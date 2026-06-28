@@ -113,7 +113,15 @@ Start with the small core rules and keep each rule explicit. The first real inte
 (λx. body)(arg) -> body[x := arg]
 ```
 
-Do not lower unreduced `lam` or `app` nodes to `Expr`. If they remain after reduction, throw an error.
+The next rule is same-label DUP-SUP annihilation:
+
+```txt
+! x &L = &L{a, b}; body -> body[x0 := a, x1 := b]
+```
+
+Different-label DUP-SUP commute is not implemented yet. Until it is, throw an error instead of pretending the lowerer can handle it.
+
+Do not lower unreduced `lam`, `app`, or `sup` nodes to `Expr`. If they remain after reduction, throw an error.
 
 ## Module layer
 
