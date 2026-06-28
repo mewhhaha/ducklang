@@ -3,34 +3,51 @@ import { Expr } from "./src/expr.ts";
 import { Mod } from "./src/mod.ts";
 
 const program: IC = {
-  tag: "dup",
-  label: "A",
-  name: "r",
+  tag: "era",
   expr: {
-    tag: "prim",
-    prim: "i32.add",
-    args: [
-      {
-        tag: "sup",
-        label: "A",
-        left: { tag: "num", type: "i32", value: 1 },
-        right: { tag: "num", type: "i32", value: 2 },
-      },
-      {
-        tag: "sup",
-        label: "A",
-        left: { tag: "num", type: "i32", value: 10 },
-        right: { tag: "num", type: "i32", value: 20 },
-      },
-    ],
+    tag: "app",
+    func: {
+      tag: "lam",
+      name: "unused",
+      body: { tag: "var", name: "unused" },
+    },
+    arg: {
+      tag: "sup",
+      label: "Z",
+      left: { tag: "num", type: "i32", value: 100 },
+      right: { tag: "num", type: "i32", value: 200 },
+    },
   },
   body: {
-    tag: "prim",
-    prim: "i32.add",
-    args: [
-      { tag: "var", name: "r0" },
-      { tag: "var", name: "r1" },
-    ],
+    tag: "dup",
+    label: "A",
+    name: "r",
+    expr: {
+      tag: "prim",
+      prim: "i32.add",
+      args: [
+        {
+          tag: "sup",
+          label: "A",
+          left: { tag: "num", type: "i32", value: 1 },
+          right: { tag: "num", type: "i32", value: 2 },
+        },
+        {
+          tag: "sup",
+          label: "A",
+          left: { tag: "num", type: "i32", value: 10 },
+          right: { tag: "num", type: "i32", value: 20 },
+        },
+      ],
+    },
+    body: {
+      tag: "prim",
+      prim: "i32.add",
+      args: [
+        { tag: "var", name: "r0" },
+        { tag: "var", name: "r1" },
+      ],
+    },
   },
 };
 

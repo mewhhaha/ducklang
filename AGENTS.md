@@ -166,13 +166,22 @@ Primitive superposition propagation:
 add(&L{a, b}, x) -> ! p &L = x; &L{add(a, p0), add(b, p1)}
 ```
 
+Explicit erasure discards a value before continuing:
+
+```txt
+~ value;
+body
+```
+
+Erasure is structural. Erasing a compound value should recursively erase its children before continuing. Erasure must reduce away before lowering to `Expr`.
+
 Primitive numeric folding should preserve the target value type. Use wrapping behavior for fixed-width integer primitives.
 
 When reducing `dup`, inspect the active pair formed by the duplicated expression before reducing the body. Reducing the body too early can erase the global-variable behavior that DUP-LAM relies on.
 
 Use deterministic fresh names for generated binders.
 
-Do not lower unreduced `lam`, `app`, or `sup` nodes to `Expr`. If they remain after reduction, throw an error.
+Do not lower unreduced `lam`, `app`, `sup`, or `era` nodes to `Expr`. If they remain after reduction, throw an error.
 
 ## Module layer
 
