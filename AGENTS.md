@@ -84,14 +84,14 @@ Store module functions as a map keyed by function name. This makes export valida
 
 Types can have ad-hoc pseudo traits attached to empty functions.
 
-Define the trait shape as a type:
+Define shared pseudo-trait shapes in `src/trait.ts`:
 
 ```ts
-type Format<self> = {
+export type Format<self> = {
   fmt: (value: self) => string;
 };
 
-type Emit<from, to> = {
+export type Emit<from, to> = {
   emit: (value: from) => to;
 };
 ```
@@ -123,10 +123,14 @@ IC.fmt = function fmt(ic: IC): string {
 };
 ```
 
-Check the pseudo traits later with `satisfies`:
+Place `satisfies` checks in the implementation file, immediately after the relevant pseudo-trait methods are assigned:
 
 ```ts
+IC.emit = function emit(ic: IC): Expr {
+  return lower(ic, new Map());
+};
+
 IC satisfies Format<IC> & Emit<IC, Expr>;
 ```
 
-Do not replace this pattern with object literals or constructor casts. The empty function is the namespace-like value, and traits are added to it ad hoc.
+Do not keep these checks in `main.ts`. Do not replace this pattern with object literals or constructor casts. The empty function is the namespace-like value, and traits are added to it ad hoc.
