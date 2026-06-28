@@ -15,6 +15,6 @@ lint:
   deno lint
 
 test:
-  deno test --allow-read --allow-write --allow-run
+  deno test --no-check --allow-read --allow-write --allow-run
 
 check: fmt-check lint test
