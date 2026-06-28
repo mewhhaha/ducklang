@@ -1,3 +1,4 @@
+import { expect } from "./expect.ts";
 import type { ValType } from "./op.ts";
 import { indent, type Wat } from "./wat.ts";
 
@@ -14,6 +15,16 @@ export type Mod = {
 
 export function Mod() {}
 
+function hasFunc(mod: Mod, name: string): boolean {
+  for (const func of mod.funcs) {
+    if (func.name === name) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function fmtFunc(func: Func): Wat {
   return `(func $${func.name} (result ${func.result})\n${indent(func.body, 2)}\n)`;
 }
@@ -27,6 +38,7 @@ Mod.emit = function emit(mod: Mod): Wat {
   }
 
   for (const name of mod.exports) {
+    expect(hasFunc(mod, name), "Missing function for export: " + name);
     parts.push(`  (export "${name}" (func $${name}))`);
   }
 
