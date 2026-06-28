@@ -1,6 +1,6 @@
 import { IC } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
-import { main as wat } from "./src/wat.ts";
+import { Mod } from "./src/mod.ts";
 
 type Format<self> = {
   fmt: (value: self) => string;
@@ -23,7 +23,13 @@ IC satisfies Format<IC> & Emit<IC, Expr>;
 const expr = IC.emit(program);
 
 Expr satisfies Format<Expr> & Emit<Expr, string>;
-const watText = wat(Expr.emit(expr), Expr.type(expr));
+const mod: Mod = {
+  funcs: [{ name: "main", result: Expr.type(expr), body: Expr.emit(expr) }],
+  exports: ["main"],
+};
+
+Mod satisfies Emit<Mod, string>;
+const watText = Mod.emit(mod);
 
 await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
