@@ -15,25 +15,19 @@ Func.fmt = function fmt(func: Func): Wat {
 };
 
 export type Mod = {
-  funcs: Func[];
+  funcs: Record<string, Func>;
   exports: string[];
 };
 
 export function Mod() {}
 
 function hasFunc(mod: Mod, name: string): boolean {
-  for (const func of mod.funcs) {
-    if (func.name === name) {
-      return true;
-    }
-  }
-
-  return false;
+  return mod.funcs[name] !== undefined;
 }
 
 Mod.emit = function emit(mod: Mod): Wat {
   const parts = ["(module"];
-  const funcs = mod.funcs.map(Func.fmt).join("\n\n");
+  const funcs = Object.values(mod.funcs).map(Func.fmt).join("\n\n");
 
   if (funcs.length > 0) {
     parts.push(indent(funcs, 2));
