@@ -163,7 +163,10 @@ function reduce(ic: IC, ctx: Ctx): IC {
     const right = arg(args, 1);
 
     if (left.tag === "num" && right.tag === "num") {
-      expect(left.type === right.type, "Primitive numbers must have the same type");
+      expect(
+        left.type === right.type,
+        "Primitive numbers must have the same type",
+      );
 
       if (left.type === "i32") {
         const leftValue = left.value;
@@ -172,15 +175,27 @@ function reduce(ic: IC, ctx: Ctx): IC {
         expect(typeof rightValue === "number", "Expected i32 number");
 
         if (ic.prim === "add") {
-          return { tag: "num", type: "i32", value: (leftValue + rightValue) | 0 };
+          return {
+            tag: "num",
+            type: "i32",
+            value: (leftValue + rightValue) | 0,
+          };
         }
 
         if (ic.prim === "sub") {
-          return { tag: "num", type: "i32", value: (leftValue - rightValue) | 0 };
+          return {
+            tag: "num",
+            type: "i32",
+            value: (leftValue - rightValue) | 0,
+          };
         }
 
         if (ic.prim === "mul") {
-          return { tag: "num", type: "i32", value: Math.imul(leftValue, rightValue) };
+          return {
+            tag: "num",
+            type: "i32",
+            value: Math.imul(leftValue, rightValue),
+          };
         }
 
         ic.prim satisfies never;
@@ -250,26 +265,29 @@ function reduce(ic: IC, ctx: Ctx): IC {
 
     if (func.tag === "sup") {
       const name = ctx.name("x");
-      return reduce({
-        tag: "dup",
-        label: func.label,
-        name,
-        expr: arg,
-        body: {
-          tag: "sup",
+      return reduce(
+        {
+          tag: "dup",
           label: func.label,
-          left: {
-            tag: "app",
-            func: func.left,
-            arg: { tag: "var", name: `${name}0` },
-          },
-          right: {
-            tag: "app",
-            func: func.right,
-            arg: { tag: "var", name: `${name}1` },
+          name,
+          expr: arg,
+          body: {
+            tag: "sup",
+            label: func.label,
+            left: {
+              tag: "app",
+              func: func.left,
+              arg: { tag: "var", name: `${name}0` },
+            },
+            right: {
+              tag: "app",
+              func: func.right,
+              arg: { tag: "var", name: `${name}1` },
+            },
           },
         },
-      }, ctx);
+        ctx,
+      );
     }
 
     return {
@@ -315,19 +333,22 @@ function reduce(ic: IC, ctx: Ctx): IC {
       const left = subst(ic.body, `${ic.name}0`, leftProjection);
       const right = subst(left, `${ic.name}1`, rightProjection);
 
-      return reduce({
-        tag: "dup",
-        label: ic.label,
-        name: leftName,
-        expr: expr.left,
-        body: {
+      return reduce(
+        {
           tag: "dup",
           label: ic.label,
-          name: rightName,
-          expr: expr.right,
-          body: right,
+          name: leftName,
+          expr: expr.left,
+          body: {
+            tag: "dup",
+            label: ic.label,
+            name: rightName,
+            expr: expr.right,
+            body: right,
+          },
         },
-      }, ctx);
+        ctx,
+      );
     }
 
     if (expr.tag === "lam") {
@@ -354,13 +375,16 @@ function reduce(ic: IC, ctx: Ctx): IC {
 
       const left = subst(ic.body, `${ic.name}0`, leftFunc);
       const right = subst(left, `${ic.name}1`, rightFunc);
-      return reduce({
-        tag: "dup",
-        label: ic.label,
-        name: bodyName,
-        expr: sharedBody,
-        body: right,
-      }, ctx);
+      return reduce(
+        {
+          tag: "dup",
+          label: ic.label,
+          name: bodyName,
+          expr: sharedBody,
+          body: right,
+        },
+        ctx,
+      );
     }
 
     const body = reduce(ic.body, ctx);
