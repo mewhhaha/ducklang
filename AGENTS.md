@@ -60,6 +60,20 @@ Core HVM4 ideas we should preserve:
 - If a helper function only calls another function or performs one trivial lookup, inline it at the call site.
 - Keep semantic operations separate from concrete Wasm instructions.
 
+## Tests
+
+Use Deno tests and keep them next to the implementation they cover:
+
+```txt
+src/ic.test.ts
+src/expr.test.ts
+src/mod.test.ts
+```
+
+When changing `IC.reduce`, add tests for the exact reduced IC shape when possible. Also cover the lowered `Expr` or emitted WAT when the reduced IC intentionally still contains duplications over plain values.
+
+Use the local helpers in `src/assert.ts` instead of adding external test dependencies.
+
 ## Numeric literals
 
 Numeric literals must carry their value type in IC. Do not silently default source numbers to `i32` during lowering.
