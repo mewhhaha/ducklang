@@ -6,10 +6,10 @@ wasm wat_file="build/out.wat" wasm_file="build/out.wasm":
   wat2wasm {{wat_file}} -o {{wasm_file}}
 
 fmt:
-  deno fmt *.ts src .github/workflows/*.yaml
+  deno fmt *.ts src
 
 fmt-check:
-  deno fmt --check *.ts src .github/workflows/*.yaml
+  deno fmt --check *.ts src
 
 lint:
   deno lint
