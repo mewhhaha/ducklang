@@ -31,7 +31,10 @@ Deno.test("IC.fmt formats dup and sup terms", () => {
     body: add(var_("x0"), var_("x1")),
   };
 
-  assertEquals(IC.fmt(program), "! x &A = &A{1:i32, 2:i32};\nx0 + x1");
+  assertEquals(
+    IC.fmt(program),
+    "! x &A = &A{1:i32, 2:i32};\nx0 + x1",
+  );
 });
 
 Deno.test("IC.reduce applies APP-LAM", () => {
@@ -165,5 +168,8 @@ Deno.test("IC.emit rejects unreduced superpositions", () => {
     right: i32(2),
   };
 
-  assertThrows(() => IC.emit(program), "Cannot lower superposition before reduction");
+  assertThrows(
+    () => IC.emit(program),
+    "Cannot lower superposition before reduction",
+  );
 });
