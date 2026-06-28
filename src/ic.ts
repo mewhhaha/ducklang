@@ -166,14 +166,42 @@ function reduce(ic: IC, ctx: Ctx): IC {
     const expr = reduce(ic.expr, ctx);
 
     if (expr.tag === "sup") {
-      expect(
-        expr.label === ic.label,
-        "Cannot commute DUP-SUP with different labels yet",
-      );
+      if (expr.label === ic.label) {
+        const left = subst(ic.body, `${ic.name}0`, expr.left);
+        const right = subst(left, `${ic.name}1`, expr.right);
+        return reduce(right, ctx);
+      }
 
-      const left = subst(ic.body, `${ic.name}0`, expr.left);
-      const right = subst(left, `${ic.name}1`, expr.right);
-      return reduce(right, ctx);
+      const leftName = ctx.name("a");
+      const rightName = ctx.name("b");
+      const leftProjection: IC = {
+        tag: "sup",
+        label: expr.label,
+        left: { tag: "var", name: `${leftName}0` },
+        right: { tag: "var", name: `${rightName}0` },
+      };
+      const rightProjection: IC = {
+        tag: "sup",
+        label: expr.label,
+        left: { tag: "var", name: `${leftName}1` },
+        right: { tag: "var", name: `${rightName}1` },
+      };
+      const left = subst(ic.body, `${ic.name}0`, leftProjection);
+      const right = subst(left, `${ic.name}1`, rightProjection);
+
+      return reduce({
+        tag: "dup",
+        label: ic.label,
+        name: leftName,
+        expr: expr.left,
+        body: {
+          tag: "dup",
+          label: ic.label,
+          name: rightName,
+          expr: expr.right,
+          body: right,
+        },
+      }, ctx);
     }
 
     if (expr.tag === "lam") {

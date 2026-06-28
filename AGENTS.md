@@ -119,6 +119,16 @@ Same-label DUP-SUP annihilation:
 ! x &L = &L{a, b}; body -> body[x0 := a, x1 := b]
 ```
 
+Different-label DUP-SUP commute:
+
+```txt
+! x &L = &R{a, b}; body
+->
+! p &L = a;
+! q &L = b;
+body[x0 := &R{p0, q0}, x1 := &R{p1, q1}]
+```
+
 APP-SUP propagation creates a duplication for the argument and a superposition of applications:
 
 ```txt
@@ -136,7 +146,7 @@ rest[f0 := λx0.b0, f1 := λx1.b1]
 
 When reducing `dup`, inspect the active pair formed by the duplicated expression before reducing the body. Reducing the body too early can erase the global-variable behavior that DUP-LAM relies on.
 
-Use deterministic fresh names for generated binders. Different-label DUP-SUP commute is not implemented yet. Until it is, throw an error instead of pretending the lowerer can handle it.
+Use deterministic fresh names for generated binders.
 
 Do not lower unreduced `lam`, `app`, or `sup` nodes to `Expr`. If they remain after reduction, throw an error.
 
