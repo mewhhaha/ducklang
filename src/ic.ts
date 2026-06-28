@@ -9,7 +9,8 @@ export type IC =
   | { tag: "prim"; prim: Prim; args: IC[] }
   | { tag: "lam"; name: string; body: IC }
   | { tag: "app"; func: IC; arg: IC }
-  | { tag: "dup"; name: string; expr: IC; body: IC };
+  | { tag: "sup"; label: string; left: IC; right: IC }
+  | { tag: "dup"; label: string; name: string; expr: IC; body: IC };
 
 export function IC() {}
 
@@ -58,10 +59,16 @@ IC.fmt = function fmt(ic: IC): string {
     return `(${func})(${arg})`;
   }
 
+  if (ic.tag === "sup") {
+    const left = fmt(ic.left);
+    const right = fmt(ic.right);
+    return `&${ic.label}{${left}, ${right}}`;
+  }
+
   if (ic.tag === "dup") {
     const expr = fmt(ic.expr);
     const body = fmt(ic.body);
-    return `! ${ic.name} &D = ${expr};\n${body}`;
+    return `! ${ic.name} &${ic.label} = ${expr};\n${body}`;
   }
 
   ic satisfies never;
@@ -104,12 +111,36 @@ IC.reduce = function reduce(ic: IC): IC {
     };
   }
 
+  if (ic.tag === "sup") {
+    return {
+      tag: "sup",
+      label: ic.label,
+      left: reduce(ic.left),
+      right: reduce(ic.right),
+    };
+  }
+
   if (ic.tag === "dup") {
+    const expr = reduce(ic.expr);
+    const body = reduce(ic.body);
+
+    if (expr.tag === "sup") {
+      expect(
+        expr.label === ic.label,
+        "Cannot commute DUP-SUP with different labels yet",
+      );
+
+      const left = subst(body, `${ic.name}0`, expr.left);
+      const right = subst(left, `${ic.name}1`, expr.right);
+      return reduce(right);
+    }
+
     return {
       tag: "dup",
+      label: ic.label,
       name: ic.name,
-      expr: reduce(ic.expr),
-      body: reduce(ic.body),
+      expr,
+      body,
     };
   }
 
@@ -164,11 +195,33 @@ function subst(ic: IC, name: string, value: IC): IC {
     };
   }
 
+  if (ic.tag === "sup") {
+    return {
+      tag: "sup",
+      label: ic.label,
+      left: subst(ic.left, name, value),
+      right: subst(ic.right, name, value),
+    };
+  }
+
   if (ic.tag === "dup") {
+    const expr = subst(ic.expr, name, value);
+
+    if (name === `${ic.name}0` || name === `${ic.name}1`) {
+      return {
+        tag: "dup",
+        label: ic.label,
+        name: ic.name,
+        expr,
+        body: ic.body,
+      };
+    }
+
     return {
       tag: "dup",
+      label: ic.label,
       name: ic.name,
-      expr: subst(ic.expr, name, value),
+      expr,
       body: subst(ic.body, name, value),
     };
   }
@@ -217,6 +270,10 @@ function lower(ic: IC, env: Map<string, ValType>): ExprNode {
 
   if (ic.tag === "app") {
     throw new Error("Cannot lower application before reduction");
+  }
+
+  if (ic.tag === "sup") {
+    throw new Error("Cannot lower superposition before reduction");
   }
 
   if (ic.tag === "dup") {
