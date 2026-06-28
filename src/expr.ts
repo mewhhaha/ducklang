@@ -1,5 +1,6 @@
 import { expect } from "./expect.ts";
 import { arity, PRIMS, watPrim, type Prim, type ValType } from "./op.ts";
+import type { Emit, Format } from "./trait.ts";
 
 export type Expr =
   | { tag: "num"; type: ValType; value: number | bigint }
@@ -144,3 +145,5 @@ Expr.fmt = function fmt(expr: Expr): string {
   expr satisfies never;
   throw new Error("panic");
 };
+
+Expr satisfies Format<Expr> & Emit<Expr, string>;
