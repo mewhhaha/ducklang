@@ -12,9 +12,11 @@ export type IC =
   | { tag: "sup"; label: string; left: IC; right: IC }
   | { tag: "dup"; label: string; name: string; expr: IC; body: IC };
 
-type Fresh = {
+type Ctx = {
   used: Set<string>;
   next: number;
+  name: (prefix: string) => string;
+  var: (prefix: string) => string;
 };
 
 export function IC() {}
@@ -81,12 +83,8 @@ IC.fmt = function fmt(ic: IC): string {
 };
 
 IC.reduce = function reduceRoot(ic: IC): IC {
-  const fresh = {
-    used: collectNames(ic),
-    next: 0,
-  };
-
-  return reduce(ic, fresh);
+  const ctx = Ctx(ic);
+  return reduce(ic, ctx);
 };
 
 IC.emit = function emit(ic: IC): ExprNode {
@@ -95,7 +93,7 @@ IC.emit = function emit(ic: IC): ExprNode {
 
 IC satisfies Format<IC> & Reduce<IC> & Emit<IC, ExprNode>;
 
-function reduce(ic: IC, fresh: Fresh): IC {
+function reduce(ic: IC, ctx: Ctx): IC {
   if (ic.tag === "num" || ic.tag === "var") {
     return ic;
   }
@@ -104,7 +102,7 @@ function reduce(ic: IC, fresh: Fresh): IC {
     return {
       tag: "prim",
       prim: ic.prim,
-      args: ic.args.map((item) => reduce(item, fresh)),
+      args: ic.args.map((item) => reduce(item, ctx)),
     };
   }
 
@@ -112,20 +110,20 @@ function reduce(ic: IC, fresh: Fresh): IC {
     return {
       tag: "lam",
       name: ic.name,
-      body: reduce(ic.body, fresh),
+      body: reduce(ic.body, ctx),
     };
   }
 
   if (ic.tag === "app") {
-    const func = reduce(ic.func, fresh);
-    const arg = reduce(ic.arg, fresh);
+    const func = reduce(ic.func, ctx);
+    const arg = reduce(ic.arg, ctx);
 
     if (func.tag === "lam") {
-      return reduce(subst(func.body, func.name, arg), fresh);
+      return reduce(subst(func.body, func.name, arg), ctx);
     }
 
     if (func.tag === "sup") {
-      const name = freshName("x", fresh);
+      const name = ctx.name("x");
       return reduce({
         tag: "dup",
         label: func.label,
@@ -145,7 +143,7 @@ function reduce(ic: IC, fresh: Fresh): IC {
             arg: { tag: "var", name: `${name}1` },
           },
         },
-      }, fresh);
+      }, ctx);
     }
 
     return {
@@ -159,13 +157,13 @@ function reduce(ic: IC, fresh: Fresh): IC {
     return {
       tag: "sup",
       label: ic.label,
-      left: reduce(ic.left, fresh),
-      right: reduce(ic.right, fresh),
+      left: reduce(ic.left, ctx),
+      right: reduce(ic.right, ctx),
     };
   }
 
   if (ic.tag === "dup") {
-    const expr = reduce(ic.expr, fresh);
+    const expr = reduce(ic.expr, ctx);
 
     if (expr.tag === "sup") {
       expect(
@@ -175,13 +173,13 @@ function reduce(ic: IC, fresh: Fresh): IC {
 
       const left = subst(ic.body, `${ic.name}0`, expr.left);
       const right = subst(left, `${ic.name}1`, expr.right);
-      return reduce(right, fresh);
+      return reduce(right, ctx);
     }
 
     if (expr.tag === "lam") {
-      const bodyName = freshName("b", fresh);
-      const leftName = freshVarName(expr.name, fresh);
-      const rightName = freshVarName(expr.name, fresh);
+      const bodyName = ctx.name("b");
+      const leftName = ctx.var(expr.name);
+      const rightName = ctx.var(expr.name);
       const sharedBody = subst(expr.body, expr.name, {
         tag: "sup",
         label: ic.label,
@@ -208,10 +206,10 @@ function reduce(ic: IC, fresh: Fresh): IC {
         name: bodyName,
         expr: sharedBody,
         body: right,
-      }, fresh);
+      }, ctx);
     }
 
-    const body = reduce(ic.body, fresh);
+    const body = reduce(ic.body, ctx);
     return {
       tag: "dup",
       label: ic.label,
@@ -225,34 +223,41 @@ function reduce(ic: IC, fresh: Fresh): IC {
   throw new Error("panic");
 }
 
-function freshName(prefix: string, fresh: Fresh): string {
-  while (true) {
-    const name = "_" + prefix + fresh.next.toString();
-    fresh.next += 1;
+function Ctx(ic: IC): Ctx {
+  const ctx: Ctx = {
+    used: collectNames(ic),
+    next: 0,
+    name(prefix: string): string {
+      while (true) {
+        const name = "_" + prefix + ctx.next.toString();
+        ctx.next += 1;
 
-    if (
-      !fresh.used.has(name) &&
-      !fresh.used.has(`${name}0`) &&
-      !fresh.used.has(`${name}1`)
-    ) {
-      fresh.used.add(name);
-      fresh.used.add(`${name}0`);
-      fresh.used.add(`${name}1`);
-      return name;
-    }
-  }
-}
+        if (
+          !ctx.used.has(name) &&
+          !ctx.used.has(`${name}0`) &&
+          !ctx.used.has(`${name}1`)
+        ) {
+          ctx.used.add(name);
+          ctx.used.add(`${name}0`);
+          ctx.used.add(`${name}1`);
+          return name;
+        }
+      }
+    },
+    var(prefix: string): string {
+      while (true) {
+        const name = "_" + prefix + ctx.next.toString();
+        ctx.next += 1;
 
-function freshVarName(prefix: string, fresh: Fresh): string {
-  while (true) {
-    const name = "_" + prefix + fresh.next.toString();
-    fresh.next += 1;
+        if (!ctx.used.has(name)) {
+          ctx.used.add(name);
+          return name;
+        }
+      }
+    },
+  };
 
-    if (!fresh.used.has(name)) {
-      fresh.used.add(name);
-      return name;
-    }
-  }
+  return ctx;
 }
 
 function collectNames(ic: IC, out = new Set<string>()): Set<string> {
