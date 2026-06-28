@@ -125,6 +125,17 @@ APP-SUP propagation creates a duplication for the argument and a superposition o
 (&L{f, g})(x) -> ! a &L = x; &L{f(a0), g(a1)}
 ```
 
+DUP-LAM propagation shares the lambda body through a new duplication:
+
+```txt
+! f &L = λx.body; rest
+->
+! b &L = body[x := &L{x0, x1}];
+rest[f0 := λx0.b0, f1 := λx1.b1]
+```
+
+When reducing `dup`, inspect the active pair formed by the duplicated expression before reducing the body. Reducing the body too early can erase the global-variable behavior that DUP-LAM relies on.
+
 Use deterministic fresh names for generated binders. Different-label DUP-SUP commute is not implemented yet. Until it is, throw an error instead of pretending the lowerer can handle it.
 
 Do not lower unreduced `lam`, `app`, or `sup` nodes to `Expr`. If they remain after reduction, throw an error.
