@@ -1,5 +1,6 @@
 import { IC } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
+import { main as wat } from "./src/wat.ts";
 
 type Format<self> = {
   fmt: (value: self) => string;
@@ -8,15 +9,6 @@ type Format<self> = {
 type Emit<from, to> = {
   emit: (value: from) => to;
 };
-
-function indent(text: string, spaces: number): string {
-  const pad = " ".repeat(spaces);
-
-  return text
-    .split("\n")
-    .map((line) => line.length === 0 ? line : pad + line)
-    .join("\n");
-}
 
 const program: IC = {
   tag: "dup",
@@ -33,17 +25,9 @@ IC satisfies Format<IC> & Emit<IC, Expr>;
 const expr = IC.emit(program);
 
 Expr satisfies Emit<Expr, string>;
-const wat = `
-(module
-  (func $main (result i32)
-${indent(Expr.emit(expr), 4)}
-  )
+const watText = wat(Expr.emit(expr));
 
-  (export "main" (func $main))
-)
-`;
-
-await Deno.writeTextFile("build/out.wat", wat);
+await Deno.writeTextFile("build/out.wat", watText);
 
 console.log("IC:");
 console.log(IC.fmt(program));
@@ -52,4 +36,4 @@ console.log("\nExpr:");
 console.log(Expr.fmt(expr));
 
 console.log("\nWAT:");
-console.log(wat);
+console.log(watText);
