@@ -1,5 +1,6 @@
 import { expect } from "./expect.ts";
 import type { ValType } from "./op.ts";
+import type { Emit, Format } from "./trait.ts";
 import { indent, type Wat } from "./wat.ts";
 
 export type Func = {
@@ -12,6 +13,8 @@ function Func() {}
 Func.fmt = function fmt(name: string, func: Func): Wat {
   return `(func $${name} (result ${func.result})\n${indent(func.body, 2)}\n)`;
 };
+
+Func satisfies Format<Func>;
 
 export type Mod = {
   funcs: Record<string, Func>;
@@ -38,3 +41,5 @@ Mod.emit = function emit(mod: Mod): Wat {
   parts.push(")");
   return parts.join("\n");
 };
+
+Mod satisfies Emit<Mod, Wat>;
