@@ -166,7 +166,6 @@ function reduce(ic: IC, fresh: Fresh): IC {
 
   if (ic.tag === "dup") {
     const expr = reduce(ic.expr, fresh);
-    const body = reduce(ic.body, fresh);
 
     if (expr.tag === "sup") {
       expect(
@@ -174,11 +173,45 @@ function reduce(ic: IC, fresh: Fresh): IC {
         "Cannot commute DUP-SUP with different labels yet",
       );
 
-      const left = subst(body, `${ic.name}0`, expr.left);
+      const left = subst(ic.body, `${ic.name}0`, expr.left);
       const right = subst(left, `${ic.name}1`, expr.right);
       return reduce(right, fresh);
     }
 
+    if (expr.tag === "lam") {
+      const bodyName = freshName("b", fresh);
+      const leftName = freshVarName(expr.name, fresh);
+      const rightName = freshVarName(expr.name, fresh);
+      const sharedBody = subst(expr.body, expr.name, {
+        tag: "sup",
+        label: ic.label,
+        left: { tag: "var", name: leftName },
+        right: { tag: "var", name: rightName },
+      });
+
+      const leftFunc: IC = {
+        tag: "lam",
+        name: leftName,
+        body: { tag: "var", name: `${bodyName}0` },
+      };
+      const rightFunc: IC = {
+        tag: "lam",
+        name: rightName,
+        body: { tag: "var", name: `${bodyName}1` },
+      };
+
+      const left = subst(ic.body, `${ic.name}0`, leftFunc);
+      const right = subst(left, `${ic.name}1`, rightFunc);
+      return reduce({
+        tag: "dup",
+        label: ic.label,
+        name: bodyName,
+        expr: sharedBody,
+        body: right,
+      }, fresh);
+    }
+
+    const body = reduce(ic.body, fresh);
     return {
       tag: "dup",
       label: ic.label,
@@ -197,10 +230,26 @@ function freshName(prefix: string, fresh: Fresh): string {
     const name = "_" + prefix + fresh.next.toString();
     fresh.next += 1;
 
-    if (!fresh.used.has(name) && !fresh.used.has(`${name}0`) && !fresh.used.has(`${name}1`)) {
+    if (
+      !fresh.used.has(name) &&
+      !fresh.used.has(`${name}0`) &&
+      !fresh.used.has(`${name}1`)
+    ) {
       fresh.used.add(name);
       fresh.used.add(`${name}0`);
       fresh.used.add(`${name}1`);
+      return name;
+    }
+  }
+}
+
+function freshVarName(prefix: string, fresh: Fresh): string {
+  while (true) {
+    const name = "_" + prefix + fresh.next.toString();
+    fresh.next += 1;
+
+    if (!fresh.used.has(name)) {
+      fresh.used.add(name);
       return name;
     }
   }
