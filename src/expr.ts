@@ -1,7 +1,11 @@
+import { isOp, OPS, type Op } from "./op.ts";
+
+type BinaryExpr = { tag: Op; left: Expr; right: Expr };
+
 export type Expr =
   | { tag: "num"; value: number }
   | { tag: "var"; name: string }
-  | { tag: "add"; left: Expr; right: Expr }
+  | BinaryExpr
   | { tag: "let"; name: string; value: Expr; body: Expr };
 
 export function Expr() {}
@@ -12,7 +16,7 @@ function collect(expr: Expr, out = new Set<string>()): Set<string> {
     return out;
   }
 
-  if (expr.tag === "add") {
+  if (isOp(expr.tag)) {
     collect(expr.left, out);
     collect(expr.right, out);
     return out;
@@ -31,36 +35,36 @@ function collect(expr: Expr, out = new Set<string>()): Set<string> {
 
 function _emit(expr: Expr, env: Map<string, string>): string {
   if (expr.tag === "num") {
-    return `i32.const ${expr.value}`;
+    return "i32.const " + expr.value;
   }
 
   if (expr.tag === "var") {
     const local = env.get(expr.name);
 
     if (local === undefined) {
-      throw new Error(`Unbound variable: ${expr.name}`);
+      throw new Error("Unbound variable: " + expr.name);
     }
 
-    return `local.get $${local}`;
+    return "local.get $" + local;
   }
 
-  if (expr.tag === "add") {
-    return `
-${_emit(expr.left, env)}
-${_emit(expr.right, env)}
-i32.add
-    `.trim();
+  if (isOp(expr.tag)) {
+    return [
+      _emit(expr.left, env),
+      _emit(expr.right, env),
+      OPS[expr.tag].wat,
+    ].join("\n");
   }
 
   if (expr.tag === "let") {
     const nextEnv = new Map(env);
     nextEnv.set(expr.name, expr.name);
 
-    return `
-${_emit(expr.value, env)}
-local.set $${expr.name}
-${_emit(expr.body, nextEnv)}
-    `.trim();
+    return [
+      _emit(expr.value, env),
+      "local.set $" + expr.name,
+      _emit(expr.body, nextEnv),
+    ].join("\n");
   }
 
   expr satisfies never;
@@ -90,10 +94,10 @@ Expr.fmt = function fmt(expr: Expr): string {
     return expr.name;
   }
 
-  if (expr.tag === "add") {
+  if (isOp(expr.tag)) {
     const left = fmt(expr.left);
     const right = fmt(expr.right);
-    return `(${left} + ${right})`;
+    return `(${left} ${OPS[expr.tag].fmt} ${right})`;
   }
 
   if (expr.tag === "let") {
