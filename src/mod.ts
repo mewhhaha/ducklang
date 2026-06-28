@@ -31,7 +31,7 @@ Mod.emit = function emit(mod: Mod): Wat {
   }
 
   for (const name of mod.exports) {
-    expect(mod.funcs[name] !== undefined, "Missing function for export: " + name);
+    expect(mod.funcs[name], "Missing function for export: " + name);
     parts.push(`  (export "${name}" (func $${name}))`);
   }
 
