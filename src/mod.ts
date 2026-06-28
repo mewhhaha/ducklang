@@ -8,6 +8,12 @@ export type Func = {
   body: Wat;
 };
 
+function Func() {}
+
+Func.fmt = function fmt(func: Func): Wat {
+  return `(func $${func.name} (result ${func.result})\n${indent(func.body, 2)}\n)`;
+};
+
 export type Mod = {
   funcs: Func[];
   exports: string[];
@@ -25,13 +31,9 @@ function hasFunc(mod: Mod, name: string): boolean {
   return false;
 }
 
-function fmtFunc(func: Func): Wat {
-  return `(func $${func.name} (result ${func.result})\n${indent(func.body, 2)}\n)`;
-}
-
 Mod.emit = function emit(mod: Mod): Wat {
   const parts = ["(module"];
-  const funcs = mod.funcs.map(fmtFunc).join("\n\n");
+  const funcs = mod.funcs.map(Func.fmt).join("\n\n");
 
   if (funcs.length > 0) {
     parts.push(indent(funcs, 2));
