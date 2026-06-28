@@ -3,13 +3,23 @@ import { Expr } from "./src/expr.ts";
 import { Mod } from "./src/mod.ts";
 
 const program: IC = {
-  tag: "app",
-  func: {
-    tag: "lam",
-    name: "x",
-    body: { tag: "var", name: "x" },
+  tag: "dup",
+  label: "A",
+  name: "x",
+  expr: {
+    tag: "sup",
+    label: "A",
+    left: { tag: "num", type: "i32", value: 40 },
+    right: { tag: "num", type: "i32", value: 2 },
   },
-  arg: { tag: "num", type: "i32", value: 42 },
+  body: {
+    tag: "prim",
+    prim: "add",
+    args: [
+      { tag: "var", name: "x0" },
+      { tag: "var", name: "x1" },
+    ],
+  },
 };
 
 const reduced = IC.reduce(program);
