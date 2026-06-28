@@ -24,6 +24,19 @@ Emit.emit = function emit<from, to>(
   return impl.emit(value);
 };
 
+export type Parse<from, to> = {
+  parse: (value: from) => to;
+};
+
+export function Parse() {}
+
+Parse.parse = function parse<from, to>(
+  impl: Parse<from, to>,
+  value: from,
+): to {
+  return impl.parse(value);
+};
+
 export type CallableType<type> = {
   args: type[];
   result: type;
