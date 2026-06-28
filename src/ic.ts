@@ -1,15 +1,35 @@
 import { Expr, type Expr as ExprNode } from "./expr.ts";
-import { OPS, isOp, type Op, type ValType } from "./op.ts";
+import { expectArity, PRIMS, type Prim, type ValType } from "./op.ts";
 
-type BinaryIC = { tag: Op; left: IC; right: IC };
+type PrimIC = { tag: "prim"; prim: Prim; args: IC[] };
 
 export type IC =
   | { tag: "num"; value: number }
   | { tag: "var"; name: string }
-  | BinaryIC
+  | PrimIC
   | { tag: "dup"; name: string; expr: IC; body: IC };
 
 export function IC() {}
+
+function arg(args: IC[], index: number): IC {
+  const value = args[index];
+
+  if (value === undefined) {
+    throw new Error("Missing argument " + index);
+  }
+
+  return value;
+}
+
+function exprArg(args: ExprNode[], index: number): ExprNode {
+  const value = args[index];
+
+  if (value === undefined) {
+    throw new Error("Missing argument " + index);
+  }
+
+  return value;
+}
 
 IC.fmt = function fmt(ic: IC): string {
   if (ic.tag === "num") {
@@ -20,10 +40,12 @@ IC.fmt = function fmt(ic: IC): string {
     return ic.name;
   }
 
-  if (isOp(ic.tag)) {
-    const left = fmt(ic.left);
-    const op = OPS[ic.tag];
-    const right = fmt(ic.right);
+  if (ic.tag === "prim") {
+    expectArity(ic.prim, ic.args);
+
+    const left = fmt(arg(ic.args, 0));
+    const op = PRIMS[ic.prim].fmt;
+    const right = fmt(arg(ic.args, 1));
     return `${left} ${op} ${right}`;
   }
 
@@ -56,21 +78,23 @@ function lower(ic: IC, env: Map<string, ValType>): ExprNode {
     return { tag: "var", type, name: ic.name };
   }
 
-  if (isOp(ic.tag)) {
-    const left = lower(ic.left, env);
-    const right = lower(ic.right, env);
-    const type = Expr.type(left);
+  if (ic.tag === "prim") {
+    expectArity(ic.prim, ic.args);
 
-    if (Expr.type(right) !== type) {
-      throw new Error("Binary operands must have the same type");
+    const args = ic.args.map((item) => lower(item, env));
+    const type = Expr.type(exprArg(args, 0));
+
+    for (const item of args) {
+      if (Expr.type(item) !== type) {
+        throw new Error("Primitive operands must have the same type");
+      }
     }
 
     return {
-      tag: "bin",
+      tag: "prim",
       type,
-      op: ic.tag,
-      left,
-      right,
+      prim: ic.prim,
+      args,
     };
   }
 
@@ -107,13 +131,12 @@ function rename(expr: ExprNode, name: string): ExprNode {
     return expr;
   }
 
-  if (expr.tag === "bin") {
+  if (expr.tag === "prim") {
     return {
-      tag: "bin",
+      tag: "prim",
       type: expr.type,
-      op: expr.op,
-      left: rename(expr.left, name),
-      right: rename(expr.right, name),
+      prim: expr.prim,
+      args: expr.args.map((item) => rename(item, name)),
     };
   }
 
