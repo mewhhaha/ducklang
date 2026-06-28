@@ -25,7 +25,7 @@ IC satisfies Format<IC> & Emit<IC, Expr>;
 const expr = IC.emit(program);
 
 Expr satisfies Format<Expr> & Emit<Expr, string>;
-const watText = wat(Expr.emit(expr));
+const watText = wat(Expr.emit(expr), Expr.type(expr));
 
 await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
