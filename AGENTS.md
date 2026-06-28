@@ -17,7 +17,8 @@ The project should stay simple and inspectable while it grows. Prefer small expl
 - Do not silently default when compiler information is missing.
 - If a binding, type, local, or lowering fact cannot be found, throw an error.
 - Prefer explicit `if` blocks over compact expressions when the branch matters.
-- Use `expect(condition, message)` for reusable invariant checks.
+- Use `expect(condition, message)` directly at invariant sites.
+- Do not hide `expect` behind tiny wrapper helpers such as `expectType` or `expectArity`.
 - Keep semantic operations separate from concrete Wasm instructions.
 
 ## Primitive operations
