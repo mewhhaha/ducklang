@@ -1,6 +1,6 @@
 import { expect } from "./expect.ts";
 import { Prim, type ValType } from "./op.ts";
-import { Callable, Emit, Format } from "./trait.ts";
+import { Callable, Emit, Format, Typed } from "./trait.ts";
 
 export type Expr =
   | { tag: "num"; type: ValType; value: number | bigint }
@@ -46,7 +46,7 @@ function collect(
       return out;
 
     case "let":
-      out.set(expr.name, Expr.type(expr.value));
+      out.set(expr.name, Typed.type(Expr, expr.value));
       collect(expr.value, out);
       collect(expr.body, out);
       return out;
@@ -89,7 +89,7 @@ function emit(expr: Expr, env: Map<string, ValType>): string {
         expect(item, "Missing primitive argument " + index);
         const expectedType = primType.args[index];
         expect(expectedType, "Missing primitive argument type " + index);
-        const actual = Expr.type(item);
+        const actual = Typed.type(Expr, item);
         expect(
           actual === expectedType,
           "Primitive " + expr.prim + " argument " + index + " expects " +
@@ -103,7 +103,7 @@ function emit(expr: Expr, env: Map<string, ValType>): string {
     }
 
     case "let": {
-      const type = Expr.type(expr.value);
+      const type = Typed.type(Expr, expr.value);
       env = new Map(env);
       env.set(expr.name, type);
 
@@ -157,7 +157,7 @@ Expr.fmt = function fmt(expr: Expr): string {
         expect(item, "Missing primitive argument " + index);
         const expectedType = primType.args[index];
         expect(expectedType, "Missing primitive argument type " + index);
-        const actual = Expr.type(item);
+        const actual = Typed.type(Expr, item);
         expect(
           actual === expectedType,
           "Primitive " + expr.prim + " argument " + index + " expects " +
@@ -172,7 +172,7 @@ Expr.fmt = function fmt(expr: Expr): string {
     }
 
     case "let": {
-      const type = Expr.type(expr.value);
+      const type = Typed.type(Expr, expr.value);
       const value = fmt(expr.value);
       const body = fmt(expr.body);
       return `let ${expr.name}:${type} = ${value};\n${body}`;
@@ -180,4 +180,4 @@ Expr.fmt = function fmt(expr: Expr): string {
   }
 };
 
-Expr satisfies Format<Expr> & Emit<Expr, string>;
+Expr satisfies Format<Expr> & Emit<Expr, string> & Typed<Expr, ValType>;

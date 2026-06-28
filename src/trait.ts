@@ -11,6 +11,13 @@ Format.fmt = function fmt<self>(
   return impl.fmt(value);
 };
 
+Format.all = function all<self>(
+  impl: Format<self>,
+  values: self[],
+): string[] {
+  return values.map((value) => Format.fmt(impl, value));
+};
+
 export type Emit<from, to> = {
   emit: (value: from) => to;
 };
@@ -22,6 +29,26 @@ Emit.emit = function emit<from, to>(
   value: from,
 ): to {
   return impl.emit(value);
+};
+
+Emit.all = function all<from, to>(
+  impl: Emit<from, to>,
+  values: from[],
+): to[] {
+  return values.map((value) => Emit.emit(impl, value));
+};
+
+export type Typed<self, type> = {
+  type: (value: self) => type;
+};
+
+export function Typed() {}
+
+Typed.type = function type<self, type>(
+  impl: Typed<self, type>,
+  value: self,
+): type {
+  return impl.type(value);
 };
 
 export type CallableType<type> = {
@@ -62,4 +89,12 @@ Reduce.reduce = function reduce<ctx, from, to>(
   value: from,
 ): to {
   return impl.reduce(ctx, value);
+};
+
+Reduce.all = function all<ctx, from, to>(
+  impl: Reduce<ctx, from, to>,
+  ctx: ctx,
+  values: from[],
+): to[] {
+  return values.map((value) => Reduce.reduce(impl, ctx, value));
 };

@@ -30,4 +30,8 @@ Deno.test("Prim.type returns primitive function signatures", () => {
 Deno.test("Prim.emit returns the typed primitive instruction", () => {
   assertEquals(Emit.emit(Prim, "i32.sub"), "i32.sub");
   assertEquals(Emit.emit(Prim, "i64.mul"), "i64.mul");
+  assertEquals(Emit.all(Prim, ["i32.sub", "i64.mul"]), [
+    "i32.sub",
+    "i64.mul",
+  ]);
 });

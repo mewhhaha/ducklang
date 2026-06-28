@@ -1,7 +1,7 @@
 import { Ic } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
 import { Mod } from "./src/mod.ts";
-import { Emit, Format } from "./src/trait.ts";
+import { Emit, Format, Typed } from "./src/trait.ts";
 
 const program: Ic = {
   tag: "era",
@@ -59,7 +59,7 @@ const mod: Mod = {
   funcs: {
     main: {
       name: "main",
-      result: Expr.type(expr),
+      result: Typed.type(Expr, expr),
       body: Emit.emit(Expr, expr),
     },
   },

@@ -1,6 +1,6 @@
 import { assertEquals, assertIncludes, assertThrows } from "./assert.ts";
 import { Expr, type Expr as ExprNode } from "./expr.ts";
-import { Emit, Format } from "./trait.ts";
+import { Emit, Format, Typed } from "./trait.ts";
 
 function num(value: number): ExprNode {
   return { tag: "num", type: "i32", value };
@@ -26,7 +26,7 @@ Deno.test("Expr.type returns let body type", () => {
     body: add(num(1), num(2)),
   };
 
-  assertEquals(Expr.type(expr), "i32");
+  assertEquals(Typed.type(Expr, expr), "i32");
 });
 
 Deno.test("Expr.fmt formats typed primitive expressions", () => {

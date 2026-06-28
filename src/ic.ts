@@ -1,7 +1,7 @@
 import { expect } from "./expect.ts";
 import { Expr, type Expr as ExprNode } from "./expr.ts";
 import { Prim, type ValType } from "./op.ts";
-import { Callable, Emit, Format, Reduce } from "./trait.ts";
+import { Callable, Emit, Format, Reduce, Typed } from "./trait.ts";
 
 export type Ic =
   | { tag: "num"; type: ValType; value: number | bigint }
@@ -20,6 +20,7 @@ type Ctx = {
   var: (prefix: string) => string;
 };
 
+type IcStep = Ic;
 type PrimCall = Extract<Ic, { tag: "prim" }>;
 type Lam = Extract<Ic, { tag: "lam" }>;
 type App = Extract<Ic, { tag: "app" }>;
@@ -33,6 +34,7 @@ type I32Prim = Extract<Prim, `i32.${string}`>;
 type I64Prim = Extract<Prim, `i64.${string}`>;
 
 export function Ic() {}
+function IcStep() {}
 function PrimCall() {}
 function Lam() {}
 function App() {}
@@ -102,7 +104,7 @@ Ic.fmt = function fmt(ic: Ic): string {
 
 Ic.reduce = function reduceRoot(ic: Ic): Ic {
   const ctx = Ctx(ic);
-  return reduce(ctx, ic);
+  return Reduce.reduce(IcStep, ctx, ic);
 };
 
 Ic.emit = function emit(ic: Ic): ExprNode {
@@ -111,7 +113,7 @@ Ic.emit = function emit(ic: Ic): ExprNode {
 
 Ic satisfies Format<Ic> & Emit<Ic, ExprNode>;
 
-function reduce(ctx: Ctx, ic: Ic): Ic {
+IcStep.reduce = function (ctx: Ctx, ic: IcStep): Ic {
   switch (ic.tag) {
     case "num":
     case "var":
@@ -135,7 +137,9 @@ function reduce(ctx: Ctx, ic: Ic): Ic {
     case "era":
       return Reduce.reduce(Era, ctx, ic);
   }
-}
+};
+
+IcStep satisfies Reduce<Ctx, IcStep, Ic>;
 
 PrimCall.reduce = function (ctx: Ctx, ic: PrimCall): Ic {
   const expected = Callable.arity(Prim, ic.prim);
@@ -144,7 +148,7 @@ PrimCall.reduce = function (ctx: Ctx, ic: PrimCall): Ic {
     "Primitive " + ic.prim + " expects " + expected + " arguments",
   );
 
-  const args = ic.args.map((item) => reduce(ctx, item));
+  const args = Reduce.all(IcStep, ctx, ic.args);
 
   for (let index = 0; index < args.length; index += 1) {
     const item = args[index];
@@ -152,7 +156,7 @@ PrimCall.reduce = function (ctx: Ctx, ic: PrimCall): Ic {
 
     if (item.tag === "sup") {
       const body = spreadPrim(ic.prim, args, index, item, ctx);
-      return reduce(ctx, body);
+      return Reduce.reduce(IcStep, ctx, body);
     }
   }
 
@@ -329,23 +333,24 @@ Lam.reduce = function (ctx: Ctx, ic: Lam): Ic {
   return {
     tag: "lam",
     name: ic.name,
-    body: reduce(ctx, ic.body),
+    body: Reduce.reduce(IcStep, ctx, ic.body),
   };
 };
 
 Lam satisfies Reduce<Ctx, Lam, Ic>;
 
 App.reduce = function (ctx: Ctx, ic: App): Ic {
-  const func = reduce(ctx, ic.func);
-  const value = reduce(ctx, ic.arg);
+  const func = Reduce.reduce(IcStep, ctx, ic.func);
+  const value = Reduce.reduce(IcStep, ctx, ic.arg);
 
   if (func.tag === "lam") {
-    return reduce(ctx, subst(func.body, func.name, value));
+    return Reduce.reduce(IcStep, ctx, subst(func.body, func.name, value));
   }
 
   if (func.tag === "sup") {
     const name = ctx.name("x");
-    return reduce(
+    return Reduce.reduce(
+      IcStep,
       ctx,
       {
         tag: "dup",
@@ -379,15 +384,15 @@ Sup.reduce = function (ctx: Ctx, ic: Sup): Ic {
   return {
     tag: "sup",
     label: ic.label,
-    left: reduce(ctx, ic.left),
-    right: reduce(ctx, ic.right),
+    left: Reduce.reduce(IcStep, ctx, ic.left),
+    right: Reduce.reduce(IcStep, ctx, ic.right),
   };
 };
 
 Sup satisfies Reduce<Ctx, Sup, Ic>;
 
 Dup.reduce = function (ctx: Ctx, ic: Dup): Ic {
-  const expr = reduce(ctx, ic.expr);
+  const expr = Reduce.reduce(IcStep, ctx, ic.expr);
 
   if (expr.tag === "sup") {
     return Reduce.reduce(DupSup, ctx, [ic, expr]);
@@ -397,7 +402,7 @@ Dup.reduce = function (ctx: Ctx, ic: Dup): Ic {
     return Reduce.reduce(DupLam, ctx, [ic, expr]);
   }
 
-  const body = reduce(ctx, ic.body);
+  const body = Reduce.reduce(IcStep, ctx, ic.body);
   return {
     tag: "dup",
     label: ic.label,
@@ -410,9 +415,9 @@ Dup.reduce = function (ctx: Ctx, ic: Dup): Ic {
 Dup satisfies Reduce<Ctx, Dup, Ic>;
 
 Era.reduce = function (ctx: Ctx, ic: Era): Ic {
-  const expr = reduce(ctx, ic.expr);
+  const expr = Reduce.reduce(IcStep, ctx, ic.expr);
   const body = erase(expr, ic.body);
-  return reduce(ctx, body);
+  return Reduce.reduce(IcStep, ctx, body);
 };
 
 Era satisfies Reduce<Ctx, Era, Ic>;
@@ -423,7 +428,7 @@ DupSup.reduce = function (ctx: Ctx, pair: DupSup): Ic {
   if (expr.label === ic.label) {
     const left = subst(ic.body, `${ic.name}0`, expr.left);
     const right = subst(left, `${ic.name}1`, expr.right);
-    return reduce(ctx, right);
+    return Reduce.reduce(IcStep, ctx, right);
   }
 
   const leftName = ctx.name("a");
@@ -443,7 +448,8 @@ DupSup.reduce = function (ctx: Ctx, pair: DupSup): Ic {
   const left = subst(ic.body, `${ic.name}0`, leftProjection);
   const right = subst(left, `${ic.name}1`, rightProjection);
 
-  return reduce(
+  return Reduce.reduce(
+    IcStep,
     ctx,
     {
       tag: "dup",
@@ -489,7 +495,8 @@ DupLam.reduce = function (ctx: Ctx, pair: DupLam): Ic {
 
   const left = subst(ic.body, `${ic.name}0`, leftFunc);
   const right = subst(left, `${ic.name}1`, rightFunc);
-  return reduce(
+  return Reduce.reduce(
+    IcStep,
     ctx,
     {
       tag: "dup",
@@ -730,7 +737,7 @@ function lower(ic: Ic, env: Map<string, ValType>): ExprNode {
         expect(item, "Missing primitive argument " + index);
         const expectedType = primType.args[index];
         expect(expectedType, "Missing primitive argument type " + index);
-        const actual = Expr.type(item);
+        const actual = Typed.type(Expr, item);
         expect(
           actual === expectedType,
           "Primitive " + ic.prim + " argument " + index + " expects " +
@@ -757,7 +764,7 @@ function lower(ic: Ic, env: Map<string, ValType>): ExprNode {
 
     case "dup": {
       const value = lower(ic.expr, env);
-      const type = Expr.type(value);
+      const type = Typed.type(Expr, value);
       env = new Map(env);
 
       env.set(`${ic.name}0`, type);

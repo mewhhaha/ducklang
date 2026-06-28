@@ -28,17 +28,17 @@ export function Mod() {}
 
 Mod.emit = function emit(mod: Mod): Wat {
   const parts = ["(module"];
-  const funcs: Wat[] = [];
+  const funcs: Func[] = [];
 
   for (const name in mod.funcs) {
     const func = mod.funcs[name];
     expect(func, "Missing function: " + name);
     expect(func.name === name, "Function key/name mismatch: " + name);
-    funcs.push(Format.fmt(Func, func));
+    funcs.push(func);
   }
 
   if (funcs.length > 0) {
-    parts.push(indent(funcs.join("\n\n"), 2));
+    parts.push(indent(Format.all(Func, funcs).join("\n\n"), 2));
   }
 
   for (const name of mod.exports) {
