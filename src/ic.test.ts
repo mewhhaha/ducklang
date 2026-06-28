@@ -1,29 +1,29 @@
 import { assertEquals, assertThrows } from "./assert.ts";
 import { Expr } from "./expr.ts";
-import { IC, type IC as ICNode } from "./ic.ts";
+import { Ic, type Ic as IcNode } from "./ic.ts";
 
-function i32(value: number): ICNode {
+function i32(value: number): IcNode {
   return { tag: "num", type: "i32", value };
 }
 
-function i64(value: bigint): ICNode {
+function i64(value: bigint): IcNode {
   return { tag: "num", type: "i64", value };
 }
 
-function var_(name: string): ICNode {
+function var_(name: string): IcNode {
   return { tag: "var", name };
 }
 
-function add(left: ICNode, right: ICNode): ICNode {
+function add(left: IcNode, right: IcNode): IcNode {
   return { tag: "prim", prim: "i32.add", args: [left, right] };
 }
 
-function id(name: string): ICNode {
+function id(name: string): IcNode {
   return { tag: "lam", name, body: var_(name) };
 }
 
-Deno.test("IC.fmt formats dup and sup terms", () => {
-  const program: ICNode = {
+Deno.test("Ic.fmt formats dup and sup terms", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "x",
@@ -32,33 +32,33 @@ Deno.test("IC.fmt formats dup and sup terms", () => {
   };
 
   assertEquals(
-    IC.fmt(program),
+    Ic.fmt(program),
     "! x &A = &A{1:i32, 2:i32};\nx0 + x1",
   );
 });
 
-Deno.test("IC.fmt formats explicit erasure", () => {
-  const program: ICNode = {
+Deno.test("Ic.fmt formats explicit erasure", () => {
+  const program: IcNode = {
     tag: "era",
     expr: i32(1),
     body: i32(2),
   };
 
-  assertEquals(IC.fmt(program), "~ 1:i32;\n2:i32");
+  assertEquals(Ic.fmt(program), "~ 1:i32;\n2:i32");
 });
 
-Deno.test("IC.reduce applies APP-LAM", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce applies APP-LAM", () => {
+  const program: IcNode = {
     tag: "app",
     func: id("x"),
     arg: i32(42),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce annihilates same-label DUP-SUP", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce annihilates same-label DUP-SUP", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "x",
@@ -66,11 +66,11 @@ Deno.test("IC.reduce annihilates same-label DUP-SUP", () => {
     body: add(var_("x0"), var_("x1")),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce commutes different-label DUP-SUP enough to lower", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce commutes different-label DUP-SUP enough to lower", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "x",
@@ -84,7 +84,7 @@ Deno.test("IC.reduce commutes different-label DUP-SUP enough to lower", () => {
     },
   };
 
-  const expr = IC.emit(program);
+  const expr = Ic.emit(program);
 
   assertEquals(
     Expr.fmt(expr),
@@ -92,8 +92,8 @@ Deno.test("IC.reduce commutes different-label DUP-SUP enough to lower", () => {
   );
 });
 
-Deno.test("IC.reduce applies APP-SUP and then same-label DUP-SUP", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce applies APP-SUP and then same-label DUP-SUP", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "r",
@@ -105,11 +105,11 @@ Deno.test("IC.reduce applies APP-SUP and then same-label DUP-SUP", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce applies DUP-LAM", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce applies DUP-LAM", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "r",
@@ -128,11 +128,11 @@ Deno.test("IC.reduce applies DUP-LAM", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce propagates primitive calls over superpositions", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce propagates primitive calls over superpositions", () => {
+  const program: IcNode = {
     tag: "dup",
     label: "A",
     name: "r",
@@ -147,51 +147,51 @@ Deno.test("IC.reduce propagates primitive calls over superpositions", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(IC.reduce(program), i32(33));
+  assertEquals(Ic.reduce(program), i32(33));
 });
 
-Deno.test("IC.reduce folds i32 primitives with wrapping", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce folds i32 primitives with wrapping", () => {
+  const program: IcNode = {
     tag: "prim",
     prim: "i32.add",
     args: [i32(2147483647), i32(1)],
   };
 
-  assertEquals(IC.reduce(program), i32(-2147483648));
+  assertEquals(Ic.reduce(program), i32(-2147483648));
 });
 
-Deno.test("IC.reduce folds i64 primitives with wrapping", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce folds i64 primitives with wrapping", () => {
+  const program: IcNode = {
     tag: "prim",
     prim: "i64.mul",
     args: [i64(3n), i64(7n)],
   };
 
-  assertEquals(IC.reduce(program), i64(21n));
+  assertEquals(Ic.reduce(program), i64(21n));
 });
 
-Deno.test("IC.reduce erases numbers and continues", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce erases numbers and continues", () => {
+  const program: IcNode = {
     tag: "era",
     expr: i32(1),
     body: i32(42),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce erases superpositions structurally", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce erases superpositions structurally", () => {
+  const program: IcNode = {
     tag: "era",
     expr: { tag: "sup", label: "A", left: i32(1), right: i32(2) },
     body: i32(42),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce erases applications structurally", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce erases applications structurally", () => {
+  const program: IcNode = {
     tag: "era",
     expr: {
       tag: "app",
@@ -201,11 +201,11 @@ Deno.test("IC.reduce erases applications structurally", () => {
     body: i32(42),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.reduce erases duplicated values structurally", () => {
-  const program: ICNode = {
+Deno.test("Ic.reduce erases duplicated values structurally", () => {
+  const program: IcNode = {
     tag: "era",
     expr: {
       tag: "dup",
@@ -217,11 +217,11 @@ Deno.test("IC.reduce erases duplicated values structurally", () => {
     body: i32(42),
   };
 
-  assertEquals(IC.reduce(program), i32(42));
+  assertEquals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("IC.emit rejects unreduced superpositions", () => {
-  const program: ICNode = {
+Deno.test("Ic.emit rejects unreduced superpositions", () => {
+  const program: IcNode = {
     tag: "sup",
     label: "A",
     left: i32(1),
@@ -229,7 +229,7 @@ Deno.test("IC.emit rejects unreduced superpositions", () => {
   };
 
   assertThrows(
-    () => IC.emit(program),
+    () => Ic.emit(program),
     "Cannot lower superposition before reduction",
   );
 });

@@ -3,15 +3,15 @@ import { Expr, type Expr as ExprNode } from "./expr.ts";
 import { Prim, type ValType } from "./op.ts";
 import type { Emit, Format, Reduce } from "./trait.ts";
 
-export type IC =
+export type Ic =
   | { tag: "num"; type: ValType; value: number | bigint }
   | { tag: "var"; name: string }
-  | { tag: "prim"; prim: Prim; args: IC[] }
-  | { tag: "lam"; name: string; body: IC }
-  | { tag: "app"; func: IC; arg: IC }
-  | { tag: "sup"; label: string; left: IC; right: IC }
-  | { tag: "dup"; label: string; name: string; expr: IC; body: IC }
-  | { tag: "era"; expr: IC; body: IC };
+  | { tag: "prim"; prim: Prim; args: Ic[] }
+  | { tag: "lam"; name: string; body: Ic }
+  | { tag: "app"; func: Ic; arg: Ic }
+  | { tag: "sup"; label: string; left: Ic; right: Ic }
+  | { tag: "dup"; label: string; name: string; expr: Ic; body: Ic }
+  | { tag: "era"; expr: Ic; body: Ic };
 
 type Ctx = {
   used: Set<string>;
@@ -20,15 +20,35 @@ type Ctx = {
   var: (prefix: string) => string;
 };
 
-export function IC() {}
+type PrimCall = Extract<Ic, { tag: "prim" }>;
+type Lam = Extract<Ic, { tag: "lam" }>;
+type App = Extract<Ic, { tag: "app" }>;
+type Sup = Extract<Ic, { tag: "sup" }>;
+type Dup = Extract<Ic, { tag: "dup" }>;
+type Era = Extract<Ic, { tag: "era" }>;
+type Num = Extract<Ic, { tag: "num" }>;
+type DupSup = [dup: Dup, sup: Sup];
+type DupLam = [dup: Dup, lam: Lam];
+type I32Prim = Extract<Prim, `i32.${string}`>;
+type I64Prim = Extract<Prim, `i64.${string}`>;
 
-function arg(args: IC[], index: number): IC {
+export function Ic() {}
+function PrimCall() {}
+function Lam() {}
+function App() {}
+function Sup() {}
+function Dup() {}
+function Era() {}
+function DupSup() {}
+function DupLam() {}
+
+function arg(args: Ic[], index: number): Ic {
   const value = args[index];
   expect(value, "Missing argument " + index);
   return value;
 }
 
-IC.fmt = function fmt(ic: IC): string {
+Ic.fmt = function fmt(ic: Ic): string {
   switch (ic.tag) {
     case "num":
       return ic.value.toString() + ":" + ic.type;
@@ -80,63 +100,51 @@ IC.fmt = function fmt(ic: IC): string {
   }
 };
 
-IC.reduce = function reduceRoot(ic: IC): IC {
+Ic.reduce = function (ic: Ic): Ic {
   const ctx = Ctx(ic);
-  return reduce(ic, ctx);
+  return reduce(ctx, ic);
 };
 
-IC.emit = function emit(ic: IC): ExprNode {
-  return lower(IC.reduce(ic), new Map());
+Ic.emit = function emit(ic: Ic): ExprNode {
+  return lower(Ic.reduce(ic), new Map());
 };
 
-IC satisfies Format<IC> & Reduce<IC> & Emit<IC, ExprNode>;
+Ic satisfies Format<Ic> & Emit<Ic, ExprNode>;
 
-function reduce(ic: IC, ctx: Ctx): IC {
+function reduce(ctx: Ctx, ic: Ic): Ic {
   switch (ic.tag) {
     case "num":
     case "var":
       return ic;
 
     case "prim":
-      return reducePrim(ic, ctx);
+      return PrimCall.reduce(ctx, ic);
 
     case "lam":
-      return {
-        tag: "lam",
-        name: ic.name,
-        body: reduce(ic.body, ctx),
-      };
+      return Lam.reduce(ctx, ic);
 
     case "app":
-      return reduceApp(ic, ctx);
+      return App.reduce(ctx, ic);
 
     case "sup":
-      return {
-        tag: "sup",
-        label: ic.label,
-        left: reduce(ic.left, ctx),
-        right: reduce(ic.right, ctx),
-      };
+      return Sup.reduce(ctx, ic);
 
     case "dup":
-      return reduceDup(ic, ctx);
+      return Dup.reduce(ctx, ic);
 
-    case "era": {
-      const expr = reduce(ic.expr, ctx);
-      const body = erase(expr, ic.body);
-      return reduce(body, ctx);
-    }
+    case "era":
+      return Era.reduce(ctx, ic);
   }
 }
 
-function reducePrim(ic: Extract<IC, { tag: "prim" }>, ctx: Ctx): IC {
+PrimCall.reduce = function (ctx: Ctx, ic: PrimCall): Ic {
   const expected = Prim.arity(ic.prim);
   expect(
     ic.args.length === expected,
     "Primitive " + ic.prim + " expects " + expected + " arguments",
   );
 
-  const args = ic.args.map((item) => reduce(item, ctx));
+  const args = ic.args.map((item) => reduce(ctx, item));
 
   for (let index = 0; index < args.length; index += 1) {
     const item = args[index];
@@ -144,7 +152,7 @@ function reducePrim(ic: Extract<IC, { tag: "prim" }>, ctx: Ctx): IC {
 
     if (item.tag === "sup") {
       const body = spreadPrim(ic.prim, args, index, item, ctx);
-      return reduce(body, ctx);
+      return reduce(ctx, body);
     }
   }
 
@@ -160,19 +168,21 @@ function reducePrim(ic: Extract<IC, { tag: "prim" }>, ctx: Ctx): IC {
     prim: ic.prim,
     args,
   };
-}
+};
+
+PrimCall satisfies Reduce<Ctx, PrimCall, Ic>;
 
 function spreadPrim(
   prim: Prim,
-  args: IC[],
+  args: Ic[],
   index: number,
-  sup: Extract<IC, { tag: "sup" }>,
+  sup: Extract<Ic, { tag: "sup" }>,
   ctx: Ctx,
-): IC {
-  const leftArgs: IC[] = [];
-  const rightArgs: IC[] = [];
+): Ic {
+  const leftArgs: Ic[] = [];
+  const rightArgs: Ic[] = [];
   const copyNames: string[] = [];
-  const copyExprs: IC[] = [];
+  const copyExprs: Ic[] = [];
 
   for (let pos = 0; pos < args.length; pos += 1) {
     const input = args[pos];
@@ -190,7 +200,7 @@ function spreadPrim(
     }
   }
 
-  let body: IC = {
+  let body: Ic = {
     tag: "sup",
     label: sup.label,
     left: { tag: "prim", prim, args: leftArgs },
@@ -217,9 +227,9 @@ function spreadPrim(
 
 function foldPrim(
   prim: Prim,
-  left: Extract<IC, { tag: "num" }>,
-  right: Extract<IC, { tag: "num" }>,
-): IC {
+  left: Num,
+  right: Num,
+): Ic {
   expect(left.type === right.type, "Primitive numbers must have the same type");
 
   const primType = Prim.type(prim);
@@ -242,88 +252,101 @@ function foldPrim(
     "Primitive " + prim + " returns " + primType.result + ", got " + left.type,
   );
 
-  switch (left.type) {
-    case "i32":
+  switch (prim) {
+    case "i32.add":
+    case "i32.sub":
+    case "i32.mul":
       return foldI32(prim, left, right);
 
-    case "i64":
+    case "i64.add":
+    case "i64.sub":
+    case "i64.mul":
       return foldI64(prim, left, right);
   }
 }
 
 function foldI32(
-  prim: Prim,
-  left: Extract<IC, { tag: "num" }>,
-  right: Extract<IC, { tag: "num" }>,
-): IC {
+  prim: I32Prim,
+  left: Num,
+  right: Num,
+): Ic {
   const leftValue = left.value;
   const rightValue = right.value;
   expect(typeof leftValue === "number", "Expected i32 number");
   expect(typeof rightValue === "number", "Expected i32 number");
 
-  if (prim === "i32.add") {
-    return { tag: "num", type: "i32", value: (leftValue + rightValue) | 0 };
-  }
+  switch (prim) {
+    case "i32.add":
+      return { tag: "num", type: "i32", value: (leftValue + rightValue) | 0 };
 
-  if (prim === "i32.sub") {
-    return { tag: "num", type: "i32", value: (leftValue - rightValue) | 0 };
-  }
+    case "i32.sub":
+      return { tag: "num", type: "i32", value: (leftValue - rightValue) | 0 };
 
-  if (prim === "i32.mul") {
-    return { tag: "num", type: "i32", value: Math.imul(leftValue, rightValue) };
+    case "i32.mul":
+      return {
+        tag: "num",
+        type: "i32",
+        value: Math.imul(leftValue, rightValue),
+      };
   }
-
-  throw new Error("panic");
 }
 
 function foldI64(
-  prim: Prim,
-  left: Extract<IC, { tag: "num" }>,
-  right: Extract<IC, { tag: "num" }>,
-): IC {
+  prim: I64Prim,
+  left: Num,
+  right: Num,
+): Ic {
   const leftValue = left.value;
   const rightValue = right.value;
   expect(typeof leftValue === "bigint", "Expected i64 bigint");
   expect(typeof rightValue === "bigint", "Expected i64 bigint");
 
-  if (prim === "i64.add") {
-    return {
-      tag: "num",
-      type: "i64",
-      value: BigInt.asIntN(64, leftValue + rightValue),
-    };
-  }
+  switch (prim) {
+    case "i64.add":
+      return {
+        tag: "num",
+        type: "i64",
+        value: BigInt.asIntN(64, leftValue + rightValue),
+      };
 
-  if (prim === "i64.sub") {
-    return {
-      tag: "num",
-      type: "i64",
-      value: BigInt.asIntN(64, leftValue - rightValue),
-    };
-  }
+    case "i64.sub":
+      return {
+        tag: "num",
+        type: "i64",
+        value: BigInt.asIntN(64, leftValue - rightValue),
+      };
 
-  if (prim === "i64.mul") {
-    return {
-      tag: "num",
-      type: "i64",
-      value: BigInt.asIntN(64, leftValue * rightValue),
-    };
+    case "i64.mul":
+      return {
+        tag: "num",
+        type: "i64",
+        value: BigInt.asIntN(64, leftValue * rightValue),
+      };
   }
-
-  throw new Error("panic");
 }
 
-function reduceApp(ic: Extract<IC, { tag: "app" }>, ctx: Ctx): IC {
-  const func = reduce(ic.func, ctx);
-  const value = reduce(ic.arg, ctx);
+Lam.reduce = function (ctx: Ctx, ic: Lam): Ic {
+  return {
+    tag: "lam",
+    name: ic.name,
+    body: reduce(ctx, ic.body),
+  };
+};
+
+Lam satisfies Reduce<Ctx, Lam, Ic>;
+
+App.reduce = function (ctx: Ctx, ic: App): Ic {
+  const func = reduce(ctx, ic.func);
+  const value = reduce(ctx, ic.arg);
 
   if (func.tag === "lam") {
-    return reduce(subst(func.body, func.name, value), ctx);
+    return reduce(ctx, subst(func.body, func.name, value));
   }
 
   if (func.tag === "sup") {
     const name = ctx.name("x");
     return reduce(
+      ctx,
       {
         tag: "dup",
         label: func.label,
@@ -344,25 +367,37 @@ function reduceApp(ic: Extract<IC, { tag: "app" }>, ctx: Ctx): IC {
           },
         },
       },
-      ctx,
     );
   }
 
   return { tag: "app", func, arg: value };
-}
+};
 
-function reduceDup(ic: Extract<IC, { tag: "dup" }>, ctx: Ctx): IC {
-  const expr = reduce(ic.expr, ctx);
+App satisfies Reduce<Ctx, App, Ic>;
+
+Sup.reduce = function (ctx: Ctx, ic: Sup): Ic {
+  return {
+    tag: "sup",
+    label: ic.label,
+    left: reduce(ctx, ic.left),
+    right: reduce(ctx, ic.right),
+  };
+};
+
+Sup satisfies Reduce<Ctx, Sup, Ic>;
+
+Dup.reduce = function (ctx: Ctx, ic: Dup): Ic {
+  const expr = reduce(ctx, ic.expr);
 
   if (expr.tag === "sup") {
-    return reduceDupSup(ic, expr, ctx);
+    return DupSup.reduce(ctx, [ic, expr]);
   }
 
   if (expr.tag === "lam") {
-    return reduceDupLam(ic, expr, ctx);
+    return DupLam.reduce(ctx, [ic, expr]);
   }
 
-  const body = reduce(ic.body, ctx);
+  const body = reduce(ctx, ic.body);
   return {
     tag: "dup",
     label: ic.label,
@@ -370,28 +405,36 @@ function reduceDup(ic: Extract<IC, { tag: "dup" }>, ctx: Ctx): IC {
     expr,
     body,
   };
-}
+};
 
-function reduceDupSup(
-  ic: Extract<IC, { tag: "dup" }>,
-  expr: Extract<IC, { tag: "sup" }>,
-  ctx: Ctx,
-): IC {
+Dup satisfies Reduce<Ctx, Dup, Ic>;
+
+Era.reduce = function (ctx: Ctx, ic: Era): Ic {
+  const expr = reduce(ctx, ic.expr);
+  const body = erase(expr, ic.body);
+  return reduce(ctx, body);
+};
+
+Era satisfies Reduce<Ctx, Era, Ic>;
+
+DupSup.reduce = function (ctx: Ctx, pair: DupSup): Ic {
+  const [ic, expr] = pair;
+
   if (expr.label === ic.label) {
     const left = subst(ic.body, `${ic.name}0`, expr.left);
     const right = subst(left, `${ic.name}1`, expr.right);
-    return reduce(right, ctx);
+    return reduce(ctx, right);
   }
 
   const leftName = ctx.name("a");
   const rightName = ctx.name("b");
-  const leftProjection: IC = {
+  const leftProjection: Ic = {
     tag: "sup",
     label: expr.label,
     left: { tag: "var", name: `${leftName}0` },
     right: { tag: "var", name: `${rightName}0` },
   };
-  const rightProjection: IC = {
+  const rightProjection: Ic = {
     tag: "sup",
     label: expr.label,
     left: { tag: "var", name: `${leftName}1` },
@@ -401,6 +444,7 @@ function reduceDupSup(
   const right = subst(left, `${ic.name}1`, rightProjection);
 
   return reduce(
+    ctx,
     {
       tag: "dup",
       label: ic.label,
@@ -414,15 +458,14 @@ function reduceDupSup(
         body: right,
       },
     },
-    ctx,
   );
-}
+};
 
-function reduceDupLam(
-  ic: Extract<IC, { tag: "dup" }>,
-  expr: Extract<IC, { tag: "lam" }>,
-  ctx: Ctx,
-): IC {
+DupSup satisfies Reduce<Ctx, DupSup, Ic>;
+
+DupLam.reduce = function (ctx: Ctx, pair: DupLam): Ic {
+  const [ic, expr] = pair;
+
   const bodyName = ctx.name("b");
   const leftName = ctx.var(expr.name);
   const rightName = ctx.var(expr.name);
@@ -433,12 +476,12 @@ function reduceDupLam(
     right: { tag: "var", name: rightName },
   });
 
-  const leftFunc: IC = {
+  const leftFunc: Ic = {
     tag: "lam",
     name: leftName,
     body: { tag: "var", name: `${bodyName}0` },
   };
-  const rightFunc: IC = {
+  const rightFunc: Ic = {
     tag: "lam",
     name: rightName,
     body: { tag: "var", name: `${bodyName}1` },
@@ -447,6 +490,7 @@ function reduceDupLam(
   const left = subst(ic.body, `${ic.name}0`, leftFunc);
   const right = subst(left, `${ic.name}1`, rightFunc);
   return reduce(
+    ctx,
     {
       tag: "dup",
       label: ic.label,
@@ -454,11 +498,12 @@ function reduceDupLam(
       expr: sharedBody,
       body: right,
     },
-    ctx,
   );
-}
+};
 
-function erase(expr: IC, body: IC): IC {
+DupLam satisfies Reduce<Ctx, DupLam, Ic>;
+
+function erase(expr: Ic, body: Ic): Ic {
   switch (expr.tag) {
     case "num":
     case "var":
@@ -477,8 +522,8 @@ function erase(expr: IC, body: IC): IC {
       return eraseMany([expr.left, expr.right], body);
 
     case "dup": {
-      const left: IC = { tag: "var", name: `${expr.name}0` };
-      const right: IC = { tag: "var", name: `${expr.name}1` };
+      const left: Ic = { tag: "var", name: `${expr.name}0` };
+      const right: Ic = { tag: "var", name: `${expr.name}1` };
       const next = eraseMany([left, right], expr.body);
       return eraseMany([expr.expr, next], body);
     }
@@ -488,7 +533,7 @@ function erase(expr: IC, body: IC): IC {
   }
 }
 
-function eraseMany(items: IC[], next: IC): IC {
+function eraseMany(items: Ic[], next: Ic): Ic {
   let result = next;
 
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -500,7 +545,7 @@ function eraseMany(items: IC[], next: IC): IC {
   return result;
 }
 
-function Ctx(ic: IC): Ctx {
+function Ctx(ic: Ic): Ctx {
   const ctx: Ctx = {
     used: collectNames(ic),
     next: 0,
@@ -537,7 +582,7 @@ function Ctx(ic: IC): Ctx {
   return ctx;
 }
 
-function collectNames(ic: IC, out = new Set<string>()): Set<string> {
+function collectNames(ic: Ic, out = new Set<string>()): Set<string> {
   switch (ic.tag) {
     case "num":
       return out;
@@ -583,7 +628,7 @@ function collectNames(ic: IC, out = new Set<string>()): Set<string> {
   }
 }
 
-function subst(ic: IC, name: string, value: IC): IC {
+function subst(ic: Ic, name: string, value: Ic): Ic {
   switch (ic.tag) {
     case "num":
       return ic;
@@ -659,7 +704,7 @@ function subst(ic: IC, name: string, value: IC): IC {
   }
 }
 
-function lower(ic: IC, env: Map<string, ValType>): ExprNode {
+function lower(ic: Ic, env: Map<string, ValType>): ExprNode {
   switch (ic.tag) {
     case "num":
       return { tag: "num", type: ic.type, value: ic.value };

@@ -1,8 +1,8 @@
-import { IC } from "./src/ic.ts";
+import { Ic } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
 import { Mod } from "./src/mod.ts";
 
-const program: IC = {
+const program: Ic = {
   tag: "era",
   expr: {
     tag: "app",
@@ -51,8 +51,8 @@ const program: IC = {
   },
 };
 
-const reduced = IC.reduce(program);
-const expr = IC.emit(program);
+const reduced = Ic.reduce(program);
+const expr = Ic.emit(program);
 
 const mod: Mod = {
   funcs: {
@@ -71,10 +71,10 @@ await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
 
 console.log("IC:");
-console.log(IC.fmt(program));
+console.log(Ic.fmt(program));
 
 console.log("Reduced IC:");
-console.log(IC.fmt(reduced));
+console.log(Ic.fmt(reduced));
 
 console.log("Expr:");
 console.log(Expr.fmt(expr));

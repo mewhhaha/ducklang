@@ -16,6 +16,6 @@ export type Callable<self, type> = {
   type: (value: self) => CallableType<type>;
 };
 
-export type Reduce<self> = {
-  reduce: (value: self) => self;
+export type Reduce<ctx, from, to> = {
+  reduce: (ctx: ctx, value: from) => to;
 };
