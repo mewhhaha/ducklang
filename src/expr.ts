@@ -1,25 +1,44 @@
+import { expect } from "./expect.ts";
+import { arity, PRIMS, watPrim, type Prim, type ValType } from "./op.ts";
+
 export type Expr =
-  | { tag: "num"; value: number }
-  | { tag: "var"; name: string }
-  | { tag: "add"; left: Expr; right: Expr }
+  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "var"; type: ValType; name: string }
+  | { tag: "prim"; type: ValType; prim: Prim; args: Expr[] }
   | { tag: "let"; name: string; value: Expr; body: Expr };
 
 export function Expr() {}
 
-// Collect all local variables into a set
-function collect(expr: Expr, out = new Set<string>()): Set<string> {
+Expr.type = function type(expr: Expr): ValType {
+  if (expr.tag === "let") {
+    return type(expr.body);
+  }
+
+  return expr.type;
+};
+
+function arg(args: Expr[], index: number): Expr {
+  const value = args[index];
+  expect(value !== undefined, "Missing argument " + index);
+  return value;
+}
+
+// Collect all local variables into a map of local name to Wasm value type.
+function collect(expr: Expr, out = new Map<string, ValType>()): Map<string, ValType> {
   if (expr.tag === "num" || expr.tag === "var") {
     return out;
   }
 
-  if (expr.tag === "add") {
-    collect(expr.left, out);
-    collect(expr.right, out);
+  if (expr.tag === "prim") {
+    for (const item of expr.args) {
+      collect(item, out);
+    }
+
     return out;
   }
 
   if (expr.tag === "let") {
-    out.add(expr.name);
+    out.set(expr.name, Expr.type(expr.value));
     collect(expr.value, out);
     collect(expr.body, out);
     return out;
@@ -29,38 +48,53 @@ function collect(expr: Expr, out = new Set<string>()): Set<string> {
   throw new Error("panic");
 }
 
-function _emit(expr: Expr, env: Map<string, string>): string {
+function _emit(expr: Expr, env: Map<string, ValType>): string {
   if (expr.tag === "num") {
-    return `i32.const ${expr.value}`;
+    return expr.type + ".const " + expr.value.toString();
   }
 
   if (expr.tag === "var") {
-    const local = env.get(expr.name);
+    const type = env.get(expr.name);
 
-    if (local === undefined) {
-      throw new Error(`Unbound variable: ${expr.name}`);
+    if (type === undefined) {
+      throw new Error("Unbound variable: " + expr.name);
     }
 
-    return `local.get $${local}`;
+    expect(
+      type === expr.type,
+      "Local $" + expr.name + " is " + type + ", got " + expr.type,
+    );
+
+    return "local.get $" + expr.name;
   }
 
-  if (expr.tag === "add") {
-    return `
-${_emit(expr.left, env)}
-${_emit(expr.right, env)}
-i32.add
-    `.trim();
+  if (expr.tag === "prim") {
+    const expected = arity(expr.prim);
+    expect(
+      expr.args.length === expected,
+      "Primitive " + expr.prim + " expects " + expected + " arguments",
+    );
+
+    for (const item of expr.args) {
+      const actual = Expr.type(item);
+      expect(actual === expr.type, "Expected " + expr.type + ", got " + actual);
+    }
+
+    const lines = expr.args.map((item) => _emit(item, env));
+    lines.push(watPrim(expr.type, expr.prim));
+    return lines.join("\n");
   }
 
   if (expr.tag === "let") {
-    const nextEnv = new Map(env);
-    nextEnv.set(expr.name, expr.name);
+    const type = Expr.type(expr.value);
+    env = new Map(env);
+    env.set(expr.name, type);
 
-    return `
-${_emit(expr.value, env)}
-local.set $${expr.name}
-${_emit(expr.body, nextEnv)}
-    `.trim();
+    return [
+      _emit(expr.value, env),
+      "local.set $" + expr.name,
+      _emit(expr.body, env),
+    ].join("\n");
   }
 
   expr satisfies never;
@@ -69,7 +103,7 @@ ${_emit(expr.body, nextEnv)}
 
 Expr.emit = function emit(expr: Expr): string {
   const locals = [...collect(expr)]
-    .map((name) => `(local $${name} i32)`)
+    .map(([name, type]) => `(local $${name} ${type})`)
     .join("\n");
 
   const body = _emit(expr, new Map());
@@ -83,23 +117,31 @@ Expr.emit = function emit(expr: Expr): string {
 
 Expr.fmt = function fmt(expr: Expr): string {
   if (expr.tag === "num") {
-    return expr.value.toString();
+    return expr.value.toString() + ":" + expr.type;
   }
 
   if (expr.tag === "var") {
-    return expr.name;
+    return expr.name + ":" + expr.type;
   }
 
-  if (expr.tag === "add") {
-    const left = fmt(expr.left);
-    const right = fmt(expr.right);
-    return `(${left} + ${right})`;
+  if (expr.tag === "prim") {
+    const expected = arity(expr.prim);
+    expect(
+      expr.args.length === expected,
+      "Primitive " + expr.prim + " expects " + expected + " arguments",
+    );
+
+    const left = fmt(arg(expr.args, 0));
+    const op = PRIMS[expr.prim].fmt;
+    const right = fmt(arg(expr.args, 1));
+    return `(${left} ${op}:${expr.type} ${right})`;
   }
 
   if (expr.tag === "let") {
+    const type = Expr.type(expr.value);
     const value = fmt(expr.value);
     const body = fmt(expr.body);
-    return `let ${expr.name} = ${value};\n${body}`;
+    return `let ${expr.name}:${type} = ${value};\n${body}`;
   }
 
   expr satisfies never;

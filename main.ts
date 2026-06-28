@@ -11,22 +11,21 @@ type Emit<from, to> = {
 };
 
 const program: IC = {
-  tag: "dup",
-  name: "x",
-  expr: { tag: "num", value: 21 },
-  body: {
-    tag: "add",
-    left: { tag: "var", name: "x0" },
-    right: { tag: "var", name: "x1" },
-  },
+  tag: "prim",
+  prim: "add",
+  args: [
+    { tag: "num", value: 21 },
+    { tag: "num", value: 21 },
+  ],
 };
 
 IC satisfies Format<IC> & Emit<IC, Expr>;
 const expr = IC.emit(program);
 
-Expr satisfies Emit<Expr, string>;
-const watText = wat(Expr.emit(expr));
+Expr satisfies Format<Expr> & Emit<Expr, string>;
+const watText = wat(Expr.emit(expr), Expr.type(expr));
 
+await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
 
 console.log("IC:");

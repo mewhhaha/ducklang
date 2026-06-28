@@ -1,9 +1,19 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-run
 const decoder = new TextDecoder();
 
-const mainFile = Deno.args[0] ?? "main.ts";
-const watFile = Deno.args[1] ?? "build/out.wat";
-const wasmFile = Deno.args[2] ?? "build/out.wasm";
+function arg(index: number, fallback: string): string {
+  const value = Deno.args[index];
+
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return value;
+}
+
+const mainFile = arg(0, "main.ts");
+const watFile = arg(1, "build/out.wat");
+const wasmFile = arg(2, "build/out.wasm");
 
 await Deno.mkdir("build", { recursive: true });
 
