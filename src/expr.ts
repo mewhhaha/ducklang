@@ -17,18 +17,9 @@ Expr.type = function type(expr: Expr): ValType {
   return expr.type;
 };
 
-function expectType(expr: Expr, expected: ValType): void {
-  const actual = Expr.type(expr);
-  expect(actual === expected, "Expected " + expected + ", got " + actual);
-}
-
 function arg(args: Expr[], index: number): Expr {
   const value = args[index];
-
-  if (value === undefined) {
-    throw new Error("Missing argument " + index);
-  }
-
+  expect(value !== undefined, "Missing argument " + index);
   return value;
 }
 
@@ -69,9 +60,10 @@ function _emit(expr: Expr, env: Map<string, ValType>): string {
       throw new Error("Unbound variable: " + expr.name);
     }
 
-    if (type !== expr.type) {
-      throw new Error("Local $" + expr.name + " is " + type + ", got " + expr.type);
-    }
+    expect(
+      type === expr.type,
+      "Local $" + expr.name + " is " + type + ", got " + expr.type,
+    );
 
     return "local.get $" + expr.name;
   }
@@ -84,7 +76,8 @@ function _emit(expr: Expr, env: Map<string, ValType>): string {
     );
 
     for (const item of expr.args) {
-      expectType(item, expr.type);
+      const actual = Expr.type(item);
+      expect(actual === expr.type, "Expected " + expr.type + ", got " + actual);
     }
 
     const lines = expr.args.map((item) => _emit(item, env));
