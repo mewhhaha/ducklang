@@ -1,5 +1,5 @@
 import { expect } from "./expect.ts";
-import { arity, PRIMS, watPrim, type Prim, type ValType } from "./op.ts";
+import { arity, type Prim, PRIMS, type ValType, watPrim } from "./op.ts";
 import type { Emit, Format } from "./trait.ts";
 
 export type Expr =
