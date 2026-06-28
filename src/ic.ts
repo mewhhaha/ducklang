@@ -1,9 +1,12 @@
 import type { Expr } from "./expr.ts";
+import { isOp, OPS, type Op } from "./op.ts";
+
+type BinaryIC = { tag: Op; left: IC; right: IC };
 
 export type IC =
   | { tag: "num"; value: number }
   | { tag: "var"; name: string }
-  | { tag: "add"; left: IC; right: IC }
+  | BinaryIC
   | { tag: "dup"; name: string; expr: IC; body: IC };
 
 export function IC() {}
@@ -17,10 +20,10 @@ IC.fmt = function fmt(ic: IC): string {
     return ic.name;
   }
 
-  if (ic.tag === "add") {
+  if (isOp(ic.tag)) {
     const left = fmt(ic.left);
     const right = fmt(ic.right);
-    return `${left} + ${right}`;
+    return `${left} ${OPS[ic.tag].fmt} ${right}`;
   }
 
   if (ic.tag === "dup") {
@@ -42,9 +45,9 @@ IC.emit = function emit(ic: IC): Expr {
     return { tag: "var", name: ic.name };
   }
 
-  if (ic.tag === "add") {
+  if (isOp(ic.tag)) {
     return {
-      tag: "add",
+      tag: ic.tag,
       left: emit(ic.left),
       right: emit(ic.right),
     };
@@ -76,9 +79,9 @@ function rename(expr: Expr, name: string): Expr {
     return expr;
   }
 
-  if (expr.tag === "add") {
+  if (isOp(expr.tag)) {
     return {
-      tag: "add",
+      tag: expr.tag,
       left: rename(expr.left, name),
       right: rename(expr.right, name),
     };
