@@ -25,7 +25,10 @@ function arg(args: Expr[], index: number): Expr {
 }
 
 // Collect all local variables into a map of local name to Wasm value type.
-function collect(expr: Expr, out = new Map<string, ValType>()): Map<string, ValType> {
+function collect(
+  expr: Expr,
+  out = new Map<string, ValType>(),
+): Map<string, ValType> {
   if (expr.tag === "num" || expr.tag === "var") {
     return out;
   }
