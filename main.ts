@@ -24,9 +24,10 @@ const program: IC = {
 IC satisfies Format<IC> & Emit<IC, Expr>;
 const expr = IC.emit(program);
 
-Expr satisfies Emit<Expr, string>;
+Expr satisfies Format<Expr> & Emit<Expr, string>;
 const watText = wat(Expr.emit(expr));
 
+await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
 
 console.log("IC:");
