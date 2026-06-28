@@ -25,7 +25,7 @@ const expr = IC.emit(program);
 Expr satisfies Format<Expr> & Emit<Expr, string>;
 const mod: Mod = {
   funcs: {
-    main: { name: "main", result: Expr.type(expr), body: Expr.emit(expr) },
+    main: { result: Expr.type(expr), body: Expr.emit(expr) },
   },
   exports: ["main"],
 };
