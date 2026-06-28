@@ -1,17 +1,16 @@
-import { OPS, watOp, type Op, type ValType } from "./op.ts";
+import { expectArity, PRIMS, watPrim, type Prim, type ValType } from "./op.ts";
 
-type BinaryExpr = {
-  tag: "bin";
+type PrimExpr = {
+  tag: "prim";
   type: ValType;
-  op: Op;
-  left: Expr;
-  right: Expr;
+  prim: Prim;
+  args: Expr[];
 };
 
 export type Expr =
   | { tag: "num"; type: ValType; value: number | bigint }
   | { tag: "var"; type: ValType; name: string }
-  | BinaryExpr
+  | PrimExpr
   | { tag: "let"; name: string; value: Expr; body: Expr };
 
 export function Expr() {}
@@ -32,15 +31,27 @@ function expectType(expr: Expr, expected: ValType): void {
   }
 }
 
+function arg(args: Expr[], index: number): Expr {
+  const value = args[index];
+
+  if (value === undefined) {
+    throw new Error("Missing argument " + index);
+  }
+
+  return value;
+}
+
 // Collect all local variables into a map of local name to Wasm value type.
 function collect(expr: Expr, out = new Map<string, ValType>()): Map<string, ValType> {
   if (expr.tag === "num" || expr.tag === "var") {
     return out;
   }
 
-  if (expr.tag === "bin") {
-    collect(expr.left, out);
-    collect(expr.right, out);
+  if (expr.tag === "prim") {
+    for (const item of expr.args) {
+      collect(item, out);
+    }
+
     return out;
   }
 
@@ -74,15 +85,16 @@ function _emit(expr: Expr, env: Map<string, ValType>): string {
     return "local.get $" + expr.name;
   }
 
-  if (expr.tag === "bin") {
-    expectType(expr.left, expr.type);
-    expectType(expr.right, expr.type);
+  if (expr.tag === "prim") {
+    expectArity(expr.prim, expr.args);
 
-    return [
-      _emit(expr.left, env),
-      _emit(expr.right, env),
-      watOp(expr.type, expr.op),
-    ].join("\n");
+    for (const item of expr.args) {
+      expectType(item, expr.type);
+    }
+
+    const lines = expr.args.map((item) => _emit(item, env));
+    lines.push(watPrim(expr.type, expr.prim));
+    return lines.join("\n");
   }
 
   if (expr.tag === "let") {
@@ -124,10 +136,12 @@ Expr.fmt = function fmt(expr: Expr): string {
     return expr.name + ":" + expr.type;
   }
 
-  if (expr.tag === "bin") {
-    const left = fmt(expr.left);
-    const op = OPS[expr.op];
-    const right = fmt(expr.right);
+  if (expr.tag === "prim") {
+    expectArity(expr.prim, expr.args);
+
+    const left = fmt(arg(expr.args, 0));
+    const op = PRIMS[expr.prim].fmt;
+    const right = fmt(arg(expr.args, 1));
     return `(${left} ${op}:${expr.type} ${right})`;
   }
 
