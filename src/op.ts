@@ -29,12 +29,8 @@ export const PRIMS = {
 
 export type Prim = keyof typeof PRIMS;
 
-export function expectArity(prim: Prim, args: readonly unknown[]): void {
-  const arity = PRIMS[prim].arity;
-
-  if (args.length !== arity) {
-    throw new Error("Primitive " + prim + " expects " + arity + " arguments");
-  }
+export function arity(prim: Prim): number {
+  return PRIMS[prim].arity;
 }
 
 export function watPrim(type: ValType, prim: Prim): string {
