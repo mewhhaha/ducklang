@@ -5,3 +5,7 @@ export type Format<self> = {
 export type Emit<from, to> = {
   emit: (value: from) => to;
 };
+
+export type Reduce<self> = {
+  reduce: (value: self) => self;
+};

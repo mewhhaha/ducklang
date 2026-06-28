@@ -66,6 +66,18 @@ expect(expr.args.length === expected, "error message");
 
 Do not use an `isOp` style type guard to detect primitive names as tags.
 
+## IC reduction
+
+Put Interaction Calculus rewrite rules in `IC.reduce` before lowering to `Expr`.
+
+Start with the small core rules and keep each rule explicit. The first real interaction rule is APP-LAM:
+
+```txt
+(λx. body)(arg) -> body[x := arg]
+```
+
+Do not lower unreduced `lam` or `app` nodes to `Expr`. If they remain after reduction, throw an error.
+
 ## Module layer
 
 Keep `Expr` focused on computing one value. Do not put module, function, export, import, memory, or start-function structure into `Expr`.
@@ -93,6 +105,10 @@ export type Format<self> = {
 
 export type Emit<from, to> = {
   emit: (value: from) => to;
+};
+
+export type Reduce<self> = {
+  reduce: (value: self) => self;
 };
 ```
 
