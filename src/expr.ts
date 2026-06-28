@@ -87,13 +87,13 @@ function _emit(expr: Expr, env: Map<string, ValType>): string {
 
   if (expr.tag === "let") {
     const type = Expr.type(expr.value);
-    const nextEnv = new Map(env);
-    nextEnv.set(expr.name, type);
+    env = new Map(env);
+    env.set(expr.name, type);
 
     return [
       _emit(expr.value, env),
       "local.set $" + expr.name,
-      _emit(expr.body, nextEnv),
+      _emit(expr.body, env),
     ].join("\n");
   }
 
