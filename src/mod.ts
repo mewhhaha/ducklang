@@ -12,7 +12,9 @@ export type Func = {
 function Func() {}
 
 Func.fmt = function fmt(func: Func): Wat {
-  return `(func $${func.name} (result ${func.result})\n${indent(func.body, 2)}\n)`;
+  return `(func $${func.name} (result ${func.result})\n${
+    indent(func.body, 2)
+  }\n)`;
 };
 
 Func satisfies Format<Func>;

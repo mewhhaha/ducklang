@@ -1,6 +1,6 @@
 import { expect } from "./expect.ts";
 import { Expr, type Expr as ExprNode } from "./expr.ts";
-import { arity, PRIMS, type Prim, type ValType } from "./op.ts";
+import { arity, type Prim, PRIMS, type ValType } from "./op.ts";
 import type { Emit, Format, Reduce } from "./trait.ts";
 
 export type IC =
@@ -99,10 +99,151 @@ function reduce(ic: IC, ctx: Ctx): IC {
   }
 
   if (ic.tag === "prim") {
+    const expected = arity(ic.prim);
+    expect(
+      ic.args.length === expected,
+      "Primitive " + ic.prim + " expects " + expected + " arguments",
+    );
+
+    const args = ic.args.map((item) => reduce(item, ctx));
+
+    for (let index = 0; index < args.length; index += 1) {
+      const item = args[index];
+      expect(item, "Missing primitive argument " + index);
+
+      if (item.tag === "sup") {
+        const leftArgs: IC[] = [];
+        const rightArgs: IC[] = [];
+        const copyNames: string[] = [];
+        const copyExprs: IC[] = [];
+
+        for (let pos = 0; pos < args.length; pos += 1) {
+          const input = args[pos];
+          expect(input, "Missing primitive argument " + pos);
+
+          if (pos === index) {
+            leftArgs.push(item.left);
+            rightArgs.push(item.right);
+          } else {
+            const name = ctx.name("p");
+            copyNames.push(name);
+            copyExprs.push(input);
+            leftArgs.push({ tag: "var", name: `${name}0` });
+            rightArgs.push({ tag: "var", name: `${name}1` });
+          }
+        }
+
+        let body: IC = {
+          tag: "sup",
+          label: item.label,
+          left: { tag: "prim", prim: ic.prim, args: leftArgs },
+          right: { tag: "prim", prim: ic.prim, args: rightArgs },
+        };
+
+        for (let copy = copyNames.length - 1; copy >= 0; copy -= 1) {
+          const name = copyNames[copy];
+          const expr = copyExprs[copy];
+          expect(name, "Missing copied primitive name");
+          expect(expr, "Missing copied primitive expression");
+
+          body = {
+            tag: "dup",
+            label: item.label,
+            name,
+            expr,
+            body,
+          };
+        }
+
+        return reduce(body, ctx);
+      }
+    }
+
+    const left = arg(args, 0);
+    const right = arg(args, 1);
+
+    if (left.tag === "num" && right.tag === "num") {
+      expect(
+        left.type === right.type,
+        "Primitive numbers must have the same type",
+      );
+
+      if (left.type === "i32") {
+        const leftValue = left.value;
+        const rightValue = right.value;
+        expect(typeof leftValue === "number", "Expected i32 number");
+        expect(typeof rightValue === "number", "Expected i32 number");
+
+        if (ic.prim === "add") {
+          return {
+            tag: "num",
+            type: "i32",
+            value: (leftValue + rightValue) | 0,
+          };
+        }
+
+        if (ic.prim === "sub") {
+          return {
+            tag: "num",
+            type: "i32",
+            value: (leftValue - rightValue) | 0,
+          };
+        }
+
+        if (ic.prim === "mul") {
+          return {
+            tag: "num",
+            type: "i32",
+            value: Math.imul(leftValue, rightValue),
+          };
+        }
+
+        ic.prim satisfies never;
+        throw new Error("panic");
+      }
+
+      if (left.type === "i64") {
+        const leftValue = left.value;
+        const rightValue = right.value;
+        expect(typeof leftValue === "bigint", "Expected i64 bigint");
+        expect(typeof rightValue === "bigint", "Expected i64 bigint");
+
+        if (ic.prim === "add") {
+          return {
+            tag: "num",
+            type: "i64",
+            value: BigInt.asIntN(64, leftValue + rightValue),
+          };
+        }
+
+        if (ic.prim === "sub") {
+          return {
+            tag: "num",
+            type: "i64",
+            value: BigInt.asIntN(64, leftValue - rightValue),
+          };
+        }
+
+        if (ic.prim === "mul") {
+          return {
+            tag: "num",
+            type: "i64",
+            value: BigInt.asIntN(64, leftValue * rightValue),
+          };
+        }
+
+        ic.prim satisfies never;
+        throw new Error("panic");
+      }
+
+      left.type satisfies never;
+      throw new Error("panic");
+    }
+
     return {
       tag: "prim",
       prim: ic.prim,
-      args: ic.args.map((item) => reduce(item, ctx)),
+      args,
     };
   }
 
@@ -124,26 +265,29 @@ function reduce(ic: IC, ctx: Ctx): IC {
 
     if (func.tag === "sup") {
       const name = ctx.name("x");
-      return reduce({
-        tag: "dup",
-        label: func.label,
-        name,
-        expr: arg,
-        body: {
-          tag: "sup",
+      return reduce(
+        {
+          tag: "dup",
           label: func.label,
-          left: {
-            tag: "app",
-            func: func.left,
-            arg: { tag: "var", name: `${name}0` },
-          },
-          right: {
-            tag: "app",
-            func: func.right,
-            arg: { tag: "var", name: `${name}1` },
+          name,
+          expr: arg,
+          body: {
+            tag: "sup",
+            label: func.label,
+            left: {
+              tag: "app",
+              func: func.left,
+              arg: { tag: "var", name: `${name}0` },
+            },
+            right: {
+              tag: "app",
+              func: func.right,
+              arg: { tag: "var", name: `${name}1` },
+            },
           },
         },
-      }, ctx);
+        ctx,
+      );
     }
 
     return {
@@ -189,19 +333,22 @@ function reduce(ic: IC, ctx: Ctx): IC {
       const left = subst(ic.body, `${ic.name}0`, leftProjection);
       const right = subst(left, `${ic.name}1`, rightProjection);
 
-      return reduce({
-        tag: "dup",
-        label: ic.label,
-        name: leftName,
-        expr: expr.left,
-        body: {
+      return reduce(
+        {
           tag: "dup",
           label: ic.label,
-          name: rightName,
-          expr: expr.right,
-          body: right,
+          name: leftName,
+          expr: expr.left,
+          body: {
+            tag: "dup",
+            label: ic.label,
+            name: rightName,
+            expr: expr.right,
+            body: right,
+          },
         },
-      }, ctx);
+        ctx,
+      );
     }
 
     if (expr.tag === "lam") {
@@ -228,13 +375,16 @@ function reduce(ic: IC, ctx: Ctx): IC {
 
       const left = subst(ic.body, `${ic.name}0`, leftFunc);
       const right = subst(left, `${ic.name}1`, rightFunc);
-      return reduce({
-        tag: "dup",
-        label: ic.label,
-        name: bodyName,
-        expr: sharedBody,
-        body: right,
-      }, ctx);
+      return reduce(
+        {
+          tag: "dup",
+          label: ic.label,
+          name: bodyName,
+          expr: sharedBody,
+          body: right,
+        },
+        ctx,
+      );
     }
 
     const body = reduce(ic.body, ctx);

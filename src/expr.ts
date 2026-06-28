@@ -1,5 +1,5 @@
 import { expect } from "./expect.ts";
-import { arity, PRIMS, watPrim, type Prim, type ValType } from "./op.ts";
+import { arity, type Prim, PRIMS, type ValType, watPrim } from "./op.ts";
 import type { Emit, Format } from "./trait.ts";
 
 export type Expr =
@@ -25,7 +25,10 @@ function arg(args: Expr[], index: number): Expr {
 }
 
 // Collect all local variables into a map of local name to Wasm value type.
-function collect(expr: Expr, out = new Map<string, ValType>()): Map<string, ValType> {
+function collect(
+  expr: Expr,
+  out = new Map<string, ValType>(),
+): Map<string, ValType> {
   if (expr.tag === "num" || expr.tag === "var") {
     return out;
   }
