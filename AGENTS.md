@@ -94,12 +94,14 @@ Do not represent each operation like this:
 
 The primitive table owns metadata such as display text, arity, and typed Wasm instructions. This keeps the tree shape stable when adding more primitive functions.
 
-Check arity from the table when formatting, lowering, or emitting:
+Check arity from the table when formatting, reducing, lowering, or emitting:
 
 ```ts
 const expected = arity(expr.prim);
 expect(expr.args.length === expected, "error message");
 ```
+
+Primitive reductions belong in `IC.reduce`, not only in `Expr.emit`. Numeric primitive calls can fold in IC, and primitive calls over superpositions should propagate by creating duplications for the other arguments.
 
 Do not use an `isOp` style type guard to detect primitive names as tags.
 
@@ -143,6 +145,14 @@ DUP-LAM propagation shares the lambda body through a new duplication:
 ! b &L = body[x := &L{x0, x1}];
 rest[f0 := λx0.b0, f1 := λx1.b1]
 ```
+
+Primitive superposition propagation:
+
+```txt
+add(&L{a, b}, x) -> ! p &L = x; &L{add(a, p0), add(b, p1)}
+```
+
+Primitive numeric folding should preserve the target value type. Use wrapping behavior for fixed-width integer primitives.
 
 When reducing `dup`, inspect the active pair formed by the duplicated expression before reducing the body. Reducing the body too early can erase the global-variable behavior that DUP-LAM relies on.
 
