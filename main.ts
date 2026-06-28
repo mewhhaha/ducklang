@@ -16,7 +16,12 @@ const program: IC = {
         left: { tag: "num", type: "i32", value: 1 },
         right: { tag: "num", type: "i32", value: 2 },
       },
-      { tag: "num", type: "i32", value: 10 },
+      {
+        tag: "sup",
+        label: "A",
+        left: { tag: "num", type: "i32", value: 10 },
+        right: { tag: "num", type: "i32", value: 20 },
+      },
     ],
   },
   body: {
