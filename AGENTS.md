@@ -17,6 +17,7 @@ The project should stay simple and inspectable while it grows. Prefer small expl
 - Do not silently default when compiler information is missing.
 - If a binding, type, local, or lowering fact cannot be found, throw an error.
 - Prefer explicit `if` blocks over compact expressions when the branch matters.
+- Use `expect(condition, message)` for reusable invariant checks.
 - Keep semantic operations separate from concrete Wasm instructions.
 
 ## Primitive operations
@@ -37,7 +38,14 @@ Do not represent each operation like this:
 
 The primitive table owns metadata such as display text, arity, and typed Wasm instructions. This keeps the tree shape stable when adding more primitive functions.
 
-Check arity from the table when formatting, lowering, or emitting. Do not use an `isOp` style type guard to detect primitive names as tags.
+Check arity from the table when formatting, lowering, or emitting:
+
+```ts
+const expected = arity(expr.prim);
+expect(expr.args.length === expected, "error message");
+```
+
+Do not use an `isOp` style type guard to detect primitive names as tags.
 
 ## Pseudo traits
 
