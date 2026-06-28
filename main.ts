@@ -48,10 +48,10 @@ const mod: Mod = {
   exports: ["main"],
 };
 
-const watText = Mod(mod).emit();
+const wat = Mod(mod).emit();
 
 await Deno.mkdir("build", { recursive: true });
-await Deno.writeTextFile("build/out.wat", watText);
+await Deno.writeTextFile("build/out.wat", wat);
 
 console.log("Ic:");
 console.log(Ic(program).fmt());
@@ -63,4 +63,4 @@ console.log("Expr:");
 console.log(Expr(expr).fmt());
 
 console.log("WAT:");
-console.log(watText);
+console.log(wat);
