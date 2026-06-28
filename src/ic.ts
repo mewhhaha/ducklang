@@ -1,7 +1,7 @@
 import { expect } from "./expect.ts";
 import { Expr, type Expr as ExprNode } from "./expr.ts";
 import { Prim, type ValType } from "./op.ts";
-import type { Emit, Format, Reduce } from "./trait.ts";
+import { Callable, Emit, Format, Reduce } from "./trait.ts";
 
 export type Ic =
   | { tag: "num"; type: ValType; value: number | bigint }
@@ -57,14 +57,14 @@ Ic.fmt = function fmt(ic: Ic): string {
       return ic.name;
 
     case "prim": {
-      const expected = Prim.arity(ic.prim);
+      const expected = Callable.arity(Prim, ic.prim);
       expect(
         ic.args.length === expected,
         "Primitive " + ic.prim + " expects " + expected + " arguments",
       );
 
       const left = fmt(arg(ic.args, 0));
-      const op = Prim.fmt(ic.prim);
+      const op = Format.fmt(Prim, ic.prim);
       const right = fmt(arg(ic.args, 1));
       return `${left} ${op} ${right}`;
     }
@@ -100,7 +100,7 @@ Ic.fmt = function fmt(ic: Ic): string {
   }
 };
 
-Ic.reduce = function (ic: Ic): Ic {
+Ic.reduce = function reduceRoot(ic: Ic): Ic {
   const ctx = Ctx(ic);
   return reduce(ctx, ic);
 };
@@ -118,27 +118,27 @@ function reduce(ctx: Ctx, ic: Ic): Ic {
       return ic;
 
     case "prim":
-      return PrimCall.reduce(ctx, ic);
+      return Reduce.reduce(PrimCall, ctx, ic);
 
     case "lam":
-      return Lam.reduce(ctx, ic);
+      return Reduce.reduce(Lam, ctx, ic);
 
     case "app":
-      return App.reduce(ctx, ic);
+      return Reduce.reduce(App, ctx, ic);
 
     case "sup":
-      return Sup.reduce(ctx, ic);
+      return Reduce.reduce(Sup, ctx, ic);
 
     case "dup":
-      return Dup.reduce(ctx, ic);
+      return Reduce.reduce(Dup, ctx, ic);
 
     case "era":
-      return Era.reduce(ctx, ic);
+      return Reduce.reduce(Era, ctx, ic);
   }
 }
 
 PrimCall.reduce = function (ctx: Ctx, ic: PrimCall): Ic {
-  const expected = Prim.arity(ic.prim);
+  const expected = Callable.arity(Prim, ic.prim);
   expect(
     ic.args.length === expected,
     "Primitive " + ic.prim + " expects " + expected + " arguments",
@@ -232,7 +232,7 @@ function foldPrim(
 ): Ic {
   expect(left.type === right.type, "Primitive numbers must have the same type");
 
-  const primType = Prim.type(prim);
+  const primType = Callable.type(Prim, prim);
   const leftExpected = primType.args[0];
   const rightExpected = primType.args[1];
   expect(leftExpected, "Missing primitive argument type 0");
@@ -390,11 +390,11 @@ Dup.reduce = function (ctx: Ctx, ic: Dup): Ic {
   const expr = reduce(ctx, ic.expr);
 
   if (expr.tag === "sup") {
-    return DupSup.reduce(ctx, [ic, expr]);
+    return Reduce.reduce(DupSup, ctx, [ic, expr]);
   }
 
   if (expr.tag === "lam") {
-    return DupLam.reduce(ctx, [ic, expr]);
+    return Reduce.reduce(DupLam, ctx, [ic, expr]);
   }
 
   const body = reduce(ctx, ic.body);
@@ -716,13 +716,13 @@ function lower(ic: Ic, env: Map<string, ValType>): ExprNode {
     }
 
     case "prim": {
-      const expected = Prim.arity(ic.prim);
+      const expected = Callable.arity(Prim, ic.prim);
       expect(
         ic.args.length === expected,
         "Primitive " + ic.prim + " expects " + expected + " arguments",
       );
 
-      const primType = Prim.type(ic.prim);
+      const primType = Callable.type(Prim, ic.prim);
       const args = ic.args.map((item) => lower(item, env));
 
       for (let index = 0; index < args.length; index += 1) {

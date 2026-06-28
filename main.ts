@@ -1,6 +1,7 @@
 import { Ic } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
 import { Mod } from "./src/mod.ts";
+import { Emit, Format } from "./src/trait.ts";
 
 const program: Ic = {
   tag: "era",
@@ -52,32 +53,32 @@ const program: Ic = {
 };
 
 const reduced = Ic.reduce(program);
-const expr = Ic.emit(program);
+const expr = Emit.emit(Ic, program);
 
 const mod: Mod = {
   funcs: {
     main: {
       name: "main",
       result: Expr.type(expr),
-      body: Expr.emit(expr),
+      body: Emit.emit(Expr, expr),
     },
   },
   exports: ["main"],
 };
 
-const watText = Mod.emit(mod);
+const watText = Emit.emit(Mod, mod);
 
 await Deno.mkdir("build", { recursive: true });
 await Deno.writeTextFile("build/out.wat", watText);
 
 console.log("IC:");
-console.log(Ic.fmt(program));
+console.log(Format.fmt(Ic, program));
 
 console.log("Reduced IC:");
-console.log(Ic.fmt(reduced));
+console.log(Format.fmt(Ic, reduced));
 
 console.log("Expr:");
-console.log(Expr.fmt(expr));
+console.log(Format.fmt(Expr, expr));
 
 console.log("WAT:");
 console.log(watText);

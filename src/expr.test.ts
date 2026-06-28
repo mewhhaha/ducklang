@@ -1,5 +1,6 @@
 import { assertEquals, assertIncludes, assertThrows } from "./assert.ts";
 import { Expr, type Expr as ExprNode } from "./expr.ts";
+import { Emit, Format } from "./trait.ts";
 
 function num(value: number): ExprNode {
   return { tag: "num", type: "i32", value };
@@ -29,12 +30,12 @@ Deno.test("Expr.type returns let body type", () => {
 });
 
 Deno.test("Expr.fmt formats typed primitive expressions", () => {
-  assertEquals(Expr.fmt(add(num(1), num(2))), "(1:i32 +:i32 2:i32)");
+  assertEquals(Format.fmt(Expr, add(num(1), num(2))), "(1:i32 +:i32 2:i32)");
 });
 
 Deno.test("Expr.emit emits typed primitive instructions", () => {
   assertEquals(
-    Expr.emit(add(num(1), num(2))),
+    Emit.emit(Expr, add(num(1), num(2))),
     "i32.const 1\ni32.const 2\ni32.add",
   );
 });
@@ -47,7 +48,7 @@ Deno.test("Expr.emit emits i64 primitive instructions", () => {
     args: [num64(3n), num64(7n)],
   };
 
-  assertEquals(Expr.emit(expr), "i64.const 3\ni64.const 7\ni64.mul");
+  assertEquals(Emit.emit(Expr, expr), "i64.const 3\ni64.const 7\ni64.mul");
 });
 
 Deno.test("Expr.emit emits let locals before the body", () => {
@@ -59,13 +60,13 @@ Deno.test("Expr.emit emits let locals before the body", () => {
   };
 
   assertEquals(
-    Expr.emit(expr),
+    Emit.emit(Expr, expr),
     "(local $x i32)\ni32.const 41\nlocal.set $x\nlocal.get $x\ni32.const 1\ni32.add",
   );
 });
 
 Deno.test("Expr.emit rejects unbound variables", () => {
-  assertThrows(() => Expr.emit(var_("x")), "Unbound variable: x");
+  assertThrows(() => Emit.emit(Expr, var_("x")), "Unbound variable: x");
 });
 
 Deno.test("Expr.emit rejects local type mismatches", () => {
@@ -76,7 +77,7 @@ Deno.test("Expr.emit rejects local type mismatches", () => {
     body: { tag: "var", type: "i64", name: "x" },
   };
 
-  assertThrows(() => Expr.emit(expr), "Local $x is i32, got i64");
+  assertThrows(() => Emit.emit(Expr, expr), "Local $x is i32, got i64");
 });
 
 Deno.test("Expr.emit rejects primitive operand type mismatches", () => {
@@ -88,7 +89,7 @@ Deno.test("Expr.emit rejects primitive operand type mismatches", () => {
   };
 
   assertThrows(
-    () => Expr.emit(expr),
+    () => Emit.emit(Expr, expr),
     "Primitive i32.add argument 1 expects i32, got i64",
   );
 });
@@ -101,11 +102,14 @@ Deno.test("Expr.fmt rejects primitive arity mismatches", () => {
     args: [num(1)],
   };
 
-  assertThrows(() => Expr.fmt(expr), "Primitive i32.add expects 2 arguments");
+  assertThrows(
+    () => Format.fmt(Expr, expr),
+    "Primitive i32.add expects 2 arguments",
+  );
 });
 
 Deno.test("Expr.emit output can be matched by instruction snippets", () => {
-  const emitted = Expr.emit(add(num(10), num(20)));
+  const emitted = Emit.emit(Expr, add(num(10), num(20)));
 
   assertIncludes(emitted, "i32.const 10");
   assertIncludes(emitted, "i32.add");

@@ -1,6 +1,6 @@
 import { expect } from "./expect.ts";
 import type { ValType } from "./op.ts";
-import type { Emit, Format } from "./trait.ts";
+import { Emit, Format } from "./trait.ts";
 import { indent, type Wat } from "./wat.ts";
 
 export type Func = {
@@ -34,7 +34,7 @@ Mod.emit = function emit(mod: Mod): Wat {
     const func = mod.funcs[name];
     expect(func, "Missing function: " + name);
     expect(func.name === name, "Function key/name mismatch: " + name);
-    funcs.push(Func.fmt(func));
+    funcs.push(Format.fmt(Func, func));
   }
 
   if (funcs.length > 0) {

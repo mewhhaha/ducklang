@@ -1,6 +1,7 @@
 import { assertEquals, assertThrows } from "./assert.ts";
 import { Expr } from "./expr.ts";
 import { Ic, type Ic as IcNode } from "./ic.ts";
+import { Emit, Format } from "./trait.ts";
 
 function i32(value: number): IcNode {
   return { tag: "num", type: "i32", value };
@@ -32,7 +33,7 @@ Deno.test("Ic.fmt formats dup and sup terms", () => {
   };
 
   assertEquals(
-    Ic.fmt(program),
+    Format.fmt(Ic, program),
     "! x &A = &A{1:i32, 2:i32};\nx0 + x1",
   );
 });
@@ -44,7 +45,7 @@ Deno.test("Ic.fmt formats explicit erasure", () => {
     body: i32(2),
   };
 
-  assertEquals(Ic.fmt(program), "~ 1:i32;\n2:i32");
+  assertEquals(Format.fmt(Ic, program), "~ 1:i32;\n2:i32");
 });
 
 Deno.test("Ic.reduce applies APP-LAM", () => {
@@ -84,10 +85,10 @@ Deno.test("Ic.reduce commutes different-label DUP-SUP enough to lower", () => {
     },
   };
 
-  const expr = Ic.emit(program);
+  const expr = Emit.emit(Ic, program);
 
   assertEquals(
-    Expr.fmt(expr),
+    Format.fmt(Expr, expr),
     "let _a0:i32 = 40:i32;\nlet _b1:i32 = 2:i32;\n(_a0:i32 +:i32 _b1:i32)",
   );
 });
@@ -229,7 +230,7 @@ Deno.test("Ic.emit rejects unreduced superpositions", () => {
   };
 
   assertThrows(
-    () => Ic.emit(program),
+    () => Emit.emit(Ic, program),
     "Cannot lower superposition before reduction",
   );
 });

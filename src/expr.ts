@@ -1,6 +1,6 @@
 import { expect } from "./expect.ts";
 import { Prim, type ValType } from "./op.ts";
-import type { Emit, Format } from "./trait.ts";
+import { Callable, Emit, Format } from "./trait.ts";
 
 export type Expr =
   | { tag: "num"; type: ValType; value: number | bigint }
@@ -71,13 +71,13 @@ function emit(expr: Expr, env: Map<string, ValType>): string {
     }
 
     case "prim": {
-      const expected = Prim.arity(expr.prim);
+      const expected = Callable.arity(Prim, expr.prim);
       expect(
         expr.args.length === expected,
         "Primitive " + expr.prim + " expects " + expected + " arguments",
       );
 
-      const primType = Prim.type(expr.prim);
+      const primType = Callable.type(Prim, expr.prim);
       expect(
         primType.result === expr.type,
         "Primitive " + expr.prim + " returns " + primType.result + ", got " +
@@ -98,7 +98,7 @@ function emit(expr: Expr, env: Map<string, ValType>): string {
       }
 
       const lines = expr.args.map((item) => emit(item, env));
-      lines.push(Prim.emit(expr.prim));
+      lines.push(Emit.emit(Prim, expr.prim));
       return lines.join("\n");
     }
 
@@ -139,13 +139,13 @@ Expr.fmt = function fmt(expr: Expr): string {
       return expr.name + ":" + expr.type;
 
     case "prim": {
-      const expected = Prim.arity(expr.prim);
+      const expected = Callable.arity(Prim, expr.prim);
       expect(
         expr.args.length === expected,
         "Primitive " + expr.prim + " expects " + expected + " arguments",
       );
 
-      const primType = Prim.type(expr.prim);
+      const primType = Callable.type(Prim, expr.prim);
       expect(
         primType.result === expr.type,
         "Primitive " + expr.prim + " returns " + primType.result + ", got " +
@@ -166,7 +166,7 @@ Expr.fmt = function fmt(expr: Expr): string {
       }
 
       const left = fmt(arg(expr.args, 0));
-      const op = Prim.fmt(expr.prim);
+      const op = Format.fmt(Prim, expr.prim);
       const right = fmt(arg(expr.args, 1));
       return `(${left} ${op}:${expr.type} ${right})`;
     }

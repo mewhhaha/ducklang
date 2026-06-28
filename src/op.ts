@@ -38,8 +38,6 @@ Prim.type = function type(prim: Prim): CallableType<ValType> {
 };
 
 Prim.arity = function arity(_prim: Prim): number {
-  // return Prim.type(prim).args.length;
-  // for simplicity's sake return 2 for now
   return 2;
 };
 

@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "./assert.ts";
 import { Mod, type Mod as ModNode } from "./mod.ts";
+import { Emit } from "./trait.ts";
 
 Deno.test("Mod.emit emits functions and exports", () => {
   const mod: ModNode = {
@@ -14,7 +15,7 @@ Deno.test("Mod.emit emits functions and exports", () => {
   };
 
   assertEquals(
-    Mod.emit(mod),
+    Emit.emit(Mod, mod),
     '(module\n  (func $main (result i32)\n    i32.const 42\n  )\n  (export "main" (func $main))\n)',
   );
 });
@@ -25,7 +26,7 @@ Deno.test("Mod.emit rejects missing exports", () => {
     exports: ["main"],
   };
 
-  assertThrows(() => Mod.emit(mod), "Missing function for export: main");
+  assertThrows(() => Emit.emit(Mod, mod), "Missing function for export: main");
 });
 
 Deno.test("Mod.emit rejects function key and name mismatches", () => {
@@ -40,5 +41,5 @@ Deno.test("Mod.emit rejects function key and name mismatches", () => {
     exports: ["main"],
   };
 
-  assertThrows(() => Mod.emit(mod), "Function key/name mismatch: main");
+  assertThrows(() => Emit.emit(Mod, mod), "Function key/name mismatch: main");
 });
