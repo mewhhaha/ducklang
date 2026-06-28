@@ -1,5 +1,5 @@
 import { Expr, type Expr as ExprNode } from "./expr.ts";
-import { fmtOp, isOp, type Op, type ValType } from "./op.ts";
+import { OPS, isOp, type Op, type ValType } from "./op.ts";
 
 type BinaryIC = { tag: Op; left: IC; right: IC };
 
@@ -22,8 +22,9 @@ IC.fmt = function fmt(ic: IC): string {
 
   if (isOp(ic.tag)) {
     const left = fmt(ic.left);
+    const op = OPS[ic.tag];
     const right = fmt(ic.right);
-    return `${left} ${fmtOp(ic.tag)} ${right}`;
+    return `${left} ${op} ${right}`;
   }
 
   if (ic.tag === "dup") {
@@ -46,7 +47,13 @@ function lower(ic: IC, env: Map<string, ValType>): ExprNode {
   }
 
   if (ic.tag === "var") {
-    return { tag: "var", type: env.get(ic.name) ?? "i32", name: ic.name };
+    const type = env.get(ic.name);
+
+    if (type === undefined) {
+      throw new Error("Unbound variable: " + ic.name);
+    }
+
+    return { tag: "var", type, name: ic.name };
   }
 
   if (isOp(ic.tag)) {
