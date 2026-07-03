@@ -1,0 +1,476 @@
+import { expect } from "../expect.ts";
+import type { FrontExpr, Stmt } from "./ast.ts";
+import {
+  bind_linear_closure,
+  clone_linear_closures,
+  type LinearClosureEnv,
+} from "./linear_closure.ts";
+import {
+  consume_linear_condition as consume_linear_condition_with_hooks,
+  consume_linear_expr as consume_linear_expr_with_hooks,
+  type LinearExprHooks,
+  type LinearUseMode,
+} from "./linear_expr.ts";
+import {
+  expect_same_linear_state,
+  linear_block_exits,
+} from "./linear_state.ts";
+
+const linear_expr_hooks = {
+  validate_linear_block,
+} satisfies LinearExprHooks;
+
+function consume_expr(
+  expr: FrontExpr,
+  available: Set<string>,
+  mode: LinearUseMode,
+  closures: LinearClosureEnv,
+  active_calls: Set<string> = new Set(),
+): string[] {
+  return consume_linear_expr_with_hooks(
+    expr,
+    available,
+    mode,
+    closures,
+    active_calls,
+    linear_expr_hooks,
+  );
+}
+
+function consume_condition(
+  expr: FrontExpr,
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+): void {
+  consume_linear_condition_with_hooks(
+    expr,
+    available,
+    closures,
+    active_calls,
+    linear_expr_hooks,
+  );
+}
+
+export function validate_linear_lam(
+  expr: Extract<FrontExpr, { tag: "lam" }>,
+): void {
+  const available = new Set<string>();
+  const closures: LinearClosureEnv = new Map();
+
+  for (const param of expr.params) {
+    if (param.is_linear) {
+      available.add(param.name);
+    }
+  }
+
+  if (expr.body.tag === "block") {
+    validate_linear_block(expr.body.statements, available, closures);
+  } else {
+    consume_expr(expr.body, available, "final", closures);
+  }
+
+  for (const name of available) {
+    throw new Error("Linear value " + name + " was not consumed");
+  }
+}
+
+export function validate_linear_rest(name: string, stmts: Stmt[]): void {
+  const available = new Set<string>([name]);
+  const closures: LinearClosureEnv = new Map();
+  validate_linear_block(stmts, available, closures);
+
+  for (const item of available) {
+    throw new Error("Linear value " + item + " was not consumed");
+  }
+}
+
+function validate_linear_block(
+  stmts: Stmt[],
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string> = new Set(),
+): void {
+  for (let index = 0; index < stmts.length; index += 1) {
+    const stmt = stmts[index];
+    expect(stmt, "Missing statement " + index);
+    const is_final = index + 1 >= stmts.length;
+
+    if (stmt.tag === "assign") {
+      validate_linear_assignment(stmt, available, closures, active_calls);
+      bind_linear_closure(closures, stmt.name, stmt.value, available);
+    } else if (stmt.tag === "index_assign") {
+      consume_expr(
+        stmt.index,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+      validate_linear_assignment(
+        { tag: "assign", name: stmt.name, mode: "same", value: stmt.value },
+        available,
+        closures,
+        active_calls,
+      );
+      closures.delete(stmt.name);
+    } else if (stmt.tag === "expr") {
+      if (is_final) {
+        consume_expr(
+          stmt.expr,
+          available,
+          "final",
+          closures,
+          active_calls,
+        );
+      } else {
+        consume_expr(
+          stmt.expr,
+          available,
+          "discard",
+          closures,
+          active_calls,
+        );
+      }
+    } else if (stmt.tag === "return") {
+      consume_expr(
+        stmt.value,
+        available,
+        "final",
+        closures,
+        active_calls,
+      );
+      return;
+    } else if (stmt.tag === "bind") {
+      if (stmt.is_linear) {
+        consume_expr(
+          stmt.value,
+          available,
+          "bind",
+          closures,
+          active_calls,
+        );
+        available.add(stmt.name);
+        closures.delete(stmt.name);
+      } else {
+        consume_expr(
+          stmt.value,
+          available,
+          "discard",
+          closures,
+          active_calls,
+        );
+        bind_linear_closure(closures, stmt.name, stmt.value, available);
+      }
+    } else if (stmt.tag === "for_range") {
+      consume_expr(
+        stmt.start,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+      consume_expr(
+        stmt.end,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+      consume_expr(
+        stmt.step,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+      validate_linear_loop_body(stmt.body, available, closures, active_calls);
+    } else if (stmt.tag === "for_collection") {
+      consume_expr(
+        stmt.collection,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+      validate_linear_loop_body(stmt.body, available, closures, active_calls);
+    } else if (stmt.tag === "if_stmt") {
+      consume_condition(stmt.cond, available, closures, active_calls);
+      validate_linear_no_else_branch(
+        stmt.body,
+        available,
+        closures,
+        active_calls,
+        "if fallthrough",
+      );
+    } else if (stmt.tag === "if_let_stmt") {
+      consume_condition(stmt.target, available, closures, active_calls);
+      validate_linear_no_else_branch(
+        stmt.body,
+        available,
+        closures,
+        active_calls,
+        "if let fallthrough",
+      );
+    } else if (stmt.tag === "type_check") {
+      consume_expr(
+        stmt.target,
+        available,
+        "discard",
+        closures,
+        active_calls,
+      );
+    } else if (stmt.tag === "import" || stmt.tag === "host_import") {
+      continue;
+    } else if (stmt.tag === "break") {
+      throw new Error("Cannot lower break outside static range loop");
+    } else if (stmt.tag === "continue") {
+      throw new Error("Cannot lower continue outside static range loop");
+    } else {
+      throw new Error("Cannot validate linear " + stmt.feature + " yet");
+    }
+  }
+}
+
+function validate_linear_loop_body(
+  stmts: Stmt[],
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string> = new Set(),
+): void {
+  const before = new Set(available);
+  const local = new Set(available);
+  const local_closures = clone_linear_closures(closures);
+
+  for (let index = 0; index < stmts.length; index += 1) {
+    const stmt = stmts[index];
+    expect(stmt, "Missing loop statement " + index);
+
+    if (stmt.tag === "break" || stmt.tag === "continue") {
+      expect_same_linear_state(before, local, stmt.tag);
+      return;
+    }
+
+    if (stmt.tag === "return") {
+      consume_expr(
+        stmt.value,
+        local,
+        "final",
+        local_closures,
+        active_calls,
+      );
+      return;
+    }
+
+    if (stmt.tag === "assign") {
+      validate_linear_assignment(stmt, local, local_closures, active_calls);
+      bind_linear_closure(local_closures, stmt.name, stmt.value, local);
+    } else if (stmt.tag === "index_assign") {
+      consume_expr(
+        stmt.index,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+      validate_linear_assignment(
+        { tag: "assign", name: stmt.name, mode: "same", value: stmt.value },
+        local,
+        local_closures,
+        active_calls,
+      );
+      local_closures.delete(stmt.name);
+    } else if (stmt.tag === "expr") {
+      consume_expr(
+        stmt.expr,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+    } else if (stmt.tag === "bind") {
+      if (stmt.is_linear) {
+        consume_expr(
+          stmt.value,
+          local,
+          "bind",
+          local_closures,
+          active_calls,
+        );
+        local.add(stmt.name);
+        local_closures.delete(stmt.name);
+      } else {
+        consume_expr(
+          stmt.value,
+          local,
+          "discard",
+          local_closures,
+          active_calls,
+        );
+        bind_linear_closure(local_closures, stmt.name, stmt.value, local);
+      }
+    } else if (stmt.tag === "for_range") {
+      consume_expr(
+        stmt.start,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+      consume_expr(
+        stmt.end,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+      consume_expr(
+        stmt.step,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+      validate_linear_loop_body(
+        stmt.body,
+        local,
+        local_closures,
+        active_calls,
+      );
+    } else if (stmt.tag === "for_collection") {
+      consume_expr(
+        stmt.collection,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+      validate_linear_loop_body(
+        stmt.body,
+        local,
+        local_closures,
+        active_calls,
+      );
+    } else if (stmt.tag === "if_stmt") {
+      consume_condition(stmt.cond, local, local_closures, active_calls);
+      validate_linear_no_else_loop_branch(
+        stmt.body,
+        local,
+        local_closures,
+        active_calls,
+        "if fallthrough",
+      );
+    } else if (stmt.tag === "if_let_stmt") {
+      consume_condition(
+        stmt.target,
+        local,
+        local_closures,
+        active_calls,
+      );
+      validate_linear_no_else_loop_branch(
+        stmt.body,
+        local,
+        local_closures,
+        active_calls,
+        "if let fallthrough",
+      );
+    } else if (stmt.tag === "type_check") {
+      consume_expr(
+        stmt.target,
+        local,
+        "discard",
+        local_closures,
+        active_calls,
+      );
+    } else if (stmt.tag === "import" || stmt.tag === "host_import") {
+      continue;
+    } else {
+      throw new Error("Cannot validate linear " + stmt.feature + " yet");
+    }
+  }
+
+  expect_same_linear_state(before, local, "fallthrough");
+}
+
+function validate_linear_no_else_branch(
+  stmts: Stmt[],
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  edge: string,
+): void {
+  const before = new Set(available);
+  const branch = new Set(available);
+  validate_linear_block(
+    stmts,
+    branch,
+    clone_linear_closures(closures),
+    new Set(active_calls),
+  );
+
+  if (linear_block_exits(stmts)) {
+    return;
+  }
+
+  expect_same_linear_state(before, branch, edge);
+}
+
+function validate_linear_no_else_loop_branch(
+  stmts: Stmt[],
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  edge: string,
+): void {
+  const before = new Set(available);
+  const branch = new Set(available);
+  validate_linear_loop_body(
+    stmts,
+    branch,
+    clone_linear_closures(closures),
+    new Set(active_calls),
+  );
+
+  if (linear_block_exits(stmts)) {
+    return;
+  }
+
+  expect_same_linear_state(before, branch, edge);
+}
+
+function validate_linear_assignment(
+  stmt: Extract<Stmt, { tag: "assign" }>,
+  available: Set<string>,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+): void {
+  const was_available = available.has(stmt.name);
+  const consumed = consume_expr(
+    stmt.value,
+    available,
+    "assignment",
+    closures,
+    active_calls,
+  );
+
+  if (consumed.length > 0) {
+    expect(
+      consumed.length === 1,
+      "Linear assignment must consume exactly one value",
+    );
+    const name = consumed[0];
+    expect(name, "Missing consumed linear value");
+
+    if (name !== stmt.name) {
+      throw new Error(
+        "Linear value " + name + " must be rebound as " + name,
+      );
+    }
+
+    available.add(stmt.name);
+  } else if (was_available) {
+    throw new Error(
+      "Linear value " + stmt.name + " was rebound without being consumed",
+    );
+  }
+}

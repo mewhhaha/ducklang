@@ -1,15 +1,15 @@
-export function assertEquals(actual: unknown, expected: unknown): void {
-  const actualText = Deno.inspect(actual, { depth: 100, sorted: true });
-  const expectedText = Deno.inspect(expected, { depth: 100, sorted: true });
+export function assert_equals(actual: unknown, expected: unknown): void {
+  const actual_text = Deno.inspect(actual, { depth: 100, sorted: true });
+  const expected_text = Deno.inspect(expected, { depth: 100, sorted: true });
 
-  if (actualText !== expectedText) {
+  if (actual_text !== expected_text) {
     throw new Error(
-      "Expected:\n" + expectedText + "\n\nActual:\n" + actualText,
+      "Expected:\n" + expected_text + "\n\nActual:\n" + actual_text,
     );
   }
 }
 
-export function assertIncludes(actual: string, expected: string): void {
+export function assert_includes(actual: string, expected: string): void {
   if (!actual.includes(expected)) {
     throw new Error(
       "Expected text to include:\n" + expected + "\n\nActual:\n" + actual,
@@ -17,7 +17,7 @@ export function assertIncludes(actual: string, expected: string): void {
   }
 }
 
-export function assertThrows(fn: () => unknown, message: string): void {
+export function assert_throws(fn: () => unknown, message: string): void {
   let thrown = false;
 
   try {

@@ -1,59 +1,26 @@
 import { Ic } from "./src/ic.ts";
 import { Expr } from "./src/expr.ts";
+import { Source } from "./src/frontend.ts";
 import { Mod } from "./src/mod.ts";
-import { Emit, Format, Typed } from "./src/trait.ts";
+import { Data, Emit, Format, Typed } from "./src/trait.ts";
 
-const program: Ic = {
-  tag: "era",
-  expr: {
-    tag: "app",
-    func: {
-      tag: "lam",
-      name: "unused",
-      body: { tag: "var", name: "unused" },
-    },
-    arg: {
-      tag: "sup",
-      label: "Z",
-      left: { tag: "num", type: "i32", value: 100 },
-      right: { tag: "num", type: "i32", value: 200 },
-    },
-  },
-  body: {
-    tag: "dup",
-    label: "A",
-    name: "r",
-    expr: {
-      tag: "prim",
-      prim: "i32.add",
-      args: [
-        {
-          tag: "sup",
-          label: "A",
-          left: { tag: "num", type: "i32", value: 1 },
-          right: { tag: "num", type: "i32", value: 2 },
-        },
-        {
-          tag: "sup",
-          label: "A",
-          left: { tag: "num", type: "i32", value: 10 },
-          right: { tag: "num", type: "i32", value: 20 },
-        },
-      ],
-    },
-    body: {
-      tag: "prim",
-      prim: "i32.add",
-      args: [
-        { tag: "var", name: "r0" },
-        { tag: "var", name: "r1" },
-      ],
-    },
-  },
-};
+const source_text = `
+const make_adder = n => {
+  x => x + n
+}
 
+const add_three = comptime make_adder(3)
+
+let value = add_three(29)
+value = value + 1
+value
+`;
+
+const source = Source.parse(source_text);
+const program = Emit.emit(Source, source);
 const reduced = Ic.reduce(program);
 const expr = Emit.emit(Ic, program);
+const data = Data.data(Expr, expr);
 
 const mod: Mod = {
   funcs: {
@@ -66,19 +33,31 @@ const mod: Mod = {
   exports: ["main"],
 };
 
-const watText = Emit.emit(Mod, mod);
+if (data.length > 0) {
+  mod.memory = {
+    name: "memory",
+    pages: 1,
+    export_name: "memory",
+  };
+  mod.data = data;
+}
+
+const wat_text = Emit.emit(Mod, mod);
 
 await Deno.mkdir("build", { recursive: true });
-await Deno.writeTextFile("build/out.wat", watText);
+await Deno.writeTextFile("build/out.wat", wat_text);
 
-console.log("IC:");
+console.log("Source:");
+console.log(Format.fmt(Source, source));
+
+console.log("Ic:");
 console.log(Format.fmt(Ic, program));
 
-console.log("Reduced IC:");
+console.log("Reduced Ic:");
 console.log(Format.fmt(Ic, reduced));
 
 console.log("Expr:");
 console.log(Format.fmt(Expr, expr));
 
 console.log("WAT:");
-console.log(watText);
+console.log(wat_text);

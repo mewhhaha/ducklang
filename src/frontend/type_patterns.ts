@@ -1,0 +1,149 @@
+import { expect } from "../expect.ts";
+import type { Env, FrontExpr, TypeField, TypePattern } from "./ast.ts";
+import { lookup } from "./env.ts";
+import { lookup_type_field } from "./fields.ts";
+import { is_builtin_type_name } from "./types.ts";
+
+type TypePatternHooks = {
+  resolve_const_expr: (expr: FrontExpr, env: Env) => FrontExpr | undefined;
+};
+
+export function check_type_pattern(
+  pattern: TypePattern,
+  target: FrontExpr,
+  env: Env,
+  hooks: TypePatternHooks,
+): void {
+  const value = hooks.resolve_const_expr(target, env);
+  expect(value, "Type pattern requires compile-time value");
+  const type_value = resolve_extended_type_value(value, env, hooks);
+  const expected_fields = substitute_type_fields(pattern.fields, env, hooks);
+  let fields: TypeField[];
+  let label: string;
+
+  if (pattern.kind === "struct") {
+    if (type_value.tag !== "struct_type") {
+      throw new Error("Expected struct type value");
+    }
+
+    fields = type_value.fields;
+    label = "Struct field";
+  } else {
+    if (type_value.tag !== "union_type") {
+      throw new Error("Expected union type value");
+    }
+
+    fields = type_value.cases;
+    label = "Union case";
+  }
+
+  for (const expected of expected_fields) {
+    const actual = lookup_type_field(fields, expected.name);
+
+    if (!actual) {
+      if (pattern.kind === "struct") {
+        throw new Error("Missing struct field: " + expected.name);
+      }
+
+      throw new Error("Missing union case: " + expected.name);
+    }
+
+    if (actual.type_name !== expected.type_name) {
+      throw new Error(
+        label + " " + expected.name + " expects " + expected.type_name +
+          ", got " + actual.type_name,
+      );
+    }
+  }
+
+  if (!pattern.open && fields.length !== expected_fields.length) {
+    if (pattern.kind === "struct") {
+      throw new Error("Struct pattern does not allow extra fields");
+    }
+
+    throw new Error("Union pattern does not allow extra cases");
+  }
+}
+
+export function resolve_extended_type_value(
+  value: FrontExpr,
+  env: Env,
+  hooks: TypePatternHooks,
+): FrontExpr {
+  if (value.tag === "captured") {
+    const resolved = hooks.resolve_const_expr(value.expr, value.env);
+    expect(resolved, "Captured type value must be compile-time");
+    return resolve_extended_type_value(resolved, value.env, hooks);
+  }
+
+  if (value.tag === "struct_type") {
+    return {
+      tag: "struct_type",
+      fields: substitute_type_fields(value.fields, env, hooks),
+    };
+  }
+
+  if (value.tag === "union_type") {
+    return {
+      tag: "union_type",
+      cases: substitute_type_fields(value.cases, env, hooks),
+    };
+  }
+
+  if (value.tag !== "with") {
+    return value;
+  }
+
+  const base = hooks.resolve_const_expr(value.base, env);
+  expect(base, "Extended type pattern base must be compile-time");
+  return resolve_extended_type_value(base, env, hooks);
+}
+
+export function substitute_type_fields(
+  fields: TypeField[],
+  env: Env,
+  hooks: TypePatternHooks,
+): TypeField[] {
+  return fields.map((field) => ({
+    name: field.name,
+    type_name: resolve_type_name(field.type_name, env, hooks),
+  }));
+}
+
+function resolve_type_name(
+  name: string,
+  env: Env,
+  hooks: TypePatternHooks,
+): string {
+  if (is_builtin_type_name(name)) {
+    return name;
+  }
+
+  const binding = lookup(env, name);
+
+  if (!binding || !binding.is_const || !binding.value) {
+    return name;
+  }
+
+  let value_env = env;
+
+  if (binding.value_env) {
+    value_env = binding.value_env;
+  }
+
+  const value = hooks.resolve_const_expr(binding.value, value_env);
+
+  if (!value) {
+    return name;
+  }
+
+  if (value.tag === "type_name") {
+    return value.name;
+  }
+
+  if (value.tag === "var" && is_builtin_type_name(value.name)) {
+    return value.name;
+  }
+
+  return name;
+}

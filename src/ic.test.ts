@@ -1,7 +1,7 @@
-import { assertEquals, assertThrows } from "./assert.ts";
+import { assert_equals, assert_throws } from "./assert.ts";
 import { Expr } from "./expr.ts";
 import { Ic, type Ic as IcNode } from "./ic.ts";
-import { Emit, Format } from "./trait.ts";
+import { Data, Emit, Format, Reduce, Typed } from "./trait.ts";
 
 function i32(value: number): IcNode {
   return { tag: "num", type: "i32", value };
@@ -32,7 +32,7 @@ Deno.test("Ic.fmt formats dup and sup terms", () => {
     body: add(var_("x0"), var_("x1")),
   };
 
-  assertEquals(
+  assert_equals(
     Format.fmt(Ic, program),
     "! x &A = &A{1:i32, 2:i32};\nx0 + x1",
   );
@@ -45,7 +45,14 @@ Deno.test("Ic.fmt formats explicit erasure", () => {
     body: i32(2),
   };
 
-  assertEquals(Format.fmt(Ic, program), "~ 1:i32;\n2:i32");
+  assert_equals(Format.fmt(Ic, program), "~ 1:i32;\n2:i32");
+});
+
+Deno.test("Ic.fmt formats text literals", () => {
+  const program: IcNode = { tag: "text", value: "hello\nworld" };
+
+  assert_equals(Format.fmt(Ic, program), '"hello\\nworld"');
+  assert_equals(Ic.reduce(program), program);
 });
 
 Deno.test("Ic.reduce applies APP-LAM", () => {
@@ -55,7 +62,8 @@ Deno.test("Ic.reduce applies APP-LAM", () => {
     arg: i32(42),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
+  assert_equals(Reduce.reduce(Ic, undefined, program), i32(42));
 });
 
 Deno.test("Ic.reduce annihilates same-label DUP-SUP", () => {
@@ -67,10 +75,10 @@ Deno.test("Ic.reduce annihilates same-label DUP-SUP", () => {
     body: add(var_("x0"), var_("x1")),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
-Deno.test("Ic.reduce commutes different-label DUP-SUP enough to lower", () => {
+Deno.test("Ic.reduce commutes different-label DUP-SUP", () => {
   const program: IcNode = {
     tag: "dup",
     label: "A",
@@ -85,12 +93,7 @@ Deno.test("Ic.reduce commutes different-label DUP-SUP enough to lower", () => {
     },
   };
 
-  const expr = Emit.emit(Ic, program);
-
-  assertEquals(
-    Format.fmt(Expr, expr),
-    "let _a0:i32 = 40:i32;\nlet _b1:i32 = 2:i32;\n(_a0:i32 +:i32 _b1:i32)",
-  );
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.reduce applies APP-SUP and then same-label DUP-SUP", () => {
@@ -106,7 +109,7 @@ Deno.test("Ic.reduce applies APP-SUP and then same-label DUP-SUP", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.reduce applies DUP-LAM", () => {
@@ -129,7 +132,34 @@ Deno.test("Ic.reduce applies DUP-LAM", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
+});
+
+Deno.test("Ic.reduce copies duplicated literals", () => {
+  const program: IcNode = {
+    tag: "dup",
+    label: "A",
+    name: "x",
+    expr: i32(21),
+    body: add(var_("x0"), var_("x1")),
+  };
+
+  assert_equals(Ic.reduce(program), i32(42));
+});
+
+Deno.test("Ic.reduce removes one-sided duplications", () => {
+  const program: IcNode = {
+    tag: "dup",
+    label: "A",
+    name: "x",
+    expr: var_("input"),
+    body: add(var_("x1"), i32(1)),
+  };
+
+  assert_equals(
+    Format.fmt(Ic, Ic.reduce(program)),
+    "input + 1:i32",
+  );
 });
 
 Deno.test("Ic.reduce propagates primitive calls over superpositions", () => {
@@ -148,7 +178,7 @@ Deno.test("Ic.reduce propagates primitive calls over superpositions", () => {
     body: add(var_("r0"), var_("r1")),
   };
 
-  assertEquals(Ic.reduce(program), i32(33));
+  assert_equals(Ic.reduce(program), i32(33));
 });
 
 Deno.test("Ic.reduce folds i32 primitives with wrapping", () => {
@@ -158,7 +188,35 @@ Deno.test("Ic.reduce folds i32 primitives with wrapping", () => {
     args: [i32(2147483647), i32(1)],
   };
 
-  assertEquals(Ic.reduce(program), i32(-2147483648));
+  assert_equals(Ic.reduce(program), i32(-2147483648));
+
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.div_s",
+      args: [i32(17), i32(5)],
+    }),
+    i32(3),
+  );
+
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.rem_s",
+      args: [i32(17), i32(5)],
+    }),
+    i32(2),
+  );
+
+  assert_throws(
+    () =>
+      Ic.reduce({
+        tag: "prim",
+        prim: "i32.div_s",
+        args: [i32(1), i32(0)],
+      }),
+    "i32.div_s by zero",
+  );
 });
 
 Deno.test("Ic.reduce folds i64 primitives with wrapping", () => {
@@ -168,7 +226,142 @@ Deno.test("Ic.reduce folds i64 primitives with wrapping", () => {
     args: [i64(3n), i64(7n)],
   };
 
-  assertEquals(Ic.reduce(program), i64(21n));
+  assert_equals(Ic.reduce(program), i64(21n));
+
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i64.rem_s",
+      args: [i64(17n), i64(5n)],
+    }),
+    i64(2n),
+  );
+});
+
+Deno.test("Ic.reduce folds comparison primitives to i32 booleans", () => {
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.lt_s",
+      args: [i32(3), i32(5)],
+    }),
+    i32(1),
+  );
+
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i64.ge_s",
+      args: [i64(3n), i64(5n)],
+    }),
+    i32(0),
+  );
+});
+
+Deno.test("Ic.reduce folds select when the condition is known", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.select",
+    args: [i32(42), i32(0), i32(1)],
+  };
+
+  assert_equals(Ic.reduce(program), i32(42));
+});
+
+Deno.test("Ic.reduce preserves select with a dynamic condition", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.select",
+    args: [i32(42), i32(0), var_("cond")],
+  };
+
+  assert_equals(
+    Format.fmt(Ic, Ic.reduce(program)),
+    "if cond then 42:i32 else 0:i32",
+  );
+
+  const wide: IcNode = {
+    tag: "prim",
+    prim: "i32.select",
+    args: [i64(42n), i64(0n), var_("cond")],
+  };
+
+  assert_equals(Ic.reduce(wide), {
+    tag: "prim",
+    prim: "i64.select",
+    args: [i64(42n), i64(0n), var_("cond")],
+  });
+});
+
+Deno.test("Ic.emit lowers dynamic select to structured Expr if", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.select",
+    args: [
+      i32(42),
+      { tag: "prim", prim: "i32.trap", args: [] },
+      { tag: "prim", prim: "i32.load", args: [{ tag: "text", value: "" }] },
+    ],
+  };
+
+  const expr = Emit.emit(Ic, program);
+
+  assert_equals(Typed.type(Expr, expr), "i32");
+  assert_equals(expr.tag, "if");
+  assert_equals(
+    Emit.emit(Expr, expr),
+    [
+      "i32.const 0",
+      "i32.load",
+      "if (result i32)",
+      "  i32.const 42",
+      "else",
+      "  unreachable",
+      "end",
+    ].join("\n"),
+  );
+});
+
+Deno.test("Ic.reduce preserves trap primitives", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.trap",
+    args: [],
+  };
+
+  assert_equals(Ic.reduce(program), program);
+  assert_equals(Format.fmt(Ic, program), "trap");
+});
+
+Deno.test("Ic.reduce preserves memory load primitives", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.load",
+    args: [{ tag: "text", value: "hello" }],
+  };
+
+  assert_equals(Ic.reduce(program), program);
+  assert_equals(Format.fmt(Ic, program), 'load("hello")');
+});
+
+Deno.test("Ic.reduce propagates memory loads over superpositions", () => {
+  const program: IcNode = {
+    tag: "prim",
+    prim: "i32.load",
+    args: [
+      {
+        tag: "sup",
+        label: "A",
+        left: { tag: "text", value: "yes" },
+        right: { tag: "text", value: "no" },
+      },
+    ],
+  };
+
+  assert_equals(
+    Format.fmt(Ic, Ic.reduce(program)),
+    '&A{load("yes"), load("no")}',
+  );
 });
 
 Deno.test("Ic.reduce erases numbers and continues", () => {
@@ -178,7 +371,7 @@ Deno.test("Ic.reduce erases numbers and continues", () => {
     body: i32(42),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.reduce erases superpositions structurally", () => {
@@ -188,7 +381,7 @@ Deno.test("Ic.reduce erases superpositions structurally", () => {
     body: i32(42),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.reduce erases applications structurally", () => {
@@ -202,7 +395,7 @@ Deno.test("Ic.reduce erases applications structurally", () => {
     body: i32(42),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.reduce erases duplicated values structurally", () => {
@@ -218,7 +411,7 @@ Deno.test("Ic.reduce erases duplicated values structurally", () => {
     body: i32(42),
   };
 
-  assertEquals(Ic.reduce(program), i32(42));
+  assert_equals(Ic.reduce(program), i32(42));
 });
 
 Deno.test("Ic.emit rejects unreduced superpositions", () => {
@@ -229,8 +422,18 @@ Deno.test("Ic.emit rejects unreduced superpositions", () => {
     right: i32(2),
   };
 
-  assertThrows(
+  assert_throws(
     () => Emit.emit(Ic, program),
     "Cannot lower superposition before reduction",
   );
+});
+
+Deno.test("Ic.emit lowers text values to Expr text pointers", () => {
+  const expr = Emit.emit(Ic, { tag: "text", value: "hello" });
+
+  assert_equals(Typed.type(Expr, expr), "i32");
+  assert_equals(Emit.emit(Expr, expr), "i32.const 0");
+  assert_equals(Data.data(Expr, expr), [
+    { offset: 0, bytes: [5, 0, 0, 0, 104, 101, 108, 108, 111] },
+  ]);
 });
