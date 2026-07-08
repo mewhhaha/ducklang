@@ -123,7 +123,15 @@ function scan_drop_stmt<ctx>(
       return true;
 
     case "range_loop":
-      scan_drop_range_loop_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_range_loop_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "collection_loop":
@@ -143,11 +151,27 @@ function scan_drop_stmt<ctx>(
       return true;
 
     case "if_else_stmt":
-      scan_drop_if_else_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_if_else_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "if_let_stmt":
-      scan_drop_if_let_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_if_let_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "type_check":
