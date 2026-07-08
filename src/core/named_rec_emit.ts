@@ -1,42 +1,108 @@
+import { expect } from "../expect.ts";
 import type { Func, FuncParam } from "../mod.ts";
 import type { ValType } from "../op.ts";
-import type { Core as CoreNode, CoreExpr } from "./ast.ts";
-import type { CoreArtifactEmitCtx, CoreArtifactEmitHooks } from "./artifact_emit.ts";
-import { create_core_branch_emit_ctx } from "./emit_ctx.ts";
+import type { Core as CoreNode, CoreParam, CoreStmt } from "./ast.ts";
+import type {
+  CoreArtifactEmitCtx,
+  CoreArtifactEmitHooks,
+  CoreArtifactEmitInput,
+} from "./artifact_emit.ts";
+import { core_val_type_from_type_name } from "./type_static.ts";
+
+type NamedRecEmitInput = Omit<CoreArtifactEmitInput, "core_ctx">;
+
+type NamedRecEmitHooks<ctx extends CoreArtifactEmitCtx> = Pick<
+  CoreArtifactEmitHooks<ctx>,
+  "collect_core_ctx" | "create_emit_ctx" | "emit_stmt" | "stmt_result_type"
+>;
 
 export function emit_named_rec_functions<ctx extends CoreArtifactEmitCtx>(
-  core: CoreNode | undefined,
-  baseCtx: ctx,
-  hooks: Pick<CoreArtifactEmitHooks<ctx>, "emit_stmt" | "stmt_result_type"> & { coreCtxForType?: any },
+  core: CoreNode,
+  input: NamedRecEmitInput,
+  hooks: NamedRecEmitHooks<ctx>,
 ): Func[] {
-  if (!core || !core.recFunctions) return [];
+  if (!core.recFunctions) {
+    return [];
+  }
+
   const funcs: Func[] = [];
-  for (const [name, def] of Object.entries(core.recFunctions)) {
-    const childCtx = create_core_branch_emit_ctx(baseCtx) as ctx;
-    const params: FuncParam[] = [];
-    for (const p of def.params) {
-      // params are scalar i32 in the supported direct-rec cases (fib, sum_down etc.)
-      // full param type recovery would require carrying types in recFunctions record
-      params.push({ name: p.name, type: "i32" as ValType });
-      childCtx.locals.set(p.name, "i32");
+
+  for (const name in core.recFunctions) {
+    const def = core.recFunctions[name];
+    expect(def, "Missing named recursive function: " + name);
+
+    const stmt: CoreStmt = { tag: "expr", expr: def.body };
+    const rec_core: CoreNode = { tag: "program", statements: [stmt] };
+
+    if (core.host_imports) {
+      rec_core.host_imports = core.host_imports;
     }
-    const synthStmt = { tag: "expr" as const, expr: def.body };
-    const bodyWat = hooks.emit_stmt(synthStmt as any, childCtx, true);
-    // derive result type using the shipped stmt_result_type when possible (removes hard-coded literal here)
-    let result: ValType = "i32";
-    try {
-      const cctx = hooks.coreCtxForType || (baseCtx as any);
-      if (hooks.stmt_result_type && cctx) {
-        result = hooks.stmt_result_type(synthStmt as any, cctx);
+
+    const core_ctx = hooks.collect_core_ctx(rec_core);
+    const params = named_rec_func_params(name, def.params);
+    const param_names = new Set<string>();
+
+    for (const param of params) {
+      expect(param.name, "Named recursive function parameter must be named");
+      param_names.add(param.name);
+      core_ctx.locals.set(param.name, param.type);
+    }
+
+    const result = hooks.stmt_result_type(stmt, core_ctx);
+    expect(
+      result === "i32",
+      "Named recursive Core functions only support i32 results for now: " + name,
+    );
+
+    const ctx = hooks.create_emit_ctx({
+      core_ctx,
+      text_layout: input.text_layout,
+      closures: input.closures,
+      heap: input.heap,
+      scratch: input.scratch,
+    });
+    const body_lines: string[] = [];
+
+    for (const [local, type] of core_ctx.locals) {
+      if (!param_names.has(local)) {
+        body_lines.push("(local $" + local + " " + type + ")");
       }
-    } catch {}
+    }
+
+    body_lines.push(hooks.emit_stmt(stmt, ctx, true));
     funcs.push({
       name,
       params,
       result,
-      body: bodyWat,
+      body: body_lines.join("\n"),
     });
   }
+
   return funcs;
 }
 
+function named_rec_func_params(name: string, params: CoreParam[]): FuncParam[] {
+  const result: FuncParam[] = [];
+
+  for (const param of params) {
+    const type = named_rec_param_type(param);
+    expect(
+      type === "i32",
+      "Named recursive Core function " + name +
+        " only supports i32 params for now: " + param.name,
+    );
+    result.push({ name: param.name, type });
+  }
+
+  return result;
+}
+
+function named_rec_param_type(param: CoreParam): ValType {
+  if (!param.annotation) {
+    return "i32";
+  }
+
+  const type = core_val_type_from_type_name(param.annotation);
+  expect(type, "Cannot emit named recursive parameter annotation: " + param.annotation);
+  return type;
+}
