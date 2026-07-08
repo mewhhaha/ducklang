@@ -103,7 +103,10 @@ function named_rec_param_seed_stmts(params: FuncParam[]): CoreStmt[] {
   return statements;
 }
 
-function named_rec_func_params(name: string, params: CoreParam[]): FuncParam[] {
+function named_rec_func_params(
+  name: string,
+  params: CoreParam[],
+): FuncParam[] {
   const result: FuncParam[] = [];
 
   for (const param of params) {
