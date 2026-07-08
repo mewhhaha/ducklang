@@ -8211,6 +8211,334 @@ user = user_type { name: "B", age: 2 }
     "Cannot move or replace borrowed owner user in program#0 while borrow#0 is active",
   );
 
+  const if_let_payload_borrow_blocks_union_owner_assignment = Source.core(
+    Source.parse(`
+const result_type = union {
+  ok: Text,
+  err: Unit
+}
+
+let result: result_type = .ok("Ada")
+let view: Text = "fallback"
+if let .ok(value) = result {
+  view = borrow value
+}
+result = .ok("Grace")
+len(view)
+`),
+  );
+  assert_equals(
+    Core.validate_borrows(if_let_payload_borrow_blocks_union_owner_assignment),
+    {
+      ok: false,
+      issues: [
+        {
+          tag: "borrowed_owner_barrier",
+          barrier: {
+            scope: "program#0",
+            owner: "result",
+            action: "assign",
+            borrow_id: "borrow#0",
+            message:
+              "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+          },
+          message:
+            "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+        },
+      ],
+    },
+  );
+  assert_throws(
+    () =>
+      Core.check_borrows(
+        if_let_payload_borrow_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+  assert_equals(
+    Core.proof(if_let_payload_borrow_blocks_union_owner_assignment).issues.map(
+      (issue) => issue.message,
+    ),
+    [
+      "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () => Core.check_proof(if_let_payload_borrow_blocks_union_owner_assignment),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () => Emit.emit(Core, if_let_payload_borrow_blocks_union_owner_assignment),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+
+  const if_let_aggregate_payload_borrow_blocks_union_owner_assignment = Source
+    .core(
+      Source.parse(`
+const user_type = struct {
+  age: Int,
+  score: Int
+}
+const result_type = union {
+  ok: user_type,
+  err: Unit
+}
+
+let start = 1
+let user: user_type = user_type {
+  age: 40,
+  score: start
+}
+let result: result_type = result_type.ok(user)
+let view = if let .ok(value) = result {
+  borrow value
+} else {
+  user_type {
+    age: 0,
+    score: 0
+  }
+}
+result = result_type.ok(user_type {
+  age: 5,
+  score: start
+})
+0
+`),
+    );
+  assert_equals(
+    Core.validate_borrows(
+      if_let_aggregate_payload_borrow_blocks_union_owner_assignment,
+    ),
+    {
+      ok: false,
+      issues: [
+        {
+          tag: "borrowed_owner_barrier",
+          barrier: {
+            scope: "program#0",
+            owner: "result",
+            action: "assign",
+            borrow_id: "borrow#0",
+            message:
+              "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+          },
+          message:
+            "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+        },
+      ],
+    },
+  );
+  assert_equals(
+    Core.proof(
+      if_let_aggregate_payload_borrow_blocks_union_owner_assignment,
+    ).issues.map((issue) => issue.message),
+    [
+      "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () =>
+      Core.check_proof(
+        if_let_aggregate_payload_borrow_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () =>
+      Emit.emit(
+        Core,
+        if_let_aggregate_payload_borrow_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+
+  const if_let_nested_union_payload_borrow_blocks_union_owner_assignment =
+    Source.core(
+      Source.parse(`
+const inner_type = union {
+  some: Int,
+  none: Unit
+}
+const result_type = union {
+  ok: inner_type,
+  err: Unit
+}
+
+let start = 1
+let inner: inner_type = inner_type.some(start)
+let result: result_type = result_type.ok(inner)
+let view = if let .ok(value) = result {
+  borrow value
+} else {
+  inner_type.none()
+}
+result = result_type.ok(inner_type.some(start + 1))
+0
+`),
+    );
+  assert_equals(
+    Core.validate_borrows(
+      if_let_nested_union_payload_borrow_blocks_union_owner_assignment,
+    ),
+    {
+      ok: false,
+      issues: [
+        {
+          tag: "borrowed_owner_barrier",
+          barrier: {
+            scope: "program#0",
+            owner: "result",
+            action: "assign",
+            borrow_id: "borrow#0",
+            message:
+              "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+          },
+          message:
+            "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+        },
+      ],
+    },
+  );
+  assert_equals(
+    Core.proof(
+      if_let_nested_union_payload_borrow_blocks_union_owner_assignment,
+    ).issues.map((issue) => issue.message),
+    [
+      "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () =>
+      Core.check_proof(
+        if_let_nested_union_payload_borrow_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () =>
+      Emit.emit(
+        Core,
+        if_let_nested_union_payload_borrow_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in program#0 while borrow#0 is active",
+  );
+
+  const if_let_scalar_payload_borrow_allows_union_owner_assignment = Source
+    .core(
+      Source.parse(`
+const result_type = union {
+  ok: Int,
+  err: Unit
+}
+
+(start: Int) => {
+  let result: result_type = .ok(start)
+  let view: Int = if let .ok(value) = result { borrow value } else { 0 }
+  result = .ok(start + 1)
+  view
+}
+`),
+    );
+  assert_equals(
+    Core.validate_borrows(
+      if_let_scalar_payload_borrow_allows_union_owner_assignment,
+    ),
+    {
+      ok: true,
+      issues: [],
+    },
+  );
+  assert_equals(
+    Core.proof(
+      if_let_scalar_payload_borrow_allows_union_owner_assignment,
+    ).ok,
+    true,
+  );
+  assert_equals(
+    Typed.type(
+      Core,
+      if_let_scalar_payload_borrow_allows_union_owner_assignment,
+    ),
+    "i32",
+  );
+  assert_includes(
+    Emit.emit(
+      Mod,
+      Core.mod(if_let_scalar_payload_borrow_allows_union_owner_assignment),
+    ),
+    "local.set $view",
+  );
+
+  const if_let_payload_borrow_result_blocks_union_owner_assignment = Source
+    .core(
+      Source.parse(`
+const result_type = union {
+  ok: Text,
+  err: Unit
+}
+
+(start: Int) => {
+  let result: result_type = .ok(slice("Ada", start, 3))
+  let view: Text = if let .ok(value) = result { borrow value } else { "fallback" }
+  result = .ok(slice("Grace", start, 5))
+  len(view)
+}
+`),
+    );
+  assert_equals(
+    Core.validate_borrows(
+      if_let_payload_borrow_result_blocks_union_owner_assignment,
+    ),
+    {
+      ok: false,
+      issues: [
+        {
+          tag: "borrowed_owner_barrier",
+          barrier: {
+            scope: "block#0",
+            owner: "result",
+            action: "assign",
+            borrow_id: "borrow#0",
+            message:
+              "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+          },
+          message:
+            "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+        },
+      ],
+    },
+  );
+  assert_throws(
+    () =>
+      Core.check_borrows(
+        if_let_payload_borrow_result_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+  );
+  assert_equals(
+    Core.proof(
+      if_let_payload_borrow_result_blocks_union_owner_assignment,
+    ).issues.map((issue) => issue.message),
+    [
+      "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () =>
+      Core.check_proof(
+        if_let_payload_borrow_result_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () =>
+      Emit.emit(
+        Core,
+        if_let_payload_borrow_result_blocks_union_owner_assignment,
+      ),
+    "Cannot move or replace borrowed owner result in block#0 while borrow#0 is active",
+  );
+
   const stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
   let view = borrow message
@@ -8284,6 +8612,92 @@ user = user_type { name: "B", age: 2 }
   assert_throws(
     () => Core.check_borrows(mutate_stored_borrowed_text),
     "Cannot mutate borrowed owner message in block#0 while borrow#0 is active",
+  );
+
+  const freeze_stored_borrowed_text = Source.core(Source.parse(`
+(message: Text) => {
+  let view = borrow message
+  let frozen = freeze message
+  len(view)
+}
+`));
+  assert_equals(Core.validate_borrows(freeze_stored_borrowed_text), {
+    ok: false,
+    issues: [
+      {
+        tag: "borrowed_owner_barrier",
+        barrier: {
+          scope: "block#0",
+          owner: "message",
+          action: "freeze",
+          borrow_id: "borrow#0",
+          message:
+            "Cannot freeze borrowed owner message in block#0 while borrow#0 is active",
+        },
+        message:
+          "Cannot freeze borrowed owner message in block#0 while borrow#0 is active",
+      },
+    ],
+  });
+  assert_equals(
+    Core.proof(freeze_stored_borrowed_text).issues.map((issue) =>
+      issue.message
+    ),
+    [
+      "Cannot freeze borrowed owner message in block#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () => Core.check_proof(freeze_stored_borrowed_text),
+    "Cannot freeze borrowed owner message in block#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () => Emit.emit(Core, freeze_stored_borrowed_text),
+    "Cannot freeze borrowed owner message in block#0 while borrow#0 is active",
+  );
+
+  const transfer_stored_borrowed_text = Source.core(Source.parse(`
+host_import host_take from "env.take" (ownership_transfer Text) => I32
+
+(message: Text) => {
+  let view = borrow message
+  host_take(message)
+  len(view)
+}
+`));
+  assert_equals(Core.validate_borrows(transfer_stored_borrowed_text), {
+    ok: false,
+    issues: [
+      {
+        tag: "borrowed_owner_barrier",
+        barrier: {
+          scope: "function_call#0",
+          owner: "message",
+          action: "transfer",
+          borrow_id: "borrow#0",
+          message:
+            "Cannot transfer borrowed owner message in function_call#0 while borrow#0 is active",
+        },
+        message:
+          "Cannot transfer borrowed owner message in function_call#0 while borrow#0 is active",
+      },
+    ],
+  });
+  assert_equals(
+    Core.proof(transfer_stored_borrowed_text).issues.map((issue) =>
+      issue.message
+    ),
+    [
+      "Cannot transfer borrowed owner message in function_call#0 while borrow#0 is active",
+    ],
+  );
+  assert_throws(
+    () => Core.check_proof(transfer_stored_borrowed_text),
+    "Cannot transfer borrowed owner message in function_call#0 while borrow#0 is active",
+  );
+  assert_throws(
+    () => Emit.emit(Core, transfer_stored_borrowed_text),
+    "Cannot transfer borrowed owner message in function_call#0 while borrow#0 is active",
   );
 
   const mutate_collection_item_borrow_owner = Source.core(Source.parse(`
@@ -14559,6 +14973,22 @@ let f = (x: Int) => x
 1
 `));
   const unused_owner_proof = Core.proof(unused_owner);
+  const unused_owner_drops = {
+    steps: [
+      {
+        tag: "heap_drop" as const,
+        id: "drop#0",
+        edge: "scope_exit" as const,
+        scope: "program#0",
+        owner: "f",
+        ownership: unique_closure,
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
+        reason:
+          "unique_heap closure scope exit lowers to no-op with bump allocator",
+      },
+    ],
+  };
 
   assert_equals(unused_owner_proof.ok, true);
   assert_equals(unused_owner_proof.managed_storage, "disabled");
@@ -14582,22 +15012,8 @@ let f = (x: Int) => x
       },
     ],
   );
-  assert_equals(Core.drops(unused_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to no-op with bump allocator",
-      },
-    ],
-  });
+  assert_equals(unused_owner_proof.drops, unused_owner_drops);
+  assert_equals(Core.drops(unused_owner), unused_owner_drops);
 
   const captured_closure_owner = Source.core(Source.parse(`
 let n = 1
@@ -14721,22 +15137,55 @@ let f = (x: Int) => x
   1
 }
 `));
-  assert_equals(Core.drops(closure_body_owner), {
+  const closure_body_owner_proof = Core.proof(closure_body_owner);
+  const closure_body_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "closure#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(closure_body_owner_proof.ok, true);
+  assert_equals(closure_body_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    closure_body_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(closure_body_owner_proof.drops, closure_body_owner_drops);
+  assert_equals(Core.drops(closure_body_owner), closure_body_owner_drops);
 
   const closure_return_owner = Source.core(Source.parse(`
 (x: Int) => {
@@ -14744,22 +15193,55 @@ let f = (x: Int) => x
   return 1
 }
 `));
-  assert_equals(Core.drops(closure_return_owner), {
+  const closure_return_owner_proof = Core.proof(closure_return_owner);
+  const closure_return_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "return_exit",
+        edge: "return_exit" as const,
         scope: "closure#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure return exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(closure_return_owner_proof.ok, true);
+  assert_equals(closure_return_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    closure_return_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(closure_return_owner_proof.drops, closure_return_owner_drops);
+  assert_equals(Core.drops(closure_return_owner), closure_return_owner_drops);
 
   const final_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -14773,22 +15255,48 @@ let f = (x: Int) => x
 
 return 1
 `));
-  assert_equals(Core.drops(return_owner), {
+  const return_owner_proof = Core.proof(return_owner);
+  const return_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "return_exit",
+        edge: "return_exit" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure return exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(return_owner_proof.ok, true);
+  assert_equals(return_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    return_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(return_owner_proof.drops, return_owner_drops);
+  assert_equals(Core.drops(return_owner), return_owner_drops);
 
   const returned_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -14803,34 +15311,64 @@ f = (x: Int) => x + 1
 
 1
 `));
-  assert_equals(Core.drops(replaced_owner), {
+  const replaced_owner_proof = Core.proof(replaced_owner);
+  const replaced_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "assignment_replace",
+        edge: "assignment_replace" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure assignment replacement lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(replaced_owner_proof.ok, true);
+  assert_equals(replaced_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    replaced_owner_proof.allocations.facts.map((fact) => {
+      return {
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(replaced_owner_proof.drops, replaced_owner_drops);
+  assert_equals(Core.drops(replaced_owner), replaced_owner_drops);
 
   const discarded_closure = Source.core(Source.parse(`
 ((x: Int) => x)
@@ -15020,22 +15558,65 @@ const user_type = struct {
   1
 }
 `));
-  assert_equals(Core.drops(discarded_runtime_aggregate_temporary), {
+  const discarded_runtime_aggregate_temporary_proof = Core.proof(
+    discarded_runtime_aggregate_temporary,
+  );
+  const discarded_runtime_aggregate_temporary_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "discarded_expr",
+        edge: "discarded_expr" as const,
         scope: "closure#0",
         owner: undefined,
         ownership: unique_runtime_aggregate,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap runtime_aggregate discarded expression lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(discarded_runtime_aggregate_temporary_proof.ok, true);
+  assert_equals(
+    discarded_runtime_aggregate_temporary_proof.managed_storage,
+    "disabled",
+  );
+  assert_equals(
+    discarded_runtime_aggregate_temporary_proof.allocations.facts.map(
+      (fact) => {
+        return {
+          storage: fact.storage,
+          ownership: fact.ownership,
+          reason: fact.reason,
+          expression: fact.expression,
+        };
+      },
+    ),
+    [
+      {
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        storage: "persistent_unique_heap",
+        ownership: unique_runtime_aggregate,
+        reason: "runtime_aggregate",
+        expression: "struct_value",
+      },
+    ],
+  );
+  assert_equals(
+    discarded_runtime_aggregate_temporary_proof.drops,
+    discarded_runtime_aggregate_temporary_drops,
+  );
+  assert_equals(
+    Core.drops(discarded_runtime_aggregate_temporary),
+    discarded_runtime_aggregate_temporary_drops,
+  );
 
   const discarded_runtime_union_temporary = Source.core(Source.parse(`
 const result_type = union {
@@ -15184,22 +15765,59 @@ const user = {
 user
 1
 `));
-  assert_equals(Core.drops(discarded_static_aggregate_materialization), {
+  const discarded_static_aggregate_materialization_proof = Core.proof(
+    discarded_static_aggregate_materialization,
+  );
+  const discarded_static_aggregate_materialization_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "discarded_expr",
+        edge: "discarded_expr" as const,
         scope: "program#0",
         owner: undefined,
         ownership: unique_runtime_aggregate,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap runtime_aggregate discarded expression lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(discarded_static_aggregate_materialization_proof.ok, true);
+  assert_equals(
+    discarded_static_aggregate_materialization_proof.managed_storage,
+    "disabled",
+  );
+  assert_equals(
+    discarded_static_aggregate_materialization_proof.allocations.facts.map(
+      (fact) => {
+        return {
+          storage: fact.storage,
+          ownership: fact.ownership,
+          reason: fact.reason,
+          expression: fact.expression,
+        };
+      },
+    ),
+    [
+      {
+        storage: "persistent_unique_heap",
+        ownership: unique_runtime_aggregate,
+        reason: "runtime_aggregate",
+        expression: "var",
+      },
+    ],
+  );
+  assert_equals(
+    discarded_static_aggregate_materialization_proof.drops,
+    discarded_static_aggregate_materialization_drops,
+  );
+  assert_equals(
+    Core.drops(discarded_static_aggregate_materialization),
+    discarded_static_aggregate_materialization_drops,
+  );
 
   const bound_runtime_text_temporary = Source.core(Source.parse(`
 (value: Text) => {
@@ -15332,22 +15950,48 @@ f
 
 1
 `));
-  assert_equals(Core.drops(discarded_named_owner), {
+  const discarded_named_owner_proof = Core.proof(discarded_named_owner);
+  const discarded_named_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "discarded_expr",
+        edge: "discarded_expr" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure discarded expression lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(discarded_named_owner_proof.ok, true);
+  assert_equals(discarded_named_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    discarded_named_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(discarded_named_owner_proof.drops, discarded_named_owner_drops);
+  assert_equals(Core.drops(discarded_named_owner), discarded_named_owner_drops);
 
   const moved_named_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15355,22 +15999,48 @@ let g = f
 
 1
 `));
-  assert_equals(Core.drops(moved_named_owner), {
+  const moved_named_owner_proof = Core.proof(moved_named_owner);
+  const moved_named_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "g",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(moved_named_owner_proof.ok, true);
+  assert_equals(moved_named_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    moved_named_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(moved_named_owner_proof.drops, moved_named_owner_drops);
+  assert_equals(Core.drops(moved_named_owner), moved_named_owner_drops);
 
   const discarded_frozen_named_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15540,22 +16210,59 @@ let f = (x: Int) => x
 
 1
 `));
-  assert_equals(Core.drops(discarded_block_outer_owner), {
+  const discarded_block_outer_owner_proof = Core.proof(
+    discarded_block_outer_owner,
+  );
+  const discarded_block_outer_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "discarded_expr",
+        edge: "discarded_expr" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure discarded expression lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(discarded_block_outer_owner_proof.ok, true);
+  assert_equals(
+    discarded_block_outer_owner_proof.managed_storage,
+    "disabled",
+  );
+  assert_equals(
+    discarded_block_outer_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    discarded_block_outer_owner_proof.drops,
+    discarded_block_outer_owner_drops,
+  );
+  assert_equals(
+    Core.drops(discarded_block_outer_owner),
+    discarded_block_outer_owner_drops,
+  );
 
   const moved_block_outer_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15563,22 +16270,54 @@ let g = { f }
 
 1
 `));
-  assert_equals(Core.drops(moved_block_outer_owner), {
+  const moved_block_outer_owner_proof = Core.proof(moved_block_outer_owner);
+  const moved_block_outer_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "g",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(moved_block_outer_owner_proof.ok, true);
+  assert_equals(moved_block_outer_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    moved_block_outer_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    moved_block_outer_owner_proof.drops,
+    moved_block_outer_owner_drops,
+  );
+  assert_equals(
+    Core.drops(moved_block_outer_owner),
+    moved_block_outer_owner_drops,
+  );
 
   const discarded_block_local_owner = Source.core(Source.parse(`
 {
@@ -15588,22 +16327,56 @@ let g = { f }
 
 1
 `));
-  assert_equals(Core.drops(discarded_block_local_owner), {
+  const discarded_block_local_owner_proof = Core.proof(
+    discarded_block_local_owner,
+  );
+  const discarded_block_local_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "discarded_expr",
+        edge: "discarded_expr" as const,
         scope: "program#0",
         owner: undefined,
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure discarded expression lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(discarded_block_local_owner_proof.ok, true);
+  assert_equals(discarded_block_local_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    discarded_block_local_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    discarded_block_local_owner_proof.drops,
+    discarded_block_local_owner_drops,
+  );
+  assert_equals(
+    Core.drops(discarded_block_local_owner),
+    discarded_block_local_owner_drops,
+  );
 
   const moved_block_local_owner = Source.core(Source.parse(`
 let h = {
@@ -15613,22 +16386,54 @@ let h = {
 
 1
 `));
-  assert_equals(Core.drops(moved_block_local_owner), {
+  const moved_block_local_owner_proof = Core.proof(moved_block_local_owner);
+  const moved_block_local_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "h",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(moved_block_local_owner_proof.ok, true);
+  assert_equals(moved_block_local_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    moved_block_local_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    moved_block_local_owner_proof.drops,
+    moved_block_local_owner_drops,
+  );
+  assert_equals(
+    Core.drops(moved_block_local_owner),
+    moved_block_local_owner_drops,
+  );
 
   const block_local_owner_dropped = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15640,34 +16445,75 @@ let f = (x: Int) => x
 
 1
 `));
-  assert_equals(Core.drops(block_local_owner_dropped), {
+  const block_local_owner_dropped_proof = Core.proof(
+    block_local_owner_dropped,
+  );
+  const block_local_owner_dropped_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#0",
         owner: "g",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(block_local_owner_dropped_proof.ok, true);
+  assert_equals(block_local_owner_dropped_proof.managed_storage, "disabled");
+  assert_equals(
+    block_local_owner_dropped_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    block_local_owner_dropped_proof.drops,
+    block_local_owner_dropped_drops,
+  );
+  assert_equals(
+    Core.drops(block_local_owner_dropped),
+    block_local_owner_dropped_drops,
+  );
 
   const final_branch_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15772,46 +16618,79 @@ let h = if 1 { f } else { g }
 
 1
 `));
-  assert_equals(Core.drops(moved_branch_owner), {
+  const moved_branch_owner_proof = Core.proof(moved_branch_owner);
+  const moved_branch_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#0",
         owner: "g",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#2",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#2",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "h",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(moved_branch_owner_proof.ok, true);
+  assert_equals(moved_branch_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    moved_branch_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(moved_branch_owner_proof.drops, moved_branch_owner_drops);
+  assert_equals(Core.drops(moved_branch_owner), moved_branch_owner_drops);
 
   const moved_mixed_branch_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15819,34 +16698,75 @@ let h = if 1 { f } else { (x: Int) => x }
 
 1
 `));
-  assert_equals(Core.drops(moved_mixed_branch_owner), {
+  const moved_mixed_branch_owner_proof = Core.proof(
+    moved_mixed_branch_owner,
+  );
+  const moved_mixed_branch_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#2",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "h",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(moved_mixed_branch_owner_proof.ok, true);
+  assert_equals(moved_mixed_branch_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    moved_mixed_branch_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "block#1",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    moved_mixed_branch_owner_proof.drops,
+    moved_mixed_branch_owner_drops,
+  );
+  assert_equals(
+    Core.drops(moved_mixed_branch_owner),
+    moved_mixed_branch_owner_drops,
+  );
 
   const const_union_if_let_branch_owner = Source.core(Source.parse(`
 const result_type = union {
@@ -15859,34 +16779,85 @@ let g = (x: Int) => x
 
 if let .ok(value) = result_type.ok(1) { f } else { g }
 `));
-  assert_equals(Core.drops(const_union_if_let_branch_owner), {
+  const const_union_if_let_branch_owner_proof = Core.proof(
+    const_union_if_let_branch_owner,
+  );
+  const const_union_if_let_branch_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#0",
         owner: "g",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "block#2",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(const_union_if_let_branch_owner_proof.ok, true);
+  assert_equals(
+    const_union_if_let_branch_owner_proof.managed_storage,
+    "disabled",
+  );
+  assert_equals(
+    const_union_if_let_branch_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_runtime_union,
+        reason: "runtime_union",
+        expression: "union_case",
+      },
+    ],
+  );
+  assert_equals(
+    const_union_if_let_branch_owner_proof.drops,
+    const_union_if_let_branch_owner_drops,
+  );
+  assert_equals(
+    Core.drops(const_union_if_let_branch_owner),
+    const_union_if_let_branch_owner_drops,
+  );
 
   const break_owner = Source.core(Source.parse(`
 for i in 0..1 {
@@ -15896,22 +16867,48 @@ for i in 0..1 {
 
 0
 `));
-  assert_equals(Core.drops(break_owner), {
+  const break_owner_proof = Core.proof(break_owner);
+  const break_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "break_exit",
+        edge: "break_exit" as const,
         scope: "loop#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure break exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(break_owner_proof.ok, true);
+  assert_equals(break_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    break_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(break_owner_proof.drops, break_owner_drops);
+  assert_equals(Core.drops(break_owner), break_owner_drops);
 
   const continue_owner = Source.core(Source.parse(`
 for i in 0..1 {
@@ -15921,22 +16918,48 @@ for i in 0..1 {
 
 0
 `));
-  assert_equals(Core.drops(continue_owner), {
+  const continue_owner_proof = Core.proof(continue_owner);
+  const continue_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "continue_exit",
+        edge: "continue_exit" as const,
         scope: "loop#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure continue exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(continue_owner_proof.ok, true);
+  assert_equals(continue_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    continue_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(continue_owner_proof.drops, continue_owner_drops);
+  assert_equals(Core.drops(continue_owner), continue_owner_drops);
 
   const conditional_return_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -15946,34 +16969,68 @@ if 1 {
 
 0
 `));
-  assert_equals(Core.drops(conditional_return_owner), {
+  const conditional_return_owner_proof = Core.proof(
+    conditional_return_owner,
+  );
+  const conditional_return_owner_drops = {
     steps: [
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "return_exit",
+        edge: "return_exit" as const,
         scope: "block#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure return exit lowers to no-op with bump allocator",
       },
       {
-        tag: "heap_drop",
+        tag: "heap_drop" as const,
         id: "drop#1",
-        edge: "scope_exit",
+        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "f",
         ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "no_op_bump_allocator",
+        storage: "persistent_unique_heap" as const,
+        runtime: "no_op_bump_allocator" as const,
         reason:
           "unique_heap closure scope exit lowers to no-op with bump allocator",
       },
     ],
-  });
+  };
+
+  assert_equals(conditional_return_owner_proof.ok, true);
+  assert_equals(conditional_return_owner_proof.managed_storage, "disabled");
+  assert_equals(
+    conditional_return_owner_proof.allocations.facts.map((fact) => {
+      return {
+        scope: fact.scope,
+        storage: fact.storage,
+        ownership: fact.ownership,
+        reason: fact.reason,
+        expression: fact.expression,
+      };
+    }),
+    [
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: unique_closure,
+        reason: "closure",
+        expression: "lam",
+      },
+    ],
+  );
+  assert_equals(
+    conditional_return_owner_proof.drops,
+    conditional_return_owner_drops,
+  );
+  assert_equals(
+    Core.drops(conditional_return_owner),
+    conditional_return_owner_drops,
+  );
 
   const terminal_if_owner = Source.core(Source.parse(`
 let f = (x: Int) => x

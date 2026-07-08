@@ -189,6 +189,23 @@ fib(6)
   assert_includes(Format.fmt(Ic, ic), "fix fib#0 =");
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 8 });
 
+  const tail_source = `
+let rec sum_down = (n, total) => {
+  if n == 0 {
+    total
+  } else {
+    sum_down(n - 1, total + n)
+  }
+}
+
+sum_down(4, 0)
+`;
+  const wat = Emit.emit(Core, Source.core(Source.parse(tail_source)));
+
+  assert_includes(wat, "block $rec_exit_0 (result i32)");
+  assert_includes(wat, "loop $rec_loop_0");
+  assert_includes(wat, "br $rec_loop_0");
+
   assert_throws(
     () => Source.core(Source.parse(source)),
     "Cannot lower recursive source binding to Core yet",
@@ -2709,6 +2726,35 @@ get((if let .some(user) = choose(flag) {
   assert_includes(union_payload_struct_text_get, "load8_u");
   assert_includes(union_payload_struct_text_get, "field_name");
   assert_includes(union_payload_struct_text_get, "index");
+
+  const union_payload_struct_text_index = Format.fmt(
+    Ic,
+    Ic.reduce(compile(`
+const user_type = struct {
+  name: Text
+}
+
+const option_type = union {
+  some: user_type,
+  none: Unit
+}
+
+let choose = flag => if flag {
+  option_type.some(user_type { name: input })
+} else {
+  option_type.none()
+}
+
+(if let .some(user) = choose(flag) {
+  user
+} else {
+  user_type { name: other }
+}).name[index]
+`)),
+  );
+  assert_includes(union_payload_struct_text_index, "load8_u");
+  assert_includes(union_payload_struct_text_index, "field_name");
+  assert_includes(union_payload_struct_text_index, "index");
 
   assert_throws(
     () =>

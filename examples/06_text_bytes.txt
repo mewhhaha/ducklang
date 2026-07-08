@@ -1,0 +1,5 @@
+let first = "Ada"
+let last = " Lovelace"
+let full = append(first, last)
+
+len(full) + full[1]

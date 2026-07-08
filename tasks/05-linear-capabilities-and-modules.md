@@ -87,11 +87,13 @@ module logger = caps => {
   functions and bindings that can lower to Ic, including pure specialized calls
   with linear parameters. Reserved linear effect detection lives in
   `src/frontend/linear_effect.ts`, separate from path-sensitive statement
-  consumption validation in `src/frontend/linear_stmt.ts`, expression
-  consumption in `src/frontend/linear_expr.ts`, and shared carried-state helpers
-  in `src/frontend/linear_state.ts`. `src/frontend/linear.ts` remains the public
-  linear facade. Local/aliased/simple-block/static branch linear closure
-  tracking lives in `src/frontend/linear_closure.ts`.
+  consumption validation in `src/frontend/linear_stmt.ts`, loop-body validation
+  and loop carried-state merging in `src/frontend/linear_stmt_loop.ts`,
+  expression consumption in `src/frontend/linear_expr.ts`, and shared
+  carried-state helpers in `src/frontend/linear_state.ts`.
+  `src/frontend/linear.ts` remains the public linear facade.
+  Local/aliased/simple-block/static branch linear closure tracking lives in
+  `src/frontend/linear_closure.ts`.
 - Implemented pure explicit capability-function calls through const-specialized
   dependency objects, so a field such as `caps.bump` can consume and return a
   linear value when it is an ordinary frontend-known function. Frontend-known

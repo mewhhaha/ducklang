@@ -56,10 +56,9 @@ let add = (x, y) => {
   scalar/capture-free, already frozen/shareable, explicitly promoted/frozen, or
   proven scratch-free. A hidden attached scratch region is not a closure
   lifetime strategy.
-- Split first-class closure storage into explicit implementation slices:
-  closure value representation, environment layout, per-slot capture
-  classification, call ABI, linear closure participation, and environment
-  cleanup/drop proof.
+- Split first-class closure storage into explicit implementation slices: closure
+  value representation, environment layout, per-slot capture classification,
+  call ABI, linear closure participation, and environment cleanup/drop proof.
 - For representation, use a code pointer or function-table index plus an
   environment pointer when captures exist. Capture-free closures may remain code
   pointers; captured closures allocate an environment record with storage,
@@ -67,8 +66,8 @@ let add = (x, y) => {
 - For capture classification, record each slot as scalar, frozen/shareable,
   unique owner, borrow view, scratch-backed value, capability, or nested
   ownership-bearing closure. Reusable closure values accept scalar and
-  frozen/shareable slots by default; other slots require linear closure
-  behavior or rejection.
+  frozen/shareable slots by default; other slots require linear closure behavior
+  or rejection.
 - For cleanup, treat closure environments and environment-construction
   temporaries like other owned runtime values. Accepted closure fixtures must
   expose allocation, capture ownership, freeze/promotion, transfer, and
@@ -118,34 +117,33 @@ let add = (x, y) => {
   struct and union `if`/`if let` expressions with synthesized field-wise or
   case-table fallbacks when every field/payload has an Ic-safe fallback,
   block-final no-else `if`/`if let` conditionals as value-producing final
-  expressions when their branch block has a value result,
-  known-case `if let` including runtime payloads and frontend-known
-  field/static-index projections, rejection of known non-i32 conditions before
-  Ic lowering, and direct typed pure union `if let` through Ic handlers, plus
-  same-case dynamic typed or locally inferred shorthand union `if` payload
-  selection as handler-encoded values, including unknown runtime payloads;
-  different-case dynamic typed or locally inferred shorthand union `if` as
-  handler-encoded Ic values, including unknown runtime payloads; and
-  different-case dynamic typed union `if` consumed by numeric/text-pointer
-  `if let`, including `Text` payloads used by `len`; locally inferred shorthand
-  dynamic union cases work both directly and through statically bound dynamic
-  `if` values when consumed by `if let`, including dynamic union values returned
-  by inlineable runtime closure calls; frontend-known object/typed-struct
-  `if let` results lower field-by-field through that scalar path, either as
-  field projections or as Ic handler-encoded aggregate values; simple
-  block-local frontend-known union values are resolved before known-case
-  `if let` lowering, and simple block-local dynamic union-if values are resolved
-  before dynamic `if let` lowering; dynamic ordinary function branches,
-  including simple aliases to known closures, eta-expand to Ic lambdas when
-  their applied bodies produce scalar/text-pointer results, preserve matching
-  parameter annotations, one-sided annotations, and alias-equivalent annotations
-  across selected branches, use selected-branch parameter facts to erase
-  `borrow`, `freeze`, and simple value-returning `scratch` wrappers at the call
-  boundary, reject incompatible selected-branch call arguments, reject
-  incompatible dynamic branch parameter shapes before generic dynamic `if`
-  lowering, recover i64 selected bodies from those parameter/capture facts, and
-  calls through those branches inline back to dynamic `if` expressions for
-  frontend-known struct and union consumers.
+  expressions when their branch block has a value result, known-case `if let`
+  including runtime payloads and frontend-known field/static-index projections,
+  rejection of known non-i32 conditions before Ic lowering, and direct typed
+  pure union `if let` through Ic handlers, plus same-case dynamic typed or
+  locally inferred shorthand union `if` payload selection as handler-encoded
+  values, including unknown runtime payloads; different-case dynamic typed or
+  locally inferred shorthand union `if` as handler-encoded Ic values, including
+  unknown runtime payloads; and different-case dynamic typed union `if` consumed
+  by numeric/text-pointer `if let`, including `Text` payloads used by `len`;
+  locally inferred shorthand dynamic union cases work both directly and through
+  statically bound dynamic `if` values when consumed by `if let`, including
+  dynamic union values returned by inlineable runtime closure calls;
+  frontend-known object/typed-struct `if let` results lower field-by-field
+  through that scalar path, either as field projections or as Ic handler-encoded
+  aggregate values; simple block-local frontend-known union values are resolved
+  before known-case `if let` lowering, and simple block-local dynamic union-if
+  values are resolved before dynamic `if let` lowering; dynamic ordinary
+  function branches, including simple aliases to known closures, eta-expand to
+  Ic lambdas when their applied bodies produce scalar/text-pointer results,
+  preserve matching parameter annotations, one-sided annotations, and
+  alias-equivalent annotations across selected branches, use selected-branch
+  parameter facts to erase `borrow`, `freeze`, and simple value-returning
+  `scratch` wrappers at the call boundary, reject incompatible selected-branch
+  call arguments, reject incompatible dynamic branch parameter shapes before
+  generic dynamic `if` lowering, recover i64 selected bodies from those
+  parameter/capture facts, and calls through those branches inline back to
+  dynamic `if` expressions for frontend-known struct and union consumers.
 - Implemented static `Core.emit` lowering for `if let` statements and
   expressions over literal or statically bound shorthand and typed-constructor
   union-case targets, including payload local binding and skipped non-matching
@@ -195,17 +193,16 @@ let add = (x, y) => {
 - `&&` and `||` are implemented as boolean `if` expressions and lower through
   the existing Ic `select` path for dynamic operands.
 - Direct `Text` consumers now provide caller context through safe inlineable
-  helper calls. Unannotated identity-style helpers such as `value => value`,
-  and callable block aliases such as `{ let id = value => value; id }`, can
-  feed `len(...)`, `get(...)`, and byte-index syntax without an intermediate
-  `Text` annotation. The inline text path rejects helper bodies such as
-  `value + 1` instead of treating arbitrary lowered `i32` expressions as text
-  pointers.
+  helper calls. Unannotated identity-style helpers such as `value => value`, and
+  callable block aliases such as `{ let id = value => value; id }`, can feed
+  `len(...)`, `get(...)`, and byte-index syntax without an intermediate `Text`
+  annotation. The inline text path rejects helper bodies such as `value + 1`
+  instead of treating arbitrary lowered `i32` expressions as text pointers.
 - Call-only runtime lambda bindings whose body contains an untyped dynamic text
-  branch can stay environment-only until an inline call supplies `Text`
-  context. This covers helpers like `flag => if flag { input } else { other }`
-  feeding direct text consumers, including simple block-local aliases, while
-  escaping the helper as a function value or aliasing it as data still rejects.
+  branch can stay environment-only until an inline call supplies `Text` context.
+  This covers helpers like `flag => if flag { input } else { other }` feeding
+  direct text consumers, including simple block-local aliases, while escaping
+  the helper as a function value or aliasing it as data still rejects.
 - The same call-only text-helper path now handles no-else dynamic text branches
   once the direct text consumer supplies `Text` context. `len(choose(flag))`,
   `get(choose(flag), i)`, and `choose(flag)[i]` synthesize the empty-text
@@ -215,8 +212,8 @@ let add = (x, y) => {
   helper results. Numeric primitive operands, annotated struct bindings, and
   annotated union bindings inline unannotated helpers whose bodies contain
   dynamic branches, so Ic output no longer leaks free helper calls such as
-  `(choose#0)(flag)`. `Text` expected contexts stay on the dedicated text
-  proof path to avoid treating arbitrary `i32` expressions as text pointers.
+  `(choose#0)(flag)`. `Text` expected contexts stay on the dedicated text proof
+  path to avoid treating arbitrary `i32` expressions as text pointers.
 - Inlineable helper app-result inference now feeds runtime struct field typing.
   Direct text consumers such as `len(choose(flag).name)`,
   `get(choose(flag).name, i)`, and nested field reads can lower when the helper

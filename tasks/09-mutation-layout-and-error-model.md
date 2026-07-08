@@ -18,11 +18,10 @@ helpers, and the error model.
   not a GC fallback, and rejects before WAT emission when a required proof fact
   is missing.
 - For each mutation-adjacent slice, use the Task 12 authoritative execution
-  checklist:
-  classify storage and lifetimes, check active borrows, prove scratch-result
-  escape before reset, emit explicit freeze/promotion when needed, record
-  cleanup/drop/reset facts, and keep `managed_storage: "disabled"` for accepted
-  baseline fixtures.
+  checklist: classify storage and lifetimes, check active borrows, prove
+  scratch-result escape before reset, emit explicit freeze/promotion when
+  needed, record cleanup/drop/reset facts, and keep
+  `managed_storage: "disabled"` for accepted baseline fixtures.
 - Implement pure struct update by copy/rebuild:
 
 ```txt
@@ -74,10 +73,9 @@ buf[i] = x
   scratch-backed returns, and lowering-created temporaries. Accepted fixtures
   expose the facts WAT emission uses; rejected fixtures assert deterministic
   diagnostics.
-- Classify every new memory/mutation case using the Task 12 authoritative
-  no-GC acceptance matrix: accepted with proof facts, rejected with a named
-  missing fact, or deferred to an explicit future region/managed-storage
-  profile.
+- Classify every new memory/mutation case using the Task 12 authoritative no-GC
+  acceptance matrix: accepted with proof facts, rejected with a named missing
+  fact, or deferred to an explicit future region/managed-storage profile.
 - Use the Task 12 proof-fixture shape before broadening mutation or allocation
   codegen. Accepted fixtures must keep `target_profile: "core-3-nonweb"` and
   `managed_storage: "disabled"` visible, rejected fixtures must name the first
@@ -88,11 +86,11 @@ buf[i] = x
   owner drop, ownership transfer, explicit freeze/promotion into persistent
   storage, or a proof that the value is scalar/frozen and needs no cleanup.
   Missing cleanup facts are a proof failure, not a reason to enable GC.
-- Keep the remaining memory work split by value shape:
-  runtime `Text`, runtime aggregate, runtime union payload, first-class closure
-  environment, host/import boundary, and compiler-created temporary. Each shape
-  should land as either an accepted no-GC proof fixture, a rejected diagnostic,
-  or a future explicit profile note.
+- Keep the remaining memory work split by value shape: runtime `Text`, runtime
+  aggregate, runtime union payload, first-class closure environment, host/import
+  boundary, and compiler-created temporary. Each shape should land as either an
+  accepted no-GC proof fixture, a rejected diagnostic, or a future explicit
+  profile note.
 - For scratchpad mutation/allocation cases, prove the result before reset. A
   result that still points into scratch storage must be rejected unless an
   explicit freeze/promotion copy has moved every reachable text buffer,
@@ -279,7 +277,12 @@ user_layout.align
   local error. Static-shaped aggregate bindings created through `freeze { ... }`
   now follow the same immutable compiler-fact path: field reads stay scalarized,
   the no-GC proof records an allowed frozen/shareable edge, and indexed mutation
-  rejects before WAT emission.
+  rejects before WAT emission. Core index-assignment implementation is now split
+  behind `src/core/index_assign.ts`: shared hook/plan shapes live in
+  `src/core/index_assign/types.ts`, static aggregate rebuild planning/emission
+  lives in `src/core/index_assign/static.ts`, and runtime aggregate
+  checked-store planning/emission lives in
+  `src/core/index_assign/runtime_aggregate.ts`.
 - Core host/import bounded-borrow and direct ownership-transfer contracts are
   implemented as part of the no-GC proof surface. Known imports can declare
   scalar, bounded-borrow, or ownership-transfer arguments; bounded borrows
@@ -303,29 +306,30 @@ user_layout.align
   edges, while unique heap drop points may initially lower to no-ops for the
   bump allocator. A scratch result cannot carry an attached live region in the
   MVP; it must be scalar, frozen, promoted, proven scratch-free, or rejected.
-  Scratchpads are the source-level ergonomic region for temporary work, not an
-  implicit managed heap. Values produced there may be freely shared only when
-  they are frozen/shareable or proven not to reference reset storage. Optional
-  region-like scopes should reuse scratch/arena lifetime analysis, not implicit
-  managed storage. Allocation sites should record their storage class and escape
-  reason. `Core.drops(...)` now records deterministic analysis-only unique-heap
-  drop facts for overwritten owners, discarded unique expressions, scope-ending
-  owners, `return`/`break`/`continue` exits, terminal expression branches,
-  branch assignments to existing unique owners, and closure-local owners in
-  closure bodies, while the first bump allocator lowers those drops to no-ops.
-  Direct named-owner discards and direct named-owner moves through static
-  aliases now produce drop facts without forcing static owner values through
-  runtime expression typing. Compile-time-only `const` values, including type
-  values and const type-constructor results, are now kept in static drop context
-  without creating runtime owners or requiring runtime expression typing. Direct
-  block-expression result moves such as `{ f }`, discarded `{ f }`,
-  `let g = { f }`, and block-local owner results now preserve owner facts across
-  the block boundary. Expression-level `if` and `if let` branches now scan owner
-  results path-sensitively, dropping non-selected owners in branch scopes and
-  moving, escaping, or discarding the selected owner according to the
-  surrounding expression context. Lowering-created temporaries still need full
-  cleanup coverage from ownership facts. Unknown host/import calls should be
-  treated as escaping unless their signature explicitly accepts a bounded
+  Scratchpads are the source-level ergonomic arena for temporary work, not an
+  implicit managed heap or attached region. Values produced there may be freely
+  shared only when they are frozen/shareable or proven not to reference reset
+  storage. Optional longer-lived regions are future explicit owner packages;
+  they may reuse scratch/arena lifetime machinery, but must not be inferred from
+  ordinary `scratch {}`. Allocation sites should record their storage class and
+  escape reason. `Core.drops(...)` now records deterministic analysis-only
+  unique-heap drop facts for overwritten owners, discarded unique expressions,
+  scope-ending owners, `return`/`break`/`continue` exits, terminal expression
+  branches, branch assignments to existing unique owners, and closure-local
+  owners in closure bodies, while the first bump allocator lowers those drops to
+  no-ops. Direct named-owner discards and direct named-owner moves through
+  static aliases now produce drop facts without forcing static owner values
+  through runtime expression typing. Compile-time-only `const` values, including
+  type values and const type-constructor results, are now kept in static drop
+  context without creating runtime owners or requiring runtime expression
+  typing. Direct block-expression result moves such as `{ f }`, discarded
+  `{ f }`, `let g = { f }`, and block-local owner results now preserve owner
+  facts across the block boundary. Expression-level `if` and `if let` branches
+  now scan owner results path-sensitively, dropping non-selected owners in
+  branch scopes and moving, escaping, or discarding the selected owner according
+  to the surrounding expression context. Lowering-created temporaries still need
+  full cleanup coverage from ownership facts. Unknown host/import calls should
+  be treated as escaping unless their signature explicitly accepts a bounded
   borrow, and scratch-to-heap promotion must be an explicit Core step. GC is
   deferred out of the baseline backend; the remaining work is to complete the
   static proof surface for supported programs and reject missing proofs

@@ -122,9 +122,12 @@ const has_name = t => {
   dynamic union case-shape inference. Core dynamic union-if `if let` lowering
   keeps named struct payloads, including shorthand object payloads resolved from
   declared case context, as branch-local static aggregate facts.
-- Frontend union construction, typed constructor validation, union type-value
-  resolution, and shorthand union-case inference live in
-  `src/frontend/union_values.ts`; dynamic union branch case-shape inference
+- Frontend union handler lowering and public re-exports live in
+  `src/frontend/union_values.ts`; union value, constructor-call, block-alias,
+  and type-value resolution live in `src/frontend/union_resolve.ts`; payload
+  inference and typed constructor validation live in
+  `src/frontend/union_payload.ts`; and the shared hook/target contract lives in
+  `src/frontend/union_value_types.ts`. Dynamic union branch case-shape inference
   lives in `src/frontend/union_infer.ts` with shared dynamic union-if case
   merging in `src/frontend/dynamic_union_cases.ts`. Frontend `if let`
   orchestration lives in `src/frontend/if_let.ts`, shared typed `if let` helpers
@@ -164,10 +167,10 @@ const has_name = t => {
   struct-if reshaping, and static collection-field projection live in
   `src/core/struct_static.ts`, with backend expression-type and static-call
   hooks.
-- Frontend typed no-payload union cases now lower as either
-  `option_type.none()` or `option_type.none`. The field form is accepted only
-  when the named case is declared `Unit`; payload cases still require an
-  explicit constructor call with one argument.
+- Frontend typed no-payload union cases now lower as either `option_type.none()`
+  or `option_type.none`. The field form is accepted only when the named case is
+  declared `Unit`; payload cases still require an explicit constructor call with
+  one argument.
 - Frontend annotated runtime struct field and index projection facts now survive
   pure-Ic ownership wrappers. A value known through `let user: user_type = ...`
   can be projected through `borrow`, `freeze`, or a simple value-returning

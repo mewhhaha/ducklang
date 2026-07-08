@@ -1,5 +1,6 @@
 import { expect } from "../expect.ts";
-import type { Env, FrontExpr, FrontType, Stmt } from "./ast.ts";
+import type { Env, FrontExpr, FrontType } from "./ast.ts";
+import { stmt_result_expr } from "./block_result.ts";
 import {
   front_type_from_type_name,
   is_builtin_type_name,
@@ -22,7 +23,7 @@ export function single_expr_block_result(
 
   const stmt = expr.statements[0];
   expect(stmt, "Missing typed block statement");
-  return block_result_expr(stmt);
+  return stmt_result_expr(stmt);
 }
 
 export function simple_alias_block_value(
@@ -52,7 +53,7 @@ export function simple_alias_block_value(
     return undefined;
   }
 
-  const result_expr = block_result_expr(result);
+  const result_expr = stmt_result_expr(result);
 
   if (!result_expr) {
     return undefined;
@@ -86,16 +87,4 @@ export function simple_alias_block_value(
   }
 
   return bind.value;
-}
-
-function block_result_expr(stmt: Stmt): FrontExpr | undefined {
-  if (stmt.tag === "expr") {
-    return stmt.expr;
-  }
-
-  if (stmt.tag === "return") {
-    return stmt.value;
-  }
-
-  return undefined;
 }

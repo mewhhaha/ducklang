@@ -1,0 +1,13 @@
+const option_type = t => union {
+  some: t,
+  none: Unit
+}
+
+const int_option_type = option_type(Int)
+let value = int_option_type.some(41)
+
+if let .some(found) = value {
+  found + 1
+} else {
+  0
+}

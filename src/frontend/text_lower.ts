@@ -1,6 +1,7 @@
 import { expect } from "../expect.ts";
 import { Ic, type Ic as IcNode } from "../ic.ts";
 import type { Env, FrontExpr, Stmt } from "./ast.ts";
+import { stmt_result_expr } from "./block_result.ts";
 import { text_byte_length } from "./text.ts";
 import { lower_expr_as_front_type } from "./typed_lower.ts";
 import { front_type_from_type_name, is_builtin_type_name } from "./types.ts";
@@ -279,7 +280,7 @@ function lower_simple_text_alias_block_len(
     return undefined;
   }
 
-  const result_expr = text_block_result_expr(result);
+  const result_expr = stmt_result_expr(result);
 
   if (!result_expr) {
     return undefined;
@@ -306,18 +307,6 @@ function lower_simple_text_alias_block_len(
       lower_expr_as_front_type(bind.value, { tag: "text" }, env, hooks),
     ],
   };
-}
-
-function text_block_result_expr(stmt: Stmt): FrontExpr | undefined {
-  if (stmt.tag === "expr") {
-    return stmt.expr;
-  }
-
-  if (stmt.tag === "return") {
-    return stmt.value;
-  }
-
-  return undefined;
 }
 
 function annotation_is_text(

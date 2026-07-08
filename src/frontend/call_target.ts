@@ -1,5 +1,6 @@
 import { expect } from "../expect.ts";
 import type { Binding, Env, FrontExpr, ResolvedCallTarget } from "./ast.ts";
+import { stmt_result_expr } from "./block_result.ts";
 import { clone_env, lookup } from "./env.ts";
 
 export type CallTargetHooks = {
@@ -101,7 +102,7 @@ function resolve_call_target_with_env_seen(
     expect(result, "Missing call target alias result");
 
     if (bind.tag === "bind" && bind.kind === "let" && !bind.is_linear) {
-      const result_expr = call_target_block_result_expr(result);
+      const result_expr = stmt_result_expr(result);
 
       if (
         result_expr && result_expr.tag === "var" &&
@@ -156,20 +157,6 @@ function resolve_call_target_with_env_seen(
   }
 
   return { expr: binding.value, env: value_env };
-}
-
-function call_target_block_result_expr(
-  stmt: Extract<FrontExpr, { tag: "block" }>["statements"][number],
-): FrontExpr | undefined {
-  if (stmt.tag === "expr") {
-    return stmt.expr;
-  }
-
-  if (stmt.tag === "return") {
-    return stmt.value;
-  }
-
-  return undefined;
 }
 
 function resolve_dynamic_function_if_target_seen(

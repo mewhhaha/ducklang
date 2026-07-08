@@ -969,6 +969,39 @@ sum_down(5, 0)
   }
 });
 
+Deno.test("frontend named tail recursion compiles through WAT to Wasm", async () => {
+  const wat_text = wat_from_core_source(`
+let rec sum_down = (n, total) => {
+  if n == 0 {
+    total
+  } else {
+    sum_down(n - 1, total + n)
+  }
+}
+
+sum_down(5, 0)
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "frontend_named_tail_rec",
+    {},
+  );
+
+  if (!("main" in instance.exports)) {
+    throw new Error("Missing main export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 15) {
+    throw new Error("Expected main() -> 15, got " + result);
+  }
+});
+
 Deno.test("core type-changing shadowing compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
 let x = 1

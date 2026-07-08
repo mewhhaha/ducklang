@@ -1,13 +1,11 @@
 import { expect } from "../expect.ts";
 import type { Ic as IcNode } from "../ic.ts";
-import type { Env, FrontExpr, Source as SourceNode, Stmt } from "./ast.ts";
+import type { Env, FrontExpr, Source as SourceNode } from "./ast.ts";
 import { assignment_type } from "./annotations.ts";
-import { create_frontend_expression_hooks } from "./lower_expression_hooks_adapter.ts";
 import { capture_const_ref, capture_expr } from "./capture.ts";
-import { is_const_builtin_name, validate_const_expr } from "./constness.ts";
+import { validate_const_expr } from "./constness.ts";
 import { clone_env, create_env, fresh, lookup, push_binding } from "./env.ts";
 import type { FrontEvalHooks } from "./eval.ts";
-import { format_expr } from "./format.ts";
 import { share_free_variables } from "./ic_share.ts";
 import type { IfLetHooks } from "./if_let.ts";
 import type { IfExprHooks } from "./if_expr.ts";
@@ -15,21 +13,18 @@ import type { ExprLowerHooks } from "./expr_lower.ts";
 import type { InferHooks } from "./infer.ts";
 import { create_frontend_annotation } from "./lower_annotation_adapter.ts";
 import { create_frontend_call_facade } from "./lower_call_facade.ts";
-import {
-  create_frontend_call_graph,
-  type FrontendCallGraph,
-} from "./lower_call_graph.ts";
+import { type FrontendCallGraph } from "./lower_call_graph.ts";
 import { create_frontend_const_resolve } from "./lower_const_resolve_adapter.ts";
-import { create_frontend_dynamic_branch } from "./lower_dynamic_branch_adapter.ts";
 import { create_frontend_lower_graph_bridge } from "./lower_graph/bridge.ts";
+import { create_frontend_lower_graph_program_hooks } from "./lower_graph/program.ts";
+import { create_frontend_lower_graph_value_hooks } from "./lower_graph/value.ts";
 import { create_frontend_static_expr } from "./lower_static_expr_adapter.ts";
 import { create_frontend_static_loop } from "./lower_static_loop_adapter.ts";
-import { create_frontend_static_rec_hooks } from "./lower_static_rec_adapter.ts";
 import { create_frontend_struct_access } from "./lower_struct_access_adapter.ts";
 import { create_frontend_text_lower } from "./lower_text_adapter.ts";
-import { create_frontend_program_hooks } from "./lower_program_hooks_adapter.ts";
 import { apply_index_assignment } from "./index_assignment.ts";
 import type { FrontPrepareHooks } from "./prepare.ts";
+import type { StaticRecHooks } from "./rec_hooks.ts";
 import {
   infer_static_rec_app_type,
   lower_static_rec_app,
@@ -43,20 +38,13 @@ import {
   check_struct_fields,
   maybe_struct_type_value,
   resolve_struct_type_value,
-  type StructValueHooks,
-  type StructValueTarget,
   validate_struct_value,
 } from "./struct_values.ts";
 import {
   check_type_pattern,
   resolve_extended_type_value,
 } from "./type_patterns.ts";
-import { type UnionValueHooks } from "./union_values.ts";
-import { type UnionInferHooks } from "./union_infer.ts";
-import {
-  create_frontend_value_graph,
-  type FrontendValueGraph,
-} from "./lower_value_graph.ts";
+import { type FrontendValueGraph } from "./lower_value_graph.ts";
 import { create_frontend_value_facade } from "./lower_value_facade.ts";
 import { same_type } from "./types.ts";
 
@@ -74,6 +62,7 @@ let if_let_hooks: IfLetHooks;
 let infer_hooks: InferHooks;
 let prepare_hooks: FrontPrepareHooks;
 let statement_lower_hooks: StatementLowerHooks;
+let static_rec_hooks: StaticRecHooks;
 
 const {
   check_dynamic_function_if_args,
@@ -248,76 +237,41 @@ const type_pattern_hooks = {
   resolve_const_expr,
 };
 
-const union_value_hooks = {
+const {
+  can_lower_dynamic_union_if_as_value,
+  create_value_graph,
+  lower_dynamic_struct_if,
+  lower_dynamic_union_if,
+  resolve_dynamic_if_let_struct_value,
+  resolve_dynamic_struct_if_value,
+  struct_value_hooks,
+} = create_frontend_lower_graph_value_hooks({
+  capture_expr,
   eval_simple_front_block,
   infer_expr,
-  inline_deferred_const_call,
-  inline_runtime_call_expr,
-  inline_specialized_call_expr,
-  lower_expr,
-  resolve_const_expr,
-  resolve_extended_type_value: (expr, env) =>
-    resolve_extended_type_value(expr, env, type_pattern_hooks),
-  resolve_index_expr,
-  resolve_static_i32_expr,
-  resolve_struct_field_expr,
-} satisfies UnionValueHooks;
-
-const union_infer_hooks = {
-  eval_simple_front_block,
+  infer_dynamic_if_let_cases,
+  infer_dynamic_union_if_cases,
   infer_union_cases,
   infer_untyped_union_case,
   inline_deferred_const_call,
   inline_runtime_call_expr,
   inline_specialized_call_expr,
-  resolve_dynamic_union_if_target,
-  resolve_annotation_type: (annotation, env) =>
-    resolve_annotation_type(annotation, env),
-  resolve_union_type_value,
-  resolve_union_value,
-} satisfies UnionInferHooks;
-
-const frontend_dynamic_branch = create_frontend_dynamic_branch({
-  infer_dynamic_if_let_cases,
-  infer_dynamic_union_if_cases,
-  infer_expr,
   lower_expr,
+  lower_expr_as_declared_type,
   lower_struct_value,
   lower_union_case_value,
   resolve_annotation_type: (annotation, env) =>
     resolve_annotation_type(annotation, env),
-  resolve_struct_type_value: (expr, env) =>
-    resolve_struct_type_value(expr, env, struct_value_hooks),
-  resolve_struct_value,
-  resolve_union_value,
-});
-
-const {
-  can_lower_dynamic_union_if_as_value,
-  lower_dynamic_struct_if,
-  lower_dynamic_union_if,
-  resolve_dynamic_if_let_struct_value,
-  resolve_dynamic_struct_if_value,
-} = frontend_dynamic_branch;
-
-const struct_value_hooks = {
-  capture_expr,
-  eval_simple_front_block,
-  infer_expr,
-  inline_deferred_const_call,
-  inline_runtime_call_expr,
-  inline_specialized_call_expr,
-  lower_expr_as_declared_type,
-  lower_expr,
   resolve_const_expr,
-  resolve_dynamic_if_let_struct_value,
-  resolve_dynamic_struct_if_value,
-  resolve_extended_type_value: (expr, env) =>
-    resolve_extended_type_value(expr, env, type_pattern_hooks),
+  resolve_dynamic_union_if_target,
   resolve_index_expr,
   resolve_static_i32_expr,
   resolve_struct_field_expr,
-} satisfies StructValueHooks;
+  resolve_struct_value,
+  resolve_union_type_value,
+  resolve_union_value,
+  type_pattern_hooks,
+});
 
 const frontend_annotation = create_frontend_annotation({
   capture_const_ref,
@@ -371,50 +325,67 @@ const frontend_struct_access = create_frontend_struct_access({
   resolve_struct_value_type_fields,
 });
 
-frontend_value_graph = create_frontend_value_graph({
-  struct_access: frontend_struct_access,
-  struct_value_hooks,
-  union_infer_hooks,
-  union_value_hooks,
-});
+frontend_value_graph = create_value_graph(frontend_struct_access);
 
-const frontend_expression_hooks = create_frontend_expression_hooks({
+const frontend_program_hooks = create_frontend_lower_graph_program_hooks({
   apply_annotation_context,
   apply_struct_update: (expr, env) =>
     apply_struct_update(expr, env, struct_value_hooks),
+  apply_index_assignment,
+  apply_runtime_binding_annotation,
+  assignment_type,
   can_lower_dynamic_union_if_as_value,
+  capture_const_ref,
   capture_expr,
   check_binding_annotation,
   check_const_annotation,
   check_dynamic_function_if_args: (expr, env) =>
     check_dynamic_function_if_args(expr, env),
   check_text_concat_operand_visibility,
+  check_static_type_pattern: (pattern, target, env) =>
+    check_type_pattern(pattern, target, env, type_pattern_hooks),
+  check_type_pattern: (stmt, env) =>
+    check_type_pattern(stmt.pattern, stmt.target, env, type_pattern_hooks),
+  clone_env,
   declared_struct_field_type,
   declared_struct_index_type,
+  eval_const_call,
   eval_const_builtin,
+  eval_i32_expr,
   eval_simple_front_block,
   eval_front_value,
+  expand_for_collection,
+  expand_for_range,
+  fresh,
   indexed_result_type,
   indexed_values_are_text,
+  infer_call_union_result_type,
+  infer_dynamic_if_let_cases,
+  infer_dynamic_union_if_cases,
   infer_expr,
+  infer_specialized_app_type,
+  infer_static_rec_app_type: (expr, env) =>
+    infer_static_rec_app_type(expr, env, static_rec_hooks),
   infer_union_cases,
   inline_deferred_const_call,
   inline_runtime_call_expr,
   inline_specialized_call_expr,
+  is_deferred_frontend_value,
   lookup,
   lower_dynamic_index_access,
   lower_dynamic_struct_if,
   lower_dynamic_union_if,
+  lower_app_as_front_type: lower_frontend_app_as_front_type,
   lower_expr,
   lower_expr_as_declared_type,
   lower_if_expr,
   lower_if_let,
+  lower_static_expr,
   lower_runtime_struct_field_access: (expr, env) =>
     lower_runtime_struct_field_access(expr, env),
   lower_runtime_struct_index_access: (object, index, env) =>
     lower_runtime_struct_index_access(object, index, env),
   lower_runtime_text_byte_index,
-  lower_app_as_front_type: lower_frontend_app_as_front_type,
   lower_specialized_app,
   lower_static_rec_app: (expr, env) =>
     lower_static_rec_app(expr, env, static_rec_hooks),
@@ -423,7 +394,11 @@ const frontend_expression_hooks = create_frontend_expression_hooks({
   lower_struct_value,
   lower_text_len,
   lower_union_case_value,
+  maybe_struct_type_value: (expr: FrontExpr, env: Env) =>
+    maybe_struct_type_value(expr, env, struct_value_hooks),
+  prepare_const_value,
   prepare_runtime_value,
+  push_binding,
   requires_specialized_call,
   resolve_annotation_type,
   resolve_const_field_expr,
@@ -437,124 +412,28 @@ const frontend_expression_hooks = create_frontend_expression_hooks({
   resolve_struct_field_expr,
   resolve_struct_value,
   resolve_struct_value_type_fields,
-  resolve_union_constructor_call,
-  resolve_union_value,
-  try_eval_all_const_call,
-  validate_struct_value: (value, env) =>
-    validate_struct_value(value, env, struct_value_hooks),
-  visible_text_value,
-});
-
-const {
-  call_specialize_hooks,
-  index_assignment_hooks,
-} = frontend_expression_hooks;
-
-expr_lower_hooks = frontend_expression_hooks.expr_lower_hooks;
-if_expr_hooks = frontend_expression_hooks.if_expr_hooks;
-if_let_hooks = frontend_expression_hooks.if_let_hooks;
-
-frontend_call_graph = create_frontend_call_graph(call_specialize_hooks);
-
-const frontend_program_hooks = create_frontend_program_hooks({
-  apply_struct_update: (expr, env) =>
-    apply_struct_update(expr, env, struct_value_hooks),
-  apply_annotation_context,
-  apply_index_assignment: (stmt, env) =>
-    apply_index_assignment(stmt, env, index_assignment_hooks),
-  apply_runtime_binding_annotation,
-  assignment_type,
-  capture_const_ref,
-  capture_expr,
-  check_binding_annotation,
-  check_type_pattern: (stmt, env) =>
-    check_type_pattern(stmt.pattern, stmt.target, env, type_pattern_hooks),
-  check_text_concat_operand_visibility,
-  eval_const_call,
-  eval_i32_expr,
-  expand_for_collection,
-  expand_for_range,
-  infer_call_union_result_type,
-  infer_dynamic_if_let_cases,
-  infer_dynamic_union_if_cases,
-  infer_union_cases,
-  infer_specialized_app_type,
-  infer_static_rec_app_type: (expr, env) =>
-    infer_static_rec_app_type(expr, env, static_rec_hooks),
-  infer_expr,
-  inline_deferred_const_call,
-  is_deferred_frontend_value,
-  lower_app_as_front_type: lower_frontend_app_as_front_type,
-  lower_dynamic_union_if,
-  lower_expr,
-  maybe_struct_type_value: (expr: FrontExpr, env: Env) =>
-    maybe_struct_type_value(expr, env, struct_value_hooks),
-  prepare_const_value,
-  prepare_runtime_value,
-  requires_specialized_call,
-  resolve_annotation_type,
-  resolve_const_field_expr,
-  resolve_index_expr,
-  resolve_runtime_struct_type,
-  resolve_static_i32_expr,
-  resolve_struct_field_expr,
-  resolve_struct_value,
-  resolve_struct_value_type_fields,
+  resolve_struct_type_value: (expr, env) =>
+    resolve_struct_type_value(expr, env, struct_value_hooks),
   resolve_union_constructor_call,
   resolve_union_type_value,
   resolve_union_value,
+  same_type,
   try_eval_all_const_call,
   validate_struct_value: (value, env) =>
     validate_struct_value(value, env, struct_value_hooks),
+  validate_const_expr,
   visible_text_value,
 });
 
 eval_hooks = frontend_program_hooks.eval_hooks;
+expr_lower_hooks = frontend_program_hooks.expr_lower_hooks;
+frontend_call_graph = frontend_program_hooks.frontend_call_graph;
+if_expr_hooks = frontend_program_hooks.if_expr_hooks;
+if_let_hooks = frontend_program_hooks.if_let_hooks;
 infer_hooks = frontend_program_hooks.infer_hooks;
 prepare_hooks = frontend_program_hooks.prepare_hooks;
 statement_lower_hooks = frontend_program_hooks.statement_lower_hooks;
-
-const static_rec_hooks = create_frontend_static_rec_hooks({
-  apply_index_assignment: (
-    stmt: Extract<Stmt, { tag: "index_assign" }>,
-    env: Env,
-  ) => apply_index_assignment(stmt, env, index_assignment_hooks),
-  apply_runtime_binding_annotation: (
-    annotation: string,
-    value: FrontExpr,
-    env: Env,
-  ) => apply_runtime_binding_annotation(annotation, value, env),
-  assignment_type,
-  capture_const_ref,
-  capture_expr,
-  check_const_annotation,
-  check_type_pattern: (pattern, target, env) =>
-    check_type_pattern(pattern, target, env, type_pattern_hooks),
-  clone_env,
-  eval_i32_expr,
-  expand_for_collection,
-  expand_for_range,
-  fresh,
-  infer_expr,
-  inline_deferred_const_call,
-  inline_runtime_call_expr,
-  inline_specialized_call_expr,
-  lookup,
-  lower_expr,
-  lower_static_expr,
-  prepare_const_value,
-  prepare_runtime_value,
-  push_binding,
-  resolve_annotation_type,
-  resolve_index_expr,
-  resolve_static_i32_expr,
-  resolve_struct_type_value: (expr, env) =>
-    resolve_struct_type_value(expr, env, struct_value_hooks),
-  resolve_struct_field_expr,
-  resolve_union_value,
-  same_type,
-  validate_const_expr,
-});
+static_rec_hooks = frontend_program_hooks.static_rec_hooks;
 
 function check_const_annotation(
   annotation: string,

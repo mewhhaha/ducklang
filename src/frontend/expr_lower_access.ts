@@ -64,8 +64,8 @@ export function lower_app_expr(
     result = lower_expr(expr.func, env, hooks);
   } catch (err) {
     if (expr.func.tag === "field" && err instanceof Error) {
-      const field_message =
-        "Cannot lower field access to Ic frontend yet: " + expr.func.name;
+      const field_message = "Cannot lower field access to Ic frontend yet: " +
+        expr.func.name;
 
       if (err.message.startsWith(field_message)) {
         throw new Error(
@@ -87,8 +87,7 @@ export function lower_app_expr(
         arg: lower_expr_as_front_type(arg.value, arg.type, env, {
           infer_expr: hooks.infer_expr,
           lower_app_as_front_type: hooks.lower_app_as_front_type,
-          lower_expr: (value, value_env) =>
-            lower_expr(value, value_env, hooks),
+          lower_expr: (value, value_env) => lower_expr(value, value_env, hooks),
           resolve_annotation_type: hooks.resolve_annotation_type,
         }),
       };

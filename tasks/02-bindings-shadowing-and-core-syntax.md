@@ -90,27 +90,29 @@ let x#2: Text = "hello"
   to erase `borrow`, `freeze`, and simple value-returning `scratch` wrappers
   before pure-Ic lowering. Shapes such as `let value: Int = borrow input`,
   `let message: Text = scratch { input }`, and `value = borrow input` keep the
-  wrapper-visible ownership syntax out of the final Ic term while preserving
-  the declared binding type.
+  wrapper-visible ownership syntax out of the final Ic term while preserving the
+  declared binding type.
 - That annotation boundary also reaches simple block results and scalar/Text
-  dynamic `if` branches. `let value: Int = if flag { borrow input } else {
-  other }` and same-type assignment variants lower through Ic as typed selects
-  instead of failing on unknown branch wrappers. Simple one-expression,
-  single-return, and pure two-statement alias blocks now preserve that same
-  expected type, so `let text: Text = { if flag { input } else { other } }`,
+  dynamic `if` branches.
+  `let value: Int = if flag { borrow input } else {
+  other }` and same-type
+  assignment variants lower through Ic as typed selects instead of failing on
+  unknown branch wrappers. Simple one-expression, single-return, and pure
+  two-statement alias blocks now preserve that same expected type, so
+  `let text: Text = { if flag { input } else { other } }`,
   `let text: Text = { return if flag { input } else { other } }`,
   `let text: Text = { let selected: Text = if flag { input } else { other };
-  selected }`, and annotated call arguments with the same block shapes lower
-  through the typed pure-Ic path, including branch-local `borrow`, `freeze`, or
-  simple `scratch {}` wrappers inside the selected value. The same block-local
-  alias shape now works when the selected value is produced by typed union
-  `if let` branches.
+  selected }`,
+  and annotated call arguments with the same block shapes lower through the
+  typed pure-Ic path, including branch-local `borrow`, `freeze`, or simple
+  `scratch {}` wrappers inside the selected value. The same block-local alias
+  shape now works when the selected value is produced by typed union `if let`
+  branches.
 - The same binding context now covers implicit no-else typed aggregate branches.
-  `let user: user_type = if flag { borrow input }` can still project
-  `user.age` through Ic with a synthesized fallback field value, while typed
-  union bindings use the declared case table and fallback payloads for later
-  `if let` consumption. Invalid aggregate annotations still reject before
-  lowering.
+  `let user: user_type = if flag { borrow input }` can still project `user.age`
+  through Ic with a synthesized fallback field value, while typed union bindings
+  use the declared case table and fallback payloads for later `if let`
+  consumption. Invalid aggregate annotations still reject before lowering.
 - The `Source -> Core` path also freshens sequential type-changing `:=`
   shadowing into new Core bindings before WAT emission, including closure-local
   shadows, so fixed-type Wasm locals are preserved.
@@ -152,12 +154,12 @@ let x#2: Text = "hello"
   struct, or union type context for otherwise unknown runtime values. The
   annotation-driven wrapper erasure path now covers simple block results,
   scalar/Text dynamic branches, and typed struct/union dynamic branch values
-  used by annotated bindings before pure-Ic lowering. The
-  structured Core path rejects unsupported annotations explicitly instead of
-  treating them as comments. Fact-checker annotations over const or
-  frontend-known aggregate values are checked in the frontend. Frontend
-  annotation checks live in `src/frontend/annotation_check.ts`, with
-  `src/frontend/annotations.ts` kept as the public annotation facade.
+  used by annotated bindings before pure-Ic lowering. The structured Core path
+  rejects unsupported annotations explicitly instead of treating them as
+  comments. Fact-checker annotations over const or frontend-known aggregate
+  values are checked in the frontend. Frontend annotation checks live in
+  `src/frontend/annotation_check.ts`, with `src/frontend/annotations.ts` kept as
+  the public annotation facade.
 - Text literals lower to Ic text values and then to Expr `i32` pointers into
   length-prefixed UTF-8 module data.
 - Visible text literals, bindings, fields, indexes, const-call results, simple

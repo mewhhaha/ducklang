@@ -6,6 +6,7 @@ import { clone_env, fresh } from "../env.ts";
 import { lookup_type_field } from "../fields.ts";
 import { implicit_fallback_expr } from "../implicit_fallback.ts";
 import { lower_lambda_binding } from "../ic_share.ts";
+import { same_union_cases } from "../union_cases.ts";
 import type { DynamicBranchHooks, ResolvedUnionValue } from "./types.ts";
 
 export function lower_dynamic_union_if(
@@ -246,24 +247,4 @@ function lower_dynamic_union_if_handler_branch(
     func: { tag: "var", name: selected_handler },
     arg: payload,
   };
-}
-
-function same_union_cases(left: TypeField[], right: TypeField[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  for (const left_case of left) {
-    const right_case = lookup_type_field(right, left_case.name);
-
-    if (!right_case) {
-      return false;
-    }
-
-    if (left_case.type_name !== right_case.type_name) {
-      return false;
-    }
-  }
-
-  return true;
 }

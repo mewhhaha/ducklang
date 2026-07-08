@@ -120,17 +120,20 @@ collector-decided scratch or temporary cleanup
   an `Int`, `I64`, `Text`, or declared struct parameter annotation, while
   top-level unknown wrapper results still route to structured Core/Wasm.
   Branch-selected function values with compatible annotated parameters provide
-  that context too, so direct `(if flag { (x: Int) => ... } else {
-  (x: Int) => ... })(borrow input)` calls and bound `choose(borrow input)` calls
-  lower through Ic after wrapper erasure, including declared struct parameter
-  projection and typed union `if let` consumption. Static-rec annotated
-  parameters now use the same wrapper-erasure boundary for initial and tail
-  recursive calls. Annotated runtime bindings and same-type assignments provide
-  that context as well, so `let value: Int = borrow input`, `let text: Text =
-  scratch { input }`, and `value = borrow input` lower through Ic after wrapper
-  erasure. The same boundary reaches simple block results and scalar/Text
-  dynamic `if` branch results, including annotated call arguments and
-  branch-selected function arguments.
+  that context too, so direct
+  `(if flag { (x: Int) => ... } else {
+  (x: Int) => ... })(borrow input)` calls
+  and bound `choose(borrow input)` calls lower through Ic after wrapper erasure,
+  including declared struct parameter projection and typed union `if let`
+  consumption. Static-rec annotated parameters now use the same wrapper-erasure
+  boundary for initial and tail recursive calls. Annotated runtime bindings and
+  same-type assignments provide that context as well, so
+  `let value: Int = borrow input`, `let text: Text =
+  scratch { input }`, and
+  `value = borrow input` lower through Ic after wrapper erasure. The same
+  boundary reaches simple block results and scalar/Text dynamic `if` branch
+  results, including annotated call arguments and branch-selected function
+  arguments.
 - `scratch { ... }` is the MVP region-like grammar surface. General named arenas
   or first-class region objects remain outside the MVP and should only be added
   after the scratch lifetime/drop model is stable.
@@ -151,11 +154,21 @@ collector-decided scratch or temporary cleanup
 - Parser token navigation is isolated in `src/frontend/parser_cursor.ts`,
   parameter and annotation parsing is isolated in
   `src/frontend/parser_params.ts`, aggregate field/type-pattern parsing is
-  isolated in `src/frontend/parser_aggregate.ts`, expression/postfix/block
-  parsing is isolated in `src/frontend/parser_expr.ts`, and parser support rules
-  for reserved keywords, builtin type-reference names, module-function
-  normalization, operator precedence, and struct-value starts are isolated in
-  `src/frontend/parser_support.ts`.
+  isolated in `src/frontend/parser_aggregate.ts`, block parsing is isolated in
+  `src/frontend/parser_block.ts`, conditional expression parsing is isolated in
+  `src/frontend/parser_conditional.ts`, primary expression parsing and balanced
+  unsupported-text consumption are isolated in `src/frontend/parser_primary.ts`,
+  expression arrow/precedence/unary/postfix parsing is isolated in
+  `src/frontend/parser_expr.ts`, host-import target and ownership-contract
+  interpretation is isolated in `src/frontend/parser_host_import.ts`, and parser
+  support rules for reserved keywords, builtin type-reference names,
+  module-function normalization, operator precedence, and struct-value starts
+  are isolated in `src/frontend/parser_support.ts`. The public source parser
+  entrypoint stays in `src/frontend/parser.ts`, while program and statement
+  dispatch are isolated in `src/frontend/parser_stmt.ts`, binding/import
+  statement helpers in `src/frontend/parser_stmt/binding.ts`, and
+  statement-level `if`/`if let`/`for` parsing in
+  `src/frontend/parser_stmt/control.ts`.
 - Text literal tokenization supports the MVP escape set needed by frontend-to-Ic
   lowering: newline, tab, carriage return, quote, and backslash escapes.
 - Unsupported or not-yet-lowered grammar paths are rejected with explicit

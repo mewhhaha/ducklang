@@ -137,6 +137,10 @@ otherwise fail
 - Implemented `Core.emit` WAT lowering for scalar dynamic tail-recursive calls
   by initializing recursive parameter locals and lowering tail `rec(...)` calls
   to parameter updates plus `br` back to a Wasm `loop`.
+- Source-level named `let rec` lambdas now lower to the same Core `rec`
+  representation when every recursive self-call is in tail position. General
+  named fixpoints, such as non-tail Fibonacci-style recursion, remain on the Ic
+  fixpoint bridge and still reject on the structured Core route.
 - Static-rec text-specific result lowering is split into
   `src/frontend/rec_text.ts`, and runtime struct projection/index lowering is
   split into `src/frontend/rec_struct.ts`, separate from recursive unrolling and
@@ -170,7 +174,8 @@ otherwise fail
   `if let` consumption. Dynamic branch arguments with declared struct or union
   parameter context also use typed aggregate lowering, including implicit
   no-else fallbacks for shapes such as `loop(if flag { borrow input }, 0)` and
-  explicit else branches such as `loop(if flag { scratch { input } } else {
+  explicit else branches such as
+  `loop(if flag { scratch { input } } else {
   other }, 0)`.
 - Static-rec block-local annotated bindings and same-type assignments use the
   same wrapper-erasure boundary, so rec bodies can bind or update scalar/Text
@@ -290,16 +295,16 @@ otherwise fail
   dynamic `break` guard without leaving an unresolved `f#...` application in the
   reduced Ic graph.
 - Block-local function aliases after dynamic static-loop control can also carry
-  simple non-linear local captures. The direct-lambda resolver inlines the
-  block prefix into the captured environment, so
+  simple non-linear local captures. The direct-lambda resolver inlines the block
+  prefix into the captured environment, so
   `let f = { let offset = i + 1; let add = x => x + offset; add }` and
-  `let f = { let offset = i + 1; return x => x + offset }` lower through pure
-  Ic without leaking `offset#...` or placeholder loop-index names.
+  `let f = { let offset = i + 1; return x => x + offset }` lower through pure Ic
+  without leaking `offset#...` or placeholder loop-index names.
 - Unannotated calls through a loop-local function binding after dynamic
   static-loop control now infer the inlined scalar result type for skipped-step
-  fallback synthesis. A shape such as `let id = x => x; let value = id(i)`
-  after a dynamic `break` guard remains on the pure Ic route without requiring
-  an explicit `Int` annotation.
+  fallback synthesis. A shape such as `let id = x => x; let value = id(i)` after
+  a dynamic `break` guard remains on the pure Ic route without requiring an
+  explicit `Int` annotation.
 - The same skipped-step call-result inference preserves lambda parameter
   annotations. A loop-local helper such as `let id = (text: Text) => text` can
   be called after a dynamic `break` guard, and the binding fallback still
@@ -328,10 +333,9 @@ otherwise fail
   lambda parameters and simple branch captures are normalized for later calls.
 - Union-valued same-type assignments after dynamic static-loop `break` or
   `continue` state now synthesize an explicit skipped-step assignment value:
-  `name = if loop_step { new_value } else { name }`. This preserves the
-  previous union value on skipped paths, keeps no-else union assignment
-  fallbacks typed, and lets a later final `if let` consume `Text` payloads on
-  the pure Ic route.
+  `name = if loop_step { new_value } else { name }`. This preserves the previous
+  union value on skipped paths, keeps no-else union assignment fallbacks typed,
+  and lets a later final `if let` consume `Text` payloads on the pure Ic route.
 - Same-type union assignments written with `:=` after dynamic static-loop
   control now use that same skipped-step assignment path when the new union
   cases are statically proven to match the previous binding. True type-changing
@@ -345,8 +349,8 @@ otherwise fail
   deferred through the skipped-step guard until a later pure-Ic consumer
   supplies the result type. Numeric consumers materialize `Int`/`I64` zero
   fallbacks, typed text consumers materialize `""`, and typed union `if let`
-  text results lower through the existing handler/text path. Untyped final
-  uses still keep the dynamic-unknown rejection instead of guessing a fallback.
+  text results lower through the existing handler/text path. Untyped final uses
+  still keep the dynamic-unknown rejection instead of guessing a fallback.
 - Static-rec local bindings now use the same deferred result-context model for
   unknown dynamic `if`/`if let` values. Rec-local numeric primitive operands
   lower deferred `Int`/`I64` values through typed operands, and `len(...)`

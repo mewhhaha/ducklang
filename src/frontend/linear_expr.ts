@@ -1,25 +1,28 @@
 import { expect } from "../expect.ts";
-import type { FrontExpr, Stmt } from "./ast.ts";
+import type { FrontExpr } from "./ast.ts";
 import {
   clone_linear_closures,
-  type LinearClosureBinding,
   type LinearClosureEnv,
   type LinearClosureRef,
   merge_used_linear_closures,
   resolve_linear_closure_ref,
 } from "./linear_closure.ts";
-import { same_name_set, same_names } from "./linear_state.ts";
+import {
+  consume_linear_branch_with_consumer,
+  consume_linear_condition_with_consumer,
+  merge_linear_branches,
+} from "./linear_expr/branch.ts";
+import type {
+  LinearBranch,
+  LinearExprHooks,
+  LinearUseMode,
+} from "./linear_expr/types.ts";
 
-export type LinearUseMode = "assignment" | "bind" | "discard" | "final";
-
-export type LinearExprHooks = {
-  validate_linear_block: (
-    stmts: Stmt[],
-    available: Set<string>,
-    closures: LinearClosureEnv,
-    active_calls: Set<string>,
-  ) => void;
-};
+export type {
+  LinearBranch,
+  LinearExprHooks,
+  LinearUseMode,
+} from "./linear_expr/types.ts";
 
 export function consume_linear_expr(
   expr: FrontExpr,
@@ -127,29 +130,32 @@ export function consume_linear_expr(
     }
 
     if (item.tag === "if") {
-      consume_linear_condition(
+      consume_linear_condition_with_consumer(
         item.cond,
         available,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
       const before = new Set(available);
-      const then_branch = consume_linear_branch(
+      const then_branch = consume_linear_branch_with_consumer(
         item.then_branch,
         before,
         mode,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
-      const else_branch = consume_linear_branch(
+      const else_branch = consume_linear_branch_with_consumer(
         item.else_branch,
         before,
         mode,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
       merge_linear_branches(
         available,
@@ -162,29 +168,32 @@ export function consume_linear_expr(
     }
 
     if (item.tag === "if_let") {
-      consume_linear_condition(
+      consume_linear_condition_with_consumer(
         item.target,
         available,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
       const before = new Set(available);
-      const then_branch = consume_linear_branch(
+      const then_branch = consume_linear_branch_with_consumer(
         item.then_branch,
         before,
         mode,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
-      const else_branch = consume_linear_branch(
+      const else_branch = consume_linear_branch_with_consumer(
         item.else_branch,
         before,
         mode,
         closures,
         active_calls,
         hooks,
+        consume_linear_expr,
       );
       merge_linear_branches(
         available,
@@ -312,12 +321,6 @@ export function consume_linear_expr(
   return consumed;
 }
 
-export type LinearBranch = {
-  available: Set<string>;
-  consumed: string[];
-  used_closures: Set<LinearClosureBinding>;
-};
-
 export function consume_linear_condition(
   expr: FrontExpr,
   available: Set<string>,
@@ -325,14 +328,13 @@ export function consume_linear_condition(
   active_calls: Set<string>,
   hooks: LinearExprHooks,
 ): void {
-  const condition_available = new Set(available);
-  consume_linear_expr(
+  consume_linear_condition_with_consumer(
     expr,
-    condition_available,
-    "discard",
-    clone_linear_closures(closures),
-    new Set(active_calls),
+    available,
+    closures,
+    active_calls,
     hooks,
+    consume_linear_expr,
   );
 }
 
@@ -344,77 +346,13 @@ export function consume_linear_branch(
   active_calls: Set<string>,
   hooks: LinearExprHooks,
 ): LinearBranch {
-  const branch_available = new Set(available);
-  const branch_closures = clone_linear_closures(closures);
-  const branch_consumed = consume_linear_expr(
+  return consume_linear_branch_with_consumer(
     expr,
-    branch_available,
+    available,
     mode,
-    branch_closures,
-    new Set(active_calls),
+    closures,
+    active_calls,
     hooks,
+    consume_linear_expr,
   );
-  return {
-    available: branch_available,
-    consumed: branch_consumed,
-    used_closures: new Set(branch_closures.used),
-  };
-}
-
-export function merge_linear_branches(
-  available: Set<string>,
-  consumed: string[],
-  closures: LinearClosureEnv,
-  left: LinearBranch,
-  right: LinearBranch,
-): void {
-  if (!same_names(left.consumed, right.consumed)) {
-    throw new Error("Linear branches must consume the same values");
-  }
-
-  if (!same_name_set(left.available, right.available)) {
-    throw new Error("Linear branches must leave the same available values");
-  }
-
-  if (
-    !same_linear_closure_binding_set(
-      left.used_closures,
-      right.used_closures,
-    )
-  ) {
-    throw new Error("Linear branches must consume the same closures");
-  }
-
-  available.clear();
-
-  for (const name of left.available) {
-    available.add(name);
-  }
-
-  for (const name of left.consumed) {
-    if (!consumed.includes(name)) {
-      consumed.push(name);
-    }
-  }
-
-  for (const id of left.used_closures) {
-    closures.used.add(id);
-  }
-}
-
-function same_linear_closure_binding_set(
-  left: Set<LinearClosureBinding>,
-  right: Set<LinearClosureBinding>,
-): boolean {
-  if (left.size !== right.size) {
-    return false;
-  }
-
-  for (const binding of left) {
-    if (!right.has(binding)) {
-      return false;
-    }
-  }
-
-  return true;
 }

@@ -108,5 +108,5 @@ let ys = map(xs, double)
 - Annotated runtime parameters now preserve ownership-wrapper erasure at
   frontend-to-Ic call boundaries. Direct specialized calls and const-parameter
   helper calls can lower arguments such as `borrow input`, `freeze input`, or
-  `scratch { input }` when the runtime parameter annotation supplies the
-  scalar, text, or declared aggregate context needed by the pure Ic route.
+  `scratch { input }` when the runtime parameter annotation supplies the scalar,
+  text, or declared aggregate context needed by the pure Ic route.

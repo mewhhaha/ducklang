@@ -1,0 +1,128 @@
+import type { Wat } from "../../wat.ts";
+import type { CoreExpr, CoreStmt } from "../ast.ts";
+import { fresh_temp_local, indent_lines, set_local } from "../backend/util.ts";
+import type { RuntimeUnionTarget } from "../runtime_union.ts";
+import { emit_runtime_union_match_payload_setup } from "../runtime_union_payload_emit.ts";
+import type { RuntimeUnionIfLetCtx, RuntimeUnionIfLetHooks } from "./types.ts";
+
+export function emit_runtime_union_if_let_stmt<
+  ctx extends RuntimeUnionIfLetCtx,
+>(
+  stmt: Extract<CoreStmt, { tag: "if_let_stmt" }>,
+  target: RuntimeUnionTarget,
+  ctx: ctx,
+  hooks: RuntimeUnionIfLetHooks<ctx>,
+): Wat {
+  const target_code = hooks.emit_expr(target.target, ctx);
+  const local_name = fresh_temp_local(ctx, "union_match");
+  set_local(ctx.locals, local_name, "i32");
+  const cond_name = fresh_temp_local(ctx, "if_cond");
+  set_local(ctx.locals, cond_name, "i32");
+  const else_statics = new Map(ctx.statics);
+  const info = hooks.runtime_union_match_info(stmt.case_name, target, ctx);
+  const binding = hooks.match_branch_ctx(stmt.value_name, info, ctx);
+  const branch_ctx = binding.ctx;
+  const body: string[] = [];
+  const payload_setup = emit_runtime_union_match_payload_setup(
+    local_name,
+    stmt.value_name,
+    info,
+    binding.fields,
+  );
+
+  if (payload_setup !== "") {
+    body.push(payload_setup);
+  }
+
+  for (const item of stmt.body) {
+    body.push(hooks.emit_stmt(item, branch_ctx, false));
+  }
+
+  ctx.next_loop = branch_ctx.next_loop;
+  ctx.next_temp = branch_ctx.next_temp;
+  const merge_setup = hooks.merge_if_else_static_assignments(
+    stmt,
+    { tag: "var", name: cond_name },
+    branch_ctx.statics,
+    else_statics,
+    ctx,
+    ctx,
+  );
+  const lines = [
+    target_code,
+    "local.set $" + local_name,
+    "local.get $" + local_name,
+    "i32.load",
+    "i32.const " + info.tag_value.toString(),
+    "i32.eq",
+    "local.set $" + cond_name,
+    "local.get $" + cond_name,
+    "if",
+    indent_lines(body.join("\n"), 2),
+    "end",
+  ];
+
+  if (merge_setup !== "") {
+    lines.push(merge_setup);
+  }
+
+  return lines.join("\n");
+}
+
+export function emit_runtime_union_if_let_expr<
+  ctx extends RuntimeUnionIfLetCtx,
+>(
+  expr: Extract<CoreExpr, { tag: "if_let" }>,
+  target: RuntimeUnionTarget,
+  ctx: ctx,
+  hooks: RuntimeUnionIfLetHooks<ctx>,
+): Wat {
+  const result_type = hooks.expr_type(expr, ctx);
+  const target_code = hooks.emit_expr(target.target, ctx);
+  const local_name = fresh_temp_local(ctx, "union_match");
+  set_local(ctx.locals, local_name, "i32");
+  const info = hooks.runtime_union_match_info(expr.case_name, target, ctx);
+  const binding = hooks.match_branch_ctx(expr.value_name, info, ctx);
+  const branch_ctx = binding.ctx;
+  const then_lines: string[] = [];
+  const payload_setup = emit_runtime_union_match_payload_setup(
+    local_name,
+    expr.value_name,
+    info,
+    binding.fields,
+  );
+
+  if (payload_setup !== "") {
+    then_lines.push(payload_setup);
+  }
+
+  then_lines.push(hooks.emit_expr(expr.then_branch, branch_ctx));
+  ctx.next_loop = branch_ctx.next_loop;
+  ctx.next_temp = branch_ctx.next_temp;
+
+  let else_branch: Wat;
+
+  if (expr.implicit_else) {
+    if (hooks.core_expr_is_text(expr, ctx)) {
+      else_branch = hooks.emit_expr({ tag: "text", value: "" }, ctx);
+    } else {
+      else_branch = result_type + ".const 0";
+    }
+  } else {
+    else_branch = hooks.emit_expr(expr.else_branch, ctx);
+  }
+
+  return [
+    target_code,
+    "local.set $" + local_name,
+    "local.get $" + local_name,
+    "i32.load",
+    "i32.const " + info.tag_value.toString(),
+    "i32.eq",
+    "if (result " + result_type + ")",
+    indent_lines(then_lines.join("\n"), 2),
+    "else",
+    indent_lines(else_branch, 2),
+    "end",
+  ].join("\n");
+}

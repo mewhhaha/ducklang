@@ -3,7 +3,7 @@ import type { Ic as IcNode } from "../ic.ts";
 import type { Env, FrontExpr, TypeField } from "./ast.ts";
 import { capture_expr } from "./capture.ts";
 import { clone_env, fresh, push_binding } from "./env.ts";
-import { lookup_type_field, merge_type_fields } from "./fields.ts";
+import { lookup_type_field } from "./fields.ts";
 import {
   front_type_for_type_name,
   infer_dynamic_union_if_cases,
@@ -14,6 +14,12 @@ import {
   resolve_dynamic_union_if_target,
 } from "./if_let_target.ts";
 import type { IfLetHooks, ResolvedUnionValue } from "./if_let_types.ts";
+import { infer_if_let_result_union_cases } from "./if_let_union_infer.ts";
+import {
+  apply_union_result_handlers,
+  lower_union_expr_with_cases,
+} from "./if_let_union_value.ts";
+import { same_union_cases } from "./union_cases.ts";
 
 export function lower_dynamic_union_if_let_result_union(
   expr: Extract<FrontExpr, { tag: "if_let" }>,
@@ -74,46 +80,6 @@ export function lower_dynamic_union_if_let_result_union(
     env,
     hooks,
   );
-}
-
-export function infer_if_let_result_union_cases(
-  expr: Extract<FrontExpr, { tag: "if_let" }>,
-  cases: TypeField[],
-  env: Env,
-  hooks: IfLetHooks,
-): TypeField[] | undefined {
-  const then_env = clone_env(env);
-
-  if (expr.value_name) {
-    const matched = lookup_type_field(cases, expr.case_name);
-
-    if (!matched) {
-      throw new Error("Missing union case: " + expr.case_name);
-    }
-
-    if (matched.type_name === "Unit") {
-      throw new Error("Union case has no payload: " + expr.case_name);
-    }
-
-    push_binding(then_env, {
-      name: expr.value_name,
-      ic_name: expr.value_name,
-      type: front_type_for_type_name(matched.type_name, then_env, hooks),
-      is_const: false,
-      is_linear: false,
-      value: undefined,
-      value_env: undefined,
-    });
-  }
-
-  const then_cases = hooks.infer_union_cases(expr.then_branch, then_env);
-  const else_cases = hooks.infer_union_cases(expr.else_branch, env);
-
-  if (!then_cases || !else_cases) {
-    return undefined;
-  }
-
-  return merge_type_fields(then_cases, else_cases);
 }
 
 function lower_if_let_union_result_value(
@@ -396,115 +362,4 @@ function lower_matching_if_let_union_result(
     ),
     arg: hooks.lower_expr(payload, target.env),
   };
-}
-
-function lower_union_expr_with_cases(
-  expr: FrontExpr,
-  env: Env,
-  cases: TypeField[],
-  hooks: IfLetHooks,
-): IcNode {
-  const value = hooks.resolve_union_value(expr, env);
-
-  if (value) {
-    return lower_union_case_with_cases(value.expr, value.env, cases, hooks);
-  }
-
-  return hooks.lower_expr(expr, env);
-}
-
-function lower_union_case_with_cases(
-  expr: Extract<FrontExpr, { tag: "union_case" }>,
-  env: Env,
-  cases: TypeField[],
-  hooks: IfLetHooks,
-): IcNode {
-  const declared = lookup_type_field(cases, expr.name);
-
-  if (!declared) {
-    throw new Error("Missing union case: " + expr.name);
-  }
-
-  let payload: IcNode = { tag: "num", type: "i32", value: 0 };
-
-  if (declared.type_name !== "Unit") {
-    const value = expr.value;
-    expect(value, "Missing union case payload: " + expr.name);
-    payload = hooks.lower_expr(value, env);
-  }
-
-  const local = clone_env(env);
-  const handler_names: string[] = [];
-
-  for (const field of cases) {
-    handler_names.push(fresh(local, "case_" + field.name));
-  }
-
-  let selected_index = -1;
-
-  for (let index = 0; index < cases.length; index += 1) {
-    const field = cases[index];
-    expect(field, "Missing union result case " + index.toString());
-
-    if (field.name === expr.name) {
-      selected_index = index;
-    }
-  }
-
-  if (selected_index < 0) {
-    throw new Error("Missing union case: " + expr.name);
-  }
-
-  const selected_handler = handler_names[selected_index];
-  expect(selected_handler, "Missing selected union result handler");
-  let body: IcNode = {
-    tag: "app",
-    func: { tag: "var", name: selected_handler },
-    arg: payload,
-  };
-
-  for (let index = handler_names.length - 1; index >= 0; index -= 1) {
-    const name = handler_names[index];
-    expect(name, "Missing union result handler " + index.toString());
-    body = lower_lambda_binding(name, body);
-  }
-
-  return body;
-}
-
-function apply_union_result_handlers(
-  value: IcNode,
-  handler_names: string[],
-): IcNode {
-  let result = value;
-
-  for (const name of handler_names) {
-    result = {
-      tag: "app",
-      func: result,
-      arg: { tag: "var", name },
-    };
-  }
-
-  return result;
-}
-
-function same_union_cases(left: TypeField[], right: TypeField[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  for (const left_case of left) {
-    const right_case = lookup_type_field(right, left_case.name);
-
-    if (!right_case) {
-      return false;
-    }
-
-    if (right_case.type_name !== left_case.type_name) {
-      return false;
-    }
-  }
-
-  return true;
 }

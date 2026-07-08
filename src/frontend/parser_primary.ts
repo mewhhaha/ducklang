@@ -1,0 +1,166 @@
+import { expect } from "../expect.ts";
+import type { FrontExpr } from "./ast.ts";
+import { expect_snake_case } from "./names.ts";
+import { parse_number_expr } from "./numeric.ts";
+import { ParserBlock } from "./parser_block.ts";
+import {
+  is_builtin_type_reference_name,
+  unsupported_reserved_feature,
+} from "./parser_support.ts";
+
+export abstract class ParserPrimary extends ParserBlock {
+  protected parse_primary(): FrontExpr {
+    const token = this.peek();
+
+    if (token.kind === "name") {
+      const feature = unsupported_reserved_feature(token.text);
+
+      if (feature) {
+        return this.parse_unsupported_expr(feature);
+      }
+    }
+
+    if (token.kind === "number") {
+      this.advance();
+      return parse_number_expr(token.text);
+    }
+
+    if (token.kind === "string") {
+      this.advance();
+      return { tag: "text", value: token.text };
+    }
+
+    if (this.match_name("comptime")) {
+      return { tag: "comptime", expr: this.parse_expr() };
+    }
+
+    if (this.match_name("if")) {
+      if (this.peek().kind === "name" && this.peek().text === "let") {
+        return this.parse_if_let_expr();
+      }
+
+      return this.parse_if_expr();
+    }
+
+    if (this.match_name("for")) {
+      return this.parse_unsupported_expr("for");
+    }
+
+    if (this.match_name("struct")) {
+      return { tag: "struct_type", fields: this.parse_type_field_list() };
+    }
+
+    if (this.match_name("union")) {
+      return { tag: "union_type", cases: this.parse_type_field_list() };
+    }
+
+    if (this.match_symbol("!")) {
+      const name = this.expect_name("Expected linear value name");
+      expect_snake_case(name, "Linear value");
+      return { tag: "linear", name };
+    }
+
+    if (this.match_symbol(".")) {
+      const name = this.expect_name("Expected union case name");
+      expect_snake_case(name, "Union case");
+      let value: FrontExpr | undefined;
+
+      if (this.match_symbol("(")) {
+        value = this.parse_expr();
+        this.expect_symbol(")");
+      }
+
+      return { tag: "union_case", name, value, type_expr: undefined };
+    }
+
+    if (this.peek().kind === "symbol" && this.peek().text === "{") {
+      if (this.is_object_literal()) {
+        return {
+          tag: "struct_value",
+          type_expr: { tag: "var", name: "object_type" },
+          fields: this.parse_field_list(),
+        };
+      }
+
+      return this.parse_block();
+    }
+
+    if (this.match_symbol("(")) {
+      const expr = this.parse_expr();
+      this.expect_symbol(")");
+      return expr;
+    }
+
+    if (token.kind === "name") {
+      this.advance();
+      this.expect_supported_name(token.text, "Name");
+
+      if (!is_builtin_type_reference_name(token.text)) {
+        expect_snake_case(token.text, "Name");
+      }
+
+      return { tag: "var", name: token.text };
+    }
+
+    throw this.error("Expected expression");
+  }
+
+  protected parse_unsupported_expr(feature: string): FrontExpr {
+    const text = this.consume_until_boundary();
+    return { tag: "unsupported", feature, text };
+  }
+
+  protected consume_until_boundary(): string {
+    const parts: string[] = [];
+    let depth = 0;
+
+    while (!this.is("eof")) {
+      const token = this.peek();
+
+      if (token.kind === "newline" && depth === 0) {
+        break;
+      }
+
+      if (token.kind === "symbol") {
+        if (token.text === "{" || token.text === "(" || token.text === "[") {
+          depth += 1;
+        } else if (
+          token.text === "}" || token.text === ")" || token.text === "]"
+        ) {
+          depth -= 1;
+        }
+      }
+
+      parts.push(this.advance().text);
+    }
+
+    return parts.join(" ");
+  }
+
+  protected consume_balanced_block_text(): string {
+    if (this.peek().kind !== "symbol" || this.peek().text !== "{") {
+      throw this.error("Expected extension object");
+    }
+
+    const parts: string[] = [];
+    let depth = 0;
+
+    while (!this.is("eof")) {
+      const token = this.advance();
+      parts.push(token.text);
+
+      if (token.kind === "symbol" && token.text === "{") {
+        depth += 1;
+      } else if (token.kind === "symbol" && token.text === "}") {
+        depth -= 1;
+
+        if (depth === 0) {
+          break;
+        }
+      }
+    }
+
+    expect(depth === 0, "Unterminated extension object");
+    return parts.join(" ");
+  }
+}

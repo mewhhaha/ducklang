@@ -102,10 +102,14 @@ loops -> block/loop/br_if
 - The proof gate is the boundary where "skip GC if analysis is proper" is
   enforced. If the analysis cannot prove the case yet, the accepted baseline
   program does not exist yet.
+- Treat this as the active implementation rule, not only a validation check:
+  broaden the static proof until the supported shape is known-safe, or keep the
+  shape rejected/deferred. Do not add a GC or managed-storage branch to make the
+  default lowering succeed.
 - Use the Task 12 authoritative no-GC acceptance matrix for every lowering
   feature that touches runtime memory: accepted with proof facts, rejected with
-  a named missing fact, or deferred to an explicit future
-  region/managed-storage profile.
+  a named missing fact, or deferred to an explicit future region/managed-storage
+  profile.
 - Keep the proof gate ahead of both the pure Ic route and the structured
   Core/Wasm route. Pure scalar/frozen values may still lower through Ic, while
   owned, borrowed, scratch-backed, or closure-environment values must stay in
@@ -113,11 +117,11 @@ loops -> block/loop/br_if
 - Use the Task 12 first fixture backlog as the initial lowering order for
   memory-heavy features: borrow/view barriers, scalar and frozen scratch
   returns, aggregate/union scratch result gates, lowering-created temporary
-  cleanup, first-class closure storage, and host/import ownership contracts.
-  Do not broaden a lowering path until its accepted and rejected proof fixtures
+  cleanup, first-class closure storage, and host/import ownership contracts. Do
+  not broaden a lowering path until its accepted and rejected proof fixtures
   exist.
-- Lowering proof fixtures must follow the Task 12 proof-fixture shape. The
-  final pre-WAT gate must expose `target_profile: "core-3-nonweb"`,
+- Lowering proof fixtures must follow the Task 12 proof-fixture shape. The final
+  pre-WAT gate must expose `target_profile: "core-3-nonweb"`,
   `managed_storage: "disabled"`, storage/lifetime rows, borrow/scratch result
   rows, freeze/promotion rows, cleanup/drop/reset rows, and host-boundary rows
   before an ownership-heavy value reaches codegen.
@@ -207,30 +211,29 @@ loops -> block/loop/br_if
   annotations, selected-branch call rejection for known incompatible arguments,
   annotation-driven wrapper erasure for branch-selected scalar, text, struct,
   and union arguments, typed aggregate branch values, and annotated runtime
-  bindings whose dynamic branch values are otherwise unknown at runtime,
-  simple one-expression block wrappers and pure block-local alias wrappers
-  around those annotated dynamic branch values,
-  including implicit no-else typed struct/union branch values synthesized from
-  declared annotation fallbacks, static-rec annotated aggregate arguments that
-  select between wrapper branches with or without explicit `else`, direct
-  static-rec struct results projected by field, static index, or `get`,
-  annotated static-rec app results lowered under expected scalar, `Text`,
-  struct, and union binding/call-argument contexts, and i64
-  selected bodies whose primitive type is recovered from
-  parameter/capture facts, branch-call inlining for frontend-known struct/union
-  consumers, typed pure union handler lowering with numeric and text-pointer
-  results, typed struct and frontend-known object handler lowering, dynamic
-  typed struct and frontend-known object `if` field selection, same-case dynamic
-  typed union `if` payload selection, same-case locally inferred shorthand
-  dynamic union values, standalone inferred shorthand union cases including
-  unknown runtime payloads, different-case dynamic typed or locally inferred
-  shorthand union `if` values including unknown runtime payloads, different-case
-  dynamic typed union `if` consumed by numeric/text-pointer `if let` including
-  `Text` payloads used by `len` and named-struct payloads used by field access,
-  including shorthand object payloads resolved from declared union-case context
-  and typed unknown union-value branches matched by dynamic `if let`, including
-  annotated helper calls that return dynamic `if` values over typed union
-  parameters, i64 select retagging after direct handler-encoded union
+  bindings whose dynamic branch values are otherwise unknown at runtime, simple
+  one-expression block wrappers and pure block-local alias wrappers around those
+  annotated dynamic branch values, including implicit no-else typed struct/union
+  branch values synthesized from declared annotation fallbacks, static-rec
+  annotated aggregate arguments that select between wrapper branches with or
+  without explicit `else`, direct static-rec struct results projected by field,
+  static index, or `get`, annotated static-rec app results lowered under
+  expected scalar, `Text`, struct, and union binding/call-argument contexts, and
+  i64 selected bodies whose primitive type is recovered from parameter/capture
+  facts, branch-call inlining for frontend-known struct/union consumers, typed
+  pure union handler lowering with numeric and text-pointer results, typed
+  struct and frontend-known object handler lowering, dynamic typed struct and
+  frontend-known object `if` field selection, same-case dynamic typed union `if`
+  payload selection, same-case locally inferred shorthand dynamic union values,
+  standalone inferred shorthand union cases including unknown runtime payloads,
+  different-case dynamic typed or locally inferred shorthand union `if` values
+  including unknown runtime payloads, different-case dynamic typed union `if`
+  consumed by numeric/text-pointer `if let` including `Text` payloads used by
+  `len` and named-struct payloads used by field access, `get`, and byte-index
+  reads, including shorthand object payloads resolved from declared union-case
+  context and typed unknown union-value branches matched by dynamic `if let`,
+  including annotated helper calls that return dynamic `if` values over typed
+  union parameters, i64 select retagging after direct handler-encoded union
   application, dynamic union `if let` expressions that produce handler-encoded
   union results through direct targets, deferred const-call results, and
   inlineable runtime closure calls, dynamic `if` branches whose union cases are
@@ -290,7 +293,10 @@ loops -> block/loop/br_if
   Unsupported-codegen proof conversion lives in
   `src/core/backend/graph/proof_unsupported.ts`, keeping analysis-error
   normalization and placeholder unsupported-proof assembly out of the public
-  backend graph facade.
+  backend graph facade. Drop-analysis freeze-consumption detection and
+  local-fact clearing live in `src/core/backend/graph/drop_freeze.ts`, keeping
+  the drop/proof local-collection helpers smaller inside the backend graph
+  facade.
 - Moved Core top-level WAT artifact assembly, lifted-closure function/table
   aggregation, data segment exposure, and `Mod` construction into
   `src/core/artifact_emit.ts`; `src/core/backend/entry/artifact.ts` owns the
@@ -314,12 +320,15 @@ loops -> block/loop/br_if
 - Moved frontend visible-text primitives such as UTF-8 byte-length calculation
   and compile-time visible text concatenation into `src/frontend/text.ts`.
 - Moved frontend visible-text value discovery and text-concat operand visibility
-  checks into `src/frontend/text_visible.ts`, with the shared text-lowering hook
-  contract in `src/frontend/text_lower_types.ts`, keeping recognition separate
-  from text length/index Ic construction.
+  checks into `src/frontend/text_visible.ts`, with visible `if let` and dynamic
+  union branch text recovery in `src/frontend/text_visible_if_let.ts` and the
+  shared text-lowering hook contract in `src/frontend/text_lower_types.ts`,
+  keeping recognition separate from text length/index Ic construction.
 - Moved frontend static/runtime text byte-index Ic construction into
-  `src/frontend/text_lower/byte_index.ts`, leaving `src/frontend/text_lower.ts`
-  focused on visible/runtime text length selection.
+  `src/frontend/text_lower/byte_index.ts`, with visible-text byte selection and
+  shared text-index validation in
+  `src/frontend/text_lower/visible_byte_index.ts`, leaving
+  `src/frontend/text_lower.ts` focused on visible/runtime text length selection.
 - Moved frontend text-lowering hook composition and text-specific lowerer
   adapter glue into `src/frontend/lower_text_adapter.ts`, keeping text hook
   wiring out of `src/frontend/lower_graph.ts`.
@@ -354,10 +363,24 @@ loops -> block/loop/br_if
   `src/frontend/static_loop/if_let_payload.ts`, dynamic-control flag generation
   and loop-control scanning into `src/frontend/static_loop/dynamic_control.ts`,
   and guarded dynamic-control statement expansion into
-  `src/frontend/static_loop/expand_dynamic.ts`. Dynamic skipped-step fallback
-  synthesis and guarded struct/union/function value helpers live in
-  `src/frontend/static_loop/fallback.ts`, keeping type/fallback construction
-  separate from dynamic-control statement expansion.
+  `src/frontend/static_loop/expand_dynamic.ts`. Dynamic loop-control local
+  binding/assignment guard synthesis lives in
+  `src/frontend/static_loop/expand_dynamic_binding.ts`. Dynamic skipped-step
+  fallback dispatch lives in `src/frontend/static_loop/fallback.ts`,
+  skipped-step helper-call result inference and inlining live in
+  `src/frontend/static_loop/fallback/app.ts`, and branch-selected function
+  fallback normalization lives in
+  `src/frontend/static_loop/fallback/function.ts`, while aggregate/type fallback
+  and guarded aggregate value construction lives in
+  `src/frontend/static_loop/fallback/aggregate.ts`. Declared field typing lives
+  in `src/frontend/static_loop/fallback/field.ts`, guarded aggregate value
+  construction lives in `src/frontend/static_loop/fallback/guarded.ts`,
+  recursive type fallback construction lives in
+  `src/frontend/static_loop/fallback/type_fallback.ts`, typed fallback
+  environments live in `src/frontend/static_loop/fallback/typed_env.ts`, and
+  shared fallback shapes live in `src/frontend/static_loop/fallback/types.ts`,
+  keeping type/fallback construction separate from dynamic-control statement
+  expansion.
 - Moved frontend static expression lowering and static `i32` evaluation into
   `src/frontend/static_expr.ts`, leaving `src/frontend/lower_graph.ts` to
   provide the dynamic fallback, lookup, and field/index resolution hooks.
@@ -373,13 +396,16 @@ loops -> block/loop/br_if
   so aggregate/text call-site deferral traversal stays out of the semantic
   lowering pass.
 - Moved frontend local/aliased/simple-block/static-branch linear closure
-  tracking into `src/frontend/linear_closure.ts`, keeping closure recognition
-  separate from path-sensitive linear consumption validation.
+  tracking into `src/frontend/linear_closure.ts`, with alpha-renaming in
+  `src/frontend/linear_closure_rename.ts` and closure-name collection in
+  `src/frontend/linear_closure_names.ts`, keeping closure recognition separate
+  from path-sensitive linear consumption validation.
 - Moved frontend path-sensitive linear validation into
   `src/frontend/linear_stmt.ts` for statement/control-flow traversal,
-  `src/frontend/linear_expr.ts` for expression consumption, and
-  `src/frontend/linear_state.ts` for carried-state comparison helpers, leaving
-  `src/frontend/linear.ts` as the stable public facade.
+  `src/frontend/linear_stmt_loop.ts` for loop-body validation and loop
+  carried-state merging, `src/frontend/linear_expr.ts` for expression
+  consumption, and `src/frontend/linear_state.ts` for carried-state comparison
+  helpers, leaving `src/frontend/linear.ts` as the stable public facade.
 - Moved frontend deferred aggregate and visible-text value detection into
   `src/frontend/call_deferred.ts`.
 - Moved frontend const/runtime call argument specialization checks and argument
@@ -415,22 +441,42 @@ loops -> block/loop/br_if
   specialization predicates, `src/frontend/call_dynamic_args.ts` owns dynamic
   function-branch argument checks, `src/frontend/call_inline.ts` owns
   const/runtime call inlining, and `src/frontend/call_union_result.ts` owns
-  call-result union inference; `src/frontend/call_specialize.ts` remains the
-  specialized Ic application facade with the lowerer supplying annotation,
-  inference, value-resolution, dynamic-union, and Ic-lowering hooks.
+  call-result union inference. `src/frontend/call_linear_effect.ts` owns the
+  call-specific unresolved linear-effect scan, including frontend-known method
+  allowances; `src/frontend/call_specialize.ts` remains the specialized Ic
+  application facade with the lowerer supplying annotation, inference,
+  value-resolution, dynamic-union, and Ic-lowering hooks.
 - Kept `src/frontend/infer.ts` as the frontend expression type-inference facade,
   with the implementation split under `src/frontend/infer/` into hook contracts,
-  primitive/builtin inference, runtime-struct field/index inference,
-  statement-result inference, and the main expression dispatcher. The lowerer
-  supplies text, struct, union, and index resolution hooks.
+  primitive/builtin inference, runtime-struct field/index inference, app-result
+  inference, field/index access inference, control-flow inference, block
+  statement inference, statement-result inference, and the main expression
+  dispatcher. The lowerer supplies text, struct, union, and index resolution
+  hooks.
 - Split frontend expression-to-Ic lowering so `src/frontend/expr_lower.ts`
   remains the dispatch surface, `src/frontend/expr_lower_types.ts` owns the
   shared hook contract, `src/frontend/expr_lower_binding.ts` owns
   binding/lambda/linear lowering, and `src/frontend/expr_lower_access.ts` owns
-  app/field/index lowering, with the lowerer supplying specialization, builtin,
-  struct, union, text, index, and recursive-call hooks.
-- Moved frontend-known struct-value discovery, declared field-type discovery,
-  and handler-encoded struct-value Ic lowering into
+  app/field/index lowering. Primitive, numeric-operand, and text
+  identity/equality lowering live in `src/frontend/expr_primitive.ts`;
+  ownership-wrapper pure-Ic eligibility and erasure live in
+  `src/frontend/expr_ownership.ts`, with the lowerer supplying specialization,
+  builtin, struct, union, text, index, and recursive-call hooks.
+- Split expected-type frontend lowering so `src/frontend/typed_lower.ts` remains
+  the dispatcher, `src/frontend/typed_hooks.ts` owns the typed lowering
+  hook/type contract, `src/frontend/typed_block.ts` owns simple block-result and
+  alias unwrapping, `src/frontend/typed_if.ts` owns typed dynamic branch
+  dispatch, `src/frontend/typed_if_values.ts` owns typed struct/union selection,
+  and `src/frontend/typed_if_fallback.ts` plus `src/frontend/typed_type.ts` own
+  typed fallback and type-name helpers.
+- Moved shared block-final-value extraction into `src/frontend/block_result.ts`,
+  keeping duplicated `expr`/`return` result checks out of typed expected-type
+  lowering, static-rec result aliasing, text lowering, call-target resolution,
+  and expression lowering.
+- Moved frontend declared struct-value validation, struct type-value resolution,
+  and declared field-type discovery into `src/frontend/struct_value_type.ts`;
+  frontend-known struct-value discovery, pure struct-update rebuilds, and
+  handler-encoded struct-value Ic lowering live in
   `src/frontend/struct_values.ts`, with the lowerer supplying nested expression
   lowering and environment-sensitive resolution hooks.
 - Moved frontend declared static-shaped struct field/index value resolution,
@@ -444,12 +490,16 @@ loops -> block/loop/br_if
   statement-level `if`/`if let`, and non-final expression erasure into
   `src/frontend/stmt.ts`; moved shared statement hook types into
   `src/frontend/stmt/types.ts`; and moved binding/assignment/index-assignment
-  shadowing into `src/frontend/stmt/binding.ts`, with the lowerer supplying
+  shadowing into `src/frontend/stmt/binding.ts`, with runtime binding cases in
+  `src/frontend/stmt/runtime_binding.ts` and shared binding-body continuation
+  lowering in `src/frontend/stmt/binding_body.ts`. The lowerer supplies
   expression, type, annotation, loop, index-assignment, and value-resolution
   hooks.
 - Moved call-only runtime lambda defer scanning into
-  `src/frontend/stmt/call_only_defer.ts`, keeping tail-use scanning and
-  linear-capture rejection out of `src/frontend/stmt/binding.ts`.
+  `src/frontend/stmt/call_only_defer.ts`, with tail-use validation in
+  `src/frontend/stmt/call_only_defer_scan.ts` and linear-expression detection in
+  `src/frontend/stmt/linear_contains.ts`, keeping that scanner weight out of
+  `src/frontend/stmt/binding.ts`.
 - Moved frontend const/runtime value preparation, including union-constructor
   normalization, struct update rebuild validation, deferred const-call capture,
   and extension base capture, into `src/frontend/prepare.ts`, with the lowerer
@@ -457,6 +507,11 @@ loops -> block/loop/br_if
 - Moved frontend compile-time value and block evaluation into
   `src/frontend/eval.ts`, with the lowerer supplying annotation, const-call,
   static-loop, index-assignment, type, and value-resolution hooks.
+- Split frontend compile-time evaluation behind the `src/frontend/eval.ts`
+  facade: shared hook types live in `src/frontend/eval/types.ts`,
+  expression-value evaluation lives in `src/frontend/eval/value.ts`,
+  statement/block evaluation lives in `src/frontend/eval/block.ts`, and
+  simple-block foldability lives in `src/frontend/eval/simple.ts`.
 - Moved frontend compile-time expression and extension-field resolution into
   `src/frontend/const_resolve.ts`, with the lowerer supplying const-builtin,
   const-call, static-index, simple-block, and index-resolution hooks.
@@ -467,29 +522,44 @@ loops -> block/loop/br_if
 - Moved frontend `if` expression lowering into `src/frontend/if_expr.ts`, with
   the lowerer supplying branch inference, dynamic struct/union reshaping, and
   nested Ic-lowering hooks.
+- Moved dynamic function-valued `if` Ic lowering into
+  `src/frontend/if_function.ts`.
 - Moved shared direct-lambda selection helpers for dynamic function-valued
   branches into `src/frontend/function_if.ts`, so ordinary dynamic `if` and
   function-valued dynamic `if let` use the same parameter annotation and alias
   rules.
 - Moved frontend `if let` shared type/default/handler helpers into
   `src/frontend/if_let_common.ts`, hook/type shapes into
-  `src/frontend/if_let_types.ts`, and handler-encoded union-result lowering into
-  `src/frontend/if_let_union_result.ts`, leaving `src/frontend/if_let.ts`
-  focused on known-union and dynamic union-if orchestration.
+  `src/frontend/if_let_types.ts`, function-valued dynamic `if let` Ic lowering
+  into `src/frontend/if_let_function.ts`, dynamic union-if target lowering into
+  `src/frontend/if_let_dynamic.ts`, and handler-encoded union-result lowering
+  into `src/frontend/if_let_union_result.ts`. Union-result case inference lives
+  in `src/frontend/if_let_union_infer.ts`, handler-encoded result construction
+  helpers live in `src/frontend/if_let_union_value.ts`, and shared union-case
+  equality checks live in `src/frontend/union_cases.ts`, leaving
+  `src/frontend/if_let.ts` focused on the known-union facade.
 - Moved frontend structural type-pattern/fact-checker validation and type-field
   substitution into `src/frontend/type_patterns.ts`, with the lowerer supplying
   the compile-time expression resolver hook.
 - Moved frontend compile-time builtin evaluation for structural facts, layout
   helpers, `len`, and `get` into `src/frontend/const_builtin.ts`, with the
   lowerer supplying environment, field lookup, and aggregate resolution hooks.
+- Moved frontend pure-Ic text/index builtin lowering for `len`, `get`, `slice`,
+  and `append` into `src/frontend/builtin_call/text.ts`, keeping the public
+  `src/frontend/builtin_call.ts` facade focused on builtin dispatch, fallback
+  const-builtin evaluation, and frontend-known method calls. Text read/index
+  builtins live in `src/frontend/builtin_call/text_read.ts`, while text
+  operation builtins live in `src/frontend/builtin_call/text_ops.ts`.
 - Moved frontend const-known expression and block analysis into
   `src/frontend/const_known.ts`, keeping the compile-time eligibility traversal
   separate from const-call execution and Ic lowering.
-- Moved frontend union construction, typed constructor validation, union
-  type-value resolution, and shorthand union-case inference into
-  `src/frontend/union_values.ts`, moved dynamic union branch case-shape
-  inference into `src/frontend/union_infer.ts`, and shared dynamic union-if case
-  merging through `src/frontend/dynamic_union_cases.ts`, with the lowerer
+- Moved frontend union case lowering into `src/frontend/union_values.ts`, union
+  value/constructor/type resolution into `src/frontend/union_resolve.ts`,
+  payload inference and typed constructor validation into
+  `src/frontend/union_payload.ts`, and the shared union hook contract into
+  `src/frontend/union_value_types.ts`. Dynamic union branch case-shape inference
+  lives in `src/frontend/union_infer.ts`, and shared dynamic union-if case
+  merging lives in `src/frontend/dynamic_union_cases.ts`, with the lowerer
   supplying expression, field, index, and dynamic-target resolution hooks.
 - Moved frontend `if let` union-handler lowering, scalar/text branch selection,
   and union-result branch handling into `src/frontend/if_let.ts`, with the
@@ -513,32 +583,55 @@ loops -> block/loop/br_if
 - Moved frontend dynamic-branch hook composition and dynamic-branch lowerer
   adapter glue into `src/frontend/lower_dynamic_branch_adapter.ts`, keeping
   dynamic branch hook wiring out of `src/frontend/lower_graph.ts`.
-- Moved frontend runtime typed-struct type discovery, projection/index
-  selection, and indexed-field type helpers into
-  `src/frontend/runtime_struct.ts`, so ordinary frontend lowering and static-rec
-  struct lowering use the same field selection rules.
+- Moved frontend runtime typed-struct type discovery, projection/index access
+  entry points, and indexed-field type helpers into
+  `src/frontend/runtime_struct.ts`, with runtime struct selector construction
+  and dynamic `if` projection lowering in
+  `src/frontend/runtime_struct_projection.ts`, so ordinary frontend lowering and
+  static-rec struct lowering use the same field selection rules.
 - Moved frontend runtime-struct hook composition and runtime-struct adapter glue
   into `src/frontend/lower_runtime_struct_adapter.ts`, keeping runtime
   typed-struct projection and type-discovery hook wiring out of
   `src/frontend/lower_graph.ts`.
 - Moved frontend tail-recursion validation and static-rec lowering into
-  `src/frontend/rec.ts`, moved static-rec result-expression dispatch into
-  `src/frontend/rec_result.ts`, moved the shared static-rec hook contract into
-  `src/frontend/rec_hooks.ts`, moved recursive target/argument binding into
+  `src/frontend/rec.ts`, moved static-rec statement/block traversal and
+  expected-type block alias handling into `src/frontend/rec_block.ts`, with
+  shared block lowerer types in `src/frontend/rec_block/types.ts`,
+  binding/assignment updates in `src/frontend/rec_block/binding.ts`, and
+  static-rec `if`/`if let` statement dispatch in
+  `src/frontend/rec_block/branch.ts`, moved static-rec result-expression
+  dispatch into `src/frontend/rec_result.ts`, moved static-rec primitive
+  lowering into `src/frontend/rec_prim.ts`, expected-type helper lowering into
+  `src/frontend/rec_type_lower.ts`, bound non-lambda app lowering into
+  `src/frontend/rec_bound_app.ts`, struct-value result lowering into
+  `src/frontend/rec_struct_value.ts`, moved the shared static-rec hook contract
+  into `src/frontend/rec_hooks.ts`, moved recursive target/argument binding into
   `src/frontend/rec_bind.ts`, moved static-rec `if` branch lowering into
-  `src/frontend/rec_if.ts`, moved static-rec union/`if let` lowering into
-  `src/frontend/rec_union.ts`, with dynamic union `if`, rec-aware `if let`, and
-  union-result `if let` application split under `src/frontend/rec_union/`, moved
-  static-rec union handler application and case-to-handler Ic helpers into
-  `src/frontend/rec_union_handlers.ts`, moved static-rec union case-shape
-  inference into `src/frontend/rec_union_infer.ts`, moved static-rec expression
-  inference into `src/frontend/rec_infer.ts`, and moved shared static-rec
-  helpers into `src/frontend/rec_util.ts`, with static-rec lower-graph hook
-  assembly in `src/frontend/lower_static_rec_adapter.ts` and the lowerer
-  supplying the environment, type, static-loop, and Ic-lowering hooks.
+  `src/frontend/rec_if.ts`, dynamic struct-valued static-rec `if` field
+  selection into `src/frontend/rec_if_struct.ts`, moved static-rec
+  union/`if let` lowering into `src/frontend/rec_union.ts`, with dynamic union
+  `if`, rec-aware `if let`, and union-result `if let` application split under
+  `src/frontend/rec_union/`, moved static-rec union handler application and
+  case-to-handler Ic helpers into `src/frontend/rec_union_handlers.ts`, moved
+  static-rec union case-shape inference into `src/frontend/rec_union_infer.ts`,
+  moved static-rec expression inference into `src/frontend/rec_infer.ts`, and
+  moved shared static-rec helpers into `src/frontend/rec_util.ts`, with
+  static-rec lower-graph hook assembly in
+  `src/frontend/lower_static_rec_adapter.ts` and the lowerer supplying the
+  environment, type, static-loop, and Ic-lowering hooks.
 - Moved lazy lower/eval/prepare/infer and `if`/`if let` bridge wrappers into
   `src/frontend/lower_graph/bridge.ts`, keeping cyclic hook access explicit and
   reducing wrapper weight in `src/frontend/lower_graph.ts`.
+- Moved lower-graph value hook wiring into `src/frontend/lower_graph/value.ts`;
+  it owns union-value hooks, union-inference hooks, dynamic branch hooks,
+  struct-value hooks, and delayed value-graph construction while
+  `src/frontend/lower_graph.ts` supplies the environment-sensitive
+  lower/eval/resolve callbacks.
+- Moved lower-graph expression/program/static-rec hook wiring into
+  `src/frontend/lower_graph/program.ts`; it owns call-graph construction,
+  expression/program hook composition, static-rec hook composition, and
+  index-assignment hook threading while the lowerer root supplies the semantic
+  dependencies.
 - Split frontend annotation handling so `src/frontend/annotation_types.ts` owns
   the hook contract, `src/frontend/annotation_resolve.ts` owns annotation type
   and numeric resolution, `src/frontend/annotation_context.ts` owns direct
@@ -567,9 +660,16 @@ loops -> block/loop/br_if
   aggregate-shape, union-case, and type hooks. `src/core/text_layout.ts` is now
   a compatibility facade over `src/core/text_layout/build.ts`,
   `src/core/text_layout/types.ts`, and `src/core/text_layout/param.ts`.
-- Moved Core runtime text WAT helpers for heap concatenation, length loads, byte
-  loads, and byte assignment into `src/core/runtime_text.ts`, with the backend
-  supplying expression emission, type checks, and runtime-concat detection.
+- Moved Core runtime text WAT operation emitters for heap concatenation,
+  equality, slice, length loads, byte loads, and byte assignment into
+  `src/core/runtime_text.ts`, with the backend supplying expression emission,
+  type checks, and runtime text operation detection. Shared runtime text context
+  and hook shapes now live in `src/core/runtime_text/types.ts`, temporary
+  plan/local declaration helpers live in `src/core/runtime_text/plan.ts`, and
+  byte-copy loop emitters live in `src/core/runtime_text/copy.ts`. Operation
+  dispatch is now split into `alloc.ts`, `concat.ts`, `eq.ts`, `slice.ts`, and
+  `access.ts` under `src/core/runtime_text/`, with `src/core/runtime_text.ts`
+  kept as the public facade.
 - Moved Core backend text hook composition and text-specific adapter glue behind
   `src/core/backend/text.ts`, with static text adapters in
   `src/core/backend/text/static.ts`, text fact adapters in
@@ -595,8 +695,12 @@ loops -> block/loop/br_if
   `src/core/runtime_union_match.ts`, keeping packed payload field reconstruction
   out of the backend emitter.
 - Moved Core runtime-union heap materialization and pointer `if let` control
-  flow into `src/core/runtime_union_emit.ts`, while packed struct payload stores
-  and payload loads for pointer matches live in
+  flow behind `src/core/runtime_union_emit.ts`, with shared emit context and
+  hook shapes in `src/core/runtime_union_emit/types.ts`, materialized runtime
+  union value/local collection in `src/core/runtime_union_emit/value.ts`, and
+  runtime-union `if let` statement/expression emission in
+  `src/core/runtime_union_emit/if_let.ts`. Packed struct payload stores and
+  payload loads for pointer matches live in
   `src/core/runtime_union_payload_emit.ts`, with the backend supplying
   expression emission, expression typing, statement emission, static struct
   facts, branch context, and case metadata hooks.
@@ -622,8 +726,13 @@ loops -> block/loop/br_if
   checks into `src/core/scope_analysis.ts`, so backend static-call planning can
   depend on a focused Core AST analysis module.
 - Moved Core type-level static evaluation, type-name resolution, and type
-  constructor substitution into `src/core/type_static.ts` so the backend does
-  not own both type metaprogramming and WAT emission details.
+  constructor substitution behind `src/core/type_static.ts`, with builtin
+  type-name helpers in `src/core/type_static/names.ts`, static block-result
+  probing in `src/core/type_static/block.ts`, type-constructor substitution in
+  `src/core/type_static/substitute.ts`, shared context shape in
+  `src/core/type_static/types.ts`, and static value resolution in
+  `src/core/type_static/value.ts`. The backend does not own both type
+  metaprogramming and WAT emission details.
 - Moved Core binding/parameter annotation validation, direct struct/union
   annotation context, structural type-pattern checks, and value type-name checks
   into `src/core/type_check.ts`, with the backend supplying text, union,
@@ -697,8 +806,10 @@ loops -> block/loop/br_if
   context cloning and the backend supplying expression emission/type hooks,
   static struct lookup, text facts, and local-fact clearing.
 - Moved Core static union-case lookup, dynamic union-if discovery, and dynamic
-  `if let` payload binding into `src/core/union_static.ts`, with the backend
-  supplying type-value, static-call, and expression-typing hooks.
+  `if let` payload binding behind `src/core/union_static.ts`, with the backend
+  supplying type-value, static-call, and expression-typing hooks. The split
+  implementation now uses `src/core/union_static/types.ts`, `field.ts`,
+  `static_call.ts`, `static_case.ts`, `dynamic_if.ts`, and `payload.ts`.
 - Moved Core recursive-call result typing, initial parameter binding, tail-call
   detection, and tail-call argument validation into `src/core/rec_type.ts`, with
   the backend supplying annotation, expression typing, local-collection, and
@@ -760,9 +871,14 @@ loops -> block/loop/br_if
   `src/core/backend/entry/index.ts`, keeping static index assignment, dynamic
   index emission, and collection item-type hook wiring out of
   `src/core/backend.ts`.
-- Moved Core expression-level WAT emission into `src/core/expr_emit.ts`, with
+- Moved Core expression-level WAT emission behind `src/core/expr_emit.ts`, with
   the backend supplying static value/text facts, app/if-let/closure emitters,
-  runtime text helpers, and nested statement/expression hooks.
+  runtime text helpers, and nested statement/expression hooks. Shared
+  expression-emission context and hook shapes now live in
+  `src/core/expr_emit/types.ts`, and scratch/freeze lifetime emission helpers
+  live in `src/core/expr_emit/lifetime.ts`. Freeze expression dispatch now lives
+  in `src/core/expr_emit/freeze.ts`, and scratch expression dispatch now lives
+  in `src/core/expr_emit/scratch.ts`.
 - Moved Core backend expression-emission hook composition and closure-valued
   `if` dispatch into `src/core/backend/emit/expr.ts`, keeping expression emit
   hook wiring out of `src/core/backend.ts`.
@@ -779,13 +895,32 @@ loops -> block/loop/br_if
   The drop/proof path treats static-shaped aggregates, aggregate updates, and
   extension objects as ownerless compiler facts, matching the existing
   scalarized aggregate representation instead of forcing those values through
-  runtime heap ownership. The first host/import boundary slice is also wired
-  through this gate: known `Core.host_imports` entries record scalar,
+  runtime heap ownership. Core drop-plan types now live in
+  `src/core/drop/types.ts`, and low-level heap-drop/host-transfer step emission
+  lives in `src/core/drop/emit.ts`. Static helper-function discovery and
+  parameter matching live in `src/core/drop/static_function.ts`; static
+  ownerless-value and non-runtime-closure classification lives in
+  `src/core/drop/static_owner.ts`; moved-owner, final-escape, host-transfer, and
+  unique-heap classification helpers live in `src/core/drop/ownership.ts`;
+  owner-map, scope-name, exit-owner, and alias-resolution helpers live in
+  `src/core/drop/state.ts`; general statement/final-result traversal and scanner
+  callback wiring live in `src/core/drop/scan.ts`, leaving `src/core/drop.ts` as
+  the public drop-plan facade. The first host/import boundary slice is also
+  wired through this gate: known `Core.host_imports` entries record scalar,
   bounded-borrow, and ownership-transfer argument contracts; proof output
   records the matched signature and per-argument decision; `Core.drops(...)`
   records `host_transfer` facts for direct unique-owner transfer;
   `Core.proof(...)` rejects later direct use of a transferred owner; module
   emission writes the WAT import/call.
+- Source-to-Core context state, source-name aliasing, and host-import owner
+  type-value tracking live in `src/core/from_source/context.ts`; host-import
+  argument/result contract conversion lives in
+  `src/core/from_source/host_import.ts`. Source statement lowering, carried-name
+  discovery, recursive binding lowering, and source `if`-block statement
+  conversion live in `src/core/from_source/stmt.ts`; Source expression lowering,
+  host-import method-call rewriting, and shared parameter/field/type-field
+  conversion live in `src/core/from_source/expr.ts`. `src/core/from_source.ts`
+  remains the public program-level facade.
 - Moved Core dynamic index selection over static aggregate shapes into
   `src/core/index_expr.ts`, and pure visible text byte-index expression
   construction into `src/core/text_index.ts`, keeping those leaf lowering rules
@@ -818,7 +953,8 @@ loops -> block/loop/br_if
   runtime-union, expression-type, and nested emit hooks.
   `src/core/static_values.ts` is now a compatibility facade over
   `src/core/static_values/types.ts`, `src/core/static_values/recognition.ts`,
-  and `src/core/static_values/plan.ts`.
+  `src/core/static_values/scratch_free.ts`, `src/core/static_values/capture.ts`,
+  `src/core/static_values/struct.ts`, and `src/core/static_values/plan.ts`.
 - Moved Core backend static-value hook composition and static-value adapter glue
   into `src/core/backend/values/static_value.ts`, with the backend contract in
   `src/core/backend/values/static_value/types.ts`, hook adapters in
@@ -1047,8 +1183,8 @@ loops -> block/loop/br_if
   their scalar, `Text`, struct, or union context instead of falling back to
   untyped branch lowering. The same path now preserves the expected type before
   struct field projection or union handler selection when those block-local
-  branches contain `borrow`, `freeze`, or simple `scratch {}` wrappers, including
-  typed union `if let` branch results.
+  branches contain `borrow`, `freeze`, or simple `scratch {}` wrappers,
+  including typed union `if let` branch results.
 - Static-rec union payload bindings preserve user-defined annotation type names
   before Ic lowering, so recursive `if let` bodies can project nested struct
   fields and use runtime `Text` operations on payload fields.
@@ -1106,9 +1242,9 @@ loops -> block/loop/br_if
   `if let` statements.
 - Dynamic `if let` union-result lowering now handles encoded nested dynamic
   union targets, not only direct union-case target branches. This lets guarded
-  loop bindings such as `let result = if let .some(value) = maybe { ... }`
-  lower through pure Ic even when `maybe` is a skipped-step union value whose
-  active branch is itself a dynamic union `if`.
+  loop bindings such as `let result = if let .some(value) = maybe { ... }` lower
+  through pure Ic even when `maybe` is a skipped-step union value whose active
+  branch is itself a dynamic union `if`.
 - Expected-type aggregate lowering now falls through from the direct dynamic
   `if` probe to the typed aggregate path when the direct route reports generic
   struct or union branches. This keeps annotated guarded loop bindings such as
@@ -1125,11 +1261,10 @@ loops -> block/loop/br_if
   inferring the then branch. Static-loop skipped-step bindings that return the
   matched payload directly can therefore synthesize `Text` and struct fallbacks
   without requiring a manual annotation.
-- Expected-type `if let` lowering now backs off from speculative direct
-  lowering when direct no-else fallback inference is weaker than the expected
-  result type. This lets nested block-final no-else `if let` payload selections
-  lower through the typed handler path instead of failing with an unknown
-  fallback.
+- Expected-type `if let` lowering now backs off from speculative direct lowering
+  when direct no-else fallback inference is weaker than the expected result
+  type. This lets nested block-final no-else `if let` payload selections lower
+  through the typed handler path instead of failing with an unknown fallback.
 - Direct-lambda resolution now includes simple two-statement block-local aliases
   used after dynamic static-loop control. The skipped-step function binding path
   normalizes the active value before building the guard, so loop-local aliases

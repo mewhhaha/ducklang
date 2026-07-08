@@ -1,0 +1,276 @@
+import type { CoreExpr, CoreStmt } from "../../ast.ts";
+import type { CoreBorrowClosureCtx } from "../../borrow.ts";
+import type { CoreHostBoundaryClosureCtx } from "../../host_boundary.ts";
+import type { CoreCtx } from "../../local_collect.ts";
+import { runtime_union_match_info } from "../../runtime_union.ts";
+import type { RuntimeUnionMatchInfo } from "../../runtime_union.ts";
+import { bind_runtime_union_match_payload_temps } from "../../runtime_union_match.ts";
+import {
+  core_val_type_from_type_name,
+  static_type_value,
+} from "../../type_static.ts";
+import { create_child_core_ctx } from "./context.ts";
+import { core_probe_index_assign_error } from "./proof_unsupported.ts";
+import type { CoreBackendGraph } from "./types.ts";
+
+export function core_borrow_closure_body_ctx(
+  expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
+  ctx: CoreCtx,
+): CoreBorrowClosureCtx<CoreCtx> {
+  const closure_ctx = create_child_core_ctx(ctx);
+
+  for (const param of expr.params) {
+    if (param.is_const) {
+      continue;
+    }
+
+    const annotation = param.annotation;
+
+    if (!annotation) {
+      return {
+        tag: "skip",
+        reason: "Cannot analyze closure-body borrows without parameter " +
+          "annotation: " + param.name,
+      };
+    }
+
+    const type = core_val_type_from_type_name(annotation);
+
+    if (!type) {
+      return {
+        tag: "skip",
+        reason: "Cannot analyze closure-body borrows for non-scalar " +
+          "parameter annotation: " + annotation,
+      };
+    }
+
+    closure_ctx.locals.set(param.name, type);
+
+    if (annotation === "Text") {
+      closure_ctx.text_locals.add(param.name);
+    } else {
+      closure_ctx.text_locals.delete(param.name);
+    }
+
+    if (closure_ctx.frozen_locals) {
+      closure_ctx.frozen_locals.delete(param.name);
+    }
+  }
+
+  return {
+    tag: "scan",
+    ctx: closure_ctx,
+  };
+}
+
+export function core_host_boundary_closure_body_ctx(
+  backend: CoreBackendGraph,
+  expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
+  ctx: CoreCtx,
+): CoreHostBoundaryClosureCtx<CoreCtx> {
+  let closure_ctx: CoreCtx | undefined;
+
+  try {
+    closure_ctx = core_drop_closure_body_ctx(backend, expr, ctx);
+  } catch (error) {
+    if (core_probe_index_assign_error(error)) {
+      return { tag: "skip" };
+    }
+
+    throw error;
+  }
+
+  if (!closure_ctx) {
+    return { tag: "skip" };
+  }
+
+  return {
+    tag: "scan",
+    ctx: closure_ctx,
+  };
+}
+
+export function core_drop_closure_body_ctx(
+  backend: CoreBackendGraph,
+  expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
+  ctx: CoreCtx,
+): CoreCtx | undefined {
+  const closure_ctx = create_child_core_ctx(ctx);
+  let has_const_param = false;
+
+  for (const param of expr.params) {
+    if (param.is_const) {
+      has_const_param = true;
+      continue;
+    }
+
+    const annotation = param.annotation;
+
+    if (!annotation) {
+      return undefined;
+    }
+
+    const type = core_val_type_from_type_name(annotation);
+
+    if (!type) {
+      const type_value = static_type_value(
+        { tag: "var", name: annotation },
+        ctx,
+      );
+
+      if (type_value && type_value.tag === "struct_type") {
+        closure_ctx.locals.set(param.name, "i32");
+        closure_ctx.text_locals.delete(param.name);
+        closure_ctx.struct_locals.set(param.name, {
+          tag: "var",
+          name: annotation,
+        });
+        closure_ctx.union_locals.delete(param.name);
+
+        if (closure_ctx.frozen_locals) {
+          closure_ctx.frozen_locals.delete(param.name);
+        }
+
+        continue;
+      }
+
+      if (type_value && type_value.tag === "union_type") {
+        closure_ctx.locals.set(param.name, "i32");
+        closure_ctx.text_locals.delete(param.name);
+        closure_ctx.struct_locals.delete(param.name);
+        closure_ctx.union_locals.set(param.name, {
+          tag: "var",
+          name: annotation,
+        });
+
+        if (closure_ctx.frozen_locals) {
+          closure_ctx.frozen_locals.delete(param.name);
+        }
+
+        continue;
+      }
+
+      return undefined;
+    }
+
+    closure_ctx.locals.set(param.name, type);
+    closure_ctx.struct_locals.delete(param.name);
+    closure_ctx.union_locals.delete(param.name);
+
+    if (annotation === "Text") {
+      closure_ctx.text_locals.add(param.name);
+    } else {
+      closure_ctx.text_locals.delete(param.name);
+    }
+
+    if (closure_ctx.frozen_locals) {
+      closure_ctx.frozen_locals.delete(param.name);
+    }
+  }
+
+  if (has_const_param) {
+    return closure_ctx;
+  }
+
+  backend.local_collect.collect_expr_locals(expr.body, closure_ctx);
+
+  return closure_ctx;
+}
+
+export function core_drop_collection_loop_body_ctx(
+  backend: CoreBackendGraph,
+  stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
+  ctx: CoreCtx,
+): { tag: "scan"; ctx: CoreCtx } | { tag: "skip" } {
+  const fields = backend.struct.static_collection_fields(
+    stmt.collection,
+    ctx,
+  );
+
+  if (!fields) {
+    const text = backend.text.static_text_value(stmt.collection, ctx);
+
+    if (!text && !backend.text.core_expr_is_text(stmt.collection, ctx)) {
+      return { tag: "skip" };
+    }
+  }
+
+  const loop_ctx = create_child_core_ctx(ctx);
+  backend.local_collect.collect_stmt_locals(stmt, loop_ctx);
+  return { tag: "scan", ctx: loop_ctx };
+}
+
+export function create_core_runtime_union_match_child_ctx(
+  value_name: string | undefined,
+  info: RuntimeUnionMatchInfo,
+  ctx: CoreCtx,
+): CoreCtx {
+  const branch_ctx = create_child_core_ctx(ctx);
+  bind_runtime_union_match_payload_temps(value_name, info, branch_ctx);
+  return branch_ctx;
+}
+
+export function core_drop_if_let_branch_ctx(
+  backend: CoreBackendGraph,
+  case_name: string,
+  value_name: string | undefined,
+  target: CoreExpr,
+  ctx: CoreCtx,
+):
+  | { tag: "scan"; ctx: CoreCtx }
+  | { tag: "skip" }
+  | { tag: "unknown" } {
+  const union_case = backend.union.static_union_case(target, ctx);
+
+  if (union_case) {
+    if (union_case.name !== case_name) {
+      return { tag: "skip" };
+    }
+
+    const branch_ctx = create_child_core_ctx(ctx);
+    backend.control_flow.bind_core_if_let_payload_fact(
+      value_name,
+      union_case,
+      branch_ctx,
+    );
+    return { tag: "scan", ctx: branch_ctx };
+  }
+
+  const dynamic_target = backend.union.dynamic_union_if(target, ctx);
+
+  if (dynamic_target) {
+    if (
+      dynamic_target.then_case.name !== case_name &&
+      dynamic_target.else_case.name !== case_name
+    ) {
+      return { tag: "skip" };
+    }
+
+    const branch_ctx = create_child_core_ctx(ctx);
+    backend.union.bind_dynamic_if_let_payload(
+      case_name,
+      value_name,
+      dynamic_target,
+      branch_ctx,
+    );
+    return { tag: "scan", ctx: branch_ctx };
+  }
+
+  const runtime_target = backend.union.runtime_union_target(target, ctx);
+
+  if (runtime_target) {
+    const info = runtime_union_match_info(
+      case_name,
+      runtime_target,
+      ctx,
+    );
+    const branch_ctx = create_core_runtime_union_match_child_ctx(
+      value_name,
+      info,
+      create_child_core_ctx(ctx),
+    );
+    return { tag: "scan", ctx: branch_ctx };
+  }
+
+  return { tag: "unknown" };
+}

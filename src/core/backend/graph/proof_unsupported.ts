@@ -156,7 +156,9 @@ export function core_unsupported_codegen_issue_exists(
   return false;
 }
 
-export function core_unknown_host_boundary_probe_error(error: unknown): boolean {
+export function core_unknown_host_boundary_probe_error(
+  error: unknown,
+): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
