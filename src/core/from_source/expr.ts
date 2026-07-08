@@ -18,15 +18,16 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
     case "type_name":
       return { tag: "type_name", name: expr.name };
 
-    case "var":
+    case "var": {
       const resolved = resolve_core_name(ctx, expr.name);
-      if (ctx.namedRecs.has(resolved) || ctx.namedRecs.has(expr.name)) {
-        return { tag: "rec_ref", name: resolved };
-      }
-      return { tag: "var", name: resolved };
+      const named_rec = ctx.namedRecs.get(resolved) || ctx.namedRecs.get(expr.name);
 
-    case "rec_ref":
-      return { tag: "rec_ref", name: resolve_core_name(ctx, expr.name) };
+      if (named_rec) {
+        return { tag: "rec_ref", name: resolved, params: named_rec.params };
+      }
+
+      return { tag: "var", name: resolved };
+    }
 
     case "linear":
       return { tag: "linear", name: resolve_core_name(ctx, expr.name) };
