@@ -4,7 +4,6 @@ import type { CoreExpr, CoreField, CoreStmt } from "./ast.ts";
 export function core_expr_has_static_call_statement_scope(
   expr: CoreExpr,
 ): boolean {
-  if (!expr) return false;
   switch (expr.tag) {
     case "block":
       return core_block_has_static_call_statement_scope(expr.statements);
@@ -132,7 +131,6 @@ export function core_expr_assigns_name(
 
     case "lam":
     case "rec":
-    case "rec_ref":
       for (const param of expr.params) {
         if (param.name === name) {
           return false;
@@ -140,6 +138,9 @@ export function core_expr_assigns_name(
       }
 
       return core_expr_assigns_name(expr.body, name);
+
+    case "rec_ref":
+      return false;
 
     case "app":
       if (core_expr_assigns_name(expr.func, name)) {
