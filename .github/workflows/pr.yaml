@@ -16,7 +16,10 @@ jobs:
           deno-version: v2.x
 
       - name: format
-        run: deno fmt --check --ignore=src/frontend.test.ts *.ts src
+        run: |
+          find . -name '*.ts' \
+            ! -path './src/frontend.test.ts' \
+            -print0 | xargs -0 deno fmt --check
 
       - name: lint
         run: deno lint
