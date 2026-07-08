@@ -31,15 +31,18 @@ export function emit_named_rec_functions<ctx extends CoreArtifactEmitCtx>(
     const def = core.recFunctions[name];
     expect(def, "Missing named recursive function: " + name);
 
+    const params = named_rec_func_params(name, def.params);
     const stmt: CoreStmt = { tag: "expr", expr: def.body };
-    const rec_core: CoreNode = { tag: "program", statements: [stmt] };
+    const collection_core: CoreNode = {
+      tag: "program",
+      statements: [...named_rec_param_seed_stmts(params), stmt],
+    };
 
     if (core.host_imports) {
-      rec_core.host_imports = core.host_imports;
+      collection_core.host_imports = core.host_imports;
     }
 
-    const core_ctx = hooks.collect_core_ctx(rec_core);
-    const params = named_rec_func_params(name, def.params);
+    const core_ctx = hooks.collect_core_ctx(collection_core);
     const param_names = new Set<string>();
 
     for (const param of params) {
@@ -79,6 +82,24 @@ export function emit_named_rec_functions<ctx extends CoreArtifactEmitCtx>(
   }
 
   return funcs;
+}
+
+function named_rec_param_seed_stmts(params: FuncParam[]): CoreStmt[] {
+  const statements: CoreStmt[] = [];
+
+  for (const param of params) {
+    expect(param.name, "Named recursive function parameter must be named");
+    statements.push({
+      tag: "bind",
+      kind: "let",
+      name: param.name,
+      is_linear: false,
+      annotation: undefined,
+      value: { tag: "num", type: param.type, value: 0 },
+    });
+  }
+
+  return statements;
 }
 
 function named_rec_func_params(name: string, params: CoreParam[]): FuncParam[] {
