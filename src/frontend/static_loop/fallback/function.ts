@@ -272,7 +272,7 @@ function dynamic_loop_control_selected_function_parts(
   else_env: Env,
   base_env: Env,
   param_types: FrontType[],
-  hooks: StaticLoopHooks,
+  _hooks: StaticLoopHooks,
   protected_name: string | undefined,
 ):
   | {
