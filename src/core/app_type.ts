@@ -264,6 +264,9 @@ function named_rec_param_type(param: CoreParam): ValType {
   }
 
   const type = core_val_type_from_type_name(param.annotation);
-  expect(type, "Cannot type named recursive parameter annotation: " + param.annotation);
+  expect(
+    type,
+    "Cannot type named recursive parameter annotation: " + param.annotation,
+  );
   return type;
 }
