@@ -14,12 +14,6 @@ import type { CoreBackendGraph } from "./types.ts";
 export type { CoreBackendGraph };
 
 export function create_core_backend_graph(): CoreBackendGraph {
-  let analysis: CoreBackendAnalysisGraph;
-  let emit: CoreBackendEmitGraph;
-  let entry: CoreBackendEntryGraph;
-  let runtime: CoreBackendRuntimeGraph;
-  let values: CoreBackendValuesGraph;
-
   const graph_deps = create_core_backend_graph_deps({
     analysis: () => analysis,
     emit: () => emit,
@@ -28,11 +22,19 @@ export function create_core_backend_graph(): CoreBackendGraph {
     values: () => values,
   });
 
-  analysis = create_core_backend_analysis_graph(graph_deps);
-  emit = create_core_backend_emit_graph(graph_deps);
-  values = create_core_backend_values_graph(graph_deps);
-  runtime = create_core_backend_runtime_graph(graph_deps);
-  entry = create_core_backend_entry_graph(graph_deps);
+  const analysis: CoreBackendAnalysisGraph = create_core_backend_analysis_graph(
+    graph_deps,
+  );
+  const emit: CoreBackendEmitGraph = create_core_backend_emit_graph(graph_deps);
+  const values: CoreBackendValuesGraph = create_core_backend_values_graph(
+    graph_deps,
+  );
+  const runtime: CoreBackendRuntimeGraph = create_core_backend_runtime_graph(
+    graph_deps,
+  );
+  const entry: CoreBackendEntryGraph = create_core_backend_entry_graph(
+    graph_deps,
+  );
 
   return {
     ...analysis,
