@@ -3,7 +3,11 @@ import type {
   FrontHostImportOwnerReason,
   Stmt,
 } from "../../frontend/ast.ts";
-import type { CoreExpr, CoreHostImportOwnerReason, CoreParam } from "../ast.ts";
+import type {
+  CoreExpr,
+  CoreHostImportOwnerReason,
+  CoreParam,
+} from "../ast.ts";
 
 export type CoreNamedRecSource = {
   params: CoreParam[];
