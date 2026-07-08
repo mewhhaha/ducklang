@@ -229,7 +229,9 @@ function core_recursive_binding_value(
       throw error;
     }
 
-    if (error.message !== "Cannot lower recursive source binding to Core yet") {
+    if (
+      error.message !== "Cannot lower recursive source binding to Core yet"
+    ) {
       throw error;
     }
 
