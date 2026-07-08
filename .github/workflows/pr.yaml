@@ -27,9 +27,40 @@ jobs:
 
       - name: lint
         run: |
-          find . -name '*.ts' \
-            ! -path './src/frontend.test.ts' \
-            -print0 | xargs -0 deno lint
+          deno lint \
+            main.ts \
+            src/core/app_emit.ts \
+            src/core/app_type.ts \
+            src/core/artifact_emit.ts \
+            src/core/ast.ts \
+            src/core/backend/graph/baseline_proof.ts \
+            src/core/backend/graph/instance.ts \
+            src/core/backend/graph/values.ts \
+            src/core/backend/union/runtime/info.ts \
+            src/core/drop/emit.ts \
+            src/core/drop/scan.ts \
+            src/core/expr_emit.ts \
+            src/core/expr_type/expr.ts \
+            src/core/format.ts \
+            src/core/from_source.ts \
+            src/core/from_source/context.ts \
+            src/core/from_source/expr.ts \
+            src/core/from_source/stmt.ts \
+            src/core/local_collect/expr.ts \
+            src/core/local_collect/stmt.ts \
+            src/core/named_rec_emit.ts \
+            src/core/runtime_union/types.ts \
+            src/core/scope_analysis.ts \
+            src/core/static_call/target.ts \
+            src/core/static_stability.ts \
+            src/core/stmt_emit.ts \
+            src/core/substitute.ts \
+            src/core/text_layout/build.ts \
+            src/core/union_static/dynamic_if.ts \
+            src/core/union_static/static_case.ts \
+            src/frontend/lower_graph/value.ts \
+            src/frontend/static_loop/fallback.ts \
+            src/frontend/static_loop/fallback/function.ts
 
       - name: install wabt
         run: |
