@@ -103,11 +103,27 @@ function scan_drop_stmt<ctx>(
 ): boolean {
   switch (stmt.tag) {
     case "bind":
-      scan_drop_bind_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_bind_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "assign":
-      scan_drop_assign_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_assign_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "index_assign":
@@ -147,7 +163,15 @@ function scan_drop_stmt<ctx>(
       return true;
 
     case "if_stmt":
-      scan_drop_if_stmt(stmt, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_if_stmt(
+        stmt,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "if_else_stmt":
@@ -175,7 +199,15 @@ function scan_drop_stmt<ctx>(
       return true;
 
     case "type_check":
-      scan_drop_expr(stmt.target, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_expr(
+        stmt.target,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "break":
@@ -201,7 +233,15 @@ function scan_drop_stmt<ctx>(
     }
 
     case "expr":
-      scan_drop_expr(stmt.expr, scope, owners, exit_owners, ctx, hooks, state);
+      scan_drop_expr(
+        stmt.expr,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
       return true;
 
     case "unsupported":
