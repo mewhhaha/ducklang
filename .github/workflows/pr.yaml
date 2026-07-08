@@ -21,7 +21,10 @@ jobs:
           sudo apt-get install -y wabt
 
       - name: format
-        run: deno fmt --check *.ts src --ignore=src/frontend.test.ts
+        run: |
+          find . -name '*.ts' \
+            ! -path './src/frontend.test.ts' \
+            -print0 | xargs -0 deno fmt --check
 
       - name: lint
         run: deno lint
