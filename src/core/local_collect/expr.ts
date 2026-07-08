@@ -65,7 +65,6 @@ export function collect_core_expr_locals(
     case "text":
     case "type_name":
     case "linear":
-    case "rec":
     case "struct_type":
     case "union_type":
     case "unsupported":
@@ -103,10 +102,7 @@ export function collect_core_expr_locals(
     }
 
     case "rec_ref":
-      return;
-
     case "rec":
-      // rec body collected via dedicated rec local collector to avoid cycles on self refs
       return;
 
     case "prim":
