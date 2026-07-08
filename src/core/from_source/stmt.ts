@@ -22,22 +22,13 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
           ctx.linear_names.delete(name);
         }
 
-        const recVal = core_recursive_binding_value(stmt, ctx);
-        if (recVal && recVal.tag === "rec_ref") {
-          // For non-tail named rec, do not emit a Core bind carrying the marker as a value.
-          // This prevents the name from appearing in collected locals (avoiding dead (local $name) in main).
-          // Call sites already lowered to rec_ref nodes; the body lives in recFunctions.
-          // Return a dummy expr (will be erased or no-op in emission).
-          return { tag: "expr", expr: { tag: "num", type: "i32", value: 0 } };
-        }
-
         return {
           tag: "bind",
           kind: stmt.kind,
           name,
           is_linear: stmt.is_linear,
           annotation: stmt.annotation,
-          value: recVal,
+          value: core_recursive_binding_value(stmt, ctx, name),
         };
       }
 
@@ -203,46 +194,59 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
 function core_recursive_binding_value(
   stmt: Extract<Stmt, { tag: "bind" }>,
   ctx: CoreFromSourceCtx,
+  name: string,
 ): CoreExpr {
-  if (stmt.value.tag !== "lam") {
-    // support explicit rec ( value for tail rec forms used in tests/examples
-    if (stmt.value.tag === "rec") {
-      const r = stmt.value as any;
-      const body_ctx = fork_core_from_source_ctx(ctx);
-      for (const p of r.params || []) body_ctx.aliases.set(p.name, p.name);
-      return {
-        tag: "rec",
-        params: (r.params || []).map(core_param),
-        body: core_expr(r.body, body_ctx),
-      };
+  if (stmt.value.tag === "rec") {
+    const body_ctx = fork_core_from_source_ctx(ctx);
+
+    for (const param of stmt.value.params) {
+      body_ctx.aliases.set(param.name, param.name);
+      if (param.is_linear) {
+        body_ctx.linear_names.add(param.name);
+      } else {
+        body_ctx.linear_names.delete(param.name);
+      }
     }
+
+    return {
+      tag: "rec",
+      params: stmt.value.params.map(core_param),
+      body: core_expr(stmt.value.body, body_ctx),
+    };
+  }
+
+  if (stmt.value.tag !== "lam") {
     throw new Error("Cannot lower recursive source binding to Core yet");
   }
 
-  // lam case (from "let rec name = lam")
   const params = stmt.value.params.map(core_param);
+  let is_tail = true;
 
-  // determine tailness first (validate is pure)
-  let isTail = false;
   try {
     validate_named_recursive_tail_binding(stmt.name, stmt.value);
-    isTail = true;
-  } catch {
-    isTail = false;
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    if (error.message !== "Cannot lower recursive source binding to Core yet") {
+      throw error;
+    }
+
+    is_tail = false;
   }
 
-  if (!isTail) {
-    // set early on outer so fork copy for body will see it, self refs become rec_ref
-    ctx.namedRecs.set(stmt.name, { params, body: null as any });
+  if (!is_tail) {
+    ctx.namedRecs.set(name, { params, body: undefined });
   }
 
   const body_ctx = fork_core_from_source_ctx(ctx);
-  if (isTail) {
+
+  if (is_tail) {
     body_ctx.aliases.set(stmt.name, "rec");
   } else {
-    body_ctx.aliases.set(stmt.name, stmt.name);
-    // ensure the forked namedRecs also has it (in case fork copied before set)
-    body_ctx.namedRecs.set(stmt.name, { params, body: null as any });
+    body_ctx.aliases.set(stmt.name, name);
+    body_ctx.namedRecs.set(name, { params, body: undefined });
   }
 
   for (const param of stmt.value.params) {
@@ -256,14 +260,11 @@ function core_recursive_binding_value(
 
   const body = core_expr(stmt.value.body, body_ctx);
 
-  if (!isTail) {
-    ctx.namedRecs.set(stmt.name, { params, body });
-    body_ctx.namedRecs.set(stmt.name, { params, body });
-    // return a small rec_ref marker as the bind value (not the full lam body)
-    // so statics gets marker not the body lam (avoids layout/visit cycles on rec body)
-    // the real body is in recFunctions for named rec emission
-    return { tag: "rec_ref", name: stmt.name } as any;
+  if (!is_tail) {
+    ctx.namedRecs.set(name, { params, body });
+    return { tag: "rec_ref", name, params };
   }
+
   return { tag: "rec", params, body };
 }
 
