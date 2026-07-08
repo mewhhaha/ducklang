@@ -1,4 +1,3 @@
-import type { ValType } from "../../op.ts";
 import type { CoreExpr, CoreFnType } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import type {
