@@ -8,11 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        run: |
-          git init --quiet .
-          git remote add origin https://github.com/${{ github.repository }}.git
-          git fetch --quiet --depth=1 origin ${{ github.ref }}
-          git checkout --quiet FETCH_HEAD
+        uses: actions/checkout@v4
 
       - name: setup deno
         uses: denoland/setup-deno@v2
@@ -20,58 +16,10 @@ jobs:
           deno-version: v2.x
 
       - name: format
-        run: |
-          deno fmt --check \
-            main.ts \
-            src/core/app_emit.ts \
-            src/core/app_type.ts \
-            src/core/artifact_emit.ts \
-            src/core/ast.ts \
-            src/core/expr_emit.ts \
-            src/core/expr_type/expr.ts \
-            src/core/format.ts \
-            src/core/from_source.ts \
-            src/core/from_source/context.ts \
-            src/core/from_source/expr.ts \
-            src/core/from_source/stmt.ts \
-            src/core/local_collect/expr.ts \
-            src/core/local_collect/stmt.ts \
-            src/core/named_rec_emit.ts \
-            src/core/scope_analysis.ts \
-            src/core/static_call/target.ts \
-            src/core/static_stability.ts \
-            src/core/stmt_emit.ts \
-            src/core/substitute.ts \
-            src/core/text_layout/build.ts \
-            src/core/union_static/dynamic_if.ts \
-            src/core/union_static/static_case.ts
+        run: deno fmt --check --ignore=src/frontend.test.ts *.ts src
 
       - name: lint
-        run: |
-          deno lint \
-            main.ts \
-            src/core/app_emit.ts \
-            src/core/app_type.ts \
-            src/core/artifact_emit.ts \
-            src/core/ast.ts \
-            src/core/expr_emit.ts \
-            src/core/expr_type/expr.ts \
-            src/core/format.ts \
-            src/core/from_source.ts \
-            src/core/from_source/context.ts \
-            src/core/from_source/expr.ts \
-            src/core/from_source/stmt.ts \
-            src/core/local_collect/expr.ts \
-            src/core/local_collect/stmt.ts \
-            src/core/named_rec_emit.ts \
-            src/core/scope_analysis.ts \
-            src/core/static_call/target.ts \
-            src/core/static_stability.ts \
-            src/core/stmt_emit.ts \
-            src/core/substitute.ts \
-            src/core/text_layout/build.ts \
-            src/core/union_static/dynamic_if.ts \
-            src/core/union_static/static_case.ts
+        run: deno lint
 
       - name: install wabt
         run: |
