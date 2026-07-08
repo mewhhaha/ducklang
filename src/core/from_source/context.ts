@@ -5,6 +5,11 @@ import type {
 } from "../../frontend/ast.ts";
 import type { CoreExpr, CoreHostImportOwnerReason, CoreParam } from "../ast.ts";
 
+export type CoreNamedRecSource = {
+  params: CoreParam[];
+  body: CoreExpr | undefined;
+};
+
 export type CoreFromSourceCtx = {
   aliases: Map<string, string>;
   host_import_const_names: Set<string>;
@@ -12,7 +17,7 @@ export type CoreFromSourceCtx = {
   host_import_type_values: Map<string, CoreHostImportOwnerReason>;
   linear_names: Set<string>;
   fresh: { next: number };
-  namedRecs: Map<string, { params: CoreParam[]; body: CoreExpr }>;
+  namedRecs: Map<string, CoreNamedRecSource>;
 };
 
 export function create_core_from_source_ctx(): CoreFromSourceCtx {
