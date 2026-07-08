@@ -1,11 +1,6 @@
 import { expect } from "../expect.ts";
 import type { Source as SourceNode } from "../frontend/ast.ts";
-import type {
-  Core,
-  CoreHostImport,
-  CoreRecFunction,
-  CoreStmt,
-} from "./ast.ts";
+import type { Core, CoreHostImport, CoreRecFunction, CoreStmt } from "./ast.ts";
 import {
   create_core_from_source_ctx,
   record_core_from_source_type_value,
