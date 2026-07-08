@@ -8,7 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        run: |
+          git init --quiet .
+          git remote add origin https://github.com/${{ github.repository }}.git
+          git fetch --quiet --depth=1 origin ${{ github.ref }}
+          git checkout --quiet FETCH_HEAD
 
       - name: setup deno
         uses: denoland/setup-deno@v2
@@ -23,9 +27,11 @@ jobs:
 
       - name: lint
         run: |
-          find . -name '*.ts' \
-            ! -path './src/frontend.test.ts' \
-            -print0 | xargs -0 deno lint
+          set -e
+          while IFS= read -r -d '' file; do
+            echo "lint-check $file"
+            deno lint "$file"
+          done < <(find . -name '*.ts' ! -path './src/frontend.test.ts' -print0)
 
       - name: install wabt
         run: |
