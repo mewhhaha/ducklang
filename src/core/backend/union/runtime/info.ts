@@ -15,8 +15,6 @@ export function create_core_backend_union_runtime_info(
   api: CoreBackendUnionApi,
   static_union: CoreBackendUnionStatic,
 ): CoreBackendUnionRuntimeInfo {
-  let runtime_union_hooks: RuntimeUnionHooks<StaticCtx>;
-
   function runtime_union_type_expr(
     expr: CoreExpr,
     ctx: StaticCtx,
@@ -28,11 +26,12 @@ export function create_core_backend_union_runtime_info(
     );
   }
 
-  runtime_union_hooks = create_core_backend_union_runtime_hooks(
-    api,
-    static_union,
-    runtime_union_type_expr,
-  );
+  const runtime_union_hooks: RuntimeUnionHooks<StaticCtx> =
+    create_core_backend_union_runtime_hooks(
+      api,
+      static_union,
+      runtime_union_type_expr,
+    );
   const query = create_core_backend_union_runtime_query(
     () => runtime_union_hooks,
   );
