@@ -15,19 +15,21 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: format
+        run: |
+          set -e
+          while IFS= read -r -d '' file; do
+            echo "format-check $file"
+            deno fmt --check "$file"
+          done < <(find . -name '*.ts' ! -path './src/frontend.test.ts' -print0)
+
+      - name: lint
+        run: deno lint
+
       - name: install wabt
         run: |
           sudo apt-get update
           sudo apt-get install -y wabt
-
-      - name: format
-        run: |
-          find . -name '*.ts' \
-            ! -path './src/frontend.test.ts' \
-            -print0 | xargs -0 deno fmt --check
-
-      - name: lint
-        run: deno lint
 
       - name: run tests
         run: |
