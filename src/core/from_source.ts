@@ -1,5 +1,6 @@
+import { expect } from "../expect.ts";
 import type { Source as SourceNode } from "../frontend/ast.ts";
-import type { Core, CoreHostImport, CoreStmt } from "./ast.ts";
+import type { Core, CoreHostImport, CoreRecFunction, CoreStmt } from "./ast.ts";
 import {
   create_core_from_source_ctx,
   record_core_from_source_type_value,
@@ -45,6 +46,17 @@ export function core_from_source(source: SourceNode): Core {
 
   if (Object.keys(host_imports).length > 0) {
     core.host_imports = host_imports;
+  }
+
+  if (ctx.namedRecs.size > 0) {
+    const recs: Record<string, CoreRecFunction> = {};
+
+    for (const [name, value] of ctx.namedRecs) {
+      expect(value.body, "Missing named recursive body: " + name);
+      recs[name] = { params: value.params, body: value.body };
+    }
+
+    core.recFunctions = recs;
   }
 
   return core;

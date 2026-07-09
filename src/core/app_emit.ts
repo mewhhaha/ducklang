@@ -192,6 +192,18 @@ export function emit_core_app<
     return hooks.emit_core_rec_call(expr, rec_target, ctx);
   }
 
+  if (expr.func.tag === "rec_ref") {
+    hooks.app_type(expr, ctx);
+    const lines: string[] = [];
+
+    for (const arg of expr.args) {
+      lines.push(hooks.emit_expr(arg, ctx));
+    }
+
+    lines.push("call $" + expr.func.name);
+    return lines.join("\n");
+  }
+
   const branch_static_call = static_core_call_branch_app(expr, ctx, hooks);
 
   if (branch_static_call) {

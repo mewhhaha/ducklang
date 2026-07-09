@@ -13,9 +13,6 @@ export type { CoreBackendValuesGraph };
 export function create_core_backend_values_graph(
   deps: CoreBackendGraphDeps,
 ): CoreBackendValuesGraph {
-  let struct: CoreBackendStruct | undefined;
-  let text: CoreBackendText | undefined;
-
   const get_struct = () => {
     expect(struct, "Core backend struct graph was used before initialization");
     return struct;
@@ -27,14 +24,21 @@ export function create_core_backend_values_graph(
   };
 
   const static_call = create_core_backend_values_static_call(deps, get_struct);
-  struct = create_core_backend_values_struct(deps, static_call);
+  const struct: CoreBackendStruct = create_core_backend_values_struct(
+    deps,
+    static_call,
+  );
   const static_value = create_core_backend_values_static_value(
     deps,
     static_call,
     struct,
     get_text,
   );
-  text = create_core_backend_values_text(deps, static_call, struct);
+  const text: CoreBackendText = create_core_backend_values_text(
+    deps,
+    static_call,
+    struct,
+  );
 
   return {
     static_call,

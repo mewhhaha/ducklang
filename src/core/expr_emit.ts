@@ -205,6 +205,11 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
     case "lam":
       return hooks.emit_runtime_closure(expr, ctx);
 
+    case "rec_ref":
+      // Direct-rec names are only valid in call position, where app_emit
+      // lowers them to Wasm calls. No runtime closure is materialized.
+      return "unreachable";
+
     case "block": {
       const lines: string[] = [];
 

@@ -21,6 +21,7 @@ import {
   type ClosureEmitCtx,
   create_closure_emit_ctx,
 } from "./closure_emit.ts";
+import { emit_named_rec_functions } from "./named_rec_emit.ts";
 import type { CoreCtx } from "./local_collect.ts";
 import type { RuntimeTextHeap } from "./runtime_text.ts";
 import { type CoreScratchHeap, scratch_heap_global } from "./scratch.ts";
@@ -117,6 +118,21 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
     heap,
     scratch,
   );
+  const named_rec_funcs = emit_named_rec_functions(
+    core,
+    { text_layout, closures, heap, scratch },
+    {
+      collect_core_ctx: hooks.collect_core_ctx,
+      create_emit_ctx: hooks.create_emit_ctx,
+      emit_stmt: hooks.emit_stmt,
+      stmt_result_type: hooks.stmt_result_type,
+    },
+  );
+
+  for (const func of named_rec_funcs) {
+    funcs.push(func);
+  }
+
   let table: Table | undefined;
 
   if (closures.table_elements.length > 0) {

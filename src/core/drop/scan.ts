@@ -22,7 +22,7 @@ import {
   drop_unknown_host_boundary_probe_error,
   mark_final_expr_escape,
 } from "./ownership.ts";
-import { empty_exit_owners, returned_owner_name } from "./state.ts";
+import { returned_owner_name } from "./state.ts";
 import type {
   CoreDropExitOwners,
   CoreDropExprResult,

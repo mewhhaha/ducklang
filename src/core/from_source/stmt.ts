@@ -28,7 +28,7 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
           name,
           is_linear: stmt.is_linear,
           annotation: stmt.annotation,
-          value: core_recursive_binding_value(stmt, ctx),
+          value: core_recursive_binding_value(stmt, ctx, name),
         };
       }
 
@@ -194,14 +194,62 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
 function core_recursive_binding_value(
   stmt: Extract<Stmt, { tag: "bind" }>,
   ctx: CoreFromSourceCtx,
+  name: string,
 ): CoreExpr {
+  if (stmt.value.tag === "rec") {
+    const body_ctx = fork_core_from_source_ctx(ctx);
+
+    for (const param of stmt.value.params) {
+      body_ctx.aliases.set(param.name, param.name);
+      if (param.is_linear) {
+        body_ctx.linear_names.add(param.name);
+      } else {
+        body_ctx.linear_names.delete(param.name);
+      }
+    }
+
+    return {
+      tag: "rec",
+      params: stmt.value.params.map(core_param),
+      body: core_expr(stmt.value.body, body_ctx),
+    };
+  }
+
   if (stmt.value.tag !== "lam") {
     throw new Error("Cannot lower recursive source binding to Core yet");
   }
 
-  validate_named_recursive_tail_binding(stmt.name, stmt.value);
+  const params = stmt.value.params.map(core_param);
+  let is_tail = true;
+
+  try {
+    validate_named_recursive_tail_binding(stmt.name, stmt.value);
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    if (
+      error.message !== "Cannot lower recursive source binding to Core yet"
+    ) {
+      throw error;
+    }
+
+    is_tail = false;
+  }
+
+  if (!is_tail) {
+    ctx.namedRecs.set(name, { params, body: undefined });
+  }
+
   const body_ctx = fork_core_from_source_ctx(ctx);
-  body_ctx.aliases.set(stmt.name, "rec");
+
+  if (is_tail) {
+    body_ctx.aliases.set(stmt.name, "rec");
+  } else {
+    body_ctx.aliases.set(stmt.name, name);
+    body_ctx.namedRecs.set(name, { params, body: undefined });
+  }
 
   for (const param of stmt.value.params) {
     body_ctx.aliases.set(param.name, param.name);
@@ -212,11 +260,14 @@ function core_recursive_binding_value(
     }
   }
 
-  return {
-    tag: "rec",
-    params: stmt.value.params.map(core_param),
-    body: core_expr(stmt.value.body, body_ctx),
-  };
+  const body = core_expr(stmt.value.body, body_ctx);
+
+  if (!is_tail) {
+    ctx.namedRecs.set(name, { params, body });
+    return { tag: "rec_ref", name, params };
+  }
+
+  return { tag: "rec", params, body };
 }
 
 function carried_names(stmts: CoreStmt[]): string[] {

@@ -2,7 +2,6 @@ import { core_storage_class } from "../escape.ts";
 import { core_ownership_result_text } from "../ownership.ts";
 import type {
   CoreDropEdge,
-  CoreDropExitOwners,
   CoreDropOwner,
   CoreDropState,
   CoreUniqueHeapOwnership,

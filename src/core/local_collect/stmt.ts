@@ -53,6 +53,13 @@ export function collect_core_stmt_locals(
         return;
       }
 
+      if (value.tag === "rec_ref") {
+        ctx.locals.delete(stmt.name);
+        ctx.statics.delete(stmt.name);
+        hooks.clear_core_local_facts(stmt.name, ctx);
+        return;
+      }
+
       if (value.tag !== "lam") {
         const branch_function_value = static_core_call_branch_value(
           value,

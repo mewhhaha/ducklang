@@ -65,21 +65,18 @@ export function collect_core_expr_locals(
     case "text":
     case "type_name":
     case "linear":
-    case "rec":
     case "struct_type":
     case "union_type":
     case "unsupported":
       return;
 
-    case "var":
-      {
-        const struct_value = hooks.static_struct_value(expr, ctx);
+    case "var": {
+      const struct_value = hooks.static_struct_value(expr, ctx);
 
-        if (struct_value) {
-          const plan = runtime_aggregate_plan(ctx);
-          declare_runtime_aggregate_locals(plan, ctx);
-          return;
-        }
+      if (struct_value) {
+        const plan = runtime_aggregate_plan(ctx);
+        declare_runtime_aggregate_locals(plan, ctx);
+        return;
       }
 
       const static_value = ctx.statics.get(expr.name);
@@ -91,6 +88,7 @@ export function collect_core_expr_locals(
 
       hooks.collect_runtime_union_value_locals(expr, ctx);
       return;
+    }
 
     case "lam": {
       const fn_type = local_collect_closure_fn_type(expr, ctx, hooks);
@@ -101,6 +99,10 @@ export function collect_core_expr_locals(
 
       return;
     }
+
+    case "rec_ref":
+    case "rec":
+      return;
 
     case "prim":
       for (const arg of expr.args) {

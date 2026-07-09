@@ -6,7 +6,6 @@ import {
   dynamic_loop_control_inline_app_expr,
 } from "./fallback/app.ts";
 import {
-  dynamic_loop_control_guarded_binding_value,
   dynamic_loop_control_struct_fallback,
   dynamic_loop_control_type_fallback,
   dynamic_loop_control_union_fallback,

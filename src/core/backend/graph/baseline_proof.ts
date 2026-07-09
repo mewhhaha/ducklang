@@ -52,12 +52,9 @@ import {
   core_host_boundary_closure_body_ctx
     as graph_core_host_boundary_closure_body_ctx,
   core_ownership_hooks as graph_core_ownership_hooks,
-  core_runtime_aggregate_type_for_ownership
-    as graph_core_runtime_aggregate_type_for_ownership,
   core_static_call_proof_hooks as graph_core_static_call_proof_hooks,
   core_static_value as graph_core_static_value,
 } from "./proof_hooks.ts";
-import { create_core_runtime_union_match_child_ctx } from "./proof_context.ts";
 import type { CoreBackendGraph } from "./types.ts";
 
 export function core_backend_host_boundaries(

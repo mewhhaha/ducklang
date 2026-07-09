@@ -61,3 +61,19 @@ console.log(Format.fmt(Expr, expr));
 
 console.log("WAT:");
 console.log(wat_text);
+
+const final_value = numeric_result_text(reduced);
+
+if (final_value !== undefined) {
+  console.log(final_value);
+} else {
+  console.log(Format.fmt(Ic, reduced));
+}
+
+function numeric_result_text(value: typeof reduced): string | undefined {
+  if (value.tag === "num") {
+    return value.value.toString();
+  }
+
+  return undefined;
+}
