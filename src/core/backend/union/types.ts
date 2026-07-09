@@ -1,6 +1,6 @@
 import type { ValType } from "../../../op.ts";
 import type { Wat } from "../../../wat.ts";
-import type { CoreExpr, CoreFnType, CoreStmt } from "../../ast.ts";
+import type { CoreExpr, CoreField, CoreFnType, CoreStmt } from "../../ast.ts";
 import type { CoreEmitCtx } from "../../emit_ctx.ts";
 import type { DynamicUnionIf } from "../../if_let.ts";
 import type { CoreCtx, StaticCtx } from "../../local_collect.ts";
@@ -72,6 +72,10 @@ export type CoreBackendUnionApi = {
     expr: CoreExpr,
     ctx: StaticCtx,
   ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
+  static_collection_fields: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => CoreField[] | undefined;
   static_struct_value: (
     expr: CoreExpr,
     ctx: StaticCtx,

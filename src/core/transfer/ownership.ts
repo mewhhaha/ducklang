@@ -102,6 +102,19 @@ export function bind_transfer_owner_alias<ctx>(
   state.alias_rejection_reasons.delete(name);
 
   if (value.tag !== "var") {
+    if (value.tag !== "freeze") {
+      state.alias_ownership.delete(name);
+      return;
+    }
+
+    try {
+      state.alias_ownership.set(
+        name,
+        core_expr_ownership(value, state.ctx, state.hooks),
+      );
+    } catch {
+      state.alias_ownership.delete(name);
+    }
     return;
   }
 

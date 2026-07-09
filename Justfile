@@ -17,4 +17,7 @@ lint:
 test:
   deno test --no-check --allow-read --allow-write --allow-run
 
+examples:
+  deno test --no-check --allow-read --allow-write --allow-run examples/examples.test.ts
+
 check: fmt-check lint test

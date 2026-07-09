@@ -11,12 +11,37 @@ export type CoreAllocationReason =
 
 export type CoreAllocationFact = {
   id: string;
+  allocation_id: string;
   scope: string;
   storage: CoreStorageClass;
   ownership: CoreOwnership;
   reason: CoreAllocationReason;
   expression: CoreExpr["tag"];
+  byte_size: CoreAllocationByteSize;
+  alignment: 4 | 8;
+  layout: CoreAllocationLayout;
+  owned_children?: CoreAllocationOwnedChild[];
+  owner?: string;
 };
+
+export type CoreAllocationOwnedChild = {
+  allocation_ids: string[];
+  offset: number;
+  ownership: Extract<CoreOwnership, { tag: "unique_heap" }>;
+  layout: CoreAllocationLayout;
+};
+
+export type CoreAllocationByteSize =
+  | { tag: "static"; value: number }
+  | { tag: "runtime"; formula: string };
+
+export type CoreAllocationLayout =
+  | "closure_env.table_index_and_capture_slots"
+  | "runtime_aggregate.aligned_fields"
+  | "runtime_text.length_prefixed_utf8"
+  | "runtime_union.tag_and_aligned_payload"
+  | "runtime_slice.length_and_i32_elements"
+  | "runtime_slice.length_and_frozen_text_pointers";
 
 export type CoreAllocationPlan = {
   facts: CoreAllocationFact[];

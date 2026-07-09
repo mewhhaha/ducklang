@@ -25,6 +25,7 @@ export function create_core_backend_union_runtime_hooks(
     runtime_union_type_expr,
     same_runtime_aggregate_type_expr: api.same_runtime_aggregate_type_expr,
     same_runtime_union_type_expr,
+    static_collection_fields: api.static_collection_fields,
     static_struct_value: api.static_struct_value,
     static_union_case: static_union.static_union_case,
   };

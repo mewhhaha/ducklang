@@ -15,13 +15,13 @@ export function record_allocation(
   reason: CoreAllocationReason,
   scope: CoreAllocationScope,
   state: CoreAllocationState,
-): void {
+): import("./types.ts").CoreAllocationFact | undefined {
   const key = allocation_record_key(reason, scope);
   const recorded = state.recorded.get(expr);
 
   if (recorded) {
     if (recorded.has(key)) {
-      return;
+      return undefined;
     }
 
     recorded.add(key);
@@ -39,16 +39,86 @@ export function record_allocation(
     ownership = { tag: "scratch_backed", source: base };
   }
 
+  const allocation_id = "allocation#" + state.next_allocation.toString();
+  const layout = allocation_layout(expr, reason);
   const fact = {
-    id: "allocation#" + state.next_allocation.toString(),
+    id: allocation_id,
+    allocation_id,
     scope: scope.name,
     storage: core_storage_class(ownership),
     ownership,
     reason,
     expression: expr.tag,
-  };
+    byte_size: layout.byte_size,
+    alignment: layout.alignment,
+    layout: layout.layout,
+  } as import("./types.ts").CoreAllocationFact;
+
+  if (expr.tag === "var") {
+    fact.owner = expr.name;
+  }
   state.next_allocation += 1;
   state.facts.push(fact);
+  return fact;
+}
+
+function allocation_layout(
+  expr: CoreExpr,
+  reason: CoreAllocationReason,
+): {
+  byte_size: import("./types.ts").CoreAllocationByteSize;
+  alignment: 4 | 8;
+  layout: import("./types.ts").CoreAllocationLayout;
+} {
+  if (
+    expr.tag === "app" && expr.func.tag === "var" &&
+    (expr.func.name === "runtime_i32_slice" ||
+      expr.func.name === "runtime_text_slice")
+  ) {
+    let layout: import("./types.ts").CoreAllocationLayout =
+      "runtime_slice.length_and_i32_elements";
+    if (expr.func.name === "runtime_text_slice") {
+      layout = "runtime_slice.length_and_frozen_text_pointers";
+    }
+    return {
+      byte_size: { tag: "static", value: expr.args.length * 4 },
+      alignment: 4,
+      layout,
+    };
+  }
+
+  if (reason === "closure") {
+    return {
+      byte_size: {
+        tag: "runtime",
+        formula: "align8(4 + capture_slot_bytes)",
+      },
+      alignment: 8,
+      layout: "closure_env.table_index_and_capture_slots",
+    };
+  }
+
+  if (reason === "runtime_aggregate") {
+    return {
+      byte_size: { tag: "runtime", formula: "aligned_field_layout_size" },
+      alignment: 8,
+      layout: "runtime_aggregate.aligned_fields",
+    };
+  }
+
+  if (reason === "runtime_union") {
+    return {
+      byte_size: { tag: "runtime", formula: "4 + aligned_payload_size" },
+      alignment: 4,
+      layout: "runtime_union.tag_and_aligned_payload",
+    };
+  }
+
+  return {
+    byte_size: { tag: "runtime", formula: "4 + runtime_byte_length" },
+    alignment: 4,
+    layout: "runtime_text.length_prefixed_utf8",
+  };
 }
 
 function allocation_record_key(

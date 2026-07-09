@@ -1,4 +1,3 @@
-import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
 import type { CoreExpr, CoreField, CoreFnType, CoreHostImport } from "./ast.ts";
 import { fresh_temp_local, set_local } from "./backend/util.ts";

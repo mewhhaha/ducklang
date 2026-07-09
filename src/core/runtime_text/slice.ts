@@ -9,6 +9,7 @@ import {
   runtime_text_slice_plan,
 } from "./plan.ts";
 import { runtime_text_alloc_heap } from "./alloc.ts";
+import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import type { RuntimeTextEmitCtx, RuntimeTextHooks } from "./types.ts";
 
 export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
@@ -27,6 +28,27 @@ export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
   const heap_name = runtime_text_alloc_heap(ctx);
   const exit_label = "text_slice_exit_" + locals.id.toString();
   const loop_label = "text_slice_loop_" + locals.id.toString();
+  const allocation: string[] = [];
+  if (heap_name === closure_heap_global) {
+    allocation.push(emit_persistent_alloc(
+      "local.get $" + locals.slice_len + "\ni32.const 4\ni32.add",
+      8,
+    ));
+    allocation.push("local.set $" + locals.result);
+  } else {
+    allocation.push("global.get $" + heap_name);
+    allocation.push("local.set $" + locals.result);
+    allocation.push("global.get $" + heap_name);
+    allocation.push("local.get $" + locals.slice_len);
+    allocation.push("i32.const 4");
+    allocation.push("i32.add");
+    allocation.push("i32.const 7");
+    allocation.push("i32.add");
+    allocation.push("i32.const -8");
+    allocation.push("i32.and");
+    allocation.push("i32.add");
+    allocation.push("global.set $" + heap_name);
+  }
 
   return [
     hooks.emit_expr(text, ctx),
@@ -66,18 +88,7 @@ export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
                 "local.get $" + locals.start,
                 "i32.sub",
                 "local.set $" + locals.slice_len,
-                "global.get $" + heap_name,
-                "local.set $" + locals.result,
-                "global.get $" + heap_name,
-                "local.get $" + locals.slice_len,
-                "i32.const 4",
-                "i32.add",
-                "i32.const 7",
-                "i32.add",
-                "i32.const -8",
-                "i32.and",
-                "i32.add",
-                "global.set $" + heap_name,
+                ...allocation,
                 "local.get $" + locals.result,
                 "local.get $" + locals.slice_len,
                 "i32.store",
@@ -129,18 +140,11 @@ export function emit_runtime_text_freeze_copy_from_wat<
     "local.set $" + locals.source_len,
     "local.get $" + locals.source_len,
     "local.set $" + locals.slice_len,
-    "global.get $" + closure_heap_global,
+    emit_persistent_alloc(
+      "local.get $" + locals.slice_len + "\ni32.const 4\ni32.add",
+      8,
+    ),
     "local.set $" + locals.result,
-    "global.get $" + closure_heap_global,
-    "local.get $" + locals.slice_len,
-    "i32.const 4",
-    "i32.add",
-    "i32.const 7",
-    "i32.add",
-    "i32.const -8",
-    "i32.and",
-    "i32.add",
-    "global.set $" + closure_heap_global,
     "local.get $" + locals.result,
     "local.get $" + locals.slice_len,
     "i32.store",

@@ -4,6 +4,7 @@ import {
   bind_core_name,
   type CoreFromSourceCtx,
   fork_core_from_source_ctx,
+  resolve_bound_core_value_name,
   resolve_core_name,
   shadow_core_name,
 } from "./context.ts";
@@ -32,13 +33,21 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         };
       }
 
-      const value = core_expr(stmt.value, ctx);
+      let value = core_expr(stmt.value, ctx);
       const name = bind_core_name(ctx, stmt.name);
 
       if (stmt.is_linear) {
         ctx.linear_names.add(name);
       } else {
         ctx.linear_names.delete(name);
+      }
+      record_capability_method_table(name, stmt.value, ctx);
+      if (ctx.dynamic_capability_tables.has(name)) {
+        const methods = ctx.capability_methods.get(name);
+        if (!methods) {
+          throw new Error("Missing dynamic capability method facts: " + name);
+        }
+        value = strip_capability_method_fields(value, methods);
       }
 
       return {
@@ -52,11 +61,13 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
     }
 
     case "assign": {
+      resolve_bound_core_value_name(ctx, stmt.name);
       const value = core_expr(stmt.value, ctx);
 
       if (stmt.mode === "change") {
         const name = shadow_core_name(ctx, stmt.name);
         ctx.linear_names.delete(name);
+        record_capability_method_table(name, stmt.value, ctx);
         return {
           tag: "bind",
           kind: "let",
@@ -67,15 +78,19 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         };
       }
 
+      const name = resolve_core_name(ctx, stmt.name);
+      record_capability_method_table(name, stmt.value, ctx);
+
       return {
         tag: "assign",
-        name: resolve_core_name(ctx, stmt.name),
+        name,
         mode: stmt.mode,
         value,
       };
     }
 
     case "index_assign":
+      resolve_bound_core_value_name(ctx, stmt.name);
       return {
         tag: "index_assign",
         name: resolve_core_name(ctx, stmt.name),
@@ -189,6 +204,189 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         text: stmt.text,
       };
   }
+}
+
+function strip_capability_method_fields(
+  value: CoreExpr,
+  methods: Map<string, string>,
+): CoreExpr {
+  if (value.tag === "var" || value.tag === "linear") {
+    return value;
+  }
+
+  if (value.tag === "struct_value") {
+    let type_expr = value.type_expr;
+    if (type_expr.tag === "struct_type") {
+      type_expr = {
+        ...type_expr,
+        fields: type_expr.fields.filter((field) => !methods.has(field.name)),
+      };
+    }
+    return {
+      ...value,
+      type_expr,
+      fields: value.fields.filter((field) => !methods.has(field.name)),
+    };
+  }
+
+  if (value.tag === "if") {
+    return {
+      ...value,
+      then_branch: strip_capability_method_fields(value.then_branch, methods),
+      else_branch: strip_capability_method_fields(value.else_branch, methods),
+    };
+  }
+
+  if (value.tag === "block") {
+    const statements = [...value.statements];
+    const final_index = statements.length - 1;
+    const final_stmt = statements[final_index];
+    if (!final_stmt || final_stmt.tag !== "expr") {
+      throw new Error("Dynamic capability block must end in an expression");
+    }
+    statements[final_index] = {
+      ...final_stmt,
+      expr: strip_capability_method_fields(final_stmt.expr, methods),
+    };
+    return { ...value, statements };
+  }
+
+  throw new Error(
+    "Dynamic capability table must lower to a struct or conditional struct",
+  );
+}
+
+function record_capability_method_table(
+  name: string,
+  value: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): void {
+  const table = capability_method_table(value, ctx, new Set());
+
+  if (!table) {
+    ctx.capability_methods.delete(name);
+    ctx.dynamic_capability_tables.delete(name);
+    return;
+  }
+
+  ctx.capability_methods.set(name, table.methods);
+  if (table.dynamic) {
+    ctx.dynamic_capability_tables.add(name);
+  } else {
+    ctx.dynamic_capability_tables.delete(name);
+  }
+}
+
+type CapabilityMethodTable = {
+  methods: Map<string, string>;
+  dynamic: boolean;
+};
+
+function capability_method_table(
+  value: FrontExpr,
+  ctx: CoreFromSourceCtx,
+  seen: Set<string>,
+): CapabilityMethodTable | undefined {
+  if (value.tag === "captured" || value.tag === "comptime") {
+    return capability_method_table(value.expr, ctx, seen);
+  }
+
+  if (value.tag === "var" || value.tag === "linear") {
+    const name = resolve_core_name(ctx, value.name);
+    if (seen.has(name)) {
+      throw new Error("Recursive capability method table alias: " + name);
+    }
+    seen.add(name);
+    const methods = ctx.capability_methods.get(name);
+    if (!methods) {
+      return undefined;
+    }
+    return {
+      methods: new Map(methods),
+      dynamic: ctx.dynamic_capability_tables.has(name),
+    };
+  }
+
+  if (value.tag === "if") {
+    const left = capability_method_table(value.then_branch, ctx, new Set(seen));
+    const right = capability_method_table(
+      value.else_branch,
+      ctx,
+      new Set(seen),
+    );
+    if (!left || !right) {
+      return undefined;
+    }
+    return {
+      methods: intersect_capability_methods(left.methods, right.methods),
+      dynamic: true,
+    };
+  }
+
+  if (value.tag === "block") {
+    const final_stmt = value.statements[value.statements.length - 1];
+    if (!final_stmt || final_stmt.tag !== "expr") {
+      return undefined;
+    }
+    const table = capability_method_table(final_stmt.expr, ctx, seen);
+    if (!table) {
+      return undefined;
+    }
+    return { methods: table.methods, dynamic: true };
+  }
+
+  if (value.tag !== "struct_value") {
+    return undefined;
+  }
+
+  const methods = new Map<string, string>();
+  let dynamic = false;
+
+  for (const field of value.fields) {
+    const host_import = capability_host_import_name(field.value, ctx);
+    if (host_import) {
+      methods.set(field.name, host_import);
+      continue;
+    }
+    dynamic = true;
+  }
+
+  return { methods, dynamic };
+}
+
+function capability_host_import_name(
+  value: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): string | undefined {
+  if (value.tag === "captured" || value.tag === "comptime") {
+    return capability_host_import_name(value.expr, ctx);
+  }
+
+  if (value.tag !== "var") {
+    return undefined;
+  }
+
+  if (!ctx.host_import_names.has(value.name)) {
+    return undefined;
+  }
+
+  return value.name;
+}
+
+function intersect_capability_methods(
+  left: Map<string, string>,
+  right: Map<string, string>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  for (const [method, host_import] of left) {
+    const other = right.get(method);
+    if (other === host_import) {
+      result.set(method, host_import);
+    }
+  }
+
+  return result;
 }
 
 function core_recursive_binding_value(

@@ -42,6 +42,10 @@ export function core_ownership_hooks(
     static_runtime_union_match_branch_ctx:
       create_core_runtime_union_match_child_ctx,
     static_struct_value: backend.struct.static_struct_value,
+    static_core_call_requires_scope:
+      backend.static_call.static_core_call_requires_scope,
+    static_core_call_target: backend.static_call.static_core_call_target,
+    static_core_call_value: backend.static_call.static_core_call_value,
     static_text_value: backend.text.static_text_value,
     static_union_case: backend.union.static_union_case,
   };

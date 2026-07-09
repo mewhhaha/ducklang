@@ -1,5 +1,3 @@
-import { expect } from "../expect.ts";
-
 export function is_digit(char: string): boolean {
   return char >= "0" && char <= "9";
 }

@@ -14,7 +14,15 @@ export function closure_capture_decision(
   ownership: CoreOwnership,
   expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
   facts: CoreClosureOwnershipFacts,
+  linear = false,
 ): CoreClosureCaptureDecision {
+  if (linear) {
+    return {
+      tag: "allowed",
+      reason: "source linear capture moves into a one-shot closure " +
+        "environment slot",
+    };
+  }
   if (ownership.tag === "scalar_local") {
     return {
       tag: "allowed",
@@ -87,6 +95,15 @@ export function merge_closure_capture_decisions(
       return {
         tag: "reserved",
         reason: capture.name + ": " + capture.decision.reason,
+      };
+    }
+  }
+
+  for (const capture of captures) {
+    if (capture.environment?.transfer === "move") {
+      return {
+        tag: "allowed",
+        reason: "linear captures move into a one-shot closure environment",
       };
     }
   }

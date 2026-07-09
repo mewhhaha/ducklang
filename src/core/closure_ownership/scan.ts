@@ -1,4 +1,6 @@
 import type { CoreExpr, CoreStmt } from "../ast.ts";
+import { align_to, val_type_align, val_type_size } from "../memory.ts";
+import { core_expr_ownership, type CoreOwnership } from "../ownership.ts";
 import type { CoreCaptureInfo } from "../closure_capture.ts";
 import {
   closure_capture_decision,
@@ -11,12 +13,16 @@ import {
 } from "./facts.ts";
 import type {
   CoreClosureCaptureSlot,
+  CoreClosureOwnershipCtx,
+  CoreClosureOwnershipEdge,
   CoreClosureOwnershipFacts,
   CoreClosureOwnershipHooks,
   CoreClosureOwnershipState,
 } from "./types.ts";
 
-export function scan_closure_ownership_stmts<ctx>(
+export function scan_closure_ownership_stmts<
+  ctx extends CoreClosureOwnershipCtx,
+>(
   statements: CoreStmt[],
   scope: string,
   ctx: ctx,
@@ -29,7 +35,7 @@ export function scan_closure_ownership_stmts<ctx>(
   }
 }
 
-function scan_closure_ownership_stmt<ctx>(
+function scan_closure_ownership_stmt<ctx extends CoreClosureOwnershipCtx>(
   stmt: CoreStmt,
   scope: string,
   ctx: ctx,
@@ -48,7 +54,26 @@ function scan_closure_ownership_stmt<ctx>(
         facts,
         hooks,
       );
+      if (stmt.tag === "bind") {
+        if (stmt.is_linear) {
+          facts.linear_names.add(stmt.name);
+        } else {
+          facts.linear_names.delete(stmt.name);
+          facts.linear_ownerships.delete(stmt.name);
+        }
+      }
       try_collect_stmt_locals(stmt, ctx, hooks);
+      if (stmt.tag === "bind" && stmt.is_linear) {
+        const ownership = try_capture_ownership_from_value(
+          { tag: "var", name: stmt.name },
+          ctx,
+          hooks,
+        );
+
+        if (ownership) {
+          facts.linear_ownerships.set(stmt.name, ownership);
+        }
+      }
       return;
 
     case "index_assign":
@@ -166,7 +191,21 @@ function scan_closure_ownership_stmt<ctx>(
   }
 }
 
-function scan_closure_ownership_expr<ctx>(
+function try_capture_ownership_from_value<
+  ctx extends CoreClosureOwnershipCtx,
+>(
+  value: CoreExpr,
+  ctx: ctx,
+  hooks: CoreClosureOwnershipHooks<ctx>,
+): CoreOwnership | undefined {
+  try {
+    return core_expr_ownership(value, ctx, hooks);
+  } catch {
+    return undefined;
+  }
+}
+
+function scan_closure_ownership_expr<ctx extends CoreClosureOwnershipCtx>(
   expr: CoreExpr,
   scope: string,
   ctx: ctx,
@@ -382,7 +421,7 @@ function scan_closure_ownership_expr<ctx>(
   }
 }
 
-function record_closure_ownership_edge<ctx>(
+function record_closure_ownership_edge<ctx extends CoreClosureOwnershipCtx>(
   expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
   scope: string,
   ctx: ctx,
@@ -398,32 +437,84 @@ function record_closure_ownership_edge<ctx>(
   }
 
   const captures: CoreClosureCaptureSlot[] = [];
+  let offset = 4;
+  let linear = false;
+  let persistent_environment = false;
 
-  for (const name of info.names) {
+  const capture_names = [...info.names];
+
+  if (
+    expr.body.tag === "linear" &&
+    facts.linear_names.has(expr.body.name) &&
+    !capture_names.includes(expr.body.name)
+  ) {
+    capture_names.push(expr.body.name);
+  }
+
+  for (const name of capture_names) {
     const ownership = try_capture_ownership(name, ctx, facts, hooks);
 
     if (!ownership) {
       continue;
     }
 
-    captures.push({
+    const type = ownership.tag === "scalar_local" ? ownership.type : "i32";
+    offset = align_to(offset, val_type_align(type));
+    const is_linear = facts.linear_names.has(name);
+    let environment:
+      | CoreClosureCaptureSlot["environment"]
+      | undefined;
+
+    if (is_linear) {
+      linear = true;
+      environment = {
+        offset,
+        storage: "unique_heap",
+        lifetime: "persistent",
+        transfer: "move",
+      };
+    } else if (
+      facts.scratch_depth > 0 && ownership.tag === "frozen_shareable"
+    ) {
+      persistent_environment = true;
+      environment = {
+        offset,
+        storage: "unique_heap",
+        lifetime: "persistent",
+        transfer: "share",
+      };
+    }
+
+    const capture: CoreClosureCaptureSlot = {
       name,
       ownership,
-      decision: closure_capture_decision(ownership, expr, facts),
-    });
+      decision: closure_capture_decision(ownership, expr, facts, is_linear),
+    };
+    if (environment) {
+      capture.environment = environment;
+    }
+    captures.push(capture);
+    offset += val_type_size(type);
   }
 
   if (captures.length === 0) {
     return;
   }
 
-  state.edges.push({
+  const edge: CoreClosureOwnershipEdge = {
     id: "closure_capture#" + state.edges.length.toString(),
     scope,
     expression: expr.tag,
     captures,
     decision: merge_closure_capture_decisions(captures),
-  });
+  };
+  if (linear) {
+    edge.callable = "once";
+    edge.environment_storage = "persistent_unique_heap";
+  } else if (persistent_environment) {
+    edge.environment_storage = "persistent_unique_heap";
+  }
+  state.edges.push(edge);
 }
 
 function lam_capture_expr(
@@ -440,7 +531,7 @@ function lam_capture_expr(
   };
 }
 
-function scan_closure_ownership_fields<ctx>(
+function scan_closure_ownership_fields<ctx extends CoreClosureOwnershipCtx>(
   fields: { value: CoreExpr }[],
   scope: string,
   ctx: ctx,
@@ -460,7 +551,7 @@ function scan_closure_ownership_fields<ctx>(
   }
 }
 
-function try_collect_stmt_locals<ctx>(
+function try_collect_stmt_locals<ctx extends CoreClosureOwnershipCtx>(
   stmt: CoreStmt,
   ctx: ctx,
   hooks: CoreClosureOwnershipHooks<ctx>,
@@ -472,7 +563,7 @@ function try_collect_stmt_locals<ctx>(
   }
 }
 
-function try_lam_capture_info<ctx>(
+function try_lam_capture_info<ctx extends CoreClosureOwnershipCtx>(
   expr: Extract<CoreExpr, { tag: "lam" }>,
   ctx: ctx,
   hooks: CoreClosureOwnershipHooks<ctx>,

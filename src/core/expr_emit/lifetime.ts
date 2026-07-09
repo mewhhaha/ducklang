@@ -8,7 +8,6 @@ import {
 } from "../ownership.ts";
 import { emit_runtime_text_freeze_copy } from "../runtime_text.ts";
 import {
-  emit_runtime_aggregate_freeze_copy,
   runtime_aggregate_freeze_copy_supported,
 } from "../runtime_aggregate.ts";
 import {

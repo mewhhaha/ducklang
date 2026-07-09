@@ -86,7 +86,7 @@ function merged_if_else_static_value<
   cond: CoreExpr,
   then_value: CoreExpr,
   else_value: CoreExpr,
-  hooks: StaticMergeHooks<ctx, emit_ctx>,
+  _hooks: StaticMergeHooks<ctx, emit_ctx>,
 ): CoreExpr | undefined {
   const then_struct = mergeable_static_struct_value(then_value);
   const else_struct = mergeable_static_struct_value(else_value);
@@ -208,6 +208,9 @@ function same_static_core_expr(left: CoreExpr, right: CoreExpr): boolean {
 
     case "linear":
       return right.tag === "linear" && left.name === right.name;
+
+    case "rec_ref":
+      return false;
 
     case "prim":
       return right.tag === "prim" &&

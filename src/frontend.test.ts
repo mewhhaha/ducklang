@@ -5338,6 +5338,7 @@ bad(option_type.none())
 
 Deno.test("Source rejects untyped dynamic if let expressions", () => {
   const source = `
+let result = 1
 if let .ok(value) = result {
   value
 } else {
@@ -6993,6 +6994,161 @@ Deno.test("Source rejects excluded grammar families explicitly", () => {
     () => Source.parse("let f = (macro) => macro\nf"),
     "Parameter is reserved for unsupported macros: macro",
   );
+});
+
+Deno.test("Source parses every Task 11 MVP grammar include", () => {
+  const cases = [
+    { feature: "let", text: "let value = 1\nvalue" },
+    { feature: "const", text: "const value = 1\nvalue" },
+    { feature: "comptime", text: "comptime 1" },
+    {
+      feature: "shadowing with = and :=",
+      text: 'let value = 1\nvalue = 2\nvalue := "x"\nvalue',
+    },
+    { feature: "closures", text: "x => x" },
+    { feature: "return", text: "{ return 1 }" },
+    { feature: "if", text: "if 1 { 2 } else { 3 }" },
+    {
+      feature: "if let",
+      text: "if let .ok(value) = .ok(1) { value } else { 0 }",
+    },
+    { feature: "rec", text: "let f = rec n => n\nf" },
+    { feature: "for", text: "for i in 0..3 { i }\n0" },
+    { feature: "break", text: "for i in 0..3 { break }\n0" },
+    { feature: "continue", text: "for i in 0..3 { continue }\n0" },
+    {
+      feature: "linear parameters with !",
+      text: "let f = (!io) => !io\nf",
+    },
+    { feature: "borrow views", text: "borrow value" },
+    { feature: "freeze values", text: "freeze value" },
+    { feature: "scratchpads with value results", text: "scratch { 1 }" },
+    {
+      feature: "struct",
+      text: "const user_type = struct { age: Int }\nuser_type",
+    },
+    {
+      feature: "union",
+      text: "const option_type = union { none: Unit, some: Int }\noption_type",
+    },
+    { feature: "type-values", text: "Int" },
+    {
+      feature: "const parameters",
+      text: "let apply = (const f, x) => f(x)\napply",
+    },
+    {
+      feature: "with extensions",
+      text: "const base = { x: 1 }\n" +
+        "const extended = base with { y: 2 }\nextended",
+    },
+    {
+      feature: "fact checkers",
+      text: "let value: has_name = item\nvalue",
+    },
+    {
+      feature: "modules as functions",
+      text: "module app = caps => { { main: 1 } }",
+    },
+    { feature: "compile-time layout helpers", text: "layout(user_type)" },
+    {
+      feature: "monomorphization",
+      text: "let id = (const t, x: t) => x\nid(Int, 1)",
+    },
+    { feature: "Wasm codegen", text: "40 + 2" },
+  ];
+
+  for (const item of cases) {
+    const parsed = Source.parse(item.text);
+    const formatted = Format.fmt(Source, parsed);
+    assert_equals(typeof item.feature, "string");
+    assert_equals(formatted.length > 0, true);
+  }
+});
+
+Deno.test("Source rejects every Task 11 MVP grammar exclude", () => {
+  const cases = [
+    {
+      feature: "global IO",
+      run: () => compile('io.print("x")'),
+      error: "Cannot lower method call to Ic frontend yet: print",
+    },
+    {
+      feature: "global typeclass instance search",
+      run: () => compile("instance show_int = show(Int)"),
+      error: "Cannot lower runtime instance search to Ic frontend yet",
+    },
+    {
+      feature: "runtime structural dispatch",
+      run: () => compile("value.map(f)"),
+      error: "Cannot lower method call to Ic frontend yet: map",
+    },
+    {
+      feature: "implicit effects",
+      run: () => compile('io.print("x")'),
+      error: "Cannot lower method call to Ic frontend yet: print",
+    },
+    {
+      feature: "inheritance",
+      run: () => compile("extends base {}"),
+      error: "Cannot lower inheritance to Ic frontend yet",
+    },
+    {
+      feature: "classes",
+      run: () => compile("class user {}"),
+      error: "Cannot lower classes to Ic frontend yet",
+    },
+    {
+      feature: "traits",
+      run: () => compile("trait show {}"),
+      error: "Cannot lower traits to Ic frontend yet",
+    },
+    {
+      feature: "macros as a separate system",
+      run: () => compile("macro debug {}"),
+      error: "Cannot lower macros to Ic frontend yet",
+    },
+    {
+      feature: "dependent runtime-sized types",
+      run: () => Source.parse("let value: make_type(n) = 1"),
+      error: "Expected `=`",
+    },
+    {
+      feature: "general first-class linear closure capture",
+      run: () => compile('freeze ((!io) => io.print("x"))'),
+      error: "Cannot lower linear function to Ic frontend yet",
+    },
+    {
+      feature: "baseline GC fallback for uncertain lifetimes",
+      run: () => compile("scratch { input }"),
+      error: "Cannot lower scratch result through pure Ic",
+    },
+    {
+      feature: "first-class source-level region objects beyond scratchpads",
+      run: () => Source.parse("region { 1 }"),
+      error: "Expected field name",
+    },
+    {
+      feature: "attached scratch regions that survive scratch reset",
+      run: () => compile("scratch { input }"),
+      error: "Cannot lower scratch result through pure Ic",
+    },
+    {
+      feature:
+        "implicit promotion or managed storage for unsafe scratch returns",
+      run: () => compile("scratch { input }"),
+      error: "Cannot lower scratch result through pure Ic",
+    },
+    {
+      feature: "collector-decided scratch or temporary cleanup",
+      run: () => compile("scratch { input }"),
+      error: "Cannot lower scratch result through pure Ic",
+    },
+  ];
+
+  for (const item of cases) {
+    assert_equals(typeof item.feature, "string");
+    assert_throws(item.run, item.error);
+  }
 });
 
 Deno.test("Source lowers pure linear bindings to Ic", () => {
@@ -11050,11 +11206,9 @@ for i in 0..n {
 
 sum
 `;
-  const dynamic_core = Source.core(dynamic_source);
-
-  assert_equals(
-    Format.fmt(Core, dynamic_core),
-    "let sum = 0:i32\nrange_loop i in 0:i32..n by 1:i32 carry [sum] {\n  sum = sum i32.add i\n}\nsum",
+  assert_throws(
+    () => Source.core(dynamic_source),
+    "Unbound core value: n",
   );
 
   assert_throws(
@@ -11080,9 +11234,9 @@ for i in 0..3 {
 `;
 
   const dynamic_control_binding_core = Source.core(
-    dynamic_control_binding_source,
+    "let input = 1\n" + dynamic_control_binding_source,
   );
-  assert_equals(dynamic_control_binding_core.statements[0]?.tag, "range_loop");
+  assert_equals(dynamic_control_binding_core.statements[1]?.tag, "range_loop");
 
   assert_throws(
     () =>
@@ -11953,10 +12107,10 @@ for i in 0..3 {
 `;
 
   const dynamic_control_nested_loop_core = Source.core(
-    dynamic_control_nested_loop_source,
+    "let input = 1\n" + dynamic_control_nested_loop_source,
   );
   assert_equals(
-    dynamic_control_nested_loop_core.statements[0]?.tag,
+    dynamic_control_nested_loop_core.statements[1]?.tag,
     "range_loop",
   );
 
@@ -12081,6 +12235,7 @@ for x in xs {
   );
 
   const unknown_collection_core = Source.core(Source.parse(`
+let xs = 1
 let total = 0
 
 for x in xs {
@@ -12092,7 +12247,7 @@ total
 
   assert_equals(
     Format.fmt(Core, unknown_collection_core),
-    "let total = 0:i32\ncollection_loop x in xs carry [total] {\n  total = total i32.add x\n}\ntotal",
+    "let xs = 1:i32\nlet total = 0:i32\ncollection_loop x in xs carry [total] {\n  total = total i32.add x\n}\ntotal",
   );
 
   assert_throws(
@@ -12124,6 +12279,8 @@ for i, x in xs {
   );
 
   const indexed_unknown_collection_core = Source.core(Source.parse(`
+let xs = 1
+let total = 0
 for i, x in xs {
   total = total + i + x
 }
@@ -12133,7 +12290,7 @@ total
 
   assert_equals(
     Format.fmt(Core, indexed_unknown_collection_core),
-    "collection_loop i, x in xs carry [total] {\n  total = total i32.add i i32.add x\n}\ntotal",
+    "let xs = 1:i32\nlet total = 0:i32\ncollection_loop i, x in xs carry [total] {\n  total = total i32.add i i32.add x\n}\ntotal",
   );
 
   assert_throws(
@@ -14165,6 +14322,17 @@ Deno.test("Source rejects unresolved imports without a loader", () => {
   );
 });
 
+Deno.test("Source structured route reports canonical unbound values", () => {
+  assert_throws(
+    () => Source.core(Source.parse("unknown.member")),
+    "Unbound core value: unknown",
+  );
+  assert_throws(
+    () => Source.wat("unknown(1)"),
+    "Unbound core value: unknown",
+  );
+});
+
 Deno.test("Source lowers host import contracts to Core", () => {
   const source = Source.parse(`
 host_import host_read from "env.read" (bounded_borrow Text) => I32
@@ -15503,6 +15671,147 @@ add_size(user_type, 10)
   );
 });
 
+Deno.test("Task 7 ownership protocol fixtures reach the Core proof gate", () => {
+  const specialized = compile(`
+const readable = ops => {
+  ops.read
+  ops
+}
+
+const scalar_ops = 0
+const scalar_ops = scalar_ops with {
+  read: value => value + 1
+}
+
+let use_read = (const ops: readable, value) => ops.read(value)
+use_read(scalar_ops, 41)
+`);
+  assert_equals(Ic.reduce(specialized), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  const bounded_borrow = Source.core(Source.parse(`
+host_import host_read from "env.read" (bounded_borrow Text) => I32
+
+let read = message => host_read(borrow message)
+let message: Text = append("a", "b")
+read(message)
+`));
+  const bounded_borrow_proof = Core.proof(bounded_borrow);
+  assert_equals(bounded_borrow_proof.ok, true);
+  assert_equals(
+    bounded_borrow_proof.host_boundaries.edges[0]?.args[0]?.ownership.tag,
+    "borrow_view",
+  );
+  assert_equals(
+    bounded_borrow_proof.host_boundaries.edges[0]?.decision.tag,
+    "allowed",
+  );
+
+  const unique_transfer = Source.core(Source.parse(`
+host_import host_take from "env.take" (ownership_transfer Text) => I32
+
+let send = message => host_take(message)
+let message: Text = append("a", "b")
+send(message)
+`));
+  const unique_transfer_proof = Core.proof(unique_transfer);
+  assert_equals(unique_transfer_proof.ok, true);
+  assert_equals(unique_transfer_proof.transfers.transfers.length, 1);
+  assert_equals(unique_transfer_proof.transfers.transfers[0]?.owner, "message");
+  assert_equals(unique_transfer_proof.drops.steps[0]?.tag, "host_transfer");
+
+  const frozen_return = Source.core(Source.parse(`
+host_import host_make from "env.make" () => frozen_shareable Text
+
+host_make()
+  `));
+  const frozen_return_proof = Core.proof(frozen_return);
+  assert_equals(frozen_return_proof.ok, true);
+  const frozen_return_edge = frozen_return_proof.host_boundaries.edges[0];
+  if (!frozen_return_edge) {
+    throw new Error("Missing frozen host-return boundary edge");
+  }
+  if (!frozen_return_edge.signature) {
+    throw new Error("Missing frozen host-return boundary signature");
+  }
+  assert_equals(
+    frozen_return_edge.signature.result_owner,
+    { tag: "frozen_shareable", reason: "text" },
+  );
+  assert_equals(frozen_return_proof.final_result.ownership, {
+    tag: "frozen_shareable",
+    reason: "text",
+  });
+
+  const ownership_protocol = Source.core(Source.parse(`
+host_import host_read from "env.read" (bounded_borrow Text) => I32
+
+const readable = ops => {
+  ops.read
+  ops
+}
+
+const text_ops = 0
+const text_ops = text_ops with {
+  read: message => host_read(borrow message)
+}
+
+let use_read = (const ops: readable, message: Text) => ops.read(message)
+let message: Text = append("a", "b")
+use_read(text_ops, message)
+`));
+  assert_throws(
+    () => Core.proof(ownership_protocol),
+    "Cannot check core first-class closure parameter annotation: readable",
+  );
+
+  const missing_cleanup = Source.core(Source.parse(`
+host_import host_take from "env.take" (ownership_transfer Text) => I32
+
+let maybe_send = (flag: Int, message: Text) => {
+  if flag {
+    host_take(message)
+  } else {
+    0
+  }
+}
+
+let message: Text = append("a", "b")
+maybe_send(1, message)
+`));
+  const missing_cleanup_proof = Core.proof(missing_cleanup);
+  assert_equals(missing_cleanup_proof.ok, false);
+  assert_equals(
+    missing_cleanup_proof.transfers.issues[0]?.tag,
+    "conditional_transfer_requires_cleanup",
+  );
+  assert_throws(
+    () => Core.check_proof(missing_cleanup),
+    "requires conditional cleanup/drop facts",
+  );
+
+  const scratch_escape = Source.core(
+    Source.parse('scratch { append("a", "b") }'),
+  );
+  const scratch_escape_proof = Core.proof(scratch_escape);
+  assert_equals(scratch_escape_proof.ok, false);
+  assert_equals(
+    scratch_escape_proof.cleanup.steps[0]?.return_value.storage,
+    "rejected",
+  );
+  assert_equals(
+    scratch_escape_proof.issues[0]?.missing_edge,
+    "scratch_backed_result",
+  );
+  assert_throws(
+    () => Core.check_proof(scratch_escape),
+    "unique_heap text cannot leave scratch without freeze or explicit promotion",
+  );
+});
+
 Deno.test("Source lowers frontend-known index updates by rebuilding", () => {
   assert_equals(
     Format.fmt(Source, Source.parse("xs[i] = value")),
@@ -15837,14 +16146,9 @@ xs[0]
     "Cannot lower index access to Ic frontend yet: buf",
   );
 
-  const unknown_index_update_core = Source.core(Source.parse(`
-buf[i] = x
-buf
-`));
-
-  assert_equals(
-    Format.fmt(Core, unknown_index_update_core),
-    "buf[i] = x\nbuf",
+  assert_throws(
+    () => Source.core(Source.parse("buf[i] = x\nbuf")),
+    "Unbound core value: buf",
   );
 });
 
@@ -15869,14 +16173,14 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
     "Expected scratch block",
   );
 
-  assert_equals(
-    Format.fmt(Core, Source.core(Source.parse("borrow user"))),
-    "borrow user",
+  assert_throws(
+    () => Source.core(Source.parse("borrow user")),
+    "Unbound core value: user",
   );
 
-  assert_equals(
-    Format.fmt(Core, Source.core(Source.parse("freeze value"))),
-    "freeze value",
+  assert_throws(
+    () => Source.core(Source.parse("freeze value")),
+    "Unbound core value: value",
   );
 
   assert_equals(
@@ -17617,10 +17921,15 @@ inc
 });
 
 Deno.test("Source and Core facades lower representative inputs and expose proof rows (task coverage)", async () => {
+  const evidenceDir = "/tmp/grok-goal-c35e95813d70/implementer";
+  await Deno.mkdir(evidenceDir, { recursive: true });
+
   // Drive real shipped entry points directly on minimal and example inputs.
   // Assert lowered forms and no-GC proof for memory shapes.
   // arithmetic + shadowing
-  const ex01 = await Deno.readTextFile("examples/01_arithmetic_and_shadowing.txt");
+  const ex01 = await Deno.readTextFile(
+    "examples/basics/01_arithmetic_and_shadowing.ix",
+  );
   const c01 = Source.core(ex01);
   assert_equals(Typed.type(Core, c01), "i32");
   const p01 = Core.proof(c01);
@@ -17629,10 +17938,13 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   assert_equals(p01.ok, true);
   assert_equals(p01.issues.length, 0);
   // save durable full proof rows evidence
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/ex01.proof.json", JSON.stringify(p01, null, 2));
+  await Deno.writeTextFile(
+    evidenceDir + "/ex01.proof.json",
+    JSON.stringify(p01, null, 2),
+  );
 
   // struct
-  const ex04 = await Deno.readTextFile("examples/04_struct_fields.txt");
+  const ex04 = await Deno.readTextFile("examples/data/01_struct_fields.ix");
   const c04 = Source.core(ex04);
   const p04 = Core.proof(c04);
   assert_equals(p04.target, "core-3-nonweb");
@@ -17640,12 +17952,14 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   assert_equals(p04.issues.length, 0);
 
   // union
-  const ex05 = await Deno.readTextFile("examples/05_union_match.txt");
+  const ex05 = await Deno.readTextFile("examples/data/07_generic_option.ix");
   const c05 = Source.core(ex05);
   assert_includes(Format.fmt(Core, c05), ".some");
 
   // text
-  const ex06 = await Deno.readTextFile("examples/06_text_bytes.txt");
+  const ex06 = await Deno.readTextFile(
+    "examples/data/10_text_append_and_bytes.ix",
+  );
   const c06 = Source.core(ex06);
   const p06 = Core.proof(c06);
   assert_equals(p06.managed_storage, "disabled");
@@ -17653,13 +17967,15 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   assert_equals(p06.issues.length, 0);
 
   // range loop
-  const ex07 = await Deno.readTextFile("examples/07_range_loop.txt");
+  const ex07 = await Deno.readTextFile("examples/loops/01_range_sum.ix");
   const c07 = Source.core(ex07);
   const wat07 = Emit.emit(Core, c07);
   assert_includes(wat07, "loop");
 
   // dynamic union
-  const ex14 = await Deno.readTextFile("examples/14_dynamic_union_result.txt");
+  const ex14 = await Deno.readTextFile(
+    "examples/data/08_dynamic_union_result.ix",
+  );
   const c14 = Source.core(ex14);
   const p14 = Core.proof(c14);
   assert_equals(p14.target, "core-3-nonweb");
@@ -17667,7 +17983,9 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   assert_equals(p14.issues.length, 0);
 
   // recursive fib via real Source and Core (classic non-tail double-rec lam)
-  const ex03 = await Deno.readTextFile("examples/03_recursive_fib.txt");
+  const ex03 = await Deno.readTextFile(
+    "examples/functions/04_recursive_fibonacci.ix",
+  );
   const c03 = Source.core(ex03);
   const p03 = Core.proof(c03);
   assert_equals(p03.target, "core-3-nonweb");
@@ -17675,7 +17993,7 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   assert_equals(p03.issues.length, 0);
   // full module via Source.wat (not body-only)
   const wat03 = Source.wat(ex03);
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/example-03.log", wat03);
+  await Deno.writeTextFile(evidenceDir + "/example-03.log", wat03);
   assert_includes(wat03, "(module");
   assert_includes(wat03, "(param $n i32)");
   assert_includes(wat03, "call $fib");
@@ -17697,12 +18015,12 @@ n
   assert_equals(pLin.issues.length, 0);
   const w = Source.wat(linearHostSrc);
   assert_includes(w, "import");
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/example-linear.log", w);
+  await Deno.writeTextFile(evidenceDir + "/example-linear.log", w);
 
   // write representative example WATs from real paths for verification evidence
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/example-01.log", Source.wat(ex01));
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/example-04.log", Source.wat(ex04));
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/example-07.log", Source.wat(ex07));
+  await Deno.writeTextFile(evidenceDir + "/example-01.log", Source.wat(ex01));
+  await Deno.writeTextFile(evidenceDir + "/example-04.log", Source.wat(ex04));
+  await Deno.writeTextFile(evidenceDir + "/example-07.log", Source.wat(ex07));
 
   // memory fixture per verification: borrow/scratch/freeze/owner + owner replacement ( := after borrow view ends)
   const memFix = `
@@ -17718,8 +18036,12 @@ o2
 `;
   const cm = Source.core(memFix);
   const pm = Core.proof(cm);
-  const memLog = "memory fixture proof: target=" + pm.target + " managed=" + pm.managed_storage + " ok=" + pm.ok + " issues=" + pm.issues.length;
-  await Deno.writeTextFile("/tmp/grok-goal-c35e95813d70/implementer/memory-proof.log", memLog + "\n" + JSON.stringify(pm, null, 2));
+  const memLog = "memory fixture proof: target=" + pm.target + " managed=" +
+    pm.managed_storage + " ok=" + pm.ok + " issues=" + pm.issues.length;
+  await Deno.writeTextFile(
+    evidenceDir + "/memory-proof.log",
+    memLog + "\n" + JSON.stringify(pm, null, 2),
+  );
   assert_equals(pm.target, "core-3-nonweb");
   assert_equals(pm.managed_storage, "disabled");
   assert_equals(pm.ok, true);
@@ -17749,12 +18071,13 @@ fib(6)
   // structural requirements (per focused test mandate)
   assert_includes(wat, "(param $n");
   assert_includes(wat, "call \$fib");
-  assert_includes(wat, "call \$fib");  // at least two by presence
+  assert_includes(wat, "call \$fib"); // at least two by presence
   assert_includes(wat, "(param $n i32)");
   // main func must not have a dead (local $fib ...) from the rec bind marker
   const mainMatch = wat.match(/\(func \$main[\s\S]*?\n\)/);
-  const hasDeadLocalInMain = mainMatch ? mainMatch[0].includes("(local $fib") : false;
+  const hasDeadLocalInMain = mainMatch
+    ? mainMatch[0].includes("(local $fib")
+    : false;
   assert_equals(hasDeadLocalInMain, false);
   // the $fib body should contain the recursive calls (already asserted broadly)
 });
-

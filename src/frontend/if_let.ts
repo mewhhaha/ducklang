@@ -1,4 +1,3 @@
-import { expect } from "../expect.ts";
 import type { Ic as IcNode } from "../ic.ts";
 import type { Env, FrontExpr } from "./ast.ts";
 import { clone_env, fresh, push_binding } from "./env.ts";
@@ -8,7 +7,6 @@ import {
   lower_if_let_else_branch,
 } from "./if_let_common.ts";
 import { lower_dynamic_if_let } from "./if_let_dynamic.ts";
-import { resolve_dynamic_union_if_target } from "./if_let_target.ts";
 import type { IfLetHooks } from "./if_let_types.ts";
 import { lower_lambda_binding } from "./ic_share.ts";
 

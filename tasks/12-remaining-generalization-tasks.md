@@ -1739,10 +1739,10 @@ Current implementation status for that split:
   block-local scratch runtime aggregate alias promotion with scalar, `Text`, and
   nested aggregate fields, block-local scratch runtime union alias promotion for
   scalar/`Text`/`Unit`, union-pointer, and supported aggregate-pointer payloads,
-  no-op bump-allocator drop facts for many source-owner paths, and the first
-  Core host/import contract slices. `Core.host_imports` now carries explicit
-  argument contracts, `Core.proof(...).host_boundaries` records the matched
-  signature and per-argument decisions, bounded-borrow imports accept
+  reusable free-list cleanup for allocation-linked source-owner paths, and the
+  first Core host/import contract slices. `Core.host_imports` now carries
+  explicit argument contracts, `Core.proof(...).host_boundaries` records the
+  matched signature and per-argument decisions, bounded-borrow imports accept
   `borrow_view` arguments, ownership-transfer imports consume direct
   `unique_heap` arguments, `Core.drops(...)` records `host_transfer` facts, and
   `Core.mod(...)` emits the corresponding WAT imports and calls.
@@ -3380,8 +3380,10 @@ Split the feature into small vertical slices:
   ownership reason, for example frozen text, closure pointers, runtime-union
   pointers, or scratch-backed values. Bounded borrow escape checks, owner
   move/mutation/freeze protection while borrowed, control-flow drop coverage,
-  and runtime text freeze promotion now have accepted proof slices. Broader
-  aggregate/union/closure promotion and reusable cleanup are still pending.
+  and runtime text freeze promotion now have accepted proof slices. Promoted
+  scratch `Text` can also be captured by a stored closure through a persistent
+  frozen/shareable environment slot. Broader aggregate/union promotion and
+  reusable cleanup emission are still pending.
 - Core `scratch { ... }` now accepts results classified as `frozen_shareable` in
   addition to scalar locals. Static text literals inside `scratch` can return
   through Core type/emission because they are already frozen/shareable and do
@@ -3482,8 +3484,11 @@ Split the feature into small vertical slices:
   loop `break`/`continue` that remain inside an outer scratchpad do not reset
   that outer scope. `Core.mod` emits the `__scratch_heap` global and memory when
   a scratch expression is used, including scratch inside lifted closure bodies.
-  Reusable allocator/destructor lowering and closure-body cleanup planning
-  beyond this shared scratch state are still pending.
+  Conditional branches and structured loops now contribute proof-visible
+  cleanup/drop rows for the accepted owner paths, including branch replacement,
+  `if let`, zero/one-iteration loop cases, and `break`/`continue` exits.
+  Allocation-linked rows now lower to `__free` calls through the reusable
+  free-list allocator at their statement and control-flow anchors.
 - `src/core/lifetime_scope.ts` and `Core.lifetimes(...)` now expose the first
   lexical lifetime-scope scan. It records deterministic program, block,
   loop-iteration, function-call, closure-environment, and scratchpad scopes with
@@ -3499,29 +3504,28 @@ Split the feature into small vertical slices:
   direct unique values and final named owners are treated as escaping results.
   Terminal expression branches, such as both sides of an expression-level `if`
   returning, do not also report a false fallthrough drop. The current runtime is
-  explicitly `no_op_bump_allocator`, so these drops are analysis facts for later
-  reusable allocation and destructor lowering rather than emitted WAT. Branches
-  that assign existing unique owners merge the resulting owner back into the
-  outer scope, while branch-local unique owners still drop at the branch
-  boundary. Closure bodies are now scanned under deterministic `closure#N`
-  scopes, so closure-local unique owners produce drop facts on closure
-  fallthrough or closure-local `return` exits. Direct named-owner discards and
-  direct named-owner moves through static aliases are now handled without
-  forcing static owner values through runtime expression typing.
-  Compile-time-only `const` values, including type values and const
-  type-constructor results, stay in the static drop-analysis context and do not
-  create runtime owners or require runtime expression typing. Freeze of a named,
-  block-result, or branch-result unique owner is now modeled as an
-  ownership-consuming edge in the drop plan, including discarded `freeze f`,
-  `let frozen = freeze f`, `let frozen = { freeze f }`, branch-local
-  `if { freeze f } else { freeze g }`, `return freeze f`, and self-shadowing
-  `f := freeze f`; full immutable heap-copy/promotion codegen for unique values
-  remains pending. Statement-level no-else `if` and typed `if let` bodies that
-  contain `freeze f` now avoid forcing static owner values through runtime
-  typing and produce conservative outer drop facts for paths where the optional
-  branch does not run. Conditional drop/destructor emission for real reusable
-  allocators remains pending; the current facts still target the
-  `no_op_bump_allocator` runtime.
+  explicitly `reusable_free_list_allocator`; allocation-linked drops emit
+  `__free` calls at their statement and control-flow anchors. Branches that
+  assign existing unique owners merge the resulting owner back into the outer
+  scope, while branch-local unique owners still drop at the branch boundary.
+  Closure bodies are now scanned under deterministic `closure#N` scopes, so
+  closure-local unique owners produce drop facts on closure fallthrough or
+  closure-local `return` exits. Direct named-owner discards and direct
+  named-owner moves through static aliases are now handled without forcing
+  static owner values through runtime expression typing. Compile-time-only
+  `const` values, including type values and const type-constructor results, stay
+  in the static drop-analysis context and do not create runtime owners or
+  require runtime expression typing. Freeze of a named, block-result, or
+  branch-result unique owner is now modeled as an ownership-consuming edge in
+  the drop plan, including discarded `freeze f`, `let frozen = freeze f`,
+  `let frozen = { freeze f }`, branch-local `if { freeze f } else { freeze g }`,
+  `return freeze f`, and self-shadowing `f := freeze f`; full immutable
+  heap-copy/promotion codegen for unique values remains pending. Statement-level
+  no-else `if` and typed `if let` bodies that contain `freeze f` now avoid
+  forcing static owner values through runtime typing and produce conservative
+  outer drop facts for paths where the optional branch does not run. Conditional
+  cleanup now emits on the retained branch, including dynamic no-else `if` and
+  typed `if let` fallthrough paths.
 - `src/core/proof.ts`, `Core.proof(...)`, and `Core.check_proof(...)` now expose
   the first explicit baseline no-GC proof harness for the `core-3-nonweb`
   target. The proof aggregates final-result escape analysis, borrow validation,
@@ -3532,6 +3536,19 @@ Split the feature into small vertical slices:
   proof issues instead of selecting a GC fallback. The proof gate belongs before
   WAT/module emission; `Core.type(...)` remains a type-query surface rather than
   the final no-GC proof boundary.
+- The baseline proof now exposes canonical row families for storage, lifetimes,
+  borrow views, scratch results, freeze/promotion, cleanup/drop, host
+  boundaries, capability methods, runtime slices, and allocation metadata.
+  Accepted emitters consume the same facts rather than reconstructing a second
+  ownership model after the gate.
+- Persistent allocation rows now carry reusable-layout prerequisites such as
+  allocation id, byte-size formula, alignment, and layout id for runtime text,
+  aggregates, unions, closures, and runtime `i32` slices. The baseline runtime
+  now consumes that contract through a shared header-backed first-fit
+  `__alloc(size, alignment)` free list and a real `__free(ptr)`. Persistent
+  allocation families share reusable blocks, while scratch allocation remains a
+  distinct region discipline. Linked cleanup rows call `__free` on proven owner
+  exits and replacements; escaped and frozen results remain live.
 - Drop/proof analysis now recognizes static-shaped aggregate values,
   static-shaped aggregate updates, and extension objects as ownerless compiler
   facts rather than runtime heap owners. This lets `Core.proof(...)` accept the
@@ -3759,11 +3776,10 @@ Break the remaining work into these implementation slices:
    - Implemented analysis-only drop-plan consumption for direct named and
      block/branch-result unique owners consumed by `freeze`, so the original
      owner is not dropped later as if it were still live.
-   - Implemented conservative no-op bump drop facts for optional statement
-     branches where `freeze` may not run, including no-else `if` and typed
-     `if let` bodies. A later reusable allocator/destructor path still needs
-     explicit conditional cleanup facts for the paths where the owner remains
-     live.
+   - Implemented conditional cleanup for optional statement branches where
+     `freeze` may not run, including dynamic no-else `if` and typed `if let`
+     fallthrough paths. Linked retained-path owners lower to `__free` through
+     the reusable free-list allocator.
    - Implemented the first persistent heap-backed freeze slice for runtime
      `Text`: `freeze` over `unique_heap text` consumes the owned buffer as
      immutable shareable storage, tracks frozen runtime locals through Core
@@ -3899,10 +3915,10 @@ Break the remaining work into these implementation slices:
      expression context move, escape, or discard the selected result.
    - Insert drop/reset actions at the same proven lifetime ends used for source
      values. Scratch-backed temporaries reset with their scratch scope; unique
-     heap temporaries record drops even if the first bump allocator lowers them
-     to no-ops.
-   - Extend cleanup/reset emission for reusable allocator/destructor paths into
-     branch merges and lowering-created temporaries.
+     heap temporaries link drops to reusable free-list allocation metadata and
+     emit `__free` at their cleanup anchors.
+   - Cleanup/reset emission now covers accepted branch merges and linked
+     lowering-created temporaries through the reusable allocator.
    - Remaining follow-up: extend the same owner/drop facts to future richer
      lowering-created temporaries and reusable allocator/destructor emission.
    - Prioritize temporaries introduced by runtime aggregate materialization,
@@ -4482,6 +4498,11 @@ remain reserved.
   and zero-iteration cleanup/drop facts exist. Dynamic range loops carrying
   static aggregate/union facts already reject earlier in the loop-carried fact
   gate.
+- Implemented dynamic runtime `i32` slice facts and structured iteration. The
+  proof records element type, ownership, pointer offset, dynamic length, and
+  capacity before WAT emits the slice loop. Runtime aggregate indexing also
+  preserves indexed runtime-union type/payload facts, so a dynamically selected
+  union item can flow into `if let` without losing its layout contract.
 - Remaining follow-up: broaden one-sided branch and loop payload moves only
   after explicit conditional cleanup/drop facts exist; then continue through
   dynamic wrappers; add precise freeze/copy facts for payloads that should be
@@ -4584,7 +4605,7 @@ subset. Broader text operations need allocation and byte-copy loops.
   proof records runtime append as a `persistent_unique_heap` /
   `unique_heap text` / `runtime_text` allocation with managed storage disabled.
 - Runtime text operation temporaries now have proof-locked drop coverage for the
-  current no-op bump allocator path: discarded append/slice temporaries emit
+  reusable free-list allocator path: discarded append/slice temporaries emit
   `discarded_expr` drop facts, bound append/slice runtime text temporaries emit
   `scope_exit` drop facts, and the append proof fixture exposes both slice and
   append owner drops with managed storage disabled.
@@ -4641,9 +4662,14 @@ subset. Broader text operations need allocation and byte-copy loops.
   collection local collection now scans the body once per emitted field, so
   helper locals introduced by unrolled body text operations and the later
   scratch-to-persistent freeze copy are declared before WAT emission.
-- Remaining follow-up: broader scratch-backed escaping text promotion/freeze and
-  reusable allocator/destructor cleanup beyond the current no-op bump drop
-  facts.
+- Helper-returned scratch `Text` freeze now inlines ownership facts before the
+  scratch-return gate, allocates the promoted bytes persistently, and preserves
+  cleanup rows through WAT. A promoted scratch `Text` may also be stored in a
+  persistent closure environment as a frozen/shareable capture; the matching raw
+  scratch-backed stored capture remains rejected.
+- Remaining follow-up: broader nested aggregate/union scratch-backed text
+  promotion and reusable allocator/destructor cleanup beyond the current no-op
+  bump drop facts.
 
 ## Task 12.9: Effectful Capability Method ABI
 
@@ -4698,9 +4724,13 @@ lowering. A Wasm ABI is needed before lowering them generally.
 - Missing imported method facts are now proof-visible. A linear receiver method
   call without a matching `host_import`, including inside a lambda body, records
   `Missing host capability method: receiver.method` before WAT emission.
-- Remaining follow-up: runtime capability objects with method tables, capability
-  narrowing facts through object fields, and non-scalar or ownership-bearing
-  capability tokens beyond the scalar import-threading slice.
+- Capability objects built from known host imports now lower to explicit method
+  tables. `Core.proof(...)` exposes canonical capability-method rows, narrowed
+  tables reject omitted methods before WAT, and accepted calls retain explicit
+  linear token threading through the selected import.
+- Remaining follow-up: dynamically allocated capability tables and non-scalar or
+  ownership-bearing capability tokens beyond the known-table scalar
+  import-threading slice.
 
 ## Task 12.10: First-Class Linear Closure Captures
 
@@ -4888,13 +4918,21 @@ slices:
   non-escaping direct-call shape inside `scratch {}`. A lambda immediately
   called inside the scratchpad may capture a scratch-backed `Text` value when
   the lambda body contains no nested closure value and the scratch result is
-  scalar. Stored, returned, frozen, or branch-selected scratch-backed closure
-  captures still reject until linear/scratch closure ownership is implemented.
-- Remaining follow-up: true closure-environment slots that move source `!`
-  values into heap-stored closure environments beyond non-escaping
-  branch-selected call paths, broader ownership-bearing aggregate/union closure
-  parameter shapes beyond copy/share-safe pointers, and scratch-backed capture
-  proofs.
+  scalar. Raw stored, returned, frozen, or branch-selected scratch-backed
+  closure captures still reject; the explicit promotion slice below is the
+  supported way to move captured data out of the scratch lifetime.
+- Heap-stored one-shot closure environments now support explicit source `!`
+  moves for scalar capability slots and runtime aggregate owner slots. Each slot
+  records offset, persistent lifetime, unique environment storage, and `move`;
+  the closure records `callable: "once"`, emits exactly one `call_indirect`, and
+  direct or aliased reuse rejects before WAT. Aggregate layout facts remain
+  available in the lifted body.
+- Explicitly promoted scratch `Text` captures record a persistent
+  frozen/shareable environment slot with `share` transfer plus scratch-reset
+  cleanup rows. Raw scratch-backed stored captures still reject.
+- Remaining follow-up: one-shot runtime-union owner slots, nested
+  ownership-bearing aggregate/union captures beyond the implemented pointer
+  move, and stored scratch-backed captures without an explicit promotion edge.
 
 ## Task 12.11: Broader Structured-Core/Wasm Cleanup
 

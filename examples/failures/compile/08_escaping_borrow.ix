@@ -1,0 +1,6 @@
+let escape = (message: Text) => {
+  borrow message
+}
+
+let message: Text = append("a", "b")
+escape(message)

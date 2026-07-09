@@ -1,0 +1,20 @@
+host_import flag from "env.flag" () => I32
+
+const choice_type = union {
+  add: Int,
+  multiply: Int
+}
+
+let choice: choice_type = if flag() {
+  choice_type.add(21)
+} else {
+  choice_type.multiply(2)
+}
+
+let operation = if let .add(amount) = choice {
+  (value: Int) => value + amount
+} else {
+  (value: Int) => value * 2
+}
+
+operation(21)

@@ -11,6 +11,7 @@ export function core_expr_contains_borrow<ctx>(
     case "num":
     case "text":
     case "type_name":
+    case "rec_ref":
     case "linear":
     case "struct_type":
     case "union_type":

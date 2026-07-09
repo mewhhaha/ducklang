@@ -74,6 +74,8 @@ export function create_core_backend_runtime_union(
       deps.static_call().static_core_call_target(expr, ctx),
     static_core_call_value: (expr, ctx) =>
       deps.static_call().static_core_call_value(expr, ctx),
+    static_collection_fields: (expr, ctx) =>
+      deps.struct().static_collection_fields(expr, ctx),
     static_struct_value: (expr, ctx) =>
       deps.struct().static_struct_value(expr, ctx),
     static_type_value,

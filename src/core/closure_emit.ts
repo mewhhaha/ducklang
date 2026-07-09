@@ -9,7 +9,6 @@ import {
 } from "./closure_lift.ts";
 export { emit_lifted_closure_funcs } from "./closure_lift_emit.ts";
 import {
-  closure_heap_global,
   type CoreClosureEmitCtx,
   type CoreClosureEmitHooks,
 } from "./closure_runtime.ts";
@@ -25,6 +24,7 @@ export {
   type LiftedClosure,
 } from "./closure_runtime.ts";
 import { store_instr } from "./memory.ts";
+import { emit_persistent_alloc } from "./runtime_allocator.ts";
 
 export function emit_runtime_closure<ctx extends CoreClosureEmitCtx>(
   expr: Extract<CoreExpr, { tag: "lam" }>,
@@ -47,12 +47,11 @@ export function emit_runtime_closure_with_type<ctx extends CoreClosureEmitCtx>(
   set_local(ctx.locals, name, "i32");
   ctx.heap.needed = true;
   const lines = [
-    "global.get $" + closure_heap_global,
+    emit_persistent_alloc(
+      "i32.const " + closure_env_size(lift).toString(),
+      8,
+    ),
     "local.set $" + name,
-    "global.get $" + closure_heap_global,
-    "i32.const " + closure_env_size(lift).toString(),
-    "i32.add",
-    "global.set $" + closure_heap_global,
     "local.get $" + name,
     "i32.const " + lift.table_index.toString(),
     "i32.store",

@@ -2,7 +2,9 @@ import type { CoreExpr, CoreField, CoreStmt } from "../ast.ts";
 import type { CoreFnType } from "../ast.ts";
 import {
   find_core_field,
+  fresh_temp_local,
   maybe_static_i32,
+  set_local,
   static_indexed_field,
 } from "../backend/util.ts";
 import { collect_block_expr_locals } from "../local_collect_block.ts";
@@ -149,6 +151,15 @@ export function collect_core_expr_locals(
       if (target && static_core_call_requires_scope(target)) {
         hooks.collect_scoped_static_core_call_locals(expr, target, ctx);
         return;
+      }
+
+      if (
+        expr.func.tag === "var" &&
+        (expr.func.name === "runtime_i32_slice" ||
+          expr.func.name === "runtime_text_slice")
+      ) {
+        const name = fresh_temp_local(ctx, "runtime_slice");
+        set_local(ctx.locals, name, "i32");
       }
 
       api.collect_expr_locals(expr.func, ctx, hooks);
@@ -408,7 +419,8 @@ function collect_runtime_aggregate_freeze_copy_locals(
   }
 
   const struct_value = hooks.static_struct_value(value, ctx);
-  let type_expr = ctx.struct_locals.get(value.name);
+  const runtime_type_expr = ctx.struct_locals.get(value.name);
+  let type_expr = runtime_type_expr;
 
   if (!type_expr && struct_value) {
     type_expr = struct_value.type_expr;
@@ -426,7 +438,7 @@ function collect_runtime_aggregate_freeze_copy_locals(
     return;
   }
 
-  if (!struct_value) {
+  if (runtime_type_expr) {
     const plan = runtime_aggregate_plan(ctx);
     declare_runtime_aggregate_locals(plan, ctx);
   }

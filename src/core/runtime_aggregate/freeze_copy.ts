@@ -2,7 +2,7 @@ import { expect } from "../../expect.ts";
 import type { ValType } from "../../op.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
-import { closure_heap_global } from "../closure_runtime.ts";
+import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import { store_instr } from "../memory.ts";
 import {
   declare_runtime_text_slice_locals,
@@ -39,12 +39,8 @@ export function emit_runtime_aggregate_freeze_copy<
   declare_runtime_aggregate_locals(plan, ctx);
   ctx.heap.needed = true;
   const lines = [
-    "global.get $" + closure_heap_global,
+    emit_persistent_alloc("i32.const " + layout.size.toString(), 8),
     "local.set $" + plan.local,
-    "global.get $" + closure_heap_global,
-    "i32.const " + layout.size.toString(),
-    "i32.add",
-    "global.set $" + closure_heap_global,
   ];
 
   emit_runtime_aggregate_freeze_copy_field_stores(

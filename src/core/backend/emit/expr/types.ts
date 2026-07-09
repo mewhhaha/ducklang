@@ -136,6 +136,17 @@ export type CoreBackendExprEmitApi = {
     expr: CoreExpr,
     ctx: CoreEmitCtx,
   ) => CoreField[] | undefined;
+  static_core_call_requires_scope: (
+    target: Extract<CoreExpr, { tag: "lam" }>,
+  ) => boolean;
+  static_core_call_target: (
+    expr: CoreExpr,
+    ctx: CoreEmitCtx,
+  ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
+  static_core_call_value: (
+    expr: CoreExpr,
+    ctx: CoreEmitCtx,
+  ) => CoreExpr | undefined;
   static_struct_value: (
     expr: CoreExpr,
     ctx: CoreEmitCtx,

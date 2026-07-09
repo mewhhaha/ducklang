@@ -16,6 +16,7 @@ import {
   type CoreBorrowValidation,
 } from "../borrow.ts";
 import { core_cleanup_plan, type CoreCleanupPlan } from "../cleanup.ts";
+import { elaborate_core_cleanup_emission } from "../cleanup_emission.ts";
 import {
   core_closure_ownership_plan,
   type CoreClosureOwnershipPlan,
@@ -31,10 +32,7 @@ import { core_host_import_for_app } from "../host_import.ts";
 import type { CoreCtx } from "../local_collect.ts";
 import type { CoreOwnership } from "../ownership.ts";
 import { core_check_baseline_proof, type CoreBaselineProof } from "../proof.ts";
-import {
-  create_child_core_ctx,
-  create_empty_core_ctx,
-} from "./graph/context.ts";
+import { create_child_core_ctx } from "./graph/context.ts";
 import {
   core_backend_host_boundaries,
   core_backend_proof,
@@ -42,7 +40,6 @@ import {
 import {
   collect_core_borrow_ctx as graph_collect_core_borrow_ctx,
   collect_core_drop_ctx as graph_collect_core_drop_ctx,
-  collect_stmt_locals_for_proof as graph_collect_stmt_locals_for_proof,
   drop_analysis_static_expr_value as graph_drop_analysis_static_expr_value,
 } from "./graph/drop_context.ts";
 import {
@@ -74,13 +71,19 @@ export function core_type(core: CoreNode): ValType {
 }
 
 export function emit_core(core: CoreNode): Wat {
-  core_check_proof(core);
+  prepare_cleanup_emission(core);
   return core_backend.artifact.emit_core_artifact(core).body;
 }
 
 export function core_mod(core: CoreNode, name = "main"): Mod {
-  core_check_proof(core);
+  prepare_cleanup_emission(core);
   return core_backend.artifact.core_mod(core, name);
+}
+
+function prepare_cleanup_emission(core: CoreNode): void {
+  const proof = core_backend_proof(core_backend, core);
+  core_check_baseline_proof(proof);
+  core.cleanup_emission = elaborate_core_cleanup_emission(core, proof.drops);
 }
 
 export function core_data(core: CoreNode): DataSegment[] {
@@ -219,13 +222,6 @@ function collect_core_ctx(core: CoreNode): CoreCtx {
 
 function collect_core_borrow_ctx(core: CoreNode): CoreCtx {
   return graph_collect_core_borrow_ctx(core_backend, core);
-}
-
-function collect_stmt_locals_for_proof(
-  stmt: CoreStmt,
-  ctx: CoreCtx,
-): void {
-  graph_collect_stmt_locals_for_proof(core_backend, stmt, ctx);
 }
 
 function drop_analysis_static_expr_value(

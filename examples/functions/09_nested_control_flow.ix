@@ -1,0 +1,13 @@
+host_import flag from "env.flag" () => I32
+
+let value = 0
+
+if flag() {
+  if flag() {
+    value = 42
+  }
+} else {
+  value = 21
+}
+
+value

@@ -186,6 +186,10 @@ function core_builtin_app_name(name: string): boolean {
     return true;
   }
 
+  if (name === "runtime_i32_slice" || name === "runtime_text_slice") {
+    return true;
+  }
+
   return false;
 }
 

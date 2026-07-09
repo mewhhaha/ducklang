@@ -130,6 +130,12 @@ export function create_core_backend_graph_expr_emit(
     expr_type: deps.expr_type().expr_type,
     static_collection_fields: (expr: CoreExpr, ctx: EmitCtx) =>
       deps.struct().static_collection_fields(expr, ctx),
+    static_core_call_requires_scope: (target) =>
+      deps.static_call().static_core_call_requires_scope(target),
+    static_core_call_target: (expr: CoreExpr, ctx: EmitCtx) =>
+      deps.static_call().static_core_call_target(expr, ctx),
+    static_core_call_value: (expr: CoreExpr, ctx: EmitCtx) =>
+      deps.static_call().static_core_call_value(expr, ctx),
     static_struct_value: (expr: CoreExpr, ctx: EmitCtx) =>
       deps.struct().static_struct_value(expr, ctx),
     static_runtime_union_match_branch_ctx:

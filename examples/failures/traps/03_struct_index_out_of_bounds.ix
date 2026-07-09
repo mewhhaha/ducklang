@@ -1,0 +1,4 @@
+host_import index from "env.index" () => I32
+
+let pair = { first: 20, second: 22 }
+pair[index()]

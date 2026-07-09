@@ -1,5 +1,5 @@
 import type { Wat } from "../../../wat.ts";
-import type { CoreExpr, CoreFnType } from "../../ast.ts";
+import type { CoreExpr } from "../../ast.ts";
 import type { CoreEmitCtx } from "../../emit_ctx.ts";
 import { emit_core_expr } from "../../expr_emit.ts";
 import { create_core_backend_expr_emit_hooks } from "./expr/hooks.ts";

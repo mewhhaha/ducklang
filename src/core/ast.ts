@@ -3,9 +3,41 @@ import type { Prim, ValType } from "../op.ts";
 
 export type Core = {
   tag: "program";
+  cleanup_emission?: CoreCleanupEmission[];
+  capability_methods?: CoreCapabilityMethodFact[];
   host_imports?: Record<string, CoreHostImport>;
   statements: CoreStmt[];
   recFunctions?: Record<string, CoreRecFunction>;
+};
+
+export type CoreCleanupEmission = {
+  step_id: string;
+  allocation_ids: string[];
+  edge:
+    | "scope_exit"
+    | "assignment_replace"
+    | "discarded_expr"
+    | "return_exit"
+    | "break_exit"
+    | "continue_exit"
+    | "conditional_cleanup"
+    | "loop_zero_iteration_cleanup";
+  scope: string;
+  owner: string | undefined;
+  pointer_local: string | undefined;
+  statement_index: number | undefined;
+  statement_path: number[] | undefined;
+  byte_size: import("./allocation.ts").CoreAllocationByteSize;
+  alignment: 4 | 8;
+  layout: import("./allocation.ts").CoreAllocationLayout;
+  owned_children: import("./allocation.ts").CoreAllocationOwnedChild[];
+};
+
+export type CoreCapabilityMethodFact = {
+  table: string;
+  method: string;
+  host_import: string;
+  representation?: "runtime_aggregate";
 };
 
 export type CoreRecFunction = {
@@ -111,7 +143,12 @@ export type CoreExpr =
   | { tag: "var"; name: string }
   | { tag: "linear"; name: string }
   | { tag: "prim"; prim: Prim; args: CoreExpr[] }
-  | { tag: "lam"; params: CoreParam[]; body: CoreExpr }
+  | {
+    tag: "lam";
+    params: CoreParam[];
+    body: CoreExpr;
+    is_linear_closure?: boolean;
+  }
   | { tag: "rec"; params: CoreParam[]; body: CoreExpr }
   | { tag: "rec_ref"; name: string; params: CoreParam[] }
   | { tag: "app"; func: CoreExpr; args: CoreExpr[] }

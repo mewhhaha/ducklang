@@ -25,6 +25,10 @@ import { emit_named_rec_functions } from "./named_rec_emit.ts";
 import type { CoreCtx } from "./local_collect.ts";
 import type { RuntimeTextHeap } from "./runtime_text.ts";
 import { type CoreScratchHeap, scratch_heap_global } from "./scratch.ts";
+import {
+  allocator_free_head,
+  runtime_allocator_funcs,
+} from "./runtime_allocator.ts";
 import type { TextLayout } from "./text_layout.ts";
 import { core_host_func_imports } from "./host_import.ts";
 
@@ -142,8 +146,10 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
     };
   }
 
+  const body = lines.join("\n");
+
   return {
-    body: lines.join("\n"),
+    body,
     result: hooks.stmt_result_type(final_stmt, core_ctx),
     data: text_layout.data,
     funcs,
@@ -151,7 +157,8 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
     types: Array.from(closures.types.values()),
     table,
     heap_start: text_layout.heap_start,
-    needs_heap: heap.needed || table !== undefined,
+    needs_heap: heap.needed || table !== undefined ||
+      body.includes("call $__free"),
     needs_scratch: scratch.needed,
   };
 }
@@ -184,6 +191,10 @@ export function core_mod_from_artifact(
     result: artifact.result,
     body: artifact.body,
   };
+
+  if (artifact.needs_heap) {
+    Object.assign(funcs, runtime_allocator_funcs());
+  }
 
   const mod: Mod = {
     imports,
@@ -231,6 +242,12 @@ export function core_mod_from_artifact(
         type: "i32",
         mutable: true,
         value: artifact.heap_start,
+      },
+      [allocator_free_head]: {
+        name: allocator_free_head,
+        type: "i32",
+        mutable: true,
+        value: 0,
       },
     };
   }

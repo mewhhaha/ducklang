@@ -20,6 +20,9 @@ underscores.
 ```txt
 let read_number = input
 const make_adder = n => x => x + n
+const layout_of = t => layout(t)
+const align_to = (offset, alignment) => offset
+const greet_user = user => user.name
 const user_layout = layout(user_type)
 ```
 
@@ -723,11 +726,10 @@ closure values still require explicit promotion/freeze or reject before WAT
 emission.
 
 Cleanup is elaborated from facts before WAT emission. Scratch cleanup emits real
-pointer resets. Unique heap drops may initially lower to no-ops for the first
-bump allocator, but the drop facts still have to exist so a later reusable
-allocator or destructor path has a stable contract. Temporaries introduced
-during lowering follow the same storage, lifetime, and cleanup rules as source
-values.
+pointer resets. Unique heap drops emit `__free` calls into the reusable
+free-list allocator, and their allocation/layout links keep that runtime action
+explicit in the proof. Temporaries introduced during lowering follow the same
+storage, lifetime, and cleanup rules as source values.
 
 Linear analysis applies only where storage or effects require it: source `!`
 capabilities, `unique_heap` owners, active `borrow_view` barriers,

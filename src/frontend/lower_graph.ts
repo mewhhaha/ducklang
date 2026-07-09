@@ -53,15 +53,27 @@ export function lower_program(source: SourceNode): IcNode {
   return share_free_variables(lower_statements(source.statements, 0, env));
 }
 
+// These graphs are initialized once after their mutually recursive lazy facades
+// have been constructed.
+// deno-lint-ignore prefer-const
 let frontend_call_graph: FrontendCallGraph;
+// deno-lint-ignore prefer-const
 let frontend_value_graph: FrontendValueGraph;
+// deno-lint-ignore prefer-const
 let eval_hooks: FrontEvalHooks;
+// deno-lint-ignore prefer-const
 let expr_lower_hooks: ExprLowerHooks;
+// deno-lint-ignore prefer-const
 let if_expr_hooks: IfExprHooks;
+// deno-lint-ignore prefer-const
 let if_let_hooks: IfLetHooks;
+// deno-lint-ignore prefer-const
 let infer_hooks: InferHooks;
+// deno-lint-ignore prefer-const
 let prepare_hooks: FrontPrepareHooks;
+// deno-lint-ignore prefer-const
 let statement_lower_hooks: StatementLowerHooks;
+// deno-lint-ignore prefer-const
 let static_rec_hooks: StaticRecHooks;
 
 const {
@@ -101,11 +113,9 @@ const {
   resolve_union_constructor_call,
   resolve_union_type_value,
   resolve_union_value,
-  validate_union_payload_type,
 } = create_frontend_value_facade(() => frontend_value_graph);
 
 const {
-  eval_front_block,
   eval_front_value,
   eval_simple_front_block,
   infer_expr,
@@ -227,9 +237,7 @@ const frontend_const_resolve = create_frontend_const_resolve({
 
 const {
   eval_const_builtin,
-  lookup_const_field,
   resolve_const_expr,
-  resolve_const_expr_with_env,
   resolve_const_field_expr,
 } = frontend_const_resolve;
 
@@ -243,7 +251,6 @@ const {
   lower_dynamic_struct_if,
   lower_dynamic_union_if,
   resolve_dynamic_if_let_struct_value,
-  resolve_dynamic_struct_if_value,
   struct_value_hooks,
 } = create_frontend_lower_graph_value_hooks({
   capture_expr,

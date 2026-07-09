@@ -480,9 +480,6 @@ export function build_text_layout(
     }
 
     switch (expr.tag) {
-      case "rec_ref":
-        return;
-
       case "prim":
         for (const arg of expr.args) {
           visit_expr(arg);
@@ -512,7 +509,6 @@ export function build_text_layout(
         return;
 
       case "lam":
-      case "rec":
         visit_closure_body(expr.params, expr.body);
         return;
 

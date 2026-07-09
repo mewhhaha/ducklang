@@ -1,7 +1,0 @@
-let score = if input {
-  10
-} else {
-  20
-}
-
-score * 2 + 1

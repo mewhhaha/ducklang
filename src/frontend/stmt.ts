@@ -17,7 +17,7 @@ import {
   lower_if_let_statement,
   lower_if_statement,
 } from "./stmt/control.ts";
-import type { StatementDone, StatementLowerHooks } from "./stmt/types.ts";
+import type { StatementLowerHooks } from "./stmt/types.ts";
 
 export type { StatementLowerHooks };
 

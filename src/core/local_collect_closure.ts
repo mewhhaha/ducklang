@@ -46,6 +46,13 @@ export function collect_closure_value_locals_with_type(
 
   if (expr.tag === "lam") {
     collect_runtime_closure_locals(ctx);
+    if (expr.body.tag === "linear") {
+      const captured = ctx.statics.get(expr.body.name);
+
+      if (captured) {
+        callbacks.collect_expr_locals(captured, ctx, hooks);
+      }
+    }
     return;
   }
 

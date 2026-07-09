@@ -1,0 +1,13 @@
+const values = {
+  first: 10,
+  second: 20,
+  third: 12
+}
+
+let total = 0
+
+for index, value in values {
+  total = total + values[index]
+}
+
+total

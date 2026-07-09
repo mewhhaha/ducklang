@@ -1,4 +1,5 @@
 import type { Core as CoreNode } from "../../ast.ts";
+import { core_runtime_slice_facts } from "../../runtime_slice.ts";
 import { unsupported_core_captured_assignment_message } from "../../closure_capture.ts";
 import { core_escape_analysis } from "../../escape.ts";
 import { core_lifetime_plan } from "../../lifetime_scope.ts";
@@ -17,6 +18,7 @@ export function core_unsupported_codegen_proof(
       tag: "scalar_local",
       type: "i32",
     }),
+    borrow_plan: { edges: [], barriers: [], skipped_closures: [] },
     borrows: { ok: true, issues: [] },
     freeze_edges: [],
     cleanup: { steps: [] },
@@ -24,6 +26,8 @@ export function core_unsupported_codegen_proof(
     drops: { steps: [] },
     allocations: { facts: [] },
     host_boundaries: { edges: [] },
+    capability_method_rows: core.capability_methods || [],
+    runtime_slice_rows: core_runtime_slice_facts(core),
     transfers: { transfers: [], issues: [] },
     lifetimes: core_lifetime_plan(core),
     unsupported_codegen,
@@ -222,8 +226,9 @@ function core_builtin_app_unsupported_codegen_issue_from_analysis_error(
     return {
       tag: "unsupported_codegen",
       node: "expr",
-      feature: "app",
-      message: "Cannot emit core len over unknown collection or text",
+      feature: "len_unknown_collection_or_text",
+      missing_edge: "missing_collection_or_text_fact",
+      message: "Unsupported Core len: operand has no collection or Text fact",
     };
   }
 
@@ -231,8 +236,9 @@ function core_builtin_app_unsupported_codegen_issue_from_analysis_error(
     return {
       tag: "unsupported_codegen",
       node: "expr",
-      feature: "app",
-      message: "Cannot emit core get over unknown collection",
+      feature: "get_unknown_collection",
+      missing_edge: "missing_collection_fact",
+      message: "Unsupported Core get: operand has no collection fact",
     };
   }
 

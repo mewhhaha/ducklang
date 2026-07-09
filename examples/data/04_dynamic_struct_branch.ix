@@ -1,0 +1,11 @@
+host_import flag from "env.flag" () => I32
+
+const point_type = struct { x: Int, y: Int }
+
+let point: point_type = if flag() {
+  point_type { x: 40, y: 2 }
+} else {
+  point_type { x: 20, y: 22 }
+}
+
+point.x + point.y

@@ -31,6 +31,13 @@ export type CoreTransferValidationIssue =
     owner: string;
     transfer: CoreTransferEdge;
     message: string;
+  }
+  | {
+    tag: "invalid_union_payload_ownership";
+    owner: string | undefined;
+    callee: string;
+    ownership: CoreOwnership;
+    message: string;
   };
 
 export type CoreTransferValidation = {

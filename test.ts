@@ -7,6 +7,151 @@ import { Data, Emit, Typed } from "./src/trait.ts";
 
 const decoder = new TextDecoder();
 
+Deno.test("linear aggregate moves through a one-shot closure environment", async () => {
+  const wat_text = wat_from_core_source(`
+const user_type = struct { age: Int }
+let make = (age: Int) => user_type { age: age }
+let !user: user_type = make(41)
+let flag = 1
+let take_once = if flag { () => !user } else { () => !user }
+user = take_once()
+let marker = "x"
+!user
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "linear_aggregate_one_shot_closure",
+    {},
+  );
+
+  if (!(instance.exports.memory instanceof WebAssembly.Memory)) {
+    throw new Error("Missing memory export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("Missing main export");
+  }
+
+  const pointer = instance.exports.main();
+
+  if (typeof pointer !== "number") {
+    throw new Error("Expected aggregate pointer result");
+  }
+
+  const age = new DataView(instance.exports.memory.buffer).getInt32(
+    pointer,
+    true,
+  );
+
+  if (age !== 41) {
+    throw new Error("Expected moved aggregate age 41, got " + age);
+  }
+});
+
+Deno.test("linear union moves through a one-shot closure environment", async () => {
+  const wat_text = wat_from_core_source(`
+const result_type = union { ok: Int, err: Int }
+let !result: result_type = result_type.ok(41)
+let flag = 1
+let take_once = if flag { () => !result } else { () => !result }
+result = take_once()
+let marker = "x"
+!result
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "linear_union_one_shot_closure",
+    {},
+  );
+
+  if (!(instance.exports.memory instanceof WebAssembly.Memory)) {
+    throw new Error("Missing memory export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("Missing main export");
+  }
+
+  const pointer = instance.exports.main();
+  if (typeof pointer !== "number") {
+    throw new Error("Expected union pointer result");
+  }
+
+  const view = new DataView(instance.exports.memory.buffer);
+  const tag = view.getInt32(pointer, true);
+  const payload = view.getInt32(pointer + 4, true);
+
+  if (tag !== 0 || payload !== 41) {
+    throw new Error(
+      "Expected moved .ok(41), got tag=" + tag.toString() + " payload=" +
+        payload.toString(),
+    );
+  }
+});
+
+Deno.test("no-else conditional payload transfers clean only fallthrough", async () => {
+  const prefix = `
+host_import branch_flag from "env.flag" () => I32
+const gate_type = union { go: Int, stop: Int }
+const user_type = struct { age: Int }
+const result_type = union { ok: user_type, err: Unit }
+let flag = branch_flag()
+let gate: gate_type = if flag {
+  gate_type.go(1)
+} else {
+  gate_type.stop(0)
+}
+let make = if flag {
+  (age: Int) => user_type { age: age }
+} else {
+  (age: Int) => user_type { age: age + 1 }
+}
+let user: user_type = make(40)
+`;
+  const suffix = `
+let first: user_type = make(50)
+let second: user_type = make(60)
+first.age
+`;
+  const fixtures = [
+    prefix + "if flag { result_type.ok(user) }\n" + suffix,
+    prefix + "if let .go(value) = gate { result_type.ok(user) }\n" +
+    suffix,
+  ];
+
+  for (
+    let fixture_index = 0;
+    fixture_index < fixtures.length;
+    fixture_index += 1
+  ) {
+    const source = fixtures[fixture_index];
+    if (!source) {
+      throw new Error("Missing conditional cleanup fixture");
+    }
+
+    for (const flag of [0, 1]) {
+      const instance = await instantiate_wat(
+        wat_from_core_source(source),
+        "no_else_conditional_cleanup_" + fixture_index.toString() + "_" +
+          flag.toString(),
+        { env: { flag: () => flag } },
+      );
+      if (typeof instance.exports.main !== "function") {
+        throw new Error("Missing main export");
+      }
+
+      const result = instance.exports.main();
+      const expected = 51 - flag;
+      if (result !== expected) {
+        throw new Error(
+          "Expected first.age=" + expected.toString() +
+            " from distinct post-cleanup allocations, got " + String(result),
+        );
+      }
+    }
+  }
+});
+
 function log_error(label: string, bytes: Uint8Array): void {
   if (bytes.length > 0) {
     console.error(`${label}:\n${decoder.decode(bytes)}`);
@@ -81,6 +226,353 @@ async function instantiate_wat(
     await Deno.remove(dir, { recursive: true });
   }
 }
+
+Deno.test("frontend dynamic runtime i32 slice loop compiles through WAT to Wasm", async () => {
+  const wat = wat_from_core_source(`
+let length = 2
+let sum = 0
+for index, value in runtime_i32_slice(length, 10, 20, 30) {
+  sum = sum + index + value
+}
+sum
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_dynamic_runtime_i32_slice_loop",
+    {},
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 31) {
+    throw new Error("Expected runtime slice sum 31, got " + result);
+  }
+});
+
+Deno.test("frontend linked scope cleanup placeholder compiles through WAT to Wasm", async () => {
+  const wat = wat_from_core_source(`
+let text: Text = append("A", "da")
+1
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_linked_scope_cleanup_placeholder",
+    {},
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+  if (result !== 1) {
+    throw new Error("Expected cleanup placeholder main() -> 1, got " + result);
+  }
+});
+
+Deno.test("frontend nested cleanup edges compile through WAT to Wasm", async () => {
+  const cases = [
+    {
+      name: "frontend_cleanup_conditional_return",
+      source: `
+let f = (x: Int) => x
+if 1 {
+  return 7
+}
+0
+`,
+      expected: 7,
+    },
+    {
+      name: "frontend_cleanup_return_stack_preservation",
+      source: `
+let text: Text = append("A", "da")
+if 1 {
+  return len(text)
+}
+0
+`,
+      expected: 3,
+    },
+    {
+      name: "frontend_cleanup_loop_break",
+      source: `
+let result = 3
+for i in 0..2 {
+  let f = (x: Int) => x
+  break
+}
+result
+`,
+      expected: 3,
+    },
+    {
+      name: "frontend_cleanup_loop_continue",
+      source: `
+let result = 4
+for i in 0..2 {
+  let f = (x: Int) => x
+  continue
+}
+result
+`,
+      expected: 4,
+    },
+  ];
+
+  for (const item of cases) {
+    const instance = await instantiate_wat(
+      wat_from_core_source(item.source),
+      item.name,
+      {},
+    );
+    if (typeof instance.exports.main !== "function") {
+      throw new Error("main export is not a function");
+    }
+    const result = instance.exports.main();
+    if (result !== item.expected) {
+      throw new Error(
+        "Expected cleanup edge main() -> " + item.expected.toString() +
+          ", got " + result,
+      );
+    }
+  }
+});
+
+Deno.test("frontend persistent allocator reuses freed layout blocks", async () => {
+  let wat = wat_from_core_source(`
+let text: Text = append("A", "da")
+1
+`);
+  const module_end = wat.lastIndexOf("\n)");
+  if (module_end < 0) {
+    throw new Error("Missing WAT module terminator");
+  }
+  wat = wat.slice(0, module_end) +
+    '\n  (export "alloc" (func $__alloc))' +
+    '\n  (export "free" (func $__free))' +
+    wat.slice(module_end);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_persistent_allocator_reuse",
+    {},
+  );
+  if (
+    typeof instance.exports.alloc !== "function" ||
+    typeof instance.exports.free !== "function"
+  ) {
+    throw new Error("allocator exports are not functions");
+  }
+  const alloc = instance.exports.alloc as (
+    size: number,
+    align: number,
+  ) => number;
+  const free = instance.exports.free as (ptr: number) => number;
+  const text_address = alloc(20, 8);
+  free(text_address);
+  const union_address = alloc(8, 8);
+  if (union_address !== text_address) {
+    throw new Error("Expected union allocation to reuse freed Text block");
+  }
+  free(union_address);
+  const aggregate_address = alloc(16, 8);
+  if (aggregate_address !== text_address) {
+    throw new Error("Expected aggregate allocation to reuse freed block");
+  }
+
+  async function scoped_text_heap(iterations: number): Promise<number> {
+    let scoped_wat = wat_from_core_source(`
+for i in 0..${iterations.toString()} {
+  let text: Text = append("A", "da")
+  len(text)
+}
+0
+`);
+    const end = scoped_wat.lastIndexOf("\n)");
+    if (end < 0) {
+      throw new Error("Missing scoped-allocation WAT module terminator");
+    }
+    scoped_wat = scoped_wat.slice(0, end) +
+      '\n  (export "heap" (global $__closure_heap))' +
+      scoped_wat.slice(end);
+    const scoped = await instantiate_wat(
+      scoped_wat,
+      "frontend_scoped_text_reuse_" + iterations.toString(),
+      {},
+    );
+    if (typeof scoped.exports.main !== "function") {
+      throw new Error("main export is not a function");
+    }
+    scoped.exports.main();
+    const heap = scoped.exports.heap;
+    if (!(heap instanceof WebAssembly.Global)) {
+      throw new Error("heap export is not a global");
+    }
+    return Number(heap.value);
+  }
+
+  const one_iteration_heap = await scoped_text_heap(1);
+  const eight_iteration_heap = await scoped_text_heap(8);
+  if (eight_iteration_heap !== one_iteration_heap) {
+    throw new Error("Repeated scoped Text allocation did not reuse its block");
+  }
+
+  async function scoped_aggregate_heap(iterations: number): Promise<number> {
+    let scoped_wat = wat_from_core_source(`
+const user_type = struct { name: Text, age: Int }
+let flag = 1
+let make = if flag {
+  (suffix: Text) => user_type { name: append("A", suffix), age: 40 }
+} else {
+  (suffix: Text) => user_type { name: append("B", suffix), age: 5 }
+}
+for i in 0..${iterations.toString()} {
+  let user: user_type = make("da")
+  len(user.name) + user.age
+}
+0
+`);
+    const end = scoped_wat.lastIndexOf("\n)");
+    if (end < 0) {
+      throw new Error("Missing aggregate WAT module terminator");
+    }
+    scoped_wat = scoped_wat.slice(0, end) +
+      '\n  (export "heap" (global $__closure_heap))' +
+      scoped_wat.slice(end);
+    const scoped = await instantiate_wat(
+      scoped_wat,
+      "frontend_scoped_aggregate_reuse_" + iterations.toString(),
+      {},
+    );
+    if (typeof scoped.exports.main !== "function") {
+      throw new Error("main export is not a function");
+    }
+    scoped.exports.main();
+    const heap = scoped.exports.heap;
+    if (!(heap instanceof WebAssembly.Global)) {
+      throw new Error("heap export is not a global");
+    }
+    return Number(heap.value);
+  }
+
+  const one_aggregate_heap = await scoped_aggregate_heap(1);
+  const eight_aggregate_heap = await scoped_aggregate_heap(8);
+  if (eight_aggregate_heap !== one_aggregate_heap) {
+    throw new Error(
+      "Repeated aggregate Text child allocation did not reuse both blocks",
+    );
+  }
+});
+
+Deno.test("discarded compiler temporaries reuse allocator blocks", async () => {
+  const fixtures = [
+    {
+      name: "text",
+      discarded: `
+let flag = 1
+append(if flag { "A" } else { "B" }, "!")
+append(if flag { "C" } else { "D" }, "?")
+`,
+      retained: `
+let flag = 1
+let held: Text = append(if flag { "A" } else { "B" }, "!")
+append(if flag { "C" } else { "D" }, "?")
+`,
+    },
+    {
+      name: "aggregate",
+      discarded: `
+const user_type = struct { age: Int }
+let flag = 1
+let make = freeze ((age: Int) => user_type { age: age })
+make(flag)
+make(flag + 1)
+`,
+      retained: `
+const user_type = struct { age: Int }
+let flag = 1
+let make = freeze ((age: Int) => user_type { age: age })
+let held: user_type = make(flag)
+make(flag + 1)
+`,
+    },
+    {
+      name: "union",
+      discarded: `
+const result_type = union { ok: Int, err: Int }
+let flag = 1
+let make = freeze ((value: Int) => result_type.ok(value))
+make(flag)
+make(flag + 1)
+`,
+      retained: `
+const result_type = union { ok: Int, err: Int }
+let flag = 1
+let make = freeze ((value: Int) => result_type.ok(value))
+let held: result_type = make(flag)
+make(flag + 1)
+`,
+    },
+    {
+      name: "closure",
+      discarded: `
+let flag = 1
+let marker = "x"
+((x: Int) => x + flag)
+((x: Int) => x + flag)
+`,
+      retained: `
+let flag = 1
+let marker = "x"
+let held = if flag {
+  (x: Int) => x
+} else {
+  (x: Int) => x + 1
+}
+((x: Int) => x + flag)
+`,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const discarded = await instantiate_wat(
+      wat_from_core_source(fixture.discarded),
+      "discarded_temporary_" + fixture.name,
+      {},
+    );
+    const retained = await instantiate_wat(
+      wat_from_core_source(fixture.retained),
+      "retained_temporary_" + fixture.name,
+      {},
+    );
+    if (
+      typeof discarded.exports.main !== "function" ||
+      typeof retained.exports.main !== "function"
+    ) {
+      throw new Error("Missing temporary cleanup main export");
+    }
+
+    const reused_pointer = discarded.exports.main();
+    const retained_pointer = retained.exports.main();
+    if (
+      typeof reused_pointer !== "number" ||
+      typeof retained_pointer !== "number"
+    ) {
+      throw new Error("Expected temporary cleanup pointer results");
+    }
+    if (reused_pointer >= retained_pointer) {
+      throw new Error(
+        "Expected discarded " + fixture.name +
+          " block reuse before retained allocation, got " +
+          reused_pointer.toString() + " and " + retained_pointer.toString(),
+      );
+    }
+  }
+});
 
 Deno.test("main writes WAT that compiles and instantiates", async () => {
   const wat_file = "build/out.wat";
@@ -2466,6 +2958,173 @@ total
     throw new Error(
       "Expected control main() -> 31, got " + control_result,
     );
+  }
+});
+
+Deno.test("core dynamic indexed runtime union facts compile through WAT to Wasm", async () => {
+  const wat_text = wat_from_core_source(`
+const result_type = union {
+  ok: Int,
+  err: Int
+}
+const choices_type = struct {
+  first: result_type,
+  second: result_type
+}
+
+let flag = 1
+let make = if flag {
+  (first: result_type, second: result_type) => choices_type {
+    first: first,
+    second: second
+  }
+} else {
+  (first: result_type, second: result_type) => choices_type {
+    first: second,
+    second: first
+  }
+}
+
+let choices: choices_type = make(result_type.ok(40), result_type.err(2))
+let index = flag
+let picked: result_type = get(choices, index)
+if let .ok(value) = picked {
+  value + 2
+} else {
+  0
+}
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "core_dynamic_indexed_runtime_union_facts",
+    {},
+  );
+
+  if (!("main" in instance.exports)) {
+    throw new Error("Missing main export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 0) {
+    throw new Error("Expected main() -> 0, got " + result);
+  }
+});
+
+Deno.test("core one-sided union payload transfer cleans retained branch", async () => {
+  const wat_text = wat_from_core_source(`
+host_import branch_flag from "env.flag" () => I32
+
+const user_type = struct {
+  age: Int,
+  score: Int
+}
+const result_type = union {
+  ok: user_type,
+  err: Unit
+}
+
+let flag = branch_flag()
+let user: user_type = user_type { age: 40, score: 2 }
+let result: result_type = result_type.err()
+if flag {
+  result = result_type.ok(user)
+} else {
+  result = result_type.err()
+}
+if let .ok(found) = result {
+  found.age + found.score
+} else {
+  0
+}
+`);
+
+  for (
+    const fixture of [
+      { flag: 1, expected: 42 },
+      { flag: 0, expected: 0 },
+    ]
+  ) {
+    const instance = await instantiate_wat(
+      wat_text,
+      "core_one_sided_union_payload_transfer_" + fixture.flag.toString(),
+      {
+        env: {
+          flag: () => fixture.flag,
+        },
+      },
+    );
+
+    if (!("main" in instance.exports)) {
+      throw new Error("Missing main export");
+    }
+
+    if (typeof instance.exports.main !== "function") {
+      throw new Error("main export is not a function");
+    }
+
+    const result = instance.exports.main();
+
+    if (result !== fixture.expected) {
+      throw new Error(
+        "Expected main() -> " + fixture.expected.toString() + ", got " +
+          result,
+      );
+    }
+  }
+});
+
+Deno.test("core single-exit loop payload transfer covers zero iterations", async () => {
+  const wat_text = wat_from_core_source(`
+host_import loop_limit from "env.limit" () => I32
+
+const user_type = struct { age: Int }
+const result_type = union { ok: user_type, err: Unit }
+let limit = loop_limit()
+let user: user_type = user_type { age: 40 }
+for index in 0..limit {
+  result_type.ok(user)
+  break
+}
+limit
+`);
+
+  for (
+    const fixture of [
+      { limit: 0, expected: 0 },
+      { limit: 3, expected: 3 },
+    ]
+  ) {
+    const instance = await instantiate_wat(
+      wat_text,
+      "core_single_exit_loop_payload_" + fixture.limit.toString(),
+      {
+        env: {
+          limit: () => fixture.limit,
+        },
+      },
+    );
+
+    if (!("main" in instance.exports)) {
+      throw new Error("Missing main export");
+    }
+
+    if (typeof instance.exports.main !== "function") {
+      throw new Error("main export is not a function");
+    }
+
+    const result = instance.exports.main();
+
+    if (result !== fixture.expected) {
+      throw new Error(
+        "Expected main() -> " + fixture.expected.toString() + ", got " +
+          result,
+      );
+    }
   }
 });
 
@@ -6665,6 +7324,109 @@ io
   }
 });
 
+Deno.test("frontend narrowed capability method table compiles through WAT to Wasm", async () => {
+  const wat = wat_from_core_source(`
+host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import read from "env.read" (I32) => I32
+
+const output = { print: print }
+let !io: I32 = 1
+io = output.print(!io, "hello")
+io
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_narrowed_capability_method_table",
+    {
+      env: {
+        print(token: number, ptr: number): number {
+          if (ptr < 0) {
+            throw new Error("expected text pointer");
+          }
+
+          return token + 41;
+        },
+        read(token: number): number {
+          return token + 1000;
+        },
+      },
+    },
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 42) {
+    throw new Error("Expected narrowed capability main() -> 42, got " + result);
+  }
+});
+
+Deno.test("frontend runtime capability table compiles through WAT to Wasm", async () => {
+  const wat = wat_from_core_source(`
+host_import consume from "env.consume" (ownership_transfer Text) => I32
+let flag = 1
+let output = if flag {
+  { marker: runtime_i32_slice(1, 7), consume: consume }
+} else {
+  { marker: runtime_i32_slice(1, 8), consume: consume }
+}
+output.consume(append("A", "da"))
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_runtime_capability_table",
+    {
+      env: {
+        consume(ptr: number): number {
+          return new DataView(memory.buffer).getUint32(ptr, true);
+        },
+      },
+    },
+  );
+  if (!(instance.exports.memory instanceof WebAssembly.Memory)) {
+    throw new Error("memory export is not a memory");
+  }
+  const memory = instance.exports.memory;
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+  const result = instance.exports.main();
+  if (result !== 3) {
+    throw new Error("Expected runtime capability main() -> 3, got " + result);
+  }
+});
+
+Deno.test("frontend block-wrapped union payload compiles through WAT to Wasm", async () => {
+  const wat = wat_from_core_source(`
+const user_type = struct { age: Int }
+const result_type = union { ok: user_type, err: Unit }
+let seed = 41
+let user: user_type = user_type { age: seed }
+let result: result_type = result_type.ok({
+  let alias = user
+  alias
+})
+if let .ok(found) = result { found.age } else { 0 }
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "frontend_block_wrapped_union_payload",
+    {},
+  );
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+  const result = instance.exports.main();
+  if (result !== 41) {
+    throw new Error(
+      "Expected block-wrapped payload main() -> 41, got " + result,
+    );
+  }
+});
+
 Deno.test(
   "frontend captured linear capability closure compiles through WAT to Wasm",
   async () => {
@@ -6728,6 +7490,8 @@ io
 `);
     let calls = 0;
     let printed = "";
+    // Initialized after instantiation; host callbacks close over this binding.
+    // deno-lint-ignore prefer-const
     let memory: WebAssembly.Memory | undefined;
     const instance = await instantiate_wat(
       wat,
@@ -6801,6 +7565,8 @@ io
 `);
     let calls = 0;
     let printed = "";
+    // Initialized after instantiation; host callbacks close over this binding.
+    // deno-lint-ignore prefer-const
     let memory: WebAssembly.Memory | undefined;
     const instance = await instantiate_wat(
       wat,
@@ -6928,6 +7694,8 @@ io
 `);
     let calls = 0;
     let printed = "";
+    // Initialized after instantiation; host callbacks close over this binding.
+    // deno-lint-ignore prefer-const
     let memory: WebAssembly.Memory | undefined;
     const instance = await instantiate_wat(
       wat,
@@ -7012,6 +7780,8 @@ io
 `);
     let calls = 0;
     let printed = "";
+    // Initialized after instantiation; host callbacks close over this binding.
+    // deno-lint-ignore prefer-const
     let memory: WebAssembly.Memory | undefined;
     const instance = await instantiate_wat(
       wat,
@@ -8571,6 +9341,72 @@ freeze_suffix("hi")
   }
 });
 
+Deno.test("frontend helper-returned scratch Text freeze persists through reset", async () => {
+  const wat_text = wat_from_core_source(`
+let freeze_suffix = (value: Text) => {
+  freeze append(value, "!")
+}
+let prefix: Text = slice("Ada", 0, 3)
+scratch { freeze_suffix(prefix) }
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "frontend_helper_returned_scratch_text_freeze",
+    {},
+  );
+
+  if (!(instance.exports.memory instanceof WebAssembly.Memory)) {
+    throw new Error("Missing memory export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("Missing main export");
+  }
+
+  const result = instance.exports.main();
+
+  if (typeof result !== "number") {
+    throw new Error("Expected main() to return a text pointer");
+  }
+
+  const bytes = new Uint8Array(instance.exports.memory.buffer, result, 8);
+
+  if (
+    bytes[0] !== 4 || bytes[4] !== 65 || bytes[5] !== 100 ||
+    bytes[6] !== 97 || bytes[7] !== 33
+  ) {
+    throw new Error("Expected helper-returned scratch Text to equal Ada!");
+  }
+});
+
+Deno.test("promoted scratch Text survives in a stored closure environment", async () => {
+  const wat_text = wat_from_core_source(`
+let f = scratch {
+  let message: Text = append("he", "llo")
+  let persistent: Text = freeze message
+  freeze ((x: Int) => len(persistent) + x)
+}
+f(1)
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "promoted_scratch_text_closure_capture",
+    {},
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("Missing main export");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 6) {
+    throw new Error(
+      "Expected promoted scratch Text closure main() -> 6, got " + result,
+    );
+  }
+});
+
 Deno.test("frontend branch scratch runtime text freeze compiles through WAT to Wasm", async () => {
   async function check_branch(
     flag: number,
@@ -8728,6 +9564,48 @@ read_user(${flag})
     7,
     "frontend_branch_scratch_aggregate_freeze_else",
   );
+});
+
+Deno.test("frontend chained-alias scratch aggregate freeze compiles through WAT to Wasm", async () => {
+  const wat_text = wat_from_core_source(`
+const user_type = struct {
+  name: Text,
+  age: Int
+}
+
+let start = 0
+let prefix: Text = slice("Ada", start, 1)
+let existing: user_type = user_type { name: append(prefix, "da"), age: 40 }
+let user: user_type = scratch {
+  let first = existing
+  let second = first
+  freeze second
+}
+
+len(user.name) + user.age
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "frontend_chained_alias_scratch_aggregate_freeze",
+    {},
+  );
+
+  if (!("main" in instance.exports)) {
+    throw new Error("Missing main export");
+  }
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 43) {
+    throw new Error(
+      "Expected chained-alias scratch-frozen aggregate result 43, got " +
+        String(result),
+    );
+  }
 });
 
 Deno.test("frontend branch-assigned scratch aggregate freeze compiles through WAT to Wasm", async () => {

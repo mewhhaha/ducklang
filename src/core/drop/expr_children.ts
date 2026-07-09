@@ -71,6 +71,7 @@ export function scan_drop_expr_children_impl<ctx>(
     case "text":
     case "type_name":
     case "var":
+    case "rec_ref":
     case "linear":
     case "struct_type":
     case "union_type":

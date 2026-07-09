@@ -2,7 +2,13 @@ import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr, CoreField, CoreFnType } from "./ast.ts";
-import { maybe_static_i32, static_indexed_field } from "./backend/util.ts";
+import {
+  fresh_temp_local,
+  maybe_static_i32,
+  set_local,
+  static_indexed_field,
+  type TempNameCtx,
+} from "./backend/util.ts";
 import {
   type CoreHostImportCtx,
   emit_core_host_import_call,
@@ -11,9 +17,13 @@ import {
   static_core_call_branch_app,
   type StaticCoreCallCtx,
 } from "./static_call.ts";
+import { emit_persistent_alloc } from "./runtime_allocator.ts";
 
 export type CoreAppEmitHooks<
-  ctx extends CoreHostImportCtx & StaticCoreCallCtx,
+  ctx extends CoreHostImportCtx & StaticCoreCallCtx & TempNameCtx & {
+    heap: { needed: boolean };
+    locals: Map<string, ValType>;
+  },
 > = {
   app_type: (
     expr: Extract<CoreExpr, { tag: "app" }>,
@@ -100,7 +110,10 @@ export type CoreAppEmitHooks<
 };
 
 export function emit_core_app<
-  ctx extends CoreHostImportCtx & StaticCoreCallCtx,
+  ctx extends CoreHostImportCtx & StaticCoreCallCtx & TempNameCtx & {
+    heap: { needed: boolean };
+    locals: Map<string, ValType>;
+  },
 >(
   expr: Extract<CoreExpr, { tag: "app" }>,
   ctx: ctx,
@@ -235,6 +248,32 @@ export function emit_core_app<
     expect(left, "Missing core append left argument");
     expect(right, "Missing core append right argument");
     return hooks.emit_runtime_text_append(left, right, ctx);
+  }
+
+  if (name === "runtime_i32_slice" || name === "runtime_text_slice") {
+    hooks.app_type(expr, ctx);
+    expect(ctx.heap, "Core runtime slice needs heap emission facts");
+    ctx.heap.needed = true;
+    const length = expr.args[0];
+    expect(length, "Missing runtime slice length");
+    const slice_size = (expr.args.length * 4).toString();
+    const slice_local = fresh_temp_local(ctx, "runtime_slice");
+    set_local(ctx.locals, slice_local, "i32");
+    const lines = [
+      emit_persistent_alloc("i32.const " + slice_size, 4),
+      "local.tee $" + slice_local,
+    ];
+    lines.push("local.get $" + slice_local);
+    lines.push(hooks.emit_expr(length, ctx));
+    lines.push("i32.store");
+    for (let index = 1; index < expr.args.length; index += 1) {
+      const element = expr.args[index];
+      expect(element, "Missing runtime slice element");
+      lines.push("local.get $" + slice_local);
+      lines.push(hooks.emit_expr(element, ctx));
+      lines.push("i32.store offset=" + (index * 4).toString());
+    }
+    return lines.join("\n");
   }
 
   const host_import_call = emit_core_host_import_call(

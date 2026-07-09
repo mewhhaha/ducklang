@@ -78,6 +78,17 @@ export type CoreBackendExprTypeApi = {
     expr: CoreExpr,
     ctx: StaticCtx,
   ) => CoreField[] | undefined;
+  static_core_call_requires_scope: (
+    target: Extract<CoreExpr, { tag: "lam" }>,
+  ) => boolean;
+  static_core_call_target: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
+  static_core_call_value: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => CoreExpr | undefined;
   static_runtime_union_match_branch_ctx: (
     value_name: string | undefined,
     info: RuntimeUnionMatchInfo,

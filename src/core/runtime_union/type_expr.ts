@@ -72,6 +72,16 @@ export function runtime_union_type_expr<ctx extends RuntimeUnionCtx>(
     }
   }
 
+  const collection_type = runtime_union_collection_item_type_expr(
+    value,
+    ctx,
+    hooks,
+  );
+
+  if (collection_type) {
+    return collection_type;
+  }
+
   if (value.tag === "borrow" || value.tag === "freeze") {
     return runtime_union_type_expr(value.value, ctx, hooks);
   }
@@ -85,6 +95,67 @@ export function runtime_union_type_expr<ctx extends RuntimeUnionCtx>(
   }
 
   return undefined;
+}
+
+function runtime_union_collection_item_type_expr<
+  ctx extends RuntimeUnionCtx,
+>(
+  value: CoreExpr,
+  ctx: ctx,
+  hooks: RuntimeUnionHooks<ctx>,
+): CoreExpr | undefined {
+  let collection: CoreExpr | undefined;
+
+  if (value.tag === "index") {
+    collection = value.object;
+  }
+
+  if (
+    value.tag === "app" &&
+    value.func.tag === "var" &&
+    value.func.name === "get"
+  ) {
+    collection = value.args[0];
+  }
+
+  if (!collection) {
+    return undefined;
+  }
+
+  const fields = hooks.static_collection_fields(collection, ctx);
+  if (!fields || fields.length === 0) {
+    return undefined;
+  }
+
+  let result: CoreExpr | undefined;
+  let saw_non_union = false;
+
+  for (const field of fields) {
+    const item = runtime_union_type_expr(field.value, ctx, hooks);
+
+    if (!item) {
+      if (result) {
+        throw new Error("Core collection item union fact mismatch");
+      }
+      saw_non_union = true;
+      continue;
+    }
+
+    if (saw_non_union) {
+      throw new Error("Core collection item union fact mismatch");
+    }
+
+    if (!result) {
+      result = item;
+      continue;
+    }
+
+    if (!same_runtime_union_type_expr(result, item, ctx)) {
+      throw new Error("Core collection item union fact mismatch");
+    }
+  }
+
+  return result;
 }
 
 function runtime_union_block_result_type_expr<ctx extends RuntimeUnionCtx>(

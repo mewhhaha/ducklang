@@ -7,6 +7,11 @@ import type {
   CoreStmt,
 } from "../ast.ts";
 import type { CoreStorageClass } from "../escape.ts";
+import type {
+  CoreAllocationByteSize,
+  CoreAllocationLayout,
+  CoreAllocationOwnedChild,
+} from "../allocation.ts";
 import type { CoreOwnership, CoreOwnershipHooks } from "../ownership.ts";
 
 export type CoreDropEdge =
@@ -14,10 +19,12 @@ export type CoreDropEdge =
   | "return_exit"
   | "break_exit"
   | "continue_exit"
+  | "conditional_cleanup"
+  | "loop_zero_iteration_cleanup"
   | "assignment_replace"
   | "discarded_expr";
 
-export type CoreDropRuntime = "no_op_bump_allocator";
+export type CoreDropRuntime = "reusable_free_list_allocator";
 
 export type CoreUniqueHeapOwnership = Extract<
   CoreOwnership,
@@ -35,6 +42,12 @@ export type CoreDropStep =
     storage: CoreStorageClass;
     runtime: CoreDropRuntime;
     reason: string;
+    allocation_id?: string;
+    allocation_ids?: string[];
+    byte_size?: CoreAllocationByteSize;
+    alignment?: 4 | 8;
+    layout?: CoreAllocationLayout;
+    owned_children?: CoreAllocationOwnedChild[];
   }
   | {
     tag: "host_transfer";
@@ -48,6 +61,12 @@ export type CoreDropStep =
     storage: CoreStorageClass;
     runtime: "host_owned";
     reason: string;
+    allocation_id?: undefined;
+    allocation_ids?: undefined;
+    byte_size?: undefined;
+    alignment?: undefined;
+    layout?: undefined;
+    owned_children?: undefined;
   };
 
 export type CoreDropPlan = {

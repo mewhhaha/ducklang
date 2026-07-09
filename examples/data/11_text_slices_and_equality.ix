@@ -3,4 +3,8 @@ let head = slice(word, 0, 3)
 let tail = slice(word, 3, len(word))
 let rebuilt = append(head, tail)
 
-len(rebuilt) + get(word, 1)
+if rebuilt == word {
+  42
+} else {
+  0
+}

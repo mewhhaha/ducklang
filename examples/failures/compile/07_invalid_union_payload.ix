@@ -1,0 +1,8 @@
+const result_type = union { ok: Int, err: Text }
+let result = result_type.ok("wrong")
+
+if let .ok(value) = result {
+  value
+} else {
+  0
+}

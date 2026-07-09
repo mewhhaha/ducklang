@@ -1,5 +1,3 @@
-import type { ValType } from "../op.ts";
-import type { CoreExpr, CoreFnType } from "./ast.ts";
 import type { CoreArtifactEmitInput } from "./artifact_emit.ts";
 import type {
   ClosureEmitCtx,

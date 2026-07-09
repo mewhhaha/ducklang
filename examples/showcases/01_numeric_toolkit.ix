@@ -1,0 +1,17 @@
+const compose = (first, second) => {
+  value => first(second(value))
+}
+
+const double = value => value * 2
+const increment = value => value + 1
+const transform = comptime compose(increment, double)
+
+let gcd = rec (left, right) => {
+  if right == 0 {
+    left
+  } else {
+    rec(right, left % right)
+  }
+}
+
+transform(gcd(84, 30)) + 29

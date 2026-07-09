@@ -245,6 +245,7 @@ function runtime_aggregate_block_result_type_expr<
     value.statements,
     ctx,
     hooks,
+    new Set<string>(),
   );
 }
 
@@ -287,7 +288,14 @@ function runtime_aggregate_block_alias_type_expr<
   statements: CoreStmt[],
   ctx: ctx,
   hooks: RuntimeAggregateTypeHooks<ctx>,
+  seen: Set<string>,
 ): CoreExpr | undefined {
+  if (seen.has(alias)) {
+    return undefined;
+  }
+
+  seen.add(alias);
+
   for (let index = statements.length - 2; index >= 0; index -= 1) {
     const stmt = statements[index];
     expect(stmt, "Missing runtime aggregate block statement");
@@ -302,10 +310,42 @@ function runtime_aggregate_block_alias_type_expr<
         return annotation_type;
       }
 
+      const nested_alias = runtime_aggregate_result_alias(stmt.value);
+
+      if (nested_alias) {
+        const nested_type = runtime_aggregate_block_alias_type_expr(
+          nested_alias,
+          statements.slice(0, index + 1),
+          ctx,
+          hooks,
+          seen,
+        );
+
+        if (nested_type) {
+          return nested_type;
+        }
+      }
+
       return runtime_aggregate_type_expr(stmt.value, ctx, hooks);
     }
 
     if (stmt.tag === "assign" && stmt.name === alias) {
+      const nested_alias = runtime_aggregate_result_alias(stmt.value);
+
+      if (nested_alias) {
+        const nested_type = runtime_aggregate_block_alias_type_expr(
+          nested_alias,
+          statements.slice(0, index + 1),
+          ctx,
+          hooks,
+          seen,
+        );
+
+        if (nested_type) {
+          return nested_type;
+        }
+      }
+
       return runtime_aggregate_type_expr(stmt.value, ctx, hooks);
     }
   }

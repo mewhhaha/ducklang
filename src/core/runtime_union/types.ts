@@ -1,4 +1,4 @@
-import type { CoreExpr, CoreFnType } from "../ast.ts";
+import type { CoreExpr, CoreField, CoreFnType } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import type {
   RuntimeUnionPayload,
@@ -21,6 +21,10 @@ export type RuntimeUnionHooks<ctx extends RuntimeUnionCtx> =
     ) => void;
     closure_fn_type: (expr: CoreExpr, ctx: ctx) => CoreFnType | undefined;
     dynamic_union_if: (expr: CoreExpr, ctx: ctx) => DynamicUnionIf | undefined;
+    static_collection_fields: (
+      expr: CoreExpr,
+      ctx: ctx,
+    ) => CoreField[] | undefined;
     static_union_case: (
       expr: CoreExpr,
       ctx: ctx,

@@ -84,6 +84,10 @@ export type CoreOwnershipHooks<ctx> = {
     expr: CoreExpr,
     ctx: ctx,
   ) => Extract<CoreExpr, { tag: "struct_value" }> | undefined;
+  static_core_call_value?: (
+    expr: CoreExpr,
+    ctx: ctx,
+  ) => CoreExpr | undefined;
   static_text_value: (expr: CoreExpr, ctx: ctx) => CoreExpr | undefined;
   scoped_static_core_call_value?: (
     expr: Extract<CoreExpr, { tag: "app" }>,

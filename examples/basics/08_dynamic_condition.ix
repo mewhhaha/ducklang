@@ -1,0 +1,9 @@
+host_import flag from "env.flag" () => I32
+
+let score = if flag() {
+  10
+} else {
+  20
+}
+
+score * 2 + 1

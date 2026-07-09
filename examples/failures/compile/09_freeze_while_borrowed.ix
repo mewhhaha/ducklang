@@ -1,0 +1,5 @@
+let message: Text = append("a", "b")
+let view = borrow message
+let frozen = freeze message
+
+len(view) + len(frozen)

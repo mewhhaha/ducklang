@@ -1,6 +1,9 @@
 import { expect } from "../../../expect.ts";
 import type { Core as CoreNode, CoreExpr, CoreStmt } from "../../ast.ts";
-import { core_allocation_plan } from "../../allocation.ts";
+import {
+  core_allocation_plan,
+  link_drop_allocations,
+} from "../../allocation.ts";
 import { core_borrow_plan, core_validate_borrow_plan } from "../../borrow.ts";
 import { core_cleanup_plan } from "../../cleanup.ts";
 import { core_closure_ownership_plan } from "../../closure_ownership.ts";
@@ -19,7 +22,11 @@ import {
   core_unsupported_codegen_issues,
   type CoreBaselineProof,
 } from "../../proof.ts";
-import { core_transfer_validation } from "../../transfer.ts";
+import {
+  core_transfer_validation,
+  plan_conditional_transfer_cleanup,
+  resolve_conditional_transfer_cleanup,
+} from "../../transfer.ts";
 import { create_child_core_ctx } from "./context.ts";
 import {
   collect_core_borrow_ctx as graph_collect_core_borrow_ctx,
@@ -56,6 +63,7 @@ import {
   core_static_value as graph_core_static_value,
 } from "./proof_hooks.ts";
 import type { CoreBackendGraph } from "./types.ts";
+import { core_runtime_slice_facts } from "../../runtime_slice.ts";
 
 export function core_backend_host_boundaries(
   backend: CoreBackendGraph,
@@ -192,25 +200,46 @@ export function core_backend_proof(
       graph_core_static_call_proof_hooks(backend),
     );
     const host_boundaries = core_backend_host_boundaries(backend, core);
-    const transfers = core_transfer_validation(
+    const transfer_hooks = {
+      ...graph_core_ownership_hooks(backend),
+      closure_body_ctx: (
+        expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
+        ctx: CoreCtx,
+      ) => graph_core_drop_closure_body_ctx(backend, expr, ctx),
+    };
+    const raw_transfers = core_transfer_validation(
       core,
       ctx,
-      {
-        ...graph_core_ownership_hooks(backend),
-        closure_body_ctx: (expr, ctx) =>
-          graph_core_drop_closure_body_ctx(backend, expr, ctx),
-      },
+      transfer_hooks,
+    );
+    const conditional_drops = plan_conditional_transfer_cleanup(
+      core,
+      raw_transfers,
+      drops,
+      ctx,
+      transfer_hooks,
+    );
+    const linked_drops = link_drop_allocations(
+      conditional_drops,
+      allocations,
+    );
+    const transfers = resolve_conditional_transfer_cleanup(
+      raw_transfers,
+      linked_drops,
     );
 
     return core_baseline_proof({
       final_result,
+      borrow_plan,
       borrows: core_validate_borrow_plan(borrow_plan),
       freeze_edges,
       cleanup,
       closure_ownership,
-      drops,
+      drops: linked_drops,
       allocations,
       host_boundaries,
+      capability_method_rows: core.capability_methods || [],
+      runtime_slice_rows: core_runtime_slice_facts(core),
       transfers,
       lifetimes: core_lifetime_plan(core),
       unsupported_codegen,

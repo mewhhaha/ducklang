@@ -5,6 +5,7 @@ import { runtime_aggregate_field_info } from "../../runtime_aggregate.ts";
 import { static_type_level_value } from "../../type_static.ts";
 import { find_core_field } from "../util.ts";
 import type { CoreBackendGraph } from "./types.ts";
+import { core_runtime_slice_fact } from "../../runtime_slice.ts";
 import {
   core_probe_index_assign_error,
   core_unsupported_codegen_issue_from_analysis_error,
@@ -15,6 +16,9 @@ export function core_collection_loop_supported(
   stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
   ctx: CoreCtx,
 ): boolean {
+  if (core_runtime_slice_fact(stmt.collection)) {
+    return true;
+  }
   const fields = backend.struct.static_collection_fields(
     stmt.collection,
     ctx,

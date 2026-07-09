@@ -1,6 +1,7 @@
 import type { CoreExpr } from "../ast.ts";
 import { core_expr_ownership, type CoreOwnership } from "../ownership.ts";
 import type {
+  CoreClosureOwnershipCtx,
   CoreClosureOwnershipFacts,
   CoreClosureOwnershipHooks,
 } from "./types.ts";
@@ -11,6 +12,8 @@ export function empty_closure_ownership_facts(): CoreClosureOwnershipFacts {
     scratch_locals: new Map(),
     scratch_depth: 0,
     direct_call_depth: 0,
+    linear_names: new Set(),
+    linear_ownerships: new Map(),
   };
 }
 
@@ -22,10 +25,14 @@ export function clone_closure_ownership_facts(
     scratch_locals: new Map(facts.scratch_locals),
     scratch_depth: facts.scratch_depth,
     direct_call_depth: facts.direct_call_depth,
+    linear_names: new Set(facts.linear_names),
+    linear_ownerships: new Map(facts.linear_ownerships),
   };
 }
 
-export function record_closure_local_ownership_fact<ctx>(
+export function record_closure_local_ownership_fact<
+  ctx extends CoreClosureOwnershipCtx,
+>(
   name: string,
   value: CoreExpr,
   ctx: ctx,
@@ -54,7 +61,7 @@ export function record_closure_local_ownership_fact<ctx>(
   }
 }
 
-function closure_borrow_view_ownership<ctx>(
+function closure_borrow_view_ownership<ctx extends CoreClosureOwnershipCtx>(
   value: CoreExpr,
   ctx: ctx,
   facts: CoreClosureOwnershipFacts,
@@ -83,7 +90,7 @@ function closure_borrow_view_ownership<ctx>(
   };
 }
 
-function closure_scratch_local_ownership<ctx>(
+function closure_scratch_local_ownership<ctx extends CoreClosureOwnershipCtx>(
   value: CoreExpr,
   ctx: ctx,
   facts: CoreClosureOwnershipFacts,
@@ -113,7 +120,7 @@ function closure_scratch_local_ownership<ctx>(
   };
 }
 
-function closure_expr_ownership<ctx>(
+function closure_expr_ownership<ctx extends CoreClosureOwnershipCtx>(
   expr: CoreExpr,
   ctx: ctx,
   facts: CoreClosureOwnershipFacts,
@@ -162,12 +169,18 @@ function closure_expr_allocates_in_scratch(expr: CoreExpr): boolean {
   return false;
 }
 
-export function try_capture_ownership<ctx>(
+export function try_capture_ownership<ctx extends CoreClosureOwnershipCtx>(
   name: string,
   ctx: ctx,
   facts: CoreClosureOwnershipFacts,
   hooks: CoreClosureOwnershipHooks<ctx>,
 ): CoreOwnership | undefined {
+  const linear_ownership = facts.linear_ownerships.get(name);
+
+  if (linear_ownership) {
+    return linear_ownership;
+  }
+
   const borrow_view = facts.borrow_views.get(name);
 
   if (borrow_view) {

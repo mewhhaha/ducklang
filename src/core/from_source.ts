@@ -35,7 +35,15 @@ export function core_from_source(source: SourceNode): Core {
       };
     } else {
       record_core_from_source_type_value(stmt, ctx);
-      statements.push(core_stmt(stmt, ctx));
+      const lowered = core_stmt(stmt, ctx);
+
+      if (
+        lowered.tag !== "bind" ||
+        !ctx.capability_methods.has(lowered.name) ||
+        ctx.dynamic_capability_tables.has(lowered.name)
+      ) {
+        statements.push(lowered);
+      }
     }
   }
 
@@ -43,6 +51,27 @@ export function core_from_source(source: SourceNode): Core {
     tag: "program",
     statements,
   };
+
+  const capability_methods = [];
+
+  for (const [table, methods] of ctx.capability_methods) {
+    for (const [method, host_import] of methods) {
+      if (ctx.dynamic_capability_tables.has(table)) {
+        capability_methods.push({
+          table,
+          method,
+          host_import,
+          representation: "runtime_aggregate" as const,
+        });
+      } else {
+        capability_methods.push({ table, method, host_import });
+      }
+    }
+  }
+
+  if (capability_methods.length > 0) {
+    core.capability_methods = capability_methods;
+  }
 
   if (Object.keys(host_imports).length > 0) {
     core.host_imports = host_imports;

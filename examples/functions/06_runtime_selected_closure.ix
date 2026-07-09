@@ -1,0 +1,9 @@
+host_import flag from "env.flag" () => I32
+
+let operation = if flag() {
+  (value: Int) => value + 1
+} else {
+  (value: Int) => value * 2
+}
+
+operation(21)

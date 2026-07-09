@@ -4,6 +4,7 @@ export function closure_body_contains_closure_value(expr: CoreExpr): boolean {
   switch (expr.tag) {
     case "lam":
     case "rec":
+    case "rec_ref":
       return true;
 
     case "num":

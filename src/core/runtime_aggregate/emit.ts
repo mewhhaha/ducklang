@@ -2,6 +2,7 @@ import { expect } from "../../expect.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
 import { closure_heap_global } from "../closure_runtime.ts";
+import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import { load_instr, store_instr } from "../memory.ts";
 import { scratch_heap_global } from "../scratch.ts";
 import type { TypeStaticCtx } from "../type_static.ts";
@@ -97,14 +98,21 @@ export function emit_runtime_aggregate_value<
   const plan = runtime_aggregate_plan(ctx);
   declare_runtime_aggregate_locals(plan, ctx);
   const heap_name = runtime_aggregate_alloc_heap(ctx);
-  const lines = [
-    "global.get $" + heap_name,
-    "local.set $" + plan.local,
-    "global.get $" + heap_name,
-    "i32.const " + layout.size.toString(),
-    "i32.add",
-    "global.set $" + heap_name,
-  ];
+  const lines: string[] = [];
+  if (heap_name === closure_heap_global) {
+    lines.push(emit_persistent_alloc(
+      "i32.const " + layout.size.toString(),
+      8,
+    ));
+    lines.push("local.set $" + plan.local);
+  } else {
+    lines.push("global.get $" + heap_name);
+    lines.push("local.set $" + plan.local);
+    lines.push("global.get $" + heap_name);
+    lines.push("i32.const " + layout.size.toString());
+    lines.push("i32.add");
+    lines.push("global.set $" + heap_name);
+  }
 
   emit_runtime_aggregate_field_stores(
     plan.local,

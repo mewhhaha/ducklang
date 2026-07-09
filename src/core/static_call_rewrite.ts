@@ -58,6 +58,9 @@ export function scoped_static_core_call_expr(
       };
     }
 
+    case "rec_ref":
+      return expr;
+
     case "app":
       return {
         tag: "app",

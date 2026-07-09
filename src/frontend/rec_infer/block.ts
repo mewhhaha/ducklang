@@ -1,5 +1,5 @@
 import { expect } from "../../expect.ts";
-import type { Env, FrontExpr, FrontType, Stmt } from "../ast.ts";
+import type { Env, FrontType, Stmt } from "../ast.ts";
 import type { StaticRecHooks } from "../rec_hooks.ts";
 import type { RecExprInfer } from "./types.ts";
 import {

@@ -1,5 +1,5 @@
 import { expect } from "../expect.ts";
-import type { CoreExpr, CoreStmt } from "./ast.ts";
+import type { CoreStmt } from "./ast.ts";
 import { clone_core_host_imports } from "./host_import.ts";
 import type { CoreCtx, CoreLocalCollectHooks } from "./local_collect/types.ts";
 import type { CoreLocalCollectorCallbacks } from "./local_collect_closure.ts";

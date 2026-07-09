@@ -1,0 +1,13 @@
+const has_score = value_type => {
+  let struct { score: Int, .. } = value_type
+  value_type
+}
+
+const player_type: has_score = struct {
+  name: Text,
+  score: Int
+}
+
+let score = (player: has_score) => player.score
+let player = player_type { name: "Ada", score: 42 }
+score(player)

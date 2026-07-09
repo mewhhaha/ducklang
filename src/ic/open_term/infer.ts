@@ -1,4 +1,3 @@
-import { expect } from "../../expect.ts";
 import { Prim, type ValType } from "../../op.ts";
 import { Callable } from "../../trait.ts";
 import type { Ic } from "../ast.ts";

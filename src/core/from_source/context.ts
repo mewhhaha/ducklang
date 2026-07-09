@@ -12,6 +12,8 @@ export type CoreNamedRecSource = {
 
 export type CoreFromSourceCtx = {
   aliases: Map<string, string>;
+  capability_methods: Map<string, Map<string, string>>;
+  dynamic_capability_tables: Set<string>;
   host_import_const_names: Set<string>;
   host_import_names: Set<string>;
   host_import_type_values: Map<string, CoreHostImportOwnerReason>;
@@ -23,6 +25,8 @@ export type CoreFromSourceCtx = {
 export function create_core_from_source_ctx(): CoreFromSourceCtx {
   return {
     aliases: new Map(),
+    capability_methods: new Map(),
+    dynamic_capability_tables: new Set(),
     host_import_const_names: new Set(),
     host_import_names: new Set(),
     host_import_type_values: new Map(),
@@ -37,6 +41,8 @@ export function fork_core_from_source_ctx(
 ): CoreFromSourceCtx {
   return {
     aliases: new Map(ctx.aliases),
+    capability_methods: clone_capability_methods(ctx.capability_methods),
+    dynamic_capability_tables: new Set(ctx.dynamic_capability_tables),
     host_import_const_names: new Set(ctx.host_import_const_names),
     host_import_names: new Set(ctx.host_import_names),
     host_import_type_values: new Map(ctx.host_import_type_values),
@@ -44,6 +50,18 @@ export function fork_core_from_source_ctx(
     fresh: ctx.fresh,
     namedRecs: new Map(ctx.namedRecs),
   };
+}
+
+function clone_capability_methods(
+  methods: Map<string, Map<string, string>>,
+): Map<string, Map<string, string>> {
+  const cloned = new Map<string, Map<string, string>>();
+
+  for (const [name, entries] of methods) {
+    cloned.set(name, new Map(entries));
+  }
+
+  return cloned;
 }
 
 export function record_core_from_source_type_value(
@@ -109,6 +127,41 @@ export function resolve_core_name(
 
   return name;
 }
+
+export function resolve_bound_core_value_name(
+  ctx: CoreFromSourceCtx,
+  name: string,
+): string {
+  const resolved = resolve_core_name(ctx, name);
+
+  if (
+    ctx.aliases.has(name) || ctx.host_import_names.has(name) ||
+    ctx.namedRecs.has(name) || core_builtin_value_names.has(name)
+  ) {
+    return resolved;
+  }
+
+  throw new Error("Unbound core value: " + name);
+}
+
+const core_builtin_value_names = new Set([
+  "I32",
+  "I64",
+  "Int",
+  "Text",
+  "Type",
+  "U32",
+  "Unit",
+  "append",
+  "get",
+  "len",
+  "object_type",
+  "panic",
+  "rec",
+  "runtime_i32_slice",
+  "runtime_text_slice",
+  "slice",
+]);
 
 export function bind_core_name(
   ctx: CoreFromSourceCtx,

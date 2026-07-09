@@ -1,0 +1,3 @@
+let value = 41
+value := "x"
+len(value) + 41

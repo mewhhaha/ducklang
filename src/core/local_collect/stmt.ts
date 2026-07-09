@@ -1,6 +1,7 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreStmt } from "../ast.ts";
 import { set_local } from "../backend/util.ts";
+import { core_statement_cleanup_rows } from "../cleanup_emission.ts";
 import { collect_if_else_stmt_locals } from "../local_collect_if_else.ts";
 import { collect_core_if_let_stmt_locals } from "../local_collect_if_let.ts";
 import {
@@ -283,6 +284,11 @@ export function collect_core_stmt_locals(
     case "expr":
       api.collect_expr_locals(stmt.expr, ctx, hooks);
       hooks.expr_type(stmt.expr, ctx);
+      for (const row of core_statement_cleanup_rows(stmt)) {
+        if (row.pointer_local) {
+          set_local(ctx.locals, row.pointer_local, "i32");
+        }
+      }
       return;
 
     case "type_check":

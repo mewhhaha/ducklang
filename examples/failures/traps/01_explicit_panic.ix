@@ -1,0 +1,1 @@
+panic("deliberate example trap")

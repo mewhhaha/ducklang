@@ -2,6 +2,12 @@ import { expect } from "../expect.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr, CoreField, CoreStmt } from "./ast.ts";
 import { indent_lines } from "./backend/util.ts";
+import {
+  core_runtime_slice_fact,
+  runtime_slice_end_local,
+  runtime_slice_index_local,
+  runtime_slice_value_local,
+} from "./runtime_slice.ts";
 
 export type CoreCollectionLoopCtx = {
   next_loop: number;
@@ -30,6 +36,10 @@ export function emit_core_collection_loop<
   hooks: CoreCollectionLoopHooks<ctx>,
 ): Wat {
   const fields = hooks.static_collection_fields(stmt.collection, ctx);
+
+  if (core_runtime_slice_fact(stmt.collection)) {
+    return emit_runtime_slice_loop(stmt, ctx, hooks);
+  }
 
   if (!fields) {
     const text = hooks.static_text_value(stmt.collection, ctx);
@@ -83,6 +93,72 @@ export function emit_core_collection_loop<
 
   lines.push("end");
   return lines.join("\n");
+}
+
+function emit_runtime_slice_loop<ctx extends CoreCollectionLoopCtx>(
+  stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
+  ctx: ctx,
+  hooks: CoreCollectionLoopHooks<ctx>,
+): Wat {
+  const fact = core_runtime_slice_fact(stmt.collection);
+  expect(fact, "Missing runtime slice facts");
+  const id = ctx.next_loop;
+  ctx.next_loop += 1;
+  const index = stmt.index || runtime_slice_index_local(id);
+  const value = runtime_slice_value_local(id);
+  const end = runtime_slice_end_local(id);
+  const exit = "slice_exit_" + id.toString();
+  const loop = "slice_loop_" + id.toString();
+  const next = "slice_continue_" + id.toString();
+  const body_ctx: ctx = {
+    ...ctx,
+    break_label: exit,
+    continue_label: next,
+    scratch_loop_resets: [],
+  };
+  const body = [
+    "local.get $" + value,
+    "local.get $" + index,
+    "i32.const 4",
+    "i32.mul",
+    "i32.add",
+    "i32.load offset=4",
+    "local.set $" + stmt.item,
+  ];
+  for (const item of stmt.body) {
+    body.push(hooks.emit_stmt(item, body_ctx, false));
+  }
+  return [
+    hooks.emit_expr(stmt.collection, ctx),
+    "local.set $" + value,
+    "local.get $" + value,
+    "i32.load",
+    "local.set $" + end,
+    "local.get $" + end,
+    "i32.const " + fact.capacity.toString(),
+    "i32.gt_u",
+    "if",
+    "  unreachable",
+    "end",
+    "i32.const 0",
+    "local.set $" + index,
+    "block $" + exit,
+    "  loop $" + loop,
+    "    local.get $" + index,
+    "    local.get $" + end,
+    "    i32.ge_u",
+    "    br_if $" + exit,
+    "    block $" + next,
+    indent_lines(body.join("\n"), 6),
+    "    end",
+    "    local.get $" + index,
+    "    i32.const 1",
+    "    i32.add",
+    "    local.set $" + index,
+    "    br $" + loop,
+    "  end",
+    "end",
+  ].join("\n");
 }
 
 export function text_collection_index_local(id: number): string {

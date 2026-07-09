@@ -747,7 +747,7 @@ function if_let_payload_owner_ownership<ctx>(
       payload_ctx,
       hooks,
     );
-  } catch (error) {
+  } catch {
     const fallback = runtime_union_payload_ownership(
       case_name,
       target,

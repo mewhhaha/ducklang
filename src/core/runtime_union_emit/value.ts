@@ -3,6 +3,7 @@ import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
 import { fresh_temp_local, indent_lines, set_local } from "../backend/util.ts";
 import { closure_heap_global } from "../closure_emit.ts";
+import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import { store_instr } from "../memory.ts";
 import { scratch_heap_global } from "../scratch.ts";
 import { emit_runtime_union_struct_payload_stores } from "../runtime_union_payload_emit.ts";
@@ -139,17 +140,21 @@ function emit_runtime_union_case<ctx extends RuntimeUnionEmitCtx>(
   const name = fresh_temp_local(ctx, "union");
   set_local(ctx.locals, name, "i32");
   const heap_name = runtime_union_alloc_heap(ctx);
-  const lines = [
-    "global.get $" + heap_name,
-    "local.set $" + name,
-    "global.get $" + heap_name,
-    "i32.const " + info.size.toString(),
-    "i32.add",
-    "global.set $" + heap_name,
-    "local.get $" + name,
-    "i32.const " + info.tag_value.toString(),
-    "i32.store",
-  ];
+  const lines: string[] = [];
+  if (heap_name === closure_heap_global) {
+    lines.push(emit_persistent_alloc("i32.const " + info.size.toString(), 8));
+    lines.push("local.set $" + name);
+  } else {
+    lines.push("global.get $" + heap_name);
+    lines.push("local.set $" + name);
+    lines.push("global.get $" + heap_name);
+    lines.push("i32.const " + info.size.toString());
+    lines.push("i32.add");
+    lines.push("global.set $" + heap_name);
+  }
+  lines.push("local.get $" + name);
+  lines.push("i32.const " + info.tag_value.toString());
+  lines.push("i32.store");
 
   if (info.payload.tag === "value") {
     expect(

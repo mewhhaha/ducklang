@@ -1,0 +1,3 @@
+const user_type = struct { name: Text, age: Int }
+let user = user_type { name: "Ada" }
+user.age

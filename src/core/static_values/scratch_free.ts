@@ -135,6 +135,7 @@ export function is_scratch_free_static_value_expr<ctx>(
     case "linear":
     case "lam":
     case "rec":
+    case "rec_ref":
     case "block":
     case "comptime":
     case "with":

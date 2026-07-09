@@ -1,4 +1,4 @@
-import type { DataSegment, Mod } from "../../mod.ts";
+import type { DataSegment } from "../../mod.ts";
 import type { ValType } from "../../op.ts";
 import { Data, Emit, Format, Typed } from "../../trait.ts";
 import type { Wat } from "../../wat.ts";

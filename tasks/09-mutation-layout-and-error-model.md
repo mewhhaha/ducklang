@@ -375,6 +375,8 @@ user_layout.align
   aggregate/text/union values still reject until explicit freeze/promotion or
   field/value-level scratch-free proofs exist. General fact-directed memory
   mutation remains pending. Optional statement branches that contain `freeze`
-  now produce conservative no-op bump drop facts for the paths where the branch
-  may not run, including no-else `if` and typed `if let` bodies; conditional
-  destructor emission for a future reusable allocator remains pending.
+  now produce path-specific drop facts for the paths where the branch may not
+  run, including no-else `if` and typed `if let` bodies. Persistent allocation
+  cleanup uses the shared first-fit allocator's real `__free` path; cleanup
+  anchors preserve branch alternatives instead of relying on a no-op bump
+  destructor.

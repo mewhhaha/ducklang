@@ -1,0 +1,8 @@
+const point_type = struct { x: Int, y: Int }
+
+let start = point_type { x: 10, y: 10 }
+let end = point_type { x: 20, y: 1 }
+
+let moved_start = start { x: start.x + 1 }
+
+moved_start.x + start.y + end.x + end.y

@@ -1,4 +1,8 @@
 import { loop_exit_owners, next_loop_scope } from "./state.ts";
+import {
+  core_runtime_slice_fact,
+  runtime_slice_value_local,
+} from "../runtime_slice.ts";
 import type {
   CoreDropExitOwners,
   CoreDropHooks,
@@ -18,6 +22,8 @@ type CoreDropExprChildrenScanner<ctx> = (
   hooks: CoreDropHooks<ctx>,
   state: CoreDropState,
 ) => boolean;
+
+type CoreDropExprScanner<ctx> = CoreDropExprChildrenScanner<ctx>;
 
 type CoreDropStmtsScanner<ctx> = (
   statements: CoreStmt[],
@@ -91,23 +97,56 @@ export function scan_drop_collection_loop_stmt<ctx>(
   hooks: CoreDropHooks<ctx>,
   state: CoreDropState,
   scan_drop_expr_children: CoreDropExprChildrenScanner<ctx>,
+  scan_drop_expr: CoreDropExprScanner<ctx>,
   scan_drop_stmts: CoreDropStmtsScanner<ctx>,
 ): boolean {
-  scan_drop_expr_children(
-    stmt.collection,
-    scope,
-    owners,
-    exit_owners,
-    ctx,
-    hooks,
-    state,
-  );
+  const loop_scope = next_loop_scope(state);
+  const slice = core_runtime_slice_fact(stmt.collection);
+  let continues: boolean;
+  if (slice) {
+    continues = scan_drop_expr(
+      stmt.collection,
+      scope,
+      owners,
+      exit_owners,
+      ctx,
+      hooks,
+      state,
+    );
+  } else {
+    continues = scan_drop_expr_children(
+      stmt.collection,
+      scope,
+      owners,
+      exit_owners,
+      ctx,
+      hooks,
+      state,
+    );
+  }
+  if (!continues) {
+    return false;
+  }
+  if (slice) {
+    const step = state.steps[state.steps.length - 1];
+    if (
+      step && step.tag === "heap_drop" &&
+      step.edge === "discarded_expr" && !step.owner
+    ) {
+      const loop_id = Number(loop_scope.slice("loop#".length));
+      step.edge = "loop_zero_iteration_cleanup";
+      step.owner = runtime_slice_value_local(loop_id);
+      step.reason = step.reason.replace(
+        "discarded expression",
+        "loop zero-iteration cleanup",
+      );
+    }
+  }
   const body_ctx = drop_collection_loop_body_ctx(stmt, ctx, hooks);
   if (body_ctx.tag === "skip") {
     return true;
   }
 
-  const loop_scope = next_loop_scope(state);
   const loop_owners = new Map<string, CoreDropOwner>();
   scan_drop_stmts(
     stmt.body,

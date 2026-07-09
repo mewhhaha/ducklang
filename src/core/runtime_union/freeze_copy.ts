@@ -3,7 +3,7 @@ import type { ValType } from "../../op.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
 import { fresh_temp_local, indent_lines, set_local } from "../backend/util.ts";
-import { closure_heap_global } from "../closure_emit.ts";
+import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import { load_instr, store_instr } from "../memory.ts";
 import {
   declare_runtime_aggregate_freeze_copy_locals,
@@ -92,12 +92,11 @@ export function emit_runtime_union_freeze_copy<
   const lines = [
     source_wat,
     "local.set $" + plan.source,
-    "global.get $" + closure_heap_global,
+    emit_persistent_alloc(
+      "i32.const " + runtime_union_type_size(type_value, ctx).toString(),
+      8,
+    ),
     "local.set $" + plan.result,
-    "global.get $" + closure_heap_global,
-    "i32.const " + runtime_union_type_size(type_value, ctx).toString(),
-    "i32.add",
-    "global.set $" + closure_heap_global,
     "local.get $" + plan.result,
     "local.get $" + plan.source,
     load_instr("i32", 0),

@@ -19,6 +19,7 @@ export function is_type_level_expr(expr: CoreExpr): boolean {
     case "text":
     case "var":
     case "linear":
+    case "rec_ref":
     case "prim":
     case "app":
     case "block":
@@ -148,6 +149,7 @@ export function static_type_level_value(
     case "num":
     case "text":
     case "linear":
+    case "rec_ref":
     case "prim":
     case "comptime":
     case "borrow":

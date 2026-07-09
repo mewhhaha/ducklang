@@ -9,7 +9,10 @@ export type {
   CoreBaselineProof,
   CoreBaselineProofInput,
   CoreBaselineTarget,
+  CoreCleanupProofRow,
   CoreProofIssue,
+  CoreProofMissingEdge,
+  CoreStorageProofRow,
   CoreUnsupportedCodegenHooks,
   CoreUnsupportedCodegenIssue,
 } from "./proof/types.ts";

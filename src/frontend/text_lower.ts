@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import { Ic, type Ic as IcNode } from "../ic.ts";
-import type { Env, FrontExpr, Stmt } from "./ast.ts";
+import type { Env, FrontExpr } from "./ast.ts";
 import { stmt_result_expr } from "./block_result.ts";
 import { text_byte_length } from "./text.ts";
 import { lower_expr_as_front_type } from "./typed_lower.ts";

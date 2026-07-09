@@ -1,0 +1,9 @@
+const point_type = struct { x: Int, y: Int }
+const line_type = struct { start: point_type, end: point_type }
+
+let line = line_type {
+  start: point_type { x: 10, y: 11 },
+  end: point_type { x: 20, y: 1 }
+}
+
+line.start.x + line.start.y + line.end.x + line.end.y

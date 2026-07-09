@@ -246,6 +246,7 @@ function scan_drop_stmt<ctx>(
         hooks,
         state,
         scan_drop_expr_children,
+        scan_drop_discarded_expr,
         scan_drop_stmts,
       );
     }
@@ -372,6 +373,27 @@ function scan_drop_stmt<ctx>(
     case "unsupported":
       return true;
   }
+}
+
+function scan_drop_discarded_expr<ctx>(
+  expr: CoreExpr,
+  scope: string,
+  owners: Map<string, CoreDropOwner>,
+  exit_owners: CoreDropExitOwners,
+  ctx: ctx,
+  hooks: CoreDropHooks<ctx>,
+  state: CoreDropState,
+): boolean {
+  return scan_drop_expr(
+    expr,
+    scope,
+    owners,
+    exit_owners,
+    ctx,
+    hooks,
+    state,
+    scan_drop_expr_children,
+  );
 }
 
 function scan_drop_expr_children<ctx>(

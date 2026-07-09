@@ -1,0 +1,10 @@
+host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_take from "env.take" (ownership_transfer Text) => I32
+
+let read_message: Text = append("a", "b")
+let read_result = host_read(borrow read_message)
+
+let sent_message: Text = append("c", "d")
+let send_result = host_take(sent_message)
+
+read_result + send_result

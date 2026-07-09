@@ -1,10 +1,7 @@
 import type { Env, FrontExpr, FrontType } from "./ast.ts";
 import { check_binding_annotation } from "./annotation_check.ts";
 import { apply_annotation_context } from "./annotation_context.ts";
-import {
-  resolve_annotation_type,
-  resolve_numeric_expr_type,
-} from "./annotation_resolve.ts";
+import { resolve_annotation_type } from "./annotation_resolve.ts";
 import type { AnnotationHooks } from "./annotation_types.ts";
 
 export type { AnnotationHooks } from "./annotation_types.ts";

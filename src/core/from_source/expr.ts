@@ -1,8 +1,10 @@
 import type { FrontExpr, Stmt } from "../../frontend/ast.ts";
+import { contains_reserved_linear_effect } from "../../frontend/linear.ts";
 import type { CoreExpr, CoreField, CoreParam, CoreTypeField } from "../ast.ts";
 import {
   type CoreFromSourceCtx,
   fork_core_from_source_ctx,
+  resolve_bound_core_value_name,
   resolve_core_name,
 } from "./context.ts";
 import { core_stmt } from "./stmt.ts";
@@ -19,7 +21,7 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       return { tag: "type_name", name: expr.name };
 
     case "var": {
-      const resolved = resolve_core_name(ctx, expr.name);
+      const resolved = resolve_bound_core_value_name(ctx, expr.name);
       const named_rec = ctx.namedRecs.get(resolved) ||
         ctx.namedRecs.get(expr.name);
 
@@ -52,11 +54,15 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
         }
       }
 
-      return {
+      const value: CoreExpr = {
         tag: "lam",
         params: expr.params.map(core_param),
         body: core_expr(expr.body, body_ctx),
       };
+      if (contains_reserved_linear_effect(expr.body, body_ctx.linear_names)) {
+        value.is_linear_closure = true;
+      }
+      return value;
     }
 
     case "rec": {
@@ -256,6 +262,26 @@ function core_host_import_method_app(
   }
 
   const receiver_name = resolve_core_name(ctx, object.name);
+  resolve_bound_core_value_name(ctx, object.name);
+  const method_table = ctx.capability_methods.get(receiver_name);
+
+  if (method_table) {
+    const host_import = method_table.get(expr.func.name);
+
+    if (!host_import) {
+      return {
+        tag: "unsupported",
+        feature: "missing_capability_method",
+        text: receiver_name + "." + expr.func.name,
+      };
+    }
+
+    return {
+      tag: "app",
+      func: { tag: "var", name: host_import },
+      args: expr.args.map((arg) => core_expr(arg, ctx)),
+    };
+  }
 
   if (!ctx.host_import_names.has(expr.func.name)) {
     if (ctx.linear_names.has(receiver_name)) {

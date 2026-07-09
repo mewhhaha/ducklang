@@ -1,0 +1,9 @@
+import score_module from "./multi_file/score_module.ix"
+
+const capabilities = {
+  base: 40,
+  bonus: 2
+}
+
+let application = score_module(capabilities)
+application.run

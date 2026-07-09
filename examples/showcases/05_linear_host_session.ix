@@ -1,0 +1,10 @@
+host_import print from "env.print" (I32, bounded_borrow Text) => I32
+
+let message = scratch {
+  let temporary: Text = append("hel", "lo")
+  freeze temporary
+}
+
+let !io: I32 = 1
+io = print(!io, borrow message)
+io

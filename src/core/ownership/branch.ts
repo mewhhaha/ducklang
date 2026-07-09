@@ -33,7 +33,7 @@ export function core_if_branches_are_freeze_results(
     core_expr_result_is_freeze(expr.else_branch);
 }
 
-function core_expr_result_is_freeze(expr: CoreExpr): boolean {
+export function core_expr_result_is_freeze(expr: CoreExpr): boolean {
   const block_value = static_block_result(expr);
 
   if (block_value) {

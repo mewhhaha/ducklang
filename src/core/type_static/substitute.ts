@@ -55,6 +55,9 @@ export function substitute_core_type_expr(
       };
     }
 
+    case "rec_ref":
+      return expr;
+
     case "app":
       return {
         tag: "app",

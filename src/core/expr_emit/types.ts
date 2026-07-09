@@ -138,6 +138,17 @@ export type CoreExprEmitHooks<ctx extends CoreExprEmitCtx> = {
     expr: CoreExpr,
     ctx: ctx,
   ) => CoreField[] | undefined;
+  static_core_call_requires_scope: (
+    target: Extract<CoreExpr, { tag: "lam" }>,
+  ) => boolean;
+  static_core_call_target: (
+    expr: CoreExpr,
+    ctx: ctx,
+  ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
+  static_core_call_value: (
+    expr: CoreExpr,
+    ctx: ctx,
+  ) => CoreExpr | undefined;
   static_struct_value: (
     expr: CoreExpr,
     ctx: ctx,

@@ -15,6 +15,10 @@ export function plan_core_lam_capture<ctx extends CoreCaptureTempCtx>(
   emit_setup: boolean,
   hooks: CoreCaptureHooks<ctx>,
 ): CoreLamCapturePlan | undefined {
+  if (expr.is_linear_closure) {
+    return undefined;
+  }
+
   const capture_info = core_lam_capture_info(expr, ctx, hooks);
 
   if (capture_info.invalid_assignment) {

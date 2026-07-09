@@ -297,33 +297,6 @@ function validate_linear_no_else_branch(
   merge_used_linear_closures(closures, branch_closures);
 }
 
-function validate_linear_no_else_loop_branch(
-  stmts: Stmt[],
-  available: Set<string>,
-  closures: LinearClosureEnv,
-  active_calls: Set<string>,
-  edge: string,
-): void {
-  const before = new Set(available);
-  const branch = new Set(available);
-  const branch_closures = clone_linear_closures(closures);
-  validate_linear_loop_body_with_ops(
-    stmts,
-    branch,
-    branch_closures,
-    new Set(active_calls),
-    linear_stmt_loop_ops,
-  );
-
-  if (linear_block_exits(stmts)) {
-    return;
-  }
-
-  expect_same_linear_state(before, branch, edge);
-  expect_same_linear_closure_state(closures, branch_closures, edge);
-  merge_used_linear_closures(closures, branch_closures);
-}
-
 function validate_linear_assignment(
   stmt: Extract<Stmt, { tag: "assign" }>,
   available: Set<string>,

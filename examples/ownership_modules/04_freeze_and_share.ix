@@ -1,0 +1,2 @@
+let message = freeze "shared"
+len(message) * 7

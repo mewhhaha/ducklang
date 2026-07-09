@@ -70,9 +70,9 @@ export function emit_drop(
     owner: owner_name,
     ownership: owner.ownership,
     storage,
-    runtime: "no_op_bump_allocator",
+    runtime: "reusable_free_list_allocator",
     reason: core_ownership_result_text(owner.ownership) + " " +
-      drop_edge_text(edge) + " lowers to no-op with bump allocator",
+      drop_edge_text(edge) + " lowers to __free with reusable allocator",
   });
   state.next_drop += 1;
 }
@@ -116,6 +116,12 @@ function drop_edge_text(edge: CoreDropEdge): string {
 
     case "continue_exit":
       return "continue exit";
+
+    case "conditional_cleanup":
+      return "conditional retained-path cleanup";
+
+    case "loop_zero_iteration_cleanup":
+      return "loop zero-iteration cleanup";
 
     case "assignment_replace":
       return "assignment replacement";

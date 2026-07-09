@@ -1,4 +1,3 @@
-import { expect } from "../../expect.ts";
 import type { Ic as IcNode } from "../../ic.ts";
 import type { Binding, Env, FrontExpr, FrontType, Stmt } from "../ast.ts";
 import { structured_core_route } from "../diagnostic.ts";

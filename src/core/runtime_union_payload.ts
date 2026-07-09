@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
-import type { CoreExpr, CoreField } from "./ast.ts";
+import type { CoreExpr } from "./ast.ts";
 import { find_core_field } from "./backend/util.ts";
 import { align_to, val_type_size } from "./memory.ts";
 import {
@@ -223,16 +223,6 @@ function runtime_union_payload_type(
   }
 
   return core_val_type_from_type_name(type_name);
-}
-
-function runtime_union_struct_payload<ctx extends TypeStaticCtx>(
-  type_expr: CoreExpr,
-  type_value: Extract<CoreExpr, { tag: "struct_type" }>,
-  ctx: ctx,
-): RuntimeUnionPayload {
-  const offset = { value: 4 };
-  const fields = runtime_union_struct_payload_fields(type_value, ctx, offset);
-  return { tag: "struct", type_expr, fields };
 }
 
 function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(

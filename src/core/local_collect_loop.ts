@@ -9,6 +9,12 @@ import {
 import type { CoreCtx, CoreLocalCollectHooks } from "./local_collect/types.ts";
 import type { CoreLocalCollectorCallbacks } from "./local_collect_closure.ts";
 import { range_end_local, range_step_local } from "./range_loop.ts";
+import {
+  core_runtime_slice_fact,
+  runtime_slice_end_local,
+  runtime_slice_index_local,
+  runtime_slice_value_local,
+} from "./runtime_slice.ts";
 
 export function collect_range_loop_stmt_locals(
   stmt: Extract<CoreStmt, { tag: "range_loop" }>,
@@ -52,6 +58,31 @@ export function collect_collection_loop_stmt_locals(
   const id = ctx.next_loop;
   ctx.next_loop += 1;
   const fields = hooks.static_collection_fields(stmt.collection, ctx);
+
+  const slice = core_runtime_slice_fact(stmt.collection);
+  if (slice) {
+    callbacks.collect_expr_locals(stmt.collection, ctx, hooks);
+    if (stmt.index) {
+      clear_loop_binding(stmt.index, ctx);
+      set_local(ctx.locals, stmt.index, "i32");
+    } else {
+      set_local(ctx.locals, runtime_slice_index_local(id), "i32");
+    }
+    clear_loop_binding(stmt.item, ctx);
+    set_local(ctx.locals, stmt.item, "i32");
+    if (slice.element_type === "Text") {
+      ctx.text_locals.add(stmt.item);
+      if (ctx.frozen_locals) {
+        ctx.frozen_locals.add(stmt.item);
+      }
+    }
+    set_local(ctx.locals, runtime_slice_value_local(id), "i32");
+    set_local(ctx.locals, runtime_slice_end_local(id), "i32");
+    for (const item of stmt.body) {
+      callbacks.collect_stmt_locals(item, ctx, hooks);
+    }
+    return;
+  }
 
   if (fields) {
     collect_static_collection_loop_stmt_locals(

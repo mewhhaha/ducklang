@@ -1,12 +1,11 @@
 import { expect } from "../../expect.ts";
 import type { Ic as IcNode } from "../../ic.ts";
-import type { Binding, Env, FrontExpr, FrontType, Stmt } from "../ast.ts";
+import type { Binding, Env, FrontExpr, Stmt } from "../ast.ts";
 import { validate_const_expr } from "../constness.ts";
 import { clone_env, fresh, lookup, push_binding } from "../env.ts";
 import { validate_linear_rest } from "../linear.ts";
 import { unwrap_ownership_wrapper_context_expr } from "../ownership.ts";
 import { same_type } from "../types.ts";
-import { lower_binding_body } from "./binding_body.ts";
 import {
   lower_recursive_runtime_binding,
   lower_runtime_binding,

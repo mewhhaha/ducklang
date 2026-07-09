@@ -1,7 +1,7 @@
 import type { Core } from "./ast.ts";
 import { scan_drop_stmts } from "./drop/scan.ts";
 import { top_level_drop_functions } from "./drop/static_function.ts";
-import { empty_exit_owners, resolve_drop_owner } from "./drop/state.ts";
+import { empty_exit_owners } from "./drop/state.ts";
 import type {
   CoreDropHooks,
   CoreDropOwner,

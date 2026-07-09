@@ -1,0 +1,9 @@
+host_import bound from "env.bound" () => I32
+
+let total = 0
+
+for value in 0..bound() {
+  total = total + value
+}
+
+total

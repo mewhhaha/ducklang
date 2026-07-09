@@ -1,7 +1,10 @@
+import { expect } from "../expect.ts";
 import type { CoreExpr } from "./ast.ts";
 import type { RuntimeUnionTarget } from "./runtime_union.ts";
 import { static_block_result } from "./type_static.ts";
+import { core_runtime_slice_fact } from "./runtime_slice.ts";
 import {
+  core_expr_result_is_freeze,
   core_if_branch_ownership,
   core_if_branches_are_freeze_results,
   core_if_let_branch_ownership,
@@ -22,6 +25,10 @@ export function core_expr_ownership<ctx>(
   ctx: ctx,
   hooks: CoreOwnershipHooks<ctx>,
 ): CoreOwnership {
+  if (core_runtime_slice_fact(expr)) {
+    return { tag: "unique_heap", reason: "runtime_aggregate" };
+  }
+
   const block_value = static_block_result(expr);
 
   if (block_value) {
@@ -71,6 +78,24 @@ export function core_expr_ownership<ctx>(
   }
 
   if (expr.tag === "app") {
+    if (
+      expr.func.tag === "var" &&
+      hooks.static_core_call_requires_scope &&
+      hooks.static_core_call_value
+    ) {
+      const target = direct_static_value(expr.func.name, ctx);
+
+      if (
+        target && target.tag === "lam" &&
+        !hooks.static_core_call_requires_scope(target) &&
+        core_expr_result_is_freeze(target.body)
+      ) {
+        const value = hooks.static_core_call_value(expr, ctx);
+        expect(value, "Missing static freeze call value");
+        return core_expr_ownership(value, ctx, hooks);
+      }
+    }
+
     const scoped = scoped_static_ownership_call_value(expr, ctx, hooks);
 
     if (scoped) {
@@ -163,6 +188,21 @@ export function core_expr_ownership<ctx>(
   const union_target = try_runtime_union_target(expr, ctx, hooks);
 
   if (union_target) {
+    const collection = indexed_collection_source(expr);
+
+    if (collection) {
+      const source = core_expr_ownership(collection, ctx, hooks);
+
+      if (
+        source.tag === "scalar_local" ||
+        source.tag === "frozen_shareable"
+      ) {
+        return source;
+      }
+
+      return { tag: "borrow_view", source };
+    }
+
     return { tag: "unique_heap", reason: "runtime_union" };
   }
 
@@ -173,6 +213,45 @@ export function core_expr_ownership<ctx>(
   const type = hooks.expr_type(expr, ctx);
 
   return { tag: "scalar_local", type };
+}
+
+function direct_static_value<ctx>(
+  name: string,
+  ctx: ctx,
+): CoreExpr | undefined {
+  if (typeof ctx !== "object" || ctx === null || !("statics" in ctx)) {
+    return undefined;
+  }
+
+  const statics = ctx.statics;
+
+  if (!(statics instanceof Map)) {
+    return undefined;
+  }
+
+  const value = statics.get(name);
+
+  if (typeof value !== "object" || value === null || !("tag" in value)) {
+    return undefined;
+  }
+
+  return value as CoreExpr;
+}
+
+function indexed_collection_source(expr: CoreExpr): CoreExpr | undefined {
+  if (expr.tag === "index") {
+    return expr.object;
+  }
+
+  if (
+    expr.tag === "app" &&
+    expr.func.tag === "var" &&
+    expr.func.name === "get"
+  ) {
+    return expr.args[0];
+  }
+
+  return undefined;
 }
 
 function scoped_static_ownership_call_value<ctx>(

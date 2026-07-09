@@ -1315,13 +1315,13 @@ Implemented and verified:
   Optional longer-lived regions are future explicit owner packages. They may
   reuse scratch/arena lifetime machinery, but must not be inferred from ordinary
   `scratch {}` or introduce implicit managed storage. Scratch reset must be
-  emitted on every structured exit edge, and unique heap drop points should be
-  computed even while the initial bump allocator makes those drops runtime
-  no-ops. Lowering-created temporaries also need cleanup points from
-  ownership/lifetime facts. Allocation sites should record their storage class
-  and escape reason, unknown host/import calls should be treated as escaping
-  unless marked as bounded-borrow consumers, and scratch-to-heap promotion
-  should be explicit in Core rather than an implicit fallback.
+  emitted on every structured exit edge, and unique heap drop points now lower
+  through allocation-linked `__free` calls in the reusable free-list allocator.
+  Lowering-created temporaries also need cleanup points from ownership/lifetime
+  facts. Allocation sites should record their storage class and escape reason,
+  unknown host/import calls should be treated as escaping unless marked as
+  bounded-borrow consumers, and scratch-to-heap promotion should be explicit in
+  Core rather than an implicit fallback.
 - `borrow expr`, `freeze expr`, and `scratch { ... }` are reserved in the
   frontend grammar and source formatter. Source-to-Core now preserves them as
   explicit ownership nodes, and Core type/emit lowers them transparently for
@@ -1429,10 +1429,10 @@ Implemented and verified:
   Terminal expression branches do not also report false fallthrough drops, and
   branch assignments to existing unique owners merge into the outer owner state.
   Branch-local owners and closure-local owners inside closure bodies now produce
-  deterministic drop facts at their boundary. The first runtime is still the
-  bump allocator, so drop steps are explicit `no_op_bump_allocator` analysis
-  facts rather than emitted WAT. Direct named-owner discards and direct
-  named-owner moves through static aliases now produce drop facts without
+  deterministic drop facts at their boundary. The runtime now uses a reusable
+  free-list allocator, so linked `reusable_free_list_allocator` drop steps emit
+  `__free` calls at their cleanup anchors. Direct named-owner discards and
+  direct named-owner moves through static aliases now produce drop facts without
   forcing static owner values through runtime expression typing.
   Compile-time-only `const` values, including type values and const
   type-constructor results, stay in the static drop-analysis context and do not
@@ -1469,9 +1469,9 @@ Implemented and verified:
   discarded, bound, block-wrapped, branch-local, returned, and self-shadowed
   freeze expressions. Optional statement branches containing `freeze`, including
   no-else `if` and typed `if let` bodies, now avoid runtime typing of static
-  owner values and produce conservative no-op bump drop facts for paths where
-  the branch may not run; conditional destructor emission for reusable
-  allocators is still pending. `src/core/proof.ts`, `Core.proof(...)`, and
+  owner values and produce conditional cleanup facts for paths where the branch
+  may not run; linked retained-path owners emit `__free` through the reusable
+  free-list allocator. `src/core/proof.ts`, `Core.proof(...)`, and
   `Core.check_proof(...)` now expose an explicit `core-3-nonweb` no-GC proof
   harness with managed storage disabled. It aggregates final-result escape
   facts, borrow validation, explicit `freeze` edges, scratch cleanup/reset
@@ -1650,10 +1650,10 @@ host/import transfer analysis.
 Latest implementation slice: discarded runtime aggregate materialization now
 participates in the drop plan. A discarded aggregate expression records an
 ownerless `heap_drop` on `discarded_expr` with `unique_heap runtime_aggregate`,
-so the cleanup proof matches the runtime aggregate allocation fact instead of
-silently relying on the bump allocator or backend emission. This covers direct
-aggregate construction and static aggregate facts that are materialized by
-expression use before being discarded.
+so the cleanup proof matches the runtime aggregate allocation fact and anchors
+its reusable-allocator `__free` emission. This covers direct aggregate
+construction and static aggregate facts that are materialized by expression use
+before being discarded.
 
 Latest proof-gate slice: unsupported Core codegen nodes now participate in
 `Core.proof(...)`. Covered shapes now include unknown `collection_loop`

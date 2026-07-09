@@ -245,6 +245,42 @@ export function app_type<ctx extends CoreHostImportCtx & StaticCoreCallCtx>(
     return "i32";
   }
 
+  if (name === "runtime_i32_slice") {
+    expect(
+      expr.args.length >= 2,
+      "Core runtime_i32_slice needs length and at least one element",
+    );
+    for (const arg of expr.args) {
+      expect(
+        hooks.expr_type(arg, ctx) === "i32",
+        "Core runtime_i32_slice expects i32 facts",
+      );
+    }
+    return "i32";
+  }
+
+  if (name === "runtime_text_slice") {
+    expect(
+      expr.args.length >= 2,
+      "Core runtime_text_slice needs length and at least one element",
+    );
+    const length = expr.args[0];
+    expect(length, "Missing runtime_text_slice length");
+    expect(
+      hooks.expr_type(length, ctx) === "i32",
+      "Core runtime_text_slice length must be i32",
+    );
+    for (let index = 1; index < expr.args.length; index += 1) {
+      const element = expr.args[index];
+      expect(element, "Missing runtime_text_slice element");
+      expect(
+        hooks.static_text_value(element, ctx),
+        "Core runtime_text_slice elements must be frozen/shareable Text",
+      );
+    }
+    return "i32";
+  }
+
   const host_import_type = core_host_import_result_type(
     expr,
     ctx,

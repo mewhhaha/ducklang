@@ -1,0 +1,3 @@
+host_import index from "env.index" () => I32
+
+get("a", index())

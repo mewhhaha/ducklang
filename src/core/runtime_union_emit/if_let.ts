@@ -14,7 +14,7 @@ export function emit_runtime_union_if_let_stmt<
   hooks: RuntimeUnionIfLetHooks<ctx>,
 ): Wat {
   const target_code = hooks.emit_expr(target.target, ctx);
-  const local_name = fresh_temp_local(ctx, "union_match");
+  const local_name = runtime_union_match_local(ctx);
   set_local(ctx.locals, local_name, "i32");
   const cond_name = fresh_temp_local(ctx, "if_cond");
   set_local(ctx.locals, cond_name, "i32");
@@ -79,7 +79,7 @@ export function emit_runtime_union_if_let_expr<
 ): Wat {
   const result_type = hooks.expr_type(expr, ctx);
   const target_code = hooks.emit_expr(target.target, ctx);
-  const local_name = fresh_temp_local(ctx, "union_match");
+  const local_name = runtime_union_match_local(ctx);
   set_local(ctx.locals, local_name, "i32");
   const info = hooks.runtime_union_match_info(expr.case_name, target, ctx);
   const binding = hooks.match_branch_ctx(expr.value_name, info, ctx);
@@ -125,4 +125,50 @@ export function emit_runtime_union_if_let_expr<
     indent_lines(else_branch, 2),
     "end",
   ].join("\n");
+}
+
+function runtime_union_match_local<ctx extends RuntimeUnionIfLetCtx>(
+  ctx: ctx,
+): string {
+  const generated = fresh_temp_local(ctx, "union_match");
+
+  if (ctx.locals.has(generated)) {
+    return generated;
+  }
+
+  const prefix = "_union_match#";
+  let found: string | undefined;
+  let found_index: number | undefined;
+
+  for (const name of ctx.locals.keys()) {
+    if (!name.startsWith(prefix)) {
+      continue;
+    }
+
+    const index = Number(name.slice(prefix.length));
+    if (!Number.isInteger(index)) {
+      continue;
+    }
+
+    if (index < ctx.next_temp - 1) {
+      continue;
+    }
+
+    if (found_index !== undefined && found_index <= index) {
+      continue;
+    }
+
+    found = name;
+    found_index = index;
+  }
+
+  if (found_index !== undefined) {
+    ctx.next_temp = found_index + 1;
+  }
+
+  if (found) {
+    return found;
+  }
+
+  return generated;
 }

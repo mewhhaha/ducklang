@@ -34,6 +34,12 @@ Run the test suite:
 just test
 ```
 
+Compile and execute the complete source example suite:
+
+```sh
+just examples
+```
+
 The tests use Deno and expect `wat2wasm` to be available for Wasm integration
 checks.
 
@@ -285,6 +291,7 @@ src/expr.ts         expression layer
 src/mod.ts          Wasm module layer
 src/core.ts         structured Core path
 docs/language.md    longer source-language notes
+examples/           runnable .ix source programs and expected failures
 tasks/              planning notes and task breakdowns
 ```
 

@@ -3,6 +3,7 @@ import type { ValType } from "../op.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr, CoreStmt } from "./ast.ts";
 import type { CoreLamCapturePlan } from "./closure_capture.ts";
+import { core_statement_cleanup_rows } from "./cleanup_emission.ts";
 import { emit_core_scratch_resets } from "./scratch.ts";
 import {
   static_core_call_branch_value,
@@ -118,6 +119,66 @@ export type CoreStmtEmitHooks<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx> =
   };
 
 export function emit_core_stmt<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
+  stmt: CoreStmt,
+  ctx: ctx,
+  is_final: boolean,
+  hooks: CoreStmtEmitHooks<ctx>,
+): Wat {
+  const before = emit_statement_cleanup(stmt, "before", ctx);
+  let emitted = emit_core_stmt_inner(stmt, ctx, is_final, hooks);
+  emitted = emit_conditional_fallthrough_cleanup(stmt, emitted, ctx);
+  const after = emit_statement_cleanup(stmt, "after", ctx);
+  return [before, emitted, after].filter((line) => line !== "").join("\n");
+}
+
+function emit_conditional_fallthrough_cleanup(
+  stmt: CoreStmt,
+  emitted: Wat,
+  ctx: CoreStmtEmitCtx,
+): Wat {
+  if (stmt.tag !== "if_stmt" && stmt.tag !== "if_let_stmt") {
+    return emitted;
+  }
+
+  const rows = core_statement_cleanup_rows(stmt).filter((row) => {
+    return row.edge === "conditional_cleanup" &&
+      row.scope.endsWith("_fallthrough");
+  });
+  if (rows.length === 0) {
+    return emitted;
+  }
+
+  const cleanup = emit_cleanup_rows(rows, ctx);
+  const indented_cleanup = cleanup.split("\n").map((line) => {
+    return "  " + line;
+  }).join("\n");
+
+  if (stmt.tag === "if_let_stmt") {
+    const empty_then = "\nif\n  \nelse\n";
+    if (emitted.includes(empty_then)) {
+      return emitted.replace(
+        empty_then,
+        "\nif\n" + indented_cleanup + "\nelse\n",
+      );
+    }
+
+    const empty_else = "\nelse\n  \nend";
+    expect(
+      emitted.includes(empty_else),
+      "Conditional if-let cleanup requires an unmatched branch",
+    );
+    return emitted.replace(empty_else, "\nelse\n" + indented_cleanup + "\nend");
+  }
+
+  const suffix = "\nend";
+  expect(emitted.endsWith(suffix), "Conditional cleanup requires WAT end");
+  return emitted.slice(0, -suffix.length) + "\nelse\n" +
+    indented_cleanup + suffix;
+}
+
+function emit_core_stmt_inner<
+  ctx extends CoreStmtEmitCtx & StaticCoreCallCtx,
+>(
   stmt: CoreStmt,
   ctx: ctx,
   is_final: boolean,
@@ -257,31 +318,68 @@ export function emit_core_stmt<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
     case "break":
       expect(ctx.break_label, "Cannot emit core break outside loop");
       return emit_core_control_transfer(
-        emit_core_scratch_resets(ctx.scratch_loop_resets),
+        join_cleanup(
+          emit_core_scratch_resets(ctx.scratch_loop_resets),
+          emit_transfer_cleanup(stmt, "break_exit", ctx),
+        ),
         "br $" + ctx.break_label,
       );
 
     case "continue":
       expect(ctx.continue_label, "Cannot emit core continue outside loop");
       return emit_core_control_transfer(
-        emit_core_scratch_resets(ctx.scratch_loop_resets),
+        join_cleanup(
+          emit_core_scratch_resets(ctx.scratch_loop_resets),
+          emit_transfer_cleanup(stmt, "continue_exit", ctx),
+        ),
         "br $" + ctx.continue_label,
       );
 
     case "return":
-      if (is_final && ctx.scratch_return_resets.length === 0) {
+      if (
+        is_final && ctx.scratch_return_resets.length === 0 &&
+        emit_transfer_cleanup(stmt, "return_exit", ctx) === ""
+      ) {
         return hooks.emit_expr(stmt.value, ctx);
       }
 
       return emit_core_control_transfer(
         hooks.emit_expr(stmt.value, ctx) + "\n" +
-          emit_core_scratch_resets(ctx.scratch_return_resets),
+          join_cleanup(
+            emit_core_scratch_resets(ctx.scratch_return_resets),
+            emit_transfer_cleanup(stmt, "return_exit", ctx),
+          ),
         "return",
       );
 
     case "expr":
       if (is_final) {
         return hooks.emit_expr(stmt.expr, ctx);
+      }
+
+      {
+        const ownerless = core_statement_cleanup_rows(stmt).filter((row) => {
+          return row.edge === "discarded_expr" &&
+            row.pointer_local !== undefined;
+        });
+        if (ownerless.length > 0) {
+          expect(
+            ownerless.length === 1,
+            "Discarded expression must have one ownerless cleanup pointer",
+          );
+          const row = ownerless[0];
+          expect(row, "Missing ownerless discarded-expression cleanup row");
+          expect(
+            row.pointer_local,
+            "Missing discarded-expression cleanup local",
+          );
+          expect(
+            ctx.locals.has(row.pointer_local),
+            "Missing discarded-expression cleanup local: " + row.pointer_local,
+          );
+          return hooks.emit_expr(stmt.expr, ctx) + "\nlocal.set $" +
+            row.pointer_local;
+        }
       }
 
       return hooks.emit_expr(stmt.expr, ctx) + "\ndrop";
@@ -324,6 +422,76 @@ export function emit_core_stmt<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
     case "unsupported":
       throw new Error("Cannot emit core " + stmt.tag + " statement yet");
   }
+}
+
+function emit_statement_cleanup(
+  stmt: CoreStmt,
+  placement: "before" | "after",
+  ctx: CoreStmtEmitCtx,
+): Wat {
+  const rows = core_statement_cleanup_rows(stmt).filter((row) => {
+    if (placement === "before") {
+      return row.edge === "assignment_replace";
+    }
+    return row.edge === "discarded_expr" ||
+      (row.edge === "conditional_cleanup" &&
+        !row.scope.endsWith("_fallthrough")) ||
+      row.edge === "loop_zero_iteration_cleanup" ||
+      row.edge === "scope_exit";
+  });
+  return emit_cleanup_rows(rows, ctx);
+}
+
+function emit_transfer_cleanup(
+  stmt: CoreStmt,
+  edge: "return_exit" | "break_exit" | "continue_exit",
+  ctx: CoreStmtEmitCtx,
+): Wat {
+  return emit_cleanup_rows(
+    core_statement_cleanup_rows(stmt).filter((row) => row.edge === edge),
+    ctx,
+  );
+}
+
+function emit_cleanup_rows(
+  rows: ReturnType<typeof core_statement_cleanup_rows>,
+  ctx: CoreStmtEmitCtx,
+): Wat {
+  return rows.map((row) => {
+    let pointer: string;
+    if (row.pointer_local) {
+      expect(
+        ctx.locals.has(row.pointer_local),
+        "Missing cleanup pointer local: " + row.pointer_local,
+      );
+      pointer = "local.get $" + row.pointer_local;
+    } else {
+      expect(row.owner, "Cleanup row has no owner or pointer local");
+      if (ctx.statics.has(row.owner)) {
+        return "";
+      }
+      expect(
+        ctx.locals.has(row.owner),
+        "Missing cleanup owner local: " + row.owner,
+      );
+      pointer = "local.get $" + row.owner;
+    }
+    const lines: string[] = [];
+    for (const child of row.owned_children) {
+      lines.push(pointer);
+      lines.push("i32.load offset=" + child.offset.toString());
+      lines.push("call $__free");
+      lines.push("drop");
+    }
+    lines.push(pointer);
+    lines.push("call $__free");
+    lines.push("drop");
+    return lines.join("\n");
+  }).filter((line) => line !== "").join("\n");
+}
+
+function join_cleanup(left: Wat, right: Wat): Wat {
+  return [left, right].filter((line) => line !== "").join("\n");
 }
 
 function bind_core_text_fact<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(

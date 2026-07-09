@@ -1,0 +1,6 @@
+let total = scratch {
+  let message = "temporary"
+  len(message) + 33
+}
+
+total

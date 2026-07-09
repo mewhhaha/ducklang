@@ -79,6 +79,12 @@ export function create_core_backend_graph_expr_type(
         expr,
         ctx,
       ),
+    static_core_call_requires_scope: (target) =>
+      deps.static_call().static_core_call_requires_scope(target),
+    static_core_call_target: (expr: CoreExpr, ctx: StaticCtx) =>
+      deps.static_call().static_core_call_target(expr, ctx),
+    static_core_call_value: (expr: CoreExpr, ctx: StaticCtx) =>
+      deps.static_call().static_core_call_value(expr, ctx),
     static_runtime_union_match_branch_ctx: (
       value_name: string | undefined,
       info,

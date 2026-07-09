@@ -1,4 +1,4 @@
-import type { CoreExpr, CoreStmt } from "../ast.ts";
+import type { CoreStmt } from "../ast.ts";
 import {
   bind_collection_loop_item_owner_alias,
   bind_if_let_payload_owner_alias,

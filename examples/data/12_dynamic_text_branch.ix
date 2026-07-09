@@ -1,0 +1,9 @@
+host_import flag from "env.flag" () => I32
+
+let word = if flag() {
+  "forty"
+} else {
+  "six"
+}
+
+len(word)

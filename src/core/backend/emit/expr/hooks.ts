@@ -41,6 +41,9 @@ export function create_core_backend_expr_emit_hooks(
     same_runtime_aggregate_type_expr: api.same_runtime_aggregate_type_expr,
     same_runtime_union_type_expr: api.same_runtime_union_type_expr,
     static_collection_fields: api.static_collection_fields,
+    static_core_call_requires_scope: api.static_core_call_requires_scope,
+    static_core_call_target: api.static_core_call_target,
+    static_core_call_value: api.static_core_call_value,
     static_runtime_union_match_branch_ctx:
       api.static_runtime_union_match_branch_ctx,
     static_struct_value: api.static_struct_value,

@@ -1,0 +1,10 @@
+const user_type = struct { name: Text, score: Int }
+const result_type = union { ok: user_type, err: Text }
+
+let result = result_type.ok(user_type { name: "Ada", score: 42 })
+
+if let .ok(user) = result {
+  user.score
+} else {
+  0
+}

@@ -199,6 +199,9 @@ export function expr_type<
         static_runtime_union_match_branch_ctx:
           hooks.static_runtime_union_match_branch_ctx,
         static_struct_value: hooks.static_struct_value,
+        static_core_call_requires_scope: hooks.static_core_call_requires_scope,
+        static_core_call_target: hooks.static_core_call_target,
+        static_core_call_value: hooks.static_core_call_value,
         static_union_case: hooks.static_union_case,
         static_text_value: hooks.static_text_value,
       });
@@ -247,6 +250,9 @@ export function expr_type<
         static_runtime_union_match_branch_ctx:
           hooks.static_runtime_union_match_branch_ctx,
         static_struct_value: hooks.static_struct_value,
+        static_core_call_requires_scope: hooks.static_core_call_requires_scope,
+        static_core_call_target: hooks.static_core_call_target,
+        static_core_call_value: hooks.static_core_call_value,
         static_union_case: hooks.static_union_case,
         static_text_value: hooks.static_text_value,
       };
