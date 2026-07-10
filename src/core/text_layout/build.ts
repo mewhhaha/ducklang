@@ -333,7 +333,7 @@ export function build_text_layout(
     value: CoreExpr,
     annotation: string | undefined,
   ): boolean {
-    if (annotation === "Text") {
+    if (annotation === "Text" || annotation === "Bytes") {
       return true;
     }
 
@@ -413,7 +413,7 @@ export function build_text_layout(
         body_ctx.union_locals.delete(param.name);
         set_local(body_ctx.locals, param.name, type);
 
-        if (param.annotation === "Text") {
+        if (param.annotation === "Text" || param.annotation === "Bytes") {
           body_ctx.text_locals.add(param.name);
         } else {
           body_ctx.text_locals.delete(param.name);

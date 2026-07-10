@@ -195,7 +195,7 @@ function runtime_struct_field_fallback_ic(field: TypeField): IcNode {
     return { tag: "num", type: "i32", value: 0 };
   }
 
-  if (field.type_name === "Text") {
+  if (field.type_name === "Text" || field.type_name === "Bytes") {
     return { tag: "text", value: "" };
   }
 
@@ -205,7 +205,7 @@ function runtime_struct_field_fallback_ic(field: TypeField): IcNode {
 }
 
 function runtime_struct_field_select_prim(field: TypeField): Prim | undefined {
-  if (field.type_name === "Text") {
+  if (field.type_name === "Text" || field.type_name === "Bytes") {
     return "i32.select";
   }
 

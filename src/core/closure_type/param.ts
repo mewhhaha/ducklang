@@ -31,7 +31,7 @@ export function closure_param_info(
     return { type: "i64", is_text: false };
   }
 
-  if (annotation === "Text") {
+  if (annotation === "Text" || annotation === "Bytes") {
     return { type: "i32", is_text: true };
   }
 

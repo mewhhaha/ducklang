@@ -50,6 +50,7 @@ The executable expectations and deterministic runners live in `manifest.ts`.
 | `08_union_fact_checker.ix`         | structural union constraint                   | IC    | `42`   |
 | `09_type_pattern_check.ix`         | compile-time type pattern                     | IC    | `42`   |
 | `10_extensions_and_protocols.ix`   | lexical extension and protocol specialization | IC    | `42`   |
+| `11_indexed_calculator.ix`         | closed calculator type family                 | Core  | `42`   |
 
 ## Functions And Control Flow
 

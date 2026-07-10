@@ -235,6 +235,10 @@ function host_result_type_name(value: FrontHostImport): string {
       return "Text";
     }
 
+    if (reason === "bytes") {
+      return "Bytes";
+    }
+
     if (typeof reason !== "string") {
       return reason.name;
     }
@@ -540,6 +544,10 @@ function effect_result_contract(
 function effect_owner_reason(type_name: string): FrontHostImportOwnerReason {
   if (type_name === "Text") {
     return "text";
+  }
+
+  if (type_name === "Bytes") {
+    return "bytes";
   }
 
   return { tag: "type_ref", name: type_name };

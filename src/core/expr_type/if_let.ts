@@ -172,7 +172,7 @@ function implicit_core_if_let_then_type<
     branch_ctx.fn_types.delete(expr.value_name);
     branch_ctx.union_locals.delete(expr.value_name);
 
-    if (matched.type_name === "Text") {
+    if (matched.type_name === "Text" || matched.type_name === "Bytes") {
       branch_ctx.text_locals.add(expr.value_name);
     } else {
       branch_ctx.text_locals.delete(expr.value_name);

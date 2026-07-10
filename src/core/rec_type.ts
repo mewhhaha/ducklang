@@ -75,7 +75,7 @@ export function bind_rec_initial_params<
     ctx.union_locals.delete(param.name);
     set_local(ctx.locals, param.name, hooks.expr_type(value, ctx));
 
-    if (param.annotation === "Text") {
+    if (param.annotation === "Text" || param.annotation === "Bytes") {
       ctx.text_locals.add(param.name);
     } else {
       ctx.text_locals.delete(param.name);

@@ -26,6 +26,10 @@ export function resolve_annotation_type(
     return { tag: "text" };
   }
 
+  if (annotation === "Bytes") {
+    return { tag: "text", encoding: "bytes" };
+  }
+
   if (annotation === "Type") {
     return { tag: "type" };
   }

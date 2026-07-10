@@ -95,6 +95,10 @@ export function core_host_import_owner_reason(
   reason: FrontHostImportOwnerReason,
   ctx: CoreFromSourceCtx,
 ): CoreHostImportOwnerReason {
+  if (reason === "bytes") {
+    return "text";
+  }
+
   if (typeof reason === "string") {
     return reason;
   }
@@ -148,6 +152,7 @@ const core_builtin_value_names = new Set([
   "I32",
   "I64",
   "Int",
+  "Bytes",
   "Text",
   "Type",
   "U32",

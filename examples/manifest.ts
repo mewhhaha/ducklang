@@ -134,6 +134,11 @@ export const success_examples: SuccessExample[] = [
     route: "ic",
     runs: run(42),
   },
+  {
+    path: "examples/compile_time/11_indexed_calculator.ix",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/functions/01_closure_capture.ix",

@@ -112,7 +112,7 @@ export function collect_core_stmt_locals(
       hooks.bind_core_union_type(stmt.name, value, stmt.annotation, ctx);
 
       if (
-        stmt.annotation === "Text" ||
+        stmt.annotation === "Text" || stmt.annotation === "Bytes" ||
         hooks.core_expr_has_runtime_text_fact(value, ctx)
       ) {
         ctx.text_locals.add(stmt.name);

@@ -636,6 +636,27 @@ let bind_add = (const m_type: monad, value, const f) => {
 Protocol-constrained calls specialize before Ic lowering. There is no runtime
 typeclass or instance search.
 
+An extension can also hold a closed family of type-values. Selecting a field
+specializes the family to an ordinary struct or union before Core emission:
+
+```txt
+const calc_types = 0
+const calc_types = calc_types with {
+  number: union { literal: Int, add: add_args_type },
+  text: union { literal: Text }
+}
+
+const number_calc_type = calc_types.number
+const text_calc_type = calc_types.text
+```
+
+The selected union controls which constructors exist, so
+`number_calc_type.add(...)` is valid while `text_calc_type.add(...)` is
+rejected. This is a closed, compile-time indexed family rather than a general
+GADT: abstract indices, existential packaging, and recursive indexed unions
+remain reserved. See `examples/compile_time/11_indexed_calculator.ix` for the
+complete executable calculator.
+
 ## Linear Values And Host Effects
 
 Linear parameters are marked with `!`.
@@ -711,8 +732,8 @@ let increment: I32 -> I32 = value => value + 1
 pure binding and rejects an effectful right-hand side. Compatible effects are
 inferred through calls, including recursion and higher-order calls. Callers do
 not manually thread an effect token. The compiler preserves the linear
-proof-token discipline internally, but that implementation detail is not part
-of the source language.
+proof-token discipline internally, but that implementation detail is not part of
+the source language.
 
 Type constructors compose by whitespace application. Row variables propagate
 callback effects through higher-order types:
@@ -729,8 +750,8 @@ let apply: (I32 -> <e> I32, I32) -> <e> I32 =
 
 Creating an anonymous closure is pure. Invoking it introduces its inferred
 latent row. The current runtime vertical slice specializes statically known
-`const` callbacks; general escaping Ix-effect closures remain reserved until
-CPS closure conversion supports them.
+`const` callbacks; general escaping Ix-effect closures remain reserved until CPS
+closure conversion supports them.
 
 In this first row-polymorphism slice, unresolved row variables compose through
 union. Intersection and difference still work for concrete rows; an unresolved
@@ -751,16 +772,16 @@ as `Stdin & Stdout` intersect to the empty row. Parentheses group compound row
 expressions. Handler discharge subtracts the handled operation set
 automatically.
 
-Rows propagate through branches, callbacks, closures, module initialization,
-and exported function types. Capturing a linear host resource makes the closure
+Rows propagate through branches, callbacks, closures, module initialization, and
+exported function types. Capturing a linear host resource makes the closure
 one-shot under the normal linear closure rules. The compiler rejects operations
 outside an explicit row, effects in an explicitly pure arrow, incompatible
 branch rows, effect-resource duplication, and authority hidden inside a reusable
 closure.
 
-Operations are selected by their declared effect name, for example
-`Io.read()` or `Stdout.write_line()`. The effect row on a function type records
-the operations it may perform; callers need only provide compatible runners.
+Operations are selected by their declared effect name, for example `Io.read()`
+or `Stdout.write_line()`. The effect row on a function type records the
+operations it may perform; callers need only provide compatible runners.
 
 Imported modules receive only the explicitly passed subset of the caller's
 context:

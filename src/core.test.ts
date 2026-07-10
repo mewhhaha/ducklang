@@ -6951,6 +6951,53 @@ if let .some(value) = result {
   );
 });
 
+Deno.test("Core resolves type values stored in extension fields", () => {
+  const source = `
+const add_args_type = struct { left: Int, right: Int }
+
+const calc_types = 0
+const calc_types = calc_types with {
+  number: union { literal: Int, add: add_args_type },
+  text: union { literal: Text }
+}
+
+const number_calc_type = calc_types.number
+const text_calc_type = calc_types.text
+
+let expression = number_calc_type.add(add_args_type {
+  left: 20,
+  right: 22
+})
+
+if let .add(args) = expression {
+  args.left + args.right
+} else {
+  0
+}
+`;
+  const core = Source.core(Source.parse(source));
+
+  assert_equals(Typed.type(Core, core), "i32");
+  assert_includes(Emit.emit(Core, core), "i32.add");
+
+  assert_throws(
+    () =>
+      Source.wat(`
+const add_args_type = struct { left: Int, right: Int }
+
+const calc_types = 0
+const calc_types = calc_types with {
+  number: union { literal: Int, add: add_args_type },
+  text: union { literal: Text }
+}
+
+const text_calc_type = calc_types.text
+text_calc_type.add(add_args_type { left: 20, right: 22 })
+`),
+    "Missing union case: add",
+  );
+});
+
 Deno.test("Core.emit elides type-level consts and type checks", () => {
   const core = Source.core(Source.parse(`
 const int_type = Int

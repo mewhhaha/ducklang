@@ -42,7 +42,7 @@ export function bind_unsafe_scratch_return_for_proof(
   if (scalar_type) {
     set_local(ctx.locals, stmt.name, scalar_type);
 
-    if (annotation === "Text") {
+    if (annotation === "Text" || annotation === "Bytes") {
       ctx.text_locals.add(stmt.name);
     }
 

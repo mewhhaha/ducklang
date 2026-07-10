@@ -254,6 +254,7 @@ export type FrontHostImportArgContract =
 
 export type FrontHostImportOwnerReason =
   | "text"
+  | "bytes"
   | "closure"
   | "runtime_union"
   | "runtime_aggregate"
@@ -300,7 +301,7 @@ export type Token = {
 
 export type FrontType =
   | { tag: "int"; type: ValType | undefined }
-  | { tag: "text" }
+  | { tag: "text"; encoding?: "bytes" }
   | { tag: "type" }
   | { tag: "struct"; fields: string[]; field_types: TypeField[] | undefined }
   | { tag: "union"; case_name: string }

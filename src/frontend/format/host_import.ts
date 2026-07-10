@@ -74,6 +74,10 @@ function format_host_import_owner_reason(
     return "Text";
   }
 
+  if (reason === "bytes") {
+    return "Bytes";
+  }
+
   if (reason === "closure") {
     return "closure";
   }

@@ -132,7 +132,7 @@ function layout_type_name(name: string): { size: number; align: number } {
     return { size: 8, align: 8 };
   }
 
-  if (name === "Text") {
+  if (name === "Text" || name === "Bytes") {
     return { size: 8, align: 4 };
   }
 

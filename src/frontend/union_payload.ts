@@ -115,10 +115,16 @@ export function validate_union_payload_type(
     return;
   }
 
-  if (expected === "Text") {
-    if (actual.tag !== "text") {
+  if (expected === "Text" || expected === "Bytes") {
+    const expects_bytes = expected === "Bytes";
+
+    if (
+      actual.tag !== "text" ||
+      (actual.encoding === "bytes") !== expects_bytes
+    ) {
       throw new Error(
-        "Union case " + name + " expects Text, got " + front_type_name(actual),
+        "Union case " + name + " expects " + expected + ", got " +
+          front_type_name(actual),
       );
     }
   }

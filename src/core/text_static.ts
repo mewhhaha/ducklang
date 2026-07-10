@@ -272,7 +272,7 @@ function static_if_let_matched_payload_is_text(
       continue;
     }
 
-    return item.type_name === "Text";
+    return item.type_name === "Text" || item.type_name === "Bytes";
   }
 
   return false;

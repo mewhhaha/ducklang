@@ -120,7 +120,7 @@ export type AbiManifest = {
   abi_name: "ix-js";
   abi_version: "ix-js-2";
   target: {
-    profile: "core-3-browser";
+    profile: "core-3-nonweb";
     pointer: "wasm32";
     endianness: "little";
     i64_js: "bigint";
@@ -346,7 +346,7 @@ export function build_abi_manifest(
     abi_name: "ix-js",
     abi_version: ix_abi_version,
     target: {
-      profile: "core-3-browser",
+      profile: "core-3-nonweb",
       pointer: "wasm32",
       endianness: "little",
       i64_js: "bigint",

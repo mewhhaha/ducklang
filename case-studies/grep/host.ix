@@ -1,0 +1,46 @@
+module () where
+
+declare effect Process {
+  arg_count: () => I32
+  arg: (I32) => unique_heap Text
+  cwd: () => unique_heap Text
+}
+
+declare effect Walk {
+  begin: (bounded_borrow Text) => unique_heap open_result_type
+  next: () => unique_heap walk_event_type
+  prune: () => Unit
+  end: () => Unit
+}
+
+declare effect FileReader {
+  open: (bounded_borrow Text) => unique_heap open_result_type
+  read: (I32) => unique_heap read_result_type
+  close: () => Unit
+}
+
+declare effect Stdin {
+  read: (I32) => unique_heap read_result_type
+  is_terminal: () => I32
+}
+
+declare effect Stdout {
+  write: (bounded_borrow Bytes) => unique_heap write_result_type
+  is_terminal: () => I32
+}
+
+declare effect Stderr {
+  write: (bounded_borrow Bytes) => unique_heap write_result_type
+  is_terminal: () => I32
+}
+
+declare Init {
+  process: Process
+  walk: Walk
+  file_reader: FileReader
+  stdin: Stdin
+  stdout: Stdout
+  stderr: Stderr
+}
+
+return {}

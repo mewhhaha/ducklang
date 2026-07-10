@@ -46,7 +46,7 @@ export function core_borrow_closure_body_ctx(
 
     closure_ctx.locals.set(param.name, type);
 
-    if (annotation === "Text") {
+    if (annotation === "Text" || annotation === "Bytes") {
       closure_ctx.text_locals.add(param.name);
     } else {
       closure_ctx.text_locals.delete(param.name);
@@ -157,7 +157,7 @@ export function core_drop_closure_body_ctx(
     closure_ctx.struct_locals.delete(param.name);
     closure_ctx.union_locals.delete(param.name);
 
-    if (annotation === "Text") {
+    if (annotation === "Text" || annotation === "Bytes") {
       closure_ctx.text_locals.add(param.name);
     } else {
       closure_ctx.text_locals.delete(param.name);

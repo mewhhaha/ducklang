@@ -187,7 +187,7 @@ function runtime_aggregate_field<ctx extends TypeStaticCtx>(
       name,
       offset,
       type: field_type,
-      text: field_type_name === "Text",
+      text: field_type_name === "Text" || field_type_name === "Bytes",
       union_type_expr: undefined,
     };
   }
@@ -209,7 +209,7 @@ function runtime_aggregate_field<ctx extends TypeStaticCtx>(
   if (!type_value || type_value.tag !== "struct_type") {
     throw new Error(
       "Core runtime aggregate field " + name +
-        " must be Int, I32, U32, I64, Text, Unit, Resume, a union type, " +
+        " must be Int, I32, U32, I64, Text, Bytes, Unit, Resume, a union type, " +
         "or a static-shaped struct type",
     );
   }
@@ -259,7 +259,7 @@ function runtime_aggregate_type_layout<ctx extends TypeStaticCtx>(
 }
 
 function runtime_aggregate_value_type(type_name: string): ValType | undefined {
-  if (type_name === "Text") {
+  if (type_name === "Text" || type_name === "Bytes") {
     return "i32";
   }
 

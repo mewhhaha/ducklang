@@ -275,12 +275,13 @@ function apply_core_value_annotation<ctx extends CoreTypeCheckCtx>(
     return value;
   }
 
-  if (annotation === "Text") {
+  if (annotation === "Text" || annotation === "Bytes") {
     const actual = core_binding_value_type_name(value, ctx, hooks);
 
     if (actual !== "Text") {
       throw new Error(
-        "Core " + label + " annotation expects Text, got " + actual,
+        "Core " + label + " annotation expects " + annotation + ", got " +
+          actual,
       );
     }
 

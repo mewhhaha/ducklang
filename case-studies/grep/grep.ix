@@ -1,0 +1,56 @@
+module (!init: Init) where
+
+const io_error_type = struct {
+  code: I32,
+  path: Text,
+  message: Text
+}
+
+const open_result_type = union {
+  ok: Unit,
+  err: io_error_type
+}
+
+const read_result_type = union {
+  chunk: Bytes,
+  eof: Unit,
+  err: io_error_type
+}
+
+const walk_entry_type = struct {
+  path: Text,
+  name: Text,
+  depth: I32,
+  size: I64
+}
+
+const walk_event_type = union {
+  enter: walk_entry_type,
+  leave: walk_entry_type,
+  file: walk_entry_type,
+  symlink: walk_entry_type,
+  other: walk_entry_type,
+  err: io_error_type,
+  done: Unit
+}
+
+const write_result_type = union {
+  ok: Unit,
+  closed: Unit,
+  err: io_error_type
+}
+
+count <- Process.arg_count()
+path <- Process.arg(0)
+open_result <- FileReader.open(borrow path)
+read_result <- FileReader.read(65536)
+code <- if let .chunk(bytes) = read_result {
+  write_result <- Stdout.write(borrow bytes)
+  0
+} else {
+  1
+}
+_ <- FileReader.close()
+
+let final_code: I32 = code
+return { code: final_code }

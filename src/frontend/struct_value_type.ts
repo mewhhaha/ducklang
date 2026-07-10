@@ -184,10 +184,15 @@ function validate_field_type(
     return;
   }
 
-  if (expected === "Text") {
-    if (actual.tag !== "text") {
+  if (expected === "Text" || expected === "Bytes") {
+    const expects_bytes = expected === "Bytes";
+
+    if (
+      actual.tag !== "text" ||
+      (actual.encoding === "bytes") !== expects_bytes
+    ) {
       throw new Error(
-        "Struct field " + name + " expects Text, got " +
+        "Struct field " + name + " expects " + expected + ", got " +
           front_type_name(actual),
       );
     }

@@ -132,6 +132,9 @@ export function static_type_level_value(
     case "app":
       return static_type_constructor_call_value(expr, ctx);
 
+    case "field":
+      return static_type_extension_field_value(expr, ctx);
+
     case "var": {
       if (is_core_builtin_type_name(expr.name)) {
         return { tag: "type_name", name: expr.name };
@@ -159,12 +162,69 @@ export function static_type_level_value(
     case "struct_update":
     case "if":
     case "if_let":
-    case "field":
     case "index":
     case "union_case":
     case "unsupported":
       return undefined;
   }
+}
+
+function static_type_extension_field_value(
+  expr: Extract<CoreExpr, { tag: "field" }>,
+  ctx: TypeStaticCtx,
+): CoreExpr | undefined {
+  // Type-valued extension fields form closed compile-time namespaces. Resolve
+  // the selected field before ordinary union or struct lowering sees it.
+  const extension = static_extension_value(expr.object, ctx);
+
+  if (!extension) {
+    return undefined;
+  }
+
+  for (let index = extension.fields.length - 1; index >= 0; index -= 1) {
+    const field = extension.fields[index];
+    expect(field, "Missing static extension field " + index.toString());
+
+    if (field.name === expr.name) {
+      return static_type_level_value(field.value, ctx);
+    }
+  }
+
+  return static_type_extension_field_value(
+    { tag: "field", object: extension.base, name: expr.name },
+    ctx,
+  );
+}
+
+function static_extension_value(
+  expr: CoreExpr,
+  ctx: TypeStaticCtx,
+): Extract<CoreExpr, { tag: "with" }> | undefined {
+  if (expr.tag === "with") {
+    return expr;
+  }
+
+  if (expr.tag === "block") {
+    const value = static_block_result(expr);
+
+    if (!value) {
+      return undefined;
+    }
+
+    return static_extension_value(value, ctx);
+  }
+
+  if (expr.tag !== "var") {
+    return undefined;
+  }
+
+  const value = ctx.statics.get(expr.name);
+
+  if (!value) {
+    return undefined;
+  }
+
+  return static_extension_value(value, ctx);
 }
 
 export function resolve_core_type_name(

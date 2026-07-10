@@ -199,6 +199,10 @@ function host_import_owner_reason(
     return "text";
   }
 
+  if (name === "Bytes") {
+    return "bytes";
+  }
+
   if (name === "closure") {
     return "closure";
   }

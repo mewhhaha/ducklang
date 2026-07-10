@@ -204,7 +204,7 @@ function scoped_static_core_call_ctx<
           body_ctx,
         );
 
-        if (param.annotation === "Text") {
+        if (param.annotation === "Text" || param.annotation === "Bytes") {
           body_ctx.text_locals.add(param.name);
         } else {
           body_ctx.text_locals.delete(param.name);
@@ -226,7 +226,7 @@ function scoped_static_core_call_ctx<
         body_ctx,
       );
 
-      if (param.annotation === "Text") {
+      if (param.annotation === "Text" || param.annotation === "Bytes") {
         body_ctx.text_locals.add(param.name);
       } else {
         body_ctx.text_locals.delete(param.name);
@@ -374,7 +374,7 @@ function scoped_static_core_call_plan<
     ctx.statics.delete(name);
     set_local(ctx.locals, name, type);
 
-    if (param.annotation === "Text") {
+    if (param.annotation === "Text" || param.annotation === "Bytes") {
       ctx.text_locals.add(name);
     } else {
       ctx.text_locals.delete(name);

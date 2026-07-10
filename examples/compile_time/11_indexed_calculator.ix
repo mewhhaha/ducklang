@@ -1,0 +1,37 @@
+const add_args_type = struct {
+  left: Int,
+  right: Int
+}
+
+const calc_types = 0
+const calc_types = calc_types with {
+  number: union {
+    literal: Int,
+    add: add_args_type
+  },
+  text: union {
+    literal: Text
+  }
+}
+
+const number_calc_type = calc_types.number
+const text_calc_type = calc_types.text
+
+let eval_number = expression => {
+  if let .literal(value) = expression {
+    value
+  } else {
+    if let .add(args) = expression {
+      args.left + args.right
+    } else {
+      0
+    }
+  }
+}
+
+let expression = number_calc_type.add(add_args_type {
+  left: 20,
+  right: 22
+})
+
+eval_number(expression)

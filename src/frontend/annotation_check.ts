@@ -204,12 +204,16 @@ function check_builtin_binding_annotation(
     return;
   }
 
-  if (annotation === "Text") {
+  if (annotation === "Text" || annotation === "Bytes") {
     const actual = hooks.infer_expr(value, env);
+    const expects_bytes = annotation === "Bytes";
 
-    if (actual.tag !== "text") {
+    if (
+      actual.tag !== "text" ||
+      (actual.encoding === "bytes") !== expects_bytes
+    ) {
       throw new Error(
-        "Binding annotation expects Text, got " +
+        "Binding annotation expects " + annotation + ", got " +
           binding_value_type_name(value, env, hooks),
       );
     }

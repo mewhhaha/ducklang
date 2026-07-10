@@ -107,7 +107,7 @@ export function lower_expr_as_declared_type(
   }
 
   const value_type = val_type_from_type_name(type_name);
-  const is_text = type_name === "Text";
+  const is_text = type_name === "Text" || type_name === "Bytes";
 
   if (!value_type && !is_text) {
     return hooks.lower_expr(expr, env);

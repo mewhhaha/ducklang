@@ -4,7 +4,7 @@ import type { ValType } from "../op.ts";
 
 export function is_builtin_type_name(name: string): boolean {
   return name === "Unit" || name === "Int" || name === "I32" ||
-    name === "U32" || name === "I64" || name === "Text" ||
+    name === "U32" || name === "I64" || name === "Text" || name === "Bytes" ||
     name === "Resume";
 }
 
@@ -22,6 +22,10 @@ export function front_type_from_type_name(name: string): FrontType {
 
   if (name === "Text") {
     return { tag: "text" };
+  }
+
+  if (name === "Bytes") {
+    return { tag: "text", encoding: "bytes" };
   }
 
   if (name === "Unit") {
@@ -60,6 +64,10 @@ export function front_type_name(type: FrontType): string {
       return "Int";
 
     case "text":
+      if (type.encoding === "bytes") {
+        return "Bytes";
+      }
+
       return "Text";
 
     case "type":
@@ -94,6 +102,10 @@ export function type_name_from_front_type(
   }
 
   if (type.tag === "text") {
+    if (type.encoding === "bytes") {
+      return "Bytes";
+    }
+
     return "Text";
   }
 
@@ -148,6 +160,10 @@ export function same_type(left: FrontType, right: FrontType): boolean {
     }
 
     return true;
+  }
+
+  if (left.tag === "text" && right.tag === "text") {
+    return left.encoding === right.encoding;
   }
 
   if (left.tag === "struct" && right.tag === "struct") {

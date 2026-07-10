@@ -505,7 +505,7 @@ function bind_core_text_fact<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
   >,
 ): void {
   if (
-    annotation === "Text" ||
+    annotation === "Text" || annotation === "Bytes" ||
     hooks.core_expr_has_runtime_text_fact(value, ctx)
   ) {
     ctx.text_locals.add(name);

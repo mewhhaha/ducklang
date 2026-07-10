@@ -540,6 +540,38 @@ function check_manifest(manifest: AbiManifest): void {
     );
   }
 
+  if (manifest.target.profile !== "core-3-nonweb") {
+    throw new IxAbiError(
+      "target_mismatch",
+      "target.profile",
+      "Expected core-3-nonweb, got " + String(manifest.target.profile),
+    );
+  }
+
+  if (manifest.target.pointer !== "wasm32") {
+    throw new IxAbiError(
+      "target_mismatch",
+      "target.pointer",
+      "Expected wasm32, got " + String(manifest.target.pointer),
+    );
+  }
+
+  if (manifest.target.endianness !== "little") {
+    throw new IxAbiError(
+      "target_mismatch",
+      "target.endianness",
+      "Expected little endian, got " + String(manifest.target.endianness),
+    );
+  }
+
+  if (manifest.target.i64_js !== "bigint") {
+    throw new IxAbiError(
+      "target_mismatch",
+      "target.i64_js",
+      "Expected BigInt i64 values, got " + String(manifest.target.i64_js),
+    );
+  }
+
   for (const import_name in manifest.imports) {
     const abi_import = manifest.imports[import_name];
 

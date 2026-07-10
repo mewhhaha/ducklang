@@ -615,7 +615,7 @@ function payload_ownership_from_type_name<ctx>(
   ctx: ctx,
   hooks: CoreBorrowHooks<ctx>,
 ): CoreOwnership | undefined {
-  if (type_name === "Text") {
+  if (type_name === "Text" || type_name === "Bytes") {
     return {
       tag: "unique_heap",
       reason: "text",

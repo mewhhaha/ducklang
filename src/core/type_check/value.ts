@@ -113,10 +113,14 @@ export function check_core_value_type_name<
 
   const actual_name = core_binding_value_type_name(value, ctx, hooks);
 
-  if (resolved_expected_type_name === "Text") {
+  if (
+    resolved_expected_type_name === "Text" ||
+    resolved_expected_type_name === "Bytes"
+  ) {
     if (actual_name !== "Text") {
       throw new Error(
-        label + " expects Text, got " + actual_name,
+        label + " expects " + resolved_expected_type_name + ", got " +
+          actual_name,
       );
     }
 

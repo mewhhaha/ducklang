@@ -211,7 +211,7 @@ function effect_manifest(result: "i32" | "text"): AbiManifest {
     abi_name: "ix-js",
     abi_version: "ix-js-2",
     target: {
-      profile: "core-3-browser",
+      profile: "core-3-nonweb",
       pointer: "wasm32",
       endianness: "little",
       i64_js: "bigint",
@@ -283,6 +283,29 @@ Deno.test("managed ABI rejects ix-js-1 manifests", async () => {
     assert_equals(error.code, "version_mismatch");
     assert_equals(error.path, "abi_version");
     assert_includes(error.message, "Expected ix-js-2");
+  }
+});
+
+Deno.test("managed ABI rejects a mismatched target profile", async () => {
+  const browser_manifest = {
+    ...effect_manifest("i32"),
+    target: {
+      ...effect_manifest("i32").target,
+      profile: "core-3-browser",
+    },
+  } as unknown as AbiManifest;
+
+  try {
+    await IxHost.instantiate(new Uint8Array(), browser_manifest);
+    throw new Error("Expected target profile rejection");
+  } catch (error) {
+    if (!(error instanceof IxAbiError)) {
+      throw error;
+    }
+
+    assert_equals(error.code, "target_mismatch");
+    assert_equals(error.path, "target.profile");
+    assert_includes(error.message, "Expected core-3-nonweb");
   }
 });
 
@@ -623,7 +646,7 @@ return { result }
 `);
 
   assert_equals(artifact.abi.abi_version, "ix-js-2");
-  assert_equals(artifact.abi.target.profile, "core-3-browser");
+  assert_equals(artifact.abi.target.profile, "core-3-nonweb");
   assert_equals(artifact.abi.imports.__ix_effect_Measure_text, {
     name: "__ix_effect_Measure_text",
     module: "ix_effect",
@@ -723,6 +746,82 @@ return { result }
   });
 
   assert_equals(result, { result: 5 });
+});
+
+Deno.test("managed ABI round trips Bytes through a typed effect result", async () => {
+  const source = `
+module (!init: Init) where
+
+const read_result_type = union {
+  chunk: Bytes,
+  eof: Unit,
+  err: Text
+}
+
+declare effect Host {
+  read: () => unique_heap read_result_type
+  write: (bounded_borrow Bytes) => Unit
+}
+
+declare Init { host: Host }
+
+outcome <- Host.read()
+result <- if let .chunk(bytes) = outcome {
+  _ <- Host.write(borrow bytes)
+  len(bytes) + get(bytes, 0)
+} else {
+  0
+}
+let final_result: I32 = result
+return { result: final_result }
+`;
+  const artifact = Source.artifact(source);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const input = new Uint8Array([7, 0, 255]);
+  let written = new Uint8Array();
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    const result = host.run({
+      host: {
+        read() {
+          return { tag: "chunk", value: input };
+        },
+        write(value) {
+          if (!(value instanceof Uint8Array)) {
+            throw new Error("Expected Bytes host argument");
+          }
+
+          written = value;
+          return undefined;
+        },
+      },
+    });
+
+    assert_equals(result, { result: 10 });
+    assert_equals(Array.from(written), [7, 0, 255]);
+    assert_equals(
+      artifact.abi.effects.Host.operations.read.result,
+      {
+        type: { tag: "named", name: "read_result_type" },
+        ownership: "unique_heap",
+      },
+    );
+    assert_equals(
+      artifact.abi.effects.Host.operations.write.params,
+      [{ type: { tag: "bytes" }, ownership: "bounded_borrow" }],
+    );
+    const read_result = artifact.abi.types.read_result_type;
+    assert_equals(read_result.tag, "union");
+
+    if (read_result.tag !== "union") {
+      throw new Error("Expected read_result_type union ABI");
+    }
+
+    assert_equals(read_result.cases[0]?.payload, { tag: "bytes" });
+  } finally {
+    host.dispose();
+  }
 });
 
 Deno.test("managed ABI grows memory for large host results", async () => {

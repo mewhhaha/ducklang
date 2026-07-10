@@ -87,7 +87,7 @@ export function runtime_union_payload<ctx extends TypeStaticCtx>(
     return {
       tag: "value",
       type: payload_type,
-      text: resolved_type_name === "Text",
+      text: resolved_type_name === "Text" || resolved_type_name === "Bytes",
     };
   }
 
@@ -108,8 +108,8 @@ export function runtime_union_payload<ctx extends TypeStaticCtx>(
   }
 
   throw new Error(
-    "Core runtime union payloads must be Int, I32, U32, I64, Text, Unit, " +
-      "Resume, a union type, or a struct type",
+    "Core runtime union payloads must be Int, I32, U32, I64, Text, Bytes, " +
+      "Unit, Resume, a union type, or a struct type",
   );
 }
 
@@ -218,7 +218,7 @@ export function check_runtime_union_aggregate_payload<
 function runtime_union_payload_type(
   type_name: string,
 ): ValType | undefined {
-  if (type_name === "Text") {
+  if (type_name === "Text" || type_name === "Bytes") {
     return "i32";
   }
 
@@ -243,7 +243,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
         name: field.name,
         offset: offset.value,
         type: field_type,
-        text: field_type_name === "Text",
+        text: field_type_name === "Text" || field_type_name === "Bytes",
       });
       offset.value += val_type_size(field_type);
       continue;
@@ -269,7 +269,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
     if (!type_value || type_value.tag !== "struct_type") {
       throw new Error(
         "Core runtime union struct payload field " + field.name +
-          " must be Int, I32, U32, I64, Text, Resume, a union type, " +
+          " must be Int, I32, U32, I64, Text, Bytes, Resume, a union type, " +
           "or a static-shaped struct type",
       );
     }

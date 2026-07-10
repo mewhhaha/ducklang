@@ -275,7 +275,7 @@ function lower_rec_struct_ic_fields(
 function rec_struct_field_select_prim(
   field: TypeField,
 ): "i32.select" | "i64.select" | undefined {
-  if (field.type_name === "Text") {
+  if (field.type_name === "Text" || field.type_name === "Bytes") {
     return "i32.select";
   }
 
