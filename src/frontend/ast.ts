@@ -51,10 +51,25 @@ export type EffectRef = {
   operation: string;
 };
 
-export type EffectContext = {
-  name: string;
-  operations: EffectRef[] | undefined;
-};
+export type EffectRowExpr =
+  | { tag: "family"; name: string }
+  | { tag: "operation"; effect: string; operation: string }
+  | { tag: "variable"; name: string }
+  | { tag: "group"; value: EffectRowExpr }
+  | { tag: "union"; left: EffectRowExpr; right: EffectRowExpr }
+  | { tag: "intersection"; left: EffectRowExpr; right: EffectRowExpr }
+  | { tag: "difference"; left: EffectRowExpr; right: EffectRowExpr };
+
+export type TypeExpr =
+  | { tag: "name"; name: string }
+  | { tag: "apply"; func: TypeExpr; arg: TypeExpr }
+  | { tag: "tuple"; items: TypeExpr[] }
+  | {
+    tag: "arrow";
+    param: TypeExpr;
+    effects: EffectRowExpr | undefined;
+    result: TypeExpr;
+  };
 
 export type BindingPatternItem = {
   name: string;
@@ -93,12 +108,12 @@ export type Stmt =
     is_recursive?: boolean;
     is_linear: boolean;
     annotation: string | undefined;
-    effect_context?: EffectContext;
+    type_annotation?: TypeExpr;
+    effectful?: boolean;
     value: FrontExpr;
   }
   | {
     tag: "state_bind";
-    context: string;
     value_name: string | undefined;
     value: FrontExpr;
   }
@@ -143,7 +158,7 @@ export type Stmt =
   | { tag: "break" }
   | { tag: "continue" }
   | { tag: "return"; value: FrontExpr }
-  | { tag: "expr"; expr: FrontExpr }
+  | { tag: "expr"; expr: FrontExpr; effectful?: boolean }
   | { tag: "unsupported"; feature: string; text: string };
 
 export type FrontExpr =
@@ -218,6 +233,7 @@ export type Param = {
   is_const: boolean;
   is_linear: boolean;
   annotation: string | undefined;
+  type_annotation?: TypeExpr;
 };
 
 export type Field = {

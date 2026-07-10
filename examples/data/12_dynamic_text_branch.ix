@@ -1,9 +1,17 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
 
-let word = if flag() {
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
+
+flag <- Input.flag()
+let word = if flag {
   "forty"
 } else {
   "six"
 }
 
-len(word)
+let result = len(word)
+return { result }

@@ -57,8 +57,8 @@ Counter {
     () =>
       Source.core(`
 effect Counter { add: (I32) => Unit }
-let Fx run = () => {
-  let (!Fx, ()) = Fx.Counter.add()
+let run = () => {
+  _ <- Counter.add()
 }
 let counter = Counter {
   add: (amount, !resume) => !resume(()),

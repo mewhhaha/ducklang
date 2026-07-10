@@ -9,13 +9,7 @@
 (binding_statement name: (identifier) @local.definition.var)
 (binding_statement
   name: (destructuring_pattern (identifier) @local.definition.var))
-(context_function_statement name: (identifier) @local.definition.var)
-(context_function_statement
-  context: (context_holder name: (identifier) @local.definition.var))
-(context_function_statement
-  context: (context_annotation
-    holder: (context_holder name: (identifier) @local.definition.var)))
-(state_binding_statement value: (identifier) @local.definition.var)
+(effect_binding_statement name: (identifier) @local.definition.var)
 (resume_dup_statement left: (identifier) @local.definition.var)
 (resume_dup_statement right: (identifier) @local.definition.var)
 (parameter name: (identifier) @local.definition.parameter)

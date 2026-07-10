@@ -1,13 +1,22 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
 
 let value = 0
+outer <- Input.flag()
 
-if flag() {
-  if flag() {
+if outer {
+  inner <- Input.flag()
+  if inner {
     value = 42
   }
 } else {
   value = 21
 }
 
-value
+let result = value
+return { result }

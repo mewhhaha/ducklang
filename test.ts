@@ -1,6 +1,6 @@
 import { Core, type Core as CoreNode } from "./src/core.ts";
 import { Expr, type Expr as ExprNode } from "./src/expr.ts";
-import { Source } from "./src/frontend.ts";
+import { TestSource as Source } from "./src/frontend/test_source.ts";
 import { Ic } from "./src/ic.ts";
 import { Mod } from "./src/mod.ts";
 import { Data, Emit, Typed } from "./src/trait.ts";

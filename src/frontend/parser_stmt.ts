@@ -15,7 +15,10 @@ import { ParserStmtBinding } from "./parser_stmt/binding.ts";
 import { unsupported_reserved_feature } from "./parser_support.ts";
 
 export class ParserStmt extends ParserStmtBinding {
-  constructor(tokens: Token[]) {
+  constructor(
+    tokens: Token[],
+    private readonly allow_host_imports_for_test = false,
+  ) {
     super(tokens);
   }
 
@@ -241,7 +244,21 @@ export class ParserStmt extends ParserStmtBinding {
       return this.parse_bind("const");
     }
 
+    if (
+      this.peek().kind === "name" && this.peek(1).kind === "symbol" &&
+      this.peek(1).text === "<-"
+    ) {
+      return this.parse_effect_bind();
+    }
+
     if (this.peek().kind === "name" && this.peek().text === "host_import") {
+      if (!this.allow_host_imports_for_test) {
+        throw new Error(
+          "`host_import` is not source syntax; use `declare effect` " +
+            "and provide its resource through `Init`",
+        );
+      }
+
       return this.parse_host_import_stmt();
     }
 

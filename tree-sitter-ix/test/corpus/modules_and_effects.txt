@@ -13,9 +13,9 @@ declare Init {
   io: Io
 }
 
-let Fx greet = () => {
-  let (!Fx, name) = Fx.read()
-  let (!Fx, ()) = Fx.print(borrow name)
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- Io.read()
+  _ <- Io.print(borrow name)
   name
 }
 
@@ -32,50 +32,53 @@ return { result }
         (type_reference
           (identifier)))))
   (declare_effect_statement
-    (identifier)
+    (effect_identifier)
     (effect_operation_block
       (effect_operation
         (identifier)
         (host_parameter_list)
         (host_result
-          (type_reference
-            (identifier))))
+          (type_reference)))
       (effect_operation
         (identifier)
         (host_parameter_list
           (host_parameter
-            (type_reference
-              (identifier))))
+            (type_reference)))
         (host_result
-          (type_reference
-            (identifier))))))
+          (type_reference)))))
   (declare_record_statement
     (identifier)
     (type_field_block
       (type_field
         (identifier)
-        (type_reference
-          (identifier)))))
-  (context_function_statement
-    (context_holder
-      (identifier))
+        (type_reference))))
+  (binding_statement
     (identifier)
+    (type_reference
+      (function_type
+        (unit_type)
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier))
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier)))))
+        (identifier)))
     (arrow_function
       (parameter_list)
       (block
-        (state_binding_statement
-          (context_holder
-            (identifier))
+        (effect_binding_statement
           (identifier)
           (call_expression
             (field_expression
               (identifier)
               (identifier))
             (argument_list)))
-        (state_binding_statement
-          (context_holder
-            (identifier))
-          (unit_pattern)
+        (effect_binding_statement
+          (identifier)
           (call_expression
             (field_expression
               (identifier)
@@ -95,6 +98,104 @@ return { result }
       (field_block
         (shorthand_field
           (identifier))))))
+
+==================
+Effect row expressions and effectful bind
+==================
+
+let run: () -> <Stdin | Stdout & (Trace \ Debug)> Text = () => {
+  line <- Stdin.read_line()
+  _ <- Stdout.write_line(borrow line)
+  line
+}
+
+let inspect: () -> <Stdin | Stdout.write_line | Trace \ Debug> Unit = () => ()
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (unit_type)
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_family_reference
+                (effect_identifier))
+              (effect_intersection_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (parenthesized_effect_expression
+                  (effect_difference_expression
+                    (effect_family_reference
+                      (effect_identifier))
+                    (effect_family_reference
+                      (effect_identifier))))))))
+        (identifier)))
+    (arrow_function
+      (parameter_list)
+      (block
+        (effect_binding_statement
+          (identifier)
+          (call_expression
+            (field_expression
+              (identifier)
+              (identifier))
+            (argument_list)))
+        (effect_binding_statement
+          (identifier)
+          (call_expression
+            (field_expression
+              (identifier)
+              (identifier))
+            (argument_list
+              (unary_expression
+                (identifier)))))
+        (expression_statement
+          (identifier)))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (unit_type)
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_union_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (effect_operation_reference
+                  (effect_identifier)
+                  (identifier)))
+              (effect_difference_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (effect_family_reference
+                  (effect_identifier))))))
+        (identifier)))
+    (arrow_function
+      (parameter_list)
+      (unit_pattern))))
+
+==================
+Source fragment
+==================
+
+let answer = 40 + 2
+answer
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (binary_expression
+      (number)
+      (number)))
+  (expression_statement
+    (identifier)))
 
 ==================
 Ix handler and resumptions
@@ -134,23 +235,20 @@ return { result }
   (module_header
     (parameter_list))
   (effect_statement
-    (identifier)
+    (effect_identifier)
     (effect_operation_block
       (effect_operation
         (identifier)
         (host_parameter_list)
         (host_result
-          (type_reference
-            (identifier))))
+          (type_reference)))
       (effect_operation
         (identifier)
         (host_parameter_list
           (host_parameter
-            (type_reference
-              (identifier))))
+            (type_reference)))
         (host_result
-          (type_reference
-            (identifier))))))
+          (type_reference)))))
   (binding_statement
     (identifier)
     (block
@@ -160,10 +258,10 @@ return { result }
           (identifier))
         (number))
       (expression_statement
-        (effect_handler_expression
+        (struct_expression
           (identifier)
-          (handler_clause_block
-            (handler_operation_clause
+          (field_block
+            (field_definition
               (identifier)
               (arrow_function
                 (parameter_list
@@ -174,7 +272,7 @@ return { result }
                     (identifier))
                   (argument_list
                     (identifier)))))
-            (handler_operation_clause
+            (field_definition
               (identifier)
               (arrow_function
                 (parameter_list
@@ -194,7 +292,8 @@ return { result }
                         (identifier))
                       (argument_list
                         (unit_pattern)))))))
-            (handler_return_clause
+            (field_definition
+              (identifier)
               (arrow_function
                 (parameter
                   (identifier))
@@ -208,10 +307,10 @@ return { result }
     (identifier)
     (arrow_function
       (parameter_list)
-      (effect_handler_expression
+      (struct_expression
         (identifier)
-        (handler_clause_block
-          (handler_operation_clause
+        (field_block
+          (field_definition
             (identifier)
             (arrow_function
               (parameter_list
@@ -222,7 +321,8 @@ return { result }
                   (identifier))
                 (argument_list
                   (number)))))
-          (handler_return_clause
+          (field_definition
+            (identifier)
             (arrow_function
               (parameter
                 (identifier))
@@ -246,16 +346,16 @@ return { result }
           (identifier))))))
 
 ==================
-Annotated context and module instantiation
+Annotated effect row and module instantiation
 ==================
 
 module (!init: Init) where
 
 import console from "./console.ix"
 
-let (Fx :: { Io.read, Io.print }) greet = () => {
-  let (!Fx, name) = Fx.read()
-  let (!Fx, ()) = Fx.print(borrow name)
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- Io.read()
+  _ <- Io.print(borrow name)
   name
 }
 
@@ -275,34 +375,33 @@ return { result, close }
   (import_statement
     (identifier)
     (string))
-  (context_function_statement
-    (context_annotation
-      (context_holder
-        (identifier))
-      (effect_row
-        (effect_operation_reference
-          (identifier)
-          (identifier))
-        (effect_operation_reference
-          (identifier)
-          (identifier))))
+  (binding_statement
     (identifier)
+    (type_reference
+      (function_type
+        (unit_type)
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier))
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier)))))
+        (identifier)))
     (arrow_function
       (parameter_list)
       (block
-        (state_binding_statement
-          (context_holder
-            (identifier))
+        (effect_binding_statement
           (identifier)
           (call_expression
             (field_expression
               (identifier)
               (identifier))
             (argument_list)))
-        (state_binding_statement
-          (context_holder
-            (identifier))
-          (unit_pattern)
+        (effect_binding_statement
+          (identifier)
           (call_expression
             (field_expression
               (identifier)

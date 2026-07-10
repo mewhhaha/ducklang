@@ -40,7 +40,7 @@ export abstract class ParserBlock extends ParserConditional {
       expect(stmt, "Missing handler state statement");
       expect(
         stmt.tag === "bind" && stmt.kind === "let" && !stmt.is_recursive &&
-          !stmt.is_linear && !stmt.effect_context,
+          !stmt.is_linear && !stmt.effectful,
         "Handler state block may contain only leading ordinary `let` bindings",
       );
       state.push({

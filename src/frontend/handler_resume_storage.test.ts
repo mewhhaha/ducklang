@@ -6,8 +6,8 @@ effect Suspend {
   pause: () => I32
 }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Suspend.pause()
+let run = () => {
+  value <- Suspend.pause()
   value + 1
 }
 `;

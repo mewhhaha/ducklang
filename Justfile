@@ -23,15 +23,17 @@ examples:
 helix-grammar:
   cd tree-sitter-ix && tree-sitter generate
   cd tree-sitter-ix && tree-sitter test
-  cd tree-sitter-ix && tree-sitter parse --quiet --stat ../examples/effects/*.ix ../examples/effects/*/*.ix
-  cd tree-sitter-ix && tree-sitter query queries/highlights.scm ../examples/effects/01_inferred_io.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/indents.scm ../examples/effects/01_inferred_io.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/textobjects.scm ../examples/effects/01_inferred_io.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.ix >/dev/null
+  cd tree-sitter-ix && rg --files ../examples -g '*.ix' -0 | xargs -0 tree-sitter parse --quiet --stat
+  cd tree-sitter-ix && tree-sitter query queries/highlights.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+  cd tree-sitter-ix && tree-sitter query queries/indents.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+  cd tree-sitter-ix && tree-sitter query queries/textobjects.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+  cd tree-sitter-ix && tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+  cd tree-sitter-ix && tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+  cd tree-sitter-ix && tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
 
 helix-register: helix-grammar
   scripts/setup_helix.sh
+
+install: helix-register
 
 check: fmt-check lint test

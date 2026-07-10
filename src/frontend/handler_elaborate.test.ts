@@ -7,9 +7,9 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let Fx run = () => {
-  let (!Fx, ()) = Fx.Counter.add(2)
-  let (!Fx, value) = Fx.Counter.get()
+let run: () -> <Counter> I32 = () => {
+  _ <- Counter.add(2)
+  value <- Counter.get()
   value
 }
 
@@ -68,12 +68,107 @@ Deno.test("Ix handler elaboration runs a deep scalar counter", async () => {
   assert_equals(await run_i32(counter_source), 2);
 });
 
+Deno.test("Ix handler elaboration lowers an inferred nested effect function", async () => {
+  assert_equals(
+    await run_i32(`
+effect Counter { get: () => I32 }
+let run = () => {
+  let offset = 40
+  let read = () => {
+    value <- Counter.get()
+    value + offset
+  }
+  read()
+}
+let counter = Counter {
+  get: (!resume) => !resume(2),
+  return: value => value,
+}
+try run() with counter
+`),
+    42,
+  );
+});
+
+Deno.test("Ix handler elaboration lowers a typed nested effect function", async () => {
+  assert_equals(
+    await run_i32(`
+effect Counter { get: () => I32 }
+let run = () => {
+  let read: () -> <Counter> I32 = () => {
+    value <- Counter.get()
+    value + 1
+  }
+  read()
+}
+let counter = Counter {
+  get: (!resume) => !resume(41),
+  return: value => value,
+}
+try run() with counter
+`),
+    42,
+  );
+});
+
+Deno.test("a pure nested function shadows an outer Ix function", async () => {
+  assert_equals(
+    await run_i32(`
+effect Counter { get: () => I32 }
+let read = () => {
+  value <- Counter.get()
+  value
+}
+let run = () => {
+  let read = () => 40
+  value <- Counter.get()
+  read() + value
+}
+let counter = Counter {
+  get: (!resume) => !resume(2),
+  return: value => value,
+}
+try run() with counter
+`),
+    42,
+  );
+});
+
+Deno.test("a nested Ix function can transitively shadow an outer Ix function", async () => {
+  assert_equals(
+    await run_i32(`
+effect Counter { get: () => I32 }
+let read = () => {
+  value <- Counter.get()
+  value
+}
+let helper = () => {
+  value <- Counter.get()
+  value
+}
+let run = () => {
+  let read = () => {
+    value <- helper()
+    value
+  }
+  read()
+}
+let counter = Counter {
+  get: (!resume) => !resume(42),
+  return: value => value,
+}
+try run() with counter
+`),
+    42,
+  );
+});
+
 Deno.test("Ix handler clauses can abort without resuming", async () => {
   assert_equals(
     await run_i32(`
 effect Stop { stop: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Stop.stop()
+let run = () => {
+  value <- Stop.stop()
   value + 100
 }
 let stop = Stop {
@@ -90,8 +185,8 @@ Deno.test("Ix handler clauses can post-process a resumed result", async () => {
   assert_equals(
     await run_i32(`
 effect Ask { ask: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Ask.ask()
+let run = () => {
+  value <- Ask.ask()
   value + 1
 }
 let ask = Ask {
@@ -111,9 +206,9 @@ effect Pair {
   left: () => I32
   right: () => I32
 }
-let Fx run = () => {
-  let (!Fx, left) = Fx.Pair.left()
-  let (!Fx, right) = Fx.Pair.right()
+let run = () => {
+  left <- Pair.left()
+  right <- Pair.right()
   left + right
 }
 let outer = Pair {
@@ -136,9 +231,9 @@ Deno.test("resuming reinstalls nested captured handlers", async () => {
     await run_i32(`
 effect Outer { enter: () => I32 }
 effect Inner { read: () => I32 }
-let Fx run = () => {
-  let (!Fx, outer) = Fx.Outer.enter()
-  let (!Fx, inner) = Fx.Inner.read()
+let run = () => {
+  outer <- Outer.enter()
+  inner <- Inner.read()
   outer + inner
 }
 let outer = Outer {
@@ -159,17 +254,17 @@ Deno.test("handler clauses forward same-effect calls with inactive delimiters", 
   assert_equals(
     await run_i32(`
 effect Ask { ask: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Ask.ask()
+let run = () => {
+  value <- Ask.ask()
   value
 }
 let outer = Ask {
   ask: (!resume) => !resume(10),
   return: value => value + 100,
 }
-let Fx inner = () => Ask {
+let inner = () => Ask {
   ask: (!resume) => {
-    let (!Fx, value) = Fx.Ask.ask()
+    value <- Ask.ask()
     !resume(value + 1)
   },
   return: value => value + 10,
@@ -185,8 +280,8 @@ Deno.test("Ix handler elaboration rejects consuming one handler twice", () => {
     () =>
       Source.core(`
 effect Ask { ask: () => I32 }
-let Fx ask = () => {
-  let (!Fx, value) = Fx.Ask.ask()
+let ask = () => {
+  value <- Ask.ask()
   value
 }
 let h = Ask {

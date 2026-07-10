@@ -1,5 +1,5 @@
 import { expect } from "../../expect.ts";
-import type { EffectContext, EffectRef, Stmt } from "../ast.ts";
+import type { FrontExpr, Stmt, TypeExpr } from "../ast.ts";
 import { expect_snake_case } from "../names.ts";
 import { module_value } from "../parser_support.ts";
 import { ParserStmtControl } from "./control.ts";
@@ -51,15 +51,44 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       return this.parse_resume_dup();
     }
 
+    if (kind === "let" && this.is_effect_bind()) {
+      throw new Error(
+        "Do not prefix an effect bind with `let`; use " +
+          "`value <- Effect.operation()`",
+      );
+    }
+
     if (
       kind === "let" && this.peek().kind === "symbol" &&
       this.peek().text === "(" && this.peek(1).kind === "symbol" &&
       this.peek(1).text === "!"
     ) {
-      return this.parse_state_bind();
+      throw new Error(
+        "Legacy effect state bindings are not supported; use " +
+          "`value <- Effect.operation()`",
+      );
     }
 
-    const effect_context = this.try_effect_context();
+    if (
+      this.peek().kind === "symbol" && this.peek().text === "(" &&
+      this.peek(1).kind === "name" &&
+      this.peek(2).kind === "symbol" && this.peek(2).text === "::"
+    ) {
+      throw new Error(
+        "Legacy effect contexts are not supported; annotate the function " +
+          "with `-> <row>`",
+      );
+    }
+
+    if (
+      this.peek().kind === "name" && this.peek(1).kind === "name" &&
+      /^[A-Z][A-Za-z0-9]*$/.test(this.peek().text)
+    ) {
+      throw new Error(
+        "Legacy effect contexts are not supported; remove the context name " +
+          "and use `-> <row>`",
+      );
+    }
 
     let is_recursive = false;
 
@@ -89,12 +118,16 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
     }
 
     let annotation: string | undefined;
+    let type_annotation: TypeExpr | undefined;
 
     if (this.match_symbol(":")) {
-      annotation = this.consume_annotation();
+      const parsed = this.consume_annotation();
+      annotation = parsed.annotation;
+      type_annotation = parsed.type_annotation;
     }
 
     this.expect_symbol("=");
+    this.skip_newlines();
     const value = this.parse_expr();
 
     if (is_linear) {
@@ -103,16 +136,21 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       this.affine_call_names.delete(name);
     }
 
-    return {
+    const stmt: Extract<Stmt, { tag: "bind" }> = {
       tag: "bind",
       kind,
       name,
       is_recursive,
       is_linear,
       annotation,
-      effect_context,
       value,
     };
+
+    if (type_annotation) {
+      stmt.type_annotation = type_annotation;
+    }
+
+    return stmt;
   }
 
   private is_resume_dup(): boolean {
@@ -144,6 +182,70 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
     return { tag: "resume_dup", left, right, value: this.parse_expr() };
   }
 
+  private is_effect_bind(): boolean {
+    if (
+      this.peek().kind === "name" && this.peek(1).kind === "symbol" &&
+      this.peek(1).text === "<-"
+    ) {
+      return true;
+    }
+
+    return this.peek().kind === "symbol" && this.peek().text === "(" &&
+      this.peek(1).kind === "symbol" && this.peek(1).text === ")" &&
+      this.peek(2).kind === "symbol" && this.peek(2).text === "<-";
+  }
+
+  protected parse_effect_bind(): Stmt {
+    let value_name: string | undefined;
+
+    if (this.match_symbol("(")) {
+      this.expect_symbol(")");
+    } else {
+      const name = this.expect_name("Expected effect result binding");
+
+      if (name !== "_") {
+        expect_snake_case(name, "Effect result binding");
+        value_name = name;
+      }
+    }
+
+    this.expect_symbol("<-");
+    const value = this.parse_expr();
+
+    if (this.is_direct_effect_call(value)) {
+      return { tag: "state_bind", value_name, value };
+    }
+
+    if (!value_name) {
+      return { tag: "expr", expr: value, effectful: true };
+    }
+
+    return {
+      tag: "bind",
+      kind: "let",
+      name: value_name,
+      is_linear: false,
+      annotation: undefined,
+      effectful: true,
+      value,
+    };
+  }
+
+  private is_direct_effect_call(value: FrontExpr): boolean {
+    if (value.tag !== "app" || value.func.tag !== "field") {
+      return false;
+    }
+
+    const object = value.func.object;
+
+    if (object.tag === "var") {
+      return /^[A-Z][A-Za-z0-9]*$/.test(object.name);
+    }
+
+    return object.tag === "field" && object.object.tag === "var" &&
+      /^[A-Z][A-Za-z0-9]*$/.test(object.object.name);
+  }
+
   private parse_bind_pattern(kind: "let" | "const"): Stmt {
     this.expect_symbol("{");
     const items = [];
@@ -163,84 +265,6 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
 
     this.expect_symbol("=");
     return { tag: "bind_pattern", kind, items, value: this.parse_expr() };
-  }
-
-  private parse_state_bind(): Stmt {
-    this.expect_symbol("(");
-    this.expect_symbol("!");
-    const context = this.expect_name("Expected renewed effect context");
-    this.expect_effect_context_name(context);
-    this.expect_symbol(",");
-    let value_name: string | undefined;
-
-    if (this.match_symbol("(")) {
-      this.expect_symbol(")");
-    } else {
-      value_name = this.expect_name("Expected state result binding");
-      expect_snake_case(value_name, "State result binding");
-    }
-
-    this.expect_symbol(")");
-    this.expect_symbol("=");
-    return { tag: "state_bind", context, value_name, value: this.parse_expr() };
-  }
-
-  private try_effect_context(): EffectContext | undefined {
-    if (this.peek().kind === "symbol" && this.peek().text === "(") {
-      const context = this.peek(1);
-      const separator = this.peek(2);
-
-      if (
-        context.kind !== "name" || separator.kind !== "symbol" ||
-        separator.text !== "::"
-      ) {
-        return undefined;
-      }
-
-      this.expect_symbol("(");
-      const name = this.expect_name("Expected effect context name");
-      this.expect_effect_context_name(name);
-      this.expect_symbol("::");
-      this.expect_symbol("{");
-      const operations: EffectRef[] = [];
-
-      while (!this.match_symbol("}")) {
-        const effect = this.expect_name("Expected effect name");
-        this.expect_symbol(".");
-        const operation = this.expect_name("Expected effect operation");
-        expect_snake_case(operation, "Effect operation");
-        operations.push({ effect, operation });
-
-        if (!this.match_symbol("}")) {
-          this.expect_symbol(",");
-        } else {
-          break;
-        }
-      }
-
-      this.expect_symbol(")");
-      return { name, operations };
-    }
-
-    const context = this.peek();
-    const binding = this.peek(1);
-
-    if (
-      context.kind !== "name" || binding.kind !== "name" ||
-      !/^[A-Z][A-Za-z0-9]*$/.test(context.text)
-    ) {
-      return undefined;
-    }
-
-    this.advance();
-    return { name: context.text, operations: undefined };
-  }
-
-  private expect_effect_context_name(name: string): void {
-    expect(
-      /^[A-Z][A-Za-z0-9]*$/.test(name),
-      "Effect context must use PascalCase: " + name,
-    );
   }
 
   protected parse_unsupported_stmt(feature: string): Stmt {

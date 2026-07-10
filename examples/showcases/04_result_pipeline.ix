@@ -1,4 +1,10 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
 
 const result_type = error_type => value_type => union {
   ok: value_type,
@@ -8,14 +14,17 @@ const result_type = error_type => value_type => union {
 const user_type = struct { name: Text, score: Int }
 const user_result_type = result_type(Text)(user_type)
 
-let result: user_result_type = if flag() {
+flag <- Input.flag()
+let outcome: user_result_type = if flag {
   user_result_type.ok(user_type { name: "Ada", score: 42 })
 } else {
   user_result_type.err("missing")
 }
 
-if let .ok(user) = result {
+let result: I32 = if let .ok(user) = outcome {
   user.score
 } else {
   len("missing") * 6
 }
+
+return { result }

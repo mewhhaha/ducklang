@@ -1,3 +1,11 @@
-host_import index from "env.index" () => I32
+module (!init: Init) where
 
-get("a", index())
+declare effect Input {
+  index: () => I32
+}
+
+declare Init { input: Input }
+
+index <- Input.index()
+let result = get("a", index)
+return { result }

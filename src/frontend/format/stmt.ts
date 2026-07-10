@@ -1,4 +1,5 @@
 import type { FrontExpr, Stmt } from "../ast.ts";
+import { format_type_expr } from "../type_expr.ts";
 import { format_type_pattern } from "./common.ts";
 import { format_host_import } from "./host_import.ts";
 
@@ -15,22 +16,14 @@ export function format_stmt_with_expr(
   }
 
   if (stmt.tag === "bind") {
+    if (stmt.effectful) {
+      return stmt.name + " <- " + format_expr(stmt.value);
+    }
+
     let text = stmt.kind + " ";
 
     if (stmt.is_recursive) {
       text += "rec ";
-    }
-
-    if (stmt.effect_context) {
-      if (stmt.effect_context.operations) {
-        const operations = stmt.effect_context.operations.map((operation) =>
-          operation.effect + "." + operation.operation
-        ).join(", ");
-        text += "(" + stmt.effect_context.name + " :: { " + operations +
-          " }) ";
-      } else {
-        text += stmt.effect_context.name + " ";
-      }
     }
 
     if (stmt.is_linear) {
@@ -39,7 +32,9 @@ export function format_stmt_with_expr(
 
     text += stmt.name;
 
-    if (stmt.annotation) {
+    if (stmt.type_annotation) {
+      text += ": " + format_type_expr(stmt.type_annotation);
+    } else if (stmt.annotation) {
       text += ": " + stmt.annotation;
     }
 
@@ -47,14 +42,13 @@ export function format_stmt_with_expr(
   }
 
   if (stmt.tag === "state_bind") {
-    let value_name = "()";
+    let value_name = "_";
 
     if (stmt.value_name) {
       value_name = stmt.value_name;
     }
 
-    return "let (!" + stmt.context + ", " + value_name + ") = " +
-      format_expr(stmt.value);
+    return value_name + " <- " + format_expr(stmt.value);
   }
 
   if (stmt.tag === "bind_pattern") {
@@ -161,6 +155,10 @@ export function format_stmt_with_expr(
   }
 
   if (stmt.tag === "expr") {
+    if (stmt.effectful) {
+      return "_ <- " + format_expr(stmt.expr);
+    }
+
     return format_expr(stmt.expr);
   }
 

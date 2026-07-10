@@ -1,18 +1,21 @@
 import { expect } from "../expect.ts";
 import type {
-  EffectContext,
   EffectDeclaration,
   EffectRef,
+  EffectRowExpr,
   FrontExpr,
   HandlerClause,
+  Param,
   Source,
   Stmt,
+  TypeExpr,
 } from "./ast.ts";
 import { val_type_from_type_name } from "./types.ts";
+import { resolve_effect_row } from "./effect_row.ts";
+import { format_type_expr } from "./type_expr.ts";
 
 export type FrontEffectFunction = {
   name: string;
-  context: string;
   effects: EffectRef[];
   annotated: boolean;
 };
@@ -39,25 +42,27 @@ type EffectScan = {
 
 type FunctionFact = {
   name: string;
-  context: EffectContext | undefined;
+  type_annotation: FunctionTypeExpr | undefined;
+  parameter_effects: ParameterEffectRows;
+  params: Param[];
   body: FrontExpr;
   direct: Map<string, EffectRef>;
   calls: Map<string, CallEdge>;
 };
 
+type FunctionTypeExpr = Extract<TypeExpr, { tag: "arrow" }>;
+type ParameterEffectRows = Map<string, EffectRowExpr | undefined>;
+
 type EffectIndex = {
   effects: Map<string, EffectDeclaration>;
-  operations: Map<string, EffectRef[]>;
 };
 
 type BindingValue = {
   value: FrontExpr;
-  context: EffectContext | undefined;
 };
 
 type HandlerVariant = {
   expr: Extract<FrontExpr, { tag: "handler" }>;
-  context: EffectContext | undefined;
 };
 
 type HandlerResolution = {
@@ -69,18 +74,27 @@ type HandlerResolution = {
 type AnalysisContext = {
   index: EffectIndex;
   bindings: Map<string, BindingValue>;
+  active_parameter_effects: ParameterEffectRows;
+  active_parameter_result_types: Map<string, string | undefined>;
+  observed_effect_variables: Set<string> | undefined;
 };
 
 export function analyze_front_effects(source: Source): FrontEffectAnalysis {
   const index = build_effect_index(source);
   const bindings = collect_binding_values(source.statements);
-  const analysis = { index, bindings };
+  const analysis = {
+    index,
+    bindings,
+    active_parameter_effects: new Map<string, EffectRowExpr | undefined>(),
+    active_parameter_result_types: new Map<string, string | undefined>(),
+    observed_effect_variables: undefined,
+  };
   const facts = collect_function_facts(source, analysis);
   infer_transitive_effects(facts);
+  refine_function_effects(facts, analysis);
   validate_function_effects(facts, analysis);
   const module_scan = scan_statements(
     source.statements,
-    undefined,
     analysis,
     facts,
     [],
@@ -90,16 +104,19 @@ export function analyze_front_effects(source: Source): FrontEffectAnalysis {
   const functions: Record<string, FrontEffectFunction> = {};
 
   for (const fact of facts.values()) {
-    if (!fact.context) {
+    const has_latent_row = fact.type_annotation?.effects !== undefined;
+
+    if (fact.direct.size === 0 && !has_latent_row) {
       continue;
     }
 
-    functions[fact.name] = {
+    const item: FrontEffectFunction = {
       name: fact.name,
-      context: fact.context.name,
       effects: sorted_effects(fact.direct),
-      annotated: fact.context.operations !== undefined,
+      annotated: fact.type_annotation !== undefined,
     };
+
+    functions[fact.name] = item;
   }
 
   return { module_effects: sorted_effects(module_effects), functions };
@@ -107,7 +124,6 @@ export function analyze_front_effects(source: Source): FrontEffectAnalysis {
 
 function build_effect_index(source: Source): EffectIndex {
   const effects = new Map<string, EffectDeclaration>();
-  const operations = new Map<string, EffectRef[]>();
   let declarations = source.declarations;
 
   if (!declarations) {
@@ -133,23 +149,14 @@ function build_effect_index(source: Source): EffectIndex {
           operation.name,
       );
       operation_names.add(operation.name);
-      const refs = operations.get(operation.name);
-      const ref = { effect: declaration.name, operation: operation.name };
-
-      if (refs) {
-        refs.push(ref);
-      } else {
-        operations.set(operation.name, [ref]);
-      }
     }
   }
 
-  return { effects, operations };
+  return { effects };
 }
 
 function collect_binding_values(
   statements: Stmt[],
-  context?: EffectContext,
   result: Map<string, BindingValue> = new Map(),
 ): Map<string, BindingValue> {
   for (const stmt of statements) {
@@ -157,13 +164,7 @@ function collect_binding_values(
       continue;
     }
 
-    let binding_context = context;
-
-    if (stmt.effect_context) {
-      binding_context = stmt.effect_context;
-    }
-
-    result.set(stmt.name, { value: stmt.value, context: binding_context });
+    result.set(stmt.name, { value: stmt.value });
 
     if (
       (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
@@ -171,7 +172,6 @@ function collect_binding_values(
     ) {
       collect_binding_values(
         stmt.value.body.statements,
-        binding_context,
         result,
       );
     }
@@ -201,38 +201,65 @@ function collect_function_facts_from_statements(
     }
 
     if (stmt.value.tag !== "lam" && stmt.value.tag !== "rec") {
-      if (stmt.effect_context) {
-        throw new Error(
-          "Effect context is only valid on a function binding: " + stmt.name,
-        );
-      }
-
       continue;
     }
 
-    if (stmt.effect_context) {
-      validate_context_annotation(stmt.effect_context, analysis.index);
+    const value = stmt.value;
+
+    let type_annotation: FunctionTypeExpr | undefined;
+
+    if (stmt.type_annotation?.tag === "arrow") {
+      type_annotation = stmt.type_annotation;
+      const params = function_type_params(type_annotation);
+      expect(
+        params.length === value.params.length,
+        "Function type on " + stmt.name + " expects " +
+          params.length.toString() + " parameters, got " +
+          value.params.length.toString(),
+      );
     }
 
-    const scan = scan_expr(
-      stmt.value.body,
-      stmt.effect_context,
+    const parameter_effects = function_parameter_effects(
+      type_annotation,
+      value.params,
+    );
+    const parameter_result_types = function_parameter_result_types(
+      type_annotation,
+      value.params,
+    );
+
+    const scan = with_parameter_effects(
       analysis,
-      undefined,
-      false,
-      [],
+      parameter_effects,
+      () => {
+        return with_parameter_result_types(
+          analysis,
+          parameter_result_types,
+          () => {
+            return scan_expr(
+              value.body,
+              analysis,
+              undefined,
+              false,
+              [],
+            );
+          },
+        );
+      },
     );
     facts.set(stmt.name, {
       name: stmt.name,
-      context: stmt.effect_context,
-      body: stmt.value.body,
+      type_annotation,
+      parameter_effects,
+      params: value.params,
+      body: value.body,
       direct: scan.direct,
       calls: scan.calls,
     });
 
-    if (stmt.value.body.tag === "block") {
+    if (value.body.tag === "block") {
       collect_function_facts_from_statements(
-        stmt.value.body.statements,
+        value.body.statements,
         analysis,
         facts,
       );
@@ -265,64 +292,713 @@ function infer_transitive_effects(facts: Map<string, FunctionFact>): void {
   }
 }
 
+function refine_function_effects(
+  facts: Map<string, FunctionFact>,
+  analysis: AnalysisContext,
+): void {
+  let changed = true;
+
+  while (changed) {
+    let before = 0;
+
+    for (const fact of facts.values()) {
+      before += fact.direct.size + fact.calls.size;
+      const scan = with_parameter_effects(
+        analysis,
+        fact.parameter_effects,
+        () => {
+          return with_parameter_result_types(
+            analysis,
+            function_parameter_result_types(
+              fact.type_annotation,
+              fact.params,
+            ),
+            () => {
+              return scan_expr(
+                fact.body,
+                analysis,
+                facts,
+                false,
+                [],
+              );
+            },
+          );
+        },
+      );
+      merge_effects(fact.direct, scan.direct);
+      merge_calls(fact.calls, scan.calls);
+    }
+
+    infer_transitive_effects(facts);
+    let after = 0;
+
+    for (const fact of facts.values()) {
+      after += fact.direct.size + fact.calls.size;
+    }
+
+    changed = after !== before;
+  }
+}
+
 function validate_function_effects(
   facts: Map<string, FunctionFact>,
   analysis: AnalysisContext,
 ): void {
   for (const fact of facts.values()) {
-    scan_expr(
-      fact.body,
-      fact.context,
+    const observed_effect_variables = new Set<string>();
+    with_parameter_effects(
       analysis,
-      facts,
-      false,
-      [],
-    );
-
-    if (!fact.context && fact.direct.size > 0) {
-      throw new Error(
-        "Pure function " + fact.name +
-          " calls effects; add an uppercase effect context holder",
-      );
-    }
-
-    if (!fact.context || !fact.context.operations) {
-      continue;
-    }
-
-    const allowed = new Set(
-      fact.context.operations.map((effect) => effect_key(effect)),
-    );
-
-    for (const effect of fact.direct.values()) {
-      if (!allowed.has(effect_key(effect))) {
-        throw new Error(
-          "Effect context " + fact.context.name + " on " + fact.name +
-            " does not allow " + effect_text(effect),
+      fact.parameter_effects,
+      () => {
+        with_parameter_result_types(
+          analysis,
+          function_parameter_result_types(
+            fact.type_annotation,
+            fact.params,
+          ),
+          () => {
+            with_effect_variable_observer(
+              analysis,
+              observed_effect_variables,
+              () => {
+                scan_expr(
+                  fact.body,
+                  analysis,
+                  facts,
+                  false,
+                  [],
+                );
+              },
+            );
+          },
         );
+      },
+    );
+    validate_function_value_type(
+      fact,
+      analysis.index.effects,
+      observed_effect_variables,
+    );
+
+    const allowed_rows: { label: string; operations: EffectRef[] }[] = [];
+
+    if (fact.type_annotation) {
+      let operations: EffectRef[] = [];
+
+      if (fact.type_annotation.effects) {
+        const resolved = resolve_type_effect_row(
+          fact.type_annotation.effects,
+          analysis.index.effects,
+          new Map(),
+          true,
+        );
+        operations = Array.from(resolved.effects.values());
+      }
+
+      allowed_rows.push({
+        label: "Function type on " + fact.name,
+        operations,
+      });
+    }
+
+    for (const row of allowed_rows) {
+      const allowed = new Set(
+        row.operations.map((effect) => effect_key(effect)),
+      );
+
+      for (const effect of fact.direct.values()) {
+        if (!allowed.has(effect_key(effect))) {
+          throw new Error(
+            row.label + " does not allow " + effect_text(effect),
+          );
+        }
       }
     }
-
-    validate_context_annotation(fact.context, analysis.index);
   }
 }
 
-function validate_context_annotation(
-  context: EffectContext,
-  index: EffectIndex,
+function validate_function_value_type(
+  fact: FunctionFact,
+  effects: Map<string, EffectDeclaration>,
+  observed_effect_variables: Set<string>,
 ): void {
-  if (!context.operations) {
+  const type = fact.type_annotation;
+
+  if (!type) {
+    for (const variable of observed_effect_variables) {
+      throw new Error(
+        "Row-polymorphic callback parameter " + variable + " on " +
+          fact.name + " requires a binding function type",
+      );
+    }
+
     return;
   }
 
-  for (const ref of context.operations) {
-    const effect = index.effects.get(ref.effect);
-    expect(effect, "Unknown declared effect: " + ref.effect);
-    expect(
-      effect.operations.some((operation) => operation.name === ref.operation),
-      "Unknown effect operation: " + effect_text(ref),
+  const param_types = function_type_params(type);
+  const value_types = new Map<string, string>();
+  let outer_effects: ResolvedTypeEffectRow = {
+    effects: new Map(),
+    variables: new Set(),
+  };
+
+  if (type.effects) {
+    outer_effects = resolve_type_effect_row(
+      type.effects,
+      effects,
+      new Map(),
+      true,
     );
   }
+
+  for (let index = 0; index < param_types.length; index += 1) {
+    const param_type = param_types[index];
+    const param = fact.params[index];
+    expect(param_type, "Missing function parameter type " + index.toString());
+    expect(param, "Missing function parameter " + index.toString());
+
+    if (param_type.tag === "arrow") {
+      continue;
+    }
+
+    if (param_type.tag !== "name") {
+      continue;
+    }
+
+    if (param.annotation) {
+      expect(
+        same_declared_type(param.annotation, param_type.name),
+        "Function type on " + fact.name + " expects parameter " +
+          param.name + " to be " + param_type.name + ", got " +
+          param.annotation,
+      );
+    }
+
+    value_types.set(param.name, param_type.name);
+  }
+
+  for (const variable of observed_effect_variables) {
+    expect(
+      outer_effects.variables.has(variable),
+      "Function type on " + fact.name +
+        " does not expose callback row variable " + variable,
+    );
+  }
+
+  if (type.result.tag !== "name") {
+    return;
+  }
+
+  const result = infer_simple_type(fact.body, value_types);
+
+  if (!result) {
+    return;
+  }
+
+  expect(
+    same_declared_type(result, type.result.name),
+    "Function type on " + fact.name + " returns " + type.result.name +
+      ", got " + result,
+  );
+}
+
+function function_type_params(type: FunctionTypeExpr): TypeExpr[] {
+  if (type.param.tag === "tuple") {
+    return type.param.items;
+  }
+
+  return [type.param];
+}
+
+function function_parameter_effects(
+  type: FunctionTypeExpr | undefined,
+  params: Param[],
+): ParameterEffectRows {
+  const result = new Map<string, EffectRowExpr | undefined>();
+  let types: TypeExpr[] = [];
+
+  if (type) {
+    types = function_type_params(type);
+  }
+
+  for (let index = 0; index < params.length; index += 1) {
+    const param = params[index];
+    const param_type = types[index];
+    expect(param, "Missing function parameter " + index.toString());
+
+    if (param.type_annotation && param_type) {
+      expect(
+        format_type_expr(param.type_annotation) ===
+          format_type_expr(param_type),
+        "Function parameter type on " + param.name +
+          " conflicts with its binding function type",
+      );
+    }
+
+    let callback_type = param.type_annotation;
+
+    if (param_type) {
+      callback_type = param_type;
+    }
+
+    if (callback_type?.tag === "arrow") {
+      result.set(param.name, callback_type.effects);
+    }
+  }
+
+  return result;
+}
+
+function function_parameter_result_types(
+  type: FunctionTypeExpr | undefined,
+  params: Param[],
+): Map<string, string | undefined> {
+  const result = new Map<string, string | undefined>();
+  let types: TypeExpr[] = [];
+
+  if (type) {
+    types = function_type_params(type);
+  }
+
+  for (let index = 0; index < params.length; index += 1) {
+    const param = params[index];
+    const param_type = types[index];
+    expect(param, "Missing function parameter " + index.toString());
+
+    let callback_type = param.type_annotation;
+
+    if (param_type) {
+      callback_type = param_type;
+    }
+
+    if (callback_type?.tag === "arrow") {
+      if (callback_type.result.tag === "name") {
+        result.set(param.name, callback_type.result.name);
+      } else {
+        result.set(param.name, undefined);
+      }
+    }
+  }
+
+  return result;
+}
+
+function with_parameter_effects<value>(
+  analysis: AnalysisContext,
+  effects: ParameterEffectRows,
+  run: () => value,
+): value {
+  const previous = analysis.active_parameter_effects;
+  analysis.active_parameter_effects = effects;
+
+  try {
+    return run();
+  } finally {
+    analysis.active_parameter_effects = previous;
+  }
+}
+
+function with_parameter_result_types<value>(
+  analysis: AnalysisContext,
+  result_types: Map<string, string | undefined>,
+  run: () => value,
+): value {
+  const previous = analysis.active_parameter_result_types;
+  analysis.active_parameter_result_types = result_types;
+
+  try {
+    return run();
+  } finally {
+    analysis.active_parameter_result_types = previous;
+  }
+}
+
+function active_parameter_effect_row(
+  name: string,
+  analysis: AnalysisContext,
+): ResolvedTypeEffectRow | undefined {
+  if (!analysis.active_parameter_effects.has(name)) {
+    return undefined;
+  }
+
+  const row = analysis.active_parameter_effects.get(name);
+
+  if (!row) {
+    return { effects: new Map(), variables: new Set() };
+  }
+
+  return resolve_type_effect_row(
+    row,
+    analysis.index.effects,
+    new Map(),
+    true,
+  );
+}
+
+function with_effect_variable_observer<value>(
+  analysis: AnalysisContext,
+  variables: Set<string>,
+  run: () => value,
+): value {
+  const previous = analysis.observed_effect_variables;
+  analysis.observed_effect_variables = variables;
+
+  try {
+    return run();
+  } finally {
+    analysis.observed_effect_variables = previous;
+  }
+}
+
+type ResolvedTypeEffectRow = {
+  effects: Map<string, EffectRef>;
+  variables: Set<string>;
+};
+
+function resolve_type_effect_row(
+  row: EffectRowExpr,
+  effects: Map<string, EffectDeclaration>,
+  bindings: Map<string, ResolvedTypeEffectRow>,
+  allow_unbound: boolean,
+): ResolvedTypeEffectRow {
+  if (row.tag === "variable") {
+    const bound = bindings.get(row.name);
+
+    if (bound) {
+      return {
+        effects: new Map(bound.effects),
+        variables: new Set(bound.variables),
+      };
+    }
+
+    expect(
+      allow_unbound,
+      "Cannot infer effect row variable: " + row.name,
+    );
+    return { effects: new Map(), variables: new Set([row.name]) };
+  }
+
+  if (row.tag === "family" || row.tag === "operation") {
+    const resolved = resolve_effect_row(row, effects);
+    return {
+      effects: new Map(resolved.map((effect) => [effect_key(effect), effect])),
+      variables: new Set(),
+    };
+  }
+
+  if (row.tag === "group") {
+    return resolve_type_effect_row(
+      row.value,
+      effects,
+      bindings,
+      allow_unbound,
+    );
+  }
+
+  const left = resolve_type_effect_row(
+    row.left,
+    effects,
+    bindings,
+    allow_unbound,
+  );
+  const right = resolve_type_effect_row(
+    row.right,
+    effects,
+    bindings,
+    allow_unbound,
+  );
+
+  if (row.tag === "union") {
+    merge_effects(left.effects, right.effects);
+
+    for (const variable of right.variables) {
+      left.variables.add(variable);
+    }
+
+    return left;
+  }
+
+  let operator = "\\";
+
+  if (row.tag === "intersection") {
+    operator = "&";
+  }
+
+  expect(
+    left.variables.size === 0 && right.variables.size === 0,
+    "Effect row variables under `" + operator +
+      "` require a concrete call-site row",
+  );
+
+  if (row.tag === "intersection") {
+    for (const operation of Array.from(left.effects.keys())) {
+      if (!right.effects.has(operation)) {
+        left.effects.delete(operation);
+      }
+    }
+
+    return left;
+  }
+
+  if (row.tag === "difference") {
+    for (const operation of right.effects.keys()) {
+      left.effects.delete(operation);
+    }
+
+    return left;
+  }
+
+  row satisfies never;
+  throw new Error("Unknown effect row expression");
+}
+
+function instantiate_call_effects(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  called: FunctionFact,
+  analysis: AnalysisContext,
+  facts: Map<string, FunctionFact>,
+): ResolvedTypeEffectRow {
+  const type = called.type_annotation;
+  expect(type, "Missing function type for " + called.name);
+  const param_types = function_type_params(type);
+  const bindings = new Map<string, ResolvedTypeEffectRow>();
+
+  for (let index = 0; index < param_types.length; index += 1) {
+    const param_type = param_types[index];
+    const arg = expr.args[index];
+    expect(param_type, "Missing parameter type for " + called.name);
+    expect(arg, "Missing argument for " + called.name);
+
+    if (param_type.tag !== "arrow") {
+      continue;
+    }
+
+    const actual = latent_effects_of_expr(
+      arg,
+      analysis,
+      facts,
+    );
+
+    if (!actual) {
+      continue;
+    }
+
+    if (!param_type.effects) {
+      expect(
+        actual.effects.size === 0 && actual.variables.size === 0,
+        "Function argument " + (index + 1).toString() + " to " +
+          called.name + " exceeds its pure callback type",
+      );
+      continue;
+    }
+
+    const declared = resolve_type_effect_row(
+      param_type.effects,
+      analysis.index.effects,
+      new Map(),
+      true,
+    );
+
+    if (declared.variables.size === 0) {
+      expect(
+        actual.variables.size === 0,
+        "Function argument " + (index + 1).toString() + " to " +
+          called.name + " has an unresolved effect row",
+      );
+
+      for (const effect of actual.effects.values()) {
+        expect(
+          declared.effects.has(effect_key(effect)),
+          "Function argument " + (index + 1).toString() + " to " +
+            called.name + " exceeds its effect row with " +
+            effect_text(effect),
+        );
+      }
+
+      continue;
+    }
+
+    expect(
+      declared.variables.size === 1,
+      "Cannot infer multiple effect row variables in one parameter of " +
+        called.name,
+    );
+    const variable = Array.from(declared.variables)[0];
+    expect(variable, "Missing effect row variable for " + called.name);
+    let bound = bindings.get(variable);
+
+    if (!bound) {
+      bound = { effects: new Map(), variables: new Set() };
+      bindings.set(variable, bound);
+    }
+
+    for (const [operation, effect] of actual.effects) {
+      if (!declared.effects.has(operation)) {
+        bound.effects.set(operation, effect);
+      }
+    }
+
+    for (const actual_variable of actual.variables) {
+      bound.variables.add(actual_variable);
+    }
+  }
+
+  let result: ResolvedTypeEffectRow = {
+    effects: new Map(),
+    variables: new Set(),
+  };
+
+  if (type.effects) {
+    result = resolve_type_effect_row(
+      type.effects,
+      analysis.index.effects,
+      bindings,
+      true,
+    );
+  }
+
+  if (analysis.observed_effect_variables) {
+    for (const variable of result.variables) {
+      analysis.observed_effect_variables.add(variable);
+    }
+  }
+
+  const available_variables = new Set<string>();
+
+  for (const row of analysis.active_parameter_effects.values()) {
+    if (!row) {
+      continue;
+    }
+
+    const resolved = resolve_type_effect_row(
+      row,
+      analysis.index.effects,
+      new Map(),
+      true,
+    );
+
+    for (const variable of resolved.variables) {
+      available_variables.add(variable);
+    }
+  }
+
+  for (const variable of result.variables) {
+    expect(
+      available_variables.has(variable),
+      "Cannot infer effect row variable " + variable + " while calling " +
+        called.name,
+    );
+  }
+
+  return result;
+}
+
+function validate_parameter_callback_arguments(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  called: FunctionFact,
+  analysis: AnalysisContext,
+  facts: Map<string, FunctionFact>,
+): void {
+  for (let index = 0; index < called.params.length; index += 1) {
+    const param = called.params[index];
+    const arg = expr.args[index];
+    expect(param, "Missing parameter for " + called.name);
+    expect(arg, "Missing argument for " + called.name);
+    const param_type = param.type_annotation;
+
+    if (!param_type || param_type.tag !== "arrow") {
+      continue;
+    }
+
+    const actual = latent_effects_of_expr(
+      arg,
+      analysis,
+      facts,
+    );
+
+    if (!actual) {
+      continue;
+    }
+
+    if (!param_type.effects) {
+      expect(
+        actual.effects.size === 0 && actual.variables.size === 0,
+        "Function argument " + (index + 1).toString() + " to " +
+          called.name + " exceeds its pure callback type",
+      );
+      continue;
+    }
+
+    const declared = resolve_type_effect_row(
+      param_type.effects,
+      analysis.index.effects,
+      new Map(),
+      true,
+    );
+
+    if (declared.variables.size > 0) {
+      continue;
+    }
+
+    expect(
+      actual.variables.size === 0,
+      "Function argument " + (index + 1).toString() + " to " + called.name +
+        " has an unresolved effect row",
+    );
+
+    for (const effect of actual.effects.values()) {
+      expect(
+        declared.effects.has(effect_key(effect)),
+        "Function argument " + (index + 1).toString() + " to " +
+          called.name + " exceeds its effect row with " + effect_text(effect),
+      );
+    }
+  }
+}
+
+function latent_effects_of_expr(
+  expr: FrontExpr,
+  analysis: AnalysisContext,
+  facts: Map<string, FunctionFact>,
+): ResolvedTypeEffectRow | undefined {
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    const variables = new Set<string>();
+    const scan = with_effect_variable_observer(
+      analysis,
+      variables,
+      () => {
+        return scan_expr(
+          expr.body,
+          analysis,
+          facts,
+          false,
+          [],
+        );
+      },
+    );
+    return {
+      effects: effects_with_calls(scan, facts),
+      variables,
+    };
+  }
+
+  if (expr.tag !== "var") {
+    return undefined;
+  }
+
+  const fact = facts.get(expr.name);
+
+  if (fact) {
+    return { effects: new Map(fact.direct), variables: new Set() };
+  }
+
+  const parameter_row = active_parameter_effect_row(expr.name, analysis);
+
+  if (!parameter_row) {
+    return undefined;
+  }
+
+  return parameter_row;
 }
 
 function validate_resolved_ix_root(
@@ -343,7 +1019,6 @@ function validate_resolved_ix_root(
 
 function scan_statements(
   statements: Stmt[],
-  context: EffectContext | undefined,
   analysis: AnalysisContext,
   facts: Map<string, FunctionFact> | undefined,
   handlers: ActiveHandler[],
@@ -353,21 +1028,31 @@ function scan_statements(
 
   for (const stmt of statements) {
     if (stmt.tag === "state_bind") {
-      expect(context, "Effect state binding requires an effect context");
-      expect(
-        stmt.context === context.name,
-        "Effect state binding renews " + stmt.context +
-          " inside context " + context.name,
-      );
-      const operation = direct_effect_call(stmt.value, context, analysis.index);
+      const operation = direct_effect_call(stmt.value, analysis.index);
       expect(
         operation,
-        "Effect state binding must call an operation on " + context.name,
+        "Effect bind must call a declared effect operation",
       );
+
+      if (stmt.value_name === undefined) {
+        const result_type = infer_effect_bind_result_type(
+          stmt.value,
+          analysis,
+          facts,
+        );
+        expect(
+          result_type,
+          "Cannot infer result type of discarded effect computation",
+        );
+        expect(
+          same_simple_type(result_type, "Unit"),
+          "Discarded effect computation must return Unit, got " + result_type,
+        );
+      }
+
       add_visible_effect(direct, operation, handlers);
       const nested = scan_app_args(
         stmt.value,
-        context,
         analysis,
         facts,
         handlers,
@@ -382,7 +1067,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.value,
-          context,
           analysis,
           facts,
           false,
@@ -397,18 +1081,59 @@ function scan_statements(
         continue;
       }
 
-      merge_scan(
-        direct,
-        calls,
-        scan_expr(
+      if (facts && stmt.type_annotation?.tag === "arrow") {
+        throw new Error(
+          "Typed function alias " + stmt.name +
+            " is not supported yet; bind a function literal instead",
+        );
+      }
+
+      if (facts && stmt.value.tag === "var") {
+        const aliased = facts.get(stmt.value.name);
+
+        if (
+          aliased &&
+          (aliased.direct.size > 0 ||
+            aliased.type_annotation?.effects !== undefined)
+        ) {
+          throw new Error(
+            "Effectful named function " + stmt.value.name +
+              " cannot be aliased as " + stmt.name + " yet",
+          );
+        }
+      }
+
+      const scan = scan_expr(
+        stmt.value,
+        analysis,
+        facts,
+        false,
+        handlers,
+      );
+
+      if (facts) {
+        const effectful = expression_is_effectful(
           stmt.value,
-          context,
           analysis,
           facts,
-          false,
-          handlers,
-        ),
-      );
+          scan,
+        );
+
+        if (stmt.effectful) {
+          expect(
+            effectful,
+            "Effect bind for " + stmt.name +
+              " requires an effectful computation",
+          );
+        } else {
+          expect(
+            !effectful,
+            "Effectful binding " + stmt.name + " must use `<-`",
+          );
+        }
+      }
+
+      merge_scan(direct, calls, scan);
       continue;
     }
 
@@ -418,7 +1143,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.value,
-          context,
           analysis,
           facts,
           false,
@@ -434,7 +1158,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.index,
-          context,
           analysis,
           facts,
           false,
@@ -446,7 +1169,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.value,
-          context,
           analysis,
           facts,
           false,
@@ -457,18 +1179,41 @@ function scan_statements(
     }
 
     if (stmt.tag === "expr") {
-      merge_scan(
-        direct,
-        calls,
-        scan_expr(
+      const scan = scan_expr(
+        stmt.expr,
+        analysis,
+        facts,
+        false,
+        handlers,
+      );
+
+      if (stmt.effectful && facts) {
+        expect(
+          expression_is_effectful(
+            stmt.expr,
+            analysis,
+            facts,
+            scan,
+          ),
+          "Unit effect bind requires an effectful computation",
+        );
+
+        const result_type = infer_effect_bind_result_type(
           stmt.expr,
-          context,
           analysis,
           facts,
-          false,
-          handlers,
-        ),
-      );
+        );
+        expect(
+          result_type,
+          "Cannot infer result type of discarded effect computation",
+        );
+        expect(
+          same_simple_type(result_type, "Unit"),
+          "Discarded effect computation must return Unit, got " + result_type,
+        );
+      }
+
+      merge_scan(direct, calls, scan);
       continue;
     }
 
@@ -478,7 +1223,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.value,
-          context,
           analysis,
           facts,
           false,
@@ -494,7 +1238,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.start,
-          context,
           analysis,
           facts,
           false,
@@ -506,7 +1249,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.end,
-          context,
           analysis,
           facts,
           false,
@@ -518,7 +1260,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.step,
-          context,
           analysis,
           facts,
           false,
@@ -528,7 +1269,7 @@ function scan_statements(
       merge_scan(
         direct,
         calls,
-        scan_statements(stmt.body, context, analysis, facts, handlers),
+        scan_statements(stmt.body, analysis, facts, handlers),
       );
       continue;
     }
@@ -539,7 +1280,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.collection,
-          context,
           analysis,
           facts,
           false,
@@ -549,7 +1289,7 @@ function scan_statements(
       merge_scan(
         direct,
         calls,
-        scan_statements(stmt.body, context, analysis, facts, handlers),
+        scan_statements(stmt.body, analysis, facts, handlers),
       );
       continue;
     }
@@ -560,7 +1300,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.cond,
-          context,
           analysis,
           facts,
           false,
@@ -570,7 +1309,7 @@ function scan_statements(
       merge_scan(
         direct,
         calls,
-        scan_statements(stmt.body, context, analysis, facts, handlers),
+        scan_statements(stmt.body, analysis, facts, handlers),
       );
       continue;
     }
@@ -581,7 +1320,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.target,
-          context,
           analysis,
           facts,
           false,
@@ -591,7 +1329,7 @@ function scan_statements(
       merge_scan(
         direct,
         calls,
-        scan_statements(stmt.body, context, analysis, facts, handlers),
+        scan_statements(stmt.body, analysis, facts, handlers),
       );
       continue;
     }
@@ -602,7 +1340,6 @@ function scan_statements(
         calls,
         scan_expr(
           stmt.target,
-          context,
           analysis,
           facts,
           false,
@@ -617,7 +1354,6 @@ function scan_statements(
 
 function scan_expr(
   expr: FrontExpr,
-  context: EffectContext | undefined,
   analysis: AnalysisContext,
   facts: Map<string, FunctionFact> | undefined,
   allow_direct: boolean,
@@ -627,23 +1363,70 @@ function scan_expr(
   const calls = new Map<string, CallEdge>();
 
   if (expr.tag === "app") {
-    const operation = direct_effect_call(expr, context, analysis.index);
+    const operation = direct_effect_call(expr, analysis.index);
 
     if (operation) {
-      let context_name = "<missing>";
-
-      if (context) {
-        context_name = context.name;
-      }
-
       expect(
         allow_direct,
         "Effect operation " + effect_text(operation) +
-          " must renew its context with let (!" + context_name + ", value)",
+          " must be bound with `<-`",
       );
       add_visible_effect(direct, operation, handlers);
     } else if (expr.func.tag === "var") {
-      add_call(calls, expr.func.name, handlers);
+      const parameter_row = active_parameter_effect_row(
+        expr.func.name,
+        analysis,
+      );
+
+      if (parameter_row) {
+        merge_visible_effects(direct, parameter_row.effects, handlers);
+
+        if (analysis.observed_effect_variables) {
+          for (const variable of parameter_row.variables) {
+            analysis.observed_effect_variables.add(variable);
+          }
+        }
+      } else {
+        add_call(calls, expr.func.name, handlers);
+      }
+
+      if (facts) {
+        const called = facts.get(expr.func.name);
+
+        if (called) {
+          if (called.type_annotation) {
+            const instantiated = instantiate_call_effects(
+              expr,
+              called,
+              analysis,
+              facts,
+            );
+            merge_visible_effects(direct, instantiated.effects, handlers);
+          } else {
+            validate_parameter_callback_arguments(
+              expr,
+              called,
+              analysis,
+              facts,
+            );
+          }
+        }
+      }
+    } else if (
+      facts && (expr.func.tag === "lam" || expr.func.tag === "rec")
+    ) {
+      const invoked = scan_expr(
+        expr.func.body,
+        analysis,
+        facts,
+        false,
+        [],
+      );
+      merge_visible_effects(
+        direct,
+        effects_with_calls(invoked, facts),
+        handlers,
+      );
     }
 
     merge_scan(
@@ -651,7 +1434,6 @@ function scan_expr(
       calls,
       scan_expr(
         expr.func,
-        context,
         analysis,
         facts,
         true,
@@ -663,7 +1445,7 @@ function scan_expr(
       merge_scan(
         direct,
         calls,
-        scan_expr(arg, context, analysis, facts, false, handlers),
+        scan_expr(arg, analysis, facts, false, handlers),
       );
     }
 
@@ -673,7 +1455,6 @@ function scan_expr(
   if (expr.tag === "block") {
     return scan_statements(
       expr.statements,
-      context,
       analysis,
       facts,
       handlers,
@@ -686,7 +1467,6 @@ function scan_expr(
     for (const state of expr.state) {
       const state_scan = scan_expr(
         state.value,
-        context,
         analysis,
         facts,
         false,
@@ -696,7 +1476,6 @@ function scan_expr(
       if (facts) {
         const pure_scan = scan_expr(
           state.value,
-          context,
           analysis,
           facts,
           false,
@@ -722,7 +1501,6 @@ function scan_expr(
       calls,
       scan_expr(
         expr.handler,
-        context,
         analysis,
         facts,
         false,
@@ -731,7 +1509,6 @@ function scan_expr(
     );
     const resolution = resolve_handler_expr(
       expr.handler,
-      context,
       analysis,
       new Map(),
       new Set(),
@@ -746,7 +1523,6 @@ function scan_expr(
       calls,
       scan_expr(
         expr.body,
-        context,
         analysis,
         facts,
         false,
@@ -774,83 +1550,78 @@ function scan_expr(
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.left, context, analysis, facts, false, handlers),
+      scan_expr(expr.left, analysis, facts, false, handlers),
     );
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.right, context, analysis, facts, false, handlers),
+      scan_expr(expr.right, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "lam" || expr.tag === "rec") {
-    merge_scan(
-      direct,
-      calls,
-      scan_expr(expr.body, context, analysis, facts, false, handlers),
-    );
+    return { direct, calls };
   } else if (expr.tag === "comptime") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.expr, context, analysis, facts, false, handlers),
+      scan_expr(expr.expr, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "borrow" || expr.tag === "freeze") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.value, context, analysis, facts, false, handlers),
+      scan_expr(expr.value, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "scratch") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.body, context, analysis, facts, false, handlers),
+      scan_expr(expr.body, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "captured") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.expr, context, analysis, facts, false, handlers),
+      scan_expr(expr.expr, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "with" || expr.tag === "struct_update") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.base, context, analysis, facts, false, handlers),
+      scan_expr(expr.base, analysis, facts, false, handlers),
     );
 
     for (const field of expr.fields) {
       merge_scan(
         direct,
         calls,
-        scan_expr(field.value, context, analysis, facts, false, handlers),
+        scan_expr(field.value, analysis, facts, false, handlers),
       );
     }
   } else if (expr.tag === "struct_value") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.type_expr, context, analysis, facts, false, handlers),
+      scan_expr(expr.type_expr, analysis, facts, false, handlers),
     );
 
     for (const field of expr.fields) {
       merge_scan(
         direct,
         calls,
-        scan_expr(field.value, context, analysis, facts, false, handlers),
+        scan_expr(field.value, analysis, facts, false, handlers),
       );
     }
   } else if (expr.tag === "if") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.cond, context, analysis, facts, false, handlers),
+      scan_expr(expr.cond, analysis, facts, false, handlers),
     );
     merge_scan(
       direct,
       calls,
       scan_expr(
         expr.then_branch,
-        context,
         analysis,
         facts,
         false,
@@ -862,7 +1633,6 @@ function scan_expr(
       calls,
       scan_expr(
         expr.else_branch,
-        context,
         analysis,
         facts,
         false,
@@ -873,14 +1643,13 @@ function scan_expr(
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.target, context, analysis, facts, false, handlers),
+      scan_expr(expr.target, analysis, facts, false, handlers),
     );
     merge_scan(
       direct,
       calls,
       scan_expr(
         expr.then_branch,
-        context,
         analysis,
         facts,
         false,
@@ -892,7 +1661,6 @@ function scan_expr(
       calls,
       scan_expr(
         expr.else_branch,
-        context,
         analysis,
         facts,
         false,
@@ -903,24 +1671,24 @@ function scan_expr(
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.object, context, analysis, facts, true, handlers),
+      scan_expr(expr.object, analysis, facts, true, handlers),
     );
   } else if (expr.tag === "index") {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.object, context, analysis, facts, false, handlers),
+      scan_expr(expr.object, analysis, facts, false, handlers),
     );
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.index, context, analysis, facts, false, handlers),
+      scan_expr(expr.index, analysis, facts, false, handlers),
     );
   } else if (expr.tag === "union_case" && expr.value) {
     merge_scan(
       direct,
       calls,
-      scan_expr(expr.value, context, analysis, facts, false, handlers),
+      scan_expr(expr.value, analysis, facts, false, handlers),
     );
   }
 
@@ -940,20 +1708,6 @@ function scan_handler_dependencies(
     outer_handlers,
   );
 
-  if (facts) {
-    const raw = scan_handler_dependency_bodies(
-      variant,
-      analysis,
-      facts,
-      [],
-    );
-    validate_handler_dependency_context(
-      variant,
-      effects_with_calls(raw, facts),
-      analysis.index,
-    );
-  }
-
   return scan;
 }
 
@@ -972,7 +1726,6 @@ function scan_handler_dependency_bodies(
       calls,
       scan_expr(
         clause.body,
-        variant.context,
         analysis,
         facts,
         false,
@@ -986,7 +1739,6 @@ function scan_handler_dependency_bodies(
     calls,
     scan_expr(
       variant.expr.return_clause.body,
-      variant.context,
       analysis,
       facts,
       false,
@@ -996,43 +1748,8 @@ function scan_handler_dependency_bodies(
   return { direct, calls };
 }
 
-function validate_handler_dependency_context(
-  variant: HandlerVariant,
-  dependencies: Map<string, EffectRef>,
-  index: EffectIndex,
-): void {
-  if (dependencies.size === 0) {
-    return;
-  }
-
-  const context = variant.context;
-  expect(
-    context,
-    "Handler " + variant.expr.effect +
-      " clauses call effects; add an uppercase effect context holder",
-  );
-
-  if (!context.operations) {
-    return;
-  }
-
-  validate_context_annotation(context, index);
-  const allowed = new Set(
-    context.operations.map((effect) => effect_key(effect)),
-  );
-
-  for (const dependency of dependencies.values()) {
-    expect(
-      allowed.has(effect_key(dependency)),
-      "Effect context " + context.name + " on handler " +
-        variant.expr.effect + " does not allow " + effect_text(dependency),
-    );
-  }
-}
-
 function scan_app_args(
   expr: FrontExpr,
-  context: EffectContext,
   analysis: AnalysisContext,
   facts: Map<string, FunctionFact> | undefined,
   handlers: ActiveHandler[],
@@ -1048,7 +1765,7 @@ function scan_app_args(
     merge_scan(
       direct,
       calls,
-      scan_expr(arg, context, analysis, facts, false, handlers),
+      scan_expr(arg, analysis, facts, false, handlers),
     );
   }
 
@@ -1057,69 +1774,78 @@ function scan_app_args(
 
 function direct_effect_call(
   expr: FrontExpr,
-  context: EffectContext | undefined,
   index: EffectIndex,
 ): EffectRef | undefined {
-  if (!context || expr.tag !== "app" || expr.func.tag !== "field") {
+  if (expr.tag !== "app" || expr.func.tag !== "field") {
     return undefined;
   }
 
   const object = expr.func.object;
 
-  if (object.tag === "var" && object.name === context.name) {
-    let candidates = index.operations.get(expr.func.name);
-
-    if (!candidates) {
-      candidates = [];
-    }
-
-    let filtered = candidates;
-
-    const allowed_operations = context.operations;
-
-    if (allowed_operations) {
-      const annotated = candidates.filter((candidate) => {
-        for (const allowed of allowed_operations) {
-          if (effect_key(allowed) === effect_key(candidate)) {
-            return true;
-          }
-        }
-
-        return false;
-      });
-
-      if (annotated.length > 0) {
-        filtered = annotated;
-      }
-    }
-
-    expect(
-      filtered.length > 0,
-      "Unknown effect operation on " + context.name + ": " + expr.func.name,
-    );
-    expect(
-      filtered.length === 1,
-      "Ambiguous effect operation " + expr.func.name +
-        "; use " + context.name + ".Effect." + expr.func.name,
-    );
-    return filtered[0];
-  }
-
-  if (
-    object.tag === "field" && object.object.tag === "var" &&
-    object.object.name === context.name
-  ) {
+  if (object.tag === "var") {
     const effect = index.effects.get(object.name);
-    const operation_name = expr.func.name;
-    expect(effect, "Unknown declared effect: " + object.name);
-    expect(
-      effect.operations.some((operation) => operation.name === operation_name),
-      "Unknown effect operation: " + object.name + "." + operation_name,
-    );
-    return { effect: object.name, operation: operation_name };
+
+    if (effect) {
+      const operation_name = expr.func.name;
+      expect(
+        effect.operations.some((operation) => {
+          return operation.name === operation_name;
+        }),
+        "Unknown effect operation: " + object.name + "." + operation_name,
+      );
+      return { effect: object.name, operation: operation_name };
+    }
   }
 
   return undefined;
+}
+
+function expression_is_effectful(
+  expr: FrontExpr,
+  analysis: AnalysisContext,
+  facts: Map<string, FunctionFact>,
+  scan: EffectScan,
+): boolean {
+  if (direct_effect_call(expr, analysis.index)) {
+    return true;
+  }
+
+  if (expr.tag === "app" && expr.func.tag === "var") {
+    const parameter_row = active_parameter_effect_row(
+      expr.func.name,
+      analysis,
+    );
+
+    if (parameter_row) {
+      return parameter_row.effects.size > 0 || parameter_row.variables.size > 0;
+    }
+
+    const called = facts.get(expr.func.name);
+
+    if (called) {
+      if (called.direct.size > 0) {
+        return true;
+      }
+
+      if (called.type_annotation) {
+        const instantiated = instantiate_call_effects(
+          expr,
+          called,
+          analysis,
+          facts,
+        );
+
+        if (
+          instantiated.effects.size > 0 ||
+          instantiated.variables.size > 0
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return effects_with_calls(scan, facts).size > 0;
 }
 
 function validate_handler_shape(
@@ -1749,6 +2475,217 @@ function infer_simple_type(
   return undefined;
 }
 
+function infer_effect_bind_result_type(
+  expr: FrontExpr,
+  analysis: AnalysisContext,
+  facts: Map<string, FunctionFact> | undefined,
+  types: Map<string, string> = new Map(),
+  resolving: Set<string> = new Set(),
+): string | undefined {
+  if (expr.tag === "borrow" || expr.tag === "freeze") {
+    return infer_effect_bind_result_type(
+      expr.value,
+      analysis,
+      facts,
+      types,
+      resolving,
+    );
+  }
+
+  if (expr.tag === "app") {
+    const operation = direct_effect_call(expr, analysis.index);
+
+    if (operation) {
+      const declaration = analysis.index.effects.get(operation.effect);
+      expect(declaration, "Missing effect declaration: " + operation.effect);
+      const declared_operation = declaration.operations.find((candidate) => {
+        return candidate.name === operation.operation;
+      });
+      expect(
+        declared_operation,
+        "Unknown effect operation: " + effect_text(operation),
+      );
+      return declared_operation.result.type_name;
+    }
+
+    if (expr.func.tag === "var" && facts) {
+      const called = facts.get(expr.func.name);
+
+      if (called) {
+        if (called.type_annotation) {
+          if (called.type_annotation.result.tag === "name") {
+            return called.type_annotation.result.name;
+          }
+
+          return undefined;
+        }
+
+        if (resolving.has(called.name)) {
+          return undefined;
+        }
+
+        const next_resolving = new Set(resolving);
+        next_resolving.add(called.name);
+        const parameter_types = new Map<string, string>();
+
+        for (const param of called.params) {
+          if (param.annotation) {
+            parameter_types.set(param.name, param.annotation);
+          }
+        }
+
+        return with_parameter_result_types(
+          analysis,
+          function_parameter_result_types(
+            called.type_annotation,
+            called.params,
+          ),
+          () => {
+            return infer_effect_bind_result_type(
+              called.body,
+              analysis,
+              facts,
+              parameter_types,
+              next_resolving,
+            );
+          },
+        );
+      }
+    }
+
+    if (expr.func.tag === "var") {
+      if (analysis.active_parameter_result_types.has(expr.func.name)) {
+        return analysis.active_parameter_result_types.get(expr.func.name);
+      }
+    }
+
+    if (expr.func.tag === "lam" || expr.func.tag === "rec") {
+      const parameter_types = new Map<string, string>();
+
+      for (const param of expr.func.params) {
+        if (param.type_annotation?.tag === "name") {
+          parameter_types.set(param.name, param.type_annotation.name);
+        }
+      }
+
+      return infer_effect_bind_result_type(
+        expr.func.body,
+        analysis,
+        facts,
+        parameter_types,
+        resolving,
+      );
+    }
+
+    return undefined;
+  }
+
+  if (expr.tag === "block") {
+    const local = new Map(types);
+
+    for (const stmt of expr.statements) {
+      if (stmt.tag === "bind") {
+        const type = stmt.annotation || infer_effect_bind_result_type(
+          stmt.value,
+          analysis,
+          facts,
+          local,
+          resolving,
+        );
+
+        if (type) {
+          local.set(stmt.name, type);
+        }
+      }
+
+      if (stmt.tag === "state_bind" && stmt.value_name !== undefined) {
+        const type = infer_effect_bind_result_type(
+          stmt.value,
+          analysis,
+          facts,
+          local,
+          resolving,
+        );
+
+        if (type) {
+          local.set(stmt.value_name, type);
+        }
+      }
+
+      if (stmt.tag === "assign") {
+        const type = infer_effect_bind_result_type(
+          stmt.value,
+          analysis,
+          facts,
+          local,
+          resolving,
+        );
+
+        if (type) {
+          local.set(stmt.name, type);
+        }
+      }
+    }
+
+    const final_stmt = expr.statements[expr.statements.length - 1];
+
+    if (!final_stmt) {
+      return "Unit";
+    }
+
+    if (final_stmt.tag === "state_bind") {
+      return "Unit";
+    }
+
+    if (final_stmt.tag === "expr") {
+      return infer_effect_bind_result_type(
+        final_stmt.expr,
+        analysis,
+        facts,
+        local,
+        resolving,
+      );
+    }
+
+    if (final_stmt.tag === "return") {
+      return infer_effect_bind_result_type(
+        final_stmt.value,
+        analysis,
+        facts,
+        local,
+        resolving,
+      );
+    }
+
+    return undefined;
+  }
+
+  if (expr.tag === "if") {
+    const left = infer_effect_bind_result_type(
+      expr.then_branch,
+      analysis,
+      facts,
+      new Map(types),
+      resolving,
+    );
+    const right = infer_effect_bind_result_type(
+      expr.else_branch,
+      analysis,
+      facts,
+      new Map(types),
+      resolving,
+    );
+
+    if (left && right && same_simple_type(left, right)) {
+      return left;
+    }
+
+    return undefined;
+  }
+
+  return infer_simple_type(expr, types);
+}
+
 function same_simple_type(left: string, right: string): boolean {
   if (left === right) {
     return true;
@@ -1984,7 +2921,6 @@ function validate_handler_state_stmt_assignments(
 
 function resolve_handler_expr(
   expr: FrontExpr,
-  context: EffectContext | undefined,
   analysis: AnalysisContext,
   replacements: Map<string, FrontExpr>,
   resolving: Set<string>,
@@ -1994,14 +2930,13 @@ function resolve_handler_expr(
     return {
       effect: expr.effect,
       operations: new Set(expr.clauses.map((clause) => clause.name)),
-      variants: [{ expr, context }],
+      variants: [{ expr }],
     };
   }
 
   if (expr.tag === "captured") {
     return resolve_handler_expr(
       expr.expr,
-      context,
       analysis,
       replacements,
       resolving,
@@ -2014,7 +2949,6 @@ function resolve_handler_expr(
     if (replacement) {
       return resolve_handler_expr(
         replacement,
-        context,
         analysis,
         replacements,
         resolving,
@@ -2036,7 +2970,6 @@ function resolve_handler_expr(
     try {
       return resolve_handler_expr(
         binding.value,
-        binding.context,
         analysis,
         replacements,
         resolving,
@@ -2048,7 +2981,6 @@ function resolve_handler_expr(
 
   if (expr.tag === "app") {
     let target: Extract<FrontExpr, { tag: "lam" | "rec" }> | undefined;
-    let target_context = context;
     let target_name: string | undefined;
 
     if (expr.func.tag === "lam" || expr.func.tag === "rec") {
@@ -2061,7 +2993,6 @@ function resolve_handler_expr(
         (binding.value.tag === "lam" || binding.value.tag === "rec")
       ) {
         target = binding.value;
-        target_context = binding.context;
         target_name = expr.func.name;
       }
     }
@@ -2095,7 +3026,6 @@ function resolve_handler_expr(
     try {
       return resolve_handler_expr(
         target.body,
-        target_context,
         analysis,
         local_replacements,
         resolving,
@@ -2127,7 +3057,6 @@ function resolve_handler_expr(
       if (stmt.tag === "expr" && index + 1 === expr.statements.length) {
         return resolve_handler_expr(
           stmt.expr,
-          context,
           analysis,
           local_replacements,
           resolving,
@@ -2137,7 +3066,6 @@ function resolve_handler_expr(
       if (stmt.tag === "return") {
         return resolve_handler_expr(
           stmt.value,
-          context,
           analysis,
           local_replacements,
           resolving,
@@ -2151,14 +3079,12 @@ function resolve_handler_expr(
   if (expr.tag === "if") {
     const left = resolve_handler_expr(
       expr.then_branch,
-      context,
       analysis,
       new Map(replacements),
       new Set(resolving),
     );
     const right = resolve_handler_expr(
       expr.else_branch,
-      context,
       analysis,
       new Map(replacements),
       new Set(resolving),

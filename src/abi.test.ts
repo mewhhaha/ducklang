@@ -67,8 +67,8 @@ Deno.test("managed ABI describes declared effects and opaque Init fields", () =>
 Deno.test("managed ABI records inferred operation requirements", () => {
   const source = Source.parse(`
 declare effect Io { read: () => Text }
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 read_name
@@ -79,7 +79,27 @@ read_name
     module: [],
     functions: {
       read_name: {
-        context: "Fx",
+        effects: [{ effect: "Io", operation: "read" }],
+      },
+    },
+  });
+});
+
+Deno.test("managed ABI uses inferred typed effect requirements", () => {
+  const source = Source.parse(`
+declare effect Io { read: () => Text }
+let read_name: () -> <Io.read> Text = () => {
+  name <- Io.read()
+  name
+}
+read_name
+`);
+  const manifest = build_abi_manifest(source);
+
+  assert_equals(manifest.requirements, {
+    module: [],
+    functions: {
+      read_name: {
         effects: [{ effect: "Io", operation: "read" }],
       },
     },
@@ -91,14 +111,14 @@ Deno.test("managed ABI excludes Ix effects and local handler requirements", () =
 declare effect Io { print: (bounded_borrow Text) => Unit }
 effect Counter { get: () => I32 }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
+let run = () => {
+  value <- Counter.get()
   value
 }
 
-let (Fx :: { Io.print }) counter = () => Counter {
+let counter = () => Counter {
     get: (!resume) => {
-      let (!Fx, ()) = Fx.Io.print(borrow "get")
+      _ <- Io.print(borrow "get")
       !resume(0)
     },
     return: (value) => value
@@ -189,7 +209,7 @@ function effect_manifest(result: "i32" | "text"): AbiManifest {
 
   return {
     abi_name: "ix-js",
-    abi_version: "ix-js-1",
+    abi_version: "ix-js-2",
     target: {
       profile: "core-3-browser",
       pointer: "wasm32",
@@ -245,6 +265,50 @@ function effect_manifest(result: "i32" | "text"): AbiManifest {
     },
   };
 }
+
+Deno.test("managed ABI rejects ix-js-1 manifests", async () => {
+  const legacy_manifest = {
+    ...effect_manifest("i32"),
+    abi_version: "ix-js-1",
+  } as unknown as AbiManifest;
+
+  try {
+    await IxHost.instantiate(new Uint8Array(), legacy_manifest);
+    throw new Error("Expected ABI version rejection");
+  } catch (error) {
+    if (!(error instanceof IxAbiError)) {
+      throw error;
+    }
+
+    assert_equals(error.code, "version_mismatch");
+    assert_equals(error.path, "abi_version");
+    assert_includes(error.message, "Expected ix-js-2");
+  }
+});
+
+Deno.test("managed ABI rejects imports outside effects and Init", async () => {
+  const manifest = effect_manifest("i32");
+  manifest.imports.legacy = {
+    name: "legacy",
+    module: "env",
+    field: "legacy",
+    params: [],
+    result: { type: { tag: "i32" }, ownership: "scalar" },
+  };
+
+  try {
+    await IxHost.instantiate(new Uint8Array(), manifest);
+    throw new Error("Expected raw import rejection");
+  } catch (error) {
+    if (!(error instanceof IxAbiError)) {
+      throw error;
+    }
+
+    assert_equals(error.code, "invalid_manifest");
+    assert_equals(error.path, "imports.legacy");
+    assert_includes(error.message, "exactly one effect or Init field");
+  }
+});
 
 function effect_wat(): string {
   return `(module
@@ -417,13 +481,13 @@ declare effect Io {
 
 declare Init { io: Io }
 
-let Fx greet = () => {
-  let (!Fx, name) = Fx.read()
-  let (!Fx, ()) = Fx.print(borrow name)
+let greet = () => {
+  name <- Io.read()
+  _ <- Io.print(borrow name)
   name
 }
 
-let result = greet()
+result <- greet()
 return { result }
 `);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -454,7 +518,6 @@ return { result }
     ],
     functions: {
       greet: {
-        context: "Fx",
         effects: [
           { effect: "Io", operation: "print" },
           { effect: "Io", operation: "read" },
@@ -462,6 +525,39 @@ return { result }
       },
     },
   });
+});
+
+Deno.test("managed ABI runs an inferred anonymous effect callback", async () => {
+  const artifact = Source.artifact(`
+module (!init: Init) where
+
+declare effect Io { read: () => I32 }
+declare Init { io: Io }
+
+let apply: (I32 -> <e> I32, I32) -> <e> I32 = (const callback, value) => {
+  result <- callback(value)
+  result
+}
+
+let forward: (I32 -> <f> I32, I32) -> <f> I32 =
+  (const callback, value) => {
+    result <- apply(callback, value)
+    result
+  }
+
+value <- forward(item => {
+  input <- Io.read()
+  input + item
+}, 1)
+let result: I32 = value
+return { result }
+`);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  assert_equals(host.run({ io: { read: () => 41 } }), { result: 42 });
+  assert_equals(artifact.abi.requirements.functions.apply, undefined);
+  assert_equals(artifact.abi.requirements.functions.forward, undefined);
 });
 
 Deno.test("Ix handlers can use rich host effects without exposing local effects", async () => {
@@ -478,20 +574,20 @@ effect Local {
 
 declare Init { io: Io }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Local.ask()
+let run = () => {
+  value <- Local.ask()
   value
 }
 
-let (Fx :: { Io.decorate }) make_local = () => Local {
+let make_local = () => Local {
   ask: (!resume) => {
-    let (!Fx, decorated) = Fx.Io.decorate(borrow "hello")
+    decorated <- Io.decorate(borrow "hello")
     !resume(decorated)
   },
   return: value => value,
 }
 
-let result: Text = try run() with make_local()
+result <- try run() with make_local()
 return { result }
 `);
   assert_equals(Object.keys(artifact.abi.effects), ["Io"]);
@@ -517,18 +613,27 @@ return { result }
 
 Deno.test("managed ABI emits a versioned manifest and runtime exports", () => {
   const artifact = Source.artifact(`
-host_import measure from "env.measure" (bounded_borrow Text) => I32
-measure(borrow "hello")
+module (!init: Init) where
+
+declare effect Measure { text: (bounded_borrow Text) => I32 }
+declare Init { measure: Measure }
+
+result <- Measure.text(borrow "hello")
+return { result }
 `);
 
-  assert_equals(artifact.abi.abi_version, "ix-js-1");
+  assert_equals(artifact.abi.abi_version, "ix-js-2");
   assert_equals(artifact.abi.target.profile, "core-3-browser");
-  assert_equals(artifact.abi.imports.measure, {
-    name: "measure",
-    module: "env",
-    field: "measure",
-    params: [{ type: { tag: "text" }, ownership: "bounded_borrow" }],
+  assert_equals(artifact.abi.imports.__ix_effect_Measure_text, {
+    name: "__ix_effect_Measure_text",
+    module: "ix_effect",
+    field: "Measure.text",
+    params: [
+      { type: { tag: "resource", effect: "Measure" }, ownership: "scalar" },
+      { type: { tag: "text" }, ownership: "bounded_borrow" },
+    ],
     result: { type: { tag: "i32" }, ownership: "scalar" },
+    effect: { name: "Measure", operation: "text", resource_param: 0 },
   });
   assert_includes(artifact.wat, '(export "memory" (memory $memory))');
   assert_includes(artifact.wat, '(export "__ix_abi_alloc"');
@@ -537,14 +642,20 @@ measure(borrow "hello")
 
 Deno.test("managed ABI decodes Text arguments for JS", async () => {
   const artifact = Source.artifact(`
-host_import measure from "env.measure" (bounded_borrow Text) => I32
-measure(borrow "Zażółć 🦀")
+module (!init: Init) where
+
+declare effect Measure { text: (bounded_borrow Text) => I32 }
+declare Init { measure: Measure }
+
+result <- Measure.text(borrow "Zażółć 🦀")
+return { result }
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   let received = "";
-  const host = await IxHost.instantiate(wasm, artifact.abi, {
-    env: {
-      measure(value) {
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+  const result = host.run({
+    measure: {
+      text(value) {
         if (typeof value !== "string") {
           throw new Error("Expected JS string");
         }
@@ -555,7 +666,7 @@ measure(borrow "Zażółć 🦀")
     },
   });
 
-  assert_equals(host.run(), "Zażółć 🦀".length);
+  assert_equals(result, { result: "Zażółć 🦀".length });
   assert_equals(received, "Zażółć 🦀");
   host.dispose();
   assert_throws(() => host.run(), "disposed");
@@ -563,15 +674,21 @@ measure(borrow "Zażółć 🦀")
 
 Deno.test("managed ABI encodes JS structs containing Text", async () => {
   const source = `
+module (!init: Init) where
+
 const user_type = struct { name: Text, age: Int }
-host_import make_user from "env.make_user" () => unique_heap user_type
-let user: user_type = make_user()
-len(user.name) + user.age
+declare effect Host { make_user: () => unique_heap user_type }
+declare Init { host: Host }
+
+user <- Host.make_user()
+let result: I32 = len(user.name) + user.age
+return { result }
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
-  const host = await IxHost.instantiate(wasm, artifact.abi, {
-    env: {
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+  const result = host.run({
+    host: {
       make_user() {
         return { name: "x".repeat(200_000), age: 36 };
       },
@@ -579,46 +696,59 @@ len(user.name) + user.age
   });
 
   assert_equals(artifact.abi.types.user_type.tag, "struct");
-  assert_equals(host.run(), 200_036);
+  assert_equals(result, { result: 200_036 });
 });
 
 Deno.test("managed ABI encodes tagged JS unions", async () => {
   const source = `
+module (!init: Init) where
+
 const result_type = union { ok: Text, err: Int }
-host_import make_result from "env.make_result" () => unique_heap result_type
-let result: result_type = make_result()
-if let .ok(value) = result { len(value) } else { 0 }
+declare effect Host { make_result: () => unique_heap result_type }
+declare Init { host: Host }
+
+outcome <- Host.make_result()
+let result: I32 = if let .ok(value) = outcome { len(value) } else { 0 }
+return { result }
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
-  const host = await IxHost.instantiate(wasm, artifact.abi, {
-    env: {
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+  const result = host.run({
+    host: {
       make_result() {
         return { tag: "ok", value: "hello" };
       },
     },
   });
 
-  assert_equals(host.run(), 5);
+  assert_equals(result, { result: 5 });
 });
 
 Deno.test("managed ABI grows memory for large host results", async () => {
   const source = `
-host_import make_text from "env.make_text" () => unique_heap Text
-len(make_text())
+module (!init: Init) where
+
+declare effect Host { make_text: () => unique_heap Text }
+declare Init { host: Host }
+
+text <- Host.make_text()
+let result: I32 = len(text)
+return { result }
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
   const text = "x".repeat(200_000);
-  const host = await IxHost.instantiate(wasm, artifact.abi, {
-    env: {
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+  const result = host.run({
+    host: {
       make_text() {
         return text;
       },
     },
   });
 
-  assert_equals(host.run(), 200_000);
+  assert_equals(result, { result: 200_000 });
   const memory = host.instance.exports.memory;
 
   if (!(memory instanceof WebAssembly.Memory)) {
@@ -628,23 +758,29 @@ len(make_text())
   assert_equals(memory.buffer.byteLength >= 200_000, true);
 });
 
-Deno.test("managed ABI reports missing handlers with a stable error", async () => {
+Deno.test("managed ABI reports missing effect methods with a stable error", async () => {
   const artifact = Source.artifact(`
-host_import read from "env.read" () => I32
-read()
+module (!init: Init) where
+
+declare effect Host { read: () => I32 }
+declare Init { host: Host }
+
+result <- Host.read()
+return { result }
 `);
   const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
 
   try {
-    await IxHost.instantiate(wasm, artifact.abi, {});
+    host.run({ host: {} });
     throw new Error("Expected IxAbiError");
   } catch (error) {
     if (!(error instanceof IxAbiError)) {
       throw error;
     }
 
-    assert_equals(error.code, "missing_handler");
-    assert_equals(error.path, "env.read");
+    assert_equals(error.code, "missing_method");
+    assert_equals(error.path, "init.host.read");
   }
 });
 

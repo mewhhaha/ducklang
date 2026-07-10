@@ -135,7 +135,7 @@ export abstract class ParserHostImport extends ParserExpr {
   }
 }
 
-export function parse_host_import_target(text: string): {
+function parse_host_import_target(text: string): {
   module: string;
   field: string;
 } {
@@ -148,7 +148,7 @@ export function parse_host_import_target(text: string): {
   };
 }
 
-export function is_host_import_arg_contract_name(
+function is_host_import_arg_contract_name(
   name: string,
 ): name is FrontHostImportArgContract["tag"] {
   if (name === "scalar") {
@@ -170,7 +170,7 @@ export function is_host_import_arg_contract_name(
   return false;
 }
 
-export function host_import_scalar_value_type(
+function host_import_scalar_value_type(
   name: string,
 ): ValType | undefined {
   if (name === "Int" || name === "I32" || name === "U32") {
@@ -184,7 +184,7 @@ export function host_import_scalar_value_type(
   return undefined;
 }
 
-export function host_import_owned_value_type(name: string): ValType {
+function host_import_owned_value_type(name: string): ValType {
   if (host_import_scalar_value_type(name)) {
     throw new Error("Unsupported host import owned type: " + name);
   }
@@ -192,7 +192,7 @@ export function host_import_owned_value_type(name: string): ValType {
   return "i32";
 }
 
-export function host_import_owner_reason(
+function host_import_owner_reason(
   name: string,
 ): FrontHostImportOwnerReason {
   if (name === "Text") {

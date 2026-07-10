@@ -3,7 +3,7 @@ import { format_source } from "./format.ts";
 import { load_source } from "./load.ts";
 import { parse_source } from "./parser.ts";
 
-Deno.test("module syntax parses effects, contexts, state, and exports", () => {
+Deno.test("module syntax parses effects, rows, state, and exports", () => {
   const source = parse_source(`
 module (!init: Init) where
 
@@ -16,13 +16,13 @@ declare Init {
   io: Io
 }
 
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 
-let (Fx :: { Io.read, Io.print }) greet = () => {
-  let (!Fx, ()) = Fx.print("hello")
+let greet: () -> <Io.read | Io.print> Unit = () => {
+  _ <- Io.print("hello")
 }
 
 const { a, b } = dependency(init)
@@ -63,30 +63,30 @@ return { a, message: b }
   ]);
 
   const first = source.statements[0];
-  assert_equals(
-    first && first.tag === "bind" ? first.effect_context : undefined,
-    {
-      name: "Fx",
-      operations: undefined,
-    },
-  );
+  if (!first || first.tag !== "bind") {
+    throw new Error("Expected read_name binding");
+  }
+  assert_equals(first.type_annotation, undefined);
 
   const second = source.statements[1];
-  assert_equals(
-    second && second.tag === "bind" ? second.effect_context : undefined,
-    {
-      name: "Fx",
-      operations: [
-        { effect: "Io", operation: "read" },
-        { effect: "Io", operation: "print" },
-      ],
+  if (!second || second.tag !== "bind") {
+    throw new Error("Expected greet binding");
+  }
+  assert_equals(second.type_annotation, {
+    tag: "arrow",
+    param: { tag: "tuple", items: [] },
+    effects: {
+      tag: "union",
+      left: { tag: "operation", effect: "Io", operation: "read" },
+      right: { tag: "operation", effect: "Io", operation: "print" },
     },
-  );
+    result: { tag: "name", name: "Unit" },
+  });
 
   const formatted = format_source(source);
   assert_includes(formatted, "module (!init: Init) where");
   assert_includes(formatted, "declare effect Io");
-  assert_includes(formatted, 'let (!Fx, ()) = Fx.print("hello")');
+  assert_includes(formatted, '_ <- Io.print("hello")');
   assert_includes(formatted, "const { a, b } = dependency(init)");
   assert_includes(formatted, "return { a, message: b }");
 });

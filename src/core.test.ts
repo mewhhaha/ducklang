@@ -9,7 +9,7 @@ import {
   core_scratch_return_lifetime_decision,
 } from "./core/lifetime.ts";
 import { core_expr_ownership } from "./core/ownership.ts";
-import { Source } from "./frontend.ts";
+import { TestSource as Source } from "./frontend/test_source.ts";
 import { Mod } from "./mod.ts";
 import { Data, Emit, Format, Typed } from "./trait.ts";
 

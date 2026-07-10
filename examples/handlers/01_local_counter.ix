@@ -3,9 +3,9 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let Fx run = () => {
-  let (!Fx, ()) = Fx.Counter.add(40)
-  let (!Fx, value) = Fx.Counter.get()
+let run: () -> <Counter> I32 = () => {
+  _ <- Counter.add(40)
+  value <- Counter.get()
   value + 2
 }
 

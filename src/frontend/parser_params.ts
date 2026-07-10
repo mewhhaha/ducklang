@@ -1,5 +1,5 @@
 import { expect } from "../expect.ts";
-import type { Param } from "./ast.ts";
+import type { Param, Token, TypeExpr } from "./ast.ts";
 import {
   expect_const_binding_name,
   expect_snake_case,
@@ -10,6 +10,7 @@ import {
   is_builtin_type_reference_name,
   unsupported_reserved_feature,
 } from "./parser_support.ts";
+import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 
 export class ParserParams extends ParserCursor {
   protected allow_pascal_type_names = 0;
@@ -127,12 +128,21 @@ export class ParserParams extends ParserCursor {
     }
 
     let annotation: string | undefined;
+    let type_annotation: TypeExpr | undefined;
 
     if (this.match_symbol(":")) {
-      annotation = this.consume_annotation();
+      const parsed = this.consume_annotation();
+      annotation = parsed.annotation;
+      type_annotation = parsed.type_annotation;
     }
 
-    return { name, is_const, is_linear, annotation };
+    const param: Param = { name, is_const, is_linear, annotation };
+
+    if (type_annotation) {
+      param.type_annotation = type_annotation;
+    }
+
+    return param;
   }
 
   protected expect_param_name(name: string): void {
@@ -178,29 +188,49 @@ export class ParserParams extends ParserCursor {
     expect_const_binding_name(name);
   }
 
-  protected consume_annotation(): string {
-    const parts: string[] = [];
+  protected consume_annotation(): {
+    annotation: string;
+    type_annotation: TypeExpr | undefined;
+  } {
+    const tokens: Token[] = [];
+    let parens = 0;
+    let angles = 0;
 
     while (!this.is("eof")) {
       const token = this.peek();
 
       if (
         token.kind === "newline" ||
-        (token.kind === "symbol" &&
+        (parens === 0 && angles === 0 && token.kind === "symbol" &&
           (token.text === "," || token.text === ")" || token.text === "=" ||
             token.text === "=>"))
       ) {
         break;
       }
 
-      if (token.kind === "name") {
-        this.expect_type_reference_name(token.text, "Type annotation");
+      if (token.kind === "symbol" && token.text === "(") {
+        parens += 1;
+      } else if (token.kind === "symbol" && token.text === ")") {
+        parens -= 1;
+      } else if (token.kind === "symbol" && token.text === "<") {
+        angles += 1;
+      } else if (token.kind === "symbol" && token.text === ">") {
+        angles -= 1;
       }
 
-      parts.push(this.advance().text);
+      tokens.push(this.advance());
     }
 
-    expect(parts.length > 0, "Expected type annotation");
-    return parts.join("");
+    expect(tokens.length > 0, "Expected type annotation");
+    const parsed = parse_type_expr(tokens);
+    let type_annotation: TypeExpr | undefined;
+
+    if (parsed.tag === "name") {
+      this.expect_type_reference_name(parsed.name, "Type annotation");
+    } else {
+      type_annotation = parsed;
+    }
+
+    return { annotation: format_type_expr(parsed), type_annotation };
   }
 }

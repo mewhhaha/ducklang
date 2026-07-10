@@ -19,8 +19,8 @@ protocol values, fields, methods, modules, and ordinary helper functions use
 underscores.
 
 Declared host effects and host context records use type-style names such as `Io`
-and `Init`. Function-local effect context holders use a short uppercase name
-such as `Fx`. The holder name is local and has no built-in spelling.
+and `Init`. Lowercase names in an effect row, such as `e`, are inferred row
+variables. Effect operations are always qualified by their declared effect.
 
 ```txt
 let read_number = input
@@ -97,7 +97,9 @@ const { write } = logger({ io: !init.io })
 Module invocation is compiler-time wiring and specialization. Its result is the
 imported file's export record, so ordinary record destructuring selects exports.
 The entry module's final record is returned by the managed JavaScript
-`program.run(init)` call.
+`IxRunner(init).run(program)` call. A runner captures one explicit handler set;
+selecting another runner swaps host or mock effects without recompiling the
+module.
 
 ## Bindings
 
@@ -680,46 +682,85 @@ record. Ix cannot construct or inspect an `Io`; JavaScript supplies an instance
 through the entry `Init`. `declare` means the operations are host-implemented.
 Only declared effects appear in the managed JavaScript ABI.
 
-An uppercase context holder marks an effectful function. Its name is arbitrary;
-`Fx` is only the convention used in examples:
+An unannotated function receives its minimal inferred operation row:
 
 ```txt
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 ```
 
-The compiler infers the holder's minimal structural operation row. A function
-without a holder is pure. An explicit annotation gives an upper bound, so every
-inferred operation must belong to the annotation:
+Function types use whitespace application, right-associative `->`, and an
+optional latent row between the arrow and result. An explicit row is an upper
+bound, so every inferred operation must belong to it. Omitting the row from an
+explicit function type declares the function pure:
 
 ```txt
-let (Fx :: { Io.read, Io.print }) greet = () => {
-  let (!Fx, name) = Fx.read()
-  let (!Fx, ()) = Fx.print(borrow name)
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- Io.read()
+  _ <- Io.print(borrow name)
   name
 }
+
+let increment: I32 -> I32 = value => value + 1
 ```
 
-Primitive effect operations consume and renew the holder's linear proof token,
-which is why their result is bound with `let (!Fx, value) = ...`. A `Unit`
-result uses `let (!Fx, ()) = ...`. Compatible contexts are forwarded lexically
-through ordinary calls, including recursion and higher-order calls, so callers
-do not manually thread `Fx` through their parameter lists.
+`value <- computation` executes an effectful computation and binds its result.
+`_ <- computation` discards a `Unit` result. Ordinary `let value = ...` is a
+pure binding and rejects an effectful right-hand side. Compatible effects are
+inferred through calls, including recursion and higher-order calls. Callers do
+not manually thread an effect token. The compiler preserves the linear
+proof-token discipline internally, but that implementation detail is not part
+of the source language.
 
-Rows propagate through branches, callbacks, closures, module initialization, and
-exported function types. Capturing a context or linear host resource makes the
-closure one-shot under the normal linear closure rules. The compiler rejects
-effectful calls from pure functions, operations outside an annotation, missing
-token rebinding, incompatible branch rows, effect-resource duplication, and
-authority hidden inside a reusable closure.
+Type constructors compose by whitespace application. Row variables propagate
+callback effects through higher-order types:
 
-One holder may contain multiple effect resources. `Fx.read()` selects an
-operation when its name is unique. When operation names collide, qualify the
-effect explicitly, for example `Fx.Io.read()`. If multiple instances of the same
-effect type are available, the module must narrow its context before an
-unqualified operation can select an instance.
+```txt
+(List a, a -> <e> b) -> <e> List b
+
+let apply: (I32 -> <e> I32, I32) -> <e> I32 =
+  (const callback, value) => {
+    result <- callback(value)
+    result
+  }
+```
+
+Creating an anonymous closure is pure. Invoking it introduces its inferred
+latent row. The current runtime vertical slice specializes statically known
+`const` callbacks; general escaping Ix-effect closures remain reserved until
+CPS closure conversion supports them.
+
+In this first row-polymorphism slice, unresolved row variables compose through
+union. Intersection and difference still work for concrete rows; an unresolved
+variable beneath `&` or `\` is reserved until symbolic row constraints are
+implemented.
+
+Effect rows are sets of qualified operations. A family atom expands to every
+operation declared by that effect. Set expressions use these operators:
+
+```txt
+A | B  // union
+A & B  // intersection
+A \ B  // difference
+```
+
+`Io.read | Io.print` permits both operations, while two disjoint families such
+as `Stdin & Stdout` intersect to the empty row. Parentheses group compound row
+expressions. Handler discharge subtracts the handled operation set
+automatically.
+
+Rows propagate through branches, callbacks, closures, module initialization,
+and exported function types. Capturing a linear host resource makes the closure
+one-shot under the normal linear closure rules. The compiler rejects operations
+outside an explicit row, effects in an explicitly pure arrow, incompatible
+branch rows, effect-resource duplication, and authority hidden inside a reusable
+closure.
+
+Operations are selected by their declared effect name, for example
+`Io.read()` or `Stdout.write_line()`. The effect row on a function type records
+the operations it may perform; callers need only provide compatible runners.
 
 Imported modules receive only the explicitly passed subset of the caller's
 context:
@@ -729,7 +770,7 @@ module (!init: Init) where
 
 import logger from "./logger.ix"
 const { write } = logger({ io: !init.io })
-let result = write("hello")
+result <- write("hello")
 
 return { result }
 ```
@@ -777,22 +818,23 @@ let result = try run() with counter
 ```
 
 `Counter { ... }` is an affine handler value because `Counter` names an effect,
-not a data constructor. `try computation with handler` consumes that value.
-Use a function returning a fresh implementation when the same definition must
-be installed more than once.
+not a data constructor. `try computation with handler` consumes that value. Use
+a function returning a fresh implementation when the same definition must be
+installed more than once.
 
 The mandatory `return` clause handles ordinary completion. Operation clauses
 receive the declared operation arguments followed by an affine resumption. A
 clause may invoke its resumption once, return without invoking it to abort the
 captured computation, pass it to other Ix code, or store it in an internal
-aggregate or union. Calling a resumption reinstalls the captured handler segment,
-so handlers are deep. The matched handler is inactive while its clause runs;
-calling the same effect directly from that clause therefore forwards outward.
+aggregate or union. Calling a resumption reinstalls the captured handler
+segment, so handlers are deep. The matched handler is inactive while its clause
+runs; calling the same effect directly from that clause therefore forwards
+outward.
 
 Handlers may omit operations. An omitted operation searches the next outer
 handler. Reaching the module boundary with an unresolved plain-effect operation
-is a compile error; it never becomes host authority. Clause dependencies on
-host effects remain in the surrounding operation row and require ordinary
+is a compile error; it never becomes host authority. Clause dependencies on host
+effects remain in the surrounding operation row and require ordinary
 `declare effect` resources.
 
 Checked multi-shot use is explicit:
@@ -801,14 +843,15 @@ Checked multi-shot use is explicit:
 let (!left, !right) = dup !resume
 ```
 
-Duplication is accepted only when every live capture is duplicable. Scalar
-state is copied and frozen values are shared. Unique owners, borrows, scratch
-values, host resources, and nested affine resumptions reject duplication. Once
-a clause consumes or duplicates its resumption, that clause can post-process
-the resumed output but cannot access the transferred handler state.
+Duplication is accepted only when every live capture is duplicable. Scalar state
+is copied and frozen values are shared. Unique owners, borrows, scratch values,
+host resources, and nested affine resumptions reject duplication. Once a clause
+consumes or duplicates its resumption, that clause can post-process the resumed
+output but cannot access the transferred handler state.
 
 Ix handlers compile only through the Core/managed-Wasm route. The IC-only route
-rejects plain effects, handlers, resumptions, and Unit handler syntax explicitly.
+rejects plain effects, handlers, resumptions, and Unit handler syntax
+explicitly.
 
 ## Ownership, Borrows, Freezing, And Scratchpads
 
@@ -1121,21 +1164,25 @@ frontend into Ic, then into Expr, Mod, and WAT.
 
 The `Mod` layer can also emit Wasm function imports, export imported functions,
 define a single Wasm memory, export it, and emit active data segments. Declared
-host effects lower to ordinary Wasm imports and opaque `i32` registry handles;
-effect rows and renewed proof tokens have no runtime representation. The
-explicit low-level source ABI declaration remains available:
+host effects lower to typed Wasm imports and opaque `i32` registry handles;
+effect rows and internal proof tokens have no runtime representation.
 
 ```txt
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+declare effect Host {
+  read: (bounded_borrow Text) => I32
+  take: (ownership_transfer Text) => I32
+  make_text: () => unique_heap Text
+}
+
+declare Init { host: Host }
 ```
 
-The implemented source slice supports scalar numeric ABI parameters/results,
-`bounded_borrow Text`, `ownership_transfer Text`, `frozen_shareable Text`, and
-host-returned `unique_heap Text` or `frozen_shareable Text`. These declarations
-are available on the structured `Source.core`, `Source.mod`, and `Source.wat`
-routes. Pure Ic lowering rejects them because host imports require the
-structured Core/Wasm boundary checks. Effect resources are still represented as
-explicit module dependencies, not ambient Wasm authority.
+Effect operations support scalar numeric ABI parameters/results,
+`bounded_borrow`, `ownership_transfer`, and `frozen_shareable` parameters, plus
+host-returned `unique_heap` or `frozen_shareable` values. The compiler generates
+its internal import descriptors during effect elaboration; source programs do
+not name raw Wasm modules or fields. Effect resources remain explicit module
+dependencies rather than ambient Wasm authority.
 
 Supported Ic-lowerable scalar features include:
 

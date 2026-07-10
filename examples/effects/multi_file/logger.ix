@@ -1,7 +1,7 @@
 module (!init: Init) where
 
-let (Fx :: { Io.print }) write = (message: Text) => {
-  let (!Fx, ()) = Fx.print(borrow message)
+let write: Text -> <Io.print> Unit = (message: Text) => {
+  _ <- Io.print(borrow message)
 }
 
 return { write }

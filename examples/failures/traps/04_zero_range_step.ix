@@ -1,9 +1,17 @@
-host_import step from "env.step" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  step: () => I32
+}
+
+declare Init { input: Input }
 
 let total = 0
+step <- Input.step()
 
-for value in 0..10 by step() {
+for value in 0..10 by step {
   total = total + value
 }
 
-total
+let result = total
+return { result }

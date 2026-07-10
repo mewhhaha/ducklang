@@ -1,6 +1,14 @@
-host_import index from "env.index" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  index: () => I32
+}
+
+declare Init { input: Input }
 
 const pair_type = struct { first: Int, second: Int }
 let pair = pair_type { first: 20, second: 22 }
 
-pair[index()]
+index <- Input.index()
+let result: I32 = pair[index]
+return { result }

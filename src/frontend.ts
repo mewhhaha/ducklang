@@ -30,9 +30,9 @@ export {
   type IxEffectObject,
   IxHost,
   type IxHostHandler,
-  type IxHostHandlers,
   type IxHostInstance,
   type IxInitValue,
+  IxRunner,
   type IxValue,
 } from "./host.ts";
 export type {
@@ -44,6 +44,7 @@ export type {
 } from "./core.ts";
 export type {
   Binding,
+  EffectRowExpr,
   Env,
   Field,
   FrontExpr,
@@ -58,6 +59,7 @@ export type {
   Stmt,
   Token,
   TokenKind,
+  TypeExpr,
   TypeField,
   TypePattern,
 } from "./frontend/ast.ts";

@@ -1,10 +1,17 @@
-host_import host_read from "env.read" (bounded_borrow Text) => I32
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+module (!init: Init) where
+
+declare effect Host {
+  read: (bounded_borrow Text) => I32
+  take: (ownership_transfer Text) => I32
+}
+
+declare Init { host: Host }
 
 let read_message: Text = append("a", "b")
-let read_result = host_read(borrow read_message)
+read_result <- Host.read(borrow read_message)
 
 let sent_message: Text = append("c", "d")
-let send_result = host_take(sent_message)
+send_result <- Host.take(sent_message)
 
-read_result + send_result
+let result = read_result + send_result
+return { result }

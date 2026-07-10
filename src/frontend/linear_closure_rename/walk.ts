@@ -274,14 +274,12 @@ function rename_linear_closure_stmt(
         name: stmt.name,
         is_linear: stmt.is_linear,
         annotation: stmt.annotation,
-        effect_context: stmt.effect_context,
         value: rename_linear_closure_expr(stmt.value, renames),
       };
 
     case "state_bind":
       return {
         tag: "state_bind",
-        context: stmt.context,
         value_name: stmt.value_name,
         value: rename_linear_closure_expr(stmt.value, renames),
       };

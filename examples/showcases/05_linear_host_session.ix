@@ -1,10 +1,15 @@
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+module (!init: Init) where
+
+declare effect Host {
+  print: (bounded_borrow Text) => I32
+}
+
+declare Init { host: Host }
 
 let message = scratch {
   let temporary: Text = append("hel", "lo")
   freeze temporary
 }
 
-let !io: I32 = 1
-io = print(!io, borrow message)
-io
+result <- Host.print(borrow message)
+return { result }

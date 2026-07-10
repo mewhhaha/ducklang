@@ -21,11 +21,26 @@ if (config_home === undefined) {
 const helix = config_home + "/helix";
 const languages_path = helix + "/languages.toml";
 const query_target = helix + "/runtime/queries/ix";
+const grammar_directory = helix + "/runtime/grammars";
 const grammar_path = repository + "/tree-sitter-ix";
 const query_source = grammar_path + "/queries";
+let grammar_extension: string;
+
+if (Deno.build.os === "linux") {
+  grammar_extension = "so";
+} else if (Deno.build.os === "darwin") {
+  grammar_extension = "dylib";
+} else if (Deno.build.os === "windows") {
+  grammar_extension = "dll";
+} else {
+  throw new Error("Unsupported operating system: " + Deno.build.os);
+}
+
+const grammar_target = grammar_directory + "/ix." + grammar_extension;
 
 await Deno.mkdir(helix, { recursive: true });
 await Deno.mkdir(query_target, { recursive: true });
+await Deno.mkdir(grammar_directory, { recursive: true });
 
 let languages = "";
 
@@ -83,5 +98,17 @@ for await (const entry of Deno.readDir(query_source)) {
   );
 }
 
+const grammar_build = new Deno.Command("tree-sitter", {
+  args: ["build", "--output", grammar_target, grammar_path],
+  stdout: "inherit",
+  stderr: "inherit",
+});
+const grammar_status = await grammar_build.spawn().status;
+
+if (!grammar_status.success) {
+  throw new Error("Failed to build the Ix Tree-sitter grammar");
+}
+
 console.log("Registered Ix in " + languages_path);
 console.log("Installed Ix queries in " + query_target);
+console.log("Installed Ix grammar in " + grammar_target);

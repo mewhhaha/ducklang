@@ -1,5 +1,5 @@
 import { assert_equals, assert_includes } from "../src/assert.ts";
-import { Source } from "../src/frontend.ts";
+import { IxHost, IxRunner, type IxValue, Source } from "../src/frontend.ts";
 import {
   compile_failure_examples,
   dependency_paths,
@@ -12,6 +12,11 @@ const decoder = new TextDecoder();
 
 for (const example of success_examples) {
   Deno.test("example runs: " + example.path, async () => {
+    if (example.route === "managed") {
+      await run_managed_example(example);
+      return;
+    }
+
     const wat = compile_example(example);
 
     for (const example_run of example.runs) {
@@ -52,17 +57,21 @@ for (const example of compile_failure_examples) {
 
 for (const example of trap_examples) {
   Deno.test("example traps: " + example.path, async () => {
-    const wat = Source.wat(Source.load_fragment_file(example.path));
-    let imports: WebAssembly.Imports = {};
-
-    if (example.imports !== undefined) {
-      imports = example.imports();
-    }
-
     let trapped = false;
 
     try {
-      await run_wat(wat, imports);
+      if (example.route === "managed") {
+        await run_managed_trap(example);
+      } else {
+        const wat = Source.wat(Source.load_fragment_file(example.path));
+        let imports: WebAssembly.Imports = {};
+
+        if (example.imports !== undefined) {
+          imports = example.imports();
+        }
+
+        await run_wat(wat, imports);
+      }
     } catch (error) {
       if (error instanceof WebAssembly.RuntimeError) {
         trapped = true;
@@ -110,14 +119,95 @@ function compile_example(example: SuccessExample): string {
     return Source.wat(Source.load_fragment_file(example.path));
   }
 
+  if (example.route === "managed") {
+    throw new Error("Managed examples compile through Source.artifact_file");
+  }
+
   example.route satisfies never;
   throw new Error("Unknown example route");
+}
+
+async function run_managed_example(example: SuccessExample): Promise<void> {
+  const artifact = Source.artifact_file(example.path);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const program = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    for (const example_run of example.runs) {
+      const init = example_run.init;
+
+      if (!init) {
+        throw new Error("Managed example is missing Init: " + example.path);
+      }
+
+      const value = IxRunner(init()).run(program);
+      assert_equals(managed_result(value, example.path), example_run.expected);
+    }
+  } finally {
+    program.dispose();
+  }
+}
+
+async function run_managed_trap(
+  example: (typeof trap_examples)[number],
+): Promise<void> {
+  const init = example.init;
+
+  if (!init) {
+    throw new Error("Managed trap example is missing Init: " + example.path);
+  }
+
+  const artifact = Source.artifact_file(example.path);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const program = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    IxRunner(init()).run(program);
+  } finally {
+    program.dispose();
+  }
+}
+
+function managed_result(value: IxValue, path: string): number | bigint {
+  if (
+    typeof value !== "object" || value === null || Array.isArray(value) ||
+    value instanceof Uint8Array || !("result" in value)
+  ) {
+    throw new Error("Managed example must return { result }: " + path);
+  }
+
+  const result = value.result;
+
+  if (typeof result !== "number" && typeof result !== "bigint") {
+    throw new Error("Managed example result must be numeric: " + path);
+  }
+
+  return result;
 }
 
 async function run_wat(
   wat: string,
   imports: WebAssembly.Imports,
 ): Promise<number | bigint> {
+  const bytes = await wasm_from_wat(wat);
+  const module = await WebAssembly.compile(bytes);
+  const instantiated = await WebAssembly.instantiate(module, imports);
+  const main = instantiated.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("Example module does not export main");
+  }
+
+  const result = main();
+
+  if (typeof result !== "number" && typeof result !== "bigint") {
+    throw new Error("Example main returned a non-numeric result");
+  }
+
+  return result;
+}
+
+async function wasm_from_wat(wat: string): Promise<Uint8Array<ArrayBuffer>> {
   const directory = await Deno.makeTempDir({ prefix: "binned-example-" });
   const wat_path = directory + "/example.wat";
   const wasm_path = directory + "/example.wasm";
@@ -138,20 +228,9 @@ async function run_wat(
     }
 
     const bytes = await Deno.readFile(wasm_path);
-    const instantiated = await WebAssembly.instantiate(bytes, imports);
-    const main = instantiated.instance.exports.main;
-
-    if (typeof main !== "function") {
-      throw new Error("Example module does not export main");
-    }
-
-    const result = main();
-
-    if (typeof result !== "number" && typeof result !== "bigint") {
-      throw new Error("Example main returned a non-numeric result");
-    }
-
-    return result;
+    const copy = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+    copy.set(bytes);
+    return copy;
   } finally {
     await Deno.remove(directory, { recursive: true });
   }

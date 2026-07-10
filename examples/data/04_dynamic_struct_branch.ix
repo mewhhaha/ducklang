@@ -1,11 +1,19 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
 
 const point_type = struct { x: Int, y: Int }
 
-let point: point_type = if flag() {
+flag <- Input.flag()
+let point: point_type = if flag {
   point_type { x: 40, y: 2 }
 } else {
   point_type { x: 20, y: 22 }
 }
 
-point.x + point.y
+let result: I32 = point.x + point.y
+return { result }

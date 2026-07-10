@@ -8,6 +8,11 @@ const PREC = {
   MULTIPLY: 7,
   UNARY: 8,
   POSTFIX: 9,
+  EFFECT_UNION: 1,
+  EFFECT_INTERSECTION: 2,
+  EFFECT_DIFFERENCE: 3,
+  TYPE_ARROW: 1,
+  TYPE_APPLICATION: 2,
 };
 
 module.exports = grammar({
@@ -25,18 +30,20 @@ module.exports = grammar({
     [$.union_case],
     [$.field_block, $.block],
     [$.parameter, $._primary_expression, $.linear_reference],
-    [$.parameter, $.type_reference],
+    [$.parameter, $._primary_expression, $._type_atom],
     [$.condition_expression, $.linear_reference],
     [$._primary_expression, $.shorthand_field],
-    [$.context_holder, $.resume_dup_statement],
   ],
 
   rules: {
     source_file: ($) =>
-      seq(
-        $.module_header,
-        repeat($._module_statement),
-        $.module_return_statement,
+      choice(
+        seq(
+          $.module_header,
+          repeat($._module_statement),
+          $.module_return_statement,
+        ),
+        repeat1($._module_statement),
       ),
 
     module_header: ($) =>
@@ -52,9 +59,8 @@ module.exports = grammar({
         $.effect_statement,
         $.declare_record_statement,
         $.import_statement,
-        $.host_import_statement,
-        $.context_function_statement,
-        $.state_binding_statement,
+        $.module_binding_statement,
+        $.effect_binding_statement,
         $.resume_dup_statement,
         $.binding_statement,
         $.type_pattern_statement,
@@ -68,8 +74,7 @@ module.exports = grammar({
 
     _statement: ($) =>
       choice(
-        $.context_function_statement,
-        $.state_binding_statement,
+        $.effect_binding_statement,
         $.resume_dup_statement,
         $.binding_statement,
         $.type_pattern_statement,
@@ -100,51 +105,68 @@ module.exports = grammar({
         "}",
       ),
 
-    context_function_statement: ($) =>
-      seq(
-        "let",
-        optional(field("recursive", "rec")),
-        choice(
-          field("context", $.context_holder),
-          field("context", $.context_annotation),
+    effect_row: ($) => $._effect_row_expression,
+
+    _effect_row_expression: ($) =>
+      choice(
+        $.effect_union_expression,
+        $.effect_intersection_expression,
+        $.effect_difference_expression,
+        $.parenthesized_effect_expression,
+        $.effect_family_reference,
+        $.effect_row_variable,
+        $.effect_operation_reference,
+      ),
+
+    effect_union_expression: ($) =>
+      prec.left(
+        PREC.EFFECT_UNION,
+        seq(
+          field("left", $._effect_row_expression),
+          "|",
+          field("right", $._effect_row_expression),
         ),
-        field("name", $.identifier),
-        "=",
-        field("value", $._expression),
       ),
 
-    context_holder: ($) => field("name", $.identifier),
-
-    context_annotation: ($) =>
-      seq(
-        "(",
-        field("holder", $.context_holder),
-        "::",
-        field("effects", $.effect_row),
-        ")",
+    effect_intersection_expression: ($) =>
+      prec.left(
+        PREC.EFFECT_INTERSECTION,
+        seq(
+          field("left", $._effect_row_expression),
+          "&",
+          field("right", $._effect_row_expression),
+        ),
       ),
 
-    effect_row: ($) =>
-      seq("{", optional(commaSep1($.effect_operation_reference)), "}"),
+    effect_difference_expression: ($) =>
+      prec.left(
+        PREC.EFFECT_DIFFERENCE,
+        seq(
+          field("left", $._effect_row_expression),
+          "\\",
+          field("right", $._effect_row_expression),
+        ),
+      ),
+
+    parenthesized_effect_expression: ($) =>
+      seq("(", field("value", $._effect_row_expression), ")"),
+
+    effect_family_reference: ($) => field("effect", $.effect_identifier),
+
+    effect_row_variable: ($) => field("name", $.row_variable),
 
     effect_operation_reference: ($) =>
       seq(
-        field("effect", $.identifier),
+        field("effect", $.effect_identifier),
         ".",
         field("operation", $.identifier),
       ),
 
-    state_binding_statement: ($) =>
+    effect_binding_statement: ($) =>
       seq(
-        "let",
-        "(",
-        "!",
-        field("context", $.context_holder),
-        ",",
-        field("value", choice($.identifier, $.unit_pattern)),
-        ")",
-        "=",
-        field("operation", $._expression),
+        field("name", choice($.identifier, $.unit_pattern)),
+        "<-",
+        field("value", $._expression),
       ),
 
     resume_dup_statement: ($) =>
@@ -176,14 +198,14 @@ module.exports = grammar({
       seq(
         "declare",
         "effect",
-        field("name", $.identifier),
+        field("name", $.effect_identifier),
         field("operations", $.effect_operation_block),
       ),
 
     effect_statement: ($) =>
       seq(
         "effect",
-        field("name", $.identifier),
+        field("name", $.effect_identifier),
         field("operations", $.effect_operation_block),
       ),
 
@@ -218,15 +240,12 @@ module.exports = grammar({
         field("path", $.string),
       ),
 
-    host_import_statement: ($) =>
+    module_binding_statement: ($) =>
       seq(
-        "host_import",
+        "module",
         field("name", $.identifier),
-        "from",
-        field("path", $.string),
-        field("parameters", $.host_parameter_list),
-        "=>",
-        field("result", $.host_result),
+        "=",
+        field("value", $._expression),
       ),
 
     host_parameter_list: ($) =>
@@ -245,7 +264,7 @@ module.exports = grammar({
             ),
           ),
         ),
-        field("type", $.type_reference),
+        field("type", alias($.identifier, $.type_reference)),
       ),
 
     host_result: ($) =>
@@ -256,7 +275,7 @@ module.exports = grammar({
             choice("scalar", "unique_heap", "frozen_shareable"),
           ),
         ),
-        field("type", $.type_reference),
+        field("type", alias($.identifier, $.type_reference)),
       ),
 
     return_statement: ($) => seq("return", field("value", $._expression)),
@@ -577,7 +596,7 @@ module.exports = grammar({
       prec(
         PREC.POSTFIX + 1,
         seq(
-          field("effect", $.identifier),
+          field("effect", $.effect_identifier),
           field("clauses", $.handler_clause_block),
         ),
       ),
@@ -657,7 +676,7 @@ module.exports = grammar({
       seq(
         field("name", $.identifier),
         ":",
-        field("type", $.type_reference),
+        field("type", alias($.identifier, $.type_reference)),
       ),
 
     type_pattern: ($) =>
@@ -674,9 +693,62 @@ module.exports = grammar({
 
     parenthesized_expression: ($) => seq("(", $._expression, ")"),
 
-    type_reference: ($) => $.identifier,
+    // Surface types use whitespace application (`List a`) and right
+    // associative arrows (`a -> b`).  Keep the existing type_reference node
+    // as the wrapper so simple annotations retain their old tree shape.
+    type_reference: ($) => $._type_expression,
+
+    _type_expression: ($) => choice($.function_type, $._type_application),
+
+    function_type: ($) =>
+      prec.right(
+        PREC.TYPE_ARROW,
+        seq(
+          field("parameter", $._type_application),
+          "->",
+          optional(field("effects", $.latent_effect_row)),
+          field("result", $._type_expression),
+        ),
+      ),
+
+    latent_effect_row: ($) =>
+      seq("<", field("row", $.effect_row), ">"),
+
+    _type_application: ($) => choice($.type_application, $._type_atom),
+
+    type_application: ($) =>
+      prec.left(
+        PREC.TYPE_APPLICATION,
+        seq(
+          field("constructor", $._type_atom),
+          repeat1(field("argument", $._type_atom)),
+        ),
+      ),
+
+    _type_atom: ($) =>
+      prec(
+        -1,
+        choice(
+          $.identifier,
+          $.unit_type,
+          $.type_tuple,
+          $.type_parenthesized,
+        ),
+      ),
+
+    unit_type: () => prec(-1, seq("(", ")")),
+
+    type_tuple: ($) =>
+      seq("(", commaSep2($._type_expression), ")"),
+
+    type_parenthesized: ($) =>
+      seq("(", field("value", $._type_expression), ")"),
 
     identifier: () => /[A-Za-z_][A-Za-z0-9_]*/,
+
+    effect_identifier: () => /[A-Z][A-Za-z0-9]*/,
+
+    row_variable: () => /[a-z_][A-Za-z0-9_]*/,
 
     number: () => /[0-9]+(i32|i64)?/,
 
@@ -688,4 +760,8 @@ module.exports = grammar({
 
 function commaSep1(rule) {
   return seq(rule, repeat(seq(",", rule)));
+}
+
+function commaSep2(rule) {
+  return seq(rule, ",", commaSep1(rule));
 }

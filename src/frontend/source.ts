@@ -75,9 +75,8 @@ Source.core = function core(input: string | SourceNode): CoreNode {
     source = input;
   }
 
-  source = elaborate_front_effects(source);
-  validate_source_linear(source);
-  return Core.from_source(source);
+  reject_public_host_imports(source);
+  return core_from_source_with_internal_imports(source);
 };
 
 Source.mod = function mod(input: string | SourceNode, name = "main"): ModNode {
@@ -104,6 +103,14 @@ Source.artifact = function artifact(
     source = input;
   }
 
+  return artifact_from_source(source, options, false);
+};
+
+function artifact_from_source(
+  source: SourceNode,
+  options: string | SourceArtifactOptions,
+  allow_internal_imports: boolean,
+): SourceArtifact {
   let name = "main";
 
   if (typeof options === "string") {
@@ -118,15 +125,35 @@ Source.artifact = function artifact(
     }
   }
 
+  if (!allow_internal_imports) {
+    reject_public_host_imports(source);
+  }
+
   const compiled_source = elaborate_front_effects(source);
   const abi = build_abi_manifest(source, compiled_source);
-  const mod = managed_abi_mod(Source.mod(compiled_source, name), abi);
+  const core = core_from_elaborated_source(compiled_source);
+  const mod = managed_abi_mod(Core.mod(core, name), abi);
   return {
     mod,
     wat: Mod.emit(mod),
     abi,
   };
-};
+}
+
+// These helpers are imported only by the backend fixture facade. They are not
+// re-exported from frontend.ts and do not make raw imports source syntax.
+export function core_from_source_with_internal_imports_for_test(
+  source: SourceNode,
+): CoreNode {
+  return core_from_source_with_internal_imports(source);
+}
+
+export function artifact_from_source_with_internal_imports_for_test(
+  source: SourceNode,
+  options: string | SourceArtifactOptions = "main",
+): SourceArtifact {
+  return artifact_from_source(source, options, true);
+}
 
 Source.ic_mod = function ic_mod(
   input: string | SourceNode,
@@ -215,6 +242,26 @@ function merge_host_interface(
   }
 
   return { ...source, declarations };
+}
+
+function core_from_source_with_internal_imports(source: SourceNode): CoreNode {
+  return core_from_elaborated_source(elaborate_front_effects(source));
+}
+
+function core_from_elaborated_source(source: SourceNode): CoreNode {
+  validate_source_linear(source);
+  return Core.from_source(source);
+}
+
+function reject_public_host_imports(source: SourceNode): void {
+  for (const stmt of source.statements) {
+    if (stmt.tag === "host_import") {
+      throw new Error(
+        "`host_import` is not source syntax; use `declare effect` and " +
+          "provide its resource through `Init`",
+      );
+    }
+  }
 }
 
 Source satisfies Format<SourceNode> & Emit<SourceNode, IcNode>;

@@ -269,14 +269,12 @@ function substitute_front_stmt(
         is_recursive: stmt.is_recursive,
         is_linear: stmt.is_linear,
         annotation: stmt.annotation,
-        effect_context: stmt.effect_context,
         value: substitute_front_expr(stmt.value, replacements),
       };
 
     case "state_bind":
       return {
         tag: "state_bind",
-        context: stmt.context,
         value_name: stmt.value_name,
         value: substitute_front_expr(stmt.value, replacements),
       };

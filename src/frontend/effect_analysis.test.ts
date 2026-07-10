@@ -11,17 +11,17 @@ declare effect Io {
 }
 declare Init { io: Io }
 
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 
-let App greet = () => {
-  let name = read_name()
-  let (!App, ()) = App.print(borrow name)
+let greet = () => {
+  name <- read_name()
+  _ <- Io.print(borrow name)
 }
 
-greet()
+_ <- greet()
 return {}
 `);
 
@@ -33,13 +33,11 @@ return {}
     functions: {
       read_name: {
         name: "read_name",
-        context: "Fx",
         effects: [{ effect: "Io", operation: "read" }],
         annotated: false,
       },
       greet: {
         name: "greet",
-        context: "App",
         effects: [
           { effect: "Io", operation: "print" },
           { effect: "Io", operation: "read" },
@@ -50,54 +48,56 @@ return {}
   });
 });
 
-Deno.test("effect analysis enforces annotations and pure functions", () => {
+Deno.test("effect analysis enforces rows and infers unannotated functions", () => {
   assert_throws(
     () =>
       analyze_front_effects(parse_source(`
 declare effect Io { read: () => Text, print: (Text) => Unit }
-let (Fx :: { Io.read }) bad = () => {
-  let (!Fx, ()) = Fx.print("hello")
+let bad: () -> <Io.read> Unit = () => {
+  _ <- Io.print("hello")
 }
 bad
 `)),
     "does not allow Io.print",
   );
 
-  assert_throws(
-    () =>
-      analyze_front_effects(parse_source(`
+  const inferred = analyze_front_effects(parse_source(`
 declare effect Io { read: () => Text }
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 let pure = () => read_name()
 pure
-`)),
-    "Pure function pure calls effects",
-  );
+`));
+
+  assert_equals(inferred.functions.pure, {
+    name: "pure",
+    effects: [{ effect: "Io", operation: "read" }],
+    annotated: false,
+  });
 });
 
-Deno.test("effect analysis requires qualified operations on collisions", () => {
+Deno.test("effect analysis requires declared effect qualifiers", () => {
   assert_throws(
     () =>
       analyze_front_effects(parse_source(`
 declare effect File { read: () => Text }
 declare effect Io { read: () => Text }
-let Fx read = () => {
-  let (!Fx, value) = Fx.read()
+let read = () => {
+  value <- Fx.read()
   value
 }
 read
 `)),
-    "Ambiguous effect operation read",
+    "Effect bind must call a declared effect operation",
   );
 
   const qualified = analyze_front_effects(parse_source(`
 declare effect File { read: () => Text }
 declare effect Io { read: () => Text }
-let Fx read = () => {
-  let (!Fx, value) = Fx.Io.read()
+let read = () => {
+  value <- Io.read()
   value
 }
 read
@@ -111,9 +111,9 @@ Deno.test("effect analysis discharges Ix operations through handler factories", 
   const analysis = analyze_front_effects(parse_source(`
 effect Counter { get: () => I32, add: (I32) => Unit }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
-  let (!Fx, ()) = Fx.Counter.add(1)
+let run = () => {
+  value <- Counter.get()
+  _ <- Counter.add(1)
   value
 }
 
@@ -143,14 +143,14 @@ Deno.test("effect analysis forwards partial handlers and keeps clauses deep", ()
   const analysis = analyze_front_effects(parse_source(`
 effect Counter { get: () => I32, add: (I32) => Unit }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
-  let (!Fx, ()) = Fx.Counter.add(value)
+let run = () => {
+  value <- Counter.get()
+  _ <- Counter.add(value)
 }
 
-let Fx inner = () => Counter {
+let inner = () => Counter {
     get: (!resume) => {
-      let (!Fx, ()) = Fx.Counter.add(1)
+      _ <- Counter.add(1)
       !resume(0)
     },
     return: (value) => value
@@ -165,19 +165,19 @@ try (try run() with inner()) with outer()
 `));
 
   assert_equals(analysis.module_effects, []);
-  assert_equals(analysis.functions.inner?.effects, []);
+  assert_equals(analysis.functions.inner, undefined);
 
   assert_throws(
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32, add: (I32) => Unit }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
-  let (!Fx, ()) = Fx.Counter.add(value)
+let run = () => {
+  value <- Counter.get()
+  _ <- Counter.add(value)
 }
-let Fx inner = () => Counter {
+let inner = () => Counter {
     get: (!resume) => {
-      let (!Fx, ()) = Fx.Counter.add(1)
+      _ <- Counter.add(1)
       !resume(0)
     },
     return: (value) => value
@@ -193,14 +193,14 @@ Deno.test("effect analysis exposes handler clause host dependencies", () => {
 declare effect Io { print: (Text) => Unit }
 effect Counter { get: () => I32 }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
+let run = () => {
+  value <- Counter.get()
   value
 }
 
-let (Fx :: { Io.print }) counter = () => Counter {
+let counter = () => Counter {
     get: (!resume) => {
-      let (!Fx, ()) = Fx.Io.print("get")
+      _ <- Io.print("get")
       !resume(0)
     },
     return: (value) => value
@@ -212,27 +212,6 @@ try run() with counter()
   assert_equals(analysis.module_effects, [
     { effect: "Io", operation: "print" },
   ]);
-
-  assert_throws(
-    () =>
-      analyze_front_effects(parse_source(`
-declare effect Io { read: () => Text, print: (Text) => Unit }
-effect Counter { get: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
-  value
-}
-let (Fx :: { Io.read }) counter = () => Counter {
-    get: (!resume) => {
-      let (!Fx, ()) = Fx.Io.print("get")
-      !resume(0)
-    },
-    return: (value) => value
-}
-try run() with counter()
-`)),
-    "on handler Counter does not allow Io.print",
-  );
 });
 
 Deno.test("effect analysis rejects invalid handler declarations", () => {
@@ -280,11 +259,11 @@ Deno.test("effect analysis enforces pure stable handler state", () => {
       analyze_front_effects(parse_source(`
 declare effect Io { read: () => I32 }
 effect Counter { get: () => I32 }
-let Fx read = () => {
-  let (!Fx, value) = Fx.Io.read()
+let read = () => {
+  value <- Io.read()
   value
 }
-let Fx counter = () => {
+let counter = () => {
   let count = read()
   Counter {
     get: (!resume) => !resume(count),
@@ -364,8 +343,8 @@ Deno.test("effect analysis rejects unresolved Ix operations at the root", () => 
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
+let run = () => {
+  value <- Counter.get()
   value
 }
 run()

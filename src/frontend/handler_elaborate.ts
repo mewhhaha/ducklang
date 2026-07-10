@@ -1,6 +1,5 @@
 import { expect } from "../expect.ts";
 import type {
-  EffectContext,
   EffectDeclaration,
   EffectOperation,
   EffectRef,
@@ -16,19 +15,16 @@ type HandlerExpr = Extract<FrontExpr, { tag: "handler" }>;
 
 type EffectIndex = {
   effects: Map<string, EffectDeclaration>;
-  operations: Map<string, EffectRef[]>;
 };
 
 type EffectFunction = {
   name: string;
-  context: EffectContext;
   value: Extract<FrontExpr, { tag: "lam" | "rec" }>;
 };
 
 type HandlerRecipe = {
   key: string;
   handler: HandlerExpr;
-  context: EffectContext | undefined;
   prefix: Stmt[];
   affine: boolean;
 };
@@ -82,6 +78,7 @@ type CompileCtx = {
   escaped_resumptions: Map<string, EscapedResume>;
   unavailable_state: Set<number>;
   values: Map<string, ValueKind>;
+  functions: Map<string, EffectFunction | undefined>;
   active_calls: Set<string>;
 };
 
@@ -315,7 +312,6 @@ function create_elaboration(
   options: HandlerElaborationOptions,
 ): Elaboration {
   const effects = new Map<string, EffectDeclaration>();
-  const operations = new Map<string, EffectRef[]>();
 
   for (const declaration of source.declarations || []) {
     if (declaration.tag !== "effect") {
@@ -323,22 +319,11 @@ function create_elaboration(
     }
 
     effects.set(declaration.name, declaration);
-
-    for (const operation of declaration.operations) {
-      const ref = { effect: declaration.name, operation: operation.name };
-      const refs = operations.get(operation.name);
-
-      if (refs) {
-        refs.push(ref);
-      } else {
-        operations.set(operation.name, [ref]);
-      }
-    }
   }
 
   return {
     source,
-    index: { effects, operations },
+    index: { effects },
     analysis: options.analysis,
     providers: options.providers,
     functions: new Map(),
@@ -364,12 +349,11 @@ function collect_top_level_facts(
     elaboration.static_names.add(stmt.name);
 
     if (
-      stmt.effect_context &&
-      (stmt.value.tag === "lam" || stmt.value.tag === "rec")
+      (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
+      function_binding_has_ix_effects(stmt.name, stmt.value, elaboration)
     ) {
       elaboration.functions.set(stmt.name, {
         name: stmt.name,
-        context: stmt.effect_context,
         value: stmt.value,
       });
     }
@@ -382,7 +366,6 @@ function collect_top_level_facts(
 
     const recipe = handler_recipe_from_expr(
       stmt.value,
-      stmt.effect_context,
       stmt.name,
       elaboration,
       new Set(),
@@ -428,6 +411,7 @@ function create_compile_ctx(
     escaped_resumptions: new Map(),
     unavailable_state: new Set(),
     values,
+    functions: new Map(),
     active_calls: new Set(),
   };
 }
@@ -469,9 +453,8 @@ function rewrite_top_level_statements(
 
     if (stmt.tag === "bind") {
       if (
-        stmt.effect_context &&
         (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
-        function_has_ix_effects(stmt.name, elaboration)
+        function_binding_has_ix_effects(stmt.name, stmt.value, elaboration)
       ) {
         continue;
       }
@@ -711,10 +694,8 @@ function compile_expr(
     }
 
     if (
-      expr.func.tag === "var" && function_has_ix_effects(
-        expr.func.name,
-        elaboration,
-      )
+      expr.func.tag === "var" &&
+      ix_function_for_name(expr.func.name, ctx, elaboration)
     ) {
       return compile_ix_function_call(expr, ctx, cont, elaboration);
     }
@@ -1183,9 +1164,34 @@ function compile_statement_at(
       return rest(next_ctx);
     }
 
+    let binding_ctx = ctx;
+
+    if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+      binding_ctx = clone_compile_ctx(ctx);
+
+      if (
+        nested_function_has_ix_effects(
+          stmt.name,
+          stmt.value,
+          ctx,
+          elaboration,
+        )
+      ) {
+        binding_ctx.functions.set(stmt.name, {
+          name: stmt.name,
+          value: stmt.value,
+        });
+        return rest(binding_ctx);
+      }
+
+      // Remember ordinary nested functions too: they shadow an effectful
+      // function with the same outer name for the rest of this lexical block.
+      binding_ctx.functions.set(stmt.name, undefined);
+    }
+
     return compile_expr(
       stmt.value,
-      ctx,
+      binding_ctx,
       (value, next_ctx) => {
         const rest_ctx = clone_compile_ctx(next_ctx);
         rest_ctx.values.set(stmt.name, kind_from_expr(value, rest_ctx));
@@ -1851,7 +1857,7 @@ function compile_ix_function_call(
   elaboration: Elaboration,
 ): CpsResult {
   expect(expr.func.tag === "var", "Expected named Ix effect function");
-  const binding = elaboration.functions.get(expr.func.name);
+  const binding = ix_function_for_name(expr.func.name, ctx, elaboration);
   expect(binding, "Missing Ix effect function: " + expr.func.name);
   expect(
     binding.value.tag === "lam",
@@ -1996,7 +2002,7 @@ function rewrite_pure_expr(
     );
     expect(
       !(expr.func.tag === "var" &&
-        function_has_ix_effects(expr.func.name, elaboration)),
+        ix_function_for_name(expr.func.name, ctx, elaboration)),
       "Ix effect function call requires CPS elaboration",
     );
     return {
@@ -2232,7 +2238,6 @@ function rewrite_pure_stmt(
 
 function handler_recipe_from_expr(
   expr: FrontExpr,
-  context: EffectContext | undefined,
   key: string,
   elaboration: Elaboration,
   seen: Set<string>,
@@ -2241,7 +2246,6 @@ function handler_recipe_from_expr(
     return {
       key,
       handler: expr,
-      context,
       prefix: [],
       affine: true,
     };
@@ -2294,7 +2298,6 @@ function handler_recipe_from_expr(
   const prefix = handler_result_prefix(body);
   const recipe = handler_recipe_from_expr(
     result,
-    factory.context,
     "__factory_" + elaboration.next_factory.toString(),
     elaboration,
     seen,
@@ -2323,7 +2326,6 @@ function resolve_handler_recipe(
 
   return handler_recipe_from_expr(
     expr,
-    undefined,
     "__inline_handler_" + elaboration.next_handler.toString(),
     elaboration,
     seen,
@@ -2348,7 +2350,6 @@ function find_handler_factory(
     ) {
       return {
         name,
-        context: stmt.effect_context || { name: "Fx", operations: undefined },
         value: stmt.value,
       };
     }
@@ -2433,6 +2434,271 @@ function function_has_ix_effects(
   return false;
 }
 
+function function_binding_has_ix_effects(
+  name: string,
+  value: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  elaboration: Elaboration,
+): boolean {
+  if (function_body_has_direct_ix_effects(value.body, elaboration)) {
+    return true;
+  }
+
+  return function_has_ix_effects(name, elaboration);
+}
+
+function nested_function_has_ix_effects(
+  name: string,
+  value: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  ctx: CompileCtx,
+  elaboration: Elaboration,
+): boolean {
+  if (function_body_has_direct_ix_effects(value.body, elaboration)) {
+    return true;
+  }
+
+  if (function_body_calls_ix_function(value.body, ctx, elaboration)) {
+    return true;
+  }
+
+  if (elaboration.functions.has(name)) {
+    return false;
+  }
+
+  return function_has_ix_effects(name, elaboration);
+}
+
+function function_body_has_direct_ix_effects(
+  body: FrontExpr,
+  elaboration: Elaboration,
+): boolean {
+  if (body.tag !== "block") {
+    return false;
+  }
+
+  return body.statements.some((stmt) => {
+    return statement_has_direct_ix_effects(stmt, elaboration);
+  });
+}
+
+function function_body_calls_ix_function(
+  body: FrontExpr,
+  ctx: CompileCtx,
+  elaboration: Elaboration,
+): boolean {
+  if (body.tag !== "block") {
+    return expr_calls_ix_function(body, ctx, elaboration);
+  }
+
+  return body.statements.some((stmt) => {
+    return stmt_calls_ix_function(stmt, ctx, elaboration);
+  });
+}
+
+function stmt_calls_ix_function(
+  stmt: Stmt,
+  ctx: CompileCtx,
+  elaboration: Elaboration,
+): boolean {
+  if (stmt.tag === "bind") {
+    if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+      return false;
+    }
+
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "resume_dup") {
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "assign") {
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "index_assign") {
+    return expr_calls_ix_function(stmt.index, ctx, elaboration) ||
+      expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "for_range") {
+    return expr_calls_ix_function(stmt.start, ctx, elaboration) ||
+      expr_calls_ix_function(stmt.end, ctx, elaboration) ||
+      expr_calls_ix_function(stmt.step, ctx, elaboration) ||
+      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+  }
+
+  if (stmt.tag === "for_collection") {
+    return expr_calls_ix_function(stmt.collection, ctx, elaboration) ||
+      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+  }
+
+  if (stmt.tag === "if_stmt") {
+    return expr_calls_ix_function(stmt.cond, ctx, elaboration) ||
+      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+  }
+
+  if (stmt.tag === "if_let_stmt") {
+    return expr_calls_ix_function(stmt.target, ctx, elaboration) ||
+      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+  }
+
+  if (stmt.tag === "type_check") {
+    return expr_calls_ix_function(stmt.target, ctx, elaboration);
+  }
+
+  if (stmt.tag === "return") {
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
+  if (stmt.tag === "expr") {
+    return expr_calls_ix_function(stmt.expr, ctx, elaboration);
+  }
+
+  return false;
+}
+
+function expr_calls_ix_function(
+  expr: FrontExpr,
+  ctx: CompileCtx,
+  elaboration: Elaboration,
+): boolean {
+  if (expr.tag === "app") {
+    if (
+      expr.func.tag === "var" &&
+      ix_function_for_name(expr.func.name, ctx, elaboration)
+    ) {
+      return true;
+    }
+
+    if (expr_calls_ix_function(expr.func, ctx, elaboration)) {
+      return true;
+    }
+
+    return expr.args.some((arg) => {
+      return expr_calls_ix_function(arg, ctx, elaboration);
+    });
+  }
+
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    return false;
+  }
+
+  if (expr.tag === "prim") {
+    return expr_calls_ix_function(expr.left, ctx, elaboration) ||
+      expr_calls_ix_function(expr.right, ctx, elaboration);
+  }
+
+  if (expr.tag === "block") {
+    return expr.statements.some((stmt) => {
+      return stmt_calls_ix_function(stmt, ctx, elaboration);
+    });
+  }
+
+  if (expr.tag === "comptime" || expr.tag === "captured") {
+    return expr_calls_ix_function(expr.expr, ctx, elaboration);
+  }
+
+  if (expr.tag === "borrow" || expr.tag === "freeze") {
+    return expr_calls_ix_function(expr.value, ctx, elaboration);
+  }
+
+  if (expr.tag === "scratch") {
+    return expr_calls_ix_function(expr.body, ctx, elaboration);
+  }
+
+  if (expr.tag === "with" || expr.tag === "struct_update") {
+    if (expr_calls_ix_function(expr.base, ctx, elaboration)) {
+      return true;
+    }
+
+    return expr.fields.some((field) => {
+      return expr_calls_ix_function(field.value, ctx, elaboration);
+    });
+  }
+
+  if (expr.tag === "struct_value") {
+    if (expr_calls_ix_function(expr.type_expr, ctx, elaboration)) {
+      return true;
+    }
+
+    return expr.fields.some((field) => {
+      return expr_calls_ix_function(field.value, ctx, elaboration);
+    });
+  }
+
+  if (expr.tag === "if") {
+    return expr_calls_ix_function(expr.cond, ctx, elaboration) ||
+      expr_calls_ix_function(expr.then_branch, ctx, elaboration) ||
+      expr_calls_ix_function(expr.else_branch, ctx, elaboration);
+  }
+
+  if (expr.tag === "if_let") {
+    return expr_calls_ix_function(expr.target, ctx, elaboration) ||
+      expr_calls_ix_function(expr.then_branch, ctx, elaboration) ||
+      expr_calls_ix_function(expr.else_branch, ctx, elaboration);
+  }
+
+  if (expr.tag === "field") {
+    return expr_calls_ix_function(expr.object, ctx, elaboration);
+  }
+
+  if (expr.tag === "index") {
+    return expr_calls_ix_function(expr.object, ctx, elaboration) ||
+      expr_calls_ix_function(expr.index, ctx, elaboration);
+  }
+
+  if (expr.tag === "union_case") {
+    if (expr.value && expr_calls_ix_function(expr.value, ctx, elaboration)) {
+      return true;
+    }
+
+    if (
+      expr.type_expr &&
+      expr_calls_ix_function(expr.type_expr, ctx, elaboration)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function statement_has_direct_ix_effects(
+  stmt: Stmt,
+  elaboration: Elaboration,
+): boolean {
+  if (stmt.tag === "state_bind") {
+    const operation = operation_from_state_bind(stmt, elaboration.index);
+    const effect = elaboration.index.effects.get(operation.effect);
+    expect(effect, "Missing effect declaration: " + operation.effect);
+    return effect.implementation === "ix";
+  }
+
+  if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
+    return stmt.body.some((item) => {
+      return statement_has_direct_ix_effects(item, elaboration);
+    });
+  }
+
+  return false;
+}
+
+function ix_function_for_name(
+  name: string,
+  ctx: CompileCtx,
+  elaboration: Elaboration,
+): EffectFunction | undefined {
+  if (ctx.functions.has(name)) {
+    return ctx.functions.get(name);
+  }
+
+  return elaboration.functions.get(name);
+}
+
 function resume_function_call(
   expr: Extract<FrontExpr, { tag: "app" }>,
   ctx: CompileCtx,
@@ -2501,7 +2767,6 @@ function resume_function_call(
 
   return {
     name: binding.name,
-    context: binding.effect_context || { name: "Fx", operations: undefined },
     value: binding.value,
   };
 }
@@ -2515,30 +2780,15 @@ function operation_from_state_bind(
   expect(func.tag === "field", "Effect state binding requires a method call");
   const object = func.object;
 
-  if (object.tag === "var" && object.name === stmt.context) {
-    const refs = index.operations.get(func.name) || [];
-    expect(refs.length > 0, "Unknown effect operation: " + func.name);
-    expect(
-      refs.length === 1,
-      "Ambiguous effect operation " + func.name + "; qualify its effect",
-    );
-    const ref = refs[0];
-    expect(ref, "Missing effect operation reference");
-    return ref;
-  }
-
-  if (
-    object.tag === "field" && object.object.tag === "var" &&
-    object.object.name === stmt.context
-  ) {
+  if (object.tag === "var") {
     const effect = index.effects.get(object.name);
     expect(effect, "Unknown effect: " + object.name);
     find_operation(effect, func.name);
-    return { effect: object.name, operation: func.name };
+    return { effect: effect.name, operation: func.name };
   }
 
   throw new Error(
-    "Effect state binding must call " + stmt.context + ".operation",
+    "Effect bind must call a declared effect operation",
   );
 }
 
@@ -2699,6 +2949,7 @@ function clone_compile_ctx(ctx: CompileCtx): CompileCtx {
     escaped_resumptions,
     unavailable_state: new Set(ctx.unavailable_state),
     values: new Map(ctx.values),
+    functions: new Map(ctx.functions),
     active_calls: new Set(ctx.active_calls),
   };
 }

@@ -1,11 +1,18 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
+
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
 
 const choice_type = union {
   add: Int,
   multiply: Int
 }
 
-let choice: choice_type = if flag() {
+flag <- Input.flag()
+let choice: choice_type = if flag {
   choice_type.add(21)
 } else {
   choice_type.multiply(2)
@@ -17,4 +24,5 @@ let operation = if let .add(amount) = choice {
   (value: Int) => value * 2
 }
 
-operation(21)
+let result: I32 = operation(21)
+return { result }

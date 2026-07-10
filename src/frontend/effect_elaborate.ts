@@ -14,10 +14,12 @@ import type {
   RecordDeclaration,
   Source,
   Stmt,
+  TypeExpr,
 } from "./ast.ts";
 import {
   analyze_front_effects,
   type FrontEffectAnalysis,
+  type FrontEffectFunction,
 } from "./effect_analysis.ts";
 import { elaborate_front_handlers } from "./handler_elaborate.ts";
 import { substitute_front_expr } from "./substitute.ts";
@@ -25,7 +27,6 @@ import { substitute_front_expr } from "./substitute.ts";
 type EffectElaboration = {
   analysis: FrontEffectAnalysis;
   effects: Map<string, EffectDeclaration>;
-  operations: Map<string, EffectRef[]>;
   records: Map<string, RecordDeclaration>;
   modules: Map<string, Extract<FrontExpr, { tag: "lam" }>>;
   effect_functions: Map<
@@ -134,7 +135,6 @@ export function elaborate_front_effects(source: Source): Source {
   const statements = rewrite_statements(
     handler_source.statements,
     providers,
-    undefined,
     elaboration,
   );
   materialize_module_result_type(statements, prefix);
@@ -383,8 +383,8 @@ function infer_result_type(
 }
 
 function create_elaboration(source: Source): EffectElaboration {
+  const analysis = analyze_front_effects(source);
   const effects = new Map<string, EffectDeclaration>();
-  const operations = new Map<string, EffectRef[]>();
   const records = new Map<string, RecordDeclaration>();
   const modules = new Map<string, Extract<FrontExpr, { tag: "lam" }>>();
   const effect_functions = new Map<
@@ -401,17 +401,6 @@ function create_elaboration(source: Source): EffectElaboration {
     }
 
     effects.set(declaration.name, declaration);
-
-    for (const operation of declaration.operations) {
-      const refs = operations.get(operation.name);
-      const ref = { effect: declaration.name, operation: operation.name };
-
-      if (refs) {
-        refs.push(ref);
-      } else {
-        operations.set(operation.name, [ref]);
-      }
-    }
   }
 
   for (const stmt of source.statements) {
@@ -431,12 +420,15 @@ function create_elaboration(source: Source): EffectElaboration {
       }
     }
   }
-  collect_effect_function_bindings(source.statements, effect_functions);
+  collect_effect_function_bindings(
+    source.statements,
+    effect_functions,
+    analysis,
+  );
 
   return {
-    analysis: analyze_front_effects(source),
+    analysis,
     effects,
-    operations,
     records,
     modules,
     effect_functions,
@@ -446,10 +438,11 @@ function create_elaboration(source: Source): EffectElaboration {
 function collect_effect_function_bindings(
   statements: Stmt[],
   result: EffectElaboration["effect_functions"],
+  analysis: FrontEffectAnalysis,
 ): void {
   for (const stmt of statements) {
     if (
-      stmt.tag === "bind" && stmt.effect_context &&
+      stmt.tag === "bind" && analysis.functions[stmt.name] &&
       (stmt.value.tag === "lam" || stmt.value.tag === "rec")
     ) {
       result.set(
@@ -465,7 +458,11 @@ function collect_effect_function_bindings(
       (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
       stmt.value.body.tag === "block"
     ) {
-      collect_effect_function_bindings(stmt.value.body.statements, result);
+      collect_effect_function_bindings(
+        stmt.value.body.statements,
+        result,
+        analysis,
+      );
     }
   }
 }
@@ -559,7 +556,6 @@ function effect_value_type(type_name: string): ValType {
 function rewrite_statements(
   statements: Stmt[],
   providers: Map<string, FrontExpr>,
-  context: string | undefined,
   elaboration: EffectElaboration,
 ): Stmt[] {
   const result: Stmt[] = [];
@@ -567,16 +563,11 @@ function rewrite_statements(
 
   for (const stmt of statements) {
     if (stmt.tag === "state_bind") {
-      expect(context, "Effect state binding requires a function context");
-      expect(
-        stmt.context === context,
-        "Effect state binding renews the wrong context: " + stmt.context,
-      );
-      const value = rewrite_expr(stmt.value, providers, context, elaboration);
+      const value = rewrite_expr(stmt.value, providers, elaboration);
       let annotation: string | undefined;
 
       if (stmt.value.tag === "app") {
-        const operation_ref = effect_call(stmt.value, context, elaboration);
+        const operation_ref = effect_call(stmt.value, elaboration);
 
         if (operation_ref) {
           const effect = elaboration.effects.get(operation_ref.effect);
@@ -640,7 +631,6 @@ function rewrite_statements(
           result.push(...rewrite_statements(
             body_statements,
             providers,
-            context,
             elaboration,
           ));
 
@@ -670,7 +660,6 @@ function rewrite_statements(
               value: rewrite_expr(
                 field.value,
                 providers,
-                context,
                 elaboration,
               ),
             });
@@ -688,7 +677,7 @@ function rewrite_statements(
         name: temp,
         is_linear: false,
         annotation: undefined,
-        value: rewrite_expr(stmt.value, providers, context, elaboration),
+        value: rewrite_expr(stmt.value, providers, elaboration),
       });
 
       for (const item of stmt.items) {
@@ -714,16 +703,16 @@ function rewrite_statements(
         continue;
       }
 
+      const function_fact = elaboration.analysis.functions[stmt.name];
+
       if (
-        stmt.effect_context &&
+        function_fact &&
         (stmt.value.tag === "lam" || stmt.value.tag === "rec")
       ) {
         if (stmt.value.tag === "lam") {
           continue;
         }
 
-        const function_fact = elaboration.analysis.functions[stmt.name];
-        expect(function_fact, "Missing inferred effects for " + stmt.name);
         const hidden = hidden_effect_params(function_fact.effects);
         const local_providers = new Map<string, FrontExpr>();
 
@@ -738,14 +727,21 @@ function rewrite_statements(
 
         result.push({
           ...stmt,
-          effect_context: undefined,
+          annotation: undefined,
+          type_annotation: undefined,
+          effectful: undefined,
           value: {
             ...stmt.value,
-            params: [...hidden, ...stmt.value.params],
+            params: [
+              ...hidden,
+              ...apply_function_parameter_types(
+                stmt.value.params,
+                stmt.type_annotation,
+              ),
+            ],
             body: rewrite_expr(
               stmt.value.body,
               local_providers,
-              stmt.effect_context.name,
               elaboration,
             ),
           },
@@ -753,18 +749,81 @@ function rewrite_statements(
         continue;
       }
 
+      if (stmt.type_annotation) {
+        expect(
+          stmt.type_annotation.tag === "arrow" &&
+            (stmt.value.tag === "lam" || stmt.value.tag === "rec"),
+          "Rich type annotation is not lowered yet on " + stmt.name,
+        );
+      }
+
+      let annotation = stmt.annotation;
+
+      if (stmt.type_annotation) {
+        annotation = undefined;
+      }
+
       result.push({
         ...stmt,
-        effect_context: undefined,
-        value: rewrite_expr(stmt.value, providers, context, elaboration),
+        annotation,
+        type_annotation: undefined,
+        effectful: undefined,
+        value: rewrite_expr(
+          apply_binding_function_type(stmt.value, stmt.type_annotation),
+          providers,
+          elaboration,
+        ),
       });
       continue;
     }
 
-    result.push(rewrite_stmt(stmt, providers, context, elaboration));
+    result.push(rewrite_stmt(stmt, providers, elaboration));
   }
 
   return result;
+}
+
+function apply_binding_function_type(
+  value: FrontExpr,
+  type: TypeExpr | undefined,
+): FrontExpr {
+  if (
+    !type || type.tag !== "arrow" ||
+    (value.tag !== "lam" && value.tag !== "rec")
+  ) {
+    return value;
+  }
+
+  return {
+    ...value,
+    params: apply_function_parameter_types(value.params, type),
+  };
+}
+
+function apply_function_parameter_types(
+  params: Param[],
+  type: TypeExpr | undefined,
+): Param[] {
+  if (!type || type.tag !== "arrow") {
+    return params;
+  }
+
+  let types: TypeExpr[] = [type.param];
+
+  if (type.param.tag === "tuple") {
+    types = type.param.items;
+  }
+
+  return params.map((param, index) => {
+    const param_type = types[index];
+    expect(param_type, "Missing function parameter type " + index.toString());
+
+    if (param.annotation || param_type.tag !== "name") {
+      return param;
+    }
+
+    return { ...param, annotation: param_type.name };
+  });
 }
 
 function hidden_effect_params(effects: EffectRef[]): Param[] {
@@ -791,45 +850,44 @@ function hidden_effect_params(effects: EffectRef[]): Param[] {
 function rewrite_stmt(
   stmt: Stmt,
   providers: Map<string, FrontExpr>,
-  context: string | undefined,
   elaboration: EffectElaboration,
 ): Stmt {
   if (stmt.tag === "assign") {
     return {
       ...stmt,
-      value: rewrite_expr(stmt.value, providers, context, elaboration),
+      value: rewrite_expr(stmt.value, providers, elaboration),
     };
   }
 
   if (stmt.tag === "index_assign") {
     return {
       ...stmt,
-      index: rewrite_expr(stmt.index, providers, context, elaboration),
-      value: rewrite_expr(stmt.value, providers, context, elaboration),
+      index: rewrite_expr(stmt.index, providers, elaboration),
+      value: rewrite_expr(stmt.value, providers, elaboration),
     };
   }
 
   if (stmt.tag === "expr") {
     return {
       tag: "expr",
-      expr: rewrite_expr(stmt.expr, providers, context, elaboration),
+      expr: rewrite_expr(stmt.expr, providers, elaboration),
     };
   }
 
   if (stmt.tag === "return") {
     return {
       tag: "return",
-      value: rewrite_expr(stmt.value, providers, context, elaboration),
+      value: rewrite_expr(stmt.value, providers, elaboration),
     };
   }
 
   if (stmt.tag === "for_range") {
     return {
       ...stmt,
-      start: rewrite_expr(stmt.start, providers, context, elaboration),
-      end: rewrite_expr(stmt.end, providers, context, elaboration),
-      step: rewrite_expr(stmt.step, providers, context, elaboration),
-      body: rewrite_statements(stmt.body, providers, context, elaboration),
+      start: rewrite_expr(stmt.start, providers, elaboration),
+      end: rewrite_expr(stmt.end, providers, elaboration),
+      step: rewrite_expr(stmt.step, providers, elaboration),
+      body: rewrite_statements(stmt.body, providers, elaboration),
     };
   }
 
@@ -839,33 +897,32 @@ function rewrite_stmt(
       collection: rewrite_expr(
         stmt.collection,
         providers,
-        context,
         elaboration,
       ),
-      body: rewrite_statements(stmt.body, providers, context, elaboration),
+      body: rewrite_statements(stmt.body, providers, elaboration),
     };
   }
 
   if (stmt.tag === "if_stmt") {
     return {
       ...stmt,
-      cond: rewrite_expr(stmt.cond, providers, context, elaboration),
-      body: rewrite_statements(stmt.body, providers, context, elaboration),
+      cond: rewrite_expr(stmt.cond, providers, elaboration),
+      body: rewrite_statements(stmt.body, providers, elaboration),
     };
   }
 
   if (stmt.tag === "if_let_stmt") {
     return {
       ...stmt,
-      target: rewrite_expr(stmt.target, providers, context, elaboration),
-      body: rewrite_statements(stmt.body, providers, context, elaboration),
+      target: rewrite_expr(stmt.target, providers, elaboration),
+      body: rewrite_statements(stmt.body, providers, elaboration),
     };
   }
 
   if (stmt.tag === "type_check") {
     return {
       ...stmt,
-      target: rewrite_expr(stmt.target, providers, context, elaboration),
+      target: rewrite_expr(stmt.target, providers, elaboration),
     };
   }
 
@@ -875,7 +932,6 @@ function rewrite_stmt(
 function rewrite_expr(
   expr: FrontExpr,
   providers: Map<string, FrontExpr>,
-  context: string | undefined,
   elaboration: EffectElaboration,
 ): FrontExpr {
   if (expr.tag === "unit") {
@@ -887,9 +943,9 @@ function rewrite_expr(
   }
 
   if (expr.tag === "app") {
-    const effect = effect_call(expr, context, elaboration);
+    const effect = effect_call(expr, elaboration);
     const args = expr.args.map((arg) => {
-      return rewrite_expr(arg, providers, context, elaboration);
+      return rewrite_expr(arg, providers, elaboration);
     });
 
     if (effect) {
@@ -908,16 +964,23 @@ function rewrite_expr(
       };
     }
 
-    const rewritten_func = rewrite_expr(
-      expr.func,
-      providers,
-      context,
-      elaboration,
-    );
+    let called: FrontEffectFunction | undefined;
 
     if (expr.func.tag === "var") {
-      const called = elaboration.analysis.functions[expr.func.name];
+      called = elaboration.analysis.functions[expr.func.name];
+    }
 
+    let rewritten_func = expr.func;
+
+    if (!called) {
+      rewritten_func = rewrite_expr(
+        expr.func,
+        providers,
+        elaboration,
+      );
+    }
+
+    if (expr.func.tag === "var") {
       if (called) {
         const hidden_args: FrontExpr[] = [];
         const seen = new Set<string>();
@@ -975,7 +1038,6 @@ function rewrite_expr(
           const body = rewrite_expr(
             effect_function.value.body,
             local_providers,
-            effect_function.effect_context?.name,
             elaboration,
           );
           return substitute_front_expr(body, replacements);
@@ -994,7 +1056,6 @@ function rewrite_expr(
       statements: rewrite_statements(
         expr.statements,
         providers,
-        context,
         elaboration,
       ),
     };
@@ -1003,76 +1064,74 @@ function rewrite_expr(
   if (expr.tag === "prim") {
     return {
       ...expr,
-      left: rewrite_expr(expr.left, providers, context, elaboration),
-      right: rewrite_expr(expr.right, providers, context, elaboration),
+      left: rewrite_expr(expr.left, providers, elaboration),
+      right: rewrite_expr(expr.right, providers, elaboration),
     };
   }
 
   if (expr.tag === "lam" || expr.tag === "rec") {
     return {
       ...expr,
-      body: rewrite_expr(expr.body, providers, context, elaboration),
+      body: rewrite_expr(expr.body, providers, elaboration),
     };
   }
 
   if (expr.tag === "comptime") {
     return {
       ...expr,
-      expr: rewrite_expr(expr.expr, providers, context, elaboration),
+      expr: rewrite_expr(expr.expr, providers, elaboration),
     };
   }
 
   if (expr.tag === "borrow" || expr.tag === "freeze") {
     return {
       ...expr,
-      value: rewrite_expr(expr.value, providers, context, elaboration),
+      value: rewrite_expr(expr.value, providers, elaboration),
     };
   }
 
   if (expr.tag === "scratch") {
     return {
       ...expr,
-      body: rewrite_expr(expr.body, providers, context, elaboration),
+      body: rewrite_expr(expr.body, providers, elaboration),
     };
   }
 
   if (expr.tag === "captured") {
     return {
       ...expr,
-      expr: rewrite_expr(expr.expr, providers, context, elaboration),
+      expr: rewrite_expr(expr.expr, providers, elaboration),
     };
   }
 
   if (expr.tag === "with" || expr.tag === "struct_update") {
     return {
       ...expr,
-      base: rewrite_expr(expr.base, providers, context, elaboration),
-      fields: rewrite_fields(expr.fields, providers, context, elaboration),
+      base: rewrite_expr(expr.base, providers, elaboration),
+      fields: rewrite_fields(expr.fields, providers, elaboration),
     };
   }
 
   if (expr.tag === "struct_value") {
     return {
       ...expr,
-      type_expr: rewrite_expr(expr.type_expr, providers, context, elaboration),
-      fields: rewrite_fields(expr.fields, providers, context, elaboration),
+      type_expr: rewrite_expr(expr.type_expr, providers, elaboration),
+      fields: rewrite_fields(expr.fields, providers, elaboration),
     };
   }
 
   if (expr.tag === "if") {
     return {
       ...expr,
-      cond: rewrite_expr(expr.cond, providers, context, elaboration),
+      cond: rewrite_expr(expr.cond, providers, elaboration),
       then_branch: rewrite_expr(
         expr.then_branch,
         providers,
-        context,
         elaboration,
       ),
       else_branch: rewrite_expr(
         expr.else_branch,
         providers,
-        context,
         elaboration,
       ),
     };
@@ -1081,17 +1140,15 @@ function rewrite_expr(
   if (expr.tag === "if_let") {
     return {
       ...expr,
-      target: rewrite_expr(expr.target, providers, context, elaboration),
+      target: rewrite_expr(expr.target, providers, elaboration),
       then_branch: rewrite_expr(
         expr.then_branch,
         providers,
-        context,
         elaboration,
       ),
       else_branch: rewrite_expr(
         expr.else_branch,
         providers,
-        context,
         elaboration,
       ),
     };
@@ -1100,23 +1157,34 @@ function rewrite_expr(
   if (expr.tag === "field") {
     return {
       ...expr,
-      object: rewrite_expr(expr.object, providers, context, elaboration),
+      object: rewrite_expr(expr.object, providers, elaboration),
     };
   }
 
   if (expr.tag === "index") {
     return {
       ...expr,
-      object: rewrite_expr(expr.object, providers, context, elaboration),
-      index: rewrite_expr(expr.index, providers, context, elaboration),
+      object: rewrite_expr(expr.object, providers, elaboration),
+      index: rewrite_expr(expr.index, providers, elaboration),
     };
   }
 
   if (expr.tag === "union_case" && expr.value) {
     return {
       ...expr,
-      value: rewrite_expr(expr.value, providers, context, elaboration),
+      value: rewrite_expr(expr.value, providers, elaboration),
     };
+  }
+
+  if (expr.tag === "var") {
+    const fact = elaboration.analysis.functions[expr.name];
+
+    if (fact) {
+      throw new Error(
+        "Effectful named function " + expr.name +
+          " cannot be used as a value yet; wrap it in an anonymous callback",
+      );
+    }
   }
 
   return expr;
@@ -1125,44 +1193,38 @@ function rewrite_expr(
 function rewrite_fields(
   fields: Field[],
   providers: Map<string, FrontExpr>,
-  context: string | undefined,
   elaboration: EffectElaboration,
 ): Field[] {
   return fields.map((field) => {
     return {
       ...field,
-      value: rewrite_expr(field.value, providers, context, elaboration),
+      value: rewrite_expr(field.value, providers, elaboration),
     };
   });
 }
 
 function effect_call(
   expr: Extract<FrontExpr, { tag: "app" }>,
-  context: string | undefined,
   elaboration: EffectElaboration,
 ): EffectRef | undefined {
-  if (!context || expr.func.tag !== "field") {
+  if (expr.func.tag !== "field") {
     return undefined;
   }
 
-  if (expr.func.object.tag === "var" && expr.func.object.name === context) {
-    const candidates = elaboration.operations.get(expr.func.name) || [];
-    expect(
-      candidates.length === 1,
-      "Ambiguous effect operation: " + expr.func.name,
-    );
-    return candidates[0];
-  }
+  if (expr.func.object.tag === "var") {
+    const effect = elaboration.effects.get(expr.func.object.name);
 
-  if (
-    expr.func.object.tag === "field" &&
-    expr.func.object.object.tag === "var" &&
-    expr.func.object.object.name === context
-  ) {
-    return {
-      effect: expr.func.object.name,
-      operation: expr.func.name,
-    };
+    if (effect) {
+      const operation_name = expr.func.name;
+      const operation = effect.operations.find((item) => {
+        return item.name === operation_name;
+      });
+      expect(
+        operation,
+        "Unknown effect operation: " + effect.name + "." + operation_name,
+      );
+      return { effect: effect.name, operation: operation.name };
+    }
   }
 
   return undefined;

@@ -1,9 +1,12 @@
-export type ExampleRoute = "ic" | "core";
+import type { IxInitValue } from "../src/frontend.ts";
+
+export type ExampleRoute = "ic" | "core" | "managed";
 
 export type ExampleRun = {
   name?: string;
   expected: number | bigint;
   imports?: () => WebAssembly.Imports;
+  init?: () => IxInitValue;
 };
 
 export type SuccessExample = {
@@ -20,7 +23,9 @@ export type CompileFailureExample = {
 
 export type TrapExample = {
   path: string;
+  route: "core" | "managed";
   imports?: () => WebAssembly.Imports;
+  init?: () => IxInitValue;
 };
 
 function run(expected: number | bigint): ExampleRun[] {
@@ -35,12 +40,12 @@ function flag_runs(
     {
       name: "flag_true",
       expected: when_true,
-      imports: () => ({ env: { flag: () => 1 } }),
+      init: () => ({ input: { flag: () => 1 } }),
     },
     {
       name: "flag_false",
       expected: when_false,
-      imports: () => ({ env: { flag: () => 0 } }),
+      init: () => ({ input: { flag: () => 0 } }),
     },
   ];
 }
@@ -75,7 +80,7 @@ export const success_examples: SuccessExample[] = [
   { path: "examples/basics/07_early_return.ix", route: "ic", runs: run(42) },
   {
     path: "examples/basics/08_dynamic_condition.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(21, 41),
   },
 
@@ -157,27 +162,27 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/functions/06_runtime_selected_closure.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(22, 42),
   },
   {
     path: "examples/functions/07_selected_i64_closure.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(22n, 42n),
   },
   {
     path: "examples/functions/08_no_else_fallthrough.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(42, 1),
   },
   {
     path: "examples/functions/09_nested_control_flow.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(42, 21),
   },
   {
     path: "examples/functions/10_union_selected_closure.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(42, 42),
   },
 
@@ -190,22 +195,22 @@ export const success_examples: SuccessExample[] = [
   { path: "examples/data/03_nested_structs.ix", route: "ic", runs: run(42) },
   {
     path: "examples/data/04_dynamic_struct_branch.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(42, 42),
   },
   {
     path: "examples/data/05_struct_runtime_index.ix",
-    route: "core",
+    route: "managed",
     runs: [
       {
         name: "first",
         expected: 20,
-        imports: () => ({ env: { index: () => 0 } }),
+        init: () => ({ input: { index: () => 0 } }),
       },
       {
         name: "second",
         expected: 22,
-        imports: () => ({ env: { index: () => 1 } }),
+        init: () => ({ input: { index: () => 1 } }),
       },
     ],
   },
@@ -237,7 +242,7 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/data/12_dynamic_text_branch.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(5, 3),
   },
 
@@ -245,17 +250,17 @@ export const success_examples: SuccessExample[] = [
   { path: "examples/loops/02_stepped_range.ix", route: "core", runs: run(42) },
   {
     path: "examples/loops/03_dynamic_range_bound.ix",
-    route: "core",
+    route: "managed",
     runs: [
       {
         name: "bound_four",
         expected: 6,
-        imports: () => ({ env: { bound: () => 4 } }),
+        init: () => ({ input: { bound: () => 4 } }),
       },
       {
         name: "bound_seven",
         expected: 21,
-        imports: () => ({ env: { bound: () => 7 } }),
+        init: () => ({ input: { bound: () => 7 } }),
       },
     ],
   },
@@ -295,10 +300,10 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/ownership_modules/05_host_ownership_contracts.ix",
-    route: "core",
+    route: "managed",
     runs: [{
       expected: 42,
-      imports: () => ({ env: { read: () => 20, take: () => 22 } }),
+      init: () => ({ host: { read: () => 20, take: () => 22 } }),
     }],
   },
   {
@@ -330,13 +335,16 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/showcases/04_result_pipeline.ix",
-    route: "core",
+    route: "managed",
     runs: flag_runs(42, 42),
   },
   {
     path: "examples/showcases/05_linear_host_session.ix",
-    route: "core",
-    runs: [{ expected: 42, imports: () => ({ env: { print: () => 42 } }) }],
+    route: "managed",
+    runs: [{
+      expected: 42,
+      init: () => ({ host: { print: () => 42 } }),
+    }],
   },
   {
     path: "examples/showcases/06_modular_score_application.ix",
@@ -409,18 +417,21 @@ export const compile_failure_examples: CompileFailureExample[] = [
 ];
 
 export const trap_examples: TrapExample[] = [
-  { path: "examples/failures/traps/01_explicit_panic.ix" },
+  { path: "examples/failures/traps/01_explicit_panic.ix", route: "core" },
   {
     path: "examples/failures/traps/02_text_out_of_bounds.ix",
-    imports: () => ({ env: { index: () => 2 } }),
+    route: "managed",
+    init: () => ({ input: { index: () => 2 } }),
   },
   {
     path: "examples/failures/traps/03_struct_index_out_of_bounds.ix",
-    imports: () => ({ env: { index: () => 3 } }),
+    route: "managed",
+    init: () => ({ input: { index: () => 3 } }),
   },
   {
     path: "examples/failures/traps/04_zero_range_step.ix",
-    imports: () => ({ env: { step: () => 0 } }),
+    route: "managed",
+    init: () => ({ input: { step: () => 0 } }),
   },
 ];
 
@@ -429,6 +440,7 @@ export const dependency_paths = [
   "examples/failures/compile/missing_import_dependency.ix",
   "examples/effects/01_inferred_io.ix",
   "examples/effects/02_annotated_effect_row.ix",
+  "examples/effects/03_cli_stdin_stdout.ix",
   "examples/effects/multi_file/host.ix",
   "examples/effects/multi_file/logger.ix",
   "examples/effects/multi_file/main.ix",

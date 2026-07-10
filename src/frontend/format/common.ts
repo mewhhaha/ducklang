@@ -1,4 +1,5 @@
 import type { Field, Param, TypeField, TypePattern } from "../ast.ts";
+import { format_type_expr } from "../type_expr.ts";
 
 export function format_field(
   field: Field,
@@ -35,7 +36,9 @@ export function format_params(params: Param[]): string {
 
     text += param.name;
 
-    if (param.annotation) {
+    if (param.type_annotation) {
+      text += ": " + format_type_expr(param.type_annotation);
+    } else if (param.annotation) {
       text += ": " + param.annotation;
     }
 

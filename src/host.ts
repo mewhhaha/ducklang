@@ -18,7 +18,6 @@ export type IxValue =
   | { tag: string; value?: IxValue };
 
 export type IxHostHandler = (...args: IxValue[]) => IxValue;
-export type IxHostHandlers = Record<string, Record<string, IxHostHandler>>;
 export type IxEffectObject = Record<string, IxHostHandler>;
 export type IxInitValue = Record<string, IxEffectObject>;
 
@@ -40,6 +39,18 @@ export type IxHostInstance = {
   dispose: () => void;
 };
 
+export type IxRunner = {
+  run: (program: IxHostInstance) => IxValue;
+};
+
+export function IxRunner(init: IxInitValue): IxRunner {
+  return {
+    run(program: IxHostInstance): IxValue {
+      return program.run(init);
+    },
+  };
+}
+
 type EffectResource = {
   effect: string;
   value: IxEffectObject;
@@ -50,7 +61,6 @@ export function IxHost() {}
 IxHost.instantiate = async function instantiate(
   source: BufferSource | WebAssembly.Module,
   manifest: AbiManifest,
-  handlers: IxHostHandlers = {},
 ): Promise<IxHostInstance> {
   check_manifest(manifest);
   let instance: WebAssembly.Instance | undefined;
@@ -70,12 +80,6 @@ IxHost.instantiate = async function instantiate(
         "imports." + name,
         "Missing ABI import",
       );
-    }
-
-    const handler = resolve_legacy_handler(abi_import, handlers);
-
-    if (!abi_import.effect && !abi_import.init && !handler) {
-      throw missing_handler_error(abi_import);
     }
 
     let module_imports = imports[abi_import.module];
@@ -108,57 +112,11 @@ IxHost.instantiate = async function instantiate(
 
       const runtime = abi_runtime(instance, manifest);
 
-      if (abi_import.effect) {
-        return invoke_effect_operation(
-          abi_import,
-          raw_args,
-          resources,
-          runtime,
-        );
-      }
-
-      if (!handler) {
-        throw missing_handler_error(abi_import);
-      }
-
-      const args: IxValue[] = [];
-
-      for (let index = 0; index < abi_import.params.length; index += 1) {
-        const param = abi_import.params[index];
-        const raw = raw_args[index];
-
-        if (!param) {
-          throw new IxAbiError(
-            "invalid_manifest",
-            abi_import.name,
-            "Missing ABI parameter",
-          );
-        }
-
-        args.push(runtime.decode_raw(
-          param.type,
-          raw,
-          abi_import.name + ".arg" + index.toString(),
-        ));
-      }
-
-      let result: IxValue;
-
-      try {
-        result = invoke_sync_handler(
-          handler,
-          args,
-          abi_import.name,
-          undefined,
-        );
-      } finally {
-        free_transferred_params(abi_import, raw_args, runtime);
-      }
-
-      return runtime.encode_raw(
-        abi_import.result.type,
-        result,
-        abi_import.name + ".result",
+      return invoke_effect_operation(
+        abi_import,
+        raw_args,
+        resources,
+        runtime,
       );
     };
   }
@@ -341,27 +299,6 @@ function invoke_init_getter(
   }
 
   return handle;
-}
-
-function resolve_legacy_handler(
-  abi_import: AbiImport,
-  handlers: IxHostHandlers,
-): IxHostHandler | undefined {
-  const module_handlers = handlers[abi_import.module];
-
-  if (!module_handlers) {
-    return undefined;
-  }
-
-  return module_handlers[abi_import.field];
-}
-
-function missing_handler_error(abi_import: AbiImport): IxAbiError {
-  return new IxAbiError(
-    "missing_handler",
-    abi_import.module + "." + abi_import.field,
-    "Missing Ix host handler",
-  );
 }
 
 function invoke_sync_handler(
@@ -595,12 +532,35 @@ function validate_effect_object(
 }
 
 function check_manifest(manifest: AbiManifest): void {
-  if (manifest.abi_version !== "ix-js-1") {
+  if (manifest.abi_version !== "ix-js-2") {
     throw new IxAbiError(
       "version_mismatch",
       "abi_version",
-      "Expected ix-js-1, got " + String(manifest.abi_version),
+      "Expected ix-js-2, got " + String(manifest.abi_version),
     );
+  }
+
+  for (const import_name in manifest.imports) {
+    const abi_import = manifest.imports[import_name];
+
+    if (!abi_import || abi_import.name !== import_name) {
+      throw new IxAbiError(
+        "invalid_manifest",
+        "imports." + import_name,
+        "Missing import or import name mismatch",
+      );
+    }
+
+    if (
+      (!abi_import.effect && !abi_import.init) ||
+      (abi_import.effect !== undefined && abi_import.init !== undefined)
+    ) {
+      throw new IxAbiError(
+        "invalid_manifest",
+        "imports." + import_name,
+        "Managed ABI imports must reference exactly one effect or Init field",
+      );
+    }
   }
 
   for (const effect_name in manifest.effects) {

@@ -1,0 +1,59 @@
+==================
+Surface function types
+==================
+
+let map: (List a, a -> <Stdin | e> b) -> <e> List b = () => ()
+let nested: a -> b -> c = () => ()
+let unit: () -> Text = () => ()
+
+---
+
+(source_file
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (function_type
+        parameter: (type_tuple
+          (type_application
+            constructor: (identifier)
+            argument: (identifier))
+          (function_type
+            parameter: (identifier)
+            effects: (latent_effect_row
+              row: (effect_row
+                (effect_union_expression
+                  left: (effect_family_reference
+                    effect: (effect_identifier))
+                  right: (effect_row_variable
+                    name: (row_variable)))))
+            result: (identifier)))
+        effects: (latent_effect_row
+          row: (effect_row
+            (effect_row_variable
+              name: (row_variable))))
+        result: (type_application
+          constructor: (identifier)
+          argument: (identifier))))
+    value: (arrow_function
+      parameters: (parameter_list)
+      body: (unit_pattern)))
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (function_type
+        parameter: (identifier)
+        result: (function_type
+          parameter: (identifier)
+          result: (identifier))))
+    value: (arrow_function
+      parameters: (parameter_list)
+      body: (unit_pattern)))
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (function_type
+        parameter: (unit_type)
+        result: (identifier)))
+    value: (arrow_function
+      parameters: (parameter_list)
+      body: (unit_pattern))))

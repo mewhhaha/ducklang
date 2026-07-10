@@ -121,8 +121,7 @@ function resolve_imports(
 
     for (const imported_stmt of imported.statements) {
       if (
-        imported_stmt.tag !== "bind" && imported_stmt.tag !== "type_check" &&
-        imported_stmt.tag !== "host_import"
+        imported_stmt.tag !== "bind" && imported_stmt.tag !== "type_check"
       ) {
         throw new Error(
           "Import file can only expose top-level bindings: " + stmt.path,

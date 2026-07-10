@@ -1,0 +1,236 @@
+import { expect } from "../expect.ts";
+import type { EffectRowExpr, Token, TypeExpr } from "./ast.ts";
+import { is_snake_case } from "./names.ts";
+import { format_effect_row } from "./effect_row.ts";
+
+export function parse_type_expr(tokens: Token[]): TypeExpr {
+  const parser = new TypeExprParser(tokens);
+  const type = parser.parse_arrow();
+  expect(parser.is_end(), "Unexpected token in type annotation");
+  return type;
+}
+
+export function format_type_expr(type: TypeExpr): string {
+  return format(type, 0);
+}
+
+class TypeExprParser {
+  private index = 0;
+
+  constructor(private tokens: Token[]) {}
+
+  is_end(): boolean {
+    const token = this.peek();
+    return !token || token.kind === "eof";
+  }
+
+  parse_arrow(): TypeExpr {
+    const param = this.parse_apply();
+
+    if (!this.match_symbol("->")) {
+      return param;
+    }
+
+    let effects: EffectRowExpr | undefined;
+
+    if (this.match_symbol("<")) {
+      effects = this.parse_effect_row_union();
+      this.expect_symbol(">");
+    }
+
+    return {
+      tag: "arrow",
+      param,
+      effects,
+      result: this.parse_arrow(),
+    };
+  }
+
+  private parse_apply(): TypeExpr {
+    let type = this.parse_atom();
+
+    while (this.starts_atom()) {
+      type = { tag: "apply", func: type, arg: this.parse_atom() };
+    }
+
+    return type;
+  }
+
+  private parse_atom(): TypeExpr {
+    if (this.match_symbol("(")) {
+      if (this.match_symbol(")")) {
+        return { tag: "tuple", items: [] };
+      }
+
+      const first = this.parse_arrow();
+
+      if (this.match_symbol(")")) {
+        return first;
+      }
+
+      this.expect_symbol(",");
+      const items = [first];
+
+      while (true) {
+        items.push(this.parse_arrow());
+
+        if (this.match_symbol(")")) {
+          break;
+        }
+
+        this.expect_symbol(",");
+      }
+
+      return { tag: "tuple", items };
+    }
+
+    const token = this.peek();
+    expect(token && token.kind === "name", "Expected type name");
+    this.index += 1;
+    return { tag: "name", name: token.text };
+  }
+
+  private parse_effect_row_union(): EffectRowExpr {
+    let row = this.parse_effect_row_intersection();
+
+    while (this.match_symbol("|")) {
+      row = {
+        tag: "union",
+        left: row,
+        right: this.parse_effect_row_intersection(),
+      };
+    }
+
+    return row;
+  }
+
+  private parse_effect_row_intersection(): EffectRowExpr {
+    let row = this.parse_effect_row_difference();
+
+    while (this.match_symbol("&")) {
+      row = {
+        tag: "intersection",
+        left: row,
+        right: this.parse_effect_row_difference(),
+      };
+    }
+
+    return row;
+  }
+
+  private parse_effect_row_difference(): EffectRowExpr {
+    let row = this.parse_effect_row_atom();
+
+    while (this.match_symbol("\\")) {
+      row = {
+        tag: "difference",
+        left: row,
+        right: this.parse_effect_row_atom(),
+      };
+    }
+
+    return row;
+  }
+
+  private parse_effect_row_atom(): EffectRowExpr {
+    if (this.match_symbol("(")) {
+      const value = this.parse_effect_row_union();
+      this.expect_symbol(")");
+      return { tag: "group", value };
+    }
+
+    const token = this.peek();
+    expect(token && token.kind === "name", "Expected effect row member");
+    this.index += 1;
+
+    if (is_snake_case(token.text)) {
+      return { tag: "variable", name: token.text };
+    }
+
+    expect(
+      /^[A-Z][A-Za-z0-9]*$/.test(token.text),
+      "Effect name must use PascalCase: " + token.text,
+    );
+
+    if (!this.match_symbol(".")) {
+      return { tag: "family", name: token.text };
+    }
+
+    const operation = this.peek();
+    expect(
+      operation && operation.kind === "name" && is_snake_case(operation.text),
+      "Effect operation must use snake_case",
+    );
+    this.index += 1;
+    return { tag: "operation", effect: token.text, operation: operation.text };
+  }
+
+  private starts_atom(): boolean {
+    const token = this.peek();
+
+    return token !== undefined &&
+      (token.kind === "name" ||
+        (token.kind === "symbol" && token.text === "("));
+  }
+
+  private match_symbol(text: string): boolean {
+    const token = this.peek();
+
+    if (!token || token.kind !== "symbol" || token.text !== text) {
+      return false;
+    }
+
+    this.index += 1;
+    return true;
+  }
+
+  private expect_symbol(text: string): void {
+    expect(
+      this.match_symbol(text),
+      "Expected `" + text + "` in type annotation",
+    );
+  }
+
+  private peek(): Token | undefined {
+    return this.tokens[this.index];
+  }
+}
+
+function format(type: TypeExpr, parent_precedence: number): string {
+  if (type.tag === "name") {
+    return type.name;
+  }
+
+  if (type.tag === "tuple") {
+    return "(" + type.items.map((item) => format(item, 0)).join(", ") + ")";
+  }
+
+  if (type.tag === "apply") {
+    const precedence = 2;
+    const text = format(type.func, precedence) + " " +
+      format(type.arg, precedence + 1);
+    return parenthesize(text, precedence, parent_precedence);
+  }
+
+  const precedence = 1;
+  let text = format(type.param, precedence + 1) + " ->";
+
+  if (type.effects) {
+    text += " <" + format_effect_row(type.effects) + ">";
+  }
+
+  text += " " + format(type.result, precedence);
+  return parenthesize(text, precedence, parent_precedence);
+}
+
+function parenthesize(
+  text: string,
+  precedence: number,
+  parent_precedence: number,
+): string {
+  if (precedence < parent_precedence) {
+    return "(" + text + ")";
+  }
+
+  return text;
+}

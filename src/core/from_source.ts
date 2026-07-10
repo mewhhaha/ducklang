@@ -25,6 +25,13 @@ export function core_from_source(source: SourceNode): Core {
   const host_imports: Record<string, CoreHostImport> = {};
   const statements: CoreStmt[] = [];
 
+  // Effect elaboration places generated Wasm imports before source bindings.
+  // Gather global compile-time type values first so rich import contracts can
+  // resolve their struct and union ownership reasons independent of order.
+  for (const stmt of source.statements) {
+    record_core_from_source_type_value(stmt, ctx);
+  }
+
   for (const stmt of source.statements) {
     if (stmt.tag === "host_import") {
       ctx.host_import_names.add(stmt.value.name);

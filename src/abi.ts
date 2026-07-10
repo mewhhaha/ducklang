@@ -1,12 +1,6 @@
-import type {
-  FrontExpr,
-  FrontHostImportArgContract,
-  FrontHostImportOwnerReason,
-  Source,
-} from "./frontend/ast.ts";
+import type { FrontExpr, Source } from "./frontend/ast.ts";
 import { analyze_front_effects } from "./frontend/effect_analysis.ts";
 import { align_to } from "./core/memory.ts";
-import type { ValType } from "./op.ts";
 import type { Func, Mod } from "./mod.ts";
 import {
   allocator_free_head,
@@ -14,7 +8,7 @@ import {
 } from "./core/runtime_allocator.ts";
 import { closure_heap_global } from "./core/closure_runtime.ts";
 
-export const ix_abi_version = "ix-js-1";
+export const ix_abi_version = "ix-js-2";
 
 export type AbiOwnership =
   | "scalar"
@@ -98,7 +92,6 @@ export type AbiEffectRef = {
 };
 
 export type AbiEffectFunctionRequirement = {
-  context: string;
   effects: AbiEffectRef[];
 };
 
@@ -125,7 +118,7 @@ export type AbiEntry = {
 
 export type AbiManifest = {
   abi_name: "ix-js";
-  abi_version: "ix-js-1";
+  abi_version: "ix-js-2";
   target: {
     profile: "core-3-browser";
     pointer: "wasm32";
@@ -346,63 +339,6 @@ export function build_abi_manifest(
     effects[declaration.name] = { name: declaration.name, operations };
   }
 
-  for (const stmt of source.statements) {
-    if (stmt.tag !== "host_import") {
-      continue;
-    }
-
-    if (imports[stmt.value.name]) {
-      throw new Error("Duplicate ABI import name: " + stmt.value.name);
-    }
-
-    const params = [];
-
-    for (let index = 0; index < stmt.value.params.length; index += 1) {
-      const val_type = stmt.value.params[index];
-      const contract = stmt.value.args[index];
-
-      if (!val_type || !contract) {
-        throw new Error(
-          "Missing ABI host parameter " + index.toString() + " for " +
-            stmt.value.name,
-        );
-      }
-
-      params.push({
-        type: abi_contract_type(contract, val_type, values, resolve_named),
-        ownership: contract.tag,
-      });
-    }
-
-    let result_type: AbiTypeRef = abi_scalar_ref(stmt.value.result);
-    let result_ownership: AbiOwnership = "scalar";
-
-    if (
-      stmt.value.result_owner && stmt.value.result_owner.tag !== "scalar"
-    ) {
-      if (stmt.value.result_owner.reason === "freeze") {
-        throw new Error(
-          "Managed ABI frozen host result requires an explicit value type",
-        );
-      }
-
-      result_type = abi_owner_type(
-        stmt.value.result_owner.reason,
-        values,
-        resolve_named,
-      );
-      result_ownership = stmt.value.result_owner.tag;
-    }
-
-    imports[stmt.value.name] = {
-      name: stmt.value.name,
-      module: stmt.value.module,
-      field: stmt.value.field,
-      params,
-      result: { type: result_type, ownership: result_ownership },
-    };
-  }
-
   const init = abi_init(source, effects, imports);
   const requirements = abi_effect_requirements(source, effects);
 
@@ -450,10 +386,11 @@ function abi_effect_requirements(
     });
 
     if (host_effects.length > 0) {
-      functions[name] = {
-        context: requirement.context,
+      const item: AbiEffectFunctionRequirement = {
         effects: host_effects,
       };
+
+      functions[name] = item;
     }
   }
 
@@ -762,43 +699,6 @@ function collect_type_values(source: Source): Map<string, FrontExpr> {
   return values;
 }
 
-function abi_contract_type(
-  contract: FrontHostImportArgContract,
-  val_type: ValType,
-  values: Map<string, FrontExpr>,
-  resolve_named: (name: string) => AbiType,
-): AbiTypeRef {
-  if (contract.tag === "scalar") {
-    return abi_scalar_ref(val_type);
-  }
-
-  return abi_owner_type(contract.reason, values, resolve_named);
-}
-
-function abi_owner_type(
-  reason: FrontHostImportOwnerReason,
-  values: Map<string, FrontExpr>,
-  resolve_named: (name: string) => AbiType,
-): AbiTypeRef {
-  if (reason === "text") {
-    return { tag: "text" };
-  }
-
-  if (reason === "runtime_aggregate" || reason === "runtime_union") {
-    throw new Error(
-      "Managed ABI requires a named struct or union instead of " + reason,
-    );
-  }
-
-  if (reason === "closure") {
-    throw new Error("Managed ABI closure contracts require a signature");
-  }
-
-  const type = abi_type_ref(reason.name, values, resolve_named);
-  resolve_named(reason.name);
-  return type;
-}
-
 function abi_type_ref(
   name: string,
   values: Map<string, FrontExpr>,
@@ -846,19 +746,6 @@ function reject_resume_abi_type(name: string): void {
   if (name === "Resume") {
     throw new Error("Managed ABI cannot expose Resume values");
   }
-}
-
-function abi_scalar_ref(value_type: ValType): AbiTypeRef {
-  if (value_type === "i32") {
-    return { tag: "i32" };
-  }
-
-  if (value_type === "i64") {
-    return { tag: "i64" };
-  }
-
-  value_type satisfies never;
-  throw new Error("Unsupported ABI scalar type");
 }
 
 function abi_type_ref_layout(

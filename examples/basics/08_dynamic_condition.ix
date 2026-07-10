@@ -1,9 +1,17 @@
-host_import flag from "env.flag" () => I32
+module (!init: Init) where
 
-let score = if flag() {
+declare effect Input {
+  flag: () => I32
+}
+
+declare Init { input: Input }
+
+flag <- Input.flag()
+let score = if flag {
   10
 } else {
   20
 }
 
-score * 2 + 1
+let result = score * 2 + 1
+return { result }

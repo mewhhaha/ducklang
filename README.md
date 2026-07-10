@@ -43,12 +43,13 @@ just examples
 Install the repository's Tree-sitter grammar and Helix queries for `.ix` files:
 
 ```sh
-just helix-register
+just install
 ```
 
 This adds a managed `ix` block to `~/.config/helix/languages.toml`, installs
 highlight, indentation, locals, textobject, symbol, and rainbow-bracket queries,
-and builds the grammar. Run `just helix-grammar` to validate the grammar without
+and builds the grammar. `just helix-register` remains available as the explicit
+Helix-specific alias. Run `just helix-grammar` to validate the grammar without
 changing Helix configuration.
 
 The tests use Deno and expect `wat2wasm` to be available for Wasm integration
@@ -284,27 +285,40 @@ declare Init {
 }
 ```
 
-An uppercase context holder on a function asks the compiler to infer that
-function's minimal operation row. A row annotation is an upper bound:
+Unannotated functions infer their minimal operation row. Function types use
+`-> <row>` for an explicit upper bound; a plain `->` is pure:
 
 ```txt
-let Fx read_name = () => {
-  let (!Fx, name) = Fx.read()
+let read_name = () => {
+  name <- Io.read()
   name
 }
 
-let (Fx :: { Io.read, Io.print }) greet = () => {
-  let name = read_name()
-  let (!Fx, ()) = Fx.print(borrow name)
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- read_name()
+  _ <- Io.print(borrow name)
   name
 }
 ```
 
-Primitive effect operations explicitly renew the holder with
-`let (!Fx, value) = ...`. Compatible context is forwarded through ordinary
-calls, and pure functions omit a holder. Imported files are loaded first and
-then instantiated with an explicitly narrowed context record; an import does not
-grant authority by itself.
+`<-` executes an effectful computation and binds its result; `_ <-` discards a
+`Unit` result. Ordinary `let value = ...` remains pure. Effect operations are
+always qualified by their declared effect (for example, `Io.read()`). The
+compiler retains the linear context-renewal proof internally, so application
+code does not thread an effect token explicitly.
+
+Effect annotations are operation sets. A family such as `Io` expands to all of
+its operations. `|` is union, `&` is intersection, and `\` is difference. Rows
+propagate through calls, and a row annotation is an upper bound on the inferred
+minimal row. Type constructors compose by whitespace application, arrows
+associate right, and lowercase row variables propagate callback effects:
+
+```txt
+(List a, a -> <e> b) -> <e> List b
+```
+
+Imported files are loaded first and then instantiated with an explicitly
+narrowed context record; an import does not grant authority by itself.
 
 The entry module receives the sole root authority from JavaScript:
 
@@ -313,7 +327,7 @@ module (!init: Init) where
 
 import console from "./console.ix"
 const { greet } = console({ io: !init.io })
-let result = greet("Ada")
+result <- greet("Ada")
 
 return { result }
 ```
@@ -345,11 +359,11 @@ let result = try run() with counter
 Effect implementation values are affine. Handlers are deep, omitted clauses
 forward outward, and the matched handler is inactive while a clause runs.
 Resumptions may abort, resume once, or be duplicated with checked
-`let (!left, !right) = dup !resume` when all captures are copy/share safe.
-Plain effects and resumptions remain internal to one Ix run and never appear in
-the managed JavaScript manifest.
+`let (!left, !right) = dup !resume` when all captures are copy/share safe. Plain
+effects and resumptions remain internal to one Ix run and never appear in the
+managed JavaScript manifest.
 
-## Ownership And Low-Level Host Imports
+## Ownership And Host Effects
 
 Linear bindings and parameters are marked with `!`.
 
@@ -366,14 +380,22 @@ freeze value
 scratch { statements }
 ```
 
-`host_import` remains the explicit low-level Wasm boundary. It declares Wasm
-imports plus scalar or ownership contracts:
+Host boundaries are declared as effects and supplied through `Init`. Operation
+parameters carry the same scalar and ownership contracts used by Core:
 
 ```txt
-host_import log from "env.log"(Int) => Int
-host_import print from "env.print"(bounded_borrow Text) => Int
-host_import make_text from "env.make_text"(Int) => unique_heap Text
+declare effect Console {
+  log: (I32) => I32
+  print: (bounded_borrow Text) => I32
+  make_text: (I32) => unique_heap Text
+}
+
+declare Init { console: Console }
 ```
+
+The compiler turns these operations into typed Wasm imports internally. There is
+no user-written raw-import statement; this keeps host authority visible in
+effect rows and makes the complete handler set swappable through `IxRunner`.
 
 ## Compiler Entry Points
 
@@ -386,7 +408,6 @@ Source.ic_wat(text); // Source -> IC route -> WAT
 Source.core(text); // Source -> structured Core
 Source.mod(text, "main"); // Source -> Core -> Mod
 Source.wat(text, "main"); // Source -> Core -> WAT
-Source.raw_wat(text, "main"); // explicit raw Wasm ABI
 Source.artifact(text, "main"); // managed module, WAT, and ABI manifest
 Source.artifact_file("main.ix", {
   host_interface: "host.ix",
@@ -395,17 +416,17 @@ Source.artifact_file("main.ix", {
 
 Use the IC route for small scalar examples and open terms like `input + 1`. Use
 the Core route for larger programs with structured statements, loops, runtime
-text, host imports, closures, and aggregate behavior.
+text, host effects, closures, and aggregate behavior.
 
 ### Managed JavaScript host ABI
 
-`Source.artifact` emits the `ix-js-1` manifest and a module with exported
+`Source.artifact` emits the `ix-js-2` manifest and a module with exported
 `memory`, `__ix_abi_alloc`, `__ix_abi_free`, and `__ix_abi_main`. Instantiate
 that artifact through `IxHost` to receive JavaScript values instead of raw Wasm
 pointers:
 
 ```ts
-import { IxHost, Source } from "./src/frontend.ts";
+import { IxHost, IxRunner, Source } from "./src/frontend.ts";
 
 const artifact = Source.artifact(`
 module (!init: Init) where
@@ -418,38 +439,40 @@ declare Init {
   measure: Measure
 }
 
-let Fx run = () => {
-  let (!Fx, length) = Fx.text(borrow "hello")
+let run: () -> <Measure> I32 = () => {
+  length <- Measure.text(borrow "hello")
   length
 }
 
-let result = run()
+result <- run()
 return { result }
 `);
 const wasm = compileWat(artifact.wat);
 const program = await IxHost.instantiate(wasm, artifact.abi);
 
-const result = program.run({
+const runner = IxRunner({
   measure: {
     text(value) {
       return value.length;
     },
   },
 });
+const result = runner.run(program);
 program.dispose();
 ```
 
 For a separate host interface, compile the entry file with
 `Source.artifact_file(entry, { host_interface })`. The interface contributes
 only declarations; passing it does not instantiate or grant a resource. The JS
-objects supplied to `program.run(init)` are the actual authority.
+objects captured by `IxRunner(init)` are the actual authority. Constructing a
+different runner swaps the complete handler set without changing the compiled
+program.
 
 The adapter marshals entry context and export records while host effects remain
 opaque registry resources inside Wasm. It validates resource handles, required
 methods, UTF-8, bounds, union tags, handler availability, and ABI versions.
-Allocations grow Wasm memory when needed. `Source.raw_mod` and `Source.raw_wat`
-retain the lower-level scalar/pointer ABI for embedders that want direct
-control.
+Allocations grow Wasm memory when needed. `Source.wat` retains the lower-level
+scalar/pointer output for embedders that do not need the managed adapter.
 
 ## Repository Layout
 

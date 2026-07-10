@@ -11,8 +11,8 @@ effect Suspend {
   pause: () => I32
 }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Suspend.pause()
+let run = () => {
+  value <- Suspend.pause()
   value + 1
 }
 
@@ -35,8 +35,8 @@ effect Ask {
   ask: () => I32
 }
 
-let Fx run = () => {
-  let (!Fx, value) = Fx.Ask.ask()
+let run = () => {
+  value <- Ask.ask()
   value + 1
 }
 
@@ -55,10 +55,10 @@ effect Counter {
   get: () => I32
 }
 
-let Fx run = () => {
-  let (!Fx, ()) = Fx.Counter.fork()
-  let (!Fx, ()) = Fx.Counter.add(1)
-  let (!Fx, value) = Fx.Counter.get()
+let run = () => {
+  _ <- Counter.fork()
+  _ <- Counter.add(1)
+  value <- Counter.get()
   value
 }
 
@@ -122,8 +122,8 @@ Deno.test("a resumption cannot be invoked twice", () => {
     () =>
       Source.core(`
 effect Ask { ask: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Ask.ask()
+let run = () => {
+  value <- Ask.ask()
   value
 }
 let ask = Ask {
@@ -144,8 +144,8 @@ Deno.test("handler state is unavailable after its resumption is consumed", () =>
     () =>
       Source.core(`
 effect Counter { get: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Counter.get()
+let run = () => {
+  value <- Counter.get()
   value
 }
 let counter = {
@@ -169,8 +169,8 @@ Deno.test("checked resumption dup rejects unique handler captures", () => {
     () =>
       Source.core(`
 effect Fork { fork: () => Unit }
-let Fx run = () => {
-  let (!Fx, ()) = Fx.Fork.fork()
+let run = () => {
+  _ <- Fork.fork()
   0
 }
 let fork = {
@@ -225,8 +225,8 @@ const suspended_type = union {
   done: I32
 }
 effect Suspend { pause: () => I32 }
-let Fx run = () => {
-  let (!Fx, value) = Fx.Suspend.pause()
+let run = () => {
+  value <- Suspend.pause()
   value
 }
 let suspend = Suspend {

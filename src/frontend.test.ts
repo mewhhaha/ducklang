@@ -1,13 +1,38 @@
 import { assert_equals, assert_includes, assert_throws } from "./assert.ts";
 import { Core } from "./core.ts";
 import { Expr } from "./expr.ts";
-import { Source } from "./frontend.ts";
+import { Source as PublicSource } from "./frontend.ts";
+import { TestSource as Source } from "./frontend/test_source.ts";
 import { Ic } from "./ic.ts";
 import { Emit, Format, Typed } from "./trait.ts";
 
 function compile(text: string) {
   return Emit.emit(Source, Source.parse(text));
 }
+
+Deno.test("public Source rejects raw host imports in favor of effects and Init", () => {
+  const raw = 'host_import read from "env.read" () => I32\nread()';
+  const migration = "not source syntax; use `declare effect` and " +
+    "provide its resource through `Init`";
+
+  assert_throws(() => PublicSource.parse(raw), migration);
+  assert_throws(() => PublicSource.core(raw), migration);
+  assert_throws(() => PublicSource.wat(raw), migration);
+
+  const internal_ast = Source.parse(raw);
+  assert_throws(() => PublicSource.core(internal_ast), migration);
+  assert_throws(() => PublicSource.artifact(internal_ast), migration);
+
+  const dir = Deno.makeTempDirSync();
+  const path = dir + "/raw-host-import.ix";
+
+  try {
+    Deno.writeTextFileSync(path, raw);
+    assert_throws(() => PublicSource.load(path), migration);
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
 
 Deno.test("Source lowers arithmetic expressions to Ic", () => {
   const ic = compile("40 + 2");
@@ -7109,8 +7134,8 @@ Deno.test("Source rejects every Task 11 MVP grammar exclude", () => {
     },
     {
       feature: "dependent runtime-sized types",
-      run: () => Source.parse("let value: make_type(n) = 1"),
-      error: "Expected `=`",
+      run: () => Source.core("let value: make_type n = 1\nvalue"),
+      error: "Rich type annotation is not lowered yet on value",
     },
     {
       feature: "general first-class linear closure capture",
