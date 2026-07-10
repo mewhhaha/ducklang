@@ -6,16 +6,16 @@ wasm wat_file="build/out.wat" wasm_file="build/out.wasm":
   wat2wasm {{wat_file}} -o {{wasm_file}}
 
 fmt:
-  deno fmt *.ts src
+  deno fmt *.ts src case-studies
 
 fmt-check:
-  deno fmt --check *.ts src
+  deno fmt --check *.ts src case-studies
 
 lint:
-  deno lint
+  deno lint --ignore=.claude
 
 test:
-  deno test --no-check --allow-read --allow-write --allow-run
+  deno test --no-check --allow-read --allow-write --allow-run --ignore=.claude
 
 examples:
   deno test --no-check --allow-read --allow-write --allow-run examples/examples.test.ts

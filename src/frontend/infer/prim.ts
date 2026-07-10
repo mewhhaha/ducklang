@@ -38,6 +38,18 @@ export function infer_builtin_call_type(
   }
 
   if (expr.func.name === "slice" && expr.args.length === 3) {
+    const value = expr.args[0];
+
+    if (!value) {
+      throw new Error("Missing slice value argument");
+    }
+
+    const value_type = infer_builtin_text_arg_type(value, env);
+
+    if (value_type) {
+      return value_type;
+    }
+
     return { tag: "text" };
   }
 
@@ -45,10 +57,48 @@ export function infer_builtin_call_type(
     expr.func.name === "append" && expr.args.length === 2 &&
     !lookup(env, expr.func.name)
   ) {
+    const left = expr.args[0];
+    const right = expr.args[1];
+
+    if (!left || !right) {
+      throw new Error("Missing append argument");
+    }
+
+    const left_type = infer_builtin_text_arg_type(left, env);
+    const right_type = infer_builtin_text_arg_type(right, env);
+
+    if (
+      left_type && right_type &&
+      left_type.encoding === right_type.encoding
+    ) {
+      return left_type;
+    }
+
     return { tag: "text" };
   }
 
   return undefined;
+}
+
+function infer_builtin_text_arg_type(
+  expr: FrontExpr,
+  env: Env,
+): Extract<FrontType, { tag: "text" }> | undefined {
+  if (expr.tag === "text") {
+    return { tag: "text" };
+  }
+
+  if (expr.tag !== "var" && expr.tag !== "linear") {
+    return undefined;
+  }
+
+  const binding = lookup(env, expr.name);
+
+  if (!binding || binding.type.tag !== "text") {
+    return undefined;
+  }
+
+  return binding.type;
 }
 
 function infer_prim_operand_type(

@@ -778,7 +778,7 @@ return { result: final_result }
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
   const input = new Uint8Array([7, 0, 255]);
-  let written = new Uint8Array();
+  let written: Uint8Array<ArrayBufferLike> = new Uint8Array();
   const host = await IxHost.instantiate(wasm, artifact.abi);
 
   try {
