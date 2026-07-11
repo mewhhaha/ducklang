@@ -3058,7 +3058,7 @@ should not be forced through Ic.
 - `src/core/from_source/expr.ts`
 - `src/core/from_source/host_import.ts`
 - `src/core/from_source/stmt.ts`
-- `test.ts`
+- `src/wasm_*.test.ts`
 - `src/frontend.test.ts`
 
 ### Acceptance Tests
