@@ -134,6 +134,14 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       };
     }
 
+    case "loop": {
+      const loop_ctx = fork_core_from_source_ctx(ctx);
+      return {
+        tag: "loop",
+        body: expr.body.map((stmt) => core_stmt(stmt, loop_ctx)),
+      };
+    }
+
     case "comptime":
       return { tag: "comptime", expr: core_expr(expr.expr, ctx) };
 

@@ -18,6 +18,7 @@ export type CoreStmtEmitCtx = {
   text_locals: Set<string>;
   struct_locals: Map<string, CoreExpr>;
   break_label: string | undefined;
+  break_value_type: ValType | undefined;
   continue_label: string | undefined;
   scratch_loop_resets: string[];
   scratch_return_resets: string[];
@@ -315,15 +316,33 @@ function emit_core_stmt_inner<
     case "if_let_stmt":
       return hooks.emit_if_let_stmt(stmt, ctx);
 
-    case "break":
+    case "break": {
       expect(ctx.break_label, "Cannot emit core break outside loop");
+      let break_value = "";
+      if (stmt.value) {
+        expect(
+          ctx.break_value_type,
+          "Cannot emit core break value outside value-producing loop",
+        );
+        break_value = hooks.emit_expr(stmt.value, ctx);
+      } else {
+        if (ctx.break_value_type) {
+          expect(
+            ctx.break_value_type === "i32",
+            "Core bare loop break only produces i32 Unit",
+          );
+          break_value = "i32.const 0";
+        }
+      }
       return emit_core_control_transfer(
         join_cleanup(
+          break_value,
           emit_core_scratch_resets(ctx.scratch_loop_resets),
           emit_transfer_cleanup(stmt, "break_exit", ctx),
         ),
         "br $" + ctx.break_label,
       );
+    }
 
     case "continue":
       expect(ctx.continue_label, "Cannot emit core continue outside loop");
@@ -490,8 +509,8 @@ function emit_cleanup_rows(
   }).filter((line) => line !== "").join("\n");
 }
 
-function join_cleanup(left: Wat, right: Wat): Wat {
-  return [left, right].filter((line) => line !== "").join("\n");
+function join_cleanup(...items: Wat[]): Wat {
+  return items.filter((line) => line !== "").join("\n");
 }
 
 function bind_core_text_fact<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(

@@ -140,6 +140,9 @@ function validate_ic_route_expr(expr: FrontExpr): void {
       validate_ic_route_expr(expr.body);
       return;
 
+    case "loop":
+      return reject_ic_route("loop expression");
+
     case "captured":
       validate_ic_route_expr(expr.expr);
       return;

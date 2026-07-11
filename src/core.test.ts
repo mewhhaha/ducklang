@@ -78,6 +78,214 @@ let h = if 1 { f } else { g }
   ]);
 });
 
+Deno.test("Core links loop replacement drops across alternative exits", () => {
+  const core = Source.core(Source.parse(`
+host_import bound from "env.bound" () => I32
+let end = bound()
+let pending: Text = slice("Ada", 0, end)
+
+for i in 0..end {
+  pending = append(pending, "!")
+  pending = slice(pending, 0, len(pending))
+
+  if end {
+    break
+  }
+}
+
+len(pending)
+`));
+  const proof = Core.proof(core);
+
+  assert_equals(proof.ok, true);
+  assert_equals(proof.issues, []);
+  assert_equals(
+    proof.allocations.facts.map((fact) => fact.allocation_id),
+    ["allocation#0", "allocation#1", "allocation#2"],
+  );
+  assert_equals(
+    proof.drops.steps.map((step) => {
+      return {
+        edge: step.edge,
+        allocation_id: step.allocation_id,
+        allocation_ids: step.allocation_ids,
+      };
+    }),
+    [
+      {
+        edge: "assignment_replace",
+        allocation_id: undefined,
+        allocation_ids: ["allocation#0", "allocation#1"],
+      },
+      {
+        edge: "break_exit",
+        allocation_id: "allocation#2",
+        allocation_ids: undefined,
+      },
+      {
+        edge: "scope_exit",
+        allocation_id: "allocation#2",
+        allocation_ids: undefined,
+      },
+      {
+        edge: "scope_exit",
+        allocation_id: "allocation#2",
+        allocation_ids: undefined,
+      },
+    ],
+  );
+  Core.check_proof(core);
+});
+
+Deno.test("Core emits scalar value-producing loops with nested labels", () => {
+  const loop: CoreNode = {
+    tag: "program",
+    statements: [
+      {
+        tag: "expr",
+        expr: {
+          tag: "loop",
+          body: [
+            {
+              tag: "expr",
+              expr: {
+                tag: "loop",
+                body: [{
+                  tag: "break",
+                  value: { tag: "num", type: "i32", value: 3 },
+                }],
+              },
+            },
+            {
+              tag: "break",
+              value: { tag: "num", type: "i32", value: 7 },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  assert_equals(Core.type(loop), "i32");
+  const wat = Emit.emit(Mod, Core.mod(loop));
+
+  assert_includes(wat, "block $loop_exit_0 (result i32)");
+  assert_includes(wat, "loop $loop_0 (result i32)");
+  assert_includes(wat, "block $loop_continue_0");
+  assert_includes(wat, "block $loop_exit_1 (result i32)");
+  assert_includes(wat, "br $loop_exit_1");
+  assert_includes(wat, "br $loop_exit_0");
+});
+
+Deno.test("Core preserves Bytes facts through runtime union loop bodies", () => {
+  const wat = Source.wat(Source.parse(`
+const result_type = union { chunk: Bytes, eof: Unit }
+host_import read from "env.read" () => unique_heap result_type
+
+let result: result_type = read()
+if let .chunk(first_bytes) = result {
+  let pending: Bytes = slice(first_bytes, 0, len(first_bytes))
+
+  loop {
+    for index, byte in pending {
+      for offset in 0..len(pending) {
+        ()
+      }
+    }
+
+    let appended: Bytes = append(pending, first_bytes)
+    pending = slice(appended, 0, len(appended))
+    break len(pending)
+  }
+} else {
+  0
+}
+`));
+
+  assert_includes(wat, "block $loop_exit_");
+  assert_includes(wat, "block $text_collection_exit_");
+  assert_includes(wat, "block $range_exit_");
+  assert_includes(wat, "block $text_slice_exit_");
+  assert_includes(wat, "block $text_concat_left_exit_");
+});
+
+Deno.test("Core treats bare loop break as i32 Unit and rejects invalid exits", () => {
+  const unit: CoreNode = {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: { tag: "loop", body: [{ tag: "break" }] },
+    }],
+  };
+  assert_equals(Core.type(unit), "i32");
+  assert_includes(Emit.emit(Mod, Core.mod(unit)), "i32.const 0");
+
+  const mixed: CoreNode = {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: {
+        tag: "loop",
+        body: [
+          { tag: "break" },
+          { tag: "break", value: { tag: "num", type: "i64", value: 1n } },
+        ],
+      },
+    }],
+  };
+  assert_throws(() => Core.type(mixed), "Core loop break value type mismatch");
+
+  const text: CoreNode = {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: {
+        tag: "loop",
+        body: [{ tag: "break", value: { tag: "text", value: "owned" } }],
+      },
+    }],
+  };
+  assert_throws(
+    () => Core.type(text),
+    "Core value-producing loop break result must be scalar",
+  );
+});
+
+Deno.test("Core finds loop breaks nested in expression control flow", () => {
+  const core: CoreNode = {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: {
+        tag: "loop",
+        body: [{
+          tag: "expr",
+          expr: {
+            tag: "if",
+            cond: { tag: "num", type: "i32", value: 1 },
+            then_branch: {
+              tag: "block",
+              statements: [{
+                tag: "break",
+                value: { tag: "num", type: "i32", value: 1 },
+              }],
+            },
+            else_branch: {
+              tag: "block",
+              statements: [{
+                tag: "break",
+                value: { tag: "num", type: "i32", value: 2 },
+              }],
+            },
+          },
+        }],
+      },
+    }],
+  };
+
+  assert_equals(Core.type(core), "i32");
+});
+
 function drop_plan_without_allocation_links(
   plan: ReturnType<typeof Core.drops>,
 ): { steps: Record<string, unknown>[] } {
@@ -3429,6 +3637,41 @@ if flag {
 
   assert_equals(Typed.type(Core, expr_core), "i32");
   assert_includes(Emit.emit(Core, expr_core), "if (result i32)");
+
+  const chain_core = Source.core(Source.parse(`
+host_import choose from "env.choose" () => I32
+let choice = choose()
+let value = 0
+
+if choice == 1 {
+  value = 10
+} else if choice == 2 {
+  value = 42
+} else {
+  value = 20
+}
+
+value
+`));
+  const outer = chain_core.statements.find((stmt) => {
+    return stmt.tag === "if_else_stmt";
+  });
+
+  assert_equals(outer?.tag, "if_else_stmt");
+
+  if (!outer || outer.tag !== "if_else_stmt") {
+    throw new Error("Expected outer else-if Core statement");
+  }
+
+  assert_equals(outer.else_body[0]?.tag, "if_else_stmt");
+  assert_equals(Core.proof(chain_core).issues, []);
+  assert_equals(Typed.type(Core, chain_core), "i32");
+  assert_equals(
+    Emit.emit(Core, chain_core).split("\n").filter((line) => {
+      return line.trim() === "if";
+    }).length,
+    2,
+  );
 });
 
 Deno.test("Core.emit merges static if else assignments", () => {
@@ -21806,4 +22049,26 @@ if let .ok(found) = result { found.age } else { 0 }
     "Use of transferred owner user after ownership transfer transfer#0 to " +
       "union_case.ok",
   );
+});
+
+Deno.test("Core proof resolves locals declared in if-let statement bodies", () => {
+  const core = Source.core(Source.parse(`
+const result_type = union { ok: Text, err: Text }
+let flag = 1
+let result: result_type = if flag {
+  .ok("yes")
+} else {
+  .err("no")
+}
+if let .ok(value) = result {
+  let decorated: Text = append(value, "!")
+  freeze decorated
+}
+0
+`));
+  const proof = Core.proof(core);
+
+  assert_equals(proof.issues, []);
+  assert_equals(proof.freeze_edges.length, 1);
+  Core.check_proof(core);
 });

@@ -1034,22 +1034,6 @@ function scan_statements(
         "Effect bind must call a declared effect operation",
       );
 
-      if (stmt.value_name === undefined) {
-        const result_type = infer_effect_bind_result_type(
-          stmt.value,
-          analysis,
-          facts,
-        );
-        expect(
-          result_type,
-          "Cannot infer result type of discarded effect computation",
-        );
-        expect(
-          same_simple_type(result_type, "Unit"),
-          "Discarded effect computation must return Unit, got " + result_type,
-        );
-      }
-
       add_visible_effect(direct, operation, handlers);
       const nested = scan_app_args(
         stmt.value,
@@ -1208,8 +1192,12 @@ function scan_statements(
           "Cannot infer result type of discarded effect computation",
         );
         expect(
-          same_simple_type(result_type, "Unit"),
-          "Discarded effect computation must return Unit, got " + result_type,
+          same_simple_type(result_type, "Unit") ||
+            result_type === "Int" || result_type === "I32" ||
+            result_type === "U32" || result_type === "I64",
+          "Discarding an effectful function result requires an explicit " +
+            "cleanup path for owned results; bind the result until owned " +
+            "function-result discard lowering is implemented",
         );
       }
 
@@ -1576,6 +1564,12 @@ function scan_expr(
       direct,
       calls,
       scan_expr(expr.body, analysis, facts, false, handlers),
+    );
+  } else if (expr.tag === "loop") {
+    merge_scan(
+      direct,
+      calls,
+      scan_statements(expr.body, analysis, facts, handlers),
     );
   } else if (expr.tag === "captured") {
     merge_scan(
@@ -2204,6 +2198,16 @@ function walk_typed_expr_children(
     return;
   }
 
+  if (expr.tag === "loop") {
+    const local = new Map(types);
+
+    for (const stmt of expr.body) {
+      visit_stmt_exprs(stmt, local, visit);
+    }
+
+    return;
+  }
+
   if (expr.tag === "captured") {
     visit(expr.expr, types);
     return;
@@ -2343,6 +2347,11 @@ function visit_stmt_exprs(
   }
 
   if (stmt.tag === "return") {
+    visit(stmt.value, types);
+    return;
+  }
+
+  if (stmt.tag === "break" && stmt.value) {
     visit(stmt.value, types);
     return;
   }
@@ -2760,6 +2769,14 @@ function validate_handler_state_expr_assignments(
     return;
   }
 
+  if (expr.tag === "loop") {
+    for (const stmt of expr.body) {
+      validate_handler_state_stmt_assignments(stmt, state_names);
+    }
+
+    return;
+  }
+
   if (expr.tag === "captured") {
     validate_handler_state_expr_assignments(expr.expr, state_names);
     return;
@@ -2910,6 +2927,11 @@ function validate_handler_state_stmt_assignments(
   }
 
   if (stmt.tag === "return") {
+    validate_handler_state_expr_assignments(stmt.value, state_names);
+    return;
+  }
+
+  if (stmt.tag === "break" && stmt.value) {
     validate_handler_state_expr_assignments(stmt.value, state_names);
     return;
   }

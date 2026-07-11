@@ -1,22 +1,32 @@
 # Grep Case Study
 
-This directory grows a ripgrep-shaped command-line program in Ix. The current
-vertical slice establishes the synchronous, mockable host boundary and proves
-that arbitrary byte chunks can travel from a file, through Wasm, and back to the
-host without UTF-8 decoding.
+This directory contains a small literal grep command-line program in Ix. It
+accepts exactly `pattern path`, reads the file in 64 KiB chunks, and writes each
+matching line (including its newline when present) as raw bytes. Exit status is
+`0` when at least one line matches, `1` when none match, and `2` for an invalid
+invocation or I/O failure. An empty pattern matches every existing line.
 
-It is not a ripgrep replacement yet. Regex matching, line buffering across
-chunks, ignore files, traversal policy, binary detection, and output formatting
-remain Ix-side work for later slices.
+The matcher keeps only the unfinished tail between reads. Completed lines are
+dropped from the rolling `Bytes` buffer, so retained input is bounded by one
+chunk plus the longest unfinished line rather than the complete file. `append`
+and `slice` currently allocate and copy, and matching is a naive byte search;
+this is a correctness slice, not a performance claim.
+
+The outer read loop is an unbounded, value-producing `loop`: each terminal path
+uses `break` to return the final exit status. Pattern comparison and output
+handling are separate Ix functions, while the loop owns the rolling buffer and
+stream state. Regexes, directory traversal, ignore files, diagnostics, and
+richer ripgrep options are not included. The program returns status `2` for
+expected I/O errors but cannot format their `Text` payloads for the
+byte-oriented `Stderr` capability yet.
 
 ## Run
 
-Compile the Ix module, read the first 64 KiB of a file, and copy that chunk to
-stdout:
+Run the literal matcher:
 
 ```sh
 deno run --allow-read --allow-run=wat2wasm \
-  case-studies/grep/grep.ts case-studies/grep/fixtures/input.txt
+  case-studies/grep/grep.ts needle case-studies/grep/fixtures/input.txt
 ```
 
 Run its contract tests:
@@ -42,3 +52,7 @@ stream payloads are owned `Bytes`; output calls receive bounded borrows.
 
 The live and mock implementations are selected by the TypeScript runner. The Ix
 module receives only the capability objects supplied through `Init`.
+
+The current single-file program exercises `Process`, `FileReader`, and `Stdout`.
+`Walk`, `Stdin`, and `Stderr` remain part of the case study's minimal
+ripgrep-shaped host boundary and have independently tested live/mock handlers.

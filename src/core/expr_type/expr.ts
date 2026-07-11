@@ -1,6 +1,6 @@
 import { expect } from "../../expect.ts";
 import type { ValType } from "../../op.ts";
-import type { CoreExpr, CoreFnType, CoreStmt } from "../ast.ts";
+import type { CoreExpr, CoreField, CoreFnType, CoreStmt } from "../ast.ts";
 import {
   find_core_field,
   maybe_static_i32,
@@ -162,6 +162,9 @@ export function expr_type<
 
       return stmt_result_type(final_stmt, block_ctx, hooks);
     }
+
+    case "loop":
+      return loop_expr_type(expr, ctx, hooks);
 
     case "borrow": {
       const result_type = expr_type(expr.value, ctx, hooks);
@@ -383,6 +386,300 @@ export function expr_type<
     case "rec_ref":
       // rec name stands for the function; calls are handled specially; type as i32 (ptr-like or direct)
       return "i32";
+  }
+}
+
+function loop_expr_type<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  expr: Extract<CoreExpr, { tag: "loop" }>,
+  ctx: ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+): ValType {
+  const break_types: ValType[] = [];
+  const loop_ctx = hooks.create_block_ctx(ctx);
+  collect_loop_break_types(expr.body, loop_ctx, hooks, break_types);
+  expect(
+    break_types.length > 0,
+    "Core value-producing loop requires at least one direct break value",
+  );
+  const result_type = break_types[0];
+  expect(result_type, "Core loop break type is missing");
+
+  for (const type of break_types) {
+    expect(type === result_type, "Core loop break value type mismatch");
+  }
+
+  return result_type;
+}
+
+function collect_loop_break_types<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  statements: CoreStmt[],
+  ctx: block_ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+  break_types: ValType[],
+): void {
+  for (const stmt of statements) {
+    switch (stmt.tag) {
+      case "break": {
+        if (!stmt.value) {
+          break_types.push("i32");
+          continue;
+        }
+        const type = expr_type(stmt.value, ctx, hooks);
+        const ownership = core_expr_ownership(stmt.value, ctx, {
+          closure_fn_type: hooks.closure_fn_type,
+          core_expr_is_text: hooks.core_expr_is_text,
+          bind_core_if_let_payload_fact: hooks.bind_core_if_let_payload_fact,
+          bind_dynamic_if_let_payload: hooks.bind_dynamic_if_let_payload,
+          block_ctx: hooks.create_block_ctx,
+          collect_stmt_locals: (stmt, value_ctx) =>
+            hooks.collect_stmt_locals(
+              stmt,
+              value_ctx as unknown as block_ctx,
+            ),
+          dynamic_union_if: hooks.dynamic_union_if,
+          expr_type: (value, value_ctx) => expr_type(value, value_ctx, hooks),
+          frozen_local: frozen_core_local,
+          if_let_branch_ctx: hooks.create_block_ctx,
+          runtime_union_match_info: hooks.runtime_union_match_info,
+          runtime_union_target: hooks.runtime_union_target,
+          runtime_union_value: hooks.core_runtime_union_value,
+          runtime_aggregate_type_expr: (value, value_ctx) =>
+            runtime_aggregate_type_expr(value, value_ctx, {
+              check_closure_call_args: hooks.check_closure_call_args,
+              closure_fn_type: hooks.closure_fn_type,
+            }),
+          static_runtime_union_match_branch_ctx:
+            hooks.static_runtime_union_match_branch_ctx,
+          static_struct_value: hooks.static_struct_value,
+          static_core_call_requires_scope:
+            hooks.static_core_call_requires_scope,
+          static_core_call_target: hooks.static_core_call_target,
+          static_core_call_value: hooks.static_core_call_value,
+          static_union_case: hooks.static_union_case,
+          static_text_value: hooks.static_text_value,
+        });
+        expect(
+          ownership.tag === "scalar_local",
+          core_non_scalar_ownership_message(
+            "Core value-producing loop break result must be scalar",
+            ownership,
+          ),
+        );
+        break_types.push(type);
+        continue;
+      }
+
+      case "if_stmt":
+        expect(
+          expr_type(stmt.cond, ctx, hooks) === "i32",
+          "Core if condition must be i32",
+        );
+        collect_loop_break_types(
+          stmt.body,
+          hooks.create_block_ctx(ctx),
+          hooks,
+          break_types,
+        );
+        continue;
+
+      case "if_else_stmt":
+        expect(
+          expr_type(stmt.cond, ctx, hooks) === "i32",
+          "Core if condition must be i32",
+        );
+        collect_loop_break_types(
+          stmt.then_body,
+          hooks.create_block_ctx(ctx),
+          hooks,
+          break_types,
+        );
+        collect_loop_break_types(
+          stmt.else_body,
+          hooks.create_block_ctx(ctx),
+          hooks,
+          break_types,
+        );
+        continue;
+
+      case "if_let_stmt":
+        collect_loop_break_types(
+          stmt.body,
+          hooks.create_block_ctx(ctx),
+          hooks,
+          break_types,
+        );
+        continue;
+
+      case "range_loop":
+      case "collection_loop":
+        continue;
+
+      case "bind":
+      case "assign":
+        hooks.collect_stmt_locals(stmt, ctx);
+        continue;
+
+      case "index_assign":
+      case "type_check":
+      case "return":
+      case "continue":
+      case "unsupported":
+        hooks.collect_stmt_locals(stmt, ctx);
+        continue;
+
+      case "expr":
+        collect_loop_expr_break_types(stmt.expr, ctx, hooks, break_types);
+        continue;
+    }
+  }
+}
+
+function collect_loop_expr_break_types<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  expr: CoreExpr,
+  ctx: block_ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+  break_types: ValType[],
+): void {
+  switch (expr.tag) {
+    case "loop":
+    case "lam":
+    case "rec":
+    case "num":
+    case "text":
+    case "type_name":
+    case "var":
+    case "linear":
+    case "rec_ref":
+    case "struct_type":
+    case "union_type":
+    case "unsupported":
+      return;
+
+    case "block":
+      collect_loop_break_types(
+        expr.statements,
+        hooks.create_block_ctx(ctx),
+        hooks,
+        break_types,
+      );
+      return;
+
+    case "if":
+      expect(
+        expr_type(expr.cond, ctx, hooks) === "i32",
+        "Core if condition must be i32",
+      );
+      collect_loop_expr_break_types(
+        expr.then_branch,
+        hooks.create_block_ctx(ctx),
+        hooks,
+        break_types,
+      );
+      collect_loop_expr_break_types(
+        expr.else_branch,
+        hooks.create_block_ctx(ctx),
+        hooks,
+        break_types,
+      );
+      return;
+
+    case "if_let":
+      collect_loop_expr_break_types(expr.target, ctx, hooks, break_types);
+      collect_loop_expr_break_types(
+        expr.then_branch,
+        hooks.create_block_ctx(ctx),
+        hooks,
+        break_types,
+      );
+      collect_loop_expr_break_types(
+        expr.else_branch,
+        hooks.create_block_ctx(ctx),
+        hooks,
+        break_types,
+      );
+      return;
+
+    case "prim":
+      for (const arg of expr.args) {
+        collect_loop_expr_break_types(arg, ctx, hooks, break_types);
+      }
+      return;
+
+    case "app":
+      collect_loop_expr_break_types(expr.func, ctx, hooks, break_types);
+      for (const arg of expr.args) {
+        collect_loop_expr_break_types(arg, ctx, hooks, break_types);
+      }
+      return;
+
+    case "comptime":
+      collect_loop_expr_break_types(expr.expr, ctx, hooks, break_types);
+      return;
+
+    case "borrow":
+    case "freeze":
+      collect_loop_expr_break_types(expr.value, ctx, hooks, break_types);
+      return;
+
+    case "scratch":
+      collect_loop_expr_break_types(expr.body, ctx, hooks, break_types);
+      return;
+
+    case "with":
+      collect_loop_expr_break_types(expr.base, ctx, hooks, break_types);
+      collect_loop_field_break_types(expr.fields, ctx, hooks, break_types);
+      return;
+
+    case "struct_value":
+      collect_loop_expr_break_types(expr.type_expr, ctx, hooks, break_types);
+      collect_loop_field_break_types(expr.fields, ctx, hooks, break_types);
+      return;
+
+    case "struct_update":
+      collect_loop_expr_break_types(expr.base, ctx, hooks, break_types);
+      collect_loop_field_break_types(expr.fields, ctx, hooks, break_types);
+      return;
+
+    case "field":
+      collect_loop_expr_break_types(expr.object, ctx, hooks, break_types);
+      return;
+
+    case "index":
+      collect_loop_expr_break_types(expr.object, ctx, hooks, break_types);
+      collect_loop_expr_break_types(expr.index, ctx, hooks, break_types);
+      return;
+
+    case "union_case":
+      if (expr.value) {
+        collect_loop_expr_break_types(expr.value, ctx, hooks, break_types);
+      }
+      if (expr.type_expr) {
+        collect_loop_expr_break_types(expr.type_expr, ctx, hooks, break_types);
+      }
+      return;
+  }
+}
+
+function collect_loop_field_break_types<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  fields: CoreField[],
+  ctx: block_ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+  break_types: ValType[],
+): void {
+  for (const field of fields) {
+    collect_loop_expr_break_types(field.value, ctx, hooks, break_types);
   }
 }
 

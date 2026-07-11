@@ -131,7 +131,7 @@ export type CoreStmt =
     body: CoreStmt[];
   }
   | { tag: "type_check"; pattern: TypePattern; target: CoreExpr }
-  | { tag: "break" }
+  | { tag: "break"; value?: CoreExpr }
   | { tag: "continue" }
   | { tag: "return"; value: CoreExpr }
   | { tag: "expr"; expr: CoreExpr }
@@ -159,6 +159,7 @@ export type CoreExpr =
     resume_payload?: boolean;
   }
   | { tag: "block"; statements: CoreStmt[] }
+  | { tag: "loop"; body: CoreStmt[] }
   | { tag: "comptime"; expr: CoreExpr }
   | { tag: "borrow"; value: CoreExpr }
   | { tag: "freeze"; value: CoreExpr }

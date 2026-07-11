@@ -40,6 +40,7 @@
 
 [
   "for"
+  "loop"
   "in"
   "by"
 ] @keyword.control.repeat
@@ -49,6 +50,8 @@
   (break_statement)
   (continue_statement)
 ] @keyword.control.return
+
+(wildcard) @variable.builtin
 
 [
   "dup"
@@ -112,6 +115,8 @@
 ; Literals and comments
 (number) @constant.numeric.integer
 (string) @string
+(character) @constant.character
+(boolean) @constant.builtin.boolean
 (comment) @comment.line
 
 ; Types
@@ -132,7 +137,7 @@
 
 ((identifier) @type.builtin
   (#any-of? @type.builtin
-    "Int" "I32" "U32" "I64" "Text" "Unit" "Type" "Resume"))
+    "Int" "I32" "U32" "I64" "Text" "Bytes" "Unit" "Type" "Resume"))
 
 (declare_effect_statement
   name: (effect_identifier) @type)

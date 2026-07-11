@@ -22,6 +22,7 @@ export type CoreEmitCtx = StaticCtx & {
   next_loop: number;
   next_temp: number;
   break_label: string | undefined;
+  break_value_type: import("../op.ts").ValType | undefined;
   continue_label: string | undefined;
 };
 
@@ -46,6 +47,7 @@ export function create_core_artifact_emit_ctx(
     next_loop: 0,
     next_temp: 0,
     break_label: undefined,
+    break_value_type: undefined,
     continue_label: undefined,
   };
 }
@@ -71,6 +73,7 @@ export function create_core_lifted_closure_body_ctx(
     next_loop: 0,
     next_temp: 0,
     break_label: undefined,
+    break_value_type: undefined,
     continue_label: undefined,
   };
 }
@@ -93,6 +96,7 @@ export function create_core_rec_body_emit_ctx(ctx: CoreEmitCtx): CoreEmitCtx {
     next_loop: ctx.next_loop,
     next_temp: ctx.next_temp,
     break_label: ctx.break_label,
+    break_value_type: ctx.break_value_type,
     continue_label: ctx.continue_label,
   };
 }
@@ -116,6 +120,7 @@ export function create_core_branch_emit_ctx(ctx: CoreEmitCtx): CoreEmitCtx {
     next_loop: ctx.next_loop,
     next_temp: ctx.next_temp,
     break_label: ctx.break_label,
+    break_value_type: ctx.break_value_type,
     continue_label: ctx.continue_label,
   };
 }

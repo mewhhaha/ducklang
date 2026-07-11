@@ -78,6 +78,10 @@ function dynamic_loop_control_terminal(
   state: DynamicLoopState,
 ): Stmt[] | undefined {
   if (stmt.tag === "break") {
+    if (stmt.value) {
+      return undefined;
+    }
+
     return loop_break_statements(state);
   }
 
@@ -254,6 +258,9 @@ function expr_contains_loop_control(expr: FrontExpr): boolean {
 
     case "scratch":
       return expr_contains_loop_control(expr.body);
+
+    case "loop":
+      return false;
 
     case "lam":
       return expr_contains_loop_control(expr.body);

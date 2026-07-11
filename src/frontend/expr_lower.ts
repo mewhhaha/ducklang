@@ -81,6 +81,11 @@ export function lower_expr(
     case "scratch":
       return lower_ownership_wrapper_expr(expr, env, hooks, lower_expr);
 
+    case "loop":
+      throw new Error(
+        "Cannot lower loop through pure Ic" + structured_core_route,
+      );
+
     case "captured":
       return lower_expr(expr.expr, expr.env, hooks);
 

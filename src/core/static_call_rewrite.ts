@@ -81,6 +81,17 @@ export function scoped_static_core_call_expr(
         ),
       };
 
+    case "loop":
+      return {
+        tag: "loop",
+        body: scoped_static_core_call_block(
+          expr.body,
+          new Map(replacements),
+          ctx,
+          scoped_static_core_call_expr,
+        ),
+      };
+
     case "comptime":
       return {
         tag: "comptime",

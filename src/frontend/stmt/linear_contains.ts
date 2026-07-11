@@ -49,6 +49,9 @@ export function expr_contains_linear(expr: FrontExpr): boolean {
     case "scratch":
       return expr_contains_linear(expr.body);
 
+    case "loop":
+      return stmts_contain_linear(expr.body);
+
     case "captured":
       return expr_contains_linear(expr.expr);
 
@@ -153,9 +156,15 @@ function stmt_contains_linear(stmt: Stmt): boolean {
   switch (stmt.tag) {
     case "import":
     case "host_import":
-    case "break":
     case "continue":
     case "unsupported":
+      return false;
+
+    case "break":
+      if (stmt.value) {
+        return expr_contains_linear(stmt.value);
+      }
+
       return false;
 
     case "bind":

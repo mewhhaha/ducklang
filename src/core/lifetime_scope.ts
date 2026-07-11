@@ -106,6 +106,12 @@ function scan_lifetime_expr(
       return;
     }
 
+    case "loop": {
+      const scope = add_scope(state, "loop", parent, undefined);
+      scan_lifetime_stmts(expr.body, scope.id, state);
+      return;
+    }
+
     case "comptime":
       scan_lifetime_expr(expr.expr, parent, state);
       return;
@@ -252,6 +258,10 @@ function scan_lifetime_stmt(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_lifetime_expr(stmt.value, parent, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;

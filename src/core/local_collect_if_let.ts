@@ -119,6 +119,8 @@ export function collect_core_if_let_stmt_locals(
   }
 
   collect_runtime_if_let_target_locals(runtime_target, ctx, hooks, api);
+  const cond_name = fresh_temp_local(ctx, "if_cond");
+  set_local(ctx.locals, cond_name, "i32");
   const else_ctx = create_if_let_branch_ctx(ctx);
   const info = runtime_union_match_info(
     stmt.case_name,

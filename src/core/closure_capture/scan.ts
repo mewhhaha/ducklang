@@ -54,6 +54,10 @@ export function collect_core_expr_captures<ctx extends CoreCaptureStaticCtx>(
       collect_core_block_captures(expr.statements, state);
       return;
 
+    case "loop":
+      collect_core_block_captures(expr.body, state);
+      return;
+
     case "comptime":
       collect_core_expr_captures(expr.expr, state);
       return;
@@ -331,6 +335,10 @@ function collect_core_stmt_captures<ctx extends CoreCaptureStaticCtx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        collect_core_expr_captures(stmt.value, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;

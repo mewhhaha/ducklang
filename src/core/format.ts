@@ -109,6 +109,9 @@ function format_stmt(stmt: CoreStmt, depth: number): string {
         format_expr(stmt.target);
 
     case "break":
+      if (stmt.value) {
+        return pad + "break " + format_expr(stmt.value);
+      }
       return pad + "break";
 
     case "continue":
@@ -163,6 +166,10 @@ function format_expr(expr: CoreExpr): string {
       return "{ " +
         expr.statements.map((stmt) => format_stmt(stmt, 0)).join("; ") +
         " }";
+
+    case "loop":
+      return "loop { " +
+        expr.body.map((stmt) => format_stmt(stmt, 0)).join("; ") + " }";
 
     case "comptime":
       return "comptime " + format_expr(expr.expr);

@@ -196,30 +196,41 @@ value
   ]);
 });
 
-Deno.test("discarded effect computations must return Unit", () => {
-  assert_throws(
-    () =>
-      Source.effects(`
+Deno.test("discarded direct effects may discard results", () => {
+  const analysis = Source.effects(`
 declare effect Io { read: () => I32 }
 _ <- Io.read()
-`),
-    "Discarded effect computation must return Unit, got I32",
-  );
+`);
+  assert_equals(analysis.module_effects, [
+    { effect: "Io", operation: "read" },
+  ]);
 
-  assert_throws(
-    () =>
-      Source.effects(`
+  const function_analysis = Source.effects(`
 declare effect Io { read: () => I32 }
 let read = () => {
   value <- Io.read()
   value
 }
 _ <- read()
+`);
+  assert_equals(function_analysis.module_effects, [
+    { effect: "Io", operation: "read" },
+  ]);
+
+  assert_throws(
+    () =>
+      Source.effects(`
+declare effect Io { read_resume: () => Resume }
+let read_resume: () -> <Io.read_resume> Resume = () => {
+  value <- Io.read_resume()
+  value
+}
+_ <- read_resume()
 `),
-    "Discarded effect computation must return Unit, got I32",
+    "Discarding an effectful function result requires an explicit cleanup path",
   );
 
-  const analysis = Source.effects(`
+  const unit_analysis = Source.effects(`
 declare effect Io { print: () => Unit }
 let write: () -> <Io.print> Unit = () => {
   _ <- Io.print()
@@ -228,7 +239,7 @@ _ <- Io.print()
 _ <- write()
 `);
 
-  assert_equals(analysis.module_effects, [
+  assert_equals(unit_analysis.module_effects, [
     { effect: "Io", operation: "print" },
   ]);
 });

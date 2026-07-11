@@ -96,6 +96,12 @@ export function substitute_front_expr(
         body: substitute_front_expr(expr.body, replacements),
       };
 
+    case "loop":
+      return {
+        tag: "loop",
+        body: substitute_front_block(expr.body, replacements),
+      };
+
     case "captured":
       return expr;
 
@@ -369,6 +375,16 @@ function substitute_front_stmt(
         target: substitute_front_expr(stmt.target, replacements),
       };
 
+    case "break":
+      if (!stmt.value) {
+        return stmt;
+      }
+
+      return {
+        tag: "break",
+        value: substitute_front_expr(stmt.value, replacements),
+      };
+
     case "return":
       return {
         tag: "return",
@@ -383,7 +399,6 @@ function substitute_front_stmt(
 
     case "import":
     case "host_import":
-    case "break":
     case "continue":
     case "unsupported":
       return stmt;

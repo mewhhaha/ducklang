@@ -92,6 +92,14 @@ export function core_expr_contains_borrow<ctx>(
         seen_static_names,
       );
 
+    case "loop":
+      return core_stmts_contain_borrow(
+        expr.body,
+        ctx,
+        hooks,
+        seen_static_names,
+      );
+
     case "comptime":
       return core_expr_contains_borrow(
         expr.expr,

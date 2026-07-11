@@ -1,0 +1,59 @@
+==================
+Text, character, and boolean literals
+==================
+
+let message = "hello\nworld"
+let newline = '\n'
+let quote = '\''
+let ready = true
+if ready { 'λ' } else { false }
+if (let 'c' = newline) { true } else { false }
+if let "ready" = message { 1 } else { 0 }
+
+---
+
+(source_file
+  (binding_statement
+    name: (identifier)
+    value: (string))
+  (binding_statement
+    name: (identifier)
+    value: (character))
+  (binding_statement
+    name: (identifier)
+    value: (character))
+  (binding_statement
+    name: (identifier)
+    value: (boolean))
+  (expression_statement
+    (if_expression
+      condition: (condition_expression
+        (identifier))
+      consequence: (block
+        (expression_statement
+          (character)))
+      alternative: (block
+        (expression_statement
+          (boolean)))))
+  (expression_statement
+    (if_expression
+      pattern: (character)
+      value: (condition_expression
+        (identifier))
+      consequence: (block
+        (expression_statement
+          (boolean)))
+      alternative: (block
+        (expression_statement
+          (boolean)))))
+  (expression_statement
+    (if_expression
+      pattern: (string)
+      value: (condition_expression
+        (identifier))
+      consequence: (block
+        (expression_statement
+          (number)))
+      alternative: (block
+        (expression_statement
+          (number))))))

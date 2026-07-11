@@ -53,6 +53,9 @@ export function closure_fn_type(
       return stmt_closure_fn_type(block.final_stmt, block.ctx, hooks);
     }
 
+    case "loop":
+      return undefined;
+
     case "if": {
       const cond_type = hooks.expr_type(expr.cond, ctx);
       expect(cond_type === "i32", "Core closure if condition must be i32");
@@ -218,6 +221,9 @@ export function closure_fn_type_with_expected(
         hooks,
       );
     }
+
+    case "loop":
+      return undefined;
 
     case "if": {
       const cond_type = hooks.expr_type(expr.cond, ctx);

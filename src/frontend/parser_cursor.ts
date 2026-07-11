@@ -1,10 +1,12 @@
 import { expect } from "../expect.ts";
 import type { Token, TokenKind } from "./ast.ts";
+import { no_demand_name } from "./names.ts";
 
 export class ParserCursor {
   protected tokens: Token[];
   protected index = 0;
   protected effect_names = new Set<string>();
+  #next_no_demand_name = 0;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -62,6 +64,22 @@ export class ParserCursor {
 
     this.advance();
     return token.text;
+  }
+
+  protected expect_binding_name(message: string): string {
+    const name = this.expect_name(message);
+
+    if (name !== "_") {
+      return name;
+    }
+
+    return this.fresh_no_demand_name();
+  }
+
+  protected fresh_no_demand_name(): string {
+    const index = this.#next_no_demand_name;
+    this.#next_no_demand_name += 1;
+    return no_demand_name(index);
   }
 
   protected is(kind: TokenKind): boolean {

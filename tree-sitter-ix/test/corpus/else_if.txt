@@ -1,0 +1,48 @@
+==================
+Else-if chains
+==================
+
+if true { 1 } else if (let 'x' = letter) { 2 } else { 3 }
+if let .some(value) = option { 1 } else if let .none = option { 2 } else { 3 }
+
+---
+
+(source_file
+  (expression_statement
+    (if_expression
+      condition: (condition_expression
+        (boolean))
+      consequence: (block
+        (expression_statement
+          (number)))
+      alternative: (if_expression
+        pattern: (character)
+        value: (condition_expression
+          (identifier))
+        consequence: (block
+          (expression_statement
+            (number)))
+        alternative: (block
+          (expression_statement
+            (number))))))
+  (expression_statement
+    (if_expression
+      pattern: (union_pattern
+        case: (identifier)
+        value: (identifier))
+      value: (condition_expression
+        (identifier))
+      consequence: (block
+        (expression_statement
+          (number)))
+      alternative: (if_expression
+        pattern: (union_pattern
+          case: (identifier))
+        value: (condition_expression
+          (identifier))
+        consequence: (block
+          (expression_statement
+            (number)))
+        alternative: (block
+          (expression_statement
+            (number)))))))

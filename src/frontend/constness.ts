@@ -98,6 +98,9 @@ export function validate_const_expr(
       validate_const_expr(expr.body, env, bound, message);
       return;
 
+    case "loop":
+      throw new Error(message);
+
     case "captured":
       validate_const_expr(expr.expr, expr.env, bound, message);
       return;

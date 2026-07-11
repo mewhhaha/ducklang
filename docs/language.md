@@ -96,6 +96,8 @@ const { write } = logger({ io: !init.io })
 
 Module invocation is compiler-time wiring and specialization. Its result is the
 imported file's export record, so ordinary record destructuring selects exports.
+An `_` entry in that pattern selects no field and ignores the remaining export
+shape.
 The entry module's final record is returned by the managed JavaScript
 `IxRunner(init).run(program)` call. A runner captures one explicit handler set;
 selecting another runner swaps host or mock effects without recompiling the
@@ -201,6 +203,49 @@ let small = 42i32
 let wide = 42i64
 ```
 
+Double-quoted string literals produce UTF-8 `Text`. Boolean and character
+literals are source-level scalar syntax in the current MVP: `true` lowers to
+`1:i32`, `false` lowers to `0:i32`, and a single-quoted character lowers to its
+Unicode scalar value as `i32`. There are not yet distinct runtime `Bool` or
+`Char` value types.
+
+```txt
+let message = "hello"
+let ready = true
+let newline = '\n'
+let lambda = 'λ'
+```
+
+String escapes support `\n`, `\t`, `\r`, `\"`, and `\\`. Character escapes
+support `\n`, `\t`, `\r`, `\'`, and `\\`, and a character literal must contain
+exactly one Unicode scalar after escape decoding. Text indexing currently
+returns UTF-8 bytes, so a non-ASCII character's scalar value is not the same as
+one indexed byte of its UTF-8 encoding.
+
+Literals can also be used as equality patterns in `if let`. Literal patterns do
+not introduce a binding; they select the branch when the target equals the
+literal. Both the ordinary Ix spelling and a parenthesized condition are
+accepted.
+
+```txt
+if let '\n' = byte {
+  line_count = line_count + 1
+}
+
+if (let "dry-run" = argument) {
+  dry_run = true
+}
+```
+
+Union patterns remain structural and can bind their payload, as in
+`if let .ok(value) = result { ... }`.
+
+`Bytes` is the raw, non-UTF-8 buffer type used by managed host effects. Runtime
+`Bytes` values support `len`, `get`, byte iteration, `slice`, and `append` in
+structured Core, and bounded borrows can cross effect calls. Slices and appends
+currently allocate and copy; there is no source `Bytes` literal or borrowed
+slice view yet.
+
 Visible text values can concatenate with `+` when both operands are
 frontend-visible text literals, bindings, fields, indexes, const-call results,
 simple block-local values, or dynamic text branches. This produces another
@@ -218,7 +263,7 @@ also rejected before primitive Ic lowering.
 Visible text equality and inequality fold to `i32` booleans. When one or both
 operands are dynamic visible text branches, the pure Ic route lowers equality to
 nested `i32.select` expressions over branch-local static comparisons. Runtime
-`Text` equality that requires byte comparison still belongs to structured
+`Text` equality that requires byte comparison lowers through structured
 Core/Wasm.
 
 Text-valued `if let` expressions over statically known union cases and dynamic
@@ -398,6 +443,31 @@ Logical operators are boolean `if` sugar.
 ```txt
 ready && valid
 ready || fallback
+```
+
+`else if` is nested expression syntax: each `else if` is an `if` expression in
+the preceding branch's `else` arm. It can chain ordinary conditions, literal
+`if let` patterns, and union `if let` patterns; every arm must produce a
+compatible value (or update compatible state when used as a statement).
+
+```txt
+let label = if score == 0 {
+  "zero"
+} else if score == 1 {
+  "one"
+} else {
+  "many"
+}
+
+let value = if let 0 = byte {
+  10
+} else if let '\n' = byte {
+  20
+} else if let .ok(found) = result {
+  found
+} else {
+  0
+}
 ```
 
 `if let` matches union cases when the case is statically known. Runtime payloads
@@ -998,6 +1068,66 @@ for i in 0..4 {
 }
 
 sum
+```
+
+`loop` is an expression form for an unbounded structured loop. `break value`
+returns a scalar result from the nearest `loop`, and every direct
+break value must have the same source type. A loop whose direct exits all use a
+bare `break` has type `Unit`; bare and valued exits cannot be mixed. Owned
+`Text`, `Bytes`, aggregate, union, and closure loop results are not supported
+yet. `break` and `continue` are control-flow statements, not general values.
+Declared host operations and calls to ordinary effectful functions may occur in
+the body. Locally handled effects inside a runtime loop remain reserved until
+the handler pass can lower recursive CPS control flow.
+
+```txt
+let first_even = loop {
+  if candidate % 2 == 0 {
+    break candidate
+  } else {
+    candidate = candidate + 1
+    continue
+  }
+}
+```
+
+`for` remains statement-only. Its binders may be `_` when an index or element
+is intentionally ignored. A range may omit binders entirely:
+
+```txt
+for _ in values {
+  tick()
+}
+
+for 0..4 {
+  work()
+}
+```
+
+The wildcard binder is a no-demand binding: it does not introduce a usable
+local and does not require the iterated value to be consumed by the body. `_`
+is accepted for ordinary and const bindings, function parameters, record/module
+destructuring, union payload patterns, and loop binders. It cannot be referenced
+as an expression or marked linear as `!_`. Direct `_ <- Effect.operation()`
+can discard scalar, frozen/shareable, or owned results; owned results still
+produce an explicit cleanup edge. A non-scalar result from an indirect
+effectful function call must still be bound until result ownership and cleanup
+rows can be preserved safely after call inlining.
+
+A fold is an ordinary function that accepts an initial accumulator and a step
+function. It does not need a dedicated control-flow form; `for` remains the
+simple statement form for repeated side effects or mutation.
+
+```txt
+let fold_range = (start, end, initial, const step) => {
+  let state = initial
+
+  for index in start..end {
+    state = step(state, index)
+  }
+
+  state
+}
 ```
 
 Collection loops are supported over const-known aggregate values and typed

@@ -1,0 +1,12 @@
+let message = "answer"
+let answer = 0
+
+if (let 'a' = get(message, 0)) {
+  answer = 42
+}
+
+if true && !false {
+  answer
+} else {
+  0
+}

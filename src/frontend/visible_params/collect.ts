@@ -72,6 +72,9 @@ export function expr_collects_from_names(
     case "scratch":
       return expr_collects_from_names(expr.body, names);
 
+    case "loop":
+      return stmts_collect_from_names(expr.body, new Set(names));
+
     case "handler": {
       const handler_names = new Set(names);
 
@@ -320,12 +323,18 @@ function stmt_collects_from_names(stmt: Stmt, names: Set<string>): boolean {
     case "resume_dup":
       return expr_collects_from_names(stmt.value, names);
 
-    case "break":
     case "continue":
     case "import":
     case "host_import":
     case "unsupported":
       return false;
+
+    case "break":
+      if (!stmt.value) {
+        return false;
+      }
+
+      return expr_collects_from_names(stmt.value, names);
   }
 
   stmt satisfies never;

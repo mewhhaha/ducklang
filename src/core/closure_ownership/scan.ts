@@ -185,6 +185,17 @@ function scan_closure_ownership_stmt<ctx extends CoreClosureOwnershipCtx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_closure_ownership_expr(
+          stmt.value,
+          scope,
+          ctx,
+          facts,
+          hooks,
+          state,
+        );
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
@@ -267,6 +278,21 @@ function scan_closure_ownership_expr<ctx extends CoreClosureOwnershipCtx>(
         expr.statements,
         block_scope,
         block_ctx,
+        clone_closure_ownership_facts(facts),
+        hooks,
+        state,
+      );
+      return;
+    }
+
+    case "loop": {
+      const loop_ctx = hooks.block_ctx(ctx);
+      const loop_scope = scope + "/loop#" + state.next_block.toString();
+      state.next_block += 1;
+      scan_closure_ownership_stmts(
+        expr.body,
+        loop_scope,
+        loop_ctx,
         clone_closure_ownership_facts(facts),
         hooks,
         state,

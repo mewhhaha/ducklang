@@ -1835,6 +1835,126 @@ add_suffix(message)
   );
 });
 
+Deno.test("Source lowers boolean and character literals to typed i32", () => {
+  assert_equals(Ic.reduce(compile("true")), {
+    tag: "num",
+    type: "i32",
+    value: 1,
+  });
+  assert_equals(Ic.reduce(compile("false")), {
+    tag: "num",
+    type: "i32",
+    value: 0,
+  });
+  assert_equals(Ic.reduce(compile("true && !false")), {
+    tag: "num",
+    type: "i32",
+    value: 1,
+  });
+  assert_equals(Ic.reduce(compile("'A'")), {
+    tag: "num",
+    type: "i32",
+    value: 65,
+  });
+  assert_equals(Ic.reduce(compile("'λ'")), {
+    tag: "num",
+    type: "i32",
+    value: 955,
+  });
+  assert_equals(Ic.reduce(compile("'🦀'")), {
+    tag: "num",
+    type: "i32",
+    value: 129408,
+  });
+  assert_equals(Ic.reduce(compile(String.raw`'\n'`)), {
+    tag: "num",
+    type: "i32",
+    value: 10,
+  });
+  assert_equals(Ic.reduce(compile(String.raw`'\''`)), {
+    tag: "num",
+    type: "i32",
+    value: 39,
+  });
+  assert_equals(Ic.reduce(compile(String.raw`'\\'`)), {
+    tag: "num",
+    type: "i32",
+    value: 92,
+  });
+
+  const parenthesized_character_pattern = compile(`
+let value = 'c'
+if (let 'c' = value) {
+  42
+} else {
+  0
+}
+`);
+
+  assert_equals(Ic.reduce(parenthesized_character_pattern), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  const literal_patterns = compile(`
+let value = 0
+if let false = value {
+  value = 1
+}
+if let 1 = value {
+  value = 2
+}
+if let "ready" = "ready" {
+  value = value + 40
+}
+value
+`);
+
+  assert_equals(Ic.reduce(literal_patterns), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  assert_equals(
+    Ic.reduce(compile(`
+let value = 42i64
+if let 42i64 = value {
+  42
+} else {
+  0
+}
+`)),
+    {
+      tag: "num",
+      type: "i32",
+      value: 42,
+    },
+  );
+
+  assert_throws(
+    () => compile("''"),
+    "Character literal must contain exactly one Unicode scalar value",
+  );
+  assert_throws(
+    () => compile("'ab'"),
+    "Character literal must contain exactly one Unicode scalar value",
+  );
+  assert_throws(
+    () => compile("'a"),
+    "Unterminated character literal",
+  );
+  assert_throws(
+    () => compile(String.raw`'\x'`),
+    "Unsupported character escape: \\x",
+  );
+  assert_throws(
+    () => compile("if (let value = 1) { 42 }"),
+    "Expected union case or literal pattern",
+  );
+});
+
 Deno.test("Source checks binding annotations", () => {
   assert_equals(
     Format.fmt(Source, Source.parse("let x: Int = 1\nx")),
@@ -2026,6 +2146,134 @@ if input {
 `);
 
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
+});
+
+Deno.test("Source lowers else-if chains as nested expressions", () => {
+  const ordinary = compile(`
+let choice = 2
+
+if choice == 1 {
+  10
+} else if choice == 2 {
+  42
+} else {
+  0
+}
+`);
+
+  assert_equals(Ic.reduce(ordinary), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  const literal_pattern = compile(`
+let token = 'x'
+
+if let 'a' = token {
+  1
+} else if (let 'x' = token) {
+  42
+} else {
+  0
+}
+`);
+
+  assert_equals(Ic.reduce(literal_pattern), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  const union_pattern = compile(`
+let result = .err(42)
+
+if let .ok(value) = result {
+  value
+} else if let .err(error) = result {
+  error
+} else {
+  0
+}
+`);
+
+  assert_equals(Ic.reduce(union_pattern), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+  assert_includes(
+    Format.fmt(
+      Source,
+      Source.parse(`
+if let .ok(value) = result {
+  value
+} else if let .err(error) = result {
+  error
+} else {
+  0
+}
+`),
+    ),
+    "else if let .err(error)",
+  );
+
+  const assigned_wat = Source.wat(`
+host_import choose from "env.choose" () => I32
+let choice = choose()
+let result = 0
+
+if choice == 1 {
+  result = 1
+} else if choice == 2 {
+  result = 42
+} else {
+  result = 3
+}
+
+result
+  `);
+
+  assert_includes(assigned_wat, "i32.const 42");
+  assert_equals(
+    assigned_wat.split("\n").filter((line) => {
+      return line.trim() === "if";
+    }).length,
+    2,
+  );
+
+  const implicit_final_else = compile(`
+let first = false
+let second = true
+
+if first {
+  1
+} else if second {
+  42
+}
+`);
+
+  assert_equals(Ic.reduce(implicit_final_else), {
+    tag: "num",
+    type: "i32",
+    value: 42,
+  });
+
+  assert_includes(
+    Format.fmt(
+      Source,
+      Source.parse(`
+if first {
+  1
+} else if second {
+  2
+} else {
+  3
+}
+`),
+    ),
+    "else if second",
+  );
 });
 
 Deno.test("Source lowers no-else if statements with fallthrough", () => {

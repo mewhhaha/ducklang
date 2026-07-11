@@ -3,6 +3,7 @@ import type { Param, Token, TypeExpr } from "./ast.ts";
 import {
   expect_const_binding_name,
   expect_snake_case,
+  is_no_demand_name,
   is_snake_case,
 } from "./names.ts";
 import { ParserCursor } from "./parser_cursor.ts";
@@ -26,8 +27,12 @@ export class ParserParams extends ParserCursor {
       return undefined;
     }
 
-    const name = this.advance().text;
-    this.expect_param_name(name);
+    const name = this.expect_binding_name("Expected lambda parameter");
+
+    if (!is_no_demand_name(name)) {
+      this.expect_param_name(name);
+    }
+
     return { name, is_const: false, is_linear: false, annotation: undefined };
   }
 
@@ -82,8 +87,12 @@ export class ParserParams extends ParserCursor {
       return params;
     }
 
-    const name = this.expect_name("Expected recursive parameter");
-    this.expect_param_name(name);
+    const name = this.expect_binding_name("Expected recursive parameter");
+
+    if (!is_no_demand_name(name)) {
+      this.expect_param_name(name);
+    }
+
     return [{ name, is_const: false, is_linear: false, annotation: undefined }];
   }
 
@@ -112,19 +121,25 @@ export class ParserParams extends ParserCursor {
   protected parse_param(): Param {
     const is_const = this.match_name("const");
     const is_linear = this.match_symbol("!");
-    const name = this.expect_name("Expected parameter name");
+    const name = this.expect_binding_name("Expected parameter name");
     let param_label = "Parameter";
+
+    if (is_linear && is_no_demand_name(name)) {
+      throw new Error("`!_` is not supported");
+    }
 
     if (is_const) {
       param_label = "Const parameter";
     }
 
-    this.expect_supported_name(name, param_label);
+    if (!is_no_demand_name(name)) {
+      this.expect_supported_name(name, param_label);
 
-    if (is_const) {
-      expect_snake_case(name, "Const parameter");
-    } else {
-      this.expect_param_name(name);
+      if (is_const) {
+        expect_snake_case(name, "Const parameter");
+      } else {
+        this.expect_param_name(name);
+      }
     }
 
     let annotation: string | undefined;

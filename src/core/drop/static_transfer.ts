@@ -399,6 +399,17 @@ function scan_static_drop_transfer_stmt<ctx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_static_drop_transfer_expr(
+          stmt.value,
+          scope,
+          owners,
+          ctx,
+          hooks,
+          state,
+        );
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
@@ -459,6 +470,17 @@ function scan_static_drop_transfer_expr<ctx>(
     case "block":
       scan_static_drop_transfer_stmts(
         expr.statements,
+        scope,
+        owners,
+        ctx,
+        hooks,
+        state,
+      );
+      return;
+
+    case "loop":
+      scan_static_drop_transfer_stmts(
+        expr.body,
         scope,
         owners,
         ctx,

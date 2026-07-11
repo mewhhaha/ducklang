@@ -74,6 +74,9 @@ export function contains_unresolved_linear_effect(
     case "scratch":
       return contains_unresolved_linear_effect(expr.body, names, env, hooks);
 
+    case "loop":
+      return contains_unresolved_linear_stmt(expr.body, names, env, hooks);
+
     case "captured":
       return contains_unresolved_linear_effect(
         expr.expr,
@@ -236,10 +239,18 @@ function contains_unresolved_linear_stmt(
     switch (stmt.tag) {
       case "import":
       case "host_import":
-      case "break":
       case "continue":
       case "type_check":
       case "unsupported":
+        break;
+
+      case "break":
+        if (
+          stmt.value &&
+          contains_unresolved_linear_effect(stmt.value, names, env, hooks)
+        ) {
+          return true;
+        }
         break;
 
       case "bind":

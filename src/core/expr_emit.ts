@@ -17,6 +17,7 @@ import {
 } from "./runtime_aggregate.ts";
 import { emit_core_freeze_expr } from "./expr_emit/freeze.ts";
 import { emit_core_scratch_block_expr } from "./expr_emit/scratch.ts";
+import { emit_core_loop_expr } from "./loop.ts";
 import type { CoreExprEmitCtx, CoreExprEmitHooks } from "./expr_emit/types.ts";
 
 export type { CoreExprEmitCtx, CoreExprEmitHooks } from "./expr_emit/types.ts";
@@ -222,6 +223,12 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
 
       return lines.join("\n");
     }
+
+    case "loop":
+      return emit_core_loop_expr(expr, ctx, {
+        emit_stmt: hooks.emit_stmt,
+        expr_type: hooks.expr_type,
+      });
 
     case "borrow": {
       return emit_core_expr(expr.value, ctx, hooks);

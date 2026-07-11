@@ -1,4 +1,5 @@
 import { type CoreDropStmtScanner, scan_drop_block_expr } from "./block.ts";
+import { loop_exit_owners, next_loop_scope } from "./state.ts";
 import { scan_drop_closure_body } from "./closure_body.ts";
 import {
   scan_drop_if_expr,
@@ -160,6 +161,22 @@ export function scan_drop_expr_children_impl<ctx>(
         scan_drop_stmt,
         scan_drop_result_expr,
       );
+    }
+
+    case "loop": {
+      const loop_scope = next_loop_scope(state);
+      const loop_owners = new Map<string, CoreDropOwner>();
+      scan_drop_stmts(
+        expr.body,
+        loop_scope,
+        loop_owners,
+        loop_exit_owners(owners, exit_owners),
+        ctx,
+        hooks,
+        state,
+      );
+      state.expr_results.set(expr, { tag: "none" });
+      return true;
     }
 
     case "comptime":

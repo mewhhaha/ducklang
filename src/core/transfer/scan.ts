@@ -140,6 +140,10 @@ function scan_transfer_stmt<ctx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_transfer_expr(stmt.value, scope, host_imports, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;

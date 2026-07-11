@@ -93,18 +93,7 @@ export function tokenize(text: string): Token[] {
         if (next === "\\") {
           const escaped = text[index + 1];
           expect(escaped, "Unterminated string escape");
-
-          if (escaped === "n") {
-            value += "\n";
-          } else if (escaped === "t") {
-            value += "\t";
-          } else if (escaped === "r") {
-            value += "\r";
-          } else if (escaped === '"' || escaped === "\\") {
-            value += escaped;
-          } else {
-            throw new Error("Unsupported string escape: \\" + escaped);
-          }
+          value += decode_literal_escape(escaped, '"', "string");
 
           index += 2;
           column += 2;
@@ -119,6 +108,59 @@ export function tokenize(text: string): Token[] {
       index += 1;
       column += 1;
       tokens.push({ kind: "string", text: value, line, column: start_column });
+    } else if (char === "'") {
+      const start_column = column;
+      index += 1;
+      column += 1;
+      let value = "";
+
+      while (index < text.length) {
+        const next = text[index];
+        expect(next, "Missing character literal value");
+
+        if (next === "'") {
+          break;
+        }
+
+        if (next === "\n" || next === "\r") {
+          throw new Error("Unterminated character literal");
+        }
+
+        if (next === "\\") {
+          const escaped = text[index + 1];
+          expect(escaped, "Unterminated character escape");
+          value += decode_literal_escape(escaped, "'", "character");
+          index += 2;
+          column += 2;
+        } else {
+          value += next;
+          index += 1;
+          column += 1;
+        }
+      }
+
+      expect(text[index] === "'", "Unterminated character literal");
+      const scalars = Array.from(value);
+      expect(
+        scalars.length === 1,
+        "Character literal must contain exactly one Unicode scalar value",
+      );
+      const scalar = scalars[0];
+      expect(scalar, "Missing character literal scalar");
+      const code_point = scalar.codePointAt(0);
+      expect(code_point !== undefined, "Missing character literal code point");
+      expect(
+        code_point < 0xd800 || code_point > 0xdfff,
+        "Character literal must contain a Unicode scalar value",
+      );
+      index += 1;
+      column += 1;
+      tokens.push({
+        kind: "character",
+        text: scalar,
+        line,
+        column: start_column,
+      });
     } else {
       const start_column = column;
       const two = text.slice(index, index + 2);
@@ -151,4 +193,28 @@ export function tokenize(text: string): Token[] {
 
   tokens.push({ kind: "eof", text: "", line, column });
   return tokens;
+}
+
+function decode_literal_escape(
+  escaped: string,
+  quote: '"' | "'",
+  literal: "string" | "character",
+): string {
+  if (escaped === "n") {
+    return "\n";
+  }
+
+  if (escaped === "t") {
+    return "\t";
+  }
+
+  if (escaped === "r") {
+    return "\r";
+  }
+
+  if (escaped === quote || escaped === "\\") {
+    return escaped;
+  }
+
+  throw new Error("Unsupported " + literal + " escape: \\" + escaped);
 }

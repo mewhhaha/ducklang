@@ -91,6 +91,114 @@ return { a, message: b }
   assert_includes(formatted, "return { a, message: b }");
 });
 
+Deno.test("no-demand binders parse as distinct internal names and format as underscores", () => {
+  const source = parse_source(`
+let _ = 1
+const _ = 2
+let pair = (_, const _) => 0
+let count = rec (_, const _) => 0
+let selected = if let .ok(_) = result { 1 } else { 0 }
+let { _, value } = source
+`);
+
+  const names: string[] = [];
+
+  for (const statement of source.statements) {
+    if (statement.tag === "bind") {
+      names.push(statement.name);
+
+      if (statement.value.tag === "lam" || statement.value.tag === "rec") {
+        for (const param of statement.value.params) {
+          names.push(param.name);
+        }
+      }
+
+      if (statement.value.tag === "if_let" && statement.value.value_name) {
+        names.push(statement.value.value_name);
+      }
+    }
+
+    if (statement.tag === "bind_pattern") {
+      for (const item of statement.items) {
+        names.push(item.name);
+      }
+    }
+  }
+
+  const no_demand = names.filter((name) => name.startsWith("@no_demand_"));
+  assert_equals(no_demand.length, 8);
+  assert_equals(new Set(no_demand).size, no_demand.length);
+
+  const formatted = format_source(source);
+  assert_includes(formatted, "let _ = 1");
+  assert_includes(formatted, "const _ = 2");
+  assert_includes(formatted, "let pair = (_, const _) => 0");
+  assert_includes(formatted, "let count = rec (_, const _) => 0");
+  assert_includes(formatted, "if let .ok(_) = result");
+  assert_includes(formatted, "let { _, value } = source");
+});
+
+Deno.test("no-demand binders cannot be used as linear values or expressions", () => {
+  assert_throws(
+    () => parse_source("let !_ = 1"),
+    "`!_` is not supported",
+  );
+  assert_throws(
+    () => parse_source("let take = (!_ ) => 0"),
+    "`!_` is not supported",
+  );
+  assert_throws(
+    () => parse_source("let { !_ } = source"),
+    "`!_` is not supported",
+  );
+  assert_throws(
+    () => parse_source("_"),
+    "Wildcard `_` cannot be used as an expression",
+  );
+  assert_throws(
+    () => parse_source("!_"),
+    "`!_` is not supported",
+  );
+});
+
+Deno.test("value loops and binderless ranges parse and format", () => {
+  const source = parse_source(`
+let code = loop {
+  for 0..2 {
+    ()
+  }
+  if ready {
+    break 7
+  }
+  continue
+}
+`);
+  const statement = source.statements[0];
+
+  if (
+    !statement || statement.tag !== "bind" || statement.value.tag !== "loop"
+  ) {
+    throw new Error("Expected a loop binding");
+  }
+
+  const range = statement.value.body[0];
+  assert_equals(range?.tag, "for_range");
+
+  if (!range || range.tag !== "for_range") {
+    throw new Error("Expected a binderless range");
+  }
+
+  assert_equals(range.index.startsWith("@no_demand_"), true);
+  assert_equals(range.start, { tag: "num", type: "i32", value: 0 });
+  assert_equals(range.end, { tag: "num", type: "i32", value: 2 });
+
+  const formatted = format_source(source);
+  assert_includes(formatted, "let code = loop");
+  assert_includes(formatted, "for 0..2 by 1");
+  assert_includes(formatted, "break 7");
+  assert_includes(formatted, "continue");
+});
+
 Deno.test("handler syntax parses and formats local effects and resumptions", () => {
   const source = parse_source(`
 effect Counter {

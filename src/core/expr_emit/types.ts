@@ -24,6 +24,9 @@ export type CoreExprEmitCtx = {
   scratch_return_resets: string[];
   next_loop: number;
   next_temp: number;
+  break_label: string | undefined;
+  break_value_type: ValType | undefined;
+  continue_label: string | undefined;
   text_layout: {
     offsets: Map<string, number>;
   };

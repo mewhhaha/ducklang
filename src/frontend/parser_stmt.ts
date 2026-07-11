@@ -345,8 +345,24 @@ export class ParserStmt extends ParserStmtBinding {
       const keyword = this.advance().text;
 
       if (keyword === "break") {
+        const next = this.peek();
+
+        if (
+          next.kind !== "newline" && next.kind !== "eof" &&
+          !(next.kind === "symbol" && next.text === "}")
+        ) {
+          return { tag: "break", value: this.parse_expr() };
+        }
+
         return { tag: "break" };
       }
+
+      const next = this.peek();
+      expect(
+        next.kind === "newline" || next.kind === "eof" ||
+          (next.kind === "symbol" && next.text === "}"),
+        "Continue does not accept a value",
+      );
 
       return { tag: "continue" };
     }

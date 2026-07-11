@@ -108,6 +108,12 @@ function rename_linear_closure_expr(
         body: rename_linear_closure_expr(expr.body, renames),
       };
 
+    case "loop":
+      return {
+        tag: "loop",
+        body: rename_linear_closure_block(expr.body, renames),
+      };
+
     case "captured":
       return expr;
 
@@ -374,6 +380,16 @@ function rename_linear_closure_stmt(
         target: rename_linear_closure_expr(stmt.target, renames),
       };
 
+    case "break":
+      if (!stmt.value) {
+        return stmt;
+      }
+
+      return {
+        tag: "break",
+        value: rename_linear_closure_expr(stmt.value, renames),
+      };
+
     case "return":
       return {
         tag: "return",
@@ -388,7 +404,6 @@ function rename_linear_closure_stmt(
 
     case "import":
     case "host_import":
-    case "break":
     case "continue":
     case "unsupported":
       return stmt;

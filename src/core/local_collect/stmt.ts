@@ -254,6 +254,7 @@ export function collect_core_stmt_locals(
       return;
 
     case "if_stmt":
+      api.collect_expr_locals(stmt.cond, ctx, hooks);
       hooks.expr_type(stmt.cond, ctx);
 
       for (const item of stmt.body) {
@@ -296,6 +297,12 @@ export function collect_core_stmt_locals(
       return;
 
     case "break":
+      if (stmt.value) {
+        api.collect_expr_locals(stmt.value, ctx, hooks);
+        hooks.expr_type(stmt.value, ctx);
+      }
+      return;
+
     case "continue":
     case "unsupported":
       return;

@@ -275,6 +275,7 @@ function same_static_core_expr(left: CoreExpr, right: CoreExpr): boolean {
         same_core_fields(left.fields, right.fields);
 
     case "block":
+    case "loop":
     case "comptime":
     case "with":
     case "lam":

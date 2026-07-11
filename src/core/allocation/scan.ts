@@ -46,6 +46,35 @@ export function scan_allocation_stmts<ctx>(
   }
 }
 
+function scan_allocation_scoped_stmts<ctx>(
+  statements: CoreStmt[],
+  scope: CoreAllocationScope,
+  ctx: ctx,
+  hooks: CoreAllocationHooks<ctx>,
+  state: CoreAllocationState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_allocation_stmts(statements, scope, ctx, hooks, state);
+    return;
+  }
+
+  const scoped_ctx = hooks.block_ctx(ctx);
+
+  for (let index = 0; index < statements.length; index += 1) {
+    const stmt = statements[index];
+
+    if (!stmt) {
+      throw new Error("Missing allocation scoped statement");
+    }
+
+    scan_allocation_stmt(stmt, scope, scoped_ctx, hooks, state);
+
+    if (index + 1 < statements.length) {
+      hooks.collect_stmt_locals(stmt, scoped_ctx);
+    }
+  }
+}
+
 function scan_allocation_stmt<ctx>(
   stmt: CoreStmt,
   scope: CoreAllocationScope,
@@ -145,23 +174,35 @@ function scan_allocation_stmt<ctx>(
       scan_allocation_expr(stmt.start, scope, ctx, hooks, state);
       scan_allocation_expr(stmt.end, scope, ctx, hooks, state);
       scan_allocation_expr(stmt.step, scope, ctx, hooks, state);
-      scan_allocation_stmts(stmt.body, scope, ctx, hooks, state);
+      scan_allocation_loop_stmts(stmt, scope, ctx, hooks, state);
       return;
 
     case "collection_loop":
       scan_allocation_expr(stmt.collection, scope, ctx, hooks, state);
-      scan_allocation_stmts(stmt.body, scope, ctx, hooks, state);
+      scan_allocation_loop_stmts(stmt, scope, ctx, hooks, state);
       return;
 
     case "if_stmt":
       scan_allocation_expr(stmt.cond, scope, ctx, hooks, state);
-      scan_allocation_stmts(stmt.body, scope, ctx, hooks, state);
+      scan_allocation_scoped_stmts(stmt.body, scope, ctx, hooks, state);
       return;
 
     case "if_else_stmt":
       scan_allocation_expr(stmt.cond, scope, ctx, hooks, state);
-      scan_allocation_stmts(stmt.then_body, scope, ctx, hooks, state);
-      scan_allocation_stmts(stmt.else_body, scope, ctx, hooks, state);
+      scan_allocation_scoped_stmts(
+        stmt.then_body,
+        scope,
+        ctx,
+        hooks,
+        state,
+      );
+      scan_allocation_scoped_stmts(
+        stmt.else_body,
+        scope,
+        ctx,
+        hooks,
+        state,
+      );
       return;
 
     case "if_let_stmt":
@@ -172,7 +213,7 @@ function scan_allocation_stmt<ctx>(
         hooks,
         state,
         scan_allocation_expr,
-        scan_allocation_stmts,
+        scan_allocation_scoped_stmts,
       );
       return;
 
@@ -189,10 +230,31 @@ function scan_allocation_stmt<ctx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_allocation_expr(stmt.value, scope, ctx, hooks, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
   }
+}
+
+function scan_allocation_loop_stmts<ctx>(
+  stmt: Extract<CoreStmt, { tag: "range_loop" | "collection_loop" }>,
+  scope: CoreAllocationScope,
+  ctx: ctx,
+  hooks: CoreAllocationHooks<ctx>,
+  state: CoreAllocationState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_allocation_stmts(stmt.body, scope, ctx, hooks, state);
+    return;
+  }
+
+  const loop_ctx = hooks.block_ctx(ctx);
+  hooks.collect_stmt_locals(stmt, loop_ctx);
+  scan_allocation_stmts(stmt.body, scope, loop_ctx, hooks, state);
 }
 
 function mark_bound_allocation_owner(
@@ -440,6 +502,19 @@ function scan_allocation_expr<ctx>(
         state,
         scan_allocation_stmt,
         scan_allocation_stmts,
+      );
+      return;
+    }
+
+    case "loop": {
+      const loop = "loop#" + state.next_block.toString();
+      state.next_block += 1;
+      scan_allocation_scoped_stmts(
+        expr.body,
+        { name: loop, scratch: scope.scratch },
+        ctx,
+        hooks,
+        state,
       );
       return;
     }

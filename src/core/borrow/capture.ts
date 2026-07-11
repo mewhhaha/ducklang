@@ -136,6 +136,15 @@ function collect_captured_borrow_view_names(
       );
       return;
 
+    case "loop":
+      collect_stmts_captured_borrow_view_names(
+        expr.body,
+        aliases,
+        new Set(shadowed),
+        names,
+      );
+      return;
+
     case "comptime":
       collect_captured_borrow_view_names(
         expr.expr,
@@ -530,6 +539,15 @@ function collect_stmt_captured_borrow_view_names(
       return;
 
     case "break":
+      if (stmt.value) {
+        collect_captured_borrow_view_names(
+          stmt.value,
+          aliases,
+          shadowed,
+          names,
+        );
+      }
+      return;
     case "continue":
     case "unsupported":
       return;

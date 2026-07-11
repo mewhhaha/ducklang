@@ -1,0 +1,22 @@
+module pair = () => {
+  return { ignored: 7, value: 40 }
+}
+
+let _ = 1
+const _ = 2
+const { _, value } = pair()
+let add_two = (_, number) => number + 2
+
+const option_type = union {
+  some: I32,
+  none: Unit
+}
+
+let choice = option_type.some(99)
+let result = if let .some(_) = choice {
+  add_two(100, value)
+} else {
+  0
+}
+
+result

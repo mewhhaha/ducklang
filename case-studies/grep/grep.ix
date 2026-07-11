@@ -40,17 +40,155 @@ const write_result_type = union {
   err: io_error_type
 }
 
-count <- Process.arg_count()
-path <- Process.arg(0)
-open_result <- FileReader.open(borrow path)
-read_result <- FileReader.read(65536)
-code <- if let .chunk(bytes) = read_result {
-  write_result <- Stdout.write(borrow bytes)
-  0
-} else {
-  1
-}
-_ <- FileReader.close()
+const line_contains = (bytes: Bytes, pattern: Text, line_start: I32, line_end: I32) => {
+  let matched = false
+  let pattern_length = len(pattern)
+  let search_end = line_end - pattern_length + 1
 
-let final_code: I32 = code
-return { code: final_code }
+  for start in line_start..search_end {
+    let same = true
+
+    for offset in 0..pattern_length {
+      if get(bytes, start + offset) != get(pattern, offset) {
+        same = false
+      }
+    }
+
+    if same {
+      matched = true
+    }
+  }
+
+  matched
+}
+
+let write_line: Bytes -> <Stdout.write> I32 = (line: Bytes) => {
+  write_result <- Stdout.write(borrow line)
+
+  if let .ok = write_result {
+    0
+  } else if let .closed = write_result {
+    1
+  } else if let .err(_) = write_result {
+    2
+  } else {
+    2
+  }
+}
+
+arg_count <- Process.arg_count()
+let code = 2
+
+if arg_count == 2 {
+  pattern <- Process.arg(0)
+  path <- Process.arg(1)
+  open_result <- FileReader.open(borrow path)
+
+  if let .ok = open_result {
+    first_result <- FileReader.read(65536)
+
+    if let .chunk(first_bytes) = first_result {
+      let current: Bytes = first_bytes
+      let pending: Bytes = slice(first_bytes, 0, 0)
+      let matched_any = false
+      let done = false
+      let failed = false
+      let stopped = false
+      loop_code <- loop {
+        let appended: Bytes = append(pending, current)
+        pending = appended
+        let consumed = 0
+
+        for index, byte in pending {
+          if (let '\n' = byte) {
+            let line_end = index + 1
+            let line_matches = line_contains(pending, pattern, consumed, line_end)
+
+            if line_matches && stopped == false && failed == false {
+              matched_any = true
+              let line: Bytes = slice(pending, consumed, line_end)
+              write_status <- write_line(line)
+
+              if write_status == 1 {
+                stopped = true
+              }
+
+              if write_status == 2 {
+                failed = true
+              }
+            }
+
+            consumed = line_end
+          }
+        }
+
+        pending = slice(pending, consumed, len(pending))
+
+        if stopped == false && failed == false {
+          next_result <- FileReader.read(65536)
+
+          if let .chunk(next_bytes) = next_result {
+            current = next_bytes
+            ()
+          } else if let .eof = next_result {
+            done = true
+            ()
+          } else if let .err = next_result {
+            failed = true
+            ()
+          }
+        }
+
+        if done && failed == false && stopped == false && len(pending) > 0 {
+          let line_end = len(pending)
+          let line_matches = line_contains(pending, pattern, 0, line_end)
+
+          if line_matches {
+            matched_any = true
+            let line: Bytes = slice(pending, 0, line_end)
+            write_status <- write_line(line)
+
+            if write_status == 1 {
+              stopped = true
+            }
+
+            if write_status == 2 {
+              failed = true
+            }
+          }
+        }
+
+        if done || stopped || failed {
+          break if failed {
+            2
+          } else if done || stopped {
+            if matched_any {
+              0
+            } else {
+              1
+            }
+          } else {
+            2
+          }
+        }
+      }
+
+      code = loop_code
+      code
+    } else if let .eof = first_result {
+      code = 1
+      code
+    } else if let .err = first_result {
+      code = 2
+      code
+    }
+
+    _ <- FileReader.close()
+    ()
+  } else if let .err = open_result {
+    code = 2
+    ()
+  }
+}
+
+return { code }

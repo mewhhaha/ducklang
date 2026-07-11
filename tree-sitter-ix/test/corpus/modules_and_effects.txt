@@ -78,7 +78,7 @@ return { result }
               (identifier))
             (argument_list)))
         (effect_binding_statement
-          (identifier)
+          (wildcard)
           (call_expression
             (field_expression
               (identifier)
@@ -145,7 +145,7 @@ let inspect: () -> <Stdin | Stdout.write_line | Trace \ Debug> Unit = () => ()
               (identifier))
             (argument_list)))
         (effect_binding_statement
-          (identifier)
+          (wildcard)
           (call_expression
             (field_expression
               (identifier)
@@ -401,7 +401,7 @@ return { result, close }
               (identifier))
             (argument_list)))
         (effect_binding_statement
-          (identifier)
+          (wildcard)
           (call_expression
             (field_expression
               (identifier)

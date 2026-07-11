@@ -83,6 +83,21 @@ export const success_examples: SuccessExample[] = [
     route: "managed",
     runs: flag_runs(21, 41),
   },
+  {
+    path: "examples/basics/09_literals.ix",
+    route: "ic",
+    runs: run(42),
+  },
+  {
+    path: "examples/basics/10_else_if.ix",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/basics/11_no_demand_bindings.ix",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/compile_time/01_comptime_adder.ix",
@@ -281,6 +296,16 @@ export const success_examples: SuccessExample[] = [
     path: "examples/loops/08_text_byte_collection.ix",
     route: "core",
     runs: run(198),
+  },
+  {
+    path: "examples/loops/09_loop_expression_syntax.ix",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/loops/10_fold_function.ix",
+    route: "core",
+    runs: run(42),
   },
 
   {

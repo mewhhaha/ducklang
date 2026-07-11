@@ -24,3 +24,21 @@ export function expect_snake_case(name: string, label: string): void {
 export function expect_const_binding_name(name: string): void {
   expect_snake_case(name, "Const binding");
 }
+
+const no_demand_prefix = "@no_demand_";
+
+export function no_demand_name(index: number): string {
+  return no_demand_prefix + index.toString();
+}
+
+export function is_no_demand_name(name: string): boolean {
+  return name.startsWith(no_demand_prefix);
+}
+
+export function format_binding_name(name: string): string {
+  if (is_no_demand_name(name)) {
+    return "_";
+  }
+
+  return name;
+}

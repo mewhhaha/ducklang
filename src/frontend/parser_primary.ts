@@ -1,7 +1,7 @@
 import { expect } from "../expect.ts";
 import type { FrontExpr, HandlerClause, HandlerReturnClause } from "./ast.ts";
-import { expect_snake_case } from "./names.ts";
-import { parse_number_expr } from "./numeric.ts";
+import { front_literal_expr } from "./literal.ts";
+import { expect_snake_case, is_no_demand_name } from "./names.ts";
 import { ParserBlock } from "./parser_block.ts";
 import {
   is_builtin_type_reference_name,
@@ -20,14 +20,11 @@ export abstract class ParserPrimary extends ParserBlock {
       }
     }
 
-    if (token.kind === "number") {
-      this.advance();
-      return parse_number_expr(token.text);
-    }
+    const literal = front_literal_expr(token);
 
-    if (token.kind === "string") {
+    if (literal) {
       this.advance();
-      return { tag: "text", value: token.text };
+      return literal;
     }
 
     if (this.match_name("handler")) {
@@ -41,11 +38,21 @@ export abstract class ParserPrimary extends ParserBlock {
     }
 
     if (this.match_name("if")) {
-      if (this.peek().kind === "name" && this.peek().text === "let") {
+      if (this.starts_if_let_condition()) {
         return this.parse_if_let_expr();
       }
 
       return this.parse_if_expr();
+    }
+
+    if (
+      this.peek().kind === "name" && this.peek().text === "loop" &&
+      this.peek(1).kind === "symbol" && this.peek(1).text === "{"
+    ) {
+      this.expect_name("Expected loop");
+      const body = this.parse_block();
+      expect(body.tag === "block", "Expected loop body block");
+      return { tag: "loop", body: body.statements };
     }
 
     if (this.match_name("for")) {
@@ -62,6 +69,11 @@ export abstract class ParserPrimary extends ParserBlock {
 
     if (this.match_symbol("!")) {
       const name = this.expect_name("Expected linear value name");
+
+      if (name === "_") {
+        throw this.error("`!_` is not supported");
+      }
+
       expect_snake_case(name, "Linear value");
       return { tag: "linear", name };
     }
@@ -103,6 +115,15 @@ export abstract class ParserPrimary extends ParserBlock {
 
     if (token.kind === "name") {
       this.advance();
+
+      if (token.text === "_") {
+        throw this.error("Wildcard `_` cannot be used as an expression");
+      }
+
+      if (is_no_demand_name(token.text)) {
+        throw this.error("No-demand binding cannot be used as an expression");
+      }
+
       this.expect_supported_name(token.text, "Name");
       const effect_literal = this.effect_names.has(token.text) &&
         this.peek().kind === "symbol" && this.peek().text === "{";

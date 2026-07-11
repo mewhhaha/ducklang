@@ -63,6 +63,10 @@ function validate_rec_expr(expr: FrontExpr, tail: boolean): void {
       validate_rec_expr(expr.body, false);
       return;
 
+    case "loop":
+      validate_rec_block(expr.body);
+      return;
+
     case "captured":
       validate_rec_expr(expr.expr, tail);
       return;
@@ -160,7 +164,12 @@ function validate_rec_block(stmts: Stmt[]): void {
       validate_rec_expr(stmt.target, false);
     } else if (stmt.tag === "import" || stmt.tag === "host_import") {
       continue;
-    } else if (stmt.tag === "break" || stmt.tag === "continue") {
+    } else if (stmt.tag === "break") {
+      if (stmt.value) {
+        validate_rec_expr(stmt.value, false);
+      }
+      return;
+    } else if (stmt.tag === "continue") {
       return;
     }
   }

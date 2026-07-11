@@ -234,6 +234,15 @@ function scan_unsupported_codegen_stmt(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_unsupported_codegen_expr(
+          stmt.value,
+          issues,
+          hooks,
+          true,
+          loop_depth,
+        );
+      }
       if (loop_depth === 0) {
         issues.push({
           tag: "unsupported_codegen",
@@ -341,6 +350,15 @@ function scan_unsupported_codegen_expr(
         issues,
         hooks,
         loop_depth,
+      );
+      return;
+
+    case "loop":
+      scan_unsupported_codegen_stmts(
+        expr.body,
+        issues,
+        hooks,
+        loop_depth + 1,
       );
       return;
 
@@ -569,6 +587,7 @@ function direct_unsupported_codegen_expr_issue(
     case "lam":
     case "app":
     case "block":
+    case "loop":
     case "borrow":
     case "freeze":
     case "scratch":

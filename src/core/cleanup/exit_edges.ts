@@ -48,6 +48,10 @@ function collect_expr_exit_edges(
       collect_stmt_exit_edges(expr.statements, edges, loop_depth);
       return;
 
+    case "loop":
+      collect_stmt_exit_edges(expr.body, edges, loop_depth + 1);
+      return;
+
     case "comptime":
       collect_expr_exit_edges(expr.expr, edges, loop_depth);
       return;
@@ -168,6 +172,9 @@ function collect_one_stmt_exit_edges(
       return;
 
     case "break":
+      if (stmt.value) {
+        collect_expr_exit_edges(stmt.value, edges, loop_depth);
+      }
       if (loop_depth === 0) {
         edges.add("break");
       }

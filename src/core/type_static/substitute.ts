@@ -73,6 +73,14 @@ export function substitute_core_type_expr(
         ),
       };
 
+    case "loop":
+      return {
+        tag: "loop",
+        body: expr.body.map((stmt) =>
+          substitute_core_type_stmt(stmt, type_args)
+        ),
+      };
+
     case "comptime":
       return {
         tag: "comptime",
@@ -317,6 +325,13 @@ function substitute_core_type_stmt(
       };
 
     case "break":
+      if (!stmt.value) {
+        return stmt;
+      }
+      return {
+        tag: "break",
+        value: substitute_core_type_expr(stmt.value, type_args),
+      };
     case "continue":
     case "unsupported":
       return stmt;

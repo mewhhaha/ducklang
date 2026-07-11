@@ -45,6 +45,14 @@ export function closure_body_contains_closure_value(expr: CoreExpr): boolean {
       }
       return false;
 
+    case "loop":
+      for (const stmt of expr.body) {
+        if (closure_stmt_contains_closure_value(stmt)) {
+          return true;
+        }
+      }
+      return false;
+
     case "comptime":
       return closure_body_contains_closure_value(expr.expr);
 

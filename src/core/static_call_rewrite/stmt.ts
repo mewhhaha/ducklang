@@ -231,6 +231,13 @@ function scoped_static_core_call_stmt(
       };
 
     case "break":
+      if (!stmt.value) {
+        return stmt;
+      }
+      return {
+        tag: "break",
+        value: rewrite_expr(stmt.value, replacements, ctx),
+      };
     case "continue":
     case "unsupported":
       return stmt;

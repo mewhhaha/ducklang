@@ -164,8 +164,10 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         target: core_expr(stmt.target, ctx),
       };
 
-    case "break":
-      return { tag: "break" };
+    case "break": {
+      const value = stmt.value ? core_expr(stmt.value, ctx) : undefined;
+      return { tag: "break", value };
+    }
 
     case "continue":
       return { tag: "continue" };
@@ -553,13 +555,15 @@ function core_if_else_stmt(
   }
 
   const then_body = block_body(expr.then_branch);
-  const else_body = block_body(expr.else_branch);
 
-  if (!then_body || !else_body) {
+  if (!then_body) {
     return undefined;
   }
 
-  if (block_produces_value(then_body) && block_produces_value(else_body)) {
+  if (
+    block_produces_value(then_body) &&
+    conditional_branch_produces_value(expr.else_branch)
+  ) {
     return undefined;
   }
 
@@ -570,8 +574,48 @@ function core_if_else_stmt(
     tag: "if_else_stmt",
     cond: core_expr(expr.cond, ctx),
     then_body: then_body.map((stmt) => core_stmt(stmt, then_ctx)),
-    else_body: else_body.map((stmt) => core_stmt(stmt, else_ctx)),
+    else_body: core_conditional_branch_stmts(expr.else_branch, else_ctx),
   };
+}
+
+function core_conditional_branch_stmts(
+  expr: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): CoreStmt[] {
+  const body = block_body(expr);
+
+  if (body) {
+    return body.map((stmt) => core_stmt(stmt, ctx));
+  }
+
+  const nested = core_if_else_stmt(expr, ctx);
+
+  if (nested) {
+    return [nested];
+  }
+
+  return [{ tag: "expr", expr: core_expr(expr, ctx) }];
+}
+
+function conditional_branch_produces_value(expr: FrontExpr): boolean {
+  const body = block_body(expr);
+
+  if (body) {
+    return block_produces_value(body);
+  }
+
+  if (expr.tag === "if" || expr.tag === "if_let") {
+    const then_body = block_body(expr.then_branch);
+
+    if (!then_body) {
+      return true;
+    }
+
+    return block_produces_value(then_body) &&
+      conditional_branch_produces_value(expr.else_branch);
+  }
+
+  return true;
 }
 
 function block_produces_value(stmts: Stmt[]): boolean {

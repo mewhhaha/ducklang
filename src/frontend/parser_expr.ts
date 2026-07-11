@@ -212,8 +212,10 @@ export abstract class ParserExpr extends ParserPrimary {
         after.kind === "symbol" && after.text === "(" &&
         next.text !== "resume" &&
         !this.affine_call_names.has(next.text);
+      const boolean_literal = next.kind === "name" &&
+        (next.text === "true" || next.text === "false");
 
-      if (next.kind === "symbol" || non_affine_call) {
+      if (next.kind === "symbol" || non_affine_call || boolean_literal) {
         this.expect_symbol("!");
         return {
           tag: "prim",

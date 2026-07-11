@@ -78,23 +78,23 @@ function scan_freeze_stmt<ctx>(
       scan_freeze_expr(stmt.start, ctx, hooks, state);
       scan_freeze_expr(stmt.end, ctx, hooks, state);
       scan_freeze_expr(stmt.step, ctx, hooks, state);
-      scan_freeze_stmts(stmt.body, ctx, hooks, state);
+      scan_freeze_loop_stmts(stmt, ctx, hooks, state);
       return;
 
     case "collection_loop":
       scan_freeze_expr(stmt.collection, ctx, hooks, state);
-      scan_freeze_stmts(stmt.body, ctx, hooks, state);
+      scan_freeze_loop_stmts(stmt, ctx, hooks, state);
       return;
 
     case "if_stmt":
       scan_freeze_expr(stmt.cond, ctx, hooks, state);
-      scan_freeze_stmts(stmt.body, ctx, hooks, state);
+      scan_freeze_scoped_stmts(stmt.body, ctx, hooks, state);
       return;
 
     case "if_else_stmt":
       scan_freeze_expr(stmt.cond, ctx, hooks, state);
-      scan_freeze_stmts(stmt.then_body, ctx, hooks, state);
-      scan_freeze_stmts(stmt.else_body, ctx, hooks, state);
+      scan_freeze_scoped_stmts(stmt.then_body, ctx, hooks, state);
+      scan_freeze_scoped_stmts(stmt.else_body, ctx, hooks, state);
       return;
 
     case "if_let_stmt":
@@ -114,6 +114,10 @@ function scan_freeze_stmt<ctx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_freeze_expr(stmt.value, ctx, hooks, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
@@ -190,6 +194,50 @@ function scan_freeze_stmts<ctx>(
   }
 }
 
+function scan_freeze_scoped_stmts<ctx>(
+  statements: CoreStmt[],
+  ctx: ctx,
+  hooks: CoreFreezeProofHooks<ctx>,
+  state: CoreFreezeProofState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_freeze_stmts(statements, ctx, hooks, state);
+    return;
+  }
+
+  const scoped_ctx = hooks.block_ctx(ctx);
+
+  for (let index = 0; index < statements.length; index += 1) {
+    const stmt = statements[index];
+
+    if (!stmt) {
+      throw new Error("Missing freeze-proof scoped statement");
+    }
+
+    scan_freeze_stmt(stmt, scoped_ctx, hooks, state);
+
+    if (index + 1 < statements.length) {
+      hooks.collect_stmt_locals(stmt, scoped_ctx);
+    }
+  }
+}
+
+function scan_freeze_loop_stmts<ctx>(
+  stmt: Extract<CoreStmt, { tag: "range_loop" | "collection_loop" }>,
+  ctx: ctx,
+  hooks: CoreFreezeProofHooks<ctx>,
+  state: CoreFreezeProofState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_freeze_stmts(stmt.body, ctx, hooks, state);
+    return;
+  }
+
+  const loop_ctx = hooks.block_ctx(ctx);
+  hooks.collect_stmt_locals(stmt, loop_ctx);
+  scan_freeze_stmts(stmt.body, loop_ctx, hooks, state);
+}
+
 function scan_freeze_expr<ctx>(
   expr: CoreExpr,
   ctx: ctx,
@@ -234,6 +282,10 @@ function scan_freeze_expr<ctx>(
 
     case "block":
       scan_freeze_block(expr, ctx, hooks, state);
+      return;
+
+    case "loop":
+      scan_freeze_scoped_stmts(expr.body, ctx, hooks, state);
       return;
 
     case "comptime":
@@ -340,7 +392,7 @@ function scan_freeze_if_let_stmt<ctx>(
     !hooks.bind_core_if_let_payload_fact ||
     !hooks.bind_dynamic_if_let_payload
   ) {
-    scan_freeze_stmts(stmt.body, ctx, hooks, state);
+    scan_freeze_scoped_stmts(stmt.body, ctx, hooks, state);
     return;
   }
 
@@ -357,7 +409,7 @@ function scan_freeze_if_let_stmt<ctx>(
       union_case,
       branch_ctx,
     );
-    scan_freeze_stmts(stmt.body, branch_ctx, hooks, state);
+    scan_freeze_scoped_stmts(stmt.body, branch_ctx, hooks, state);
     return;
   }
 
@@ -375,11 +427,33 @@ function scan_freeze_if_let_stmt<ctx>(
       dynamic_target,
       branch_ctx,
     );
-    scan_freeze_stmts(stmt.body, branch_ctx, hooks, state);
+    scan_freeze_scoped_stmts(stmt.body, branch_ctx, hooks, state);
     return;
   }
 
-  scan_freeze_stmts(stmt.body, ctx, hooks, state);
+  if (
+    hooks.runtime_union_target && hooks.runtime_union_match_info &&
+    hooks.static_runtime_union_match_branch_ctx
+  ) {
+    const runtime_target = hooks.runtime_union_target(stmt.target, ctx);
+
+    if (runtime_target) {
+      const info = hooks.runtime_union_match_info(
+        stmt.case_name,
+        runtime_target,
+        ctx,
+      );
+      const branch_ctx = hooks.static_runtime_union_match_branch_ctx(
+        stmt.value_name,
+        info,
+        ctx,
+      );
+      scan_freeze_scoped_stmts(stmt.body, branch_ctx, hooks, state);
+      return;
+    }
+  }
+
+  scan_freeze_scoped_stmts(stmt.body, ctx, hooks, state);
 }
 
 function scan_freeze_if_let_expr<ctx>(
@@ -436,6 +510,29 @@ function scan_freeze_if_let_expr<ctx>(
 
     scan_freeze_expr(expr.else_branch, ctx, hooks, state);
     return;
+  }
+
+  if (
+    hooks.runtime_union_target && hooks.runtime_union_match_info &&
+    hooks.static_runtime_union_match_branch_ctx
+  ) {
+    const runtime_target = hooks.runtime_union_target(expr.target, ctx);
+
+    if (runtime_target) {
+      const info = hooks.runtime_union_match_info(
+        expr.case_name,
+        runtime_target,
+        ctx,
+      );
+      const branch_ctx = hooks.static_runtime_union_match_branch_ctx(
+        expr.value_name,
+        info,
+        ctx,
+      );
+      scan_freeze_expr(expr.then_branch, branch_ctx, hooks, state);
+      scan_freeze_expr(expr.else_branch, ctx, hooks, state);
+      return;
+    }
   }
 
   scan_freeze_expr(expr.then_branch, ctx, hooks, state);

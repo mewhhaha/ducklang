@@ -155,7 +155,7 @@ export type Stmt =
     body: Stmt[];
   }
   | { tag: "type_check"; pattern: TypePattern; target: FrontExpr }
-  | { tag: "break" }
+  | { tag: "break"; value?: FrontExpr }
   | { tag: "continue" }
   | { tag: "return"; value: FrontExpr }
   | { tag: "expr"; expr: FrontExpr; effectful?: boolean }
@@ -181,6 +181,7 @@ export type FrontExpr =
   | { tag: "borrow"; value: FrontExpr }
   | { tag: "freeze"; value: FrontExpr }
   | { tag: "scratch"; body: FrontExpr }
+  | { tag: "loop"; body: Stmt[] }
   | { tag: "captured"; expr: FrontExpr; env: Env }
   | {
     tag: "handler";
@@ -288,6 +289,7 @@ export type TokenKind =
   | "name"
   | "number"
   | "string"
+  | "character"
   | "symbol"
   | "newline"
   | "eof";

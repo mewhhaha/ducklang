@@ -92,7 +92,10 @@ module.exports = grammar({
         field("kind", choice("let", "const")),
         optional(field("recursive", "rec")),
         optional(field("linear", "!")),
-        field("name", choice($.identifier, $.destructuring_pattern)),
+        field(
+          "name",
+          choice($.identifier, $.wildcard, $.destructuring_pattern),
+        ),
         optional(seq(":", field("type", $.type_reference))),
         "=",
         field("value", $._expression),
@@ -101,7 +104,9 @@ module.exports = grammar({
     destructuring_pattern: ($) =>
       seq(
         "{",
-        optional(commaSep1(field("name", $.identifier))),
+        optional(
+          commaSep1(field("name", choice($.identifier, $.wildcard))),
+        ),
         "}",
       ),
 
@@ -164,7 +169,7 @@ module.exports = grammar({
 
     effect_binding_statement: ($) =>
       seq(
-        field("name", choice($.identifier, $.unit_pattern)),
+        field("name", choice($.identifier, $.wildcard, $.unit_pattern)),
         "<-",
         field("value", $._expression),
       ),
@@ -283,7 +288,15 @@ module.exports = grammar({
     module_return_statement: ($) =>
       seq("return", field("exports", $.object_literal)),
 
-    break_statement: () => "break",
+    break_statement: ($) =>
+      choice(
+        "break",
+        seq(
+          "break",
+          token.immediate(/[ \t]+/),
+          field("value", $._expression),
+        ),
+      ),
 
     continue_statement: () => "continue",
 
@@ -305,20 +318,30 @@ module.exports = grammar({
       ),
 
     for_statement: ($) =>
-      seq(
-        "for",
-        field("first", $.identifier),
-        optional(seq(",", field("second", $.identifier))),
-        "in",
-        field("start_or_collection", $.condition_expression),
-        optional(
-          seq(
-            "..",
-            field("end", $.condition_expression),
-            optional(seq("by", field("step", $.condition_expression))),
+      choice(
+        seq(
+          "for",
+          field("first", choice($.identifier, $.wildcard)),
+          optional(seq(",", field("second", choice($.identifier, $.wildcard)))),
+          "in",
+          field("start_or_collection", $.condition_expression),
+          optional(
+            seq(
+              "..",
+              field("end", $.condition_expression),
+              optional(seq("by", field("step", $.condition_expression))),
+            ),
           ),
+          field("body", prec.dynamic(10, $.block)),
         ),
-        field("body", prec.dynamic(10, $.block)),
+        seq(
+          "for",
+          field("start", $.condition_expression),
+          "..",
+          field("end", $.condition_expression),
+          optional(seq("by", field("step", $.condition_expression))),
+          field("body", prec.dynamic(10, $.block)),
+        ),
       ),
 
     expression_statement: ($) => $._expression,
@@ -326,6 +349,7 @@ module.exports = grammar({
     _expression: ($) =>
       choice(
         $.try_with_expression,
+        $.loop_expression,
         $.arrow_function,
         $.recursive_function,
         $.recursive_call_expression,
@@ -367,7 +391,10 @@ module.exports = grammar({
         PREC.ARROW,
         seq(
           "rec",
-          field("parameters", choice($.identifier, $.parameter_list)),
+          field(
+            "parameters",
+            choice($.identifier, $.wildcard, $.parameter_list),
+          ),
           "=>",
           field("body", $._expression),
         ),
@@ -385,7 +412,7 @@ module.exports = grammar({
       seq(
         optional("const"),
         optional("!"),
-        field("name", $.identifier),
+        field("name", choice($.identifier, $.wildcard)),
         optional(seq(":", field("type", $.type_reference))),
       ),
 
@@ -394,17 +421,22 @@ module.exports = grammar({
         seq(
           "if",
           choice(
-            seq(
-              "let",
-              field("pattern", $.union_pattern),
-              "=",
-              field("value", $.condition_expression),
-            ),
+            ifLetCondition($),
+            seq("(", ifLetCondition($), ")"),
             field("condition", $.condition_expression),
           ),
           field("consequence", prec.dynamic(10, $.block)),
           optional(
-            seq("else", field("alternative", prec.dynamic(10, $.block))),
+            seq(
+              "else",
+              field(
+                "alternative",
+                choice(
+                  prec.dynamic(10, $.block),
+                  prec.dynamic(10, $.if_expression),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -413,7 +445,9 @@ module.exports = grammar({
       seq(
         ".",
         field("case", $.identifier),
-        optional(seq("(", field("value", $.identifier), ")")),
+        optional(
+          seq("(", field("value", choice($.identifier, $.wildcard)), ")"),
+        ),
       ),
 
     condition_expression: ($) =>
@@ -426,6 +460,9 @@ module.exports = grammar({
         $.condition_parenthesized_expression,
         $.number,
         $.string,
+        $.character,
+        $.boolean,
+        alias("loop", $.identifier),
         $.identifier,
         $.linear_reference,
         $.union_case,
@@ -541,6 +578,8 @@ module.exports = grammar({
 
     scratch_expression: ($) => seq("scratch", field("body", $.block)),
 
+    loop_expression: ($) => prec(1, seq("loop", field("body", $.block))),
+
     call_expression: ($) =>
       prec.left(
         PREC.POSTFIX,
@@ -628,6 +667,9 @@ module.exports = grammar({
       choice(
         $.number,
         $.string,
+        $.character,
+        $.boolean,
+        alias("loop", $.identifier),
         $.identifier,
         $.union_case,
         $.linear_reference,
@@ -711,8 +753,7 @@ module.exports = grammar({
         ),
       ),
 
-    latent_effect_row: ($) =>
-      seq("<", field("row", $.effect_row), ">"),
+    latent_effect_row: ($) => seq("<", field("row", $.effect_row), ">"),
 
     _type_application: ($) => choice($.type_application, $._type_atom),
 
@@ -738,13 +779,14 @@ module.exports = grammar({
 
     unit_type: () => prec(-1, seq("(", ")")),
 
-    type_tuple: ($) =>
-      seq("(", commaSep2($._type_expression), ")"),
+    type_tuple: ($) => seq("(", commaSep2($._type_expression), ")"),
 
     type_parenthesized: ($) =>
       seq("(", field("value", $._type_expression), ")"),
 
-    identifier: () => /[A-Za-z_][A-Za-z0-9_]*/,
+    wildcard: () => "_",
+
+    identifier: () => /[A-Za-z][A-Za-z0-9_]*/,
 
     effect_identifier: () => /[A-Z][A-Za-z0-9]*/,
 
@@ -753,6 +795,10 @@ module.exports = grammar({
     number: () => /[0-9]+(i32|i64)?/,
 
     string: () => /"([^"\\]|\\[ntr"\\])*"/,
+
+    character: () => /'([^'\\\n\r]|\\[ntr'\\])'/,
+
+    boolean: () => choice("true", "false"),
 
     comment: () => token(seq("//", /.*/)),
   },
@@ -764,4 +810,22 @@ function commaSep1(rule) {
 
 function commaSep2(rule) {
   return seq(rule, ",", commaSep1(rule));
+}
+
+function ifLetCondition($) {
+  return seq(
+    "let",
+    field(
+      "pattern",
+      choice(
+        $.union_pattern,
+        $.number,
+        $.string,
+        $.character,
+        $.boolean,
+      ),
+    ),
+    "=",
+    field("value", $.condition_expression),
+  );
 }

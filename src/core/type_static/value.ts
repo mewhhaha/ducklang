@@ -23,6 +23,7 @@ export function is_type_level_expr(expr: CoreExpr): boolean {
     case "prim":
     case "app":
     case "block":
+    case "loop":
     case "comptime":
     case "borrow":
     case "freeze":

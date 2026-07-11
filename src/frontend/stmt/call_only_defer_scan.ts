@@ -48,10 +48,16 @@ function scan_call_only_stmt(
   switch (stmt.tag) {
     case "import":
     case "host_import":
-    case "break":
     case "continue":
     case "unsupported":
       return { valid: true, used: false };
+
+    case "break":
+      if (!stmt.value) {
+        return { valid: true, used: false };
+      }
+
+      return scan_call_only_expr(name, stmt.value, false);
 
     case "bind": {
       const scan = scan_call_only_expr(name, stmt.value, false);
@@ -209,6 +215,9 @@ function scan_call_only_expr(
 
     case "scratch":
       return scan_call_only_expr(name, expr.body, false);
+
+    case "loop":
+      return scan_call_only_stmts(name, expr.body);
 
     case "captured":
       return scan_call_only_expr(name, expr.expr, call_target);

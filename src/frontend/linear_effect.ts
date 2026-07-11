@@ -59,6 +59,9 @@ export function contains_reserved_linear_effect(
     case "scratch":
       return contains_reserved_linear_effect(expr.body, names);
 
+    case "loop":
+      return contains_reserved_linear_stmt(expr.body, names);
+
     case "captured":
       return contains_reserved_linear_effect(expr.expr, names);
 
@@ -305,6 +308,9 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
     case "scratch":
       return uses_linear_name(expr.body, names);
 
+    case "loop":
+      return stmts_use_linear_name(expr.body, names);
+
     case "captured":
       return uses_linear_name(expr.expr, names);
 
@@ -433,6 +439,14 @@ function stmt_uses_linear_name(stmt: Stmt, names: Set<string>): boolean {
   }
 
   if (stmt.tag === "return") {
+    return uses_linear_name(stmt.value, names);
+  }
+
+  if (stmt.tag === "break") {
+    if (!stmt.value) {
+      return false;
+    }
+
     return uses_linear_name(stmt.value, names);
   }
 

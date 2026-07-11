@@ -137,6 +137,10 @@ function scan_host_boundary_stmt<
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_host_boundary_expr(stmt.value, ctx, hooks, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
@@ -192,6 +196,10 @@ function scan_host_boundary_expr<
 
     case "block":
       scan_host_boundary_stmts(expr.statements, ctx, hooks, state);
+      return;
+
+    case "loop":
+      scan_host_boundary_stmts(expr.body, ctx, hooks, state);
       return;
 
     case "comptime":

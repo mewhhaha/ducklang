@@ -46,17 +46,241 @@ Deno.test("grep case study exposes the typed byte-stream host contract", () => {
   assert_equals(read_result.cases[0]?.payload, { tag: "bytes" });
 });
 
-Deno.test("grep case study copies a file chunk through the mock runner", async () => {
-  const input = new Uint8Array([0, 255, 10, 65]);
+Deno.test("grep prints matching lines as raw bytes", async () => {
+  const input = new TextEncoder().encode("alpha\nneedle\nomega\nneedle tail\n");
   const runner = mock_runner({
-    args: ["input.bin"],
+    args: ["needle", "input.bin"],
     files: { "input.bin": input },
   });
 
   try {
     assert_equals(await main(runner), { code: 0 });
-    assert_equals(Array.from(concat_chunks(runner.stdout)), [0, 255, 10, 65]);
+    assert_equals(
+      new TextDecoder().decode(concat_chunks(runner.stdout)),
+      "needle\nneedle tail\n",
+    );
     assert_equals(runner.stderr, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep returns no-match for a pattern absent from the file", async () => {
+  const runner = mock_runner({
+    args: ["missing", "input.bin"],
+    files: { "input.bin": new TextEncoder().encode("alpha\nomega\n") },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 1 });
+    assert_equals(concat_chunks(runner.stdout), new Uint8Array());
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep returns no-match for an empty file", async () => {
+  const runner = mock_runner({
+    args: ["needle", "empty"],
+    files: { empty: new Uint8Array() },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 1 });
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep treats an empty pattern as matching every existing line", async () => {
+  const input = new TextEncoder().encode("alpha\n\nomega\n");
+  const runner = mock_runner({
+    args: ["", "input.bin"],
+    files: { "input.bin": input },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(concat_chunks(runner.stdout), input);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep matches UTF-8 patterns in byte-oriented input", async () => {
+  const pattern = new TextEncoder().encode("é");
+  const input = new Uint8Array([0xff, ...pattern, 0x0a]);
+  const runner = mock_runner({
+    args: ["é", "input.bin"],
+    files: { "input.bin": input },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(concat_chunks(runner.stdout), input);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep rejects an invalid argument count", async () => {
+  const runner = mock_runner({ args: [] });
+
+  try {
+    assert_equals(await main(runner), { code: 2 });
+    assert_equals(runner.stdout, []);
+    assert_equals(runner.stderr, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep rejects extra arguments", async () => {
+  const runner = mock_runner({
+    args: ["needle", "input.bin", "extra"],
+    files: { "input.bin": new TextEncoder().encode("needle\n") },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 2 });
+    assert_equals(runner.stdout, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep returns an I/O error for a typed FileReader.read error", async () => {
+  const runner = mock_runner({
+    args: ["needle", "input.bin"],
+    files: { "input.bin": new TextEncoder().encode("needle\n") },
+  });
+  runner.init.file_reader.read = function read_error(): IxValue {
+    return {
+      tag: "err",
+      value: {
+        code: 5,
+        path: "input.bin",
+        message: "mock read failure",
+      },
+    };
+  };
+
+  try {
+    assert_equals(await main(runner), { code: 2 });
+    assert_equals(runner.stdout, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep treats a closed Stdout as a successful match and stops output", async () => {
+  const runner = mock_runner({
+    args: ["needle", "input.bin"],
+    files: {
+      "input.bin": new TextEncoder().encode("needle\nneedle again\n"),
+    },
+  });
+  let writes = 0;
+  runner.init.stdout.write = function closed_output(): IxValue {
+    writes += 1;
+    return { tag: "closed" };
+  };
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(writes, 1);
+    assert_equals(runner.stdout, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep returns an I/O error for a typed Stdout.write error", async () => {
+  const runner = mock_runner({
+    args: ["needle", "input.bin"],
+    files: { "input.bin": new TextEncoder().encode("needle\n") },
+  });
+  runner.init.stdout.write = function output_error(): IxValue {
+    return {
+      tag: "err",
+      value: {
+        code: 5,
+        path: "<stdout>",
+        message: "mock output failure",
+      },
+    };
+  };
+
+  try {
+    assert_equals(await main(runner), { code: 2 });
+    assert_equals(runner.stdout, []);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep reports missing files as I/O errors", async () => {
+  const runner = mock_runner({ args: ["needle", "missing.txt"] });
+
+  try {
+    assert_equals(await main(runner), { code: 2 });
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep matches a final unterminated line", async () => {
+  const runner = mock_runner({
+    args: ["needle", "input.bin"],
+    files: { "input.bin": new TextEncoder().encode("alpha\nneedle") },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(
+      new TextDecoder().decode(concat_chunks(runner.stdout)),
+      "needle",
+    );
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep preserves invalid UTF-8 bytes in matching lines", async () => {
+  const input = new Uint8Array([
+    0xff,
+    0x6e,
+    0x65,
+    0x65,
+    0x64,
+    0x6c,
+    0x65,
+    0x0a,
+  ]);
+  const runner = mock_runner({
+    args: ["needle", "input.bin"],
+    files: { "input.bin": input },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(concat_chunks(runner.stdout), input);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("grep matches patterns and lines crossing the 64 KiB read boundary", async () => {
+  const pattern = "p".repeat(70_000);
+  const input = new TextEncoder().encode("prefix\n" + pattern + "\n");
+  const runner = mock_runner({
+    args: [pattern, "input.bin"],
+    files: { "input.bin": input },
+  });
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(concat_chunks(runner.stdout), input.slice(7));
   } finally {
     runner.dispose();
   }
@@ -110,13 +334,14 @@ Deno.test("mock Walk yields raw DFS events and honors prune", () => {
   }
 });
 
-Deno.test("live grep runner copies the fixture to stdout", async () => {
+Deno.test("live grep runner matches pattern and reports exit status", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: [
       "run",
       "--allow-read",
       "--allow-run=wat2wasm",
       new URL("./grep.ts", import.meta.url).href,
+      "needle",
       fixture_url.pathname,
     ],
     cwd: new URL("../../", import.meta.url),
@@ -125,15 +350,28 @@ Deno.test("live grep runner copies the fixture to stdout", async () => {
   });
   const output = await command.output();
 
-  if (!output.success) {
-    throw new Error(new TextDecoder().decode(output.stderr));
-  }
-
   assert_equals(
     new TextDecoder().decode(output.stdout),
-    await Deno.readTextFile(fixture_url),
+    "needle\n",
   );
   assert_equals(new TextDecoder().decode(output.stderr), "");
+  assert_equals(output.code, 0);
+
+  const no_match = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-read",
+      "--allow-run=wat2wasm",
+      new URL("./grep.ts", import.meta.url).href,
+      "absent",
+      fixture_url.pathname,
+    ],
+    cwd: new URL("../../", import.meta.url),
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+
+  assert_equals(no_match.code, 1);
 });
 
 function call(

@@ -7,6 +7,7 @@ import {
   Source,
 } from "./frontend.ts";
 import { build_abi_manifest } from "./abi.ts";
+import { Core } from "./core.ts";
 
 Deno.test("managed ABI describes declared effects and opaque Init fields", () => {
   const manifest = build_abi_manifest({
@@ -748,6 +749,86 @@ return { result }
   assert_equals(result, { result: 5 });
 });
 
+Deno.test("managed ABI drops discarded owned effect results", async () => {
+  const source = `
+module (!init: Init) where
+
+const result_type = union { chunk: Bytes, eof: Unit }
+declare effect Host { read: () => unique_heap result_type }
+declare Init { host: Host }
+
+_ <- Host.read()
+return { result: 1 }
+`;
+  const artifact = Source.artifact(source);
+  const proof = Core.proof(Source.core(source));
+  const discarded = proof.cleanup_rows.filter((row) => {
+    return row.tag === "heap_drop" && row.edge === "discarded_expr";
+  });
+  assert_equals(discarded.length, 1);
+  assert_includes(artifact.wat, "local.set $_cleanup_drop#0");
+  assert_includes(artifact.wat, "call $__free");
+
+  const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    let reads = 0;
+    const result = host.run({
+      host: {
+        read() {
+          reads += 1;
+          return { tag: "chunk", value: new Uint8Array([7, 0, 255]) };
+        },
+      },
+    });
+
+    assert_equals(result, { result: 1 });
+    assert_equals(reads, 1);
+  } finally {
+    host.dispose();
+  }
+});
+
+Deno.test("managed ABI drops discarded scalar effect-function results", async () => {
+  const source = `
+module (!init: Init) where
+
+declare effect Host { read: () => I32 }
+declare Init { host: Host }
+
+let read: () -> <Host.read> I32 = () => {
+  value <- Host.read()
+  value
+}
+
+_ <- read()
+return { result: 1 }
+`;
+  const artifact = Source.artifact(source);
+  assert_includes(artifact.wat, "local.get $value\n    drop");
+
+  const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    let reads = 0;
+    const result = host.run({
+      host: {
+        read() {
+          reads += 1;
+          return 99;
+        },
+      },
+    });
+
+    assert_equals(result, { result: 1 });
+    assert_equals(reads, 1);
+  } finally {
+    host.dispose();
+  }
+});
+
 Deno.test("managed ABI round trips Bytes through a typed effect result", async () => {
   const source = `
 module (!init: Init) where
@@ -819,6 +900,161 @@ return { result: final_result }
     }
 
     assert_equals(read_result.cases[0]?.payload, { tag: "bytes" });
+  } finally {
+    host.dispose();
+  }
+});
+
+Deno.test("managed ABI handles Bytes unions in effectful dynamic loops", async () => {
+  const source = `
+module (!init: Init) where
+
+const result_type = union {
+  chunk: Bytes,
+  skip: Unit
+}
+
+declare effect Host {
+  count: () => I32
+  read: () => unique_heap result_type
+  write: (bounded_borrow Bytes) => Unit
+}
+
+declare Init { host: Host }
+
+length <- Host.count()
+for index in 0..length {
+  outcome <- Host.read()
+  if let .chunk(bytes) = outcome {
+    let prefix = slice(bytes, 0, 1)
+    let doubled = append(prefix, prefix)
+    let marker: Text = append("loop", "!")
+    freeze marker
+    _ <- Host.write(borrow doubled)
+  }
+}
+
+return { result: length }
+`;
+  const artifact = Source.artifact(source);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const input = new Uint8Array([7, 0, 255]);
+  const written: number[][] = [];
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    const result = host.run({
+      host: {
+        count() {
+          return 2;
+        },
+        read() {
+          return { tag: "chunk", value: input };
+        },
+        write(value) {
+          if (!(value instanceof Uint8Array)) {
+            throw new Error("Expected Bytes host argument");
+          }
+
+          written.push(Array.from(value));
+          return undefined;
+        },
+      },
+    });
+
+    assert_equals(result, { result: 2 });
+    assert_equals(written, [[7, 7], [7, 7]]);
+  } finally {
+    host.dispose();
+  }
+});
+
+Deno.test("literal patterns compare runtime Text effect results", async () => {
+  const source = `
+module (!init: Init) where
+
+declare effect Input {
+  read: () => unique_heap Text
+}
+
+declare Init { input: Input }
+
+value <- Input.read()
+let result = 0
+if (let "ready" = value) {
+  result = 42
+}
+return { result }
+`;
+  const artifact = Source.artifact(source);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+
+  try {
+    const result = host.run({
+      input: {
+        read() {
+          return "ready";
+        },
+      },
+    });
+
+    assert_equals(result, { result: 42 });
+  } finally {
+    host.dispose();
+  }
+});
+
+Deno.test("else-if expressions compose and select branch effects", async () => {
+  const source = `
+module (!init: Init) where
+
+declare effect Input {
+  choose: () => I32
+  first: () => I32
+  second: () => I32
+}
+
+declare Init { input: Input }
+
+choice <- Input.choose()
+result <- if choice == 1 {
+  value <- Input.first()
+  value
+} else if choice == 2 {
+  value <- Input.second()
+  value
+} else {
+  0
+}
+return { result }
+`;
+  const artifact = Source.artifact(source);
+  const wasm = await wasm_from_wat(artifact.wat);
+  const host = await IxHost.instantiate(wasm, artifact.abi);
+  let first_calls = 0;
+  let second_calls = 0;
+
+  try {
+    const result = host.run({
+      input: {
+        choose() {
+          return 2;
+        },
+        first() {
+          first_calls += 1;
+          return 1;
+        },
+        second() {
+          second_calls += 1;
+          return 42;
+        },
+      },
+    });
+
+    assert_equals(result, { result: 42 });
+    assert_equals(first_calls, 0);
+    assert_equals(second_calls, 1);
   } finally {
     host.dispose();
   }

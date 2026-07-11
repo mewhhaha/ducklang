@@ -8,6 +8,9 @@ export function core_expr_has_static_call_statement_scope(
     case "block":
       return core_block_has_static_call_statement_scope(expr.statements);
 
+    case "loop":
+      return core_block_has_static_call_statement_scope(expr.body);
+
     case "prim":
       for (const arg of expr.args) {
         if (core_expr_has_static_call_statement_scope(arg)) {
@@ -119,6 +122,9 @@ export function core_expr_assigns_name(
   switch (expr.tag) {
     case "block":
       return core_block_assigns_name(expr.statements, name);
+
+    case "loop":
+      return core_block_assigns_name(expr.body, name);
 
     case "prim":
       for (const arg of expr.args) {
@@ -370,6 +376,10 @@ function core_stmt_assigns_name(stmt: CoreStmt, name: string): boolean {
       return core_expr_assigns_name(stmt.expr, name);
 
     case "break":
+      if (stmt.value) {
+        return core_expr_assigns_name(stmt.value, name);
+      }
+      return false;
     case "continue":
     case "unsupported":
       return false;

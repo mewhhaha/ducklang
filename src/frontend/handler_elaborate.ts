@@ -208,6 +208,10 @@ function stmt_contains_handler(stmt: Stmt): boolean {
     return expr_contains_handler(stmt.value);
   }
 
+  if (stmt.tag === "break" && stmt.value) {
+    return expr_contains_handler(stmt.value);
+  }
+
   if (stmt.tag === "expr") {
     return expr_contains_handler(stmt.expr);
   }
@@ -251,6 +255,10 @@ function expr_contains_handler(expr: FrontExpr): boolean {
 
   if (expr.tag === "scratch") {
     return expr_contains_handler(expr.body);
+  }
+
+  if (expr.tag === "loop") {
+    return expr.body.some(stmt_contains_handler);
   }
 
   if (expr.tag === "captured") {
@@ -2056,6 +2064,17 @@ function rewrite_pure_expr(
     };
   }
 
+  if (expr.tag === "loop") {
+    expect(
+      !expr.body.some(stmt_has_ix_operation),
+      "Local effects inside runtime loops require recursive CPS lowering",
+    );
+    return {
+      tag: "loop",
+      body: expr.body.map((stmt) => rewrite_pure_stmt(stmt, ctx, elaboration)),
+    };
+  }
+
   if (expr.tag === "captured") {
     return {
       ...expr,
@@ -2216,6 +2235,13 @@ function rewrite_pure_stmt(
     return {
       ...stmt,
       target: rewrite_pure_expr(stmt.target, ctx, elaboration),
+    };
+  }
+
+  if (stmt.tag === "break" && stmt.value) {
+    return {
+      tag: "break",
+      value: rewrite_pure_expr(stmt.value, ctx, elaboration),
     };
   }
 
@@ -2554,6 +2580,10 @@ function stmt_calls_ix_function(
     return expr_calls_ix_function(stmt.value, ctx, elaboration);
   }
 
+  if (stmt.tag === "break" && stmt.value) {
+    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+  }
+
   if (stmt.tag === "expr") {
     return expr_calls_ix_function(stmt.expr, ctx, elaboration);
   }
@@ -2608,6 +2638,12 @@ function expr_calls_ix_function(
 
   if (expr.tag === "scratch") {
     return expr_calls_ix_function(expr.body, ctx, elaboration);
+  }
+
+  if (expr.tag === "loop") {
+    return expr.body.some((stmt) => {
+      return stmt_calls_ix_function(stmt, ctx, elaboration);
+    });
   }
 
   if (expr.tag === "with" || expr.tag === "struct_update") {

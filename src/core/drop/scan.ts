@@ -349,6 +349,20 @@ function scan_drop_stmt<ctx>(
       );
 
     case "break":
+      if (stmt.value) {
+        const continues = scan_drop_expr_children(
+          stmt.value,
+          scope,
+          owners,
+          exit_owners,
+          ctx,
+          hooks,
+          state,
+        );
+        if (!continues) {
+          return false;
+        }
+      }
       drop_exit_owners(
         "break_exit",
         scope,

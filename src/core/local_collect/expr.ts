@@ -42,6 +42,7 @@ import {
   static_core_rec_target,
 } from "../static_call.ts";
 import type { CoreCtx, CoreLocalCollectHooks } from "./types.ts";
+import { clone_core_host_imports } from "../host_import.ts";
 
 export type CoreExprLocalCollectApi = {
   collect_expr_locals: (
@@ -208,6 +209,33 @@ export function collect_core_expr_locals(
       });
       return;
 
+    case "loop": {
+      ctx.next_loop += 1;
+      const loop_ctx: CoreCtx = {
+        locals: ctx.locals,
+        statics: new Map(ctx.statics),
+        fn_types: new Map(ctx.fn_types),
+        text_locals: new Set(ctx.text_locals),
+        struct_locals: new Map(ctx.struct_locals),
+        union_locals: new Map(ctx.union_locals),
+        frozen_locals: clone_loop_frozen_locals(ctx.frozen_locals),
+        host_imports: clone_core_host_imports(ctx.host_imports),
+        scratch_depth: ctx.scratch_depth,
+        next_loop: ctx.next_loop,
+        next_temp: ctx.next_temp,
+      };
+      for (const stmt of expr.body) {
+        if (stmt.tag === "expr") {
+          api.collect_expr_locals(stmt.expr, loop_ctx, hooks);
+          continue;
+        }
+        api.collect_stmt_locals(stmt, loop_ctx, hooks);
+      }
+      ctx.next_loop = loop_ctx.next_loop;
+      ctx.next_temp = loop_ctx.next_temp;
+      return;
+    }
+
     case "comptime":
       api.collect_expr_locals(expr.expr, ctx, hooks);
       return;
@@ -371,6 +399,16 @@ export function collect_core_expr_locals(
       hooks.collect_runtime_union_value_locals(expr, ctx);
       return;
   }
+}
+
+function clone_loop_frozen_locals(
+  frozen_locals: Set<string> | undefined,
+): Set<string> | undefined {
+  if (!frozen_locals) {
+    return undefined;
+  }
+
+  return new Set(frozen_locals);
 }
 
 function local_collect_closure_fn_type(

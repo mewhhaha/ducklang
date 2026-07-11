@@ -149,6 +149,20 @@ function scan_borrow_expr<ctx>(
       return;
     }
 
+    case "loop": {
+      const scope = add_scope(state, "loop", undefined, parent);
+      scan_borrow_stmts(
+        expr.body,
+        ctx,
+        hooks,
+        scope.id,
+        state,
+        use,
+        aliases,
+      );
+      return;
+    }
+
     case "comptime":
       scan_borrow_expr(expr.expr, ctx, hooks, parent, state, use, aliases);
       return;

@@ -72,6 +72,7 @@ export function is_const_expr_known(
     case "borrow":
     case "freeze":
     case "scratch":
+    case "loop":
       return false;
 
     case "captured":
@@ -257,7 +258,13 @@ function is_const_block_known(
       }
     } else if (stmt.tag === "import" || stmt.tag === "host_import") {
       continue;
-    } else if (stmt.tag === "break" || stmt.tag === "continue") {
+    } else if (stmt.tag === "break") {
+      if (stmt.value && !is_const_expr_known(stmt.value, env, local)) {
+        return false;
+      }
+
+      return true;
+    } else if (stmt.tag === "continue") {
       return true;
     } else {
       return false;

@@ -9,6 +9,7 @@ import {
 } from "./cleanup/scratch_return.ts";
 import { core_escape_analysis, type CoreEscapeAnalysis } from "./escape.ts";
 import type { CoreOwnershipHooks } from "./ownership.ts";
+import { dynamic_if_let_can_match } from "./union_static.ts";
 
 export { core_scratch_exit_edges, type CoreCleanupExitEdge };
 export {
@@ -117,6 +118,10 @@ function scan_cleanup_expr<ctx>(
       scan_cleanup_block(expr, ctx, hooks, state);
       return;
 
+    case "loop":
+      scan_cleanup_scoped_stmts(expr.body, ctx, hooks, state);
+      return;
+
     case "comptime":
       scan_cleanup_expr(expr.expr, ctx, hooks, state);
       return;
@@ -172,7 +177,15 @@ function scan_cleanup_expr<ctx>(
 
     case "if_let":
       scan_cleanup_expr(expr.target, ctx, hooks, state);
-      scan_cleanup_expr(expr.then_branch, ctx, hooks, state);
+      {
+        const branch = cleanup_if_let_branch_ctx(expr, ctx, hooks);
+
+        if (branch.tag === "scan") {
+          scan_cleanup_expr(expr.then_branch, branch.ctx, hooks, state);
+        } else if (branch.tag === "unknown") {
+          scan_cleanup_expr(expr.then_branch, ctx, hooks, state);
+        }
+      }
       scan_cleanup_expr(expr.else_branch, ctx, hooks, state);
       return;
 
@@ -262,28 +275,36 @@ function scan_cleanup_stmt<ctx>(
       scan_cleanup_expr(stmt.start, ctx, hooks, state);
       scan_cleanup_expr(stmt.end, ctx, hooks, state);
       scan_cleanup_expr(stmt.step, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.body, ctx, hooks, state);
+      scan_cleanup_loop_stmts(stmt, ctx, hooks, state);
       return;
 
     case "collection_loop":
       scan_cleanup_expr(stmt.collection, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.body, ctx, hooks, state);
+      scan_cleanup_loop_stmts(stmt, ctx, hooks, state);
       return;
 
     case "if_stmt":
       scan_cleanup_expr(stmt.cond, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.body, ctx, hooks, state);
+      scan_cleanup_scoped_stmts(stmt.body, ctx, hooks, state);
       return;
 
     case "if_else_stmt":
       scan_cleanup_expr(stmt.cond, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.then_body, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.else_body, ctx, hooks, state);
+      scan_cleanup_scoped_stmts(stmt.then_body, ctx, hooks, state);
+      scan_cleanup_scoped_stmts(stmt.else_body, ctx, hooks, state);
       return;
 
     case "if_let_stmt":
       scan_cleanup_expr(stmt.target, ctx, hooks, state);
-      scan_cleanup_stmts(stmt.body, ctx, hooks, state);
+      {
+        const branch = cleanup_if_let_stmt_branch_ctx(stmt, ctx, hooks);
+
+        if (branch.tag === "scan") {
+          scan_cleanup_scoped_stmts(stmt.body, branch.ctx, hooks, state);
+        } else if (branch.tag === "unknown") {
+          scan_cleanup_scoped_stmts(stmt.body, ctx, hooks, state);
+        }
+      }
       return;
 
     case "type_check":
@@ -299,10 +320,167 @@ function scan_cleanup_stmt<ctx>(
       return;
 
     case "break":
+      if (stmt.value) {
+        scan_cleanup_expr(stmt.value, ctx, hooks, state);
+      }
+      return;
     case "continue":
     case "unsupported":
       return;
   }
+}
+
+function scan_cleanup_scoped_stmts<ctx>(
+  statements: CoreStmt[],
+  ctx: ctx,
+  hooks: CoreCleanupHooks<ctx>,
+  state: CoreCleanupState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_cleanup_stmts(statements, ctx, hooks, state);
+    return;
+  }
+
+  const scoped_ctx = hooks.block_ctx(ctx);
+
+  for (let index = 0; index < statements.length; index += 1) {
+    const stmt = statements[index];
+
+    if (!stmt) {
+      throw new Error("Missing cleanup scoped statement");
+    }
+
+    scan_cleanup_stmt(stmt, scoped_ctx, hooks, state);
+
+    if (index + 1 < statements.length) {
+      hooks.collect_stmt_locals(stmt, scoped_ctx);
+    }
+  }
+}
+
+function scan_cleanup_loop_stmts<ctx>(
+  stmt: Extract<CoreStmt, { tag: "range_loop" | "collection_loop" }>,
+  ctx: ctx,
+  hooks: CoreCleanupHooks<ctx>,
+  state: CoreCleanupState,
+): void {
+  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
+    scan_cleanup_stmts(stmt.body, ctx, hooks, state);
+    return;
+  }
+
+  const loop_ctx = hooks.block_ctx(ctx);
+  hooks.collect_stmt_locals(stmt, loop_ctx);
+  scan_cleanup_stmts(stmt.body, loop_ctx, hooks, state);
+}
+
+type CleanupBranch<ctx> =
+  | { tag: "scan"; ctx: ctx }
+  | { tag: "skip" }
+  | { tag: "unknown" };
+
+function cleanup_if_let_branch_ctx<ctx>(
+  expr: Extract<CoreExpr, { tag: "if_let" }>,
+  ctx: ctx,
+  hooks: CoreCleanupHooks<ctx>,
+): CleanupBranch<ctx> {
+  return cleanup_matched_branch_ctx(
+    expr.case_name,
+    expr.value_name,
+    expr.target,
+    ctx,
+    hooks,
+  );
+}
+
+function cleanup_if_let_stmt_branch_ctx<ctx>(
+  stmt: Extract<CoreStmt, { tag: "if_let_stmt" }>,
+  ctx: ctx,
+  hooks: CoreCleanupHooks<ctx>,
+): CleanupBranch<ctx> {
+  return cleanup_matched_branch_ctx(
+    stmt.case_name,
+    stmt.value_name,
+    stmt.target,
+    ctx,
+    hooks,
+  );
+}
+
+function cleanup_matched_branch_ctx<ctx>(
+  case_name: string,
+  value_name: string | undefined,
+  target: CoreExpr,
+  ctx: ctx,
+  hooks: CoreCleanupHooks<ctx>,
+): CleanupBranch<ctx> {
+  if (
+    hooks.static_union_case && hooks.if_let_branch_ctx &&
+    hooks.bind_core_if_let_payload_fact
+  ) {
+    const union_case = hooks.static_union_case(target, ctx);
+
+    if (union_case) {
+      if (union_case.name !== case_name) {
+        return { tag: "skip" };
+      }
+
+      const branch_ctx = hooks.if_let_branch_ctx(ctx);
+      hooks.bind_core_if_let_payload_fact(
+        value_name,
+        union_case,
+        branch_ctx,
+      );
+      return { tag: "scan", ctx: branch_ctx };
+    }
+  }
+
+  if (
+    hooks.dynamic_union_if && hooks.if_let_branch_ctx &&
+    hooks.bind_dynamic_if_let_payload
+  ) {
+    const dynamic_target = hooks.dynamic_union_if(target, ctx);
+
+    if (dynamic_target) {
+      if (!dynamic_if_let_can_match(case_name, dynamic_target)) {
+        return { tag: "skip" };
+      }
+
+      const branch_ctx = hooks.if_let_branch_ctx(ctx);
+      hooks.bind_dynamic_if_let_payload(
+        case_name,
+        value_name,
+        dynamic_target,
+        branch_ctx,
+      );
+      return { tag: "scan", ctx: branch_ctx };
+    }
+  }
+
+  if (
+    hooks.runtime_union_target && hooks.runtime_union_match_info &&
+    hooks.static_runtime_union_match_branch_ctx
+  ) {
+    const runtime_target = hooks.runtime_union_target(target, ctx);
+
+    if (runtime_target) {
+      const info = hooks.runtime_union_match_info(
+        case_name,
+        runtime_target,
+        ctx,
+      );
+      return {
+        tag: "scan",
+        ctx: hooks.static_runtime_union_match_branch_ctx(
+          value_name,
+          info,
+          ctx,
+        ),
+      };
+    }
+  }
+
+  return { tag: "unknown" };
 }
 
 function cleanup_stmt_value_is_direct_static_call_target<ctx>(

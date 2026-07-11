@@ -9,7 +9,10 @@ import {
   type StaticTextCtx,
   type StaticTextHooks,
 } from "../text_static.ts";
-import { core_val_type_from_type_name } from "../type_static.ts";
+import {
+  core_val_type_from_type_name,
+  static_type_value,
+} from "../type_static.ts";
 import { dynamic_if_let_can_match } from "../union_static.ts";
 import { core_text_layout_param_type } from "./param.ts";
 import type { CoreTextLayoutHooks, TextLayout } from "./types.ts";
@@ -173,18 +176,29 @@ export function build_text_layout(
         visit_expr(stmt.end);
         visit_expr(stmt.step);
 
-        for (const item of stmt.body) {
-          visit_stmt(item);
-        }
+        with_text_layout_ctx(create_text_layout_branch_ctx(ctx), () => {
+          bind_layout_loop_local(stmt.index);
+
+          for (const item of stmt.body) {
+            visit_stmt(item);
+          }
+        });
 
         return;
 
       case "collection_loop":
         visit_expr(stmt.collection);
 
-        for (const item of stmt.body) {
-          visit_stmt(item);
-        }
+        with_text_layout_ctx(create_text_layout_branch_ctx(ctx), () => {
+          if (stmt.index) {
+            bind_layout_loop_local(stmt.index);
+          }
+          bind_layout_loop_local(stmt.item);
+
+          for (const item of stmt.body) {
+            visit_stmt(item);
+          }
+        });
 
         return;
 
@@ -289,7 +303,14 @@ export function build_text_layout(
         return;
 
       case "type_check":
+        visit_expr(stmt.target);
+        return;
+
       case "break":
+        if (stmt.value) {
+          visit_expr(stmt.value);
+        }
+        return;
       case "continue":
       case "unsupported":
         return;
@@ -306,12 +327,22 @@ export function build_text_layout(
     annotation: string | undefined,
   ): void {
     ctx.statics.delete(name);
+    ctx.union_locals.delete(name);
 
     if (annotation) {
       const type = core_val_type_from_type_name(annotation);
 
       if (type) {
         set_local(ctx.locals, name, type);
+      }
+
+      const type_value = static_type_value(
+        { tag: "var", name: annotation },
+        ctx,
+      );
+
+      if (type_value && type_value.tag === "union_type") {
+        ctx.union_locals.set(name, { tag: "var", name: annotation });
       }
     }
 
@@ -329,6 +360,15 @@ export function build_text_layout(
     }
   }
 
+  function bind_layout_loop_local(name: string): void {
+    ctx.statics.delete(name);
+    ctx.fn_types.delete(name);
+    ctx.struct_locals.delete(name);
+    ctx.union_locals.delete(name);
+    ctx.text_locals.delete(name);
+    set_local(ctx.locals, name, "i32");
+  }
+
   function layout_value_has_text_fact(
     value: CoreExpr,
     annotation: string | undefined,
@@ -343,6 +383,30 @@ export function build_text_layout(
 
     if (value.tag === "var") {
       return ctx.text_locals.has(value.name);
+    }
+
+    if (value.tag === "app" && value.func.tag === "var") {
+      if (value.func.name === "append") {
+        const left = value.args[0];
+        const right = value.args[1];
+
+        if (!left || !right) {
+          return false;
+        }
+
+        return layout_value_has_text_fact(left, undefined) &&
+          layout_value_has_text_fact(right, undefined);
+      }
+
+      if (value.func.name === "slice") {
+        const source = value.args[0];
+
+        if (!source) {
+          return false;
+        }
+
+        return layout_value_has_text_fact(source, undefined);
+      }
     }
 
     if (value.tag === "borrow" || value.tag === "freeze") {
@@ -532,6 +596,13 @@ export function build_text_layout(
 
       case "block":
         for (const stmt of expr.statements) {
+          visit_stmt(stmt);
+        }
+
+        return;
+
+      case "loop":
+        for (const stmt of expr.body) {
           visit_stmt(stmt);
         }
 

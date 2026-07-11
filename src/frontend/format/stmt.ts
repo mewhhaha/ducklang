@@ -1,4 +1,5 @@
 import type { FrontExpr, Stmt } from "../ast.ts";
+import { format_binding_name, is_no_demand_name } from "../names.ts";
 import { format_type_expr } from "../type_expr.ts";
 import { format_type_pattern } from "./common.ts";
 import { format_host_import } from "./host_import.ts";
@@ -17,7 +18,7 @@ export function format_stmt_with_expr(
 
   if (stmt.tag === "bind") {
     if (stmt.effectful) {
-      return stmt.name + " <- " + format_expr(stmt.value);
+      return format_binding_name(stmt.name) + " <- " + format_expr(stmt.value);
     }
 
     let text = stmt.kind + " ";
@@ -30,7 +31,7 @@ export function format_stmt_with_expr(
       text += "!";
     }
 
-    text += stmt.name;
+    text += format_binding_name(stmt.name);
 
     if (stmt.type_annotation) {
       text += ": " + format_type_expr(stmt.type_annotation);
@@ -45,7 +46,7 @@ export function format_stmt_with_expr(
     let value_name = "_";
 
     if (stmt.value_name) {
-      value_name = stmt.value_name;
+      value_name = format_binding_name(stmt.value_name);
     }
 
     return value_name + " <- " + format_expr(stmt.value);
@@ -54,10 +55,10 @@ export function format_stmt_with_expr(
   if (stmt.tag === "bind_pattern") {
     const items = stmt.items.map((item) => {
       if (item.is_linear) {
-        return "!" + item.name;
+        return "!" + format_binding_name(item.name);
       }
 
-      return item.name;
+      return format_binding_name(item.name);
     });
     return stmt.kind + " { " + items.join(", ") + " } = " +
       format_expr(stmt.value);
@@ -101,7 +102,13 @@ export function format_stmt_with_expr(
   }
 
   if (stmt.tag === "for_range") {
-    return "for " + stmt.index + " in " + format_expr(stmt.start) + ".." +
+    let head = "for ";
+
+    if (!is_no_demand_name(stmt.index)) {
+      head += format_binding_name(stmt.index) + " in ";
+    }
+
+    return head + format_expr(stmt.start) + ".." +
       format_expr(stmt.end) + " by " + format_expr(stmt.step) + " " +
       "{ " + stmt.body.map((item) => format_stmt_with_expr(item, format_expr))
       .join("; ") + " }";
@@ -111,10 +118,11 @@ export function format_stmt_with_expr(
     let head = "for ";
 
     if (stmt.index) {
-      head += stmt.index + ", ";
+      head += format_binding_name(stmt.index) + ", ";
     }
 
-    head += stmt.item + " in " + format_expr(stmt.collection) + " ";
+    head += format_binding_name(stmt.item) + " in " +
+      format_expr(stmt.collection) + " ";
     return head + "{ " +
       stmt.body.map((item) => format_stmt_with_expr(item, format_expr)).join(
         "; ",
@@ -132,7 +140,7 @@ export function format_stmt_with_expr(
     let pattern = "." + stmt.case_name;
 
     if (stmt.value_name) {
-      pattern += "(" + stmt.value_name + ")";
+      pattern += "(" + format_binding_name(stmt.value_name) + ")";
     }
 
     return "if let " + pattern + " = " + format_expr(stmt.target) + " { " +
@@ -147,6 +155,10 @@ export function format_stmt_with_expr(
   }
 
   if (stmt.tag === "break") {
+    if (stmt.value) {
+      return "break " + format_expr(stmt.value);
+    }
+
     return "break";
   }
 

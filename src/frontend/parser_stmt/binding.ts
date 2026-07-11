@@ -1,6 +1,6 @@
 import { expect } from "../../expect.ts";
 import type { FrontExpr, Stmt, TypeExpr } from "../ast.ts";
-import { expect_snake_case } from "../names.ts";
+import { expect_snake_case, is_no_demand_name } from "../names.ts";
 import { module_value } from "../parser_support.ts";
 import { ParserStmtControl } from "./control.ts";
 
@@ -102,19 +102,25 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       is_linear = true;
     }
 
-    const name = this.expect_name("Expected binding name");
+    const name = this.expect_binding_name("Expected binding name");
     let binding_label = "Const binding";
 
     if (kind === "let") {
       binding_label = "Runtime binding";
     }
 
-    this.expect_supported_name(name, binding_label);
+    if (is_linear && is_no_demand_name(name)) {
+      throw new Error("`!_` is not supported");
+    }
 
-    if (kind === "let") {
-      expect_snake_case(name, "Runtime binding");
-    } else {
-      this.expect_const_binding_name(name);
+    if (!is_no_demand_name(name)) {
+      this.expect_supported_name(name, binding_label);
+
+      if (kind === "let") {
+        expect_snake_case(name, "Runtime binding");
+      } else {
+        this.expect_const_binding_name(name);
+      }
     }
 
     let annotation: string | undefined;
@@ -252,8 +258,17 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
 
     while (!this.match_symbol("}")) {
       const is_linear = this.match_symbol("!");
-      const name = this.expect_name("Expected destructured binding name");
-      expect_snake_case(name, "Destructured binding");
+      const name = this.expect_binding_name(
+        "Expected destructured binding name",
+      );
+
+      if (is_linear && is_no_demand_name(name)) {
+        throw new Error("`!_` is not supported");
+      }
+
+      if (!is_no_demand_name(name)) {
+        expect_snake_case(name, "Destructured binding");
+      }
       items.push({ name, is_linear });
 
       if (!this.match_symbol("}")) {

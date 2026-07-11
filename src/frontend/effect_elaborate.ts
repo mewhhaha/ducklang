@@ -22,6 +22,7 @@ import {
   type FrontEffectFunction,
 } from "./effect_analysis.ts";
 import { elaborate_front_handlers } from "./handler_elaborate.ts";
+import { is_no_demand_name } from "./names.ts";
 import { substitute_front_expr } from "./substitute.ts";
 
 type EffectElaboration = {
@@ -643,6 +644,10 @@ function rewrite_statements(
           ));
 
           for (const item of stmt.items) {
+            if (is_no_demand_name(item.name)) {
+              continue;
+            }
+
             const field = export_stmt.value.fields.find((candidate) => {
               return candidate.name === item.name;
             });
@@ -689,6 +694,10 @@ function rewrite_statements(
       });
 
       for (const item of stmt.items) {
+        if (is_no_demand_name(item.name)) {
+          continue;
+        }
+
         result.push({
           tag: "bind",
           kind: stmt.kind,
@@ -885,6 +894,13 @@ function rewrite_stmt(
   if (stmt.tag === "return") {
     return {
       tag: "return",
+      value: rewrite_expr(stmt.value, providers, elaboration),
+    };
+  }
+
+  if (stmt.tag === "break" && stmt.value) {
+    return {
+      tag: "break",
       value: rewrite_expr(stmt.value, providers, elaboration),
     };
   }
@@ -1102,6 +1118,13 @@ function rewrite_expr(
     return {
       ...expr,
       body: rewrite_expr(expr.body, providers, elaboration),
+    };
+  }
+
+  if (expr.tag === "loop") {
+    return {
+      tag: "loop",
+      body: rewrite_statements(expr.body, providers, elaboration),
     };
   }
 

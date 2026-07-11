@@ -70,6 +70,12 @@ export function substitute_core_call_expr(
         statements: substitute_core_call_block(expr.statements, replacements),
       };
 
+    case "loop":
+      return {
+        tag: "loop",
+        body: substitute_core_call_block(expr.body, new Map(replacements)),
+      };
+
     case "comptime":
       return {
         tag: "comptime",
@@ -366,6 +372,13 @@ function substitute_core_call_stmt(
       };
 
     case "break":
+      if (!stmt.value) {
+        return stmt;
+      }
+      return {
+        tag: "break",
+        value: substitute_core_call_expr(stmt.value, replacements),
+      };
     case "continue":
     case "unsupported":
       return stmt;

@@ -53,6 +53,9 @@ export function expr_iterates_collection_from_names(
     case "scratch":
       return expr_iterates_collection_from_names(expr.body, names);
 
+    case "loop":
+      return stmts_iterate_collection_from_names(expr.body, new Set(names));
+
     case "handler": {
       const handler_names = new Set(names);
 
@@ -296,12 +299,18 @@ function stmt_iterates_collection_from_names(
     case "type_check":
       return expr_iterates_collection_from_names(stmt.target, names);
 
-    case "break":
     case "continue":
     case "import":
     case "host_import":
     case "unsupported":
       return false;
+
+    case "break":
+      if (!stmt.value) {
+        return false;
+      }
+
+      return expr_iterates_collection_from_names(stmt.value, names);
   }
 
   stmt satisfies never;

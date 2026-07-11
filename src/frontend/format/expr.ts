@@ -1,4 +1,5 @@
 import type { FrontExpr, Stmt } from "../ast.ts";
+import { format_binding_name } from "../names.ts";
 import { format_field, format_params, format_type_field } from "./common.ts";
 import { prim_symbol } from "./prim.ts";
 
@@ -56,12 +57,15 @@ export function format_expr_with_stmt(
     case "scratch":
       return "scratch " + format_expr(expr.body);
 
+    case "loop":
+      return "loop { " + expr.body.map(format_stmt).join("; ") + " }";
+
     case "captured":
       return format_expr(expr.expr);
 
     case "handler": {
       const state = expr.state.map((item) => {
-        let text = "let " + item.name;
+        let text = "let " + format_binding_name(item.name);
 
         if (item.annotation) {
           text += ": " + item.annotation;
@@ -140,7 +144,7 @@ export function format_expr_with_stmt(
       let pattern = "." + expr.case_name;
 
       if (expr.value_name) {
-        pattern += "(" + expr.value_name + ")";
+        pattern += "(" + format_binding_name(expr.value_name) + ")";
       }
 
       return "if let " + pattern + " = " + format_expr(expr.target) + " " +

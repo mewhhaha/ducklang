@@ -114,13 +114,31 @@ export function link_drop_allocations(
     }
 
     if (step.edge === "assignment_replace") {
-      const later_drops = drops.steps.slice(step_index + 1).filter((later) => {
-        return later.tag === "heap_drop" &&
-          later.storage === "persistent_unique_heap" &&
-          later.owner === step.owner &&
-          later.ownership.reason === step.ownership.reason;
-      }).length;
-      const available = candidates.length - later_drops;
+      let later_replacements = 0;
+      let has_later_terminal = false;
+
+      for (const later of drops.steps.slice(step_index + 1)) {
+        if (
+          later.tag !== "heap_drop" ||
+          later.storage !== "persistent_unique_heap" ||
+          later.owner !== step.owner ||
+          later.ownership.reason !== step.ownership.reason
+        ) {
+          continue;
+        }
+
+        if (later.edge === "assignment_replace") {
+          later_replacements += 1;
+        } else {
+          has_later_terminal = true;
+        }
+      }
+
+      let reserved = later_replacements;
+      if (has_later_terminal) {
+        reserved += 1;
+      }
+      const available = candidates.length - reserved;
 
       if (available > 0) {
         candidates = candidates.slice(0, available);

@@ -15,6 +15,264 @@ export {
 
 export function validate_source_linear(source: Source): void {
   validate_linear_statements(source.statements);
+  validate_source_loop_break_units(source.statements);
+}
+
+function validate_source_loop_break_units(stmts: Stmt[]): void {
+  for (const stmt of stmts) {
+    validate_loop_units_in_stmt(stmt);
+  }
+}
+
+function validate_loop_units_in_stmt(stmt: Stmt): void {
+  if (
+    stmt.tag === "bind" || stmt.tag === "state_bind" ||
+    stmt.tag === "bind_pattern" || stmt.tag === "resume_dup" ||
+    stmt.tag === "assign"
+  ) {
+    validate_loop_units_in_expr(stmt.value);
+    return;
+  }
+
+  if (stmt.tag === "index_assign") {
+    validate_loop_units_in_expr(stmt.index);
+    validate_loop_units_in_expr(stmt.value);
+    return;
+  }
+
+  if (stmt.tag === "for_range") {
+    validate_loop_units_in_expr(stmt.start);
+    validate_loop_units_in_expr(stmt.end);
+    validate_loop_units_in_expr(stmt.step);
+    validate_source_loop_break_units(stmt.body);
+    return;
+  }
+
+  if (stmt.tag === "for_collection") {
+    validate_loop_units_in_expr(stmt.collection);
+    validate_source_loop_break_units(stmt.body);
+    return;
+  }
+
+  if (stmt.tag === "if_stmt") {
+    validate_loop_units_in_expr(stmt.cond);
+    validate_source_loop_break_units(stmt.body);
+    return;
+  }
+
+  if (stmt.tag === "if_let_stmt") {
+    validate_loop_units_in_expr(stmt.target);
+    validate_source_loop_break_units(stmt.body);
+    return;
+  }
+
+  if (stmt.tag === "type_check") {
+    validate_loop_units_in_expr(stmt.target);
+    return;
+  }
+
+  if (stmt.tag === "break" && stmt.value) {
+    validate_loop_units_in_expr(stmt.value);
+    return;
+  }
+
+  if (stmt.tag === "return") {
+    validate_loop_units_in_expr(stmt.value);
+    return;
+  }
+
+  if (stmt.tag === "expr") {
+    validate_loop_units_in_expr(stmt.expr);
+  }
+}
+
+function validate_loop_units_in_expr(expr: FrontExpr): void {
+  if (expr.tag === "loop") {
+    let has_unit_break = false;
+    let has_value_break = false;
+    collect_direct_loop_break_units(expr.body, (is_unit) => {
+      if (is_unit) {
+        has_unit_break = true;
+      } else {
+        has_value_break = true;
+      }
+    });
+    if (has_unit_break && has_value_break) {
+      throw new Error(
+        "Loop breaks must return one source type, got Unit and value",
+      );
+    }
+    validate_source_loop_break_units(expr.body);
+    return;
+  }
+
+  if (expr.tag === "prim") {
+    validate_loop_units_in_expr(expr.left);
+    validate_loop_units_in_expr(expr.right);
+    return;
+  }
+
+  if (expr.tag === "app") {
+    validate_loop_units_in_expr(expr.func);
+    for (const arg of expr.args) {
+      validate_loop_units_in_expr(arg);
+    }
+    return;
+  }
+
+  if (expr.tag === "block") {
+    validate_source_loop_break_units(expr.statements);
+    return;
+  }
+
+  if (expr.tag === "comptime" || expr.tag === "captured") {
+    validate_loop_units_in_expr(expr.expr);
+    return;
+  }
+
+  if (expr.tag === "borrow" || expr.tag === "freeze") {
+    validate_loop_units_in_expr(expr.value);
+    return;
+  }
+
+  if (expr.tag === "scratch") {
+    validate_loop_units_in_expr(expr.body);
+    return;
+  }
+
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    validate_loop_units_in_expr(expr.body);
+    return;
+  }
+
+  if (expr.tag === "handler") {
+    for (const state of expr.state) {
+      validate_loop_units_in_expr(state.value);
+    }
+    for (const clause of expr.clauses) {
+      validate_loop_units_in_expr(clause.body);
+    }
+    validate_loop_units_in_expr(expr.return_clause.body);
+    return;
+  }
+
+  if (expr.tag === "try_with") {
+    validate_loop_units_in_expr(expr.body);
+    validate_loop_units_in_expr(expr.handler);
+    return;
+  }
+
+  if (expr.tag === "with" || expr.tag === "struct_update") {
+    validate_loop_units_in_expr(expr.base);
+    for (const field of expr.fields) {
+      validate_loop_units_in_expr(field.value);
+    }
+    return;
+  }
+
+  if (expr.tag === "struct_value") {
+    validate_loop_units_in_expr(expr.type_expr);
+    for (const field of expr.fields) {
+      validate_loop_units_in_expr(field.value);
+    }
+    return;
+  }
+
+  if (expr.tag === "if") {
+    validate_loop_units_in_expr(expr.cond);
+    validate_loop_units_in_expr(expr.then_branch);
+    validate_loop_units_in_expr(expr.else_branch);
+    return;
+  }
+
+  if (expr.tag === "if_let") {
+    validate_loop_units_in_expr(expr.target);
+    validate_loop_units_in_expr(expr.then_branch);
+    validate_loop_units_in_expr(expr.else_branch);
+    return;
+  }
+
+  if (expr.tag === "field") {
+    validate_loop_units_in_expr(expr.object);
+    return;
+  }
+
+  if (expr.tag === "index") {
+    validate_loop_units_in_expr(expr.object);
+    validate_loop_units_in_expr(expr.index);
+    return;
+  }
+
+  if (expr.tag === "union_case") {
+    if (expr.value) {
+      validate_loop_units_in_expr(expr.value);
+    }
+    if (expr.type_expr) {
+      validate_loop_units_in_expr(expr.type_expr);
+    }
+  }
+}
+
+function collect_direct_loop_break_units(
+  stmts: Stmt[],
+  found: (is_unit: boolean) => void,
+): void {
+  for (const stmt of stmts) {
+    if (stmt.tag === "break") {
+      found(!stmt.value || stmt.value.tag === "unit");
+      continue;
+    }
+
+    if (stmt.tag === "for_range" || stmt.tag === "for_collection") {
+      continue;
+    }
+
+    if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
+      collect_direct_loop_break_units(stmt.body, found);
+      continue;
+    }
+
+    if (stmt.tag === "expr") {
+      collect_loop_break_units_from_expr(stmt.expr, found);
+      continue;
+    }
+
+    if (
+      stmt.tag === "bind" || stmt.tag === "state_bind" ||
+      stmt.tag === "bind_pattern" || stmt.tag === "resume_dup" ||
+      stmt.tag === "assign"
+    ) {
+      collect_loop_break_units_from_expr(stmt.value, found);
+    }
+  }
+}
+
+function collect_loop_break_units_from_expr(
+  expr: FrontExpr,
+  found: (is_unit: boolean) => void,
+): void {
+  if (
+    expr.tag === "loop" || expr.tag === "lam" || expr.tag === "rec" ||
+    expr.tag === "handler" || expr.tag === "try_with"
+  ) {
+    return;
+  }
+
+  if (expr.tag === "block") {
+    collect_direct_loop_break_units(expr.statements, found);
+    return;
+  }
+
+  if (expr.tag === "if") {
+    collect_loop_break_units_from_expr(expr.then_branch, found);
+    collect_loop_break_units_from_expr(expr.else_branch, found);
+    return;
+  }
+
+  if (expr.tag === "if_let") {
+    collect_loop_break_units_from_expr(expr.then_branch, found);
+    collect_loop_break_units_from_expr(expr.else_branch, found);
+  }
 }
 
 export function linear_param_names(
@@ -98,9 +356,14 @@ function validate_linear_stmt_lambdas(stmt: Stmt): void {
 
     case "import":
     case "host_import":
-    case "break":
     case "continue":
     case "unsupported":
+      return;
+
+    case "break":
+      if (stmt.value) {
+        validate_linear_expr_lambdas(stmt.value);
+      }
       return;
   }
 }
@@ -150,6 +413,10 @@ function validate_linear_expr_lambdas(expr: FrontExpr): void {
 
     case "scratch":
       validate_linear_expr_lambdas(expr.body);
+      return;
+
+    case "loop":
+      validate_linear_statements(expr.body);
       return;
 
     case "captured":
