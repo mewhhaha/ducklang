@@ -1,6 +1,8 @@
 import { expect } from "../../expect.ts";
 import type { FrontExpr, Stmt } from "../ast.ts";
 import { expect_snake_case, is_no_demand_name } from "../names.ts";
+import { truthy_expr } from "../numeric.ts";
+import { guarded_condition } from "../parser_conditional.ts";
 import { ParserHostImport } from "../parser_host_import.ts";
 
 export abstract class ParserStmtControl extends ParserHostImport {
@@ -120,10 +122,23 @@ export abstract class ParserStmtControl extends ParserHostImport {
           tag: "expr",
           expr: {
             tag: "if",
-            cond: pattern.cond,
+            cond: guarded_condition(pattern.cond, pattern.guard),
             then_branch,
             else_branch,
           },
+        };
+      }
+
+      // A guarded union pattern nests the guard branch, so a failing
+      // guard selects the same else branch as a failing pattern.
+      let guarded_then: FrontExpr = then_branch;
+
+      if (pattern.guard) {
+        guarded_then = {
+          tag: "if",
+          cond: truthy_expr(pattern.guard),
+          then_branch,
+          else_branch: structuredClone(else_branch),
         };
       }
 
@@ -134,7 +149,7 @@ export abstract class ParserStmtControl extends ParserHostImport {
           case_name: pattern.case_name,
           value_name: pattern.value_name,
           target: pattern.target,
-          then_branch,
+          then_branch: guarded_then,
           else_branch,
         },
       };
@@ -143,9 +158,21 @@ export abstract class ParserStmtControl extends ParserHostImport {
     if (pattern.tag === "literal") {
       return {
         tag: "if_stmt",
-        cond: pattern.cond,
+        cond: guarded_condition(pattern.cond, pattern.guard),
         body: then_branch.statements,
       };
+    }
+
+    // Without an else branch a failing guard falls through, exactly
+    // like a failing pattern, so the guard nests as an if statement.
+    let body = then_branch.statements;
+
+    if (pattern.guard) {
+      body = [{
+        tag: "if_stmt",
+        cond: truthy_expr(pattern.guard),
+        body: then_branch.statements,
+      }];
     }
 
     return {
@@ -153,7 +180,7 @@ export abstract class ParserStmtControl extends ParserHostImport {
       case_name: pattern.case_name,
       value_name: pattern.value_name,
       target: pattern.target,
-      body: then_branch.statements,
+      body,
     };
   }
 }

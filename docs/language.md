@@ -235,6 +235,23 @@ if (let "dry-run" = argument) {
 Union patterns remain structural and can bind their payload, as in
 `if let .ok(value) = result { ... }`.
 
+An `if let` condition may add a guard expression after a comma. The guard
+sees the pattern's payload binding, and a failing guard behaves exactly like
+a failing pattern: statement forms fall through, expression forms select the
+else branch. Both the parenthesized and ordinary spellings accept guards.
+
+```txt
+if (let .ok(x) = m, x == 0) {
+  handle_zero()
+}
+
+if let .ok(x) = m, x == 0 {
+  handle_zero()
+} else {
+  handle_other()
+}
+```
+
 `Bytes` is the raw, non-UTF-8 buffer type used by managed host effects. Runtime
 `Bytes` values support `len`, `get`, byte iteration, `slice`, and `append`, and
 bounded borrows can cross effect calls. There is no source `Bytes` literal or
@@ -412,6 +429,38 @@ dynamic `if` whose branches construct cases of an inferable union. Dynamic
 inferred union-case table into later `=` shadowing checks. The exact set of
 dynamic union shapes each route accepts is tracked in
 [coverage.md](coverage.md).
+
+`match` is surface sugar over those `if let` chains, in the same way `else if`
+is nested `if` sugar and the logical operators are boolean `if` sugar. An arm
+pattern is a literal, a union case with an optional payload binder, or the `_`
+wildcard, and every arm may add a guard expression after a comma. A guarded
+arm whose guard fails falls through to the remaining arms.
+
+```txt
+let value = match result {
+  .ok(found), found == 0 => 7,
+  .ok(found) => found + 1,
+  .err(code) => code,
+}
+
+let label = match byte {
+  0 => "zero",
+  '\n' => "newline",
+  _ => "other",
+}
+```
+
+The desugaring is specified, not an implementation detail: the target is bound
+to a hidden name when it is not already a plain name, the arms become an
+`if let`/`if` chain against that name in order, a final unguarded `_` arm
+becomes the chain's else branch, and a match without one falls back to
+`panic("unreachable match arm")`. Guards nest as inner branches whose failing
+side repeats the remaining chain, so long guarded matches trade code size for
+fallthrough; keep guarded arm lists short. Arms after an unguarded `_` are
+rejected as unreachable. Because match is sugar, a match compiles exactly when
+the equivalent chain does, and exhaustiveness is not yet checked statically:
+an unmatched value reaches the synthesized panic and traps. Static
+exhaustiveness checking against known union case tables is reserved.
 
 ## Types, Structs, Unions, And Facts
 

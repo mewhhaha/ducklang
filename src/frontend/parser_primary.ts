@@ -45,6 +45,10 @@ export abstract class ParserPrimary extends ParserBlock {
       return this.parse_if_expr();
     }
 
+    if (this.match_name("match")) {
+      return this.parse_match_expr();
+    }
+
     if (
       this.peek().kind === "name" && this.peek().text === "loop" &&
       this.peek(1).kind === "symbol" && this.peek(1).text === "{"

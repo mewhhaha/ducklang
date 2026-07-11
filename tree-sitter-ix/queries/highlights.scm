@@ -31,6 +31,7 @@
 [
   "if"
   "else"
+  "match"
 ] @keyword.control.conditional
 
 (try_with_expression

@@ -164,6 +164,11 @@ until CPS closure conversion supports them.
 
 ## Branches And Unions
 
+`match` expressions and pattern guards are parser sugar over `if`/`if let`
+chains: they desugar before lowering and add no route coverage of their own. A
+match or guarded condition compiles exactly when the equivalent hand-written
+chain does, and rejects with the same diagnostics when it does not.
+
 Runtime union matching where the case is not statically known is reserved for a
 structured-core union representation unless the target has a direct typed union
 annotation or is a direct or statically bound dynamic `if` whose branches

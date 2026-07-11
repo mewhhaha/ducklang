@@ -88,6 +88,7 @@ The executable expectations and deterministic runners live in `manifest.ts`.
 | `12_dynamic_text_branch.ix`      | host-selected visible text               | Managed | `5` / `3`   |
 | `13_type_rows.ix`                | extensible product and union rows        | Core    | `42`        |
 | `14_type_sets.ix`                | type union, intersection, and difference | Core    | `42`        |
+| `15_match_union.ix`              | match sugar with guards over a union     | Core    | `42`        |
 
 ## Loops And Collections
 

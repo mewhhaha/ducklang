@@ -413,6 +413,7 @@ module.exports = grammar({
         $.recursive_function,
         $.recursive_call_expression,
         $.if_expression,
+        $.match_expression,
         $.binary_expression,
         $.is_expression,
         $.unary_expression,
@@ -499,6 +500,34 @@ module.exports = grammar({
             ),
           ),
         ),
+      ),
+
+    match_expression: ($) =>
+      seq(
+        "match",
+        field("target", $.condition_expression),
+        "{",
+        repeat($.match_arm),
+        "}",
+      ),
+
+    match_arm: ($) =>
+      seq(
+        field(
+          "pattern",
+          choice(
+            $.union_pattern,
+            $.number,
+            $.string,
+            $.character,
+            $.boolean,
+            $.wildcard,
+          ),
+        ),
+        optional(seq(",", field("guard", $.condition_expression))),
+        "=>",
+        field("value", $._expression),
+        optional(","),
       ),
 
     union_pattern: ($) =>
@@ -991,5 +1020,6 @@ function ifLetCondition($) {
     ),
     "=",
     field("value", $.condition_expression),
+    optional(seq(",", field("guard", $.condition_expression))),
   );
 }

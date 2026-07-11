@@ -1,0 +1,75 @@
+================================================================================
+Match expression with guards
+================================================================================
+
+module () where
+
+let value = match result {
+  .ok(found), found == 0 => 7,
+  .ok(found) => found + 1,
+  '\n' => 2,
+  _ => 3,
+}
+
+if (let .ok(x) = m, x == 0) {
+  value = 1
+}
+
+return { value }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_header
+    (parameter_list))
+  (binding_statement
+    (identifier)
+    (match_expression
+      (condition_expression
+        (identifier))
+      (match_arm
+        (union_pattern
+          (identifier)
+          (identifier))
+        (condition_expression
+          (condition_binary_expression
+            (condition_expression
+              (identifier))
+            (condition_expression
+              (number))))
+        (number))
+      (match_arm
+        (union_pattern
+          (identifier)
+          (identifier))
+        (binary_expression
+          (identifier)
+          (number)))
+      (match_arm
+        (character)
+        (number))
+      (match_arm
+        (wildcard)
+        (number))))
+  (expression_statement
+    (if_expression
+      (union_pattern
+        (identifier)
+        (identifier))
+      (condition_expression
+        (identifier))
+      (condition_expression
+        (condition_binary_expression
+          (condition_expression
+            (identifier))
+          (condition_expression
+            (number))))
+      (block
+        (assignment
+          (identifier)
+          (number)))))
+  (module_return_statement
+    (object_literal
+      (field_block
+        (shorthand_field
+          (identifier))))))

@@ -267,6 +267,7 @@ export const success_examples: SuccessExample[] = [
   },
   { path: "examples/data/13_type_rows.ix", route: "core", runs: run(42) },
   { path: "examples/data/14_type_sets.ix", route: "core", runs: run(42) },
+  { path: "examples/data/15_match_union.ix", route: "core", runs: run(42) },
 
   { path: "examples/loops/01_range_sum.ix", route: "core", runs: run(10) },
   { path: "examples/loops/02_stepped_range.ix", route: "core", runs: run(42) },

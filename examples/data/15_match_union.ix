@@ -1,0 +1,19 @@
+const result_type = union {
+  ok: Int,
+  err: Int
+}
+
+let flag = 1
+let result: result_type = if flag {
+  result_type.ok(41)
+} else {
+  result_type.err(2)
+}
+
+let value = match result {
+  .ok(found), found == 0 => 7,
+  .ok(found) => found + 1,
+  .err(code) => code,
+}
+
+value
