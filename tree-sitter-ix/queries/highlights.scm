@@ -56,7 +56,6 @@
 
 [
   "dup"
-  "borrow"
   "freeze"
   "scratch"
   "is"
@@ -66,10 +65,6 @@
 
 [
   "scalar"
-  "bounded_borrow"
-  "frozen_shareable"
-  "ownership_transfer"
-  "unique_heap"
 ] @keyword.storage.modifier
 
 ; Operators and punctuation

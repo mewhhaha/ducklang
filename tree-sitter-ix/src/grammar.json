@@ -1214,10 +1214,10 @@
       ]
     },
     "host_parameter": {
-      "type": "SEQ",
+      "type": "CHOICE",
       "members": [
         {
-          "type": "CHOICE",
+          "type": "SEQ",
           "members": [
             {
               "type": "FIELD",
@@ -1227,25 +1227,31 @@
                 "members": [
                   {
                     "type": "STRING",
+                    "value": "&"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "#"
+                  },
+                  {
+                    "type": "STRING",
                     "value": "scalar"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "bounded_borrow"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "frozen_shareable"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "ownership_transfer"
                   }
                 ]
               }
             },
             {
-              "type": "BLANK"
+              "type": "FIELD",
+              "name": "type",
+              "content": {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "identifier"
+                },
+                "named": true,
+                "value": "type_reference"
+              }
             }
           ]
         },
@@ -1265,10 +1271,10 @@
       ]
     },
     "host_result": {
-      "type": "SEQ",
+      "type": "CHOICE",
       "members": [
         {
-          "type": "CHOICE",
+          "type": "SEQ",
           "members": [
             {
               "type": "FIELD",
@@ -1278,21 +1284,27 @@
                 "members": [
                   {
                     "type": "STRING",
+                    "value": "#"
+                  },
+                  {
+                    "type": "STRING",
                     "value": "scalar"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "unique_heap"
-                  },
-                  {
-                    "type": "STRING",
-                    "value": "frozen_shareable"
                   }
                 ]
               }
             },
             {
-              "type": "BLANK"
+              "type": "FIELD",
+              "name": "type",
+              "content": {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "identifier"
+                },
+                "named": true,
+                "value": "type_reference"
+              }
             }
           ]
         },
@@ -2626,10 +2638,6 @@
                 },
                 {
                   "type": "STRING",
-                  "value": "borrow"
-                },
-                {
-                  "type": "STRING",
                   "value": "freeze"
                 },
                 {
@@ -3107,10 +3115,6 @@
                 {
                   "type": "STRING",
                   "value": "&"
-                },
-                {
-                  "type": "STRING",
-                  "value": "borrow"
                 },
                 {
                   "type": "STRING",

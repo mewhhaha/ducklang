@@ -6,13 +6,13 @@ declare effect Input {
 
 declare Init { input: Input }
 
-const point_type = struct { x: Int, y: Int }
+type Point = [.x = Int, .y = Int]
 
 flag <- Input.flag()
-let point: point_type = if flag {
-  point_type { x: 40, y: 2 }
+let point: Point = if flag {
+  [.x = 40, .y = 2]
 } else {
-  point_type { x: 20, y: 22 }
+  [.x = 20, .y = 22]
 }
 
 let result: I32 = point.x + point.y

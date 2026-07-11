@@ -28,7 +28,7 @@ Deno.test("grep case study exposes the typed byte-stream host contract", () => {
   assert_equals(
     artifact.abi.effects.FileReader?.operations.read?.result,
     {
-      type: { tag: "named", name: "read_result_type" },
+      type: { tag: "named", name: "ReadResult" },
       ownership: "unique_heap",
     },
   );
@@ -36,11 +36,11 @@ Deno.test("grep case study exposes the typed byte-stream host contract", () => {
     artifact.abi.effects.Stdout?.operations.write?.params,
     [{ type: { tag: "bytes" }, ownership: "bounded_borrow" }],
   );
-  const read_result = artifact.abi.types.read_result_type;
+  const read_result = artifact.abi.types.ReadResult;
   assert_equals(read_result.tag, "union");
 
   if (read_result.tag !== "union") {
-    throw new Error("Expected read_result_type union ABI");
+    throw new Error("Expected ReadResult union ABI");
   }
 
   assert_equals(read_result.cases[0]?.payload, { tag: "bytes" });

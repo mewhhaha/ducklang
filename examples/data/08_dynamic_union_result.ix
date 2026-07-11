@@ -1,13 +1,12 @@
-const result_type = union {
-  ok: Int,
-  err: Text
-}
+type Result =
+  | .ok = Int
+  | .err = Text
 
 let flag = 1
-let result: result_type = if flag {
-  result_type.ok(40)
+let result: Result = if flag {
+  Result.ok(40)
 } else {
-  result_type.err("missing")
+  Result.err("missing")
 }
 
 if let .ok(value) = result {

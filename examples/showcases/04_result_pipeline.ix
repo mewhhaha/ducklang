@@ -6,19 +6,17 @@ declare effect Input {
 
 declare Init { input: Input }
 
-const result_type = error_type => value_type => union {
-  ok: value_type,
-  err: error_type
-}
-
-const user_type = struct { name: Text, score: Int }
-const user_result_type = result_type(Text)(user_type)
+type Result error value =
+  | .ok = value
+  | .err = error
+type User = [.name = Text, .score = Int]
+type UserResult = Result Text User
 
 flag <- Input.flag()
-let outcome: user_result_type = if flag {
-  user_result_type.ok(user_type { name: "Ada", score: 42 })
+let outcome: UserResult = if flag {
+  UserResult.ok([.name = "Ada", .score = 42])
 } else {
-  user_result_type.err("missing")
+  UserResult.err("missing")
 }
 
 let result: I32 = if let .ok(user) = outcome {

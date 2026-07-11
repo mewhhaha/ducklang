@@ -35,6 +35,9 @@ The executable expectations and deterministic runners live in `manifest.ts`.
 | `06_functions_and_blocks.ix`     | multi-argument block function           | IC      | `42`        |
 | `07_early_return.ix`             | early function return                   | IC      | `42`        |
 | `08_dynamic_condition.ix`        | host-driven runtime branch              | Managed | `21` / `41` |
+| `09_literals.ix`                 | text, character, and boolean literals   | IC      | `42`        |
+| `10_else_if.ix`                  | expression-valued `else if` chains      | IC      | `42`        |
+| `11_no_demand_bindings.ix`       | `_` in ignored binding positions        | Core    | `42`        |
 
 ## Compile Time
 
@@ -45,12 +48,12 @@ The executable expectations and deterministic runners live in `manifest.ts`.
 | `03_const_parameter_twice.ix`      | const call-site specialization                | IC    | `42`   |
 | `04_const_capture_snapshot.ix`     | binding-time const capture                    | IC    | `42`   |
 | `05_static_recursion_factorial.ix` | statically reducible recursion                | IC    | `42`   |
-| `06_generic_type_constructor.ix`   | curried union type constructor                | IC    | `42`   |
-| `07_struct_fact_checker.ix`        | structural struct constraint                  | IC    | `42`   |
-| `08_union_fact_checker.ix`         | structural union constraint                   | IC    | `42`   |
-| `09_type_pattern_check.ix`         | compile-time type pattern                     | IC    | `42`   |
+| `06_generic_type_constructor.ix`   | generic sum type declaration                  | Core  | `42`   |
+| `07_struct_fact_checker.ix`        | named product declaration and projection      | Core  | `42`   |
+| `08_union_fact_checker.ix`         | named sum declaration and case selection      | Core  | `42`   |
+| `09_type_pattern_check.ix`         | product alias and annotated construction      | Core  | `42`   |
 | `10_extensions_and_protocols.ix`   | lexical extension and protocol specialization | IC    | `42`   |
-| `11_indexed_calculator.ix`         | closed calculator type family                 | Core  | `42`   |
+| `11_indexed_calculator.ix`         | closed calculator sum                         | Core  | `42`   |
 
 ## Functions And Control Flow
 
@@ -69,33 +72,37 @@ The executable expectations and deterministic runners live in `manifest.ts`.
 
 ## Data And Text
 
-| Example                          | Focus                                | Route   | Result      |
-| -------------------------------- | ------------------------------------ | ------- | ----------- |
-| `01_struct_fields.ix`            | typed struct construction and fields | Core    | `39`        |
-| `02_projected_struct_update.ix`  | pure struct update                   | Core    | `42`        |
-| `03_nested_structs.ix`           | nested typed structures              | IC      | `42`        |
-| `04_dynamic_struct_branch.ix`    | host-selected struct value           | Managed | `42`        |
-| `05_struct_runtime_index.ix`     | checked runtime struct index         | Managed | `20` / `22` |
-| `06_struct_index_assignment.ix`  | aggregate rebuild by index           | Core    | `42`        |
-| `07_generic_option.ix`           | generic union and `if let`           | Core    | `42`        |
-| `08_dynamic_union_result.ix`     | materialized runtime union           | Core    | `42`        |
-| `09_union_struct_payload.ix`     | struct payload extraction            | Core    | `42`        |
-| `10_text_append_and_bytes.ix`    | append, length, and UTF-8 indexing   | Core    | `112`       |
-| `11_text_slices_and_equality.ix` | slicing, rebuilding, and equality    | Core    | `42`        |
-| `12_dynamic_text_branch.ix`      | host-selected visible text           | Managed | `5` / `3`   |
+| Example                          | Focus                                    | Route   | Result      |
+| -------------------------------- | ---------------------------------------- | ------- | ----------- |
+| `01_struct_fields.ix`            | typed struct construction and fields     | Core    | `39`        |
+| `02_projected_struct_update.ix`  | pure struct update                       | Core    | `42`        |
+| `03_nested_structs.ix`           | nested typed structures                  | IC      | `42`        |
+| `04_dynamic_struct_branch.ix`    | host-selected struct value               | Managed | `42`        |
+| `05_struct_runtime_index.ix`     | checked runtime struct index             | Managed | `20` / `22` |
+| `06_struct_index_assignment.ix`  | aggregate rebuild by index               | Core    | `42`        |
+| `07_generic_option.ix`           | generic union and `if let`               | Core    | `42`        |
+| `08_dynamic_union_result.ix`     | materialized runtime union               | Core    | `42`        |
+| `09_union_struct_payload.ix`     | struct payload extraction                | Core    | `42`        |
+| `10_text_append_and_bytes.ix`    | append, length, and UTF-8 indexing       | Core    | `112`       |
+| `11_text_slices_and_equality.ix` | slicing, rebuilding, and equality        | Core    | `42`        |
+| `12_dynamic_text_branch.ix`      | host-selected visible text               | Managed | `5` / `3`   |
+| `13_type_rows.ix`                | extensible product and union rows        | Core    | `42`        |
+| `14_type_sets.ix`                | type union, intersection, and difference | Core    | `42`        |
 
 ## Loops And Collections
 
-| Example                      | Focus                          | Route   | Result     |
-| ---------------------------- | ------------------------------ | ------- | ---------- |
-| `01_range_sum.ix`            | range loop with carried state  | Core    | `10`       |
-| `02_stepped_range.ix`        | explicit positive step         | Core    | `42`       |
-| `03_dynamic_range_bound.ix`  | host-provided loop bound       | Managed | `6` / `21` |
-| `04_break.ix`                | loop break                     | Core    | `42`       |
-| `05_continue.ix`             | loop continue                  | Core    | `42`       |
-| `06_nested_ranges.ix`        | nested loop scopes             | Core    | `42`       |
-| `07_struct_collection.ix`    | aggregate collection iteration | Core    | `42`       |
-| `08_text_byte_collection.ix` | UTF-8 byte iteration           | Core    | `198`      |
+| Example                        | Focus                              | Route   | Result     |
+| ------------------------------ | ---------------------------------- | ------- | ---------- |
+| `01_range_sum.ix`              | range loop with carried state      | Core    | `10`       |
+| `02_stepped_range.ix`          | explicit positive step             | Core    | `42`       |
+| `03_dynamic_range_bound.ix`    | host-provided loop bound           | Managed | `6` / `21` |
+| `04_break.ix`                  | loop break                         | Core    | `42`       |
+| `05_continue.ix`               | loop continue                      | Core    | `42`       |
+| `06_nested_ranges.ix`          | nested loop scopes                 | Core    | `42`       |
+| `07_struct_collection.ix`      | aggregate collection iteration     | Core    | `42`       |
+| `08_text_byte_collection.ix`   | UTF-8 byte iteration               | Core    | `198`      |
+| `09_loop_expression_syntax.ix` | value-producing loop and break     | Core    | `42`       |
+| `10_fold_function.ix`          | fold built from the loop primitive | Core    | `42`       |
 
 ## Ownership And Modules
 

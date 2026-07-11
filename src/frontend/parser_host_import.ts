@@ -65,13 +65,8 @@ export abstract class ParserHostImport extends ParserExpr {
       contract_tag = "frozen_shareable";
     }
 
-    if (this.peek().kind === "name") {
-      const name = this.peek().text;
-
-      if (is_host_import_arg_contract_name(name)) {
-        this.advance();
-        contract_tag = name;
-      }
+    if (this.match_name("scalar")) {
+      contract_tag = "scalar";
     }
 
     const type_name = this.expect_name("Expected host import parameter type");
@@ -117,22 +112,6 @@ export abstract class ParserHostImport extends ParserExpr {
     if (this.peek().kind === "name") {
       const contract_name = this.peek().text;
 
-      if (
-        contract_name === "unique_heap" ||
-        contract_name === "frozen_shareable"
-      ) {
-        this.advance();
-        const type_name = this.expect_name("Expected host import result type");
-        const reason = host_import_owner_reason(type_name);
-        const type = host_import_owned_value_type(type_name);
-
-        if (contract_name === "unique_heap") {
-          return { type, owner: { tag: "unique_heap", reason } };
-        }
-
-        return { type, owner: { tag: "frozen_shareable", reason } };
-      }
-
       if (contract_name === "scalar") {
         this.advance();
       }
@@ -167,28 +146,6 @@ function parse_host_import_target(text: string): {
     module: text.slice(0, dot),
     field: text.slice(dot + 1),
   };
-}
-
-function is_host_import_arg_contract_name(
-  name: string,
-): name is FrontHostImportArgContract["tag"] {
-  if (name === "scalar") {
-    return true;
-  }
-
-  if (name === "bounded_borrow") {
-    return true;
-  }
-
-  if (name === "frozen_shareable") {
-    return true;
-  }
-
-  if (name === "ownership_transfer") {
-    return true;
-  }
-
-  return false;
 }
 
 function host_import_scalar_value_type(

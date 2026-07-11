@@ -1,14 +1,8 @@
-const result_like = value_type => {
-  let union { ok: Int, .. } = value_type
-  value_type
-}
+type Result =
+  | .ok = Int
+  | .err = Text
 
-const result_type: result_like = union {
-  ok: Int,
-  err: Text
-}
-
-let unwrap = (result: result_like) => {
+let unwrap = (result: Result) => {
   if let .ok(value) = result {
     value
   } else {
@@ -16,4 +10,4 @@ let unwrap = (result: result_like) => {
   }
 }
 
-unwrap(result_type.ok(42))
+unwrap(Result.ok(42))

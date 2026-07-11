@@ -55,9 +55,6 @@ TestSource.wat = function wat(
   return Mod.emit(TestSource.mod(input, name));
 };
 
-TestSource.raw_mod = TestSource.mod;
-TestSource.raw_wat = TestSource.wat;
-
 TestSource.artifact = function artifact(
   input: string | Parameters<typeof Source.artifact>[0],
   options?: Parameters<typeof Source.artifact>[1],

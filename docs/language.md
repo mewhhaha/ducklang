@@ -685,8 +685,7 @@ let view: &Text = &text
 
 For host effect contracts, `&T` means a bounded borrow, `#T` means a
 frozen/shareable value, and plain rich `T` means ownership transfer for an
-argument or a unique owned result. The legacy ownership words remain accepted as
-parser aliases, but formatting uses the sigils.
+argument or a unique owned result.
 
 First-class closure parameters retain singleton-atom constraints.
 Ownership-qualified closure parameters such as `#Text` and `&Text` are rejected
@@ -1108,9 +1107,8 @@ unless a more specific allocation fact applies. A unique heap value may be
 moved, consumed, borrowed, frozen, returned, or dropped, but it is not
 implicitly copied.
 
-`&value` creates a non-owning read-only view tied to a lexical lifetime. The
-legacy `borrow value` spelling remains a parser alias, but formatting emits the
-sigil. A stored view uses ordinary binding syntax.
+`&value` creates a non-owning read-only view tied to a lexical lifetime. A
+stored view uses ordinary binding syntax.
 
 ```txt
 let view = &user

@@ -40,21 +40,24 @@ declare effect Io {
   );
 });
 
-Deno.test("legacy effect ownership words remain accepted aliases", () => {
-  const source = parse_source(
-    "declare effect Io { write: (bounded_borrow Text, frozen_shareable Bytes, ownership_transfer Text) => frozen_shareable Text }",
-  );
-
-  assert_equals(
-    format_source(source),
-    "declare effect Io { write: (&Text, #Bytes, Text) => #Text }",
-  );
-});
-
 Deno.test("effect results reject bounded borrow sigils", () => {
   assert_throws(
     () => parse_source("declare effect Io { read: () => &Text }"),
     "Effect results cannot use bounded borrow ownership",
+  );
+});
+
+Deno.test("effect ownership requires canonical sigils", () => {
+  assert_throws(
+    () =>
+      parse_source(
+        "declare effect Io { write: (bounded_borrow Text) => Unit }",
+      ),
+    "Unknown effect parameter ownership: bounded_borrow",
+  );
+  assert_throws(
+    () => parse_source("declare effect Io { read: () => unique_heap Text }"),
+    "Unknown effect result ownership: unique_heap",
   );
 });
 
@@ -86,15 +89,7 @@ Deno.test("raw host import ownership sigils parse and format canonically", () =>
   );
 });
 
-Deno.test("raw host import plain rich values retain legacy transfer semantics", () => {
-  const source = TestSource.parse(
-    'host_import copy from "host.copy" (ownership_transfer Packet) => unique_heap Packet',
-  );
-
-  assert_equals(
-    format_source(source),
-    'host_import copy from "host.copy" (Packet) => Packet',
-  );
+Deno.test("raw host import rejects bounded borrow results", () => {
   assert_throws(
     () => TestSource.parse('host_import bad from "host.bad" () => &Text'),
     "Host import results cannot use bounded borrow ownership",

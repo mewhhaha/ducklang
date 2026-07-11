@@ -1704,7 +1704,7 @@ different(input)
 
   const runtime_text_borrow_identity = compile(`
 let same = (value: Text) => {
-  borrow value == borrow value
+  &value == &value
 }
 
 same(input)
@@ -1732,7 +1732,7 @@ same(input)
 
   const runtime_text_mixed_wrapper_identity = compile(`
 let value: Text = input
-borrow value == scratch { value }
+&value == scratch { value }
 `);
 
   assert_equals(Ic.reduce(runtime_text_mixed_wrapper_identity), {
@@ -6094,7 +6094,7 @@ choose(40i64)
   (x: Int) => x + 1
 } else {
   (x: Int) => x - 1
-})(borrow input)
+})(&input)
 `);
 
   assert_equals(
@@ -6110,7 +6110,7 @@ let choose = if flag {
   (x: Int) => x - 1
 }
 
-choose(borrow input)
+choose(&input)
 `);
 
   assert_equals(
@@ -6164,7 +6164,7 @@ let choose = if flag {
   (user: user_type) => len(user.name)
 }
 
-choose(borrow input)
+choose(&input)
 `);
 
   assert_equals(
@@ -6189,7 +6189,7 @@ let choose = if flag {
   (option: option_type) => 1
 }
 
-choose(borrow input)
+choose(&input)
 `);
 
   assert_equals(
@@ -6205,8 +6205,7 @@ let choose = if flag {
 }
 
 choose(if pick {
-  borrow input
-} else {
+  (&input)} else {
   other
 })
 `);
@@ -6253,8 +6252,7 @@ let choose = if flag {
 }
 
 choose(if pick {
-  borrow input
-} else {
+  (&input)} else {
   other
 })
 `)),
@@ -7293,7 +7291,7 @@ Deno.test("Source parses every Task 11 MVP grammar include", () => {
       feature: "linear parameters with !",
       text: "let f = (!io) => !io\nf",
     },
-    { feature: "borrow views", text: "borrow value" },
+    { feature: "borrow views", text: "&value" },
     { feature: "freeze values", text: "freeze value" },
     { feature: "scratchpads with value results", text: "scratch { 1 }" },
     {
@@ -11890,8 +11888,7 @@ for i in 0..2 {
 
   let user: user_type = {
     let selected = if let .some(found) = maybe {
-      borrow input_user
-    } else {
+      (&input_user)    } else {
       scratch { other_user }
     }
 
@@ -11944,8 +11941,7 @@ for i in 0..2 {
 
   let option: option_type = {
     let selected = if let .some(found) = maybe {
-      borrow input_option
-    } else {
+      (&input_option)    } else {
       scratch { other_option }
     }
 
@@ -12782,7 +12778,7 @@ let loop = rec (value: Int, n: Int) => {
   }
 }
 
-loop(borrow input, 2)
+loop(&input, 2)
 `);
 
   assert_equals(
@@ -12838,7 +12834,7 @@ let loop = rec (user: user_type, n: Int) => {
   }
 }
 
-loop(borrow input, 2)
+loop(&input, 2)
 `);
 
   assert_equals(
@@ -12890,8 +12886,7 @@ let loop = rec (user: user_type, n: Int) => {
 }
 
 loop(if flag {
-  borrow input
-}, 0)
+  (&input)}, 0)
 `)),
     ),
     "if flag then (input)(λfield_age#0. λfield_name#0. field_age#0) else 0:i32",
@@ -12944,8 +12939,7 @@ let loop = rec (user: user_type, n: Int) => {
 }
 
 loop(if flag {
-  borrow input
-} else {
+  (&input)} else {
   other
 }, 0)
 `)),
@@ -12994,8 +12988,7 @@ let loop = rec (value: Int, n: Int) => {
 }
 
 loop(if flag {
-  borrow input
-} else {
+  (&input)} else {
   other
 }, 0)
 `);
@@ -13027,7 +13020,7 @@ loop(0)
 
   const rec_local_borrowed_binding = compile(`
 let loop = rec (n: Int) => {
-  let value: Int = borrow input
+  let value: Int = &input
 
   if n == 0 {
     value + 1
@@ -13490,8 +13483,7 @@ let make = rec (n: Int) => {
   if n == 0 {
     {
       let selected = if flag {
-        borrow input
-      } else {
+        (&input)      } else {
         scratch { other }
       }
       return selected
@@ -13520,8 +13512,7 @@ let make = rec (n: Int) => {
   if n == 0 {
     {
       let selected = if flag {
-        borrow input
-      } else {
+        (&input)      } else {
         scratch { other }
       }
       return selected
@@ -14608,14 +14599,14 @@ Deno.test("Source structured route reports canonical unbound values", () => {
 
 Deno.test("Source lowers host import contracts to Core", () => {
   const source = Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
-host_import host_take from "env.take" (ownership_transfer Text) => I32
-host_import host_frozen from "env.frozen" (frozen_shareable Text) => I32
-host_import host_make from "env.make" () => unique_heap Text
+host_import host_read from "env.read" (&Text) => I32
+host_import host_take from "env.take" (Text) => I32
+host_import host_frozen from "env.frozen" (#Text) => I32
+host_import host_make from "env.make" () => Text
 host_import host_count from "env.count" (I32, I64) => I32
 
 let message: Text = append("he", "llo")
-host_read(borrow message)
+host_read(&message)
 `);
 
   assert_equals(
@@ -14683,7 +14674,7 @@ host_read(borrow message)
   assert_throws(
     () =>
       compile(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 1
 `),
     "Cannot lower host import through pure Ic",
@@ -14714,11 +14705,11 @@ host_import host_read from "env.read" (bounded_borrow Text) => I32
   );
 
   const pointer_contracts = Source.parse(`
-host_import host_read_aggregate from "env.read_aggregate" (bounded_borrow runtime_aggregate) => I32
-host_import host_take_union from "env.take_union" (ownership_transfer runtime_union) => I32
-host_import host_frozen_closure from "env.frozen_closure" (frozen_shareable closure) => I32
-host_import host_make_union from "env.make_union" () => unique_heap runtime_union
-host_import host_make_frozen_aggregate from "env.make_frozen_aggregate" () => frozen_shareable runtime_aggregate
+host_import host_read_aggregate from "env.read_aggregate" (&runtime_aggregate) => I32
+host_import host_take_union from "env.take_union" (runtime_union) => I32
+host_import host_frozen_closure from "env.frozen_closure" (#closure) => I32
+host_import host_make_union from "env.make_union" () => runtime_union
+host_import host_make_frozen_aggregate from "env.make_frozen_aggregate" () => #runtime_aggregate
 `);
 
   assert_equals(
@@ -14791,11 +14782,11 @@ const user_type = struct { name: Text, age: Int }
 const result_type = union { ok: Text, err: Int }
 const user_alias = user_type
 
-host_import host_read_user from "env.read_user" (bounded_borrow user_type) => I32
-host_import host_take_result from "env.take_result" (ownership_transfer result_type) => I32
-host_import host_frozen_user from "env.frozen_user" (frozen_shareable user_alias) => I32
-host_import host_make_user from "env.make_user" () => unique_heap user_type
-host_import host_make_frozen_result from "env.make_frozen_result" () => frozen_shareable result_type
+host_import host_read_user from "env.read_user" (&user_type) => I32
+host_import host_take_result from "env.take_result" (result_type) => I32
+host_import host_frozen_user from "env.frozen_user" (#user_alias) => I32
+host_import host_make_user from "env.make_user" () => user_type
+host_import host_make_frozen_result from "env.make_frozen_result" () => #result_type
 `);
 
   assert_equals(
@@ -14868,7 +14859,7 @@ host_import host_make_frozen_result from "env.make_frozen_result" () => frozen_s
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import host_bad from "env.bad" (bounded_borrow missing_type) => I32
+host_import host_bad from "env.bad" (&missing_type) => I32
 `)),
     "Missing host import owner type value: missing_type",
   );
@@ -14877,7 +14868,7 @@ host_import host_bad from "env.bad" (bounded_borrow missing_type) => I32
     () =>
       Source.core(Source.parse(`
 const not_type = 1
-host_import host_bad from "env.bad" () => unique_heap not_type
+host_import host_bad from "env.bad" () => not_type
 `)),
     "Host import owner type not_type must resolve to a struct or union " +
       "type-value",
@@ -15977,9 +15968,9 @@ use_read(scalar_ops, 41)
   });
 
   const bounded_borrow = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
-let read = message => host_read(borrow message)
+let read = message => host_read(&message)
 let message: Text = append("a", "b")
 read(message)
 `));
@@ -15995,7 +15986,7 @@ read(message)
   );
 
   const unique_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = message => host_take(message)
 let message: Text = append("a", "b")
@@ -16008,7 +15999,7 @@ send(message)
   assert_equals(unique_transfer_proof.drops.steps[0]?.tag, "host_transfer");
 
   const frozen_return = Source.core(Source.parse(`
-host_import host_make from "env.make" () => frozen_shareable Text
+host_import host_make from "env.make" () => #Text
 
 host_make()
   `));
@@ -16031,7 +16022,7 @@ host_make()
   });
 
   const ownership_protocol = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 const readable = ops => {
   ops.read
@@ -16040,7 +16031,7 @@ const readable = ops => {
 
 const text_ops = 0
 const text_ops = text_ops with {
-  read: message => host_read(borrow message)
+  read: message => host_read(&message)
 }
 
 let use_read = (const ops: readable, message: Text) => ops.read(message)
@@ -16053,7 +16044,7 @@ use_read(text_ops, message)
   );
 
   const missing_cleanup = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let maybe_send = (flag: Int, message: Text) => {
   if flag {
@@ -16438,7 +16429,7 @@ xs[0]
 
 Deno.test("Source reserves ownership and scratchpad syntax", () => {
   assert_equals(
-    Format.fmt(Source, Source.parse("borrow user.name")),
+    Format.fmt(Source, Source.parse("&user.name")),
     "&user.name",
   );
 
@@ -16458,7 +16449,7 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
   );
 
   assert_throws(
-    () => Source.core(Source.parse("borrow user")),
+    () => Source.core(Source.parse("&user")),
     "Unbound core value: user",
   );
 
@@ -16473,7 +16464,7 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
   );
 
   assert_throws(
-    () => compile("borrow user"),
+    () => compile("&user"),
     "use Source.core, Source.mod, or Source.wat",
   );
 
@@ -16511,7 +16502,7 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
     value: 42,
   });
 
-  assert_equals(Ic.reduce(compile("borrow (1 + 2)")), {
+  assert_equals(Ic.reduce(compile("&(1 + 2)")), {
     tag: "num",
     type: "i32",
     value: 3,
@@ -16524,7 +16515,7 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
   });
 
   assert_equals(
-    Format.fmt(Ic, Ic.reduce(compile("borrow input + 1"))),
+    Format.fmt(Ic, Ic.reduce(compile("&input + 1"))),
     "input + 1:i32",
   );
 
@@ -16542,7 +16533,7 @@ Deno.test("Source reserves ownership and scratchpad syntax", () => {
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-if borrow input {
+if (&input) {
   1
 } else {
   0
@@ -16571,7 +16562,7 @@ if scratch { input } {
       Ic,
       Ic.reduce(compile(`
 let inc = (x: Int) => x + 1
-inc(borrow input)
+inc(&input)
 `)),
     ),
     "input + 1:i32",
@@ -16603,7 +16594,7 @@ size(scratch { input })
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-let value: Int = borrow input
+let value: Int = &input
 value + 1
 `)),
     ),
@@ -16615,8 +16606,7 @@ value + 1
       Ic,
       Ic.reduce(compile(`
 let value: Int = if flag {
-  borrow input
-} else {
+  (&input)} else {
   other
 }
 
@@ -16744,8 +16734,7 @@ len(value)
       Ic.reduce(compile(`
 let value: Text = {
   let selected: Text = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -16905,8 +16894,7 @@ size({
 let size = (message: Text) => len(message)
 size({
   let selected: Text = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -16925,8 +16913,7 @@ const user_type = struct {
 }
 
 let user: user_type = if flag {
-  borrow input
-} else {
+  (&input)} else {
   other
 }
 
@@ -16970,8 +16957,7 @@ const user_type = struct {
 
 let user: user_type = {
   let selected = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17038,8 +17024,7 @@ const user_type = struct {
 }
 
 let user: user_type = if flag {
-  borrow input
-}
+  (&input)}
 
 user.age
 `)),
@@ -17083,8 +17068,7 @@ const option_type = union {
 
 let option: option_type = {
   let selected = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17188,8 +17172,7 @@ const user_type = struct {
 
 let choose = (user: user_type) => user.age
 choose(if flag {
-  borrow input
-})
+  (&input)})
 `)),
     ),
     "if flag then (input)(λfield_age#0. λfield_name#0. field_age#0) else 0:i32",
@@ -17206,8 +17189,7 @@ const user_type = struct {
 let choose = (user: user_type) => user.age
 choose({
   let selected = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17257,8 +17239,7 @@ let pick = (option: option_type) => if let .some(value) = option {
 
 pick({
   let selected = if flag {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17280,8 +17261,7 @@ const maybe_type = union {
 let maybe: maybe_type = source
 let value: Text = {
   let selected: Text = if let .some(found) = maybe {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17309,8 +17289,7 @@ const user_type = struct {
 let maybe: maybe_type = source
 let user: user_type = {
   let selected = if let .some(found) = maybe {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17339,8 +17318,7 @@ const option_type = union {
 let maybe: maybe_type = source
 let option: option_type = {
   let selected = if let .some(found) = maybe {
-    borrow input
-  } else {
+    (&input)  } else {
     scratch { other }
   }
   return selected
@@ -17377,7 +17355,7 @@ user.age
       Ic,
       Ic.reduce(compile(`
 let value: Int = 0
-value = borrow input
+value = &input
 value + 1
 `)),
     ),
@@ -17402,8 +17380,7 @@ len(value)
       Ic.reduce(compile(`
 let value: Int = 0
 value = if flag {
-  borrow input
-} else {
+  (&input)} else {
   other
 }
 
@@ -17420,7 +17397,7 @@ const user_type = struct {
   age: Int
 }
 
-let user: user_type = borrow input
+let user: user_type = &input
 user.age
 `)),
   );
@@ -17455,7 +17432,7 @@ const user_type = struct {
 }
 
 let age = (user: user_type) => user.age
-age(borrow input)
+age(&input)
 `)),
   );
   assert_includes(borrowed_annotated_struct_arg, "input");
@@ -17467,7 +17444,7 @@ age(borrow input)
       Ic.reduce(compile(`
 let apply = (x: Int, const f) => f(x)
 const inc = x => x + 1
-apply(borrow input, inc)
+apply(&input, inc)
 `)),
     ),
     "input + 1:i32",
@@ -17476,7 +17453,7 @@ apply(borrow input, inc)
   const borrowed_arg = compile(`
 let inc = x => x + 1
 let value = 41
-inc(borrow value)
+inc(&value)
 `);
 
   assert_equals(Ic.reduce(borrowed_arg), {
@@ -17487,7 +17464,7 @@ inc(borrow value)
 
   assert_equals(
     Ic.reduce(compile(`
-let size = (message: Text) => len(borrow message)
+let size = (message: Text) => len(&message)
 size(input)
 `)),
     {
@@ -17744,8 +17721,7 @@ choose
   assert_equals(
     Ic.reduce(compile(`
 let identity = (message: Text) => {
-  borrow message
-}
+  (&message)}
 
 identity(input)
 `)),
@@ -17758,8 +17734,7 @@ identity(input)
   assert_equals(
     Ic.reduce(compile(`
 let identity = (message: Text) => {
-  borrow message
-}
+  (&message)}
 
 len(identity(input))
 `)),
@@ -17774,8 +17749,7 @@ len(identity(input))
     Ic,
     Ic.reduce(compile(`
 let identity = (message: Text) => {
-  borrow message
-}
+  (&message)}
 
 identity(input)[index]
 `)),
@@ -17872,7 +17846,7 @@ get(identity(input), index)
 
   assert_equals(
     Ic.reduce(compile(`
-let size = (message: Text) => len(borrow (scratch { freeze message }))
+let size = (message: Text) => len(&(scratch { freeze message }))
 size(input)
 `)),
     {
@@ -17896,7 +17870,7 @@ byte_at(input, index)
   const nested_get = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-let byte_at = (message: Text, index: Int) => get(scratch { borrow message }, index)
+let byte_at = (message: Text, index: Int) => get(scratch { &message }, index)
 byte_at(input, index)
 `)),
   );
@@ -17918,7 +17892,7 @@ byte_at(input)
   const nested_index = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-let byte_at = (message: Text) => (borrow (scratch { freeze message }))[1]
+let byte_at = (message: Text) => (&(scratch { freeze message }))[1]
 byte_at(input)
 `)),
   );
@@ -17934,7 +17908,7 @@ const user_type = struct {
 }
 
 let user: user_type = input
-(borrow user).age
+(&user).age
 `)),
   );
   assert_includes(borrowed_runtime_struct_field, "input");
@@ -17999,7 +17973,7 @@ inc(41)
 
   assert_equals(
     Ic.reduce(compile(`
-let inc = borrow (x => x + 1)
+let inc = &(x => x + 1)
 inc(41)
 `)),
     {
@@ -18033,7 +18007,7 @@ size(message)
     },
   );
 
-  assert_equals(Ic.reduce(compile('borrow "text"')), {
+  assert_equals(Ic.reduce(compile('&"text"')), {
     tag: "text",
     value: "text",
   });
@@ -18051,8 +18025,7 @@ size(message)
   assert_equals(
     Ic.reduce(compile(`
 let message = "hello"
-borrow message
-`)),
+(&message)`)),
     {
       tag: "text",
       value: "hello",
@@ -18099,7 +18072,7 @@ len(message)
 
   const borrowed_object = Format.fmt(
     Ic,
-    Ic.reduce(compile("borrow { age: 1 }")),
+    Ic.reduce(compile("&({ age: 1 })")),
   );
   assert_includes(borrowed_object, "λpick#");
   assert_includes(borrowed_object, "1:i32");
@@ -18144,7 +18117,7 @@ user
   assert_throws(
     () =>
       compile(`
-let user = borrow { age: 41 }
+let user = &({ age: 41 })
 user = 1
 user
 `),
@@ -18177,11 +18150,11 @@ inc
   );
 
   assert_throws(
-    () => compile("borrow input"),
+    () => compile("&input"),
     "Cannot lower borrow view result through pure Ic",
   );
   assert_throws(
-    () => compile("borrow input"),
+    () => compile("&input"),
     "use Source.core, Source.mod, or Source.wat",
   );
 
@@ -18286,9 +18259,9 @@ Deno.test("Source and Core facades lower representative inputs and expose proof 
   // linear/module + host shape (minimal exercising ! and modules via known host)
   // use a shape covered by existing host proof paths (borrow for bounded, scalar result)
   const linearHostSrc = `
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 let msg = "hi"
-let n = host_read(borrow msg)
+let n = host_read(&msg)
 n
 `;
   const cLin = Source.core(linearHostSrc);
@@ -18309,12 +18282,12 @@ n
   // memory fixture per verification: borrow/scratch/freeze/owner + owner replacement ( := after borrow view ends)
   const memFix = `
 let owner = 99
-let view = borrow owner
+let view = &owner
 let frozen = freeze (owner + 1)
 let res = scratch { 123 + 4 }
 res
 let o2 = 5
-let v2 = borrow o2
+let v2 = &o2
 o2 := 6   // owner replacement after active borrow view ended for previous
 o2
 `;

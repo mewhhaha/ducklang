@@ -126,22 +126,22 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/compile_time/06_generic_type_constructor.ix",
-    route: "ic",
+    route: "core",
     runs: run(42),
   },
   {
     path: "examples/compile_time/07_struct_fact_checker.ix",
-    route: "ic",
+    route: "core",
     runs: run(42),
   },
   {
     path: "examples/compile_time/08_union_fact_checker.ix",
-    route: "ic",
+    route: "core",
     runs: run(42),
   },
   {
     path: "examples/compile_time/09_type_pattern_check.ix",
-    route: "ic",
+    route: "core",
     runs: run(42),
   },
   {

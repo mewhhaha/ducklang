@@ -1,44 +1,31 @@
 module (!init: Init) where
 
-const io_error_type = struct {
-  code: I32,
-  path: Text,
-  message: Text
-}
+type IoError = [.code = I32, .path = Text, .message = Text]
 
-const open_result_type = union {
-  ok: Unit,
-  err: io_error_type
-}
+type OpenResult =
+  | .ok
+  | .err = IoError
 
-const read_result_type = union {
-  chunk: Bytes,
-  eof: Unit,
-  err: io_error_type
-}
+type ReadResult =
+  | .chunk = Bytes
+  | .eof
+  | .err = IoError
 
-const walk_entry_type = struct {
-  path: Text,
-  name: Text,
-  depth: I32,
-  size: I64
-}
+type WalkEntry = [.path = Text, .name = Text, .depth = I32, .size = I64]
 
-const walk_event_type = union {
-  enter: walk_entry_type,
-  leave: walk_entry_type,
-  file: walk_entry_type,
-  symlink: walk_entry_type,
-  other: walk_entry_type,
-  err: io_error_type,
-  done: Unit
-}
+type WalkEvent =
+  | .enter = WalkEntry
+  | .leave = WalkEntry
+  | .file = WalkEntry
+  | .symlink = WalkEntry
+  | .other = WalkEntry
+  | .err = IoError
+  | .done
 
-const write_result_type = union {
-  ok: Unit,
-  closed: Unit,
-  err: io_error_type
-}
+type WriteResult =
+  | .ok
+  | .closed
+  | .err = IoError
 
 const line_contains = (bytes: Bytes, pattern: Text, line_start: I32, line_end: I32) => {
   let matched = false

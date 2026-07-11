@@ -3747,7 +3747,7 @@ let view: Text = ""
 let total = 0
 
 for index, name in names {
-  view = borrow name
+  view = &name
   total = total + index + len(name)
 }
 
@@ -7257,10 +7257,10 @@ Deno.test("module imports compile through WAT to Wasm", async () => {
 
 Deno.test("frontend host import contracts compile through WAT to Wasm", async () => {
   const wat = Source.wat(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let message: Text = append("he", "llo")
-host_read(borrow message)
+host_read(&message)
 `);
   const instance = await instantiate_wat(
     wat,
@@ -7291,7 +7291,7 @@ host_read(borrow message)
 
 Deno.test("frontend host capability method compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 io = io.print("hello")
@@ -7326,7 +7326,7 @@ io
 
 Deno.test("frontend narrowed capability method table compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 host_import read from "env.read" (I32) => I32
 
 const output = { print: print }
@@ -7366,7 +7366,7 @@ io
 
 Deno.test("frontend runtime capability table compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import consume from "env.consume" (ownership_transfer Text) => I32
+host_import consume from "env.consume" (Text) => I32
 let flag = 1
 let output = if flag {
   { marker: runtime_i32_slice(1, 7), consume: consume }
@@ -7431,7 +7431,7 @@ Deno.test(
   "frontend captured linear capability closure compiles through WAT to Wasm",
   async () => {
     const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let print_once = () => io.print("hello")
@@ -7476,7 +7476,7 @@ Deno.test(
   "frontend branch-selected linear capability closure compiles through WAT to Wasm",
   async () => {
     const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
@@ -7551,14 +7551,14 @@ Deno.test(
   "frontend branch-selected linear closure alpha-renames params through WAT to Wasm",
   async () => {
     const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
 let print_once = if flag {
-  (message: Text) => io.print(borrow message)
+  (message: Text) => io.print(&message)
 } else {
-  (text: Text) => io.print(borrow text)
+  (text: Text) => io.print(&text)
 }
 io = print_once("world")
 io
@@ -7675,7 +7675,7 @@ const result_type = union {
   err: Text
 }
 
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 1
@@ -7685,7 +7685,7 @@ let result: result_type = if flag {
   result_type.err("fallback")
 }
 let print_once = if let .ok(value) = result {
-  () => io.print(borrow value)
+  () => io.print(&value)
 } else {
   () => io.print("fallback")
 }
@@ -7760,7 +7760,7 @@ const result_type = union {
   err: Unit
 }
 
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 1
@@ -7771,7 +7771,7 @@ let make = if flag {
 }
 let result: result_type = make("world")
 let print_once = if let .ok(value) = result {
-  () => io.print(borrow value)
+  () => io.print(&value)
 } else {
   () => io.print("fallback")
 }
@@ -7841,7 +7841,7 @@ Deno.test(
   "frontend first-class linear capability closure compiles through WAT to Wasm",
   async () => {
     const wat = wat_from_core_source(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 const main = (!io: I32) => {
   let print_once = () => io.print("hello")
@@ -8179,7 +8179,7 @@ Deno.test("core ownership-transfer host import compiles through WAT to Wasm", as
 
 Deno.test("core branch-selected ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 0
 let send = if flag {
@@ -8219,7 +8219,7 @@ send(message)
 
 Deno.test("core temporary ownership-transfer wrapper argument compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 send(append("he", "llo"))
@@ -8253,7 +8253,7 @@ send(append("he", "llo"))
 
 Deno.test("core expression temporary ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(append(msg, "!"))
 let message: Text = append("he", "llo")
@@ -8288,7 +8288,7 @@ send(message)
 
 Deno.test("core branch temporary ownership-transfer wrapper argument compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let flag = 0
@@ -8323,7 +8323,7 @@ send(if flag { append("he", "llo") } else { append("wo", "rld") })
 
 Deno.test("core branch-local ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 1
 let message: Text = append("he", "llo")
@@ -8363,7 +8363,7 @@ if flag {
 
 Deno.test("core rec ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = rec (msg: Text) => host_take(msg)
 let message: Text = append("he", "llo")
@@ -8398,7 +8398,7 @@ send(message)
 
 Deno.test("core higher-order ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => f(msg)
@@ -8434,7 +8434,7 @@ relay(send, message)
 
 Deno.test("core higher-order expression temporary ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
 let relay = (const f, msg: Text) => f(append(msg, "!"))
@@ -8470,7 +8470,7 @@ relay(send, message)
 
 Deno.test("core higher-order alias ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => {
@@ -8509,7 +8509,7 @@ relay(send, message)
 
 Deno.test("core branch higher-order alias temporary ownership-transfer wrapper compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
 let flag = 1

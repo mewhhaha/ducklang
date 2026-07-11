@@ -212,10 +212,6 @@ export abstract class ParserExpr extends ParserPrimary {
       return { tag: "try_with", body, handler: this.parse_expr() };
     }
 
-    if (this.match_name("borrow")) {
-      return { tag: "borrow", value: this.parse_unary() };
-    }
-
     if (this.match_symbol("&")) {
       return { tag: "borrow", value: this.parse_unary() };
     }

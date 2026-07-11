@@ -1,15 +1,6 @@
-const score_type = Int
+type Score = Int
+type Player = [.name = Text, .score = Score]
 
-const player_type = struct {
-  name: Text,
-  score: score_type
-}
-
-let struct { score: score_type, .. } = player_type
-
-let player = player_type {
-  name: "Ada",
-  score: 41
-}
+let player: Player = [.name = "Ada", .score = 41]
 
 player.score + 1

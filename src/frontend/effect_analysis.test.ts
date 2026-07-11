@@ -7,7 +7,7 @@ Deno.test("effect analysis infers direct and forwarded operation rows", () => {
 module (!init: Init) where
 declare effect Io {
   read: () => Text
-  print: (bounded_borrow Text) => Unit
+  print: (&Text) => Unit
 }
 declare Init { io: Io }
 
@@ -18,7 +18,7 @@ let read_name = () => {
 
 let greet = () => {
   name <- read_name()
-  _ <- Io.print(borrow name)
+  _ <- Io.print(&name)
 }
 
 _ <- greet()

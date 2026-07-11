@@ -170,47 +170,38 @@ export class ParserStmt extends ParserTypeDeclaration {
       return { type_name: text, ownership: "ownership_transfer" };
     }
 
-    let ownership = parts[0];
+    const ownership_symbol = parts[0];
     const type_name = parts.slice(1).join("");
     expect(type_name.length > 0, "Expected effect parameter type");
 
-    if (ownership === "&") {
-      ownership = "bounded_borrow";
+    if (ownership_symbol === "&") {
+      return { type_name, ownership: "bounded_borrow" };
     }
 
-    if (ownership === "#") {
-      ownership = "frozen_shareable";
+    if (ownership_symbol === "#") {
+      return { type_name, ownership: "frozen_shareable" };
     }
 
-    expect(
-      ownership === "bounded_borrow" || ownership === "frozen_shareable" ||
-        ownership === "ownership_transfer",
-      "Unknown effect parameter ownership: " + ownership,
-    );
-    return { type_name, ownership };
+    throw new Error("Unknown effect parameter ownership: " + ownership_symbol);
   }
 
   private parse_effect_result(text: string): EffectResult {
     const parts = text.split(/\s+/);
 
     if (parts.length > 1) {
-      let ownership = parts[0];
+      const ownership_symbol = parts[0];
       const type_name = parts.slice(1).join("");
       expect(type_name.length > 0, "Expected effect result type");
 
-      if (ownership === "&") {
+      if (ownership_symbol === "&") {
         throw new Error("Effect results cannot use bounded borrow ownership");
       }
 
-      if (ownership === "#") {
-        ownership = "frozen_shareable";
+      if (ownership_symbol === "#") {
+        return { type_name, ownership: "frozen_shareable" };
       }
 
-      expect(
-        ownership === "unique_heap" || ownership === "frozen_shareable",
-        "Unknown effect result ownership: " + ownership,
-      );
-      return { type_name, ownership };
+      throw new Error("Unknown effect result ownership: " + ownership_symbol);
     }
 
     if (is_effect_scalar_type(text)) {

@@ -180,7 +180,7 @@ Deno.test("Core emits scalar value-producing loops with nested labels", () => {
 Deno.test("Core preserves Bytes facts through runtime union loop bodies", () => {
   const wat = Source.wat(Source.parse(`
 const result_type = union { chunk: Bytes, eof: Unit }
-host_import read from "env.read" () => unique_heap result_type
+host_import read from "env.read" () => result_type
 
 let result: result_type = read()
 if let .chunk(first_bytes) = result {
@@ -2757,7 +2757,7 @@ let make = if flag {
 }
 
 let pair: pair_type = make(10, 31)
-let view = borrow pair
+let view = &pair
 pair[0] = 40
 0
 `))),
@@ -3348,7 +3348,7 @@ let view: Text = ""
 let total = 0
 
 for index, name in names {
-  view = borrow name
+  view = &name
   total = total + index + len(name)
 }
 
@@ -6378,7 +6378,7 @@ const result_type = union {
 }
 
 let user: user_type = user_type { age: 1 }
-let result: result_type = result_type.ok(borrow user)
+let result: result_type = result_type.ok(&user)
 if let .ok(found) = result {
   found.age
 } else {
@@ -8143,7 +8143,7 @@ if let .ok(value) = result {
 });
 
 Deno.test("Core.emit preserves scalar ownership and scratchpad nodes", () => {
-  const borrowed = Source.core(Source.parse("borrow (1 + 2)"));
+  const borrowed = Source.core(Source.parse("&(1 + 2)"));
   assert_equals(Format.fmt(Core, borrowed), "borrow 1:i32 i32.add 2:i32");
   assert_equals(Core.ownership(borrowed), {
     tag: "scalar_local",
@@ -8567,7 +8567,7 @@ len(message)
   assert_includes(scratch_text_wat, "global.set $__scratch_heap");
 
   const scratch_borrowed_text = Source.core(
-    Source.parse('scratch { borrow "temp" }'),
+    Source.parse('scratch { &"temp" }'),
   );
   assert_equals(Core.borrows(scratch_borrowed_text), {
     edges: [
@@ -8791,7 +8791,7 @@ for i in 0..3 {
 
   const captured_borrow = Source.core(Source.parse(`
 let factor = 2
-let scale = x => borrow (x + factor)
+let scale = x => &(x + factor)
 factor = 3
 scale(10)
 `));
@@ -8849,7 +8849,7 @@ scale(10)
   Core.check_borrows(captured_borrow);
 
   const bounded_text_borrow = Source.core(
-    Source.parse("(message: Text) => len(borrow message)"),
+    Source.parse("(message: Text) => len(&message)"),
   );
   assert_equals(Core.borrows(bounded_text_borrow), {
     edges: [
@@ -8887,7 +8887,7 @@ scale(10)
   );
 
   const escaping_text_borrow = Source.core(
-    Source.parse("(message: Text) => borrow message"),
+    Source.parse("(message: Text) => &message"),
   );
   const escaping_text_borrow_message =
     "borrow over unique_heap text needs lexical lifetime tracking before the owner can be protected";
@@ -8921,8 +8921,7 @@ scale(10)
 
   const mutate_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  borrow message
-  message[0] = 65
+  (&message)  message[0] = 65
   1
 }
 `));
@@ -8952,8 +8951,7 @@ scale(10)
   const mutate_aliased_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
   let alias = message
-  borrow alias
-  message[0] = 65
+  (&alias)  message[0] = 65
   1
 }
 `));
@@ -8987,7 +8985,7 @@ const user_type = struct {
 }
 
 let user: user_type = user_type { name: "A", age: 1 }
-borrow user.name
+&user.name
 user = user_type { name: "B", age: 2 }
 1
 `));
@@ -9027,8 +9025,7 @@ const user_type = struct {
 let user: user_type = user_type { name: "A", age: 1 }
 let name = user.name
 let other = name
-borrow other
-user = user_type { name: "B", age: 2 }
+(&other)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9070,8 +9067,7 @@ let name = {
   let inner = user.name
   inner
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9110,7 +9106,7 @@ const user_type = struct {
 
 let user: user_type = user_type { name: "A", age: 1 }
 let view = {
-  let inner = borrow user.name
+  let inner = &user.name
   inner
 }
 user = user_type { name: "B", age: 2 }
@@ -9159,8 +9155,7 @@ let name = {
   }
   inner
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9213,8 +9208,7 @@ let name = {
   }
   inner
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 other = user_type { name: "D", age: 4 }
 1
 `),
@@ -9283,8 +9277,7 @@ let name = {
   }
   inner
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9335,8 +9328,7 @@ let name = {
   }
   inner
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9380,8 +9372,7 @@ const user_type = struct {
 
 let user: user_type = user_type { name: "A", age: 1 }
 let name = user.name
-borrow name
-name[0] = 65
+(&name)name[0] = 65
 1
 `),
   );
@@ -9423,8 +9414,7 @@ let name: Text = "fallback"
 if flag {
   name = user.name
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `));
   assert_equals(
@@ -9465,8 +9455,7 @@ let name: Text = "fallback"
 for i in 0..n {
   name = user.name
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `));
   assert_equals(
@@ -9508,8 +9497,7 @@ for i in 0..1 {
   break
   name = user.name
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9540,8 +9528,7 @@ if flag {
 } else {
   name = other.name
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 other = user_type { name: "D", age: 4 }
 1
 `),
@@ -9596,8 +9583,7 @@ let flag = 1
 let user: user_type = user_type { name: "A", age: 1 }
 let other: user_type = user_type { name: "C", age: 3 }
 let name = if flag { user.name } else { other.name }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 other = user_type { name: "D", age: 4 }
 1
 `),
@@ -9654,8 +9640,7 @@ const user_type = struct {
 let flag = 1
 let user: user_type = user_type { name: "A", age: 1 }
 let name = if flag { user.name } else { "fallback" }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9699,8 +9684,7 @@ const user_type = struct {
 let target: maybe_text = .some("hit")
 let user: user_type = user_type { name: "A", age: 1 }
 let name = if let .some(value) = target { user.name } else { "fallback" }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `),
   );
@@ -9745,8 +9729,7 @@ let target: maybe_text = .some("hit")
 let user: user_type = user_type { name: "A", age: 1 }
 let other: user_type = user_type { name: "C", age: 3 }
 let name = if let .some(value) = target { user.name } else { other.name }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 other = user_type { name: "D", age: 4 }
 1
 `),
@@ -9802,7 +9785,7 @@ const user_type = struct {
 
 let flag = 1
 let user: user_type = user_type { name: "A", age: 1 }
-let view = if flag { borrow user.name } else { "fallback" }
+let view = if flag { &user.name } else { "fallback" }
 user = user_type { name: "B", age: 2 }
 1
 `),
@@ -9843,7 +9826,7 @@ const user_type = struct {
 let flag = 1
 let user: user_type = user_type { name: "A", age: 1 }
 let other: user_type = user_type { name: "C", age: 3 }
-let view = if flag { borrow user.name } else { borrow other.name }
+let view = if flag { &user.name } else { &other.name }
 user = user_type { name: "B", age: 2 }
 other = user_type { name: "D", age: 4 }
 1
@@ -9903,7 +9886,7 @@ const user_type = struct {
 
 let target: maybe_text = .some("hit")
 let user: user_type = user_type { name: "A", age: 1 }
-let view = if let .some(value) = target { borrow user.name } else { "fallback" }
+let view = if let .some(value) = target { &user.name } else { "fallback" }
 user = user_type { name: "B", age: 2 }
 1
 `));
@@ -9949,8 +9932,7 @@ let name: Text = "fallback"
 if let .some(value) = target {
   name = user.name
 }
-borrow name
-user = user_type { name: "B", age: 2 }
+(&name)user = user_type { name: "B", age: 2 }
 1
 `));
   assert_equals(
@@ -9994,7 +9976,7 @@ let target: maybe_text = .some("hit")
 let user: user_type = user_type { name: "A", age: 1 }
 let name: Text = "fallback"
 if let .some(value) = target {
-  name = borrow user.name
+  name = &user.name
 }
 user = user_type { name: "B", age: 2 }
 1
@@ -10037,7 +10019,7 @@ const result_type = union {
 let result: result_type = .ok("Ada")
 let view: Text = "fallback"
 if let .ok(value) = result {
-  view = borrow value
+  view = &value
 }
 result = .ok("Grace")
 len(view)
@@ -10107,8 +10089,7 @@ let user: user_type = user_type {
 }
 let result: result_type = result_type.ok(user)
 let view = if let .ok(value) = result {
-  borrow value
-} else {
+  (&value)} else {
   user_type {
     age: 0,
     score: 0
@@ -10184,8 +10165,7 @@ let start = 1
 let inner: inner_type = inner_type.some(start)
 let result: result_type = result_type.ok(inner)
 let view = if let .ok(value) = result {
-  borrow value
-} else {
+  (&value)} else {
   inner_type.none()
 }
 result = result_type.ok(inner_type.some(start + 1))
@@ -10249,7 +10229,7 @@ const result_type = union {
 
 (start: Int) => {
   let result: result_type = .ok(start)
-  let view: Int = if let .ok(value) = result { borrow value } else { 0 }
+  let view: Int = if let .ok(value) = result { &value } else { 0 }
   result = .ok(start + 1)
   view
 }
@@ -10295,7 +10275,7 @@ const result_type = union {
 
 (start: Int) => {
   let result: result_type = .ok(slice("Ada", start, 3))
-  let view: Text = if let .ok(value) = result { borrow value } else { "fallback" }
+  let view: Text = if let .ok(value) = result { &value } else { "fallback" }
   result = .ok(slice("Grace", start, 5))
   len(view)
 }
@@ -10357,7 +10337,7 @@ const result_type = union {
 
   const stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   len(view)
 }
 `));
@@ -10401,7 +10381,7 @@ const result_type = union {
 
   const mutate_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   len(view)
   message[0] = 65
   1
@@ -10432,7 +10412,7 @@ const result_type = union {
 
   const freeze_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   let frozen = freeze message
   len(view)
 }
@@ -10473,10 +10453,10 @@ const result_type = union {
   );
 
   const transfer_stored_borrowed_text = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   host_take(message)
   len(view)
 }
@@ -10535,7 +10515,7 @@ let names: names_type = make_names()
 let view: Text = ""
 
 for index, name in names {
-  view = borrow name
+  view = &name
 }
 
 names[0] = "Edsger"
@@ -10566,7 +10546,7 @@ len(view)
 
   const returned_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   view
 }
 `));
@@ -10605,7 +10585,7 @@ len(view)
 
   const captured_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = borrow message
+  let view = &message
   (x: Int) => len(view)
 }
 `));
@@ -10646,7 +10626,7 @@ len(view)
 (flag: Int, message: Text) => {
   let view: Text = "fallback"
   if flag {
-    view = borrow message
+    view = &message
   }
   len(view)
 }
@@ -10662,7 +10642,7 @@ len(view)
 (flag: Int, message: Text) => {
   let view: Text = "fallback"
   if flag {
-    view = borrow message
+    view = &message
   }
   message[0] = 65
   1
@@ -10695,7 +10675,7 @@ len(view)
 (flag: Int, message: Text) => {
   let view: Text = "fallback"
   if flag {
-    view = borrow message
+    view = &message
   }
   view
 }
@@ -10737,7 +10717,7 @@ len(view)
 (message: Text) => {
   let view: Text = "fallback"
   for i in 0..1 {
-    view = borrow message
+    view = &message
   }
   message[0] = 65
   1
@@ -10769,8 +10749,7 @@ len(view)
   const mutate_after_loop_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
   for i in 0..1 {
-    borrow message
-  }
+    (&message)  }
   message[0] = 65
   1
 }
@@ -10785,7 +10764,7 @@ len(view)
   let view: Text = "fallback"
   for i in 0..1 {
     break
-    view = borrow message
+    view = &message
   }
   message[0] = 65
   1
@@ -10802,7 +10781,7 @@ len(view)
   let view: Text = "fallback"
   for i in 0..1 {
     continue
-    view = borrow message
+    view = &message
   }
   message[0] = 65
   1
@@ -10821,7 +10800,7 @@ len(view)
 (message: Text) => {
   let view: Text = "fallback"
   for i in 0..1 {
-    view = borrow message
+    view = &message
     break
   }
   message[0] = 65
@@ -10937,7 +10916,7 @@ len(view)
     ],
   });
 
-  const borrowed_text = Source.core(Source.parse('borrow "text"'));
+  const borrowed_text = Source.core(Source.parse('&"text"'));
   assert_equals(Format.fmt(Core, borrowed_text), 'borrow "text"');
   assert_equals(Core.ownership(borrowed_text), {
     tag: "frozen_shareable",
@@ -10988,7 +10967,7 @@ len(view)
   Core.check_borrows(escaping_untyped_plain_closure);
 
   const escaping_untyped_borrow_closure = Source.core(
-    Source.parse("x => borrow x"),
+    Source.parse("x => &x"),
   );
   assert_equals(Core.validate_borrows(escaping_untyped_borrow_closure), {
     ok: false,
@@ -11010,7 +10989,7 @@ len(view)
     "Skipped closure borrow analysis in closure#0",
   );
 
-  const borrowed_closure = Source.core(Source.parse("borrow ((x: Int) => x)"));
+  const borrowed_closure = Source.core(Source.parse("&((x: Int) => x)"));
   const borrowed_closure_message =
     "borrow over unique_heap closure needs lexical lifetime tracking before the owner can be protected";
   assert_equals(Core.borrows(borrowed_closure), {
@@ -16333,7 +16312,7 @@ scratch {
     "unique_heap closure cannot leave scratch without freeze or explicit promotion",
   );
 
-  const borrowed_closure = Source.core(Source.parse("borrow ((x: Int) => x)"));
+  const borrowed_closure = Source.core(Source.parse("&((x: Int) => x)"));
   assert_throws(
     () => Core.check_proof(borrowed_closure),
     "Rejected borrow borrow#0 in program#0",
@@ -16585,7 +16564,7 @@ f(1)
 
   const borrow_capture_core = Source.core(Source.parse(`
 let message: Text = append("he", "llo")
-let view = borrow message
+let view = &message
 let f = (x: Int) => len(view) + x
 
 f(1)
@@ -19320,7 +19299,7 @@ let message: Text = slice("Ada", 0, 3)
 
 Deno.test("Source.core lowers host-backed capability methods", () => {
   const core = Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 io = io.print("hello")
@@ -19337,7 +19316,7 @@ io`,
   assert_includes(Emit.emit(Core, core), "call $print");
 
   const captured_linear_source = `
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let print_once = () => io.print("hello")
@@ -19397,7 +19376,7 @@ io
   assert_includes(captured_linear_wat, "call $print");
 
   const branch_linear_source = `
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
@@ -19425,14 +19404,14 @@ io
   assert_includes(Source.wat(branch_linear_source), "call_indirect");
 
   const branch_param_linear_source = `
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
 let print_once = if flag {
-  (message: Text) => io.print(borrow message)
+  (message: Text) => io.print(&message)
 } else {
-  (text: Text) => io.print(borrow text)
+  (text: Text) => io.print(&text)
 }
 io = print_once("world")
 io
@@ -19471,7 +19450,7 @@ const result_type = union {
   err: Text
 }
 
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 1
@@ -19481,7 +19460,7 @@ let result: result_type = if flag {
   result_type.err("fallback")
 }
 let print_once = if let .ok(value) = result {
-  () => io.print(borrow value)
+  () => io.print(&value)
 } else {
   () => io.print("fallback")
 }
@@ -19513,7 +19492,7 @@ const result_type = union {
   err: Unit
 }
 
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 1
@@ -19524,7 +19503,7 @@ let make = if flag {
 }
 let result: result_type = make("world")
 let print_once = if let .ok(value) = result {
-  () => io.print(borrow value)
+  () => io.print(&value)
 } else {
   () => io.print("fallback")
 }
@@ -19658,7 +19637,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
@@ -19677,7 +19656,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 0
@@ -19697,7 +19676,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let print_once = () => io.print("hello")
@@ -19711,7 +19690,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let print_once = () => io.print("hello")
@@ -19726,7 +19705,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 let flag = 1
@@ -19753,7 +19732,7 @@ value
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
 io.print("hello")
@@ -19763,7 +19742,7 @@ io
   );
 
   const narrowed_method_table_source = `
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 host_import read from "env.read" (I32) => I32
 
 const output = { print: print }
@@ -19786,7 +19765,7 @@ io
   assert_includes(Source.wat(narrowed_method_table_source), "call $print");
 
   const narrowed_missing_method = Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 host_import read from "env.read" (I32) => I32
 
 const output = { print: print }
@@ -19805,7 +19784,7 @@ io
   assert_throws(
     () =>
       Source.core(Source.parse(`
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 const output = { print: print }
 let !io: I32 = 1
@@ -19852,7 +19831,7 @@ main
   );
 
   const first_class_linear_source = `
-host_import print from "env.print" (I32, bounded_borrow Text) => I32
+host_import print from "env.print" (I32, &Text) => I32
 
 const main = (!io: I32) => {
   let print_once = () => io.print("hello")
@@ -19882,7 +19861,7 @@ io
 
 Deno.test("Source.core lowers runtime capability method tables", () => {
   const source = `
-host_import consume from "env.consume" (ownership_transfer Text) => I32
+host_import consume from "env.consume" (Text) => I32
 let flag = 1
 let output = if flag {
   { marker: runtime_i32_slice(1, 7), consume: consume }
@@ -19921,8 +19900,8 @@ output.consume(append("A", "da"))
   assert_throws(
     () =>
       Source.wat(`
-host_import consume_a from "env.consume_a" (ownership_transfer Text) => I32
-host_import consume_b from "env.consume_b" (ownership_transfer Text) => I32
+host_import consume_a from "env.consume_a" (Text) => I32
+host_import consume_b from "env.consume_b" (Text) => I32
 let flag = 1
 let output = if flag {
   { marker: runtime_i32_slice(1, 7), consume: consume_a }
@@ -20048,11 +20027,11 @@ Deno.test("Core.proof accepts bounded-borrow host import contracts", () => {
   );
 
   const wrapper_borrow_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = msg => host_read(msg)
 let message: Text = append("a", "b")
-read(borrow message)
+read(&message)
 `));
   const wrapper_borrow_proof = Core.proof(wrapper_borrow_host_call);
 
@@ -20099,13 +20078,13 @@ read(borrow message)
   );
 
   const block_wrapper_borrow_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = msg => {
   host_read(msg)
 }
 let message: Text = append("a", "b")
-read(borrow message)
+read(&message)
 `));
   const block_wrapper_borrow_proof = Core.proof(
     block_wrapper_borrow_host_call,
@@ -20122,10 +20101,10 @@ read(borrow message)
   );
 
   const local_borrow_wrapper_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = (msg: Text) => {
-  let view = borrow msg
+  let view = &msg
   host_read(view)
 }
 let message: Text = append("a", "b")
@@ -20146,11 +20125,11 @@ read(message)
   );
 
   const rec_wrapper_borrow_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = rec (msg: Text) => host_read(msg)
 let message: Text = append("a", "b")
-read(borrow message)
+read(&message)
 `));
   const rec_wrapper_borrow_proof = Core.proof(rec_wrapper_borrow_host_call);
 
@@ -20165,7 +20144,7 @@ read(borrow message)
   );
 
   const branch_wrapper_borrow_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let flag = 1
 let read = if flag {
@@ -20174,7 +20153,7 @@ let read = if flag {
   (msg: Text) => host_read(msg)
 }
 let message: Text = append("a", "b")
-read(borrow message)
+read(&message)
 `));
   const branch_wrapper_borrow_proof = Core.proof(
     branch_wrapper_borrow_host_call,
@@ -20202,10 +20181,10 @@ read(borrow message)
   );
 
   const higher_order_borrow_wrapper_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = value => host_read(value)
-let relay = (const f, msg: Text) => f(borrow msg)
+let relay = (const f, msg: Text) => f(&msg)
 let message: Text = append("a", "b")
 relay(read, message)
 `));
@@ -20225,12 +20204,12 @@ relay(read, message)
 
   const higher_order_alias_borrow_wrapper_host_call = Source.core(
     Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = value => host_read(value)
 let relay = (const f, msg: Text) => {
   let g = f
-  g(borrow msg)
+  g(&msg)
 }
 let message: Text = append("a", "b")
 relay(read, message)
@@ -20256,7 +20235,7 @@ relay(read, message)
   );
 
   const wrapper_unique_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = msg => host_read(msg)
 let message: Text = append("a", "b")
@@ -20291,7 +20270,7 @@ read(message)
   );
 
   const local_alias_wrapper_unique_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = msg => {
   let view = msg
@@ -20319,7 +20298,7 @@ read(message)
   );
 
   const rec_wrapper_unique_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = rec (msg: Text) => host_read(msg)
 let message: Text = append("a", "b")
@@ -20346,7 +20325,7 @@ read(message)
   );
 
   const branch_wrapper_unique_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let flag = 1
 let read = if flag {
@@ -20388,7 +20367,7 @@ read(message)
   );
 
   const higher_order_unique_wrapper_host_call = Source.core(Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = value => host_read(value)
 let relay = (const f, msg: Text) => f(msg)
@@ -20415,7 +20394,7 @@ relay(read, message)
 
   const higher_order_alias_unique_wrapper_host_call = Source.core(
     Source.parse(`
-host_import host_read from "env.read" (bounded_borrow Text) => I32
+host_import host_read from "env.read" (&Text) => I32
 
 let read = value => host_read(value)
 let relay = (const f, msg: Text) => {
@@ -20908,7 +20887,7 @@ Deno.test("Core.proof accepts ownership-transfer host import contracts", () => {
   );
 
   const wrapper_transfer_host_call = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let message: Text = append("a", "b")
@@ -20950,7 +20929,7 @@ send(message)
   Core.check_proof(wrapper_transfer_host_call);
 
   const temporary_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 send(append("a", "b"))
@@ -20993,7 +20972,7 @@ send(append("a", "b"))
   Core.check_proof(temporary_wrapper_transfer);
 
   const expression_temporary_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(append(msg, "!"))
 let message: Text = append("a", "b")
@@ -21045,7 +21024,7 @@ send(message)
   Core.check_proof(expression_temporary_wrapper_transfer);
 
   const branch_temporary_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let flag = 1
@@ -21089,7 +21068,7 @@ send(if flag { append("a", "b") } else { append("c", "d") })
   Core.check_proof(branch_temporary_wrapper_transfer);
 
   const scalar_temporary_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 send(1)
@@ -21123,7 +21102,7 @@ send(1)
   );
 
   const scalar_named_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let value = 1
@@ -21158,7 +21137,7 @@ send(value)
   );
 
   const wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let message: Text = append("a", "b")
@@ -21193,7 +21172,7 @@ len(message)
   );
 
   const higher_order_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => f(msg)
@@ -21239,7 +21218,7 @@ relay(send, message)
 
   const higher_order_expression_temporary_wrapper_transfer = Source.core(
     Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
 let relay = (const f, msg: Text) => f(append(msg, "!"))
@@ -21295,7 +21274,7 @@ relay(send, message)
   Core.check_proof(higher_order_expression_temporary_wrapper_transfer);
 
   const higher_order_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => f(msg)
@@ -21310,7 +21289,7 @@ len(message)
   );
 
   const higher_order_alias_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => {
@@ -21363,7 +21342,7 @@ relay(send, message)
 
   const branch_higher_order_alias_temporary_wrapper_transfer = Source.core(
     Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
 let flag = 1
@@ -21458,7 +21437,7 @@ relay(send, message)
 
   const higher_order_alias_wrapper_use_after_transfer = Source.core(
     Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
 let relay = (const f, msg) => {
@@ -21477,7 +21456,7 @@ len(message)
   );
 
   const rec_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = rec (msg: Text) => host_take(msg)
 let message: Text = append("a", "b")
@@ -21519,7 +21498,7 @@ send(message)
   Core.check_proof(rec_wrapper_transfer);
 
   const rec_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = rec (msg: Text) => host_take(msg)
 let message: Text = append("a", "b")
@@ -21533,7 +21512,7 @@ len(message)
   );
 
   const block_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => {
   host_take(msg)
@@ -21574,7 +21553,7 @@ send(message)
   Core.check_proof(block_wrapper_transfer);
 
   const block_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => {
   host_take(msg)
@@ -21590,7 +21569,7 @@ len(message)
   );
 
   const multi_stmt_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => {
   let code = host_take(msg)
@@ -21634,7 +21613,7 @@ send(message)
   Core.check_proof(multi_stmt_wrapper_transfer);
 
   const multi_stmt_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let send = msg => {
   let code = host_take(msg)
@@ -21651,7 +21630,7 @@ len(message)
   );
 
   const branch_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 1
 let send = if flag {
@@ -21722,7 +21701,7 @@ send(message)
   Core.check_proof(branch_wrapper_transfer);
 
   const branch_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 1
 let send = if flag {
@@ -21741,7 +21720,7 @@ len(message)
   );
 
   const branch_local_wrapper_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 1
 let message: Text = append("a", "b")
@@ -21810,7 +21789,7 @@ if flag {
   Core.check_proof(branch_local_wrapper_transfer);
 
   const branch_local_wrapper_use_after_transfer = Source.core(Source.parse(`
-host_import host_take from "env.take" (ownership_transfer Text) => I32
+host_import host_take from "env.take" (Text) => I32
 
 let flag = 1
 let message: Text = append("a", "b")

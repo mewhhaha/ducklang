@@ -8,7 +8,7 @@ Deno.test("module syntax parses effects, rows, state, and exports", () => {
 module (!init: Init) where
 
 declare effect Io {
-  print: (bounded_borrow Text) => Unit
+  print: (&Text) => Unit
   read: () => Text
 }
 

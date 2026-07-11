@@ -6,16 +6,16 @@ declare effect Input {
 
 declare Init { input: Input }
 
-const choice_type = union {
-  add: Int,
-  multiply: Int
-}
+type Choice =
+  | .add = Int
+  | .multiply = Int
 
+let _ = 0
 flag <- Input.flag()
-let choice: choice_type = if flag {
-  choice_type.add(21)
+let choice: Choice = if flag {
+  Choice.add(21)
 } else {
-  choice_type.multiply(2)
+  Choice.multiply(2)
 }
 
 let operation = if let .add(amount) = choice {

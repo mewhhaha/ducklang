@@ -1,11 +1,5 @@
-const point_type = struct {
-  x: Int,
-  y: Int
-}
+type Point = [.x = Int, .y = Int]
 
-let point = point_type {
-  x: 20,
-  y: 21
-}
+let point: Point = [.x = 20, .y = 21]
 
 (point { x: point.x + 1 }).x + point.y

@@ -109,7 +109,7 @@ read_name
 
 Deno.test("managed ABI excludes Ix effects and local handler requirements", () => {
   const source = Source.parse(`
-declare effect Io { print: (bounded_borrow Text) => Unit }
+declare effect Io { print: (&Text) => Unit }
 effect Counter { get: () => I32 }
 
 let run = () => {
@@ -119,7 +119,7 @@ let run = () => {
 
 let counter = () => Counter {
     get: (!resume) => {
-      _ <- Io.print(borrow "get")
+      _ <- Io.print(&"get")
       !resume(0)
     },
     return: (value) => value
@@ -500,14 +500,14 @@ module (!init: Init) where
 
 declare effect Io {
   read: () => Text
-  print: (bounded_borrow Text) => Unit
+  print: (&Text) => Unit
 }
 
 declare Init { io: Io }
 
 let greet = () => {
   name <- Io.read()
-  _ <- Io.print(borrow name)
+  _ <- Io.print(&name)
   name
 }
 
@@ -589,7 +589,7 @@ Deno.test("Ix handlers can use rich host effects without exposing local effects"
 module (!init: Init) where
 
 declare effect Io {
-  decorate: (bounded_borrow Text) => Text
+  decorate: (&Text) => Text
 }
 
 effect Local {
@@ -605,7 +605,7 @@ let run = () => {
 
 let make_local = () => Local {
   ask: (!resume) => {
-    decorated <- Io.decorate(borrow "hello")
+    decorated <- Io.decorate(&"hello")
     !resume(decorated)
   },
   return: value => value,
@@ -639,10 +639,10 @@ Deno.test("managed ABI emits a versioned manifest and runtime exports", () => {
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-declare effect Measure { text: (bounded_borrow Text) => I32 }
+declare effect Measure { text: (&Text) => I32 }
 declare Init { measure: Measure }
 
-result <- Measure.text(borrow "hello")
+result <- Measure.text(&"hello")
 return { result }
 `);
 
@@ -668,10 +668,10 @@ Deno.test("managed ABI decodes Text arguments for JS", async () => {
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-declare effect Measure { text: (bounded_borrow Text) => I32 }
+declare effect Measure { text: (&Text) => I32 }
 declare Init { measure: Measure }
 
-result <- Measure.text(borrow "Zażółć 🦀")
+result <- Measure.text(&"Zażółć 🦀")
 return { result }
 `);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -701,7 +701,7 @@ Deno.test("managed ABI encodes JS structs containing Text", async () => {
 module (!init: Init) where
 
 const user_type = struct { name: Text, age: Int }
-declare effect Host { make_user: () => unique_heap user_type }
+declare effect Host { make_user: () => user_type }
 declare Init { host: Host }
 
 user <- Host.make_user()
@@ -728,7 +728,7 @@ Deno.test("managed ABI encodes tagged JS unions", async () => {
 module (!init: Init) where
 
 const result_type = union { ok: Text, err: Int }
-declare effect Host { make_result: () => unique_heap result_type }
+declare effect Host { make_result: () => result_type }
 declare Init { host: Host }
 
 outcome <- Host.make_result()
@@ -754,7 +754,7 @@ Deno.test("managed ABI drops discarded owned effect results", async () => {
 module (!init: Init) where
 
 const result_type = union { chunk: Bytes, eof: Unit }
-declare effect Host { read: () => unique_heap result_type }
+declare effect Host { read: () => result_type }
 declare Init { host: Host }
 
 _ <- Host.read()
@@ -840,15 +840,15 @@ const read_result_type = union {
 }
 
 declare effect Host {
-  read: () => unique_heap read_result_type
-  write: (bounded_borrow Bytes) => Unit
+  read: () => read_result_type
+  write: (&Bytes) => Unit
 }
 
 declare Init { host: Host }
 
 outcome <- Host.read()
 result <- if let .chunk(bytes) = outcome {
-  _ <- Host.write(borrow bytes)
+  _ <- Host.write(&bytes)
   len(bytes) + get(bytes, 0)
 } else {
   0
@@ -916,8 +916,8 @@ const result_type = union {
 
 declare effect Host {
   count: () => I32
-  read: () => unique_heap result_type
-  write: (bounded_borrow Bytes) => Unit
+  read: () => result_type
+  write: (&Bytes) => Unit
 }
 
 declare Init { host: Host }
@@ -930,7 +930,7 @@ for index in 0..length {
     let doubled = append(prefix, prefix)
     let marker: Text = append("loop", "!")
     freeze marker
-    _ <- Host.write(borrow doubled)
+    _ <- Host.write(&doubled)
   }
 }
 
@@ -974,7 +974,7 @@ Deno.test("literal patterns compare runtime Text effect results", async () => {
 module (!init: Init) where
 
 declare effect Input {
-  read: () => unique_heap Text
+  read: () => Text
 }
 
 declare Init { input: Input }
@@ -1064,7 +1064,7 @@ Deno.test("managed ABI grows memory for large host results", async () => {
   const source = `
 module (!init: Init) where
 
-declare effect Host { make_text: () => unique_heap Text }
+declare effect Host { make_text: () => Text }
 declare Init { host: Host }
 
 text <- Host.make_text()

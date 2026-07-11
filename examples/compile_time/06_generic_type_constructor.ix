@@ -1,10 +1,9 @@
-const result_type = error_type => value_type => union {
-  ok: value_type,
-  err: error_type
-}
+type Result error value =
+  | .ok = value
+  | .err = error
 
-const parse_result_type = result_type(Text)(Int)
-let result = parse_result_type.ok(42)
+type ParseResult = Result Text Int
+let result = ParseResult.ok(42)
 
 if let .ok(value) = result {
   value

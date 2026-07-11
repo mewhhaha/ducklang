@@ -90,10 +90,6 @@ Source.wat = function wat(input: string | SourceNode, name = "main"): Wat {
   return Mod.emit(Source.mod(input, name));
 };
 
-Source.raw_mod = Source.mod;
-
-Source.raw_wat = Source.wat;
-
 Source.artifact = function artifact(
   input: string | SourceNode,
   options: string | SourceArtifactOptions = "main",

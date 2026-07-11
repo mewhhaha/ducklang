@@ -1969,10 +1969,6 @@
             "named": false
           },
           {
-            "type": "borrow",
-            "named": false
-          },
-          {
             "type": "comptime",
             "named": false
           },
@@ -3464,15 +3460,11 @@
         "required": false,
         "types": [
           {
-            "type": "bounded_borrow",
+            "type": "#",
             "named": false
           },
           {
-            "type": "frozen_shareable",
-            "named": false
-          },
-          {
-            "type": "ownership_transfer",
+            "type": "&",
             "named": false
           },
           {
@@ -3517,15 +3509,11 @@
         "required": false,
         "types": [
           {
-            "type": "frozen_shareable",
+            "type": "#",
             "named": false
           },
           {
             "type": "scalar",
-            "named": false
-          },
-          {
-            "type": "unique_heap",
             "named": false
           }
         ]
@@ -6962,10 +6950,6 @@
             "named": false
           },
           {
-            "type": "borrow",
-            "named": false
-          },
-          {
             "type": "comptime",
             "named": false
           },
@@ -7309,14 +7293,6 @@
     "named": false
   },
   {
-    "type": "borrow",
-    "named": false
-  },
-  {
-    "type": "bounded_borrow",
-    "named": false
-  },
-  {
     "type": "break",
     "named": false
   },
@@ -7382,10 +7358,6 @@
     "named": false
   },
   {
-    "type": "frozen_shareable",
-    "named": false
-  },
-  {
     "type": "identifier",
     "named": true
   },
@@ -7424,10 +7396,6 @@
   {
     "type": "number",
     "named": true
-  },
-  {
-    "type": "ownership_transfer",
-    "named": false
   },
   {
     "type": "rec",
@@ -7471,10 +7439,6 @@
   },
   {
     "type": "union",
-    "named": false
-  },
-  {
-    "type": "unique_heap",
     "named": false
   },
   {

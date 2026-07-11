@@ -6,8 +6,8 @@ declare effect Input {
 
 declare Init { input: Input }
 
-const pair_type = struct { first: Int, second: Int }
-let pair = pair_type { first: 20, second: 22 }
+type Pair = [.first = Int, .second = Int]
+let pair: Pair = [.first = 20, .second = 22]
 
 index <- Input.index()
 let result: I32 = pair[index]

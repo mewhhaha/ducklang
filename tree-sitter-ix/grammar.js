@@ -319,28 +319,25 @@ module.exports = grammar({
       seq("(", optional(commaSep1($.host_parameter)), ")"),
 
     host_parameter: ($) =>
-      seq(
-        optional(
+      choice(
+        seq(
           field(
             "contract",
-            choice(
-              "scalar",
-              "bounded_borrow",
-              "frozen_shareable",
-              "ownership_transfer",
-            ),
+            choice("&", "#", "scalar"),
           ),
+          field("type", alias($.identifier, $.type_reference)),
         ),
         field("type", alias($.identifier, $.type_reference)),
       ),
 
     host_result: ($) =>
-      seq(
-        optional(
+      choice(
+        seq(
           field(
             "contract",
-            choice("scalar", "unique_heap", "frozen_shareable"),
+            choice("#", "scalar"),
           ),
+          field("type", alias($.identifier, $.type_reference)),
         ),
         field("type", alias($.identifier, $.type_reference)),
       ),
@@ -573,7 +570,7 @@ module.exports = grammar({
         seq(
           field(
             "operator",
-            choice("-", "!", "&", "borrow", "freeze", "comptime"),
+            choice("-", "!", "&", "freeze", "comptime"),
           ),
           field("operand", $.condition_expression),
         ),
@@ -655,7 +652,7 @@ module.exports = grammar({
         seq(
           field(
             "operator",
-            choice("-", "!", "&", "borrow", "freeze", "comptime"),
+            choice("-", "!", "&", "freeze", "comptime"),
           ),
           field("operand", $._expression),
         ),

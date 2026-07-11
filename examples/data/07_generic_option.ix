@@ -1,10 +1,9 @@
-const option_type = t => union {
-  some: t,
-  none: Unit
-}
+type Option t =
+  | .some = t
+  | .none
 
-const int_option_type = option_type(Int)
-let value = int_option_type.some(41)
+type IntOption = Option Int
+let value = IntOption.some(41)
 
 if let .some(found) = value {
   found + 1

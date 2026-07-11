@@ -277,7 +277,7 @@ methods are the operations tracked by the effect system:
 ```txt
 declare effect Io {
   read: () => Text
-  print: (bounded_borrow Text) => Unit
+  print: (&Text) => Unit
 }
 
 declare Init {
@@ -296,7 +296,7 @@ let read_name = () => {
 
 let greet: () -> <Io.read | Io.print> Text = () => {
   name <- read_name()
-  _ <- Io.print(borrow name)
+  _ <- Io.print(&name)
   name
 }
 ```
@@ -375,7 +375,7 @@ let use_once = (!value) => value
 Ownership-oriented expressions:
 
 ```txt
-borrow value
+&value
 freeze value
 scratch { statements }
 ```
@@ -386,8 +386,8 @@ parameters carry the same scalar and ownership contracts used by Core:
 ```txt
 declare effect Console {
   log: (I32) => I32
-  print: (bounded_borrow Text) => I32
-  make_text: (I32) => unique_heap Text
+  print: (&Text) => I32
+  make_text: (I32) => Text
 }
 
 declare Init { console: Console }
@@ -432,7 +432,7 @@ const artifact = Source.artifact(`
 module (!init: Init) where
 
 declare effect Measure {
-  text: (bounded_borrow Text) => I32
+  text: (&Text) => I32
 }
 
 declare Init {
@@ -440,7 +440,7 @@ declare Init {
 }
 
 let run: () -> <Measure> I32 = () => {
-  length <- Measure.text(borrow "hello")
+  length <- Measure.text(&"hello")
   length
 }
 
