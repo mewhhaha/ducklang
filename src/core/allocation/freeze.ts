@@ -14,6 +14,7 @@ import {
 } from "../runtime_union_payload.ts";
 import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
 import { record_allocation } from "./record.ts";
+import { set_core_allocation_fact_emission_site } from "./metadata.ts";
 import type {
   CoreAllocationHooks,
   CoreAllocationScope,
@@ -63,8 +64,21 @@ export function freeze_promotes_runtime_aggregate<ctx>(
     return false;
   }
 
-  return expr.value.tag === "struct_value" &&
-    !!hooks.static_struct_value(expr.value, ctx);
+  if (!hooks.static_struct_value(expr.value, ctx)) {
+    return false;
+  }
+  if (!hooks.runtime_aggregate_type_expr) {
+    return false;
+  }
+  const type_expr = hooks.runtime_aggregate_type_expr(expr.value, ctx);
+  if (!type_expr) {
+    return false;
+  }
+  const type_value = static_type_value(
+    type_expr,
+    ctx as ctx & TypeStaticCtx,
+  );
+  return !!type_value && type_value.tag === "struct_type";
 }
 
 export function freeze_copies_runtime_aggregate<ctx>(
@@ -95,6 +109,13 @@ export function freeze_copies_runtime_aggregate<ctx>(
   if (!type_expr) {
     return false;
   }
+  const type_value = static_type_value(
+    type_expr,
+    ctx as ctx & TypeStaticCtx,
+  );
+  if (!type_value || type_value.tag !== "struct_type") {
+    return false;
+  }
 
   return runtime_aggregate_freeze_copy_supported(
     type_expr,
@@ -108,12 +129,18 @@ export function freeze_copies_runtime_aggregate<ctx>(
 export function record_runtime_aggregate_freeze_copy_allocations<ctx>(
   expr: Extract<CoreExpr, { tag: "freeze" }>,
   scope: CoreAllocationScope,
+  emission_site:
+    | "runtime_aggregate.value"
+    | "runtime_aggregate.freeze_copy",
   ctx: ctx,
   hooks: CoreAllocationHooks<ctx>,
   state: CoreAllocationState,
 ): void {
   expect_runtime_aggregate_type_expr(expr, ctx, hooks);
-  record_allocation(expr, "runtime_aggregate", scope, state);
+  const parent = record_allocation(expr, "runtime_aggregate", scope, state);
+  if (parent) {
+    set_core_allocation_fact_emission_site(parent, emission_site);
+  }
   record_runtime_aggregate_freeze_field_allocations(
     expr,
     scope,
@@ -141,6 +168,7 @@ function record_runtime_aggregate_freeze_field_allocations<ctx>(
     scope,
     ctx,
     state,
+    "aggregate",
   );
 }
 
@@ -164,8 +192,14 @@ function record_runtime_aggregate_freeze_text_allocations(
   scope: CoreAllocationScope,
   ctx: unknown,
   state: CoreAllocationState,
+  path: string,
 ): void {
-  for (const field of fields) {
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (!field) {
+      throw new Error("Missing runtime aggregate freeze field");
+    }
+    const field_path = path + "/field:" + field.name;
     if (field.tag === "unit") {
       continue;
     }
@@ -177,18 +211,26 @@ function record_runtime_aggregate_freeze_text_allocations(
         scope,
         ctx,
         state,
+        field_path,
       );
       continue;
     }
 
     if (field.union_type_expr) {
-      record_allocation(expr, "runtime_union", scope, state);
+      record_allocation(
+        expr,
+        "runtime_union",
+        scope,
+        state,
+        "freeze:" + field_path + "/union",
+      );
       record_runtime_union_freeze_text_allocations(
         expr,
         field.union_type_expr,
         scope,
         ctx,
         state,
+        field_path + "/union",
       );
       continue;
     }
@@ -199,6 +241,7 @@ function record_runtime_aggregate_freeze_text_allocations(
         "runtime_text",
         scope,
         state,
+        "freeze:" + field_path + "/text",
       );
     }
   }
@@ -275,6 +318,7 @@ export function record_runtime_union_freeze_copy_allocations<ctx>(
     scope,
     ctx,
     state,
+    "union",
   );
 }
 
@@ -316,6 +360,7 @@ function record_runtime_union_freeze_text_allocations<ctx>(
   scope: CoreAllocationScope,
   ctx: ctx,
   state: CoreAllocationState,
+  path: string,
 ): void {
   const type_value = static_type_value(type_expr, ctx as ctx & TypeStaticCtx);
   expect(
@@ -323,7 +368,11 @@ function record_runtime_union_freeze_text_allocations<ctx>(
     "Core runtime union freeze-copy allocations require a union type",
   );
 
-  for (const union_case of type_value.cases) {
+  for (let index = 0; index < type_value.cases.length; index += 1) {
+    const union_case = type_value.cases[index];
+    if (!union_case) {
+      throw new Error("Missing runtime union freeze case");
+    }
     const payload = runtime_union_payload(
       union_case.type_name,
       ctx as ctx & TypeStaticCtx,
@@ -334,6 +383,7 @@ function record_runtime_union_freeze_text_allocations<ctx>(
       scope,
       ctx,
       state,
+      path + "/case:" + union_case.name,
     );
   }
 }
@@ -344,6 +394,7 @@ function record_runtime_union_payload_text_allocations<ctx>(
   scope: CoreAllocationScope,
   ctx: ctx,
   state: CoreAllocationState,
+  path: string,
 ): void {
   if (payload.tag === "aggregate") {
     record_runtime_aggregate_type_freeze_copy_allocations(
@@ -352,25 +403,39 @@ function record_runtime_union_payload_text_allocations<ctx>(
       scope,
       ctx,
       state,
+      path,
     );
     return;
   }
 
   if (payload.tag === "value") {
     if (payload.union_type_expr) {
-      record_allocation(expr, "runtime_union", scope, state);
+      record_allocation(
+        expr,
+        "runtime_union",
+        scope,
+        state,
+        "freeze:" + path + "/union",
+      );
       record_runtime_union_freeze_text_allocations(
         expr,
         payload.union_type_expr,
         scope,
         ctx,
         state,
+        path + "/union",
       );
       return;
     }
 
     if (payload.text) {
-      record_allocation(expr, "runtime_text", scope, state);
+      record_allocation(
+        expr,
+        "runtime_text",
+        scope,
+        state,
+        "freeze:" + path + "/text",
+      );
     }
 
     return;
@@ -386,6 +451,7 @@ function record_runtime_union_payload_text_allocations<ctx>(
     scope,
     ctx,
     state,
+    path,
   );
 }
 
@@ -395,18 +461,26 @@ function record_runtime_aggregate_type_freeze_copy_allocations<ctx>(
   scope: CoreAllocationScope,
   ctx: ctx,
   state: CoreAllocationState,
+  path: string,
 ): void {
   const layout = runtime_aggregate_layout_for_type(
     type_expr,
     ctx as ctx & TypeStaticCtx,
   );
-  record_allocation(expr, "runtime_aggregate", scope, state);
+  record_allocation(
+    expr,
+    "runtime_aggregate",
+    scope,
+    state,
+    "freeze:" + path + "/aggregate",
+  );
   record_runtime_aggregate_freeze_text_allocations(
     expr,
     layout.fields,
     scope,
     ctx,
     state,
+    path + "/aggregate",
   );
 }
 
@@ -416,8 +490,14 @@ function record_runtime_union_payload_field_text_allocations(
   scope: CoreAllocationScope,
   ctx: unknown,
   state: CoreAllocationState,
+  path: string,
 ): void {
-  for (const field of fields) {
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (!field) {
+      throw new Error("Missing runtime union payload freeze field");
+    }
+    const field_path = path + "/field:" + field.name;
     if (field.tag === "struct") {
       record_runtime_union_payload_field_text_allocations(
         expr,
@@ -425,24 +505,38 @@ function record_runtime_union_payload_field_text_allocations(
         scope,
         ctx,
         state,
+        field_path,
       );
       continue;
     }
 
     if (field.union_type_expr) {
-      record_allocation(expr, "runtime_union", scope, state);
+      record_allocation(
+        expr,
+        "runtime_union",
+        scope,
+        state,
+        "freeze:" + field_path + "/union",
+      );
       record_runtime_union_freeze_text_allocations(
         expr,
         field.union_type_expr,
         scope,
         ctx,
         state,
+        field_path + "/union",
       );
       continue;
     }
 
     if (field.text) {
-      record_allocation(expr, "runtime_text", scope, state);
+      record_allocation(
+        expr,
+        "runtime_text",
+        scope,
+        state,
+        "freeze:" + field_path + "/text",
+      );
     }
   }
 }

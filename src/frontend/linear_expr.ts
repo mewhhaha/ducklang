@@ -17,6 +17,13 @@ import type {
   LinearExprHooks,
   LinearUseMode,
 } from "./linear_expr/types.ts";
+import {
+  linear_binding_related,
+  type LinearRelatedSubject,
+  LinearState,
+  throw_linear_diagnostic,
+  throw_unused_linear_value,
+} from "./linear_state.ts";
 
 export type {
   LinearBranch,
@@ -26,7 +33,7 @@ export type {
 
 export function consume_linear_expr(
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   mode: LinearUseMode,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
@@ -34,33 +41,37 @@ export function consume_linear_expr(
 ): string[] {
   const consumed: string[] = [];
 
-  function consume(name: string): void {
-    if (!available.has(name)) {
-      throw new Error("Linear value " + name + " was already consumed");
+  function consume(name: string, value: FrontExpr): void {
+    if (consumed.includes(name) && available.has(name)) {
+      throw_linear_diagnostic(
+        "IX2201",
+        "Linear value " + name + " used more than once",
+        value,
+        linear_binding_related(available, name),
+      );
     }
 
-    if (consumed.includes(name)) {
-      throw new Error("Linear value " + name + " used more than once");
-    }
-
-    available.delete(name);
+    available.consume(name, value);
     consumed.push(name);
   }
 
   function walk(item: FrontExpr, is_root: boolean): void {
     if (item.tag === "linear") {
-      consume(item.name);
+      consume(item.name, item);
       return;
     }
 
     if (item.tag === "var" && available.has(item.name)) {
       if (mode === "final" && is_root) {
-        consume(item.name);
+        consume(item.name, item);
         return;
       }
 
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2204",
         "Linear value " + item.name + " used without explicit consumption",
+        item,
+        linear_binding_related(available, item.name),
       );
     }
 
@@ -72,6 +83,7 @@ export function consume_linear_expr(
           linear_closure_call_name(item.func),
           closure,
           item.args,
+          item,
         );
         return;
       }
@@ -80,7 +92,7 @@ export function consume_linear_expr(
         item.func.tag === "field" && item.func.object.tag === "var" &&
         available.has(item.func.object.name)
       ) {
-        consume(item.func.object.name);
+        consume(item.func.object.name, item.func.object);
       } else {
         walk(item.func, false);
       }
@@ -110,7 +122,7 @@ export function consume_linear_expr(
     }
 
     if (item.tag === "block") {
-      const before = new Set(available);
+      const before = available.clone();
       const block_closures = clone_linear_closures(closures);
       hooks.validate_linear_block(
         item.statements,
@@ -138,7 +150,7 @@ export function consume_linear_expr(
         hooks,
         consume_linear_expr,
       );
-      const before = new Set(available);
+      const before = available.clone();
       const then_branch = consume_linear_branch_with_consumer(
         item.then_branch,
         before,
@@ -158,6 +170,7 @@ export function consume_linear_expr(
         consume_linear_expr,
       );
       merge_linear_branches(
+        item,
         available,
         consumed,
         closures,
@@ -176,7 +189,7 @@ export function consume_linear_expr(
         hooks,
         consume_linear_expr,
       );
-      const before = new Set(available);
+      const before = available.clone();
       const then_branch = consume_linear_branch_with_consumer(
         item.then_branch,
         before,
@@ -196,6 +209,7 @@ export function consume_linear_expr(
         consume_linear_expr,
       );
       merge_linear_branches(
+        item,
         available,
         consumed,
         closures,
@@ -218,10 +232,13 @@ export function consume_linear_expr(
     name: string,
     closure: LinearClosureRef,
     args: FrontExpr[],
+    call: Extract<FrontExpr, { tag: "app" }>,
   ): void {
     if (active_calls.has(name)) {
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2290",
         "Cannot validate recursive linear closure call yet: " + name,
+        call,
       );
     }
 
@@ -230,8 +247,8 @@ export function consume_linear_expr(
     }
 
     active_calls.add(name);
-    const before = new Set(available);
-    const local_available = new Set(available);
+    const before = available.clone();
+    const local_available = available.clone();
     const local_closures = clone_linear_closures(closures);
     const param_names = new Set<string>();
 
@@ -240,7 +257,7 @@ export function consume_linear_expr(
       local_closures.delete(param.name);
 
       if (param.is_linear) {
-        local_available.add(param.name);
+        local_available.bind(param.name, param);
       } else {
         local_available.delete(param.name);
       }
@@ -268,7 +285,7 @@ export function consume_linear_expr(
 
     for (const param of closure.expr.params) {
       if (param.is_linear && local_available.has(param.name)) {
-        throw new Error("Linear value " + param.name + " was not consumed");
+        throw_unused_linear_value(param.name, param);
       }
     }
 
@@ -286,10 +303,34 @@ export function consume_linear_expr(
 
     if (consumed_outer_linear && closure.binding) {
       if (closures.used.has(closure.binding)) {
-        throw new Error("Linear closure " + name + " was already consumed");
+        const related: LinearRelatedSubject[] = [];
+        const first_consume = closures.consumed_at.get(closure.binding);
+        const declaration = closures.declarations.get(name);
+
+        if (first_consume) {
+          related.push({
+            message: "Linear closure first consumed here",
+            subject: first_consume,
+          });
+        }
+
+        if (declaration) {
+          related.push({
+            message: "Linear closure declared here",
+            subject: declaration,
+          });
+        }
+
+        throw_linear_diagnostic(
+          "IX2206",
+          "Linear closure " + name + " was already consumed",
+          call,
+          related,
+        );
       }
 
       closures.used.add(closure.binding);
+      closures.consumed_at.set(closure.binding, call);
     }
 
     merge_used_linear_closures(closures, local_closures);
@@ -301,10 +342,15 @@ export function consume_linear_expr(
 
       if (!local_available.has(used)) {
         if (consumed.includes(used)) {
-          throw new Error("Linear value " + used + " used more than once");
+          throw_linear_diagnostic(
+            "IX2201",
+            "Linear value " + used + " used more than once",
+            call,
+            linear_binding_related(available, used),
+          );
         }
 
-        available.delete(used);
+        available.consume(used, call);
         consumed.push(used);
       }
     }
@@ -315,7 +361,12 @@ export function consume_linear_expr(
   if (mode === "discard" && consumed.length > 0) {
     const name = consumed[0];
     expect(name, "Missing discarded linear value");
-    throw new Error("Linear value " + name + " is consumed but not rebound");
+    throw_linear_diagnostic(
+      "IX2203",
+      "Linear value " + name + " is consumed but not rebound",
+      expr,
+      linear_binding_related(available, name),
+    );
   }
 
   return consumed;
@@ -323,7 +374,7 @@ export function consume_linear_expr(
 
 export function consume_linear_condition(
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
   hooks: LinearExprHooks,
@@ -340,7 +391,7 @@ export function consume_linear_condition(
 
 export function consume_linear_branch(
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   mode: LinearUseMode,
   closures: LinearClosureEnv,
   active_calls: Set<string>,

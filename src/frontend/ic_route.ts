@@ -1,27 +1,54 @@
 import type { FrontExpr, Source, Stmt } from "./ast.ts";
 import { structured_core_route } from "./diagnostic.ts";
+import {
+  source_diagnostic,
+  type SourceDiagnostic,
+} from "./semantic_diagnostic.ts";
 
 export function validate_ic_route(source: Source): void {
+  validate_ic_route_source(source, undefined);
+}
+
+export function diagnose_ic_route(source: Source): SourceDiagnostic[] {
+  const diagnostics: SourceDiagnostic[] = [];
+  validate_ic_route_source(source, diagnostics);
+  return diagnostics;
+}
+
+function validate_ic_route_source(
+  source: Source,
+  diagnostics: SourceDiagnostic[] | undefined,
+): void {
   const declarations = source.declarations || [];
 
   for (const declaration of declarations) {
     if (
       declaration.tag === "effect" && declaration.implementation === "ix"
     ) {
-      reject_ic_route("Ix-defined effect " + declaration.name);
+      reject_ic_route(
+        "Ix-defined effect " + declaration.name,
+        declaration,
+        diagnostics,
+      );
     }
   }
 
-  validate_ic_route_stmts(source.statements);
+  validate_ic_route_stmts(source.statements, diagnostics);
 }
 
-function validate_ic_route_stmts(statements: Stmt[]): void {
+function validate_ic_route_stmts(
+  statements: Stmt[],
+  diagnostics: SourceDiagnostic[] | undefined,
+): void {
   for (const stmt of statements) {
-    validate_ic_route_stmt(stmt);
+    validate_ic_route_stmt(stmt, diagnostics);
   }
 }
 
-function validate_ic_route_stmt(stmt: Stmt): void {
+function validate_ic_route_stmt(
+  stmt: Stmt,
+  diagnostics: SourceDiagnostic[] | undefined,
+): void {
   switch (stmt.tag) {
     case "import":
     case "host_import":
@@ -34,49 +61,50 @@ function validate_ic_route_stmt(stmt: Stmt): void {
     case "state_bind":
     case "bind_pattern":
     case "assign":
-      validate_ic_route_expr(stmt.value);
+      validate_ic_route_expr(stmt.value, diagnostics);
       return;
 
     case "resume_dup":
-      return reject_ic_route("resumption duplication");
+      reject_ic_route("resumption duplication", stmt, diagnostics);
+      return;
 
     case "index_assign":
-      validate_ic_route_expr(stmt.index);
-      validate_ic_route_expr(stmt.value);
+      validate_ic_route_expr(stmt.index, diagnostics);
+      validate_ic_route_expr(stmt.value, diagnostics);
       return;
 
     case "for_range":
-      validate_ic_route_expr(stmt.start);
-      validate_ic_route_expr(stmt.end);
-      validate_ic_route_expr(stmt.step);
-      validate_ic_route_stmts(stmt.body);
+      validate_ic_route_expr(stmt.start, diagnostics);
+      validate_ic_route_expr(stmt.end, diagnostics);
+      validate_ic_route_expr(stmt.step, diagnostics);
+      validate_ic_route_stmts(stmt.body, diagnostics);
       return;
 
     case "for_collection":
-      validate_ic_route_expr(stmt.collection);
-      validate_ic_route_stmts(stmt.body);
+      validate_ic_route_expr(stmt.collection, diagnostics);
+      validate_ic_route_stmts(stmt.body, diagnostics);
       return;
 
     case "if_stmt":
-      validate_ic_route_expr(stmt.cond);
-      validate_ic_route_stmts(stmt.body);
+      validate_ic_route_expr(stmt.cond, diagnostics);
+      validate_ic_route_stmts(stmt.body, diagnostics);
       return;
 
     case "if_let_stmt":
-      validate_ic_route_expr(stmt.target);
-      validate_ic_route_stmts(stmt.body);
+      validate_ic_route_expr(stmt.target, diagnostics);
+      validate_ic_route_stmts(stmt.body, diagnostics);
       return;
 
     case "type_check":
-      validate_ic_route_expr(stmt.target);
+      validate_ic_route_expr(stmt.target, diagnostics);
       return;
 
     case "return":
-      validate_ic_route_expr(stmt.value);
+      validate_ic_route_expr(stmt.value, diagnostics);
       return;
 
     case "expr":
-      validate_ic_route_expr(stmt.expr);
+      validate_ic_route_expr(stmt.expr, diagnostics);
       return;
   }
 
@@ -84,7 +112,10 @@ function validate_ic_route_stmt(stmt: Stmt): void {
   throw new Error("panic");
 }
 
-function validate_ic_route_expr(expr: FrontExpr): void {
+function validate_ic_route_expr(
+  expr: FrontExpr,
+  diagnostics: SourceDiagnostic[] | undefined,
+): void {
   switch (expr.tag) {
     case "num":
     case "atom":
@@ -99,105 +130,109 @@ function validate_ic_route_expr(expr: FrontExpr): void {
       return;
 
     case "unit":
-      return reject_ic_route("unit value");
+      reject_ic_route("unit value", expr, diagnostics);
+      return;
 
     case "is":
-      validate_ic_route_expr(expr.value);
+      validate_ic_route_expr(expr.value, diagnostics);
       return;
 
     case "handler":
-      return reject_ic_route("handler");
+      reject_ic_route("handler", expr, diagnostics);
+      return;
 
     case "try_with":
-      return reject_ic_route("try-with handler expression");
+      reject_ic_route("try-with handler expression", expr, diagnostics);
+      return;
 
     case "prim":
-      validate_ic_route_expr(expr.left);
-      validate_ic_route_expr(expr.right);
+      validate_ic_route_expr(expr.left, diagnostics);
+      validate_ic_route_expr(expr.right, diagnostics);
       return;
 
     case "lam":
     case "rec":
-      validate_ic_route_expr(expr.body);
+      validate_ic_route_expr(expr.body, diagnostics);
       return;
 
     case "app":
-      validate_ic_route_expr(expr.func);
+      validate_ic_route_expr(expr.func, diagnostics);
 
       for (const arg of expr.args) {
-        validate_ic_route_expr(arg);
+        validate_ic_route_expr(arg, diagnostics);
       }
       return;
 
     case "block":
-      validate_ic_route_stmts(expr.statements);
+      validate_ic_route_stmts(expr.statements, diagnostics);
       return;
 
     case "comptime":
-      validate_ic_route_expr(expr.expr);
+      validate_ic_route_expr(expr.expr, diagnostics);
       return;
 
     case "borrow":
     case "freeze":
-      validate_ic_route_expr(expr.value);
+      validate_ic_route_expr(expr.value, diagnostics);
       return;
 
     case "scratch":
-      validate_ic_route_expr(expr.body);
+      validate_ic_route_expr(expr.body, diagnostics);
       return;
 
     case "loop":
-      return reject_ic_route("loop expression");
+      reject_ic_route("loop expression", expr, diagnostics);
+      return;
 
     case "captured":
-      validate_ic_route_expr(expr.expr);
+      validate_ic_route_expr(expr.expr, diagnostics);
       return;
 
     case "with":
     case "struct_update":
-      validate_ic_route_expr(expr.base);
+      validate_ic_route_expr(expr.base, diagnostics);
 
       for (const field of expr.fields) {
-        validate_ic_route_expr(field.value);
+        validate_ic_route_expr(field.value, diagnostics);
       }
       return;
 
     case "struct_value":
-      validate_ic_route_expr(expr.type_expr);
+      validate_ic_route_expr(expr.type_expr, diagnostics);
 
       for (const field of expr.fields) {
-        validate_ic_route_expr(field.value);
+        validate_ic_route_expr(field.value, diagnostics);
       }
       return;
 
     case "if":
-      validate_ic_route_expr(expr.cond);
-      validate_ic_route_expr(expr.then_branch);
-      validate_ic_route_expr(expr.else_branch);
+      validate_ic_route_expr(expr.cond, diagnostics);
+      validate_ic_route_expr(expr.then_branch, diagnostics);
+      validate_ic_route_expr(expr.else_branch, diagnostics);
       return;
 
     case "if_let":
-      validate_ic_route_expr(expr.target);
-      validate_ic_route_expr(expr.then_branch);
-      validate_ic_route_expr(expr.else_branch);
+      validate_ic_route_expr(expr.target, diagnostics);
+      validate_ic_route_expr(expr.then_branch, diagnostics);
+      validate_ic_route_expr(expr.else_branch, diagnostics);
       return;
 
     case "field":
-      validate_ic_route_expr(expr.object);
+      validate_ic_route_expr(expr.object, diagnostics);
       return;
 
     case "index":
-      validate_ic_route_expr(expr.object);
-      validate_ic_route_expr(expr.index);
+      validate_ic_route_expr(expr.object, diagnostics);
+      validate_ic_route_expr(expr.index, diagnostics);
       return;
 
     case "union_case":
       if (expr.value) {
-        validate_ic_route_expr(expr.value);
+        validate_ic_route_expr(expr.value, diagnostics);
       }
 
       if (expr.type_expr) {
-        validate_ic_route_expr(expr.type_expr);
+        validate_ic_route_expr(expr.type_expr, diagnostics);
       }
       return;
   }
@@ -206,8 +241,22 @@ function validate_ic_route_expr(expr: FrontExpr): void {
   throw new Error("panic");
 }
 
-function reject_ic_route(feature: string): never {
-  throw new Error(
-    "Cannot lower " + feature + " through pure Ic" + structured_core_route,
-  );
+function reject_ic_route(
+  feature: string,
+  subject: object,
+  diagnostics: SourceDiagnostic[] | undefined,
+): void {
+  const message = "Cannot lower " + feature + " through pure Ic" +
+    structured_core_route;
+
+  if (diagnostics === undefined) {
+    throw new Error(message);
+  }
+
+  diagnostics.push(source_diagnostic(
+    "IX2901",
+    "error",
+    message,
+    subject,
+  ));
 }

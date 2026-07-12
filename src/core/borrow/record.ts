@@ -13,6 +13,7 @@ import {
   borrow_owner_names_with_aliases,
   clear_borrow_alias,
   field_owner_for_borrow_value,
+  iteration_scope_for_borrow_value,
   resolve_borrow_alias_expr,
 } from "./aliases.ts";
 import type {
@@ -22,6 +23,7 @@ import type {
   CoreBorrowUse,
   CoreRecordedBorrow,
 } from "./types.ts";
+import { record_core_diagnostic_subject } from "../source_origin.ts";
 
 export type ScanBorrowExpr<ctx> = (
   expr: CoreExpr,
@@ -53,27 +55,38 @@ export function record_borrow_expr_with_scan<ctx>(
     ownership = core_expr_ownership(value, ctx, hooks);
   }
 
+  if (expr.value.tag === "field" || expr.value.tag === "index" || field_owner) {
+    while (ownership.tag === "borrow_view") {
+      ownership = ownership.source;
+    }
+  }
+
   const id = "borrow#" + state.next_borrow.toString();
   state.next_borrow += 1;
   const decision = core_borrow_decision(ownership, use, parent);
-  state.edges.push({
+  const edge = {
     id,
     source_scope: parent,
     target_scope: parent,
     ownership,
     decision,
-  });
+  };
+  state.edges.push(edge);
+  record_core_diagnostic_subject(edge, expr);
   const owners = borrow_owner_names_with_aliases(expr.value, aliases);
+  const iteration_scope = iteration_scope_for_borrow_value(expr.value, aliases);
   if (
     owners.length > 0 && ownership.tag === "unique_heap" &&
     decision.tag === "allowed" && use === "bounded"
   ) {
     for (const owner of owners) {
-      state.active_borrows.push({
+      const active = {
         id,
         owner,
         scope: parent,
-      });
+      };
+      state.active_borrows.push(active);
+      record_core_diagnostic_subject(active, expr);
     }
   }
   scan_expr(
@@ -89,6 +102,7 @@ export function record_borrow_expr_with_scan<ctx>(
     id,
     owners,
     scope: parent,
+    iteration_scope,
     ownership,
     decision,
   };
@@ -129,6 +143,7 @@ export function update_borrow_alias_from_record(
       owners: recorded.owners,
       borrow_id: recorded.id,
       scope: recorded.scope,
+      iteration_scope: recorded.iteration_scope,
       ownership: recorded.ownership,
     }, aliases);
     return;

@@ -16,6 +16,10 @@ import {
   clone_core_host_imports,
   core_host_import_map,
 } from "./host_import.ts";
+import {
+  core_materialized_bindings,
+  core_mutable_bindings,
+} from "./mutable_bindings.ts";
 
 export type {
   CoreCtx,
@@ -27,6 +31,7 @@ export type {
 export function create_rec_call_ctx(ctx: StaticCtx): StaticCtx {
   return {
     locals: new Map(ctx.locals),
+    static_capture_values: clone_optional_map(ctx.static_capture_values),
     statics: new Map(ctx.statics),
     fn_types: new Map(ctx.fn_types),
     text_locals: new Set(ctx.text_locals),
@@ -35,12 +40,15 @@ export function create_rec_call_ctx(ctx: StaticCtx): StaticCtx {
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: clone_optional_set(ctx.materialized_bindings),
+    mutable_bindings: clone_optional_set(ctx.mutable_bindings),
   };
 }
 
 export function create_core_block_ctx(ctx: StaticCtx): CoreCtx {
   return {
     locals: new Map(ctx.locals),
+    static_capture_values: clone_optional_map(ctx.static_capture_values),
     statics: new Map(ctx.statics),
     fn_types: new Map(ctx.fn_types),
     text_locals: new Set(ctx.text_locals),
@@ -49,6 +57,8 @@ export function create_core_block_ctx(ctx: StaticCtx): CoreCtx {
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: clone_optional_set(ctx.materialized_bindings),
+    mutable_bindings: clone_optional_set(ctx.mutable_bindings),
     next_loop: 0,
     next_temp: 0,
   };
@@ -59,6 +69,7 @@ export function collect_core_ctx(
   hooks: CoreLocalCollectHooks,
 ): CoreCtx {
   const locals = new Map<string, ValType>();
+  const static_capture_values = new Map<string, CoreExpr>();
   const statics = new Map<string, CoreExpr>();
   const fn_types = new Map<string, CoreFnType>();
   const text_locals = new Set<string>();
@@ -67,6 +78,7 @@ export function collect_core_ctx(
   const frozen_locals = new Set<string>();
   const ctx: CoreCtx = {
     locals,
+    static_capture_values,
     statics,
     fn_types,
     text_locals,
@@ -75,6 +87,8 @@ export function collect_core_ctx(
     frozen_locals,
     host_imports: core_host_import_map(core),
     scratch_depth: 0,
+    materialized_bindings: core_materialized_bindings(core),
+    mutable_bindings: core_mutable_bindings(core),
     next_loop: 0,
     next_temp: 0,
   };
@@ -116,4 +130,14 @@ function clone_optional_set(
   }
 
   return new Set(value);
+}
+
+function clone_optional_map<key, value>(
+  value: Map<key, value> | undefined,
+): Map<key, value> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return new Map(value);
 }

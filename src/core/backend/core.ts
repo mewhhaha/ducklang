@@ -69,6 +69,8 @@ export type {
   CoreFreezeProofEdge,
   CoreProofIssue,
 } from "../proof.ts";
+export type { CompilerDiagnostic } from "../../diagnostic.ts";
+export { core_proof_diagnostic } from "../proof.ts";
 export type {
   CoreClosureCaptureDecision,
   CoreClosureCaptureSlot,

@@ -21,6 +21,8 @@ export function emit_lifted_closure_funcs<ctx extends CoreClosureEmitCtx>(
   closures: ClosureEmitCtx,
   heap: RuntimeTextHeap,
   scratch: CoreScratchHeap,
+  allocation_permits:
+    import("./allocation_emission.ts").CoreAllocationPermitState,
   hooks: CoreClosureEmitHooks<ctx>,
 ): Func[] {
   const funcs: Func[] = [];
@@ -35,6 +37,7 @@ export function emit_lifted_closure_funcs<ctx extends CoreClosureEmitCtx>(
         closures,
         heap,
         scratch,
+        allocation_permits,
         hooks,
       ),
     );
@@ -49,6 +52,8 @@ function emit_lifted_closure_func<ctx extends CoreClosureEmitCtx>(
   closures: ClosureEmitCtx,
   heap: RuntimeTextHeap,
   scratch: CoreScratchHeap,
+  allocation_permits:
+    import("./allocation_emission.ts").CoreAllocationPermitState,
   hooks: CoreClosureEmitHooks<ctx>,
 ): Func {
   const replacements = new Map<string, CoreExpr>();
@@ -145,11 +150,13 @@ function emit_lifted_closure_func<ctx extends CoreClosureEmitCtx>(
     struct_locals,
     union_locals,
     frozen_locals,
+    materialized_bindings: lift.materialized_bindings,
     host_imports: lift.host_imports,
     text_layout,
     closures,
     heap,
     scratch,
+    allocation_permits,
   });
 
   for (const [name, value] of lift.statics) {

@@ -3,13 +3,14 @@ import type {
   LinearClosureBinding,
   LinearClosureEnv,
 } from "../linear_closure.ts";
+import type { LinearState } from "../linear_state.ts";
 
 export type LinearUseMode = "assignment" | "bind" | "discard" | "final";
 
 export type LinearExprHooks = {
   validate_linear_block: (
     stmts: Stmt[],
-    available: Set<string>,
+    available: LinearState,
     closures: LinearClosureEnv,
     active_calls: Set<string>,
   ) => void;
@@ -17,7 +18,7 @@ export type LinearExprHooks = {
 
 export type LinearExprConsume = (
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   mode: LinearUseMode,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
@@ -25,7 +26,8 @@ export type LinearExprConsume = (
 ) => string[];
 
 export type LinearBranch = {
-  available: Set<string>;
+  available: LinearState;
   consumed: string[];
   used_closures: Set<LinearClosureBinding>;
+  closure_consumes: Map<LinearClosureBinding, FrontExpr>;
 };

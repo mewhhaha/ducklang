@@ -1,4 +1,9 @@
-import { loop_exit_owners, next_loop_scope } from "./state.ts";
+import {
+  clone_drop_owners,
+  loop_exit_owners,
+  next_loop_scope,
+} from "./state.ts";
+import { drop_scope_owners } from "./emit.ts";
 import {
   core_runtime_slice_fact,
   runtime_slice_value_local,
@@ -75,16 +80,20 @@ export function scan_drop_range_loop_stmt<ctx>(
     state,
   );
   const loop_scope = next_loop_scope(state);
-  const loop_owners = new Map<string, CoreDropOwner>();
+  const carried = carried_loop_owners(stmt.carried, owners);
+  const loop_owners = clone_drop_owners(carried);
   scan_drop_stmts(
     stmt.body,
     loop_scope,
     loop_owners,
-    loop_exit_owners(owners, exit_owners),
+    loop_exit_owners(carried, exit_owners),
     ctx,
     hooks,
     state,
+    false,
   );
+  drop_loop_local_owners(loop_scope, loop_owners, carried, state);
+  merge_carried_loop_owners(owners, loop_owners, stmt.carried);
   return true;
 }
 
@@ -147,17 +156,65 @@ export function scan_drop_collection_loop_stmt<ctx>(
     return true;
   }
 
-  const loop_owners = new Map<string, CoreDropOwner>();
+  const carried = carried_loop_owners(stmt.carried, owners);
+  const loop_owners = clone_drop_owners(carried);
   scan_drop_stmts(
     stmt.body,
     loop_scope,
     loop_owners,
-    loop_exit_owners(owners, exit_owners),
+    loop_exit_owners(carried, exit_owners),
     body_ctx.ctx,
     hooks,
     state,
+    false,
   );
+  drop_loop_local_owners(loop_scope, loop_owners, carried, state);
+  merge_carried_loop_owners(owners, loop_owners, stmt.carried);
   return true;
+}
+
+function carried_loop_owners(
+  names: string[],
+  owners: Map<string, CoreDropOwner>,
+): Map<string, CoreDropOwner> {
+  const carried = new Map<string, CoreDropOwner>();
+
+  for (const name of names) {
+    const owner = owners.get(name);
+    if (owner) {
+      carried.set(name, owner);
+    }
+  }
+
+  return carried;
+}
+
+export function drop_loop_local_owners(
+  scope: string,
+  owners: Map<string, CoreDropOwner>,
+  carried: Map<string, CoreDropOwner>,
+  state: CoreDropState,
+): void {
+  const locals = new Map(owners);
+  for (const name of carried.keys()) {
+    locals.delete(name);
+  }
+  drop_scope_owners(scope, locals, state);
+}
+
+export function merge_carried_loop_owners(
+  outer: Map<string, CoreDropOwner>,
+  loop: Map<string, CoreDropOwner>,
+  carried: string[],
+): void {
+  for (const name of carried) {
+    const owner = loop.get(name);
+    if (owner) {
+      outer.set(name, owner);
+    } else {
+      outer.delete(name);
+    }
+  }
 }
 
 function drop_collection_loop_body_ctx<ctx>(

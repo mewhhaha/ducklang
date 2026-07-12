@@ -1,6 +1,7 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreStmt } from "../ast.ts";
 import { static_core_call_branch_app } from "../static_call.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import { find_core_type_field } from "./field.ts";
 import { scoped_union_static_call_value } from "./static_call.ts";
 import type { CoreUnionCtx, CoreUnionHooks } from "./types.ts";
@@ -171,7 +172,7 @@ function static_union_constructor_case<ctx extends CoreUnionCtx>(
     result.resume_payload = true;
   }
 
-  return result;
+  return record_core_expr_provenance(result, expr);
 }
 
 function static_union_type<ctx extends CoreUnionCtx>(

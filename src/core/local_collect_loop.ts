@@ -196,6 +196,14 @@ function reject_static_carried_loop_values(
   kind: "range" | "collection",
 ): void {
   for (const name of carried) {
+    if (ctx.struct_locals.has(name) || ctx.union_locals.has(name)) {
+      throw new Error(
+        "Cannot carry static aggregate/union core value through dynamic " +
+          kind +
+          " loop yet: " + name,
+      );
+    }
+
     const value = ctx.statics.get(name);
 
     if (

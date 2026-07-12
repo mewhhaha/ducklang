@@ -158,8 +158,9 @@ export function scan_drop_expr<ctx>(
       "discarded_expr",
       scope,
       undefined,
-      { name: "", ownership },
+      { name: "", ownership, pointer: "temporary" },
       state,
+      expr,
     );
   }
 
@@ -256,6 +257,7 @@ export function scan_drop_result_expr<ctx>(
         owner: {
           name: "",
           ownership,
+          pointer: "temporary",
         },
       },
     };

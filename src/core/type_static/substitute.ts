@@ -63,6 +63,7 @@ export function substitute_core_type_expr(
         tag: "app",
         func: substitute_core_type_expr(expr.func, type_args),
         args: expr.args.map((arg) => substitute_core_type_expr(arg, type_args)),
+        resume_payload: expr.resume_payload,
       };
 
     case "block":
@@ -199,6 +200,7 @@ export function substitute_core_type_expr(
         name: expr.name,
         value,
         type_expr,
+        resume_payload: expr.resume_payload,
       };
     }
 

@@ -4,6 +4,7 @@ import {
   wat_from_core_source,
   wat_from_source,
 } from "./wasm_test_util.ts";
+import { assert_throws } from "./assert.ts";
 
 Deno.test("frontend same-case shorthand union compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
@@ -175,8 +176,10 @@ slots
   }
 });
 
-Deno.test("core captured runtime aggregate union index assignment compiles through WAT to Wasm", async () => {
-  const wat_text = wat_from_core_source(`
+Deno.test("core rejects first-class runtime aggregate union mutation capture", () => {
+  assert_throws(
+    () =>
+      wat_from_core_source(`
 const result_type = union {
   ok: Int,
   err: Int
@@ -215,54 +218,10 @@ let write = if flag {
 
 write(1, 2)
 slots
-`);
-  const instance = await instantiate_wat(
-    wat_text,
-    "core_captured_runtime_aggregate_union_index_assignment",
-    {},
+`),
+    "unique_heap runtime_aggregate capture requires linear closure " +
+      "ownership support",
   );
-
-  if (!("main" in instance.exports)) {
-    throw new Error("Missing main export");
-  }
-
-  if (typeof instance.exports.main !== "function") {
-    throw new Error("main export is not a function");
-  }
-
-  if (!("memory" in instance.exports)) {
-    throw new Error("Missing memory export");
-  }
-
-  if (!(instance.exports.memory instanceof WebAssembly.Memory)) {
-    throw new Error("memory export is not a WebAssembly.Memory");
-  }
-
-  const result = instance.exports.main();
-
-  if (typeof result !== "number") {
-    throw new Error("Expected main() to return an aggregate pointer");
-  }
-
-  const view = new DataView(instance.exports.memory.buffer);
-  const first = view.getInt32(result, true);
-  const second = view.getInt32(result + 4, true);
-
-  if (view.getInt32(first, true) !== 0) {
-    throw new Error("Expected first union tag -> 0");
-  }
-
-  if (view.getInt32(first + 4, true) !== 1) {
-    throw new Error("Expected first union payload -> 1");
-  }
-
-  if (view.getInt32(second, true) !== 0) {
-    throw new Error("Expected second union tag -> 0");
-  }
-
-  if (view.getInt32(second + 4, true) !== 2) {
-    throw new Error("Expected second union payload -> 2");
-  }
 });
 
 Deno.test("core runtime scalar Text and struct union values compile through WAT to Wasm memory", async () => {
@@ -995,7 +954,7 @@ let make = if flag {
 } else {
   (x: Int) => result_type.err(x)
 }
-let result: result_type = make(41)
+let result: result_type = freeze make(41)
 let read_result = if flag {
   (x: Int) => {
     if let .ok(value) = result {

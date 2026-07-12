@@ -75,6 +75,7 @@ export type CoreOwnershipHooks<ctx> = {
     ctx: ctx,
   ) => RuntimeUnionTarget | undefined;
   runtime_union_value: (expr: CoreExpr, ctx: ctx) => CoreExpr | undefined;
+  scratch_return_ctx?: (ctx: ctx) => ctx;
   static_runtime_union_match_branch_ctx?: (
     value_name: string | undefined,
     info: RuntimeUnionMatchInfo,
@@ -88,6 +89,7 @@ export type CoreOwnershipHooks<ctx> = {
     expr: CoreExpr,
     ctx: ctx,
   ) => CoreExpr | undefined;
+  static_capture_value?: (name: string, ctx: ctx) => CoreExpr | undefined;
   static_text_value: (expr: CoreExpr, ctx: ctx) => CoreExpr | undefined;
   scoped_static_core_call_value?: (
     expr: Extract<CoreExpr, { tag: "app" }>,

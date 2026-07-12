@@ -117,6 +117,7 @@ function scan_borrow_stmt_with_scanner<ctx>(
         "assign",
         parent,
         state,
+        stmt,
       );
       scan_borrow_binding_value(
         stmt.name,
@@ -139,6 +140,7 @@ function scan_borrow_stmt_with_scanner<ctx>(
         "assign",
         parent,
         state,
+        stmt,
       );
       scan_borrow_binding_value(
         stmt.name,
@@ -159,6 +161,7 @@ function scan_borrow_stmt_with_scanner<ctx>(
         "index_assign",
         parent,
         state,
+        stmt,
       );
       scanner.scan_expr(
         stmt.index,
@@ -246,6 +249,7 @@ function scan_borrow_stmt_with_scanner<ctx>(
       bind_collection_loop_item_owner_alias(
         stmt.item,
         stmt.collection,
+        scope.id,
         ctx,
         hooks,
         body_aliases,

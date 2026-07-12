@@ -21,6 +21,8 @@ import { emit_persistent_alloc } from "./runtime_allocator.ts";
 
 export type CoreAppEmitHooks<
   ctx extends CoreHostImportCtx & StaticCoreCallCtx & TempNameCtx & {
+    allocation_permits:
+      import("./allocation_emission.ts").CoreAllocationPermitState;
     heap: { needed: boolean };
     locals: Map<string, ValType>;
   },
@@ -58,6 +60,7 @@ export type CoreAppEmitHooks<
   emit_runtime_text_append: (
     left: CoreExpr,
     right: CoreExpr,
+    subject: CoreExpr,
     ctx: ctx,
   ) => Wat;
   emit_runtime_text_len: (
@@ -65,6 +68,7 @@ export type CoreAppEmitHooks<
     ctx: ctx,
   ) => Wat;
   emit_runtime_text_slice: (
+    subject: CoreExpr,
     text: CoreExpr,
     start: CoreExpr,
     end: CoreExpr,
@@ -111,6 +115,8 @@ export type CoreAppEmitHooks<
 
 export function emit_core_app<
   ctx extends CoreHostImportCtx & StaticCoreCallCtx & TempNameCtx & {
+    allocation_permits:
+      import("./allocation_emission.ts").CoreAllocationPermitState;
     heap: { needed: boolean };
     locals: Map<string, ValType>;
   },
@@ -191,7 +197,7 @@ export function emit_core_app<
     expect(text, "Missing core slice text argument");
     expect(start, "Missing core slice start argument");
     expect(end, "Missing core slice end argument");
-    return hooks.emit_runtime_text_slice(text, start, end, ctx);
+    return hooks.emit_runtime_text_slice(expr, text, start, end, ctx);
   }
 
   if (name === "panic") {
@@ -247,7 +253,7 @@ export function emit_core_app<
     const right = expr.args[1];
     expect(left, "Missing core append left argument");
     expect(right, "Missing core append right argument");
-    return hooks.emit_runtime_text_append(left, right, ctx);
+    return hooks.emit_runtime_text_append(left, right, expr, ctx);
   }
 
   if (name === "runtime_i32_slice" || name === "runtime_text_slice") {
@@ -259,8 +265,22 @@ export function emit_core_app<
     const slice_size = (expr.args.length * 4).toString();
     const slice_local = fresh_temp_local(ctx, "runtime_slice");
     set_local(ctx.locals, slice_local, "i32");
+    let layout: import("./allocation.ts").CoreAllocationLayout;
+    if (name === "runtime_i32_slice") {
+      layout = "runtime_slice.length_and_i32_elements";
+    } else {
+      layout = "runtime_slice.length_and_frozen_text_pointers";
+    }
     const lines = [
-      emit_persistent_alloc("i32.const " + slice_size, 4),
+      emit_persistent_alloc(
+        ctx,
+        expr,
+        "i32.const " + slice_size,
+        4,
+        "runtime_aggregate",
+        layout,
+        "runtime_slice.value",
+      ),
       "local.tee $" + slice_local,
     ];
     lines.push("local.get $" + slice_local);

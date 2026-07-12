@@ -8,6 +8,7 @@ import { reduce_ic_graph } from "./graph_reduce.ts";
 import { lower_ic_with_env } from "./lower.ts";
 import { infer_open_term_params } from "./open_term/infer.ts";
 import { try_recursive_open_mod } from "./open_term/recursive.ts";
+import { check_ic_no_gc_proof } from "./proof.ts";
 
 export type IcOpenOptions = {
   name?: string;
@@ -26,6 +27,10 @@ export function ic_open_mod(ic: Ic, options?: IcOpenOptions): ModNode {
     explicit_params = options.params;
   }
 
+  if (ic.tag === "fix") {
+    check_ic_no_gc_proof(ic);
+  }
+
   const recursive = try_recursive_open_mod(ic, name, explicit_params);
 
   if (recursive) {
@@ -33,6 +38,7 @@ export function ic_open_mod(ic: Ic, options?: IcOpenOptions): ModNode {
   }
 
   const reduced = reduce_ic_graph(ic);
+  check_ic_no_gc_proof(reduced);
   const inferred = infer_open_term_params(reduced, explicit_params);
   const expr = lower_ic_with_env(reduced, inferred.types);
   const body = emit_expr_with_env(expr, inferred.types);

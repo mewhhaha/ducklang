@@ -9,10 +9,14 @@ import {
   runtime_text_slice_plan,
 } from "./plan.ts";
 import { runtime_text_alloc_heap } from "./alloc.ts";
-import { emit_persistent_alloc } from "../runtime_allocator.ts";
+import {
+  consume_scratch_alloc,
+  emit_persistent_alloc,
+} from "../runtime_allocator.ts";
 import type { RuntimeTextEmitCtx, RuntimeTextHooks } from "./types.ts";
 
 export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
+  subject: CoreExpr,
   text: CoreExpr,
   start: CoreExpr,
   end: CoreExpr,
@@ -31,11 +35,23 @@ export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
   const allocation: string[] = [];
   if (heap_name === closure_heap_global) {
     allocation.push(emit_persistent_alloc(
+      ctx,
+      subject,
       "local.get $" + locals.slice_len + "\ni32.const 4\ni32.add",
       8,
+      "runtime_text",
+      "runtime_text.length_prefixed_utf8",
+      "runtime_text.slice",
     ));
     allocation.push("local.set $" + locals.result);
   } else {
+    consume_scratch_alloc(
+      ctx,
+      subject,
+      "runtime_text",
+      "runtime_text.length_prefixed_utf8",
+      "runtime_text.slice",
+    );
     allocation.push("global.get $" + heap_name);
     allocation.push("local.set $" + locals.result);
     allocation.push("global.get $" + heap_name);
@@ -110,17 +126,19 @@ export function emit_runtime_text_slice<ctx extends RuntimeTextEmitCtx>(
 }
 
 export function emit_runtime_text_freeze_copy<ctx extends RuntimeTextEmitCtx>(
+  subject: CoreExpr,
   text: CoreExpr,
   ctx: ctx,
   hooks: Pick<RuntimeTextHooks<ctx>, "emit_expr">,
 ): Wat {
   const text_wat = hooks.emit_expr(text, ctx);
-  return emit_runtime_text_freeze_copy_from_wat(text_wat, ctx);
+  return emit_runtime_text_freeze_copy_from_wat(subject, text_wat, ctx);
 }
 
 export function emit_runtime_text_freeze_copy_from_wat<
   ctx extends RuntimeTextEmitCtx,
 >(
+  subject: CoreExpr,
   text_wat: Wat,
   ctx: ctx,
 ): Wat {
@@ -141,8 +159,13 @@ export function emit_runtime_text_freeze_copy_from_wat<
     "local.get $" + locals.source_len,
     "local.set $" + locals.slice_len,
     emit_persistent_alloc(
+      ctx,
+      subject,
       "local.get $" + locals.slice_len + "\ni32.const 4\ni32.add",
       8,
+      "runtime_text",
+      "runtime_text.length_prefixed_utf8",
+      "runtime_text.freeze_copy",
     ),
     "local.set $" + locals.result,
     "local.get $" + locals.result,

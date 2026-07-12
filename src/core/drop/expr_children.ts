@@ -1,5 +1,13 @@
 import { type CoreDropStmtScanner, scan_drop_block_expr } from "./block.ts";
-import { loop_exit_owners, next_loop_scope } from "./state.ts";
+import {
+  clone_drop_owners,
+  loop_exit_owners,
+  next_loop_scope,
+} from "./state.ts";
+import {
+  drop_loop_local_owners,
+  merge_carried_loop_owners,
+} from "./loop_stmt.ts";
 import { scan_drop_closure_body } from "./closure_body.ts";
 import {
   scan_drop_if_expr,
@@ -8,8 +16,13 @@ import {
 import type { CoreDropResultExprScanner } from "./expr_result.ts";
 import {
   consume_host_transfer_args,
+  consume_runtime_aggregate_resume_field_owners,
   consume_runtime_union_payload_owner,
+  unique_heap_ownership,
 } from "./ownership.ts";
+import { emit_drop } from "./emit.ts";
+import { find_core_diagnostic_subject } from "../source_origin.ts";
+import { canonical_core_expr } from "../subject_provenance.ts";
 import { consume_static_host_transfer_call } from "./static_transfer.ts";
 import type {
   CoreDropExitOwners,
@@ -107,20 +120,19 @@ export function scan_drop_expr_children_impl<ctx>(
       }
       return true;
 
-    case "app":
-      {
-        const continues = scan_children(
-          expr.func,
-          scope,
-          owners,
-          exit_owners,
-          ctx,
-          hooks,
-          state,
-        );
-        if (!continues) {
-          return false;
-        }
+    case "app": {
+      const transfer_start = state.steps.length;
+      const continues = scan_children(
+        expr.func,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+      );
+      if (!continues) {
+        return false;
       }
       for (const arg of expr.args) {
         const continues = scan_children(
@@ -147,7 +159,16 @@ export function scan_drop_expr_children_impl<ctx>(
         state,
       );
       consume_runtime_union_payload_owner(expr, owners, ctx, hooks, state);
+      drop_temporary_app_args(
+        expr,
+        scope,
+        ctx,
+        hooks,
+        state.steps.slice(transfer_start),
+        state,
+      );
       return true;
+    }
 
     case "block": {
       return scan_drop_block_expr(
@@ -165,15 +186,23 @@ export function scan_drop_expr_children_impl<ctx>(
 
     case "loop": {
       const loop_scope = next_loop_scope(state);
-      const loop_owners = new Map<string, CoreDropOwner>();
+      const carried = clone_drop_owners(owners);
+      const loop_owners = clone_drop_owners(carried);
       scan_drop_stmts(
         expr.body,
         loop_scope,
         loop_owners,
-        loop_exit_owners(owners, exit_owners),
+        loop_exit_owners(carried, exit_owners),
         ctx,
         hooks,
         state,
+        false,
+      );
+      drop_loop_local_owners(loop_scope, loop_owners, carried, state);
+      merge_carried_loop_owners(
+        owners,
+        loop_owners,
+        Array.from(carried.keys()),
       );
       state.expr_results.set(expr, { tag: "none" });
       return true;
@@ -202,16 +231,21 @@ export function scan_drop_expr_children_impl<ctx>(
         state,
       );
 
-    case "scratch":
+    case "scratch": {
+      let scratch_ctx = ctx;
+      if (hooks.scratch_return_ctx) {
+        scratch_ctx = hooks.scratch_return_ctx(ctx);
+      }
       return scan_children(
         expr.body,
         scope,
         owners,
         exit_owners,
-        ctx,
+        scratch_ctx,
         hooks,
         state,
       );
+    }
 
     case "with":
       if (
@@ -252,16 +286,29 @@ export function scan_drop_expr_children_impl<ctx>(
       ) {
         return false;
       }
-      return scan_drop_fields(
-        expr.fields,
-        scope,
-        owners,
-        exit_owners,
-        ctx,
-        hooks,
-        state,
-        scan_children,
-      );
+      {
+        const continues = scan_drop_fields(
+          expr.fields,
+          scope,
+          owners,
+          exit_owners,
+          ctx,
+          hooks,
+          state,
+          scan_children,
+        );
+        if (!continues) {
+          return false;
+        }
+        consume_runtime_aggregate_resume_field_owners(
+          expr,
+          owners,
+          ctx,
+          hooks,
+          state,
+        );
+        return true;
+      }
 
     case "struct_update":
       if (
@@ -421,4 +468,128 @@ function scan_drop_fields<ctx>(
   }
 
   return true;
+}
+
+function drop_temporary_app_args<ctx>(
+  expr: Extract<CoreExpr, { tag: "app" }>,
+  scope: string,
+  ctx: ctx,
+  hooks: CoreDropHooks<ctx>,
+  call_steps: CoreDropState["steps"],
+  state: CoreDropState,
+): void {
+  let union_payload: CoreExpr | undefined;
+  const union_value = hooks.runtime_union_value(expr, ctx);
+  if (union_value && union_value.tag === "union_case") {
+    union_payload = union_value.value;
+  }
+
+  for (const arg of expr.args) {
+    if (arg.tag === "var" || arg.tag === "linear") {
+      continue;
+    }
+    if (arg.tag === "borrow" || arg.tag === "freeze") {
+      continue;
+    }
+    if (
+      state.consumed_temporary_subjects.has(arg) ||
+      state.consumed_temporary_subjects.has(canonical_core_expr(arg))
+    ) {
+      continue;
+    }
+    const aggregate_access = static_aggregate_text_access(arg);
+    if (aggregate_access) {
+      if (state.frozen_aggregate_owners.has(aggregate_access.owner)) {
+        continue;
+      }
+      const fields = state.static_aggregate_fields.get(aggregate_access.owner);
+      if (fields && fields.static_texts.has(aggregate_access.path)) {
+        continue;
+      }
+    }
+    if (hooks.static_text_value(arg, ctx)) {
+      continue;
+    }
+    const static_value = hooks.static_value(arg, ctx);
+    if (static_value) {
+      if (static_value.tag === "text") {
+        continue;
+      }
+      if (hooks.static_text_value(static_value, ctx)) {
+        continue;
+      }
+    }
+    if (
+      union_payload &&
+      canonical_core_expr(union_payload) === canonical_core_expr(arg)
+    ) {
+      continue;
+    }
+    if (
+      call_steps.some((step) => {
+        if (step.tag !== "host_transfer") {
+          return false;
+        }
+        const subject = find_core_diagnostic_subject(step);
+        if (!subject || !drop_subject_is_expr(subject)) {
+          return false;
+        }
+        return canonical_core_expr(subject) === canonical_core_expr(arg);
+      })
+    ) {
+      continue;
+    }
+
+    const ownership = unique_heap_ownership(arg, ctx, hooks);
+    if (!ownership) {
+      continue;
+    }
+    emit_drop(
+      "discarded_expr",
+      scope,
+      undefined,
+      { name: "", ownership, pointer: "temporary", subject: arg },
+      state,
+      arg,
+    );
+  }
+}
+
+function static_aggregate_text_access(
+  expr: CoreExpr,
+): { owner: string; path: string } | undefined {
+  if (expr.tag !== "field") {
+    return undefined;
+  }
+  if (expr.object.tag === "var" || expr.object.tag === "linear") {
+    return { owner: expr.object.name, path: expr.name };
+  }
+  const parent = static_aggregate_text_access(expr.object);
+  if (!parent) {
+    return undefined;
+  }
+  return { owner: parent.owner, path: parent.path + "." + expr.name };
+}
+
+function drop_subject_is_expr(
+  subject: import("../source_origin.ts").CoreSourceSubject,
+): subject is CoreExpr {
+  switch (subject.tag) {
+    case "bind":
+    case "assign":
+    case "index_assign":
+    case "range_loop":
+    case "collection_loop":
+    case "if_stmt":
+    case "if_else_stmt":
+    case "if_let_stmt":
+    case "type_check":
+    case "break":
+    case "continue":
+    case "return":
+    case "expr":
+      return false;
+    default:
+      return true;
+  }
 }

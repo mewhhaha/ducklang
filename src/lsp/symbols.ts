@@ -1,6 +1,18 @@
-import type { Token } from "../frontend/ast.ts";
-import { tokenize } from "../frontend/tokenize.ts";
-import type { LspRange } from "./diagnostics.ts";
+import type {
+  Declaration,
+  EffectOperation,
+  Source,
+  Stmt,
+  TypeField,
+} from "../frontend/ast.ts";
+import { name_sites, type NameSite } from "../frontend/name_site.ts";
+import { source_span, type SourceSyntax } from "../frontend/syntax.ts";
+import { source_tokens } from "../frontend/tokenize.ts";
+import {
+  type LspRange,
+  type PositionEncoding,
+  PositionIndex,
+} from "./position.ts";
 
 export type LspDocumentSymbol = {
   name: string;
@@ -13,189 +25,330 @@ export type LspDocumentSymbol = {
 const symbol_kind = {
   module: 2,
   class: 5,
+  method: 6,
+  field: 8,
   interface: 11,
   function: 12,
   variable: 13,
   constant: 14,
+  enum_member: 22,
+  type_parameter: 26,
 } as const;
 
-// Symbols come straight from the token stream: top-level `let`, `const`,
-// `type`, `effect`, `declare`, `import`, and `module` introductions. This
-// stays useful even while the buffer has parse errors further down.
-export function document_symbols(text: string): LspDocumentSymbol[] {
-  let tokens: Token[];
-
-  try {
-    tokens = tokenize(text);
-  } catch {
-    return [];
-  }
-
+export function document_symbols(
+  source: Source,
+  syntax: SourceSyntax,
+  encoding: PositionEncoding,
+): LspDocumentSymbol[] {
+  const positions = new PositionIndex(syntax.text, encoding);
   const symbols: LspDocumentSymbol[] = [];
-  let depth = 0;
-  let line_start = true;
 
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
+  if (source.module !== undefined) {
+    const tokens = source_tokens(syntax);
+    const keyword = tokens.find((token) =>
+      token.kind === "name" && token.text === "module"
+    );
 
-    if (token === undefined || token.kind === "eof") {
-      break;
-    }
+    if (keyword !== undefined) {
+      const children: LspDocumentSymbol[] = [];
 
-    if (token.kind === "newline") {
-      line_start = true;
-      continue;
-    }
+      for (const param of source.module.params) {
+        const child = symbol_from_owner(
+          param,
+          "name",
+          undefined,
+          param.name,
+          symbol_kind.variable,
+          positions,
+          [],
+        );
 
-    if (token.kind === "symbol") {
-      if (token.text === "{" || token.text === "(" || token.text === "[") {
-        depth += 1;
-      } else if (
-        token.text === "}" || token.text === ")" || token.text === "]"
-      ) {
-        depth = Math.max(0, depth - 1);
+        if (child !== undefined) {
+          children.push(child);
+        }
       }
 
-      line_start = false;
-      continue;
-    }
-
-    if (!line_start || depth > 0 || token.kind !== "name") {
-      line_start = false;
-      continue;
-    }
-
-    line_start = false;
-    const symbol = introduction(tokens, index, token);
-
-    if (symbol !== undefined) {
-      symbols.push(symbol);
+      symbols.push({
+        name: "module",
+        kind: symbol_kind.module,
+        range: range_from_span(positions, source_span(source.module)),
+        selectionRange: range_from_span(positions, keyword.span),
+        children,
+      });
     }
   }
 
+  if (source.declarations !== undefined) {
+    for (const declaration of source.declarations) {
+      const symbol = declaration_symbol(declaration, positions);
+
+      if (symbol !== undefined) {
+        symbols.push(symbol);
+      }
+    }
+  }
+
+  for (const statement of source.statements) {
+    symbols.push(...statement_symbols(statement, syntax, positions));
+  }
+
+  symbols.sort((left, right) => {
+    if (left.range.start.line !== right.range.start.line) {
+      return left.range.start.line - right.range.start.line;
+    }
+
+    return left.range.start.character - right.range.start.character;
+  });
   return symbols;
 }
 
-function introduction(
-  tokens: Token[],
-  index: number,
-  keyword: Token,
+function declaration_symbol(
+  declaration: Declaration,
+  positions: PositionIndex,
 ): LspDocumentSymbol | undefined {
-  if (keyword.text === "module") {
-    return make_symbol("module", symbol_kind.module, keyword, keyword);
-  }
+  const children: LspDocumentSymbol[] = [];
+  let kind: number = symbol_kind.class;
 
-  if (keyword.text === "let" || keyword.text === "const") {
-    const name = binding_name(tokens, index + 1);
+  if (declaration.tag === "effect") {
+    kind = symbol_kind.interface;
 
-    if (name === undefined) {
-      return undefined;
+    for (const operation of declaration.operations) {
+      const child = operation_symbol(operation, positions);
+
+      if (child !== undefined) {
+        children.push(child);
+      }
+    }
+  } else if (declaration.tag === "record") {
+    for (const field of declaration.fields) {
+      const child = field_symbol(field, symbol_kind.field, positions);
+
+      if (child !== undefined) {
+        children.push(child);
+      }
+    }
+  } else {
+    for (let index = 0; index < declaration.params.length; index += 1) {
+      const param = declaration.params[index];
+
+      if (param === undefined) {
+        throw new Error("Missing type parameter");
+      }
+
+      const child = symbol_from_owner(
+        declaration,
+        "params",
+        index,
+        param,
+        symbol_kind.type_parameter,
+        positions,
+        [],
+      );
+
+      if (child !== undefined) {
+        children.push(child);
+      }
     }
 
-    const kind = keyword.text === "const"
-      ? symbol_kind.constant
-      : line_has_arrow(tokens, index)
-      ? symbol_kind.function
-      : symbol_kind.variable;
-    return make_symbol(name.text, kind, keyword, name);
-  }
+    if (declaration.body.tag === "product") {
+      for (const field of declaration.body.fields) {
+        const child = field_symbol(field, symbol_kind.field, positions);
 
-  if (keyword.text === "type") {
-    const name = next_name(tokens, index + 1);
-    return name === undefined
-      ? undefined
-      : make_symbol(name.text, symbol_kind.class, keyword, name);
-  }
+        if (child !== undefined) {
+          children.push(child);
+        }
+      }
+    } else if (declaration.body.tag === "sum") {
+      for (const field of declaration.body.cases) {
+        const child = field_symbol(field, symbol_kind.enum_member, positions);
 
-  if (keyword.text === "effect") {
-    const name = next_name(tokens, index + 1);
-    return name === undefined
-      ? undefined
-      : make_symbol(name.text, symbol_kind.interface, keyword, name);
-  }
-
-  if (keyword.text === "declare") {
-    const first = next_name(tokens, index + 1);
-
-    if (first === undefined) {
-      return undefined;
+        if (child !== undefined) {
+          children.push(child);
+        }
+      }
     }
-
-    const name = first.text === "effect" ? next_name(tokens, index + 2) : first;
-    return name === undefined
-      ? undefined
-      : make_symbol(name.text, symbol_kind.interface, keyword, name);
   }
 
-  if (keyword.text === "import") {
-    const name = next_name(tokens, index + 1);
-    return name === undefined
-      ? undefined
-      : make_symbol(name.text, symbol_kind.module, keyword, name);
-  }
-
-  return undefined;
+  return symbol_from_owner(
+    declaration,
+    "name",
+    undefined,
+    declaration.name,
+    kind,
+    positions,
+    children,
+  );
 }
 
-function binding_name(tokens: Token[], index: number): Token | undefined {
-  const token = tokens[index];
+function operation_symbol(
+  operation: EffectOperation,
+  positions: PositionIndex,
+): LspDocumentSymbol | undefined {
+  return symbol_from_owner(
+    operation,
+    "name",
+    undefined,
+    operation.name,
+    symbol_kind.method,
+    positions,
+    [],
+  );
+}
 
-  if (token === undefined) {
+function field_symbol(
+  field: TypeField,
+  kind: number,
+  positions: PositionIndex,
+): LspDocumentSymbol | undefined {
+  return symbol_from_owner(
+    field,
+    "name",
+    undefined,
+    field.name,
+    kind,
+    positions,
+    [],
+  );
+}
+
+function statement_symbols(
+  statement: Stmt,
+  syntax: SourceSyntax,
+  positions: PositionIndex,
+): LspDocumentSymbol[] {
+  if (statement.tag === "import") {
+    const symbol = symbol_from_owner(
+      statement,
+      "name",
+      undefined,
+      statement.name,
+      symbol_kind.module,
+      positions,
+      [],
+    );
+
+    if (symbol === undefined) {
+      return [];
+    }
+
+    return [symbol];
+  }
+
+  if (statement.tag === "bind") {
+    let kind: number = symbol_kind.variable;
+
+    if (statement.kind === "const") {
+      kind = symbol_kind.constant;
+    }
+
+    if (statement.value.tag === "lam" || statement.value.tag === "rec") {
+      kind = symbol_kind.function;
+    }
+
+    const site = name_site(statement, "name", undefined, statement.name);
+
+    if (site === undefined) {
+      return [];
+    }
+
+    const prefix = syntax.text.slice(
+      source_span(statement).start,
+      site.span.start,
+    );
+
+    if (prefix.trimStart().startsWith("module ")) {
+      kind = symbol_kind.module;
+    }
+
+    const symbol = symbol_from_owner(
+      statement,
+      "name",
+      undefined,
+      statement.name,
+      kind,
+      positions,
+      [],
+    );
+
+    if (symbol === undefined) {
+      throw new Error("Missing binding document symbol");
+    }
+
+    return [symbol];
+  }
+
+  if (statement.tag === "bind_pattern") {
+    const symbols: LspDocumentSymbol[] = [];
+
+    for (const item of statement.items) {
+      let kind: number = symbol_kind.variable;
+
+      if (statement.kind === "const") {
+        kind = symbol_kind.constant;
+      }
+
+      const symbol = symbol_from_owner(
+        item,
+        "name",
+        undefined,
+        item.name,
+        kind,
+        positions,
+        [],
+      );
+
+      if (symbol !== undefined) {
+        symbols.push(symbol);
+      }
+    }
+
+    return symbols;
+  }
+
+  return [];
+}
+
+function symbol_from_owner(
+  owner: object,
+  slot: string,
+  index: number | undefined,
+  name: string,
+  kind: number,
+  positions: PositionIndex,
+  children: LspDocumentSymbol[],
+): LspDocumentSymbol | undefined {
+  const site = name_site(owner, slot, index, name);
+
+  if (site === undefined) {
     return undefined;
   }
 
-  if (token.kind === "symbol" && token.text === "!") {
-    return next_name(tokens, index + 1);
-  }
-
-  return token.kind === "name" ? token : undefined;
-}
-
-function next_name(tokens: Token[], index: number): Token | undefined {
-  const token = tokens[index];
-  return token !== undefined && token.kind === "name" ? token : undefined;
-}
-
-function line_has_arrow(tokens: Token[], index: number): boolean {
-  for (let cursor = index; cursor < tokens.length; cursor += 1) {
-    const token = tokens[cursor];
-
-    if (token === undefined || token.kind === "newline") {
-      return false;
-    }
-
-    if (token.kind === "symbol" && token.text === "=>") {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function make_symbol(
-  name: string,
-  kind: number,
-  keyword: Token,
-  target: Token,
-): LspDocumentSymbol {
-  const selection = token_range(target);
   return {
     name,
     kind,
-    range: {
-      start: token_range(keyword).start,
-      end: selection.end,
-    },
-    selectionRange: selection,
-    children: [],
+    range: range_from_span(positions, source_span(owner)),
+    selectionRange: range_from_span(positions, site.span),
+    children,
   };
 }
 
-function token_range(token: Token): LspRange {
-  const line = token.line - 1;
-  const character = token.column - 1;
+function name_site(
+  owner: object,
+  slot: string,
+  index: number | undefined,
+  name: string,
+): NameSite | undefined {
+  return name_sites(owner).find((site) =>
+    site.slot === slot && site.index === index && site.name === name
+  );
+}
+
+function range_from_span(
+  positions: PositionIndex,
+  span: { start: number; end: number },
+): LspRange {
   return {
-    start: { line, character },
-    end: { line, character: character + Math.max(token.text.length, 1) },
+    start: positions.position_from_offset(span.start),
+    end: positions.position_from_offset(span.end),
   };
 }

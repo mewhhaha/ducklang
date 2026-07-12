@@ -69,7 +69,7 @@ export function core_lam_fn_type(
     ...optional_param_unions(param_unions),
     result,
     result_text,
-    result_struct: hooks.static_struct_value(expr.body, body_ctx)?.type_expr,
+    result_struct: hooks.runtime_aggregate_type_expr(expr.body, body_ctx),
     result_union: hooks.runtime_union_type_expr(expr.body, body_ctx),
   };
 }
@@ -160,7 +160,7 @@ export function core_lam_fn_type_with_expected(
   );
   expect(
     same_runtime_aggregate_type_expr(
-      hooks.static_struct_value(expr.body, body_ctx)?.type_expr,
+      hooks.runtime_aggregate_type_expr(expr.body, body_ctx),
       expected.result_struct,
       body_ctx,
     ),

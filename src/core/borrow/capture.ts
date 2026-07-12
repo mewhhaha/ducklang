@@ -3,9 +3,11 @@ import { owner_list_text } from "./barrier.ts";
 import { core_stmt_definitely_exits_sequence } from "./control.ts";
 import type {
   CoreBorrowAliases,
+  CoreBorrowEdge,
   CoreBorrowState,
   CoreStoredBorrowView,
 } from "./types.ts";
+import { record_core_diagnostic_subject } from "../source_origin.ts";
 
 export function record_stored_borrow_view_escape(
   name: string,
@@ -13,10 +15,11 @@ export function record_stored_borrow_view_escape(
   target_scope: string,
   state: CoreBorrowState,
   action: string,
+  subject: CoreExpr,
 ): void {
   const id = "borrow#" + state.next_borrow.toString();
   state.next_borrow += 1;
-  state.edges.push({
+  const edge: CoreBorrowEdge = {
     id,
     source_scope: view.scope,
     target_scope,
@@ -30,7 +33,9 @@ export function record_stored_borrow_view_escape(
         " borrowed owner " + owner_list_text(view.owners) + " from " +
         view.scope,
     },
-  });
+  };
+  state.edges.push(edge);
+  record_core_diagnostic_subject(edge, subject);
 }
 
 export function record_captured_borrow_views(
@@ -60,6 +65,7 @@ export function record_captured_borrow_views(
       target_scope,
       state,
       "cannot be captured by " + target_scope + " because it references",
+      expr,
     );
   }
 }

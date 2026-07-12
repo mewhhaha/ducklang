@@ -55,6 +55,10 @@ export type CoreBackendClosureApi = {
     expr: CoreExpr,
     ctx: StaticCtx,
   ) => RuntimeUnionTarget | undefined;
+  runtime_aggregate_type_expr: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => CoreExpr | undefined;
   runtime_union_type_expr: (
     expr: CoreExpr,
     ctx: StaticCtx,
@@ -138,6 +142,8 @@ export type CoreBackendClosure = {
     closures: ClosureEmitCtx,
     heap: RuntimeTextHeap,
     scratch: CoreScratchHeap,
+    allocation_permits:
+      import("../../allocation_emission.ts").CoreAllocationPermitState,
   ) => Func[];
   emit_runtime_closure: (
     expr: Extract<CoreExpr, { tag: "lam" }>,

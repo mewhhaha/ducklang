@@ -124,11 +124,13 @@ export type CoreStoredBorrowView = {
   owners: string[];
   borrow_id: string;
   scope: string;
+  iteration_scope: string | undefined;
   ownership: CoreOwnership;
 };
 
 export type CoreFieldBorrowOwner = {
   owners: string[];
+  iteration_scope: string | undefined;
   ownership: CoreOwnership;
 };
 
@@ -150,6 +152,7 @@ export type CoreRecordedBorrow = {
   id: string;
   owners: string[];
   scope: string;
+  iteration_scope: string | undefined;
   ownership: CoreOwnership;
   decision: CoreLifetimeDecision;
 };

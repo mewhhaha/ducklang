@@ -22,6 +22,7 @@ export type ScratchFreeStaticValueHooks<ctx> = {
     expr: CoreExpr,
     ctx: ctx,
   ) => CoreExpr | undefined;
+  static_capture_value?: (name: string, ctx: ctx) => CoreExpr | undefined;
   static_core_call_value: (
     expr: CoreExpr,
     ctx: ctx,
@@ -41,11 +42,37 @@ export function is_scratch_free_static_value_expr<ctx>(
   value: CoreExpr,
   ctx: ctx,
   hooks: ScratchFreeStaticValueHooks<ctx>,
+  captured_names = new Set<string>(),
 ): boolean {
+  if (value.tag === "var" && hooks.static_capture_value) {
+    const captured = hooks.static_capture_value(value.name, ctx);
+
+    if (captured) {
+      if (captured_names.has(value.name)) {
+        return false;
+      }
+
+      captured_names.add(value.name);
+      const scratch_free = is_scratch_free_static_value_expr(
+        captured,
+        ctx,
+        hooks,
+        captured_names,
+      );
+      captured_names.delete(value.name);
+      return scratch_free;
+    }
+  }
+
   const inlined = hooks.static_core_call_value(value, ctx);
 
   if (inlined) {
-    return is_scratch_free_static_value_expr(inlined, ctx, hooks);
+    return is_scratch_free_static_value_expr(
+      inlined,
+      ctx,
+      hooks,
+      captured_names,
+    );
   }
 
   if (hooks.static_text_value(value, ctx)) {
@@ -65,6 +92,7 @@ export function is_scratch_free_static_value_expr<ctx>(
       block_result.expr,
       block_result.ctx,
       hooks,
+      captured_names,
     );
   }
 
@@ -75,7 +103,12 @@ export function is_scratch_free_static_value_expr<ctx>(
       return true;
     }
 
-    return is_scratch_free_static_value_expr(union_case.value, ctx, hooks);
+    return is_scratch_free_static_value_expr(
+      union_case.value,
+      ctx,
+      hooks,
+      captured_names,
+    );
   }
 
   if (value.tag === "if") {
@@ -86,9 +119,20 @@ export function is_scratch_free_static_value_expr<ctx>(
         union_if.cond,
         ctx,
         hooks,
+        captured_names,
       ) &&
-        is_scratch_free_static_value_expr(union_if.then_case, ctx, hooks) &&
-        is_scratch_free_static_value_expr(union_if.else_case, ctx, hooks);
+        is_scratch_free_static_value_expr(
+          union_if.then_case,
+          ctx,
+          hooks,
+          captured_names,
+        ) &&
+        is_scratch_free_static_value_expr(
+          union_if.else_case,
+          ctx,
+          hooks,
+          captured_names,
+        );
     }
   }
 
@@ -96,7 +140,14 @@ export function is_scratch_free_static_value_expr<ctx>(
 
   if (struct_value) {
     for (const field of struct_value.fields) {
-      if (!is_scratch_free_static_value_expr(field.value, ctx, hooks)) {
+      if (
+        !is_scratch_free_static_value_expr(
+          field.value,
+          ctx,
+          hooks,
+          captured_names,
+        )
+      ) {
         return false;
       }
     }
@@ -107,7 +158,12 @@ export function is_scratch_free_static_value_expr<ctx>(
   const block_value = static_block_result(value);
 
   if (block_value) {
-    return is_scratch_free_static_value_expr(block_value, ctx, hooks);
+    return is_scratch_free_static_value_expr(
+      block_value,
+      ctx,
+      hooks,
+      captured_names,
+    );
   }
 
   switch (value.tag) {
@@ -124,13 +180,28 @@ export function is_scratch_free_static_value_expr<ctx>(
       return is_scratch_free_scalar_expr(value, ctx, hooks);
 
     case "borrow":
-      return is_scratch_free_static_value_expr(value.value, ctx, hooks);
+      return is_scratch_free_static_value_expr(
+        value.value,
+        ctx,
+        hooks,
+        captured_names,
+      );
 
     case "freeze":
-      return is_scratch_free_static_value_expr(value.value, ctx, hooks);
+      return is_scratch_free_static_value_expr(
+        value.value,
+        ctx,
+        hooks,
+        captured_names,
+      );
 
     case "scratch":
-      return is_scratch_free_static_value_expr(value.body, ctx, hooks);
+      return is_scratch_free_static_value_expr(
+        value.body,
+        ctx,
+        hooks,
+        captured_names,
+      );
 
     case "linear":
     case "lam":

@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import type { Ic as IcNode } from "../ic.ts";
-import type { Env, FrontExpr, Source as SourceNode } from "./ast.ts";
+import type { Env, FrontExpr, Source as SourceNode, Stmt } from "./ast.ts";
 import { assignment_type } from "./annotations.ts";
 import { capture_const_ref, capture_expr } from "./capture.ts";
 import { validate_const_expr } from "./constness.ts";
@@ -51,6 +51,19 @@ import { same_type } from "./types.ts";
 export function lower_program(source: SourceNode): IcNode {
   const env = create_env();
   return share_free_variables(lower_statements(source.statements, 0, env));
+}
+
+export function evaluate_frontend_expression(
+  preceding_statements: Stmt[],
+  expr: FrontExpr,
+): FrontExpr {
+  const env = create_env();
+  lower_statements(
+    [...preceding_statements, { tag: "expr", expr }],
+    0,
+    env,
+  );
+  return eval_front_value(expr, env);
 }
 
 // These graphs are initialized once after their mutually recursive lazy facades

@@ -16,6 +16,7 @@ export type RuntimeUnionPayload =
     tag: "value";
     type: ValType;
     text: boolean;
+    resume: boolean;
     union_type_expr?: CoreExpr;
   }
   | {
@@ -35,6 +36,7 @@ export type RuntimeUnionPayloadField =
     offset: number;
     type: ValType;
     text: boolean;
+    resume: boolean;
     union_type_expr?: CoreExpr;
   }
   | {
@@ -88,6 +90,7 @@ export function runtime_union_payload<ctx extends TypeStaticCtx>(
       tag: "value",
       type: payload_type,
       text: resolved_type_name === "Text" || resolved_type_name === "Bytes",
+      resume: resolved_type_name === "Resume",
     };
   }
 
@@ -99,6 +102,7 @@ export function runtime_union_payload<ctx extends TypeStaticCtx>(
       tag: "value",
       type: "i32",
       text: false,
+      resume: false,
       union_type_expr: type_expr,
     };
   }
@@ -244,6 +248,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
         offset: offset.value,
         type: field_type,
         text: field_type_name === "Text" || field_type_name === "Bytes",
+        resume: field_type_name === "Resume",
       });
       offset.value += val_type_size(field_type);
       continue;
@@ -260,6 +265,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
         offset: offset.value,
         type: "i32",
         text: false,
+        resume: false,
         union_type_expr: type_expr,
       });
       offset.value += val_type_size("i32");

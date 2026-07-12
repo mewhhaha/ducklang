@@ -2,9 +2,9 @@
 
 This document is the companion to [language.md](language.md). The language
 contract — syntax and the semantics a program can rely on — lives there.
-Everything here is implementation status: which source shapes each backend
-route accepts today. This file is expected to churn as coverage broadens; the
-spec is not.
+Everything here is implementation status: which source shapes each backend route
+accepts today. This file is expected to churn as coverage broadens; the spec is
+not.
 
 ## Routes
 
@@ -14,7 +14,9 @@ Two lowering routes are implemented, plus a managed ABI on top of the second:
   Interaction Calculus, then `Expr`, `Mod`, and WAT. It covers scalar
   computation and a frontend-visible value subset (visible text, frontend-known
   structs/unions encoded as handler lambdas). It supports open terms such as
-  `input + 1`.
+  `input + 1`. Before module emission, its no-GC proof accepts only scalar
+  locals and frozen static data; memory loads whose address cannot be traced to
+  static data reject before WAT generation.
 - The **structured Core route** (`Source.core`, `Source.mod`, `Source.wat`)
   lowers source into a typed structured representation and emits Wasm control
   flow directly. It covers statements, dynamic loops, runtime text, runtime
@@ -37,19 +39,19 @@ payload types also flow into shorthand object payloads such as
 `.ok({ age: 40 })`. The structured Core path rejects other binding annotations
 until it has a fact-checker execution model. Fact-checker annotations are
 checked for const type-values and frontend-known aggregate values in the
-frontend. In the frontend Ic path, explicit runtime binding annotations can
-also provide scalar, text, struct, or union type context for otherwise unknown
+frontend. In the frontend Ic path, explicit runtime binding annotations can also
+provide scalar, text, struct, or union type context for otherwise unknown
 runtime values, while known incompatible values still fail at the binding.
 
-The structured Core path also preserves closure parameter annotations and
-checks built-in scalar/type parameter annotations when const/static calls are
-inlined. When the parameter annotation names a visible struct or union
-type-value, the same direct type context is applied at the static call
-boundary. This keeps annotation failures at the call boundary instead of after
-parameter substitution has erased the source parameter. In the frontend Ic
-path, an explicit runtime parameter annotation can also provide type context
-for an otherwise unknown runtime argument, while known incompatible argument
-types still fail at the call site.
+The structured Core path also preserves closure parameter annotations and checks
+built-in scalar/type parameter annotations when const/static calls are inlined.
+When the parameter annotation names a visible struct or union type-value, the
+same direct type context is applied at the static call boundary. This keeps
+annotation failures at the call boundary instead of after parameter substitution
+has erased the source parameter. In the frontend Ic path, an explicit runtime
+parameter annotation can also provide type context for an otherwise unknown
+runtime argument, while known incompatible argument types still fail at the call
+site.
 
 When runtime bindings or parameters carry `I64` annotations, numeric primitive
 lowering uses that type context to select the corresponding i64 operation even
@@ -64,27 +66,27 @@ Visible text values can concatenate with `+` when both operands are
 frontend-visible text literals, bindings, fields, indexes, const-call results,
 simple block-local values, or dynamic text branches. This produces another
 visible text value; it does not allocate arbitrary runtime strings in the
-Ic/Expr path. The structured Core path preserves the same visible rule and
-emits the concatenated visible text alternatives as length-prefixed UTF-8 data
+Ic/Expr path. The structured Core path preserves the same visible rule and emits
+the concatenated visible text alternatives as length-prefixed UTF-8 data
 pointers. It can also concatenate runtime values known to have type `Text` by
 allocating a fresh length-prefixed UTF-8 text object from the runtime heap and
 copying both byte ranges. Text concatenation must stay in either the visible
 text subset or the structured Core runtime `Text` concat path.
 
 Visible text equality and inequality fold to `i32` booleans. When one or both
-operands are dynamic visible text branches, the pure Ic route lowers equality
-to nested `i32.select` expressions over branch-local static comparisons.
-Runtime `Text` equality that requires byte comparison lowers through structured
+operands are dynamic visible text branches, the pure Ic route lowers equality to
+nested `i32.select` expressions over branch-local static comparisons. Runtime
+`Text` equality that requires byte comparison lowers through structured
 Core/Wasm.
 
 Text-valued `if let` expressions over statically known union cases and dynamic
 union-if targets with visible branch payloads preserve visible text facts
-through bindings, so later `len`, indexing, equality, and slice-style
-operations stay on the pure Ic path. Inlineable unannotated helper calls that
-return visible text preserve those facts as well: helper-returned `append`,
-`slice`, text-producing `if`, and visible text `if let` results can still feed
-later equality, `len`, indexing, and nested visible text operations on the pure
-Ic path.
+through bindings, so later `len`, indexing, equality, and slice-style operations
+stay on the pure Ic path. Inlineable unannotated helper calls that return
+visible text preserve those facts as well: helper-returned `append`, `slice`,
+text-producing `if`, and visible text `if let` results can still feed later
+equality, `len`, indexing, and nested visible text operations on the pure Ic
+path.
 
 `slice(value, start, end)` over frontend-visible text folds when `start` and
 `end` are compile-time `i32` values. If `value` is a dynamic visible text
@@ -92,8 +94,9 @@ branch, the slice is applied to each branch payload and the branch shape is
 preserved. A bound visible slice result remains visible to later `len`,
 indexing, equality, and nested visible operations. Runtime `Text` slices with
 dynamic storage or offsets belong to structured Core/Wasm. `append(left,
-right)` follows the same visible-text subset as `+`; runtime `Text` append
-belongs to structured Core/Wasm.
+right)`
+follows the same visible-text subset as `+`; runtime `Text` append belongs to
+structured Core/Wasm.
 
 Text values are represented as `i32` pointers to length-prefixed UTF-8 data in
 the current Ic/Expr/WAT path. `len(value)` over a runtime value known to have
@@ -107,10 +110,10 @@ values known to have type `Text` can also be byte-indexed in the Ic path with
 either `value[index]` or `get(value, index)`; this lowers to an `i32.load8_u`
 from `pointer + 4 + index`, where `pointer` addresses the length-prefixed text
 object. The generated WAT guards the load with signed negative-index and length
-checks, trapping on out-of-range indexes. Collection loops over
-frontend-visible text values iterate UTF-8 bytes; the frontend can expand
-const-known text loops to Ic, and structured Core can emit visible text loops
-as length-prefixed byte loops.
+checks, trapping on out-of-range indexes. Collection loops over frontend-visible
+text values iterate UTF-8 bytes; the frontend can expand const-known text loops
+to Ic, and structured Core can emit visible text loops as length-prefixed byte
+loops.
 
 ## Closures And Calls
 
@@ -122,22 +125,23 @@ names, so closure-local assignment and shadowing do not clobber caller locals.
 
 First-class scalar closures with annotated scalar parameters can lower through
 `Core.mod`: closure values are `i32` environment pointers, offset `0` stores a
-function-table index, scalar captures and captured closure pointers are
-snapshotted into subsequent slots, captured closure signatures are preserved
-for later indirect calls, and calls use `call_indirect`. Selected first-class
-closure branches can derive one-sided `Int`/`I32`, `I64`, and `Text` parameter
-facts from the annotated branch; Core keeps `Text` parameter facts separate
-from plain `i32`, so `Int` and `Text` branches are not silently unified.
-Same-type assignment to a captured scalar name lowers as a per-call
-closure-local shadow for both inlined static closures and first-class closure
-environments. Sequential type-changing shadowing lowers to fresh Core locals
-before WAT emission, including closure-local shadows. Inlineable static
+function-table index, scalar or frozen/shareable captures are stored in
+subsequent slots, captured closure signatures are preserved for later indirect
+calls, and calls use `call_indirect`. Unfrozen unique aggregate, union, text,
+and closure-pointer captures require the one-shot linear path or reject before
+WAT. Selected first-class closure branches can derive one-sided `Int`/`I32`,
+`I64`, and `Text` parameter facts from the annotated branch; Core keeps `Text`
+parameter facts separate from plain `i32`, so `Int` and `Text` branches are not
+silently unified. Same-type assignment to a captured scalar name lowers as a
+per-call closure-local shadow for both inlined static closures and first-class
+closure environments. Sequential type-changing shadowing lowers to fresh Core
+locals before WAT emission, including closure-local shadows. Inlineable static
 closures that index-assign captured statically shaped aggregates clone those
-aggregate shapes per call before rebuilding them. Captured runtime `Text` byte
-assignment and captured runtime aggregate scalar/`Text`/union-pointer index
-assignment lower through first-class closure environments, including inline
-nested aggregate fields. General first-class linear closure captures remain
-reserved.
+aggregate shapes per call before rebuilding them. Mutation through an unfrozen
+unique runtime `Text` or runtime aggregate capture is rejected because a
+reusable closure cannot safely snapshot that owner. Frozen captures remain
+read-only; supported source-linear captures move into a one-shot environment.
+Broader first-class linear closure captures remain reserved.
 
 The frontend supports direct non-escaping local closure calls, including
 parameterized calls, simple local aliases, simple block-local aliases/direct
@@ -170,28 +174,28 @@ annotation or is a direct or statically bound dynamic `if` whose branches
 construct shorthand union cases. Directly typed pure union values lower to Ic
 handler lambdas. A standalone shorthand union case also lowers as a one-case Ic
 handler lambda when its payload type can be inferred locally, or when the
-payload is an unknown runtime value passed through the selected handler.
-Dynamic `if` expressions where both branches construct the same typed or
-locally inferred shorthand union case lower as handler-encoded union values by
-selecting that case payload. Dynamic `if` expressions over different typed or
-locally inferred union cases lower as handler-encoded Ic values by selecting
-between case-handler applications, including unknown runtime payloads. They
-also lower when immediately consumed by an `if let` whose branches produce
-numeric or text-pointer results, including when the dynamic union expression is
-produced by a const-call result or an inlineable runtime closure call and
-consumed later by a bound `if let`. Text payloads selected by these dynamic
-union branches retain their text facts for operations such as `len(value)`,
-and explicitly named struct payloads such as `user_type { ... }` or shorthand
-object payloads under declared union-case context preserve their struct fields
-for annotated dynamic union branches. Branches that produce typed or locally
-inferred union values lower as handler-encoded union results, including direct
-targets, deferred const-call results, and inlineable runtime closure-call
-results. Static-rec result lowering can apply those bound handler-encoded union
-results through direct, deferred const-call, and inlineable runtime
-closure-call targets. Frontend-known object or typed-struct results lower
-field-by-field through the same numeric/text-pointer `if let` path, either as a
-projected field or as an Ic handler-encoded aggregate value, including when the
-aggregate expression is a simple const-call result.
+payload is an unknown runtime value passed through the selected handler. Dynamic
+`if` expressions where both branches construct the same typed or locally
+inferred shorthand union case lower as handler-encoded union values by selecting
+that case payload. Dynamic `if` expressions over different typed or locally
+inferred union cases lower as handler-encoded Ic values by selecting between
+case-handler applications, including unknown runtime payloads. They also lower
+when immediately consumed by an `if let` whose branches produce numeric or
+text-pointer results, including when the dynamic union expression is produced by
+a const-call result or an inlineable runtime closure call and consumed later by
+a bound `if let`. Text payloads selected by these dynamic union branches retain
+their text facts for operations such as `len(value)`, and explicitly named
+struct payloads such as `user_type { ... }` or shorthand object payloads under
+declared union-case context preserve their struct fields for annotated dynamic
+union branches. Branches that produce typed or locally inferred union values
+lower as handler-encoded union results, including direct targets, deferred
+const-call results, and inlineable runtime closure-call results. Static-rec
+result lowering can apply those bound handler-encoded union results through
+direct, deferred const-call, and inlineable runtime closure-call targets.
+Frontend-known object or typed-struct results lower field-by-field through the
+same numeric/text-pointer `if let` path, either as a projected field or as an Ic
+handler-encoded aggregate value, including when the aggregate expression is a
+simple const-call result.
 
 In structured Core, `if let` statements over literal or statically bound
 shorthand and typed-constructor union-case targets emit by selecting the
@@ -205,13 +209,13 @@ access can scalarize inside the selected branch. When a typed Core union value
 itself must be emitted, Core materializes direct typed union constructors and
 direct dynamic `if` branches over typed numeric, `Text`, `Unit`, or
 static-shaped struct union cases as heap values: an `i32` tag at offset `0`,
-followed by scalar/text-pointer payload slots or packed struct field slots.
-This runtime union object path currently covers `Int`, `I32`, `U32`, `I64`,
-`Text`, `Unit`, and static-shaped struct payloads whose leaves are scalar or
-`Text`. Core preserves typed union-pointer facts on annotated runtime bindings
-and first-class closure-call results, so `if let` over those stored pointers
-lowers to Wasm tag loads plus scalar/text-pointer or struct-field payload loads
-from the materialized object.
+followed by scalar/text-pointer payload slots or packed struct field slots. This
+runtime union object path currently covers `Int`, `I32`, `U32`, `I64`, `Text`,
+`Unit`, and static-shaped struct payloads whose leaves are scalar or `Text`.
+Core preserves typed union-pointer facts on annotated runtime bindings and
+first-class closure-call results, so `if let` over those stored pointers lowers
+to Wasm tag loads plus scalar/text-pointer or struct-field payload loads from
+the materialized object.
 
 In structured Core, statement-level dynamic `if ... else` branches can lower to
 Wasm control flow when the branches update scalar locals. If both branches
@@ -223,9 +227,9 @@ branch executes.
 
 The structured Core path validates visible `struct { ... }` and `union { ... }`
 type-check patterns against compile-time type-values before eliding those
-statements from generated WAT. Simple `const` aliases to visible struct or
-union type-values are preserved in Core static analysis. Simple `const` aliases
-to builtin type names can also be used inside Core-visible struct fields, union
+statements from generated WAT. Simple `const` aliases to visible struct or union
+type-values are preserved in Core static analysis. Simple `const` aliases to
+builtin type names can also be used inside Core-visible struct fields, union
 payloads, and destructuring patterns. Simple const type-constructor calls that
 return struct or union type-values, including curried calls like
 `result_type(Text)(Int)`, are instantiated before Core type checks and WAT
@@ -252,19 +256,19 @@ typed-struct fields preserve the existing integer width even when the stored
 payloads are runtime values. Declared or homogeneous visible `Text` fields
 rebuild through data-pointer selections. Unknown runtime collection loops,
 unknown index expressions, and unknown index assignments can be preserved in
-Core. The structured Core emitter can apply static and dynamic index
-assignments to statically bound object/struct shapes, capturing runtime index
-and value expressions in hidden locals as needed. It can also preserve visible
-`Text` update values through dynamic index assignment and rebuild static-shaped
-struct update expressions while preserving the original aggregate value.
-Inlineable static closure calls clone captured static aggregate shapes and
-static aggregate arguments before applying index-assignment rebuilds. For
-runtime locals known to have type `Text`, `Core.emit` lowers byte index
-assignment to a bounds-checked `i32.store8` into the length-prefixed text
-buffer, including captured runtime `Text` locals inside first-class closure
-environments. Fact-directed lowering for unknown runtime collections and
-general memory-backed collection mutation remains reserved for memory/codegen
-work.
+Core. The structured Core emitter can apply static and dynamic index assignments
+to statically bound object/struct shapes, capturing runtime index and value
+expressions in hidden locals as needed. It can also preserve visible `Text`
+update values through dynamic index assignment and rebuild static-shaped struct
+update expressions while preserving the original aggregate value. Inlineable
+static closure calls clone captured static aggregate shapes and static aggregate
+arguments before applying index-assignment rebuilds. For directly owned runtime
+locals known to have type `Text`, `Core.emit` lowers byte index assignment to a
+bounds-checked `i32.store8` into the length-prefixed text buffer. A reusable
+closure cannot capture that unfrozen unique buffer for mutation; it must use a
+supported one-shot move or reject. Fact-directed lowering for unknown runtime
+collections and general memory-backed collection mutation remains reserved for
+memory/codegen work.
 
 ## Loops And Recursion
 
@@ -272,27 +276,27 @@ The current frontend statically unrolls compile-time reducible recursive calls,
 including bodies with static loops, frontend-known aggregate index assignment,
 compile-time-known const parameters, and explicit runtime type context for
 annotated `Text`, struct, and union rec parameters or rec-local bindings.
-Static-rec result lowering preserves that text context for `len`, byte
-indexing, and `get`, and preserves struct context for field projection,
-indexing, `get`, dynamic struct `if` result/projection/index lowering, and
-dynamic index-assignment rebuilds. It also preserves scalar and text context
-for dynamic `if` results, statement-level dynamic `if`/`if let` fallthrough,
-and union context for dynamic union `if` targets consumed by `if let`. The
-structured Core emitter can lower scalar dynamic tail-recursive calls to Wasm
-`block`/`loop` control flow by carrying recursive parameters as locals.
+Static-rec result lowering preserves that text context for `len`, byte indexing,
+and `get`, and preserves struct context for field projection, indexing, `get`,
+dynamic struct `if` result/projection/index lowering, and dynamic
+index-assignment rebuilds. It also preserves scalar and text context for dynamic
+`if` results, statement-level dynamic `if`/`if let` fallthrough, and union
+context for dynamic union `if` targets consumed by `if let`. The structured Core
+emitter can lower scalar dynamic tail-recursive calls to Wasm `block`/`loop`
+control flow by carrying recursive parameters as locals.
 
 Range loops with compile-time-known bounds lower to Ic by static expansion.
 Simple dynamic `if` or `if let` statements whose body is exactly `break` or
 `continue` lower through synthesized active/step flags, so the expanded Ic
-preserves runtime loop-control choices. More complex dynamic loop-control
-bodies remain reserved. Dynamic range loops can be preserved in the Core
-structured representation with start, end, step, body, and carried-variable
-facts. The minimal Core emitter can generate Wasm control flow for scalar `i32`
-range loops, evaluating start, end, and step once, rejecting statically zero
-steps, trapping dynamically zero steps, and supporting local carried
-assignments, no-else `if`, `break`, and `continue`. Statement-level dynamic
-`if ... else` branches with scalar local assignments, compatible static-shaped
-struct assignments, and visible text assignments also lower to structured Wasm
+preserves runtime loop-control choices. More complex dynamic loop-control bodies
+remain reserved. Dynamic range loops can be preserved in the Core structured
+representation with start, end, step, body, and carried-variable facts. The
+minimal Core emitter can generate Wasm control flow for scalar `i32` range
+loops, evaluating start, end, and step once, rejecting statically zero steps,
+trapping dynamically zero steps, and supporting local carried assignments,
+no-else `if`, `break`, and `continue`. Statement-level dynamic `if ... else`
+branches with scalar local assignments, compatible static-shaped struct
+assignments, and visible text assignments also lower to structured Wasm
 `if`/`else` control flow.
 
 Collection loops are supported over const-known aggregate values and typed
@@ -306,13 +310,15 @@ statically shaped object/struct values, including when that dynamic shape is
 produced by a simple const-call result, with `break` and `continue` edges.
 Static-call block bodies can declare local carried values and contain those
 collection loops after inlining. The Core emitter can also lower visible text
-and runtime values known to have type `Text` to Wasm `block`/`loop` control
-flow over the length-prefixed UTF-8 bytes. Runtime aggregate pointers with
-known struct layout expose collection facts for homogeneous fields, including
-nested aggregate fields such as `user.scores` when the nested inline struct
-fields are homogeneous scalar values. Borrowing a non-scalar item from an
-aggregate-backed collection keeps the borrow tied to the source aggregate
-owner, so mutating the owner while the view is live is rejected.
+and runtime values known to have type `Text` to Wasm `block`/`loop` control flow
+over the length-prefixed UTF-8 bytes. Runtime aggregate pointers with known
+struct layout expose collection facts for homogeneous fields, including nested
+aggregate fields such as `user.scores` when the nested inline struct fields are
+homogeneous scalar values. Borrowing a non-scalar item from an aggregate-backed
+collection keeps the borrow tied to the source aggregate owner and the current
+loop iteration. Bounded reads inside that iteration are accepted; assigning the
+view to an outer binding rejects before WAT emission, and mutating the owner
+while any valid view is live is also rejected.
 
 Dynamic conditional `break` or `continue` inside Ic-expanded static loops is
 rejected explicitly. Unknown runtime collection codegen and general dynamic
@@ -324,14 +330,14 @@ pass can lower recursive CPS control flow.
 
 On the pure Ic route, `&`, `freeze`, and `scratch` erase around scalar values,
 statically visible/shareable text, frontend-known struct/union handler values,
-and pure closure values. Those wrapper expressions preserve their
-frontend-known type for `=` shadowing checks, so accidental type changes still
-reject. Unknown owners, runtime text, and ownership-bearing heap values require
-structured Core so borrow, freeze, scratch escape, and cleanup facts are
-available before WAT emission. Immediate scalar text reads are the narrow
-exception: `len`, `get`, and byte indexing may recursively erase `&`, `freeze`,
-or `scratch` around an annotated runtime `Text` value because the wrapped value
-does not escape the read.
+and pure closure values. Those wrapper expressions preserve their frontend-known
+type for `=` shadowing checks, so accidental type changes still reject. Unknown
+owners, runtime text, and ownership-bearing heap values require structured Core
+so borrow, freeze, scratch escape, and cleanup facts are available before WAT
+emission. Immediate scalar text reads are the narrow exception: `len`, `get`,
+and byte indexing may recursively erase `&`, `freeze`, or `scratch` around an
+annotated runtime `Text` value because the wrapped value does not escape the
+read.
 
 Static and frozen-shareable text bindings are immutable; indexed assignment
 through them rejects before WAT emission. Static-shaped aggregate bindings
@@ -341,22 +347,22 @@ frozen/shareable binding diagnostic.
 
 Scalarized static-shaped aggregate results may leave a scratchpad when every
 returned field is scalar, static/frozen data, or otherwise proven scratch-free.
-Static union cases and dynamic static-union `if` results may also leave when
-the condition and case payloads are scratch-free. Heap-backed aggregate, text,
+Static union cases and dynamic static-union `if` results may also leave when the
+condition and case payloads are scratch-free. Heap-backed aggregate, text,
 union, or closure values require explicit promotion/freeze or reject before WAT
 emission.
 
-Cleanup is elaborated from facts before WAT emission. Scratch cleanup emits
-real pointer resets. Unique heap drops emit `__free` calls into the reusable
+Cleanup is elaborated from facts before WAT emission. Scratch cleanup emits real
+pointer resets. Unique heap drops emit `__free` calls into the reusable
 free-list allocator, and their allocation/layout links keep that runtime action
 explicit in the proof. Temporaries introduced during lowering follow the same
 storage, lifetime, and cleanup rules as source values.
 
 ## Handlers
 
-Ix-defined effect handlers compile only through the Core/managed-Wasm route.
-The IC-only route rejects plain effects, handlers, resumptions, and Unit
-handler syntax explicitly.
+Ix-defined effect handlers compile only through the Core/managed-Wasm route. The
+IC-only route rejects plain effects, handlers, resumptions, and Unit handler
+syntax explicitly.
 
 ## Host Effects And ABI
 
@@ -456,7 +462,7 @@ Core dynamic same-shape collection-loop unrolling
 Core static-call block-local collection-loop unrolling
 Core inline closure-local parameter assignment and caller-safe local shadowing
 Core first-class scalar closure storage through env pointers, function tables,
-captured closure pointers, closures returned from scoped static calls, and
+scalar/frozen captures, closures returned from scoped static calls, and
 `call_indirect`
 Core dynamic tail recursion as structured loops
 Source-level annotated dynamic tail recursion through `Source.wat`

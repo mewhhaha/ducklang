@@ -1,10 +1,19 @@
-export function assert_equals(actual: unknown, expected: unknown): void {
+export function assert_equals(
+  actual: unknown,
+  expected: unknown,
+  message?: string,
+): void {
   const actual_text = Deno.inspect(actual, { depth: 100, sorted: true });
   const expected_text = Deno.inspect(expected, { depth: 100, sorted: true });
 
   if (actual_text !== expected_text) {
+    let prefix = "";
+    if (message) {
+      prefix = message + "\n\n";
+    }
     throw new Error(
-      "Expected:\n" + expected_text + "\n\nActual:\n" + actual_text,
+      prefix + "Expected:\n" + expected_text + "\n\nActual:\n" +
+        actual_text,
     );
   }
 }

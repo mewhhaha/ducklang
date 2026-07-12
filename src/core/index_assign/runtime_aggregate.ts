@@ -146,6 +146,30 @@ export function emit_core_runtime_aggregate_index_assign<
   const static_index = maybe_static_i32(stmt.index);
 
   if (static_index !== undefined) {
+    if (stmt.value.tag === "struct_value") {
+      // Local collection reserves the aggregate expression temporary before
+      // planning the index-assignment temporaries.  This literal is now
+      // stored in place, so retain the name sequence without emitting it.
+      fresh_temp_local(ctx, "aggregate");
+      const stores = emit_static_runtime_aggregate_struct_index_assign(
+        stmt.name,
+        static_indexed_runtime_aggregate_field(
+          runtime_aggregate_layout_for_type(type_expr, ctx).fields,
+          static_index,
+        ),
+        stmt.value,
+        runtime_aggregate_index_assign_placeholder_plan(type_expr, ctx),
+        ctx,
+        hooks,
+      );
+      const plan = plan_core_runtime_aggregate_index_assign(
+        type_expr,
+        stmt,
+        ctx,
+        hooks,
+      );
+      return replace_runtime_aggregate_index_assign_placeholders(stores, plan);
+    }
     const value = hooks.emit_expr(stmt.value, ctx);
     const plan = plan_core_runtime_aggregate_index_assign(
       type_expr,
@@ -167,6 +191,33 @@ export function emit_core_runtime_aggregate_index_assign<
   }
 
   const index = hooks.emit_expr(stmt.index, ctx);
+  if (stmt.value.tag === "struct_value") {
+    // See the static-index path above.  The dynamic index local must retain
+    // the same deterministic name chosen during local collection.
+    fresh_temp_local(ctx, "aggregate");
+    const stores = emit_dynamic_runtime_aggregate_struct_index_assign(
+      stmt.name,
+      stmt.value,
+      runtime_aggregate_index_assign_placeholder_plan(type_expr, ctx),
+      ctx,
+      hooks,
+    );
+    const plan = plan_core_runtime_aggregate_index_assign(
+      type_expr,
+      stmt,
+      ctx,
+      hooks,
+    );
+    expect(
+      plan.index_local,
+      "Missing runtime aggregate index assignment index local",
+    );
+    return [
+      index,
+      "local.set $" + plan.index_local,
+      replace_runtime_aggregate_index_assign_placeholders(stores, plan),
+    ].join("\n");
+  }
   const value = hooks.emit_expr(stmt.value, ctx);
   const plan = plan_core_runtime_aggregate_index_assign(
     type_expr,
@@ -190,6 +241,82 @@ export function emit_core_runtime_aggregate_index_assign<
     "local.set $" + plan.value_local,
     emit_dynamic_runtime_aggregate_index_assign(stmt.name, plan, ctx),
   ].join("\n");
+}
+
+const runtime_aggregate_index_assign_index_placeholder =
+  "__runtime_aggregate_index_assign_index__";
+const runtime_aggregate_index_assign_value_placeholder =
+  "__runtime_aggregate_index_assign_value__";
+
+function runtime_aggregate_index_assign_placeholder_plan<
+  ctx extends TypeStaticCtx,
+>(
+  type_expr: CoreExpr,
+  ctx: ctx,
+): RuntimeAggregateIndexAssignPlan {
+  return {
+    fields: runtime_aggregate_layout_for_type(type_expr, ctx).fields,
+    index_local: runtime_aggregate_index_assign_index_placeholder,
+    static_index: undefined,
+    value_local: runtime_aggregate_index_assign_value_placeholder,
+    value_type: "i32",
+  };
+}
+
+function replace_runtime_aggregate_index_assign_placeholders(
+  wat: Wat,
+  plan: RuntimeAggregateIndexAssignPlan,
+): Wat {
+  let result = wat;
+
+  if (result.includes(runtime_aggregate_index_assign_index_placeholder)) {
+    expect(
+      plan.index_local,
+      "Missing runtime aggregate index assignment index local",
+    );
+    result = result.replaceAll(
+      runtime_aggregate_index_assign_index_placeholder,
+      plan.index_local,
+    );
+  }
+
+  if (result.includes(runtime_aggregate_index_assign_value_placeholder)) {
+    expect(
+      plan.value_local,
+      "Missing runtime aggregate index assignment value local",
+    );
+    result = result.replaceAll(
+      runtime_aggregate_index_assign_value_placeholder,
+      plan.value_local,
+    );
+  }
+
+  return result;
+}
+
+function emit_static_runtime_aggregate_struct_index_assign<
+  ctx extends CoreIndexAssignCtx & TypeStaticCtx,
+>(
+  name: string,
+  field: RuntimeAggregateField,
+  value: Extract<CoreExpr, { tag: "struct_value" }>,
+  plan: RuntimeAggregateIndexAssignPlan,
+  ctx: ctx,
+  hooks: Pick<CoreIndexAssignHooks<ctx, ctx>, "emit_expr">,
+): Wat {
+  expect(
+    field.tag === "struct",
+    "Core runtime aggregate static struct index assignment requires a nested aggregate field: " +
+      field.name,
+  );
+  return emit_runtime_aggregate_static_struct_stores(
+    name,
+    field,
+    value,
+    plan,
+    ctx,
+    hooks,
+  );
 }
 
 function emit_static_runtime_aggregate_index_assign<
@@ -264,6 +391,118 @@ function emit_dynamic_runtime_aggregate_index_assign<
   }
 
   return result;
+}
+
+function emit_dynamic_runtime_aggregate_struct_index_assign<
+  ctx extends CoreIndexAssignCtx & TypeStaticCtx,
+>(
+  name: string,
+  value: Extract<CoreExpr, { tag: "struct_value" }>,
+  plan: RuntimeAggregateIndexAssignPlan,
+  ctx: ctx,
+  hooks: Pick<CoreIndexAssignHooks<ctx, ctx>, "emit_expr">,
+): Wat {
+  expect(
+    plan.index_local,
+    "Missing runtime aggregate dynamic index assignment index local",
+  );
+  let result = "unreachable";
+
+  for (let index = plan.fields.length - 1; index >= 0; index -= 1) {
+    const field = plan.fields[index];
+    expect(
+      field,
+      "Missing runtime aggregate field " + index.toString(),
+    );
+    result = [
+      "local.get $" + plan.index_local,
+      "i32.const " + index.toString(),
+      "i32.eq",
+      "if",
+      indent_lines(
+        emit_static_runtime_aggregate_struct_index_assign(
+          name,
+          field,
+          value,
+          plan,
+          ctx,
+          hooks,
+        ),
+        2,
+      ),
+      "else",
+      indent_lines(result, 2),
+      "end",
+    ].join("\n");
+  }
+
+  return result;
+}
+
+function emit_runtime_aggregate_static_struct_stores<
+  ctx extends CoreIndexAssignCtx & TypeStaticCtx,
+>(
+  name: string,
+  field: Extract<RuntimeAggregateField, { tag: "struct" }>,
+  value: Extract<CoreExpr, { tag: "struct_value" }>,
+  plan: RuntimeAggregateIndexAssignPlan,
+  ctx: ctx,
+  hooks: Pick<CoreIndexAssignHooks<ctx, ctx>, "emit_expr">,
+): Wat {
+  const lines: string[] = [];
+
+  for (const nested_field of field.fields) {
+    const value_field = value.fields.find((item) =>
+      item.name === nested_field.name
+    );
+    expect(
+      value_field,
+      "Core runtime aggregate static index assignment missing struct field " +
+        nested_field.name,
+    );
+
+    if (nested_field.tag === "unit") {
+      continue;
+    }
+
+    if (nested_field.tag === "struct") {
+      if (value_field.value.tag === "struct_value") {
+        lines.push(
+          emit_runtime_aggregate_static_struct_stores(
+            name,
+            nested_field,
+            value_field.value,
+            plan,
+            ctx,
+            hooks,
+          ),
+        );
+        continue;
+      }
+
+      expect(
+        plan.value_local,
+        "Missing runtime aggregate nested index assignment value local",
+      );
+      lines.push(hooks.emit_expr(value_field.value, ctx));
+      lines.push("local.set $" + plan.value_local);
+      lines.push(
+        emit_runtime_aggregate_index_assign_stores(
+          name,
+          nested_field,
+          plan,
+          ctx,
+        ),
+      );
+      continue;
+    }
+
+    lines.push("local.get $" + name);
+    lines.push(hooks.emit_expr(value_field.value, ctx));
+    lines.push(store_instr(nested_field.type, nested_field.offset));
+  }
+
+  return lines.join("\n");
 }
 
 function emit_runtime_aggregate_index_assign_stores<

@@ -20,6 +20,10 @@ export function create_core_backend_graph_stmt_emit(
     bind_core_struct_type: deps.local_facts().bind_core_struct_type,
     bind_core_union_type: deps.local_facts().bind_core_union_type,
     clear_core_local_facts: deps.local_facts().clear_core_local_facts,
+    core_assignment_value: (
+      stmt: Extract<CoreStmt, { tag: "assign" }>,
+      ctx: EmitCtx,
+    ) => deps.type_check().core_assignment_value(stmt, ctx),
     core_binding_value: (
       stmt: Extract<CoreStmt, { tag: "bind" }>,
       ctx: EmitCtx,
@@ -31,6 +35,8 @@ export function create_core_backend_graph_stmt_emit(
     ) => deps.type_check().core_type_const_value(stmt, value, ctx),
     core_expr_has_runtime_text_fact: (value: CoreExpr, ctx: EmitCtx) =>
       deps.text().core_expr_has_runtime_text_fact(value, ctx),
+    core_expr_is_text: (value: CoreExpr, ctx: EmitCtx) =>
+      deps.text().core_expr_is_text(value, ctx),
     emit_collection_loop: (
       stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
       ctx: EmitCtx,

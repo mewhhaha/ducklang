@@ -18,6 +18,8 @@ export type RuntimeUnionMatchCtx = {
   frozen_locals?: Set<string>;
   host_imports?: Map<string, CoreHostImport>;
   scratch_depth?: number;
+  materialized_bindings?: Set<string>;
+  mutable_bindings?: Set<string>;
 };
 
 export type RuntimeUnionMatchTempCtx = RuntimeUnionMatchCtx & {
@@ -168,6 +170,8 @@ export function static_runtime_union_match_branch_ctx(
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: clone_optional_set(ctx.materialized_bindings),
+    mutable_bindings: clone_optional_set(ctx.mutable_bindings),
   };
 
   bind_runtime_union_match_payload_fact(value_name, info, branch_ctx);
@@ -189,6 +193,8 @@ export function core_runtime_union_match_branch_ctx(
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: clone_optional_set(ctx.materialized_bindings),
+    mutable_bindings: clone_optional_set(ctx.mutable_bindings),
     next_loop: ctx.next_loop,
     next_temp: ctx.next_temp,
   };

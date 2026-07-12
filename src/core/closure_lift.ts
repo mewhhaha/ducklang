@@ -54,6 +54,7 @@ export function ensure_lifted_closure<ctx extends CoreClosureEmitCtx>(
     struct_locals: new Map(ctx.struct_locals),
     union_locals: new Map(ctx.union_locals),
     frozen_locals: clone_optional_set(ctx.frozen_locals),
+    materialized_bindings: clone_optional_set(ctx.materialized_bindings),
     host_imports: clone_core_host_imports(ctx.host_imports),
   };
 

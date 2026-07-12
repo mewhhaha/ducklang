@@ -5,6 +5,7 @@ import type { StaticValueRecognitionHooks } from "./types.ts";
 
 type StaticValueAliasCtx = {
   statics: Map<string, CoreExpr>;
+  scratch_depth?: number;
 };
 
 export function is_static_value_expr<ctx extends StaticValueAliasCtx>(
@@ -80,6 +81,7 @@ export function is_static_value_expr<ctx extends StaticValueAliasCtx>(
       value.body,
       ctx,
       hooks,
+      true,
     );
 
     if (scratch_result) {
@@ -108,10 +110,96 @@ export function is_static_value_expr<ctx extends StaticValueAliasCtx>(
   return false;
 }
 
+export function static_scratch_aggregate_alias_materializes(
+  value: CoreExpr,
+): boolean {
+  if (value.tag !== "scratch" || value.body.tag !== "block") {
+    return false;
+  }
+  const final_stmt = value.body.statements[value.body.statements.length - 1];
+  if (!final_stmt) {
+    throw new Error("Missing static scratch aggregate final statement");
+  }
+  let final_value: CoreExpr | undefined;
+  if (final_stmt.tag === "expr") {
+    final_value = final_stmt.expr;
+  } else if (final_stmt.tag === "return") {
+    final_value = final_stmt.value;
+  }
+  if (
+    !final_value ||
+    (final_value.tag !== "var" && final_value.tag !== "linear")
+  ) {
+    return false;
+  }
+  const result = static_scratch_block_result_value(value);
+  return result !== undefined && result.tag === "struct_value";
+}
+
+export function static_scratch_block_result_value(
+  value: CoreExpr,
+): CoreExpr | undefined {
+  if (value.tag !== "scratch" || value.body.tag !== "block") {
+    return undefined;
+  }
+  if (value.body.statements.length <= 1) {
+    return undefined;
+  }
+  const final_stmt = value.body.statements[value.body.statements.length - 1];
+  if (!final_stmt) {
+    throw new Error("Missing static scratch aggregate final statement");
+  }
+  let result: CoreExpr | undefined;
+  if (final_stmt.tag === "expr") {
+    result = final_stmt.expr;
+  } else if (final_stmt.tag === "return") {
+    result = final_stmt.value;
+  }
+  if (!result) {
+    return undefined;
+  }
+  if (result.tag !== "var" && result.tag !== "linear") {
+    return result;
+  }
+
+  let name = result.name;
+  const visiting = new Set<string>();
+  while (!visiting.has(name)) {
+    visiting.add(name);
+    let source: CoreExpr | undefined;
+    for (
+      let index = value.body.statements.length - 2;
+      index >= 0;
+      index -= 1
+    ) {
+      const stmt = value.body.statements[index];
+      if (!stmt) {
+        throw new Error("Missing static scratch aggregate statement");
+      }
+      if (
+        (stmt.tag === "bind" || stmt.tag === "assign") &&
+        stmt.name === name
+      ) {
+        source = stmt.value;
+        break;
+      }
+    }
+    if (!source) {
+      return undefined;
+    }
+    if (source.tag !== "var" && source.tag !== "linear") {
+      return source;
+    }
+    name = source.name;
+  }
+  return undefined;
+}
+
 function static_value_block_result_with_ctx<ctx extends StaticValueAliasCtx>(
   value: CoreExpr,
   ctx: ctx,
   hooks: StaticValueRecognitionHooks<ctx>,
+  scratch = false,
 ): { expr: CoreExpr; ctx: ctx } | undefined {
   if (value.tag !== "block") {
     return undefined;
@@ -122,6 +210,14 @@ function static_value_block_result_with_ctx<ctx extends StaticValueAliasCtx>(
   }
 
   const block_ctx = hooks.block_ctx(ctx);
+  if (scratch) {
+    const scratch_depth = block_ctx.scratch_depth;
+    if (scratch_depth === undefined) {
+      block_ctx.scratch_depth = 1;
+    } else {
+      block_ctx.scratch_depth = scratch_depth + 1;
+    }
+  }
 
   for (let index = 0; index < value.statements.length; index += 1) {
     const stmt = value.statements[index];

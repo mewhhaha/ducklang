@@ -3,6 +3,9 @@ import {
   core_scratch_exit_edges,
   type CoreCleanupExitEdge,
 } from "./cleanup.ts";
+import { canonical_core_subject } from "./subject_provenance.ts";
+
+export type CoreLifetimeSubject = CoreExpr | CoreStmt;
 
 export type CoreLifetimeScope =
   | {
@@ -40,7 +43,13 @@ type CoreLifetimeState = {
   next_closure: number;
   next_scratch: number;
   scopes: CoreLifetimeScope[];
+  subject_scopes: WeakMap<CoreLifetimeSubject, CoreLifetimeScope>;
 };
+
+const subject_scopes_by_plan = new WeakMap<
+  CoreLifetimePlan,
+  WeakMap<CoreLifetimeSubject, CoreLifetimeScope>
+>();
 
 export function core_lifetime_plan(core: Core): CoreLifetimePlan {
   const state: CoreLifetimeState = {
@@ -51,6 +60,7 @@ export function core_lifetime_plan(core: Core): CoreLifetimePlan {
     next_closure: 0,
     next_scratch: 0,
     scopes: [],
+    subject_scopes: new WeakMap(),
   };
   const program = add_scope(state, "program", undefined, undefined);
 
@@ -58,7 +68,35 @@ export function core_lifetime_plan(core: Core): CoreLifetimePlan {
     scan_lifetime_stmt(stmt, program.id, state);
   }
 
-  return { scopes: state.scopes };
+  const plan = { scopes: state.scopes };
+  subject_scopes_by_plan.set(plan, state.subject_scopes);
+  return plan;
+}
+
+export function core_lifetime_scope_for_subject(
+  plan: CoreLifetimePlan,
+  subject: CoreLifetimeSubject,
+): CoreLifetimeScope | undefined {
+  const subject_scopes = subject_scopes_by_plan.get(plan);
+  if (!subject_scopes) {
+    return undefined;
+  }
+
+  return subject_scopes.get(canonical_core_subject(subject));
+}
+
+export function core_require_lifetime_scope_for_subject(
+  plan: CoreLifetimePlan,
+  subject: CoreLifetimeSubject,
+): CoreLifetimeScope {
+  const scope = core_lifetime_scope_for_subject(plan, subject);
+  if (scope) {
+    return scope;
+  }
+
+  throw new Error(
+    "Missing lifetime scope provenance for Core subject: " + subject.tag,
+  );
 }
 
 function scan_lifetime_expr(
@@ -66,6 +104,10 @@ function scan_lifetime_expr(
   parent: string,
   state: CoreLifetimeState,
 ): void {
+  if (expr.tag !== "app") {
+    record_subject_scope(expr, parent, state);
+  }
+
   switch (expr.tag) {
     case "num":
     case "text":
@@ -92,6 +134,7 @@ function scan_lifetime_expr(
 
     case "app": {
       const scope = add_scope(state, "function_call", parent, undefined);
+      record_subject_scope(expr, scope.id, state);
       scan_lifetime_expr(expr.func, scope.id, state);
 
       for (const arg of expr.args) {
@@ -195,6 +238,10 @@ function scan_lifetime_stmt(
   parent: string,
   state: CoreLifetimeState,
 ): void {
+  if (stmt.tag !== "range_loop" && stmt.tag !== "collection_loop") {
+    record_subject_scope(stmt, parent, state);
+  }
+
   switch (stmt.tag) {
     case "bind":
     case "assign":
@@ -211,6 +258,7 @@ function scan_lifetime_stmt(
       scan_lifetime_expr(stmt.end, parent, state);
       scan_lifetime_expr(stmt.step, parent, state);
       const scope = add_scope(state, "loop", parent, undefined);
+      record_subject_scope(stmt, scope.id, state);
       scan_lifetime_stmts(stmt.body, scope.id, state);
       return;
     }
@@ -218,6 +266,7 @@ function scan_lifetime_stmt(
     case "collection_loop": {
       scan_lifetime_expr(stmt.collection, parent, state);
       const scope = add_scope(state, "loop", parent, undefined);
+      record_subject_scope(stmt, scope.id, state);
       scan_lifetime_stmts(stmt.body, scope.id, state);
       return;
     }
@@ -266,6 +315,34 @@ function scan_lifetime_stmt(
     case "unsupported":
       return;
   }
+}
+
+function record_subject_scope(
+  subject: CoreLifetimeSubject,
+  scope_id: string,
+  state: CoreLifetimeState,
+): void {
+  const scope = state.scopes.find((candidate) => candidate.id === scope_id);
+  if (!scope) {
+    throw new Error(
+      "Missing lifetime scope while recording Core subject: " + scope_id,
+    );
+  }
+
+  const existing = state.subject_scopes.get(subject);
+  if (!existing) {
+    state.subject_scopes.set(subject, scope);
+    return;
+  }
+
+  if (existing.id === scope.id) {
+    return;
+  }
+
+  throw new Error(
+    "Core subject occurs in multiple lifetime scopes: " + subject.tag +
+      " (" + existing.id + ", " + scope.id + ")",
+  );
 }
 
 function scan_lifetime_fields(

@@ -1,12 +1,26 @@
-import type { Core } from "./ast.ts";
+import type { Core, CoreExpr } from "./ast.ts";
+import {
+  find_core_diagnostic_subject,
+  record_core_diagnostic_subject,
+} from "./source_origin.ts";
+import { canonical_core_expr } from "./subject_provenance.ts";
 import type { CoreDropPlan } from "./drop.ts";
 import { scan_allocation_stmts } from "./allocation/scan.ts";
+import {
+  core_allocation_fact_destinations,
+  core_allocation_fact_subject,
+} from "./allocation/metadata.ts";
 import type {
+  CoreAllocationFact,
   CoreAllocationHooks,
   CoreAllocationOwnedChild,
   CoreAllocationPlan,
   CoreAllocationState,
 } from "./allocation/types.ts";
+import {
+  core_materialized_bindings,
+  core_mutable_bindings,
+} from "./mutable_bindings.ts";
 
 export type {
   CoreAllocationByteSize,
@@ -18,6 +32,11 @@ export type {
   CoreAllocationReason,
 } from "./allocation/types.ts";
 
+const value_allocations_by_plan = new WeakMap<
+  CoreAllocationPlan,
+  WeakMap<CoreExpr, CoreAllocationState["facts"]>
+>();
+
 export function core_allocation_plan<ctx>(
   core: Core,
   ctx: ctx,
@@ -28,8 +47,21 @@ export function core_allocation_plan<ctx>(
     next_block: 0,
     next_closure: 0,
     next_scratch: 0,
+    next_static_call: 0,
+    current_allocation_instance: undefined,
     facts: [],
     recorded: new WeakMap(),
+    runtime_bindings: new Set(),
+    binding_allocations: new Map(),
+    value_allocations: new WeakMap(),
+    closure_result_allocations: new Map(),
+    static_closure_bindings: new Map(),
+    forced_closures: new WeakSet(),
+    forced_static_parameter_closure_branches: new WeakSet(),
+    nonmaterialized_struct_values: new WeakSet(),
+    nonmaterialized_union_values: new WeakSet(),
+    materialized_bindings: core_materialized_bindings(core),
+    mutable_bindings: core_mutable_bindings(core),
   };
 
   scan_allocation_stmts(
@@ -40,8 +72,27 @@ export function core_allocation_plan<ctx>(
     state,
   );
 
-  return { facts: state.facts };
+  const plan = { facts: state.facts };
+  value_allocations_by_plan.set(plan, state.value_allocations);
+  return plan;
 }
+
+export function core_allocation_facts_for_value(
+  plan: CoreAllocationPlan,
+  value: CoreExpr,
+): CoreAllocationFact[] | undefined {
+  const values = value_allocations_by_plan.get(plan);
+  if (!values) {
+    return undefined;
+  }
+  const facts = values.get(value);
+  if (!facts) {
+    return undefined;
+  }
+  return [...facts];
+}
+
+export { core_allocation_fact_subject } from "./allocation/metadata.ts";
 
 export function link_drop_allocations(
   drops: CoreDropPlan,
@@ -58,11 +109,7 @@ export function link_drop_allocations(
       return step;
     }
 
-    const matching = allocations.facts.filter((fact) => {
-      if (used.has(fact.allocation_id)) {
-        return false;
-      }
-
+    const all_matching = allocations.facts.filter((fact) => {
       if (fact.storage !== "persistent_unique_heap") {
         return false;
       }
@@ -77,11 +124,90 @@ export function link_drop_allocations(
 
       return true;
     });
+    const matching = all_matching.filter((fact) => {
+      return !used.has(fact.allocation_id);
+    });
 
     let candidates = matching;
+    let exact_subject = false;
+    const drop_subject = find_core_diagnostic_subject(step);
+    if (drop_subject && allocation_subject_is_expr(drop_subject)) {
+      const explicit = core_allocation_facts_for_value(
+        allocations,
+        drop_subject,
+      );
+      const explicit_ids = new Set<string>();
+      if (explicit) {
+        for (const fact of explicit) {
+          explicit_ids.add(fact.allocation_id);
+        }
+      }
+      let exact_candidates = matching;
+      if (step.edge === "assignment_replace") {
+        exact_candidates = all_matching;
+      }
+      let exact = exact_candidates.filter((fact) => {
+        return explicit_ids.has(fact.allocation_id);
+      });
+      if (exact.length === 0) {
+        const canonical_subject = canonical_core_expr(drop_subject);
+        exact = exact_candidates.filter((fact) => {
+          const fact_subject = core_allocation_fact_subject(fact);
+          if (!fact_subject) {
+            return false;
+          }
+          return canonical_core_expr(fact_subject) === canonical_subject;
+        });
+      }
+      if (
+        exact.length === 0 && drop_subject.tag === "field" &&
+        (drop_subject.object.tag === "var" ||
+          drop_subject.object.tag === "linear")
+      ) {
+        const destination_owner = drop_subject.object.name;
+        exact = all_matching.filter((fact) => {
+          return core_allocation_fact_destinations(fact).some((destination) => {
+            return destination.owner === destination_owner &&
+              destination.field === drop_subject.name;
+          });
+        });
+      }
+      if (exact.length > 1) {
+        const owned_ids = new Set<string>();
+        for (const candidate of exact) {
+          if (!candidate.owned_children) {
+            continue;
+          }
+          for (const child of candidate.owned_children) {
+            for (const allocation_id of child.allocation_ids) {
+              owned_ids.add(allocation_id);
+            }
+          }
+        }
+        const roots = exact.filter((candidate) => {
+          return !owned_ids.has(candidate.allocation_id);
+        });
+        if (roots.length > 0) {
+          exact = roots;
+        }
+      }
+      if (exact.length > 0) {
+        candidates = exact;
+        exact_subject = true;
+      }
+    }
 
-    if (step.owner) {
-      candidates = matching.filter((fact) => fact.owner === step.owner);
+    if (!exact_subject && step.owner) {
+      const scoped_owner_prefix = "_local_" + step.owner + "#";
+      candidates = matching.filter((fact) => {
+        if (fact.owner === step.owner) {
+          return true;
+        }
+        if (!fact.owner) {
+          return false;
+        }
+        return fact.owner.startsWith(scoped_owner_prefix);
+      });
 
       if (candidates.length === 0) {
         const unowned = matching.filter((fact) => !fact.owner);
@@ -105,7 +231,7 @@ export function link_drop_allocations(
           }
         }
       }
-    } else {
+    } else if (!exact_subject) {
       const same_scope = matching.filter((fact) => fact.scope === step.scope);
       const first = same_scope[0];
       if (first) {
@@ -113,7 +239,7 @@ export function link_drop_allocations(
       }
     }
 
-    if (step.edge === "assignment_replace") {
+    if (step.edge === "assignment_replace" && !exact_subject) {
       let later_replacements = 0;
       let has_later_terminal = false;
 
@@ -171,10 +297,7 @@ export function link_drop_allocations(
         linked.add(candidate.allocation_id);
       }
 
-      const owned_children = linked_allocation_owned_children(
-        fact,
-        allocations,
-      );
+      const owned_children = merged_allocation_owned_children(candidates);
       const linked_step = {
         ...step,
         allocation_ids: candidates.map((candidate) => {
@@ -185,7 +308,14 @@ export function link_drop_allocations(
         layout: fact.layout,
       };
       if (owned_children) {
-        return { ...linked_step, owned_children };
+        const result = { ...linked_step, owned_children };
+        if (drop_subject) {
+          record_core_diagnostic_subject(result, drop_subject);
+        }
+        return result;
+      }
+      if (drop_subject) {
+        record_core_diagnostic_subject(linked_step, drop_subject);
       }
       return linked_step;
     }
@@ -206,12 +336,42 @@ export function link_drop_allocations(
       layout: fact.layout,
     };
     if (owned_children) {
-      return { ...linked_step, owned_children };
+      const result = { ...linked_step, owned_children };
+      if (drop_subject) {
+        record_core_diagnostic_subject(result, drop_subject);
+      }
+      return result;
+    }
+    if (drop_subject) {
+      record_core_diagnostic_subject(linked_step, drop_subject);
     }
     return linked_step;
   });
 
   return { steps };
+}
+
+function allocation_subject_is_expr(
+  subject: import("./source_origin.ts").CoreSourceSubject,
+): subject is CoreExpr {
+  switch (subject.tag) {
+    case "bind":
+    case "assign":
+    case "index_assign":
+    case "range_loop":
+    case "collection_loop":
+    case "if_stmt":
+    case "if_else_stmt":
+    case "if_let_stmt":
+    case "type_check":
+    case "break":
+    case "continue":
+    case "return":
+    case "expr":
+      return false;
+    default:
+      return true;
+  }
 }
 
 function linked_allocation_owned_children(
@@ -275,6 +435,42 @@ function linked_allocation_owned_children(
       ownership: child.ownership,
       layout: child.layout,
     });
+  }
+  return result;
+}
+
+function merged_allocation_owned_children(
+  parents: CoreAllocationPlan["facts"],
+): CoreAllocationOwnedChild[] | undefined {
+  const result: CoreAllocationOwnedChild[] = [];
+  for (const parent of parents) {
+    if (!parent.owned_children) {
+      continue;
+    }
+    for (const child of parent.owned_children) {
+      const existing = result.find((candidate) => {
+        return candidate.offset === child.offset &&
+          candidate.layout === child.layout &&
+          candidate.ownership.reason === child.ownership.reason;
+      });
+      if (existing) {
+        for (const allocation_id of child.allocation_ids) {
+          if (!existing.allocation_ids.includes(allocation_id)) {
+            existing.allocation_ids.push(allocation_id);
+          }
+        }
+        continue;
+      }
+      result.push({
+        allocation_ids: [...child.allocation_ids],
+        offset: child.offset,
+        ownership: child.ownership,
+        layout: child.layout,
+      });
+    }
+  }
+  if (result.length === 0) {
+    return undefined;
   }
   return result;
 }

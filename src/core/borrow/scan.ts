@@ -23,6 +23,7 @@ import type {
   CoreRecordedBorrow,
 } from "./types.ts";
 import { record_borrow_expr_with_scan } from "./record.ts";
+import { inherit_core_source_origin } from "../source_origin.ts";
 
 function scan_borrow_expr<ctx>(
   expr: CoreExpr,
@@ -54,6 +55,7 @@ function scan_borrow_expr<ctx>(
             parent,
             state,
             "cannot escape",
+            expr,
           );
         }
         return;
@@ -62,6 +64,7 @@ function scan_borrow_expr<ctx>(
       const static_value = hooks.static_value(expr.name, ctx);
 
       if (static_value) {
+        inherit_core_source_origin(static_value, expr);
         scan_borrow_expr(static_value, ctx, hooks, parent, state, use, aliases);
       }
 
@@ -114,6 +117,7 @@ function scan_borrow_expr<ctx>(
       const inlined = hooks.static_core_call_value(expr, ctx);
 
       if (inlined) {
+        inherit_core_source_origin(inlined, expr);
         scan_borrow_expr(inlined, ctx, hooks, scope.id, state, use, aliases);
         return;
       }
@@ -178,6 +182,7 @@ function scan_borrow_expr<ctx>(
         "freeze",
         parent,
         state,
+        expr,
       );
       scan_borrow_expr(
         expr.value,
@@ -436,6 +441,7 @@ function check_host_transfer_barriers<ctx>(
       "transfer",
       parent,
       state,
+      expr,
     );
   }
 }

@@ -64,6 +64,8 @@ import {
 } from "./proof_hooks.ts";
 import type { CoreBackendGraph } from "./types.ts";
 import { core_runtime_slice_facts } from "../../runtime_slice.ts";
+import { record_core_diagnostic_subject } from "../../source_origin.ts";
+import { static_owner_value_materializes } from "../../mutable_static_owner.ts";
 
 export function core_backend_host_boundaries(
   backend: CoreBackendGraph,
@@ -89,6 +91,20 @@ export function core_backend_proof(
   try {
     ctx = collect_core_drop_ctx(backend, core);
   } catch (error) {
+    const frozen_mutation = frozen_index_assignment(core.statements, new Set());
+
+    if (frozen_mutation) {
+      const issue = {
+        tag: "unsupported_codegen",
+        node: "stmt",
+        feature: "index_assign",
+        message: "Cannot mutate frozen/shareable core binding: " +
+          frozen_mutation.name,
+      } as const;
+      record_core_diagnostic_subject(issue, frozen_mutation);
+      return core_unsupported_codegen_proof(core, [issue]);
+    }
+
     const unsupported = core_unsupported_codegen_issue_from_analysis_error(
       error,
     );
@@ -180,6 +196,7 @@ export function core_backend_proof(
       "final_result",
       core_final_expr_ownership(backend, expr, ctx),
     );
+    record_core_diagnostic_subject(final_result, expr);
     const borrow_plan = core_borrow_plan(core, borrow_ctx, {
       ...graph_core_ownership_hooks(backend),
       closure_body_ctx: graph_core_borrow_closure_body_ctx,
@@ -209,8 +226,18 @@ export function core_backend_proof(
         graph_core_drop_closure_body_ctx(backend, expr, ctx),
       collect_stmt_locals: (stmt, ctx) =>
         collect_stmt_locals_for_proof(backend, stmt, ctx),
+      core_assignment_value: backend.type_check.core_assignment_value,
+      core_binding_value: backend.type_check.core_binding_value,
       collection_loop_body_ctx: (stmt, ctx) =>
         graph_core_drop_collection_loop_body_ctx(backend, stmt, ctx),
+      mutable_binding: (name, ctx) => {
+        if (!ctx.mutable_bindings) {
+          return false;
+        }
+        return ctx.mutable_bindings.has(name);
+      },
+      materialized_static_owner: (value, ctx) =>
+        static_owner_value_materializes(value, ctx),
       if_let_branch_ctx: (case_name, value_name, target, ctx) =>
         graph_core_drop_if_let_branch_ctx(
           backend,
@@ -286,6 +313,70 @@ export function core_backend_proof(
 
     throw error;
   }
+}
+
+function frozen_index_assignment(
+  statements: CoreStmt[],
+  frozen: Set<string>,
+): Extract<CoreStmt, { tag: "index_assign" }> | undefined {
+  for (const stmt of statements) {
+    if (stmt.tag === "bind") {
+      if (stmt.value.tag === "freeze") {
+        frozen.add(stmt.name);
+      } else {
+        frozen.delete(stmt.name);
+      }
+      continue;
+    }
+
+    if (stmt.tag === "assign") {
+      frozen.delete(stmt.name);
+      continue;
+    }
+
+    if (stmt.tag === "index_assign") {
+      if (frozen.has(stmt.name)) {
+        return stmt;
+      }
+      continue;
+    }
+
+    if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
+      const rejected = frozen_index_assignment(stmt.body, new Set(frozen));
+      if (rejected) {
+        return rejected;
+      }
+      continue;
+    }
+
+    if (stmt.tag === "if_else_stmt") {
+      const then_rejected = frozen_index_assignment(
+        stmt.then_body,
+        new Set(frozen),
+      );
+      if (then_rejected) {
+        return then_rejected;
+      }
+
+      const else_rejected = frozen_index_assignment(
+        stmt.else_body,
+        new Set(frozen),
+      );
+      if (else_rejected) {
+        return else_rejected;
+      }
+      continue;
+    }
+
+    if (stmt.tag === "range_loop" || stmt.tag === "collection_loop") {
+      const rejected = frozen_index_assignment(stmt.body, new Set(frozen));
+      if (rejected) {
+        return rejected;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function collect_core_drop_ctx(

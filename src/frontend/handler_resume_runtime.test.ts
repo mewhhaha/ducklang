@@ -1,4 +1,5 @@
 import { assert_equals, assert_includes, assert_throws } from "../assert.ts";
+import { Core } from "../core.ts";
 import { Source } from "../frontend.ts";
 
 const suspended_source = `
@@ -219,7 +220,7 @@ Deno.test("an escaped resumption allocates and dispatches indirectly", () => {
 });
 
 Deno.test("an abandoned resumption drops its union frame and closure", () => {
-  const wat = Source.wat(`
+  const source = `
 const suspended_type = union {
   suspended: Resume,
   done: I32
@@ -235,8 +236,30 @@ let suspend = Suspend {
 }
 let suspended: suspended_type = try run() with suspend
 0
-`);
+`;
+  const proof = Core.proof(Source.core(source));
+  const wat = Source.wat(source);
 
+  assert_equals(proof.issues, []);
+  assert_equals(
+    proof.drops.steps.map((step) => ({
+      allocation_id: step.allocation_id,
+      owner: step.owner,
+      reason: step.ownership.reason,
+      owned_children: step.owned_children,
+    })),
+    [{
+      allocation_id: "allocation#0",
+      owner: "suspended",
+      reason: "runtime_union",
+      owned_children: [{
+        allocation_ids: ["allocation#1"],
+        offset: 4,
+        ownership: { tag: "unique_heap", reason: "closure" },
+        layout: "closure_env.table_index_and_capture_slots",
+      }],
+    }],
+  );
   assert_includes(wat, "call $__alloc");
   assert_includes(wat, "call $__free");
 });

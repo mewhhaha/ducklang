@@ -19,6 +19,8 @@ export type RuntimeUnionLocalCtx = {
 };
 
 export type RuntimeUnionEmitCtx = RuntimeUnionLocalCtx & {
+  allocation_permits:
+    import("../allocation_emission.ts").CoreAllocationPermitState;
   heap: RuntimeUnionEmitHeap;
   scratch: CoreScratchHeap;
   scratch_return_resets: string[];

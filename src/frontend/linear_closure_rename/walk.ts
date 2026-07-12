@@ -1,5 +1,8 @@
 import { expect } from "../../expect.ts";
 import type { Field, FrontExpr, Param, Stmt } from "../ast.ts";
+import {
+  inherit_linear_source_span as inherit_source_span,
+} from "../linear_state.ts";
 
 export function rename_linear_closure_body(
   body: FrontExpr,
@@ -36,92 +39,92 @@ function rename_linear_closure_expr(
       return expr;
 
     case "is":
-      return {
+      return inherit_source_span({
         tag: "is",
         value: rename_linear_closure_expr(expr.value, renames),
         type_expr: expr.type_expr,
-      };
+      }, expr);
 
     case "var":
-      return {
+      return inherit_source_span({
         tag: "var",
         name: renamed_linear_closure_name(expr.name, renames),
-      };
+      }, expr);
 
     case "linear":
-      return {
+      return inherit_source_span({
         tag: "linear",
         name: renamed_linear_closure_name(expr.name, renames),
-      };
+      }, expr);
 
     case "prim":
-      return {
+      return inherit_source_span({
         tag: "prim",
         prim: expr.prim,
         left: rename_linear_closure_expr(expr.left, renames),
         right: rename_linear_closure_expr(expr.right, renames),
-      };
+      }, expr);
 
     case "lam": {
       const local = shadow_linear_closure_params(renames, expr.params);
-      return {
+      return inherit_source_span({
         tag: "lam",
         params: expr.params,
         body: rename_linear_closure_expr(expr.body, local),
-      };
+      }, expr);
     }
 
     case "rec": {
       const local = shadow_linear_closure_params(renames, expr.params);
-      return {
+      return inherit_source_span({
         tag: "rec",
         params: expr.params,
         body: rename_linear_closure_expr(expr.body, local),
-      };
+      }, expr);
     }
 
     case "app":
-      return {
+      return inherit_source_span({
         tag: "app",
         func: rename_linear_closure_expr(expr.func, renames),
         args: expr.args.map((arg) => rename_linear_closure_expr(arg, renames)),
-      };
+      }, expr);
 
     case "block":
-      return {
+      return inherit_source_span({
         tag: "block",
         statements: rename_linear_closure_block(expr.statements, renames),
-      };
+      }, expr);
 
     case "comptime":
-      return {
+      return inherit_source_span({
         tag: "comptime",
         expr: rename_linear_closure_expr(expr.expr, renames),
-      };
+      }, expr);
 
     case "borrow":
-      return {
+      return inherit_source_span({
         tag: "borrow",
         value: rename_linear_closure_expr(expr.value, renames),
-      };
+      }, expr);
 
     case "freeze":
-      return {
+      return inherit_source_span({
         tag: "freeze",
         value: rename_linear_closure_expr(expr.value, renames),
-      };
+      }, expr);
 
     case "scratch":
-      return {
+      return inherit_source_span({
         tag: "scratch",
         body: rename_linear_closure_expr(expr.body, renames),
-      };
+      }, expr);
 
     case "loop":
-      return {
+      return inherit_source_span({
         tag: "loop",
         body: rename_linear_closure_block(expr.body, renames),
-      };
+      }, expr);
 
     case "captured":
       return expr;
@@ -147,7 +150,7 @@ function rename_linear_closure_expr(
         local,
         expr.return_clause.param.name,
       );
-      return {
+      return inherit_source_span({
         ...expr,
         state,
         clauses,
@@ -158,46 +161,46 @@ function rename_linear_closure_expr(
             return_renames,
           ),
         },
-      };
+      }, expr);
     }
 
     case "try_with":
-      return {
+      return inherit_source_span({
         tag: "try_with",
         body: rename_linear_closure_expr(expr.body, renames),
         handler: rename_linear_closure_expr(expr.handler, renames),
-      };
+      }, expr);
 
     case "with":
-      return {
+      return inherit_source_span({
         tag: "with",
         base: rename_linear_closure_expr(expr.base, renames),
         fields: rename_linear_closure_fields(expr.fields, renames),
-      };
+      }, expr);
 
     case "struct_value":
-      return {
+      return inherit_source_span({
         tag: "struct_value",
         type_expr: rename_linear_closure_expr(expr.type_expr, renames),
         fields: rename_linear_closure_fields(expr.fields, renames),
         bracketed: expr.bracketed,
-      };
+      }, expr);
 
     case "struct_update":
-      return {
+      return inherit_source_span({
         tag: "struct_update",
         base: rename_linear_closure_expr(expr.base, renames),
         fields: rename_linear_closure_fields(expr.fields, renames),
-      };
+      }, expr);
 
     case "if":
-      return {
+      return inherit_source_span({
         tag: "if",
         cond: rename_linear_closure_expr(expr.cond, renames),
         then_branch: rename_linear_closure_expr(expr.then_branch, renames),
         else_branch: rename_linear_closure_expr(expr.else_branch, renames),
         implicit_else: expr.implicit_else,
-      };
+      }, expr);
 
     case "if_let": {
       let then_renames = renames;
@@ -206,7 +209,7 @@ function rename_linear_closure_expr(
         then_renames = shadow_linear_closure_name(renames, expr.value_name);
       }
 
-      return {
+      return inherit_source_span({
         tag: "if_let",
         case_name: expr.case_name,
         value_name: expr.value_name,
@@ -214,22 +217,22 @@ function rename_linear_closure_expr(
         then_branch: rename_linear_closure_expr(expr.then_branch, then_renames),
         else_branch: rename_linear_closure_expr(expr.else_branch, renames),
         implicit_else: expr.implicit_else,
-      };
+      }, expr);
     }
 
     case "field":
-      return {
+      return inherit_source_span({
         tag: "field",
         object: rename_linear_closure_expr(expr.object, renames),
         name: expr.name,
-      };
+      }, expr);
 
     case "index":
-      return {
+      return inherit_source_span({
         tag: "index",
         object: rename_linear_closure_expr(expr.object, renames),
         index: rename_linear_closure_expr(expr.index, renames),
-      };
+      }, expr);
 
     case "union_case": {
       let value: FrontExpr | undefined;
@@ -243,12 +246,12 @@ function rename_linear_closure_expr(
         type_expr = rename_linear_closure_expr(expr.type_expr, renames);
       }
 
-      return {
+      return inherit_source_span({
         tag: "union_case",
         name: expr.name,
         value,
         type_expr,
-      };
+      }, expr);
     }
   }
 }
@@ -284,64 +287,64 @@ function rename_linear_closure_stmt(
 ): Stmt {
   switch (stmt.tag) {
     case "bind":
-      return {
+      return inherit_source_span({
         tag: "bind",
         kind: stmt.kind,
         name: stmt.name,
         is_linear: stmt.is_linear,
         annotation: stmt.annotation,
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "state_bind":
-      return {
+      return inherit_source_span({
         tag: "state_bind",
         value_name: stmt.value_name,
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "bind_pattern":
-      return {
+      return inherit_source_span({
         tag: "bind_pattern",
         kind: stmt.kind,
         items: stmt.items,
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "resume_dup":
-      return {
+      return inherit_source_span({
         tag: "resume_dup",
         left: stmt.left,
         right: stmt.right,
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "assign":
-      return {
+      return inherit_source_span({
         tag: "assign",
         name: renamed_linear_closure_name(stmt.name, renames),
         mode: stmt.mode,
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "index_assign":
-      return {
+      return inherit_source_span({
         tag: "index_assign",
         name: renamed_linear_closure_name(stmt.name, renames),
         index: rename_linear_closure_expr(stmt.index, renames),
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "for_range": {
       const body_renames = shadow_linear_closure_name(renames, stmt.index);
-      return {
+      return inherit_source_span({
         tag: "for_range",
         index: stmt.index,
         start: rename_linear_closure_expr(stmt.start, renames),
         end: rename_linear_closure_expr(stmt.end, renames),
         step: rename_linear_closure_expr(stmt.step, renames),
         body: rename_linear_closure_block(stmt.body, body_renames),
-      };
+      }, stmt);
     }
 
     case "for_collection": {
@@ -351,21 +354,21 @@ function rename_linear_closure_stmt(
         body_renames = shadow_linear_closure_name(body_renames, stmt.index);
       }
 
-      return {
+      return inherit_source_span({
         tag: "for_collection",
         index: stmt.index,
         item: stmt.item,
         collection: rename_linear_closure_expr(stmt.collection, renames),
         body: rename_linear_closure_block(stmt.body, body_renames),
-      };
+      }, stmt);
     }
 
     case "if_stmt":
-      return {
+      return inherit_source_span({
         tag: "if_stmt",
         cond: rename_linear_closure_expr(stmt.cond, renames),
         body: rename_linear_closure_block(stmt.body, new Map(renames)),
-      };
+      }, stmt);
 
     case "if_let_stmt": {
       let body_renames = renames;
@@ -374,43 +377,43 @@ function rename_linear_closure_stmt(
         body_renames = shadow_linear_closure_name(renames, stmt.value_name);
       }
 
-      return {
+      return inherit_source_span({
         tag: "if_let_stmt",
         case_name: stmt.case_name,
         value_name: stmt.value_name,
         target: rename_linear_closure_expr(stmt.target, renames),
         body: rename_linear_closure_block(stmt.body, body_renames),
-      };
+      }, stmt);
     }
 
     case "type_check":
-      return {
+      return inherit_source_span({
         tag: "type_check",
         pattern: stmt.pattern,
         target: rename_linear_closure_expr(stmt.target, renames),
-      };
+      }, stmt);
 
     case "break":
       if (!stmt.value) {
         return stmt;
       }
 
-      return {
+      return inherit_source_span({
         tag: "break",
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "return":
-      return {
+      return inherit_source_span({
         tag: "return",
         value: rename_linear_closure_expr(stmt.value, renames),
-      };
+      }, stmt);
 
     case "expr":
-      return {
+      return inherit_source_span({
         tag: "expr",
         expr: rename_linear_closure_expr(stmt.expr, renames),
-      };
+      }, stmt);
 
     case "import":
     case "host_import":

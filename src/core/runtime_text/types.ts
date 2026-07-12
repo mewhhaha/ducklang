@@ -18,6 +18,8 @@ export type RuntimeTextLoopCtx = RuntimeTextTempCtx & {
 };
 
 export type RuntimeTextEmitCtx = RuntimeTextLoopCtx & {
+  allocation_permits:
+    import("../allocation_emission.ts").CoreAllocationPermitState;
   heap: RuntimeTextHeap;
   scratch: CoreScratchHeap;
   scratch_return_resets: string[];

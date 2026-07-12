@@ -12,6 +12,7 @@ export type Core = {
   host_imports?: Record<string, CoreHostImport>;
   statements: CoreStmt[];
   recFunctions?: Record<string, CoreRecFunction>;
+  allocation_permit_plan?: import("./allocation.ts").CoreAllocationPlan;
 };
 
 export type CoreCleanupEmission = {
@@ -29,6 +30,8 @@ export type CoreCleanupEmission = {
   scope: string;
   owner: string | undefined;
   pointer_local: string | undefined;
+  replacement_value_local: string | undefined;
+  replacement_old_local: string | undefined;
   statement_index: number | undefined;
   statement_path: number[] | undefined;
   byte_size: import("./allocation.ts").CoreAllocationByteSize;

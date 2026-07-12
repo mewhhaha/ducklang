@@ -2,6 +2,7 @@ import { expect } from "../../expect.ts";
 import type { CoreExpr } from "../ast.ts";
 import { core_expr_has_static_call_statement_scope } from "../scope_analysis.ts";
 import { substitute_core_call_expr } from "../substitute.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import { static_block_result } from "../type_static.ts";
 import { static_type_value } from "../type_static.ts";
 import { check_static_core_call_arity } from "./arity.ts";
@@ -18,6 +19,33 @@ type StaticCoreCallBranchHooks<ctx extends StaticCoreCallCtx> = {
     ctx: ctx,
   ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
 };
+
+export function static_core_call_binding_target<ctx>(
+  name: string,
+  value: CoreExpr,
+  ctx: ctx,
+  hooks: {
+    static_core_call_target?: (
+      expr: CoreExpr,
+      ctx: ctx,
+    ) => Extract<CoreExpr, { tag: "lam" }> | undefined;
+  },
+): boolean {
+  if (!hooks.static_core_call_target) {
+    return false;
+  }
+  if (value.tag !== "lam" || value.is_linear_closure) {
+    return false;
+  }
+  const target = hooks.static_core_call_target(
+    { tag: "var", name },
+    ctx,
+  );
+  if (!target) {
+    return false;
+  }
+  return target === value;
+}
 
 export function static_core_call_requires_scope(
   target: Extract<CoreExpr, { tag: "lam" }>,
@@ -136,21 +164,24 @@ export function static_core_call_branch_app<
   const else_target = hooks.static_core_call_target(branch.else_branch, ctx);
   expect(else_target, "Missing static branch else call target");
 
-  return {
+  const then_branch = record_core_expr_provenance({
+    tag: "app",
+    func: then_target,
+    args: expr.args,
+  }, expr);
+  const else_branch = record_core_expr_provenance({
+    tag: "app",
+    func: else_target,
+    args: expr.args,
+  }, expr);
+
+  return record_core_expr_provenance({
     tag: "if",
     cond: branch.cond,
-    then_branch: {
-      tag: "app",
-      func: then_target,
-      args: expr.args,
-    },
-    else_branch: {
-      tag: "app",
-      func: else_target,
-      args: expr.args,
-    },
+    then_branch,
+    else_branch,
     implicit_else: branch.implicit_else,
-  };
+  }, expr);
 }
 
 export function static_core_call_value<

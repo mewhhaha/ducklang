@@ -6,6 +6,8 @@ import type {
   CoreDropState,
   CoreUniqueHeapOwnership,
 } from "./types.ts";
+import type { CoreExpr } from "../ast.ts";
+import { record_core_diagnostic_subject } from "../source_origin.ts";
 
 export function drop_scope_owners(
   scope: string,
@@ -30,6 +32,7 @@ export function drop_exit_owners(
   scope: string,
   owners: Map<string, CoreDropOwner>,
   inherited: CoreDropOwner[],
+  retained_owners: Set<string> | undefined,
   escaped_owner: string | undefined,
   state: CoreDropState,
 ): void {
@@ -38,6 +41,10 @@ export function drop_exit_owners(
 
   for (let index = all_owners.length - 1; index >= 0; index -= 1) {
     const owner = all_owners[index];
+
+    if (retained_owners?.has(owner.name)) {
+      continue;
+    }
 
     if (owner.name === escaped_owner) {
       continue;
@@ -51,7 +58,16 @@ export function drop_exit_owners(
     emit_drop(edge, scope, owner.name, owner, state);
   }
 
-  owners.clear();
+  if (!retained_owners) {
+    owners.clear();
+    return;
+  }
+
+  for (const name of Array.from(owners.keys())) {
+    if (!retained_owners.has(name)) {
+      owners.delete(name);
+    }
+  }
 }
 
 export function emit_drop(
@@ -60,20 +76,33 @@ export function emit_drop(
   owner_name: string | undefined,
   owner: CoreDropOwner,
   state: CoreDropState,
+  subject?: CoreExpr,
 ): void {
   const storage = core_storage_class(owner.ownership);
-  state.steps.push({
+  let emitted_owner = owner_name;
+  if (owner.pointer === "temporary") {
+    emitted_owner = undefined;
+  }
+  const step = {
     tag: "heap_drop",
     id: "drop#" + state.next_drop.toString(),
     edge,
     scope,
-    owner: owner_name,
+    owner: emitted_owner,
     ownership: owner.ownership,
     storage,
     runtime: "reusable_free_list_allocator",
     reason: core_ownership_result_text(owner.ownership) + " " +
       drop_edge_text(edge) + " lowers to __free with reusable allocator",
-  });
+  } as const;
+  state.steps.push(step);
+  let diagnostic_subject = subject;
+  if (!diagnostic_subject) {
+    diagnostic_subject = owner.subject;
+  }
+  if (diagnostic_subject) {
+    record_core_diagnostic_subject(step, diagnostic_subject);
+  }
   state.next_drop += 1;
 }
 
@@ -83,10 +112,11 @@ export function emit_host_transfer(
   argument: number,
   owner: string | undefined,
   ownership: CoreUniqueHeapOwnership,
+  subject: CoreExpr,
   state: CoreDropState,
 ): void {
   const storage = core_storage_class(ownership);
-  state.steps.push({
+  const step = {
     tag: "host_transfer",
     id: "transfer#" + state.next_transfer.toString(),
     edge: "host_transfer",
@@ -99,7 +129,9 @@ export function emit_host_transfer(
     runtime: "host_owned",
     reason: core_ownership_result_text(ownership) +
       " transfers ownership to host/import " + callee,
-  });
+  } as const;
+  state.steps.push(step);
+  record_core_diagnostic_subject(step, subject);
   state.next_transfer += 1;
 }
 

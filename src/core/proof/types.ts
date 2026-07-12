@@ -36,11 +36,44 @@ export type CoreProofMissingEdge =
   | "invalid_ownership_transfer"
   | "missing_collection_or_text_fact"
   | "missing_collection_fact"
+  | "duplicate_value_inventory"
+  | "orphan_value_inventory"
+  | "missing_value_owner"
+  | "missing_value_lifetime"
+  | "missing_value_origin"
+  | "missing_value_escape"
+  | "missing_value_terminal"
   | "unsupported_codegen";
 
 export type CoreStorageProofRow =
   | { tag: "final_result"; analysis: CoreEscapeAnalysis }
   | { tag: "allocation"; fact: CoreAllocationFact };
+
+export type CoreValueInventoryTerminal =
+  | { tag: "drop"; drop_id: string }
+  | { tag: "transfer"; transfer_id: string }
+  | { tag: "freeze"; freeze_id: string }
+  | { tag: "returned_owner"; allocation_ids?: string[] }
+  | { tag: "scratch_reset"; scope: string }
+  | { tag: "no_cleanup" }
+  | { tag: "missing_temporary_cleanup" };
+
+export type CoreValueInventoryRow = {
+  tag: "final_result" | "allocation";
+  value_id: string;
+  owner_id: string;
+  lifetime_id: string;
+  origin_id: string;
+  escape: {
+    edge: string;
+    escapes: boolean;
+    decision: "allowed" | "rejected";
+  };
+  terminal: CoreValueInventoryTerminal;
+  allocation_id?: string;
+  source_value_id?: string;
+  source_value_ids?: string[];
+};
 
 export type CoreCleanupProofRow = CoreCleanupStep | CoreDropStep;
 
@@ -133,6 +166,20 @@ export type CoreProofIssue =
     message: string;
   }
   | {
+    tag: "value_inventory";
+    missing_edge:
+      | "duplicate_value_inventory"
+      | "orphan_value_inventory"
+      | "missing_value_owner"
+      | "missing_value_lifetime"
+      | "missing_value_origin"
+      | "missing_value_escape"
+      | "missing_value_terminal"
+      | "missing_temporary_cleanup";
+    value_id: string;
+    message: string;
+  }
+  | {
     tag: "unsupported_codegen";
     missing_edge:
       | "unsupported_codegen"
@@ -148,6 +195,7 @@ export type CoreBaselineProof = {
   managed_storage: "disabled";
   ok: boolean;
   storage_rows: CoreStorageProofRow[];
+  inventory_rows: CoreValueInventoryRow[];
   lifetime_rows: CoreLifetimeScope[];
   borrow_view_rows: CoreBorrowEdge[];
   scratch_result_rows: CoreCleanupStep[];
@@ -170,6 +218,7 @@ export type CoreBaselineProof = {
 };
 
 export type CoreBaselineProofInput = {
+  inventory_rows?: CoreValueInventoryRow[];
   final_result: CoreEscapeAnalysis;
   borrow_plan: CoreBorrowPlan;
   borrows: CoreBorrowValidation;

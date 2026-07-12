@@ -255,10 +255,27 @@ function contains_reserved_linear_stmt(
   return false;
 }
 
-function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
+export function contains_explicit_linear_use(
+  expr: FrontExpr,
+  names: Set<string>,
+): boolean {
+  return uses_linear_name(expr, names, true);
+}
+
+function uses_linear_name(
+  expr: FrontExpr,
+  names: Set<string>,
+  explicit_only = false,
+): boolean {
   switch (expr.tag) {
-    case "var":
     case "linear":
+      return names.has(expr.name);
+
+    case "var":
+      if (explicit_only) {
+        return false;
+      }
+
       return names.has(expr.name);
 
     case "num":
@@ -273,23 +290,29 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
       return false;
 
     case "is":
-      return uses_linear_name(expr.value, names);
+      return uses_linear_name(expr.value, names, explicit_only);
 
     case "prim":
-      return uses_linear_name(expr.left, names) ||
-        uses_linear_name(expr.right, names);
+      return uses_linear_name(expr.left, names, explicit_only) ||
+        uses_linear_name(expr.right, names, explicit_only);
 
     case "lam":
-    case "rec":
-      return false;
+    case "rec": {
+      if (!explicit_only) {
+        return false;
+      }
+
+      const local = shadow_linear_names(names, expr.params);
+      return uses_linear_name(expr.body, local, true);
+    }
 
     case "app": {
-      if (uses_linear_name(expr.func, names)) {
+      if (uses_linear_name(expr.func, names, explicit_only)) {
         return true;
       }
 
       for (const arg of expr.args) {
-        if (uses_linear_name(arg, names)) {
+        if (uses_linear_name(arg, names, explicit_only)) {
           return true;
         }
       }
@@ -298,37 +321,31 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
     }
 
     case "block":
-      for (const stmt of expr.statements) {
-        if (stmt_uses_linear_name(stmt, names)) {
-          return true;
-        }
-      }
-
-      return false;
+      return stmts_use_linear_name(expr.statements, names, explicit_only);
 
     case "comptime":
-      return uses_linear_name(expr.expr, names);
+      return uses_linear_name(expr.expr, names, explicit_only);
 
     case "borrow":
-      return uses_linear_name(expr.value, names);
+      return uses_linear_name(expr.value, names, explicit_only);
 
     case "freeze":
-      return uses_linear_name(expr.value, names);
+      return uses_linear_name(expr.value, names, explicit_only);
 
     case "scratch":
-      return uses_linear_name(expr.body, names);
+      return uses_linear_name(expr.body, names, explicit_only);
 
     case "loop":
-      return stmts_use_linear_name(expr.body, names);
+      return stmts_use_linear_name(expr.body, names, explicit_only);
 
     case "captured":
-      return uses_linear_name(expr.expr, names);
+      return uses_linear_name(expr.expr, names, explicit_only);
 
     case "handler": {
       const local = new Set(names);
 
       for (const state of expr.state) {
-        if (uses_linear_name(state.value, local)) {
+        if (uses_linear_name(state.value, local, explicit_only)) {
           return true;
         }
 
@@ -338,7 +355,7 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
       for (const clause of expr.clauses) {
         const clause_names = shadow_linear_names(local, clause.params);
 
-        if (uses_linear_name(clause.body, clause_names)) {
+        if (uses_linear_name(clause.body, clause_names, explicit_only)) {
           return true;
         }
       }
@@ -347,20 +364,24 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
         local,
         [expr.return_clause.param],
       );
-      return uses_linear_name(expr.return_clause.body, return_names);
+      return uses_linear_name(
+        expr.return_clause.body,
+        return_names,
+        explicit_only,
+      );
     }
 
     case "try_with":
-      return uses_linear_name(expr.body, names) ||
-        uses_linear_name(expr.handler, names);
+      return uses_linear_name(expr.body, names, explicit_only) ||
+        uses_linear_name(expr.handler, names, explicit_only);
 
     case "with": {
-      if (uses_linear_name(expr.base, names)) {
+      if (uses_linear_name(expr.base, names, explicit_only)) {
         return true;
       }
 
       for (const field of expr.fields) {
-        if (uses_linear_name(field.value, names)) {
+        if (uses_linear_name(field.value, names, explicit_only)) {
           return true;
         }
       }
@@ -369,12 +390,12 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
     }
 
     case "struct_value": {
-      if (uses_linear_name(expr.type_expr, names)) {
+      if (uses_linear_name(expr.type_expr, names, explicit_only)) {
         return true;
       }
 
       for (const field of expr.fields) {
-        if (uses_linear_name(field.value, names)) {
+        if (uses_linear_name(field.value, names, explicit_only)) {
           return true;
         }
       }
@@ -383,12 +404,12 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
     }
 
     case "struct_update": {
-      if (uses_linear_name(expr.base, names)) {
+      if (uses_linear_name(expr.base, names, explicit_only)) {
         return true;
       }
 
       for (const field of expr.fields) {
-        if (uses_linear_name(field.value, names)) {
+        if (uses_linear_name(field.value, names, explicit_only)) {
           return true;
         }
       }
@@ -397,59 +418,71 @@ function uses_linear_name(expr: FrontExpr, names: Set<string>): boolean {
     }
 
     case "if":
-      return uses_linear_name(expr.cond, names) ||
-        uses_linear_name(expr.then_branch, names) ||
-        uses_linear_name(expr.else_branch, names);
+      return uses_linear_name(expr.cond, names, explicit_only) ||
+        uses_linear_name(expr.then_branch, names, explicit_only) ||
+        uses_linear_name(expr.else_branch, names, explicit_only);
 
-    case "if_let":
-      return uses_linear_name(expr.target, names) ||
-        uses_linear_name(expr.then_branch, names) ||
-        uses_linear_name(expr.else_branch, names);
+    case "if_let": {
+      let then_names = names;
+
+      if (expr.value_name) {
+        then_names = new Set(names);
+        then_names.delete(expr.value_name);
+      }
+
+      return uses_linear_name(expr.target, names, explicit_only) ||
+        uses_linear_name(expr.then_branch, then_names, explicit_only) ||
+        uses_linear_name(expr.else_branch, names, explicit_only);
+    }
 
     case "field":
-      return uses_linear_name(expr.object, names);
+      return uses_linear_name(expr.object, names, explicit_only);
 
     case "index":
-      return uses_linear_name(expr.object, names) ||
-        uses_linear_name(expr.index, names);
+      return uses_linear_name(expr.object, names, explicit_only) ||
+        uses_linear_name(expr.index, names, explicit_only);
 
     case "union_case":
       if (!expr.value) {
         return false;
       }
 
-      return uses_linear_name(expr.value, names);
+      return uses_linear_name(expr.value, names, explicit_only);
   }
 }
 
-function stmt_uses_linear_name(stmt: Stmt, names: Set<string>): boolean {
+function stmt_uses_linear_name(
+  stmt: Stmt,
+  names: Set<string>,
+  explicit_only = false,
+): boolean {
   if (stmt.tag === "bind") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "state_bind") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "bind_pattern") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "resume_dup") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "assign") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "index_assign") {
-    return uses_linear_name(stmt.index, names) ||
-      uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.index, names, explicit_only) ||
+      uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "return") {
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "break") {
@@ -457,47 +490,67 @@ function stmt_uses_linear_name(stmt: Stmt, names: Set<string>): boolean {
       return false;
     }
 
-    return uses_linear_name(stmt.value, names);
+    return uses_linear_name(stmt.value, names, explicit_only);
   }
 
   if (stmt.tag === "expr") {
-    return uses_linear_name(stmt.expr, names);
+    return uses_linear_name(stmt.expr, names, explicit_only);
   }
 
   if (stmt.tag === "for_range") {
-    return uses_linear_name(stmt.start, names) ||
-      uses_linear_name(stmt.end, names) ||
-      uses_linear_name(stmt.step, names) ||
-      stmts_use_linear_name(stmt.body, names);
+    const body_names = new Set(names);
+    body_names.delete(stmt.index);
+    return uses_linear_name(stmt.start, names, explicit_only) ||
+      uses_linear_name(stmt.end, names, explicit_only) ||
+      uses_linear_name(stmt.step, names, explicit_only) ||
+      stmts_use_linear_name(stmt.body, body_names, explicit_only);
   }
 
   if (stmt.tag === "for_collection") {
-    return uses_linear_name(stmt.collection, names) ||
-      stmts_use_linear_name(stmt.body, names);
+    const body_names = new Set(names);
+    body_names.delete(stmt.item);
+
+    if (stmt.index) {
+      body_names.delete(stmt.index);
+    }
+
+    return uses_linear_name(stmt.collection, names, explicit_only) ||
+      stmts_use_linear_name(stmt.body, body_names, explicit_only);
   }
 
   if (stmt.tag === "if_stmt") {
-    return uses_linear_name(stmt.cond, names) ||
-      stmts_use_linear_name(stmt.body, names);
+    return uses_linear_name(stmt.cond, names, explicit_only) ||
+      stmts_use_linear_name(stmt.body, names, explicit_only);
   }
 
   if (stmt.tag === "if_let_stmt") {
-    return uses_linear_name(stmt.target, names) ||
-      stmts_use_linear_name(stmt.body, names);
+    let body_names = names;
+
+    if (stmt.value_name) {
+      body_names = new Set(names);
+      body_names.delete(stmt.value_name);
+    }
+
+    return uses_linear_name(stmt.target, names, explicit_only) ||
+      stmts_use_linear_name(stmt.body, body_names, explicit_only);
   }
 
   if (stmt.tag === "type_check") {
-    return uses_linear_name(stmt.target, names);
+    return uses_linear_name(stmt.target, names, explicit_only);
   }
 
   return false;
 }
 
-function stmts_use_linear_name(stmts: Stmt[], names: Set<string>): boolean {
+function stmts_use_linear_name(
+  stmts: Stmt[],
+  names: Set<string>,
+  explicit_only = false,
+): boolean {
   const local = new Set(names);
 
   for (const stmt of stmts) {
-    if (stmt_uses_linear_name(stmt, local)) {
+    if (stmt_uses_linear_name(stmt, local, explicit_only)) {
       return true;
     }
 

@@ -1,37 +1,49 @@
 import type { CoreExpr, CoreStmt } from "../ast.ts";
+import { static_core_call_binding_target } from "../static_call.ts";
 import type { CoreAllocationHooks } from "./types.ts";
 
-export function allocation_stmt_value_is_scoped_static_call_target<ctx>(
+export function allocation_stmt_value_is_static_call_target<ctx>(
   stmt: Extract<CoreStmt, { tag: "bind" | "assign" }>,
   ctx: ctx,
   hooks: CoreAllocationHooks<ctx>,
 ): boolean {
-  if (!hooks.static_core_call_target) {
+  if (
+    static_core_call_binding_target(
+      stmt.name,
+      stmt.value,
+      ctx,
+      hooks,
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    stmt.value.tag !== "lam" ||
+    !hooks.block_ctx ||
+    !hooks.collect_stmt_locals
+  ) {
     return false;
   }
 
-  if (!hooks.static_core_call_requires_scope) {
-    return false;
+  const binding_ctx = hooks.block_ctx(ctx);
+  try {
+    hooks.collect_stmt_locals(stmt, binding_ctx);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Unbound core local: ")
+    ) {
+      return false;
+    }
+    throw error;
   }
-
-  if (stmt.value.tag !== "lam") {
-    return false;
-  }
-
-  const target = hooks.static_core_call_target(
-    { tag: "var", name: stmt.name },
-    ctx,
+  return static_core_call_binding_target(
+    stmt.name,
+    stmt.value,
+    binding_ctx,
+    hooks,
   );
-
-  if (!target) {
-    return false;
-  }
-
-  if (target !== stmt.value) {
-    return false;
-  }
-
-  return hooks.static_core_call_requires_scope(target);
 }
 
 export function scoped_static_allocation_call_value<ctx>(

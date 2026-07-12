@@ -226,6 +226,7 @@ function clone_field_owner_aliases(
   for (const [name, alias] of aliases) {
     cloned.set(name, {
       owners: [...alias.owners],
+      iteration_scope: alias.iteration_scope,
       ownership: alias.ownership,
     });
   }
@@ -268,6 +269,7 @@ export function merge_optional_branch_borrow_aliases(
       continue;
     }
 
+    reject_collection_loop_borrow_escape(view, parent_scope, state);
     bind_stored_borrow_view_alias(
       name,
       promote_stored_borrow_view(view, parent_scope, state),
@@ -398,6 +400,7 @@ export function merge_field_owner_aliases(
 
   const owners: string[] = [];
   let ownership = first.ownership;
+  let iteration_scope = first.iteration_scope;
 
   for (const alias of aliases) {
     for (const owner of alias.owners) {
@@ -411,10 +414,15 @@ export function merge_field_owner_aliases(
     if (alias.ownership.tag === "unique_heap") {
       ownership = alias.ownership;
     }
+
+    if (!iteration_scope && alias.iteration_scope) {
+      iteration_scope = alias.iteration_scope;
+    }
   }
 
   return {
     owners,
+    iteration_scope,
     ownership,
   };
 }
@@ -432,6 +440,7 @@ export function promote_stored_borrow_view(
     owners: [...view.owners],
     borrow_id: view.borrow_id,
     scope,
+    iteration_scope: view.iteration_scope,
     ownership: view.ownership,
   };
 }
@@ -465,6 +474,7 @@ export function bind_field_owner_alias(
   aliases.owners.delete(name);
   aliases.field_owners.set(name, {
     owners: [...field_owner.owners],
+    iteration_scope: field_owner.iteration_scope,
     ownership: field_owner.ownership,
   });
 }
@@ -472,6 +482,7 @@ export function bind_field_owner_alias(
 export function bind_collection_loop_item_owner_alias<ctx>(
   item: string,
   collection: CoreExpr,
+  iteration_scope: string | undefined,
   ctx: ctx,
   hooks: CoreBorrowHooks<ctx>,
   aliases: CoreBorrowAliases,
@@ -500,6 +511,7 @@ export function bind_collection_loop_item_owner_alias<ctx>(
 
   bind_field_owner_alias(item, {
     owners,
+    iteration_scope,
     ownership,
   }, aliases);
 }
@@ -568,6 +580,7 @@ function bind_if_let_payload_ownership_alias(
 ): void {
   bind_field_owner_alias(value_name, {
     owners,
+    iteration_scope: undefined,
     ownership,
   }, aliases);
 }
@@ -817,6 +830,7 @@ export function bind_stored_borrow_view_alias(
     owners: [...view.owners],
     borrow_id: view.borrow_id,
     scope: view.scope,
+    iteration_scope: view.iteration_scope,
     ownership: view.ownership,
   });
 }
@@ -853,6 +867,7 @@ function field_owner_for_expr<ctx>(
 
   return {
     owners,
+    iteration_scope: iteration_scope_for_borrow_value(object, aliases),
     ownership: core_expr_ownership(value, ctx, hooks),
   };
 }
@@ -866,6 +881,33 @@ export function field_owner_for_borrow_value(
   }
 
   return aliases.field_owners.get(value.name);
+}
+
+export function iteration_scope_for_borrow_value(
+  value: CoreExpr,
+  aliases: CoreBorrowAliases,
+): string | undefined {
+  if (value.tag === "var") {
+    const field_owner = aliases.field_owners.get(value.name);
+
+    if (field_owner) {
+      return field_owner.iteration_scope;
+    }
+
+    const view = aliases.views.get(value.name);
+
+    if (view) {
+      return view.iteration_scope;
+    }
+
+    return undefined;
+  }
+
+  if (value.tag === "field" || value.tag === "index") {
+    return iteration_scope_for_borrow_value(value.object, aliases);
+  }
+
+  return undefined;
 }
 
 export function stored_field_owner_for_value(
@@ -963,4 +1005,53 @@ export function clear_borrow_alias(
   aliases.owners.delete(name);
   aliases.field_owners.delete(name);
   aliases.views.delete(name);
+}
+
+function reject_collection_loop_borrow_escape(
+  view: CoreStoredBorrowView,
+  target_scope: string,
+  state: CoreBorrowState,
+): void {
+  const iteration_scope = view.iteration_scope;
+
+  if (
+    !iteration_scope || scope_is_within(target_scope, iteration_scope, state)
+  ) {
+    return;
+  }
+
+  for (const edge of state.edges) {
+    if (edge.id !== view.borrow_id) {
+      continue;
+    }
+
+    edge.source_scope = iteration_scope;
+    edge.target_scope = target_scope;
+    edge.decision = {
+      tag: "rejected",
+      reason: "borrow view rooted in collection iteration " +
+        iteration_scope + " cannot escape to " + target_scope,
+    };
+    return;
+  }
+
+  throw new Error("Missing collection-loop borrow edge " + view.borrow_id);
+}
+
+function scope_is_within(
+  scope: string,
+  ancestor: string,
+  state: CoreBorrowState,
+): boolean {
+  let current: string | undefined = scope;
+
+  while (current) {
+    if (current === ancestor) {
+      return true;
+    }
+
+    current = state.scope_parents.get(current);
+  }
+
+  return false;
 }

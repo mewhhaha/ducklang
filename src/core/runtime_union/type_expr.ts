@@ -29,7 +29,7 @@ export function runtime_union_type_expr<ctx extends RuntimeUnionCtx>(
     return constructor_type;
   }
 
-  if (value.tag === "var") {
+  if (value.tag === "var" || value.tag === "linear") {
     const local = ctx.union_locals.get(value.name);
 
     if (local) {

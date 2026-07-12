@@ -11,8 +11,16 @@ import {
 } from "./context.ts";
 import { block_body, core_expr, core_param } from "./expr.ts";
 import { validate_named_recursive_tail_binding } from "./rec.ts";
+import { record_optional_core_source_origin } from "../source_origin.ts";
 
 export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
+  return record_optional_core_source_origin(
+    core_stmt_untracked(stmt, ctx),
+    stmt,
+  );
+}
+
+function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
   switch (stmt.tag) {
     case "bind": {
       if (stmt.is_recursive) {
@@ -48,7 +56,11 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         if (!methods) {
           throw new Error("Missing dynamic capability method facts: " + name);
         }
-        value = strip_capability_method_fields(value, methods);
+        value = strip_capability_method_fields(
+          value,
+          methods,
+          ctx.host_import_names,
+        );
       }
 
       return {
@@ -227,31 +239,66 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
 function strip_capability_method_fields(
   value: CoreExpr,
   methods: Map<string, string>,
+  host_import_names: Set<string>,
 ): CoreExpr {
   if (value.tag === "var" || value.tag === "linear") {
     return value;
   }
 
   if (value.tag === "struct_value") {
+    const removed_names = new Set(methods.keys());
+    for (const field of value.fields) {
+      if (
+        field.value.tag === "var" && host_import_names.has(field.value.name)
+      ) {
+        removed_names.add(field.name);
+      }
+    }
+    const fields = value.fields.filter((field) => {
+      return !removed_names.has(field.name);
+    });
     let type_expr = value.type_expr;
     if (type_expr.tag === "struct_type") {
       type_expr = {
         ...type_expr,
-        fields: type_expr.fields.filter((field) => !methods.has(field.name)),
+        fields: type_expr.fields.filter((field) => {
+          return !removed_names.has(field.name);
+        }),
+      };
+    } else if (type_expr.tag === "var" && type_expr.name === "object_type") {
+      type_expr = {
+        tag: "struct_type",
+        fields: fields.map((field) => {
+          return {
+            name: field.name,
+            type_name: runtime_capability_field_type_name(
+              field.name,
+              field.value,
+            ),
+          };
+        }),
       };
     }
     return {
       ...value,
       type_expr,
-      fields: value.fields.filter((field) => !methods.has(field.name)),
+      fields,
     };
   }
 
   if (value.tag === "if") {
     return {
       ...value,
-      then_branch: strip_capability_method_fields(value.then_branch, methods),
-      else_branch: strip_capability_method_fields(value.else_branch, methods),
+      then_branch: strip_capability_method_fields(
+        value.then_branch,
+        methods,
+        host_import_names,
+      ),
+      else_branch: strip_capability_method_fields(
+        value.else_branch,
+        methods,
+        host_import_names,
+      ),
     };
   }
 
@@ -264,13 +311,94 @@ function strip_capability_method_fields(
     }
     statements[final_index] = {
       ...final_stmt,
-      expr: strip_capability_method_fields(final_stmt.expr, methods),
+      expr: strip_capability_method_fields(
+        final_stmt.expr,
+        methods,
+        host_import_names,
+      ),
     };
     return { ...value, statements };
   }
 
   throw new Error(
     "Dynamic capability table must lower to a struct or conditional struct",
+  );
+}
+
+function runtime_capability_field_type_name(
+  field_name: string,
+  value: CoreExpr,
+): string {
+  if (value.tag === "num") {
+    if (value.type === "i32") {
+      return "I32";
+    }
+    if (value.type === "i64") {
+      return "I64";
+    }
+  }
+  if (value.tag === "text") {
+    return "Text";
+  }
+  if (value.tag === "borrow" || value.tag === "freeze") {
+    return runtime_capability_field_type_name(field_name, value.value);
+  }
+  if (value.tag === "comptime") {
+    return runtime_capability_field_type_name(field_name, value.expr);
+  }
+  if (value.tag === "scratch") {
+    return runtime_capability_field_type_name(field_name, value.body);
+  }
+  if (value.tag === "app" && value.func.tag === "var") {
+    if (value.func.name === "append" || value.func.name === "slice") {
+      return "Text";
+    }
+    if (
+      value.func.name === "runtime_i32_slice" ||
+      value.func.name === "runtime_text_slice"
+    ) {
+      return "I32";
+    }
+  }
+  if (value.tag === "union_case" && value.type_expr?.tag === "var") {
+    return value.type_expr.name;
+  }
+  if (
+    value.tag === "struct_value" && value.type_expr.tag === "var" &&
+    value.type_expr.name !== "object_type"
+  ) {
+    return value.type_expr.name;
+  }
+  if (value.tag === "if") {
+    const then_type = runtime_capability_field_type_name(
+      field_name,
+      value.then_branch,
+    );
+    const else_type = runtime_capability_field_type_name(
+      field_name,
+      value.else_branch,
+    );
+    if (then_type !== else_type) {
+      throw new Error(
+        "Dynamic capability field " + field_name +
+          " has incompatible branch types: " + then_type + " and " +
+          else_type,
+      );
+    }
+    return then_type;
+  }
+  if (value.tag === "block") {
+    const final_stmt = value.statements[value.statements.length - 1];
+    if (final_stmt?.tag === "expr") {
+      return runtime_capability_field_type_name(field_name, final_stmt.expr);
+    }
+    if (final_stmt?.tag === "return") {
+      return runtime_capability_field_type_name(field_name, final_stmt.value);
+    }
+  }
+  throw new Error(
+    "Cannot infer dynamic capability field " + field_name +
+      " runtime type from " + value.tag,
   );
 }
 
@@ -367,6 +495,10 @@ function capability_method_table(
       continue;
     }
     dynamic = true;
+  }
+
+  if (methods.size === 0) {
+    return undefined;
   }
 
   return { methods, dynamic };

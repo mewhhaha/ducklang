@@ -6,6 +6,7 @@ import {
   runtime_aggregate_layout_for_type,
   type RuntimeAggregateField,
 } from "./runtime_aggregate.ts";
+import { record_core_expr_provenance } from "./subject_provenance.ts";
 import { static_core_call_branch_app } from "./static_call.ts";
 import { static_block_result } from "./type_static.ts";
 
@@ -95,7 +96,10 @@ export function static_struct_value<ctx extends StaticStructCtx>(
       return undefined;
     }
 
-    return dynamic_struct_if_value(expr.cond, branches);
+    return record_core_expr_provenance(
+      dynamic_struct_if_value(expr.cond, branches),
+      expr,
+    );
   }
 
   if (expr.tag === "field") {

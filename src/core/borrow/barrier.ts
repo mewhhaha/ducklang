@@ -1,3 +1,9 @@
+import type { CoreExpr, CoreStmt } from "../ast.ts";
+import {
+  find_core_diagnostic_subject,
+  record_core_diagnostic_related_subject,
+  record_core_diagnostic_subject,
+} from "../source_origin.ts";
 import type { CoreBorrowBarrierAction, CoreBorrowState } from "./types.ts";
 
 export function check_borrowed_owner_barriers(
@@ -5,9 +11,10 @@ export function check_borrowed_owner_barriers(
   action: CoreBorrowBarrierAction,
   scope: string,
   state: CoreBorrowState,
+  subject: CoreExpr | CoreStmt,
 ): void {
   for (const owner of owners) {
-    check_borrowed_owner_barrier(owner, action, scope, state);
+    check_borrowed_owner_barrier(owner, action, scope, state, subject);
   }
 }
 
@@ -16,6 +23,7 @@ function check_borrowed_owner_barrier(
   action: CoreBorrowBarrierAction,
   scope: string,
   state: CoreBorrowState,
+  subject: CoreExpr | CoreStmt,
 ): void {
   for (const active of state.active_borrows) {
     if (active.owner !== owner) {
@@ -26,7 +34,7 @@ function check_borrowed_owner_barrier(
       continue;
     }
 
-    state.barriers.push({
+    const barrier = {
       scope,
       owner,
       action,
@@ -34,7 +42,13 @@ function check_borrowed_owner_barrier(
       message: "Cannot " + borrow_barrier_action_text(action) +
         " borrowed owner " + owner + " in " + scope + " while " +
         active.id + " is active",
-    });
+    };
+    state.barriers.push(barrier);
+    record_core_diagnostic_subject(barrier, subject);
+    const borrow_subject = find_core_diagnostic_subject(active);
+    if (borrow_subject) {
+      record_core_diagnostic_related_subject(barrier, borrow_subject);
+    }
   }
 }
 

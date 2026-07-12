@@ -40,16 +40,17 @@ export function create_core_backend_graph_app(
         index_expr,
         ctx,
       ),
-    emit_runtime_text_append: (left, right, ctx) =>
-      deps.text().emit_runtime_text_append(left, right, ctx),
+    emit_runtime_text_append: (left, right, subject, ctx) =>
+      deps.text().emit_runtime_text_append(left, right, subject, ctx),
     emit_runtime_text_len: (collection, ctx) =>
       deps.text().emit_runtime_text_len(collection, ctx),
     emit_runtime_text_slice: (
+      subject: CoreExpr,
       text: CoreExpr,
       start: CoreExpr,
       end: CoreExpr,
       ctx: EmitCtx,
-    ) => deps.text().emit_runtime_text_slice(text, start, end, ctx),
+    ) => deps.text().emit_runtime_text_slice(subject, text, start, end, ctx),
     emit_scoped_static_core_call:
       deps.static_call().emit_scoped_static_core_call,
     expr_type: (expr, ctx) => deps.expr_type().expr_type(expr, ctx),

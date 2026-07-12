@@ -70,9 +70,9 @@ let h = if 1 { f } else { g }
   const aliased_proof = Core.proof(aliased_alternatives);
 
   assert_equals(aliased_proof.ok, true);
-  assert_equals(aliased_proof.drops.steps[0]?.allocation_id, "allocation#1");
-  assert_equals(aliased_proof.drops.steps[1]?.allocation_id, "allocation#0");
-  assert_equals(aliased_proof.drops.steps[2]?.allocation_ids, [
+  assert_equals(aliased_proof.drops.steps.length, 1);
+  assert_equals(aliased_proof.drops.steps[0]?.allocation_id, undefined);
+  assert_equals(aliased_proof.drops.steps[0]?.allocation_ids, [
     "allocation#0",
     "allocation#1",
   ]);
@@ -114,17 +114,12 @@ len(pending)
     [
       {
         edge: "assignment_replace",
-        allocation_id: undefined,
-        allocation_ids: ["allocation#0", "allocation#1"],
-      },
-      {
-        edge: "break_exit",
-        allocation_id: "allocation#2",
+        allocation_id: "allocation#0",
         allocation_ids: undefined,
       },
       {
-        edge: "scope_exit",
-        allocation_id: "allocation#2",
+        edge: "assignment_replace",
+        allocation_id: "allocation#1",
         allocation_ids: undefined,
       },
       {
@@ -1106,7 +1101,11 @@ let user: user_type = make(40)
     assert_equals(proof.transfers.transfers[0]?.scope, fixture.transfer_scope);
     assert_equals(cleanup?.scope, fixture.cleanup_scope);
     assert_equals(cleanup?.owner, "user");
-    assert_equals(cleanup?.allocation_id !== undefined, true);
+    assert_equals(cleanup?.allocation_id, undefined);
+    assert_equals(cleanup?.allocation_ids, [
+      "allocation#3",
+      "allocation#5",
+    ]);
     assert_equals(cleanup?.alignment, 8);
     assert_equals(cleanup?.layout, "runtime_aggregate.aligned_fields");
     assert_equals(
@@ -1911,11 +1910,11 @@ f(1)
 
   const captured_closure_core = Source.core(Source.parse(`
 let flag = 1
-let add = if flag {
+let add = freeze (if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
+})
 let run = (y: Int) => add(y) + 10
 
 run(30)
@@ -2538,10 +2537,11 @@ let make_scores = if flag {
   () => scores_type { first: 1, second: 2 }
 }
 let scores: scores_type = make_scores()
+let frozen_scores: scores_type = freeze scores
 let make_user = if flag {
-  () => user_type { scores: scores, bonus: 1 }
+  () => user_type { scores: frozen_scores, bonus: 1 }
 } else {
-  () => user_type { scores: scores, bonus: 2 }
+  () => user_type { scores: frozen_scores, bonus: 2 }
 }
 let user: user_type = make_user()
 let total = 0
@@ -2982,7 +2982,7 @@ mixed[i] = result_type.err(4)
   );
 });
 
-Deno.test("Core.emit lowers captured runtime aggregate union index assignment", () => {
+Deno.test("Core rejects runtime aggregate union mutation closure capture", () => {
   const core = Source.core(Source.parse(`
 const result_type = union {
   ok: Int,
@@ -3007,30 +3007,19 @@ let make_slots = if flag {
   }
 }
 let slots: slots_type = make_slots(1, 2)
-let write = if flag {
-  (i: Int, value: Int) => {
-    slots[i] = result_type.ok(value)
-    0
-  }
-} else {
-  (i: Int, value: Int) => {
-    slots[i] = result_type.err(value)
-    0
-  }
+let write = (i: Int, value: Int) => {
+  slots[i] = result_type.ok(value)
+  0
 }
 
 write(1, 2)
 slots
 `));
-  const wat = Emit.emit(Mod, Core.mod(core));
-
-  assert_equals(Typed.type(Core, core), "i32");
-  assert_includes(wat, "call_indirect");
-  assert_includes(wat, "(local $slots i32)");
-  assert_includes(wat, "i32.store offset=0");
-  assert_includes(wat, "i32.store offset=4");
-  assert_includes(wat, "(local $_aggregate_index#");
-  assert_includes(wat, "(local $_aggregate_value#");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(core)),
+    "unique_heap runtime_aggregate capture requires linear closure ownership " +
+      "support",
+  );
 });
 
 Deno.test("Core.emit lowers runtime aggregate nested index assignment", () => {
@@ -3150,7 +3139,7 @@ mixed[i] = pair_type { left: 4, right: 5 }
   );
 });
 
-Deno.test("Core.emit lowers captured runtime aggregate nested index assignment", () => {
+Deno.test("Core rejects runtime aggregate nested mutation closure capture", () => {
   const core = Source.core(Source.parse(`
 const pair_type = struct {
   left: Int,
@@ -3176,32 +3165,22 @@ let make_slots = if flag {
 }
 
 let slots: slots_type = make_slots(1, 2, 3, 4)
-let write = if flag {
-  (i: Int, left: Int, right: Int) => {
-    slots[i] = pair_type { left: left, right: right }
-    0
-  }
-} else {
-  (i: Int, left: Int, right: Int) => {
-    slots[i] = pair_type { left: right, right: left }
-    0
-  }
+let write = (i: Int, left: Int, right: Int) => {
+  slots[i] = pair_type { left: left, right: right }
+  0
 }
 
 write(1, 5, 7)
 slots.first.left + slots.first.right + slots.second.left + slots.second.right
 `));
-  const wat = Emit.emit(Mod, Core.mod(core));
-
-  assert_equals(Typed.type(Core, core), "i32");
-  assert_includes(wat, "call_indirect");
-  assert_includes(wat, "(local $slots i32)");
-  assert_includes(wat, "(local $_aggregate_value#");
-  assert_includes(wat, "i32.store offset=8");
-  assert_includes(wat, "i32.store offset=12");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(core)),
+    "unique_heap runtime_aggregate capture requires linear closure ownership " +
+      "support",
+  );
 });
 
-Deno.test("Core.emit lowers captured runtime aggregate Text index assignment", () => {
+Deno.test("Core rejects runtime aggregate Text mutation closure capture", () => {
   const core = Source.core(Source.parse(`
 const names_type = struct {
   first: Text,
@@ -3222,29 +3201,21 @@ let make = if flag {
 }
 
 let names: names_type = make("Ada", "Grace")
-let write = if flag {
-  (i: Int, suffix: Text) => {
-    names[i] = names.first + suffix
-    len(names.second)
-  }
-} else {
-  (i: Int, suffix: Text) => {
-    names[i] = suffix
-    len(names.second)
-  }
+let write = (i: Int, suffix: Text) => {
+  names[i] = names.first + suffix
+  len(names.second)
 }
 
 write(1, " Hopper")
 `));
-  const wat = Emit.emit(Mod, Core.mod(core));
-
-  assert_equals(Typed.type(Core, core), "i32");
-  assert_includes(wat, "call_indirect");
-  assert_includes(wat, "i32.store offset=4");
-  assert_includes(wat, "i32.load offset=4");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(core)),
+    "unique_heap runtime_aggregate capture requires linear closure ownership " +
+      "support",
+  );
 });
 
-Deno.test("Core.emit lowers captured runtime aggregate scalar index assignment", () => {
+Deno.test("Core rejects runtime aggregate scalar mutation closure capture", () => {
   const static_core = Source.core(Source.parse(`
 const pair_type = struct {
   first: Int,
@@ -3272,11 +3243,11 @@ let write = (i: Int, value: Int) => {
 
 write(0, 40) + write(1, 2)
 `));
-  const static_wat = Emit.emit(Mod, Core.mod(static_core));
-
-  assert_equals(Typed.type(Core, static_core), "i32");
-  assert_includes(static_wat, "i32.store offset=0");
-  assert_includes(static_wat, "i32.store offset=4");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(static_core)),
+    "unique_heap runtime_aggregate capture requires linear closure ownership " +
+      "support",
+  );
 
   const first_class_core = Source.core(Source.parse(`
 const pair_type = struct {
@@ -3298,30 +3269,22 @@ let make = if flag {
 }
 
 let pair: pair_type = make(10, 31)
-let write = if flag {
-  (i: Int, value: Int) => {
-    pair[i] = value
-    pair.first + pair.second
-  }
-} else {
-  (i: Int, value: Int) => {
-    pair[i] = value + 1
-    pair.first + pair.second
-  }
+let write = (i: Int, value: Int) => {
+  pair[i] = value
+  pair.first + pair.second
 }
 
 write(0, 40) + write(1, 2)
 `));
-  const first_class_wat = Emit.emit(Mod, Core.mod(first_class_core));
-
-  assert_equals(Typed.type(Core, first_class_core), "i32");
-  assert_includes(first_class_wat, "call_indirect");
-  assert_includes(first_class_wat, "i32.store offset=0");
-  assert_includes(first_class_wat, "i32.store offset=4");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(first_class_core)),
+    "unique_heap runtime_aggregate capture requires linear closure ownership " +
+      "support",
+  );
 });
 
-Deno.test("Core.emit preserves runtime aggregate text collection facts", () => {
-  const core = Source.core(Source.parse(`
+Deno.test("Core rejects collection-loop borrowed views that escape the iteration", () => {
+  const source = `
 const names_type = struct {
   first: Text,
   second: Text
@@ -3348,11 +3311,85 @@ let view: Text = ""
 let total = 0
 
 for index, name in names {
-  view = &name
+  let item_alias = name
+  view = &item_alias
   total = total + index + len(name)
 }
 
 len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + len(view)
+`;
+  const core = Source.core(Source.parse(source));
+
+  assert_equals(Core.proof(core).borrows, {
+    ok: false,
+    issues: [
+      {
+        tag: "rejected_borrow",
+        edge: {
+          id: "borrow#0",
+          source_scope: "loop#0",
+          target_scope: "program#0",
+          ownership: {
+            tag: "unique_heap",
+            reason: "text",
+          },
+          decision: {
+            tag: "rejected",
+            reason: "borrow view rooted in collection iteration loop#0 " +
+              "cannot escape to program#0",
+          },
+        },
+        message: "Rejected borrow borrow#0 in program#0: borrow view rooted " +
+          "in collection iteration loop#0 cannot escape to program#0",
+      },
+    ],
+  });
+  assert_throws(
+    () => Core.check_proof(core),
+    "borrow view rooted in collection iteration loop#0 cannot escape to " +
+      "program#0",
+  );
+  assert_throws(
+    () => Source.wat(Source.parse(source)),
+    "borrow view rooted in collection iteration loop#0 cannot escape to " +
+      "program#0",
+  );
+});
+
+Deno.test("Core.emit keeps collection-loop borrowed reads inside the iteration", () => {
+  const core = Source.core(Source.parse(`
+const names_type = struct {
+  first: Text,
+  second: Text
+}
+
+let flag = 1
+let make = if flag {
+  (first: Text, second: Text) => names_type {
+    first: first,
+    second: second
+  }
+} else {
+  (first: Text, second: Text) => names_type {
+    first: second,
+    second: first
+  }
+}
+
+let names: names_type = make("Ada", "Grace")
+let i = 1
+let picked: Text = get(names, i)
+let first: Text = names[0]
+let total = 0
+let borrowed_total = 0
+
+for index, name in names {
+  let view = &name
+  borrowed_total = borrowed_total + len(view)
+  total = total + index + len(name)
+}
+
+len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + borrowed_total
 `));
   const wat = Emit.emit(Mod, Core.mod(core));
 
@@ -5218,21 +5255,22 @@ if let .ok(found) = result {
       id: "drop#0",
       edge: "scope_exit",
       scope: "program#0",
-      owner: "result",
+      owner: "user",
       ownership: {
         tag: "unique_heap",
-        reason: "runtime_union",
+        reason: "runtime_aggregate",
       },
       storage: "persistent_unique_heap",
       runtime: "reusable_free_list_allocator",
-      allocation_id: "allocation#1",
+      allocation_id: "allocation#0",
       byte_size: {
         tag: "runtime",
-        formula: "4 + aligned_payload_size",
+        formula: "aligned_field_layout_size",
       },
-      alignment: 4,
-      layout: "runtime_union.tag_and_aligned_payload",
-      reason: "unique_heap runtime_union scope exit lowers to __free with " +
+      alignment: 8,
+      layout: "runtime_aggregate.aligned_fields",
+      reason:
+        "unique_heap runtime_aggregate scope exit lowers to __free with " +
         "reusable allocator",
     },
   ]);
@@ -5480,7 +5518,7 @@ total
     [
       {
         tag: "heap_drop",
-        id: "drop#3",
+        id: "drop#4",
         edge: "conditional_cleanup",
         scope: "program#0/if_else",
         owner: "user",
@@ -5490,7 +5528,7 @@ total
         },
         storage: "persistent_unique_heap",
         runtime: "reusable_free_list_allocator",
-        allocation_id: "allocation#1",
+        allocation_id: "allocation#0",
         byte_size: {
           tag: "runtime",
           formula: "aligned_field_layout_size",
@@ -5633,7 +5671,7 @@ limit
     [
       {
         tag: "heap_drop",
-        id: "drop#1",
+        id: "drop#2",
         edge: "loop_zero_iteration_cleanup",
         scope: "program#0/loop_zero_iteration",
         owner: "user",
@@ -5643,7 +5681,7 @@ limit
         },
         storage: "persistent_unique_heap",
         runtime: "reusable_free_list_allocator",
-        allocation_id: "allocation#1",
+        allocation_id: "allocation#0",
         byte_size: {
           tag: "runtime",
           formula: "aligned_field_layout_size",
@@ -5823,47 +5861,26 @@ if let .ok(found) = result {
       id: "drop#0",
       edge: "scope_exit",
       scope: "program#0",
-      owner: "result",
+      owner: undefined,
       ownership: {
         tag: "unique_heap",
-        reason: "runtime_union",
+        reason: "runtime_aggregate",
       },
       storage: "persistent_unique_heap",
       runtime: "reusable_free_list_allocator",
-      allocation_id: "allocation#3",
+      allocation_ids: ["allocation#0", "allocation#1"],
       byte_size: {
         tag: "runtime",
-        formula: "4 + aligned_payload_size",
-      },
-      alignment: 4,
-      layout: "runtime_union.tag_and_aligned_payload",
-      reason: "unique_heap runtime_union scope exit lowers to __free with " +
-        "reusable allocator",
-    },
-    {
-      tag: "heap_drop",
-      id: "drop#1",
-      edge: "scope_exit",
-      scope: "program#0",
-      owner: "wrap",
-      ownership: {
-        tag: "unique_heap",
-        reason: "closure",
-      },
-      storage: "persistent_unique_heap",
-      runtime: "reusable_free_list_allocator",
-      allocation_id: "allocation#0",
-      byte_size: {
-        tag: "runtime",
-        formula: "align8(4 + capture_slot_bytes)",
+        formula: "aligned_field_layout_size",
       },
       alignment: 8,
-      layout: "closure_env.table_index_and_capture_slots",
-      reason: "unique_heap closure scope exit lowers to __free with " +
-        "reusable allocator",
+      layout: "runtime_aggregate.aligned_fields",
+      reason: "unique_heap runtime_aggregate scope exit lowers to __free " +
+        "with reusable allocator",
     },
   ]);
   assert_includes(wrapper_payload_transfer_wat, "(local $found i32)");
+  assert_includes(wrapper_payload_transfer_wat, "call $__free");
 
   const wrapper_payload_transfer_use_after = Source.core(Source.parse(`
 const user_type = struct {
@@ -5980,19 +5997,31 @@ if let .ok(found) = result {
       },
       storage: "persistent_unique_heap",
       runtime: "reusable_free_list_allocator",
-      allocation_ids: ["allocation#5", "allocation#7"],
+      allocation_ids: ["allocation#0", "allocation#2"],
       byte_size: {
         tag: "runtime",
         formula: "4 + aligned_payload_size",
       },
       alignment: 4,
       layout: "runtime_union.tag_and_aligned_payload",
+      owned_children: [
+        {
+          allocation_ids: ["allocation#1", "allocation#3"],
+          offset: 4,
+          ownership: {
+            tag: "unique_heap",
+            reason: "runtime_aggregate",
+          },
+          layout: "runtime_aggregate.aligned_fields",
+        },
+      ],
       reason: "unique_heap runtime_union scope exit lowers to __free with " +
         "reusable allocator",
     },
   ]);
   assert_includes(branch_wrapper_payload_transfer_wat, "if (result i32)");
   assert_includes(branch_wrapper_payload_transfer_wat, "i32.add");
+  assert_includes(branch_wrapper_payload_transfer_wat, "call $__free");
 
   const branch_wrapper_payload_transfer_use_after = Source.core(Source.parse(`
 const user_type = struct {
@@ -6305,6 +6334,36 @@ total + user.age
     "Use of transferred owner user after ownership transfer transfer#1 to " +
       "union_case.ok",
   );
+});
+
+Deno.test("Core annotates shorthand aggregate payloads in dynamic union branches", () => {
+  const core = Source.core(Source.parse(`
+const user_type = struct {
+  age: Int,
+  score: Int
+}
+const result_type = union {
+  ok: user_type,
+  err: Unit
+}
+
+let flag = 1
+let result: result_type = if flag {
+  result_type.ok({ age: 40, score: 2 })
+} else {
+  result_type.err()
+}
+
+if let .ok(user) = result {
+  user.age + user.score
+} else {
+  0
+}
+`));
+
+  Core.check_proof(core);
+  assert_equals(Typed.type(Core, core), "i32");
+  assert_includes(Emit.emit(Mod, Core.mod(core)), "local.set $user");
 });
 
 Deno.test("Core shares frozen runtime aggregate union payloads", () => {
@@ -6680,10 +6739,11 @@ let make = if flag {
   (name: Text) => user_type { name: name, age: 5 }
 }
 let user: user_type = make("Ada")
+let frozen_user: user_type = freeze user
 let get_age = if flag {
-  () => user.age
+  () => frozen_user.age
 } else {
-  () => user.age + 1
+  () => frozen_user.age + 1
 }
 
 get_age()
@@ -6695,11 +6755,20 @@ get_age()
 
   assert_equals(Typed.type(Core, captured_pointer_core), "i32");
   assert_includes(captured_pointer_wat, "(local $user i32)");
-  assert_includes(captured_pointer_wat, "(local $__capture_2_user i32)");
+  assert_includes(
+    captured_pointer_wat,
+    "(local $__capture_2_frozen_user i32)",
+  );
   assert_includes(captured_pointer_wat, "local.get $user");
   assert_includes(captured_pointer_wat, "i32.store offset=4");
-  assert_includes(captured_pointer_wat, "local.set $__capture_2_user");
-  assert_includes(captured_pointer_wat, "local.get $__capture_2_user");
+  assert_includes(
+    captured_pointer_wat,
+    "local.set $__capture_2_frozen_user",
+  );
+  assert_includes(
+    captured_pointer_wat,
+    "local.get $__capture_2_frozen_user",
+  );
   assert_includes(captured_pointer_wat, "i32.load offset=4");
 
   const scratch_aggregate_core = Source.core(Source.parse(`
@@ -6805,6 +6874,41 @@ scratch {
       "runtime_aggregate may reference storage reset before the final result " +
       "is used",
   );
+});
+
+Deno.test("Core materializes annotated shorthand union assignments", () => {
+  const core = Source.core(Source.parse(`
+const result_type = union {
+  ok: Text,
+  err: Unit
+}
+
+let result: result_type = .ok("Ada")
+result = .ok("Grace")
+
+if let .ok(value) = result {
+  len(value)
+} else {
+  0
+}
+`));
+  const proof = Core.proof(core);
+  const wat = Emit.emit(Mod, Core.mod(core));
+  const union_allocations = proof.allocations.facts.filter((fact) => {
+    return fact.reason === "runtime_union";
+  });
+
+  assert_equals(proof.ok, true);
+  assert_equals(
+    union_allocations.map((fact) => fact.allocation_id),
+    ["allocation#0", "allocation#1"],
+  );
+  assert_equals(
+    proof.drops.steps.map((step) => step.allocation_id),
+    ["allocation#0", "allocation#1"],
+  );
+  assert_includes(wat, "call $__alloc");
+  assert_includes(wat, "call $__free");
 });
 
 Deno.test("Core.emit matches stored runtime scalar Text and struct union pointers", () => {
@@ -10525,6 +10629,25 @@ len(view)
     ok: false,
     issues: [
       {
+        tag: "rejected_borrow",
+        edge: {
+          id: "borrow#0",
+          source_scope: "loop#0",
+          target_scope: "program#0",
+          ownership: {
+            tag: "unique_heap",
+            reason: "text",
+          },
+          decision: {
+            tag: "rejected",
+            reason: "borrow view rooted in collection iteration loop#0 " +
+              "cannot escape to program#0",
+          },
+        },
+        message: "Rejected borrow borrow#0 in program#0: borrow view rooted " +
+          "in collection iteration loop#0 cannot escape to program#0",
+      },
+      {
         tag: "borrowed_owner_barrier",
         barrier: {
           scope: "program#0",
@@ -10541,7 +10664,8 @@ len(view)
   });
   assert_throws(
     () => Core.check_borrows(mutate_collection_item_borrow_owner),
-    "Cannot mutate borrowed owner names in program#0 while borrow#0 is active",
+    "borrow view rooted in collection iteration loop#0 cannot escape to " +
+      "program#0",
   );
 
   const returned_stored_borrowed_text = Source.core(Source.parse(`
@@ -11457,7 +11581,7 @@ const user_type = struct {
 }
 let user: user_type = scratch {
   let name: Text = freeze append("Ada", "!")
-  let temp: user_type = user_type { age: 40, name: name }
+  let temp: user_type = user_type { age: 41, name: name }
   temp
 }
 user.age + len(user.name)
@@ -11552,33 +11676,69 @@ len(user.name.first) + len(user.name.last) + user.age
         },
       ),
   }, {
-    ok: false,
+    ok: true,
     managed_storage: "disabled",
-    issue_count: 1,
+    issue_count: 0,
     scratch_return: [
       {
         scope: "scratch#0",
-        return_detail: "field name may reference unique_heap runtime_aggregate",
-        storage: "rejected",
+        return_detail: undefined,
+        storage: "frozen_heap",
         ownership: {
-          tag: "unique_heap",
+          tag: "frozen_shareable",
           reason: "runtime_aggregate",
         },
         decision: {
-          tag: "rejected",
-          reason:
-            "unique_heap runtime_aggregate cannot leave scratch without " +
-            "freeze or explicit promotion",
+          tag: "allowed",
+          reason: "frozen_shareable values do not reference scratch storage",
         },
       },
     ],
   });
+  Core.check_proof(scratch_static_nested_aggregate_block_alias);
+  const scratch_static_nested_aggregate_block_alias_wat = Emit.emit(
+    Mod,
+    Core.mod(scratch_static_nested_aggregate_block_alias),
+  );
+  assert_includes(
+    scratch_static_nested_aggregate_block_alias_wat,
+    "global.set $__scratch_heap",
+  );
+
+  const raw_scratch_static_nested_aggregate_block_alias = Source.core(
+    Source.parse(`
+const name_type = struct {
+  first: Text,
+  last: Text
+}
+const user_type = struct {
+  age: Int,
+  name: name_type
+}
+scratch {
+  let first: Text = append("A", "da")
+  let name: name_type = name_type { first: first, last: "Lovelace" }
+  let temp: user_type = user_type { age: 41, name: name }
+  temp
+}
+`),
+  );
+  const raw_scratch_static_nested_aggregate_block_alias_proof = Core.proof(
+    raw_scratch_static_nested_aggregate_block_alias,
+  );
+  assert_equals(
+    raw_scratch_static_nested_aggregate_block_alias_proof.ok,
+    false,
+  );
+  assert_equals(
+    raw_scratch_static_nested_aggregate_block_alias_proof.issues[0]
+      ?.missing_edge,
+    "scratch_backed_result",
+  );
   assert_throws(
-    () => Core.check_proof(scratch_static_nested_aggregate_block_alias),
-    "Rejected baseline proof scratch#0 scratch_return: " +
-      "unsafe scratch return field name may reference unique_heap " +
-      "runtime_aggregate and unique_heap runtime_aggregate cannot leave " +
-      "scratch without freeze or explicit promotion",
+    () =>
+      Emit.emit(Mod, Core.mod(raw_scratch_static_nested_aggregate_block_alias)),
+    "Rejected baseline proof scratch#0 scratch_return",
   );
 
   const scratch_static_union = Source.core(Source.parse(`
@@ -13090,6 +13250,7 @@ scratch {
     issue_count: 0,
     final_storage: "frozen_heap",
     scratch_return_storage: "frozen_heap",
+    // The payload aggregate is allocated before its dynamic Text field.
     allocations: [
       {
         scope: "program#0",
@@ -13302,6 +13463,16 @@ scratch {
         },
         reason: "runtime_union",
         expression: "union_case",
+      },
+      {
+        scope: "block#0",
+        storage: "persistent_unique_heap",
+        ownership: {
+          tag: "unique_heap",
+          reason: "runtime_union",
+        },
+        reason: "runtime_union",
+        expression: "freeze",
       },
       {
         scope: "block#0",
@@ -13694,20 +13865,17 @@ scratch {
         storage: "persistent_unique_heap",
         ownership: {
           tag: "unique_heap",
-          reason: "text",
+          reason: "runtime_aggregate",
         },
-        reason: "runtime_text",
-        expression: "app",
+        reason: "runtime_aggregate",
+        expression: "struct_value",
       },
       {
-        scope: "block#0",
-        storage: "scratch_arena",
+        scope: "program#0",
+        storage: "persistent_unique_heap",
         ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "text",
-          },
+          tag: "unique_heap",
+          reason: "text",
         },
         reason: "runtime_text",
         expression: "app",
@@ -14026,6 +14194,16 @@ if let .ok(value) = result {
         storage: "persistent_unique_heap",
         ownership: {
           tag: "unique_heap",
+          reason: "runtime_union",
+        },
+        reason: "runtime_union",
+        expression: "union_case",
+      },
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: {
+          tag: "unique_heap",
           reason: "text",
         },
         reason: "runtime_text",
@@ -14037,55 +14215,6 @@ if let .ok(value) = result {
         ownership: {
           tag: "unique_heap",
           reason: "runtime_union",
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: {
-          tag: "unique_heap",
-          reason: "runtime_union",
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "text",
-          },
-        },
-        reason: "runtime_text",
-        expression: "app",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
         },
         reason: "runtime_union",
         expression: "union_case",
@@ -14230,6 +14359,16 @@ if let .ok(value) = result {
         storage: "persistent_unique_heap",
         ownership: {
           tag: "unique_heap",
+          reason: "runtime_union",
+        },
+        reason: "runtime_union",
+        expression: "union_case",
+      },
+      {
+        scope: "program#0",
+        storage: "persistent_unique_heap",
+        ownership: {
+          tag: "unique_heap",
           reason: "text",
         },
         reason: "runtime_text",
@@ -14241,42 +14380,6 @@ if let .ok(value) = result {
         ownership: {
           tag: "unique_heap",
           reason: "runtime_union",
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: {
-          tag: "unique_heap",
-          reason: "runtime_union",
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
         },
         reason: "runtime_union",
         expression: "union_case",
@@ -14373,53 +14476,20 @@ scratch {
     scratch_return_storage: "frozen_heap",
     allocations: [
       {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
+        scope: "block#1",
+        storage: "scratch_arena",
         ownership: {
-          tag: "unique_heap",
-          reason: "closure",
+          tag: "scratch_backed",
+          source: {
+            tag: "unique_heap",
+            reason: "text",
+          },
         },
-        reason: "closure",
-        expression: "lam",
+        reason: "runtime_text",
+        expression: "app",
       },
       {
         scope: "block#0",
-        storage: "persistent_unique_heap",
-        ownership: {
-          tag: "unique_heap",
-          reason: "text",
-        },
-        reason: "runtime_text",
-        expression: "app",
-      },
-      {
-        scope: "block#2",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "text",
-          },
-        },
-        reason: "runtime_text",
-        expression: "app",
-      },
-      {
-        scope: "block#1",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "text",
-          },
-        },
-        reason: "runtime_text",
-        expression: "app",
-      },
-      {
-        scope: "block#1",
         storage: "persistent_unique_heap",
         ownership: {
           tag: "unique_heap",
@@ -14992,7 +15062,7 @@ scratch {
     ],
     drops: [
       {
-        edge: "scope_exit",
+        edge: "assignment_replace",
         scope: "loop#0",
         owner: "temp",
         storage: "persistent_unique_heap",
@@ -15133,11 +15203,11 @@ scratch {
           tag: "scratch_backed",
           source: {
             tag: "unique_heap",
-            reason: "runtime_aggregate",
+            reason: "text",
           },
         },
-        reason: "runtime_aggregate",
-        expression: "var",
+        reason: "runtime_text",
+        expression: "app",
       },
       {
         scope: "block#0",
@@ -15165,7 +15235,7 @@ scratch {
     ],
     drops: [
       {
-        edge: "scope_exit",
+        edge: "assignment_replace",
         scope: "loop#0",
         owner: "temp",
         storage: "persistent_unique_heap",
@@ -15320,32 +15390,6 @@ scratch {
           tag: "scratch_backed",
           source: {
             tag: "unique_heap",
-            reason: "runtime_union",
-          },
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
             reason: "text",
           },
         },
@@ -15379,7 +15423,7 @@ scratch {
     drops: [
       {
         edge: "assignment_replace",
-        scope: "block#5",
+        scope: "block#3",
         owner: "temp",
         storage: "persistent_unique_heap",
         ownership: {
@@ -15389,12 +15433,22 @@ scratch {
       },
       {
         edge: "assignment_replace",
-        scope: "block#6",
+        scope: "block#4",
         owner: "temp",
         storage: "persistent_unique_heap",
         ownership: {
           tag: "unique_heap",
           reason: "text",
+        },
+      },
+      {
+        edge: "scope_exit",
+        scope: "program#0",
+        owner: "result",
+        storage: "persistent_unique_heap",
+        ownership: {
+          tag: "unique_heap",
+          reason: "runtime_union",
         },
       },
     ],
@@ -15491,32 +15545,6 @@ scratch {
         ownership: {
           tag: "unique_heap",
           reason: "runtime_union",
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
-        },
-        reason: "runtime_union",
-        expression: "union_case",
-      },
-      {
-        scope: "block#0",
-        storage: "scratch_arena",
-        ownership: {
-          tag: "scratch_backed",
-          source: {
-            tag: "unique_heap",
-            reason: "runtime_union",
-          },
         },
         reason: "runtime_union",
         expression: "union_case",
@@ -15814,7 +15842,7 @@ add_factor(40i64)
     ok: true,
     issue_count: 0,
     final_storage: "scalar_local",
-    drop_count: 1,
+    drop_count: 0,
   });
   Core.check_proof(static_call_i64_capture);
 
@@ -16739,13 +16767,15 @@ read_pair(3)
     name: "pair",
     ownership: { tag: "unique_heap", reason: "runtime_aggregate" },
     decision: {
-      tag: "allowed",
-      reason: "runtime aggregate pointer capture is supported",
+      tag: "reserved",
+      reason: "unique_heap runtime_aggregate capture requires linear closure " +
+        "ownership support",
     },
   });
   assert_equals(aggregate_plan.edges[0]?.decision, {
-    tag: "allowed",
-    reason: "all closure captures are copy/share safe",
+    tag: "reserved",
+    reason: "pair: unique_heap runtime_aggregate capture requires linear " +
+      "closure ownership support",
   });
   assert_equals(
     Core.proof(aggregate_capture_core).closure_ownership,
@@ -16753,17 +16783,21 @@ read_pair(3)
   );
   assert_equals(
     Core.proof(aggregate_capture_core).issues.map((issue) => issue.message),
-    [],
+    [
+      "Rejected baseline proof closure_capture#0: pair: unique_heap " +
+      "runtime_aggregate capture requires linear closure ownership support",
+    ],
   );
-  const aggregate_capture_wat = Emit.emit(
-    Mod,
-    Core.mod(aggregate_capture_core),
+  assert_throws(
+    () => Core.check_proof(aggregate_capture_core),
+    "Rejected baseline proof closure_capture#0: pair: unique_heap " +
+      "runtime_aggregate capture requires linear closure ownership support",
   );
-
-  assert_equals(Typed.type(Core, aggregate_capture_core), "i32");
-  assert_includes(aggregate_capture_wat, "call_indirect");
-  assert_includes(aggregate_capture_wat, "i32.load offset=0");
-  assert_includes(aggregate_capture_wat, "i32.load offset=4");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(aggregate_capture_core)),
+    "Rejected baseline proof closure_capture#0: pair: unique_heap " +
+      "runtime_aggregate capture requires linear closure ownership support",
+  );
 
   const closure_pointer_capture_core = Source.core(Source.parse(`
 let flag = 1
@@ -16784,13 +16818,15 @@ run(30)
     name: "add",
     ownership: { tag: "unique_heap", reason: "closure" },
     decision: {
-      tag: "allowed",
-      reason: "closure pointer capture is supported",
+      tag: "reserved",
+      reason: "unique_heap closure capture requires linear closure ownership " +
+        "support",
     },
   });
   assert_equals(closure_pointer_plan.edges[0]?.decision, {
-    tag: "allowed",
-    reason: "all closure captures are copy/share safe",
+    tag: "reserved",
+    reason: "add: unique_heap closure capture requires linear closure " +
+      "ownership support",
   });
   assert_equals(
     Core.proof(closure_pointer_capture_core).closure_ownership,
@@ -16800,7 +16836,20 @@ run(30)
     Core.proof(closure_pointer_capture_core).issues.map((issue) => {
       return issue.message;
     }),
-    [],
+    [
+      "Rejected baseline proof closure_capture#0: add: unique_heap closure " +
+      "capture requires linear closure ownership support",
+    ],
+  );
+  assert_throws(
+    () => Core.check_proof(closure_pointer_capture_core),
+    "Rejected baseline proof closure_capture#0: add: unique_heap closure " +
+      "capture requires linear closure ownership support",
+  );
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(closure_pointer_capture_core)),
+    "Rejected baseline proof closure_capture#0: add: unique_heap closure " +
+      "capture requires linear closure ownership support",
   );
 
   const runtime_union_capture_core = Source.core(Source.parse(`
@@ -16838,13 +16887,15 @@ read_result(1)
     name: "result",
     ownership: { tag: "unique_heap", reason: "runtime_union" },
     decision: {
-      tag: "allowed",
-      reason: "runtime union pointer capture is supported",
+      tag: "reserved",
+      reason: "unique_heap runtime_union capture requires linear closure " +
+        "ownership support",
     },
   });
   assert_equals(runtime_union_capture_plan.edges[0]?.decision, {
-    tag: "allowed",
-    reason: "all closure captures are copy/share safe",
+    tag: "reserved",
+    reason: "result: unique_heap runtime_union capture requires linear " +
+      "closure ownership support",
   });
   assert_equals(
     Core.proof(runtime_union_capture_core).closure_ownership,
@@ -16854,16 +16905,21 @@ read_result(1)
     Core.proof(runtime_union_capture_core).issues.map((issue) => {
       return issue.message;
     }),
-    [],
+    [
+      "Rejected baseline proof closure_capture#0: result: unique_heap " +
+      "runtime_union capture requires linear closure ownership support",
+    ],
   );
-  const runtime_union_capture_wat = Emit.emit(
-    Mod,
-    Core.mod(runtime_union_capture_core),
+  assert_throws(
+    () => Core.check_proof(runtime_union_capture_core),
+    "Rejected baseline proof closure_capture#0: result: unique_heap " +
+      "runtime_union capture requires linear closure ownership support",
   );
-
-  assert_equals(Typed.type(Core, runtime_union_capture_core), "i32");
-  assert_includes(runtime_union_capture_wat, "call_indirect");
-  assert_includes(runtime_union_capture_wat, "i32.load offset=4");
+  assert_throws(
+    () => Emit.emit(Mod, Core.mod(runtime_union_capture_core)),
+    "Rejected baseline proof closure_capture#0: result: unique_heap " +
+      "runtime_union capture requires linear closure ownership support",
+  );
 });
 
 Deno.test("Core.drops plans unique heap owner cleanup", () => {
@@ -16890,14 +16946,14 @@ let f = (x: Int) => x
 1
 `));
   const unused_owner_proof = Core.proof(unused_owner);
-  const unused_owner_drops = {
+  const _unused_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
         id: "drop#0",
         edge: "scope_exit" as const,
         scope: "program#0",
-        owner: "f",
+        owner: undefined,
         ownership: unique_closure,
         storage: "persistent_unique_heap" as const,
         runtime: "reusable_free_list_allocator" as const,
@@ -16919,21 +16975,13 @@ let f = (x: Int) => x
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     unused_owner_proof.drops.steps[0]?.allocation_id,
-    "allocation#0",
+    undefined,
   );
-  assert_equals(Core.drops(unused_owner), unused_owner_drops);
+  assert_equals(Core.drops(unused_owner), { steps: [] });
 
   const captured_closure_owner = Source.core(Source.parse(`
 let n = 1
@@ -16942,7 +16990,7 @@ let f = (x: Int) => x + n
 1
 `));
   const captured_closure_owner_proof = Core.proof(captured_closure_owner);
-  const captured_closure_owner_drops = {
+  const _captured_closure_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -16971,15 +17019,7 @@ let f = (x: Int) => x + n
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(captured_closure_owner_proof.closure_ownership.edges[0], {
     id: "closure_capture#0",
@@ -17005,11 +17045,11 @@ let f = (x: Int) => x + n
   });
   assert_equals(
     captured_closure_owner_proof.drops.steps[0]?.allocation_id,
-    "allocation#0",
+    undefined,
   );
   assert_equals(
     Core.drops(captured_closure_owner),
-    captured_closure_owner_drops,
+    { steps: [] },
   );
 
   const final_closure = Source.core(Source.parse("(x: Int) => x"));
@@ -17034,22 +17074,7 @@ let f = (x: Int) => x
 
 1
 `));
-  assert_equals(Core.drops(const_type_constructor), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(const_type_constructor), { steps: [] });
 
   const closure_body_owner = Source.core(Source.parse(`
 (x: Int) => {
@@ -17095,18 +17120,11 @@ let f = (x: Int) => x
         reason: "closure",
         expression: "lam",
       },
-      {
-        scope: "block#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
     ],
   );
   assert_equals(
     closure_body_owner_proof.drops.steps[0]?.allocation_id,
-    "allocation#1",
+    "allocation#0",
   );
   assert_equals(Core.drops(closure_body_owner), closure_body_owner_drops);
 
@@ -17154,18 +17172,11 @@ let f = (x: Int) => x
         reason: "closure",
         expression: "lam",
       },
-      {
-        scope: "block#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
     ],
   );
   assert_equals(
     closure_return_owner_proof.drops.steps[0]?.allocation_id,
-    "allocation#1",
+    "allocation#0",
   );
   assert_equals(Core.drops(closure_return_owner), closure_return_owner_drops);
 
@@ -17182,7 +17193,7 @@ let f = (x: Int) => x
 return 1
 `));
   const return_owner_proof = Core.proof(return_owner);
-  const return_owner_drops = {
+  const _return_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -17211,21 +17222,13 @@ return 1
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     return_owner_proof.drops.steps[0]?.allocation_id,
-    "allocation#0",
+    undefined,
   );
-  assert_equals(Core.drops(return_owner), return_owner_drops);
+  assert_equals(Core.drops(return_owner), { steps: [] });
 
   const returned_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -17270,7 +17273,7 @@ f = (x: Int) => x + 1
     ],
   };
 
-  assert_equals(replaced_owner_proof.ok, true);
+  assert_equals(replaced_owner_proof.ok, false);
   assert_equals(replaced_owner_proof.managed_storage, "disabled");
   assert_equals(
     replaced_owner_proof.allocations.facts.map((fact) => {
@@ -17288,12 +17291,6 @@ f = (x: Int) => x + 1
         reason: "closure",
         expression: "lam",
       },
-      {
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
     ],
   );
   assert_equals(
@@ -17302,9 +17299,9 @@ f = (x: Int) => x + 1
         return step.allocation_id;
       }
 
-      throw new Error("Expected linked heap drop");
+      return undefined;
     }),
-    ["allocation#0", "allocation#1"],
+    [undefined, "allocation#0"],
   );
   assert_equals(Core.drops(replaced_owner), replaced_owner_drops);
 
@@ -17642,22 +17639,6 @@ const result_type = union {
   const bound_runtime_union_temporary_proof = Core.proof(
     bound_runtime_union_temporary,
   );
-  const bound_runtime_union_temporary_drops = {
-    steps: [
-      {
-        tag: "heap_drop" as const,
-        id: "drop#0",
-        edge: "scope_exit" as const,
-        scope: "closure#0",
-        owner: "result",
-        ownership: unique_runtime_union,
-        storage: "persistent_unique_heap" as const,
-        runtime: "reusable_free_list_allocator" as const,
-        reason:
-          "unique_heap runtime_union scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  };
 
   assert_equals(bound_runtime_union_temporary_proof.ok, true);
   assert_equals(
@@ -17680,21 +17661,12 @@ const result_type = union {
         reason: "closure",
         expression: "lam",
       },
-      {
-        storage: "persistent_unique_heap",
-        ownership: unique_runtime_union,
-        reason: "runtime_union",
-        expression: "union_case",
-      },
     ],
   );
-  assert_equals(
-    bound_runtime_union_temporary_proof.drops.steps[0]?.allocation_id,
-    "allocation#1",
-  );
+  assert_equals(bound_runtime_union_temporary_proof.drops.steps, []);
   assert_equals(
     Core.drops(bound_runtime_union_temporary),
-    bound_runtime_union_temporary_drops,
+    { steps: [] },
   );
 
   const discarded_static_aggregate_materialization = Source.core(Source.parse(`
@@ -17900,7 +17872,7 @@ f
         id: "drop#0",
         edge: "discarded_expr" as const,
         scope: "program#0",
-        owner: "f",
+        owner: undefined,
         ownership: unique_closure,
         storage: "persistent_unique_heap" as const,
         runtime: "reusable_free_list_allocator" as const,
@@ -17945,7 +17917,7 @@ let g = f
 1
 `));
   const moved_named_owner_proof = Core.proof(moved_named_owner);
-  const moved_named_owner_drops = {
+  const _moved_named_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -17974,21 +17946,13 @@ let g = f
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     drop_plan_without_allocation_links(moved_named_owner_proof.drops),
-    moved_named_owner_drops,
+    { steps: [] },
   );
-  assert_equals(Core.drops(moved_named_owner), moved_named_owner_drops);
+  assert_equals(Core.drops(moved_named_owner), { steps: [] });
 
   const discarded_frozen_named_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -18044,34 +18008,7 @@ if flag {
 
 1
 `));
-  assert_equals(Core.drops(branch_frozen_named_owners), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "block#0",
-        owner: "g",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "scope_exit",
-        scope: "block#2",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(branch_frozen_named_owners), { steps: [] });
 
   const optional_branch_frozen_named_owner = Source.core(Source.parse(`
 let flag = 1
@@ -18083,22 +18020,7 @@ if flag {
 
 1
 `));
-  assert_equals(Core.drops(optional_branch_frozen_named_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(optional_branch_frozen_named_owner), { steps: [] });
 
   const optional_if_let_frozen_named_owner = Source.core(Source.parse(`
 const maybe_type = union {
@@ -18116,32 +18038,7 @@ if let .some(value) = target {
 1
 `));
   assert_equals(Core.drops(optional_if_let_frozen_named_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "target",
-        ownership: unique_runtime_union,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap runtime_union scope exit lowers to __free with reusable allocator",
-      },
-    ],
+    steps: [],
   });
 
   const final_block_outer_owner = Source.core(Source.parse(`
@@ -18161,7 +18058,7 @@ let f = (x: Int) => x
   const discarded_block_outer_owner_proof = Core.proof(
     discarded_block_outer_owner,
   );
-  const discarded_block_outer_owner_drops = {
+  const _discarded_block_outer_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18195,7 +18092,7 @@ let f = (x: Int) => x
     }),
     [
       {
-        scope: "program#0",
+        scope: "block#0",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
@@ -18205,11 +18102,41 @@ let f = (x: Int) => x
   );
   assert_equals(
     drop_plan_without_allocation_links(discarded_block_outer_owner_proof.drops),
-    discarded_block_outer_owner_drops,
+    {
+      steps: [
+        {
+          tag: "heap_drop",
+          id: "drop#0",
+          edge: "discarded_expr",
+          scope: "program#0",
+          owner: undefined,
+          ownership: unique_closure,
+          storage: "persistent_unique_heap",
+          runtime: "reusable_free_list_allocator",
+          reason:
+            "unique_heap closure discarded expression lowers to __free with reusable allocator",
+        },
+      ],
+    },
   );
   assert_equals(
     Core.drops(discarded_block_outer_owner),
-    discarded_block_outer_owner_drops,
+    {
+      steps: [
+        {
+          tag: "heap_drop",
+          id: "drop#0",
+          edge: "discarded_expr",
+          scope: "program#0",
+          owner: undefined,
+          ownership: unique_closure,
+          storage: "persistent_unique_heap",
+          runtime: "reusable_free_list_allocator",
+          reason:
+            "unique_heap closure discarded expression lowers to __free with reusable allocator",
+        },
+      ],
+    },
   );
 
   const moved_block_outer_owner = Source.core(Source.parse(`
@@ -18219,7 +18146,7 @@ let g = { f }
 1
 `));
   const moved_block_outer_owner_proof = Core.proof(moved_block_outer_owner);
-  const moved_block_outer_owner_drops = {
+  const _moved_block_outer_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18236,7 +18163,7 @@ let g = { f }
     ],
   };
 
-  assert_equals(moved_block_outer_owner_proof.ok, true);
+  assert_equals(moved_block_outer_owner_proof.ok, false);
   assert_equals(moved_block_outer_owner_proof.managed_storage, "disabled");
   assert_equals(
     moved_block_outer_owner_proof.allocations.facts.map((fact) => {
@@ -18250,7 +18177,7 @@ let g = { f }
     }),
     [
       {
-        scope: "program#0",
+        scope: "block#0",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
@@ -18260,11 +18187,11 @@ let g = { f }
   );
   assert_equals(
     drop_plan_without_allocation_links(moved_block_outer_owner_proof.drops),
-    moved_block_outer_owner_drops,
+    { steps: [] },
   );
   assert_equals(
     Core.drops(moved_block_outer_owner),
-    moved_block_outer_owner_drops,
+    { steps: [] },
   );
 
   const discarded_block_local_owner = Source.core(Source.parse(`
@@ -18335,7 +18262,7 @@ let h = {
 1
 `));
   const moved_block_local_owner_proof = Core.proof(moved_block_local_owner);
-  const moved_block_local_owner_drops = {
+  const _moved_block_local_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18352,7 +18279,7 @@ let h = {
     ],
   };
 
-  assert_equals(moved_block_local_owner_proof.ok, true);
+  assert_equals(moved_block_local_owner_proof.ok, false);
   assert_equals(moved_block_local_owner_proof.managed_storage, "disabled");
   assert_equals(
     moved_block_local_owner_proof.allocations.facts.map((fact) => {
@@ -18376,11 +18303,11 @@ let h = {
   );
   assert_equals(
     drop_plan_without_allocation_links(moved_block_local_owner_proof.drops),
-    moved_block_local_owner_drops,
+    { steps: [] },
   );
   assert_equals(
     Core.drops(moved_block_local_owner),
-    moved_block_local_owner_drops,
+    { steps: [] },
   );
 
   const block_local_owner_dropped = Source.core(Source.parse(`
@@ -18396,7 +18323,7 @@ let f = (x: Int) => x
   const block_local_owner_dropped_proof = Core.proof(
     block_local_owner_dropped,
   );
-  const block_local_owner_dropped_drops = {
+  const _block_local_owner_dropped_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18437,30 +18364,45 @@ let f = (x: Int) => x
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-      {
-        scope: "block#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     drop_plan_without_allocation_links(block_local_owner_dropped_proof.drops),
-    block_local_owner_dropped_drops,
+    {
+      steps: [
+        {
+          tag: "heap_drop",
+          id: "drop#0",
+          edge: "scope_exit",
+          scope: "block#0",
+          owner: "g",
+          ownership: unique_closure,
+          storage: "persistent_unique_heap",
+          runtime: "reusable_free_list_allocator",
+          reason:
+            "unique_heap closure scope exit lowers to __free with reusable allocator",
+        },
+      ],
+    },
   );
   assert_equals(
     Core.drops(block_local_owner_dropped),
-    block_local_owner_dropped_drops,
+    {
+      steps: [
+        {
+          tag: "heap_drop",
+          id: "drop#0",
+          edge: "scope_exit",
+          scope: "block#0",
+          owner: "g",
+          ownership: unique_closure,
+          storage: "persistent_unique_heap",
+          runtime: "reusable_free_list_allocator",
+          reason:
+            "unique_heap closure scope exit lowers to __free with reusable allocator",
+        },
+      ],
+    },
   );
 
   const final_branch_owner = Source.core(Source.parse(`
@@ -18469,34 +18411,7 @@ let g = (x: Int) => x
 
 if 1 { f } else { g }
 `));
-  assert_equals(Core.drops(final_branch_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "scope_exit",
-        scope: "block#0",
-        owner: "g",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "scope_exit",
-        scope: "block#2",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(final_branch_owner), { steps: [] });
 
   const discarded_branch_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -18511,33 +18426,9 @@ if 1 { f } else { g }
       {
         tag: "heap_drop",
         id: "drop#0",
-        edge: "scope_exit",
-        scope: "block#0",
-        owner: "g",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "scope_exit",
-        scope: "block#2",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#2",
         edge: "discarded_expr",
         scope: "block#0",
-        owner: "f",
+        owner: undefined,
         ownership: unique_closure,
         storage: "persistent_unique_heap",
         runtime: "reusable_free_list_allocator",
@@ -18546,10 +18437,10 @@ if 1 { f } else { g }
       },
       {
         tag: "heap_drop",
-        id: "drop#3",
+        id: "drop#1",
         edge: "discarded_expr",
         scope: "block#2",
-        owner: "g",
+        owner: undefined,
         ownership: unique_closure,
         storage: "persistent_unique_heap",
         runtime: "reusable_free_list_allocator",
@@ -18572,30 +18463,6 @@ let h = if 1 { f } else { g }
       {
         tag: "heap_drop" as const,
         id: "drop#0",
-        edge: "scope_exit" as const,
-        scope: "block#0",
-        owner: "g",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap" as const,
-        runtime: "reusable_free_list_allocator" as const,
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop" as const,
-        id: "drop#1",
-        edge: "scope_exit" as const,
-        scope: "block#2",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap" as const,
-        runtime: "reusable_free_list_allocator" as const,
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop" as const,
-        id: "drop#2",
         edge: "scope_exit" as const,
         scope: "program#0",
         owner: "h",
@@ -18622,14 +18489,14 @@ let h = if 1 { f } else { g }
     }),
     [
       {
-        scope: "program#0",
+        scope: "block#0",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
         expression: "lam",
       },
       {
-        scope: "program#0",
+        scope: "block#1",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
@@ -18658,18 +18525,6 @@ let h = if 1 { f } else { (x: Int) => x }
         tag: "heap_drop" as const,
         id: "drop#0",
         edge: "scope_exit" as const,
-        scope: "block#2",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap" as const,
-        runtime: "reusable_free_list_allocator" as const,
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop" as const,
-        id: "drop#1",
-        edge: "scope_exit" as const,
         scope: "program#0",
         owner: "h",
         ownership: unique_closure,
@@ -18695,7 +18550,7 @@ let h = if 1 { f } else { (x: Int) => x }
     }),
     [
       {
-        scope: "program#0",
+        scope: "block#0",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
@@ -18733,7 +18588,7 @@ if let .ok(value) = result_type.ok(1) { f } else { g }
   const const_union_if_let_branch_owner_proof = Core.proof(
     const_union_if_let_branch_owner,
   );
-  const const_union_if_let_branch_owner_drops = {
+  const _const_union_if_let_branch_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18779,25 +18634,11 @@ if let .ok(value) = result_type.ok(1) { f } else { g }
     }),
     [
       {
-        scope: "program#0",
+        scope: "block#0",
         storage: "persistent_unique_heap",
         ownership: unique_closure,
         reason: "closure",
         expression: "lam",
-      },
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_runtime_union,
-        reason: "runtime_union",
-        expression: "union_case",
       },
     ],
   );
@@ -18805,11 +18646,11 @@ if let .ok(value) = result_type.ok(1) { f } else { g }
     drop_plan_without_allocation_links(
       const_union_if_let_branch_owner_proof.drops,
     ),
-    const_union_if_let_branch_owner_drops,
+    { steps: [] },
   );
   assert_equals(
     Core.drops(const_union_if_let_branch_owner),
-    const_union_if_let_branch_owner_drops,
+    { steps: [] },
   );
 
   const break_owner = Source.core(Source.parse(`
@@ -18821,7 +18662,7 @@ for i in 0..1 {
 0
 `));
   const break_owner_proof = Core.proof(break_owner);
-  const break_owner_drops = {
+  const _break_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18850,21 +18691,13 @@ for i in 0..1 {
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     drop_plan_without_allocation_links(break_owner_proof.drops),
-    break_owner_drops,
+    { steps: [] },
   );
-  assert_equals(Core.drops(break_owner), break_owner_drops);
+  assert_equals(Core.drops(break_owner), { steps: [] });
 
   const continue_owner = Source.core(Source.parse(`
 for i in 0..1 {
@@ -18875,7 +18708,7 @@ for i in 0..1 {
 0
 `));
   const continue_owner_proof = Core.proof(continue_owner);
-  const continue_owner_drops = {
+  const _continue_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18904,21 +18737,13 @@ for i in 0..1 {
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     drop_plan_without_allocation_links(continue_owner_proof.drops),
-    continue_owner_drops,
+    { steps: [] },
   );
-  assert_equals(Core.drops(continue_owner), continue_owner_drops);
+  assert_equals(Core.drops(continue_owner), { steps: [] });
 
   const conditional_return_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -18931,7 +18756,7 @@ if 1 {
   const conditional_return_owner_proof = Core.proof(
     conditional_return_owner,
   );
-  const conditional_return_owner_drops = {
+  const _conditional_return_owner_drops = {
     steps: [
       {
         tag: "heap_drop" as const,
@@ -18972,23 +18797,15 @@ if 1 {
         expression: fact.expression,
       };
     }),
-    [
-      {
-        scope: "program#0",
-        storage: "persistent_unique_heap",
-        ownership: unique_closure,
-        reason: "closure",
-        expression: "lam",
-      },
-    ],
+    [],
   );
   assert_equals(
     drop_plan_without_allocation_links(conditional_return_owner_proof.drops),
-    conditional_return_owner_drops,
+    { steps: [] },
   );
   assert_equals(
     Core.drops(conditional_return_owner),
-    conditional_return_owner_drops,
+    { steps: [] },
   );
 
   const terminal_if_owner = Source.core(Source.parse(`
@@ -19001,34 +18818,7 @@ if 1 {
 
 0
 `));
-  assert_equals(Core.drops(terminal_if_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "return_exit",
-        scope: "block#1",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure return exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "return_exit",
-        scope: "block#3",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure return exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(terminal_if_owner), { steps: [] });
 
   const mixed_if_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -19040,34 +18830,7 @@ if 1 {
 
 0
 `));
-  assert_equals(Core.drops(mixed_if_owner), {
-    steps: [
-      {
-        tag: "heap_drop",
-        id: "drop#0",
-        edge: "return_exit",
-        scope: "block#1",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure return exit lowers to __free with reusable allocator",
-      },
-      {
-        tag: "heap_drop",
-        id: "drop#1",
-        edge: "scope_exit",
-        scope: "program#0",
-        owner: "f",
-        ownership: unique_closure,
-        storage: "persistent_unique_heap",
-        runtime: "reusable_free_list_allocator",
-        reason:
-          "unique_heap closure scope exit lowers to __free with reusable allocator",
-      },
-    ],
-  });
+  assert_equals(Core.drops(mixed_if_owner), { steps: [] });
 
   const branch_replaced_owner = Source.core(Source.parse(`
 let f = (x: Int) => x
@@ -19520,6 +19283,9 @@ io
   const runtime_if_let_allocations = Core.allocations(
     runtime_if_let_payload_linear_core,
   ).facts;
+  const runtime_if_let_payload_linear_proof = Core.proof(
+    runtime_if_let_payload_linear_core,
+  );
   assert_equals(
     runtime_if_let_allocations.filter((fact) => {
       return fact.owner !== "result";
@@ -19583,8 +19349,8 @@ io
         layout: "runtime_union.tag_and_aligned_payload",
       },
       {
-        id: "allocation#5",
-        allocation_id: "allocation#5",
+        id: "allocation#4",
+        allocation_id: "allocation#4",
         scope: "block#2",
         storage: "persistent_unique_heap",
         ownership: { tag: "unique_heap", reason: "closure" },
@@ -19598,8 +19364,8 @@ io
         layout: "closure_env.table_index_and_capture_slots",
       },
       {
-        id: "allocation#6",
-        allocation_id: "allocation#6",
+        id: "allocation#5",
+        allocation_id: "allocation#5",
         scope: "block#3",
         storage: "persistent_unique_heap",
         ownership: { tag: "unique_heap", reason: "closure" },
@@ -19615,13 +19381,13 @@ io
     ],
   );
   assert_equals(
-    runtime_if_let_allocations.some((fact) => {
-      return fact.owner === "result" &&
-        fact.layout === "runtime_union.tag_and_aligned_payload";
+    runtime_if_let_payload_linear_proof.drops.steps.some((step) => {
+      return step.tag === "heap_drop" && step.owner === "result" &&
+        step.layout === "runtime_union.tag_and_aligned_payload";
     }),
     true,
   );
-  assert_equals(Core.proof(runtime_if_let_payload_linear_core).issues, []);
+  assert_equals(runtime_if_let_payload_linear_proof.issues, []);
   assert_equals(Typed.type(Core, runtime_if_let_payload_linear_core), "i32");
   assert_includes(
     runtime_if_let_payload_linear_wat,
@@ -19879,14 +19645,64 @@ output.consume(append("A", "da"))
     host_import: "consume",
     representation: "runtime_aggregate",
   }]);
+  const output_stmt = core.statements.find((stmt) => {
+    return stmt.tag === "bind" && stmt.name === "output";
+  });
+  if (!output_stmt || output_stmt.tag !== "bind") {
+    throw new Error("Missing runtime capability output binding");
+  }
+  if (output_stmt.value.tag !== "if") {
+    throw new Error("Runtime capability output must remain conditional");
+  }
+  const branch_types: CoreExpr[] = [];
+  for (
+    const branch of [
+      output_stmt.value.then_branch,
+      output_stmt.value.else_branch,
+    ]
+  ) {
+    if (branch.tag !== "block") {
+      throw new Error("Runtime capability branch must be a block");
+    }
+    const final_stmt = branch.statements[branch.statements.length - 1];
+    if (
+      !final_stmt || final_stmt.tag !== "expr" ||
+      final_stmt.expr.tag !== "struct_value"
+    ) {
+      throw new Error("Runtime capability branch must return a struct");
+    }
+    branch_types.push(final_stmt.expr.type_expr);
+  }
+  assert_equals(branch_types, [
+    {
+      tag: "struct_type",
+      fields: [{ name: "marker", type_name: "I32" }],
+    },
+    {
+      tag: "struct_type",
+      fields: [{ name: "marker", type_name: "I32" }],
+    },
+  ]);
   assert_equals(proof.issues, []);
   assert_equals(proof.capability_method_rows, core.capability_methods);
-  assert_equals(
-    proof.allocations.facts.some((fact) => {
-      return fact.reason === "runtime_aggregate" && fact.owner === "output";
-    }),
-    true,
-  );
+  const output_allocation = proof.allocations.facts.find((fact) => {
+    return fact.reason === "runtime_aggregate" && fact.owner === "output" &&
+      fact.expression === "if";
+  });
+  if (!output_allocation) {
+    throw new Error("Missing runtime capability owner allocation");
+  }
+  assert_equals(output_allocation.owned_children, [{
+    allocation_ids: ["allocation#1", "allocation#2"],
+    offset: 0,
+    ownership: { tag: "unique_heap", reason: "runtime_aggregate" },
+    layout: "runtime_slice.length_and_i32_elements",
+  }]);
+  const output_drop = proof.drops.steps.find((step) => {
+    return step.tag === "heap_drop" && step.owner === "output";
+  });
+  assert_equals(output_drop?.allocation_id, output_allocation.allocation_id);
+  assert_equals(output_drop?.owned_children, output_allocation.owned_children);
   assert_equals(
     proof.drops.steps.some((step) => {
       return step.tag === "host_transfer" && step.callee === "consume";
@@ -22013,11 +21829,26 @@ if let .ok(found) = result { found.age } else { 0 }
         fact.alignment === 4 &&
         fact.ownership.tag === "unique_heap";
     }),
-    true,
+    false,
+  );
+  assert_equals(
+    proof.drops.steps.map((step) => {
+      return {
+        owner: step.owner,
+        reason: step.ownership.reason,
+        allocation_id: step.allocation_id,
+      };
+    }),
+    [{
+      owner: "user",
+      reason: "runtime_aggregate",
+      allocation_id: "allocation#0",
+    }],
   );
   const wat = Source.wat(source);
   assert_includes(wat, "i32.store offset=4");
   assert_includes(wat, "i32.load offset=4");
+  assert_includes(wat, "call $__free");
 
   assert_throws(
     () =>

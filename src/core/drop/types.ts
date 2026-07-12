@@ -76,6 +76,8 @@ export type CoreDropPlan = {
 export type CoreDropOwner = {
   name: string;
   ownership: CoreUniqueHeapOwnership;
+  pointer: "named" | "temporary";
+  subject?: CoreExpr;
 };
 
 export type CoreDropHooks<ctx> =
@@ -90,6 +92,14 @@ export type CoreDropHooks<ctx> =
       stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
       ctx: ctx,
     ) => CoreDropLoopBodyCtx<ctx>;
+    core_assignment_value: (
+      stmt: Extract<CoreStmt, { tag: "assign" }>,
+      ctx: ctx,
+    ) => CoreExpr;
+    core_binding_value: (
+      stmt: Extract<CoreStmt, { tag: "bind" }>,
+      ctx: ctx,
+    ) => CoreExpr;
     if_let_branch_ctx?: (
       case_name: string,
       value_name: string | undefined,
@@ -97,6 +107,8 @@ export type CoreDropHooks<ctx> =
       ctx: ctx,
     ) => CoreDropIfLetBranchCtx<ctx>;
     collect_stmt_locals: (stmt: CoreStmt, ctx: ctx) => void;
+    mutable_binding?: (name: string, ctx: ctx) => boolean;
+    materialized_static_owner?: (value: CoreExpr, ctx: ctx) => boolean;
     static_core_call_requires_scope?: (
       target: Extract<CoreExpr, { tag: "lam" }>,
     ) => boolean;
@@ -127,7 +139,17 @@ export type CoreDropState = {
   expr_results: Map<CoreExpr, CoreDropExprResult>;
   functions: Map<string, StaticDropFunction>;
   aliases: Map<string, string>;
-  temporary_aliases: Map<string, CoreUniqueHeapOwnership>;
+  temporary_aliases: Map<string, {
+    ownership: CoreUniqueHeapOwnership;
+    subject: CoreExpr;
+  }>;
+  consumed_temporary_subjects: WeakSet<CoreExpr>;
+  static_aggregate_fields: Map<
+    string,
+    { field_names: string[]; static_texts: Set<string> }
+  >;
+  frozen_aggregate_owners: Set<string>;
+  frozen_text_owners: Set<string>;
   active_functions: Set<string>;
 };
 
@@ -137,6 +159,7 @@ export type CoreDropExitOwners = {
   return_owners: CoreDropOwner[];
   break_owners: CoreDropOwner[];
   continue_owners: CoreDropOwner[];
+  retained_owners?: Set<string>;
 };
 
 export type CoreDropBranchResult = {
@@ -172,7 +195,11 @@ export type StaticDropFunction =
 
 export type StaticDropCallBinding =
   | { tag: "owner"; owner: string }
-  | { tag: "temporary"; ownership: CoreUniqueHeapOwnership };
+  | {
+    tag: "temporary";
+    ownership: CoreUniqueHeapOwnership;
+    subject: CoreExpr;
+  };
 
 export type {
   CoreExpr,

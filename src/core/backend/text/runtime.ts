@@ -46,11 +46,13 @@ export function create_core_backend_text_runtime(
   function emit_runtime_text_append(
     left: CoreExpr,
     right: CoreExpr,
+    subject: CoreExpr,
     ctx: CoreEmitCtx,
   ): Wat {
     return emit_runtime_text_append_with_hooks(
       left,
       right,
+      subject,
       ctx,
       runtime_text_hooks,
     );
@@ -88,12 +90,14 @@ export function create_core_backend_text_runtime(
   }
 
   function emit_runtime_text_slice(
+    subject: CoreExpr,
     text: CoreExpr,
     start: CoreExpr,
     end: CoreExpr,
     ctx: CoreEmitCtx,
   ): Wat {
     return emit_runtime_text_slice_with_hooks(
+      subject,
       text,
       start,
       end,

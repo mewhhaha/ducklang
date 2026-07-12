@@ -5,11 +5,19 @@ import type {
   CoreBaselineProofInput,
   CoreProofIssue,
 } from "./types.ts";
+import {
+  core_validate_value_inventory,
+  core_value_inventory,
+} from "./inventory.ts";
 
 export function core_baseline_proof(
   input: CoreBaselineProofInput,
 ): CoreBaselineProof {
   const issues: CoreProofIssue[] = [];
+  let inventory_rows = input.inventory_rows;
+  if (!inventory_rows) {
+    inventory_rows = core_value_inventory(input);
+  }
 
   for (const issue of input.borrows.issues) {
     issues.push({
@@ -157,7 +165,7 @@ export function core_baseline_proof(
 
     if (step.allocation_id || step.allocation_ids) {
       const linked_ids = drop_linked_allocation_ids(step);
-      candidates = reason_candidates.filter((fact) => {
+      candidates = input.allocations.facts.filter((fact) => {
         return linked_ids.has(fact.allocation_id);
       });
     }
@@ -176,6 +184,12 @@ export function core_baseline_proof(
     issues.push(missing_cleanup_link_issue(step));
   }
 
+  issues.push(...core_validate_value_inventory(
+    inventory_rows,
+    input,
+    issues.length > 0,
+  ));
+
   return {
     target: "core-3-nonweb",
     target_profile: "core-3-nonweb",
@@ -188,6 +202,7 @@ export function core_baseline_proof(
         fact,
       })),
     ],
+    inventory_rows,
     lifetime_rows: input.lifetimes.scopes,
     borrow_view_rows: input.borrow_plan.edges,
     scratch_result_rows: input.cleanup.steps,
@@ -222,6 +237,14 @@ function drop_linked_allocation_ids(
   if (step.allocation_ids) {
     for (const allocation_id of step.allocation_ids) {
       ids.add(allocation_id);
+    }
+  }
+
+  if (step.owned_children) {
+    for (const child of step.owned_children) {
+      for (const allocation_id of child.allocation_ids) {
+        ids.add(allocation_id);
+      }
     }
   }
 

@@ -9,14 +9,19 @@ import type {
   CoreAllocationScope,
   CoreAllocationState,
 } from "./types.ts";
+import {
+  register_core_allocation_fact,
+  register_core_allocation_fact_scratch_scope,
+} from "./metadata.ts";
 
 export function record_allocation(
   expr: CoreExpr,
   reason: CoreAllocationReason,
   scope: CoreAllocationScope,
   state: CoreAllocationState,
+  instance?: string,
 ): import("./types.ts").CoreAllocationFact | undefined {
-  const key = allocation_record_key(reason, scope);
+  const key = allocation_record_key(reason, scope, instance);
   const recorded = state.recorded.get(expr);
 
   if (recorded) {
@@ -59,7 +64,65 @@ export function record_allocation(
   }
   state.next_allocation += 1;
   state.facts.push(fact);
+  const value_facts = state.value_allocations.get(expr);
+  if (value_facts) {
+    value_facts.push(fact);
+  } else {
+    state.value_allocations.set(expr, [fact]);
+  }
+  register_core_allocation_fact(
+    fact,
+    expr,
+    allocation_emission_site(expr, reason),
+  );
+  if (scope.scratch) {
+    register_core_allocation_fact_scratch_scope(fact, scope.scratch);
+  }
   return fact;
+}
+
+function allocation_emission_site(
+  expr: CoreExpr,
+  reason: CoreAllocationReason,
+): string {
+  if (expr.tag === "freeze") {
+    return reason + ".freeze_copy";
+  }
+
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    return "closure.value";
+  }
+
+  if (expr.tag === "struct_value") {
+    return "runtime_aggregate.value";
+  }
+
+  if (expr.tag === "union_case") {
+    return "runtime_union.value";
+  }
+
+  if (expr.tag === "prim") {
+    return "runtime_text.concat";
+  }
+
+  if (expr.tag === "app" && expr.func.tag === "var") {
+    if (expr.func.name === "append") {
+      return "runtime_text.append";
+    }
+
+    if (expr.func.name === "slice") {
+      return "runtime_text.slice";
+    }
+
+    if (
+      expr.func.name === "runtime_i32_slice" ||
+      expr.func.name === "runtime_text_slice"
+    ) {
+      return "runtime_slice.value";
+    }
+  }
+
+  return reason + ".value";
 }
 
 function allocation_layout(
@@ -124,6 +187,7 @@ function allocation_layout(
 function allocation_record_key(
   reason: CoreAllocationReason,
   scope: CoreAllocationScope,
+  instance: string | undefined,
 ): string {
   let scratch = "";
 
@@ -131,7 +195,11 @@ function allocation_record_key(
     scratch = scope.scratch;
   }
 
-  return scope.name + "|" + scratch + "|" + reason;
+  let key = scope.name + "|" + scratch + "|" + reason;
+  if (instance) {
+    key += "|" + instance;
+  }
+  return key;
 }
 
 function ownership_reason(

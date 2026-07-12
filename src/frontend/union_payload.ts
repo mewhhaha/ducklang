@@ -72,7 +72,7 @@ export function validate_union_payload_type(
   expected: string,
   value: FrontExpr,
   env: Env,
-  hooks: UnionValueHooks,
+  hooks: Pick<UnionValueHooks, "infer_expr">,
 ): void {
   const actual = hooks.infer_expr(value, env);
 

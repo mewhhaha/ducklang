@@ -7,6 +7,7 @@ export {
   scoped_static_core_call_value,
 } from "./static_call/scoped.ts";
 export {
+  static_core_call_binding_target,
   static_core_call_branch_app,
   static_core_call_branch_value,
   static_core_call_requires_scope,

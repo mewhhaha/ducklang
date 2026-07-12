@@ -276,18 +276,13 @@ missing proof edge, such as `active_borrow`, `scratch_backed_result`,
 
 ## Task Order
 
-1. [01-normalize-naming-and-spec.md](01-normalize-naming-and-spec.md)
-2. [02-bindings-shadowing-and-core-syntax.md](02-bindings-shadowing-and-core-syntax.md)
-3. [03-const-comptime-and-specialization.md](03-const-comptime-and-specialization.md)
-4. [04-functions-closures-and-control-flow.md](04-functions-closures-and-control-flow.md)
-5. [05-linear-capabilities-and-modules.md](05-linear-capabilities-and-modules.md)
-6. [06-type-values-structs-unions-and-facts.md](06-type-values-structs-unions-and-facts.md)
-7. [07-extensions-and-protocol-fact-checkers.md](07-extensions-and-protocol-fact-checkers.md)
-8. [08-recursion-loops-break-continue-and-linear-state.md](08-recursion-loops-break-continue-and-linear-state.md)
-9. [09-mutation-layout-and-error-model.md](09-mutation-layout-and-error-model.md)
-10. [10-lowering-pipeline-to-ic-and-wasm.md](10-lowering-pipeline-to-ic-and-wasm.md)
-11. [11-mvp-grammar-and-scope-control.md](11-mvp-grammar-and-scope-control.md)
-12. [12-remaining-generalization-tasks.md](12-remaining-generalization-tasks.md)
+Tasks 01-11 (naming, bindings, const/comptime, functions, linear capabilities,
+type-values, extensions, recursion/loops, mutation/layout, lowering, and MVP
+grammar) are implemented and their files have been removed; their residual
+reserved surface is consolidated in
+[12-remaining-generalization-tasks.md](12-remaining-generalization-tasks.md) and
+documented in `docs/coverage.md`. Language-server work lives in
+[lsp/summary.md](lsp/summary.md).
 
 ## Completion Criteria
 
@@ -314,25 +309,24 @@ Where things stand:
   `IxHost`), with implementation modules under `src/frontend/`. The lowerer
   follows a facade-plus-hooks architecture: `src/frontend/lower.ts` is the
   stable entry, `src/frontend/lower_graph.ts` composes hooks, and
-  `lower_*_adapter.ts` modules wire feature-specific hook bundles. Feature
-  areas (text, unions, structs, static loops, linear analysis, effects) each
-  own a small module cluster, usually a facade file plus a same-named
-  directory.
+  `lower_*_adapter.ts` modules wire feature-specific hook bundles. Feature areas
+  (text, unions, structs, static loops, linear analysis, effects) each own a
+  small module cluster, usually a facade file plus a same-named directory.
 - `src/core.ts` is the structured Core facade with implementation under
   `src/core/`. The backend mirrors the frontend architecture:
   `src/core/backend.ts` is the public trait facade, `src/core/backend/graph*`
   composes analysis/emission services, and feature emitters (runtime text,
-  runtime unions, closures, recursion, index assignment, ownership proofs)
-  live in focused `src/core/*.ts` modules with hook contracts supplied by the
+  runtime unions, closures, recursion, index assignment, ownership proofs) live
+  in focused `src/core/*.ts` modules with hook contracts supplied by the
   backend.
 - `src/ic.ts` owns Interaction Calculus reduction (`src/ic/graph_reduce*`),
   validation, and lowering to `src/expr.ts`; `src/mod.ts` and `src/wat.ts` own
   Wasm module assembly; `src/abi.ts` and `src/host.ts` own the managed
   JavaScript ABI.
 - Tests live next to the code (`src/*.test.ts`, `src/frontend/*.test.ts`),
-  end-to-end Wasm integration tests are grouped in `src/wasm_*.test.ts`, and
-  the executable example suite with expected results, failures, and traps
-  lives under `examples/` with `examples/manifest.ts` as the source of truth.
+  end-to-end Wasm integration tests are grouped in `src/wasm_*.test.ts`, and the
+  executable example suite with expected results, failures, and traps lives
+  under `examples/` with `examples/manifest.ts` as the source of truth.
 
 When a slice of work changes what a route accepts, update `docs/coverage.md`;
 when it changes language semantics, update `docs/language.md`. This file only

@@ -45,6 +45,10 @@ export type CoreClosureTypeHooks = {
     ctx: CoreClosureTypeCtx,
   ) => string[] | undefined;
   expr_type: (expr: CoreExpr, ctx: CoreClosureTypeCtx) => ValType;
+  runtime_aggregate_type_expr: (
+    expr: CoreExpr,
+    ctx: CoreClosureTypeCtx,
+  ) => CoreExpr | undefined;
   runtime_union_type_expr: (
     expr: CoreExpr,
     ctx: CoreClosureTypeCtx,

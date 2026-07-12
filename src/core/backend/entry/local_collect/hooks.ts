@@ -29,6 +29,7 @@ export function create_core_backend_local_collect_hooks(
       api.union.collect_runtime_union_value_locals,
     collect_scoped_static_core_call_locals:
       api.static_call.collect_scoped_static_core_call_locals,
+    core_assignment_value: api.type_check.core_assignment_value,
     core_binding_value: api.type_check.core_binding_value,
     core_expr_has_runtime_text_fact: api.text.core_expr_has_runtime_text_fact,
     core_expr_is_text: api.text.core_expr_is_text,

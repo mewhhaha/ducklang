@@ -3,8 +3,11 @@ import { sem_type_from_expr } from "../../frontend/semantic_type.ts";
 import { front_type_value_for_semantic_type } from "../../frontend/type_declaration.ts";
 import { format_type_expr, parse_type_expr } from "../../frontend/type_expr.ts";
 import { tokenize } from "../../frontend/tokenize.ts";
+import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreParam, CoreStmt, CoreTypeField } from "../ast.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import { is_type_level_expr, static_block_result } from "../type_static.ts";
+import { find_core_type_field } from "../union_static.ts";
 import {
   core_binding_value_type_name,
   core_direct_annotation_actual_name,
@@ -36,6 +39,42 @@ export function core_binding_value<ctx extends CoreTypeCheckCtx>(
     stmt.value,
     ctx,
     hooks,
+  );
+}
+
+export function core_assignment_value<ctx extends CoreTypeCheckCtx>(
+  stmt: Extract<CoreStmt, { tag: "assign" }>,
+  ctx: ctx,
+  hooks: CoreTypeCheckHooks<ctx>,
+): CoreExpr {
+  if (stmt.mode !== "same") {
+    return stmt.value;
+  }
+
+  const expected_type_expr = ctx.union_locals.get(stmt.name);
+  if (!expected_type_expr) {
+    return stmt.value;
+  }
+
+  const expected_type = hooks.static_type_value(expected_type_expr, ctx);
+  if (!expected_type || expected_type.tag !== "union_type") {
+    throw new Error(
+      "Core union assignment requires a declared union type: " + stmt.name,
+    );
+  }
+
+  let expected_name = "union";
+  if (expected_type_expr.tag === "var") {
+    expected_name = expected_type_expr.name;
+  }
+
+  return apply_core_direct_type_annotation(
+    expected_name,
+    expected_type,
+    stmt.value,
+    ctx,
+    hooks,
+    expected_type_expr,
   );
 }
 
@@ -170,17 +209,17 @@ export function apply_core_direct_type_annotation<
     }
 
     check_core_struct_fields(type_value, struct_value.fields, ctx, hooks);
-    const annotated_struct: CoreExpr = {
+    const annotated_struct: CoreExpr = record_core_expr_provenance({
       tag: "struct_value",
       type_expr: annotation_type_expr,
       fields: struct_value.fields,
-    };
+    }, value);
 
     if (frozen_struct_value) {
-      return {
+      return record_core_expr_provenance({
         tag: "freeze",
         value: annotated_struct,
-      };
+      }, value);
     }
 
     return annotated_struct;
@@ -189,30 +228,38 @@ export function apply_core_direct_type_annotation<
   const union_case = hooks.static_union_case(value, ctx);
 
   if (union_case) {
-    check_core_union_case_value(type_value, union_case, ctx, hooks);
-    return {
-      ...union_case,
-      type_expr: annotation_type_expr,
-    };
+    return apply_core_union_case_annotation(
+      type_value,
+      union_case,
+      annotation_type_expr,
+      ctx,
+      hooks,
+    );
   }
 
   const union_if = hooks.dynamic_union_if(value, ctx);
 
   if (union_if) {
-    check_core_union_case_value(type_value, union_if.then_case, ctx, hooks);
-    check_core_union_case_value(type_value, union_if.else_case, ctx, hooks);
-    return {
+    const then_branch = apply_core_union_case_annotation(
+      type_value,
+      union_if.then_case,
+      annotation_type_expr,
+      ctx,
+      hooks,
+    );
+    const else_branch = apply_core_union_case_annotation(
+      type_value,
+      union_if.else_case,
+      annotation_type_expr,
+      ctx,
+      hooks,
+    );
+    return record_core_expr_provenance({
       tag: "if",
       cond: union_if.cond,
-      then_branch: {
-        ...union_if.then_case,
-        type_expr: annotation_type_expr,
-      },
-      else_branch: {
-        ...union_if.else_case,
-        type_expr: annotation_type_expr,
-      },
-    };
+      then_branch,
+      else_branch,
+    }, value);
   }
 
   const runtime_union_type = hooks.runtime_union_type_expr(value, ctx);
@@ -236,18 +283,47 @@ export function apply_core_direct_type_annotation<
   );
 
   if (set_case) {
-    return {
+    return record_core_expr_provenance({
       tag: "union_case",
       name: set_case.name,
       value,
       type_expr: annotation_type_expr,
-    };
+    }, value);
   }
 
   throw new Error(
     "Core binding annotation expects " + annotation + ", got " +
       core_direct_annotation_actual_name(value, ctx, hooks),
   );
+}
+
+function apply_core_union_case_annotation<ctx extends CoreTypeCheckCtx>(
+  type_value: Extract<CoreTypeValue, { tag: "union_type" }>,
+  union_case: Extract<CoreExpr, { tag: "union_case" }>,
+  annotation_type_expr: CoreExpr,
+  ctx: ctx,
+  hooks: CoreTypeCheckHooks<ctx>,
+): Extract<CoreExpr, { tag: "union_case" }> {
+  check_core_union_case_value(type_value, union_case, ctx, hooks);
+  const declared = find_core_type_field(type_value.cases, union_case.name);
+  expect(declared, "Missing union case: " + union_case.name);
+
+  let value = union_case.value;
+  if (value) {
+    value = apply_core_value_annotation(
+      "binding",
+      declared.type_name,
+      value,
+      ctx,
+      hooks,
+    );
+  }
+
+  return record_core_expr_provenance({
+    ...union_case,
+    value,
+    type_expr: annotation_type_expr,
+  }, union_case);
 }
 
 function core_scratch_annotation_result(

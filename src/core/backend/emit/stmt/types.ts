@@ -35,12 +35,20 @@ export type CoreBackendStmtEmitApi = {
     stmt: Extract<CoreStmt, { tag: "bind" }>,
     ctx: CoreEmitCtx,
   ) => CoreExpr;
+  core_assignment_value: (
+    stmt: Extract<CoreStmt, { tag: "assign" }>,
+    ctx: CoreEmitCtx,
+  ) => CoreExpr;
   core_type_const_value: (
     stmt: Extract<CoreStmt, { tag: "bind" }>,
     value: CoreExpr,
     ctx: CoreEmitCtx,
   ) => CoreExpr | undefined;
   core_expr_has_runtime_text_fact: (
+    value: CoreExpr,
+    ctx: CoreEmitCtx,
+  ) => boolean;
+  core_expr_is_text: (
     value: CoreExpr,
     ctx: CoreEmitCtx,
   ) => boolean;

@@ -10,8 +10,19 @@ import {
 } from "./context.ts";
 import { core_stmt } from "./stmt.ts";
 import { atom_i32 } from "../../frontend/atom.ts";
+import { record_optional_core_source_origin } from "../source_origin.ts";
 
 export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
+  return record_optional_core_source_origin(
+    core_expr_untracked(expr, ctx),
+    expr,
+  );
+}
+
+function core_expr_untracked(
+  expr: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): CoreExpr {
   switch (expr.tag) {
     case "atom":
       return {

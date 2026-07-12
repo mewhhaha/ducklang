@@ -1,8 +1,24 @@
 import { assert_equals } from "../assert.ts";
 import { encode_message, MessageDecoder } from "./framing.ts";
+import type { LspRange } from "./position.ts";
 import { parse_diagnostics } from "./diagnostics.ts";
+import { parse_source_with_diagnostics } from "../frontend/parser.ts";
 import { document_symbols } from "./symbols.ts";
-import { create_state, handle_message } from "./server.ts";
+import type { LspCompletionItem } from "./completion.ts";
+import {
+  create_state,
+  flush_due_diagnostics,
+  handle_message,
+  next_diagnostic_deadline,
+} from "./server.ts";
+
+const completion_triggers = [
+  ".",
+  '"',
+  "_",
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  ..."abcdefghijklmnopqrstuvwxyz",
+];
 
 Deno.test("message decoder reassembles split frames", () => {
   const framed = encode_message({ id: 1, method: "initialize" });
@@ -54,7 +70,8 @@ Deno.test("document symbols cover top-level introductions", () => {
     "total",
     "",
   ].join("\n");
-  const symbols = document_symbols(text);
+  const parsed = parse_source_with_diagnostics(text);
+  const symbols = document_symbols(parsed.source, parsed.syntax, "utf-16");
   assert_equals(
     symbols.map((symbol) => [symbol.name, symbol.kind]),
     [
@@ -67,6 +84,44 @@ Deno.test("document symbols cover top-level introductions", () => {
   );
 });
 
+Deno.test("document symbols nest declaration members through broken syntax", () => {
+  const prefix = "effect Counter {\n  get: () => I32\n}\n" +
+    "type Result =\n  | .ok = Int\n  | .error = Text\n";
+  const valid = parse_source_with_diagnostics(prefix + "let value = 1\n");
+  const broken = parse_source_with_diagnostics(prefix + "let = broken\n");
+  const valid_symbols = document_symbols(
+    valid.source,
+    valid.syntax,
+    "utf-16",
+  );
+  const broken_symbols = document_symbols(
+    broken.source,
+    broken.syntax,
+    "utf-16",
+  );
+
+  assert_equals(
+    valid_symbols.slice(0, 2).map((symbol) => ({
+      name: symbol.name,
+      children: symbol.children.map((child) => child.name),
+    })),
+    [{ name: "Counter", children: ["get"] }, {
+      name: "Result",
+      children: ["ok", "error"],
+    }],
+  );
+  assert_equals(
+    broken_symbols.map((symbol) => ({
+      name: symbol.name,
+      children: symbol.children.map((child) => child.name),
+    })),
+    [{ name: "Counter", children: ["get"] }, {
+      name: "Result",
+      children: ["ok", "error"],
+    }],
+  );
+});
+
 Deno.test("server handles the core lifecycle", () => {
   const state = create_state();
   const initialize = handle_message(state, { id: 1, method: "initialize" });
@@ -75,7 +130,11 @@ Deno.test("server handles the core lifecycle", () => {
   const opened = handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri: "file:///demo.ix", text: "let  a=1\na\n" },
+      textDocument: {
+        uri: "file:///demo.ix",
+        version: 1,
+        text: "let  a=1\na\n",
+      },
     },
   });
   assert_equals(opened.length, 1);
@@ -99,7 +158,11 @@ Deno.test("server refuses to format broken documents", () => {
   handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri: "file:///broken.ix", text: "let value = (1\n" },
+      textDocument: {
+        uri: "file:///broken.ix",
+        version: 1,
+        text: "let value = (1\n",
+      },
     },
   });
   const formatting = handle_message(state, {
@@ -108,4 +171,1613 @@ Deno.test("server refuses to format broken documents", () => {
     params: { textDocument: { uri: "file:///broken.ix" } },
   });
   assert_equals(formatting, [{ jsonrpc: "2.0", id: 1, result: null }]);
+});
+
+Deno.test("server defaults to UTF-16 and advertises incremental sync", () => {
+  const state = create_state();
+  const response = handle_message(state, { id: 1, method: "initialize" });
+  assert_equals(response, [{
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      capabilities: {
+        positionEncoding: "utf-16",
+        textDocumentSync: {
+          openClose: true,
+          change: 2,
+          willSave: true,
+          save: { includeText: true },
+        },
+        documentFormattingProvider: true,
+        documentSymbolProvider: true,
+        definitionProvider: true,
+        typeDefinitionProvider: true,
+        referencesProvider: true,
+        documentHighlightProvider: true,
+        workspaceSymbolProvider: true,
+        renameProvider: { prepareProvider: true },
+        codeActionProvider: {
+          resolveProvider: true,
+          codeActionKinds: [
+            "quickfix",
+            "refactor.rewrite",
+            "refactor.extract",
+            "refactor.inline",
+            "source.fixAll",
+          ],
+        },
+        completionProvider: {
+          resolveProvider: true,
+          triggerCharacters: completion_triggers,
+        },
+        hoverProvider: true,
+        signatureHelpProvider: {
+          triggerCharacters: ["(", ","],
+          retriggerCharacters: [","],
+        },
+        inlayHintProvider: { resolveProvider: true },
+        codeLensProvider: { resolveProvider: false },
+        executeCommandProvider: {
+          commands: [
+            "ix.viewStage",
+            "ix.expandComptime",
+            "ix.runExample",
+          ],
+        },
+        semanticTokensProvider: {
+          legend: {
+            tokenTypes: [
+              "variable",
+              "type",
+              "typeParameter",
+              "interface",
+              "method",
+              "enumMember",
+              "property",
+              "function",
+            ],
+            tokenModifiers: [
+              "declaration",
+              "readonly",
+              "modification",
+              "linear",
+              "comptime",
+            ],
+          },
+          range: true,
+          full: { delta: true },
+        },
+      },
+      experimental: {
+        ix: {
+          expandComptime: true,
+          viewStage: ["ic", "expr", "mod", "wat"],
+        },
+      },
+      serverInfo: { name: "ix-lsp", version: "0.1.0" },
+    },
+  }]);
+});
+
+Deno.test("server selects the first client-supported position encoding", () => {
+  const state = create_state();
+  const response = handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: {
+      capabilities: {
+        general: { positionEncodings: ["utf-8", "utf-16"] },
+      },
+    },
+  });
+  assert_equals(state.documents.position_encoding, "utf-8");
+  assert_equals(response, [{
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      capabilities: {
+        positionEncoding: "utf-8",
+        textDocumentSync: {
+          openClose: true,
+          change: 2,
+          willSave: true,
+          save: { includeText: true },
+        },
+        documentFormattingProvider: true,
+        documentSymbolProvider: true,
+        definitionProvider: true,
+        typeDefinitionProvider: true,
+        referencesProvider: true,
+        documentHighlightProvider: true,
+        workspaceSymbolProvider: true,
+        renameProvider: { prepareProvider: true },
+        codeActionProvider: {
+          resolveProvider: true,
+          codeActionKinds: [
+            "quickfix",
+            "refactor.rewrite",
+            "refactor.extract",
+            "refactor.inline",
+            "source.fixAll",
+          ],
+        },
+        completionProvider: {
+          resolveProvider: true,
+          triggerCharacters: completion_triggers,
+        },
+        hoverProvider: true,
+        signatureHelpProvider: {
+          triggerCharacters: ["(", ","],
+          retriggerCharacters: [","],
+        },
+        inlayHintProvider: { resolveProvider: true },
+        codeLensProvider: { resolveProvider: false },
+        executeCommandProvider: {
+          commands: [
+            "ix.viewStage",
+            "ix.expandComptime",
+            "ix.runExample",
+          ],
+        },
+        semanticTokensProvider: {
+          legend: {
+            tokenTypes: [
+              "variable",
+              "type",
+              "typeParameter",
+              "interface",
+              "method",
+              "enumMember",
+              "property",
+              "function",
+            ],
+            tokenModifiers: [
+              "declaration",
+              "readonly",
+              "modification",
+              "linear",
+              "comptime",
+            ],
+          },
+          range: true,
+          full: { delta: true },
+        },
+      },
+      experimental: {
+        ix: {
+          expandComptime: true,
+          viewStage: ["ic", "expr", "mod", "wat"],
+        },
+      },
+      serverInfo: { name: "ix-lsp", version: "0.1.0" },
+    },
+  }]);
+});
+
+Deno.test("server applies ordered UTF-16 incremental changes around emoji", () => {
+  const state = create_state();
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri: "file:///emoji.ix", version: 1, text: "a😀bc" },
+    },
+  });
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri: "file:///emoji.ix", version: 2 },
+      contentChanges: [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 3 },
+          },
+          rangeLength: 2,
+          text: "X",
+        },
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 3 },
+          },
+          rangeLength: 1,
+          text: "C",
+        },
+      ],
+    },
+  });
+  assert_equals(state.documents.get("file:///emoji.ix"), {
+    uri: "file:///emoji.ix",
+    version: 2,
+    text: "aXCc",
+  });
+});
+
+Deno.test("server accepts full document changes as the synchronization fallback", () => {
+  const state = create_state();
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri: "file:///fallback.ix", version: 1, text: "old" },
+    },
+  });
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri: "file:///fallback.ix", version: 2 },
+      contentChanges: [{ text: "new" }],
+    },
+  });
+  assert_equals(state.documents.get("file:///fallback.ix"), {
+    uri: "file:///fallback.ix",
+    version: 2,
+    text: "new",
+  });
+});
+
+Deno.test("server accepts increasing signed document versions", () => {
+  const state = create_state();
+  const uri = "file:///signed.ix";
+  const opened = handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: -1, text: "let value = 1\n" },
+    },
+  });
+  assert_equals(opened.length, 1);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 0 },
+      contentChanges: [{ text: "let value = 2\n" }],
+    },
+  });
+  assert_equals(state.documents.get(uri)?.version, 0);
+});
+
+Deno.test("server versions diagnostics and reuses then invalidates parse work", () => {
+  let now = 100;
+  const state = create_state({ debounce_ms: 50, now: () => now });
+  const uri = "file:///cached.ix";
+  const opened = handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: "let value = 1\nvalue\n" },
+    },
+  });
+  assert_equals(opened.length, 1);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 1);
+
+  handle_message(state, {
+    id: 1,
+    method: "textDocument/formatting",
+    params: { textDocument: { uri } },
+  });
+  handle_message(state, {
+    id: 5,
+    method: "textDocument/documentSymbol",
+    params: { textDocument: { uri } },
+  });
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
+
+  const changed = handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{ text: "let value = (1\n" }],
+    },
+  });
+  assert_equals(changed, []);
+  assert_equals(next_diagnostic_deadline(state), 150);
+  assert_equals(flush_due_diagnostics(state, 149), []);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 1);
+  now = 150;
+  const published = flush_due_diagnostics(state, now) as [{
+    params: { version: number };
+  }];
+  assert_equals(published[0]?.params.version, 2);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 2);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 2);
+
+  handle_message(state, {
+    method: "textDocument/willSave",
+    params: { textDocument: { uri } },
+  });
+  handle_message(state, {
+    id: 2,
+    method: "textDocument/formatting",
+    params: { textDocument: { uri } },
+  });
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 3);
+
+  const saved = handle_message(state, {
+    method: "textDocument/didSave",
+    params: { textDocument: { uri }, text: "stale saved text" },
+  });
+  assert_equals(saved.length, 1);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 4);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 3);
+  handle_message(state, {
+    id: 3,
+    method: "textDocument/formatting",
+    params: { textDocument: { uri } },
+  });
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 4);
+  assert_equals(state.documents.get(uri)?.text, "let value = (1\n");
+
+  handle_message(state, {
+    method: "workspace/didChangeWatchedFiles",
+    params: { changes: [{ uri, type: 2 }] },
+  });
+  handle_message(state, {
+    id: 4,
+    method: "textDocument/formatting",
+    params: { textDocument: { uri } },
+  });
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 5);
+});
+
+Deno.test("server debounces change bursts and publishes only the latest version", () => {
+  let now = 0;
+  const state = create_state({ debounce_ms: 40, now: () => now });
+  const uri = "file:///burst.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: "let value = 1\n" },
+    },
+  });
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 1);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{ text: "let value = (1\n" }],
+    },
+  });
+  now = 20;
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 3 },
+      contentChanges: [{ text: "let value = 3\n" }],
+    },
+  });
+
+  assert_equals(next_diagnostic_deadline(state), 60);
+  assert_equals(flush_due_diagnostics(state, 59), []);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 1);
+  const messages = flush_due_diagnostics(state, 60) as [{
+    params: { version: number; diagnostics: unknown[] };
+  }];
+  assert_equals(messages[0]?.params.version, 3);
+  assert_equals(messages[0]?.params.diagnostics, [{
+    code: "IX2003",
+    severity: 2,
+    source: "ix",
+    message: "Unused runtime binding value",
+    range: {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 13 },
+    },
+  }]);
+  assert_equals(state.documents.compute_count(uri, "source_parse"), 2);
+  assert_equals(state.documents.compute_count(uri, "source_analysis"), 2);
+  assert_equals(flush_due_diagnostics(state, 100), []);
+});
+
+Deno.test("server publishes compiler semantic diagnostics with code and version", () => {
+  const state = create_state();
+  const uri = "file:///semantic.ix";
+  const messages = handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        version: 7,
+        text: "40i64 + 2i32\n",
+      },
+    },
+  }) as [{
+    params: {
+      version: number;
+      diagnostics: Array<{
+        code: string;
+        severity: number;
+        range: LspRange;
+      }>;
+    };
+  }];
+
+  assert_equals(messages[0]?.params.version, 7);
+  assert_equals(messages[0]?.params.diagnostics, [{
+    code: "IX2302",
+    severity: 1,
+    source: "ix",
+    message: "Mixed i32 and i64 operands for operator +",
+    range: {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 12 },
+    },
+  }]);
+});
+
+Deno.test("dependency edits invalidate and republish open importers", () => {
+  let now = 0;
+  const state = create_state({ debounce_ms: 25, now: () => now });
+  const dependency_uri = "file:///dep.ix";
+  const importer_uri = "file:///main.ix";
+
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: dependency_uri,
+        version: 1,
+        text: "const available = 1\navailable\n",
+      },
+    },
+  });
+  const opened = handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: importer_uri,
+        version: 1,
+        text: 'import available from "./dep.ix"\navailable\n',
+      },
+    },
+  }) as [{ params: { diagnostics: unknown[] } }];
+  assert_equals(opened[0]?.params.diagnostics, []);
+  assert_equals(
+    state.documents.compute_count(importer_uri, "source_analysis"),
+    1,
+  );
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri: dependency_uri, version: 2 },
+      contentChanges: [{ text: "const other = 1\nother\n" }],
+    },
+  });
+  assert_equals(next_diagnostic_deadline(state), 25);
+  now = 25;
+  const published = flush_due_diagnostics(state, now) as Array<{
+    params: {
+      uri: string;
+      version: number;
+      diagnostics: Array<{ code: string }>;
+    };
+  }>;
+  const importer = published.find((message) =>
+    message.params.uri === importer_uri
+  );
+
+  if (importer === undefined) {
+    throw new Error("Missing importer diagnostic publication");
+  }
+
+  assert_equals(importer.params.version, 1);
+  assert_equals(
+    importer.params.diagnostics.map((diagnostic) => diagnostic.code),
+    ["IX2501"],
+  );
+  assert_equals(
+    state.documents.compute_count(importer_uri, "source_analysis"),
+    2,
+  );
+});
+
+Deno.test("server ignores malformed and stale changes without corrupting documents", () => {
+  const state = create_state();
+  const uri = "file:///stable.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri, version: 2, text: "stable" } },
+  });
+  assert_equals(
+    handle_message(state, {
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri, version: 2 },
+        contentChanges: [{ text: "stale" }],
+      },
+    }),
+    [],
+  );
+  assert_equals(
+    handle_message(state, {
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri: "not a uri", version: 3 },
+        contentChanges: [{ text: "broken" }],
+      },
+    }),
+    [],
+  );
+  assert_equals(state.documents.get(uri), {
+    uri,
+    version: 2,
+    text: "stable",
+  });
+});
+
+Deno.test("server formats the Unicode whole-document range in the negotiated encoding", () => {
+  const state = create_state();
+  handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: {
+      capabilities: {
+        general: { positionEncodings: ["utf-8", "utf-16"] },
+      },
+    },
+  });
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: "file:///unicode.ix",
+        version: 1,
+        text: "let  value=1\nvalue//😀",
+      },
+    },
+  });
+  const formatting = handle_message(state, {
+    id: 2,
+    method: "textDocument/formatting",
+    params: { textDocument: { uri: "file:///unicode.ix" } },
+  }) as [{ result: [{ range: { end: { line: number; character: number } } }] }];
+  assert_equals(formatting[0]?.result[0]?.range.end, {
+    line: 1,
+    character: 11,
+  });
+});
+
+Deno.test("server encodes document symbol ranges with the negotiated encoding", () => {
+  const state = create_state();
+  handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: {
+      capabilities: {
+        general: { positionEncodings: ["utf-8", "utf-16"] },
+      },
+    },
+  });
+  const uri = "file:///symbols.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        version: 1,
+        text: '"😀";let x = 1\n',
+      },
+    },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/documentSymbol",
+    params: { textDocument: { uri } },
+  }) as [{
+    result: Array<{
+      range: LspRange;
+      selectionRange: LspRange;
+    }>;
+  }];
+
+  assert_equals(response[0]?.result[0]?.range, {
+    start: { line: 0, character: 7 },
+    end: { line: 0, character: 16 },
+  });
+  assert_equals(response[0]?.result[0]?.selectionRange, {
+    start: { line: 0, character: 11 },
+    end: { line: 0, character: 12 },
+  });
+});
+
+Deno.test("server navigation and rename survive an unrelated parse error", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///navigation.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        version: 1,
+        text: "let value = 1\nlet = broken\nvalue\n",
+      },
+    },
+  });
+  const position = { line: 2, character: 1 };
+
+  assert_equals(
+    handle_message(state, {
+      id: 2,
+      method: "textDocument/definition",
+      params: { textDocument: { uri }, position },
+    }),
+    [{
+      jsonrpc: "2.0",
+      id: 2,
+      result: {
+        uri,
+        range: {
+          start: { line: 0, character: 4 },
+          end: { line: 0, character: 9 },
+        },
+      },
+    }],
+  );
+
+  const references = handle_message(state, {
+    id: 3,
+    method: "textDocument/references",
+    params: {
+      textDocument: { uri },
+      position,
+      context: { includeDeclaration: true },
+    },
+  }) as [{ result: Array<{ range: LspRange }> }];
+  assert_equals(
+    references[0]?.result.map((location) => location.range.start.line),
+    [0, 2],
+  );
+
+  const highlights = handle_message(state, {
+    id: 4,
+    method: "textDocument/documentHighlight",
+    params: { textDocument: { uri }, position },
+  }) as [{ result: Array<{ kind: number }> }];
+  assert_equals(highlights[0]?.result.map((item) => item.kind), [3, 2]);
+
+  const preparation = handle_message(state, {
+    id: 5,
+    method: "textDocument/prepareRename",
+    params: { textDocument: { uri }, position },
+  }) as [{ result: { placeholder: string } }];
+  assert_equals(preparation[0]?.result.placeholder, "value");
+
+  const rename = handle_message(state, {
+    id: 6,
+    method: "textDocument/rename",
+    params: { textDocument: { uri }, position, newName: "answer" },
+  }) as [{ result: { changes: Record<string, unknown[]> } }];
+  assert_equals(rename[0]?.result.changes[uri]?.length, 2);
+});
+
+Deno.test("server serves type, import, and workspace symbol navigation", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const main = "file:///main.ix";
+  const other = "file:///other.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: main,
+        version: 1,
+        text: "type Pair = [.left = Int]\n" +
+          "let value: Pair = [.left = 1]\nvalue.left\n",
+      },
+    },
+  });
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: other,
+        version: 1,
+        text: 'import dependency from "./dep.ix"\ndependency\n',
+      },
+    },
+  });
+
+  const type_definition = handle_message(state, {
+    id: 2,
+    method: "textDocument/typeDefinition",
+    params: {
+      textDocument: { uri: main },
+      position: { line: 2, character: 2 },
+    },
+  }) as [{ result: { range: LspRange } }];
+  assert_equals(type_definition[0]?.result.range.start, {
+    line: 0,
+    character: 5,
+  });
+
+  const imported = handle_message(state, {
+    id: 3,
+    method: "textDocument/definition",
+    params: {
+      textDocument: { uri: other },
+      position: { line: 1, character: 2 },
+    },
+  }) as [{ result: { uri: string } }];
+  assert_equals(imported[0]?.result.uri, "file:///dep.ix");
+
+  const workspace = handle_message(state, {
+    id: 4,
+    method: "workspace/symbol",
+    params: { query: "lft" },
+  }) as [{ result: Array<{ name: string; containerName?: string }> }];
+  assert_equals(workspace[0]?.result.map((symbol) => symbol.name), ["left"]);
+  assert_equals(workspace[0]?.result[0]?.containerName, "Pair");
+});
+
+Deno.test("workspace symbols include closed Ix files under the root", () => {
+  const state = create_state();
+  const root = new URL(
+    "../../examples/ownership_modules/multi_file/",
+    import.meta.url,
+  ).href;
+  handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: { rootUri: root },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "workspace/symbol",
+    params: { query: "scoremod" },
+  }) as [{ result: Array<{ name: string; location: { uri: string } }> }];
+
+  assert_equals(
+    response[0]?.result.some((symbol) =>
+      symbol.name === "score_module" &&
+      symbol.location.uri.endsWith("score_module.ix")
+    ),
+    true,
+  );
+});
+
+Deno.test("server completes members, import paths, and resolved docs", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///virtual/main.ix";
+  const dependency = "file:///virtual/dep.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: dependency,
+        version: 1,
+        text: "const dependency = 1\n",
+      },
+    },
+  });
+  const text = "/// A user record.\n" +
+    "type User = [.name = Text]\n" +
+    'let user: User = [.name = "Ada"]\nuser.';
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri, version: 1, text } },
+  });
+  const completed = handle_message(state, {
+    id: 2,
+    method: "textDocument/completion",
+    params: {
+      textDocument: { uri },
+      position: { line: 3, character: 5 },
+    },
+  }) as [{ result: { isIncomplete: boolean; items: LspCompletionItem[] } }];
+  assert_equals(completed[0]?.result.isIncomplete, true);
+  assert_equals(completed[0]?.result.items.map((item) => item.label), [
+    "name",
+  ]);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{ text: 'import dependency from "d' }],
+    },
+  });
+  const imports = handle_message(state, {
+    id: 3,
+    method: "textDocument/completion",
+    params: {
+      textDocument: { uri },
+      position: { line: 0, character: 25 },
+    },
+  }) as [{ result: { items: LspCompletionItem[] } }];
+  assert_equals(imports[0]?.result.items.map((item) => item.label), [
+    "./dep.ix",
+  ]);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 3 },
+      contentChanges: [{
+        text: "/// A user record.\ntype User = [.name = Text]\nUs",
+      }],
+    },
+  });
+  const types = handle_message(state, {
+    id: 4,
+    method: "textDocument/completion",
+    params: {
+      textDocument: { uri },
+      position: { line: 2, character: 2 },
+    },
+  }) as [{ result: { items: LspCompletionItem[] } }];
+  const user = types[0]?.result.items.find((item) => item.label === "User");
+
+  if (user === undefined) {
+    throw new Error("Missing User completion");
+  }
+
+  const resolved = handle_message(state, {
+    id: 5,
+    method: "completionItem/resolve",
+    params: user,
+  }) as [{ result: LspCompletionItem }];
+  assert_equals(
+    resolved[0]?.result.documentation?.value.includes("A user record."),
+    true,
+  );
+});
+
+Deno.test("server returns semantic hover and signature help", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///hover.ix";
+  const hover_text = "const make_adder = n => { x => x + n }\n" +
+    "const add_three = comptime make_adder(3)\n" +
+    "add_three(39)\n";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: hover_text },
+    },
+  });
+  const hovered = handle_message(state, {
+    id: 2,
+    method: "textDocument/hover",
+    params: {
+      textDocument: { uri },
+      position: { line: 2, character: 2 },
+    },
+  }) as [{ result: { contents: { value: string } } }];
+  assert_equals(
+    hovered[0]?.result.contents.value.includes("`n = 3`"),
+    true,
+  );
+
+  const signature_text = "let apply_const = (x, const f) => f(x)\n" +
+    "apply_const(21, ";
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{ text: signature_text }],
+    },
+  });
+  const signature = handle_message(state, {
+    id: 3,
+    method: "textDocument/signatureHelp",
+    params: {
+      textDocument: { uri },
+      position: { line: 1, character: 16 },
+    },
+  }) as [{
+    result: {
+      activeParameter: number;
+      signatures: Array<{ parameters: Array<{ label: string }> }>;
+    };
+  }];
+  assert_equals(signature[0]?.result.activeParameter, 1);
+  assert_equals(
+    signature[0]?.result.signatures[0]?.parameters[1]?.label,
+    "const f",
+  );
+});
+
+Deno.test("server returns and resolves inlay hints in the requested range", () => {
+  const state = create_state();
+  const uri = "file:///hints.ix";
+  handle_message(state, { id: 1, method: "initialize" });
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+    },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/inlayHint",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 14 },
+      },
+    },
+  }) as [{ result: Array<{ label: string; data: unknown }> }];
+  const hint = response[0]?.result[0];
+
+  if (hint === undefined) {
+    throw new Error("Missing inferred type inlay hint");
+  }
+
+  assert_equals(hint.label, ": I32");
+  const resolved = handle_message(state, {
+    id: 3,
+    method: "inlayHint/resolve",
+    params: hint,
+  }) as [{ result: { tooltip?: { value: string } } }];
+  assert_equals(
+    resolved[0]?.result.tooltip?.value,
+    "Inferred binding type: I32",
+  );
+});
+
+Deno.test("server applies initialization inlay hint settings", () => {
+  const state = create_state();
+  const uri = "file:///initial-hints.ix";
+  handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: { initializationOptions: { inlayHints: { types: false } } },
+  });
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+    },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/inlayHint",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 1, character: 6 },
+      },
+    },
+  });
+  assert_equals(response, [{ jsonrpc: "2.0", id: 2, result: [] }]);
+});
+
+Deno.test("server applies dynamic IX inlay hint settings", () => {
+  const state = create_state();
+  const uri = "file:///dynamic-hints.ix";
+  handle_message(state, { id: 1, method: "initialize" });
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+    },
+  });
+  handle_message(state, {
+    method: "workspace/didChangeConfiguration",
+    params: { settings: { ix: { inlayHints: { types: false } } } },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/inlayHint",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 1, character: 6 },
+      },
+    },
+  });
+  assert_equals(response, [{ jsonrpc: "2.0", id: 2, result: [] }]);
+
+  handle_message(state, {
+    method: "workspace/didChangeConfiguration",
+    params: { settings: { inlayHints: { types: true } } },
+  });
+  const restored = handle_message(state, {
+    id: 3,
+    method: "textDocument/inlayHint",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 1, character: 6 },
+      },
+    },
+  }) as [{ result: Array<{ label: string }> }];
+  assert_equals(restored[0]?.result[0]?.label, ": I32");
+});
+
+Deno.test("server semantic tokens are stable, ranged, and minimally delta-updated", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///tokens.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        version: 1,
+        text: "const first = 1\nlet second = first\nsecond\n",
+      },
+    },
+  });
+  const first = handle_message(state, {
+    id: 2,
+    method: "textDocument/semanticTokens/full",
+    params: { textDocument: { uri } },
+  }) as [{ result: { resultId: string; data: number[] } }];
+  const repeated = handle_message(state, {
+    id: 3,
+    method: "textDocument/semanticTokens/full",
+    params: { textDocument: { uri } },
+  });
+  assert_equals(repeated, [{
+    jsonrpc: "2.0",
+    id: 3,
+    result: first[0]?.result,
+  }]);
+  assert_equals(state.documents.compute_count(uri, "semantic_tokens"), 1);
+
+  const ranged = handle_message(state, {
+    id: 4,
+    method: "textDocument/semanticTokens/range",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 1, character: 0 },
+        end: { line: 2, character: 6 },
+      },
+    },
+  }) as [{ result: { data: number[] } }];
+  assert_equals(ranged[0]?.result.data.length, 15);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{
+        text: "const first = 1\nlet renamed = first\nrenamed\n",
+      }],
+    },
+  });
+  const previous_id = first[0]?.result.resultId;
+
+  if (previous_id === undefined) {
+    throw new Error("Missing initial semantic token result id");
+  }
+
+  const delta = handle_message(state, {
+    id: 5,
+    method: "textDocument/semanticTokens/full/delta",
+    params: {
+      textDocument: { uri },
+      previousResultId: previous_id,
+    },
+  }) as [{
+    result: {
+      resultId: string;
+      edits: Array<{ start: number; deleteCount: number; data?: number[] }>;
+    };
+  }];
+  assert_equals(delta[0]?.result.edits.length, 1);
+  const edit = delta[0]?.result.edits[0];
+
+  if (edit === undefined) {
+    throw new Error("Missing server semantic token delta");
+  }
+
+  assert_equals(edit.start > 0, true);
+  assert_equals(edit.deleteCount < first[0].result.data.length, true);
+});
+
+Deno.test("server enumerates and lazily resolves code actions", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///actions.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        version: 1,
+        text: "let answer = 42\nanswer\n",
+      },
+    },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/codeAction",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 4 },
+        end: { line: 0, character: 10 },
+      },
+      context: { diagnostics: [] },
+    },
+  }) as [{ result: Array<Record<string, unknown>> }];
+  const action = response[0]?.result.find((candidate) =>
+    candidate.title === "Annotate answer with inferred type"
+  );
+
+  if (action === undefined) {
+    throw new Error("Missing annotation code action");
+  }
+
+  assert_equals(action.edit, undefined);
+  const resolved = handle_message(state, {
+    id: 3,
+    method: "codeAction/resolve",
+    params: action,
+  }) as [{ result: { edit: { changes: Record<string, unknown[]> } } }];
+  assert_equals(resolved[0]?.result.edit.changes[uri], [{
+    range: {
+      start: { line: 0, character: 10 },
+      end: { line: 0, character: 10 },
+    },
+    newText: ": I32",
+  }]);
+
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri, version: 2 },
+      contentChanges: [{ text: "let answer = 43\nanswer\n" }],
+    },
+  });
+  const stale = handle_message(state, {
+    id: 4,
+    method: "codeAction/resolve",
+    params: action,
+  }) as [{ result: Record<string, unknown> }];
+  assert_equals(stale[0]?.result.edit, undefined);
+});
+
+Deno.test("server resolves proof quick fixes in the manifest route", async () => {
+  const url = new URL(
+    "../../examples/failures/compile/11_frozen_mutation.ix",
+    import.meta.url,
+  );
+  const uri = url.href;
+  const text = await Deno.readTextFile(url);
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const opened = handle_message(state, {
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri, version: 1, text } },
+  }) as [{ params: { diagnostics: Array<Record<string, unknown>> } }];
+  const diagnostic = opened[0]?.params.diagnostics.find((candidate) =>
+    candidate.code === "IX2404"
+  );
+
+  if (diagnostic === undefined) {
+    throw new Error("Missing frozen-mutation proof diagnostic");
+  }
+
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/codeAction",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 2, character: 12 },
+      },
+      context: { diagnostics: [diagnostic] },
+    },
+  }) as [{ result: Array<Record<string, unknown>> }];
+  const action = response[0]?.result.find((candidate) =>
+    candidate.title === "Rebuild and shadow frozen message"
+  );
+
+  if (action === undefined) {
+    throw new Error("Missing frozen-mutation code action");
+  }
+
+  const resolved = handle_message(state, {
+    id: 3,
+    method: "codeAction/resolve",
+    params: action,
+  }) as [{ result: { edit?: unknown } }];
+  assert_equals(resolved[0]?.result.edit === undefined, false);
+});
+
+Deno.test("server suppresses assists that fail workspace resolution", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///missing-import/main.ix";
+  const text = 'import dep from "./missing.ix"\nlet answer = 42\nanswer\n';
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri, version: 1, text } },
+  });
+  const response = handle_message(state, {
+    id: 2,
+    method: "textDocument/codeAction",
+    params: {
+      textDocument: { uri },
+      range: {
+        start: { line: 1, character: 4 },
+        end: { line: 1, character: 10 },
+      },
+      context: { diagnostics: [] },
+    },
+  }) as [{ result: Array<Record<string, unknown>> }];
+  const action = response[0]?.result.find((candidate) =>
+    candidate.title === "Annotate answer with inferred type"
+  );
+
+  if (action === undefined) {
+    throw new Error("Missing unresolved annotation action");
+  }
+
+  const resolved = handle_message(state, {
+    id: 3,
+    method: "codeAction/resolve",
+    params: action,
+  }) as [{ result: { edit?: unknown } }];
+  assert_equals(resolved[0]?.result.edit, undefined);
+});
+
+Deno.test("server exposes comptime and pipeline powertools", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  const uri = "file:///scratch/comptime.ix";
+  const text = "const make_adder = n => { x => x + n }\n" +
+    "const add_three = comptime make_adder(3)\n" +
+    "add_three(39)\n";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri, version: 1, text } },
+  });
+  const expanded = handle_message(state, {
+    id: 2,
+    method: "ix/expandComptime",
+    params: {
+      textDocument: { uri },
+      position: { line: 1, character: 35 },
+    },
+  }) as [{ result: { ok: boolean; value: { facts: unknown[] } } }];
+  assert_equals(expanded[0]?.result.ok, true);
+  assert_equals(expanded[0]?.result.value.facts, [{
+    kind: "capture",
+    name: "n",
+    value: "3",
+  }]);
+  const invalid_position = handle_message(state, {
+    id: 7,
+    method: "ix/expandComptime",
+    params: {
+      textDocument: { uri },
+      position: { line: 99, character: 0 },
+    },
+  }) as [{ result: { ok: boolean; code: string } }];
+  assert_equals(invalid_position[0]?.result, {
+    ok: false,
+    code: "invalid_position",
+    message: "position line is outside the document",
+  });
+
+  const lenses = handle_message(state, {
+    id: 3,
+    method: "textDocument/codeLens",
+    params: { textDocument: { uri } },
+  }) as [{ result: Array<{ command: { title: string } }> }];
+  assert_equals(lenses[0]?.result.map((lens) => lens.command.title), [
+    "▸ compile to WAT",
+    "▸ expand",
+  ]);
+
+  const scalar_uri = "file:///scratch/scalar.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri: scalar_uri, version: 1, text: "40 + 2\n" },
+    },
+  });
+  const stage = handle_message(state, {
+    id: 4,
+    method: "ix/viewStage",
+    params: { textDocument: { uri: scalar_uri }, stage: "wat" },
+  }) as [{ result: { ok: boolean; value: { text: string } } }];
+  assert_equals(stage[0]?.result.ok, true);
+  assert_equals(stage[0]?.result.value.text.includes("i32.const 42"), true);
+
+  const command = handle_message(state, {
+    id: 5,
+    method: "workspace/executeCommand",
+    params: {
+      command: "ix.viewStage",
+      arguments: [scalar_uri, "wat"],
+    },
+  }) as [{ result: { ok: boolean } }];
+  assert_equals(command[0]?.result.ok, true);
+
+  const broken_uri = "file:///scratch/broken.ix";
+  handle_message(state, {
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: { uri: broken_uri, version: 1, text: "let =" },
+    },
+  });
+  const broken = handle_message(state, {
+    id: 6,
+    method: "ix/viewStage",
+    params: { textDocument: { uri: broken_uri }, stage: "wat" },
+  }) as [{ result: { ok: boolean; code: string } }];
+  assert_equals(broken[0]?.result, {
+    ok: false,
+    code: "broken_source",
+    message: "Source could not be parsed: Expected binding name at 1:5",
+  });
+});
+
+Deno.test("server honors cancellation and shutdown lifecycle", () => {
+  const state = create_state();
+  handle_message(state, { id: 1, method: "initialize" });
+  handle_message(state, {
+    method: "$/cancelRequest",
+    params: { id: "cancelled" },
+  });
+  assert_equals(
+    handle_message(state, {
+      id: "cancelled",
+      method: "workspace/symbol",
+      params: { query: "anything" },
+    }),
+    [{
+      jsonrpc: "2.0",
+      id: "cancelled",
+      error: { code: -32800, message: "Request cancelled" },
+    }],
+  );
+  assert_equals(handle_message(state, { id: 2, method: "shutdown" }), [{
+    jsonrpc: "2.0",
+    id: 2,
+    result: null,
+  }]);
+  assert_equals(
+    handle_message(state, {
+      id: 3,
+      method: "workspace/symbol",
+      params: { query: "anything" },
+    }),
+    [{
+      jsonrpc: "2.0",
+      id: 3,
+      error: { code: -32600, message: "Server has shut down" },
+    }],
+  );
+  handle_message(state, { method: "exit" });
+  assert_equals(state.exited, true);
+});
+
+Deno.test("server reports workspace progress and applies workspace config", async () => {
+  const root_path = await Deno.makeTempDir({ prefix: "ix-server-root-" });
+
+  try {
+    await Deno.writeTextFile(root_path + "/one.ix", "let value = 1\n");
+    const root = new URL("file://" + root_path + "/").href;
+    const state = create_state();
+    const replies = handle_message(state, {
+      id: 1,
+      method: "initialize",
+      params: {
+        rootUri: root,
+        workDoneToken: "workspace-load",
+        initializationOptions: {
+          diagnosticsDepth: 2,
+          maxReanalysisFanout: 3,
+          formattingOnBrokenBuffer: true,
+        },
+      },
+    }) as Array<{ method?: string; params?: { value: { kind: string } } }>;
+    assert_equals(
+      replies.filter((reply) => reply.method === "$/progress").map((reply) =>
+        reply.params?.value.kind
+      ),
+      ["begin", "report", "end"],
+    );
+    assert_equals(state.workspace.file_count(), 1);
+    assert_equals(state.diagnostics_depth, 2);
+    assert_equals(state.max_reanalysis_fanout, 3);
+    assert_equals(state.format_broken_buffers, true);
+
+    handle_message(state, {
+      method: "workspace/didChangeConfiguration",
+      params: {
+        settings: {
+          ix: {
+            diagnosticsDepth: 1,
+            maxReanalysisFanout: 1,
+            formattingOnBrokenBuffer: false,
+          },
+        },
+      },
+    });
+    assert_equals(state.diagnostics_depth, 1);
+    assert_equals(state.max_reanalysis_fanout, 1);
+    assert_equals(state.format_broken_buffers, false);
+  } finally {
+    await Deno.remove(root_path, { recursive: true });
+  }
+});
+
+Deno.test("server follows cross-file members and renames workspace-wide", async () => {
+  const root_path = await Deno.makeTempDir({ prefix: "ix-server-nav-" });
+
+  try {
+    const a_text = "let exported = 1\nexported\n";
+    const b_text = 'import a from "./a.ix"\nlet value = a.exported\n';
+    await Deno.writeTextFile(root_path + "/a.ix", a_text);
+    await Deno.writeTextFile(root_path + "/b.ix", b_text);
+    const root = new URL("file://" + root_path + "/").href;
+    const a_uri = new URL("a.ix", root).href;
+    const b_uri = new URL("b.ix", root).href;
+    const state = create_state();
+    handle_message(state, {
+      id: 1,
+      method: "initialize",
+      params: { rootUri: root },
+    });
+    handle_message(state, {
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri: b_uri, version: 1, text: b_text } },
+    });
+    const definition = handle_message(state, {
+      id: 2,
+      method: "textDocument/definition",
+      params: {
+        textDocument: { uri: b_uri },
+        position: { line: 1, character: 16 },
+      },
+    }) as [{ result: { uri: string } }];
+    assert_equals(definition[0]?.result.uri, a_uri);
+
+    const references = handle_message(state, {
+      id: 3,
+      method: "textDocument/references",
+      params: {
+        textDocument: { uri: b_uri },
+        position: { line: 1, character: 16 },
+        context: { includeDeclaration: true },
+      },
+    }) as [{ result: Array<{ uri: string }> }];
+    assert_equals(references[0]?.result.map((location) => location.uri), [
+      a_uri,
+      a_uri,
+      b_uri,
+    ]);
+
+    const rename = handle_message(state, {
+      id: 4,
+      method: "textDocument/rename",
+      params: {
+        textDocument: { uri: b_uri },
+        position: { line: 1, character: 16 },
+        newName: "renamed",
+      },
+    }) as [{ result: { changes: Record<string, unknown[]> } }];
+    assert_equals(rename[0]?.result.changes[a_uri].length, 2);
+    assert_equals(rename[0]?.result.changes[b_uri].length, 1);
+  } finally {
+    await Deno.remove(root_path, { recursive: true });
+  }
+});
+
+Deno.test("three-module edits reanalyze only capped reverse dependencies", () => {
+  const state = create_state({ debounce_ms: 10, now: () => 100 });
+  handle_message(state, {
+    id: 1,
+    method: "initialize",
+    params: {
+      initializationOptions: {
+        diagnosticsDepth: 8,
+        maxReanalysisFanout: 8,
+      },
+    },
+  });
+  const a = "file:///chain/a.ix";
+  const b = "file:///chain/b.ix";
+  const c = "file:///chain/c.ix";
+  const unrelated = "file:///chain/unrelated.ix";
+  const fixtures = [{ uri: a, text: "let value = 1\n" }, {
+    uri: b,
+    text: 'import a from "./a.ix"\nlet b = a\n',
+  }, {
+    uri: c,
+    text: 'import b from "./b.ix"\nlet c = b\n',
+  }, { uri: unrelated, text: "let separate = 1\n" }];
+
+  for (const fixture of fixtures) {
+    handle_message(state, {
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: fixture.uri,
+          version: 1,
+          text: fixture.text,
+        },
+      },
+    });
+  }
+
+  const before = new Map(fixtures.map((fixture) => [
+    fixture.uri,
+    state.documents.compute_count(fixture.uri, "source_analysis"),
+  ]));
+  handle_message(state, {
+    method: "textDocument/didChange",
+    params: {
+      textDocument: { uri: a, version: 2 },
+      contentChanges: [{ text: "let value = 2\n" }],
+    },
+  });
+  const published = flush_due_diagnostics(state, 110) as Array<{
+    params: { uri: string };
+  }>;
+  assert_equals(published.map((message) => message.params.uri), [a, b, c]);
+  assert_equals(state.last_reanalysis_fanout, 2);
+  assert_equals(
+    state.documents.compute_count(unrelated, "source_analysis"),
+    before.get(unrelated),
+  );
+  assert_equals(
+    state.documents.compute_count(b, "source_analysis"),
+    Number(before.get(b)) + 1,
+  );
+  assert_equals(
+    state.documents.compute_count(c, "source_analysis"),
+    Number(before.get(c)) + 1,
+  );
+});
+
+Deno.test("open dependency edits publish diagnostics for closed importers", async () => {
+  const root_path = await Deno.makeTempDir({ prefix: "ix-closed-importer-" });
+
+  try {
+    await Deno.writeTextFile(root_path + "/a.ix", "let value = 1\n");
+    await Deno.writeTextFile(
+      root_path + "/b.ix",
+      'import a from "./a.ix"\nlet imported = a\n',
+    );
+    const root = new URL("file://" + root_path + "/").href;
+    const a = new URL("a.ix", root).href;
+    const b = new URL("b.ix", root).href;
+    const state = create_state({ debounce_ms: 10, now: () => 100 });
+    handle_message(state, {
+      id: 1,
+      method: "initialize",
+      params: { rootUri: root },
+    });
+    handle_message(state, {
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: { uri: a, version: 1, text: "let value = 1\n" },
+      },
+    });
+    handle_message(state, {
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri: a, version: 2 },
+        contentChanges: [{ text: "let value = 2\n" }],
+      },
+    });
+    const published = flush_due_diagnostics(state, 110) as Array<{
+      params: { uri: string; version?: number };
+    }>;
+    assert_equals(published.map((message) => message.params.uri), [a, b]);
+    assert_equals(published[0]?.params.version, 2);
+    assert_equals(published[1]?.params.version, undefined);
+  } finally {
+    await Deno.remove(root_path, { recursive: true });
+  }
 });

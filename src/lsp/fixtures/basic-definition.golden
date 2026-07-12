@@ -1,0 +1,18 @@
+{
+  source: "let answer = 42",
+  spans: [
+    [
+      "definition",
+      {
+        end: {
+          character: 10,
+          line: 0
+        },
+        start: {
+          character: 4,
+          line: 0
+        }
+      }
+    ]
+  ]
+}

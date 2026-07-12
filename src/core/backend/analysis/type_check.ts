@@ -5,6 +5,7 @@ import {
   apply_core_parameter_annotation as apply_core_parameter_annotation_with_hooks,
   check_core_type_pattern as check_core_type_pattern_with_hooks,
   check_core_value_type_name as check_core_value_type_name_with_hooks,
+  core_assignment_value as core_assignment_value_with_hooks,
   core_binding_value as core_binding_value_with_hooks,
   core_type_const_value as core_type_const_value_with_hooks,
   static_annotation_type_value as static_annotation_type_value_with_hooks,
@@ -24,6 +25,13 @@ export function create_core_backend_type_check(
   api: CoreBackendTypeCheckApi,
 ): CoreBackendTypeCheck {
   const type_check_hooks = create_core_backend_type_check_hooks(api);
+
+  function core_assignment_value(
+    stmt: Extract<CoreStmt, { tag: "assign" }>,
+    ctx: StaticCtx,
+  ): CoreExpr {
+    return core_assignment_value_with_hooks(stmt, ctx, type_check_hooks);
+  }
 
   function apply_core_parameter_annotation(
     param: CoreParam,
@@ -101,6 +109,7 @@ export function create_core_backend_type_check(
     apply_core_parameter_annotation,
     check_core_type_pattern,
     check_core_value_type_name,
+    core_assignment_value,
     core_binding_value,
     core_type_const_value,
     static_annotation_type_value,

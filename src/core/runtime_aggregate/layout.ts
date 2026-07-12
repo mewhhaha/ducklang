@@ -16,6 +16,7 @@ export type RuntimeAggregateField =
     offset: number;
     type: ValType;
     text: boolean;
+    resume: boolean;
     union_type_expr: CoreExpr | undefined;
   }
   | {
@@ -188,6 +189,7 @@ function runtime_aggregate_field<ctx extends TypeStaticCtx>(
       offset,
       type: field_type,
       text: field_type_name === "Text" || field_type_name === "Bytes",
+      resume: field_type_name === "Resume",
       union_type_expr: undefined,
     };
   }
@@ -202,6 +204,7 @@ function runtime_aggregate_field<ctx extends TypeStaticCtx>(
       offset,
       type: "i32",
       text: false,
+      resume: false,
       union_type_expr: type_expr,
     };
   }

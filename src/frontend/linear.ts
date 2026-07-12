@@ -1,5 +1,9 @@
 import type { FrontExpr, Source, Stmt } from "./ast.ts";
-import { contains_reserved_linear_effect } from "./linear_effect.ts";
+import {
+  contains_explicit_linear_use,
+  contains_reserved_linear_effect,
+} from "./linear_effect.ts";
+import { throw_linear_diagnostic } from "./linear_state.ts";
 import {
   validate_linear_lam,
   validate_linear_rec,
@@ -98,8 +102,10 @@ function validate_loop_units_in_expr(expr: FrontExpr): void {
       }
     });
     if (has_unit_break && has_value_break) {
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2291",
         "Loop breaks must return one source type, got Unit and value",
+        expr,
       );
     }
     validate_source_loop_break_units(expr.body);
@@ -300,7 +306,7 @@ function validate_linear_statements(stmts: Stmt[]): void {
     validate_linear_stmt_lambdas(stmt);
 
     if (stmt.tag === "bind" && stmt.is_linear) {
-      validate_linear_rest(stmt.name, stmts.slice(index + 1));
+      validate_linear_rest(stmt.name, stmts.slice(index + 1), stmt);
     }
   }
 }
@@ -371,10 +377,15 @@ function validate_linear_stmt_lambdas(stmt: Stmt): void {
 function validate_linear_expr_lambdas(expr: FrontExpr): void {
   switch (expr.tag) {
     case "lam":
-      if (
-        contains_reserved_linear_effect(expr.body, linear_param_names(expr))
-      ) {
-        validate_linear_lam(expr);
+      {
+        const names = linear_param_names(expr);
+
+        if (
+          contains_explicit_linear_use(expr.body, names) ||
+          contains_reserved_linear_effect(expr.body, names)
+        ) {
+          validate_linear_lam(expr);
+        }
       }
       validate_linear_expr_lambdas(expr.body);
       return;

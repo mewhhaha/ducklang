@@ -10,13 +10,16 @@ import {
 import { ParserPrimary } from "./parser_primary.ts";
 import { binary_precedence, can_start_struct_value } from "./parser_support.ts";
 import { parse_type_expr } from "./type_expr.ts";
+import { record_annotation_name_sites, record_name_site } from "./name_site.ts";
 
 export abstract class ParserExpr extends ParserPrimary {
   #stop_postfix_block = 0;
   #stop_try_with = 0;
 
   protected parse_expr(): FrontExpr {
-    return this.parse_arrow();
+    const start = this.index;
+    const expr = this.parse_arrow();
+    return this.concrete_node(start, expr);
   }
 
   protected parse_expr_without_postfix_block(): FrontExpr {
@@ -30,6 +33,12 @@ export abstract class ParserExpr extends ParserPrimary {
   }
 
   private parse_arrow(): FrontExpr {
+    const start = this.index;
+    const expr = this.parse_arrow_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_arrow_inner(): FrontExpr {
     if (this.is_rec_arrow()) {
       this.expect_name("Expected rec");
       const params = this.parse_arrow_params();
@@ -82,11 +91,12 @@ export abstract class ParserExpr extends ParserPrimary {
   private parse_closure_body(): FrontExpr {
     if (this.peek().kind === "symbol" && this.peek().text === "{") {
       if (this.is_object_literal()) {
-        return {
+        const start = this.index;
+        return this.concrete_node(start, {
           tag: "struct_value",
           type_expr: { tag: "var", name: "object_type" },
           fields: this.parse_record_field_list(),
-        };
+        });
       }
 
       return this.parse_block();
@@ -96,6 +106,12 @@ export abstract class ParserExpr extends ParserPrimary {
   }
 
   private parse_binary(min_precedence: number): FrontExpr {
+    const start = this.index;
+    const expr = this.parse_binary_inner(min_precedence);
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_binary_inner(min_precedence: number): FrontExpr {
     let left = this.parse_unary();
 
     while (true) {
@@ -191,10 +207,18 @@ export abstract class ParserExpr extends ParserPrimary {
     }
 
     expect(tokens.length > 0, "Expected type after is");
-    return parse_type_expr(tokens);
+    const type_expr = parse_type_expr(tokens);
+    record_annotation_name_sites(type_expr, tokens);
+    return type_expr;
   }
 
   private parse_unary(): FrontExpr {
+    const start = this.index;
+    const expr = this.parse_unary_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_unary_inner(): FrontExpr {
     if (this.match_name("try")) {
       this.#stop_try_with += 1;
       let body: FrontExpr;
@@ -283,6 +307,12 @@ export abstract class ParserExpr extends ParserPrimary {
   }
 
   private parse_postfix(): FrontExpr {
+    const start = this.index;
+    const expr = this.parse_postfix_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_postfix_inner(): FrontExpr {
     let expr = this.parse_primary();
 
     while (true) {
@@ -303,6 +333,7 @@ export abstract class ParserExpr extends ParserPrimary {
 
         expr = { tag: "app", func: expr, args };
       } else if (this.match_symbol(".")) {
+        const token = this.peek();
         const name = this.expect_name("Expected field name");
 
         if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) {
@@ -311,7 +342,9 @@ export abstract class ParserExpr extends ParserPrimary {
           expect_snake_case(name, "Field");
         }
 
-        expr = { tag: "field", object: expr, name };
+        const field = { tag: "field" as const, object: expr, name };
+        record_name_site(field, "name", name, token.span);
+        expr = field;
       } else if (this.match_symbol("[")) {
         const index = this.parse_expr();
         this.expect_symbol("]");

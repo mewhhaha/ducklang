@@ -7,6 +7,7 @@ import {
 } from "../ownership.ts";
 import { runtime_aggregate_freeze_copy_supported } from "../runtime_aggregate.ts";
 import { runtime_union_freeze_copy_supported } from "../runtime_union_emit.ts";
+import { is_scratch_free_static_value_expr } from "../static_values.ts";
 import type { TypeStaticCtx } from "../type_static.ts";
 import { static_block_result } from "../type_static.ts";
 
@@ -15,16 +16,28 @@ export function core_scratch_return_ownership<ctx>(
   ctx: ctx,
   hooks: CoreOwnershipHooks<ctx>,
 ): CoreOwnership {
+  let scratch_ctx = ctx;
+  if (hooks.scratch_return_ctx) {
+    scratch_ctx = hooks.scratch_return_ctx(ctx);
+  }
+  return core_scratch_return_ownership_in_ctx(expr, scratch_ctx, hooks);
+}
+
+function core_scratch_return_ownership_in_ctx<ctx>(
+  expr: CoreExpr,
+  ctx: ctx,
+  hooks: CoreOwnershipHooks<ctx>,
+): CoreOwnership {
   const block_value = static_block_result(expr);
 
   if (block_value) {
-    return core_scratch_return_ownership(block_value, ctx, hooks);
+    return core_scratch_return_ownership_in_ctx(block_value, ctx, hooks);
   }
 
   const block_result = scratch_block_result_with_ctx(expr, ctx, hooks);
 
   if (block_result) {
-    return core_scratch_return_ownership(
+    return core_scratch_return_ownership_in_ctx(
       block_result.expr,
       block_result.ctx,
       hooks,
@@ -232,18 +245,8 @@ function scratch_return_static_aggregate_is_free<ctx>(
   hooks: CoreOwnershipHooks<ctx>,
 ): boolean {
   const struct_value = hooks.static_struct_value(expr, ctx);
-
-  if (!struct_value) {
-    return false;
-  }
-
-  for (const field of struct_value.fields) {
-    if (!scratch_return_static_field_is_free(field.value, ctx, hooks)) {
-      return false;
-    }
-  }
-
-  return true;
+  return !!struct_value &&
+    scratch_return_static_value_is_free(expr, ctx, hooks);
 }
 
 export function core_scratch_return_rejection_detail<ctx>(
@@ -251,20 +254,40 @@ export function core_scratch_return_rejection_detail<ctx>(
   ctx: ctx,
   hooks: CoreOwnershipHooks<ctx>,
 ): string | undefined {
+  let scratch_ctx = ctx;
+  if (hooks.scratch_return_ctx) {
+    scratch_ctx = hooks.scratch_return_ctx(ctx);
+  }
+  return core_scratch_return_rejection_detail_in_ctx(expr, scratch_ctx, hooks);
+}
+
+function core_scratch_return_rejection_detail_in_ctx<ctx>(
+  expr: CoreExpr,
+  ctx: ctx,
+  hooks: CoreOwnershipHooks<ctx>,
+): string | undefined {
   const block_value = static_block_result(expr);
 
   if (block_value) {
-    return core_scratch_return_rejection_detail(block_value, ctx, hooks);
+    return core_scratch_return_rejection_detail_in_ctx(
+      block_value,
+      ctx,
+      hooks,
+    );
   }
 
   const block_result = scratch_block_result_with_ctx(expr, ctx, hooks);
 
   if (block_result) {
-    return core_scratch_return_rejection_detail(
+    return core_scratch_return_rejection_detail_in_ctx(
       block_result.expr,
       block_result.ctx,
       hooks,
     );
+  }
+
+  if (scratch_return_static_value_is_free(expr, ctx, hooks)) {
+    return undefined;
   }
 
   const aggregate_detail = scratch_return_static_aggregate_rejection_detail(
@@ -316,33 +339,52 @@ function scratch_return_static_aggregate_rejection_detail<ctx>(
   return undefined;
 }
 
-function scratch_return_static_field_is_free<ctx>(
+function scratch_return_static_value_is_free<ctx>(
   expr: CoreExpr,
   ctx: ctx,
   hooks: CoreOwnershipHooks<ctx>,
 ): boolean {
-  if (scratch_return_static_aggregate_is_free(expr, ctx, hooks)) {
-    return true;
-  }
+  return is_scratch_free_static_value_expr(expr, ctx, {
+    block_ctx: hooks.block_ctx,
+    closure_fn_type: hooks.closure_fn_type,
+    collect_stmt_locals: hooks.collect_stmt_locals,
+    core_expr_is_text: hooks.core_expr_is_text,
+    dynamic_union_if: (value, value_ctx) => {
+      if (!hooks.dynamic_union_if) {
+        return undefined;
+      }
 
-  if (scratch_return_static_union_is_free(expr, ctx, hooks)) {
-    return true;
-  }
+      return hooks.dynamic_union_if(value, value_ctx);
+    },
+    expr_type: hooks.expr_type,
+    frozen_local: hooks.frozen_local,
+    runtime_aggregate_type_expr: (value, value_ctx) => {
+      if (!hooks.runtime_aggregate_type_expr) {
+        return undefined;
+      }
 
-  if (hooks.static_text_value(expr, ctx)) {
-    return true;
-  }
+      return hooks.runtime_aggregate_type_expr(value, value_ctx);
+    },
+    runtime_union_type_expr: (value, value_ctx) =>
+      scratch_runtime_union_type_expr(value, value_ctx, hooks),
+    static_capture_value: hooks.static_capture_value,
+    static_core_call_value: (value, value_ctx) => {
+      if (!hooks.static_core_call_value) {
+        return undefined;
+      }
 
-  const ownership = core_expr_ownership(expr, ctx, hooks);
+      return hooks.static_core_call_value(value, value_ctx);
+    },
+    static_struct_value: hooks.static_struct_value,
+    static_text_value: hooks.static_text_value,
+    static_union_case: (value, value_ctx) => {
+      if (!hooks.static_union_case) {
+        return undefined;
+      }
 
-  if (
-    ownership.tag === "scalar_local" ||
-    ownership.tag === "frozen_shareable"
-  ) {
-    return true;
-  }
-
-  return false;
+      return hooks.static_union_case(value, value_ctx);
+    },
+  });
 }
 
 function scratch_return_static_field_rejection_detail<ctx>(
@@ -397,37 +439,7 @@ function scratch_return_static_union_is_free<ctx>(
     return false;
   }
 
-  return scratch_return_static_union_value_is_free(value, ctx, hooks);
-}
-
-function scratch_return_static_union_value_is_free<ctx>(
-  expr: CoreExpr,
-  ctx: ctx,
-  hooks: CoreOwnershipHooks<ctx>,
-): boolean {
-  if (expr.tag === "union_case") {
-    if (!expr.value) {
-      return true;
-    }
-
-    return scratch_return_static_field_is_free(expr.value, ctx, hooks);
-  }
-
-  if (expr.tag === "if") {
-    return scratch_return_static_field_is_free(expr.cond, ctx, hooks) &&
-      scratch_return_static_union_value_is_free(
-        expr.then_branch,
-        ctx,
-        hooks,
-      ) &&
-      scratch_return_static_union_value_is_free(
-        expr.else_branch,
-        ctx,
-        hooks,
-      );
-  }
-
-  return false;
+  return scratch_return_static_value_is_free(value, ctx, hooks);
 }
 
 function scratch_return_static_union_rejection_detail<ctx>(

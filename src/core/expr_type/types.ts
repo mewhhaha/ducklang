@@ -11,10 +11,12 @@ export type CoreExprTypeCtx = {
   locals: Map<string, ValType>;
   statics: Map<string, CoreExpr>;
   fn_types: Map<string, CoreFnType>;
+  static_capture_values?: Map<string, CoreExpr>;
   text_locals: Set<string>;
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
+  scratch_depth?: number;
 };
 
 export type CoreExprTypeBlockCtx = CoreExprTypeCtx & {

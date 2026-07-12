@@ -4,6 +4,7 @@ import type {
   CoreAllocationScope,
   CoreAllocationState,
 } from "./types.ts";
+import { register_core_allocation_fact_return } from "./metadata.ts";
 
 type AllocationExprScanner<ctx> = (
   expr: CoreExpr,
@@ -20,15 +21,15 @@ export function scan_closure_body_allocations<ctx>(
   hooks: CoreAllocationHooks<ctx>,
   state: CoreAllocationState,
   scan_expr: AllocationExprScanner<ctx>,
-): void {
+): CoreAllocationState["facts"] {
   if (!hooks.closure_body_ctx) {
-    return;
+    return [];
   }
 
   const body_ctx = hooks.closure_body_ctx(expr, ctx);
 
   if (!body_ctx) {
-    return;
+    return [];
   }
 
   const closure_scope = "closure#" + state.next_closure.toString();
@@ -40,4 +41,15 @@ export function scan_closure_body_allocations<ctx>(
     hooks,
     state,
   );
+  const returned = state.value_allocations.get(expr.body);
+  if (!returned) {
+    return [];
+  }
+  for (const fact of returned) {
+    if (fact.storage !== "persistent_unique_heap") {
+      continue;
+    }
+    register_core_allocation_fact_return(fact, expr.body);
+  }
+  return [...returned];
 }

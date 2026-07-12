@@ -53,7 +53,7 @@ export function binary_prim(
   left: FrontExpr,
   right: FrontExpr,
 ): Prim | undefined {
-  const type = binary_operand_type(op, left, right);
+  const type = binary_operand_type(left, right);
 
   if (type === "i64") {
     if (op === "+") {
@@ -151,7 +151,6 @@ export function binary_prim(
 }
 
 export function binary_operand_type(
-  op: string,
   left: FrontExpr,
   right: FrontExpr,
 ): ValType {
@@ -159,10 +158,9 @@ export function binary_operand_type(
   const right_type = parse_numeric_expr_type(right);
 
   if (left_type === "i64" || right_type === "i64") {
-    if (left_type === "i32" || right_type === "i32") {
-      throw new Error("Mixed i32 and i64 operands for operator " + op);
-    }
-
+    // Parsing only chooses a provisional primitive width. The semantic
+    // operand check owns mixed-width rejection so tolerant parsing can keep
+    // the expression and attach the diagnostic to its complete source span.
     return "i64";
   }
 

@@ -1,18 +1,44 @@
 import { expect } from "../expect.ts";
 import type { FrontExpr, HandlerState, Stmt } from "./ast.ts";
 import { ParserConditional } from "./parser_conditional.ts";
+import { mark_source_span } from "./syntax.ts";
+import { copy_name_sites } from "./name_site.ts";
 
 export abstract class ParserBlock extends ParserConditional {
   protected abstract parse_stmt(): Stmt;
 
   protected parse_block(): FrontExpr {
+    const start = this.index;
+    const block = this.parse_block_inner();
+    return this.concrete_node(start, block);
+  }
+
+  private parse_block_inner(): FrontExpr {
     this.expect_symbol("{");
     const statements: Stmt[] = [];
     this.skip_newlines();
 
     while (!this.match_symbol("}")) {
       expect(!this.is("eof"), "Unterminated block");
-      const stmt = this.parse_stmt();
+      const state = this.parser_state();
+      let stmt: Stmt;
+
+      try {
+        stmt = this.parse_stmt();
+      } catch (error) {
+        if (!this.recovering) {
+          throw error;
+        }
+
+        const failure = this.index;
+        this.restore_parser_state(state);
+        this.synchronize_statement();
+        this.record_recovery(error, state.index, failure);
+        this.skip_newlines();
+        continue;
+      }
+
+      mark_source_span(stmt, this.parsed_span(state.index));
       this.skip_newlines();
 
       const final_expr = block_final_conditional_expr(stmt);
@@ -43,14 +69,18 @@ export abstract class ParserBlock extends ParserConditional {
           !stmt.is_linear && !stmt.effectful,
         "Handler state block may contain only leading ordinary `let` bindings",
       );
-      state.push({
+      const state_item = {
         name: stmt.name,
         annotation: stmt.annotation,
         value: stmt.value,
-      });
+      };
+      copy_name_sites(stmt, state_item);
+      state.push(state_item);
     }
 
-    return { ...handler, state: [...state, ...handler.state] };
+    const result = { ...handler, state: [...state, ...handler.state] };
+    copy_name_sites(handler, result);
+    return result;
   }
 }
 
@@ -72,13 +102,15 @@ function block_final_conditional_expr(stmt: Stmt): FrontExpr | undefined {
       return undefined;
     }
 
-    return {
+    const result: Extract<FrontExpr, { tag: "if" }> = {
       tag: "if",
       cond: stmt.cond,
       then_branch: { tag: "block", statements: stmt.body },
       else_branch: { tag: "num", type: "i32", value: 0 },
       implicit_else: true,
     };
+    copy_name_sites(stmt, result);
+    return result;
   }
 
   if (stmt.tag === "if_let_stmt") {
@@ -86,7 +118,7 @@ function block_final_conditional_expr(stmt: Stmt): FrontExpr | undefined {
       return undefined;
     }
 
-    return {
+    const result: Extract<FrontExpr, { tag: "if_let" }> = {
       tag: "if_let",
       case_name: stmt.case_name,
       value_name: stmt.value_name,
@@ -95,6 +127,8 @@ function block_final_conditional_expr(stmt: Stmt): FrontExpr | undefined {
       else_branch: { tag: "num", type: "i32", value: 0 },
       implicit_else: true,
     };
+    copy_name_sites(stmt, result);
+    return result;
   }
 
   return undefined;

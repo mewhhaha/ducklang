@@ -1,4 +1,5 @@
 import type { CoreExpr } from "../ast.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import type { RuntimeUnionCtx, RuntimeUnionHooks } from "./types.ts";
 
 export function core_runtime_union_value<ctx extends RuntimeUnionCtx>(
@@ -15,12 +16,12 @@ export function core_runtime_union_value<ctx extends RuntimeUnionCtx>(
   const union_if = hooks.dynamic_union_if(value, ctx);
 
   if (union_if) {
-    return {
+    return record_core_expr_provenance({
       tag: "if",
       cond: union_if.cond,
       then_branch: union_if.then_case,
       else_branch: union_if.else_case,
-    };
+    }, value);
   }
 
   return undefined;

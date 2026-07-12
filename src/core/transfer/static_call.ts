@@ -52,10 +52,12 @@ export function scan_static_transfer_call<ctx>(
     state,
   );
   const previous_aliases = state.aliases;
+  const previous_alias_subjects = state.alias_subjects;
   const previous_alias_ownership = state.alias_ownership;
   const previous_alias_rejection_reasons = state.alias_rejection_reasons;
   const previous_functions = state.functions;
   state.aliases = new Map(previous_aliases);
+  state.alias_subjects = new Map(previous_alias_subjects);
   state.alias_ownership = new Map(previous_alias_ownership);
   state.alias_rejection_reasons = new Map(previous_alias_rejection_reasons);
   state.functions = new Map(previous_functions);
@@ -63,6 +65,8 @@ export function scan_static_transfer_call<ctx>(
   for (const entry of aliases.entries()) {
     state.aliases.set(entry[0], entry[1]);
   }
+
+  bind_static_transfer_alias_subjects(target, expr.args, state);
 
   for (const entry of function_aliases.entries()) {
     state.functions.set(entry[0], entry[1]);
@@ -81,9 +85,38 @@ export function scan_static_transfer_call<ctx>(
   } finally {
     state.active_functions.delete(name);
     state.aliases = previous_aliases;
+    state.alias_subjects = previous_alias_subjects;
     state.alias_ownership = previous_alias_ownership;
     state.alias_rejection_reasons = previous_alias_rejection_reasons;
     state.functions = previous_functions;
+  }
+}
+
+function bind_static_transfer_alias_subjects<ctx>(
+  target: CoreTransferFunction,
+  args: CoreExpr[],
+  state: CoreTransferState<ctx>,
+): void {
+  const params = static_transfer_function_params(target);
+  if (!params || params.length !== args.length) {
+    return;
+  }
+
+  for (let index = 0; index < params.length; index += 1) {
+    const param = params[index];
+    const arg = args[index];
+    if (!param || !arg) {
+      throw new Error("Missing static transfer alias subject");
+    }
+
+    let subject = arg;
+    if (arg.tag === "var") {
+      const source = state.alias_subjects.get(arg.name);
+      if (source) {
+        subject = source;
+      }
+    }
+    state.alias_subjects.set(param.name, subject);
   }
 }
 

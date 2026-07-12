@@ -40,12 +40,13 @@ export function elaborate_core_cleanup_emission(
       const assignment_anchors = (anchors.get(step.edge) || []).filter(
         (candidate) => {
           return candidate.stmt.tag === "assign" &&
-            candidate.stmt.name === owner;
+            candidate.stmt.name === owner && candidate.scope === step.scope;
         },
       );
-      const anchor_index = next_assignment_anchor.get(owner) || 0;
+      const anchor_key = step.scope + "\u0000" + owner;
+      const anchor_index = next_assignment_anchor.get(anchor_key) || 0;
       anchor = assignment_anchors[anchor_index];
-      next_assignment_anchor.set(owner, anchor_index + 1);
+      next_assignment_anchor.set(anchor_key, anchor_index + 1);
     } else if (step.edge === "scope_exit") {
       anchor = (anchors.get(step.edge) || []).find((candidate) => {
         return candidate.scope === step.scope;
@@ -67,6 +68,8 @@ export function elaborate_core_cleanup_emission(
       scope: step.scope,
       owner: step.owner,
       pointer_local: cleanup_pointer_local(step.id, step.owner),
+      replacement_value_local: replacement_value_local(step),
+      replacement_old_local: replacement_old_local(step),
       statement_index: cleanup_statement_index(
         core,
         step.owner,
@@ -99,6 +102,26 @@ function cleanup_pointer_local(
   }
 
   return "_cleanup_" + step_id;
+}
+
+function replacement_value_local(
+  step: CoreDropPlan["steps"][number],
+): string | undefined {
+  if (step.edge !== "assignment_replace") {
+    return undefined;
+  }
+
+  return "_replace_value_" + step.id;
+}
+
+function replacement_old_local(
+  step: CoreDropPlan["steps"][number],
+): string | undefined {
+  if (step.edge !== "assignment_replace") {
+    return undefined;
+  }
+
+  return "_replace_old_" + step.id;
 }
 
 const statement_cleanup_rows = new WeakMap<CoreStmt, CoreCleanupEmission[]>();

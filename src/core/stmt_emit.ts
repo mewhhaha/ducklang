@@ -10,7 +10,12 @@ import {
   type StaticCoreCallCtx,
 } from "./static_call.ts";
 import type { StaticValuePlan } from "./static_values.ts";
+import { static_scratch_aggregate_alias_materializes } from "./static_values.ts";
 import { static_function_value } from "./type_static.ts";
+import {
+  mutable_static_owner_value_materializes,
+  static_owner_value_materializes,
+} from "./mutable_static_owner.ts";
 
 export type CoreStmtEmitCtx = {
   locals: Map<string, ValType>;
@@ -22,7 +27,10 @@ export type CoreStmtEmitCtx = {
   continue_label: string | undefined;
   scratch_loop_resets: string[];
   scratch_return_resets: string[];
+  scratch_depth?: number;
   frozen_locals?: Set<string>;
+  materialized_bindings?: Set<string>;
+  mutable_bindings?: Set<string>;
 };
 
 export type CoreStmtEmitHooks<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx> =
@@ -57,12 +65,17 @@ export type CoreStmtEmitHooks<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx> =
       stmt: Extract<CoreStmt, { tag: "bind" }>,
       ctx: ctx,
     ) => CoreExpr;
+    core_assignment_value: (
+      stmt: Extract<CoreStmt, { tag: "assign" }>,
+      ctx: ctx,
+    ) => CoreExpr;
     core_type_const_value: (
       stmt: Extract<CoreStmt, { tag: "bind" }>,
       value: CoreExpr,
       ctx: ctx,
     ) => CoreExpr | undefined;
     core_expr_has_runtime_text_fact: (value: CoreExpr, ctx: ctx) => boolean;
+    core_expr_is_text: (value: CoreExpr, ctx: ctx) => boolean;
     emit_collection_loop: (
       stmt: Extract<CoreStmt, { tag: "collection_loop" }>,
       ctx: ctx,
@@ -125,11 +138,73 @@ export function emit_core_stmt<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
   is_final: boolean,
   hooks: CoreStmtEmitHooks<ctx>,
 ): Wat {
-  const before = emit_statement_cleanup(stmt, "before", ctx);
+  const replacement_rows = core_statement_cleanup_rows(stmt).filter((row) => {
+    return row.edge === "assignment_replace";
+  });
+  const before = replacement_rows.length === 0
+    ? emit_statement_cleanup(stmt, "before", ctx)
+    : "";
   let emitted = emit_core_stmt_inner(stmt, ctx, is_final, hooks);
+  if (replacement_rows.length > 0) {
+    emitted = emit_assignment_replacement(
+      stmt,
+      emitted,
+      replacement_rows,
+      ctx,
+    );
+  }
   emitted = emit_conditional_fallthrough_cleanup(stmt, emitted, ctx);
   const after = emit_statement_cleanup(stmt, "after", ctx);
   return [before, emitted, after].filter((line) => line !== "").join("\n");
+}
+
+function emit_assignment_replacement(
+  stmt: CoreStmt,
+  emitted: Wat,
+  rows: ReturnType<typeof core_statement_cleanup_rows>,
+  ctx: CoreStmtEmitCtx,
+): Wat {
+  expect(stmt.tag === "assign", "Assignment cleanup must anchor an assignment");
+  expect(rows.length === 1, "Assignment must have one replacement cleanup");
+  const row = rows[0];
+  expect(row, "Missing assignment replacement cleanup");
+  expect(
+    row.replacement_value_local,
+    "Assignment replacement cleanup requires a value local",
+  );
+  expect(
+    row.replacement_old_local,
+    "Assignment replacement cleanup requires an old-owner local",
+  );
+  expect(
+    ctx.locals.has(row.replacement_value_local),
+    "Missing assignment replacement value local: " +
+      row.replacement_value_local,
+  );
+  expect(
+    ctx.locals.has(row.replacement_old_local),
+    "Missing assignment replacement old-owner local: " +
+      row.replacement_old_local,
+  );
+  const assignment = "\nlocal.set $" + stmt.name;
+  expect(
+    emitted.endsWith(assignment),
+    "Assignment replacement must end by storing its result",
+  );
+  const value = emitted.slice(0, -assignment.length);
+  const cleanup = emit_cleanup_rows([{
+    ...row,
+    pointer_local: row.replacement_old_local,
+  }], ctx);
+  return [
+    "local.get $" + stmt.name,
+    "local.set $" + row.replacement_old_local,
+    value,
+    "local.set $" + row.replacement_value_local,
+    cleanup,
+    "local.get $" + row.replacement_value_local,
+    "local.set $" + stmt.name,
+  ].join("\n");
 }
 
 function emit_conditional_fallthrough_cleanup(
@@ -164,11 +239,20 @@ function emit_conditional_fallthrough_cleanup(
     }
 
     const empty_else = "\nelse\n  \nend";
+    if (emitted.includes(empty_else)) {
+      return emitted.replace(
+        empty_else,
+        "\nelse\n" + indented_cleanup + "\nend",
+      );
+    }
+
+    const suffix = "\nend";
     expect(
-      emitted.includes(empty_else),
+      emitted.endsWith(suffix),
       "Conditional if-let cleanup requires an unmatched branch",
     );
-    return emitted.replace(empty_else, "\nelse\n" + indented_cleanup + "\nend");
+    return emitted.slice(0, -suffix.length) + "\nelse\n" +
+      indented_cleanup + suffix;
   }
 
   const suffix = "\nend";
@@ -248,6 +332,51 @@ function emit_core_stmt_inner<
 
       if (hooks.is_static_value_expr(value, ctx)) {
         const plan = hooks.plan_static_value_expr(value, ctx, ctx);
+        const materialized_struct_owner = stmt.kind === "let" &&
+          ctx.materialized_bindings?.has(stmt.name) === true &&
+          value.tag !== "scratch" &&
+          (!ctx.scratch_depth || ctx.scratch_depth === 0) &&
+          plan.value.tag === "struct_value" &&
+          !(
+            plan.value.type_expr.tag === "var" &&
+            plan.value.type_expr.name === "object_type"
+          );
+        if (
+          static_scratch_aggregate_alias_materializes(value) ||
+          materialized_struct_owner ||
+          (value.tag !== "scratch" &&
+            static_owner_value_materializes(plan.value, ctx)) ||
+          mutable_static_owner_binding(stmt.name, plan.value, ctx)
+        ) {
+          ctx.statics.delete(stmt.name);
+          const emitted = [
+            plan.setup,
+            hooks.emit_expr(plan.value, ctx),
+            "local.set $" + stmt.name,
+          ].filter((line) => line !== "").join("\n");
+          hooks.bind_core_fn_type(stmt.name, plan.value, ctx);
+          hooks.bind_core_struct_type(
+            stmt.name,
+            plan.value,
+            stmt.annotation,
+            ctx,
+          );
+          hooks.bind_core_union_type(
+            stmt.name,
+            plan.value,
+            stmt.annotation,
+            ctx,
+          );
+          bind_core_text_fact(
+            stmt.name,
+            plan.value,
+            stmt.annotation,
+            ctx,
+            hooks,
+          );
+          bind_core_frozen_fact(stmt.name, value, ctx);
+          return emitted;
+        }
         ctx.statics.set(stmt.name, plan.value);
         hooks.clear_core_local_facts(stmt.name, ctx);
         return plan.setup;
@@ -271,34 +400,72 @@ function emit_core_stmt_inner<
         ctx.locals.has(stmt.name) || ctx.statics.has(stmt.name),
         "Cannot assign unbound core local: " + stmt.name,
       );
-
-      if (hooks.is_static_value_expr(stmt.value, ctx)) {
-        const plan = hooks.plan_static_value_expr(stmt.value, ctx, ctx);
-        ctx.statics.set(stmt.name, plan.value);
-        hooks.clear_core_local_facts(stmt.name, ctx);
-        return plan.setup;
-      }
-
-      ctx.statics.delete(stmt.name);
       {
-        const emitted = hooks.emit_expr(stmt.value, ctx) + "\nlocal.set $" +
-          stmt.name;
-        hooks.bind_core_fn_type(stmt.name, stmt.value, ctx);
-        hooks.bind_core_assignment_struct_type(
-          stmt.name,
-          stmt.value,
-          stmt.mode,
-          ctx,
-        );
-        hooks.bind_core_assignment_union_type(
-          stmt.name,
-          stmt.value,
-          stmt.mode,
-          ctx,
-        );
-        bind_core_text_fact(stmt.name, stmt.value, undefined, ctx, hooks);
-        bind_core_frozen_fact(stmt.name, stmt.value, ctx);
-        return emitted;
+        const value = hooks.core_assignment_value(stmt, ctx);
+
+        if (hooks.is_static_value_expr(value, ctx)) {
+          const plan = hooks.plan_static_value_expr(value, ctx, ctx);
+          if (
+            static_scratch_aggregate_alias_materializes(value) ||
+            (value.tag !== "scratch" &&
+              static_owner_value_materializes(plan.value, ctx)) ||
+            mutable_static_owner_binding(stmt.name, plan.value, ctx)
+          ) {
+            ctx.statics.delete(stmt.name);
+            const emitted = [
+              plan.setup,
+              hooks.emit_expr(plan.value, ctx),
+              "local.set $" + stmt.name,
+            ].filter((line) => line !== "").join("\n");
+            hooks.bind_core_fn_type(stmt.name, plan.value, ctx);
+            hooks.bind_core_assignment_struct_type(
+              stmt.name,
+              value,
+              stmt.mode,
+              ctx,
+            );
+            hooks.bind_core_assignment_union_type(
+              stmt.name,
+              value,
+              stmt.mode,
+              ctx,
+            );
+            bind_core_text_fact(
+              stmt.name,
+              plan.value,
+              undefined,
+              ctx,
+              hooks,
+            );
+            bind_core_frozen_fact(stmt.name, value, ctx);
+            return emitted;
+          }
+          ctx.statics.set(stmt.name, plan.value);
+          hooks.clear_core_local_facts(stmt.name, ctx);
+          return plan.setup;
+        }
+
+        ctx.statics.delete(stmt.name);
+        {
+          const emitted = hooks.emit_expr(value, ctx) + "\nlocal.set $" +
+            stmt.name;
+          hooks.bind_core_fn_type(stmt.name, value, ctx);
+          hooks.bind_core_assignment_struct_type(
+            stmt.name,
+            value,
+            stmt.mode,
+            ctx,
+          );
+          hooks.bind_core_assignment_union_type(
+            stmt.name,
+            value,
+            stmt.mode,
+            ctx,
+          );
+          bind_core_text_fact(stmt.name, value, undefined, ctx, hooks);
+          bind_core_frozen_fact(stmt.name, value, ctx);
+          return emitted;
+        }
       }
 
     case "range_loop":
@@ -443,6 +610,17 @@ function emit_core_stmt_inner<
   }
 }
 
+function mutable_static_owner_binding(
+  name: string,
+  value: CoreExpr,
+  ctx: CoreStmtEmitCtx,
+): boolean {
+  if (!ctx.mutable_bindings || !ctx.mutable_bindings.has(name)) {
+    return false;
+  }
+  return mutable_static_owner_value_materializes(value);
+}
+
 function emit_statement_cleanup(
   stmt: CoreStmt,
   placement: "before" | "after",
@@ -520,12 +698,12 @@ function bind_core_text_fact<ctx extends CoreStmtEmitCtx & StaticCoreCallCtx>(
   ctx: ctx,
   hooks: Pick<
     CoreStmtEmitHooks<ctx>,
-    "core_expr_has_runtime_text_fact"
+    "core_expr_is_text"
   >,
 ): void {
   if (
     annotation === "Text" || annotation === "Bytes" ||
-    hooks.core_expr_has_runtime_text_fact(value, ctx)
+    hooks.core_expr_is_text(value, ctx)
   ) {
     ctx.text_locals.add(name);
     return;

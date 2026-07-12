@@ -14,8 +14,13 @@ import {
   type LinearUseMode,
 } from "./linear_expr.ts";
 import {
+  create_linear_state,
   expect_same_linear_state,
+  linear_binding_related,
   linear_block_exits,
+  LinearState,
+  throw_linear_diagnostic,
+  throw_unused_linear_value,
 } from "./linear_state.ts";
 import {
   expect_same_linear_closure_state,
@@ -35,7 +40,7 @@ const linear_stmt_loop_ops = {
 
 function consume_expr(
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   mode: LinearUseMode,
   closures: LinearClosureEnv,
   active_calls: Set<string> = new Set(),
@@ -52,7 +57,7 @@ function consume_expr(
 
 function consume_condition(
   expr: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
 ): void {
@@ -82,12 +87,12 @@ function validate_linear_callable(
     | Extract<FrontExpr, { tag: "lam" }>
     | Extract<FrontExpr, { tag: "rec" }>,
 ): void {
-  const available = new Set<string>();
+  const available = create_linear_state();
   const closures = create_linear_closures();
 
   for (const param of expr.params) {
     if (param.is_linear) {
-      available.add(param.name);
+      available.bind(param.name, param);
     }
   }
 
@@ -98,23 +103,40 @@ function validate_linear_callable(
   }
 
   for (const name of available) {
+    const binding = available.bindings.get(name);
+    if (binding) {
+      throw_unused_linear_value(name, binding.declaration);
+    }
     throw new Error("Linear value " + name + " was not consumed");
   }
 }
 
-export function validate_linear_rest(name: string, stmts: Stmt[]): void {
-  const available = new Set<string>([name]);
+export function validate_linear_rest(
+  name: string,
+  stmts: Stmt[],
+  declaration?: object,
+): void {
+  const available = create_linear_state();
+  if (declaration) {
+    available.bind(name, declaration);
+  } else {
+    available.add(name);
+  }
   const closures = create_linear_closures();
   validate_linear_block(stmts, available, closures);
 
   for (const item of available) {
+    const binding = available.bindings.get(item);
+    if (binding) {
+      throw_unused_linear_value(item, binding.declaration);
+    }
     throw new Error("Linear value " + item + " was not consumed");
   }
 }
 
 function validate_linear_block(
   stmts: Stmt[],
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string> = new Set(),
 ): void {
@@ -125,7 +147,7 @@ function validate_linear_block(
 
     if (stmt.tag === "assign") {
       validate_linear_assignment(stmt, available, closures, active_calls);
-      bind_linear_closure(closures, stmt.name, stmt.value, available);
+      bind_linear_closure(closures, stmt.name, stmt.value, available, stmt);
     } else if (stmt.tag === "index_assign") {
       consume_expr(
         stmt.index,
@@ -139,6 +161,7 @@ function validate_linear_block(
         available,
         closures,
         active_calls,
+        stmt,
       );
       closures.delete(stmt.name);
     } else if (stmt.tag === "expr") {
@@ -177,7 +200,7 @@ function validate_linear_block(
           closures,
           active_calls,
         );
-        available.add(stmt.name);
+        available.bind(stmt.name, stmt);
         closures.delete(stmt.name);
       } else {
         consume_expr(
@@ -187,7 +210,7 @@ function validate_linear_block(
           closures,
           active_calls,
         );
-        bind_linear_closure(closures, stmt.name, stmt.value, available);
+        bind_linear_closure(closures, stmt.name, stmt.value, available, stmt);
       }
     } else if (stmt.tag === "for_range") {
       consume_expr(
@@ -217,6 +240,7 @@ function validate_linear_block(
         closures,
         active_calls,
         linear_stmt_loop_ops,
+        stmt,
       );
     } else if (stmt.tag === "for_collection") {
       consume_expr(
@@ -232,6 +256,7 @@ function validate_linear_block(
         closures,
         active_calls,
         linear_stmt_loop_ops,
+        stmt,
       );
     } else if (stmt.tag === "if_stmt") {
       consume_condition(stmt.cond, available, closures, active_calls);
@@ -241,6 +266,7 @@ function validate_linear_block(
         closures,
         active_calls,
         "if fallthrough",
+        stmt,
       );
     } else if (stmt.tag === "if_let_stmt") {
       consume_condition(stmt.target, available, closures, active_calls);
@@ -250,6 +276,7 @@ function validate_linear_block(
         closures,
         active_calls,
         "if let fallthrough",
+        stmt,
       );
     } else if (stmt.tag === "type_check") {
       consume_expr(
@@ -262,30 +289,49 @@ function validate_linear_block(
     } else if (stmt.tag === "import" || stmt.tag === "host_import") {
       continue;
     } else if (stmt.tag === "break") {
-      throw new Error("Cannot lower break outside static range loop");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot lower break outside static range loop",
+        stmt,
+      );
     } else if (stmt.tag === "continue") {
-      throw new Error("Cannot lower continue outside static range loop");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot lower continue outside static range loop",
+        stmt,
+      );
     } else if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
-      throw new Error("Cannot validate linear " + stmt.tag + " yet");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot validate linear " + stmt.tag + " yet",
+        stmt,
+      );
     } else if (stmt.tag === "resume_dup") {
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2290",
         "Resumption duplication must be elaborated before linear validation",
+        stmt,
       );
     } else {
-      throw new Error("Cannot validate linear " + stmt.feature + " yet");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot validate linear " + stmt.feature + " yet",
+        stmt,
+      );
     }
   }
 }
 
 function validate_linear_no_else_branch(
   stmts: Stmt[],
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
   edge: string,
+  subject: object,
 ): void {
-  const before = new Set(available);
-  const branch = new Set(available);
+  const before = available.clone();
+  const branch = available.clone();
   const branch_closures = clone_linear_closures(closures);
   validate_linear_block(
     stmts,
@@ -298,17 +344,29 @@ function validate_linear_no_else_branch(
     return;
   }
 
-  expect_same_linear_state(before, branch, edge);
-  expect_same_linear_closure_state(closures, branch_closures, edge);
+  expect_same_linear_state(before, branch, edge, subject);
+  expect_same_linear_closure_state(
+    closures,
+    branch_closures,
+    edge,
+    subject,
+  );
   merge_used_linear_closures(closures, branch_closures);
 }
 
 function validate_linear_assignment(
   stmt: Extract<Stmt, { tag: "assign" }>,
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
+  subject?: object,
 ): void {
+  let diagnostic_subject: object = stmt;
+
+  if (subject !== undefined) {
+    diagnostic_subject = subject;
+  }
+
   const was_available = available.has(stmt.name);
   const consumed = consume_expr(
     stmt.value,
@@ -319,23 +377,37 @@ function validate_linear_assignment(
   );
 
   if (consumed.length > 0) {
-    expect(
-      consumed.length === 1,
-      "Linear assignment must consume exactly one value",
-    );
+    if (consumed.length !== 1) {
+      throw_linear_diagnostic(
+        "IX2207",
+        "Linear assignment must consume exactly one value",
+        diagnostic_subject,
+      );
+    }
     const name = consumed[0];
     expect(name, "Missing consumed linear value");
 
     if (name !== stmt.name) {
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2207",
         "Linear value " + name + " must be rebound as " + name,
+        diagnostic_subject,
+        linear_binding_related(available, name),
       );
     }
 
-    available.add(stmt.name);
+    const binding = available.bindings.get(name);
+    if (binding) {
+      available.bind(stmt.name, binding.declaration);
+    } else {
+      available.add(stmt.name);
+    }
   } else if (was_available) {
-    throw new Error(
+    throw_linear_diagnostic(
+      "IX2207",
       "Linear value " + stmt.name + " was rebound without being consumed",
+      diagnostic_subject,
+      linear_binding_related(available, stmt.name),
     );
   }
 }

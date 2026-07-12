@@ -28,6 +28,7 @@ export function create_core_backend_closure_type(
     core_lam_capture_names: capture.core_lam_capture_names,
     dynamic_union_if: api.dynamic_union_if,
     expr_type: api.expr_type,
+    runtime_aggregate_type_expr: api.runtime_aggregate_type_expr,
     runtime_union_match_info: api.runtime_union_match_info,
     runtime_union_target: api.runtime_union_target,
     runtime_union_type_expr: api.runtime_union_type_expr,

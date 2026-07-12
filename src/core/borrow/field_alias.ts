@@ -274,6 +274,7 @@ function update_field_aliases_for_stmt<ctx>(
       bind_collection_loop_item_owner_alias(
         stmt.item,
         stmt.collection,
+        undefined,
         ctx,
         hooks,
         body_aliases,

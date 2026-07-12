@@ -1,5 +1,6 @@
 import type { CoreExpr, CoreField } from "./ast.ts";
 import type { TempNameCtx } from "./backend/util.ts";
+import { record_core_expr_provenance } from "./subject_provenance.ts";
 import { scoped_static_core_call_block } from "./static_call_rewrite/stmt.ts";
 import {
   shadow_core_call_name,
@@ -32,46 +33,48 @@ export function scoped_static_core_call_expr(
     }
 
     case "prim":
-      return {
+      return record_core_expr_provenance({
         tag: "prim",
         prim: expr.prim,
         args: expr.args.map((arg) =>
           scoped_static_core_call_expr(arg, replacements, ctx)
         ),
-      };
+      }, expr);
 
     case "lam": {
       const local = shadow_core_call_params(replacements, expr.params);
-      return {
+      return record_core_expr_provenance({
         tag: "lam",
         params: expr.params,
         body: scoped_static_core_call_expr(expr.body, local, ctx),
-      };
+        is_linear_closure: expr.is_linear_closure,
+      }, expr);
     }
 
     case "rec": {
       const local = shadow_core_call_params(replacements, expr.params);
-      return {
+      return record_core_expr_provenance({
         tag: "rec",
         params: expr.params,
         body: scoped_static_core_call_expr(expr.body, local, ctx),
-      };
+      }, expr);
     }
 
     case "rec_ref":
       return expr;
 
     case "app":
-      return {
+      return record_core_expr_provenance({
         tag: "app",
         func: scoped_static_core_call_expr(expr.func, replacements, ctx),
         args: expr.args.map((arg) =>
           scoped_static_core_call_expr(arg, replacements, ctx)
         ),
-      };
+        resume_payload: expr.resume_payload,
+      }, expr);
 
     case "block":
-      return {
+      return record_core_expr_provenance({
         tag: "block",
         statements: scoped_static_core_call_block(
           expr.statements,
@@ -79,10 +82,10 @@ export function scoped_static_core_call_expr(
           ctx,
           scoped_static_core_call_expr,
         ),
-      };
+      }, expr);
 
     case "loop":
-      return {
+      return record_core_expr_provenance({
         tag: "loop",
         body: scoped_static_core_call_block(
           expr.body,
@@ -90,41 +93,41 @@ export function scoped_static_core_call_expr(
           ctx,
           scoped_static_core_call_expr,
         ),
-      };
+      }, expr);
 
     case "comptime":
-      return {
+      return record_core_expr_provenance({
         tag: "comptime",
         expr: scoped_static_core_call_expr(expr.expr, replacements, ctx),
-      };
+      }, expr);
 
     case "borrow":
-      return {
+      return record_core_expr_provenance({
         tag: "borrow",
         value: scoped_static_core_call_expr(expr.value, replacements, ctx),
-      };
+      }, expr);
 
     case "freeze":
-      return {
+      return record_core_expr_provenance({
         tag: "freeze",
         value: scoped_static_core_call_expr(expr.value, replacements, ctx),
-      };
+      }, expr);
 
     case "scratch":
-      return {
+      return record_core_expr_provenance({
         tag: "scratch",
         body: scoped_static_core_call_expr(expr.body, replacements, ctx),
-      };
+      }, expr);
 
     case "with":
-      return {
+      return record_core_expr_provenance({
         tag: "with",
         base: scoped_static_core_call_expr(expr.base, replacements, ctx),
         fields: scoped_static_core_call_fields(expr.fields, replacements, ctx),
-      };
+      }, expr);
 
     case "struct_value":
-      return {
+      return record_core_expr_provenance({
         tag: "struct_value",
         type_expr: scoped_static_core_call_expr(
           expr.type_expr,
@@ -132,17 +135,17 @@ export function scoped_static_core_call_expr(
           ctx,
         ),
         fields: scoped_static_core_call_fields(expr.fields, replacements, ctx),
-      };
+      }, expr);
 
     case "struct_update":
-      return {
+      return record_core_expr_provenance({
         tag: "struct_update",
         base: scoped_static_core_call_expr(expr.base, replacements, ctx),
         fields: scoped_static_core_call_fields(expr.fields, replacements, ctx),
-      };
+      }, expr);
 
     case "if":
-      return {
+      return record_core_expr_provenance({
         tag: "if",
         cond: scoped_static_core_call_expr(expr.cond, replacements, ctx),
         then_branch: scoped_static_core_call_expr(
@@ -155,7 +158,8 @@ export function scoped_static_core_call_expr(
           replacements,
           ctx,
         ),
-      };
+        implicit_else: expr.implicit_else,
+      }, expr);
 
     case "if_let": {
       let then_replacements = replacements;
@@ -167,7 +171,7 @@ export function scoped_static_core_call_expr(
         );
       }
 
-      return {
+      return record_core_expr_provenance({
         tag: "if_let",
         case_name: expr.case_name,
         value_name: expr.value_name,
@@ -182,22 +186,22 @@ export function scoped_static_core_call_expr(
           replacements,
           ctx,
         ),
-      };
+      }, expr);
     }
 
     case "field":
-      return {
+      return record_core_expr_provenance({
         tag: "field",
         object: scoped_static_core_call_expr(expr.object, replacements, ctx),
         name: expr.name,
-      };
+      }, expr);
 
     case "index":
-      return {
+      return record_core_expr_provenance({
         tag: "index",
         object: scoped_static_core_call_expr(expr.object, replacements, ctx),
         index: scoped_static_core_call_expr(expr.index, replacements, ctx),
-      };
+      }, expr);
 
     case "union_case": {
       let value: CoreExpr | undefined;
@@ -215,12 +219,13 @@ export function scoped_static_core_call_expr(
         );
       }
 
-      return {
+      return record_core_expr_provenance({
         tag: "union_case",
         name: expr.name,
         value,
         type_expr,
-      };
+        resume_payload: expr.resume_payload,
+      }, expr);
     }
   }
 }

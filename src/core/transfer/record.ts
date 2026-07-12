@@ -3,6 +3,8 @@ import {
   static_transfer_argument_is_unique,
 } from "./ownership.ts";
 import { transfer_edge_text } from "./state.ts";
+import type { CoreExpr } from "../ast.ts";
+import { record_core_diagnostic_subject } from "../source_origin.ts";
 import type { CoreTransferEdge, CoreTransferState } from "./types.ts";
 
 export function record_transfer<ctx>(
@@ -10,6 +12,7 @@ export function record_transfer<ctx>(
   scope: string,
   callee: string,
   argument: number,
+  subject: CoreExpr,
   state: CoreTransferState<ctx>,
 ): void {
   const resolved_owner = resolve_transfer_owner(owner, state);
@@ -35,6 +38,14 @@ export function record_transfer<ctx>(
   };
   state.next_transfer += 1;
   state.transfers.push(edge);
+  let terminal_subject = subject;
+  if (subject.tag === "var") {
+    const alias_subject = state.alias_subjects.get(subject.name);
+    if (alias_subject) {
+      terminal_subject = alias_subject;
+    }
+  }
+  record_core_diagnostic_subject(edge, terminal_subject);
   state.transferred.set(resolved_owner, edge);
 }
 

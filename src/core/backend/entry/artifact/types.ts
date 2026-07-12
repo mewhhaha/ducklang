@@ -22,6 +22,8 @@ export type CoreBackendArtifactApi<ctx extends CoreArtifactEmitCtx> = {
     closures: ClosureEmitCtx,
     heap: RuntimeTextHeap,
     scratch: CoreScratchHeap,
+    allocation_permits:
+      import("../../../allocation_emission.ts").CoreAllocationPermitState,
   ) => Func[];
   emit_stmt: (stmt: CoreStmt, ctx: ctx, is_final: boolean) => Wat;
   stmt_result_type: (stmt: CoreStmt, ctx: CoreCtx) => ValType;

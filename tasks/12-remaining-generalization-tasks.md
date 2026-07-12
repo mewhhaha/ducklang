@@ -2310,15 +2310,11 @@ Current queue from the latest no-GC decision:
     - Implemented follow-up proof-gated rejection slice: reusable closures that
       capture `unique_heap text` values now reject before WAT emission unless
       the text is frozen/shareable first.
-    - Implemented proof-visible accepted slices for the existing non-linear
-      runtime aggregate pointer, runtime union pointer, and closure-pointer
-      capture paths. These now report allowed capture decisions instead of
-      generic reserved unique captures, and stored runtime union pointer
-      captures round-trip through WAT-to-Wasm `call_indirect`. Runtime aggregate
-      pointer captures now also have type and WAT assertions for `call_indirect`
-      plus captured field loads, so every current `unique_heap` reason is either
-      explicitly accepted (`runtime_aggregate`, `runtime_union`, `closure`) or
-      rejected (`text`) by the closure ownership proof gate.
+    - Reusable closure capture is now fail-closed for every `unique_heap`
+      reason. Runtime aggregate, runtime union, closure-pointer, and text owners
+      all reject before WAT unless the source explicitly freezes/promotes the
+      value or the existing source-linear path moves it into a one-shot closure
+      environment. Scalar and frozen/shareable captures remain reusable.
     - Implemented a generic proof-gate check for reserved closure-capture
       decisions. Any capture slot reported as reserved now rejects before WAT
       emission, including future non-text `unique_heap` capture classes that are
@@ -2978,11 +2974,10 @@ fixture must reject before WAT emission.
    - Implemented follow-up closure fixture: stored borrow-view captures and
      scratch-backed local captures are now classified separately and remain
      proof-gated rejections until linear closure values are implemented.
-   - Implemented `unique_heap text` closure-capture rejection. Existing runtime
-     aggregate pointer, runtime union pointer, and closure-pointer captures now
-     expose allowed proof decisions. Remaining closure fixtures need any broader
-     capture shapes to land as reusable/frozen proof facts, deterministic
-     rejections, or linear closure call support.
+   - Implemented fail-closed reusable closure-capture rejection for every
+     `unique_heap` reason, including text, runtime aggregate, runtime union, and
+     closure pointers. Broader capture shapes must land as frozen/shareable
+     proof facts, deterministic rejections, or one-shot linear closure support.
 
 7. Host/import boundaries
 
@@ -3541,6 +3536,13 @@ Split the feature into small vertical slices:
   boundaries, capability methods, runtime slices, and allocation metadata.
   Accepted emitters consume the same facts rather than reconstructing a second
   ownership model after the gate.
+- The pure-Ic module/WAT path now has its own fail-closed no-GC preflight with
+  the same explicit row families and `managed_storage: "disabled"`. It accepts
+  scalar locals and in-bounds addresses derived from frozen static text data,
+  records scalar open parameters as host-boundary rows, and rejects dynamic,
+  out-of-bounds, interior-result, or otherwise unproved addresses before
+  `Ic.mod`/`Ic.wat` emission. Recursive Ic modules prove scalar function and
+  main-result storage instead of assuming it.
 - Persistent allocation rows now carry reusable-layout prerequisites such as
   allocation id, byte-size formula, alignment, and layout id for runtime text,
   aggregates, unions, closures, and runtime `i32` slices. The baseline runtime
@@ -4099,8 +4101,9 @@ loops only work for special cases.
   fields at stable offsets.
 - Field access over a runtime aggregate emits a load and round-trips through
   WAT-to-Wasm.
-- Capturing a runtime aggregate in a first-class non-linear closure snapshots
-  the pointer and preserves field access after shadowing.
+- Capturing a frozen runtime aggregate in a first-class non-linear closure
+  preserves field access after shadowing; capturing an unfrozen unique pointer
+  rejects or requires the one-shot linear closure path.
 - Missing layout facts throw deterministic errors.
 - Scratch-backed aggregate pointers cannot escape unless frozen/promoted.
 
@@ -4124,6 +4127,9 @@ loops only work for special cases.
 - Tests now cover runtime aggregate pointer materialization, aligned scalar/i64
   and `Text` field stores, binding-time snapshots of runtime field values, and
   no-GC proof classification.
+- A focused layout regression now proves that an unresolved aggregate field type
+  fails during layout preparation with the deterministic
+  `Missing runtime aggregate layout for type` diagnostic, before WAT emission.
 - Runtime aggregate local facts now track struct type facts for stored pointer
   locals across local collection, statement emission, closure typing/lifting,
   static-call planning, type annotations, text facts, and expression
@@ -4136,10 +4142,11 @@ loops only work for special cases.
   first-class closure returns an aggregate pointer, for example
   `len(user.name) + user.age`. This path now has both focused Core WAT checks
   and WAT-to-Wasm round-trip coverage.
-- First-class closures can capture stored runtime aggregate pointers and later
-  load fields through the captured pointer. Nested runtime aggregate fields can
-  also be used directly or bound as pointer aliases, including nonzero inline
-  offsets such as `let name = user.name`.
+- First-class reusable closures can capture frozen stored runtime aggregate
+  pointers and later load fields through the captured pointer. Unfrozen unique
+  pointers reject unless moved through the one-shot linear closure path. Nested
+  runtime aggregate fields can still be used directly or bound as pointer
+  aliases, including nonzero inline offsets such as `let name = user.name`.
 - Persistent runtime aggregate pointers can now be frozen. The frozen binding
   retains aggregate type and runtime text field facts through the no-GC proof
   gate and WAT emission, can load scalar/Text fields after freeze, and rejects
@@ -4246,10 +4253,11 @@ element_type: ValType or aggregate/union fact
   inline layout, and `for index, item in user.scores` loads the nested fields
   from the stored aggregate pointer offsets.
 - Borrowing a non-scalar item from a runtime aggregate-backed collection now
-  records the source collection owner. A stored loop item view such as
-  `view = borrow name` can be read after the loop while the collection owner
-  remains live, and later mutation of that owner rejects through the normal
-  borrowed-owner barrier.
+  records both the source collection owner and the loop-iteration lifetime.
+  Bounded reads such as `len(borrow name)` remain valid inside the loop, while
+  assigning a view rooted in `name` (including through local aliases and field
+  projections) to an outer binding rejects before WAT emission because the
+  iteration lifetime cannot escape to the parent scope.
 - Runtime aggregate-backed collection loops now have explicit loop-control
   coverage: `continue` skips the current unrolled field body, `break` exits the
   collection loop, scalar carried locals remain valid, and the WAT-to-Wasm
@@ -4258,9 +4266,9 @@ element_type: ValType or aggregate/union fact
   runtime aggregate fields reuse the existing item-type mismatch diagnostic
   before WAT emission.
 - Remaining follow-up: general runtime array/slice facts, dynamic loop lowering
-  over unknown-length collections, borrowed item lifetime rules for future
-  iterator-backed collections, and ownership merge facts for non-scalar indexed
-  results.
+  over unknown-length collections, extension of the iteration-lifetime fact to
+  future iterator-backed collection implementations, and ownership merge facts
+  for non-scalar indexed results.
 
 ## Task 12.5: General Memory-Backed Index Mutation
 

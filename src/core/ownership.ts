@@ -51,6 +51,10 @@ export function core_expr_ownership<ctx>(
       return source;
     }
 
+    if (source.tag === "borrow_view") {
+      return source;
+    }
+
     return { tag: "borrow_view", source };
   }
 
@@ -65,7 +69,11 @@ export function core_expr_ownership<ctx>(
   }
 
   if (expr.tag === "scratch") {
-    const source = core_expr_ownership(expr.body, ctx, hooks);
+    let scratch_ctx = ctx;
+    if (hooks.scratch_return_ctx) {
+      scratch_ctx = hooks.scratch_return_ctx(ctx);
+    }
+    const source = core_expr_ownership(expr.body, scratch_ctx, hooks);
 
     if (
       source.tag === "scalar_local" ||
@@ -152,6 +160,30 @@ export function core_expr_ownership<ctx>(
     }
   }
 
+  if (
+    expr.tag === "field" && hooks.core_expr_is_text(expr, ctx) &&
+    hooks.runtime_aggregate_type_expr
+  ) {
+    if (hooks.static_text_value(expr, ctx)) {
+      return { tag: "frozen_shareable", reason: "text" };
+    }
+
+    const object_type = hooks.runtime_aggregate_type_expr(expr.object, ctx);
+    if (object_type) {
+      const source = core_expr_ownership(expr.object, ctx, hooks);
+
+      if (
+        source.tag === "scalar_local" ||
+        source.tag === "frozen_shareable" ||
+        source.tag === "borrow_view"
+      ) {
+        return source;
+      }
+
+      return { tag: "borrow_view", source };
+    }
+  }
+
   if (expr.tag === "var" && hooks.frozen_local) {
     if (hooks.frozen_local(expr.name, ctx)) {
       return { tag: "frozen_shareable", reason: "freeze" };
@@ -171,18 +203,6 @@ export function core_expr_ownership<ctx>(
 
       return { tag: "unique_heap", reason: "runtime_aggregate" };
     }
-  }
-
-  if (hooks.closure_fn_type(expr, ctx)) {
-    return { tag: "unique_heap", reason: "closure" };
-  }
-
-  if (hooks.core_expr_is_text(expr, ctx)) {
-    if (hooks.static_text_value(expr, ctx)) {
-      return { tag: "frozen_shareable", reason: "text" };
-    }
-
-    return { tag: "unique_heap", reason: "text" };
   }
 
   const union_target = try_runtime_union_target(expr, ctx, hooks);
@@ -208,6 +228,18 @@ export function core_expr_ownership<ctx>(
 
   if (hooks.runtime_union_value(expr, ctx)) {
     return { tag: "unique_heap", reason: "runtime_union" };
+  }
+
+  if (hooks.closure_fn_type(expr, ctx)) {
+    return { tag: "unique_heap", reason: "closure" };
+  }
+
+  if (hooks.core_expr_is_text(expr, ctx)) {
+    if (hooks.static_text_value(expr, ctx)) {
+      return { tag: "frozen_shareable", reason: "text" };
+    }
+
+    return { tag: "unique_heap", reason: "text" };
   }
 
   const type = hooks.expr_type(expr, ctx);

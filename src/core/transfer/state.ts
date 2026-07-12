@@ -11,6 +11,7 @@ export function clone_transfer_state<ctx>(
     transferred: new Map(state.transferred),
     functions: state.functions,
     aliases: new Map(state.aliases),
+    alias_subjects: new Map(state.alias_subjects),
     alias_ownership: new Map(state.alias_ownership),
     alias_rejection_reasons: new Map(state.alias_rejection_reasons),
     active_functions: new Set(state.active_functions),
@@ -34,6 +35,10 @@ export function merge_transfer_state<ctx>(
 
   for (const entry of source.alias_ownership.entries()) {
     target.alias_ownership.set(entry[0], entry[1]);
+  }
+
+  for (const entry of source.alias_subjects.entries()) {
+    target.alias_subjects.set(entry[0], entry[1]);
   }
 
   for (const entry of source.alias_rejection_reasons.entries()) {

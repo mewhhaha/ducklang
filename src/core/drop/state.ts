@@ -14,6 +14,8 @@ export function clone_drop_owners(
     cloned.set(name, {
       name: owner.name,
       ownership: owner.ownership,
+      pointer: owner.pointer,
+      subject: owner.subject,
     });
   }
 
@@ -38,6 +40,7 @@ export function child_exit_owners(
     return_owners: exit_owners.return_owners.concat(local_owners),
     break_owners: exit_owners.break_owners.concat(local_owners),
     continue_owners: exit_owners.continue_owners.concat(local_owners),
+    retained_owners: exit_owners.retained_owners,
   };
 }
 
@@ -45,17 +48,23 @@ export function loop_exit_owners(
   owners: Map<string, CoreDropOwner>,
   exit_owners: CoreDropExitOwners,
 ): CoreDropExitOwners {
+  const retained_owners = new Set(exit_owners.retained_owners);
+  for (const name of owners.keys()) {
+    retained_owners.add(name);
+  }
+
   return {
     return_owners: exit_owners.return_owners.concat(
       Array.from(owners.values()),
     ),
     break_owners: [],
     continue_owners: [],
+    retained_owners,
   };
 }
 
 export function returned_owner_name(expr: CoreExpr): string | undefined {
-  if (expr.tag === "var") {
+  if (expr.tag === "var" || expr.tag === "linear") {
     return expr.name;
   }
 

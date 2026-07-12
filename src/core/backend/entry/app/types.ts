@@ -39,10 +39,12 @@ export type CoreBackendAppApi = {
   emit_runtime_text_append: (
     left: CoreExpr,
     right: CoreExpr,
+    subject: CoreExpr,
     ctx: CoreEmitCtx,
   ) => Wat;
   emit_runtime_text_len: (collection: CoreExpr, ctx: CoreEmitCtx) => Wat;
   emit_runtime_text_slice: (
+    subject: CoreExpr,
     text: CoreExpr,
     start: CoreExpr,
     end: CoreExpr,

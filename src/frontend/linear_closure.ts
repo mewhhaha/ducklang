@@ -5,6 +5,10 @@ import {
   rename_linear_closure_body,
   same_linear_closure_param_shape,
 } from "./linear_closure_rename.ts";
+import {
+  inherit_linear_source_span,
+  type LinearState,
+} from "./linear_state.ts";
 
 export type LinearClosureBinding = {
   id: number;
@@ -21,12 +25,16 @@ export type LinearClosureEnv =
   & {
     next_id: number;
     used: Set<LinearClosureBinding>;
+    consumed_at: Map<LinearClosureBinding, FrontExpr>;
+    declarations: Map<string, object>;
   };
 
 export function create_linear_closures(): LinearClosureEnv {
   const closures = new Map<string, LinearClosureBinding>() as LinearClosureEnv;
   closures.next_id = 0;
   closures.used = new Set();
+  closures.consumed_at = new Map();
+  closures.declarations = new Map();
   return closures;
 }
 
@@ -36,6 +44,8 @@ export function clone_linear_closures(
   const clone = new Map(closures) as LinearClosureEnv;
   clone.next_id = closures.next_id;
   clone.used = new Set(closures.used);
+  clone.consumed_at = new Map(closures.consumed_at);
+  clone.declarations = new Map(closures.declarations);
   return clone;
 }
 
@@ -43,10 +53,12 @@ export function bind_linear_closure(
   closures: LinearClosureEnv,
   name: string,
   value: FrontExpr,
-  available: Set<string>,
+  available: LinearState,
+  declaration: object,
 ): void {
   if (available.has(name)) {
     closures.delete(name);
+    closures.declarations.delete(name);
     return;
   }
 
@@ -55,6 +67,7 @@ export function bind_linear_closure(
   if (ref) {
     if (ref.binding) {
       closures.set(name, ref.binding);
+      closures.declarations.set(name, declaration);
       return;
     }
 
@@ -62,11 +75,13 @@ export function bind_linear_closure(
       id: closures.next_id,
       expr: ref.expr,
     });
+    closures.declarations.set(name, declaration);
     closures.next_id += 1;
     return;
   }
 
   closures.delete(name);
+  closures.declarations.delete(name);
 }
 
 export function resolve_linear_closure_expr(
@@ -144,25 +159,26 @@ function dynamic_if_linear_closure(
   }
 
   const params = canonical_linear_closure_params(value, then_ref.expr.params);
+  const body = inherit_linear_source_span({
+    tag: "if" as const,
+    cond: value.cond,
+    then_branch: rename_linear_closure_body(
+      then_ref.expr.body,
+      then_ref.expr.params,
+      params,
+    ),
+    else_branch: rename_linear_closure_body(
+      else_ref.expr.body,
+      else_ref.expr.params,
+      params,
+    ),
+  }, value);
 
-  return {
-    tag: "lam",
+  return inherit_linear_source_span({
+    tag: "lam" as const,
     params,
-    body: {
-      tag: "if",
-      cond: value.cond,
-      then_branch: rename_linear_closure_body(
-        then_ref.expr.body,
-        then_ref.expr.params,
-        params,
-      ),
-      else_branch: rename_linear_closure_body(
-        else_ref.expr.body,
-        else_ref.expr.params,
-        params,
-      ),
-    },
-  };
+    body,
+  }, value);
 }
 
 function dynamic_if_let_linear_closure(
@@ -181,28 +197,29 @@ function dynamic_if_let_linear_closure(
   }
 
   const params = canonical_linear_closure_params(value, then_ref.expr.params);
+  const body = inherit_linear_source_span({
+    tag: "if_let" as const,
+    case_name: value.case_name,
+    value_name: value.value_name,
+    target: value.target,
+    then_branch: rename_linear_closure_body(
+      then_ref.expr.body,
+      then_ref.expr.params,
+      params,
+    ),
+    else_branch: rename_linear_closure_body(
+      else_ref.expr.body,
+      else_ref.expr.params,
+      params,
+    ),
+    implicit_else: value.implicit_else,
+  }, value);
 
-  return {
-    tag: "lam",
+  return inherit_linear_source_span({
+    tag: "lam" as const,
     params,
-    body: {
-      tag: "if_let",
-      case_name: value.case_name,
-      value_name: value.value_name,
-      target: value.target,
-      then_branch: rename_linear_closure_body(
-        then_ref.expr.body,
-        then_ref.expr.params,
-        params,
-      ),
-      else_branch: rename_linear_closure_body(
-        else_ref.expr.body,
-        else_ref.expr.params,
-        params,
-      ),
-      implicit_else: value.implicit_else,
-    },
-  };
+    body,
+  }, value);
 }
 
 export function merge_used_linear_closures(
@@ -211,6 +228,12 @@ export function merge_used_linear_closures(
 ): void {
   for (const id of source.used) {
     target.used.add(id);
+
+    const consumed_at = source.consumed_at.get(id);
+
+    if (consumed_at) {
+      target.consumed_at.set(id, consumed_at);
+    }
   }
 }
 

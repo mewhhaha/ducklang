@@ -1,4 +1,5 @@
 import type { Prim, ValType } from "../op.ts";
+import type { SourceSpan } from "./syntax.ts";
 
 export type Source = {
   tag: "program";
@@ -329,6 +330,10 @@ export type TokenKind =
 export type Token = {
   kind: TokenKind;
   text: string;
+  /** Exact source spelling, including quotes and escapes for literals. */
+  raw: string;
+  /** UTF-16 source offsets, with an exclusive end. */
+  span: SourceSpan;
   line: number;
   column: number;
 };

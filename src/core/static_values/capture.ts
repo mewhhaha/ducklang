@@ -1,5 +1,6 @@
 import type { CoreExpr } from "../ast.ts";
 import { fresh_temp_local, set_local } from "../backend/util.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import { static_block_result } from "../type_static.ts";
 import type {
   StaticValueCtx,
@@ -56,7 +57,10 @@ export function plan_static_capture_expr<
     ctx.union_locals.delete(name);
   }
 
-  const planned_value: CoreExpr = { tag: "var", name };
+  const planned_value: CoreExpr = record_core_expr_provenance(
+    { tag: "var", name },
+    value,
+  );
   const setup: string[] = [];
 
   if (emit_ctx) {
@@ -64,6 +68,9 @@ export function plan_static_capture_expr<
     setup.push("local.set $" + name);
   } else {
     hooks.collect_expr_locals(value, ctx);
+    if (ctx.static_capture_values) {
+      ctx.static_capture_values.set(name, value);
+    }
   }
 
   return { value: planned_value, setup: setup.join("\n") };

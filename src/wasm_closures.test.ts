@@ -389,7 +389,8 @@ let add = if flag {
 } else {
   (x: Int) => x + 2
 }
-let run = (y: Int) => add(y) + 10
+let shared_add = freeze add
+let run = (y: Int) => shared_add(y) + 10
 
 run(30)
 `);

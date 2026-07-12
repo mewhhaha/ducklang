@@ -31,6 +31,10 @@ import {
 } from "./runtime_allocator.ts";
 import type { TextLayout } from "./text_layout.ts";
 import { core_host_func_imports } from "./host_import.ts";
+import {
+  check_core_allocation_permits,
+  create_core_allocation_permit_state,
+} from "./allocation_emission.ts";
 
 export type CoreEmitArtifact = {
   body: Wat;
@@ -53,6 +57,7 @@ export type CoreArtifactEmitCtx = {
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
+  mutable_bindings?: Set<string>;
   text_layout: TextLayout;
   closures?: ClosureEmitCtx;
   heap: RuntimeTextHeap;
@@ -69,6 +74,8 @@ export type CoreArtifactEmitInput = {
   closures: ClosureEmitCtx;
   heap: RuntimeTextHeap;
   scratch: CoreScratchHeap;
+  allocation_permits:
+    import("./allocation_emission.ts").CoreAllocationPermitState;
 };
 
 export type CoreArtifactEmitHooks<ctx extends CoreArtifactEmitCtx> = {
@@ -80,6 +87,8 @@ export type CoreArtifactEmitHooks<ctx extends CoreArtifactEmitCtx> = {
     closures: ClosureEmitCtx,
     heap: RuntimeTextHeap,
     scratch: CoreScratchHeap,
+    allocation_permits:
+      import("./allocation_emission.ts").CoreAllocationPermitState,
   ) => Func[];
   emit_stmt: (stmt: CoreStmt, ctx: ctx, is_final: boolean) => Wat;
   stmt_result_type: (stmt: CoreStmt, ctx: CoreCtx) => ValType;
@@ -89,6 +98,14 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
   core: CoreNode,
   hooks: CoreArtifactEmitHooks<ctx>,
 ): CoreEmitArtifact {
+  const allocation_permit_plan = core.allocation_permit_plan;
+  expect(
+    allocation_permit_plan,
+    "Core emission requires an accepted allocation permit plan",
+  );
+  const allocation_permits = create_core_allocation_permit_state(
+    allocation_permit_plan,
+  );
   const core_ctx = hooks.collect_core_ctx(core);
   const text_layout = hooks.build_text_layout(core, core_ctx);
   const closures = create_closure_emit_ctx();
@@ -100,6 +117,7 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
     closures,
     heap,
     scratch,
+    allocation_permits,
   });
   const lines: string[] = [];
 
@@ -121,10 +139,11 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
     closures,
     heap,
     scratch,
+    allocation_permits,
   );
   const named_rec_funcs = emit_named_rec_functions(
     core,
-    { text_layout, closures, heap, scratch },
+    { text_layout, closures, heap, scratch, allocation_permits },
     {
       collect_core_ctx: hooks.collect_core_ctx,
       create_emit_ctx: hooks.create_emit_ctx,
@@ -136,6 +155,8 @@ export function emit_core_artifact<ctx extends CoreArtifactEmitCtx>(
   for (const func of named_rec_funcs) {
     funcs.push(func);
   }
+
+  check_core_allocation_permits(allocation_permits);
 
   let table: Table | undefined;
 

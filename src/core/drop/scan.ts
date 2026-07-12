@@ -107,6 +107,19 @@ function scan_final_drop_stmt<ctx>(
   drop_fallthrough_owners: boolean,
 ): boolean {
   if (stmt.tag === "expr") {
+    if (!drop_fallthrough_owners) {
+      return scan_drop_expr(
+        stmt.expr,
+        scope,
+        owners,
+        exit_owners,
+        ctx,
+        hooks,
+        state,
+        scan_drop_expr_children,
+      );
+    }
+
     const continues = scan_drop_expr_children(
       stmt.expr,
       scope,
@@ -148,6 +161,7 @@ function scan_final_drop_stmt<ctx>(
       scope,
       owners,
       exit_owners.return_owners,
+      undefined,
       returned_owner_name(stmt.value),
       state,
     );
@@ -330,6 +344,7 @@ function scan_drop_stmt<ctx>(
         scope,
         owners,
         exit_owners.return_owners,
+        undefined,
         returned_owner_name(stmt.value),
         state,
       );
@@ -368,6 +383,7 @@ function scan_drop_stmt<ctx>(
         scope,
         owners,
         exit_owners.break_owners,
+        exit_owners.retained_owners,
         undefined,
         state,
       );
@@ -379,6 +395,7 @@ function scan_drop_stmt<ctx>(
         scope,
         owners,
         exit_owners.continue_owners,
+        exit_owners.retained_owners,
         undefined,
         state,
       );

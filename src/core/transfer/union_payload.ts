@@ -7,6 +7,7 @@ type RecordTransfer<ctx> = (
   scope: string,
   callee: string,
   argument: number,
+  subject: CoreExpr,
   state: CoreTransferState<ctx>,
 ) => void;
 
@@ -79,12 +80,13 @@ export function record_union_payload_transfer<ctx>(
 
   if (
     payload_ownership.reason !== "runtime_aggregate" &&
-    payload_ownership.reason !== "runtime_union"
+    payload_ownership.reason !== "runtime_union" &&
+    !(payload_ownership.reason === "closure" && runtime_value.resume_payload)
   ) {
     return;
   }
 
-  if (payload.tag !== "var") {
+  if (payload.tag !== "var" && payload.tag !== "linear") {
     return;
   }
 
@@ -97,6 +99,7 @@ export function record_union_payload_transfer<ctx>(
     scope,
     callee,
     0,
+    payload,
     state,
   );
 }
@@ -124,7 +127,8 @@ function direct_union_payload_may_be_owner_transfer(expr: CoreExpr): boolean {
 }
 
 function direct_union_payload_ownership_form(payload: CoreExpr): boolean {
-  return payload.tag === "var" || payload.tag === "borrow" ||
+  return payload.tag === "var" || payload.tag === "linear" ||
+    payload.tag === "borrow" ||
     payload.tag === "scratch" || payload.tag === "freeze" ||
     named_union_payload(payload) !== undefined;
 }
@@ -132,10 +136,14 @@ function direct_union_payload_ownership_form(payload: CoreExpr): boolean {
 function named_union_payload(
   payload: CoreExpr,
 ):
-  | Extract<CoreExpr, { tag: "var" | "borrow" | "scratch" | "freeze" }>
+  | Extract<
+    CoreExpr,
+    { tag: "var" | "linear" | "borrow" | "scratch" | "freeze" }
+  >
   | undefined {
   if (
-    payload.tag === "var" || payload.tag === "borrow" ||
+    payload.tag === "var" || payload.tag === "linear" ||
+    payload.tag === "borrow" ||
     payload.tag === "scratch" || payload.tag === "freeze"
   ) {
     return payload;
@@ -171,13 +179,16 @@ function resolve_block_payload_alias(
   result: ReturnType<typeof named_union_payload>,
   block: Extract<CoreExpr, { tag: "block" }>,
 ): ReturnType<typeof named_union_payload> {
-  if (!result || result.tag !== "var") {
+  if (!result || (result.tag !== "var" && result.tag !== "linear")) {
     return result;
   }
 
   const aliases = new Map<string, string>();
   for (const stmt of block.statements) {
-    if (stmt.tag !== "bind" || stmt.value.tag !== "var") {
+    if (
+      stmt.tag !== "bind" ||
+      (stmt.value.tag !== "var" && stmt.value.tag !== "linear")
+    ) {
       continue;
     }
     aliases.set(stmt.name, stmt.value.name);
@@ -238,15 +249,22 @@ function union_payload_transfers_owner<ctx>(
     return false;
   }
 
-  return payload_ownership.reason === "runtime_aggregate" ||
-    payload_ownership.reason === "runtime_union";
+  if (
+    payload_ownership.reason === "runtime_aggregate" ||
+    payload_ownership.reason === "runtime_union"
+  ) {
+    return true;
+  }
+
+  return payload_ownership.reason === "closure" &&
+    runtime_value.resume_payload === true;
 }
 
 function union_payload_ownership<ctx>(
   payload: CoreExpr,
   state: CoreTransferState<ctx>,
 ): CoreOwnership | undefined {
-  if (payload.tag === "var") {
+  if (payload.tag === "var" || payload.tag === "linear") {
     const ownership = state.alias_ownership.get(payload.name);
 
     if (ownership) {

@@ -2,6 +2,7 @@ import { expect } from "../../expect.ts";
 import type { FrontExpr, Param } from "../ast.ts";
 import { collect_linear_closure_names } from "../linear_closure_names.ts";
 import { is_builtin_type_name, same_param_annotation } from "../types.ts";
+import { inherit_linear_source_span } from "../linear_state.ts";
 
 export function same_linear_closure_param_shape(
   left: Extract<FrontExpr, { tag: "lam" }>,
@@ -45,12 +46,14 @@ export function canonical_linear_closure_params(
   const used = new Set<string>();
   collect_linear_closure_names(value, used);
 
-  return params.map((param, index) => ({
-    name: fresh_linear_closure_param_name(used, index),
-    is_const: param.is_const,
-    is_linear: param.is_linear,
-    annotation: param.annotation,
-  }));
+  return params.map((param, index) => {
+    return inherit_linear_source_span({
+      name: fresh_linear_closure_param_name(used, index),
+      is_const: param.is_const,
+      is_linear: param.is_linear,
+      annotation: param.annotation,
+    }, param);
+  });
 }
 
 function same_linear_closure_param_annotation(

@@ -36,6 +36,7 @@ export type LiftedClosure = {
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
+  materialized_bindings?: Set<string>;
   host_imports?: Map<string, CoreHostImport>;
 };
 
@@ -55,10 +56,13 @@ export type CoreClosureEmitCtx = {
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
+  materialized_bindings?: Set<string>;
   host_imports?: Map<string, CoreHostImport>;
   closures?: ClosureEmitCtx;
   heap: RuntimeTextHeap;
   scratch: CoreScratchHeap;
+  allocation_permits:
+    import("./allocation_emission.ts").CoreAllocationPermitState;
   scratch_loop_resets: string[];
   scratch_return_resets: string[];
   next_loop: number;
@@ -72,11 +76,14 @@ export type CoreClosureLiftedBodyInput = {
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
+  materialized_bindings?: Set<string>;
   host_imports?: Map<string, CoreHostImport>;
   text_layout: TextLayout;
   closures: ClosureEmitCtx;
   heap: RuntimeTextHeap;
   scratch: CoreScratchHeap;
+  allocation_permits:
+    import("./allocation_emission.ts").CoreAllocationPermitState;
 };
 
 export type CoreClosureEmitHooks<ctx extends CoreClosureEmitCtx> = {

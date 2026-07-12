@@ -42,12 +42,13 @@ export function frozen_core_local<ctx extends { frozen_locals?: Set<string> }>(
 }
 
 export function emit_core_freeze_text_value<ctx extends CoreExprEmitCtx>(
+  subject: Extract<CoreExpr, { tag: "freeze" }>,
   value: CoreExpr,
   ctx: ctx,
   emit_expr: (expr: CoreExpr, ctx: ctx) => Wat,
 ): Wat {
   if (ctx.scratch_return_resets.length > 0) {
-    return emit_runtime_text_freeze_copy(value, ctx, {
+    return emit_runtime_text_freeze_copy(subject, value, ctx, {
       emit_expr,
     });
   }
@@ -105,6 +106,7 @@ export function emit_core_freeze_can_copy_runtime_aggregate<
 export function emit_runtime_aggregate_nested_union_freeze_copy<
   ctx extends CoreExprEmitCtx & TypeStaticCtx,
 >(
+  subject: CoreExpr,
   source: CoreExpr,
   type_expr: CoreExpr,
   ctx: ctx,
@@ -136,7 +138,7 @@ export function emit_runtime_aggregate_nested_union_freeze_copy<
     ) => Extract<CoreExpr, { tag: "struct_value" }> | undefined;
   },
 ): Wat {
-  return emit_runtime_union_freeze_copy(source, type_expr, ctx, {
+  return emit_runtime_union_freeze_copy(subject, source, type_expr, ctx, {
     core_expr_is_text: hooks.core_expr_is_text,
     emit_expr: hooks.emit_expr,
     expr_type: hooks.expr_type,

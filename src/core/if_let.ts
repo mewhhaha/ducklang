@@ -10,21 +10,6 @@ export type DynamicUnionIf = {
   else_case: Extract<CoreExpr, { tag: "union_case" }>;
 };
 
-export function core_if_let_match_condition(
-  target: CoreExpr,
-  case_name: string,
-): CoreExpr {
-  return {
-    tag: "if_let",
-    target,
-    case_name,
-    value_name: undefined,
-    then_branch: { tag: "num", type: "i32", value: 1 },
-    else_branch: { tag: "num", type: "i32", value: 0 },
-    implicit_else: false,
-  };
-}
-
 export type CoreIfLetPayloadBinding<ctx> = {
   setup: Wat;
   ctx: ctx;

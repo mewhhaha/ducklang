@@ -17,6 +17,7 @@ import type { RuntimeAggregateIndexAssignPlan } from "../index_assign.ts";
 
 export type StaticCtx = {
   locals: Map<string, ValType>;
+  static_capture_values?: Map<string, CoreExpr>;
   statics: Map<string, CoreExpr>;
   fn_types: Map<string, CoreFnType>;
   text_locals: Set<string>;
@@ -25,6 +26,8 @@ export type StaticCtx = {
   frozen_locals?: Set<string>;
   host_imports?: Map<string, CoreHostImport>;
   scratch_depth?: number;
+  mutable_bindings?: Set<string>;
+  materialized_bindings?: Set<string>;
 };
 
 export type TempCtx = StaticCtx & {
@@ -121,6 +124,10 @@ export type CoreLocalCollectHooks = {
   ) => void;
   core_binding_value: (
     stmt: Extract<CoreStmt, { tag: "bind" }>,
+    ctx: StaticCtx,
+  ) => CoreExpr;
+  core_assignment_value: (
+    stmt: Extract<CoreStmt, { tag: "assign" }>,
     ctx: StaticCtx,
   ) => CoreExpr;
   core_expr_has_runtime_text_fact: (

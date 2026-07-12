@@ -2,7 +2,10 @@ import { expect } from "../../expect.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
 import { closure_heap_global } from "../closure_runtime.ts";
-import { emit_persistent_alloc } from "../runtime_allocator.ts";
+import {
+  consume_scratch_alloc,
+  emit_persistent_alloc,
+} from "../runtime_allocator.ts";
 import { emit_runtime_text_concat_copy } from "./copy.ts";
 import {
   declare_runtime_text_concat_locals,
@@ -20,14 +23,23 @@ export function emit_runtime_text_concat<ctx extends RuntimeTextEmitCtx>(
   expect(operands, "Core runtime text concat requires text operands");
   const left = operands[0];
   const right = operands[1];
-  return emit_runtime_text_append(left, right, ctx, hooks);
+  return emit_runtime_text_append(
+    left,
+    right,
+    expr,
+    ctx,
+    hooks,
+    "runtime_text.concat",
+  );
 }
 
 export function emit_runtime_text_append<ctx extends RuntimeTextEmitCtx>(
   left: CoreExpr,
   right: CoreExpr,
+  subject: CoreExpr,
   ctx: ctx,
   hooks: Pick<RuntimeTextHooks<ctx>, "emit_expr">,
+  emission_site = "runtime_text.append",
 ): Wat {
   const left_wat = hooks.emit_expr(left, ctx);
   const right_wat = hooks.emit_expr(right, ctx);
@@ -54,11 +66,23 @@ export function emit_runtime_text_append<ctx extends RuntimeTextEmitCtx>(
 
   if (heap_name === closure_heap_global) {
     lines.push(emit_persistent_alloc(
+      ctx,
+      subject,
       "local.get $" + locals.total_len + "\ni32.const 4\ni32.add",
       8,
+      "runtime_text",
+      "runtime_text.length_prefixed_utf8",
+      emission_site,
     ));
     lines.push("local.set $" + locals.result);
   } else {
+    consume_scratch_alloc(
+      ctx,
+      subject,
+      "runtime_text",
+      "runtime_text.length_prefixed_utf8",
+      emission_site,
+    );
     lines.push("global.get $" + heap_name);
     lines.push("local.set $" + locals.result);
     lines.push("global.get $" + heap_name);

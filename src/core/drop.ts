@@ -34,6 +34,10 @@ export function core_drop_plan<ctx>(
     functions: top_level_drop_functions(core),
     aliases: new Map(),
     temporary_aliases: new Map(),
+    consumed_temporary_subjects: new WeakSet(),
+    static_aggregate_fields: new Map(),
+    frozen_aggregate_owners: new Set(),
+    frozen_text_owners: new Set(),
     active_functions: new Set(),
   };
   const owners = new Map<string, CoreDropOwner>();

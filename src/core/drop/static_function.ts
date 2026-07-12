@@ -63,6 +63,72 @@ export function static_drop_function_params(
   return then_params;
 }
 
+export function static_drop_function_terminal_linear_name(
+  target: StaticDropFunction,
+): string | undefined {
+  if (target.tag === "lam" || target.tag === "rec") {
+    return terminal_linear_name(target.value.body);
+  }
+
+  const then_name = static_drop_function_terminal_linear_name(
+    target.then_target,
+  );
+  const else_name = static_drop_function_terminal_linear_name(
+    target.else_target,
+  );
+
+  if (!then_name || !else_name) {
+    return undefined;
+  }
+
+  if (then_name !== else_name) {
+    return undefined;
+  }
+
+  return then_name;
+}
+
+function terminal_linear_name(expr: CoreExpr): string | undefined {
+  if (expr.tag === "linear") {
+    return expr.name;
+  }
+
+  if (expr.tag === "block") {
+    const final_stmt = expr.statements[expr.statements.length - 1];
+
+    if (!final_stmt) {
+      return undefined;
+    }
+
+    if (final_stmt.tag === "expr") {
+      return terminal_linear_name(final_stmt.expr);
+    }
+
+    if (final_stmt.tag === "return") {
+      return terminal_linear_name(final_stmt.value);
+    }
+
+    return undefined;
+  }
+
+  if (expr.tag === "if" || expr.tag === "if_let") {
+    const then_name = terminal_linear_name(expr.then_branch);
+    const else_name = terminal_linear_name(expr.else_branch);
+
+    if (!then_name || !else_name) {
+      return undefined;
+    }
+
+    if (then_name !== else_name) {
+      return undefined;
+    }
+
+    return then_name;
+  }
+
+  return undefined;
+}
+
 function static_drop_function_value(
   expr: CoreExpr,
   state: CoreDropState,

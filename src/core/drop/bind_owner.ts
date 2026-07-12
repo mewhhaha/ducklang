@@ -18,7 +18,12 @@ export function bind_drop_owner<ctx>(
   if (expr_result && expr_result.tag === "branch") {
     const ownership = unique_heap_ownership(expr, ctx, hooks);
     if (ownership) {
-      owners.set(name, { name, ownership });
+      owners.set(name, {
+        name,
+        ownership,
+        pointer: "named",
+        subject: expr,
+      });
       return;
     }
 
@@ -51,6 +56,8 @@ export function bind_drop_owner<ctx>(
     owners.set(name, {
       name,
       ownership: moved_owner.ownership,
+      pointer: moved_owner.pointer,
+      subject: moved_owner.subject,
     });
     return;
   }
@@ -58,7 +65,12 @@ export function bind_drop_owner<ctx>(
   const ownership = unique_heap_ownership(expr, ctx, hooks);
 
   if (ownership) {
-    owners.set(name, { name, ownership });
+    owners.set(name, {
+      name,
+      ownership,
+      pointer: "named",
+      subject: expr,
+    });
     return;
   }
 

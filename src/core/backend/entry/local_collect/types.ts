@@ -85,6 +85,7 @@ type LocalCollectText = Pick<
 type LocalCollectTypeCheck = Pick<
   CoreBackendTypeCheck,
   | "check_core_type_pattern"
+  | "core_assignment_value"
   | "core_binding_value"
   | "core_type_const_value"
 >;

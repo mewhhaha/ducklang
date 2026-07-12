@@ -71,3 +71,6 @@ jobs:
         run: |
           mkdir -p /tmp/grok-goal-c35e95813d70/implementer
           deno test --no-check --allow-read --allow-write --allow-run
+
+      - name: enforce LSP performance budgets
+        run: deno task lsp:perf

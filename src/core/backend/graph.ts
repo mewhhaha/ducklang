@@ -58,6 +58,7 @@ import {
   core_static_value as graph_core_static_value,
 } from "./graph/proof_hooks.ts";
 import { create_core_runtime_union_match_child_ctx } from "./graph/proof_context.ts";
+import { static_owner_value_materializes } from "../mutable_static_owner.ts";
 import { create_core_backend_graph } from "./graph/instance.ts";
 
 const core_backend = create_core_backend_graph();
@@ -84,6 +85,7 @@ function prepare_cleanup_emission(core: CoreNode): void {
   const proof = core_backend_proof(core_backend, core);
   core_check_baseline_proof(proof);
   core.cleanup_emission = elaborate_core_cleanup_emission(core, proof.drops);
+  core.allocation_permit_plan = proof.allocations;
 }
 
 export function core_data(core: CoreNode): DataSegment[] {
@@ -123,8 +125,18 @@ export function core_drops(core: CoreNode): CoreDropPlan {
     closure_body_ctx: (expr, ctx) =>
       graph_core_drop_closure_body_ctx(core_backend, expr, ctx),
     collect_stmt_locals: core_backend.local_collect.collect_stmt_locals,
+    core_assignment_value: core_backend.type_check.core_assignment_value,
+    core_binding_value: core_backend.type_check.core_binding_value,
+    materialized_static_owner: (value, ctx) =>
+      static_owner_value_materializes(value, ctx),
     collection_loop_body_ctx: (stmt, ctx) =>
       graph_core_drop_collection_loop_body_ctx(core_backend, stmt, ctx),
+    mutable_binding: (name, ctx) => {
+      if (!ctx.mutable_bindings) {
+        return false;
+      }
+      return ctx.mutable_bindings.has(name);
+    },
     core_expr_is_text: core_backend.text.core_expr_is_text,
     dynamic_union_if: core_backend.union.dynamic_union_if,
     expr_type: core_backend.expr_type.expr_type,

@@ -10,9 +10,12 @@ import type {
 } from "../runtime_union.ts";
 
 export type CoreExprEmitCtx = {
+  allocation_permits:
+    import("../allocation_emission.ts").CoreAllocationPermitState;
   locals: Map<string, ValType>;
   statics: Map<string, CoreExpr>;
   fn_types: Map<string, CoreFnType>;
+  static_capture_values?: Map<string, CoreExpr>;
   struct_locals: Map<string, CoreExpr>;
   union_locals: Map<string, CoreExpr>;
   frozen_locals?: Set<string>;
@@ -22,6 +25,7 @@ export type CoreExprEmitCtx = {
   scratch: CoreScratchHeap;
   scratch_loop_resets: string[];
   scratch_return_resets: string[];
+  scratch_depth?: number;
   next_loop: number;
   next_temp: number;
   break_label: string | undefined;

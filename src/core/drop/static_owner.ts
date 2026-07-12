@@ -1,15 +1,44 @@
 import type { CoreDropHooks, CoreExpr, CoreFnType } from "./types.ts";
+import { static_core_call_binding_target } from "../static_call.ts";
 
 export function should_skip_drop_owner_bind<ctx>(
   kind: "let" | "const",
   name: string,
+  _annotation: string | undefined,
   expr: CoreExpr,
   ctx: ctx,
   hooks: CoreDropHooks<ctx>,
 ): boolean {
+  if (hooks.mutable_binding && hooks.mutable_binding(name, ctx)) {
+    return false;
+  }
   const static_value = drop_static_value(expr, ctx, hooks);
 
   if (!static_value) {
+    return false;
+  }
+
+  if (static_value.tag === "union_case" && static_value.resume_payload) {
+    return false;
+  }
+
+  if (
+    hooks.materialized_static_owner &&
+    hooks.materialized_static_owner(static_value, ctx)
+  ) {
+    return false;
+  }
+
+  if (
+    kind === "let" && drop_owner_ctx_materializes(name, ctx) &&
+    expr.tag !== "scratch" &&
+    !drop_owner_ctx_is_scratch(ctx) &&
+    static_value.tag === "struct_value" &&
+    !(
+      static_value.type_expr.tag === "var" &&
+      static_value.type_expr.name === "object_type"
+    )
+  ) {
     return false;
   }
 
@@ -21,11 +50,33 @@ export function should_skip_drop_owner_bind<ctx>(
     return true;
   }
 
-  if (is_scoped_static_drop_helper(name, static_value, ctx, hooks)) {
+  if (is_static_drop_helper(name, static_value, ctx, hooks)) {
     return true;
   }
 
   return is_drop_static_non_runtime_closure(static_value, ctx, hooks);
+}
+
+export function drop_owner_ctx_is_scratch(ctx: unknown): boolean {
+  if (typeof ctx !== "object" || ctx === null) {
+    return false;
+  }
+  if (!("scratch_depth" in ctx)) {
+    return false;
+  }
+  const depth = ctx.scratch_depth;
+  return typeof depth === "number" && depth > 0;
+}
+
+function drop_owner_ctx_materializes(name: string, ctx: unknown): boolean {
+  if (typeof ctx !== "object" || ctx === null) {
+    return false;
+  }
+  if (!("materialized_bindings" in ctx)) {
+    return false;
+  }
+  const bindings = ctx.materialized_bindings;
+  return bindings instanceof Set && bindings.has(name);
 }
 
 export function should_skip_drop_owner_assign<ctx>(
@@ -34,9 +85,23 @@ export function should_skip_drop_owner_assign<ctx>(
   ctx: ctx,
   hooks: CoreDropHooks<ctx>,
 ): boolean {
+  if (hooks.mutable_binding && hooks.mutable_binding(name, ctx)) {
+    return false;
+  }
   const static_value = drop_static_value(expr, ctx, hooks);
 
   if (!static_value) {
+    return false;
+  }
+
+  if (static_value.tag === "union_case" && static_value.resume_payload) {
+    return false;
+  }
+
+  if (
+    hooks.materialized_static_owner &&
+    hooks.materialized_static_owner(static_value, ctx)
+  ) {
     return false;
   }
 
@@ -44,7 +109,7 @@ export function should_skip_drop_owner_assign<ctx>(
     return true;
   }
 
-  if (is_scoped_static_drop_helper(name, static_value, ctx, hooks)) {
+  if (is_static_drop_helper(name, static_value, ctx, hooks)) {
     return true;
   }
 
@@ -143,38 +208,13 @@ function is_drop_static_type_value(expr: CoreExpr): boolean {
   return false;
 }
 
-function is_scoped_static_drop_helper<ctx>(
+function is_static_drop_helper<ctx>(
   name: string,
   expr: CoreExpr,
   ctx: ctx,
   hooks: CoreDropHooks<ctx>,
 ): boolean {
-  if (!hooks.static_core_call_target) {
-    return false;
-  }
-
-  if (!hooks.static_core_call_requires_scope) {
-    return false;
-  }
-
-  if (expr.tag !== "lam") {
-    return false;
-  }
-
-  const target = hooks.static_core_call_target(
-    { tag: "var", name },
-    ctx,
-  );
-
-  if (!target) {
-    return false;
-  }
-
-  if (target !== expr) {
-    return false;
-  }
-
-  return hooks.static_core_call_requires_scope(target);
+  return static_core_call_binding_target(name, expr, ctx, hooks);
 }
 
 function drop_closure_probe_error(error: unknown): boolean {

@@ -77,12 +77,15 @@ export function create_core_backend_closure_emit(
     closures: ClosureEmitCtx,
     heap: RuntimeTextHeap,
     scratch: CoreScratchHeap,
+    allocation_permits:
+      import("../../allocation_emission.ts").CoreAllocationPermitState,
   ): Func[] {
     return emit_lifted_closure_funcs_with_hooks(
       text_layout,
       closures,
       heap,
       scratch,
+      allocation_permits,
       closure_emit_hooks,
     );
   }

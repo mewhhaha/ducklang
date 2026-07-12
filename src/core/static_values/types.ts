@@ -8,6 +8,7 @@ import type { ScratchFreeStaticValueHooks } from "./scratch_free.ts";
 
 export type StaticValueCtx = {
   locals: Map<string, ValType>;
+  static_capture_values?: Map<string, CoreExpr>;
   statics: Map<string, CoreExpr>;
   fn_types: Map<string, CoreFnType>;
   text_locals: Set<string>;

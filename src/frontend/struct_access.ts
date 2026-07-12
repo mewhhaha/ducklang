@@ -63,11 +63,19 @@ export function resolve_struct_field_expr(
 
   const field = lookup_field(target.expr.fields, expr.name);
 
-  if (!field) {
-    throw new Error("Missing struct field: " + expr.name);
-  }
+  require_struct_field(field, expr.name);
 
   return { expr: field.value, env: target.env };
+}
+
+/** Shared by route-independent semantic validation and static lowering. */
+export function require_struct_field(
+  field: { name: string; value: FrontExpr } | undefined,
+  name: string,
+): asserts field is { name: string; value: FrontExpr } {
+  if (!field) {
+    throw new Error("Missing struct field: " + name);
+  }
 }
 
 export function resolve_index_expr(

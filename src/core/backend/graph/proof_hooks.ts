@@ -4,7 +4,7 @@ import { core_host_import_result_ownership } from "../../host_import.ts";
 import { core_expr_ownership } from "../../ownership.ts";
 import type { CoreOwnershipHooks } from "../../ownership.ts";
 import { runtime_aggregate_type_expr } from "../../runtime_aggregate.ts";
-import { create_child_core_ctx } from "./context.ts";
+import { create_child_core_ctx, create_scratch_core_ctx } from "./context.ts";
 import { collect_stmt_locals_for_proof } from "./drop_context.ts";
 import {
   core_borrow_closure_body_ctx as graph_core_borrow_closure_body_ctx,
@@ -17,6 +17,7 @@ import {
   create_core_runtime_union_match_child_ctx,
 } from "./proof_context.ts";
 import type { CoreBackendGraph } from "./types.ts";
+import { static_core_call_branch_app } from "../../static_call.ts";
 
 export function core_ownership_hooks(
   backend: CoreBackendGraph,
@@ -39,6 +40,7 @@ export function core_ownership_hooks(
     runtime_aggregate_type_expr: (value, ctx) =>
       core_runtime_aggregate_type_for_ownership(backend, value, ctx),
     runtime_union_value: backend.union.core_runtime_union_value,
+    scratch_return_ctx: create_scratch_core_ctx,
     static_runtime_union_match_branch_ctx:
       create_core_runtime_union_match_child_ctx,
     static_struct_value: backend.struct.static_struct_value,
@@ -46,6 +48,7 @@ export function core_ownership_hooks(
       backend.static_call.static_core_call_requires_scope,
     static_core_call_target: backend.static_call.static_core_call_target,
     static_core_call_value: backend.static_call.static_core_call_value,
+    static_capture_value: (name, ctx) => ctx.static_capture_values?.get(name),
     static_text_value: backend.text.static_text_value,
     static_union_case: backend.union.static_union_case,
   };
@@ -73,6 +76,8 @@ export function core_allocation_hooks(
 ) {
   return {
     ...core_ownership_hooks(backend),
+    core_assignment_value: backend.type_check.core_assignment_value,
+    core_binding_value: backend.type_check.core_binding_value,
     closure_body_ctx: (
       expr: Extract<CoreExpr, { tag: "lam" | "rec" }>,
       ctx: CoreCtx,
@@ -89,9 +94,30 @@ export function core_allocation_hooks(
 
       return false;
     },
+    local_value_exists: (name: string, ctx: CoreCtx) => {
+      if (ctx.locals.has(name)) {
+        return true;
+      }
+      if (ctx.text_locals.has(name)) {
+        return true;
+      }
+      if (ctx.struct_locals.has(name)) {
+        return true;
+      }
+      return ctx.union_locals.has(name);
+    },
     is_static_value_expr: backend.static_value.is_static_value_expr,
+    static_collection_fields: backend.struct.static_collection_fields,
     scoped_static_core_call_value:
       backend.static_call.scoped_static_core_call_value,
+    static_core_call_branch_app: (
+      expr: Extract<CoreExpr, { tag: "app" }>,
+      ctx: CoreCtx,
+    ) => {
+      return static_core_call_branch_app(expr, ctx, {
+        static_core_call_target: backend.static_call.static_core_call_target,
+      });
+    },
     static_core_call_requires_scope:
       backend.static_call.static_core_call_requires_scope,
     static_core_call_target: backend.static_call.static_core_call_target,

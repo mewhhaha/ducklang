@@ -12,11 +12,33 @@ import {
   unsupported_reserved_feature,
 } from "./parser_support.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
+import { record_annotation_name_sites } from "./name_site.ts";
 
 export class ParserParams extends ParserCursor {
   protected allow_pascal_type_names = 0;
   protected affine_call_names = new Set<string>();
+
+  protected override parser_state(): import("./parser_cursor.ts").ParserState {
+    const state = super.parser_state();
+    state.affine_call_names = new Set(this.affine_call_names);
+    state.allow_pascal_type_names = this.allow_pascal_type_names;
+    return state;
+  }
+
+  protected override restore_parser_state(
+    state: import("./parser_cursor.ts").ParserState,
+  ): void {
+    super.restore_parser_state(state);
+    expect(state.affine_call_names, "Missing affine parser checkpoint");
+    expect(
+      state.allow_pascal_type_names !== undefined,
+      "Missing Pascal parser checkpoint",
+    );
+    this.affine_call_names = state.affine_call_names;
+    this.allow_pascal_type_names = state.allow_pascal_type_names;
+  }
   protected try_single_param_arrow(): Param | undefined {
+    const start = this.index;
     const token = this.peek();
 
     if (token.kind !== "name") {
@@ -33,7 +55,12 @@ export class ParserParams extends ParserCursor {
       this.expect_param_name(name);
     }
 
-    return { name, is_const: false, is_linear: false, annotation: undefined };
+    return this.concrete_node(start, {
+      name,
+      is_const: false,
+      is_linear: false,
+      annotation: undefined,
+    });
   }
 
   protected try_param_list_arrow(): Param[] | undefined {
@@ -87,13 +114,19 @@ export class ParserParams extends ParserCursor {
       return params;
     }
 
+    const start = this.index;
     const name = this.expect_binding_name("Expected recursive parameter");
 
     if (!is_no_demand_name(name)) {
       this.expect_param_name(name);
     }
 
-    return [{ name, is_const: false, is_linear: false, annotation: undefined }];
+    return [this.concrete_node(start, {
+      name,
+      is_const: false,
+      is_linear: false,
+      annotation: undefined,
+    })];
   }
 
   protected is_rec_arrow(): boolean {
@@ -119,6 +152,7 @@ export class ParserParams extends ParserCursor {
   }
 
   protected parse_param(): Param {
+    const start = this.index;
     const is_const = this.match_name("const");
     const is_linear = this.match_symbol("!");
     const name = this.expect_binding_name("Expected parameter name");
@@ -157,7 +191,7 @@ export class ParserParams extends ParserCursor {
       param.type_annotation = type_annotation;
     }
 
-    return param;
+    return this.concrete_node(start, param);
   }
 
   protected expect_param_name(name: string): void {
@@ -242,6 +276,7 @@ export class ParserParams extends ParserCursor {
 
     expect(tokens.length > 0, "Expected type annotation");
     const parsed = parse_type_expr(tokens);
+    record_annotation_name_sites(parsed, tokens);
     let type_annotation: TypeExpr | undefined;
 
     if (parsed.tag === "name") {

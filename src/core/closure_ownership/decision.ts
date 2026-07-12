@@ -38,36 +38,6 @@ export function closure_capture_decision(
   }
 
   if (
-    ownership.tag === "unique_heap" &&
-    ownership.reason === "runtime_aggregate"
-  ) {
-    return {
-      tag: "allowed",
-      reason: "runtime aggregate pointer capture is supported",
-    };
-  }
-
-  if (
-    ownership.tag === "unique_heap" &&
-    ownership.reason === "closure"
-  ) {
-    return {
-      tag: "allowed",
-      reason: "closure pointer capture is supported",
-    };
-  }
-
-  if (
-    ownership.tag === "unique_heap" &&
-    ownership.reason === "runtime_union"
-  ) {
-    return {
-      tag: "allowed",
-      reason: "runtime union pointer capture is supported",
-    };
-  }
-
-  if (
     ownership.tag === "scratch_backed" &&
     facts.scratch_depth > 0 &&
     facts.direct_call_depth > 0 &&

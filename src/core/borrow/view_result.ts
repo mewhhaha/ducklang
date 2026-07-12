@@ -96,6 +96,7 @@ export function stored_borrow_view_result_for_value<ctx>(
           owners: recorded.owners,
           borrow_id: recorded.id,
           scope: recorded.scope,
+          iteration_scope: recorded.iteration_scope,
           ownership: recorded.ownership,
         },
         scanned: true,
@@ -391,6 +392,7 @@ function merge_stored_borrow_views(
     owners,
     borrow_id: first.borrow_id,
     scope,
+    iteration_scope: first.iteration_scope,
     ownership,
   };
 }

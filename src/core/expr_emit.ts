@@ -38,6 +38,17 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
     }
 
     case "linear": {
+      const local_type = ctx.locals.get(expr.name);
+
+      if (local_type) {
+        return "local.get $" + expr.name;
+      }
+
+      const static_value = ctx.statics.get(expr.name);
+      if (static_value && static_value.tag === "freeze") {
+        return emit_core_expr(static_value, ctx, hooks);
+      }
+
       const lookup_expr: CoreExpr = { tag: "var", name: expr.name };
       const text_value = hooks.static_text_value(lookup_expr, ctx);
 
@@ -54,7 +65,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
       const struct_value = hooks.static_struct_value(lookup_expr, ctx);
 
       if (struct_value) {
-        return emit_runtime_aggregate_value(struct_value, ctx, {
+        return emit_runtime_aggregate_value(expr, struct_value, ctx, {
           core_expr_is_text: hooks.core_expr_is_text,
           emit_expr: emit_core_expr_with_hooks,
           expr_type: hooks.expr_type,
@@ -67,8 +78,6 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
         });
       }
 
-      const static_value = ctx.statics.get(expr.name);
-
       if (static_value) {
         if (hooks.closure_fn_type(lookup_expr, ctx)) {
           return emit_core_expr(static_value, ctx, hooks);
@@ -77,12 +86,21 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
         throw new Error("Cannot emit core static value directly: " + expr.name);
       }
 
-      const type = ctx.locals.get(expr.name);
-      expect(type, "Unbound core local: " + expr.name);
-      return "local.get $" + expr.name;
+      throw new Error("Unbound core local: " + expr.name);
     }
 
     case "var": {
+      const local_type = ctx.locals.get(expr.name);
+
+      if (local_type) {
+        return "local.get $" + expr.name;
+      }
+
+      const static_value = ctx.statics.get(expr.name);
+      if (static_value && static_value.tag === "freeze") {
+        return emit_core_expr(static_value, ctx, hooks);
+      }
+
       const text_value = hooks.static_text_value(expr, ctx);
 
       if (text_value) {
@@ -98,7 +116,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
       const struct_value = hooks.static_struct_value(expr, ctx);
 
       if (struct_value) {
-        return emit_runtime_aggregate_value(struct_value, ctx, {
+        return emit_runtime_aggregate_value(expr, struct_value, ctx, {
           core_expr_is_text: hooks.core_expr_is_text,
           emit_expr: emit_core_expr_with_hooks,
           expr_type: hooks.expr_type,
@@ -111,8 +129,6 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
         });
       }
 
-      const static_value = ctx.statics.get(expr.name);
-
       if (static_value) {
         if (hooks.closure_fn_type(expr, ctx)) {
           return emit_core_expr(static_value, ctx, hooks);
@@ -121,9 +137,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
         throw new Error("Cannot emit core static value directly: " + expr.name);
       }
 
-      const type = ctx.locals.get(expr.name);
-      expect(type, "Unbound core local: " + expr.name);
-      return "local.get $" + expr.name;
+      throw new Error("Unbound core local: " + expr.name);
     }
 
     case "prim": {
@@ -324,7 +338,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
     }
 
     case "struct_value":
-      return emit_runtime_aggregate_value(expr, ctx, {
+      return emit_runtime_aggregate_value(expr, expr, ctx, {
         core_expr_is_text: hooks.core_expr_is_text,
         emit_expr: emit_core_expr_with_hooks,
         expr_type: hooks.expr_type,

@@ -1,0 +1,100 @@
+import { assert_equals } from "../assert.ts";
+import { CompilerDiagnosticError } from "../diagnostic.ts";
+import { Source } from "../frontend/source.ts";
+import { Core } from "./backend/core.ts";
+
+Deno.test("Core proof maps ownership fixtures to ranged diagnostics", () => {
+  const fixtures = [
+    {
+      text: `let escape = (message: Text) => {
+  &message
+}
+
+let message: Text = append("a", "b")
+escape(message)`,
+      code: "IX2401",
+      span: { start: 85, end: 100 },
+    },
+    {
+      text: `let message: Text = append("a", "b")
+let view = &message
+let frozen = freeze message
+
+len(view) + len(frozen)`,
+      code: "IX2402",
+      span: { start: 70, end: 84 },
+    },
+    {
+      text: `scratch {
+  append("a", "b")
+}`,
+      code: "IX2403",
+      span: { start: 0, end: 30 },
+    },
+    {
+      text: `let message: Text = freeze append("a", "b")
+message[0] = 65
+len(message)`,
+      code: "IX2404",
+      span: { start: 44, end: 59 },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const core = Core.from_source(Source.parse(fixture.text));
+
+    try {
+      Core.check_proof(core);
+    } catch (error) {
+      if (!(error instanceof CompilerDiagnosticError)) {
+        throw error;
+      }
+
+      assert_equals(error.diagnostic.code, fixture.code);
+      assert_equals(error.diagnostic.span, fixture.span);
+      continue;
+    }
+
+    throw new Error("Expected Core proof diagnostic: " + fixture.code);
+  }
+});
+
+Deno.test("Core source origins do not change structural Core values", () => {
+  const core = Core.from_source(Source.parse("1"));
+
+  assert_equals(core, {
+    tag: "program",
+    statements: [{
+      tag: "expr",
+      expr: { tag: "num", type: "i32", value: 1 },
+    }],
+  });
+
+  assert_equals(Source.core("1"), core);
+});
+
+Deno.test("Core proof rows keep diagnostic subjects out of public shapes", () => {
+  const borrowed = Core.proof(
+    Core.from_source(Source.parse(`let message: Text = append("a", "b")
+&message`)),
+  );
+  const frozen = Core.proof(
+    Core.from_source(Source.parse(`let message: Text = append("a", "b")
+freeze message`)),
+  );
+  const scratch = Core.proof(Core.from_source(Source.parse(`scratch {
+  append("a", "b")
+}`)));
+
+  const borrow = borrowed.borrow_view_rows[0];
+  const freeze = frozen.freeze_edges[0];
+  const cleanup = scratch.cleanup.steps[0];
+
+  if (!borrow || !freeze || !cleanup) {
+    throw new Error("Expected Core proof rows");
+  }
+
+  assert_equals(Object.keys(borrow).includes("subject"), false);
+  assert_equals(Object.keys(freeze).includes("subject"), false);
+  assert_equals(Object.keys(cleanup).includes("subject"), false);
+});

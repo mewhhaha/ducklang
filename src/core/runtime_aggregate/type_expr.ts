@@ -49,7 +49,7 @@ export function runtime_aggregate_type_expr<
     return value.type_expr;
   }
 
-  if (value.tag === "var") {
+  if (value.tag === "var" || value.tag === "linear") {
     const local_type = ctx.struct_locals.get(value.name);
 
     if (local_type) {
@@ -67,7 +67,10 @@ export function runtime_aggregate_type_expr<
     const host_type = core_host_import_result_type_expr(value, ctx);
 
     if (host_type) {
-      return host_type;
+      const host_type_value = static_type_value(host_type, ctx);
+      if (host_type_value && host_type_value.tag === "struct_type") {
+        return host_type;
+      }
     }
 
     const branch_type = runtime_aggregate_branch_call_type_expr(

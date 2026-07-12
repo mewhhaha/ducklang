@@ -10,39 +10,44 @@ import type { LinearUseMode } from "./linear_expr.ts";
 import {
   expect_same_linear_state,
   linear_block_exits,
+  type LinearRelatedSubject,
+  LinearState,
+  throw_linear_diagnostic,
 } from "./linear_state.ts";
 
 export type LinearStmtLoopOps = {
   consume_condition: (
     expr: FrontExpr,
-    available: Set<string>,
+    available: LinearState,
     closures: LinearClosureEnv,
     active_calls: Set<string>,
   ) => void;
   consume_expr: (
     expr: FrontExpr,
-    available: Set<string>,
+    available: LinearState,
     mode: LinearUseMode,
     closures: LinearClosureEnv,
     active_calls: Set<string>,
   ) => string[];
   validate_linear_assignment: (
     stmt: Extract<Stmt, { tag: "assign" }>,
-    available: Set<string>,
+    available: LinearState,
     closures: LinearClosureEnv,
     active_calls: Set<string>,
+    subject?: object,
   ) => void;
 };
 
 export function validate_linear_loop_body(
   stmts: Stmt[],
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
   ops: LinearStmtLoopOps,
+  subject: object,
 ): void {
-  const before = new Set(available);
-  const local = new Set(available);
+  const before = available.clone();
+  const local = available.clone();
   const local_closures = clone_linear_closures(closures);
 
   for (let index = 0; index < stmts.length; index += 1) {
@@ -50,8 +55,13 @@ export function validate_linear_loop_body(
     expect(stmt, "Missing loop statement " + index);
 
     if (stmt.tag === "break" || stmt.tag === "continue") {
-      expect_same_linear_state(before, local, stmt.tag);
-      expect_same_linear_closure_state(closures, local_closures, stmt.tag);
+      expect_same_linear_state(before, local, stmt.tag, stmt);
+      expect_same_linear_closure_state(
+        closures,
+        local_closures,
+        stmt.tag,
+        stmt,
+      );
       return;
     }
 
@@ -72,8 +82,15 @@ export function validate_linear_loop_body(
         local,
         local_closures,
         active_calls,
+        stmt,
       );
-      bind_linear_closure(local_closures, stmt.name, stmt.value, local);
+      bind_linear_closure(
+        local_closures,
+        stmt.name,
+        stmt.value,
+        local,
+        stmt,
+      );
     } else if (stmt.tag === "index_assign") {
       ops.consume_expr(
         stmt.index,
@@ -87,6 +104,7 @@ export function validate_linear_loop_body(
         local,
         local_closures,
         active_calls,
+        stmt,
       );
       local_closures.delete(stmt.name);
     } else if (stmt.tag === "expr") {
@@ -106,7 +124,7 @@ export function validate_linear_loop_body(
           local_closures,
           active_calls,
         );
-        local.add(stmt.name);
+        local.bind(stmt.name, stmt);
         local_closures.delete(stmt.name);
       } else {
         ops.consume_expr(
@@ -116,7 +134,13 @@ export function validate_linear_loop_body(
           local_closures,
           active_calls,
         );
-        bind_linear_closure(local_closures, stmt.name, stmt.value, local);
+        bind_linear_closure(
+          local_closures,
+          stmt.name,
+          stmt.value,
+          local,
+          stmt,
+        );
       }
     } else if (stmt.tag === "for_range") {
       ops.consume_expr(
@@ -146,6 +170,7 @@ export function validate_linear_loop_body(
         local_closures,
         active_calls,
         ops,
+        stmt,
       );
     } else if (stmt.tag === "for_collection") {
       ops.consume_expr(
@@ -161,6 +186,7 @@ export function validate_linear_loop_body(
         local_closures,
         active_calls,
         ops,
+        stmt,
       );
     } else if (stmt.tag === "if_stmt") {
       ops.consume_condition(stmt.cond, local, local_closures, active_calls);
@@ -171,6 +197,7 @@ export function validate_linear_loop_body(
         active_calls,
         "if fallthrough",
         ops,
+        stmt,
       );
     } else if (stmt.tag === "if_let_stmt") {
       ops.consume_condition(
@@ -186,6 +213,7 @@ export function validate_linear_loop_body(
         active_calls,
         "if let fallthrough",
         ops,
+        stmt,
       );
     } else if (stmt.tag === "type_check") {
       ops.consume_expr(
@@ -198,18 +226,33 @@ export function validate_linear_loop_body(
     } else if (stmt.tag === "import" || stmt.tag === "host_import") {
       continue;
     } else if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
-      throw new Error("Cannot validate linear " + stmt.tag + " yet");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot validate linear " + stmt.tag + " yet",
+        stmt,
+      );
     } else if (stmt.tag === "resume_dup") {
-      throw new Error(
+      throw_linear_diagnostic(
+        "IX2290",
         "Resumption duplication must be elaborated before linear validation",
+        stmt,
       );
     } else {
-      throw new Error("Cannot validate linear " + stmt.feature + " yet");
+      throw_linear_diagnostic(
+        "IX2290",
+        "Cannot validate linear " + stmt.feature + " yet",
+        stmt,
+      );
     }
   }
 
-  expect_same_linear_state(before, local, "fallthrough");
-  expect_same_linear_closure_state(closures, local_closures, "fallthrough");
+  expect_same_linear_state(before, local, "fallthrough", subject);
+  expect_same_linear_closure_state(
+    closures,
+    local_closures,
+    "fallthrough",
+    subject,
+  );
   merge_used_linear_closures(closures, local_closures);
 }
 
@@ -217,26 +260,60 @@ export function expect_same_linear_closure_state(
   before: LinearClosureEnv,
   after: LinearClosureEnv,
   edge: string,
+  subject: object,
 ): void {
   if (same_linear_closure_used_state(before, after)) {
     return;
   }
 
-  throw new Error(
+  const related: LinearRelatedSubject[] = [];
+
+  for (const binding of after.used) {
+    if (before.used.has(binding)) {
+      continue;
+    }
+
+    const first_consume = after.consumed_at.get(binding);
+
+    if (first_consume) {
+      related.push({
+        message: "Linear closure consumed on this path",
+        subject: first_consume,
+      });
+    }
+
+    for (const [name, declaration] of after.declarations) {
+      if (after.get(name) === binding) {
+        related.push({
+          message: "Linear closure declared here",
+          subject: declaration,
+        });
+        break;
+      }
+    }
+
+    break;
+  }
+
+  throw_linear_diagnostic(
+    "IX2205",
     "Linear closures must be consumed on every " + edge + " path",
+    subject,
+    related,
   );
 }
 
 function validate_linear_no_else_loop_branch(
   stmts: Stmt[],
-  available: Set<string>,
+  available: LinearState,
   closures: LinearClosureEnv,
   active_calls: Set<string>,
   edge: string,
   ops: LinearStmtLoopOps,
+  subject: object,
 ): void {
-  const before = new Set(available);
-  const branch = new Set(available);
+  const before = available.clone();
+  const branch = available.clone();
   const branch_closures = clone_linear_closures(closures);
   validate_linear_loop_body(
     stmts,
@@ -244,14 +321,20 @@ function validate_linear_no_else_loop_branch(
     branch_closures,
     new Set(active_calls),
     ops,
+    subject,
   );
 
   if (linear_block_exits(stmts)) {
     return;
   }
 
-  expect_same_linear_state(before, branch, edge);
-  expect_same_linear_closure_state(closures, branch_closures, edge);
+  expect_same_linear_state(before, branch, edge, subject);
+  expect_same_linear_closure_state(
+    closures,
+    branch_closures,
+    edge,
+    subject,
+  );
   merge_used_linear_closures(closures, branch_closures);
 }
 

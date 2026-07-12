@@ -13,8 +13,8 @@ abstractions are ordinary const fact checkers.
 This file describes the language contract: syntax and the semantics a program
 can rely on. Which source shapes each backend route currently accepts is
 implementation status and lives in [coverage.md](coverage.md). Where a feature
-below is marked reserved or rejected, the rejection is deterministic and
-carries a diagnostic; it is part of the contract until the feature lands.
+below is marked reserved or rejected, the rejection is deterministic and carries
+a diagnostic; it is part of the contract until the feature lands.
 
 ## Naming
 
@@ -135,12 +135,12 @@ values, `=` compares parameter shape as part of the type: arity, `const`/`!`
 flags, and annotation shape must match, while parameter names do not matter.
 Built-in integer annotation aliases such as `Int`, `I32`, and `U32` are treated
 as the same `i32` parameter type. For structs with known field-type facts, `=`
-also compares the declared field types, so a value with the same field names
-but incompatible payload types is a type change. Anonymous object literals
-expose shallow field-type facts when every field has a simple known type such
-as `Int`, `I64`, or `Text`. Shorthand union cases such as `.ok(1)` also expose
-payload facts when the payload has a simple known type, so `.ok(Int)` and
-`.ok(Text)` are different types for `=` shadowing.
+also compares the declared field types, so a value with the same field names but
+incompatible payload types is a type change. Anonymous object literals expose
+shallow field-type facts when every field has a simple known type such as `Int`,
+`I64`, or `Text`. Shorthand union cases such as `.ok(1)` also expose payload
+facts when the payload has a simple known type, so `.ok(Int)` and `.ok(Text)`
+are different types for `=` shadowing.
 
 `:=` shadows an existing name and allows the type to change.
 
@@ -159,13 +159,13 @@ let x#1 = 3
 Bindings may have annotations. Built-in scalar/type annotations are checked at
 the binding. When the annotation names a visible struct or union type-value,
 shorthand object and union-case values are checked and given that direct type
-context; for typed union annotations, declared case payload types also flow
-into shorthand object payloads such as `.ok({ age: 40 })`. Fact-checker
-annotations run the named const fact checker against the bound value's
-type-value. An explicit runtime annotation can also provide type context for an
-otherwise unknown runtime value, while known incompatible values still fail at
-the binding. Parameter annotations follow the same rules and are enforced at
-the call boundary.
+context; for typed union annotations, declared case payload types also flow into
+shorthand object payloads such as `.ok({ age: 40 })`. Fact-checker annotations
+run the named const fact checker against the bound value's type-value. An
+explicit runtime annotation can also provide type context for an otherwise
+unknown runtime value, while known incompatible values still fail at the
+binding. Parameter annotations follow the same rules and are enforced at the
+call boundary.
 
 ```txt
 let x: Int = 41
@@ -184,8 +184,8 @@ let user: has_name = user_type {
 
 Integer literals carry value types in Ic. Unsuffixed source integers are the
 `Int`/`i32` convention. Explicit suffixes are available for scalar lowering.
-Annotated `I64` bindings and parameters give i64 type context to arithmetic
-over runtime names; explicit mixed `i32`/`i64` operands are rejected.
+Annotated `I64` bindings and parameters give i64 type context to arithmetic over
+runtime names; explicit mixed `i32`/`i64` operands are rejected.
 
 ```txt
 let small = 42i32
@@ -202,8 +202,8 @@ committed design decision for the core language profile, not a temporary gap:
 Unicode scalar value as `i32`. Conditions, comparisons, and logical operators
 produce and consume `i32` values, and `if let` literal patterns compare `i32`
 equality. Text indexing stays UTF-8-byte based, so a non-ASCII character's
-scalar value is not the same as one indexed byte of its UTF-8 encoding. A
-future profile that introduces distinct `Bool`/`Char` types would be a breaking
+scalar value is not the same as one indexed byte of its UTF-8 encoding. A future
+profile that introduces distinct `Bool`/`Char` types would be a breaking
 revision of this contract, not an incremental extension.
 
 ```txt
@@ -309,13 +309,16 @@ statements.
 
 Closures capture their environment at binding time. Runtime scalar captures are
 snapshotted when the closure value is bound, so later shadowing does not change
-the captured value. Closure-local assignment and shadowing do not clobber
-caller locals. Same-type assignment to a captured scalar name is a per-call
+the captured value. Closure-local assignment and shadowing do not clobber caller
+locals. Same-type assignment to a captured scalar name is a per-call
 closure-local shadow. Known incompatible arguments are rejected at the call
 site, while unknown runtime arguments can receive parameter type context from
-annotations. General first-class linear closure captures remain reserved;
-direct non-escaping local closure calls can consume outer linear values when
-linear use is valid along each enclosing control-flow path.
+annotations. General first-class linear closure captures remain reserved; direct
+non-escaping local closure calls can consume outer linear values when linear use
+is valid along each enclosing control-flow path. A reusable stored closure may
+capture only scalar or frozen/shareable slots. An unfrozen unique owner must
+move into a supported one-shot closure environment or the program rejects before
+WAT emission.
 
 `if` is an expression when both branches are present.
 
@@ -406,12 +409,11 @@ let value = if let .ok(found) = result {
 ```
 
 Runtime union matching where the case is not statically known requires a typed
-union target: a direct typed union annotation, a typed constructor, or a
-dynamic `if` whose branches construct cases of an inferable union. Dynamic
-`if let` expressions that produce unannotated union results carry their
-inferred union-case table into later `=` shadowing checks. The exact set of
-dynamic union shapes each route accepts is tracked in
-[coverage.md](coverage.md).
+union target: a direct typed union annotation, a typed constructor, or a dynamic
+`if` whose branches construct cases of an inferable union. Dynamic `if let`
+expressions that produce unannotated union results carry their inferred
+union-case table into later `=` shadowing checks. The exact set of dynamic union
+shapes each route accepts is tracked in [coverage.md](coverage.md).
 
 ## Types, Structs, Unions, And Facts
 
@@ -1220,8 +1222,7 @@ Source
 ```
 
 Two routes are implemented today: a pure Ic route for scalar and
-frontend-visible computation, and a structured Core route for statements,
-loops, runtime memory, closures, handlers, and the ownership proof gate. The
-managed JavaScript ABI wraps the Core route. Per-feature route coverage,
-including the full supported and reserved feature lists, lives in
-[coverage.md](coverage.md).
+frontend-visible computation, and a structured Core route for statements, loops,
+runtime memory, closures, handlers, and the ownership proof gate. The managed
+JavaScript ABI wraps the Core route. Per-feature route coverage, including the
+full supported and reserved feature lists, lives in [coverage.md](coverage.md).

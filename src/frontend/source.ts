@@ -1,5 +1,11 @@
 import type { Ic as IcNode } from "../ic.ts";
-import { Core, type Core as CoreNode } from "../core.ts";
+import {
+  Core,
+  type Core as CoreNode,
+  core_proof_diagnostic,
+  type CoreProofIssue,
+} from "../core.ts";
+import { CompilerDiagnosticError } from "../diagnostic.ts";
 import { Ic } from "../ic.ts";
 import type { IcOpenOptions } from "../ic/open_term.ts";
 import { Mod, type Mod as ModNode } from "../mod.ts";
@@ -17,13 +23,29 @@ import {
   type FrontEffectAnalysis,
 } from "./effect_analysis.ts";
 import { elaborate_front_effects } from "./effect_elaborate.ts";
-import { validate_ic_route } from "./ic_route.ts";
+import { diagnose_ic_route, validate_ic_route } from "./ic_route.ts";
 import { validate_source_linear } from "./linear.ts";
 import { validate_atom_identities } from "./atom.ts";
 import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
-import { load_source, load_source_fragment_file } from "./load.ts";
+import {
+  load_source,
+  load_source_fragment_file,
+  source_exports_name,
+  source_file_url,
+} from "./load.ts";
 import { lower_program } from "./lower.ts";
-import { parse_source } from "./parser.ts";
+import {
+  parse_source,
+  parse_source_with_diagnostics,
+  type ParseSourceResult,
+} from "./parser.ts";
+import {
+  type SourceImportResolver,
+  validate_source_imports,
+} from "./import_diagnostic.ts";
+import { validate_frontend_semantics } from "./semantic_validation.ts";
+import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
+import type { SyntaxDiagnostic } from "./syntax.ts";
 
 export type Source = SourceNode;
 
@@ -43,9 +65,108 @@ export type SourceArtifactFileOptions = {
   host_interface?: string;
 };
 
+export type SourceAnalyzeOptions = {
+  route?: "ic" | "core" | "managed";
+  uri?: string;
+  resolve_import?: SourceImportResolver;
+  warnings?: boolean;
+};
+
+export type SourceAnalysis = {
+  source: SourceNode;
+  syntax: ReturnType<typeof parse_source_with_diagnostics>["syntax"];
+  syntax_diagnostics: SyntaxDiagnostic[];
+  diagnostics: SourceDiagnostic[];
+};
+
 export function Source() {}
 
 Source.parse = parse_source;
+Source.parse_with_diagnostics = parse_source_with_diagnostics;
+
+Source.analyze = function analyze(
+  text: string,
+  options: SourceAnalyzeOptions = {},
+): SourceAnalysis {
+  return Source.analyze_parsed(Source.parse_with_diagnostics(text), options);
+};
+
+Source.analyze_parsed = function analyze_parsed(
+  parsed: ParseSourceResult,
+  options: SourceAnalyzeOptions = {},
+): SourceAnalysis {
+  const diagnostics: SourceDiagnostic[] = [];
+
+  for (const diagnostic of parsed.diagnostics) {
+    diagnostics.push({
+      code: "IX1001",
+      severity: "error",
+      message: diagnostic.message,
+      span: diagnostic.span,
+    });
+  }
+
+  if (options.uri !== undefined && options.resolve_import !== undefined) {
+    diagnostics.push(...validate_source_imports(
+      parsed.source,
+      options.uri,
+      options.resolve_import,
+    ));
+  }
+
+  diagnostics.push(...validate_frontend_semantics(parsed.source, {
+    warnings: options.warnings,
+  }));
+
+  try {
+    validate_source_linear(parsed.source);
+  } catch (error) {
+    if (error instanceof CompilerDiagnosticError) {
+      diagnostics.push(error.diagnostic);
+    } else {
+      throw error;
+    }
+  }
+
+  if (!has_error_diagnostic(diagnostics) && options.route === "ic") {
+    diagnostics.push(...diagnose_ic_route(parsed.source));
+  }
+
+  if (
+    !has_error_diagnostic(diagnostics) &&
+    (options.route === "core" || options.route === "managed")
+  ) {
+    const route_source = source_for_route_analysis(parsed.source, options);
+
+    if (route_source !== undefined) {
+      diagnostics.push(...core_route_diagnostics(route_source));
+    }
+  }
+
+  if (options.uri !== undefined) {
+    attach_diagnostic_uri(diagnostics, options.uri);
+  }
+
+  return {
+    source: parsed.source,
+    syntax: parsed.syntax,
+    syntax_diagnostics: parsed.diagnostics,
+    diagnostics,
+  };
+};
+
+Source.analyze_file = function analyze_file(
+  path: string,
+  options: SourceAnalyzeOptions = {},
+): SourceAnalysis {
+  const uri = source_file_url(path);
+  const text = Deno.readTextFileSync(uri);
+  return Source.analyze(text, {
+    ...options,
+    uri: uri.href,
+    resolve_import: resolve_file_import,
+  });
+};
 
 Source.emit = function emit(source: SourceNode): IcNode {
   validate_atom_identities(source);
@@ -264,6 +385,238 @@ function reject_public_host_imports(source: SourceNode): void {
           "provide its resource through `Init`",
       );
     }
+  }
+}
+
+function attach_diagnostic_uri(
+  diagnostics: SourceDiagnostic[],
+  uri: string,
+): void {
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.uri === undefined) {
+      diagnostic.uri = uri;
+    }
+
+    if (diagnostic.related === undefined) {
+      continue;
+    }
+
+    for (const related of diagnostic.related) {
+      if (related.uri === undefined) {
+        related.uri = uri;
+      }
+    }
+  }
+}
+
+function has_error_diagnostic(diagnostics: SourceDiagnostic[]): boolean {
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === "error") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function core_route_diagnostics(source: SourceNode): SourceDiagnostic[] {
+  let core: CoreNode;
+  let proof: ReturnType<typeof Core.proof>;
+
+  try {
+    core = core_from_source_with_internal_imports(source);
+    proof = Core.proof(core);
+  } catch (error) {
+    if (is_core_route_coverage_error(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  const diagnostics: SourceDiagnostic[] = [];
+  let needs_source_origin_fallback = false;
+
+  for (const issue of proof.issues) {
+    const diagnostic = core_proof_diagnostic(issue);
+
+    if (diagnostic !== undefined) {
+      diagnostics.push(diagnostic);
+    } else if (core_issue_has_source_diagnostic(issue)) {
+      needs_source_origin_fallback = true;
+    }
+  }
+
+  if (!needs_source_origin_fallback) {
+    return diagnostics;
+  }
+
+  const source_core = Core.from_source(source);
+  const source_proof = Core.proof(source_core);
+
+  for (const issue of source_proof.issues) {
+    const diagnostic = core_proof_diagnostic(issue);
+
+    if (diagnostic !== undefined) {
+      diagnostics.push(diagnostic);
+    }
+  }
+
+  if (diagnostics.length === 0) {
+    throw new Error("Core diagnostic issue has no source origin");
+  }
+
+  return diagnostics;
+}
+
+function core_issue_has_source_diagnostic(issue: CoreProofIssue): boolean {
+  if (
+    issue.tag === "freeze" || issue.tag === "scratch_return" ||
+    issue.tag === "borrow"
+  ) {
+    return true;
+  }
+
+  return issue.tag === "unsupported_codegen" &&
+    issue.issue.feature === "index_assign";
+}
+
+function source_for_route_analysis(
+  source: SourceNode,
+  options: SourceAnalyzeOptions,
+): SourceNode | undefined {
+  let has_import = false;
+
+  for (const stmt of source.statements) {
+    if (stmt.tag === "import") {
+      has_import = true;
+      break;
+    }
+  }
+
+  if (!has_import) {
+    return source;
+  }
+
+  if (options.uri === undefined || options.resolve_import === undefined) {
+    return undefined;
+  }
+
+  return resolve_route_imports(
+    source,
+    options.uri,
+    options.resolve_import,
+    [options.uri],
+  );
+}
+
+function resolve_route_imports(
+  source: SourceNode,
+  uri: string,
+  resolve_import: SourceImportResolver,
+  stack: string[],
+): SourceNode | undefined {
+  const statements: SourceNode["statements"] = [];
+  const declarations = [...(source.declarations || [])];
+
+  for (const stmt of source.statements) {
+    if (stmt.tag !== "import") {
+      statements.push(stmt);
+      continue;
+    }
+
+    let dependency_uri: string;
+
+    try {
+      dependency_uri = new URL(stmt.path, uri).href;
+    } catch (error) {
+      if (error instanceof TypeError) {
+        return undefined;
+      }
+
+      throw error;
+    }
+
+    if (stack.includes(dependency_uri)) {
+      return undefined;
+    }
+
+    const text = resolve_import(dependency_uri);
+
+    if (text === undefined) {
+      return undefined;
+    }
+
+    const imported = resolve_route_imports(
+      parse_source(text),
+      dependency_uri,
+      resolve_import,
+      [...stack, dependency_uri],
+    );
+
+    if (imported === undefined) {
+      return undefined;
+    }
+
+    if (imported.module !== undefined) {
+      declarations.push(...(imported.declarations || []));
+      statements.push({
+        tag: "bind",
+        kind: "const",
+        name: stmt.name,
+        is_linear: false,
+        annotation: undefined,
+        value: {
+          tag: "lam",
+          params: imported.module.params,
+          body: { tag: "block", statements: imported.statements },
+        },
+      });
+      continue;
+    }
+
+    if (!source_exports_name(imported, stmt.name)) {
+      return undefined;
+    }
+
+    for (const imported_stmt of imported.statements) {
+      if (
+        imported_stmt.tag !== "bind" && imported_stmt.tag !== "type_check"
+      ) {
+        return undefined;
+      }
+
+      statements.push(imported_stmt);
+    }
+  }
+
+  return {
+    tag: "program",
+    module: source.module,
+    declarations,
+    statements,
+  };
+}
+
+function is_core_route_coverage_error(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.startsWith(
+    "Cannot type core scratch block with non-scalar unique_heap text result yet",
+  );
+}
+
+function resolve_file_import(uri: string): string | undefined {
+  try {
+    return Deno.readTextFileSync(new URL(uri));
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return undefined;
+    }
+
+    throw error;
   }
 }
 

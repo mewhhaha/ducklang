@@ -20,6 +20,8 @@ export function collect_block_expr_locals(
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: ctx.materialized_bindings,
+    mutable_bindings: ctx.mutable_bindings,
     next_loop: ctx.next_loop,
     next_temp: ctx.next_temp,
   };

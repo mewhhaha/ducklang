@@ -3,6 +3,7 @@ import {
   wat_from_core_source,
   wat_from_source,
 } from "./wasm_test_util.ts";
+import { assert_throws } from "./assert.ts";
 
 Deno.test("frontend visible update closure compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
@@ -332,7 +333,7 @@ let make_scores = if flag {
 } else {
   () => scores_type { first: 1, second: 2 }
 }
-let scores: scores_type = make_scores()
+let scores: scores_type = freeze make_scores()
 let make_user = if flag {
   () => user_type { scores: scores, bonus: 1 }
 } else {
@@ -626,8 +627,10 @@ slots.first.left + slots.first.right + slots.second.left + slots.second.right
   }
 });
 
-Deno.test("core captured runtime aggregate nested index assignment compiles through WAT to Wasm", async () => {
-  const wat_text = wat_from_core_source(`
+Deno.test("core rejects first-class runtime aggregate nested mutation capture", () => {
+  assert_throws(
+    () =>
+      wat_from_core_source(`
 const pair_type = struct {
   left: Int,
   right: Int
@@ -666,30 +669,16 @@ let write = if flag {
 
 write(1, 5, 7)
 slots.first.left + slots.first.right + slots.second.left + slots.second.right
-`);
-  const instance = await instantiate_wat(
-    wat_text,
-    "core_captured_runtime_aggregate_nested_index_assignment",
-    {},
+`),
+    "unique_heap runtime_aggregate capture requires linear closure " +
+      "ownership support",
   );
-
-  if (!("main" in instance.exports)) {
-    throw new Error("Missing main export");
-  }
-
-  if (typeof instance.exports.main !== "function") {
-    throw new Error("main export is not a function");
-  }
-
-  const result = instance.exports.main();
-
-  if (result !== 15) {
-    throw new Error("Expected main() -> 15, got " + result);
-  }
 });
 
-Deno.test("core captured runtime aggregate Text index assignment compiles through WAT to Wasm", async () => {
-  const wat_text = wat_from_core_source(`
+Deno.test("core rejects first-class runtime aggregate Text mutation capture", () => {
+  assert_throws(
+    () =>
+      wat_from_core_source(`
 const names_type = struct {
   first: Text,
   second: Text
@@ -722,77 +711,16 @@ let write = if flag {
 }
 
 write(1, " Hopper")
-`);
-  const instance = await instantiate_wat(
-    wat_text,
-    "core_captured_runtime_aggregate_text_index_assignment",
-    {},
+`),
+    "unique_heap runtime_aggregate capture requires linear closure " +
+      "ownership support",
   );
-
-  if (!("main" in instance.exports)) {
-    throw new Error("Missing main export");
-  }
-
-  if (typeof instance.exports.main !== "function") {
-    throw new Error("main export is not a function");
-  }
-
-  const result = instance.exports.main();
-
-  if (result !== 10) {
-    throw new Error("Expected main() -> 10, got " + result);
-  }
 });
 
-Deno.test("core captured runtime aggregate scalar index assignment compiles through WAT to Wasm", async () => {
-  const static_wat = wat_from_core_source(`
-const pair_type = struct {
-  first: Int,
-  second: Int
-}
-
-let flag = 1
-let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
-} else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
-}
-
-let pair: pair_type = make(10, 31)
-let write = (i: Int, value: Int) => {
-  pair[i] = value
-  pair.first + pair.second
-}
-
-write(0, 40) + write(1, 2)
-`);
-  const static_instance = await instantiate_wat(
-    static_wat,
-    "core_captured_runtime_aggregate_static_index_assignment",
-    {},
-  );
-
-  if (!("main" in static_instance.exports)) {
-    throw new Error("Missing main export");
-  }
-
-  if (typeof static_instance.exports.main !== "function") {
-    throw new Error("main export is not a function");
-  }
-
-  const static_result = static_instance.exports.main();
-
-  if (static_result !== 113) {
-    throw new Error("Expected main() -> 113, got " + static_result);
-  }
-
-  const first_class_wat = wat_from_core_source(`
+Deno.test("core rejects first-class runtime aggregate scalar mutation capture", () => {
+  assert_throws(
+    () =>
+      wat_from_core_source(`
 const pair_type = struct {
   first: Int,
   second: Int
@@ -825,28 +753,10 @@ let write = if flag {
 }
 
 write(0, 40) + write(1, 2)
-`);
-  const first_class_instance = await instantiate_wat(
-    first_class_wat,
-    "core_captured_runtime_aggregate_first_class_index_assignment",
-    {},
+`),
+    "unique_heap runtime_aggregate capture requires linear closure " +
+      "ownership support",
   );
-
-  if (!("main" in first_class_instance.exports)) {
-    throw new Error("Missing main export");
-  }
-
-  if (typeof first_class_instance.exports.main !== "function") {
-    throw new Error("main export is not a function");
-  }
-
-  const first_class_result = first_class_instance.exports.main();
-
-  if (first_class_result !== 113) {
-    throw new Error(
-      "Expected main() -> 113, got " + first_class_result,
-    );
-  }
 });
 
 Deno.test("core runtime aggregate text collection facts compile through WAT to Wasm", async () => {
@@ -873,15 +783,16 @@ let names: names_type = make("Ada", "Grace")
 let i = 1
 let picked: Text = get(names, i)
 let first: Text = names[0]
-let view: Text = ""
 let total = 0
+let borrowed_total = 0
 
 for index, name in names {
-  view = &name
+  let view = &name
+  borrowed_total = borrowed_total + len(view)
   total = total + index + len(name)
 }
 
-len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + len(view)
+len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + borrowed_total
 `);
   const instance = await instantiate_wat(
     wat_text,
@@ -899,8 +810,8 @@ len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + len(view)
 
   const result = instance.exports.main();
 
-  if (result !== 2544) {
-    throw new Error("Expected main() -> 2544, got " + result);
+  if (result !== 2547) {
+    throw new Error("Expected main() -> 2547, got " + result);
   }
 });
 
@@ -1260,7 +1171,7 @@ let make = if flag {
 } else {
   (name: Text) => user_type { name: name, age: 5 }
 }
-let user: user_type = make("Ada")
+let user: user_type = freeze make("Ada")
 let get_age = if flag {
   () => user.age
 } else {

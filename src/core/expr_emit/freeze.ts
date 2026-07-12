@@ -53,7 +53,7 @@ export function emit_core_freeze_expr<ctx extends CoreExprEmitCtx>(
   );
 
   if (ownership.tag === "unique_heap" && ownership.reason === "text") {
-    return emit_core_freeze_text_value(expr.value, ctx, emit_expr);
+    return emit_core_freeze_text_value(expr, expr.value, ctx, emit_expr);
   }
 
   if (
@@ -75,18 +75,25 @@ export function emit_core_freeze_expr<ctx extends CoreExprEmitCtx>(
   ) {
     const type_expr = hooks.runtime_aggregate_type_expr(expr.value, ctx);
     expect(type_expr, "Missing runtime aggregate freeze-copy type");
-    return emit_runtime_aggregate_freeze_copy(expr.value, type_expr, ctx, {
-      core_expr_is_text: hooks.core_expr_is_text,
-      emit_expr,
-      expr_type: hooks.expr_type,
-      runtime_aggregate_type_expr: hooks.runtime_aggregate_type_expr,
-      runtime_union_type_expr: hooks.runtime_union_type_expr,
-      same_runtime_aggregate_type_expr: hooks.same_runtime_aggregate_type_expr,
-      same_runtime_union_type_expr: hooks.same_runtime_union_type_expr,
-      emit_runtime_union_freeze_copy:
-        emit_runtime_aggregate_nested_union_freeze_copy,
-      static_struct_value: hooks.static_struct_value,
-    });
+    return emit_runtime_aggregate_freeze_copy(
+      expr,
+      expr.value,
+      type_expr,
+      ctx,
+      {
+        core_expr_is_text: hooks.core_expr_is_text,
+        emit_expr,
+        expr_type: hooks.expr_type,
+        runtime_aggregate_type_expr: hooks.runtime_aggregate_type_expr,
+        runtime_union_type_expr: hooks.runtime_union_type_expr,
+        same_runtime_aggregate_type_expr:
+          hooks.same_runtime_aggregate_type_expr,
+        same_runtime_union_type_expr: hooks.same_runtime_union_type_expr,
+        emit_runtime_union_freeze_copy:
+          emit_runtime_aggregate_nested_union_freeze_copy,
+        static_struct_value: hooks.static_struct_value,
+      },
+    );
   }
 
   if (
@@ -104,7 +111,7 @@ export function emit_core_freeze_expr<ctx extends CoreExprEmitCtx>(
   ) {
     const type_expr = hooks.runtime_union_type_expr(expr.value, ctx);
     expect(type_expr, "Missing runtime union freeze-copy type");
-    return emit_runtime_union_freeze_copy(expr.value, type_expr, ctx, {
+    return emit_runtime_union_freeze_copy(expr, expr.value, type_expr, ctx, {
       core_expr_is_text: hooks.core_expr_is_text,
       emit_expr,
       expr_type: hooks.expr_type,

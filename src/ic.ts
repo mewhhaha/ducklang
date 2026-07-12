@@ -9,6 +9,7 @@ import {
 } from "./ic/graph_reduce.ts";
 import { lower_ic } from "./ic/lower.ts";
 import { ic_open_mod, ic_open_wat } from "./ic/open_term.ts";
+import { check_ic_no_gc_proof, ic_no_gc_proof } from "./ic/proof.ts";
 import { assert_valid_ic, validate_ic } from "./ic/validate.ts";
 
 export type Ic = IcNode;
@@ -50,6 +51,10 @@ Ic.dump_graph = dump_ic_graph;
 Ic.mod = ic_open_mod;
 
 Ic.wat = ic_open_wat;
+
+Ic.proof = ic_no_gc_proof;
+
+Ic.check_proof = check_ic_no_gc_proof;
 
 Format.register<IcNode>(Ic);
 Emit.register<IcNode, ExprNode>(Ic);

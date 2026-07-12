@@ -1,11 +1,55 @@
 import type { Func } from "../mod.ts";
+import {
+  consume_core_allocation_permit,
+  type CoreAllocationPermitState,
+} from "./allocation_emission.ts";
+import type {
+  CoreAllocationLayout,
+  CoreAllocationReason,
+} from "./allocation.ts";
+import type { CoreExpr } from "./ast.ts";
 
 export const allocator_alloc = "__alloc";
 export const allocator_free = "__free";
 export const allocator_free_head = "__free_head";
 
-export function emit_persistent_alloc(size: string, alignment: 4 | 8): string {
+type CoreAllocationEmitCtx = {
+  allocation_permits: CoreAllocationPermitState;
+};
+
+export function emit_persistent_alloc(
+  ctx: CoreAllocationEmitCtx,
+  subject: CoreExpr,
+  size: string,
+  alignment: 4 | 8,
+  reason: CoreAllocationReason,
+  layout: CoreAllocationLayout,
+  emission_site: string,
+): string {
+  consume_core_allocation_permit(ctx.allocation_permits, {
+    subject,
+    reason,
+    storage: "persistent_unique_heap",
+    layout,
+    emission_site,
+  });
   return size + "\ni32.const " + alignment.toString() + "\ncall $__alloc";
+}
+
+export function consume_scratch_alloc(
+  ctx: CoreAllocationEmitCtx,
+  subject: CoreExpr,
+  reason: CoreAllocationReason,
+  layout: CoreAllocationLayout,
+  emission_site: string,
+): void {
+  consume_core_allocation_permit(ctx.allocation_permits, {
+    subject,
+    reason,
+    storage: "scratch_arena",
+    layout,
+    emission_site,
+  });
 }
 
 export function runtime_allocator_funcs(): Record<string, Func> {

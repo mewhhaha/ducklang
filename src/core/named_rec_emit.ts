@@ -64,6 +64,7 @@ export function emit_named_rec_functions<ctx extends CoreArtifactEmitCtx>(
       closures: input.closures,
       heap: input.heap,
       scratch: input.scratch,
+      allocation_permits: input.allocation_permits,
     });
     const body_lines: string[] = [];
 

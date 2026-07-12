@@ -72,6 +72,10 @@ export type CoreBackendTypeCheck = {
     value: CoreExpr,
     ctx: StaticCtx,
   ) => CoreExpr;
+  core_assignment_value: (
+    stmt: Extract<CoreStmt, { tag: "assign" }>,
+    ctx: StaticCtx,
+  ) => CoreExpr;
   check_core_type_pattern: (
     pattern: TypePattern,
     target: CoreExpr,

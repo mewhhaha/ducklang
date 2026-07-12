@@ -13,6 +13,12 @@ import { expect } from "../expect.ts";
 import { expect_snake_case } from "./names.ts";
 import { ParserTypeDeclaration } from "./parser_type_declaration.ts";
 import { unsupported_reserved_feature } from "./parser_support.ts";
+import {
+  derive_missing_source_spans,
+  mark_source_span,
+  type SyntaxDiagnostic,
+} from "./syntax.ts";
+import type { RecoveryInterval } from "./parser_cursor.ts";
 
 export class ParserStmt extends ParserTypeDeclaration {
   constructor(
@@ -32,26 +38,34 @@ export class ParserStmt extends ParserTypeDeclaration {
       this.peek().kind === "name" && this.peek().text === "module" &&
       this.peek(1).kind === "symbol" && this.peek(1).text === "("
     ) {
-      module = this.parse_module_header();
+      const start = this.index;
+      module = this.concrete_node(start, this.parse_module_header());
       this.skip_newlines();
     }
 
     while (!this.is("eof")) {
       if (this.peek().kind === "name" && this.peek().text === "declare") {
-        declarations.push(this.parse_declaration());
+        const start = this.index;
+        declarations.push(this.concrete_node(start, this.parse_declaration()));
         this.skip_newlines();
         continue;
       }
 
       if (this.peek().kind === "name" && this.peek().text === "effect") {
+        const start = this.index;
         this.expect_name("Expected effect");
-        declarations.push(this.parse_effect_declaration("ix"));
+        declarations.push(
+          this.concrete_node(start, this.parse_effect_declaration("ix")),
+        );
         this.skip_newlines();
         continue;
       }
 
       if (this.peek().kind === "name" && this.peek().text === "type") {
-        declarations.push(this.parse_type_declaration());
+        const start = this.index;
+        declarations.push(
+          this.concrete_node(start, this.parse_type_declaration()),
+        );
         this.skip_newlines();
         continue;
       }
@@ -60,11 +74,105 @@ export class ParserStmt extends ParserTypeDeclaration {
       this.skip_newlines();
     }
 
-    if (module || declarations.length > 0) {
-      return { tag: "program", module, declarations, statements };
+    return this.finish_program(module, declarations, statements);
+  }
+
+  parse_program_with_diagnostics(): {
+    source: SourceNode;
+    diagnostics: SyntaxDiagnostic[];
+    recovery_intervals: RecoveryInterval[];
+  } {
+    let module: ModuleHeader | undefined;
+    const declarations: Declaration[] = [];
+    const statements: Stmt[] = [];
+    const diagnostics: SyntaxDiagnostic[] = [];
+    const recovery_intervals: RecoveryInterval[] = [];
+    this.begin_recovery(diagnostics, recovery_intervals);
+    this.skip_newlines();
+
+    while (!this.is("eof")) {
+      const state = this.parser_state();
+      const start = this.index;
+
+      try {
+        if (
+          module === undefined && this.peek().kind === "name" &&
+          this.peek().text === "module" && this.peek(1).kind === "symbol" &&
+          this.peek(1).text === "("
+        ) {
+          module = this.concrete_node(start, this.parse_module_header());
+        } else if (
+          this.peek().kind === "name" && this.peek().text === "declare"
+        ) {
+          const declaration = this.concrete_node(
+            start,
+            this.parse_declaration(),
+          );
+          declarations.push(declaration);
+        } else if (
+          this.peek().kind === "name" && this.peek().text === "effect"
+        ) {
+          this.expect_name("Expected effect");
+          const declaration = this.concrete_node(
+            start,
+            this.parse_effect_declaration("ix"),
+          );
+          declarations.push(declaration);
+        } else if (this.peek().kind === "name" && this.peek().text === "type") {
+          const declaration = this.concrete_node(
+            start,
+            this.parse_type_declaration(),
+          );
+          declarations.push(declaration);
+        } else {
+          const statement = this.parse_stmt();
+          statements.push(statement);
+        }
+      } catch (error) {
+        const failure = this.index;
+        this.restore_parser_state(state);
+        this.synchronize_statement();
+
+        if (this.index === start && !this.is("eof")) {
+          this.advance();
+        }
+
+        this.record_recovery(error, start, failure);
+      }
+
+      this.skip_newlines();
     }
 
-    return { tag: "program", statements };
+    return {
+      source: this.finish_program(module, declarations, statements),
+      diagnostics,
+      recovery_intervals,
+    };
+  }
+
+  private finish_program(
+    module: ModuleHeader | undefined,
+    declarations: Declaration[],
+    statements: Stmt[],
+  ): SourceNode {
+    let source: SourceNode;
+
+    if (module || declarations.length > 0) {
+      source = { tag: "program", module, declarations, statements };
+    } else {
+      source = { tag: "program", statements };
+    }
+
+    const first = this.tokens[0];
+    const eof = this.tokens[this.tokens.length - 1];
+    expect(first, "Missing first program token");
+    expect(eof, "Missing EOF token");
+    mark_source_span(source, { start: first.span.start, end: eof.span.end });
+    derive_missing_source_spans(source, {
+      start: first.span.start,
+      end: eof.span.end,
+    });
+    return source;
   }
 
   private parse_module_header(): ModuleHeader {
@@ -122,16 +230,25 @@ export class ParserStmt extends ParserTypeDeclaration {
     const operations: EffectOperation[] = [];
 
     while (!this.match_symbol("}")) {
+      const operation_start = this.index;
       const operation = this.expect_name("Expected effect operation name");
       expect_snake_case(operation, "Effect operation");
       this.expect_symbol(":");
       this.expect_symbol("(");
       const params = this.parse_effect_params();
       this.expect_symbol("=>");
-      const result = this.parse_effect_result(
-        this.consume_effect_type(",", "}"),
+      const result_start = this.index;
+      const result = this.concrete_node(
+        result_start,
+        this.parse_effect_result(this.consume_effect_type(",", "}")),
       );
-      operations.push({ name: operation, params, result });
+      operations.push(
+        this.concrete_node(operation_start, {
+          name: operation,
+          params,
+          result,
+        }),
+      );
       this.match_symbol(",");
       this.skip_newlines();
     }
@@ -147,7 +264,11 @@ export class ParserStmt extends ParserTypeDeclaration {
     }
 
     while (true) {
-      params.push(this.parse_effect_param(this.consume_effect_type(",", ")")));
+      const start = this.index;
+      params.push(this.concrete_node(
+        start,
+        this.parse_effect_param(this.consume_effect_type(",", ")")),
+      ));
 
       if (this.match_symbol(")")) {
         break;
@@ -246,6 +367,12 @@ export class ParserStmt extends ParserTypeDeclaration {
   }
 
   protected parse_stmt(): Stmt {
+    const start = this.index;
+    const statement = this.parse_stmt_inner();
+    return this.concrete_node(start, statement);
+  }
+
+  private parse_stmt_inner(): Stmt {
     if (this.peek().kind === "name") {
       const feature = unsupported_reserved_feature(this.peek().text);
 
@@ -282,13 +409,14 @@ export class ParserStmt extends ParserTypeDeclaration {
 
     if (this.match_name("return")) {
       if (this.peek().kind === "symbol" && this.peek().text === "{") {
+        const value_start = this.index;
         return {
           tag: "return",
-          value: {
+          value: this.concrete_node(value_start, {
             tag: "struct_value",
             type_expr: { tag: "var", name: "object_type" },
             fields: this.parse_record_field_list(),
-          },
+          }),
         };
       }
 

@@ -7,6 +7,7 @@ type RecordTransfer<ctx> = (
   scope: string,
   callee: string,
   argument: number,
+  subject: CoreExpr,
   state: CoreTransferState<ctx>,
 ) => void;
 
@@ -43,6 +44,6 @@ export function scan_host_transfer_call<ctx>(
       continue;
     }
 
-    record_transfer(arg.name, scope, host_import.name, index, state);
+    record_transfer(arg.name, scope, host_import.name, index, arg, state);
   }
 }

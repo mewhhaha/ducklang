@@ -3,6 +3,7 @@ import type { CoreExpr, CoreField, CoreStmt } from "../ast.ts";
 import { indent_lines, set_local } from "../backend/util.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import { core_scratch_plan, scratch_heap_global } from "../scratch.ts";
+import { record_core_expr_provenance } from "../subject_provenance.ts";
 import type { StaticStructIfBranches } from "../struct_static.ts";
 import type { StaticTextIfBranches } from "../text_static.ts";
 import { static_block_result } from "../type_static.ts";
@@ -140,8 +141,20 @@ function plan_static_scratch_value<
   emit_ctx: emit_ctx | undefined,
   hooks: StaticValueHooks<ctx, emit_ctx>,
 ): StaticValuePlan {
+  const validation_scratch_depth = ctx.scratch_depth;
+  if (validation_scratch_depth === undefined) {
+    ctx.scratch_depth = 1;
+  } else {
+    ctx.scratch_depth = validation_scratch_depth + 1;
+  }
+  let scratch_free: boolean;
+  try {
+    scratch_free = is_scratch_free_static_value_expr(value.body, ctx, hooks);
+  } finally {
+    ctx.scratch_depth = validation_scratch_depth;
+  }
   expect(
-    is_scratch_free_static_value_expr(value.body, ctx, hooks),
+    scratch_free,
     "Cannot plan scratch static core value that may reference scratch storage",
   );
 
@@ -183,7 +196,14 @@ function plan_static_scratch_value<
 
   emit_ctx.scratch_return_resets.push(scratch.base);
   emit_ctx.scratch_loop_resets.push(scratch.base);
+  const scratch_depth = ctx.scratch_depth;
+  if (scratch_depth === undefined) {
+    ctx.scratch_depth = 1;
+  } else {
+    ctx.scratch_depth = scratch_depth + 1;
+  }
   const planned = plan_static_block_value(value.body, ctx, emit_ctx, hooks);
+  ctx.scratch_depth = scratch_depth;
   const loop_reset = emit_ctx.scratch_loop_resets.pop();
   const return_reset = emit_ctx.scratch_return_resets.pop();
 
@@ -314,12 +334,13 @@ function plan_static_union_case<
   );
 
   return {
-    value: {
+    value: record_core_expr_provenance({
       tag: "union_case",
       name: value.name,
       value: planned.value,
       type_expr: value.type_expr,
-    },
+      resume_payload: value.resume_payload,
+    }, value),
     setup: planned.setup,
   };
 }
@@ -457,12 +478,13 @@ function plan_static_union_if_case<
   if (text_value) {
     const planned = plan_static_value_expr(text_value, ctx, emit_ctx, hooks);
     return {
-      value: {
+      value: record_core_expr_provenance({
         tag: "union_case",
         name: union_case.name,
         value: planned.value,
         type_expr: union_case.type_expr,
-      },
+        resume_payload: union_case.resume_payload,
+      }, union_case),
       setup: planned.setup,
     };
   }
@@ -477,12 +499,13 @@ function plan_static_union_if_case<
       hooks,
     );
     return {
-      value: {
+      value: record_core_expr_provenance({
         tag: "union_case",
         name: union_case.name,
         value: planned.value,
         type_expr: union_case.type_expr,
-      },
+        resume_payload: union_case.resume_payload,
+      }, union_case),
       setup: planned.setup,
     };
   }
@@ -500,12 +523,13 @@ function plan_static_union_if_case<
   );
 
   return {
-    value: {
+    value: record_core_expr_provenance({
       tag: "union_case",
       name: union_case.name,
       value: planned.value,
       type_expr: union_case.type_expr,
-    },
+      resume_payload: union_case.resume_payload,
+    }, union_case),
     setup: planned.setup,
   };
 }

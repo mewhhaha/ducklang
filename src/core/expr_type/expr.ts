@@ -194,6 +194,16 @@ export function expr_type<
         runtime_union_match_info: hooks.runtime_union_match_info,
         runtime_union_target: hooks.runtime_union_target,
         runtime_union_value: hooks.core_runtime_union_value,
+        scratch_return_ctx: (value_ctx) => {
+          const scratch_ctx = hooks.create_block_ctx(value_ctx);
+          const scratch_depth = scratch_ctx.scratch_depth;
+          if (scratch_depth === undefined) {
+            scratch_ctx.scratch_depth = 1;
+          } else {
+            scratch_ctx.scratch_depth = scratch_depth + 1;
+          }
+          return scratch_ctx;
+        },
         runtime_aggregate_type_expr: (value, value_ctx) =>
           runtime_aggregate_type_expr(value, value_ctx, {
             check_closure_call_args: hooks.check_closure_call_args,
@@ -205,6 +215,8 @@ export function expr_type<
         static_core_call_requires_scope: hooks.static_core_call_requires_scope,
         static_core_call_target: hooks.static_core_call_target,
         static_core_call_value: hooks.static_core_call_value,
+        static_capture_value: (name, value_ctx) =>
+          value_ctx.static_capture_values?.get(name),
         static_union_case: hooks.static_union_case,
         static_text_value: hooks.static_text_value,
       });
@@ -256,6 +268,8 @@ export function expr_type<
         static_core_call_requires_scope: hooks.static_core_call_requires_scope,
         static_core_call_target: hooks.static_core_call_target,
         static_core_call_value: hooks.static_core_call_value,
+        static_capture_value: (name, value_ctx) =>
+          value_ctx.static_capture_values?.get(name),
         static_union_case: hooks.static_union_case,
         static_text_value: hooks.static_text_value,
       };
@@ -461,6 +475,8 @@ function collect_loop_break_types<
             hooks.static_core_call_requires_scope,
           static_core_call_target: hooks.static_core_call_target,
           static_core_call_value: hooks.static_core_call_value,
+          static_capture_value: (name, value_ctx) =>
+            value_ctx.static_capture_values?.get(name),
           static_union_case: hooks.static_union_case,
           static_text_value: hooks.static_text_value,
         });

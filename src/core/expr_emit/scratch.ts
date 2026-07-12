@@ -2,12 +2,15 @@ import { expect } from "../../expect.ts";
 import type { ValType } from "../../op.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
-import { core_scratch_return_rejection_detail } from "../cleanup.ts";
+import {
+  core_scratch_return_ownership,
+  core_scratch_return_rejection_detail,
+} from "../cleanup.ts";
 import {
   core_lifetime_rejection_message,
   core_scratch_return_lifetime_decision,
 } from "../lifetime.ts";
-import { core_expr_ownership, type CoreOwnershipHooks } from "../ownership.ts";
+import type { CoreOwnershipHooks } from "../ownership.ts";
 import {
   core_scratch_plan,
   emit_core_scratch_expr as emit_core_scratch_wat,
@@ -31,7 +34,11 @@ export function emit_core_scratch_block_expr<ctx extends CoreExprEmitCtx>(
     result_type,
     hooks,
   );
-  const ownership = core_expr_ownership(expr.body, ctx, ownership_hooks);
+  const ownership = core_scratch_return_ownership(
+    expr.body,
+    ctx,
+    ownership_hooks,
+  );
   const decision = core_scratch_return_lifetime_decision(ownership);
   const detail = core_scratch_return_rejection_detail(
     expr.body,
@@ -52,7 +59,14 @@ export function emit_core_scratch_block_expr<ctx extends CoreExprEmitCtx>(
   const plan = core_scratch_plan(ctx);
   ctx.scratch_return_resets.push(plan.base);
   ctx.scratch_loop_resets.push(plan.base);
+  const scratch_depth = ctx.scratch_depth;
+  if (scratch_depth === undefined) {
+    ctx.scratch_depth = 1;
+  } else {
+    ctx.scratch_depth = scratch_depth + 1;
+  }
   const body = emit_expr(expr.body, ctx);
+  ctx.scratch_depth = scratch_depth;
   const loop_reset = ctx.scratch_loop_resets.pop();
   const return_reset = ctx.scratch_return_resets.pop();
   expect(
@@ -91,6 +105,16 @@ function scratch_ownership_hooks<ctx extends CoreExprEmitCtx>(
     runtime_union_match_info: hooks.runtime_union_match_info,
     runtime_union_target: hooks.runtime_union_target,
     runtime_union_value: hooks.runtime_union_value,
+    scratch_return_ctx: (value_ctx) => {
+      const scratch_ctx = hooks.if_let_branch_ctx(value_ctx);
+      const scratch_depth = scratch_ctx.scratch_depth;
+      if (scratch_depth === undefined) {
+        scratch_ctx.scratch_depth = 1;
+      } else {
+        scratch_ctx.scratch_depth = scratch_depth + 1;
+      }
+      return scratch_ctx;
+    },
     runtime_aggregate_type_expr: (value, value_ctx) =>
       runtime_aggregate_type_expr(value, value_ctx, {
         check_closure_call_args: hooks.check_closure_call_args,
@@ -102,6 +126,8 @@ function scratch_ownership_hooks<ctx extends CoreExprEmitCtx>(
     static_core_call_requires_scope: hooks.static_core_call_requires_scope,
     static_core_call_target: hooks.static_core_call_target,
     static_core_call_value: hooks.static_core_call_value,
+    static_capture_value: (name, value_ctx) =>
+      value_ctx.static_capture_values?.get(name),
     static_union_case: hooks.static_union_case,
     static_text_value: hooks.static_text_value,
   };

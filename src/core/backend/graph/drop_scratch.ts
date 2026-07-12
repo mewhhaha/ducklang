@@ -14,8 +14,16 @@ export function core_unsafe_scratch_return_probe_error(
     return false;
   }
 
+  if (
+    error.message.startsWith(
+      "Cannot type core scratch block with unsafe scratch return ",
+    )
+  ) {
+    return true;
+  }
+
   return error.message.startsWith(
-    "Cannot type core scratch block with unsafe scratch return ",
+    "Cannot type core scratch block with non-scalar ",
   );
 }
 

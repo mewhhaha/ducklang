@@ -25,6 +25,8 @@ import { runtime_union_type_size } from "./size.ts";
 import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
 
 export type RuntimeUnionFreezeCopyCtx = TypeStaticCtx & {
+  allocation_permits:
+    import("../allocation_emission.ts").CoreAllocationPermitState;
   locals: Map<string, ValType>;
   next_temp: number;
   next_loop: number;
@@ -75,6 +77,7 @@ export type RuntimeUnionFreezeCopyHooks<
 export function emit_runtime_union_freeze_copy<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: CoreExpr,
   type_expr: CoreExpr,
   ctx: ctx,
@@ -93,8 +96,13 @@ export function emit_runtime_union_freeze_copy<
     source_wat,
     "local.set $" + plan.source,
     emit_persistent_alloc(
+      ctx,
+      subject,
       "i32.const " + runtime_union_type_size(type_value, ctx).toString(),
       8,
+      "runtime_union",
+      "runtime_union.tag_and_aligned_payload",
+      "runtime_union.freeze_copy",
     ),
     "local.set $" + plan.result,
     "local.get $" + plan.result,
@@ -104,6 +112,7 @@ export function emit_runtime_union_freeze_copy<
   ];
 
   emit_runtime_union_freeze_copy_cases(
+    subject,
     plan.source,
     plan.result,
     type_value,
@@ -357,6 +366,7 @@ function declare_runtime_union_payload_union_copy_locals<
 function emit_runtime_union_freeze_copy_cases<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   type_value: Extract<CoreExpr, { tag: "union_type" }>,
@@ -375,6 +385,7 @@ function emit_runtime_union_freeze_copy_cases<
 
     const body: string[] = [];
     emit_runtime_union_freeze_copy_payload_stores(
+      subject,
       source,
       result,
       payload,
@@ -396,6 +407,7 @@ function emit_runtime_union_freeze_copy_cases<
 function emit_runtime_union_freeze_copy_payload_stores<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   payload: RuntimeUnionPayload,
@@ -406,6 +418,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
   if (payload.tag === "value") {
     if (payload.union_type_expr) {
       emit_runtime_union_freeze_copy_union_pointer_store(
+        subject,
         source,
         result,
         4,
@@ -418,6 +431,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
     }
 
     emit_runtime_union_freeze_copy_value_store(
+      subject,
       source,
       result,
       4,
@@ -431,6 +445,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
 
   if (payload.tag === "struct") {
     emit_runtime_union_freeze_copy_struct_payload_stores(
+      subject,
       source,
       result,
       payload.fields,
@@ -443,6 +458,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
 
   if (payload.tag === "aggregate") {
     emit_runtime_union_freeze_copy_aggregate_payload_store(
+      subject,
       source,
       result,
       payload,
@@ -459,6 +475,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
 function emit_runtime_union_freeze_copy_aggregate_payload_store<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   payload: Extract<RuntimeUnionPayload, { tag: "aggregate" }>,
@@ -476,6 +493,7 @@ function emit_runtime_union_freeze_copy_aggregate_payload_store<
   lines.push("local.get $" + result);
   lines.push(
     emit_runtime_aggregate_freeze_copy(
+      subject,
       { tag: "var", name: payload_local },
       payload.type_expr,
       ctx,
@@ -500,6 +518,7 @@ function emit_runtime_union_freeze_copy_aggregate_payload_store<
 function emit_runtime_union_freeze_copy_struct_payload_stores<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   fields: RuntimeUnionPayloadField[],
@@ -510,6 +529,7 @@ function emit_runtime_union_freeze_copy_struct_payload_stores<
   for (const field of fields) {
     if (field.tag === "struct") {
       emit_runtime_union_freeze_copy_struct_payload_stores(
+        subject,
         source,
         result,
         field.fields,
@@ -522,6 +542,7 @@ function emit_runtime_union_freeze_copy_struct_payload_stores<
 
     if (field.union_type_expr) {
       emit_runtime_union_freeze_copy_union_pointer_store(
+        subject,
         source,
         result,
         field.offset,
@@ -534,6 +555,7 @@ function emit_runtime_union_freeze_copy_struct_payload_stores<
     }
 
     emit_runtime_union_freeze_copy_value_store(
+      subject,
       source,
       result,
       field.offset,
@@ -548,6 +570,7 @@ function emit_runtime_union_freeze_copy_struct_payload_stores<
 function emit_runtime_union_freeze_copy_union_pointer_store<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   offset: number,
@@ -566,6 +589,7 @@ function emit_runtime_union_freeze_copy_union_pointer_store<
   lines.push("local.get $" + result);
   lines.push(
     emit_runtime_union_freeze_copy(
+      subject,
       { tag: "var", name: payload_local },
       type_expr,
       ctx,
@@ -578,17 +602,19 @@ function emit_runtime_union_freeze_copy_union_pointer_store<
 function emit_runtime_aggregate_nested_union_freeze_copy<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: CoreExpr,
   type_expr: CoreExpr,
   ctx: ctx,
   hooks: RuntimeUnionFreezeCopyHooks<ctx>,
 ): Wat {
-  return emit_runtime_union_freeze_copy(source, type_expr, ctx, hooks);
+  return emit_runtime_union_freeze_copy(subject, source, type_expr, ctx, hooks);
 }
 
 function emit_runtime_union_freeze_copy_value_store<
   ctx extends RuntimeUnionFreezeCopyCtx,
 >(
+  subject: CoreExpr,
   source: string,
   result: string,
   offset: number,
@@ -604,7 +630,9 @@ function emit_runtime_union_freeze_copy_value_store<
       "local.get $" + source,
       load_instr("i32", offset),
     ].join("\n");
-    lines.push(emit_runtime_text_freeze_copy_from_wat(source_text, ctx));
+    lines.push(
+      emit_runtime_text_freeze_copy_from_wat(subject, source_text, ctx),
+    );
   } else {
     lines.push("local.get $" + source);
     lines.push(load_instr(type, offset));

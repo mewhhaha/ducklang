@@ -1,5 +1,6 @@
 import type { Token } from "../frontend/ast.ts";
-import { tokenize } from "../frontend/tokenize.ts";
+import type { SourceSyntax } from "../frontend/syntax.ts";
+import { scan_source, source_tokens } from "../frontend/tokenize.ts";
 
 // The formatter is deliberately biased: it re-emits the comment-preserving
 // token stream with fixed spacing, two-space bracket indentation, collapsed
@@ -75,7 +76,17 @@ type Bracket = {
 };
 
 export function format_text(text: string): string {
-  const tokens = mark_effect_rows(tokenize(text, { comments: true }));
+  return format_syntax(scan_source(text));
+}
+
+export function format_syntax(syntax: SourceSyntax): string {
+  const diagnostic = syntax.diagnostics[0];
+
+  if (diagnostic !== undefined) {
+    throw new Error(diagnostic.message);
+  }
+
+  const tokens = mark_effect_rows(source_tokens(syntax, { comments: true }));
   const lines = split_lines(tokens);
   const parts: string[] = [];
   const brackets: Bracket[] = [];
@@ -109,7 +120,11 @@ export function format_text(text: string): string {
     // opened it; otherwise it sits inside the innermost open bracket. All
     // brackets opened on one line share a single extra indent level.
     const enclosing = brackets[brackets.length - 1];
-    let indent = enclosing === undefined ? 0 : enclosing.body_indent;
+    let indent = 0;
+
+    if (enclosing !== undefined) {
+      indent = enclosing.body_indent;
+    }
 
     if (line_starts_with_closer(line) && enclosing !== undefined) {
       indent = enclosing.open_indent;

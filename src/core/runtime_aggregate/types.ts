@@ -10,6 +10,8 @@ export type RuntimeAggregateTempCtx = {
 };
 
 export type RuntimeAggregateEmitCtx = RuntimeAggregateTempCtx & {
+  allocation_permits:
+    import("../allocation_emission.ts").CoreAllocationPermitState;
   next_loop: number;
   heap: {
     needed: boolean;
@@ -70,6 +72,7 @@ export type RuntimeAggregateFreezeCopyHooks<ctx extends TypeStaticCtx> =
   & RuntimeAggregateHooks<ctx>
   & {
     emit_runtime_union_freeze_copy: (
+      subject: CoreExpr,
       source: CoreExpr,
       type_expr: CoreExpr,
       ctx: ctx,

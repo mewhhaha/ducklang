@@ -6,6 +6,7 @@ import {
   type CoreOwnershipHooks,
 } from "../ownership.ts";
 import { dynamic_if_let_can_match } from "../union_static.ts";
+import { record_core_diagnostic_subject } from "../source_origin.ts";
 
 export type CoreFreezeProofEdge = {
   id: string;
@@ -300,10 +301,12 @@ function scan_freeze_expr<ctx>(
       const ownership = freeze_operand_ownership(expr.value, ctx, hooks);
       const id = "freeze#" + state.next_freeze.toString();
       state.next_freeze += 1;
-      state.edges.push({
+      const edge: CoreFreezeProofEdge = {
         id,
         analysis: core_escape_analysis("freeze", ownership),
-      });
+      };
+      state.edges.push(edge);
+      record_core_diagnostic_subject(edge, expr);
       scan_freeze_expr(expr.value, ctx, hooks, state);
       return;
     }

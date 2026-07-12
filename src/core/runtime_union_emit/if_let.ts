@@ -40,6 +40,36 @@ export function emit_runtime_union_if_let_stmt<
 
   ctx.next_loop = branch_ctx.next_loop;
   ctx.next_temp = branch_ctx.next_temp;
+  for (const name of branch_ctx.text_locals) {
+    if (name.startsWith("_") && name.includes("#")) {
+      ctx.text_locals.add(name);
+    }
+  }
+  for (const [name, value] of branch_ctx.struct_locals) {
+    if (name.startsWith("_") && name.includes("#")) {
+      ctx.struct_locals.set(name, value);
+    }
+  }
+  for (const [name, value] of branch_ctx.union_locals) {
+    if (name.startsWith("_") && name.includes("#")) {
+      ctx.union_locals.set(name, value);
+    }
+  }
+  for (const [name, value] of branch_ctx.fn_types) {
+    if (name.startsWith("_") && name.includes("#")) {
+      ctx.fn_types.set(name, value);
+    }
+  }
+  if (branch_ctx.frozen_locals) {
+    if (!ctx.frozen_locals) {
+      ctx.frozen_locals = new Set();
+    }
+    for (const name of branch_ctx.frozen_locals) {
+      if (name.startsWith("_") && name.includes("#")) {
+        ctx.frozen_locals.add(name);
+      }
+    }
+  }
   const merge_setup = hooks.merge_if_else_static_assignments(
     stmt,
     { tag: "var", name: cond_name },

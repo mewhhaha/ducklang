@@ -9,6 +9,7 @@ import {
   create_core_runtime_union_match_branch_ctx,
 } from "../../../emit_ctx.ts";
 import type { StaticCtx } from "../../../local_collect.ts";
+import { runtime_aggregate_type_expr } from "../../../runtime_aggregate.ts";
 
 export function create_core_backend_runtime_closure(
   deps: CoreBackendGraphDeps,
@@ -32,6 +33,11 @@ export function create_core_backend_runtime_closure(
       deps.stmt_emit().emit_stmt(stmt, ctx, is_final),
     expr_type: (expr, ctx) => deps.expr_type().expr_type(expr, ctx),
     match_branch_ctx: create_core_runtime_union_match_branch_ctx,
+    runtime_aggregate_type_expr: (expr: CoreExpr, ctx: StaticCtx) =>
+      runtime_aggregate_type_expr(expr, ctx, {
+        check_closure_call_args: deps.closure().check_closure_call_args,
+        closure_fn_type: deps.closure().closure_fn_type,
+      }),
     runtime_union_match_info: (case_name, target, ctx) =>
       get_union().runtime_union_match_info(case_name, target, ctx),
     runtime_union_target: (expr, ctx) =>

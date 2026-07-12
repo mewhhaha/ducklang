@@ -20,6 +20,12 @@ export abstract class ParserConditional extends ParserAggregate {
   protected abstract parse_block(): FrontExpr;
 
   protected parse_if_expr(): FrontExpr {
+    const start = this.index - 1;
+    const expr = this.parse_if_expr_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_if_expr_inner(): FrontExpr {
     const cond = this.parse_expr_without_postfix_block();
     const then_branch = this.parse_block();
     const else_branch = this.parse_optional_else_branch();
@@ -38,6 +44,12 @@ export abstract class ParserConditional extends ParserAggregate {
   }
 
   protected parse_if_let_expr(): FrontExpr {
+    const start = this.index - 1;
+    const expr = this.parse_if_let_expr_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_if_let_expr_inner(): FrontExpr {
     const pattern = this.parse_if_let_condition();
     const then_branch = this.parse_block();
     let else_branch: FrontExpr = { tag: "num", type: "i32", value: 0 };

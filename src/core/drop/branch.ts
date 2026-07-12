@@ -29,10 +29,19 @@ export function merge_if_stmt_branch_owners(
   }
 
   for (const name of Array.from(owners.keys())) {
+    const existing = owners.get(name);
     const owner = branch.owners.get(name);
 
     if (owner) {
-      owners.set(name, owner);
+      const merged: CoreDropOwner = {
+        name: owner.name,
+        ownership: owner.ownership,
+        pointer: owner.pointer,
+      };
+      if (existing && existing.subject === owner.subject) {
+        merged.subject = owner.subject;
+      }
+      owners.set(name, merged);
     }
   }
 }
@@ -42,7 +51,7 @@ export function merge_if_else_branch_owners(
   branches: CoreDropBranchResult[],
 ): void {
   for (const name of Array.from(owners.keys())) {
-    let merged: CoreDropOwner | undefined;
+    const continuing: CoreDropOwner[] = [];
 
     for (const branch of branches) {
       if (!branch.continues) {
@@ -51,12 +60,32 @@ export function merge_if_else_branch_owners(
 
       const owner = branch.owners.get(name);
       if (owner) {
-        merged = owner;
+        continuing.push(owner);
       }
     }
 
+    const merged = continuing[continuing.length - 1];
     if (merged) {
-      owners.set(name, merged);
+      const value: CoreDropOwner = {
+        name: merged.name,
+        ownership: merged.ownership,
+        pointer: merged.pointer,
+      };
+      for (const owner of continuing) {
+        if (owner.pointer === "temporary") {
+          value.pointer = "temporary";
+        }
+      }
+      let common_subject = continuing[0]?.subject;
+      for (const owner of continuing) {
+        if (owner.subject !== common_subject) {
+          common_subject = undefined;
+        }
+      }
+      if (common_subject) {
+        value.subject = common_subject;
+      }
+      owners.set(name, value);
     } else {
       owners.delete(name);
     }

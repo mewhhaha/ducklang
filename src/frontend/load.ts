@@ -11,7 +11,7 @@ export function load_source_fragment_file(path: string): SourceNode {
   return load_source_url(url, [], false);
 }
 
-function source_file_url(path: string): URL {
+export function source_file_url(path: string): URL {
   try {
     const url = new URL(path);
 
@@ -117,8 +117,6 @@ function resolve_imports(
       continue;
     }
 
-    let found = false;
-
     for (const imported_stmt of imported.statements) {
       if (
         imported_stmt.tag !== "bind" && imported_stmt.tag !== "type_check"
@@ -128,14 +126,10 @@ function resolve_imports(
         );
       }
 
-      if (imported_stmt.tag === "bind" && imported_stmt.name === stmt.name) {
-        found = true;
-      }
-
       statements.push(imported_stmt);
     }
 
-    if (!found) {
+    if (!source_exports_name(imported, stmt.name)) {
       throw new Error(
         "Import " + stmt.path + " does not export " + stmt.name,
       );
@@ -148,4 +142,21 @@ function resolve_imports(
     declarations,
     statements,
   };
+}
+
+export function source_exports_name(
+  source: SourceNode,
+  name: string,
+): boolean {
+  if (source.module !== undefined) {
+    return true;
+  }
+
+  for (const stmt of source.statements) {
+    if (stmt.tag === "bind" && stmt.name === name) {
+      return true;
+    }
+  }
+
+  return false;
 }

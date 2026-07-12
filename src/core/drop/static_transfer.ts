@@ -1,5 +1,7 @@
 import { merge_if_else_branch_owners } from "./branch.ts";
 import { consume_host_transfer_args } from "./ownership.ts";
+import { moved_expr_owner } from "./ownership.ts";
+import { canonical_core_expr } from "../subject_provenance.ts";
 import {
   static_drop_call_bindings,
   static_drop_call_function_aliases,
@@ -70,7 +72,10 @@ export function consume_static_host_transfer_call<ctx>(
     if (entry[1].tag === "owner") {
       state.aliases.set(entry[0], entry[1].owner);
     } else {
-      state.temporary_aliases.set(entry[0], entry[1].ownership);
+      state.temporary_aliases.set(entry[0], {
+        ownership: entry[1].ownership,
+        subject: entry[1].subject,
+      });
     }
   }
 
@@ -554,6 +559,7 @@ function scan_static_drop_transfer_expr<ctx>(
         state,
       );
       for (const field of expr.fields) {
+        consume_static_composite_child(field.value, owners, state);
         scan_static_drop_transfer_expr(
           field.value,
           scope,
@@ -672,6 +678,9 @@ function scan_static_drop_transfer_expr<ctx>(
 
     case "union_case":
       if (expr.value) {
+        consume_static_composite_child(expr.value, owners, state);
+      }
+      if (expr.value) {
         scan_static_drop_transfer_expr(
           expr.value,
           scope,
@@ -692,5 +701,25 @@ function scan_static_drop_transfer_expr<ctx>(
         );
       }
       return;
+  }
+}
+
+function consume_static_composite_child(
+  value: CoreExpr,
+  owners: Map<string, CoreDropOwner>,
+  state: CoreDropState,
+): void {
+  const owner = moved_expr_owner(value, owners, state);
+  if (!owner) {
+    return;
+  }
+  if (owner.name !== "") {
+    owners.delete(owner.name);
+  }
+  if (owner.subject) {
+    state.consumed_temporary_subjects.add(owner.subject);
+    state.consumed_temporary_subjects.add(
+      canonical_core_expr(owner.subject),
+    );
   }
 }

@@ -1,5 +1,5 @@
 import { assert_equals } from "../assert.ts";
-import { encode_message, MessageDecoder } from "../lsp/framing.ts";
+import { LspTestClient } from "../lsp/test_harness.ts";
 
 const entry = new URL("../../ix.ts", import.meta.url).pathname;
 
@@ -26,16 +26,16 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     stdout: "piped",
     stderr: "piped",
   });
-  const child = command.spawn();
-  const writer = child.stdin.getWriter();
+  const client = new LspTestClient(command.spawn());
 
-  const send = async (message: unknown) => {
-    await writer.write(encode_message(message));
-  };
-
-  await send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
-  await send({ jsonrpc: "2.0", method: "initialized", params: {} });
-  await send({
+  await client.send({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {},
+  });
+  await client.send({ jsonrpc: "2.0", method: "initialized", params: {} });
+  await client.send({
     jsonrpc: "2.0",
     method: "textDocument/didOpen",
     params: {
@@ -47,7 +47,7 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
       },
     },
   });
-  await send({
+  await client.send({
     jsonrpc: "2.0",
     id: 2,
     method: "textDocument/formatting",
@@ -56,16 +56,13 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
       options: { tabSize: 2, insertSpaces: true },
     },
   });
-  await send({ jsonrpc: "2.0", id: 3, method: "shutdown" });
-  await send({ jsonrpc: "2.0", method: "exit" });
-  await writer.close();
+  await client.send({ jsonrpc: "2.0", id: 3, method: "shutdown" });
+  await client.send({ jsonrpc: "2.0", method: "exit" });
 
-  const output = await child.output();
+  const output = await client.finish();
   assert_equals(output.success, true);
-
-  const decoder = new MessageDecoder();
   // deno-lint-ignore no-explicit-any
-  const messages = decoder.push(output.stdout) as any[];
+  const messages = output.messages as any[];
 
   const initialize = messages.find((message) => message.id === 1);
   assert_equals(

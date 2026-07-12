@@ -10,6 +10,12 @@ import {
 
 export abstract class ParserPrimary extends ParserBlock {
   protected parse_primary(): FrontExpr {
+    const start = this.index;
+    const expr = this.parse_primary_inner();
+    return this.concrete_node(start, expr);
+  }
+
+  private parse_primary_inner(): FrontExpr {
     const token = this.peek();
 
     if (token.kind === "name") {
@@ -163,6 +169,7 @@ export abstract class ParserPrimary extends ParserBlock {
     let return_clause: HandlerReturnClause | undefined;
 
     while (!this.match_symbol("}")) {
+      const clause_start = this.index;
       const name = this.expect_name("Expected handler clause name");
       expect_snake_case(name, "Handler clause");
       this.expect_symbol(":");
@@ -175,7 +182,10 @@ export abstract class ParserPrimary extends ParserBlock {
         );
         const param = value.params[0];
         expect(param, "Missing handler return parameter");
-        return_clause = { param, body: value.body };
+        return_clause = this.concrete_node(clause_start, {
+          param,
+          body: value.body,
+        });
         this.match_symbol(",");
         this.skip_newlines();
         expect(
@@ -185,7 +195,11 @@ export abstract class ParserPrimary extends ParserBlock {
         break;
       }
 
-      clauses.push({ name, params: value.params, body: value.body });
+      clauses.push(this.concrete_node(clause_start, {
+        name,
+        params: value.params,
+        body: value.body,
+      }));
       this.match_symbol(",");
       this.skip_newlines();
     }

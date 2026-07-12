@@ -6,6 +6,10 @@ import type {
   CoreStmt,
 } from "../../ast.ts";
 import type { CoreCtx } from "../../local_collect.ts";
+import {
+  mutable_static_owner_value_materializes,
+  static_owner_value_materializes,
+} from "../../mutable_static_owner.ts";
 import { runtime_aggregate_type_expr } from "../../runtime_aggregate.ts";
 import { set_local } from "../util.ts";
 import { create_child_core_ctx, create_empty_core_ctx } from "./context.ts";
@@ -151,6 +155,38 @@ function collect_drop_analysis_stmt_locals(
       );
 
     if (static_value) {
+      let materialized_struct_owner = false;
+      if (
+        stmt.kind === "let" &&
+        ctx.materialized_bindings?.has(stmt.name) === true &&
+        value.tag !== "scratch" &&
+        (!ctx.scratch_depth || ctx.scratch_depth === 0)
+      ) {
+        const struct_value = backend.struct.static_struct_value(
+          static_value,
+          ctx,
+        );
+        if (
+          struct_value &&
+          !(
+            struct_value.type_expr.tag === "var" &&
+            struct_value.type_expr.name === "object_type"
+          )
+        ) {
+          materialized_struct_owner = true;
+        }
+      }
+      if (
+        stmt.kind === "let" &&
+        (materialized_struct_owner ||
+          (value.tag !== "scratch" &&
+            static_owner_value_materializes(static_value, ctx)) ||
+          (mutable_static_owner_value_materializes(static_value) &&
+            ctx.mutable_bindings && ctx.mutable_bindings.has(stmt.name)))
+      ) {
+        collect_stmt_locals_for_proof(backend, stmt, ctx);
+        return;
+      }
       if (
         stmt.kind === "let" && static_value.tag === "lam" &&
         !drop_analysis_expr_returns_closure_value(static_value.body)
@@ -211,15 +247,26 @@ function collect_drop_analysis_stmt_locals(
   }
 
   if (stmt.tag === "assign") {
+    const value = backend.type_check.core_assignment_value(stmt, ctx);
     const static_value = drop_analysis_runtime_binding_static_expr_value(
       backend,
-      stmt.value,
+      value,
       ctx,
       (inner_stmt, block_ctx) =>
         collect_drop_analysis_stmt_locals(backend, inner_stmt, block_ctx),
     );
 
     if (static_value) {
+      if (
+        (value.tag !== "scratch" &&
+          static_owner_value_materializes(static_value, ctx)) ||
+        (mutable_static_owner_value_materializes(static_value) &&
+          ctx.mutable_bindings &&
+          ctx.mutable_bindings.has(stmt.name))
+      ) {
+        collect_stmt_locals_for_proof(backend, stmt, ctx);
+        return;
+      }
       if (
         static_value.tag === "lam" &&
         !drop_analysis_expr_returns_closure_value(static_value.body)
@@ -248,8 +295,8 @@ function collect_drop_analysis_stmt_locals(
       return;
     }
 
-    if (is_drop_analysis_freeze_consumption(stmt.value)) {
-      const fn_type = drop_analysis_closure_fn_type(backend, stmt.value, ctx);
+    if (is_drop_analysis_freeze_consumption(value)) {
+      const fn_type = drop_analysis_closure_fn_type(backend, value, ctx);
 
       if (fn_type) {
         bind_drop_analysis_closure(stmt.name, fn_type, ctx, undefined, true);
@@ -257,9 +304,9 @@ function collect_drop_analysis_stmt_locals(
       }
 
       if (
-        backend.text.core_expr_has_runtime_text_fact(stmt.value, ctx) ||
-        core_runtime_aggregate_type_for_ownership(backend, stmt.value, ctx) ||
-        backend.union.runtime_union_type_expr(stmt.value, ctx)
+        backend.text.core_expr_has_runtime_text_fact(value, ctx) ||
+        core_runtime_aggregate_type_for_ownership(backend, value, ctx) ||
+        backend.union.runtime_union_type_expr(value, ctx)
       ) {
         collect_stmt_locals_for_proof(backend, stmt, ctx);
         return;
@@ -271,7 +318,7 @@ function collect_drop_analysis_stmt_locals(
       return;
     }
 
-    const fn_type = drop_analysis_closure_fn_type(backend, stmt.value, ctx);
+    const fn_type = drop_analysis_closure_fn_type(backend, value, ctx);
 
     if (fn_type) {
       bind_drop_analysis_closure(stmt.name, fn_type, ctx, undefined, false);

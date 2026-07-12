@@ -3,12 +3,18 @@ import {
   type CoreHostImportCtx,
 } from "../host_import.ts";
 import { core_expr_ownership, type CoreOwnership } from "../ownership.ts";
+import { runtime_aggregate_layout } from "../runtime_aggregate.ts";
+import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
 import { emit_host_transfer } from "./emit.ts";
 import {
   drop_static_value,
   is_drop_static_non_runtime_closure,
   is_drop_static_ownerless_value,
 } from "./static_owner.ts";
+import {
+  static_drop_function_params,
+  static_drop_function_terminal_linear_name,
+} from "./static_function.ts";
 import { resolve_drop_owner } from "./state.ts";
 import type {
   CoreDropExprResult,
@@ -31,7 +37,69 @@ export function moved_expr_owner(
     return direct;
   }
 
+  const static_call_result = moved_static_call_result_owner(
+    expr,
+    owners,
+    state,
+  );
+
+  if (static_call_result) {
+    return static_call_result;
+  }
+
   return simple_expr_result_owner(state.expr_results.get(expr));
+}
+
+function moved_static_call_result_owner(
+  expr: CoreExpr,
+  owners: Map<string, CoreDropOwner>,
+  state: CoreDropState,
+): CoreDropOwner | undefined {
+  if (expr.tag !== "app") {
+    return undefined;
+  }
+
+  if (expr.func.tag !== "var" && expr.func.tag !== "linear") {
+    return undefined;
+  }
+
+  const target = state.functions.get(expr.func.name);
+
+  if (!target) {
+    return undefined;
+  }
+
+  const result_name = static_drop_function_terminal_linear_name(target);
+
+  if (!result_name) {
+    return undefined;
+  }
+
+  const params = static_drop_function_params(target);
+
+  if (params) {
+    for (let index = 0; index < params.length; index += 1) {
+      const param = params[index];
+
+      if (!param) {
+        throw new Error("Missing static drop call parameter");
+      }
+
+      if (param.name !== result_name) {
+        continue;
+      }
+
+      const arg = expr.args[index];
+
+      if (!arg) {
+        throw new Error("Missing static drop call argument");
+      }
+
+      return moved_expr_owner(arg, owners, state);
+    }
+  }
+
+  return owners.get(resolve_drop_owner(result_name, state));
 }
 
 export function consume_runtime_union_payload_owner<ctx>(
@@ -43,6 +111,14 @@ export function consume_runtime_union_payload_owner<ctx>(
 ): void {
   const runtime_value = hooks.runtime_union_value(expr, ctx);
   if (!runtime_value) {
+    return;
+  }
+
+  const static_value = drop_static_value(expr, ctx, hooks);
+  if (
+    static_value && is_drop_static_ownerless_value(static_value) &&
+    !(static_value.tag === "union_case" && static_value.resume_payload)
+  ) {
     return;
   }
 
@@ -70,12 +146,56 @@ export function consume_runtime_union_payload_owner<ctx>(
 
   if (
     moved_owner.ownership.reason !== "runtime_aggregate" &&
-    moved_owner.ownership.reason !== "runtime_union"
+    moved_owner.ownership.reason !== "runtime_union" &&
+    !(moved_owner.ownership.reason === "closure" &&
+      runtime_value.resume_payload)
   ) {
     return;
   }
 
   owners.delete(moved_owner.name);
+}
+
+export function consume_runtime_aggregate_resume_field_owners<ctx>(
+  expr: Extract<CoreExpr, { tag: "struct_value" }>,
+  owners: Map<string, CoreDropOwner>,
+  ctx: ctx,
+  hooks: CoreDropHooks<ctx>,
+  state: CoreDropState,
+): void {
+  const aggregate_ownership = unique_heap_ownership(expr, ctx, hooks);
+  if (
+    !aggregate_ownership ||
+    aggregate_ownership.reason !== "runtime_aggregate"
+  ) {
+    return;
+  }
+  const type_value = static_type_value(
+    expr.type_expr,
+    ctx as ctx & TypeStaticCtx,
+  );
+  if (!type_value || type_value.tag !== "struct_type") {
+    return;
+  }
+  const layout = runtime_aggregate_layout(
+    expr,
+    ctx as ctx & TypeStaticCtx,
+  );
+  for (const field of expr.fields) {
+    const field_layout = layout.fields.find((candidate) => {
+      return candidate.name === field.name;
+    });
+    if (
+      !field_layout || field_layout.tag !== "value" || !field_layout.resume
+    ) {
+      continue;
+    }
+    const moved_owner = moved_expr_owner(field.value, owners, state);
+    if (!moved_owner || moved_owner.ownership.reason !== "closure") {
+      continue;
+    }
+    owners.delete(moved_owner.name);
+  }
 }
 
 export function expr_consumes_owner_name(
@@ -202,6 +322,7 @@ export function consume_host_transfer_args<ctx>(
         index,
         owner_name,
         owner.ownership,
+        owner.subject || arg,
         state,
       );
       continue;
@@ -223,6 +344,7 @@ export function consume_host_transfer_args<ctx>(
       index,
       undefined,
       ownership,
+      arg,
       state,
     );
   }
@@ -291,14 +413,19 @@ function moved_named_owner(
   owners: Map<string, CoreDropOwner>,
   state: CoreDropState,
 ): CoreDropOwner | undefined {
-  if (expr.tag !== "var") {
+  if (expr.tag !== "var" && expr.tag !== "linear") {
     return undefined;
   }
 
   const temporary = state.temporary_aliases.get(expr.name);
 
   if (temporary) {
-    return { name: "", ownership: temporary };
+    return {
+      name: "",
+      ownership: temporary.ownership,
+      pointer: "temporary",
+      subject: temporary.subject,
+    };
   }
 
   return owners.get(resolve_drop_owner(expr.name, state));
@@ -322,7 +449,7 @@ function mark_named_final_owner_escape(
   expr: CoreExpr,
   owners: Map<string, CoreDropOwner>,
 ): boolean {
-  if (expr.tag !== "var") {
+  if (expr.tag !== "var" && expr.tag !== "linear") {
     return false;
   }
 
@@ -378,7 +505,10 @@ function unique_heap_static_aggregate_ownership<ctx>(
     return undefined;
   }
 
-  if (ownership.reason !== "runtime_aggregate") {
+  if (
+    ownership.reason !== "runtime_aggregate" &&
+    ownership.reason !== "runtime_union"
+  ) {
     return undefined;
   }
 

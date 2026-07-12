@@ -10,6 +10,7 @@ import {
 import { core_escape_analysis, type CoreEscapeAnalysis } from "./escape.ts";
 import type { CoreOwnershipHooks } from "./ownership.ts";
 import { dynamic_if_let_can_match } from "./union_static.ts";
+import { record_core_diagnostic_subject } from "./source_origin.ts";
 
 export { core_scratch_exit_edges, type CoreCleanupExitEdge };
 export {
@@ -146,6 +147,7 @@ function scan_cleanup_expr<ctx>(
         exit_edges: core_scratch_exit_edges(expr.body),
         return_value: core_escape_analysis("scratch_return", ownership),
       };
+      record_core_diagnostic_subject(step, expr);
       if (return_detail) {
         step.return_detail = return_detail;
       }

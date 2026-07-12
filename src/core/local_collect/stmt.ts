@@ -13,7 +13,12 @@ import {
   runtime_text_index_assign_plan,
 } from "../runtime_text.ts";
 import { static_core_call_branch_value } from "../static_call.ts";
+import { static_scratch_aggregate_alias_materializes } from "../static_values.ts";
 import { static_function_value } from "../type_static.ts";
+import {
+  mutable_static_owner_value_materializes,
+  static_owner_value_materializes,
+} from "../mutable_static_owner.ts";
 import type { CoreCtx, CoreLocalCollectHooks } from "./types.ts";
 
 export type CoreStmtLocalCollectApi = {
@@ -98,6 +103,42 @@ export function collect_core_stmt_locals(
 
       if (hooks.is_static_value_expr(value, ctx)) {
         const plan = hooks.plan_static_value_expr(value, ctx, undefined);
+        const materialized_struct_owner = stmt.kind === "let" &&
+          ctx.materialized_bindings?.has(stmt.name) === true &&
+          value.tag !== "scratch" &&
+          (!ctx.scratch_depth || ctx.scratch_depth === 0) &&
+          plan.value.tag === "struct_value" &&
+          !(
+            plan.value.type_expr.tag === "var" &&
+            plan.value.type_expr.name === "object_type"
+          );
+        if (
+          static_scratch_aggregate_alias_materializes(value) ||
+          materialized_struct_owner ||
+          (value.tag !== "scratch" &&
+            static_owner_value_materializes(plan.value, ctx)) ||
+          mutable_static_owner_binding(stmt.name, plan.value, ctx)
+        ) {
+          ctx.statics.delete(stmt.name);
+          api.collect_expr_locals(plan.value, ctx, hooks);
+          set_local(ctx.locals, stmt.name, hooks.expr_type(plan.value, ctx));
+          hooks.bind_core_fn_type(stmt.name, plan.value, ctx);
+          hooks.bind_core_struct_type(
+            stmt.name,
+            plan.value,
+            stmt.annotation,
+            ctx,
+          );
+          hooks.bind_core_union_type(
+            stmt.name,
+            plan.value,
+            stmt.annotation,
+            ctx,
+          );
+          ctx.text_locals.delete(stmt.name);
+          bind_core_frozen_fact(stmt.name, value, ctx);
+          return;
+        }
         ctx.locals.delete(stmt.name);
         ctx.statics.set(stmt.name, plan.value);
         hooks.clear_core_local_facts(stmt.name, ctx);
@@ -113,7 +154,7 @@ export function collect_core_stmt_locals(
 
       if (
         stmt.annotation === "Text" || stmt.annotation === "Bytes" ||
-        hooks.core_expr_has_runtime_text_fact(value, ctx)
+        hooks.core_expr_is_text(value, ctx)
       ) {
         ctx.text_locals.add(stmt.name);
       } else {
@@ -130,45 +171,77 @@ export function collect_core_stmt_locals(
         ctx.locals.has(stmt.name) || ctx.statics.has(stmt.name),
         "Cannot assign unbound core local: " + stmt.name,
       );
+      {
+        const value = hooks.core_assignment_value(stmt, ctx);
 
-      if (hooks.is_static_value_expr(stmt.value, ctx)) {
-        const plan = hooks.plan_static_value_expr(
-          stmt.value,
+        if (hooks.is_static_value_expr(value, ctx)) {
+          const plan = hooks.plan_static_value_expr(
+            value,
+            ctx,
+            undefined,
+          );
+          if (
+            static_scratch_aggregate_alias_materializes(value) ||
+            (value.tag !== "scratch" &&
+              static_owner_value_materializes(plan.value, ctx)) ||
+            mutable_static_owner_binding(stmt.name, plan.value, ctx)
+          ) {
+            ctx.statics.delete(stmt.name);
+            api.collect_expr_locals(plan.value, ctx, hooks);
+            set_local(ctx.locals, stmt.name, hooks.expr_type(plan.value, ctx));
+            hooks.bind_core_fn_type(stmt.name, plan.value, ctx);
+            hooks.bind_core_assignment_struct_type(
+              stmt.name,
+              value,
+              stmt.mode,
+              ctx,
+            );
+            hooks.bind_core_assignment_union_type(
+              stmt.name,
+              value,
+              stmt.mode,
+              ctx,
+            );
+            ctx.text_locals.delete(stmt.name);
+            bind_core_frozen_fact(stmt.name, value, ctx);
+            declare_assignment_cleanup_locals(stmt, value, ctx, hooks);
+            return;
+          }
+          ctx.locals.delete(stmt.name);
+          ctx.statics.set(stmt.name, plan.value);
+          hooks.clear_core_local_facts(stmt.name, ctx);
+          return;
+        }
+
+        ctx.statics.delete(stmt.name);
+        api.collect_expr_locals(value, ctx, hooks);
+        set_local(ctx.locals, stmt.name, hooks.expr_type(value, ctx));
+        hooks.bind_core_fn_type(stmt.name, value, ctx);
+        hooks.bind_core_assignment_struct_type(
+          stmt.name,
+          value,
+          stmt.mode,
           ctx,
-          undefined,
         );
-        ctx.locals.delete(stmt.name);
-        ctx.statics.set(stmt.name, plan.value);
-        hooks.clear_core_local_facts(stmt.name, ctx);
+        hooks.bind_core_assignment_union_type(
+          stmt.name,
+          value,
+          stmt.mode,
+          ctx,
+        );
+
+        if (hooks.core_expr_is_text(value, ctx)) {
+          ctx.text_locals.add(stmt.name);
+        } else {
+          ctx.text_locals.delete(stmt.name);
+        }
+
+        bind_core_frozen_fact(stmt.name, value, ctx);
+
+        declare_assignment_cleanup_locals(stmt, value, ctx, hooks);
+
         return;
       }
-
-      ctx.statics.delete(stmt.name);
-      api.collect_expr_locals(stmt.value, ctx, hooks);
-      set_local(ctx.locals, stmt.name, hooks.expr_type(stmt.value, ctx));
-      hooks.bind_core_fn_type(stmt.name, stmt.value, ctx);
-      hooks.bind_core_assignment_struct_type(
-        stmt.name,
-        stmt.value,
-        stmt.mode,
-        ctx,
-      );
-      hooks.bind_core_assignment_union_type(
-        stmt.name,
-        stmt.value,
-        stmt.mode,
-        ctx,
-      );
-
-      if (hooks.core_expr_has_runtime_text_fact(stmt.value, ctx)) {
-        ctx.text_locals.add(stmt.name);
-      } else {
-        ctx.text_locals.delete(stmt.name);
-      }
-
-      bind_core_frozen_fact(stmt.name, stmt.value, ctx);
-
-      return;
 
     case "index_assign":
       {
@@ -307,6 +380,44 @@ export function collect_core_stmt_locals(
     case "unsupported":
       return;
   }
+}
+
+function declare_assignment_cleanup_locals(
+  stmt: Extract<CoreStmt, { tag: "assign" }>,
+  value: CoreExpr,
+  ctx: CoreCtx,
+  hooks: CoreLocalCollectHooks,
+): void {
+  for (const row of core_statement_cleanup_rows(stmt)) {
+    if (row.edge !== "assignment_replace") {
+      continue;
+    }
+    expect(
+      row.replacement_value_local,
+      "Assignment replacement cleanup requires a value local",
+    );
+    expect(
+      row.replacement_old_local,
+      "Assignment replacement cleanup requires an old-owner local",
+    );
+    set_local(
+      ctx.locals,
+      row.replacement_value_local,
+      hooks.expr_type(value, ctx),
+    );
+    set_local(ctx.locals, row.replacement_old_local, "i32");
+  }
+}
+
+function mutable_static_owner_binding(
+  name: string,
+  value: CoreExpr,
+  ctx: CoreCtx,
+): boolean {
+  if (!ctx.mutable_bindings || !ctx.mutable_bindings.has(name)) {
+    return false;
+  }
+  return mutable_static_owner_value_materializes(value);
 }
 
 function bind_core_frozen_fact(

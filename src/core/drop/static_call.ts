@@ -139,7 +139,7 @@ export function static_drop_call_bindings<ctx>(
         return undefined;
       }
 
-      bindings.set(param.name, { tag: "temporary", ownership });
+      bindings.set(param.name, { tag: "temporary", ownership, subject: arg });
       continue;
     }
 

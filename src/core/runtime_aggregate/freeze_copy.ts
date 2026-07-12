@@ -29,6 +29,7 @@ import type {
 export function emit_runtime_aggregate_freeze_copy<
   ctx extends RuntimeAggregateEmitCtx & TypeStaticCtx,
 >(
+  subject: CoreExpr,
   source: CoreExpr,
   type_expr: CoreExpr,
   ctx: ctx,
@@ -39,11 +40,20 @@ export function emit_runtime_aggregate_freeze_copy<
   declare_runtime_aggregate_locals(plan, ctx);
   ctx.heap.needed = true;
   const lines = [
-    emit_persistent_alloc("i32.const " + layout.size.toString(), 8),
+    emit_persistent_alloc(
+      ctx,
+      subject,
+      "i32.const " + layout.size.toString(),
+      8,
+      "runtime_aggregate",
+      "runtime_aggregate.aligned_fields",
+      "runtime_aggregate.freeze_copy",
+    ),
     "local.set $" + plan.local,
   ];
 
   emit_runtime_aggregate_freeze_copy_field_stores(
+    subject,
     plan.local,
     source,
     layout.fields,
@@ -87,6 +97,7 @@ export function runtime_aggregate_freeze_copy_supported<
 function emit_runtime_aggregate_freeze_copy_field_stores<
   ctx extends RuntimeAggregateEmitCtx & TypeStaticCtx,
 >(
+  subject: CoreExpr,
   local_name: string,
   source: CoreExpr,
   fields: RuntimeAggregateField[],
@@ -107,6 +118,7 @@ function emit_runtime_aggregate_freeze_copy_field_stores<
 
     if (field_info.tag === "struct") {
       emit_runtime_aggregate_freeze_copy_field_stores(
+        subject,
         local_name,
         source_field,
         field_info.fields,
@@ -133,6 +145,7 @@ function emit_runtime_aggregate_freeze_copy_field_stores<
       );
       lines.push(
         hooks.emit_runtime_union_freeze_copy(
+          subject,
           source_field,
           field_info.union_type_expr,
           ctx,
@@ -141,7 +154,7 @@ function emit_runtime_aggregate_freeze_copy_field_stores<
       );
     } else if (field_info.text) {
       lines.push(
-        emit_runtime_text_freeze_copy(source_field, ctx, {
+        emit_runtime_text_freeze_copy(subject, source_field, ctx, {
           emit_expr: hooks.emit_expr,
         }),
       );

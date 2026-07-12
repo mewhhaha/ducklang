@@ -41,22 +41,30 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
         this.peek().kind === "symbol" &&
         (this.peek().text === "." || this.peek().text === "|")
       ) {
+        const body_start = this.index;
         const sum = this.parse_sum_type(name);
         return {
           tag: "type",
           name,
           params,
-          body: { tag: "sum", cases: sum.cases },
+          body: this.concrete_node(body_start, {
+            tag: "sum",
+            cases: sum.cases,
+          }),
           recursive: sum.recursive,
         };
       }
 
+      const body_start = this.index;
       const alias = this.consume_type_member(name, new Set());
       return {
         tag: "type",
         name,
         params,
-        body: { tag: "alias", type_name: alias.text },
+        body: this.concrete_node(body_start, {
+          tag: "alias",
+          type_name: alias.text,
+        }),
         recursive: alias.recursive,
       };
     } finally {
@@ -70,6 +78,7 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
     body: Extract<TypeDeclaration["body"], { tag: "product" }>;
     recursive: boolean;
   } {
+    const start = this.index;
     this.expect_symbol("[");
     this.skip_newlines();
     const fields: TypeField[] = [];
@@ -79,12 +88,17 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
 
     if (this.match_symbol("]")) {
       return {
-        body: { tag: "product", fields, positional: true },
+        body: this.concrete_node(start, {
+          tag: "product",
+          fields,
+          positional: true,
+        }),
         recursive,
       };
     }
 
     while (true) {
+      const field_start = this.index;
       const named = this.peek().kind === "symbol" && this.peek().text === ".";
 
       if (positional === undefined) {
@@ -113,7 +127,10 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
         declaration_name,
         new Set([",", "]", "|"]),
       );
-      fields.push({ name: field_name, type_name: member.text });
+      fields.push(this.concrete_node(field_start, {
+        name: field_name,
+        type_name: member.text,
+      }));
 
       if (member.recursive) {
         recursive = true;
@@ -138,7 +155,11 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
 
     expect(positional !== undefined, "Missing product kind");
     return {
-      body: { tag: "product", fields, positional },
+      body: this.concrete_node(start, {
+        tag: "product",
+        fields,
+        positional,
+      }),
       recursive,
     };
   }
@@ -153,6 +174,7 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
     this.skip_newlines();
 
     while (true) {
+      const case_start = this.index;
       this.expect_symbol(".");
       const case_name = this.expect_name("Expected sum case name");
       expect_snake_case(case_name, "Sum case");
@@ -172,7 +194,10 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
         }
       }
 
-      cases.push({ name: case_name, type_name });
+      cases.push(this.concrete_node(case_start, {
+        name: case_name,
+        type_name,
+      }));
 
       if (this.match_symbol("|")) {
         this.skip_newlines();

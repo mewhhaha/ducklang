@@ -48,8 +48,13 @@ export function emit_runtime_closure_with_type<ctx extends CoreClosureEmitCtx>(
   ctx.heap.needed = true;
   const lines = [
     emit_persistent_alloc(
+      ctx,
+      expr,
       "i32.const " + closure_env_size(lift).toString(),
       8,
+      "closure",
+      "closure_env.table_index_and_capture_slots",
+      "closure.value",
     ),
     "local.set $" + name,
     "local.get $" + name,

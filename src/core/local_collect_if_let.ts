@@ -2,7 +2,7 @@ import type { CoreExpr, CoreStmt } from "./ast.ts";
 import { assigned_stmt_names } from "./assigned_names.ts";
 import { fresh_temp_local, set_local } from "./backend/util.ts";
 import { clone_core_host_imports } from "./host_import.ts";
-import { core_if_let_match_condition, type DynamicUnionIf } from "./if_let.ts";
+import type { DynamicUnionIf } from "./if_let.ts";
 import type { CoreCtx, CoreLocalCollectHooks } from "./local_collect/types.ts";
 import {
   runtime_union_match_info,
@@ -107,7 +107,13 @@ export function collect_core_if_let_stmt_locals(
       undefined,
     );
 
-    merge_assigned_runtime_facts(stmt, ctx, then_ctx, else_ctx);
+    merge_assigned_runtime_facts(
+      stmt,
+      ctx,
+      then_ctx,
+      else_ctx,
+      hooks,
+    );
 
     return;
   }
@@ -143,14 +149,20 @@ export function collect_core_if_let_stmt_locals(
 
   hooks.merge_if_else_static_assignments(
     stmt,
-    core_if_let_match_condition(stmt.target, stmt.case_name),
+    { tag: "var", name: cond_name },
     branch_ctx.statics,
     else_ctx.statics,
     ctx,
     undefined,
   );
 
-  merge_assigned_runtime_facts(stmt, ctx, branch_ctx, else_ctx);
+  merge_assigned_runtime_facts(
+    stmt,
+    ctx,
+    branch_ctx,
+    else_ctx,
+    hooks,
+  );
 }
 
 export function collect_core_if_let_expr_locals(
@@ -327,6 +339,8 @@ function create_if_let_branch_ctx(ctx: CoreCtx): CoreCtx {
     frozen_locals: clone_optional_set(ctx.frozen_locals),
     host_imports: clone_core_host_imports(ctx.host_imports),
     scratch_depth: ctx.scratch_depth,
+    materialized_bindings: ctx.materialized_bindings,
+    mutable_bindings: ctx.mutable_bindings,
     next_loop: ctx.next_loop,
     next_temp: ctx.next_temp,
   };
@@ -337,9 +351,16 @@ function merge_assigned_runtime_facts(
   target: CoreCtx,
   branch_ctx: CoreCtx,
   else_ctx: CoreCtx,
+  hooks: CoreLocalCollectHooks,
 ): void {
   for (const name of assigned_stmt_names(stmt)) {
-    merge_assigned_text_fact(name, target, branch_ctx, else_ctx);
+    merge_assigned_text_fact(
+      name,
+      target,
+      branch_ctx,
+      else_ctx,
+      hooks,
+    );
     merge_assigned_type_fact(
       name,
       target.struct_locals,
@@ -361,13 +382,35 @@ function merge_assigned_text_fact(
   target: CoreCtx,
   branch_ctx: CoreCtx,
   else_ctx: CoreCtx,
+  hooks: CoreLocalCollectHooks,
 ): void {
-  if (branch_ctx.text_locals.has(name) && else_ctx.text_locals.has(name)) {
+  if (
+    binding_has_text_fact(name, branch_ctx, hooks) &&
+    binding_has_text_fact(name, else_ctx, hooks)
+  ) {
     target.text_locals.add(name);
     return;
   }
 
   target.text_locals.delete(name);
+}
+
+function binding_has_text_fact(
+  name: string,
+  ctx: CoreCtx,
+  hooks: CoreLocalCollectHooks,
+): boolean {
+  if (ctx.text_locals.has(name)) {
+    return true;
+  }
+
+  const value = ctx.statics.get(name);
+
+  if (!value) {
+    return false;
+  }
+
+  return hooks.static_text_value(value, ctx) !== undefined;
 }
 
 function merge_assigned_type_fact(

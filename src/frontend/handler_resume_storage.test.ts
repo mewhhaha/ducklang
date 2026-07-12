@@ -1,4 +1,5 @@
 import { assert_equals } from "../assert.ts";
+import { Core } from "../core.ts";
 import { Source } from "../frontend.ts";
 
 const prelude = `
@@ -10,6 +11,24 @@ let run = () => {
   value <- Suspend.pause()
   value + 1
 }
+`;
+
+const stored_resume_source = `
+const resume_box_type = struct {
+  resume: Resume
+}
+
+${prelude}
+let suspend = Suspend {
+  pause: (!resume) => {
+    let !box: resume_box_type = resume_box_type { resume: !resume }
+    let !later: Resume = !box.resume
+    !later(41)
+  },
+  return: (value: I32) => value,
+}
+
+try run() with suspend
 `;
 
 async function run_i32(source: string): Promise<number> {
@@ -56,25 +75,50 @@ try run() with suspend
 });
 
 Deno.test("a resumption can be stored in and extracted from a struct", async () => {
+  assert_equals(await run_i32(stored_resume_source), 42);
+});
+
+Deno.test("extracting a stored resumption detaches its closure allocation", () => {
+  const proof = Core.proof(Source.core(stored_resume_source));
+
+  assert_equals(proof.issues, []);
   assert_equals(
-    await run_i32(`
-const resume_box_type = struct {
-  resume: Resume
-}
-
-${prelude}
-let suspend = Suspend {
-  pause: (!resume) => {
-    let !box: resume_box_type = resume_box_type { resume: !resume }
-    let !later: Resume = !box.resume
-    !later(41)
-  },
-  return: (value: I32) => value,
-}
-
-try run() with suspend
-`),
-    42,
+    proof.allocations.facts.map((fact) => ({
+      allocation_id: fact.allocation_id,
+      reason: fact.reason,
+      owned_children: fact.owned_children,
+    })),
+    [
+      {
+        allocation_id: "allocation#0",
+        reason: "runtime_aggregate",
+        owned_children: undefined,
+      },
+      {
+        allocation_id: "allocation#1",
+        reason: "closure",
+        owned_children: undefined,
+      },
+    ],
+  );
+  assert_equals(
+    proof.drops.steps.map((step) => ({
+      allocation_id: step.allocation_id,
+      owner: step.owner,
+      owned_children: step.owned_children,
+    })),
+    [
+      {
+        allocation_id: "allocation#0",
+        owner: "box",
+        owned_children: undefined,
+      },
+      {
+        allocation_id: "allocation#1",
+        owner: "later",
+        owned_children: undefined,
+      },
+    ],
   );
 });
 
