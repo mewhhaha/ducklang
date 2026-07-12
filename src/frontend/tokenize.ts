@@ -2,7 +2,11 @@ import { expect } from "../expect.ts";
 import type { Token } from "./ast.ts";
 import { is_digit, is_name_continue, is_name_start } from "./names.ts";
 
-export function tokenize(text: string): Token[] {
+export type TokenizeOptions = {
+  comments?: boolean;
+};
+
+export function tokenize(text: string, options?: TokenizeOptions): Token[] {
   const tokens: Token[] = [];
   let index = 0;
   let line = 1;
@@ -21,9 +25,21 @@ export function tokenize(text: string): Token[] {
       line += 1;
       column = 1;
     } else if (char === "/" && text[index + 1] === "/") {
+      const start = index;
+      const start_column = column;
+
       while (index < text.length && text[index] !== "\n") {
         index += 1;
         column += 1;
+      }
+
+      if (options?.comments) {
+        tokens.push({
+          kind: "comment",
+          text: text.slice(start, index),
+          line,
+          column: start_column,
+        });
       }
     } else if (is_digit(char)) {
       const start = index;

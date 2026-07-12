@@ -323,6 +323,7 @@ export type TokenKind =
   | "character"
   | "symbol"
   | "newline"
+  | "comment"
   | "eof";
 
 export type Token = {

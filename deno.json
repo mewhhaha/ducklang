@@ -1,4 +1,7 @@
 {
+  "tasks": {
+    "ix": "deno run --allow-read --allow-write ix.ts"
+  },
   "imports": {
     "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.0"
   },
