@@ -1,6 +1,9 @@
 run:
   deno run --allow-read --allow-write main.ts
 
+ix *args:
+  deno run --allow-read --allow-write ix.ts {{args}}
+
 wasm wat_file="build/out.wat" wasm_file="build/out.wasm":
   mkdir -p build
   wat2wasm {{wat_file}} -o {{wasm_file}}

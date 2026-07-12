@@ -55,6 +55,28 @@ changing Helix configuration.
 The tests use Deno and expect `wat2wasm` to be available for Wasm integration
 checks.
 
+## Tooling CLI
+
+`ix.ts` is the language CLI. It hosts the formatter and the language server,
+which live decoupled from the compiler pipeline in `src/fmt/` and `src/lsp/`:
+
+```sh
+just ix fmt examples        # format .ix files in place
+just ix fmt --check src     # report unformatted files without writing
+just ix fmt --stdin         # format stdin to stdout
+just ix check examples      # parse files and report diagnostics
+just ix lsp                 # run the language server over stdio
+```
+
+The formatter is deliberately biased: two-space indentation, fixed spacing,
+collapsed blank runs, canonical string escapes, and no configuration. It
+re-emits the comment-preserving token stream without reflowing lines, and it
+refuses to rewrite files that do not parse. The language server provides parse
+diagnostics, document formatting, and document symbols.
+
+`just install` registers the language server and enables format-on-save for
+`.ix` files in Helix alongside the Tree-sitter grammar.
+
 ## Example
 
 ```txt

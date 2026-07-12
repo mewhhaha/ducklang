@@ -66,6 +66,10 @@ if (start >= 0) {
 }
 
 const managed_block = `${begin_marker}
+[language-server.ix]
+command = "deno"
+args = ["run", "--allow-read", "${repository}/ix.ts", "lsp"]
+
 [[language]]
 name = "ix"
 language-id = "ix"
@@ -77,6 +81,9 @@ comment-token = "//"
 grammar = "ix"
 rainbow-brackets = true
 indent = { tab-width = 2, unit = "  " }
+language-servers = ["ix"]
+auto-format = true
+formatter = { command = "deno", args = ["run", "${repository}/ix.ts", "fmt", "--stdin"] }
 
 [[grammar]]
 name = "ix"
