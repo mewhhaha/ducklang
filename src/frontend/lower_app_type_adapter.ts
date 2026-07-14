@@ -32,6 +32,10 @@ export type FrontendAppTypeApi = {
     annotation: string,
     env: Env,
   ) => FrontType | undefined;
+  try_eval_all_const_call: (
+    expr: Extract<FrontExpr, { tag: "app" }>,
+    env: Env,
+  ) => FrontExpr | undefined;
 };
 
 export type FrontendAppType = {
@@ -55,6 +59,23 @@ export function create_frontend_app_type(
     env: Env,
     depth = 0,
   ): IcNode | undefined {
+    const const_value = api.try_eval_all_const_call(expr, env);
+
+    if (const_value) {
+      return lower_expr_as_front_type(const_value, type, env, {
+        infer_expr: api.infer_expr,
+        lower_app_as_front_type: (nested, nested_type, nested_env) =>
+          lower_app_as_front_type(
+            nested,
+            nested_type,
+            nested_env,
+            depth + 1,
+          ),
+        lower_expr: api.lower_expr,
+        resolve_annotation_type: api.resolve_annotation_type,
+      });
+    }
+
     const rec_app = api.lower_static_rec_app_as_front_type(expr, type, env);
 
     if (rec_app) {

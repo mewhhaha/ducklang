@@ -11,6 +11,12 @@ export function lower_app_expr(
   hooks: ExprLowerHooks,
   lower_expr: LowerExprFn,
 ): IcNode {
+  const const_value = hooks.try_eval_all_const_call(expr, env);
+
+  if (const_value) {
+    return lower_expr(const_value, env, hooks);
+  }
+
   const rec = hooks.lower_static_rec_app(expr, env);
 
   if (rec) {
@@ -39,12 +45,6 @@ export function lower_app_expr(
 
   if (builtin) {
     return builtin;
-  }
-
-  const const_value = hooks.try_eval_all_const_call(expr, env);
-
-  if (const_value) {
-    return lower_expr(const_value, env, hooks);
   }
 
   const specialized = hooks.lower_specialized_app(expr, env);

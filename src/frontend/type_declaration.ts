@@ -191,7 +191,7 @@ function type_expr_uses_set_surface(type: TypeExpr): boolean {
       return false;
 
     case "array":
-      return type_expr_uses_set_surface(type.element);
+      return true;
 
     case "arrow":
       return type_expr_uses_set_surface(type.param) ||

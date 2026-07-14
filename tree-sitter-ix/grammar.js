@@ -525,6 +525,7 @@ module.exports = grammar({
         $.atom_expression,
         alias("loop", $.identifier),
         $.identifier,
+        alias($.effect_identifier, $.identifier),
         $.linear_reference,
         $.union_case,
       ),
@@ -580,7 +581,7 @@ module.exports = grammar({
         PREC.APPLICATION,
         seq(
           field("function", $.condition_expression),
-          field("argument", $.positional_product),
+          field("argument", $.parenthesized_or_product),
         ),
       ),
 
@@ -705,6 +706,7 @@ module.exports = grammar({
 
     _match_pattern: ($) =>
       choice(
+        $.type_pattern,
         $.union_pattern,
         $.number,
         $.string,
@@ -837,6 +839,7 @@ module.exports = grammar({
         $.boolean,
         alias("loop", $.identifier),
         $.identifier,
+        alias($.effect_identifier, $.identifier),
         $.atom_expression,
         $.import_expression,
         $.named_product,
@@ -898,7 +901,22 @@ module.exports = grammar({
         $.parenthesized_expression,
       ),
 
-    array_expression: ($) => seq("[", optional(commaSep1($._expression)), "]"),
+    array_expression: ($) =>
+      seq(
+        "[",
+        optional(
+          choice(
+            commaSep1($._expression),
+            seq(
+              optional(seq(commaSep1($._expression), ",")),
+              $.array_spread,
+            ),
+          ),
+        ),
+        "]",
+      ),
+
+    array_spread: ($) => seq("...", field("value", $._expression)),
 
     array_repeat_expression: ($) =>
       seq(

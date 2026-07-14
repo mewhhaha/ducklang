@@ -4,6 +4,12 @@ import { lookup_field, lookup_type_field, type_fields_expr } from "./fields.ts";
 import { layout_expr, layout_type } from "./layout.ts";
 import { i32_expr } from "./numeric.ts";
 import { is_builtin_type_name } from "./types.ts";
+import {
+  describe_comptime_cases,
+  describe_comptime_fields,
+  describe_comptime_type,
+} from "./comptime_descriptor.ts";
+import { resolve_comptime_type } from "./comptime_value.ts";
 
 export type ConstBuiltinHooks = {
   capture_expr: (expr: FrontExpr, env: Env) => FrontExpr;
@@ -50,6 +56,9 @@ export function eval_const_builtin(
     expr.func.name !== "has" &&
     expr.func.name !== "fields_of" &&
     expr.func.name !== "cases_of" &&
+    expr.func.name !== "describe_type" &&
+    expr.func.name !== "describe_fields" &&
+    expr.func.name !== "describe_cases" &&
     expr.func.name !== "len" &&
     expr.func.name !== "get"
   ) {
@@ -60,6 +69,15 @@ export function eval_const_builtin(
     expect(expr.args.length === 1, "len expects 1 argument");
     const collection = expr.args[0];
     expect(collection, "Missing len argument");
+    const array = hooks.resolve_const_expr_with_env(collection, env);
+
+    if (
+      array !== undefined && array.expr.tag === "array" &&
+      array.expr.rest === undefined
+    ) {
+      return i32_expr(array.expr.items.length);
+    }
+
     const target = hooks.resolve_struct_value(collection, env);
     expect(target, "len requires a compile-time collection value");
     return i32_expr(target.expr.fields.length);
@@ -85,6 +103,27 @@ export function eval_const_builtin(
   );
   const arg = expr.args[0];
   expect(arg, "Missing " + expr.func.name + " argument");
+
+  if (
+    expr.func.name === "describe_type" ||
+    expr.func.name === "describe_fields" ||
+    expr.func.name === "describe_cases"
+  ) {
+    const type = resolve_comptime_type(arg, env, {
+      resolve_const_expr_with_env: hooks.resolve_const_expr_with_env,
+    });
+    expect(type, expr.func.name + " requires a compile-time type value");
+
+    if (expr.func.name === "describe_type") {
+      return describe_comptime_type(type);
+    }
+
+    if (expr.func.name === "describe_fields") {
+      return describe_comptime_fields(type);
+    }
+
+    return describe_comptime_cases(type);
+  }
 
   if (expr.func.name === "has") {
     if (has_const_fact(arg, env, hooks)) {

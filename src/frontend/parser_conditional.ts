@@ -146,7 +146,17 @@ export abstract class ParserConditional extends ParserAggregate {
 
     while (!this.match_symbol("}")) {
       this.expect_symbol("|");
-      const pattern = this.parse_pattern();
+      let pattern: import("./ast.ts").Pattern;
+
+      if (
+        this.peek().kind === "name" &&
+        (this.peek().text === "struct" || this.peek().text === "union") &&
+        this.peek(1).kind === "symbol" && this.peek(1).text === "{"
+      ) {
+        pattern = { tag: "type", pattern: this.parse_type_pattern() };
+      } else {
+        pattern = this.parse_pattern();
+      }
       let guard: FrontExpr | undefined;
 
       if (this.match_name("if")) {

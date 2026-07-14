@@ -43,6 +43,7 @@ export function create_frontend_program_hooks(
     inline_deferred_const_call: api.inline_deferred_const_call,
     prepare_const_value: api.prepare_const_value,
     resolve_const_field_expr: api.resolve_const_field_expr,
+    resolve_const_expr_with_env: api.resolve_const_expr_with_env,
     resolve_index_expr: api.resolve_index_expr,
     resolve_struct_field_expr: api.resolve_struct_field_expr,
     resolve_union_constructor_call: api.resolve_union_constructor_call,

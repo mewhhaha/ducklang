@@ -1,5 +1,6 @@
 import { expect } from "../expect.ts";
 import type {
+  Env,
   FrontExpr,
   MatchArm,
   Param,
@@ -25,15 +26,41 @@ import {
   elaborate_product_as_expr,
 } from "./aggregate.ts";
 import { pattern_bindings } from "./pattern.ts";
+import {
+  describe_comptime_cases,
+  describe_comptime_fields,
+  describe_comptime_type,
+} from "./comptime_descriptor.ts";
+import { resolve_comptime_type } from "./comptime_value.ts";
+import { lookup_field } from "./fields.ts";
+import { format_expr } from "./format.ts";
+import { normalize_fixed_array_type_lengths } from "./fixed_array_type.ts";
+import { is_builtin_type_name } from "./types.ts";
 
 type TypeSetBinding = {
   annotation: string | undefined;
+  compiletime_only?: boolean;
   value: FrontExpr | undefined;
   union_type?: Extract<FrontExpr, { tag: "union_type" }>;
 };
 
+type TypeSetConstRecursion = {
+  active: Set<string>;
+  memo: Map<string, FrontExpr>;
+  name: string;
+  target: Extract<FrontExpr, { tag: "rec" }>;
+};
+
+type TypeSetConstEvaluation = {
+  recursions: Map<FrontExpr, TypeSetConstRecursion>;
+  steps: number;
+};
+
 type TypeSetScope = {
   bindings: Map<string, TypeSetBinding>;
+  const_evaluation: TypeSetConstEvaluation | undefined;
+  const_recursion: TypeSetConstRecursion | undefined;
+  evaluating_const_call: boolean;
   fresh: { next: number };
   type_values: Map<string, FrontExpr>;
 };
@@ -41,6 +68,9 @@ type TypeSetScope = {
 export function elaborate_front_type_sets(source: Source): Source {
   const scope: TypeSetScope = {
     bindings: new Map(),
+    const_evaluation: undefined,
+    const_recursion: undefined,
+    evaluating_const_call: false,
     fresh: { next: 0 },
     type_values: new Map(),
   };
@@ -63,8 +93,18 @@ export function elaborate_front_type_sets(source: Source): Source {
     }
   }
 
+  let module = source.module;
+
+  if (module !== undefined) {
+    module = {
+      ...module,
+      params: module.params.map((param) => normalize_scope_param(param, scope)),
+    };
+  }
+
   return {
     ...source,
+    module,
     statements: rewrite_statements(source.statements, scope),
   };
 }
@@ -76,6 +116,15 @@ function rewrite_statements(
   const result: Stmt[] = [];
 
   for (const stmt of statements) {
+    let const_rec: Extract<FrontExpr, { tag: "rec" }> | undefined;
+
+    if (
+      stmt.tag === "bind" && stmt.kind === "const" &&
+      stmt.value.tag === "rec"
+    ) {
+      const_rec = stmt.value;
+    }
+
     const rewritten = rewrite_statement(stmt, scope);
     let expanded = [rewritten];
 
@@ -87,25 +136,81 @@ function rewrite_statements(
     }
 
     for (const candidate of expanded) {
-      result.push(candidate);
-
       if (candidate.tag !== "bind") {
+        result.push(candidate);
         continue;
+      }
+
+      const compiletime_only = candidate.kind === "const" &&
+        (candidate.value.tag === "rec" ||
+          (candidate.value.tag === "lam" &&
+            expr_requires_type_specialization(candidate.value.body)));
+      let binding_value = candidate.value;
+
+      if (
+        const_rec !== undefined && stmt.tag === "bind" &&
+        candidate.name === stmt.name
+      ) {
+        binding_value = const_rec;
       }
 
       scope.bindings.set(candidate.name, {
         annotation: candidate.annotation,
-        value: candidate.value,
+        compiletime_only,
+        value: binding_value,
         union_type: binding_union_type(candidate.annotation, scope),
       });
 
       if (candidate.kind === "const") {
-        scope.type_values.set(candidate.name, candidate.value);
+        scope.type_values.set(candidate.name, binding_value);
       }
+
+      if (compiletime_only) {
+        if (scope.evaluating_const_call) {
+          result.push(candidate);
+        }
+
+        continue;
+      }
+
+      if (
+        candidate.kind === "const" &&
+        is_comptime_descriptor_value(candidate.value)
+      ) {
+        continue;
+      }
+
+      result.push(candidate);
     }
   }
 
   return result;
+}
+
+function is_comptime_descriptor_value(expr: FrontExpr): boolean {
+  if (expr.tag === "array" && expr.rest === undefined) {
+    return expr.items.length > 0 &&
+      expr.items.every(is_comptime_descriptor_value);
+  }
+
+  if (expr.tag !== "struct_value") {
+    return false;
+  }
+
+  const kind = lookup_field(expr.fields, "kind");
+
+  if (!kind || kind.value.tag !== "atom") {
+    return false;
+  }
+
+  if (kind.value.name === "field" || kind.value.name === "case") {
+    return true;
+  }
+
+  return lookup_field(expr.fields, "size") !== undefined &&
+    lookup_field(expr.fields, "align") !== undefined &&
+    lookup_field(expr.fields, "fields") !== undefined &&
+    lookup_field(expr.fields, "cases") !== undefined;
 }
 
 function elaborate_binding_pattern(
@@ -259,7 +364,10 @@ function elaborate_pattern_bindings(
     return;
   }
 
-  if (pattern.tag === "literal" || pattern.tag === "union_case") {
+  if (
+    pattern.tag === "literal" || pattern.tag === "union_case" ||
+    pattern.tag === "type"
+  ) {
     throw new Error(
       "Refutable " + pattern.tag +
         " pattern is not allowed in a plain binding",
@@ -671,6 +779,10 @@ function rewrite_statement(stmt: Stmt, scope: TypeSetScope): Stmt {
       return {
         ...stmt,
         annotation,
+        type_annotation: normalize_scope_type_expr(
+          stmt.type_annotation,
+          scope,
+        ),
         value,
       };
     }
@@ -757,6 +869,11 @@ function elaborate_match_expr(
   scope: TypeSetScope,
 ): FrontExpr {
   const target = rewrite_expr(expr.target, scope);
+
+  if (expr.arms.some((arm) => arm.pattern.tag === "type")) {
+    return elaborate_type_match_expr(expr, target, scope);
+  }
+
   const target_shape = resolve_binding_pattern_source(
     target,
     scope,
@@ -815,6 +932,155 @@ function elaborate_match_expr(
   }
 
   return { tag: "block", statements };
+}
+
+function elaborate_type_match_expr(
+  expr: Extract<FrontExpr, { tag: "match" }>,
+  target: FrontExpr,
+  scope: TypeSetScope,
+): FrontExpr {
+  const type_value = resolve_front_type_value(
+    target,
+    scope.type_values,
+    new Set(),
+  );
+  expect(type_value, "Type match requires a compile-time type value");
+
+  if (
+    type_value.tag === "var" && target.tag === "var" &&
+    type_value.name === target.name && !scope.type_values.has(target.name)
+  ) {
+    const arms: MatchArm[] = [];
+
+    for (const arm of expr.arms) {
+      let guard: FrontExpr | undefined;
+
+      if (arm.guard !== undefined) {
+        guard = rewrite_expr(arm.guard, clone_scope(scope));
+      }
+
+      arms.push({
+        ...arm,
+        guard,
+        body: rewrite_expr(arm.body, clone_scope(scope)),
+      });
+    }
+
+    return {
+      ...expr,
+      target,
+      arms,
+    };
+  }
+
+  let result: FrontExpr | undefined;
+
+  for (let index = expr.arms.length - 1; index >= 0; index -= 1) {
+    const arm = expr.arms[index];
+    expect(arm, "Missing type match arm " + index.toString());
+    let matches = false;
+    let body = arm.body;
+
+    if (arm.pattern.tag === "type") {
+      matches = type_pattern_matches(arm.pattern.pattern, type_value, scope);
+    } else if (arm.pattern.tag === "wildcard") {
+      matches = true;
+    } else if (arm.pattern.tag === "binding") {
+      if (arm.pattern.mode === "linear") {
+        throw new Error(
+          "Linear bindings are not supported in compile-time type matches",
+        );
+      }
+
+      matches = true;
+      body = substitute_front_expr(
+        arm.body,
+        new Map([[arm.pattern.name, target]]),
+      );
+    } else {
+      throw new Error(
+        "Compile-time type match arm must use a type pattern or catch-all",
+      );
+    }
+
+    if (!matches) {
+      continue;
+    }
+
+    const rewritten_body = rewrite_expr(body, clone_scope(scope));
+
+    if (arm.guard === undefined) {
+      result = rewritten_body;
+      continue;
+    }
+
+    if (result === undefined) {
+      throw new Error(
+        "Non-exhaustive guarded type match at arm " + index.toString(),
+      );
+    }
+
+    result = {
+      tag: "if",
+      cond: rewrite_expr(arm.guard, clone_scope(scope)),
+      then_branch: rewritten_body,
+      else_branch: result,
+    };
+  }
+
+  expect(result, "Non-exhaustive type match for compile-time type value");
+  return result;
+}
+
+function type_pattern_matches(
+  pattern: import("./ast.ts").TypePattern,
+  value: FrontExpr,
+  scope: TypeSetScope,
+): boolean {
+  let fields: import("./ast.ts").TypeField[];
+
+  if (pattern.kind === "struct") {
+    if (value.tag !== "struct_type") {
+      return false;
+    }
+
+    fields = value.fields;
+  } else {
+    if (value.tag !== "union_type") {
+      return false;
+    }
+
+    fields = value.cases;
+  }
+
+  for (const expected of pattern.fields) {
+    const actual = fields.find((field) => field.name === expected.name);
+
+    if (!actual) {
+      return false;
+    }
+
+    const expected_type = semantic_type_for_expr(
+      parse_type_expr(tokenize(expected.type_name)),
+      scope,
+      new Set(),
+    );
+    const actual_type = semantic_type_for_expr(
+      parse_type_expr(tokenize(actual.type_name)),
+      scope,
+      new Set(),
+    );
+
+    if (sem_type_key(expected_type) !== sem_type_key(actual_type)) {
+      return false;
+    }
+  }
+
+  if (!pattern.open && fields.length !== pattern.fields.length) {
+    return false;
+  }
+
+  return true;
 }
 
 function direct_pattern_projection_source(expr: FrontExpr): boolean {
@@ -901,6 +1167,10 @@ function elaborate_match_arm(
       ),
       else_branch: fallback,
     };
+  }
+
+  if (arm.pattern.tag === "type") {
+    throw new Error("Type match must be elaborated at compile time");
   }
 
   if (arm.pattern.tag === "union_case") {
@@ -1168,6 +1438,10 @@ function validate_match_coverage(
       continue;
     }
 
+    if (arm.pattern.tag === "type") {
+      continue;
+    }
+
     if (arm.pattern.tag === "union_case") {
       const case_name = arm.pattern.name;
 
@@ -1272,25 +1546,69 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
     case "type_name":
     case "var":
     case "linear":
-    case "set_type":
-    case "struct_type":
-    case "union_type":
     case "unsupported":
       return expr;
 
-    case "prim":
+    case "set_type":
       return {
+        ...expr,
+        type_expr: normalize_scope_type_expr(expr.type_expr, scope),
+      };
+
+    case "struct_type":
+      return {
+        ...expr,
+        fields: expr.fields.map((field) => ({
+          ...field,
+          type_name: normalize_scope_annotation(field.type_name, scope),
+          set_member: normalize_scope_type_expr(field.set_member, scope),
+        })),
+      };
+
+    case "union_type":
+      return {
+        ...expr,
+        cases: expr.cases.map((union_case) => ({
+          ...union_case,
+          type_name: normalize_scope_annotation(
+            union_case.type_name,
+            scope,
+          ),
+          set_member: normalize_scope_type_expr(
+            union_case.set_member,
+            scope,
+          ),
+        })),
+      };
+
+    case "prim": {
+      const value: FrontExpr = {
         ...expr,
         left: rewrite_expr(expr.left, scope),
         right: rewrite_expr(expr.right, scope),
       };
+      let static_value: number | undefined;
+
+      if (scope.evaluating_const_call) {
+        static_value = static_const_equality(value);
+
+        if (static_value === undefined) {
+          static_value = static_i32_source_value(value);
+        }
+      }
+
+      if (static_value !== undefined) {
+        return { tag: "num", type: "i32", value: static_value };
+      }
+
+      return value;
+    }
 
     case "lam":
     case "rec": {
-      const params = expr.params.map((param) => ({
-        ...param,
-        annotation: lower_direct_type_set_annotation(param.annotation, scope),
-      }));
+      const params = expr.params.map((param) =>
+        normalize_scope_param(param, scope)
+      );
 
       if (
         expr.tag === "rec" &&
@@ -1402,7 +1720,10 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       args = inject_type_set_call_arguments(func, args, scope);
 
       if (arg !== undefined) {
-        if (arg.tag === "product" && func.tag !== "field") {
+        if (
+          arg.tag === "product" && func.tag !== "field" &&
+          args.length === arg.entries.length
+        ) {
           arg = {
             ...arg,
             entries: arg.entries.map((entry, index) => {
@@ -1424,6 +1745,36 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         args = [arg];
       }
 
+      const type_match_call = specialize_type_match_call(func, args, scope);
+
+      if (type_match_call !== undefined) {
+        return rewrite_expr(type_match_call, scope);
+      }
+
+      const descriptor = elaborate_comptime_descriptor_call(func, args, scope);
+
+      if (descriptor !== undefined) {
+        return rewrite_expr(descriptor, scope);
+      }
+
+      const collection = elaborate_const_collection_call(func, args, scope);
+
+      if (collection !== undefined) {
+        return rewrite_expr(collection, scope);
+      }
+
+      const const_directed = elaborate_const_directed_call(func, args, scope);
+
+      if (const_directed !== undefined) {
+        return rewrite_expr(const_directed, scope);
+      }
+
+      const const_call = specialize_const_function_call(func, args, scope);
+
+      if (const_call !== undefined) {
+        return rewrite_expr(const_call, scope);
+      }
+
       return {
         ...expr,
         func,
@@ -1442,15 +1793,32 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       };
 
     case "array": {
+      const items = expr.items.map((item) => rewrite_expr(item, scope));
       let rest = expr.rest;
 
       if (rest !== undefined) {
         rest = rewrite_expr(rest, scope);
+
+        if (scope.evaluating_const_call) {
+          const value = resolve_scope_const_value(rest, scope);
+
+          if (value.tag !== "array" || value.rest !== undefined) {
+            throw new Error(
+              "Compile-time array spread requires a fixed array value",
+            );
+          }
+
+          return {
+            ...expr,
+            items: [...items, ...value.items],
+            rest: undefined,
+          };
+        }
       }
 
       return {
         ...expr,
-        items: expr.items.map((item) => rewrite_expr(item, scope)),
+        items,
         rest,
       };
     }
@@ -1479,8 +1847,22 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         statements: rewrite_statements(expr.statements, clone_scope(scope)),
       };
 
-    case "comptime":
-      return { ...expr, expr: rewrite_expr(expr.expr, scope) };
+    case "comptime": {
+      const evaluation_scope = clone_scope(scope);
+      evaluation_scope.evaluating_const_call = true;
+      evaluation_scope.const_evaluation = {
+        recursions: new Map(),
+        steps: 0,
+      };
+      const value = rewrite_expr(expr.expr, evaluation_scope);
+      const result = unwrap_const_result(value);
+
+      if (scope_const_expr_known(result, evaluation_scope)) {
+        return result;
+      }
+
+      return { ...expr, expr: value };
+    }
 
     case "borrow":
     case "freeze":
@@ -1503,16 +1885,16 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         ...expr,
         state: expr.state.map((state) => ({
           ...state,
+          annotation: lower_direct_type_set_annotation(
+            state.annotation,
+            scope,
+          ),
           value: rewrite_expr(state.value, scope),
         })),
         clauses: expr.clauses.map((clause) => {
-          const params = clause.params.map((param) => ({
-            ...param,
-            annotation: lower_direct_type_set_annotation(
-              param.annotation,
-              scope,
-            ),
-          }));
+          const params = clause.params.map((param) =>
+            normalize_scope_param(param, scope)
+          );
 
           return {
             ...clause,
@@ -1522,6 +1904,7 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         }),
         return_clause: {
           ...expr.return_clause,
+          param: normalize_scope_param(expr.return_clause.param, scope),
           body: rewrite_expr(expr.return_clause.body, clone_scope(scope)),
         },
       };
@@ -1579,23 +1962,104 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       };
     }
 
-    case "field":
-      return { ...expr, object: rewrite_expr(expr.object, scope) };
+    case "field": {
+      let object = rewrite_expr(expr.object, scope);
 
-    case "index":
-      return {
-        ...expr,
-        object: rewrite_expr(expr.object, scope),
-        index: rewrite_expr(expr.index, scope),
-      };
+      if (object.tag === "var") {
+        const const_value = scope.type_values.get(object.name);
+
+        if (
+          const_value !== undefined &&
+          is_comptime_descriptor_value(const_value)
+        ) {
+          object = rewrite_expr(const_value, scope);
+        }
+      }
+
+      if (object.tag === "struct_value") {
+        const field = lookup_field(object.fields, expr.name);
+
+        if (field !== undefined) {
+          return rewrite_expr(field.value, scope);
+        }
+      }
+
+      if (
+        object.tag === "if_let" && object.value_name !== undefined &&
+        object.then_branch.tag === "var" &&
+        object.then_branch.name === object.value_name
+      ) {
+        return {
+          ...object,
+          then_branch: {
+            tag: "field",
+            object: object.then_branch,
+            name: expr.name,
+          },
+        };
+      }
+
+      return { ...expr, object };
+    }
+
+    case "index": {
+      let object = rewrite_expr(expr.object, scope);
+      const index = rewrite_expr(expr.index, scope);
+
+      if (object.tag === "var") {
+        const const_value = scope.type_values.get(object.name);
+
+        if (
+          const_value !== undefined &&
+          is_comptime_descriptor_value(const_value)
+        ) {
+          object = rewrite_expr(const_value, scope);
+        }
+      }
+
+      if (
+        object.tag === "array" && object.rest === undefined &&
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number"
+      ) {
+        const item = object.items[index.value];
+
+        if (item !== undefined) {
+          return rewrite_expr(item, scope);
+        }
+      }
+
+      if (
+        object.tag === "if_let" && object.value_name !== undefined &&
+        object.then_branch.tag === "var" &&
+        object.then_branch.name === object.value_name &&
+        index.tag === "num" && index.type === "i32" &&
+        typeof index.value === "number"
+      ) {
+        return {
+          ...object,
+          then_branch: {
+            tag: "index",
+            object: object.then_branch,
+            index,
+          },
+        };
+      }
+
+      return { ...expr, object, index };
+    }
 
     case "is":
-      return lower_is_boolean(expr, scope);
+      return lower_is_boolean({
+        ...expr,
+        type_expr: normalize_scope_type_expr(expr.type_expr, scope),
+      }, scope);
 
     case "as": {
       const rewritten: Extract<FrontExpr, { tag: "as" }> = {
         ...expr,
         value: rewrite_expr(expr.value, scope),
+        type_expr: normalize_scope_type_expr(expr.type_expr, scope),
       };
       return rewrite_expr(elaborate_product_as_expr(rewritten), scope);
     }
@@ -1620,14 +2084,816 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
   }
 }
 
+function specialize_type_match_call(
+  func: FrontExpr,
+  args: FrontExpr[],
+  scope: TypeSetScope,
+): FrontExpr | undefined {
+  let target = func;
+
+  if (target.tag === "var") {
+    const binding = scope.bindings.get(target.name);
+
+    if (!binding || binding.value === undefined) {
+      return undefined;
+    }
+
+    target = binding.value;
+  }
+
+  if (
+    target.tag !== "lam" ||
+    !expr_requires_type_specialization(target.body)
+  ) {
+    return undefined;
+  }
+
+  if (target.params.length !== args.length) {
+    return undefined;
+  }
+
+  const replacements = new Map<string, FrontExpr>();
+
+  for (let index = 0; index < args.length; index += 1) {
+    const param = target.params[index];
+    const arg = args[index];
+
+    if (!param || !arg) {
+      return undefined;
+    }
+
+    const type = resolve_front_type_value(arg, scope.type_values, new Set());
+
+    if (!type || (type.tag === "var" && !scope.type_values.has(type.name))) {
+      return undefined;
+    }
+
+    replacements.set(param.name, arg);
+  }
+
+  return substitute_front_expr(target.body, replacements);
+}
+
+function specialize_const_function_call(
+  func: FrontExpr,
+  args: FrontExpr[],
+  scope: TypeSetScope,
+): FrontExpr | undefined {
+  if (func.tag === "lam" && scope.evaluating_const_call) {
+    if (func.params.length !== args.length) {
+      return undefined;
+    }
+
+    const replacements = new Map<string, FrontExpr>();
+
+    for (let index = 0; index < args.length; index += 1) {
+      const param = func.params[index];
+      const arg = args[index];
+      expect(param, "Missing const lambda parameter " + index.toString());
+      expect(arg, "Missing const lambda argument " + index.toString());
+      replacements.set(param.name, arg);
+    }
+
+    return substitute_front_expr(func.body, replacements);
+  }
+
+  if (func.tag !== "var") {
+    return undefined;
+  }
+
+  if (
+    scope.evaluating_const_call && func.name === "rec" &&
+    scope.const_recursion !== undefined
+  ) {
+    const recursive_args = args.map(unwrap_const_result);
+
+    if (!recursive_args.every((arg) => scope_const_expr_known(arg, scope))) {
+      return undefined;
+    }
+
+    return specialize_const_rec_call(
+      scope.const_recursion.target,
+      recursive_args,
+      scope,
+      scope.const_recursion.name,
+    );
+  }
+
+  const const_value = scope.type_values.get(func.name);
+
+  if (
+    scope.evaluating_const_call && const_value !== undefined &&
+    const_value.tag === "lam"
+  ) {
+    if (const_value.params.length !== args.length) {
+      return undefined;
+    }
+
+    const replacements = new Map<string, FrontExpr>();
+
+    for (let index = 0; index < args.length; index += 1) {
+      const param = const_value.params[index];
+      const arg = args[index];
+      expect(param, "Missing named const lambda parameter " + index.toString());
+      expect(arg, "Missing named const lambda argument " + index.toString());
+      replacements.set(param.name, arg);
+    }
+
+    return substitute_front_expr(const_value.body, replacements);
+  }
+
+  if (!scope.evaluating_const_call) {
+    return undefined;
+  }
+
+  const binding = scope.bindings.get(func.name);
+
+  if (
+    binding?.compiletime_only !== true || binding.value?.tag !== "rec"
+  ) {
+    return undefined;
+  }
+
+  if (!args.every((arg) => scope_const_expr_known(arg, scope))) {
+    return undefined;
+  }
+
+  return specialize_const_rec_call(binding.value, args, scope, func.name);
+}
+
+function specialize_const_rec_call(
+  target: Extract<FrontExpr, { tag: "rec" }>,
+  initial_args: FrontExpr[],
+  scope: TypeSetScope,
+  name: string,
+): FrontExpr {
+  if (target.params.length !== initial_args.length) {
+    throw new Error(
+      "Const recursive function " + name + " expects " +
+        target.params.length.toString() + " arguments, got " +
+        initial_args.length.toString(),
+    );
+  }
+
+  const context = scope.const_evaluation;
+  expect(context, "Missing compile-time recursion context for " + name);
+  let recursion = context.recursions.get(target);
+
+  if (recursion === undefined) {
+    recursion = {
+      active: new Set(),
+      memo: new Map(),
+      name,
+      target,
+    };
+    context.recursions.set(target, recursion);
+  }
+
+  const key = initial_args.map(format_expr).join(", ");
+  context.steps += 1;
+
+  if (context.steps > 10000) {
+    throw new Error("Compile-time recursion exceeded 10000 steps: " + name);
+  }
+
+  const memoized = recursion.memo.get(key);
+
+  if (memoized !== undefined) {
+    return memoized;
+  }
+
+  if (recursion.active.has(key)) {
+    throw new Error(
+      "Compile-time recursion cycle detected at step " +
+        context.steps.toString() + ": " + key,
+    );
+  }
+
+  recursion.active.add(key);
+
+  try {
+    const replacements = new Map<string, FrontExpr>();
+
+    for (let index = 0; index < initial_args.length; index += 1) {
+      const param = target.params[index];
+      const arg = initial_args[index];
+      expect(param, "Missing const rec parameter " + index.toString());
+      expect(arg, "Missing const rec argument " + index.toString());
+      replacements.set(param.name, arg);
+    }
+
+    const evaluation_scope = clone_scope(scope);
+    evaluation_scope.const_recursion = recursion;
+    evaluation_scope.evaluating_const_call = true;
+    const body = rewrite_expr(
+      substitute_front_expr(target.body, replacements),
+      evaluation_scope,
+    );
+    const result = unwrap_const_result(body);
+    recursion.memo.set(key, result);
+    return result;
+  } finally {
+    recursion.active.delete(key);
+  }
+}
+
+function unwrap_const_result(expr: FrontExpr): FrontExpr {
+  let result = expr;
+
+  while (result.tag === "block") {
+    const replacements = new Map<string, FrontExpr>();
+    let next: FrontExpr | undefined;
+
+    for (let index = 0; index < result.statements.length; index += 1) {
+      const statement = result.statements[index];
+      expect(statement, "Missing compile-time result statement " + index);
+
+      if (
+        statement.tag === "bind" && statement.kind === "const" &&
+        index + 1 < result.statements.length
+      ) {
+        replacements.set(
+          statement.name,
+          substitute_front_expr(statement.value, replacements),
+        );
+        continue;
+      }
+
+      if (
+        statement.tag === "expr" && index + 1 === result.statements.length
+      ) {
+        next = substitute_front_expr(statement.expr, replacements);
+      }
+
+      break;
+    }
+
+    if (next === undefined) {
+      break;
+    }
+
+    result = next;
+  }
+
+  return result;
+}
+
+function scope_const_expr_known(
+  expr: FrontExpr,
+  scope: TypeSetScope,
+): boolean {
+  if (
+    expr.tag === "bool" || expr.tag === "num" || expr.tag === "atom" ||
+    expr.tag === "unit" || expr.tag === "text" || expr.tag === "type_name" ||
+    expr.tag === "set_type" || expr.tag === "struct_type" ||
+    expr.tag === "union_type" || expr.tag === "lam" || expr.tag === "rec"
+  ) {
+    return true;
+  }
+
+  if (expr.tag === "var") {
+    return scope.type_values.has(expr.name) || is_builtin_type_name(expr.name);
+  }
+
+  if (expr.tag === "product") {
+    return expr.entries.every((entry) =>
+      scope_const_expr_known(entry.value, scope)
+    );
+  }
+
+  if (expr.tag === "array" && expr.rest === undefined) {
+    return expr.items.every((item) => scope_const_expr_known(item, scope));
+  }
+
+  if (expr.tag === "struct_value") {
+    return expr.fields.every((field) =>
+      scope_const_expr_known(field.value, scope)
+    );
+  }
+
+  if (expr.tag === "captured" || expr.tag === "comptime") {
+    return scope_const_expr_known(expr.expr, scope);
+  }
+
+  return false;
+}
+
+function elaborate_const_collection_call(
+  func: FrontExpr,
+  args: FrontExpr[],
+  scope: TypeSetScope,
+): FrontExpr | undefined {
+  if (func.tag !== "var" || func.name !== "len") {
+    return undefined;
+  }
+
+  if (args.length !== 1) {
+    throw new Error("len expects one collection value");
+  }
+
+  const arg = args[0];
+  expect(arg, "Missing len collection value");
+  const value = resolve_scope_const_value(arg, scope);
+
+  if (value.tag === "array" && value.rest === undefined) {
+    return { tag: "num", type: "i32", value: value.items.length };
+  }
+
+  if (value.tag === "struct_value") {
+    return { tag: "num", type: "i32", value: value.fields.length };
+  }
+
+  return undefined;
+}
+
+function elaborate_comptime_descriptor_call(
+  func: FrontExpr,
+  args: FrontExpr[],
+  scope: TypeSetScope,
+): FrontExpr | undefined {
+  if (
+    func.tag !== "var" ||
+    (func.name !== "describe_type" && func.name !== "describe_fields" &&
+      func.name !== "describe_cases")
+  ) {
+    return undefined;
+  }
+
+  if (args.length !== 1) {
+    throw new Error(func.name + " expects one compile-time type value");
+  }
+
+  const arg = args[0];
+  expect(arg, "Missing " + func.name + " type argument");
+  const type = resolve_comptime_type_in_scope(arg, scope);
+
+  if (type === undefined) {
+    return undefined;
+  }
+
+  if (func.name === "describe_type") {
+    return describe_comptime_type(type);
+  }
+
+  if (func.name === "describe_fields") {
+    return describe_comptime_fields(type);
+  }
+
+  return describe_comptime_cases(type);
+}
+
+function resolve_comptime_type_in_scope(
+  expr: FrontExpr,
+  scope: TypeSetScope,
+): import("./comptime_value.ts").ComptimeType | undefined {
+  const resolved = resolve_front_type_value(
+    expr,
+    scope.type_values,
+    new Set(),
+  );
+
+  if (
+    resolved?.tag === "var" && expr.tag === "var" &&
+    resolved.name === expr.name && !scope.type_values.has(expr.name) &&
+    !is_builtin_type_name(expr.name)
+  ) {
+    return undefined;
+  }
+
+  const env: Env = { scopes: [], next: new Map() };
+  return resolve_comptime_type(expr, env, {
+    resolve_const_expr_with_env: (value, value_env) => {
+      const resolved = resolve_front_type_value(
+        value,
+        scope.type_values,
+        new Set(),
+      );
+
+      if (resolved === undefined) {
+        return undefined;
+      }
+
+      return { expr: resolved, env: value_env };
+    },
+  });
+}
+
+function elaborate_const_directed_call(
+  func: FrontExpr,
+  args: FrontExpr[],
+  scope: TypeSetScope,
+): FrontExpr | undefined {
+  if (func.tag !== "var") {
+    return undefined;
+  }
+
+  if (func.name === "is_case") {
+    if (args.length !== 2) {
+      throw new Error(
+        "is_case expects a union value and one compile-time case descriptor",
+      );
+    }
+
+    const value = args[0];
+    const descriptor_arg = args[1];
+    expect(value, "is_case is missing its value");
+    expect(descriptor_arg, "is_case is missing its case descriptor");
+    const descriptor = resolve_scope_const_value(descriptor_arg, scope);
+
+    if (descriptor.tag !== "struct_value") {
+      if (
+        descriptor.tag === "var" || descriptor.tag === "field" ||
+        descriptor.tag === "index" || descriptor.tag === "app" ||
+        descriptor.tag === "captured"
+      ) {
+        return undefined;
+      }
+
+      throw new Error("is_case requires a compile-time case descriptor");
+    }
+
+    if (const_descriptor_kind(descriptor) !== "case") {
+      throw new Error("is_case requires a compile-time case descriptor");
+    }
+
+    return {
+      tag: "if_let",
+      case_name: const_descriptor_text(descriptor, "name"),
+      value_name: undefined,
+      target: value,
+      then_branch: { tag: "bool", value: true },
+      else_branch: { tag: "bool", value: false },
+    };
+  }
+
+  if (func.name === "project") {
+    if (args.length !== 2) {
+      throw new Error(
+        "project expects a value and one compile-time field descriptor",
+      );
+    }
+
+    const value = args[0];
+    const descriptor_arg = args[1];
+    expect(value, "project is missing its value");
+    expect(descriptor_arg, "project is missing its field descriptor");
+    const descriptor = resolve_scope_const_value(descriptor_arg, scope);
+
+    if (descriptor.tag !== "struct_value") {
+      if (
+        descriptor.tag === "var" || descriptor.tag === "field" ||
+        descriptor.tag === "index" || descriptor.tag === "app" ||
+        descriptor.tag === "captured"
+      ) {
+        return undefined;
+      }
+
+      throw new Error("project requires a compile-time field descriptor");
+    }
+
+    const name_field = lookup_field(descriptor.fields, "name");
+    const index_field = lookup_field(descriptor.fields, "index");
+
+    if (const_descriptor_kind(descriptor) === "case") {
+      const case_name = const_descriptor_text(descriptor, "name");
+      const payload_name = fresh_is_payload_name("case_" + case_name, scope);
+      const message: FrontExpr = {
+        tag: "text",
+        value: "project expected union case " + case_name,
+      };
+      return {
+        tag: "if_let",
+        case_name,
+        value_name: payload_name,
+        target: value,
+        then_branch: { tag: "var", name: payload_name },
+        else_branch: {
+          tag: "app",
+          func: { tag: "var", name: "panic" },
+          arg: message,
+          args: [message],
+        },
+      };
+    }
+
+    if (
+      name_field !== undefined && name_field.value.tag === "text" &&
+      name_field.value.value.length > 0
+    ) {
+      return {
+        tag: "field",
+        object: value,
+        name: name_field.value.value,
+      };
+    }
+
+    if (
+      index_field === undefined || index_field.value.tag !== "num" ||
+      typeof index_field.value.value !== "number"
+    ) {
+      throw new Error("project descriptor is missing a numeric index");
+    }
+
+    return {
+      tag: "index",
+      object: value,
+      index: {
+        tag: "num",
+        type: "i32",
+        value: index_field.value.value,
+      },
+    };
+  }
+
+  if (func.name !== "construct") {
+    return undefined;
+  }
+
+  if (args.length !== 2) {
+    throw new Error(
+      "construct expects a compile-time type and one aggregate value",
+    );
+  }
+
+  const type_expr = args[0];
+  const values = args[1];
+  expect(type_expr, "construct is missing its type");
+  expect(values, "construct is missing its aggregate value");
+  const descriptor = resolve_scope_const_value(type_expr, scope);
+
+  if (
+    descriptor.tag === "struct_value" &&
+    const_descriptor_kind(descriptor) === "case"
+  ) {
+    const owner = lookup_field(descriptor.fields, "owner");
+    expect(owner, "construct case descriptor is missing its owner type");
+    return {
+      tag: "union_case",
+      name: const_descriptor_text(descriptor, "name"),
+      value: values,
+      type_expr: owner.value,
+    };
+  }
+
+  const type = resolve_comptime_type_in_scope(type_expr, scope);
+
+  if (type === undefined) {
+    return undefined;
+  }
+
+  if (type.tag === "record") {
+    const fields = type.fields.map((field, index) => {
+      expect(field.name !== undefined, "construct record field has no name");
+      let value: FrontExpr;
+
+      if (values.tag === "struct_value") {
+        const source = lookup_field(values.fields, field.name);
+        expect(source, "construct is missing field " + field.name);
+        value = source.value;
+      } else if (values.tag === "product") {
+        const source = values.entries[index];
+        expect(
+          source,
+          "construct is missing field index " + index.toString(),
+        );
+        value = source.value;
+      } else {
+        value = { tag: "field", object: values, name: field.name };
+      }
+
+      return { name: field.name, value };
+    });
+
+    return { tag: "struct_value", type_expr, fields };
+  }
+
+  if (type.tag === "product" || type.tag === "tuple") {
+    let fields: import("./comptime_value.ts").ComptimeTypeField[];
+
+    if (type.tag === "product") {
+      fields = type.entries;
+    } else {
+      fields = type.items.map((item) => ({
+        name: undefined,
+        type: item,
+        source: item.source,
+      }));
+    }
+
+    const entries: Extract<FrontExpr, { tag: "product" }>["entries"] = [];
+
+    for (let index = 0; index < fields.length; index += 1) {
+      const field = fields[index];
+      expect(field, "Missing construct product field " + index.toString());
+      let value: FrontExpr;
+
+      if (values.tag === "product") {
+        const source = values.entries[index];
+        expect(source, "construct is missing product entry " + index);
+        value = source.value;
+      } else {
+        value = {
+          tag: "index",
+          object: values,
+          index: { tag: "num", type: "i32", value: index },
+        };
+      }
+
+      const entry: typeof entries[number] = { value };
+
+      if (field.name !== undefined) {
+        entry.label = field.name;
+      }
+
+      entries.push(entry);
+    }
+
+    return { tag: "product", entries };
+  }
+
+  if (type.tag === "array") {
+    if (values.tag !== "array" || values.rest !== undefined) {
+      throw new Error("construct fixed array requires an array value");
+    }
+
+    if (type.length.tag !== "number") {
+      throw new Error("construct fixed array requires a resolved length");
+    }
+
+    if (values.items.length !== type.length.value) {
+      throw new Error(
+        "construct fixed array expects " + type.length.value.toString() +
+          " values, got " + values.items.length.toString(),
+      );
+    }
+
+    return values;
+  }
+
+  throw new Error("construct does not support type kind " + type.tag);
+}
+
+function const_descriptor_kind(
+  descriptor: Extract<FrontExpr, { tag: "struct_value" }>,
+): string | undefined {
+  const kind = lookup_field(descriptor.fields, "kind");
+
+  if (kind?.value.tag !== "atom") {
+    return undefined;
+  }
+
+  return kind.value.name;
+}
+
+function const_descriptor_text(
+  descriptor: Extract<FrontExpr, { tag: "struct_value" }>,
+  name: string,
+): string {
+  const field = lookup_field(descriptor.fields, name);
+  expect(field, "Compile-time descriptor is missing field " + name);
+  expect(
+    field.value.tag === "text" && field.value.value.length > 0,
+    "Compile-time descriptor field " + name + " must be non-empty Text",
+  );
+  return field.value.value;
+}
+
+function resolve_scope_const_value(
+  expr: FrontExpr,
+  scope: TypeSetScope,
+): FrontExpr {
+  let value = expr;
+  const resolving = new Set<string>();
+
+  while (value.tag === "var") {
+    if (resolving.has(value.name)) {
+      throw new Error("Recursive compile-time value: " + value.name);
+    }
+
+    const binding = scope.bindings.get(value.name);
+
+    if (!binding || binding.value === undefined) {
+      break;
+    }
+
+    resolving.add(value.name);
+    value = binding.value;
+  }
+
+  return rewrite_expr(value, scope);
+}
+
+function expr_requires_type_specialization(expr: FrontExpr): boolean {
+  if (expr.tag === "match") {
+    if (expr.arms.some((arm) => arm.pattern.tag === "type")) {
+      return true;
+    }
+
+    if (expr_requires_type_specialization(expr.target)) {
+      return true;
+    }
+
+    return expr.arms.some((arm) => {
+      if (
+        arm.guard !== undefined &&
+        expr_requires_type_specialization(arm.guard)
+      ) {
+        return true;
+      }
+
+      return expr_requires_type_specialization(arm.body);
+    });
+  }
+
+  if (expr.tag === "app") {
+    if (
+      expr.func.tag === "var" &&
+      (expr.func.name === "describe_type" ||
+        expr.func.name === "describe_fields" ||
+        expr.func.name === "describe_cases" ||
+        expr.func.name === "construct" || expr.func.name === "project" ||
+        expr.func.name === "is_case")
+    ) {
+      return true;
+    }
+
+    if (expr_requires_type_specialization(expr.func)) {
+      return true;
+    }
+
+    return expr.args.some(expr_requires_type_specialization);
+  }
+
+  if (expr.tag === "block") {
+    for (const stmt of expr.statements) {
+      if (
+        stmt.tag === "bind" &&
+        expr_requires_type_specialization(stmt.value)
+      ) {
+        return true;
+      }
+
+      if (
+        stmt.tag === "expr" && expr_requires_type_specialization(stmt.expr)
+      ) {
+        return true;
+      }
+
+      if (
+        stmt.tag === "return" &&
+        expr_requires_type_specialization(stmt.value)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  if (expr.tag === "if") {
+    return expr_requires_type_specialization(expr.cond) ||
+      expr_requires_type_specialization(expr.then_branch) ||
+      expr_requires_type_specialization(expr.else_branch);
+  }
+
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    return expr_requires_type_specialization(expr.body);
+  }
+
+  if (expr.tag === "prim") {
+    return expr_requires_type_specialization(expr.left) ||
+      expr_requires_type_specialization(expr.right);
+  }
+
+  if (expr.tag === "field") {
+    return expr_requires_type_specialization(expr.object);
+  }
+
+  if (expr.tag === "index") {
+    return expr_requires_type_specialization(expr.object) ||
+      expr_requires_type_specialization(expr.index);
+  }
+
+  return false;
+}
+
 function rewrite_if(
   expr: Extract<FrontExpr, { tag: "if" }>,
   scope: TypeSetScope,
 ): FrontExpr {
   if (expr.cond.tag !== "is" || expr.cond.value.tag !== "var") {
+    const cond = rewrite_expr(expr.cond, scope);
+    const static_cond = static_i32_source_value(cond);
+
+    if (scope.evaluating_const_call && static_cond !== undefined) {
+      if (static_cond === 0) {
+        return rewrite_expr(expr.else_branch, clone_scope(scope));
+      }
+
+      return rewrite_expr(expr.then_branch, clone_scope(scope));
+    }
+
     return {
       ...expr,
-      cond: rewrite_expr(expr.cond, scope),
+      cond,
       then_branch: rewrite_expr(expr.then_branch, clone_scope(scope)),
       else_branch: rewrite_expr(expr.else_branch, clone_scope(scope)),
     };
@@ -1933,29 +3199,34 @@ function lower_direct_type_set_annotation(
     return undefined;
   }
 
-  const type = parse_type_expr(tokenize(annotation));
+  const type = normalize_scope_type_expr(
+    parse_type_expr(tokenize(annotation)),
+    scope,
+  );
+  expect(type, "Missing normalized type annotation");
+  const normalized_annotation = format_type_expr(type);
 
   if (type.tag !== "apply") {
-    return annotation;
+    return normalized_annotation;
   }
 
-  const union_type = union_type_from_annotation(annotation, scope);
+  const union_type = union_type_from_annotation(normalized_annotation, scope);
 
   if (!union_type) {
-    return annotation;
+    return normalized_annotation;
   }
 
   const first = union_type.cases[0];
 
   if (!first?.set_member) {
-    return annotation;
+    return normalized_annotation;
   }
 
   let resolved = first.set_member;
 
   for (const union_case of union_type.cases.slice(1)) {
     if (!union_case.set_member) {
-      return annotation;
+      return normalized_annotation;
     }
 
     resolved = {
@@ -1966,6 +3237,116 @@ function lower_direct_type_set_annotation(
   }
 
   return format_type_expr(resolved);
+}
+
+function normalize_scope_param(param: Param, scope: TypeSetScope): Param {
+  return {
+    ...param,
+    annotation: lower_direct_type_set_annotation(param.annotation, scope),
+    type_annotation: normalize_scope_type_expr(param.type_annotation, scope),
+  };
+}
+
+function normalize_scope_annotation(
+  annotation: string,
+  scope: TypeSetScope,
+): string {
+  const type = normalize_scope_type_expr(
+    parse_type_expr(tokenize(annotation)),
+    scope,
+  );
+  expect(type, "Missing normalized type annotation");
+  return format_type_expr(type);
+}
+
+function normalize_scope_type_expr(
+  type: TypeExpr,
+  scope: TypeSetScope,
+): TypeExpr;
+function normalize_scope_type_expr(
+  type: TypeExpr | undefined,
+  scope: TypeSetScope,
+): TypeExpr | undefined;
+function normalize_scope_type_expr(
+  type: TypeExpr | undefined,
+  scope: TypeSetScope,
+): TypeExpr | undefined {
+  if (type === undefined) {
+    return undefined;
+  }
+
+  return normalize_fixed_array_type_lengths(
+    type,
+    (name) => scope_const_i32_name(name, scope, new Set()),
+  );
+}
+
+function scope_const_i32_name(
+  name: string,
+  scope: TypeSetScope,
+  resolving: Set<string>,
+): number | undefined {
+  if (resolving.has(name)) {
+    throw new Error(
+      "Recursive fixed array length: " + [...resolving, name].join(" -> "),
+    );
+  }
+
+  const value = scope.type_values.get(name);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const next = new Set(resolving);
+  next.add(name);
+  return scope_const_i32_expr(value, scope, next);
+}
+
+function scope_const_i32_expr(
+  expr: FrontExpr,
+  scope: TypeSetScope,
+  resolving: Set<string>,
+): number | undefined {
+  if (
+    expr.tag === "num" && expr.type === "i32" &&
+    typeof expr.value === "number"
+  ) {
+    return expr.value;
+  }
+
+  if (expr.tag === "var") {
+    return scope_const_i32_name(expr.name, scope, resolving);
+  }
+
+  if (expr.tag === "captured" || expr.tag === "comptime") {
+    return scope_const_i32_expr(expr.expr, scope, resolving);
+  }
+
+  if (expr.tag === "block") {
+    return scope_const_i32_expr(
+      unwrap_const_result(expr),
+      scope,
+      resolving,
+    );
+  }
+
+  if (expr.tag !== "prim") {
+    return undefined;
+  }
+
+  const left = scope_const_i32_expr(expr.left, scope, resolving);
+  const right = scope_const_i32_expr(expr.right, scope, resolving);
+
+  if (left === undefined || right === undefined) {
+    return undefined;
+  }
+
+  return static_i32_source_value({
+    ...expr,
+    left: { tag: "num", type: "i32", value: left },
+    right: { tag: "num", type: "i32", value: right },
+  });
 }
 
 function union_type_from_expr(
@@ -2138,6 +3519,10 @@ export function resolve_front_type_value(
 ): FrontExpr | undefined {
   if (value.tag === "captured" || value.tag === "comptime") {
     return resolve_front_type_value(value.expr, type_values, resolving);
+  }
+
+  if (value.tag === "with") {
+    return resolve_front_type_value(value.base, type_values, resolving);
   }
 
   if (
@@ -2558,6 +3943,138 @@ function callable_type_set_params(
   return callable_type_set_params(binding.value, scope, next);
 }
 
+function static_const_equality(expr: FrontExpr): number | undefined {
+  if (
+    expr.tag !== "prim" ||
+    (expr.prim !== "i32.eq" && expr.prim !== "i32.ne")
+  ) {
+    return undefined;
+  }
+
+  let equal: boolean | undefined;
+
+  if (expr.left.tag === "atom" && expr.right.tag === "atom") {
+    equal = expr.left.name === expr.right.name;
+  } else if (expr.left.tag === "text" && expr.right.tag === "text") {
+    equal = expr.left.value === expr.right.value;
+  } else if (
+    expr.left.tag === "type_name" && expr.right.tag === "type_name"
+  ) {
+    equal = expr.left.name === expr.right.name;
+  }
+
+  if (equal === undefined) {
+    return undefined;
+  }
+
+  if (expr.prim === "i32.ne") {
+    equal = !equal;
+  }
+
+  if (equal) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function static_i32_source_value(expr: FrontExpr): number | undefined {
+  if (
+    expr.tag === "num" && expr.type === "i32" &&
+    typeof expr.value === "number"
+  ) {
+    return expr.value;
+  }
+
+  if (expr.tag === "bool") {
+    if (expr.value) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  if (expr.tag !== "prim") {
+    return undefined;
+  }
+
+  const left = static_i32_source_value(expr.left);
+  const right = static_i32_source_value(expr.right);
+
+  if (left === undefined || right === undefined) {
+    return undefined;
+  }
+
+  switch (expr.prim) {
+    case "i32.add":
+      return (left + right) | 0;
+    case "i32.sub":
+      return (left - right) | 0;
+    case "i32.mul":
+      return Math.imul(left, right);
+    case "i32.div_s":
+      if (right === 0) {
+        throw new Error("Compile-time integer division by zero");
+      }
+      return Math.trunc(left / right) | 0;
+    case "i32.rem_s":
+      if (right === 0) {
+        throw new Error("Compile-time integer remainder by zero");
+      }
+      return left % right;
+    case "i32.eq":
+      if (left === right) {
+        return 1;
+      }
+      return 0;
+    case "i32.ne":
+      if (left !== right) {
+        return 1;
+      }
+      return 0;
+    case "i32.lt_s":
+      if (left < right) {
+        return 1;
+      }
+      return 0;
+    case "i32.le_s":
+      if (left <= right) {
+        return 1;
+      }
+      return 0;
+    case "i32.gt_s":
+      if (left > right) {
+        return 1;
+      }
+      return 0;
+    case "i32.ge_s":
+      if (left >= right) {
+        return 1;
+      }
+      return 0;
+    case "i64.add":
+    case "i64.sub":
+    case "i64.mul":
+    case "i64.div_s":
+    case "i64.rem_s":
+    case "i64.eq":
+    case "i64.ne":
+    case "i64.lt_s":
+    case "i64.le_s":
+    case "i64.gt_s":
+    case "i64.ge_s":
+    case "i32.select":
+    case "i64.select":
+    case "i32.load":
+    case "i64.load":
+    case "i32.load8_u":
+    case "i64.load8_u":
+    case "i32.trap":
+    case "i64.trap":
+      return undefined;
+  }
+}
+
 function same_callable_type_set_param(
   left: Param,
   right: Param,
@@ -2751,8 +4268,11 @@ function union_case_payload_annotation_text(
 function clone_scope(scope: TypeSetScope): TypeSetScope {
   return {
     bindings: new Map(scope.bindings),
+    const_evaluation: scope.const_evaluation,
+    const_recursion: scope.const_recursion,
+    evaluating_const_call: scope.evaluating_const_call,
     fresh: scope.fresh,
-    type_values: scope.type_values,
+    type_values: new Map(scope.type_values),
   };
 }
 

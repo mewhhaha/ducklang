@@ -107,6 +107,10 @@ export function is_const_expr_known(
     case "rec": {
       const local = new Set(bound);
 
+      if (expr.tag === "rec") {
+        local.add("rec");
+      }
+
       for (const param of expr.params) {
         local.add(param.name);
       }

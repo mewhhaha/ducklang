@@ -59,6 +59,10 @@ export type FrontEvalHooks = {
     expr: Extract<FrontExpr, { tag: "field" }>,
     env: Env,
   ) => FrontExpr | undefined;
+  resolve_const_expr_with_env: (
+    expr: FrontExpr,
+    env: Env,
+  ) => ResolvedFrontExpr | undefined;
   resolve_index_expr: (
     expr: Extract<FrontExpr, { tag: "index" }>,
     env: Env,

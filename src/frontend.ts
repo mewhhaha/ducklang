@@ -133,6 +133,17 @@ export {
   TypeInference,
 } from "./frontend/type_inference.ts";
 export type {
+  ComptimeType,
+  ComptimeTypeField,
+  ComptimeValue,
+  ComptimeValueHooks,
+} from "./frontend/comptime_value.ts";
+export {
+  comptime_type_key,
+  resolve_comptime_type,
+  resolve_comptime_value,
+} from "./frontend/comptime_value.ts";
+export type {
   InferenceAliasNormalizer,
   InferenceBinding,
   InferenceEffect,

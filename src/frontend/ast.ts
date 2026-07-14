@@ -130,6 +130,7 @@ export type Pattern =
   | { tag: "wildcard"; mode: "default" | "const" }
   | { tag: "unit" }
   | { tag: "literal"; value: PatternLiteral }
+  | { tag: "type"; pattern: TypePattern }
   | { tag: "union_case"; name: string; value: Pattern | undefined }
   | { tag: "product"; entries: ProductPatternEntry[] }
   | { tag: "record"; fields: RecordPatternField[]; rest: Pattern | undefined }

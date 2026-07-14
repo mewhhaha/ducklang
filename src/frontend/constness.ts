@@ -7,6 +7,9 @@ export function is_const_builtin_name(name: string): boolean {
   return name === "fail" || name === "size_of" || name === "align_of" ||
     name === "layout" || name === "is_struct" || name === "is_union" ||
     name === "has" || name === "fields_of" || name === "cases_of" ||
+    name === "describe_type" || name === "describe_fields" ||
+    name === "describe_cases" ||
+    name === "construct" || name === "project" || name === "is_case" ||
     name === "len" || name === "get" ||
     is_builtin_type_name(name) ||
     name === "object_type" || name === "layout_type" ||
@@ -114,6 +117,7 @@ export function validate_const_expr(
 
     case "rec": {
       const local = new Set(bound);
+      local.add("rec");
 
       for (const param of expr.params) {
         local.add(param.name);

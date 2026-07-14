@@ -1030,7 +1030,11 @@ class SourceFactRecorder {
 
     if (
       expr.func.name === "len" || expr.func.name === "get" ||
-      expr.func.name === "slice" || expr.func.name === "append"
+      expr.func.name === "slice" || expr.func.name === "append" ||
+      expr.func.name === "describe_type" ||
+      expr.func.name === "describe_fields" ||
+      expr.func.name === "describe_cases" || expr.func.name === "construct" ||
+      expr.func.name === "project" || expr.func.name === "is_case"
     ) {
       return expr.func.name;
     }
@@ -1694,7 +1698,7 @@ class SourceFactRecorder {
 
     if (
       pattern.tag === "wildcard" || pattern.tag === "unit" ||
-      pattern.tag === "literal"
+      pattern.tag === "literal" || pattern.tag === "type"
     ) {
       return;
     }
@@ -2884,6 +2888,58 @@ function builtin_call_result(
   name: string,
   args: (SourceTypeFact | undefined)[],
 ): SourceTypeFact | undefined {
+  if (name === "describe_type" && args.length === 1) {
+    const described = args[0]?.constructed;
+
+    if (described === undefined) {
+      return undefined;
+    }
+
+    return descriptor_type_fact(described);
+  }
+
+  if (name === "describe_fields" && args.length === 1) {
+    const described = args[0]?.constructed;
+    const fields = source_fields(described);
+
+    if (fields === undefined) {
+      return descriptor_collection_type("FieldDescriptor", []);
+    }
+
+    return descriptor_collection_type(
+      "FieldDescriptor",
+      fields.map((field) => field_descriptor_type_fact(field.type)),
+    );
+  }
+
+  if (name === "describe_cases" && args.length === 1) {
+    const described = args[0]?.constructed;
+    const cases = source_cases(described);
+
+    if (described === undefined || cases === undefined) {
+      return descriptor_collection_type("CaseDescriptor", []);
+    }
+
+    return descriptor_collection_type(
+      "CaseDescriptor",
+      [...cases.values()].map((payload) =>
+        case_descriptor_type_fact(payload, described)
+      ),
+    );
+  }
+
+  if (name === "construct" && args.length === 2) {
+    return args[0]?.constructed;
+  }
+
+  if (name === "project" && args.length === 2) {
+    return args[1]?.alias_target;
+  }
+
+  if (name === "is_case" && args.length === 2) {
+    return named_type("Bool");
+  }
+
   if (name === "len") {
     if (args.length === 1 && is_text_family(args[0])) {
       return named_type("I32");
@@ -2924,6 +2980,108 @@ function builtin_call_result(
   }
 
   return undefined;
+}
+
+function descriptor_type_fact(described: SourceTypeFact): SourceTypeFact {
+  const fields = source_fields(described);
+  const cases = source_cases(described);
+  const field_descriptors: SourceTypeFact[] = [];
+  const case_descriptors: SourceTypeFact[] = [];
+
+  if (fields !== undefined) {
+    for (const field of fields) {
+      field_descriptors.push(field_descriptor_type_fact(field.type));
+    }
+  }
+
+  if (cases !== undefined) {
+    for (const payload of cases.values()) {
+      case_descriptors.push(case_descriptor_type_fact(payload, described));
+    }
+  }
+
+  return struct_type(
+    [
+      { name: "kind", type: named_type("unknown") },
+      { name: "name", type: named_type("Text") },
+      { name: "size", type: named_type("I32") },
+      { name: "align", type: named_type("I32") },
+      { name: "stride", type: named_type("I32") },
+      { name: "length", type: named_type("I32") },
+      { name: "element", type: named_type("Type") },
+      {
+        name: "fields",
+        type: descriptor_collection_type("FieldDescriptor", field_descriptors),
+      },
+      {
+        name: "cases",
+        type: descriptor_collection_type("CaseDescriptor", case_descriptors),
+      },
+    ],
+    undefined,
+    false,
+  );
+}
+
+function field_descriptor_type_fact(
+  target: SourceTypeFact | undefined,
+): SourceTypeFact {
+  const descriptor = struct_type(
+    [
+      { name: "kind", type: named_type("#field") },
+      { name: "name", type: named_type("Text") },
+      { name: "index", type: named_type("I32") },
+      { name: "offset", type: named_type("I32") },
+      { name: "type", type: named_type("Type") },
+    ],
+    undefined,
+    false,
+  );
+  descriptor.name = "FieldDescriptor";
+
+  if (target !== undefined) {
+    descriptor.alias_target = target;
+  }
+
+  return descriptor;
+}
+
+function case_descriptor_type_fact(
+  target: SourceTypeFact,
+  owner: SourceTypeFact,
+): SourceTypeFact {
+  const descriptor = struct_type(
+    [
+      { name: "kind", type: named_type("#case") },
+      { name: "name", type: named_type("Text") },
+      { name: "index", type: named_type("I32") },
+      { name: "tag", type: named_type("I32") },
+      { name: "offset", type: named_type("I32") },
+      { name: "type", type: named_type("Type") },
+      { name: "owner", type: named_type("Type") },
+    ],
+    undefined,
+    false,
+  );
+  descriptor.name = "CaseDescriptor";
+  descriptor.alias_target = target;
+  descriptor.constructed = owner;
+  return descriptor;
+}
+
+function descriptor_collection_type(
+  name: "FieldDescriptor" | "CaseDescriptor",
+  descriptors: SourceTypeFact[],
+): SourceTypeFact {
+  const type = named_type(
+    "[" + name + "; " + descriptors.length.toString() + "]",
+  );
+  type.positional_fields = true;
+  type.fields = descriptors.map((descriptor, index) => ({
+    name: index.toString(),
+    type: descriptor,
+  }));
+  return type;
 }
 
 function is_text_family(

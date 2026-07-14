@@ -2,12 +2,55 @@ import { assert_equals, assert_throws } from "../assert.ts";
 import { Source } from "../frontend.ts";
 import { fixed_array_length } from "./fixed_array_type.ts";
 
-Deno.test("fixed array lengths require non-negative integer literals", () => {
+Deno.test("fixed array lengths evaluate compile-time natural expressions", () => {
   assert_equals(fixed_array_length({ tag: "number", value: 3 }), 3);
+  assert_equals(
+    fixed_array_length(
+      {
+        tag: "binary",
+        op: "*",
+        left: { tag: "name", name: "width" },
+        right: {
+          tag: "binary",
+          op: "+",
+          left: { tag: "number", value: 1 },
+          right: { tag: "number", value: 1 },
+        },
+      },
+      (name) => {
+        if (name === "width") {
+          return 2;
+        }
+
+        return undefined;
+      },
+    ),
+    4,
+  );
 
   assert_throws(
     () => fixed_array_length({ tag: "name", name: "width" }),
-    "Fixed array length must be a non-negative integer literal",
+    "Fixed array length requires a compile-time natural: width",
+  );
+  assert_throws(
+    () =>
+      fixed_array_length({
+        tag: "binary",
+        op: "-",
+        left: { tag: "number", value: 1 },
+        right: { tag: "number", value: 2 },
+      }),
+    "Fixed array length must be a non-negative safe integer, got -1",
+  );
+  assert_throws(
+    () =>
+      fixed_array_length({
+        tag: "binary",
+        op: "/",
+        left: { tag: "number", value: 2 },
+        right: { tag: "number", value: 0 },
+      }),
+    "Fixed array length divides by zero",
   );
 });
 
@@ -22,7 +65,29 @@ let values: [Int; 2] = [1, 2i64]
   );
 });
 
-Deno.test("semantic validation rejects nonliteral fixed array lengths", () => {
+Deno.test("semantic validation resolves const fixed array lengths", () => {
+  const analysis = Source.analyze(`
+const width = 1 + 1
+let values: [Int; width * 2] = [1, 2, 3, 4]
+values
+`);
+
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("fixed array lowering receives resolved const lengths", () => {
+  const wat = Source.wat(`
+const width = 1 + 1
+let values: [Int; width + 1] = [20, 1, 21]
+values[0] + values[2]
+`);
+
+  if (!wat.includes("i32.const 20") || !wat.includes("i32.const 21")) {
+    throw new Error("Expected resolved fixed array values in WAT");
+  }
+});
+
+Deno.test("semantic validation rejects runtime fixed array lengths", () => {
   const analysis = Source.analyze(`
 let width = 2
 let values: [Int; width] = [1, 2]
@@ -30,6 +95,6 @@ let values: [Int; width] = [1, 2]
 
   assert_equals(
     analysis.diagnostics.map((diagnostic) => diagnostic.message),
-    ["Fixed array length must be a non-negative integer literal"],
+    ["Fixed array length requires a compile-time natural: width"],
   );
 });

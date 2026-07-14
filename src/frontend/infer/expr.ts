@@ -1,7 +1,7 @@
 import type { Binding, Env, FrontExpr, FrontType, Stmt } from "../ast.ts";
 import { lookup } from "../env.ts";
 import { front_expr_is_static_shareable_text } from "../ownership.ts";
-import { same_type } from "../types.ts";
+import { common_front_type, same_type } from "../types.ts";
 import { infer_app_expr_type } from "./app.ts";
 import { infer_block_type } from "./block.ts";
 import { infer_if_expr_type, infer_if_let_expr_type } from "./control.ts";
@@ -49,10 +49,24 @@ export function infer_front_expr(
     case "as":
       return infer_front_expr(elaborate_product_as_expr(expr), env, hooks);
 
-    case "match":
-      throw new Error(
-        "Match expression must be elaborated before frontend inference",
-      );
+    case "match": {
+      let result: FrontType = { tag: "never" };
+
+      for (const arm of expr.arms) {
+        const arm_type = infer_front_expr(arm.body, env, hooks);
+        const common = common_front_type(result, arm_type);
+
+        if (!common) {
+          throw new Error(
+            "Type match arms produce incompatible frontend types",
+          );
+        }
+
+        result = common;
+      }
+
+      return result;
+    }
 
     case "var": {
       const binding = lookup(env, expr.name);

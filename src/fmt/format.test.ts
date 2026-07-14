@@ -66,6 +66,13 @@ Deno.test("format_text keeps effect rows tight", () => {
   );
 });
 
+Deno.test("format_text preserves fixed array separators", () => {
+  assert_equals(
+    format_text("type Pixels=[Int;2]\nlet pixels=[20;2]\n"),
+    "type Pixels = [Int; 2]\nlet pixels = [20; 2]\n",
+  );
+});
+
 Deno.test("format_text canonicalizes string escapes", () => {
   assert_equals(
     format_text('let message = "line\\none"\n'),

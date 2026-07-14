@@ -7588,38 +7588,22 @@ xs[0] = 2
 let x = comptime 1
 x
 `));
-  const comptime_bind_proof = Core.proof(comptime_bind_core);
   assert_equals(
-    comptime_bind_proof.issues[0]?.message,
-    "Cannot emit core comptime expression yet",
+    Format.fmt(Core, comptime_bind_core),
+    "let x = 1:i32\nx",
   );
-  assert_throws(
-    () => Core.check_proof(comptime_bind_core),
-    "Cannot emit core comptime expression yet",
-  );
-  assert_throws(
-    () => Emit.emit(Core, comptime_bind_core),
-    "Cannot emit core comptime expression yet",
-  );
+  assert_equals(Core.proof(comptime_bind_core).issues, []);
 
   const comptime_assign_core = Source.core(Source.parse(`
 let x = 0
 x = comptime 1
 x
 `));
-  const comptime_assign_proof = Core.proof(comptime_assign_core);
   assert_equals(
-    comptime_assign_proof.issues[0]?.message,
-    "Cannot emit core comptime expression yet",
+    Format.fmt(Core, comptime_assign_core),
+    "let x = 0:i32\nx = 1:i32\nx",
   );
-  assert_throws(
-    () => Core.check_proof(comptime_assign_core),
-    "Cannot emit core comptime expression yet",
-  );
-  assert_throws(
-    () => Emit.emit(Core, comptime_assign_core),
-    "Cannot emit core comptime expression yet",
-  );
+  assert_equals(Core.proof(comptime_assign_core).issues, []);
 
   const nonfinal_field_core = Source.core(Source.parse(`
 let user = 1
@@ -22010,6 +21994,13 @@ let values: [Int; width] = [1, 2]
 0
 `)),
       ),
-    "Fixed array length must be a non-negative integer literal",
+    "Fixed array length requires a compile-time natural: width",
   );
+
+  const const_length = Source.core(Source.parse(`
+const width = 2
+let values: [Int; width] = [1, 2]
+values[1]
+`));
+  assert_equals(Typed.type(Core, const_length), "i32");
 });

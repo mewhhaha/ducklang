@@ -304,10 +304,75 @@ return { result }
           (postfix_expression
             (number)))
         (expression_statement
-          (effect_handler_expression
-            (effect_identifier)
-            (handler_clause_block
-              (handler_operation_clause
+          (application_expression
+            (postfix_expression
+              (identifier))
+            (postfix_expression
+              (object_literal
+                (field_block
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter_list
+                        (parameter
+                          (identifier)))
+                      (application_expression
+                        (postfix_expression
+                          (linear_reference
+                            (identifier)))
+                        (parenthesized_or_product
+                          (parenthesized_expression
+                            (postfix_expression
+                              (identifier)))))))
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter_list
+                        (parameter
+                          (identifier))
+                        (parameter
+                          (identifier)))
+                      (postfix_expression
+                        (block
+                          (assignment
+                            (identifier)
+                            (binary_expression
+                              (postfix_expression
+                                (identifier))
+                              (postfix_expression
+                                (identifier))))
+                          (expression_statement
+                            (application_expression
+                              (postfix_expression
+                                (linear_reference
+                                  (identifier)))
+                              (parenthesized_or_product
+                                (parenthesized_expression
+                                  (postfix_expression
+                                    (unit_pattern))))))))))
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter
+                        (identifier))
+                      (postfix_expression
+                        (object_literal
+                          (field_block
+                            (shorthand_field
+                              (identifier))
+                            (shorthand_field
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (application_expression
+        (postfix_expression
+          (identifier))
+        (postfix_expression
+          (object_literal
+            (field_block
+              (field_definition
                 (identifier)
                 (arrow_function
                   (parameter_list
@@ -320,71 +385,14 @@ return { result }
                     (parenthesized_or_product
                       (parenthesized_expression
                         (postfix_expression
-                          (identifier)))))))
-              (handler_operation_clause
+                          (number)))))))
+              (field_definition
                 (identifier)
-                (arrow_function
-                  (parameter_list
-                    (parameter
-                      (identifier))
-                    (parameter
-                      (identifier)))
-                  (postfix_expression
-                    (block
-                      (assignment
-                        (identifier)
-                        (binary_expression
-                          (postfix_expression
-                            (identifier))
-                          (postfix_expression
-                            (identifier))))
-                      (expression_statement
-                        (application_expression
-                          (postfix_expression
-                            (linear_reference
-                              (identifier)))
-                          (parenthesized_or_product
-                            (parenthesized_expression
-                              (postfix_expression
-                                (unit_pattern))))))))))
-              (handler_return_clause
                 (arrow_function
                   (parameter
                     (identifier))
                   (postfix_expression
-                    (object_literal
-                      (field_block
-                        (shorthand_field
-                          (identifier))
-                        (shorthand_field
-                          (identifier)))))))))))))
-  (binding_statement
-    (identifier)
-    (arrow_function
-      (parameter_list)
-      (effect_handler_expression
-        (effect_identifier)
-        (handler_clause_block
-          (handler_operation_clause
-            (identifier)
-            (arrow_function
-              (parameter_list
-                (parameter
-                  (identifier)))
-              (application_expression
-                (postfix_expression
-                  (linear_reference
-                    (identifier)))
-                (parenthesized_or_product
-                  (parenthesized_expression
-                    (postfix_expression
-                      (number)))))))
-          (handler_return_clause
-            (arrow_function
-              (parameter
-                (identifier))
-              (postfix_expression
-                (identifier))))))))
+                    (identifier))))))))))
   (binding_statement
     (identifier)
     (try_with_expression

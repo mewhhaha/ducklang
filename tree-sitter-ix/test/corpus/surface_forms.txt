@@ -52,6 +52,7 @@ Arrays, imports, casts, updates, and matches
 ==================
 
 let values = [x, y]
+let rebuilt = [x, ...rec(index + 1, length)]
 let repeated = [x; 3]
 let source = import "./source.ix"
 let cast = x as Text
@@ -74,6 +75,22 @@ type Values = [I32; 3]
           (identifier))
         (postfix_expression
           (identifier)))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (array_expression
+        (postfix_expression
+          (identifier))
+        (array_spread
+          (recursive_call_expression
+            (positional_product
+              (binary_expression
+                (postfix_expression
+                  (identifier))
+                (postfix_expression
+                  (number)))
+              (postfix_expression
+                (identifier))))))))
   (binding_statement
     (identifier)
     (postfix_expression
@@ -147,3 +164,58 @@ type Values = [I32; 3]
                   (type_difference
                     (identifier))))
               (number))))))))
+
+==================
+Const recursive fold with unary condition call
+==================
+
+const fold = rec (values, index) => {
+  if index == len(values) {
+    index
+  } else {
+    rec(values, index + 1)
+  }
+}
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (recursive_function
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (postfix_expression
+        (block
+          (expression_statement
+            (if_expression
+              (condition_expression
+                (condition_binary_expression
+                  (condition_expression
+                    (identifier))
+                  (condition_expression
+                    (condition_call_expression
+                      (condition_expression
+                        (identifier))
+                      (parenthesized_or_product
+                        (parenthesized_expression
+                          (postfix_expression
+                            (identifier))))))))
+              (block
+                (expression_statement
+                  (postfix_expression
+                    (identifier))))
+              (block
+                (expression_statement
+                  (recursive_call_expression
+                    (positional_product
+                      (postfix_expression
+                        (identifier))
+                      (binary_expression
+                        (postfix_expression
+                          (identifier))
+                        (postfix_expression
+                          (number))))))))))))))

@@ -125,6 +125,12 @@ const factor = 2
 const add_factor = comptime (n => x => x + n)(factor)
 ```
 
+Const evaluation supports memoized structural recursion, type descriptors, and
+ordinary fixed-array construction. Fixed-array lengths may use arithmetic over
+const integers, such as `const width = 2` followed by `[Int; width + 1]`. The
+derived equality example combines records, arrays, and unions:
+[`examples/compile_time/13_derived_nested_equality.ix`](examples/compile_time/13_derived_nested_equality.ix).
+
 Closures use arrow syntax:
 
 ```txt
@@ -181,6 +187,7 @@ File-module forms:
 ```txt
 module () where
 module (!init: Init) where
+module (const release: Bool) where
 
 const logger = import "./logger.ix"
 const { write } = logger({ io: !init.io })

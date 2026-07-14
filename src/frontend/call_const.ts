@@ -4,6 +4,19 @@ import { capture_const_ref } from "./capture.ts";
 import { is_const_expr_known } from "./const_known.ts";
 import { validate_const_expr } from "./constness.ts";
 import { clone_env, lookup, push_binding } from "./env.ts";
+import { format_expr } from "./format.ts";
+import { is_rec_call } from "./rec_validate.ts";
+
+type ResolvedConstEvalTarget = {
+  expr: Extract<FrontExpr, { tag: "lam" | "rec" }>;
+  env: Env;
+};
+
+type ConstRecursionState = {
+  active: Set<string>;
+  memo: Map<string, FrontExpr>;
+  steps: number;
+};
 
 export type CallConstHooks = {
   check_const_annotation: (
@@ -11,10 +24,26 @@ export type CallConstHooks = {
     expr: FrontExpr,
     env: Env,
   ) => void;
+  eval_const_builtin: (
+    expr: Extract<FrontExpr, { tag: "app" }>,
+    env: Env,
+  ) => FrontExpr | undefined;
   eval_front_value: (expr: FrontExpr, env: Env) => FrontExpr;
   infer_expr: (expr: FrontExpr, env: Env) => FrontType;
   resolve_const_field_expr: (
     expr: Extract<FrontExpr, { tag: "field" }>,
+    env: Env,
+  ) => FrontExpr | undefined;
+  resolve_const_expr_with_env: (
+    expr: FrontExpr,
+    env: Env,
+  ) => import("./ast.ts").ResolvedFrontExpr | undefined;
+  resolve_static_i32_expr: (
+    expr: FrontExpr,
+    env: Env,
+  ) => number | undefined;
+  resolve_static_if_branch: (
+    expr: Extract<FrontExpr, { tag: "if" }>,
     env: Env,
   ) => FrontExpr | undefined;
 };
@@ -37,7 +66,7 @@ export function can_eval_const_call(
   allow_unmarked_params: boolean,
   hooks: CallConstHooks,
 ): boolean {
-  const target = resolve_const_call_target(expr.func, env, hooks);
+  const target = resolve_const_eval_target(expr.func, env, hooks);
 
   if (!target) {
     return false;
@@ -72,7 +101,7 @@ export function eval_const_call(
   allow_unmarked_params: boolean,
   hooks: CallConstHooks,
 ): FrontExpr | undefined {
-  const target = resolve_const_call_target(expr.func, env, hooks);
+  const target = resolve_const_eval_target(expr.func, env, hooks);
 
   if (!target) {
     return undefined;
@@ -88,11 +117,26 @@ export function eval_const_call(
     }
   }
 
+  if (target.expr.tag === "rec") {
+    return eval_const_rec_call(target, expr.args, env, hooks);
+  }
+
   const call_env = clone_env(target.env);
 
-  for (let index = 0; index < target.expr.params.length; index += 1) {
-    const param = target.expr.params[index];
-    const arg = expr.args[index];
+  bind_const_call_args(target.expr, expr.args, env, call_env, hooks);
+  return hooks.eval_front_value(target.expr.body, call_env);
+}
+
+function bind_const_call_args(
+  target: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  args: FrontExpr[],
+  env: Env,
+  call_env: Env,
+  hooks: CallConstHooks,
+): void {
+  for (let index = 0; index < target.params.length; index += 1) {
+    const param = target.params[index];
+    const arg = args[index];
     expect(param, "Missing const call parameter " + index);
     expect(arg, "Missing const call argument " + index);
     validate_const_expr(
@@ -114,23 +158,354 @@ export function eval_const_call(
       is_const: true,
       is_linear: false,
       value,
-      value_env: undefined,
+      value_env: env,
     });
   }
-
-  return hooks.eval_front_value(target.expr.body, call_env);
 }
 
-export function resolve_const_call_target(
+function eval_const_rec_call(
+  target: ResolvedConstEvalTarget,
+  initial_args: FrontExpr[],
+  caller_env: Env,
+  hooks: CallConstHooks,
+): FrontExpr {
+  expect(target.expr.tag === "rec", "Expected recursive comptime target");
+  return eval_const_rec_invocation(
+    target,
+    initial_args,
+    caller_env,
+    hooks,
+    { active: new Set(), memo: new Map(), steps: 0 },
+  );
+}
+
+function eval_const_rec_invocation(
+  target: ResolvedConstEvalTarget,
+  args: FrontExpr[],
+  caller_env: Env,
+  hooks: CallConstHooks,
+  state: ConstRecursionState,
+): FrontExpr {
+  expect(target.expr.tag === "rec", "Expected recursive comptime target");
+  const values = args.map((arg) =>
+    materialize_const_rec_arg(arg, caller_env, hooks)
+  );
+  const key = values.map(format_expr).join(", ");
+  state.steps += 1;
+
+  if (state.steps > 10000) {
+    throw new Error("Compile-time recursion exceeded 10000 steps");
+  }
+
+  const memoized = state.memo.get(key);
+
+  if (memoized !== undefined) {
+    return memoized;
+  }
+
+  if (state.active.has(key)) {
+    throw new Error(
+      "Compile-time recursion cycle detected at step " +
+        state.steps.toString() + ": " + key,
+    );
+  }
+
+  state.active.add(key);
+
+  try {
+    const call_env = clone_env(target.env);
+    bind_const_call_args(target.expr, values, caller_env, call_env, hooks);
+    const result = eval_const_rec_expr(
+      target.expr.body,
+      call_env,
+      target,
+      hooks,
+      state,
+    );
+    const value = materialize_const_rec_arg(result, call_env, hooks);
+    state.memo.set(key, value);
+    return value;
+  } finally {
+    state.active.delete(key);
+  }
+}
+
+function eval_const_rec_expr(
+  expr: FrontExpr,
+  env: Env,
+  target: ResolvedConstEvalTarget,
+  hooks: CallConstHooks,
+  state: ConstRecursionState,
+): FrontExpr {
+  if (expr.tag === "captured") {
+    return eval_const_rec_expr(expr.expr, expr.env, target, hooks, state);
+  }
+
+  if (expr.tag === "block") {
+    const value = hooks.eval_front_value(expr, env);
+    return eval_const_rec_expr(value, env, target, hooks, state);
+  }
+
+  if (expr.tag === "if") {
+    let branch = hooks.resolve_static_if_branch(expr, env);
+
+    if (branch === undefined) {
+      const cond = eval_const_rec_expr(expr.cond, env, target, hooks, state);
+      const value = hooks.resolve_static_i32_expr(cond, env);
+
+      if (value !== undefined) {
+        if (value === 0) {
+          branch = expr.else_branch;
+        } else {
+          branch = expr.then_branch;
+        }
+      }
+    }
+
+    if (branch === undefined) {
+      throw new Error(
+        "Compile-time recursion requires a compile-time branch condition",
+      );
+    }
+
+    return eval_const_rec_expr(branch, env, target, hooks, state);
+  }
+
+  if (is_rec_call(expr)) {
+    expect(expr.tag === "app", "Expected recursive comptime call");
+    return eval_const_rec_invocation(
+      target,
+      expr.args,
+      env,
+      hooks,
+      state,
+    );
+  }
+
+  if (expr.tag === "prim") {
+    return materialize_const_rec_arg(
+      {
+        ...expr,
+        left: eval_const_rec_expr(expr.left, env, target, hooks, state),
+        right: eval_const_rec_expr(expr.right, env, target, hooks, state),
+      },
+      env,
+      hooks,
+    );
+  }
+
+  if (expr.tag === "app") {
+    return materialize_const_rec_arg(
+      {
+        ...expr,
+        func: eval_const_rec_expr(expr.func, env, target, hooks, state),
+        args: expr.args.map((arg) =>
+          eval_const_rec_expr(arg, env, target, hooks, state)
+        ),
+      },
+      env,
+      hooks,
+    );
+  }
+
+  if (expr.tag === "product") {
+    return {
+      ...expr,
+      entries: expr.entries.map((entry) => ({
+        ...entry,
+        value: eval_const_rec_expr(entry.value, env, target, hooks, state),
+      })),
+    };
+  }
+
+  if (expr.tag === "array") {
+    const items = expr.items.map((item) =>
+      eval_const_rec_expr(item, env, target, hooks, state)
+    );
+
+    if (expr.rest === undefined) {
+      return { ...expr, items };
+    }
+
+    const rest = eval_const_rec_expr(expr.rest, env, target, hooks, state);
+
+    if (rest.tag !== "array" || rest.rest !== undefined) {
+      throw new Error(
+        "Compile-time array spread requires a fixed array value",
+      );
+    }
+
+    return { ...expr, items: [...items, ...rest.items], rest: undefined };
+  }
+
+  if (expr.tag === "struct_value") {
+    return {
+      ...expr,
+      fields: expr.fields.map((field) => ({
+        ...field,
+        value: eval_const_rec_expr(field.value, env, target, hooks, state),
+      })),
+    };
+  }
+
+  if (expr.tag === "union_case" && expr.value !== undefined) {
+    return {
+      ...expr,
+      value: eval_const_rec_expr(expr.value, env, target, hooks, state),
+    };
+  }
+
+  return materialize_const_rec_arg(expr, env, hooks);
+}
+
+function materialize_const_rec_arg(
   expr: FrontExpr,
   env: Env,
   hooks: CallConstHooks,
-): ResolvedCallTarget | undefined {
-  if (expr.tag === "captured") {
-    return resolve_const_call_target(expr.expr, expr.env, hooks);
+): FrontExpr {
+  const number = hooks.resolve_static_i32_expr(expr, env);
+
+  if (number !== undefined) {
+    return { tag: "num", type: "i32", value: number };
   }
 
-  if (expr.tag === "lam") {
+  if (expr.tag === "captured") {
+    return materialize_const_rec_arg(expr.expr, expr.env, hooks);
+  }
+
+  if (expr.tag === "app") {
+    const call: Extract<FrontExpr, { tag: "app" }> = {
+      ...expr,
+      args: expr.args.map((arg) => materialize_const_rec_arg(arg, env, hooks)),
+    };
+    const resolved_call = hooks.resolve_const_expr_with_env(call, env);
+
+    if (
+      resolved_call !== undefined &&
+      (resolved_call.expr !== call || resolved_call.env !== env)
+    ) {
+      return materialize_const_rec_arg(
+        resolved_call.expr,
+        resolved_call.env,
+        hooks,
+      );
+    }
+
+    const builtin = hooks.eval_const_builtin(call, env);
+
+    if (builtin !== undefined) {
+      return materialize_const_rec_arg(builtin, env, hooks);
+    }
+
+    const value = hooks.eval_front_value(call, env);
+
+    if (
+      value.tag === "captured" && value.expr === call && value.env === env
+    ) {
+      return value;
+    }
+
+    if (value !== call) {
+      return materialize_const_rec_arg(value, env, hooks);
+    }
+
+    return call;
+  }
+
+  if (expr.tag === "index") {
+    const object = materialize_const_rec_arg(expr.object, env, hooks);
+    const index = materialize_const_rec_arg(expr.index, env, hooks);
+    const static_index = hooks.resolve_static_i32_expr(index, env);
+
+    if (
+      object.tag === "array" && object.rest === undefined &&
+      static_index !== undefined
+    ) {
+      const item = object.items[static_index];
+      expect(item, "Compile-time fold index out of bounds: " + static_index);
+      return materialize_const_rec_arg(item, env, hooks);
+    }
+
+    return { ...expr, object, index };
+  }
+
+  const resolved = hooks.resolve_const_expr_with_env(expr, env);
+
+  if (
+    resolved !== undefined &&
+    (resolved.expr !== expr || resolved.env !== env)
+  ) {
+    return materialize_const_rec_arg(resolved.expr, resolved.env, hooks);
+  }
+
+  if (expr.tag === "prim") {
+    const value: FrontExpr = {
+      ...expr,
+      left: materialize_const_rec_arg(expr.left, env, hooks),
+      right: materialize_const_rec_arg(expr.right, env, hooks),
+    };
+    const folded = hooks.resolve_static_i32_expr(value, env);
+
+    if (folded !== undefined) {
+      return { tag: "num", type: "i32", value: folded };
+    }
+
+    return value;
+  }
+
+  if (expr.tag === "product") {
+    return {
+      ...expr,
+      entries: expr.entries.map((entry) => ({
+        ...entry,
+        value: materialize_const_rec_arg(entry.value, env, hooks),
+      })),
+    };
+  }
+
+  if (expr.tag === "array") {
+    const items = expr.items.map((item) =>
+      materialize_const_rec_arg(item, env, hooks)
+    );
+
+    if (expr.rest === undefined) {
+      return { ...expr, items };
+    }
+
+    const rest = materialize_const_rec_arg(expr.rest, env, hooks);
+
+    if (rest.tag !== "array" || rest.rest !== undefined) {
+      throw new Error(
+        "Compile-time array spread requires a fixed array value",
+      );
+    }
+
+    return { ...expr, items: [...items, ...rest.items], rest: undefined };
+  }
+
+  if (expr.tag === "struct_value") {
+    return {
+      ...expr,
+      fields: expr.fields.map((field) => ({
+        ...field,
+        value: materialize_const_rec_arg(field.value, env, hooks),
+      })),
+    };
+  }
+
+  return capture_const_ref(expr, env);
+}
+
+function resolve_const_eval_target(
+  expr: FrontExpr,
+  env: Env,
+  hooks: CallConstHooks,
+): ResolvedConstEvalTarget | undefined {
+  if (expr.tag === "captured") {
+    return resolve_const_eval_target(expr.expr, expr.env, hooks);
+  }
+
+  if (expr.tag === "lam" || expr.tag === "rec") {
     return { expr, env };
   }
 
@@ -141,7 +516,7 @@ export function resolve_const_call_target(
       return undefined;
     }
 
-    return resolve_const_call_target(field, env, hooks);
+    return resolve_const_eval_target(field, env, hooks);
   }
 
   if (expr.tag === "app") {
@@ -151,7 +526,7 @@ export function resolve_const_call_target(
       return undefined;
     }
 
-    return resolve_const_call_target(value, env, hooks);
+    return resolve_const_eval_target(value, env, hooks);
   }
 
   if (expr.tag !== "var") {
@@ -170,5 +545,19 @@ export function resolve_const_call_target(
     value_env = binding.value_env;
   }
 
-  return resolve_const_call_target(binding.value, value_env, hooks);
+  return resolve_const_eval_target(binding.value, value_env, hooks);
+}
+
+export function resolve_const_call_target(
+  expr: FrontExpr,
+  env: Env,
+  hooks: CallConstHooks,
+): ResolvedCallTarget | undefined {
+  const target = resolve_const_eval_target(expr, env, hooks);
+
+  if (!target || target.expr.tag !== "lam") {
+    return undefined;
+  }
+
+  return { expr: target.expr, env: target.env };
 }

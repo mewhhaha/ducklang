@@ -92,6 +92,10 @@ export function format_pattern(pattern: Pattern): string {
     return pattern.value.value.toString();
   }
 
+  if (pattern.tag === "type") {
+    return format_type_pattern(pattern.pattern);
+  }
+
   if (pattern.tag === "union_case") {
     let text = "." + pattern.name;
 

@@ -294,6 +294,147 @@ let y = apply_const(21, double)
 Const values can be reified when passed to ordinary runtime parameters if the
 target value can lower to the current scalar Ic subset.
 
+Compile-time type values support structural `match` arms. These arms use the
+same open struct and union patterns as fact checkers, and a const function that
+contains them is specialized before Core lowering:
+
+```txt
+const derive_name = (const target) => match target {
+  | struct { name: Text, .. } => value => value.name
+  | _ => fail("derive_name requires a Text name field")
+}
+
+const player_name = comptime derive_name(Player)
+```
+
+Aliases are normalized before field types are compared. Type-match functions are
+compile-time-only wiring: every call must provide compile-time type values, and
+the unused arms do not reach generated Wasm.
+
+Structural descriptors expose the normalized kind and layout of a type:
+
+```txt
+describe_type(Player)
+describe_fields(Player)
+describe_cases(Result)
+```
+
+`describe_type` contains `kind`, `name`, `size`, `align`, `stride`, `length`,
+`element`, `fields`, and `cases`. Field descriptors contain `name`, `index`,
+`offset`, and `type`; case descriptors additionally contain their numeric `tag`
+and retain the owning union type. Product entries use an empty name when
+positional. A non-applicable descriptor length is `-1`.
+
+Descriptors can direct fixed runtime operations without introducing runtime
+reflection:
+
+```txt
+const score_field = describe_fields(Player)[1]
+let player = construct(Player, { name: 20, score: 40 })
+let score = project(player, score_field)
+```
+
+`project` becomes a fixed field or index projection. `construct` supports
+records, ordered products, and fixed arrays and validates their shape during
+compilation.
+
+Case descriptors use the same operations for unions:
+
+```txt
+const ok_case = describe_cases(Result)[0]
+let result = construct(ok_case, 42)
+
+if is_case(result, ok_case) {
+  project(result, ok_case)
+} else {
+  0
+}
+```
+
+Recursive const calls may appear in any expression position, not only in tail
+position. Calls are memoized by their structural compile-time arguments.
+Repeated active argument states report a recursion cycle, and a single
+evaluation is limited to 10,000 recursive calls so non-terminating compilation
+fails deterministically.
+
+Descriptor traversal does not introduce a separate comptime-flavored collection
+API. Define an ordinary const fold and force the derived result at the
+`comptime` boundary:
+
+```txt
+const fold = rec (values, index, state, next) => {
+  if index == len(values) {
+    state
+  } else {
+    rec(values, index + 1, next(state, values[index]), next)
+  }
+}
+
+const add_field = (sum, field) => {
+  value => sum(value) + project(value, field)
+}
+
+const derive_sum = (const target) => {
+  const fields = describe_fields(target)
+  fold(fields, 0, value => 0, add_field)
+}
+
+const sum_player = comptime derive_sum(Player)
+```
+
+Here `fold`, its accumulator, and the descriptors are all ordinary const values.
+`comptime` retains one specific meaning: it is the explicit boundary that
+requires specialization to finish during compilation. The resulting `sum_player`
+closure contains only fixed field projections; neither the fold nor the
+descriptors exist at runtime.
+
+Const recursion can construct ordinary arrays with a final spread. The spread
+must resolve to a closed fixed array before the `comptime` boundary finishes:
+
+```txt
+const range = rec (index, end) => {
+  if index == end {
+    []
+  } else {
+    [index, ...rec(index + 1, end)]
+  }
+}
+
+const indexes = comptime range(0, 3)
+```
+
+Fixed-array lengths accept natural arithmetic over compile-time integer
+bindings. They are normalized to a literal before layout and lowering:
+
+```txt
+const width = 2
+type Row = [Int; width + 1]
+let row: Row = [20, 1, 21]
+```
+
+An unresolved name, runtime binding, negative result, division by zero, or
+unsafe-integer overflow is rejected. Arrays remain fixed-size; this does not
+introduce a runtime-sized array type.
+
+Imported modules can take explicit const parameters for deterministic build
+configuration:
+
+```txt
+// dependency.ix
+module (const release: Bool) where
+const value = if release { 42 } else { 0 }
+return { value }
+
+// main.ix
+const dependency = import "./dependency.ix"
+const { value } = dependency(true)
+```
+
+Build constants are ordinary explicit inputs. Compile-time evaluation does not
+implicitly read environment variables, clocks, randomness, or the network. See
+`examples/compile_time/13_derived_nested_equality.ix` for a recursive derivation
+that specializes equality across records, fixed arrays, and union cases.
+
 ## Functions And Control Flow
 
 Functions use closure syntax.

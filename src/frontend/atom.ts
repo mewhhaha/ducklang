@@ -131,7 +131,10 @@ export function validate_atom_identities(source: Source): void {
       return;
     }
 
-    if (pattern.tag === "wildcard" || pattern.tag === "unit") {
+    if (
+      pattern.tag === "wildcard" || pattern.tag === "unit" ||
+      pattern.tag === "type"
+    ) {
       return;
     }
 

@@ -154,6 +154,16 @@ export const success_examples: SuccessExample[] = [
     route: "core",
     runs: run(42),
   },
+  {
+    path: "examples/compile_time/12_type_specialization.ix",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/13_derived_nested_equality.ix",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/functions/01_closure_capture.ix",

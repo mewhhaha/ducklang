@@ -80,13 +80,32 @@ export function validate_frontend_semantics(
   source: Source,
   options: SemanticValidationOptions = {},
 ): SourceDiagnostic[] {
+  const declarations = source.declarations || [];
+  const const_env = create_env();
+
+  for (const declaration of declarations) {
+    if (declaration.tag !== "type" && declaration.tag !== "record") {
+      continue;
+    }
+
+    push_binding(const_env, {
+      name: declaration.name,
+      ic_name: declaration.name,
+      type: { tag: "type" },
+      is_const: true,
+      is_linear: false,
+      value: undefined,
+      value_env: undefined,
+    });
+  }
+
   const env: SemanticEnv = {
     all_bindings: [],
     bindings: new Map(),
-    const_env: create_env(),
-    declarations: declaration_index(source.declarations || []),
-    effects: effect_index(source.declarations || []),
-    records: record_index(source.declarations || []),
+    const_env,
+    declarations: declaration_index(declarations),
+    effects: effect_index(declarations),
+    records: record_index(declarations),
     active_specialized_calls: new Set(),
   };
   const diagnostics: SourceDiagnostic[] = [];
@@ -177,7 +196,10 @@ function validate_statement(
     mark_annotation_use(stmt.annotation, stmt.type_annotation, env);
     let binding: SemanticBinding | undefined;
 
-    if (stmt.is_recursive) {
+    if (
+      stmt.is_recursive ||
+      (stmt.kind === "const" && stmt.value.tag === "rec")
+    ) {
       binding = {
         type: { tag: "unknown" },
         type_annotation: stmt.type_annotation,
@@ -3842,7 +3864,7 @@ function bind_pattern_types(
 
   if (
     pattern.tag === "wildcard" || pattern.tag === "unit" ||
-    pattern.tag === "literal"
+    pattern.tag === "literal" || pattern.tag === "type"
   ) {
     return;
   }
@@ -4572,7 +4594,10 @@ function validate_fixed_array_annotation(
   let length: number;
 
   try {
-    length = fixed_array_length(annotation.length);
+    length = fixed_array_length(
+      annotation.length,
+      (name) => semantic_const_i32_name(name, env, new Set()),
+    );
   } catch (error) {
     if (error instanceof Error) {
       diagnostics.push(source_diagnostic(
@@ -4637,6 +4662,92 @@ function validate_fixed_array_annotation(
       item,
     ));
   }
+}
+
+function semantic_const_i32_name(
+  name: string,
+  env: SemanticEnv,
+  resolving: Set<string>,
+): number | undefined {
+  if (resolving.has(name)) {
+    throw new Error(
+      "Recursive fixed array length: " + [...resolving, name].join(" -> "),
+    );
+  }
+
+  const binding = env.bindings.get(name);
+
+  if (
+    binding?.declaration?.kind !== "const" || binding.value === undefined
+  ) {
+    return undefined;
+  }
+
+  const next = new Set(resolving);
+  next.add(name);
+  return semantic_const_i32_expr(binding.value, env, next);
+}
+
+function semantic_const_i32_expr(
+  expr: FrontExpr,
+  env: SemanticEnv,
+  resolving: Set<string>,
+): number | undefined {
+  if (
+    expr.tag === "num" && expr.type === "i32" &&
+    typeof expr.value === "number"
+  ) {
+    return expr.value;
+  }
+
+  if (expr.tag === "var") {
+    return semantic_const_i32_name(expr.name, env, resolving);
+  }
+
+  if (expr.tag === "captured" || expr.tag === "comptime") {
+    return semantic_const_i32_expr(expr.expr, env, resolving);
+  }
+
+  if (expr.tag !== "prim") {
+    return undefined;
+  }
+
+  const left = semantic_const_i32_expr(expr.left, env, resolving);
+  const right = semantic_const_i32_expr(expr.right, env, resolving);
+
+  if (left === undefined || right === undefined) {
+    return undefined;
+  }
+
+  if (expr.prim === "i32.add") {
+    return (left + right) | 0;
+  }
+
+  if (expr.prim === "i32.sub") {
+    return (left - right) | 0;
+  }
+
+  if (expr.prim === "i32.mul") {
+    return Math.imul(left, right);
+  }
+
+  if (expr.prim === "i32.div_s") {
+    if (right === 0) {
+      throw new Error("Fixed array length divides by zero");
+    }
+
+    return Math.trunc(left / right) | 0;
+  }
+
+  if (expr.prim === "i32.rem_s") {
+    if (right === 0) {
+      throw new Error("Fixed array length divides by zero");
+    }
+
+    return left % right;
+  }
+
+  return undefined;
 }
 
 function type_name(type: FrontType): string {

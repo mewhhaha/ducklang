@@ -1,4 +1,5 @@
 import { assert_equals, assert_includes, assert_throws } from "../assert.ts";
+import { Source } from "../frontend.ts";
 import { format_source } from "./format.ts";
 import { load_source } from "./load.ts";
 import { parse_source } from "./parser.ts";
@@ -430,6 +431,29 @@ Deno.test("module imports bind dependency initializers", () => {
 
     assert_equals(dependency.name, "dependency");
     assert_equals(dependency.value.tag, "lam");
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+Deno.test("module imports specialize explicit const build parameters", () => {
+  const dir = Deno.makeTempDirSync();
+
+  try {
+    Deno.writeTextFileSync(
+      dir + "/dependency.ix",
+      "module (const release: Bool) where\n" +
+        "const value = if release { 42 } else { 0 }\n" +
+        "return { value }\n",
+    );
+    Deno.writeTextFileSync(
+      dir + "/main.ix",
+      'module () where\nconst dependency = import "./dependency.ix"\n' +
+        "const { value } = dependency(true)\nreturn { value }\n",
+    );
+
+    const wat = Source.wat(load_source(dir + "/main.ix"));
+    assert_includes(wat, "i32.const 42");
   } finally {
     Deno.removeSync(dir, { recursive: true });
   }

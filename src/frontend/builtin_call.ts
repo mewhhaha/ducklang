@@ -7,8 +7,15 @@ import type {
   ResolvedFrontExpr,
   TypeField,
 } from "./ast.ts";
+import {
+  resolve_comptime_type,
+  resolve_comptime_value,
+} from "./comptime_value.ts";
 import { call_message } from "./fields.ts";
+import { lookup_field } from "./fields.ts";
+import { fixed_array_length } from "./fixed_array_type.ts";
 import { lower_text_builtin_call } from "./builtin_call/text.ts";
+import { fresh } from "./env.ts";
 
 export type BuiltinCallHooks = {
   capture_expr: (expr: FrontExpr, env: Env) => FrontExpr;
@@ -52,6 +59,10 @@ export type BuiltinCallHooks = {
     expr: Extract<FrontExpr, { tag: "index" }>,
     env: Env,
   ) => ResolvedFrontExpr | undefined;
+  resolve_const_expr_with_env: (
+    expr: FrontExpr,
+    env: Env,
+  ) => ResolvedFrontExpr | undefined;
   resolve_runtime_struct_type: (
     expr: FrontExpr,
     env: Env,
@@ -87,6 +98,339 @@ export function lower_builtin_call(
   if (expr.func.name === "panic") {
     call_message(expr.args);
     return { tag: "prim", prim: "i32.trap", args: [] };
+  }
+
+  if (expr.func.name === "project") {
+    if (expr.args.length !== 2) {
+      throw new Error(
+        "project expects a value and one compile-time field descriptor",
+      );
+    }
+
+    const value = expr.args[0];
+    const descriptor_expr = expr.args[1];
+    if (!value || !descriptor_expr) {
+      throw new Error("project is missing its value or field descriptor");
+    }
+
+    const descriptor = resolve_comptime_value(descriptor_expr, env, {
+      resolve_const_expr_with_env: hooks.resolve_const_expr_with_env,
+    });
+
+    if (!descriptor || descriptor.tag !== "record") {
+      throw new Error("project requires a compile-time field descriptor");
+    }
+
+    const kind_field = descriptor.fields.find((field) => {
+      return field.name === "kind";
+    });
+    const descriptor_kind = kind_field?.value;
+
+    const name_field = descriptor.fields.find((field) => {
+      return field.name === "name";
+    });
+    const index_field = descriptor.fields.find((field) => {
+      return field.name === "index";
+    });
+
+    if (
+      descriptor_kind?.tag === "scalar" &&
+      descriptor_kind.value.tag === "atom" &&
+      descriptor_kind.value.name === "case"
+    ) {
+      if (
+        !name_field || name_field.value.tag !== "scalar" ||
+        name_field.value.value.tag !== "text" ||
+        name_field.value.value.value.length === 0
+      ) {
+        throw new Error("case descriptor is missing its case name");
+      }
+
+      const case_name = name_field.value.value.value;
+      const payload_name = fresh(env, "case_payload_" + case_name);
+      const message: FrontExpr = {
+        tag: "text",
+        value: "project expected union case " + case_name,
+      };
+      return hooks.lower_expr(
+        {
+          tag: "if_let",
+          case_name,
+          value_name: payload_name,
+          target: value,
+          then_branch: { tag: "var", name: payload_name },
+          else_branch: {
+            tag: "app",
+            func: { tag: "var", name: "panic" },
+            arg: message,
+            args: [message],
+          },
+        },
+        env,
+      );
+    }
+
+    if (
+      name_field && name_field.value.tag === "scalar" &&
+      name_field.value.value.tag === "text" &&
+      name_field.value.value.value.length > 0
+    ) {
+      return hooks.lower_expr(
+        {
+          tag: "field",
+          object: value,
+          name: name_field.value.value.value,
+        },
+        env,
+      );
+    }
+
+    if (
+      !index_field || index_field.value.tag !== "scalar" ||
+      index_field.value.value.tag !== "num" ||
+      typeof index_field.value.value.value !== "number"
+    ) {
+      throw new Error("project descriptor is missing a numeric index");
+    }
+
+    return hooks.lower_expr(
+      {
+        tag: "index",
+        object: value,
+        index: {
+          tag: "num",
+          type: "i32",
+          value: index_field.value.value.value,
+        },
+      },
+      env,
+    );
+  }
+
+  if (expr.func.name === "is_case") {
+    if (expr.args.length !== 2) {
+      throw new Error(
+        "is_case expects a union value and one compile-time case descriptor",
+      );
+    }
+
+    const value = expr.args[0];
+    const descriptor_expr = expr.args[1];
+    if (!value || !descriptor_expr) {
+      throw new Error("is_case is missing its value or case descriptor");
+    }
+
+    const descriptor = resolve_comptime_value(descriptor_expr, env, {
+      resolve_const_expr_with_env: hooks.resolve_const_expr_with_env,
+    });
+
+    if (!descriptor || descriptor.tag !== "record") {
+      throw new Error("is_case requires a compile-time case descriptor");
+    }
+
+    const kind_field = descriptor.fields.find((field) => {
+      return field.name === "kind";
+    });
+    const name_field = descriptor.fields.find((field) => {
+      return field.name === "name";
+    });
+
+    if (
+      !kind_field || kind_field.value.tag !== "scalar" ||
+      kind_field.value.value.tag !== "atom" ||
+      kind_field.value.value.name !== "case" || !name_field ||
+      name_field.value.tag !== "scalar" ||
+      name_field.value.value.tag !== "text" ||
+      name_field.value.value.value.length === 0
+    ) {
+      throw new Error("is_case requires a compile-time case descriptor");
+    }
+
+    return hooks.lower_expr(
+      {
+        tag: "if_let",
+        case_name: name_field.value.value.value,
+        value_name: undefined,
+        target: value,
+        then_branch: { tag: "bool", value: true },
+        else_branch: { tag: "bool", value: false },
+      },
+      env,
+    );
+  }
+
+  if (expr.func.name === "construct") {
+    if (expr.args.length !== 2) {
+      throw new Error(
+        "construct expects a compile-time type and one aggregate value",
+      );
+    }
+
+    const type_expr = expr.args[0];
+    const values = expr.args[1];
+    if (!type_expr || !values) {
+      throw new Error("construct is missing its type or aggregate value");
+    }
+
+    const descriptor = resolve_comptime_value(type_expr, env, {
+      resolve_const_expr_with_env: hooks.resolve_const_expr_with_env,
+    });
+
+    if (descriptor?.tag === "record") {
+      const kind_field = descriptor.fields.find((field) => {
+        return field.name === "kind";
+      });
+
+      if (
+        kind_field?.value.tag === "scalar" &&
+        kind_field.value.value.tag === "atom" &&
+        kind_field.value.value.name === "case"
+      ) {
+        const name_field = descriptor.fields.find((field) => {
+          return field.name === "name";
+        });
+        const owner_field = descriptor.fields.find((field) => {
+          return field.name === "owner";
+        });
+
+        if (
+          !name_field || name_field.value.tag !== "scalar" ||
+          name_field.value.value.tag !== "text" ||
+          name_field.value.value.value.length === 0 || !owner_field ||
+          owner_field.value.tag !== "type"
+        ) {
+          throw new Error("construct case descriptor is incomplete");
+        }
+
+        return hooks.lower_expr(
+          {
+            tag: "union_case",
+            name: name_field.value.value.value,
+            value: values,
+            type_expr: owner_field.value.type.source,
+          },
+          env,
+        );
+      }
+    }
+
+    const type = resolve_comptime_type(type_expr, env, {
+      resolve_const_expr_with_env: hooks.resolve_const_expr_with_env,
+    });
+
+    if (!type) {
+      throw new Error("construct requires a compile-time type value");
+    }
+
+    if (type.tag === "record") {
+      const fields = type.fields.map((field, index) => {
+        if (field.name === undefined) {
+          throw new Error(
+            "construct record field " + index.toString() + " has no name",
+          );
+        }
+
+        let value: FrontExpr;
+
+        if (values.tag === "struct_value") {
+          const source = lookup_field(values.fields, field.name);
+
+          if (!source) {
+            throw new Error("construct is missing field " + field.name);
+          }
+
+          value = source.value;
+        } else if (values.tag === "product") {
+          const source = values.entries[index];
+
+          if (!source) {
+            throw new Error(
+              "construct is missing field index " + index.toString(),
+            );
+          }
+
+          value = source.value;
+        } else {
+          value = { tag: "field", object: values, name: field.name };
+        }
+
+        return { name: field.name, value };
+      });
+
+      return hooks.lower_expr(
+        { tag: "struct_value", type_expr, fields },
+        env,
+      );
+    }
+
+    if (type.tag === "product" || type.tag === "tuple") {
+      let entries: import("./comptime_value.ts").ComptimeTypeField[];
+
+      if (type.tag === "product") {
+        entries = type.entries;
+      } else {
+        entries = type.items.map((item) => ({
+          name: undefined,
+          type: item,
+          source: item.source,
+        }));
+      }
+      const result: Extract<FrontExpr, { tag: "product" }>[
+        "entries"
+      ] = [];
+
+      for (let index = 0; index < entries.length; index += 1) {
+        const target = entries[index];
+        if (!target) {
+          throw new Error("Missing construct product type entry " + index);
+        }
+
+        let value: FrontExpr;
+
+        if (values.tag === "product") {
+          const source = values.entries[index];
+          if (!source) {
+            throw new Error("construct is missing product entry " + index);
+          }
+          value = source.value;
+        } else {
+          value = {
+            tag: "index",
+            object: values,
+            index: { tag: "num", type: "i32", value: index },
+          };
+        }
+
+        const entry: typeof result[number] = { value };
+
+        if (target.name !== undefined) {
+          entry.label = target.name;
+        }
+
+        result.push(entry);
+      }
+
+      return hooks.lower_expr({ tag: "product", entries: result }, env);
+    }
+
+    if (type.tag === "array") {
+      if (values.tag !== "array" || values.rest !== undefined) {
+        throw new Error("construct fixed array requires an array value");
+      }
+
+      const length = fixed_array_length(type.length);
+
+      if (values.items.length !== length) {
+        throw new Error(
+          "construct fixed array expects " + length.toString() +
+            " values, got " + values.items.length.toString(),
+        );
+      }
+
+      return hooks.lower_expr(values, env);
+    }
+
+    throw new Error("construct does not support type kind " + type.tag);
   }
 
   const text_builtin = lower_text_builtin_call(expr, env, hooks);

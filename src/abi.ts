@@ -10,6 +10,7 @@ import {
   runtime_allocator_funcs,
 } from "./core/runtime_allocator.ts";
 import { closure_heap_global } from "./core/closure_runtime.ts";
+import { fixed_array_length } from "./frontend/fixed_array_type.ts";
 
 export const ix_abi_name = "ix-js";
 export const ix_abi_version = "ix-js-3";
@@ -870,7 +871,7 @@ function abi_fixed_array_type_ref(
     resolve_named,
     resolve_fixed_array,
   );
-  const length = abi_fixed_array_length(array.length);
+  const length = fixed_array_length(array.length);
   const schema = resolve_fixed_array(element, length);
   return { tag: "named", name: schema.name };
 }
@@ -895,52 +896,6 @@ function abi_type_ref_from_expr(
   }
 
   throw new Error("Unsupported ABI fixed-array element type");
-}
-
-function abi_fixed_array_length(
-  length: Extract<TypeExpr, { tag: "array" }>["length"],
-): number {
-  if (length.tag === "number") {
-    return length.value;
-  }
-
-  if (length.tag === "binary") {
-    const left = abi_fixed_array_length(length.left);
-    const right = abi_fixed_array_length(length.right);
-
-    if (length.op === "+") {
-      return left + right;
-    }
-
-    if (length.op === "-") {
-      return left - right;
-    }
-
-    if (length.op === "*") {
-      return left * right;
-    }
-
-    if (length.op === "/") {
-      if (right === 0) {
-        throw new Error("ABI fixed array length divides by zero");
-      }
-
-      return Math.trunc(left / right);
-    }
-
-    if (length.op === "%") {
-      if (right === 0) {
-        throw new Error("ABI fixed array length divides by zero");
-      }
-
-      return left % right;
-    }
-
-    length.op satisfies never;
-    throw new Error("Unsupported ABI fixed array length operator");
-  }
-
-  throw new Error("ABI fixed array length must be a numeric constant");
 }
 
 function primitive_abi_type_alias(

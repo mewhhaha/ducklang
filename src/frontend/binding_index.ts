@@ -15,7 +15,8 @@ import { name_sites, type NameSite } from "./name_site.ts";
 import type { ParseSourceResult } from "./parser.ts";
 import { has_source_span, source_span, type SourceSpan } from "./syntax.ts";
 import { source_facts, type SourceFacts } from "./source_facts.ts";
-import { front_type_from_type_name, is_builtin_type_name } from "./types.ts";
+import { front_type_from_type_name } from "./types.ts";
+import { is_const_builtin_name } from "./constness.ts";
 
 export type EntityId = string;
 export type ScopeId = string;
@@ -1020,7 +1021,7 @@ function visit_pattern(
 
   if (
     pattern.tag === "wildcard" || pattern.tag === "unit" ||
-    pattern.tag === "literal"
+    pattern.tag === "literal" || pattern.tag === "type"
   ) {
     return;
   }
@@ -1721,7 +1722,8 @@ function nominal_owner(
 }
 function is_builtin(name: string): boolean {
   return name === "true" || name === "false" ||
-    is_builtin_type_name(name);
+    name === "construct" || name === "project" || name === "is_case" ||
+    is_const_builtin_name(name);
 }
 function mark_unvisited_sites(
   source: object,

@@ -6,7 +6,8 @@ import { scan_source, source_tokens } from "../frontend/tokenize.ts";
 // token stream with fixed spacing, two-space bracket indentation, collapsed
 // blank runs, and canonical string escapes. It never reflows expressions
 // across lines, so the token order (and therefore the parsed program) is
-// unchanged apart from `;` separators becoming newlines in the tokenizer.
+// unchanged apart from statement `;` separators becoming newlines in the
+// tokenizer. Semicolons inside brackets remain fixed-array separators.
 
 const keywords = new Set([
   "borrow",
@@ -221,17 +222,26 @@ function previous_content(
 function split_lines(tokens: FormatToken[]): FormatToken[][] {
   const lines: FormatToken[][] = [];
   let current: FormatToken[] = [];
+  let bracket_depth = 0;
 
   for (const token of tokens) {
     if (token.kind === "eof") {
       break;
     }
 
-    if (token.kind === "newline") {
+    if (token.kind === "newline" && token.raw === ";" && bracket_depth > 0) {
+      current.push({ ...token, kind: "symbol", text: ";" });
+    } else if (token.kind === "newline") {
       lines.push(current);
       current = [];
     } else {
       current.push(token);
+
+      if (token.kind === "symbol" && token.text === "[") {
+        bracket_depth += 1;
+      } else if (token.kind === "symbol" && token.text === "]") {
+        bracket_depth -= 1;
+      }
     }
   }
 
@@ -432,7 +442,10 @@ function needs_space(
 
   if (token.kind === "symbol") {
     // No space before closers, separators, or tight accessors.
-    if (token.text === ")" || token.text === "]" || token.text === ",") {
+    if (
+      token.text === ")" || token.text === "]" || token.text === "," ||
+      token.text === ";"
+    ) {
       return false;
     }
 

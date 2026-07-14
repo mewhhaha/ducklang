@@ -46,6 +46,10 @@
           "named": true
         },
         {
+          "type": "array_spread",
+          "named": true
+        },
+        {
           "type": "arrow_function",
           "named": true
         },
@@ -283,6 +287,74 @@
           },
           {
             "type": "wildcard",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "array_spread",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "application_expression",
+            "named": true
+          },
+          {
+            "type": "arrow_function",
+            "named": true
+          },
+          {
+            "type": "as_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "effect_handler_expression",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "is_expression",
+            "named": true
+          },
+          {
+            "type": "loop_expression",
+            "named": true
+          },
+          {
+            "type": "match_expression",
+            "named": true
+          },
+          {
+            "type": "postfix_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_call_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_function",
+            "named": true
+          },
+          {
+            "type": "try_with_expression",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -1187,7 +1259,7 @@
         "required": true,
         "types": [
           {
-            "type": "positional_product",
+            "type": "parenthesized_or_product",
             "named": true
           }
         ]
@@ -3099,6 +3171,10 @@
             "named": true
           },
           {
+            "type": "type_pattern",
+            "named": true
+          },
+          {
             "type": "union_pattern",
             "named": true
           },
@@ -3339,6 +3415,10 @@
           },
           {
             "type": "string",
+            "named": true
+          },
+          {
+            "type": "type_pattern",
             "named": true
           },
           {
@@ -3694,6 +3774,10 @@
         },
         {
           "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_pattern",
           "named": true
         },
         {

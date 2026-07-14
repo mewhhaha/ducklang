@@ -184,6 +184,7 @@ const {
     ),
   resolve_annotation_type: (annotation, env) =>
     resolve_annotation_type(annotation, env),
+  try_eval_all_const_call,
 });
 
 const frontend_text_lower = create_frontend_text_lower({
@@ -251,6 +252,7 @@ const frontend_const_resolve = create_frontend_const_resolve({
 const {
   eval_const_builtin,
   resolve_const_expr,
+  resolve_const_expr_with_env,
   resolve_const_field_expr,
 } = frontend_const_resolve;
 
@@ -422,6 +424,7 @@ const frontend_program_hooks = create_frontend_lower_graph_program_hooks({
   requires_specialized_call,
   resolve_annotation_type,
   resolve_const_field_expr,
+  resolve_const_expr_with_env,
   resolve_dynamic_if_let_struct_value,
   resolve_dynamic_union_if_target,
   resolve_index_expr,
