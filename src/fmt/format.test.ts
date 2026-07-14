@@ -31,6 +31,13 @@ Deno.test("format_text indents union alternatives", () => {
   );
 });
 
+Deno.test("format_text keeps match alternatives inside their braces", () => {
+  assert_equals(
+    format_text("match value {\n| .some item => item\n| .none => 0\n}\n"),
+    "match value {\n  | .some item => item\n  | .none => 0\n}\n",
+  );
+});
+
 Deno.test("format_text preserves comments", () => {
   assert_equals(
     format_text("//header\nlet value = 1 //trailing\n"),

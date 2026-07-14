@@ -137,7 +137,7 @@ export function format_syntax(syntax: SourceSyntax): string {
       indent += 1;
     }
 
-    if (alternative) {
+    if (alternative && enclosing === undefined) {
       indent += 1;
     }
 

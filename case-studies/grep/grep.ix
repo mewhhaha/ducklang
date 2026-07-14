@@ -51,25 +51,92 @@ const line_contains = (bytes: Bytes, pattern: Text, line_start: I32, line_end: I
   matched
 }
 
-// 0 = no match, 1 = matched and written, 2 = matched but stdout closed,
-// 3 = matched but the write failed
+const line_not_matched = 0
+const line_written = 1
+const output_closed = 2
+const output_failed = 3
+
 let emit_line: (Bytes, Text, I32, I32) -> <Stdout.write> I32 =
   (buffer: Bytes, pattern: Text, line_start: I32, line_end: I32) => {
     let line_matches = line_contains(buffer, pattern, line_start, line_end)
 
-    if line_matches {
-      let line: Bytes = slice(buffer, line_start, line_end)
-      write_result <- Stdout.write(&line)
+    if line_matches == false {
+      return line_not_matched
+    }
 
-      if let .ok = write_result {
-        1
-      } else if let .closed = write_result {
-        2
-      } else {
-        3
+    let line: Bytes = slice(buffer, line_start, line_end)
+    write_result <- Stdout.write(&line)
+
+    match write_result {
+      | .ok => line_written
+      | .closed => output_closed
+      | .err(_) => output_failed
+    }
+  }
+
+let scan: (Bytes, Text) -> <FileReader.read | Stdout.write> I32 =
+  (first_bytes: Bytes, pattern: Text) => {
+    let current: Bytes = first_bytes
+    let pending: Bytes = slice(first_bytes, 0, 0)
+    let code = 1
+
+    loop {
+      pending = append(pending, current)
+      let consumed = 0
+      let stop_code = -1
+
+      for index, byte in pending {
+        if (let '\n' = byte) {
+          let line_end = index + 1
+          emit_result <- emit_line(pending, pattern, consumed, line_end)
+
+          if emit_result == line_written {
+            code = 0
+          } else if emit_result == output_closed {
+            stop_code = 0
+          } else if emit_result == output_failed {
+            stop_code = 2
+          }
+
+          consumed = line_end
+
+          if stop_code >= 0 {
+            break
+          }
+        }
       }
-    } else {
-      0
+
+      pending = slice(pending, consumed, len(pending))
+
+      if stop_code >= 0 {
+        break stop_code
+      }
+
+      read_result <- FileReader.read(65536)
+
+      if let .chunk(bytes) = read_result {
+        current = bytes
+      } else if let .eof = read_result {
+        stop_code = code
+
+        if len(pending) > 0 {
+          emit_result <- emit_line(pending, pattern, 0, len(pending))
+
+          if emit_result == output_failed {
+            stop_code = 2
+          } else if emit_result != line_not_matched {
+            stop_code = 0
+          }
+        }
+
+        ()
+      } else {
+        stop_code = 2
+      }
+
+      if stop_code >= 0 {
+        break stop_code
+      }
     }
   }
 
@@ -77,7 +144,6 @@ arg_count <- Process.arg_count()
 let code = 2
 
 if arg_count == 2 {
-  /// hello
   pattern <- Process.arg(0)
   path <- Process.arg(1)
   open_result <- FileReader.open(&path)
@@ -86,96 +152,13 @@ if arg_count == 2 {
     first_result <- FileReader.read(65536)
 
     if let .chunk(first_bytes) = first_result {
-      let current: Bytes = first_bytes
-      let pending: Bytes = slice(first_bytes, 0, 0)
-      let matched_any = false
-      let done = false
-      let failed = false
-      let stopped = false
-      loop_code <- loop {
-        let appended: Bytes = append(pending, current)
-        pending = appended
-        let consumed = 0
-
-        for index, byte in pending {
-          if (let '\n' = byte) {
-            let line_end = index + 1
-
-            if stopped == false && failed == false {
-              line_status <- emit_line(pending, pattern, consumed, line_end)
-
-              if line_status != 0 {
-                matched_any = true
-              }
-
-              if line_status == 2 {
-                stopped = true
-              }
-
-              if line_status == 3 {
-                failed = true
-              }
-            }
-
-            consumed = line_end
-          }
-        }
-
-        pending = slice(pending, consumed, len(pending))
-
-        if stopped == false && failed == false {
-          next_result <- FileReader.read(65536)
-
-          if let .chunk(next_bytes) = next_result {
-            current = next_bytes
-          } else if let .eof = next_result {
-            done = true
-          } else if let .err = next_result {
-            failed = true
-          }
-        }
-
-        if done && failed == false && stopped == false && len(pending) > 0 {
-          tail_status <- emit_line(pending, pattern, 0, len(pending))
-
-          if tail_status != 0 {
-            matched_any = true
-          }
-
-          if tail_status == 2 {
-            stopped = true
-          }
-
-          if tail_status == 3 {
-            failed = true
-          }
-        }
-
-        if done || stopped || failed {
-          break if failed {
-            2
-          } else if matched_any {
-            0
-          } else {
-            1
-          }
-        }
-      }
-
-      code = loop_code
-      code
+      scan_code <- scan(first_bytes, pattern)
+      code = scan_code
     } else if let .eof = first_result {
       code = 1
-      code
-    } else if let .err = first_result {
-      code = 2
-      code
     }
 
     _ <- FileReader.close()
-    ()
-  } else if let .err = open_result {
-    code = 2
     ()
   }
 }
