@@ -17,6 +17,11 @@ jobs:
         with:
           deno-version: v2.9.2
 
+      - name: install ripgrep
+        run: |
+          sudo apt-get update -qq >/tmp/apt.log 2>&1
+          sudo apt-get install -y -qq ripgrep >>/tmp/apt.log 2>&1
+
       - name: install tree-sitter
         run: npm install --global tree-sitter-cli@0.26.3
 
@@ -56,8 +61,15 @@ jobs:
 
       - name: install wabt
         run: |
-          sudo apt-get update -qq >/tmp/apt.log 2>&1
-          sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
+          curl --fail --location --silent --show-error \
+            https://github.com/WebAssembly/wabt/releases/download/1.0.41/wabt-1.0.41-linux-x64.tar.gz \
+            --output /tmp/wabt-1.0.41-linux-x64.tar.gz
+          echo "83f8122e924745fcd70636e3594bc01c4c47f2d4c8f3c63b5d70d3f83a482677  /tmp/wabt-1.0.41-linux-x64.tar.gz" \
+            | sha256sum --check
+          tar --extract --gzip \
+            --file /tmp/wabt-1.0.41-linux-x64.tar.gz \
+            --directory /tmp
+          echo "/tmp/wabt-1.0.41/bin" >> "$GITHUB_PATH"
 
       - name: run source and example tests
         run: deno test --allow-read --allow-write --allow-run src examples scripts
@@ -84,8 +96,15 @@ jobs:
 
       - name: install wabt
         run: |
-          sudo apt-get update -qq >/tmp/apt.log 2>&1
-          sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
+          curl --fail --location --silent --show-error \
+            https://github.com/WebAssembly/wabt/releases/download/1.0.41/wabt-1.0.41-linux-x64.tar.gz \
+            --output /tmp/wabt-1.0.41-linux-x64.tar.gz
+          echo "83f8122e924745fcd70636e3594bc01c4c47f2d4c8f3c63b5d70d3f83a482677  /tmp/wabt-1.0.41-linux-x64.tar.gz" \
+            | sha256sum --check
+          tar --extract --gzip \
+            --file /tmp/wabt-1.0.41-linux-x64.tar.gz \
+            --directory /tmp
+          echo "/tmp/wabt-1.0.41/bin" >> "$GITHUB_PATH"
 
       - name: run case study
         run: deno test --allow-read --allow-write --allow-run case-studies/${{ matrix.study }}
