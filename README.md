@@ -560,7 +560,9 @@ tree-sitter-duck/      Tree-sitter grammar and Helix queries for .duck files
 ```
 
 The supported TypeScript exports and diagnostic categories are documented in
-[TypeScript API and Diagnostic Migration](docs/typescript-api-migration.md).
+[TypeScript API and Diagnostic Migration](docs/typescript-api-migration.md). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the repository workflow and complete
+verification gate. Ducklang is available under the [MIT License](LICENSE).
 
 ## Development
 

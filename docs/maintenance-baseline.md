@@ -33,10 +33,10 @@ gate.
 
 ## Dependencies
 
-The initial dependency report is recorded in `scripts/dependency-baseline.json`.
-It contains seven multi-file strongly connected components, with 143 files in
-the largest component, and 77 forbidden layer imports. `just architecture-check`
-prevents new findings while the baseline is reduced.
+The initial dependency report contained seven multi-file strongly connected
+components, with 143 files in the largest component, and 77 forbidden layer
+imports. These historical counts remain recorded here; the checked
+`scripts/dependency-baseline.json` is updated as findings are removed.
 
 ## Product Barrel
 
@@ -173,3 +173,21 @@ InferenceType
 TypeConstraint
 TypeScheme
 ```
+
+## Campaign Result
+
+The final campaign gate runs 1,317 source, example, API, tooling, and
+architecture tests plus all 36 case-study tests. The grammar corpus, 96 example
+parses, three prelude parses, and all six queries remain unchanged and green.
+
+The dependency baseline is empty: there are no multi-file import cycles and no
+forbidden layer imports. The supported frontend barrel contains 59 symbols, down
+from 129; the migration is documented in `docs/typescript-api-migration.md`. The
+Deno lockfile still contains only `@mewhhaha/typeclasses` 0.5.0.
+
+In the final local performance run, all 72 successful examples compiled in
+308.78 ms. The largest compile took 53.29 ms and the largest output remained
+12,779 WAT bytes. LSP cold initialization was 88.45 ms, edit diagnostics were
+80.22 ms, completion was 1.95 ms, and measured heap growth was 30,143,184 bytes.
+Every value remains well within its absolute budget; generated program output
+and the `duck-js-1` ABI are unchanged.
