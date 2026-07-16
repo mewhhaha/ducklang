@@ -20,6 +20,22 @@ export function format_type_expr(type: TypeExpr): string {
   return format(type, 0);
 }
 
+export function function_type_expr(
+  type: TypeExpr | undefined,
+): Extract<TypeExpr, { tag: "arrow" }> | undefined {
+  let current = type;
+
+  while (current?.tag === "forall") {
+    current = current.body;
+  }
+
+  if (current?.tag === "arrow") {
+    return current;
+  }
+
+  return undefined;
+}
+
 class TypeExprParser {
   private index = 0;
 
@@ -31,6 +47,36 @@ class TypeExprParser {
   }
 
   parse_arrow(): TypeExpr {
+    const token = this.peek();
+
+    if (token?.kind === "name" && token.text === "forall") {
+      this.index += 1;
+      const params: string[] = [];
+
+      while (true) {
+        const param = this.peek();
+
+        if (param?.kind !== "name") {
+          break;
+        }
+
+        expect(
+          is_snake_case(param.text) && param.text !== "_",
+          "Forall type parameter must use snake_case: " + param.text,
+        );
+        expect(
+          !params.includes(param.text),
+          "Duplicate forall type parameter: " + param.text,
+        );
+        params.push(param.text);
+        this.index += 1;
+      }
+
+      expect(params.length > 0, "Forall type requires at least one parameter");
+      this.expect_symbol(".");
+      return { tag: "forall", params, body: this.parse_arrow() };
+    }
+
     const param = this.parse_union();
 
     if (!this.match_symbol("->")) {
@@ -430,6 +476,13 @@ class TypeExprParser {
 function format(type: TypeExpr, parent_precedence: number): string {
   if (type.tag === "name") {
     return type.name;
+  }
+
+  if (type.tag === "forall") {
+    const precedence = 0;
+    const text = "forall " + type.params.join(" ") + ". " +
+      format(type.body, precedence);
+    return parenthesize(text, precedence, parent_precedence);
   }
 
   if (type.tag === "atom") {

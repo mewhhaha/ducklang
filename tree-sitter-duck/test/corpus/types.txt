@@ -1,4 +1,69 @@
 ==================
+Rank-N function types
+==================
+
+const identity: forall value. value -> value = value => value
+const apply: (forall value. value -> value) -> I32 =
+  (const identity) => identity(42)
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (type_reference
+      (forall_type
+        (identifier)
+        (function_type
+          (type_union
+            (type_intersection
+              (type_difference
+                (identifier))))
+          (type_union
+            (type_intersection
+              (type_difference
+                (identifier)))))))
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (identifier))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (type_union
+          (type_intersection
+            (type_difference
+              (type_parenthesized
+                (forall_type
+                  (identifier)
+                  (function_type
+                    (type_union
+                      (type_intersection
+                        (type_difference
+                          (identifier))))
+                    (type_union
+                      (type_intersection
+                        (type_difference
+                          (identifier))))))))))
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))))
+    (arrow_function
+      (parameter_list
+        (parameter
+          (identifier)))
+      (application_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (number))))))))
+
+==================
 Surface function types
 ==================
 

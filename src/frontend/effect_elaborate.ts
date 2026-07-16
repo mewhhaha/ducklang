@@ -30,6 +30,7 @@ import { is_no_demand_name } from "./names.ts";
 import { substitute_front_expr } from "./substitute.ts";
 import { type_declaration_bindings } from "./type_declaration.ts";
 import { prim_returns_bool } from "./numeric.ts";
+import { function_type_expr } from "./type_expr.ts";
 import { pattern_bindings } from "./pattern.ts";
 
 type EffectElaboration = {
@@ -280,11 +281,12 @@ function materialize_module_result_type(
     }
 
     if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+      const function_type = function_type_expr(stmt.type_annotation);
+
       if (
-        stmt.type_annotation?.tag === "arrow" &&
-        stmt.type_annotation.result.tag === "name"
+        function_type && function_type.result.tag === "name"
       ) {
-        functions.set(stmt.name, stmt.type_annotation.result.name);
+        functions.set(stmt.name, function_type.result.name);
         continue;
       }
 
@@ -1131,7 +1133,7 @@ function rewrite_statements(
 
       let annotation = stmt.annotation;
 
-      if (stmt.type_annotation?.tag === "arrow") {
+      if (function_type_expr(stmt.type_annotation)) {
         expect(
           stmt.value.tag === "lam" || stmt.value.tag === "rec",
           "Function type annotation requires a function value: " + stmt.name,

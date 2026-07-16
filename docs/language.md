@@ -477,13 +477,35 @@ cases.
 
 Functions use closure syntax.
 
-```txt
+```duck
 let add = (x, y) => x + y
 
 let add_block = (x, y) => {
   x + y
 }
 ```
+
+Function types support explicit universal quantification. `forall` binds one or
+more type variables through the following type expression, and it may occur at
+any rank. Parentheses delimit a nested quantified argument or result:
+
+```duck
+const identity: forall value. value -> value = value => value
+
+const apply_identity: (forall value. value -> value) -> I32 =
+  (const identity) => identity(42)
+
+const make_identity: Bool -> (forall value. value -> value) =
+  flag => value => value
+```
+
+Binder names are alpha-equivalent, so `forall value. value -> value` and
+`forall element. element -> element` denote the same type. An implementation
+checked against `forall` must remain valid for every quantified type; a
+monomorphic function such as `I32 -> I32` cannot satisfy that annotation.
+Unannotated const functions are generalized over inference variables not fixed
+by their environment. Calls instantiate those variables predicatively; Duck does
+not infer impredicative instantiations.
 
 Blocks return their final expression. `return` exits the nearest function,
 including through nested block expressions used before later fallthrough

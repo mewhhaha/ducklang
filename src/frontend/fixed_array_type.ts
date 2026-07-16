@@ -25,6 +25,12 @@ export function normalize_fixed_array_type_lengths(
   resolve_name: FixedArrayLengthResolver,
 ): TypeExpr {
   switch (type.tag) {
+    case "forall":
+      return {
+        ...type,
+        body: normalize_fixed_array_type_lengths(type.body, resolve_name),
+      };
+
     case "name":
     case "atom":
     case "top":

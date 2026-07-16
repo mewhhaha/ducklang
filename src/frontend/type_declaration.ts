@@ -162,6 +162,9 @@ function alias_uses_type_set_surface(text: string): boolean {
 
 function type_expr_uses_set_surface(type: TypeExpr): boolean {
   switch (type.tag) {
+    case "forall":
+      return type_expr_uses_set_surface(type.body);
+
     case "atom":
     case "top":
     case "never":
@@ -298,6 +301,12 @@ export function front_type_value_for_semantic_type(
 
 function runtime_type_name(type: SemType, declaration_name: string): string {
   switch (type.tag) {
+    case "forall":
+      throw new Error(
+        "Polymorphic type-set member has no runtime payload layout in " +
+          declaration_name,
+      );
+
     case "scalar":
       return type.name;
 
@@ -344,6 +353,13 @@ function runtime_type_name(type: SemType, declaration_name: string): string {
 
 function type_expr_for_semantic_type(type: SemType): TypeExpr {
   switch (type.tag) {
+    case "forall":
+      return {
+        tag: "forall",
+        params: type.params,
+        body: type_expr_for_semantic_type(type.body),
+      };
+
     case "top":
       return { tag: "top" };
 

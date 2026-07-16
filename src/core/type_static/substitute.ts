@@ -374,6 +374,19 @@ function substitute_core_type_set_member(
   type_args: Map<string, string>,
 ): TypeExpr {
   switch (type.tag) {
+    case "forall": {
+      const scoped = new Map(type_args);
+
+      for (const param of type.params) {
+        scoped.delete(param);
+      }
+
+      return {
+        ...type,
+        body: substitute_core_type_set_member(type.body, scoped),
+      };
+    }
+
     case "name":
       return {
         tag: "name",

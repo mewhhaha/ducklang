@@ -13,7 +13,7 @@ import type {
 } from "./ast.ts";
 import { val_type_from_type_name } from "./types.ts";
 import { resolve_effect_row } from "./effect_row.ts";
-import { format_type_expr } from "./type_expr.ts";
+import { format_type_expr, function_type_expr } from "./type_expr.ts";
 import { prim_returns_bool } from "./numeric.ts";
 
 export type FrontEffectFunction = {
@@ -306,8 +306,10 @@ function collect_function_facts_from_statements(
 
     let type_annotation: FunctionTypeExpr | undefined;
 
-    if (stmt.type_annotation?.tag === "arrow") {
-      type_annotation = stmt.type_annotation;
+    const declared_function_type = function_type_expr(stmt.type_annotation);
+
+    if (declared_function_type) {
+      type_annotation = declared_function_type;
       const params = function_type_params(type_annotation);
       expect(
         params.length === value.params.length,
@@ -657,8 +659,10 @@ function function_parameter_effects(
       callback_type = param_type;
     }
 
-    if (callback_type?.tag === "arrow") {
-      result.set(param.name, callback_type.effects);
+    const callback_function_type = function_type_expr(callback_type);
+
+    if (callback_function_type) {
+      result.set(param.name, callback_function_type.effects);
     }
   }
 
@@ -687,9 +691,11 @@ function function_parameter_result_types(
       callback_type = param_type;
     }
 
-    if (callback_type?.tag === "arrow") {
-      if (callback_type.result.tag === "name") {
-        result.set(param.name, callback_type.result.name);
+    const callback_function_type = function_type_expr(callback_type);
+
+    if (callback_function_type) {
+      if (callback_function_type.result.tag === "name") {
+        result.set(param.name, callback_function_type.result.name);
       } else {
         result.set(param.name, undefined);
       }
@@ -1192,7 +1198,7 @@ function scan_statements(
         continue;
       }
 
-      if (facts && stmt.type_annotation?.tag === "arrow") {
+      if (facts && function_type_expr(stmt.type_annotation)) {
         throw new Error(
           "Typed function alias " + stmt.name +
             " is not supported yet; bind a function literal instead",

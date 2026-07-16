@@ -506,6 +506,28 @@ result
   ]);
 });
 
+Deno.test("Rank-N function annotations preserve callback effect rows", () => {
+  const analysis = Source.effects(`
+declare effect Io { read: () => I32 }
+
+let apply: forall value. (value -> <e> value, value) -> <e> value =
+  (const callback, value) => {
+    result <- callback(value)
+    result
+  }
+
+result <- apply(() => {
+  value <- Io.read()
+  value
+}, ())
+result
+`);
+
+  assert_equals(analysis.module_effects, [
+    { effect: "Io", operation: "read" },
+  ]);
+});
+
 Deno.test("effectful named callback values fail before Core lowering", () => {
   assert_throws(
     () =>

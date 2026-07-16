@@ -3,7 +3,34 @@ import { format_source } from "./format.ts";
 import { resolve_effect_row } from "./effect_row.ts";
 import { parse_source } from "./parser.ts";
 import { tokenize } from "./tokenize.ts";
-import { format_type_expr, parse_type_expr } from "./type_expr.ts";
+import {
+  format_type_expr,
+  function_type_expr,
+  parse_type_expr,
+} from "./type_expr.ts";
+
+Deno.test("forall types parse at arbitrary ranks", () => {
+  const rank_two = parse_type_expr(tokenize(
+    "(forall value. value -> value) -> [I32, Bool]",
+  ));
+  const rank_three = parse_type_expr(tokenize(
+    "forall outer. (forall inner. inner -> outer) -> outer",
+  ));
+
+  assert_equals(
+    format_type_expr(rank_two),
+    "(forall value. value -> value) -> [I32, Bool]",
+  );
+  assert_equals(
+    format_type_expr(rank_three),
+    "forall outer. (forall inner. inner -> outer) -> outer",
+  );
+  assert_equals(function_type_expr(rank_three)?.tag, "arrow");
+  assert_throws(
+    () => parse_type_expr(tokenize("forall value value. value")),
+    "Duplicate forall type parameter: value",
+  );
+});
 
 Deno.test("type expressions compose with whitespace application and arrows", () => {
   const type = parse_type_expr(tokenize(

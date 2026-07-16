@@ -207,6 +207,7 @@ Source.analyze_file = function analyze_file(
 Source.emit = function emit(source: SourceNode): IcNode {
   source = resolve_bundled_source_imports(source);
   source = specialize_front_effects(source);
+  check_rank_n_inference(source);
   validate_atom_identities(source);
   validate_ic_route(source);
   return lower_program(
@@ -518,6 +519,7 @@ function prepare_core_source(source: SourceNode): SourceNode {
   source = resolve_bundled_source_imports(source);
   derive_missing_source_spans(source, { start: 0, end: 0 });
   source = specialize_front_effects(source);
+  check_rank_n_inference(source);
   const diagnostics = validate_frontend_semantics(source, {
     scope: "core-representation",
   });
@@ -533,6 +535,22 @@ function prepare_core_source(source: SourceNode): SourceNode {
       elaborate_front_effects(elaborate_front_ducks(source)),
     ),
   );
+}
+
+function check_rank_n_inference(source: SourceNode): void {
+  const diagnostics = source_inference_diagnostics(
+    source,
+    source_facts(source),
+  );
+
+  for (const diagnostic of diagnostics) {
+    if (
+      diagnostic.severity === "error" &&
+      diagnostic.code === "DUCK2312"
+    ) {
+      throw new SourceDiagnosticError(diagnostic);
+    }
+  }
 }
 
 function core_from_elaborated_source(source: SourceNode): CoreNode {

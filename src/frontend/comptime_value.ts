@@ -16,6 +16,12 @@ export type ComptimeTypeField = {
 export type ComptimeType =
   | { tag: "top"; source: FrontExpr }
   | { tag: "never"; source: FrontExpr }
+  | {
+    tag: "forall";
+    params: string[];
+    body: ComptimeType;
+    source: FrontExpr;
+  }
   | { tag: "scalar"; name: string; source: FrontExpr }
   | { tag: "named"; name: string; source: FrontExpr }
   | { tag: "atom"; name: string; source: FrontExpr }
@@ -116,6 +122,10 @@ export function resolve_comptime_type(
 
 export function comptime_type_key(type: ComptimeType): string {
   switch (type.tag) {
+    case "forall":
+      return "forall(" + type.params.join(",") + "," +
+        comptime_type_key(type.body) + ")";
+
     case "top":
     case "never":
       return type.tag;
@@ -389,6 +399,19 @@ function comptime_type_from_type_expr(
   source: FrontExpr = { tag: "set_type", type_expr: expr },
 ): ComptimeType {
   switch (expr.tag) {
+    case "forall":
+      return {
+        tag: "forall",
+        params: expr.params,
+        body: comptime_type_from_type_expr(
+          expr.body,
+          env,
+          hooks,
+          resolving,
+        ),
+        source,
+      };
+
     case "top":
       return { tag: "top", source };
 

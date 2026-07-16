@@ -103,7 +103,7 @@ diagnostics, document formatting, and document symbols.
 
 ## Example
 
-```txt
+```duck
 const make_adder = n => {
   x => x + n
 }
@@ -125,7 +125,7 @@ header and export-record form shown in the next section.
 Loaded `.duck` files are modules. A module declares its inputs in the header and
 returns an ordered export shape at the end of the file:
 
-```txt
+```duck
 module () where
 
 let x = 40
@@ -136,7 +136,7 @@ return { .answer = x + 2 }
 
 Runtime values are immutable. Assignment syntax is modeled as shadowing:
 
-```txt
+```duck
 let x = 40
 x = x + 2     // same-type shadowing
 x := "done"  // type-changing shadowing
@@ -144,7 +144,7 @@ x := "done"  // type-changing shadowing
 
 Compile-time bindings use `const`, and compile-time execution uses `comptime`:
 
-```txt
+```duck
 const factor = 2
 const add_factor = comptime (n => x => x + n)(factor)
 ```
@@ -157,14 +157,14 @@ derived equality example combines records, arrays, and unions:
 
 Closures use arrow syntax:
 
-```txt
+```duck
 let add = (x, y) => x + y
 let inc = x => x + 1
 ```
 
 Recursive functions use `let rec`:
 
-```txt
+```duck
 let rec fib = n => {
   if n < 2 {
     n
@@ -176,11 +176,22 @@ let rec fib = n => {
 fib(6)
 ```
 
+Duck supports explicit Rank-N polymorphism with `forall`. Quantifiers may appear
+at any type position, and unannotated const functions are generalized:
+
+```duck
+const apply_identity: (forall value. value -> value) -> I32 =
+  (const identity) => identity(42)
+
+const identity = value => value
+comptime apply_identity(identity)
+```
+
 ## Syntax Snapshot
 
 Common statement forms:
 
-```txt
+```duck
 let name = expr
 let name: Type = expr
 let rec name = params => body
@@ -208,7 +219,7 @@ continue
 
 File-module forms:
 
-```txt
+```duck
 module () where
 module (!init: Init) where
 module (const release: Bool) where
@@ -221,7 +232,7 @@ return { .write = write }
 
 Common expression forms:
 
-```txt
+```duck
 42
 42i32
 42i64
@@ -255,7 +266,7 @@ object with { .field = value }
 
 Built-in type names:
 
-```txt
+```duck
 Int
 I32
 U32
@@ -269,7 +280,7 @@ Type
 
 Types are compile-time values.
 
-```txt
+```duck
 const { struct } = comptime (import "duck:prelude")()
 
 const user_type = struct {
@@ -284,7 +295,7 @@ user.age
 
 Unions support typed constructors and `if let` matching:
 
-```txt
+```duck
 type Option t = | .some = t | .none
 type IntOption = Option Int
 let value = IntOption.some 41
@@ -302,14 +313,14 @@ Text literals are UTF-8 strings. Visible text operations can fold during
 frontend lowering, while runtime `Text` values are represented as `i32` pointers
 to length-prefixed UTF-8 data in generated WAT.
 
-```txt
+```duck
 let greeting = "hello" + " " + "Ada"
 len(greeting)
 ```
 
 Text builtins include:
 
-```txt
+```duck
 len(value)
 get(value, index)
 slice(value, start, end)
@@ -321,7 +332,7 @@ append(left, right)
 Host services are nominal opaque effects declared in a Ducklang host interface.
 Their methods are the operations tracked by the effect system:
 
-```txt
+```duck
 declare effect Io {
   read: () => Text
   print: (&Text) => Unit
@@ -335,7 +346,7 @@ declare Init {
 Unannotated functions infer their minimal operation row. Function types use
 `-> <row>` for an explicit upper bound; a plain `->` is pure:
 
-```txt
+```duck
 let read_name = () => {
   name <- Io.read()
   name
@@ -360,7 +371,7 @@ propagate through calls, and a row annotation is an upper bound on the inferred
 minimal row. Type constructors compose by whitespace application, arrows
 associate right, and lowercase row variables propagate callback effects:
 
-```txt
+```duck
 (List a, a -> <e> b) -> <e> List b
 ```
 
@@ -369,7 +380,7 @@ narrowed context record; an import does not grant authority by itself.
 
 The entry module receives the sole root authority from JavaScript:
 
-```txt
+```duck
 module (!init: Init) where
 
 const console = import "./console.duck"
@@ -382,7 +393,7 @@ return { .result = result }
 `declare effect` means that the operations are implemented by the host. Plain
 `effect` defines operations handled entirely inside Duck:
 
-```txt
+```duck
 effect Counter {
   get: () => I32
   add: (I32) => Unit
@@ -414,14 +425,14 @@ managed JavaScript manifest.
 
 Linear bindings and parameters are marked with `!`.
 
-```txt
+```duck
 let !buffer = make_buffer()
 let use_once = (!value) => value
 ```
 
 Ownership-oriented expressions:
 
-```txt
+```duck
 &value
 freeze value
 scratch { statements }
@@ -430,7 +441,7 @@ scratch { statements }
 Host boundaries are declared as effects and supplied through `Init`. Operation
 parameters carry the same scalar and ownership contracts used by Core:
 
-```txt
+```duck
 declare effect Console {
   log: (I32) => I32
   print: (&Text) => I32

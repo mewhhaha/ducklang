@@ -5127,6 +5127,19 @@ function substitute_scope_type_expr(
   type_args: Map<string, string>,
 ): TypeExpr {
   switch (type.tag) {
+    case "forall": {
+      const scoped = new Map(type_args);
+
+      for (const param of type.params) {
+        scoped.delete(param);
+      }
+
+      return {
+        ...type,
+        body: substitute_scope_type_expr(type.body, scoped),
+      };
+    }
+
     case "name": {
       const type_name = type_args.get(type.name);
 

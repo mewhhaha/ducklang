@@ -164,6 +164,11 @@ export const success_examples: SuccessExample[] = [
     route: "core",
     runs: run(42),
   },
+  {
+    path: "examples/compile_time/14_rank_n_identity.duck",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/functions/01_closure_capture.duck",

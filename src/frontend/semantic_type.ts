@@ -11,6 +11,7 @@ import { tokenize } from "./tokenize.ts";
 export type SemType =
   | { tag: "top" }
   | { tag: "never" }
+  | { tag: "forall"; params: string[]; body: SemType }
   | { tag: "scalar"; name: string }
   | { tag: "named"; name: string }
   | { tag: "atom"; name: string }
@@ -64,6 +65,27 @@ export function sem_type_from_expr(
   resolve_name?: SemTypeNameResolver,
 ): SemType {
   switch (expr.tag) {
+    case "forall": {
+      const params = new Set(expr.params);
+      const resolve_bound_name: SemTypeNameResolver = (name) => {
+        if (params.has(name)) {
+          return { tag: "named", name };
+        }
+
+        if (resolve_name) {
+          return resolve_name(name);
+        }
+
+        return undefined;
+      };
+
+      return {
+        tag: "forall",
+        params: expr.params,
+        body: sem_type_from_expr(expr.body, resolve_bound_name),
+      };
+    }
+
     case "top":
       return { tag: "top" };
 
@@ -635,7 +657,30 @@ function sem_type_is_scalar(type: SemType): boolean {
 }
 
 export function sem_type_key(type: SemType): string {
+  return sem_type_key_with_binders(type, new Map(), { next: 0 });
+}
+
+function sem_type_key_with_binders(
+  type: SemType,
+  binders: Map<string, number>,
+  state: { next: number },
+): string {
   switch (type.tag) {
+    case "forall": {
+      const body_binders = new Map(binders);
+      const params: number[] = [];
+
+      for (const param of type.params) {
+        const binder = state.next;
+        state.next += 1;
+        body_binders.set(param, binder);
+        params.push(binder);
+      }
+
+      return "forall(" + params.join(",") + "," +
+        sem_type_key_with_binders(type.body, body_binders, state) + ")";
+    }
+
     case "top":
       return "top";
 
@@ -645,57 +690,95 @@ export function sem_type_key(type: SemType): string {
     case "scalar":
       return "scalar(" + canonical_scalar_name(type.name) + ")";
 
-    case "named":
+    case "named": {
+      const binder = binders.get(type.name);
+
+      if (binder !== undefined) {
+        return "bound(" + binder.toString() + ")";
+      }
+
       return "named(" + type.name + ")";
+    }
 
     case "atom":
       return "atom(" + type.name + ")";
 
     case "frozen":
-      return "frozen(" + sem_type_key(type.value) + ")";
+      return "frozen(" + sem_type_key_with_binders(
+        type.value,
+        binders,
+        state,
+      ) + ")";
 
     case "borrow":
-      return "borrow(" + sem_type_key(type.value) + ")";
+      return "borrow(" + sem_type_key_with_binders(
+        type.value,
+        binders,
+        state,
+      ) + ")";
 
     case "apply":
-      return "apply(" + sem_type_key(type.func) + "," +
-        sem_type_key(type.arg) + ")";
+      return "apply(" + sem_type_key_with_binders(
+        type.func,
+        binders,
+        state,
+      ) + "," + sem_type_key_with_binders(type.arg, binders, state) + ")";
 
     case "tuple":
-      return "tuple(" + type.items.map(sem_type_key).join(",") + ")";
+      return "tuple(" +
+        type.items.map((item) =>
+          sem_type_key_with_binders(item, binders, state)
+        ).join(",") + ")";
 
     case "product":
       return "product(" + type.entries.map((entry) => {
         const label = entry.label === undefined ? "" : entry.label + "=";
-        return label + sem_type_key(entry.type);
+        return label + sem_type_key_with_binders(entry.type, binders, state);
       }).join(",") + ")";
 
     case "array":
-      return "array(" + sem_type_key(type.element) + "," +
+      return "array(" + sem_type_key_with_binders(
+        type.element,
+        binders,
+        state,
+      ) + "," +
         array_length_key(type.length) + ")";
 
     case "record":
       return "record(" + type.fields.map((field) => {
-        return field.name + ":" + sem_type_key(field.type);
+        return field.name + ":" +
+          sem_type_key_with_binders(field.type, binders, state);
       }).join(",") + ")";
 
     case "variant":
       return "variant(" + type.name + ")";
 
     case "union":
-      return "union(" + type.members.map(sem_type_key).join(",") + ")";
+      return "union(" +
+        type.members.map((member) =>
+          sem_type_key_with_binders(member, binders, state)
+        ).join(",") + ")";
 
     case "intersection":
-      return "intersection(" + type.members.map(sem_type_key).join(",") +
-        ")";
+      return "intersection(" +
+        type.members.map((member) =>
+          sem_type_key_with_binders(member, binders, state)
+        ).join(",") + ")";
 
     case "difference":
-      return "difference(" + sem_type_key(type.base) + "," +
-        sem_type_key(type.removed) + ")";
+      return "difference(" + sem_type_key_with_binders(
+        type.base,
+        binders,
+        state,
+      ) + "," + sem_type_key_with_binders(type.removed, binders, state) +
+        ")";
 
     case "arrow":
-      return "arrow(" + sem_type_key(type.param) + "," +
-        sem_type_key(type.result) + ")";
+      return "arrow(" + sem_type_key_with_binders(
+        type.param,
+        binders,
+        state,
+      ) + "," + sem_type_key_with_binders(type.result, binders, state) + ")";
   }
 }
 

@@ -112,6 +112,7 @@ export type EffectRowExpr =
 
 export type TypeExpr =
   | { tag: "name"; name: string }
+  | { tag: "forall"; params: string[]; body: TypeExpr }
   | { tag: "atom"; name: string }
   | { tag: "top" }
   | { tag: "never" }

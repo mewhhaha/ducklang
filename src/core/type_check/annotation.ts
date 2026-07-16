@@ -12,6 +12,7 @@ import { find_core_type_field } from "../union_static.ts";
 import {
   core_binding_value_type_name,
   core_direct_annotation_actual_name,
+  ordinary_static_call_probe_error,
   resolved_type_name,
   static_annotation_type_value,
 } from "./name.ts";
@@ -93,13 +94,21 @@ export function core_type_const_value<ctx extends CoreTypeCheckCtx>(
     return value;
   }
 
-  const type_name = hooks.static_type_name(value, ctx);
+  try {
+    const type_name = hooks.static_type_name(value, ctx);
 
-  if (type_name) {
-    return type_name;
+    if (type_name) {
+      return type_name;
+    }
+
+    return hooks.static_type_value(value, ctx);
+  } catch (error) {
+    if (!ordinary_static_call_probe_error(error)) {
+      throw error;
+    }
   }
 
-  return hooks.static_type_value(value, ctx);
+  return undefined;
 }
 
 export function apply_core_binding_annotation<
@@ -489,6 +498,10 @@ function apply_core_semantic_annotation<ctx extends CoreTypeCheckCtx>(
   ctx: ctx,
   hooks: CoreTypeCheckHooks<ctx>,
 ): CoreExpr | undefined {
+  if (type.tag === "forall" || type.tag === "arrow") {
+    return value;
+  }
+
   if (type.tag === "top") {
     return value;
   }

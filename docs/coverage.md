@@ -32,6 +32,13 @@ through.
 
 ## Bindings And Annotations
 
+Explicit `forall` types are parsed at arbitrary type positions. The frontend
+checks quantified implementations with rigid variables, compares quantified
+types modulo binder renaming, and generalizes unannotated const functions over
+type variables not fixed by their environment. Higher-rank const callbacks and
+functions returning polymorphic functions specialize before both backend routes;
+polymorphic function values do not introduce a runtime type-passing ABI.
+
 Built-in scalar/type annotations are checked directly in both the frontend and
 the structured Core path. When the annotation names a visible struct or union
 type-value, shorthand object and union-case values are checked and given that

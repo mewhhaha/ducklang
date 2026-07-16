@@ -28,6 +28,11 @@
   "extend"
 ] @keyword.storage.type
 
+"forall" @keyword
+
+(forall_type
+  parameter: (identifier) @type.parameter)
+
 [
   "infixl"
   "infixr"

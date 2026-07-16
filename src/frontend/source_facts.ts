@@ -195,6 +195,7 @@ export type SourceTypeFact = {
   alias_target: SourceTypeFact | undefined;
   type_set: SourceTypeSetFact | undefined;
   inference_variable: boolean;
+  quantified_variables: SourceTypeFact[] | undefined;
 };
 
 /** Small, best-effort facts safe to use while a document has syntax errors. */
@@ -390,6 +391,21 @@ function collect_unresolved_annotation_names(
   known_names: Set<string>,
   unresolved_names: Set<string>,
 ): void {
+  if (annotation.tag === "forall") {
+    const scoped_names = new Set(known_names);
+
+    for (const param of annotation.params) {
+      scoped_names.add(param);
+    }
+
+    collect_unresolved_annotation_names(
+      annotation.body,
+      scoped_names,
+      unresolved_names,
+    );
+    return;
+  }
+
   if (annotation.tag === "name") {
     if (!known_names.has(annotation.name)) {
       unresolved_names.add(annotation.name);
@@ -810,17 +826,39 @@ class SourceFactRecorder {
         scope.set(statement.name, declared);
       }
 
-      const inferred = this.record_expr(
+      let inferred = this.record_expr(
         statement.value,
         scope,
         declared,
         break_types,
       );
 
+      if (
+        declared === undefined && statement.kind === "const" &&
+        (statement.value.tag === "lam" || statement.value.tag === "rec") &&
+        inferred !== undefined
+      ) {
+        inferred = generalize_const_source_type(inferred, scope);
+      }
+
       let definition_type = inferred;
       let scope_type = inferred;
 
       if (declared !== undefined) {
+        if (
+          declared.quantified_variables !== undefined &&
+          (inferred === undefined ||
+            !source_types_compatible(declared, inferred))
+        ) {
+          this.facts.inference_diagnostics.push(source_diagnostic(
+            "DUCK2312",
+            "error",
+            "Binding " + statement.name +
+              " does not satisfy polymorphic annotation " + declared.name,
+            statement.value,
+          ));
+        }
+
         if (
           inferred !== undefined &&
           source_types_compatible(declared, inferred)
@@ -1473,9 +1511,9 @@ class SourceFactRecorder {
 
     if (exact_error !== undefined) {
       this.facts.inference_diagnostics.push(source_diagnostic(
-        "DUCK2310",
+        exact_error.rank_n ? "DUCK2312" : "DUCK2310",
         "error",
-        exact_error,
+        exact_error.message,
         subject,
       ));
       return undefined;
@@ -1521,6 +1559,20 @@ class SourceFactRecorder {
     type_parameters: Set<string>,
     resolving: Set<string>,
   ): boolean {
+    if (type.tag === "forall") {
+      const scoped_parameters = new Set(type_parameters);
+
+      for (const param of type.params) {
+        scoped_parameters.add(param);
+      }
+
+      return this.type_expr_is_known(
+        type.body,
+        scoped_parameters,
+        resolving,
+      );
+    }
+
     if (type.tag === "name") {
       if (type_parameters.has(type.name)) {
         return true;
@@ -1818,6 +1870,15 @@ class SourceFactRecorder {
     break_types: (SourceTypeFact | undefined)[] | undefined,
     inferred_params?: SourceTypeFact[],
   ): SourceTypeFact | undefined {
+    const declared_expected = expected;
+
+    if (
+      expected !== undefined &&
+      expected.quantified_variables !== undefined
+    ) {
+      expected = skolemize_quantified_source_type(expected);
+    }
+
     const body_scope = new Map(scope);
     const params: (SourceTypeFact | undefined)[] = [];
     let context_matches = true;
@@ -1918,8 +1979,19 @@ class SourceFactRecorder {
         result !== undefined &&
         source_types_compatible(expected.call_result, result)
       ) {
+        if (declared_expected !== undefined) {
+          return declared_expected;
+        }
+
         return expected;
       }
+    }
+
+    if (
+      declared_expected?.quantified_variables !== undefined &&
+      result !== undefined
+    ) {
+      return callable_type("non-polymorphic function", params, result);
     }
 
     if (expected !== undefined || !valid) {
@@ -3054,6 +3126,24 @@ class SourceFactRecorder {
     substitutions: Map<string, SourceTypeFact>,
     resolving: Set<string>,
   ): SourceTypeFact {
+    if (type_expr.tag === "forall") {
+      const scoped = new Map(substitutions);
+      const quantified_variables: SourceTypeFact[] = [];
+
+      for (const param of type_expr.params) {
+        const variable = inference_type();
+        scoped.set(param, variable);
+        quantified_variables.push(variable);
+      }
+
+      const body = this.resolve_type_expr(type_expr.body, scoped, resolving);
+      const quantified: SourceTypeFact = { ...body };
+      quantified.name = format_type_expr(type_expr);
+      quantified.resolved_name = quantified.name;
+      quantified.quantified_variables = quantified_variables;
+      return quantified;
+    }
+
     if (type_expr.tag === "name") {
       const substituted = substitutions.get(type_expr.name);
 
@@ -3901,6 +3991,7 @@ function named_type(name: string, nominal?: string): SourceTypeFact {
     alias_target: undefined,
     type_set: undefined,
     inference_variable: false,
+    quantified_variables: undefined,
   };
 }
 
@@ -4008,6 +4099,81 @@ function inference_type(): SourceTypeFact {
   return type;
 }
 
+function generalize_const_source_type(
+  type: SourceTypeFact,
+  scope: Scope,
+): SourceTypeFact {
+  const environment_variables = new Set<SourceTypeFact>();
+
+  for (const scoped of scope.values()) {
+    collect_source_inference_variables(
+      scoped,
+      environment_variables,
+      new Set(),
+    );
+  }
+
+  const variables = new Set<SourceTypeFact>();
+  collect_source_inference_variables(type, variables, new Set());
+  const quantified_variables = [...variables].filter((variable) =>
+    !environment_variables.has(variable)
+  );
+
+  if (quantified_variables.length === 0) {
+    return type;
+  }
+
+  const generalized: SourceTypeFact = { ...type };
+  generalized.name = "forall " + quantified_variables.length.toString() +
+    " variables. " + type.name;
+  generalized.resolved_name = generalized.name;
+  generalized.quantified_variables = quantified_variables;
+  return generalized;
+}
+
+function collect_source_inference_variables(
+  type: SourceTypeFact,
+  variables: Set<SourceTypeFact>,
+  visited: Set<SourceTypeFact>,
+): void {
+  if (visited.has(type)) {
+    return;
+  }
+
+  visited.add(type);
+
+  if (is_type_variable(type)) {
+    variables.add(type);
+    return;
+  }
+
+  if (type.call_params !== undefined) {
+    for (const param of type.call_params) {
+      if (param !== undefined) {
+        collect_source_inference_variables(param, variables, visited);
+      }
+    }
+  }
+
+  if (type.call_result !== undefined) {
+    collect_source_inference_variables(type.call_result, variables, visited);
+  }
+
+  if (type.fields !== undefined) {
+    for (const field of type.fields) {
+      if (field.type !== undefined) {
+        collect_source_inference_variables(field.type, variables, visited);
+      }
+    }
+  }
+
+  if (type.cases !== undefined) {
+    for (const payload of type.cases.values()) {
+      collect_source_inference_variables(payload, variables, visited);
+    }
+  }
+}
+
 function unit_type(): SourceTypeFact {
   return named_type("Unit");
 }
@@ -4026,7 +4192,7 @@ function callable_type(
 function exact_call_constraint_error(
   func: SourceTypeFact,
   args: (SourceTypeFact | undefined)[],
-): string | undefined {
+): { message: string; rank_n: boolean } | undefined {
   if (
     func.call_params === undefined || func.call_result === undefined ||
     func.call_params.length !== args.length
@@ -4043,6 +4209,28 @@ function exact_call_constraint_error(
 
     if (expected === undefined || actual === undefined) {
       return undefined;
+    }
+
+    if (expected.quantified_variables !== undefined) {
+      if (actual.quantified_variables === undefined) {
+        return {
+          message: "call argument " + (index + 1).toString() +
+            ": expected polymorphic type " + expected.name + ", got " +
+            actual.name,
+          rank_n: true,
+        };
+      }
+
+      if (!source_types_compatible(expected, actual)) {
+        return {
+          message: "call argument " + (index + 1).toString() +
+            ": polymorphic type " + actual.name +
+            " does not satisfy " + expected.name,
+          rank_n: true,
+        };
+      }
+
+      continue;
     }
 
     const expected_type = inference_type_from_source_fact(
@@ -4077,7 +4265,7 @@ function exact_call_constraint_error(
       );
     } catch (error) {
       if (error instanceof Error) {
-        return error.message;
+        return { message: error.message, rank_n: false };
       }
 
       throw error;
@@ -4311,6 +4499,77 @@ type TypeBindings = {
   concrete: Map<SourceTypeFact, SourceTypeFact>;
 };
 
+function skolemize_quantified_source_type(
+  type: SourceTypeFact,
+): SourceTypeFact {
+  const quantified = type.quantified_variables;
+
+  if (quantified === undefined) {
+    return type;
+  }
+
+  const skolems = quantified.map((_variable, index) =>
+    named_type("$forall_" + index.toString())
+  );
+  return instantiate_quantified_source_type(type, skolems);
+}
+
+function quantified_source_types_compatible(
+  expected: SourceTypeFact,
+  actual: SourceTypeFact,
+): boolean {
+  const expected_variables = expected.quantified_variables;
+  const actual_variables = actual.quantified_variables;
+
+  if (
+    expected_variables === undefined || actual_variables === undefined ||
+    expected_variables.length !== actual_variables.length
+  ) {
+    return false;
+  }
+
+  const skolems = expected_variables.map((_variable, index) =>
+    named_type("$forall_" + index.toString())
+  );
+  const expected_body = instantiate_quantified_source_type(expected, skolems);
+  const actual_body = instantiate_quantified_source_type(actual, skolems);
+  return source_types_compatible(expected_body, actual_body) &&
+    source_types_compatible(actual_body, expected_body);
+}
+
+function instantiate_quantified_source_type(
+  type: SourceTypeFact,
+  replacements: SourceTypeFact[],
+): SourceTypeFact {
+  const quantified = type.quantified_variables;
+
+  if (
+    quantified === undefined || quantified.length !== replacements.length
+  ) {
+    throw new Error("Invalid quantified source type instantiation");
+  }
+
+  const bindings: TypeBindings = {
+    parents: new Map(),
+    concrete: new Map(),
+  };
+
+  for (let index = 0; index < quantified.length; index += 1) {
+    const variable = quantified[index];
+    const replacement = replacements[index];
+
+    if (variable === undefined || replacement === undefined) {
+      throw new Error("Missing quantified source type replacement " + index);
+    }
+
+    bindings.concrete.set(variable, replacement);
+  }
+
+  const instantiated = materialize_source_type(type, bindings, new Map());
+  instantiated.quantified_variables = undefined;
+  return instantiated;
+}
+
 function unify_source_types(
   expected: SourceTypeFact,
   actual: SourceTypeFact,
@@ -4319,6 +4578,22 @@ function unify_source_types(
 ): boolean {
   if (is_error_type(expected) || is_error_type(actual)) {
     return false;
+  }
+
+  if (expected.quantified_variables !== undefined) {
+    return quantified_source_types_compatible(expected, actual);
+  }
+
+  if (actual.quantified_variables !== undefined) {
+    return unify_source_types(
+      expected,
+      instantiate_quantified_source_type(
+        actual,
+        actual.quantified_variables.map(() => inference_type()),
+      ),
+      bindings,
+      seen,
+    );
   }
 
   const expected_variable = is_type_variable(expected);
@@ -4566,6 +4841,12 @@ function materialize_source_type(
   result.inference_variable = source.inference_variable;
   copied.set(source, result);
 
+  if (source.quantified_variables !== undefined) {
+    result.quantified_variables = source.quantified_variables.map((variable) =>
+      materialize_source_type(variable, bindings, copied)
+    );
+  }
+
   if (source.type_set !== undefined) {
     result.type_set = {
       operation: source.type_set.operation,
@@ -4647,6 +4928,21 @@ function source_types_compatible(
 ): boolean {
   if (is_error_type(expected) || is_error_type(actual)) {
     return false;
+  }
+
+  if (expected.quantified_variables !== undefined) {
+    return quantified_source_types_compatible(expected, actual);
+  }
+
+  if (actual.quantified_variables !== undefined) {
+    return source_types_compatible(
+      expected,
+      instantiate_quantified_source_type(
+        actual,
+        actual.quantified_variables.map(() => inference_type()),
+      ),
+      seen,
+    );
   }
 
   if (is_type_variable(expected)) {

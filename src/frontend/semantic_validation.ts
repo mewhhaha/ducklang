@@ -40,7 +40,7 @@ import {
   prim_returns_bool,
 } from "./numeric.ts";
 import { dynamic_index_type_from_fields } from "./runtime_struct.ts";
-import { format_type_expr } from "./type_expr.ts";
+import { format_type_expr, function_type_expr } from "./type_expr.ts";
 import { front_type_from_type_name, same_type } from "./types.ts";
 import { f32x4_builtin_call, validate_f32x4_lane_argument } from "./f32x4.ts";
 import { scan_source, source_tokens } from "./tokenize.ts";
@@ -305,13 +305,15 @@ function validate_statement(
     }
 
     const before = diagnostics.length;
+    const declared_function_type = function_type_expr(stmt.type_annotation);
+
     if (
       (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
-      stmt.type_annotation !== undefined && stmt.type_annotation.tag === "arrow"
+      declared_function_type !== undefined
     ) {
       validate_annotated_lambda(
         stmt.value,
-        stmt.type_annotation,
+        declared_function_type,
         env,
         diagnostics,
         stmt.kind !== "const",
@@ -4040,16 +4042,9 @@ function resolve_called_function(
       return undefined;
     }
 
-    let result_annotation:
-      | Extract<TypeExpr, { tag: "arrow" }>
-      | undefined;
-
-    if (
-      called.type_annotation !== undefined &&
-      called.type_annotation.result.tag === "arrow"
-    ) {
-      result_annotation = called.type_annotation.result;
-    }
+    const result_annotation = function_type_expr(
+      called.type_annotation?.result,
+    );
 
     if (called.target === undefined || active_calls.has(called.target)) {
       if (result_annotation === undefined) {
@@ -4112,16 +4107,7 @@ function resolve_called_function(
     return undefined;
   }
 
-  let type_annotation:
-    | Extract<TypeExpr, { tag: "arrow" }>
-    | undefined;
-
-  if (
-    binding.type_annotation !== undefined &&
-    binding.type_annotation.tag === "arrow"
-  ) {
-    type_annotation = binding.type_annotation;
-  }
+  const type_annotation = function_type_expr(binding.type_annotation);
 
   if (binding.value === undefined) {
     if (type_annotation === undefined) {
@@ -4806,13 +4792,15 @@ function validate_annotated_lambda(
     bind_rec_target(body_env, expr, annotation);
   }
 
-  if (annotation.result.tag === "arrow") {
+  const returned_function_type = function_type_expr(annotation.result);
+
+  if (returned_function_type) {
     const returned = resolve_called_function(expr.body, body_env);
 
     if (returned !== undefined && returned.target !== undefined) {
       validate_annotated_lambda(
         returned.target,
-        annotation.result,
+        returned_function_type,
         returned.target_env,
         diagnostics,
         check_comptime,
@@ -5242,7 +5230,8 @@ function validate_basic_annotation(
   let expected = resolve_type_name(annotation, env);
 
   if (
-    stmt.type_annotation !== undefined && stmt.type_annotation.tag !== "arrow"
+    stmt.type_annotation !== undefined &&
+    function_type_expr(stmt.type_annotation) === undefined
   ) {
     expected = type_from_type_expr(stmt.type_annotation, env);
   }

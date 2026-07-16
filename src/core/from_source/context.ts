@@ -295,6 +295,16 @@ function expand_core_annotation_aliases(
     };
   }
 
+  if (type.tag === "forall") {
+    const body = expand_core_annotation_aliases(type.body, ctx, resolving);
+
+    if (!body.changed) {
+      return { type, changed: false };
+    }
+
+    return { type: { ...type, body: body.type }, changed: true };
+  }
+
   if (type.tag !== "arrow") {
     const unreachable: never = type;
     void unreachable;

@@ -1136,7 +1136,19 @@ module.exports = grammar({
     // as the wrapper so simple annotations retain their old tree shape.
     type_reference: ($) => $._type_expression,
 
-    _type_expression: ($) => choice($.function_type, $.type_union),
+    _type_expression: ($) =>
+      choice($.forall_type, $.function_type, $.type_union),
+
+    forall_type: ($) =>
+      prec.right(
+        PREC.TYPE_ARROW,
+        seq(
+          "forall",
+          repeat1(field("parameter", $.identifier)),
+          ".",
+          field("body", $._type_expression),
+        ),
+      ),
 
     function_type: ($) =>
       prec.right(
