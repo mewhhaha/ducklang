@@ -128,13 +128,6 @@ export type {
   TypePattern,
   TypeProductEntry,
 } from "./frontend/ast.ts";
-export {
-  format_inference_type,
-  monomorphic_type_binding,
-  scalar_representation_compatible,
-  statically_known_const_type_binding,
-  TypeInference,
-} from "./frontend/type_inference.ts";
 export type {
   ComptimeType,
   ComptimeTypeField,
@@ -146,16 +139,3 @@ export {
   resolve_comptime_type,
   resolve_comptime_value,
 } from "./frontend/comptime_value.ts";
-export type {
-  InferenceAliasNormalizer,
-  InferenceBinding,
-  InferenceEffect,
-  InferenceOwnership,
-  InferenceProductField,
-  InferenceRecordField,
-  InferenceScalar,
-  InferenceSumCase,
-  InferenceType,
-  TypeConstraint,
-  TypeScheme,
-} from "./frontend/type_inference.ts";

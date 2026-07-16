@@ -1,30 +1,30 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
-  format_inference_type,
-  type InferenceBinding,
-  type InferenceEffect,
-  type InferenceType,
+  format_type,
   monomorphic_type_binding,
   scalar_representation_compatible,
   statically_known_const_type_binding,
-  TypeInference,
-} from "./type_inference.ts";
+  type Type,
+  type TypeBinding,
+  type TypeEffect,
+  TypeEngine,
+} from "./type_engine.ts";
 
-const int: InferenceType = { tag: "scalar", name: "Int" };
-const i32: InferenceType = { tag: "scalar", name: "I32" };
-const bool: InferenceType = { tag: "scalar", name: "Bool" };
-const text: InferenceType = { tag: "scalar", name: "Text" };
+const int: Type = { tag: "scalar", name: "Int" };
+const i32: Type = { tag: "scalar", name: "I32" };
+const bool: Type = { tag: "scalar", name: "Bool" };
+const text: Type = { tag: "scalar", name: "Text" };
 
 function function_type(
-  params: InferenceType[],
-  result: InferenceType,
-  effects: InferenceEffect[] = [],
-): InferenceType {
+  params: Type[],
+  result: Type,
+  effects: TypeEffect[] = [],
+): Type {
   return { tag: "function", params, effects, result };
 }
 
 Deno.test("type inference rejects infinite types with an occurs check", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const element = inference.fresh_variable("element");
 
   assert_throws(
@@ -40,7 +40,7 @@ Deno.test("type inference rejects infinite types with an occurs check", () => {
 });
 
 Deno.test("statically known const identity functions instantiate freshly", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const value = inference.fresh_variable("value");
   const identity = function_type([value], value);
   const scheme = inference.generalize_statically_known_const(identity, []);
@@ -50,8 +50,8 @@ Deno.test("statically known const identity functions instantiate freshly", () =>
 
   assert_equals(scheme.quantified_variables, [0]);
   assert_equals(
-    format_inference_type(int_identity) ===
-      format_inference_type(bool_identity),
+    format_type(int_identity) ===
+      format_type(bool_identity),
     false,
   );
 
@@ -77,7 +77,7 @@ Deno.test("statically known const identity functions instantiate freshly", () =>
 });
 
 Deno.test("ordinary bindings remain monomorphic across uses", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const value = inference.fresh_variable("binding");
   const binding = monomorphic_type_binding(value);
 
@@ -100,9 +100,9 @@ Deno.test("ordinary bindings remain monomorphic across uses", () => {
 });
 
 Deno.test("generalization preserves variables free in the environment", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const captured = inference.fresh_variable("captured");
-  const environment: InferenceBinding[] = [monomorphic_type_binding(captured)];
+  const environment: TypeBinding[] = [monomorphic_type_binding(captured)];
   const scheme = inference.generalize_statically_known_const(
     function_type([captured], captured),
     environment,
@@ -112,7 +112,7 @@ Deno.test("generalization preserves variables free in the environment", () => {
 });
 
 Deno.test("arrays require equal fixed lengths", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
 
   assert_throws(
     () => {
@@ -126,35 +126,30 @@ Deno.test("arrays require equal fixed lengths", () => {
   );
 });
 
-Deno.test("records require the same labels in declaration order", () => {
-  const inference = new TypeInference();
+Deno.test("records normalize field order by label", () => {
+  const engine = new TypeEngine();
 
-  assert_throws(
-    () => {
-      inference.unify(
-        {
-          tag: "record",
-          fields: [
-            { label: "name", type: text },
-            { label: "enabled", type: bool },
-          ],
-        },
-        {
-          tag: "record",
-          fields: [
-            { label: "enabled", type: bool },
-            { label: "name", type: text },
-          ],
-        },
-        "record annotation",
-      );
+  engine.unify(
+    {
+      tag: "record",
+      fields: [
+        { label: "name", type: text },
+        { label: "enabled", type: bool },
+      ],
     },
-    "record labels differ at index 0",
+    {
+      tag: "record",
+      fields: [
+        { label: "enabled", type: bool },
+        { label: "name", type: text },
+      ],
+    },
+    "record annotation",
   );
 });
 
 Deno.test("products require the same positional labels", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
 
   assert_throws(
     () => {
@@ -175,7 +170,7 @@ Deno.test("products require the same positional labels", () => {
 });
 
 Deno.test("functions require exactly equal effect rows", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
 
   assert_throws(
     () => {
@@ -194,7 +189,7 @@ Deno.test("functions require exactly equal effect rows", () => {
 });
 
 Deno.test("ownership modes do not unify implicitly", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
 
   assert_throws(
     () => {
@@ -209,7 +204,7 @@ Deno.test("ownership modes do not unify implicitly", () => {
 });
 
 Deno.test("unresolved type diagnostics name every inference variable", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const input = inference.fresh_variable("input");
   const output = inference.fresh_variable("output");
 
@@ -225,7 +220,7 @@ Deno.test("unresolved type diagnostics name every inference variable", () => {
 });
 
 Deno.test("alias normalization participates in unification", () => {
-  const inference = new TypeInference((type) => {
+  const inference = new TypeEngine((type) => {
     if (type.name === "MachineInt") {
       return i32;
     }
@@ -241,7 +236,7 @@ Deno.test("alias normalization participates in unification", () => {
 });
 
 Deno.test("Int and I32 are distinct types with compatible representations", () => {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
 
   assert_throws(
     () => {

@@ -7,6 +7,7 @@ import type {
 } from "./ast.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
+import { type Type, type_key, TypeEngine } from "./type_engine.ts";
 
 export type SemType =
   | { tag: "top" }
@@ -497,145 +498,19 @@ export function subtract_sem_type(base: SemType, removed: SemType): SemType {
 }
 
 export function sem_type_subtype(left: SemType, right: SemType): boolean {
-  const source = normalize_sem_type(left);
-  const target = normalize_sem_type(right);
-
-  if (source.tag === "never" || target.tag === "top") {
-    return true;
-  }
-
-  if (sem_type_key(source) === sem_type_key(target)) {
-    return true;
-  }
-
-  if (source.tag === "union") {
-    for (const member of source.members) {
-      if (!sem_type_subtype(member, target)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  if (target.tag === "union") {
-    for (const member of target.members) {
-      if (sem_type_subtype(source, member)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  if (target.tag === "intersection") {
-    for (const member of target.members) {
-      if (!sem_type_subtype(source, member)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  if (source.tag === "intersection") {
-    for (const member of source.members) {
-      if (sem_type_subtype(member, target)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  if (source.tag === "difference") {
-    return sem_type_subtype(source.base, target);
-  }
-
-  if (target.tag === "difference") {
-    return sem_type_subtype(source, target.base) &&
-      sem_types_are_disjoint(source, target.removed);
-  }
-
-  if (source.tag === "record" && target.tag === "record") {
-    for (const expected of target.fields) {
-      const actual = source.fields.find((field) =>
-        field.name === expected.name
-      );
-
-      if (!actual || !sem_type_subtype(actual.type, expected.type)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  return false;
+  const engine = new TypeEngine();
+  return engine.subtype(
+    canonical_type_from_sem_type(left),
+    canonical_type_from_sem_type(right),
+  );
 }
 
 export function sem_types_are_disjoint(left: SemType, right: SemType): boolean {
-  const a = normalize_sem_type(left);
-  const b = normalize_sem_type(right);
-
-  if (a.tag === "never" || b.tag === "never") {
-    return true;
-  }
-
-  if (a.tag === "top" || b.tag === "top") {
-    return false;
-  }
-
-  if (a.tag === "union") {
-    for (const member of a.members) {
-      if (!sem_types_are_disjoint(member, b)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  if (b.tag === "union") {
-    return sem_types_are_disjoint(b, a);
-  }
-
-  if (a.tag === "atom" && b.tag === "atom") {
-    return a.name !== b.name;
-  }
-
-  if (a.tag === "scalar" && b.tag === "scalar") {
-    return canonical_scalar_name(a.name) !== canonical_scalar_name(b.name);
-  }
-
-  if (
-    (a.tag === "atom" && b.tag === "scalar") ||
-    (a.tag === "scalar" && b.tag === "atom")
-  ) {
-    return true;
-  }
-
-  if (a.tag === "record" && b.tag === "record") {
-    for (const field of a.fields) {
-      const other = b.fields.find((item) => item.name === field.name);
-
-      if (other && sem_types_are_disjoint(field.type, other.type)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  if (a.tag === "frozen" && b.tag === "frozen") {
-    return sem_types_are_disjoint(a.value, b.value);
-  }
-
-  if (a.tag === "borrow" && b.tag === "borrow") {
-    return sem_types_are_disjoint(a.value, b.value);
-  }
-
-  return false;
+  const engine = new TypeEngine();
+  return engine.disjoint(
+    canonical_type_from_sem_type(left),
+    canonical_type_from_sem_type(right),
+  );
 }
 
 function canonical_scalar_name(name: string): string {
@@ -657,129 +532,8 @@ function sem_type_is_scalar(type: SemType): boolean {
 }
 
 export function sem_type_key(type: SemType): string {
-  return sem_type_key_with_binders(type, new Map(), { next: 0 });
-}
-
-function sem_type_key_with_binders(
-  type: SemType,
-  binders: Map<string, number>,
-  state: { next: number },
-): string {
-  switch (type.tag) {
-    case "forall": {
-      const body_binders = new Map(binders);
-      const params: number[] = [];
-
-      for (const param of type.params) {
-        const binder = state.next;
-        state.next += 1;
-        body_binders.set(param, binder);
-        params.push(binder);
-      }
-
-      return "forall(" + params.join(",") + "," +
-        sem_type_key_with_binders(type.body, body_binders, state) + ")";
-    }
-
-    case "top":
-      return "top";
-
-    case "never":
-      return "never";
-
-    case "scalar":
-      return "scalar(" + canonical_scalar_name(type.name) + ")";
-
-    case "named": {
-      const binder = binders.get(type.name);
-
-      if (binder !== undefined) {
-        return "bound(" + binder.toString() + ")";
-      }
-
-      return "named(" + type.name + ")";
-    }
-
-    case "atom":
-      return "atom(" + type.name + ")";
-
-    case "frozen":
-      return "frozen(" + sem_type_key_with_binders(
-        type.value,
-        binders,
-        state,
-      ) + ")";
-
-    case "borrow":
-      return "borrow(" + sem_type_key_with_binders(
-        type.value,
-        binders,
-        state,
-      ) + ")";
-
-    case "apply":
-      return "apply(" + sem_type_key_with_binders(
-        type.func,
-        binders,
-        state,
-      ) + "," + sem_type_key_with_binders(type.arg, binders, state) + ")";
-
-    case "tuple":
-      return "tuple(" +
-        type.items.map((item) =>
-          sem_type_key_with_binders(item, binders, state)
-        ).join(",") + ")";
-
-    case "product":
-      return "product(" + type.entries.map((entry) => {
-        const label = entry.label === undefined ? "" : entry.label + "=";
-        return label + sem_type_key_with_binders(entry.type, binders, state);
-      }).join(",") + ")";
-
-    case "array":
-      return "array(" + sem_type_key_with_binders(
-        type.element,
-        binders,
-        state,
-      ) + "," +
-        array_length_key(type.length) + ")";
-
-    case "record":
-      return "record(" + type.fields.map((field) => {
-        return field.name + ":" +
-          sem_type_key_with_binders(field.type, binders, state);
-      }).join(",") + ")";
-
-    case "variant":
-      return "variant(" + type.name + ")";
-
-    case "union":
-      return "union(" +
-        type.members.map((member) =>
-          sem_type_key_with_binders(member, binders, state)
-        ).join(",") + ")";
-
-    case "intersection":
-      return "intersection(" +
-        type.members.map((member) =>
-          sem_type_key_with_binders(member, binders, state)
-        ).join(",") + ")";
-
-    case "difference":
-      return "difference(" + sem_type_key_with_binders(
-        type.base,
-        binders,
-        state,
-      ) + "," + sem_type_key_with_binders(type.removed, binders, state) +
-        ")";
-
-    case "arrow":
-      return "arrow(" + sem_type_key_with_binders(
-        type.param,
-        binders,
-        state,
-      ) + "," + sem_type_key_with_binders(type.result, binders, state) + ")";
-  }
+  const engine = new TypeEngine();
+  return type_key(engine.normalize(canonical_type_from_sem_type(type)));
 }
 
 function array_length_key(length: ArrayLengthExpr): string {
@@ -793,6 +547,228 @@ function array_length_key(length: ArrayLengthExpr): string {
 
   return "(" + array_length_key(length.left) + length.op +
     array_length_key(length.right) + ")";
+}
+
+export function canonical_type_from_sem_type(type: SemType): Type {
+  return canonical_type_from_sem_type_at(
+    type,
+    new Map(),
+    { next_variable: 0 },
+  );
+}
+
+function canonical_type_from_sem_type_at(
+  type: SemType,
+  bound_variables: Map<string, Extract<Type, { tag: "variable" }>>,
+  variables: { next_variable: number },
+): Type {
+  switch (type.tag) {
+    case "top":
+    case "never":
+      return { tag: type.tag };
+
+    case "forall": {
+      const scoped = new Map(bound_variables);
+      const quantified_variables: number[] = [];
+
+      for (const param of type.params) {
+        const variable: Extract<Type, { tag: "variable" }> = {
+          tag: "variable",
+          id: variables.next_variable,
+          hint: param,
+        };
+        variables.next_variable += 1;
+        scoped.set(param, variable);
+        quantified_variables.push(variable.id);
+      }
+
+      return {
+        tag: "forall",
+        quantified_variables,
+        body: canonical_type_from_sem_type_at(type.body, scoped, variables),
+      };
+    }
+
+    case "scalar": {
+      const name = canonical_scalar_name(type.name);
+
+      if (
+        name === "Bool" || name === "Unit" || name === "Int" ||
+        name === "I32" || name === "U32" || name === "I64" ||
+        name === "F32" || name === "F32x4" || name === "Text" ||
+        name === "Bytes" || name === "Resume" || name === "Type"
+      ) {
+        return { tag: "scalar", name };
+      }
+
+      return { tag: "named", name, args: [] };
+    }
+
+    case "named": {
+      const bound = bound_variables.get(type.name);
+
+      if (bound !== undefined) {
+        return bound;
+      }
+
+      return { tag: "named", name: type.name, args: [] };
+    }
+
+    case "atom":
+      return { tag: "named", name: "#" + type.name, args: [] };
+
+    case "frozen":
+      return {
+        tag: "owned",
+        ownership: "frozen_shareable",
+        value: canonical_type_from_sem_type_at(
+          type.value,
+          bound_variables,
+          variables,
+        ),
+      };
+
+    case "borrow":
+      return {
+        tag: "owned",
+        ownership: "bounded_borrow",
+        value: canonical_type_from_sem_type_at(
+          type.value,
+          bound_variables,
+          variables,
+        ),
+      };
+
+    case "apply": {
+      const func = canonical_type_from_sem_type_at(
+        type.func,
+        bound_variables,
+        variables,
+      );
+      const arg = canonical_type_from_sem_type_at(
+        type.arg,
+        bound_variables,
+        variables,
+      );
+
+      if (func.tag === "named") {
+        return { ...func, args: [...func.args, arg] };
+      }
+
+      return {
+        tag: "named",
+        name: "apply(" + type_key(func) + ")",
+        args: [arg],
+      };
+    }
+
+    case "tuple":
+      return {
+        tag: "product",
+        fields: type.items.map((item) => {
+          return {
+            label: undefined,
+            type: canonical_type_from_sem_type_at(
+              item,
+              bound_variables,
+              variables,
+            ),
+          };
+        }),
+      };
+
+    case "product":
+      return {
+        tag: "product",
+        fields: type.entries.map((entry) => {
+          return {
+            label: entry.label,
+            type: canonical_type_from_sem_type_at(
+              entry.type,
+              bound_variables,
+              variables,
+            ),
+          };
+        }),
+      };
+
+    case "array":
+      return {
+        tag: "named",
+        name: "Array[" + array_length_key(type.length) + "]",
+        args: [
+          canonical_type_from_sem_type_at(
+            type.element,
+            bound_variables,
+            variables,
+          ),
+        ],
+      };
+
+    case "record":
+      return {
+        tag: "record",
+        fields: type.fields.map((field) => {
+          return {
+            label: field.name,
+            type: canonical_type_from_sem_type_at(
+              field.type,
+              bound_variables,
+              variables,
+            ),
+          };
+        }),
+      };
+
+    case "variant":
+      return { tag: "named", name: type.name, args: [] };
+
+    case "union":
+    case "intersection":
+      return {
+        tag: type.tag,
+        members: type.members.map((member) => {
+          return canonical_type_from_sem_type_at(
+            member,
+            bound_variables,
+            variables,
+          );
+        }),
+      };
+
+    case "difference":
+      return {
+        tag: "difference",
+        base: canonical_type_from_sem_type_at(
+          type.base,
+          bound_variables,
+          variables,
+        ),
+        removed: canonical_type_from_sem_type_at(
+          type.removed,
+          bound_variables,
+          variables,
+        ),
+      };
+
+    case "arrow":
+      return {
+        tag: "function",
+        params: [
+          canonical_type_from_sem_type_at(
+            type.param,
+            bound_variables,
+            variables,
+          ),
+        ],
+        effects: [],
+        result: canonical_type_from_sem_type_at(
+          type.result,
+          bound_variables,
+          variables,
+        ),
+      };
+  }
 }
 
 export function sem_type_finite_members(type: SemType): SemType[] | undefined {

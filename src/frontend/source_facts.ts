@@ -16,10 +16,11 @@ import {
   type SourceDiagnostic,
 } from "./semantic_diagnostic.ts";
 import {
-  type InferenceType,
+  format_type,
   scalar_representation_compatible,
-  TypeInference,
-} from "./type_inference.ts";
+  type Type,
+  TypeEngine,
+} from "./type_engine.ts";
 import { is_builtin_type_name } from "./types.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
@@ -180,6 +181,7 @@ export type SourceTypeSetFact = {
 
 /** A source-level type fact that keeps editor-only structure unavailable in FrontType. */
 export type SourceTypeFact = {
+  canonical_type: () => Type | undefined;
   name: string;
   resolved_name: string;
   nominal: string | undefined;
@@ -344,7 +346,7 @@ function append_unresolved_annotation_diagnostic(
   site: string,
   subject: object,
 ): void {
-  const inference = new TypeInference();
+  const inference = new TypeEngine();
   const unresolved_names = new Set<string>();
   collect_unresolved_annotation_names(
     annotation,
@@ -1510,8 +1512,13 @@ class SourceFactRecorder {
     const exact_error = exact_call_constraint_error(func, args);
 
     if (exact_error !== undefined) {
+      let code = "DUCK2310";
+      if (exact_error.rank_n) {
+        code = "DUCK2312";
+      }
+
       this.facts.inference_diagnostics.push(source_diagnostic(
-        exact_error.rank_n ? "DUCK2312" : "DUCK2310",
+        code,
         "error",
         exact_error.message,
         subject,
@@ -3137,7 +3144,20 @@ class SourceFactRecorder {
       }
 
       const body = this.resolve_type_expr(type_expr.body, scoped, resolving);
-      const quantified: SourceTypeFact = { ...body };
+      const quantified_replacements = new Map<
+        SourceTypeFact,
+        SourceTypeFact
+      >();
+
+      for (const variable of quantified_variables) {
+        quantified_replacements.set(variable, variable);
+      }
+
+      const quantified = clone_source_type(
+        body,
+        quantified_replacements,
+        new Map(),
+      );
       quantified.name = format_type_expr(type_expr);
       quantified.resolved_name = quantified.name;
       quantified.quantified_variables = quantified_variables;
@@ -3975,7 +3995,15 @@ function is_supported_loop_result(type: SourceTypeFact): boolean {
 }
 
 function named_type(name: string, nominal?: string): SourceTypeFact {
-  return {
+  const type: SourceTypeFact = {
+    canonical_type: () => {
+      return canonical_type_from_source_fact(
+        type,
+        new TypeEngine(),
+        new WeakMap(),
+        new Set(),
+      );
+    },
     name,
     resolved_name: name,
     nominal,
@@ -3993,6 +4021,7 @@ function named_type(name: string, nominal?: string): SourceTypeFact {
     inference_variable: false,
     quantified_variables: undefined,
   };
+  return type;
 }
 
 function shape_entries_type(): SourceTypeFact {
@@ -4123,7 +4152,20 @@ function generalize_const_source_type(
     return type;
   }
 
-  const generalized: SourceTypeFact = { ...type };
+  const quantified_replacements = new Map<
+    SourceTypeFact,
+    SourceTypeFact
+  >();
+
+  for (const variable of quantified_variables) {
+    quantified_replacements.set(variable, variable);
+  }
+
+  const generalized = clone_source_type(
+    type,
+    quantified_replacements,
+    new Map(),
+  );
   generalized.name = "forall " + quantified_variables.length.toString() +
     " variables. " + type.name;
   generalized.resolved_name = generalized.name;
@@ -4200,8 +4242,8 @@ function exact_call_constraint_error(
     return undefined;
   }
 
-  const inference = new TypeInference();
-  const variables = new WeakMap<SourceTypeFact, InferenceType>();
+  const engine = new TypeEngine();
+  const variables = new WeakMap<SourceTypeFact, Type>();
 
   for (let index = 0; index < func.call_params.length; index += 1) {
     const expected = func.call_params[index];
@@ -4221,7 +4263,23 @@ function exact_call_constraint_error(
         };
       }
 
-      if (!source_types_compatible(expected, actual)) {
+      const expected_type = canonical_type_from_source_fact(
+        expected,
+        engine,
+        variables,
+        new Set(),
+      );
+      const actual_type = canonical_type_from_source_fact(
+        actual,
+        engine,
+        variables,
+        new Set(),
+      );
+
+      if (
+        expected_type === undefined || actual_type === undefined ||
+        !engine.alpha_equivalent(expected_type, actual_type)
+      ) {
         return {
           message: "call argument " + (index + 1).toString() +
             ": polymorphic type " + actual.name +
@@ -4233,15 +4291,15 @@ function exact_call_constraint_error(
       continue;
     }
 
-    const expected_type = inference_type_from_source_fact(
+    const expected_type = canonical_type_from_source_fact(
       expected,
-      inference,
+      engine,
       variables,
       new Set(),
     );
-    const actual_type = inference_type_from_source_fact(
+    const actual_type = canonical_type_from_source_fact(
       actual,
-      inference,
+      engine,
       variables,
       new Set(),
     );
@@ -4258,7 +4316,7 @@ function exact_call_constraint_error(
     }
 
     try {
-      inference.unify(
+      engine.unify(
         expected_type,
         actual_type,
         "call argument " + (index + 1),
@@ -4275,14 +4333,93 @@ function exact_call_constraint_error(
   return undefined;
 }
 
-function inference_type_from_source_fact(
+function canonical_type_from_source_fact(
   source: SourceTypeFact,
-  inference: TypeInference,
-  variables: WeakMap<SourceTypeFact, InferenceType>,
+  engine: TypeEngine,
+  variables: WeakMap<SourceTypeFact, Type>,
   visiting: Set<SourceTypeFact>,
-): InferenceType | undefined {
-  if (is_error_type(source) || source.type_set !== undefined) {
+  unwrapped_quantifiers = new Set<SourceTypeFact>(),
+  variable_kind: "flexible" | "rigid" = "flexible",
+): Type | undefined {
+  if (is_error_type(source)) {
     return undefined;
+  }
+
+  if (
+    source.quantified_variables !== undefined &&
+    !unwrapped_quantifiers.has(source)
+  ) {
+    const quantified_variables: number[] = [];
+
+    for (const quantified_source of source.quantified_variables) {
+      let quantified = variables.get(quantified_source);
+
+      if (quantified === undefined) {
+        quantified = engine.fresh_variable(quantified_source.name);
+        variables.set(quantified_source, quantified);
+      }
+
+      if (quantified.tag !== "variable") {
+        throw new Error(
+          "Quantified source type did not map to a canonical variable: " +
+            source.name,
+        );
+      }
+
+      quantified_variables.push(quantified.id);
+    }
+
+    const unwrapped = new Set(unwrapped_quantifiers);
+    unwrapped.add(source);
+    const body = canonical_type_from_source_fact(
+      source,
+      engine,
+      variables,
+      visiting,
+      unwrapped,
+      variable_kind,
+    );
+
+    if (body === undefined) {
+      return undefined;
+    }
+
+    return { tag: "forall", quantified_variables, body };
+  }
+
+  const canonical_type_set = source_type_set(source);
+
+  if (canonical_type_set !== undefined) {
+    const left = canonical_type_from_source_fact(
+      canonical_type_set.left,
+      engine,
+      variables,
+      visiting,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+    const right = canonical_type_from_source_fact(
+      canonical_type_set.right,
+      engine,
+      variables,
+      visiting,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+
+    if (left === undefined || right === undefined) {
+      return undefined;
+    }
+
+    if (canonical_type_set.operation === "union") {
+      return { tag: "union", members: [left, right] };
+    }
+
+    if (canonical_type_set.operation === "intersection") {
+      return { tag: "intersection", members: [left, right] };
+    }
+
+    return { tag: "difference", base: left, removed: right };
   }
 
   if (is_type_variable(source)) {
@@ -4292,7 +4429,14 @@ function inference_type_from_source_fact(
       return existing;
     }
 
-    const variable = inference.fresh_variable();
+    let variable: Type;
+
+    if (variable_kind === "rigid") {
+      variable = engine.fresh_rigid(source.name);
+    } else {
+      variable = engine.fresh_variable(source.name);
+    }
+
     variables.set(source, variable);
     return variable;
   }
@@ -4301,7 +4445,7 @@ function inference_type_from_source_fact(
     return undefined;
   }
 
-  const scalar = inference_scalar_from_source_name(source.resolved_name);
+  const scalar = canonical_scalar_from_source_name(source.resolved_name);
 
   if (scalar !== undefined) {
     return { tag: "scalar", name: scalar };
@@ -4314,18 +4458,20 @@ function inference_type_from_source_fact(
 
     const next = new Set(visiting);
     next.add(source);
-    const params: InferenceType[] = [];
+    const params: Type[] = [];
 
     for (const param of source.call_params) {
       if (param === undefined) {
         return undefined;
       }
 
-      const param_type = inference_type_from_source_fact(
+      const param_type = canonical_type_from_source_fact(
         param,
-        inference,
+        engine,
         variables,
         next,
+        unwrapped_quantifiers,
+        variable_kind,
       );
 
       if (param_type === undefined) {
@@ -4335,11 +4481,13 @@ function inference_type_from_source_fact(
       params.push(param_type);
     }
 
-    const result = inference_type_from_source_fact(
+    const result = canonical_type_from_source_fact(
       source.call_result,
-      inference,
+      engine,
       variables,
       next,
+      unwrapped_quantifiers,
+      variable_kind,
     );
 
     if (result === undefined) {
@@ -4361,7 +4509,7 @@ function inference_type_from_source_fact(
 
     if (source_fields_are_positional(source)) {
       const product_fields: Extract<
-        InferenceType,
+        Type,
         { tag: "product" }
       >["fields"] = [];
 
@@ -4370,39 +4518,45 @@ function inference_type_from_source_fact(
           return undefined;
         }
 
-        const field_type = inference_type_from_source_fact(
+        const field_type = canonical_type_from_source_fact(
           field.type,
-          inference,
+          engine,
           variables,
           next,
+          unwrapped_quantifiers,
+          variable_kind,
         );
 
         if (field_type === undefined) {
           return undefined;
         }
 
-        product_fields.push({
-          label: field.name || undefined,
-          type: field_type,
-        });
+        let label: string | undefined;
+
+        if (field.name !== "") {
+          label = field.name;
+        }
+
+        product_fields.push({ label, type: field_type });
       }
 
       return { tag: "product", fields: product_fields };
     }
 
-    const record_fields: Extract<InferenceType, { tag: "record" }>["fields"] =
-      [];
+    const record_fields: Extract<Type, { tag: "record" }>["fields"] = [];
 
     for (const field of fields) {
       if (field.type === undefined) {
         return undefined;
       }
 
-      const field_type = inference_type_from_source_fact(
+      const field_type = canonical_type_from_source_fact(
         field.type,
-        inference,
+        engine,
         variables,
         next,
+        unwrapped_quantifiers,
+        variable_kind,
       );
 
       if (field_type === undefined) {
@@ -4420,14 +4574,16 @@ function inference_type_from_source_fact(
   if (cases !== undefined) {
     const next = new Set(visiting);
     next.add(source);
-    const sum_cases: Extract<InferenceType, { tag: "sum" }>["cases"] = [];
+    const sum_cases: Extract<Type, { tag: "sum" }>["cases"] = [];
 
     for (const [label, payload] of cases) {
-      const payload_type = inference_type_from_source_fact(
+      const payload_type = canonical_type_from_source_fact(
         payload,
-        inference,
+        engine,
         variables,
         next,
+        unwrapped_quantifiers,
+        variable_kind,
       );
 
       if (payload_type === undefined) {
@@ -4443,9 +4599,9 @@ function inference_type_from_source_fact(
   return { tag: "named", name: source.resolved_name, args: [] };
 }
 
-function inference_scalar_from_source_name(
+function canonical_scalar_from_source_name(
   name: string,
-): Extract<InferenceType, { tag: "scalar" }>["name"] | undefined {
+): Extract<Type, { tag: "scalar" }>["name"] | undefined {
   if (
     name === "Bool" || name === "Unit" || name === "Int" ||
     name === "I32" || name === "U32" || name === "I64" ||
@@ -4470,10 +4626,9 @@ function specialize_call_result(
     return undefined;
   }
 
-  const bindings: TypeBindings = {
-    parents: new Map(),
-    concrete: new Map(),
-  };
+  const engine = new TypeEngine();
+  const expected_variables = new WeakMap<SourceTypeFact, Type>();
+  const actual_variables = new WeakMap<SourceTypeFact, Type>();
 
   for (let index = 0; index < func.call_params.length; index += 1) {
     const expected = func.call_params[index];
@@ -4484,20 +4639,49 @@ function specialize_call_result(
 
     const actual = args[index];
 
-    if (
-      actual === undefined || !unify_source_types(expected, actual, bindings)
-    ) {
+    if (actual === undefined) {
+      return undefined;
+    }
+
+    const expected_type = canonical_type_from_source_fact(
+      expected,
+      engine,
+      expected_variables,
+      new Set(),
+    );
+    const actual_type = canonical_type_from_source_fact(
+      actual,
+      engine,
+      actual_variables,
+      new Set(),
+    );
+
+    if (expected_type === undefined || actual_type === undefined) {
+      return undefined;
+    }
+
+    try {
+      engine.constrain_subtype(
+        actual_type,
+        expected_type,
+        "call argument " + (index + 1).toString(),
+      );
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+
       return undefined;
     }
   }
 
-  return materialize_source_type(func.call_result, bindings, new Map());
+  return materialize_source_type_from_engine(
+    func.call_result,
+    engine,
+    expected_variables,
+    new Map(),
+  );
 }
-
-type TypeBindings = {
-  parents: Map<SourceTypeFact, SourceTypeFact>;
-  concrete: Map<SourceTypeFact, SourceTypeFact>;
-};
 
 function skolemize_quantified_source_type(
   type: SourceTypeFact,
@@ -4508,287 +4692,172 @@ function skolemize_quantified_source_type(
     return type;
   }
 
-  const skolems = quantified.map((_variable, index) =>
-    named_type("$forall_" + index.toString())
+  const engine = new TypeEngine();
+  const variables = new WeakMap<SourceTypeFact, Type>();
+  const canonical = canonical_type_from_source_fact(
+    type,
+    engine,
+    variables,
+    new Set(),
   );
-  return instantiate_quantified_source_type(type, skolems);
-}
 
-function quantified_source_types_compatible(
-  expected: SourceTypeFact,
-  actual: SourceTypeFact,
-): boolean {
-  const expected_variables = expected.quantified_variables;
-  const actual_variables = actual.quantified_variables;
-
-  if (
-    expected_variables === undefined || actual_variables === undefined ||
-    expected_variables.length !== actual_variables.length
-  ) {
-    return false;
+  if (canonical === undefined || canonical.tag !== "forall") {
+    throw new Error("Invalid quantified source type: " + type.name);
   }
 
-  const skolems = expected_variables.map((_variable, index) =>
-    named_type("$forall_" + index.toString())
-  );
-  const expected_body = instantiate_quantified_source_type(expected, skolems);
-  const actual_body = instantiate_quantified_source_type(actual, skolems);
-  return source_types_compatible(expected_body, actual_body) &&
-    source_types_compatible(actual_body, expected_body);
-}
+  const skolemization = engine.skolemize_with_replacements({
+    quantified_variables: canonical.quantified_variables,
+    type: canonical.body,
+  });
+  const replacements = new Map<SourceTypeFact, SourceTypeFact>();
 
-function instantiate_quantified_source_type(
-  type: SourceTypeFact,
-  replacements: SourceTypeFact[],
-): SourceTypeFact {
-  const quantified = type.quantified_variables;
+  for (const quantified_source of quantified) {
+    const variable = variables.get(quantified_source);
 
-  if (
-    quantified === undefined || quantified.length !== replacements.length
-  ) {
-    throw new Error("Invalid quantified source type instantiation");
-  }
-
-  const bindings: TypeBindings = {
-    parents: new Map(),
-    concrete: new Map(),
-  };
-
-  for (let index = 0; index < quantified.length; index += 1) {
-    const variable = quantified[index];
-    const replacement = replacements[index];
-
-    if (variable === undefined || replacement === undefined) {
-      throw new Error("Missing quantified source type replacement " + index);
+    if (variable === undefined || variable.tag !== "variable") {
+      throw new Error(
+        "Missing canonical quantified variable for " + quantified_source.name,
+      );
     }
 
-    bindings.concrete.set(variable, replacement);
+    const skolem = skolemization.skolems.get(variable.id);
+
+    if (skolem === undefined) {
+      throw new Error(
+        "Missing skolem replacement for " + quantified_source.name,
+      );
+    }
+
+    replacements.set(quantified_source, named_type(format_type(skolem)));
   }
 
-  const instantiated = materialize_source_type(type, bindings, new Map());
+  const instantiated = clone_source_type(type, replacements, new Map());
   instantiated.quantified_variables = undefined;
   return instantiated;
 }
 
-function unify_source_types(
-  expected: SourceTypeFact,
-  actual: SourceTypeFact,
-  bindings: TypeBindings,
-  seen = new WeakMap<SourceTypeFact, WeakSet<SourceTypeFact>>(),
-): boolean {
-  if (is_error_type(expected) || is_error_type(actual)) {
-    return false;
-  }
-
-  if (expected.quantified_variables !== undefined) {
-    return quantified_source_types_compatible(expected, actual);
-  }
-
-  if (actual.quantified_variables !== undefined) {
-    return unify_source_types(
-      expected,
-      instantiate_quantified_source_type(
-        actual,
-        actual.quantified_variables.map(() => inference_type()),
-      ),
-      bindings,
-      seen,
-    );
-  }
-
-  const expected_variable = is_type_variable(expected);
-  const actual_variable = is_type_variable(actual);
-
-  if (expected_variable || actual_variable) {
-    return unify_type_variables(expected, actual, bindings);
-  }
-
-  let actuals = seen.get(expected);
-
-  if (actuals === undefined) {
-    actuals = new WeakSet();
-    seen.set(expected, actuals);
-  } else if (actuals.has(actual)) {
-    return true;
-  }
-
-  actuals.add(actual);
-
-  const expected_type_set = source_type_set(expected);
-
-  if (expected_type_set !== undefined) {
-    if (
-      source_type_set(actual) !== undefined &&
-      expected.resolved_name === actual.resolved_name
-    ) {
-      return true;
-    }
-
-    return source_type_set_contains(
-      expected_type_set,
-      actual,
-      (member, value) => unify_source_types(member, value, bindings, seen),
-    );
-  }
-
-  if (expected.call_params !== undefined || actual.call_params !== undefined) {
-    if (
-      expected.call_params === undefined || actual.call_params === undefined ||
-      expected.call_params.length !== actual.call_params.length
-    ) {
-      return false;
-    }
-
-    for (let index = 0; index < expected.call_params.length; index += 1) {
-      const expected_param = expected.call_params[index];
-      const actual_param = actual.call_params[index];
-
-      if (expected_param === undefined) {
-        continue;
-      }
-
-      if (
-        actual_param === undefined ||
-        !unify_source_types(expected_param, actual_param, bindings, seen)
-      ) {
-        return false;
-      }
-    }
-
-    if (expected.call_result === undefined) {
-      return true;
-    }
-
-    return actual.call_result !== undefined &&
-      unify_source_types(
-        expected.call_result,
-        actual.call_result,
-        bindings,
-        seen,
-      );
-  }
-
-  const expected_fields = source_fields(expected);
-  const actual_fields = source_fields(actual);
-
-  if (expected_fields !== undefined || actual_fields !== undefined) {
-    if (
-      expected_fields === undefined || actual_fields === undefined ||
-      expected_fields.length !== actual_fields.length
-    ) {
-      return false;
-    }
-
-    for (let index = 0; index < expected_fields.length; index += 1) {
-      const expected_field = expected_fields[index];
-      const actual_field = actual_fields[index];
-
-      if (
-        expected_field === undefined || actual_field === undefined ||
-        expected_field.name !== actual_field.name ||
-        expected_field.type === undefined || actual_field.type === undefined ||
-        !unify_source_types(
-          expected_field.type,
-          actual_field.type,
-          bindings,
-          seen,
-        )
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  const expected_cases = source_cases(expected);
-  const actual_cases = source_cases(actual);
-
-  if (expected_cases !== undefined || actual_cases !== undefined) {
-    if (
-      expected_cases === undefined || actual_cases === undefined ||
-      expected_cases.size !== actual_cases.size
-    ) {
-      return false;
-    }
-
-    for (const [case_name, expected_payload] of expected_cases) {
-      const actual_payload = actual_cases.get(case_name);
-
-      if (
-        actual_payload === undefined ||
-        !unify_source_types(expected_payload, actual_payload, bindings, seen)
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  return same_runtime_type_family(expected, actual);
-}
-
-function unify_type_variables(
-  expected: SourceTypeFact,
-  actual: SourceTypeFact,
-  bindings: TypeBindings,
-): boolean {
-  if (is_type_variable(expected) && is_type_variable(actual)) {
-    const expected_root = type_variable_root(expected, bindings);
-    const actual_root = type_variable_root(actual, bindings);
-
-    if (expected_root === actual_root) {
-      return true;
-    }
-
-    const expected_concrete = bindings.concrete.get(expected_root);
-    const actual_concrete = bindings.concrete.get(actual_root);
-    bindings.parents.set(actual_root, expected_root);
-
-    if (expected_concrete !== undefined && actual_concrete !== undefined) {
-      return unify_source_types(expected_concrete, actual_concrete, bindings);
-    }
-
-    if (expected_concrete === undefined && actual_concrete !== undefined) {
-      bindings.concrete.set(expected_root, actual_concrete);
-    }
-
-    return true;
-  }
-
-  let variable = expected;
-  let concrete = actual;
-
-  if (!is_type_variable(expected)) {
-    variable = actual;
-    concrete = expected;
-  }
-
-  const root = type_variable_root(variable, bindings);
-  const bound = bindings.concrete.get(root);
-
-  if (bound !== undefined) {
-    return unify_source_types(bound, concrete, bindings);
-  }
-
-  bindings.concrete.set(root, concrete);
-  return true;
-}
-
-function type_variable_root(
-  type: SourceTypeFact,
-  bindings: TypeBindings,
+function clone_source_type(
+  source: SourceTypeFact,
+  replacements: Map<SourceTypeFact, SourceTypeFact>,
+  copied: Map<SourceTypeFact, SourceTypeFact>,
 ): SourceTypeFact {
-  const parent = bindings.parents.get(type);
+  const replacement = replacements.get(source);
 
-  if (parent === undefined) {
-    return type;
+  if (replacement !== undefined) {
+    return replacement;
   }
 
-  const root = type_variable_root(parent, bindings);
-  bindings.parents.set(type, root);
-  return root;
+  const cached = copied.get(source);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const result = named_type(source.name, source.nominal);
+  result.resolved_name = source.resolved_name;
+  result.inference_variable = source.inference_variable;
+  result.positional_fields = source.positional_fields;
+  copied.set(source, result);
+
+  if (source.quantified_variables !== undefined) {
+    result.quantified_variables = source.quantified_variables.map((variable) =>
+      clone_source_type(variable, replacements, copied)
+    );
+  }
+
+  if (source.type_set !== undefined) {
+    result.type_set = {
+      operation: source.type_set.operation,
+      left: clone_source_type(source.type_set.left, replacements, copied),
+      right: clone_source_type(source.type_set.right, replacements, copied),
+    };
+  }
+
+  if (source.call_params !== undefined) {
+    result.call_params = source.call_params.map((param) => {
+      if (param === undefined) {
+        return undefined;
+      }
+
+      return clone_source_type(param, replacements, copied);
+    });
+  }
+
+  if (source.call_result !== undefined) {
+    result.call_result = clone_source_type(
+      source.call_result,
+      replacements,
+      copied,
+    );
+  }
+
+  if (source.fields !== undefined) {
+    result.fields = source.fields.map((field) => {
+      let field_type: SourceTypeFact | undefined;
+
+      if (field.type !== undefined) {
+        field_type = clone_source_type(field.type, replacements, copied);
+      }
+
+      return { name: field.name, type: field_type };
+    });
+  }
+
+  if (source.cases !== undefined) {
+    result.cases = new Map();
+
+    for (const [name, payload] of source.cases) {
+      result.cases.set(
+        name,
+        clone_source_type(payload, replacements, copied),
+      );
+    }
+  }
+
+  if (source.members !== undefined) {
+    result.members = new Map();
+
+    for (const [name, member] of source.members) {
+      result.members.set(
+        name,
+        clone_source_type(member, replacements, copied),
+      );
+    }
+  }
+
+  if (source.constructed !== undefined) {
+    result.constructed = clone_source_type(
+      source.constructed,
+      replacements,
+      copied,
+    );
+  }
+
+  if (source.alias_target !== undefined) {
+    result.alias_target = clone_source_type(
+      source.alias_target,
+      replacements,
+      copied,
+    );
+  }
+
+  if (source.handler_input !== undefined) {
+    result.handler_input = clone_source_type(
+      source.handler_input,
+      replacements,
+      copied,
+    );
+  }
+
+  if (source.handler_result !== undefined) {
+    result.handler_result = clone_source_type(
+      source.handler_result,
+      replacements,
+      copied,
+    );
+  }
+
+  return result;
 }
 
 function is_type_variable(type: SourceTypeFact): boolean {
@@ -4801,57 +4870,67 @@ function is_error_type(type: SourceTypeFact): boolean {
   return type.resolved_name === "unknown" && !type.inference_variable;
 }
 
-function materialize_source_type(
+function materialize_source_type_from_engine(
   source: SourceTypeFact,
-  bindings: TypeBindings,
+  engine: TypeEngine,
+  variables: WeakMap<SourceTypeFact, Type>,
   copied: Map<SourceTypeFact, SourceTypeFact>,
 ): SourceTypeFact {
-  if (is_type_variable(source)) {
-    const root = type_variable_root(source, bindings);
-    const existing = copied.get(root);
-
-    if (existing !== undefined) {
-      copied.set(source, existing);
-      return existing;
-    }
-
-    const concrete = bindings.concrete.get(root);
-
-    if (concrete !== undefined) {
-      const result = materialize_source_type(concrete, bindings, copied);
-      copied.set(root, result);
-      copied.set(source, result);
-      return result;
-    }
-
-    const result = inference_type();
-    copied.set(root, result);
-    copied.set(source, result);
-    return result;
-  }
-
   const cached = copied.get(source);
 
   if (cached !== undefined) {
     return cached;
   }
 
+  if (is_type_variable(source)) {
+    const canonical = variables.get(source);
+
+    if (canonical === undefined) {
+      const unresolved = inference_type();
+      copied.set(source, unresolved);
+      return unresolved;
+    }
+
+    const resolved = engine.substitute(canonical);
+
+    if (resolved.tag === "variable") {
+      const unresolved = inference_type();
+      copied.set(source, unresolved);
+      return unresolved;
+    }
+
+    const materialized = source_type_from_canonical(resolved, new Map());
+    copied.set(source, materialized);
+    return materialized;
+  }
+
   const result = named_type(source.name, source.nominal);
   result.resolved_name = source.resolved_name;
   result.inference_variable = source.inference_variable;
+  result.positional_fields = source.positional_fields;
   copied.set(source, result);
 
   if (source.quantified_variables !== undefined) {
     result.quantified_variables = source.quantified_variables.map((variable) =>
-      materialize_source_type(variable, bindings, copied)
+      materialize_source_type_from_engine(variable, engine, variables, copied)
     );
   }
 
   if (source.type_set !== undefined) {
     result.type_set = {
       operation: source.type_set.operation,
-      left: materialize_source_type(source.type_set.left, bindings, copied),
-      right: materialize_source_type(source.type_set.right, bindings, copied),
+      left: materialize_source_type_from_engine(
+        source.type_set.left,
+        engine,
+        variables,
+        copied,
+      ),
+      right: materialize_source_type_from_engine(
+        source.type_set.right,
+        engine,
+        variables,
+        copied,
+      ),
     };
   }
 
@@ -4861,59 +4940,105 @@ function materialize_source_type(
         return undefined;
       }
 
-      return materialize_source_type(param, bindings, copied);
+      return materialize_source_type_from_engine(
+        param,
+        engine,
+        variables,
+        copied,
+      );
     });
   }
 
   if (source.call_result !== undefined) {
-    result.call_result = materialize_source_type(
+    result.call_result = materialize_source_type_from_engine(
       source.call_result,
-      bindings,
+      engine,
+      variables,
       copied,
     );
   }
 
   if (source.fields !== undefined) {
-    result.positional_fields = source.positional_fields;
     result.fields = source.fields.map((field) => {
-      let type: SourceTypeFact | undefined;
+      let field_type: SourceTypeFact | undefined;
 
       if (field.type !== undefined) {
-        type = materialize_source_type(field.type, bindings, copied);
+        field_type = materialize_source_type_from_engine(
+          field.type,
+          engine,
+          variables,
+          copied,
+        );
       }
 
-      return { name: field.name, type };
+      return { name: field.name, type: field_type };
     });
   }
 
   if (source.cases !== undefined) {
     result.cases = new Map();
 
-    for (const [name, type] of source.cases) {
-      result.cases.set(name, materialize_source_type(type, bindings, copied));
+    for (const [name, payload] of source.cases) {
+      result.cases.set(
+        name,
+        materialize_source_type_from_engine(
+          payload,
+          engine,
+          variables,
+          copied,
+        ),
+      );
     }
   }
 
+  if (source.members !== undefined) {
+    result.members = new Map();
+
+    for (const [name, member] of source.members) {
+      result.members.set(
+        name,
+        materialize_source_type_from_engine(
+          member,
+          engine,
+          variables,
+          copied,
+        ),
+      );
+    }
+  }
+
+  if (source.constructed !== undefined) {
+    result.constructed = materialize_source_type_from_engine(
+      source.constructed,
+      engine,
+      variables,
+      copied,
+    );
+  }
+
   if (source.alias_target !== undefined) {
-    result.alias_target = materialize_source_type(
+    result.alias_target = materialize_source_type_from_engine(
       source.alias_target,
-      bindings,
+      engine,
+      variables,
       copied,
     );
   }
 
   if (source.handler_input !== undefined) {
-    result.handler_input = materialize_source_type(
+    result.handler_input = materialize_source_type_from_engine(
       source.handler_input,
-      bindings,
+      engine,
+      variables,
       copied,
     );
   }
 
   if (source.handler_result !== undefined) {
-    result.handler_result = materialize_source_type(
+    result.handler_result = materialize_source_type_from_engine(
       source.handler_result,
-      bindings,
+      engine,
+      variables,
       copied,
     );
   }
@@ -4921,28 +5046,178 @@ function materialize_source_type(
   return result;
 }
 
+function source_type_from_canonical(
+  type: Type,
+  variables: Map<number, SourceTypeFact>,
+): SourceTypeFact {
+  switch (type.tag) {
+    case "variable": {
+      const existing = variables.get(type.id);
+
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const variable = inference_type();
+      variables.set(type.id, variable);
+      return variable;
+    }
+
+    case "rigid":
+      return named_type(format_type(type));
+
+    case "forall": {
+      const scoped = new Map(variables);
+      const quantified_variables: SourceTypeFact[] = [];
+
+      for (const variable of type.quantified_variables) {
+        const quantified = inference_type();
+        scoped.set(variable, quantified);
+        quantified_variables.push(quantified);
+      }
+
+      const body = source_type_from_canonical(type.body, scoped);
+      body.name = format_type(type);
+      body.resolved_name = body.name;
+      body.quantified_variables = quantified_variables;
+      return body;
+    }
+
+    case "top":
+      return named_type("Any");
+
+    case "never":
+      return named_type("Never");
+
+    case "scalar":
+      return named_type(type.name);
+
+    case "named":
+      return named_type(type.name, type.name);
+
+    case "product":
+      return struct_type(
+        type.fields.map((field) => {
+          let name = "";
+
+          if (field.label !== undefined) {
+            name = field.label;
+          }
+
+          return {
+            name,
+            type: source_type_from_canonical(field.type, variables),
+          };
+        }),
+        undefined,
+        true,
+      );
+
+    case "record":
+      return struct_type(
+        type.fields.map((field) => {
+          return {
+            name: field.label,
+            type: source_type_from_canonical(field.type, variables),
+          };
+        }),
+        undefined,
+        false,
+      );
+
+    case "fixed_array":
+      return named_type(format_type(type));
+
+    case "sum": {
+      const cases = new Map<string, SourceTypeFact>();
+
+      for (const sum_case of type.cases) {
+        cases.set(
+          sum_case.label,
+          source_type_from_canonical(sum_case.payload, variables),
+        );
+      }
+
+      const result = named_type("union");
+      result.cases = cases;
+      return result;
+    }
+
+    case "function":
+      return callable_type(
+        format_type(type),
+        type.params.map((param) => {
+          return source_type_from_canonical(param, variables);
+        }),
+        source_type_from_canonical(type.result, variables),
+      );
+
+    case "owned":
+      return named_type(format_type(type));
+
+    case "type_value": {
+      const result = named_type("Type");
+      result.constructed = source_type_from_canonical(
+        type.represented,
+        variables,
+      );
+      return result;
+    }
+
+    case "union":
+    case "intersection": {
+      const members = type.members.map((member) => {
+        return source_type_from_canonical(member, variables);
+      });
+      const first = members[0];
+
+      if (first === undefined) {
+        if (type.tag === "union") {
+          return named_type("Never");
+        }
+
+        return named_type("Any");
+      }
+
+      let result = first;
+
+      for (let index = 1; index < members.length; index += 1) {
+        const member = members[index];
+
+        if (member === undefined) {
+          throw new Error("Missing canonical type-set member " + index);
+        }
+
+        const combined = named_type(format_type(type));
+        combined.type_set = {
+          operation: type.tag,
+          left: result,
+          right: member,
+        };
+        result = combined;
+      }
+
+      return result;
+    }
+
+    case "difference": {
+      const result = named_type(format_type(type));
+      result.type_set = {
+        operation: "difference",
+        left: source_type_from_canonical(type.base, variables),
+        right: source_type_from_canonical(type.removed, variables),
+      };
+      return result;
+    }
+  }
+}
+
 function source_types_compatible(
   expected: SourceTypeFact,
   actual: SourceTypeFact,
-  seen = new WeakMap<SourceTypeFact, WeakSet<SourceTypeFact>>(),
 ): boolean {
   if (is_error_type(expected) || is_error_type(actual)) {
     return false;
-  }
-
-  if (expected.quantified_variables !== undefined) {
-    return quantified_source_types_compatible(expected, actual);
-  }
-
-  if (actual.quantified_variables !== undefined) {
-    return source_types_compatible(
-      expected,
-      instantiate_quantified_source_type(
-        actual,
-        actual.quantified_variables.map(() => inference_type()),
-      ),
-      seen,
-    );
   }
 
   if (is_type_variable(expected)) {
@@ -4953,132 +5228,58 @@ function source_types_compatible(
     return false;
   }
 
-  let actuals = seen.get(expected);
+  const engine = new TypeEngine();
+  const expected_type = canonical_type_from_source_fact(
+    expected,
+    engine,
+    new WeakMap(),
+    new Set(),
+  );
+  let actual_type = canonical_type_from_source_fact(
+    actual,
+    engine,
+    new WeakMap(),
+    new Set(),
+    new Set(),
+    "rigid",
+  );
 
-  if (actuals === undefined) {
-    actuals = new WeakSet();
-    seen.set(expected, actuals);
-  } else if (actuals.has(actual)) {
-    return true;
+  if (expected_type === undefined || actual_type === undefined) {
+    return false;
   }
 
-  actuals.add(actual);
-
-  const expected_type_set = source_type_set(expected);
-
-  if (expected_type_set !== undefined) {
-    if (
-      source_type_set(actual) !== undefined &&
-      expected.resolved_name === actual.resolved_name
-    ) {
-      return true;
-    }
-
-    return source_type_set_contains(
-      expected_type_set,
-      actual,
-      (member, value) => source_types_compatible(member, value, seen),
-    );
-  }
-
-  if (expected.call_params !== undefined || actual.call_params !== undefined) {
-    if (
-      expected.call_params === undefined || actual.call_params === undefined ||
-      expected.call_params.length !== actual.call_params.length
-    ) {
+  if (expected_type.tag === "forall") {
+    if (actual_type.tag !== "forall") {
       return false;
     }
 
-    for (let index = 0; index < expected.call_params.length; index += 1) {
-      const expected_param = expected.call_params[index];
+    return engine.alpha_equivalent(expected_type, actual_type);
+  }
 
-      if (expected_param === undefined) {
-        continue;
-      }
+  if (actual_type.tag === "forall") {
+    actual_type = engine.instantiate({
+      quantified_variables: actual_type.quantified_variables,
+      type: actual_type.body,
+    });
+  }
 
-      const actual_param = actual.call_params[index];
-
-      if (
-        actual_param === undefined ||
-        !source_types_compatible(expected_param, actual_param, seen)
-      ) {
-        return false;
-      }
-    }
-
-    if (expected.call_result !== undefined) {
-      if (actual.call_result === undefined) {
-        return false;
-      }
-
-      if (
-        !source_types_compatible(
-          expected.call_result,
-          actual.call_result,
-          seen,
-        )
-      ) {
-        return false;
-      }
-    }
-
+  if (
+    expected_type.tag === "scalar" && actual_type.tag === "scalar" &&
+    scalar_representation_compatible(expected_type.name, actual_type.name)
+  ) {
     return true;
   }
 
-  const expected_fields = source_fields(expected);
-  const actual_fields = source_fields(actual);
-
-  if (expected_fields !== undefined || actual_fields !== undefined) {
-    if (
-      expected_fields === undefined || actual_fields === undefined ||
-      expected_fields.length !== actual_fields.length
-    ) {
-      return false;
-    }
-
-    for (let index = 0; index < expected_fields.length; index += 1) {
-      const expected_field = expected_fields[index];
-      const actual_field = actual_fields[index];
-
-      if (
-        expected_field === undefined || actual_field === undefined ||
-        expected_field.name !== actual_field.name ||
-        expected_field.type === undefined || actual_field.type === undefined ||
-        !source_types_compatible(expected_field.type, actual_field.type, seen)
-      ) {
-        return false;
-      }
-    }
-
+  try {
+    engine.unify(expected_type, actual_type, "source type compatibility");
     return true;
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
   }
 
-  const expected_cases = source_cases(expected);
-  const actual_cases = source_cases(actual);
-
-  if (expected_cases !== undefined || actual_cases !== undefined) {
-    if (
-      expected_cases === undefined || actual_cases === undefined ||
-      expected_cases.size !== actual_cases.size
-    ) {
-      return false;
-    }
-
-    for (const [case_name, expected_payload] of expected_cases) {
-      const actual_payload = actual_cases.get(case_name);
-
-      if (
-        actual_payload === undefined ||
-        !source_types_compatible(expected_payload, actual_payload, seen)
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  return same_runtime_type_family(expected, actual);
+  return engine.subtype(actual_type, expected_type);
 }
 
 function resume_type(
@@ -5179,33 +5380,6 @@ function source_type_set(
 
   seen.add(type);
   return source_type_set(type.alias_target, seen);
-}
-
-function source_type_set_contains(
-  type_set: SourceTypeSetFact,
-  actual: SourceTypeFact,
-  member_matches: (
-    expected: SourceTypeFact,
-    actual: SourceTypeFact,
-  ) => boolean,
-): boolean {
-  const left_matches = member_matches(type_set.left, actual);
-
-  if (type_set.operation === "union") {
-    if (left_matches) {
-      return true;
-    }
-
-    return member_matches(type_set.right, actual);
-  }
-
-  const right_matches = member_matches(type_set.right, actual);
-
-  if (type_set.operation === "intersection") {
-    return left_matches && right_matches;
-  }
-
-  return left_matches && !right_matches;
 }
 
 function common_type_facts(

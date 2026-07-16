@@ -35,6 +35,14 @@ function definition_type_name(
   return facts.definition_type_of.get(owner)?.get(slot)?.name || "missing";
 }
 
+Deno.test("source facts expose canonical types as semantic evidence", () => {
+  const source = parse_source("let value: Bool = true\nvalue");
+  const facts = source_facts(source);
+  const fact = facts.definition_type_of.get(source.statements[0]!)?.get("name");
+
+  assert_equals(fact?.canonical_type(), { tag: "scalar", name: "Bool" });
+});
+
 Deno.test("source facts specialize generic product aliases recursively", () => {
   const source = parse_source(`
 type Box a = [.value = a]
