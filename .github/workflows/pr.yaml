@@ -6,13 +6,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      XDG_CACHE_HOME: /tmp/ducklang-tree-sitter-cache
     steps:
       - name: checkout
-        run: |
-          git init --quiet .
-          git remote add origin https://github.com/${{ github.repository }}.git
-          git fetch --quiet --depth=1 origin ${{ github.ref }}
-          git checkout --quiet FETCH_HEAD
+        uses: actions/checkout@v4
 
       - name: setup deno
         uses: denoland/setup-deno@v2
@@ -20,57 +18,46 @@ jobs:
           deno-version: v2.x
 
       - name: format
-        run: |
-          find . -name '*.ts' \
-            ! -path './src/frontend.test.ts' \
-            -print0 | xargs -0 deno fmt --check
+        run: deno fmt --check
 
       - name: lint
+        run: deno lint --ignore=.claude
+
+      - name: typecheck
         run: |
-          deno lint \
-            main.ts \
-            src/core/app_emit.ts \
-            src/core/app_type.ts \
-            src/core/artifact_emit.ts \
-            src/core/ast.ts \
-            src/core/backend/graph/baseline_proof.ts \
-            src/core/backend/graph/instance.ts \
-            src/core/backend/graph/values.ts \
-            src/core/backend/union/runtime/info.ts \
-            src/core/drop/emit.ts \
-            src/core/drop/scan.ts \
-            src/core/expr_emit.ts \
-            src/core/expr_type/expr.ts \
-            src/core/format.ts \
-            src/core/from_source.ts \
-            src/core/from_source/context.ts \
-            src/core/from_source/expr.ts \
-            src/core/from_source/stmt.ts \
-            src/core/local_collect/expr.ts \
-            src/core/local_collect/stmt.ts \
-            src/core/named_rec_emit.ts \
-            src/core/runtime_union/types.ts \
-            src/core/scope_analysis.ts \
-            src/core/static_call/target.ts \
-            src/core/static_stability.ts \
-            src/core/stmt_emit.ts \
-            src/core/substitute.ts \
-            src/core/text_layout/build.ts \
-            src/core/union_static/dynamic_if.ts \
-            src/core/union_static/static_case.ts \
-            src/frontend/lower_graph/value.ts \
-            src/frontend/static_loop/fallback.ts \
-            src/frontend/static_loop/fallback/function.ts
+          deno check main.ts duck.ts
+          deno check scripts/*.ts
+          rg --files src case-studies examples -g '*.test.ts' -0 | xargs -0 deno check
 
       - name: install wabt
         run: |
           sudo apt-get update -qq >/tmp/apt.log 2>&1
           sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
 
-      - name: run tests
+      - name: install tree-sitter
+        run: npm install --global tree-sitter-cli@0.26.3
+
+      - name: check grammar
         run: |
-          mkdir -p /tmp/grok-goal-c35e95813d70/implementer
-          deno test --no-check --allow-read --allow-write --allow-run
+          cd tree-sitter-duck
+          tree-sitter generate
+          tree-sitter test
+          rg --files ../examples -g '*.duck' -0 | xargs -0 tree-sitter parse --quiet --stat
+          tree-sitter parse --quiet --stat ../src/frontend/prelude*.duck
+          tree-sitter query queries/highlights.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          tree-sitter query queries/indents.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          tree-sitter query queries/textobjects.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+          cd ..
+          git diff --exit-code -- tree-sitter-duck/src/grammar.json tree-sitter-duck/src/node-types.json tree-sitter-duck/src/parser.c
+
+      - name: run tests
+        run: deno test --allow-read --allow-write --allow-run
 
       - name: enforce LSP performance budgets
         run: deno task lsp:perf
+
+      - name: enforce compiler performance budgets
+        run: deno task compiler:perf

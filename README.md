@@ -1,11 +1,15 @@
 # Ducklang
 
-Ducklang is a small Interaction Calculus inspired compiler pipeline written in
-Deno. The project is intentionally direct and inspectable: source programs move
-through explicit stages instead of a large hidden compiler framework.
+Ducklang is an Interaction Calculus inspired compiler and source-language
+toolchain written in Deno. Source programs use one shared frontend and then
+select an explicit backend route:
 
 ```txt
-Source -> IC -> Expr -> Mod -> WAT -> Wasm
+                         -> IC -> Expr --------->
+Source -> Frontend -----|                         Mod -> WAT -> Wasm
+                         -> structured Core ---->
+                                               |
+                                               -> managed JavaScript ABI
 ```
 
 The language is a compact value-oriented playground for compile-time
@@ -21,6 +25,14 @@ just run
 ```
 
 This writes `build/out.wat` from the example program in `main.ts`.
+
+Compile or run a source file directly:
+
+```sh
+just duck build examples/basics/01_arithmetic_and_shadowing.duck
+just duck build examples/basics/01_arithmetic_and_shadowing.duck --emit all
+just duck run examples/basics/01_arithmetic_and_shadowing.duck
+```
 
 Compile the generated WAT to Wasm:
 
@@ -65,9 +77,20 @@ which live decoupled from the compiler pipeline in `src/fmt/` and `src/lsp/`:
 just duck fmt examples        # format .duck files in place
 just duck fmt --check src     # report unformatted files without writing
 just duck fmt --stdin         # format stdin to stdout
-just duck check examples      # parse files and report diagnostics
+just duck check examples      # report syntax and semantic diagnostics
+just duck build main.duck     # write build/main.wasm through Core
+just duck build main.duck --route ic --emit wat
+just duck build main.duck --managed --emit all
+just duck run main.duck
 just duck lsp                 # run the language server over stdio
 ```
+
+`build` accepts `--route ic|core|managed`, `--emit wat|wasm|all`,
+`--out <directory>`, and `--host-interface <file>`. Managed builds always write
+`<name>.abi.json` beside their WAT or Wasm output. `run` supports import-free
+IC/Core programs and managed programs that require no host capabilities;
+applications with effects should instantiate the managed output through
+`DuckHost`.
 
 The formatter is deliberately biased: two-space indentation, fixed spacing,
 collapsed blank runs, canonical string escapes, and no configuration. It
@@ -442,6 +465,11 @@ Use the IC route for small scalar examples and open terms like `input + 1`. Use
 the Core route for larger programs with structured statements, loops, runtime
 text, host effects, closures, and aggregate behavior.
 
+The Core route does not currently lower through IC. This is an intentional
+architectural boundary, not an undocumented intermediate stage. See
+[architecture.md](docs/architecture.md) for the route contracts and
+[roadmap.md](docs/roadmap.md) for the larger reserved features.
+
 ### Managed JavaScript host ABI
 
 `Source.artifact` emits the `duck-js-1` manifest and a module with exported
@@ -510,9 +538,10 @@ src/core.ts           structured Core path
 src/wasm_*.test.ts    end-to-end Wasm integration tests by feature area
 docs/language.md      source-language specification
 docs/coverage.md      per-route implementation coverage
+docs/architecture.md  compiler route contracts and stage boundaries
+docs/roadmap.md       prioritized reserved-feature work
 examples/             runnable .duck source programs and expected failures
-tree-sitter-duck/       Tree-sitter grammar and Helix queries for .duck files
-tasks/                planning notes and task breakdowns
+tree-sitter-duck/      Tree-sitter grammar and Helix queries for .duck files
 ```
 
 ## Development
@@ -521,9 +550,18 @@ tasks/                planning notes and task breakdowns
 just fmt
 just fmt-check
 just lint
+just typecheck
+just grammar-check
 just test
 just check
+deno task compiler:perf
 ```
+
+`just check` is the complete local gate: formatting, lint, type-checking,
+Tree-sitter generation/corpus/query parity, and the runtime test suite. The Wasm
+integration tests require `wat2wasm`; grammar checks require `tree-sitter`
+0.26.3. CI also enforces latency, heap, and generated-WAT-size budgets for the
+LSP and the complete successful example manifest.
 
 Style notes that matter in this repository:
 

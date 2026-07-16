@@ -1491,23 +1491,28 @@ type Result error value = | .ok = value | .err = error
 
 ## Lowering
 
-The intended pipeline is:
+The frontend performs parsing, semantic validation, fact inference, linearity
+checking, compile-time evaluation, and specialization. Compilation then selects
+one of two backend routes:
 
 ```txt
-Source
-  -> Typed Core
-  -> Const evaluation and specialization
-  -> Structured Core
-  -> Ownership, lifetime, escape, and cleanup elaboration
-  -> Interaction Calculus IR
-  -> Expr
-  -> Mod
-  -> WAT
-  -> Wasm
+                         -> Ic -> Expr --------->
+Source -> Frontend -----|                        Mod -> WAT -> Wasm
+                         -> structured Core ---->
+                                              |
+                                              -> managed JavaScript ABI
 ```
 
-Two routes are implemented today: a pure Ic route for scalar and
-frontend-visible computation, and a structured Core route for statements, loops,
-runtime memory, closures, handlers, and the ownership proof gate. The managed
-JavaScript ABI wraps the Core route. Per-feature route coverage, including the
-full supported and reserved feature lists, lives in [coverage.md](coverage.md).
+The pure Ic route is the theory-facing route for scalar, affine, and
+frontend-visible computation. It performs explicit sharing and erasure,
+Interaction Calculus graph reduction, a no-GC proof, and lowering to `Expr`.
+
+The structured Core route owns statements, loops, runtime memory, closures,
+handlers, and ownership/lifetime/cleanup proofs. It emits `Mod` directly; it
+does not currently pass through Ic or Expr. The managed JavaScript ABI wraps the
+Core module with marshaling and host-effect imports.
+
+The route contracts and permitted dependencies are documented in
+[architecture.md](architecture.md). Per-feature route coverage lives in
+[coverage.md](coverage.md), and larger reserved capabilities are prioritized in
+[roadmap.md](roadmap.md).

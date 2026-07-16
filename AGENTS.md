@@ -2,13 +2,19 @@
 
 ## Goal
 
-Build a small Interaction Calculus inspired compiler pipeline in Deno:
+Build an Interaction Calculus inspired compiler and source-language toolchain in
+Deno with two explicit backend routes:
 
 ```txt
-IC -> Expr -> Mod -> WAT -> Wasm
+Source -> IC -> Expr -> Mod -> WAT -> Wasm
+Source -> structured Core -> Mod -> WAT -> Wasm
 ```
 
-The project should stay simple and inspectable while it grows. Prefer small explicit compiler stages over clever abstractions.
+The IC route remains the theory-facing scalar and affine pipeline. Structured
+control flow, runtime memory, ownership, handlers, and the managed ABI use Core.
+Do not claim that Core lowers through IC unless that lowering actually exists.
+The project should stay inspectable while it grows. Prefer explicit compiler
+stages over clever abstractions.
 
 ## Theory background
 

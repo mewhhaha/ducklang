@@ -1,6 +1,7 @@
 {
   "tasks": {
-    "duck": "deno run --allow-read --allow-write duck.ts",
+    "duck": "deno run --allow-read --allow-write --allow-run=wat2wasm duck.ts",
+    "compiler:perf": "deno run --allow-read scripts/compiler-performance.ts",
     "lsp:perf": "deno run --allow-read scripts/lsp-performance.ts"
   },
   "imports": {

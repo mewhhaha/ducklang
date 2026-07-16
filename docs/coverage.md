@@ -487,10 +487,11 @@ frontend visible text byte indexing and `get` over dynamic visible text indexes
 
 ## Reserved
 
-Reserved for structured core and Wasm-oriented IR:
+Reserved for future route coverage:
 
 ```txt
-dynamic structured loops
+structured loop forms beyond the supported range, collection, value-producing,
+and tail-recursion paths
 runtime union payload storage/matching beyond scalar, Text, Unit, and
 static-shaped structs with scalar/Text leaves
 unknown dynamic `if let` outside typed, direct union-if, typed direct/simple
@@ -500,7 +501,7 @@ unknown runtime collections
 memory-backed index assignment beyond runtime Text bytes and runtime aggregate
 scalar/Text/union-pointer/inline nested fields
 general first-class linear closure captures
-frontend aggregate memory/codegen representation
+aggregate memory/codegen on the pure Ic route
 unknown runtime text/string operations outside the supported visible
 literal/concat/data-pointer cases and runtime `Text` length, byte-load, `get`,
 byte assignment, collection-loop, and Core runtime concat subset
