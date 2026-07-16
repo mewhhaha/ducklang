@@ -11,6 +11,7 @@ import type {
   FrontHostImportArgContract,
   FrontHostImportOwnerReason,
   Param,
+  Pattern,
   RecordDeclaration,
   Source,
   Stmt,
@@ -29,6 +30,8 @@ import { is_no_demand_name } from "./names.ts";
 import { substitute_front_expr } from "./substitute.ts";
 import { type_declaration_bindings } from "./type_declaration.ts";
 import { prim_returns_bool } from "./numeric.ts";
+import { function_type_expr } from "./type_expr.ts";
+import { pattern_bindings } from "./pattern.ts";
 
 type EffectElaboration = {
   analysis: FrontEffectAnalysis;
@@ -49,11 +52,12 @@ export function elaborate_front_effects(source: Source): Source {
   const declarations = source.declarations || [];
   const elaboration = create_elaboration(source);
   const prefix: Stmt[] = [];
+  const type_extensions: Stmt[] = [];
 
   for (const declaration of declarations) {
     if (declaration.tag === "record") {
       prefix.push(record_type_binding(declaration, elaboration.effects));
-    } else if (declaration.tag === "type") {
+    } else if (declaration.tag !== "effect") {
       continue;
     } else if (declaration.implementation === "host") {
       for (const operation of declaration.operations) {
@@ -68,8 +72,36 @@ export function elaborate_front_effects(source: Source): Source {
       }
     }
   }
+  const declaration_prefix_length = prefix.length;
 
-  prefix.push(...type_declaration_bindings(declarations, elaboration.effects));
+  for (const declaration of declarations) {
+    if (declaration.tag !== "extend") {
+      continue;
+    }
+
+    const generic_target = declarations.find((candidate) => {
+      return candidate.tag === "type" &&
+        candidate.name === declaration.type_name &&
+        candidate.params.length > 0;
+    });
+
+    if (generic_target !== undefined) {
+      continue;
+    }
+
+    type_extensions.push({
+      tag: "bind",
+      kind: "const",
+      name: declaration.type_name,
+      is_linear: false,
+      annotation: undefined,
+      value: {
+        tag: "struct_update",
+        base: { tag: "var", name: declaration.type_name },
+        fields: declaration.fields,
+      },
+    });
+  }
 
   const providers = new Map<string, FrontExpr>();
 
@@ -99,15 +131,15 @@ export function elaborate_front_effects(source: Source): Source {
       );
       expect(
         effect.implementation === "host",
-        "Init field " + field.name + " cannot provide Ix effect " +
+        "Init field " + field.name + " cannot provide Duck effect " +
           effect.name,
       );
-      const getter_name = "__ix_init_" + field.name;
+      const getter_name = "__duck_init_" + field.name;
       prefix.push({
         tag: "host_import",
         value: {
           name: getter_name,
-          module: "ix_init",
+          module: "duck_init",
           field: field.name,
           params: [],
           result: "i32",
@@ -148,14 +180,71 @@ export function elaborate_front_effects(source: Source): Source {
     providers,
     analysis: elaboration.analysis,
   });
-  const statements = rewrite_statements(
+  const rewritten_statements = rewrite_statements(
     handler_source.statements,
     providers,
     elaboration,
   );
+  const initializer_names = type_initializer_names(declarations);
+  const initializer_bindings: Stmt[] = [];
+  const statements: Stmt[] = [];
+
+  for (const statement of rewritten_statements) {
+    if (binds_type_initializer(statement, initializer_names)) {
+      initializer_bindings.push(statement);
+    } else {
+      statements.push(statement);
+    }
+  }
+
+  const module_prefix = prefix.splice(declaration_prefix_length);
+  prefix.push(...initializer_bindings);
+  prefix.push(...type_declaration_bindings(declarations, elaboration.effects));
+  prefix.push(...type_extensions);
+  prefix.push(...module_prefix);
   materialize_module_result_type(statements, prefix);
 
   return { tag: "program", statements: [...prefix, ...statements] };
+}
+
+function type_initializer_names(
+  declarations: NonNullable<Source["declarations"]>,
+): Set<string> {
+  const names = new Set<string>();
+
+  for (const declaration of declarations) {
+    if (
+      declaration.tag !== "type" || declaration.body.tag !== "product" ||
+      declaration.body.initializer?.tag !== "app" ||
+      declaration.body.initializer.func.tag !== "var"
+    ) {
+      continue;
+    }
+
+    names.add(declaration.body.initializer.func.name);
+  }
+
+  return names;
+}
+
+function binds_type_initializer(
+  statement: Stmt,
+  initializer_names: Set<string>,
+): boolean {
+  if (
+    initializer_names.size === 0 || statement.tag !== "bind" ||
+    statement.kind !== "const"
+  ) {
+    return false;
+  }
+
+  if (statement.pattern === undefined) {
+    return initializer_names.has(statement.name);
+  }
+
+  return pattern_bindings(statement.pattern).some((binding) =>
+    initializer_names.has(binding.name)
+  );
 }
 
 function materialize_module_result_type(
@@ -192,6 +281,15 @@ function materialize_module_result_type(
     }
 
     if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+      const function_type = function_type_expr(stmt.type_annotation);
+
+      if (
+        function_type && function_type.result.tag === "name"
+      ) {
+        functions.set(stmt.name, function_type.result.name);
+        continue;
+      }
+
       const result = infer_result_type(
         stmt.value.body,
         bindings,
@@ -231,7 +329,7 @@ function materialize_module_result_type(
     );
     return { name: field.name, type_name };
   });
-  const type_name = "ix_entry_result_type";
+  const type_name = "duck_entry_result_type";
   prefix.push({
     tag: "bind",
     kind: "const",
@@ -316,6 +414,21 @@ function infer_result_type(
 
     if (expr.func.name === "len" || expr.func.name === "get") {
       return "I32";
+    }
+
+    if (expr.func.name === "Bytes.generate") {
+      return "Bytes";
+    }
+
+    if (expr.func.name === "Utf8.encode") {
+      return "Bytes";
+    }
+
+    if (
+      expr.func.name === "Utf8.decode" || expr.func.name === "format_i32" ||
+      expr.func.name === "format_i64" || expr.func.name === "format_f32"
+    ) {
+      return "Text";
     }
   }
 
@@ -463,7 +576,9 @@ function create_elaboration(source: Source): EffectElaboration {
       continue;
     }
 
-    effects.set(declaration.name, declaration);
+    if (declaration.tag === "effect") {
+      effects.set(declaration.name, declaration);
+    }
   }
 
   for (const stmt of source.statements) {
@@ -577,7 +692,7 @@ function effect_host_import(
 
   return {
     name: effect_import_name(effect.name, operation.name),
-    module: "ix_effect",
+    module: "duck_effect",
     field: effect.name + "." + operation.name,
     params,
     result: effect_value_type(
@@ -638,6 +753,10 @@ function effect_value_type(
 
   if (resolved === "I64") {
     return "i64";
+  }
+
+  if (resolved === "F32") {
+    return "f32";
   }
 
   return "i32";
@@ -835,9 +954,31 @@ function rewrite_statements(
             elaboration,
           ));
 
-          if (
-            stmt.pattern === undefined || stmt.pattern.tag !== "record"
-          ) {
+          let field_patterns:
+            | Array<{ name: string; pattern: Pattern }>
+            | undefined;
+          let rest_pattern: Pattern | undefined;
+
+          if (stmt.pattern?.tag === "record") {
+            field_patterns = stmt.pattern.fields;
+            rest_pattern = stmt.pattern.rest;
+          } else if (stmt.pattern?.tag === "product") {
+            field_patterns = [];
+
+            for (const entry of stmt.pattern.entries) {
+              if (entry.label === undefined) {
+                field_patterns = undefined;
+                break;
+              }
+
+              field_patterns.push({
+                name: entry.label,
+                pattern: entry.pattern,
+              });
+            }
+          }
+
+          if (field_patterns === undefined) {
             result.push({
               ...stmt,
               value: rewrite_expr(
@@ -851,7 +992,7 @@ function rewrite_statements(
 
           const selected_names = new Set<string>();
 
-          for (const field_pattern of stmt.pattern.fields) {
+          for (const field_pattern of field_patterns) {
             selected_names.add(field_pattern.name);
             const field = export_stmt.value.fields.find((candidate) => {
               return candidate.name === field_pattern.name;
@@ -897,10 +1038,7 @@ function rewrite_statements(
             });
           }
 
-          if (
-            stmt.pattern.rest !== undefined &&
-            stmt.pattern.rest.tag !== "wildcard"
-          ) {
+          if (rest_pattern !== undefined && rest_pattern.tag !== "wildcard") {
             const rest_fields = export_stmt.value.fields.filter((field) => {
               return !selected_names.has(field.name);
             }).map((field) => {
@@ -915,17 +1053,17 @@ function rewrite_statements(
             let type_annotation: TypeExpr | undefined;
             next_pattern += 1;
 
-            if (stmt.pattern.rest.tag === "binding") {
-              name = stmt.pattern.rest.name;
-              is_linear = stmt.pattern.rest.mode === "linear";
-              annotation = stmt.pattern.rest.annotation;
-              type_annotation = stmt.pattern.rest.type_annotation;
+            if (rest_pattern.tag === "binding") {
+              name = rest_pattern.name;
+              is_linear = rest_pattern.mode === "linear";
+              annotation = rest_pattern.annotation;
+              type_annotation = rest_pattern.type_annotation;
             }
 
             result.push({
               tag: "bind",
               kind: stmt.kind,
-              pattern: stmt.pattern.rest,
+              pattern: rest_pattern,
               name,
               is_recursive: false,
               is_linear,
@@ -995,7 +1133,7 @@ function rewrite_statements(
 
       let annotation = stmt.annotation;
 
-      if (stmt.type_annotation?.tag === "arrow") {
+      if (function_type_expr(stmt.type_annotation)) {
         expect(
           stmt.value.tag === "lam" || stmt.value.tag === "rec",
           "Function type annotation requires a function value: " + stmt.name,
@@ -1233,13 +1371,22 @@ function rewrite_expr(
   }
 
   if (expr.tag === "handler" || expr.tag === "try_with") {
-    throw new Error("Ix handler must be elaborated before host effects");
+    throw new Error("Duck handler must be elaborated before host effects");
   }
 
   if (expr.tag === "app") {
     const effect = effect_call(expr, elaboration);
     const args = expr.args.map((arg) => {
-      return rewrite_expr(arg, providers, elaboration);
+      const rewritten = rewrite_expr(arg, providers, elaboration);
+
+      if (rewritten.tag === "lam") {
+        return {
+          ...rewritten,
+          body: scope_inlined_returns(rewritten.body),
+        };
+      }
+
+      return rewritten;
     });
 
     if (effect) {
@@ -1413,11 +1560,63 @@ function rewrite_expr(
     };
   }
 
+  if (expr.tag === "type_with") {
+    return {
+      ...expr,
+      base: rewrite_expr(expr.base, providers, elaboration),
+      members: expr.members.map((member) => ({
+        name: rewrite_expr(member.name, providers, elaboration),
+        value: rewrite_expr(member.value, providers, elaboration),
+      })),
+    };
+  }
+
   if (expr.tag === "struct_value") {
     return {
       ...expr,
       type_expr: rewrite_expr(expr.type_expr, providers, elaboration),
       fields: rewrite_fields(expr.fields, providers, elaboration),
+    };
+  }
+
+  if (expr.tag === "product" || expr.tag === "shape") {
+    return {
+      ...expr,
+      entries: expr.entries.map((entry) => ({
+        ...entry,
+        value: rewrite_expr(entry.value, providers, elaboration),
+      })),
+    };
+  }
+
+  if (expr.tag === "array") {
+    let rest = expr.rest;
+
+    if (rest !== undefined) {
+      rest = rewrite_expr(rest, providers, elaboration);
+    }
+
+    return {
+      ...expr,
+      items: expr.items.map((item) =>
+        rewrite_expr(item, providers, elaboration)
+      ),
+      rest,
+    };
+  }
+
+  if (expr.tag === "array_repeat") {
+    return {
+      ...expr,
+      value: rewrite_expr(expr.value, providers, elaboration),
+      length: rewrite_expr(expr.length, providers, elaboration),
+    };
+  }
+
+  if (expr.tag === "as") {
+    return {
+      ...expr,
+      value: rewrite_expr(expr.value, providers, elaboration),
     };
   }
 
@@ -1452,6 +1651,26 @@ function rewrite_expr(
         providers,
         elaboration,
       ),
+    };
+  }
+
+  if (expr.tag === "match") {
+    return {
+      ...expr,
+      target: rewrite_expr(expr.target, providers, elaboration),
+      arms: expr.arms.map((arm) => {
+        let guard = arm.guard;
+
+        if (guard !== undefined) {
+          guard = rewrite_expr(guard, providers, elaboration);
+        }
+
+        return {
+          ...arm,
+          guard,
+          body: rewrite_expr(arm.body, providers, elaboration),
+        };
+      }),
     };
   }
 
@@ -1532,7 +1751,7 @@ function effect_call(
 }
 
 function effect_import_name(effect: string, operation: string): string {
-  return "__ix_effect_" + effect + "_" + operation;
+  return "__duck_effect_" + effect + "_" + operation;
 }
 
 function pascal_to_snake(name: string): string {

@@ -14,16 +14,21 @@ export type CoreBackendTextLayout = Pick<
 
 export function create_core_backend_text_layout(
   api: CoreBackendTextApi,
+  text_facts: Pick<CoreBackendText, "core_expr_is_text">,
 ): CoreBackendTextLayout {
   const text_layout_hooks = {
     bind_core_if_let_payload_fact: api.bind_core_if_let_payload_fact,
     bind_dynamic_if_let_payload: api.bind_dynamic_if_let_payload,
+    closure_fn_type: api.closure_fn_type,
     core_binding_value: api.core_binding_value,
+    core_expr_is_text: text_facts.core_expr_is_text,
     core_type_const_value: api.core_type_const_value,
     dynamic_union_if: api.dynamic_union_if,
     expr_type: api.expr_type,
     runtime_union_match_info: api.runtime_union_match_info,
     runtime_union_target: api.runtime_union_target,
+    runtime_union_type_expr: api.runtime_union_type_expr,
+    runtime_aggregate_type_expr: api.runtime_aggregate_type_expr,
     static_collection_fields: api.static_collection_fields,
     static_core_call_value: api.static_core_call_value,
     static_core_call_target: api.static_core_call_target,

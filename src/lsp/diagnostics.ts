@@ -1,9 +1,6 @@
-import {
-  type ParseSourceResult,
-  Source,
-  type SourceAnalysis,
-  type SourceDiagnostic,
-} from "../frontend.ts";
+import type { ParseSourceResult } from "../frontend/parser.ts";
+import { Source, type SourceAnalysis } from "../frontend/source.ts";
+import type { SourceDiagnostic } from "../frontend/semantic_diagnostic.ts";
 import { type LspRange, PositionIndex } from "./position.ts";
 
 export type { LspPosition, LspRange } from "./position.ts";
@@ -43,7 +40,7 @@ export function parse_result_diagnostics(
       diagnostic.span.end,
     ),
     severity: 1,
-    source: "ix",
+    source: "duck",
     message: diagnostic.message,
   }));
 }
@@ -79,7 +76,7 @@ function source_diagnostic_to_lsp(
   const result: LspDiagnostic = {
     range: offset_range(text, positions, diagnostic.span),
     severity,
-    source: "ix",
+    source: "duck",
     code: diagnostic.code,
     message: diagnostic.message,
   };

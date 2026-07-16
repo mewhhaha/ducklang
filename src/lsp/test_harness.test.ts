@@ -13,7 +13,7 @@ import {
 import { PositionIndex } from "./position.ts";
 import { workspace_definition_location, WorkspaceModel } from "./workspace.ts";
 
-const entry = new URL("../../ix.ts", import.meta.url).pathname;
+const entry = new URL("../../duck.ts", import.meta.url).pathname;
 
 Deno.test("fixture parser removes marker lines and records spans and expectations", () => {
   const fixture = parse_fixture(
@@ -88,25 +88,25 @@ Deno.test("fixture output matches the checked-in golden file", async () => {
 
 Deno.test("multi-file fixtures drive workspace navigation", async () => {
   const fixture = parse_workspace_fixture([
-    "//- /a.ix",
+    "//- /a.duck",
     "let exported = 1",
     "//    ^^^^^^^^ definition",
     "exported",
-    "//- /b.ix",
-    'const a = import "./a.ix"',
+    "//- /b.duck",
+    'const a = import "./a.duck"',
     "let value = a.exported",
     "//              ^^^^^^^^ reference",
   ].join("\n"));
-  const root = await Deno.makeTempDir({ prefix: "ix-harness-workspace-" });
+  const root = await Deno.makeTempDir({ prefix: "duck-harness-workspace-" });
 
   try {
     const uris = await materialize_workspace_fixture(fixture, root);
     const root_uri = new URL("file://" + root + "/").href;
     const model = new WorkspaceModel([root_uri]);
     model.load([]);
-    const b = fixture.files.get("/b.ix");
-    const b_uri = uris.get("/b.ix");
-    const a_uri = uris.get("/a.ix");
+    const b = fixture.files.get("/b.duck");
+    const b_uri = uris.get("/b.duck");
+    const a_uri = uris.get("/a.duck");
 
     if (b === undefined || b_uri === undefined || a_uri === undefined) {
       throw new Error("Missing materialized workspace fixture file");
@@ -252,7 +252,7 @@ Deno.test("recorded rapid-edit session publishes only its latest version", async
     stdout: "piped",
     stderr: "piped",
   }).spawn());
-  const uri = "file:///recorded-session.ix";
+  const uri = "file:///recorded-session.duck";
   await client.send({
     jsonrpc: "2.0",
     id: 1,
@@ -263,7 +263,7 @@ Deno.test("recorded rapid-edit session publishes only its latest version", async
     jsonrpc: "2.0",
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, languageId: "ix", version: 1, text: "0\n" },
+      textDocument: { uri, languageId: "duck", version: 1, text: "0\n" },
     },
   });
 

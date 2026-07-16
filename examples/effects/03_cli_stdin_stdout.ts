@@ -1,38 +1,38 @@
 import {
-  type IxEffectObject,
-  IxHost,
-  type IxHostHandler,
-  IxRunner,
-  type IxValue,
+  type DuckEffectObject,
+  DuckHost,
+  type DuckHostHandler,
+  DuckRunner,
+  type DuckValue,
   Source,
 } from "../../src/frontend.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const source_url = new URL("./03_cli_stdin_stdout.ix", import.meta.url);
+const source_url = new URL("./03_cli_stdin_stdout.duck", import.meta.url);
 
 export const dry_run_stdin = "dry-run stdin";
 
 export type Init = {
-  [name: string]: IxEffectObject;
-  stdin: { read_line: IxHostHandler };
-  stdout: { write_line: IxHostHandler };
+  [name: string]: DuckEffectObject;
+  stdin: { read_line: DuckHostHandler };
+  stdout: { write_line: DuckHostHandler };
 };
 
 export type MainResult = {
   exports: { result: string };
 };
 
-export type EffectRunner = IxRunner;
+export type EffectRunner = DuckRunner;
 
-export type MockEffectRunner = IxRunner & {
+export type MockEffectRunner = DuckRunner & {
   stdout: string[];
 };
 
 export async function main(runner: EffectRunner): Promise<MainResult> {
   const artifact = Source.artifact_file(source_url.href);
   const wasm = await wasm_from_wat(artifact.wat);
-  const program = await IxHost.instantiate(wasm, artifact.abi);
+  const program = await DuckHost.instantiate(wasm, artifact.abi);
 
   try {
     const value = runner.run(program);
@@ -52,7 +52,7 @@ export function live_runner(): EffectRunner {
       },
     },
     stdout: {
-      write_line(value: IxValue): undefined {
+      write_line(value: DuckValue): undefined {
         const line = expect_text(value, "Stdout.write_line");
         write_all(Deno.stdout, encoder.encode(line + "\n"));
         return undefined;
@@ -60,7 +60,7 @@ export function live_runner(): EffectRunner {
     },
   };
 
-  return IxRunner(init);
+  return DuckRunner(init);
 }
 
 export function mock_runner(): MockEffectRunner {
@@ -72,37 +72,30 @@ export function mock_runner(): MockEffectRunner {
       },
     },
     stdout: {
-      write_line(value: IxValue): undefined {
+      write_line(value: DuckValue): undefined {
         stdout.push(expect_text(value, "mock Stdout.write_line"));
         return undefined;
       },
     },
   };
 
-  const runner = IxRunner(init);
+  const runner = DuckRunner(init);
   return {
     run: runner.run,
     stdout,
   };
 }
 
-function decode_exports(value: IxValue): { result: string } {
-  if (
-    typeof value !== "object" || value === null || Array.isArray(value) ||
-    value instanceof Uint8Array
-  ) {
-    throw new Error("CLI module must return an export record");
+function decode_exports(value: DuckValue): { result: string } {
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new Error("CLI module must return a one-slot product");
   }
 
-  if (!("result" in value)) {
-    throw new Error("CLI module export record is missing result");
-  }
-
-  const result = value.result;
+  const result = value[0];
   return { result: expect_text(result, "CLI result") };
 }
 
-function expect_text(value: IxValue | undefined, name: string): string {
+function expect_text(value: DuckValue | undefined, name: string): string {
   if (typeof value !== "string") {
     throw new Error(name + " must be Text");
   }

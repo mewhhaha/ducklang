@@ -1,12 +1,13 @@
 import type { Ic as IcNode } from "../ic.ts";
 import { type Prim, specialize_prim_for_operands } from "../op.ts";
+import type { NumType, ValType } from "../op.ts";
 import type { Env, FrontExpr, FrontType } from "./ast.ts";
 import type { StaticRecHooks } from "./rec_hooks.ts";
-import type { StaticRecBlockLowerer } from "./rec_result.ts";
-import {
-  lower_rec_expr_as_type,
-  type StaticRecExprLowerer,
-} from "./rec_type_lower.ts";
+import type {
+  StaticRecBlockLowerer,
+  StaticRecExprLowerer,
+} from "./rec_contract.ts";
+import { lower_rec_expr_as_type } from "./rec_type_lower.ts";
 
 export function lower_rec_prim(
   expr: Extract<FrontExpr, { tag: "prim" }>,
@@ -48,7 +49,7 @@ export function lower_rec_prim(
   };
 }
 
-function rec_numeric_type(type: FrontType): "i32" | "i64" | undefined {
+function rec_numeric_type(type: FrontType): ValType | undefined {
   if (type.tag !== "int") {
     return undefined;
   }
@@ -56,9 +57,13 @@ function rec_numeric_type(type: FrontType): "i32" | "i64" | undefined {
   return type.type;
 }
 
-function rec_numeric_primitive_operand_type(prim: Prim): "i32" | "i64" {
+function rec_numeric_primitive_operand_type(prim: Prim): NumType {
   if (prim.startsWith("i64.")) {
     return "i64";
+  }
+
+  if (prim.startsWith("f32.")) {
+    return "f32";
   }
 
   return "i32";

@@ -1,9 +1,12 @@
-import type { TypeExpr } from "../../frontend/ast.ts";
-import { sem_type_from_expr } from "../../frontend/semantic_type.ts";
-import { fixed_array_length } from "../../frontend/fixed_array_type.ts";
-import { front_type_value_for_semantic_type } from "../../frontend/type_declaration.ts";
-import { format_type_expr, parse_type_expr } from "../../frontend/type_expr.ts";
-import { tokenize } from "../../frontend/tokenize.ts";
+import type { TypeExpr } from "../../type_syntax.ts";
+import {
+  fixed_array_length,
+  format_type_expr,
+  front_type_value_for_semantic_type,
+  parse_type_expr,
+  sem_type_from_expr,
+  tokenize,
+} from "../from_source/type_contract.ts";
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreParam, CoreStmt, CoreTypeField } from "../ast.ts";
 import { record_core_expr_provenance } from "../subject_provenance.ts";
@@ -12,6 +15,7 @@ import { find_core_type_field } from "../union_static.ts";
 import {
   core_binding_value_type_name,
   core_direct_annotation_actual_name,
+  ordinary_static_call_probe_error,
   resolved_type_name,
   static_annotation_type_value,
 } from "./name.ts";
@@ -93,13 +97,21 @@ export function core_type_const_value<ctx extends CoreTypeCheckCtx>(
     return value;
   }
 
-  const type_name = hooks.static_type_name(value, ctx);
+  try {
+    const type_name = hooks.static_type_name(value, ctx);
 
-  if (type_name) {
-    return type_name;
+    if (type_name) {
+      return type_name;
+    }
+
+    return hooks.static_type_value(value, ctx);
+  } catch (error) {
+    if (!ordinary_static_call_probe_error(error)) {
+      throw error;
+    }
   }
 
-  return hooks.static_type_value(value, ctx);
+  return undefined;
 }
 
 export function apply_core_binding_annotation<
@@ -418,6 +430,30 @@ function apply_core_value_annotation<ctx extends CoreTypeCheckCtx>(
     return value;
   }
 
+  if (annotation === "F32") {
+    const actual = core_binding_value_type_name(value, ctx, hooks);
+
+    if (actual !== "F32") {
+      throw new Error(
+        "Core " + label + " annotation expects F32, got " + actual,
+      );
+    }
+
+    return value;
+  }
+
+  if (annotation === "F32x4") {
+    const actual = core_binding_value_type_name(value, ctx, hooks);
+
+    if (actual !== "F32x4") {
+      throw new Error(
+        "Core " + label + " annotation expects F32x4, got " + actual,
+      );
+    }
+
+    return value;
+  }
+
   if (annotation === "Text" || annotation === "Bytes") {
     const actual = core_binding_value_type_name(value, ctx, hooks);
 
@@ -465,6 +501,10 @@ function apply_core_semantic_annotation<ctx extends CoreTypeCheckCtx>(
   ctx: ctx,
   hooks: CoreTypeCheckHooks<ctx>,
 ): CoreExpr | undefined {
+  if (type.tag === "forall" || type.tag === "arrow") {
+    return value;
+  }
+
   if (type.tag === "top") {
     return value;
   }
@@ -749,6 +789,10 @@ function core_value_matches_set_member<ctx extends CoreTypeCheckCtx>(
 
   if (type.name === "I64") {
     return actual === "I64";
+  }
+
+  if (type.name === "F32") {
+    return actual === "F32";
   }
 
   if (type.name === "Text" || type.name === "Bytes") {

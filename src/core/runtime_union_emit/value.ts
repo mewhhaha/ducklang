@@ -1,13 +1,15 @@
 import { expect } from "../../expect.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
-import { fresh_temp_local, indent_lines, set_local } from "../backend/util.ts";
+import { fresh_temp_local } from "../emit/name.ts";
+import { indent_lines } from "../emit/format.ts";
+import { set_local } from "../emit/local.ts";
 import { closure_heap_global } from "../closure_emit.ts";
 import {
   consume_scratch_alloc,
   emit_persistent_alloc,
 } from "../runtime_allocator.ts";
-import { store_instr } from "../memory.ts";
+import { align_pointer_instr, store_instr } from "../memory.ts";
 import { scratch_heap_global } from "../scratch.ts";
 import { emit_runtime_union_struct_payload_stores } from "../runtime_union_payload_emit.ts";
 import type {
@@ -149,7 +151,7 @@ function emit_runtime_union_case<ctx extends RuntimeUnionEmitCtx>(
       ctx,
       value,
       "i32.const " + info.size.toString(),
-      8,
+      info.align,
       "runtime_union",
       "runtime_union.tag_and_aligned_payload",
       "runtime_union.value",
@@ -163,9 +165,15 @@ function emit_runtime_union_case<ctx extends RuntimeUnionEmitCtx>(
       "runtime_union.tag_and_aligned_payload",
       "runtime_union.value",
     );
-    lines.push("global.get $" + heap_name);
-    lines.push("local.set $" + name);
-    lines.push("global.get $" + heap_name);
+    if (info.align === 16) {
+      lines.push("global.get $" + heap_name);
+      lines.push(align_pointer_instr(info.align));
+      lines.push("local.tee $" + name);
+    } else {
+      lines.push("global.get $" + heap_name);
+      lines.push("local.set $" + name);
+      lines.push("global.get $" + heap_name);
+    }
     lines.push("i32.const " + info.size.toString());
     lines.push("i32.add");
     lines.push("global.set $" + heap_name);
@@ -181,7 +189,7 @@ function emit_runtime_union_case<ctx extends RuntimeUnionEmitCtx>(
     );
     lines.push("local.get $" + name);
     lines.push(hooks.emit_expr(value.value, ctx));
-    lines.push(store_instr(info.payload.type, 4));
+    lines.push(store_instr(info.payload.type, info.payload_offset));
   } else if (info.payload.tag === "aggregate") {
     expect(
       value.value,
@@ -189,7 +197,7 @@ function emit_runtime_union_case<ctx extends RuntimeUnionEmitCtx>(
     );
     lines.push("local.get $" + name);
     lines.push(hooks.emit_expr(value.value, ctx));
-    lines.push(store_instr("i32", 4));
+    lines.push(store_instr("i32", info.payload_offset));
   } else if (info.payload.tag === "struct") {
     expect(
       value.value,

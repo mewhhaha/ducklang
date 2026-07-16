@@ -1,7 +1,8 @@
 import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
 import type { CoreExpr, CoreField, CoreFnType, CoreParam } from "./ast.ts";
-import { maybe_static_i32, static_indexed_field } from "./backend/util.ts";
+import { maybe_static_i32 } from "./analysis/static_i32.ts";
+import { static_indexed_field } from "./analysis/field.ts";
 import {
   core_host_import_result_type,
   type CoreHostImportCtx,
@@ -12,6 +13,11 @@ import {
   type StaticCoreCallCtx,
 } from "./static_call.ts";
 import { core_val_type_from_type_name } from "./type_static.ts";
+import {
+  core_bytes_generate_args,
+  core_bytes_generator_call,
+} from "./runtime_bytes.ts";
+import { core_runtime_buffer_builtin } from "./runtime_buffer.ts";
 
 export type CoreAppTypeHooks<
   ctx extends CoreHostImportCtx & StaticCoreCallCtx,
@@ -88,11 +94,6 @@ export function app_type<ctx extends CoreHostImportCtx & StaticCoreCallCtx>(
       expect(param, "Missing named recursive parameter " + index.toString());
       expect(arg, "Missing named recursive argument " + index.toString());
       const param_type = named_rec_param_type(param);
-      expect(
-        param_type === "i32",
-        "Named recursive Core calls only support i32 params for now: " +
-          param.name,
-      );
       const arg_type = hooks.expr_type(arg, ctx);
       expect(
         arg_type === param_type,
@@ -197,6 +198,58 @@ export function app_type<ctx extends CoreHostImportCtx & StaticCoreCallCtx>(
     const message = expr.args[0];
     expect(message, "Missing core panic message");
     expect(message.tag === "text", "Core panic message must be text");
+    return "i32";
+  }
+
+  if (name === "Bytes.generate") {
+    const args = core_bytes_generate_args(expr);
+    expect(args, "Missing Core Bytes.generate arguments");
+    const length = args[0];
+    const generator = args[1];
+    expect(
+      hooks.expr_type(length, ctx) === "i32",
+      "Core Bytes.generate length must be i32",
+    );
+    const generator_call = core_bytes_generator_call(
+      generator,
+      { tag: "num", type: "i32", value: 0 },
+    );
+    expect(
+      hooks.expr_type(generator_call, ctx) === "i32" &&
+        !hooks.core_expr_is_text(generator_call, ctx),
+      "Core Bytes.generate callback must return i32",
+    );
+    return "i32";
+  }
+
+  const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+  if (runtime_buffer_builtin) {
+    if (runtime_buffer_builtin.arg_type === "buffer") {
+      expect(
+        hooks.core_expr_is_text(runtime_buffer_builtin.arg, ctx),
+        "Core " + runtime_buffer_builtin.name + " argument must be a buffer",
+      );
+    } else {
+      expect(
+        hooks.expr_type(runtime_buffer_builtin.arg, ctx) ===
+          runtime_buffer_builtin.arg_type,
+        "Core " + runtime_buffer_builtin.name + " argument must be " +
+          runtime_buffer_builtin.arg_type,
+      );
+    }
+
+    if (runtime_buffer_builtin.name === "format_f32") {
+      expect(
+        runtime_buffer_builtin.precision !== undefined,
+        "Core format_f32 precision must be present",
+      );
+      expect(
+        hooks.expr_type(runtime_buffer_builtin.precision, ctx) === "i32",
+        "Core format_f32 precision must be i32",
+      );
+    }
+
     return "i32";
   }
 

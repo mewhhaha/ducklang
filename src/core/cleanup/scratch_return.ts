@@ -48,7 +48,7 @@ function core_scratch_return_ownership_in_ctx<ctx>(
     const source = core_expr_ownership(expr.value, ctx, hooks);
 
     if (source.tag === "unique_heap") {
-      if (source.reason === "text") {
+      if (source.reason === "text" || source.reason === "bytes") {
         return { tag: "frozen_shareable", reason: "freeze" };
       }
 

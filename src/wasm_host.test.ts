@@ -125,7 +125,7 @@ Deno.test("frontend narrowed capability method table compiles through WAT to Was
 host_import print from "env.print" (I32, &Text) => I32
 host_import read from "env.read" (I32) => I32
 
-const output = { print: print }
+const output = [.print = print]
 let !io: I32 = 1
 io = output.print(!io, "hello")
 io
@@ -165,9 +165,9 @@ Deno.test("frontend runtime capability table compiles through WAT to Wasm", asyn
 host_import consume from "env.consume" (Text) => I32
 let flag = 1
 let output = if flag {
-  { marker: runtime_i32_slice(1, 7), consume: consume }
+  [.marker = runtime_i32_slice(1, 7), .consume = consume]
 } else {
-  { marker: runtime_i32_slice(1, 8), consume: consume }
+  [.marker = runtime_i32_slice(1, 8), .consume = consume]
 }
 output.consume(append("A", "da"))
 `);

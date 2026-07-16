@@ -230,6 +230,13 @@ function drop_analysis_static_app_ownerless_value(
       target,
       ctx,
     );
+
+    if (
+      scoped.value.tag === "block" && scoped.value.statements.length > 1
+    ) {
+      return undefined;
+    }
+
     return drop_analysis_resolved_ownerless_value(
       backend,
       scoped.value,

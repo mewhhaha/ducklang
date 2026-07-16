@@ -8,6 +8,7 @@ import type {
   Stmt,
 } from "./ast.ts";
 import { parse_source } from "./parser.ts";
+import { bundled_source_text } from "./prelude.ts";
 import { has_source_span, inherit_source_span } from "./syntax.ts";
 
 export type SourceTextResolver = (uri: string) => string | undefined;
@@ -18,6 +19,7 @@ type ImportResolution = {
   cache: Map<string, SourceNode>;
   resolve_text: SourceTextResolver;
   require_module: boolean;
+  bundled_only: boolean;
 };
 
 export function load_source(path: string): SourceNode {
@@ -63,8 +65,24 @@ export function resolve_source_imports(
     cache: new Map(),
     resolve_text,
     require_module: false,
+    bundled_only: false,
   };
 
+  const resolved = resolve_imports(source, base, [base.href], resolution);
+  return { ...resolved, declarations };
+}
+
+export function resolve_bundled_source_imports(source: SourceNode): SourceNode {
+  const declarations = [...(source.declarations || [])];
+  const resolution: ImportResolution = {
+    declarations,
+    merged_uris: new Set(),
+    cache: new Map(),
+    resolve_text: () => undefined,
+    require_module: false,
+    bundled_only: true,
+  };
+  const base = new URL("file:///__duck_source__.duck");
   const resolved = resolve_imports(source, base, [base.href], resolution);
   return { ...resolved, declarations };
 }
@@ -90,6 +108,7 @@ function load_source_url(
     cache,
     resolve_text: (uri) => Deno.readTextFileSync(new URL(uri)),
     require_module,
+    bundled_only: false,
   };
 
   const resolved = resolve_imports(
@@ -102,7 +121,7 @@ function load_source_url(
 }
 
 function validate_file_module(source: SourceNode, url: URL): void {
-  if (!url.pathname.endsWith(".ix")) {
+  if (!url.pathname.endsWith(".duck")) {
     return;
   }
 
@@ -357,7 +376,7 @@ function resolve_expression_imports_untracked(
 ): FrontExpr {
   switch (expr.tag) {
     case "import":
-      return resolve_import_expression(expr.path, base, stack, resolution);
+      return resolve_import_expression(expr, base, stack, resolution);
 
     case "bool":
     case "num":
@@ -403,6 +422,7 @@ function resolve_expression_imports_untracked(
     }
 
     case "product":
+    case "shape":
       return {
         ...expr,
         entries: expr.entries.map((entry) => ({
@@ -554,6 +574,26 @@ function resolve_expression_imports_untracked(
         ...expr,
         base: resolve_expression_imports(expr.base, base, stack, resolution),
         fields: resolve_fields(expr.fields, base, stack, resolution),
+      };
+
+    case "type_with":
+      return {
+        ...expr,
+        base: resolve_expression_imports(expr.base, base, stack, resolution),
+        members: expr.members.map((member) => ({
+          name: resolve_expression_imports(
+            member.name,
+            base,
+            stack,
+            resolution,
+          ),
+          value: resolve_expression_imports(
+            member.value,
+            base,
+            stack,
+            resolution,
+          ),
+        })),
       };
 
     case "if": {
@@ -737,13 +777,18 @@ function resolve_fields(
 }
 
 function resolve_import_expression(
-  path: string,
+  expr: Extract<FrontExpr, { tag: "import" }>,
   base: URL,
   stack: string[],
   resolution: ImportResolution,
 ): FrontExpr {
+  const path = expr.path;
   const url = new URL(path, base);
   const href = url.href;
+
+  if (resolution.bundled_only && bundled_source_text(href) === undefined) {
+    return expr;
+  }
 
   if (stack.includes(href)) {
     throw new Error("Circular import: " + [...stack, href].join(" -> "));
@@ -752,7 +797,13 @@ function resolve_import_expression(
   let imported = resolution.cache.get(href);
 
   if (imported === undefined) {
-    const text = resolution.resolve_text(href);
+    let text: string | undefined;
+
+    text = bundled_source_text(href);
+
+    if (text === undefined) {
+      text = resolution.resolve_text(href);
+    }
 
     if (text === undefined) {
       throw new Error("Import dependency does not exist: " + path);

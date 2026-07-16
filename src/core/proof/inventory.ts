@@ -493,7 +493,13 @@ function host_transfer_step_for_allocation(
   }>
   | undefined {
   for (const step of input.drops.steps) {
-    if (step.tag !== "host_transfer" || step.scope !== fact.scope) {
+    if (step.tag !== "host_transfer") {
+      continue;
+    }
+    if (
+      step.scope !== fact.scope &&
+      !step.scope.startsWith(fact.scope + "/static_call/")
+    ) {
       continue;
     }
     const subject = find_core_diagnostic_subject(step);
@@ -724,14 +730,30 @@ function drop_allocation_ids(
     }
   }
   if (step.owned_children) {
-    for (const child of step.owned_children) {
-      for (const allocation_id of child.allocation_ids) {
-        allocation_ids.add(allocation_id);
-      }
-    }
+    collect_drop_owned_child_allocation_ids(
+      allocation_ids,
+      step.owned_children,
+    );
   }
 
   return allocation_ids;
+}
+
+function collect_drop_owned_child_allocation_ids(
+  allocation_ids: Set<string>,
+  children: import("../allocation.ts").CoreAllocationOwnedChild[],
+): void {
+  for (const child of children) {
+    for (const allocation_id of child.allocation_ids) {
+      allocation_ids.add(allocation_id);
+    }
+    if (child.owned_children) {
+      collect_drop_owned_child_allocation_ids(
+        allocation_ids,
+        child.owned_children,
+      );
+    }
+  }
 }
 
 function inventory_lifetime_id(

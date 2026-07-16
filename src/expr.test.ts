@@ -228,3 +228,42 @@ Deno.test("Expr.emit output can be matched by instruction snippets", () => {
   assert_includes(emitted, "i32.const 10");
   assert_includes(emitted, "i32.add");
 });
+
+Deno.test("Expr.emit constructs and extracts F32x4 register values", () => {
+  const vector: ExprNode = {
+    tag: "prim",
+    type: "v128",
+    prim: "f32x4.make",
+    args: [
+      { tag: "num", type: "f32", value: 1 },
+      { tag: "num", type: "f32", value: 2 },
+      { tag: "num", type: "f32", value: 3 },
+      { tag: "num", type: "f32", value: 4 },
+    ],
+  };
+  const scaled: ExprNode = {
+    tag: "prim",
+    type: "v128",
+    prim: "f32x4.mul",
+    args: [
+      vector,
+      {
+        tag: "prim",
+        type: "v128",
+        prim: "f32x4.splat",
+        args: [{ tag: "num", type: "f32", value: 2 }],
+      },
+    ],
+  };
+  const extracted: ExprNode = {
+    tag: "prim",
+    type: "f32",
+    prim: "f32x4.extract_lane",
+    args: [scaled, num(2)],
+  };
+  const wat = Emit.emit(Expr, extracted);
+
+  assert_includes(wat, "f32x4.replace_lane 3");
+  assert_includes(wat, "f32x4.mul");
+  assert_includes(wat, "f32x4.extract_lane 2");
+});

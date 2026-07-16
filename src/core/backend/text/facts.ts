@@ -30,6 +30,7 @@ export function create_core_backend_text_facts(
     bind_dynamic_if_let_payload: api.bind_dynamic_if_let_payload,
     check_closure_call_args: api.check_closure_call_args,
     closure_fn_type: api.closure_fn_type,
+    core_binding_value: api.core_binding_value,
     dynamic_union_if: api.dynamic_union_if,
     expr_type: api.expr_type,
     if_let_branch_ctx: create_rec_call_ctx,

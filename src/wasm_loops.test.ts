@@ -327,6 +327,109 @@ sum
   }
 });
 
+Deno.test("core match arms preserve loop break and continue targets", async () => {
+  const wat_text = wat_from_core_source(`
+let n = 5
+let sum = 0
+
+for i in 0..n {
+  match i {
+    | 1 => { continue }
+    | 3 => { break }
+    | _ => { sum = sum + i }
+  }
+}
+
+sum
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "core_match_loop_control",
+    {},
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 2) {
+    throw new Error("Expected main() -> 2, got " + result);
+  }
+
+  const nested_wat = wat_from_core_source(`
+let n = 2
+let m = 3
+let total = 0
+
+for i in 0..n {
+  for j in 0..m {
+    total = total + 1
+    match j {
+      | 1 => { break }
+      | _ => { total = total + 0 }
+    }
+  }
+  total = total + 10
+}
+
+total
+`);
+  const nested_instance = await instantiate_wat(
+    nested_wat,
+    "core_nested_match_loop_control",
+    {},
+  );
+
+  if (typeof nested_instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const nested_result = nested_instance.exports.main();
+
+  if (nested_result !== 24) {
+    throw new Error("Expected main() -> 24, got " + nested_result);
+  }
+
+  const union_wat = wat_from_core_source(`
+type OptionType = | .some = Int | .none
+const option_type = OptionType
+let n = 4
+let total = 0
+
+for i in 0..n {
+  let option: option_type = if i == 2 {
+    option_type.some(i)
+  } else {
+    option_type.none()
+  }
+
+  match option {
+    | .some(value) => { break }
+    | .none => { total = total + 1 }
+  }
+}
+
+total
+`);
+  const union_instance = await instantiate_wat(
+    union_wat,
+    "core_union_match_loop_control",
+    {},
+  );
+
+  if (typeof union_instance.exports.main !== "function") {
+    throw new Error("main export is not a function");
+  }
+
+  const union_result = union_instance.exports.main();
+
+  if (union_result !== 2) {
+    throw new Error("Expected main() -> 2, got " + union_result);
+  }
+});
+
 Deno.test("core dynamic tail recursion compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
 let sum_down = rec (n, total) => {
@@ -431,7 +534,7 @@ Deno.test("core static collection loop compiles through WAT to Wasm", async () =
   const wat_text = wat_from_core_source(`
 let sum = 0
 
-for i, x in { first: 10, second: 32, third: 7 } {
+for i, x in [.first = 10, .second = 32, .third = 7] {
   if i == 1 {
     continue
   }
@@ -695,9 +798,10 @@ f(10) + f(20) + factor
 
 Deno.test("core static-call block collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 const sum = (pair: pair_type) => {
@@ -710,10 +814,7 @@ const sum = (pair: pair_type) => {
   total
 }
 
-sum({
-  first: 10,
-  second: 31
-})
+sum([.first = 10, .second = 31])
 `);
   const instance = await instantiate_wat(
     wat_text,
@@ -742,9 +843,9 @@ let flag = 1
 let sum = 0
 
 for i, x in if flag {
-  { first: 10, second: 20 }
+  [.first = 10, .second = 20]
 } else {
-  { first: 1, second: 2 }
+  [.first = 1, .second = 2]
 } {
   sum = sum + i + x
 }
@@ -777,9 +878,9 @@ let sum = 0
 
 const make_xs = active => {
   if active {
-    { first: 10, second: 20 }
+    [.first = 10, .second = 20]
   } else {
-    { first: 1, second: 2 }
+    [.first = 1, .second = 2]
   }
 }
 

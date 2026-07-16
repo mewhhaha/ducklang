@@ -6,7 +6,7 @@ import {
   concat_visible_text_values,
   slice_visible_text_value,
 } from "../text.ts";
-import type { BuiltinCallHooks } from "../builtin_call.ts";
+import type { BuiltinCallHooks } from "./hooks.ts";
 
 export function lower_text_operation_builtin_call(
   expr: Extract<FrontExpr, { tag: "app" }>,
@@ -87,6 +87,10 @@ function lower_append_builtin(
 
   if (left_type.tag !== "text" || right_type.tag !== "text") {
     throw new Error("append expects Text arguments");
+  }
+
+  if (left_type.encoding !== right_type.encoding) {
+    throw new Error("append arguments must both be Text or both be Bytes");
   }
 
   const left_text = hooks.visible_text_value(left, env, new Set());

@@ -22,6 +22,7 @@ export function create_core_backend_index_hooks(
     emit_expr: api.emit_expr,
     expr_type: api.expr_type,
     is_stable_static_expr,
+    plan_static_capture_expr: api.plan_static_capture_expr,
     plan_static_value_expr: api.plan_static_value_expr,
     runtime_aggregate_type_expr: api.runtime_aggregate_type_expr,
     runtime_union_type_expr: api.runtime_union_type_expr,

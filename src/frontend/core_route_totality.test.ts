@@ -8,7 +8,7 @@ Deno.test("Core analysis diagnoses an invalid generic Bool type-set binding", ()
   );
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2306",
+    code: "DUCK2306",
     severity: "error",
     message: "Type-set binding annotation expects Bool | Text, got I32",
     span: { start: 50, end: 51 },
@@ -22,7 +22,7 @@ Deno.test("Core analysis diagnoses an unspecialized generic closure annotation",
   );
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2307",
+    code: "DUCK2307",
     severity: "error",
     message: "Cannot check core first-class closure parameter annotation: Flag",
     span: { start: 30, end: 41 },
@@ -36,7 +36,7 @@ Deno.test("Core analysis diagnoses a type alias with an unresolved target", () =
   );
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2290",
+    code: "DUCK2290",
     severity: "error",
     message: "Type alias Alias references unknown type Missing",
     span: { start: 0, end: 20 },

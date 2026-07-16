@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import type { Ic as IcNode } from "../ic.ts";
-import type { ValType } from "../op.ts";
+import type { NumType, ValType } from "../op.ts";
 import type { Env, FrontExpr, FrontType, TypeField } from "./ast.ts";
 import { clone_env, lookup } from "./env.ts";
 import { lookup_type_field } from "./fields.ts";
@@ -9,17 +9,10 @@ import {
   lower_runtime_struct_projection as lower_runtime_struct_projection_impl,
 } from "./runtime_struct_projection.ts";
 import { val_type_from_type_name } from "./types.ts";
+import type { RuntimeStructHooks } from "./runtime_struct_hooks.ts";
 
 export { lower_runtime_struct_projection } from "./runtime_struct_projection.ts";
-
-export type RuntimeStructHooks = {
-  fresh: (env: Env, name: string) => string;
-  lower_expr: (expr: FrontExpr, env: Env) => IcNode;
-  resolve_runtime_struct_type: (
-    expr: FrontExpr,
-    env: Env,
-  ) => { fields: TypeField[] } | undefined;
-};
+export type { RuntimeStructHooks } from "./runtime_struct_hooks.ts";
 
 export type RuntimeStructTypeHooks = {
   infer_expr: (expr: FrontExpr, env: Env) => FrontType;
@@ -216,7 +209,7 @@ export function lower_runtime_struct_field_access(
 
 export function indexed_result_type_from_fields(
   fields: TypeField[],
-): ValType {
+): NumType {
   if (indexed_type_fields_are_text(fields)) {
     return "i32";
   }
@@ -240,6 +233,12 @@ export function indexed_result_type_from_fields(
       );
     }
 
+    if (field_type === "v128") {
+      throw new Error(
+        "Dynamic indexing of F32x4 fields requires 16-byte aggregate layout",
+      );
+    }
+
     if (result_type && result_type !== field_type) {
       throw new Error("Mixed i32 and i64 indexed values");
     }
@@ -247,8 +246,8 @@ export function indexed_result_type_from_fields(
     result_type = field_type;
   }
 
-  if (result_type === "i64") {
-    return "i64";
+  if (result_type === "i64" || result_type === "f32") {
+    return result_type;
   }
 
   return "i32";

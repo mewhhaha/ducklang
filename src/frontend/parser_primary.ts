@@ -76,14 +76,6 @@ export abstract class ParserPrimary extends ParserBlock {
       return this.parse_unsupported_expr("for");
     }
 
-    if (this.match_name("struct")) {
-      return { tag: "struct_type", fields: this.parse_type_field_list() };
-    }
-
-    if (this.match_name("union")) {
-      return { tag: "union_type", cases: this.parse_type_field_list() };
-    }
-
     if (this.match_symbol("!")) {
       const name = this.expect_name("Expected linear value name");
 
@@ -115,15 +107,19 @@ export abstract class ParserPrimary extends ParserBlock {
     }
 
     if (this.peek().kind === "symbol" && this.peek().text === "{") {
-      if (this.is_object_literal()) {
-        return {
-          tag: "struct_value",
-          type_expr: { tag: "var", name: "object_type" },
-          fields: this.parse_record_field_list(),
-        };
+      if (this.is_shape_literal()) {
+        return this.parse_shape_value();
       }
 
       return this.parse_block();
+    }
+
+    if (
+      token.kind === "name" && token.text === "union" &&
+      this.peek(1).kind === "symbol" && this.peek(1).text === "{" &&
+      this.is_shape_literal(1)
+    ) {
+      throw this.error("Sum types use `type Name = | ...`");
     }
 
     if (this.peek().kind === "symbol" && this.peek().text === "[") {
@@ -132,6 +128,13 @@ export abstract class ParserPrimary extends ParserBlock {
 
     if (this.match_symbol("(")) {
       return this.parse_parenthesized_value();
+    }
+
+    if (this.match_symbol("@")) {
+      const namespace = this.expect_name("Expected intrinsic namespace");
+      this.expect_symbol(".");
+      const member = this.expect_name("Expected intrinsic member");
+      return { tag: "var", name: "@" + namespace + "." + member };
     }
 
     if (token.kind === "name") {
@@ -146,7 +149,8 @@ export abstract class ParserPrimary extends ParserBlock {
       }
 
       this.expect_supported_name(token.text, "Name");
-      const effect_literal = this.effect_names.has(token.text) &&
+      const effect_literal = (this.effect_names.has(token.text) ||
+        /^[A-Z][A-Za-z0-9]*$/.test(token.text)) &&
         this.peek().kind === "symbol" && this.peek().text === "{";
 
       if (

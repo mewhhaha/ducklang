@@ -16,6 +16,10 @@ export function dynamic_union_if<ctx extends CoreUnionCtx>(
     return undefined;
   }
 
+  if (expr.tag === "block") {
+    return dynamic_union_block_if(expr, ctx, hooks);
+  }
+
   const inlined = hooks.static_core_call_value(expr, ctx);
 
   if (inlined) {
@@ -44,28 +48,6 @@ export function dynamic_union_if<ctx extends CoreUnionCtx>(
     }
   }
 
-  if (expr.tag === "block") {
-    const stmt = expr.statements[0];
-
-    if (!stmt) {
-      return undefined;
-    }
-
-    if (expr.statements.length !== 1) {
-      return undefined;
-    }
-
-    if (stmt.tag === "expr") {
-      return dynamic_union_if(stmt.expr, ctx, hooks);
-    }
-
-    if (stmt.tag === "return") {
-      return dynamic_union_if(stmt.value, ctx, hooks);
-    }
-
-    return undefined;
-  }
-
   if (expr.tag !== "if") {
     return undefined;
   }
@@ -83,6 +65,32 @@ export function dynamic_union_if<ctx extends CoreUnionCtx>(
   }
 
   return { cond: expr.cond, then_case, else_case };
+}
+
+function dynamic_union_block_if<ctx extends CoreUnionCtx>(
+  expr: Extract<CoreExpr, { tag: "block" }>,
+  ctx: ctx,
+  hooks: CoreUnionHooks<ctx>,
+): DynamicUnionIf | undefined {
+  if (expr.statements.length !== 1) {
+    return undefined;
+  }
+
+  const stmt = expr.statements[0];
+
+  if (!stmt) {
+    return undefined;
+  }
+
+  if (stmt.tag === "expr") {
+    return dynamic_union_if(stmt.expr, ctx, hooks);
+  }
+
+  if (stmt.tag === "return") {
+    return dynamic_union_if(stmt.value, ctx, hooks);
+  }
+
+  return undefined;
 }
 
 export function dynamic_if_let_can_match(

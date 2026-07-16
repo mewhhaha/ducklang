@@ -4,6 +4,7 @@ import { scan_source, source_tokens, tokenize } from "./tokenize.ts";
 import type { SourceSyntax, SyntaxDiagnostic } from "./syntax.ts";
 import { mark_source_span, mark_source_syntax } from "./syntax.ts";
 import type { RecoveryInterval } from "./parser_cursor.ts";
+import { collect_source_fixities } from "./fixity.ts";
 
 export function parse_source(text: string): SourceNode {
   const syntax = scan_source(text);
@@ -13,7 +14,12 @@ export function parse_source(text: string): SourceNode {
     throw new Error(diagnostic.message);
   }
 
-  const parser = new ParserStmt(source_tokens(syntax));
+  const tokens = source_tokens(syntax);
+  const parser = new ParserStmt(
+    tokens,
+    false,
+    collect_source_fixities(tokens),
+  );
   const source = parser.parse_program();
   mark_source_syntax(source, syntax);
   return source;
@@ -31,7 +37,11 @@ export function parse_source_with_diagnostics(text: string): ParseSourceResult {
   const tokens = source_tokens(syntax);
 
   try {
-    const parser = new ParserStmt(tokens);
+    const parser = new ParserStmt(
+      tokens,
+      false,
+      collect_source_fixities(tokens),
+    );
     const parsed = parser.parse_program_with_diagnostics();
     mark_source_syntax(parsed.source, syntax);
     return {
@@ -91,6 +101,11 @@ function ordered_diagnostics(
 export function parse_source_with_host_imports_for_test(
   text: string,
 ): SourceNode {
-  const parser = new ParserStmt(tokenize(text), true);
+  const tokens = tokenize(text);
+  const parser = new ParserStmt(
+    tokens,
+    true,
+    collect_source_fixities(tokens),
+  );
   return parser.parse_program();
 }

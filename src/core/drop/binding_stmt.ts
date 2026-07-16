@@ -291,6 +291,7 @@ export function scan_drop_index_assign_stmt<ctx>(
   if (
     assigned_ownership &&
     (assigned_ownership.reason === "text" ||
+      assigned_ownership.reason === "bytes" ||
       assigned_ownership.reason === "runtime_union")
   ) {
     state.consumed_temporary_subjects.add(stmt.value);

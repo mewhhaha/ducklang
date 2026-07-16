@@ -4,6 +4,7 @@ import {
   source_diagnostic,
   type SourceDiagnostic,
 } from "./semantic_diagnostic.ts";
+import { bundled_source_text } from "./prelude.ts";
 
 export type SourceImportResolver = (uri: string) => string | undefined;
 
@@ -81,7 +82,7 @@ function validate_module_exports(
 
   for (const statement of source.statements) {
     if (
-      statement.tag !== "bind" || statement.pattern?.tag !== "record" ||
+      statement.tag !== "bind" || statement.pattern === undefined ||
       statement.value.tag !== "app" || statement.value.func.tag !== "var"
     ) {
       continue;
@@ -93,16 +94,32 @@ function validate_module_exports(
       continue;
     }
 
-    for (const field of statement.pattern.fields) {
+    const selected: Array<{ name: string; subject: object }> = [];
+
+    if (statement.pattern.tag === "record") {
+      for (const field of statement.pattern.fields) {
+        selected.push({ name: field.name, subject: field.pattern });
+      }
+    } else if (statement.pattern.tag === "product") {
+      for (const entry of statement.pattern.entries) {
+        if (entry.label === undefined) {
+          selected.length = 0;
+          break;
+        }
+
+        selected.push({ name: entry.label, subject: entry.pattern });
+      }
+    }
+
+    for (const field of selected) {
       if (module.exports.has(field.name)) {
         continue;
       }
 
       diagnostics.push(source_diagnostic(
-        "IX2501",
-        "error",
+        "DUCK2501",
         "Import " + module.imported.path + " does not export " + field.name,
-        field.pattern,
+        field.subject,
       ));
     }
   }
@@ -122,15 +139,16 @@ export function source_import_expressions(
 export function validate_source_import_context(
   source: Source,
 ): SourceDiagnostic[] {
-  const imported = source_import_expressions(source)[0];
+  const imported = source_import_expressions(source).find((candidate) =>
+    bundled_source_text(candidate.path) === undefined
+  );
 
   if (imported === undefined) {
     return [];
   }
 
   return [source_diagnostic(
-    "IX2500",
-    "error",
+    "DUCK2500",
     "Cannot resolve import without a source URI and import resolver",
     imported,
   )];
@@ -153,8 +171,7 @@ function validate_source_import(
     }
 
     return source_diagnostic(
-      "IX2505",
-      "error",
+      "DUCK2505",
       "Invalid import URI: " + imported.path,
       root_subject,
     );
@@ -162,8 +179,7 @@ function validate_source_import(
 
   if (stack.includes(dependency_uri)) {
     return source_diagnostic(
-      "IX2504",
-      "error",
+      "DUCK2504",
       "Circular import: " + [...stack, dependency_uri].join(" -> "),
       root_subject,
     );
@@ -172,12 +188,15 @@ function validate_source_import(
   let dependency = validation.cache.get(dependency_uri);
 
   if (dependency === undefined) {
-    const text = validation.resolve_import(dependency_uri);
+    let text = bundled_source_text(dependency_uri);
+
+    if (text === undefined) {
+      text = validation.resolve_import(dependency_uri);
+    }
 
     if (text === undefined) {
       return source_diagnostic(
-        "IX2502",
-        "error",
+        "DUCK2502",
         "Import dependency does not exist: " + imported.path,
         root_subject,
       );
@@ -189,8 +208,7 @@ function validate_source_import(
 
   if (dependency.diagnostics.length > 0) {
     return source_diagnostic(
-      "IX2503",
-      "error",
+      "DUCK2503",
       "Imported source contains syntax errors: " + imported.path,
       root_subject,
     );
@@ -198,8 +216,7 @@ function validate_source_import(
 
   if (dependency.source.module === undefined) {
     return source_diagnostic(
-      "IX2501",
-      "error",
+      "DUCK2501",
       "Import file must be a module: " + imported.path,
       root_subject,
     );
@@ -364,6 +381,7 @@ function visit_expression(
       return;
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         visit_expression(entry.value, visit_import);
       }
@@ -439,6 +457,15 @@ function visit_expression(
     case "struct_update":
       visit_expression(expr.base, visit_import);
       visit_fields(expr.fields, visit_import);
+      return;
+
+    case "type_with":
+      visit_expression(expr.base, visit_import);
+
+      for (const member of expr.members) {
+        visit_expression(member.name, visit_import);
+        visit_expression(member.value, visit_import);
+      }
       return;
 
     case "if":

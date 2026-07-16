@@ -3,14 +3,11 @@ import type {
   BindingIndex,
   EntityId,
 } from "../frontend/binding_index.ts";
-import type {
-  FrontEffectAnalysis,
-  FrontExpr,
-  Param,
-  Source,
-  Stmt,
-} from "../frontend.ts";
-import { analyze_front_effects } from "../frontend/effect_analysis.ts";
+import type { FrontExpr, Param, Source, Stmt } from "../frontend/ast.ts";
+import {
+  analyze_front_effects,
+  type FrontEffectAnalysis,
+} from "../frontend/effect_analysis.ts";
 import { format_expr, format_source } from "../frontend/format.ts";
 import { name_sites } from "../frontend/name_site.ts";
 import { source_facts, type SourceFacts } from "../frontend/source_facts.ts";
@@ -110,7 +107,8 @@ export function hover(
   if (
     offset_in_type_position(source, offset) &&
     entity_type_declaration(source, entity) === undefined &&
-    effect_declaration(source, entity) === undefined
+    effect_declaration(source, entity) === undefined &&
+    entity.kind !== "type_parameter"
   ) {
     return undefined;
   }
@@ -143,7 +141,7 @@ export function hover(
   if (type_declaration !== undefined) {
     sections.unshift("**type** `" + entity.name + "`");
     sections.push(
-      "```ix\n" + format_source({
+      "```duck\n" + format_source({
         tag: "program",
         declarations: [type_declaration],
         statements: [],
@@ -160,7 +158,7 @@ export function hover(
     if (effect !== undefined) {
       sections.unshift("**effect** `" + entity.name + "`");
       sections.push(
-        "```ix\n" + format_source({
+        "```duck\n" + format_source({
           tag: "program",
           declarations: [effect],
           statements: [],
@@ -325,7 +323,7 @@ function expression_hover(
       return {
         contents: {
           kind: "markdown",
-          value: "**effect** `" + effect.name + "`\n\n```ix\n" +
+          value: "**effect** `" + effect.name + "`\n\n```duck\n" +
             format_source({
               tag: "program",
               declarations: [effect],
@@ -626,6 +624,11 @@ function append_binding_hover(
   encoding: PositionEncoding,
   referenced_type: string | undefined,
 ): void {
+  if (entity.kind === "type_parameter") {
+    sections.unshift("```duck\n" + entity.name + ": Type\n```");
+    return;
+  }
+
   const values = editor_binding_facts(source, index);
   const binding = values.get(entity.id);
   const declared = declared_member_hover(source, index, entity);
@@ -660,8 +663,34 @@ function append_binding_hover(
       }
 
       sections.unshift(
-        "```ix\n" + declaration_kind + " " + declaration_name + ": " +
+        "```duck\n" + declaration_kind + " " + declaration_name + ": " +
           rendered_type + "\n```",
+      );
+    } else if (
+      entity.kind === "parameter" || entity.kind === "module_parameter"
+    ) {
+      let declaration_name = entity.name;
+
+      if (entity.linear) {
+        declaration_name = "!" + declaration_name;
+      }
+
+      if (entity.readonly) {
+        declaration_name = "const " + declaration_name;
+      }
+
+      sections.unshift(
+        "```duck\n" + declaration_name + ": " + rendered_type + "\n```",
+      );
+    } else if (entity.kind === "value") {
+      let declaration_name = entity.name;
+
+      if (entity.linear) {
+        declaration_name = "!" + declaration_name;
+      }
+
+      sections.unshift(
+        "```duck\nlet " + declaration_name + ": " + rendered_type + "\n```",
       );
     } else {
       sections.unshift("**" + entity.kind + "** `" + entity.name + "`");
@@ -673,7 +702,7 @@ function append_binding_hover(
     const value = binding.value;
 
     if (value.expr.tag === "lam" || value.expr.tag === "rec") {
-      sections.push("```ix\n" + capped_format_expr(value.expr) + "\n```");
+      sections.push("```duck\n" + capped_format_expr(value.expr) + "\n```");
       append_captures(value, sections);
       const effects = editor_effect_analysis(source);
       const function_effects = effects.functions[entity.name];
@@ -690,7 +719,7 @@ function append_binding_hover(
       sections.push("latent effects: `" + row + "`");
     } else if (entity.kind === "const") {
       sections.push(
-        "value:\n```ix\n" + capped_format_expr(value.expr) +
+        "value:\n```duck\n" + capped_format_expr(value.expr) +
           "\n```",
       );
     }
@@ -734,6 +763,17 @@ function editor_entity_type_name(
     if (definition_type !== undefined) {
       return definition_type.name;
     }
+  }
+
+  const inferred_definition = facts.definition_type_of.get(
+    entity.definition_subject,
+  )?.get(entity.definition_slot);
+
+  if (
+    inferred_definition !== undefined &&
+    inferred_definition.resolved_name !== "unknown"
+  ) {
+    return inferred_definition.name;
   }
 
   const entity_facts = index.facts.get(entity.id);
@@ -1549,6 +1589,10 @@ function declared_member_hover(
   }
 
   for (const declaration of source.declarations) {
+    if (declaration.tag === "extend" || declaration.tag === "fixity") {
+      continue;
+    }
+
     if (declaration.name !== owner.name) {
       continue;
     }

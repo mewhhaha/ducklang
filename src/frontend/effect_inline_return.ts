@@ -75,6 +75,51 @@ function scope_return_stmts(statements: Stmt[]): Stmt[] {
       return scoped;
     }
 
+    if (
+      stmt.tag === "expr" && stmt.expr.tag === "match" &&
+      expr_contains_return(stmt.expr)
+    ) {
+      if (expr_contains_return(stmt.expr.target)) {
+        throw new Error(
+          "Effectful helper return inside a match target is not supported",
+        );
+      }
+
+      const rest = statements.slice(index + 1);
+      scoped.push({
+        tag: "expr",
+        expr: {
+          ...stmt.expr,
+          arms: stmt.expr.arms.map((arm) => {
+            if (
+              arm.guard !== undefined && expr_contains_return(arm.guard)
+            ) {
+              throw new Error(
+                "Effectful helper return inside a match guard is not supported",
+              );
+            }
+
+            let body: Stmt[];
+
+            if (arm.body.tag === "block") {
+              body = arm.body.statements;
+            } else {
+              body = [{ tag: "expr", expr: arm.body }];
+            }
+
+            return {
+              ...arm,
+              body: {
+                tag: "block" as const,
+                statements: scope_return_stmts([...body, ...rest]),
+              },
+            };
+          }),
+        },
+      });
+      return scoped;
+    }
+
     if (stmt_contains_return(stmt)) {
       throw new Error(
         "Effectful helper return inside a " + stmt.tag +

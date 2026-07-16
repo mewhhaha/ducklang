@@ -1,11 +1,14 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreField, CoreStmt } from "../ast.ts";
-import { indent_lines, set_local } from "../backend/util.ts";
+import { indent_lines } from "../emit/format.ts";
+import { set_local } from "../emit/local.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import { core_scratch_plan, scratch_heap_global } from "../scratch.ts";
 import { record_core_expr_provenance } from "../subject_provenance.ts";
-import type { StaticStructIfBranches } from "../struct_static.ts";
-import type { StaticTextIfBranches } from "../text_static.ts";
+import type {
+  StaticStructIfBranches,
+  StaticTextIfBranches,
+} from "../model/static_value.ts";
 import { static_block_result } from "../type_static.ts";
 import {
   plan_static_capture_expr,
@@ -121,6 +124,12 @@ export function plan_static_value_expr<
     if (text_if) {
       return plan_static_text_if(value, text_if, ctx, emit_ctx, hooks);
     }
+
+    return plan_static_if(value, ctx, emit_ctx, hooks);
+  }
+
+  if (value.tag === "block") {
+    return plan_static_block_value(value, ctx, emit_ctx, hooks);
   }
 
   const block_value = static_block_result(value);
@@ -130,6 +139,61 @@ export function plan_static_value_expr<
   }
 
   throw new Error("Cannot plan static core value: " + value.tag);
+}
+
+function plan_static_if<
+  ctx extends StaticValueCtx,
+  emit_ctx extends ctx,
+>(
+  value: Extract<CoreExpr, { tag: "if" }>,
+  ctx: ctx,
+  emit_ctx: emit_ctx | undefined,
+  hooks: StaticValueHooks<ctx, emit_ctx>,
+): StaticValuePlan {
+  const planned_cond = plan_static_capture_expr(
+    "if_cond",
+    value.cond,
+    ctx,
+    emit_ctx,
+    hooks,
+  );
+  const then_value = plan_static_value_expr(
+    value.then_branch,
+    ctx,
+    emit_ctx,
+    hooks,
+  );
+  const else_value = plan_static_value_expr(
+    value.else_branch,
+    ctx,
+    emit_ctx,
+    hooks,
+  );
+  const setup: string[] = [];
+
+  if (planned_cond.setup !== "") {
+    setup.push(planned_cond.setup);
+  }
+
+  if (emit_ctx && (then_value.setup !== "" || else_value.setup !== "")) {
+    setup.push(hooks.emit_expr(planned_cond.value, emit_ctx));
+    setup.push("if");
+    setup.push(indent_lines(then_value.setup, 2));
+    setup.push("else");
+    setup.push(indent_lines(else_value.setup, 2));
+    setup.push("end");
+  }
+
+  return {
+    value: record_core_expr_provenance({
+      tag: "if",
+      cond: planned_cond.value,
+      then_branch: then_value.value,
+      else_branch: else_value.value,
+      implicit_else: value.implicit_else,
+    }, value),
+    setup: setup.join("\n"),
+  };
 }
 
 function plan_static_scratch_value<

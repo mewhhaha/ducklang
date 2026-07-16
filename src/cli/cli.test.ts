@@ -1,9 +1,9 @@
-import { assert_equals } from "../assert.ts";
+import { assert_equals, assert_includes } from "../assert.ts";
 import { LspTestClient } from "../lsp/test_harness.ts";
 
-const entry = new URL("../../ix.ts", import.meta.url).pathname;
+const entry = new URL("../../duck.ts", import.meta.url).pathname;
 
-Deno.test("ix fmt --stdin formats a program", async () => {
+Deno.test("duck fmt --stdin formats a program", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "fmt", "--stdin"],
     stdin: "piped",
@@ -19,7 +19,7 @@ Deno.test("ix fmt --stdin formats a program", async () => {
   assert_equals(new TextDecoder().decode(output.stdout), "let a = 1\na\n");
 });
 
-Deno.test("ix lsp answers an initialize and formatting round trip", async () => {
+Deno.test("duck lsp answers an initialize and formatting round trip", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "lsp"],
     stdin: "piped",
@@ -40,8 +40,8 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     method: "textDocument/didOpen",
     params: {
       textDocument: {
-        uri: "file:///demo.ix",
-        languageId: "ix",
+        uri: "file:///demo.duck",
+        languageId: "duck",
         version: 1,
         text: "let  answer=41+1\nanswer\n",
       },
@@ -52,7 +52,7 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     id: 2,
     method: "textDocument/formatting",
     params: {
-      textDocument: { uri: "file:///demo.ix" },
+      textDocument: { uri: "file:///demo.duck" },
       options: { tabSize: 2, insertSpaces: true },
     },
   });
@@ -80,4 +80,182 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     formatting?.result?.[0]?.newText,
     "let answer = 41 + 1\nanswer\n",
   );
+});
+
+Deno.test("duck check accepts a semantically valid source file", async () => {
+  const command = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-check",
+      "--allow-read",
+      entry,
+      "check",
+      "examples/basics/01_arithmetic_and_shadowing.duck",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+
+  assert_equals(output.success, true);
+  assert_equals(new TextDecoder().decode(output.stderr), "");
+});
+
+Deno.test("duck check reports semantic diagnostics with locations", async () => {
+  const command = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-check",
+      "--allow-read",
+      entry,
+      "check",
+      "examples/failures/compile/01_reused_linear_value.duck",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+  const stderr = new TextDecoder().decode(output.stderr);
+
+  assert_equals(output.success, false);
+  assert_includes(
+    stderr,
+    "examples/failures/compile/01_reused_linear_value.duck:2:10: " +
+      "error[DUCK2201]: Linear value token was already consumed",
+  );
+  assert_includes(stderr, ":2:1: note: First consumed here");
+  assert_includes(stderr, ":1:1: note: Linear value declared here");
+});
+
+Deno.test("duck check resolves imports before reporting diagnostics", async () => {
+  const command = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-check",
+      "--allow-read",
+      entry,
+      "check",
+      "examples/failures/compile/12_missing_imported_export.duck",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+  const stderr = new TextDecoder().decode(output.stderr);
+
+  assert_equals(output.success, false);
+  assert_includes(
+    stderr,
+    "error[DUCK2501]: Import ./missing_import_dependency.duck " +
+      "does not export missing",
+  );
+});
+
+Deno.test("duck build emits runnable Core WAT and Wasm", async () => {
+  const output_directory = await Deno.makeTempDir({
+    prefix: "ducklang-cli-build-",
+  });
+
+  try {
+    const command = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-check",
+        "--allow-read",
+        "--allow-write",
+        "--allow-run=wat2wasm",
+        entry,
+        "build",
+        "examples/basics/01_arithmetic_and_shadowing.duck",
+        "--emit",
+        "all",
+        "--out",
+        output_directory,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const output = await command.output();
+
+    assert_equals(output.success, true);
+    const wat_path = output_directory +
+      "/01_arithmetic_and_shadowing.wat";
+    const wasm_path = output_directory +
+      "/01_arithmetic_and_shadowing.wasm";
+    assert_includes(await Deno.readTextFile(wat_path), '(export "main"');
+    const wasm = await Deno.readFile(wasm_path);
+    const module = await WebAssembly.compile(wasm);
+    const instance = await WebAssembly.instantiate(module);
+    const main = instance.exports.main;
+
+    if (typeof main !== "function") {
+      throw new Error("Built module does not export main");
+    }
+
+    assert_equals(main(), 42);
+  } finally {
+    await Deno.remove(output_directory, { recursive: true });
+  }
+});
+
+Deno.test("duck build emits the managed ABI manifest", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "ducklang-cli-managed-",
+  });
+  const source_path = directory + "/answer.duck";
+  const output_directory = directory + "/build";
+  await Deno.writeTextFile(
+    source_path,
+    "module () where\nreturn { .answer = 42 }\n",
+  );
+
+  try {
+    const command = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--no-check",
+        "--allow-read",
+        "--allow-write",
+        "--allow-run=wat2wasm",
+        entry,
+        "build",
+        source_path,
+        "--managed",
+        "--out",
+        output_directory,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const output = await command.output();
+
+    assert_equals(output.success, true);
+    const manifest = JSON.parse(
+      await Deno.readTextFile(output_directory + "/answer.abi.json"),
+    );
+    assert_equals(manifest.abi_version, "duck-js-1");
+    await Deno.stat(output_directory + "/answer.wasm");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("duck run executes an import-free Core program", async () => {
+  const command = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-check",
+      "--allow-read",
+      "--allow-run=wat2wasm",
+      entry,
+      "run",
+      "examples/basics/01_arithmetic_and_shadowing.duck",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+
+  assert_equals(output.success, true);
+  assert_equals(new TextDecoder().decode(output.stdout), "42\n");
 });

@@ -23,6 +23,13 @@ Deno.test("semantic unions normalize as commutative idempotent sets", () => {
   assert_equals(sem_type_key(type("Never | Text")), "scalar(Text)");
 });
 
+Deno.test("semantic forall keys ignore binder names", () => {
+  assert_equals(
+    sem_type_key(type("forall value. value -> value")),
+    sem_type_key(type("forall element. element -> element")),
+  );
+});
+
 Deno.test("semantic intersections and differences normalize finite unions", () => {
   assert_equals(
     sem_type_key(intersect_sem_types(type("Int | Text"), type("Text"))),

@@ -49,7 +49,8 @@ export function runtime_aggregate_layout<ctx extends TypeStaticCtx>(
   const type_value = static_type_value(value.type_expr, ctx);
   expect(
     type_value && type_value.tag === "struct_type",
-    "Core runtime aggregate requires a static struct type",
+    "Core runtime aggregate requires a static struct type: " +
+      JSON.stringify(value.type_expr),
   );
 
   return runtime_aggregate_struct_layout(value.type_expr, type_value, ctx);
@@ -62,7 +63,8 @@ export function runtime_aggregate_layout_for_type<ctx extends TypeStaticCtx>(
   const type_value = static_type_value(type_expr, ctx);
   expect(
     type_value && type_value.tag === "struct_type",
-    "Core runtime aggregate requires a static struct type",
+    "Core runtime aggregate requires a static struct type: " +
+      JSON.stringify(type_expr),
   );
 
   return runtime_aggregate_struct_layout(type_expr, type_value, ctx);
@@ -212,7 +214,7 @@ function runtime_aggregate_field<ctx extends TypeStaticCtx>(
   if (!type_value || type_value.tag !== "struct_type") {
     throw new Error(
       "Core runtime aggregate field " + name +
-        " must be Int, I32, U32, I64, Text, Bytes, Unit, Resume, a union type, " +
+        " must be Int, I32, U32, I64, F32, F32x4, Text, Bytes, Unit, Resume, a union type, " +
         "or a static-shaped struct type",
     );
   }

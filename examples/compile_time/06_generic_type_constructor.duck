@@ -1,0 +1,10 @@
+type Result error value = | .ok = value | .err = error
+
+type ParseResult = Result Text Int
+let result = ParseResult.ok(42)
+
+if let .ok(value) = result {
+  value
+} else {
+  0
+}

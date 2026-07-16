@@ -6,6 +6,7 @@ import {
   stored_borrow_view_for_value,
 } from "./aliases.ts";
 import { add_scope } from "./scope.ts";
+import { core_stmt_definitely_exits_sequence } from "./control.ts";
 import type {
   CoreBorrowAliases,
   CoreBorrowHooks,
@@ -229,9 +230,15 @@ function stored_borrow_view_result_for_block<ctx>(
 ): CoreStoredBorrowViewResult {
   const scope = add_scope(state, "block", undefined, parent);
   const block_aliases = clone_borrow_aliases(aliases);
+  let block_ctx = ctx;
+
+  if (hooks.block_ctx && hooks.collect_stmt_locals) {
+    block_ctx = hooks.block_ctx(ctx);
+  }
+
   const result = scan_borrow_block_prefix_for_result(
     value.statements,
-    ctx,
+    block_ctx,
     hooks,
     scope.id,
     state,
@@ -248,7 +255,7 @@ function stored_borrow_view_result_for_block<ctx>(
 
   const result_view = stored_borrow_view_result_for_value(
     result,
-    ctx,
+    block_ctx,
     hooks,
     scope.id,
     state,
@@ -272,7 +279,7 @@ function stored_borrow_view_result_for_block<ctx>(
 
   scanner.scan_expr(
     result,
-    ctx,
+    block_ctx,
     hooks,
     scope.id,
     state,
@@ -306,6 +313,14 @@ function scan_borrow_block_prefix_for_result<ctx>(
     }
 
     scanner.scan_stmt(stmt, ctx, hooks, parent, state, "bounded", aliases);
+
+    if (core_stmt_definitely_exits_sequence(stmt)) {
+      return undefined;
+    }
+
+    if (hooks.collect_stmt_locals) {
+      hooks.collect_stmt_locals(stmt, ctx);
+    }
   }
 
   const final_stmt = statements[statements.length - 1];

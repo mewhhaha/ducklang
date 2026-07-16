@@ -41,7 +41,7 @@ function hints(
     parsed.source,
     parsed.syntax,
     index,
-    "file:///fixture.ix",
+    "file:///fixture.duck",
     { start, end },
     "utf-16",
     config,
@@ -113,10 +113,29 @@ Deno.test("inlay effect hints snapshot inferred row and result", () => {
   assert_equals(dump(hints(text, category_config("effects"))), [{
     line: 1,
     character: 9,
-    label: " -> <Io.read> Text",
+    label: " -> <Io.read>...",
     kind: 1,
     category: "effects",
   }]);
+});
+
+Deno.test("inlay labels cap at sixteen characters and retain full detail", () => {
+  const text = "const identity = (const specialization, value) => value\n" +
+    "let answer = identity(123456789, 42)\n";
+  const hint = hints(text, category_config("comptime")).find((candidate) => {
+    return candidate.label.endsWith("...");
+  });
+
+  if (hint === undefined) {
+    throw new Error("Missing truncated inlay hint");
+  }
+
+  assert_equals([...hint.label].length, 16);
+  assert_equals(hint.label, " [specializat...");
+  assert_equals(resolve_inlay_hint(hint).tooltip, {
+    kind: "markdown",
+    value: "Specialized const parameters: specialization = 123456789",
+  });
 });
 
 Deno.test("inlay type hints annotate state binding names", () => {

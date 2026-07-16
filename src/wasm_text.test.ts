@@ -10,7 +10,7 @@ Deno.test("frontend dynamic visible text get compiles through WAT to Wasm", asyn
   const wat_text = wat_from_source(`
 let rename = value => {
   value with {
-    second: "Grace"
+    .second = "Grace"
   }
 }
 
@@ -21,10 +21,7 @@ let input = if flag {
   0
 }
 
-get(rename({
-  first: "Ada",
-  second: "Eve"
-})[input], 1)
+get(rename([.first = "Ada", .second = "Eve"])[input], 1)
 `);
   const instance = await instantiate_wat(
     wat_text,
@@ -265,10 +262,7 @@ byte_len("Ada")
 
 Deno.test("core dynamic text index compiles through WAT to Wasm memory", async () => {
   const wat_text = wat_from_core_source(`
-let messages = {
-  first: "Ada",
-  second: "Grace"
-}
+let messages = [.first = "Ada", .second = "Grace"]
 
 let i = if 1 {
   1
@@ -322,10 +316,7 @@ messages[i]
 
 Deno.test("core dynamic text index concatenation compiles through WAT to Wasm memory", async () => {
   const wat_text = wat_from_core_source(`
-let messages = {
-  first: "Ada",
-  second: "Grace"
-}
+let messages = [.first = "Ada", .second = "Grace"]
 
 let i = if 1 {
   1
@@ -388,10 +379,7 @@ messages[i] + "!"
 
 Deno.test("core dynamic text index len compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let messages = {
-  first: "Ada",
-  second: "Grace"
-}
+let messages = [.first = "Ada", .second = "Grace"]
 
 let i = if 1 {
   1
@@ -484,14 +472,14 @@ byte_at("Ada", 2)
   }
 });
 
-Deno.test("core runtime text byte assignment compiles through WAT to Wasm", async () => {
+Deno.test("core runtime Bytes assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let write_byte = (message: Text, i: Int, value: Int) => {
+let write_byte = (message: Bytes, i: Int, value: Int) => {
   message[i] = value
   message[i]
 }
 
-write_byte("Ada", 1, 111)
+write_byte(Utf8.encode("Ada"), 1, 111)
 `);
   const instance = await instantiate_wat(
     wat_text,
@@ -516,18 +504,18 @@ write_byte("Ada", 1, 111)
   const first_class_wat = wat_from_core_source(`
 let flag = 1
 let write_byte = if flag {
-  (message: Text, i: Int, value: Int) => {
+  (message: Bytes, i: Int, value: Int) => {
     message[i] = value
     message[i]
   }
 } else {
-  (message: Text, i: Int, value: Int) => {
+  (message: Bytes, i: Int, value: Int) => {
     message[i] = value + 1
     message[i]
   }
 }
 
-write_byte("Ada", 1, 111)
+write_byte(Utf8.encode("Ada"), 1, 111)
 `);
   const first_class_instance = await instantiate_wat(
     first_class_wat,
@@ -552,12 +540,12 @@ write_byte("Ada", 1, 111)
   }
 
   const trap_wat = wat_from_core_source(`
-let write_byte = (message: Text, i: Int, value: Int) => {
+let write_byte = (message: Bytes, i: Int, value: Int) => {
   message[i] = value
   message[i]
 }
 
-write_byte("Ada", 3, 111)
+write_byte(Utf8.encode("Ada"), 3, 111)
 `);
   const trap_instance = await instantiate_wat(
     trap_wat,

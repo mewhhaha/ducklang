@@ -7,50 +7,71 @@ import type {
 } from "./abi.ts";
 import {
   abi_fixed_array_schema_name,
-  ix_abi_name,
-  ix_abi_version,
+  duck_abi_name,
+  duck_abi_version,
 } from "./abi.ts";
 import { align_to } from "./core/memory.ts";
 
-export type IxValue =
+export type DuckValue =
   | number
   | bigint
   | string
   | undefined
   | Uint8Array
-  | IxValue[]
-  | { [name: string]: IxValue }
-  | { tag: string; value?: IxValue };
+  | DuckValue[]
+  | { tag: string; value?: DuckValue };
 
-export type IxHostHandler = (...args: IxValue[]) => IxValue;
-export type IxEffectObject = Record<string, IxHostHandler>;
-export type IxInitValue = Record<string, IxEffectObject>;
+export type DuckHostHandler = (...args: DuckValue[]) => DuckValue;
+export type DuckEffectObject = Record<string, DuckHostHandler>;
+export type DuckInitValue = Record<string, DuckEffectObject>;
 
-export class IxAbiError extends Error {
+export class DuckAbiError extends Error {
   readonly code: string;
   readonly path: string;
 
   constructor(code: string, path: string, message: string) {
     super(message);
-    this.name = "IxAbiError";
+    this.name = "DuckAbiError";
     this.code = code;
     this.path = path;
   }
 }
 
-export type IxHostInstance = {
+export type DuckHostInstance = {
   instance: WebAssembly.Instance;
-  run: (init?: IxInitValue) => IxValue;
+  run: (init?: DuckInitValue) => DuckValue;
+  call: (
+    name: string,
+    ...args: DuckCallableValue[]
+  ) => DuckValue | DuckStateToken;
   dispose: () => void;
 };
 
-export type IxRunner = {
-  run: (program: IxHostInstance) => IxValue;
+export type DuckStateToken = {
+  dispose: () => void;
 };
 
-export function IxRunner(init: IxInitValue): IxRunner {
+export type DuckCallableValue =
+  | DuckValue
+  | DuckStateToken
+  | DuckCallableValue[];
+
+type DuckStateRecord = {
+  owner: symbol;
+  type: AbiTypeRef;
+  ptr: number;
+  status: "live" | "in_flight" | "consumed" | "disposed";
+};
+
+const duck_state_records = new WeakMap<DuckStateToken, DuckStateRecord>();
+
+export type DuckRunner = {
+  run: (program: DuckHostInstance) => DuckValue;
+};
+
+export function DuckRunner(init: DuckInitValue): DuckRunner {
   return {
-    run(program: IxHostInstance): IxValue {
+    run(program: DuckHostInstance): DuckValue {
       return program.run(init);
     },
   };
@@ -58,20 +79,22 @@ export function IxRunner(init: IxInitValue): IxRunner {
 
 type EffectResource = {
   effect: string;
-  value: IxEffectObject;
+  value: DuckEffectObject;
 };
 
-export function IxHost() {}
+export function DuckHost() {}
 
-IxHost.instantiate = async function instantiate(
+DuckHost.instantiate = async function instantiate(
   source: BufferSource | WebAssembly.Module,
   manifest: AbiManifest,
-): Promise<IxHostInstance> {
+): Promise<DuckHostInstance> {
   check_manifest(manifest);
   let instance: WebAssembly.Instance | undefined;
   let disposed = false;
   let running = false;
   let next_resource_handle = 1;
+  const state_owner = Symbol("DuckHost.state");
+  const live_states = new Set<DuckStateToken>();
   const resources = new Map<number, EffectResource>();
   const active_init_handles = new Map<string, number>();
   const imports: WebAssembly.Imports = {};
@@ -80,7 +103,7 @@ IxHost.instantiate = async function instantiate(
     const abi_import = manifest.imports[name];
 
     if (!abi_import) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "imports." + name,
         "Missing ABI import",
@@ -96,15 +119,15 @@ IxHost.instantiate = async function instantiate(
 
     module_imports[abi_import.field] = (...raw_args: unknown[]) => {
       if (disposed) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "disposed",
           abi_import.name,
-          "Ix host instance is disposed",
+          "Duck host instance is disposed",
         );
       }
 
       if (!instance) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "unbound_instance",
           abi_import.name,
           "Host import ran before the Wasm instance was bound",
@@ -138,39 +161,98 @@ IxHost.instantiate = async function instantiate(
   instance = instantiated.instance;
   abi_runtime(instance, manifest);
 
+  function dispose_state(token: DuckStateToken): void {
+    const record = duck_state_records.get(token);
+
+    if (!record || record.owner !== state_owner) {
+      throw new DuckAbiError(
+        "invalid_state",
+        "state",
+        "State token does not belong to this Duck host instance",
+      );
+    }
+
+    if (record.status !== "live") {
+      throw new DuckAbiError(
+        "consumed_state",
+        "state",
+        "State token is no longer live",
+      );
+    }
+
+    const current_instance = instance;
+
+    if (!current_instance || disposed) {
+      throw new DuckAbiError(
+        "disposed",
+        "state",
+        "Duck host instance is disposed",
+      );
+    }
+
+    record.status = "disposed";
+    live_states.delete(token);
+    abi_runtime(current_instance, manifest).free_raw(record.type, record.ptr);
+  }
+
+  function state_token(type: AbiTypeRef, ptr: number): DuckStateToken {
+    if (!Number.isInteger(ptr) || ptr <= 0) {
+      throw new DuckAbiError(
+        "invalid_state",
+        "state",
+        "Managed callable returned an invalid state pointer",
+      );
+    }
+
+    const token: DuckStateToken = {
+      dispose(): void {
+        dispose_state(token);
+      },
+    };
+    Object.freeze(token);
+    duck_state_records.set(token, {
+      owner: state_owner,
+      type,
+      ptr,
+      status: "live",
+    });
+    live_states.add(token);
+    return token;
+  }
+
   return {
     instance,
-    run(init?: IxInitValue): IxValue {
+    run(init?: DuckInitValue): DuckValue {
       if (disposed) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "disposed",
           "main",
-          "Ix host instance is disposed",
+          "Duck host instance is disposed",
         );
       }
 
       if (running) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "reentrant_run",
           "main",
-          "Ix host run cannot be entered recursively",
+          "Duck host run cannot be entered recursively",
         );
       }
 
       const current_instance = instance;
 
       if (!current_instance) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "disposed",
           "main",
-          "Ix host instance is disposed",
+          "Duck host instance is disposed",
         );
       }
 
       const main = current_instance.exports[manifest.exports.main];
 
       if (typeof main !== "function") {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "missing_export",
           "main",
           "Missing managed main export",
@@ -183,10 +265,10 @@ IxHost.instantiate = async function instantiate(
         resources,
         function allocate_handle(): number {
           if (next_resource_handle > 0x7fff_ffff) {
-            throw new IxAbiError(
+            throw new DuckAbiError(
               "resource_exhausted",
               "init",
-              "Ix effect resource handle space is exhausted",
+              "Duck effect resource handle space is exhausted",
             );
           }
 
@@ -208,7 +290,7 @@ IxHost.instantiate = async function instantiate(
           const handle = handles[index];
 
           if (!field || handle === undefined) {
-            throw new IxAbiError(
+            throw new DuckAbiError(
               "invalid_manifest",
               "init",
               "Init field and registered resource count differ",
@@ -252,7 +334,7 @@ IxHost.instantiate = async function instantiate(
         if (
           typeof raw_result !== "number" && typeof raw_result !== "bigint"
         ) {
-          throw new IxAbiError(
+          throw new DuckAbiError(
             "type_mismatch",
             "main",
             "Managed main returned a non-scalar",
@@ -270,7 +352,266 @@ IxHost.instantiate = async function instantiate(
         running = false;
       }
     },
+    call(
+      name: string,
+      ...args: DuckCallableValue[]
+    ): DuckValue | DuckStateToken {
+      if (disposed) {
+        throw new DuckAbiError(
+          "disposed",
+          "callables." + name,
+          "Duck host instance is disposed",
+        );
+      }
+
+      if (running) {
+        throw new DuckAbiError(
+          "reentrant_run",
+          "callables." + name,
+          "Duck host cannot be entered recursively",
+        );
+      }
+
+      const callable = manifest.callables?.[name];
+
+      if (!callable) {
+        throw new DuckAbiError(
+          "missing_callable",
+          "callables." + name,
+          "Managed callable is not declared",
+        );
+      }
+
+      let values: DuckCallableValue[];
+
+      if (callable.params.length === 0) {
+        if (args.length !== 0) {
+          throw new DuckAbiError(
+            "arity_mismatch",
+            "callables." + name,
+            "Managed callable expects no source argument, got " +
+              args.length.toString(),
+          );
+        }
+
+        values = [];
+      } else if (callable.params.length === 1) {
+        if (args.length !== 1) {
+          throw new DuckAbiError(
+            "arity_mismatch",
+            "callables." + name,
+            "Managed callable expects one source argument, got " +
+              args.length.toString(),
+          );
+        }
+
+        values = args;
+      } else {
+        const product = args[0];
+
+        if (args.length !== 1 || !Array.isArray(product)) {
+          throw new DuckAbiError(
+            "arity_mismatch",
+            "callables." + name,
+            "Managed callable expects one product source argument",
+          );
+        }
+
+        if (product.length !== callable.params.length) {
+          throw new DuckAbiError(
+            "arity_mismatch",
+            "callables." + name,
+            "Managed callable product expects " +
+              callable.params.length.toString() + " fields, got " +
+              product.length.toString(),
+          );
+        }
+
+        values = product;
+      }
+
+      const current_instance = instance;
+
+      if (!current_instance) {
+        throw new DuckAbiError(
+          "disposed",
+          "callables." + name,
+          "Duck host instance is disposed",
+        );
+      }
+
+      const exported = current_instance.exports[callable.export];
+
+      if (typeof exported !== "function") {
+        throw new DuckAbiError(
+          "missing_export",
+          "callables." + name,
+          "Missing managed callable export " + callable.export,
+        );
+      }
+
+      const runtime = abi_runtime(current_instance, manifest);
+      const raw_args: Array<number | bigint> = [];
+      const moved: DuckStateRecord[] = [];
+      const bootstrapped: Array<{ type: AbiTypeRef; ptr: number }> = [];
+      let invoked = false;
+
+      try {
+        for (let index = 0; index < callable.params.length; index += 1) {
+          const contract = callable.params[index];
+          const value = values[index];
+
+          if (!contract) {
+            throw new DuckAbiError(
+              "invalid_manifest",
+              "callables." + name + ".params." + index.toString(),
+              "Missing managed callable parameter contract",
+            );
+          }
+
+          if (contract.ownership === "scalar") {
+            raw_args.push(runtime.encode_raw(
+              contract.type,
+              value as DuckValue,
+              "callables." + name + ".args." + index.toString(),
+            ));
+            continue;
+          }
+
+          let record: DuckStateRecord | undefined;
+
+          if (typeof value === "object" && value !== null) {
+            record = duck_state_records.get(value as DuckStateToken);
+          }
+
+          if (!record) {
+            const raw = runtime.encode_raw(
+              contract.type,
+              value as DuckValue,
+              "callables." + name + ".args." + index.toString(),
+            );
+
+            if (typeof raw !== "number") {
+              throw new DuckAbiError(
+                "invalid_state",
+                "callables." + name + ".args." + index.toString(),
+                "Managed move parameter did not encode to a pointer",
+              );
+            }
+
+            raw_args.push(raw);
+            bootstrapped.push({ type: contract.type, ptr: raw });
+            continue;
+          }
+
+          if (record.owner !== state_owner) {
+            throw new DuckAbiError(
+              "invalid_state",
+              "callables." + name + ".args." + index.toString(),
+              "State token does not belong to this Duck host instance",
+            );
+          }
+
+          if (record.status !== "live") {
+            throw new DuckAbiError(
+              "consumed_state",
+              "callables." + name + ".args." + index.toString(),
+              "State token is no longer live",
+            );
+          }
+
+          if (!same_abi_type_ref(record.type, contract.type)) {
+            throw new DuckAbiError(
+              "state_type_mismatch",
+              "callables." + name + ".args." + index.toString(),
+              "State token type does not match the callable contract",
+            );
+          }
+
+          if (moved.includes(record)) {
+            throw new DuckAbiError(
+              "consumed_state",
+              "callables." + name + ".args." + index.toString(),
+              "The same state token cannot be moved more than once",
+            );
+          }
+
+          moved.push(record);
+          raw_args.push(record.ptr);
+        }
+
+        for (const record of moved) {
+          record.status = "in_flight";
+
+          for (const token of live_states) {
+            if (duck_state_records.get(token) === record) {
+              live_states.delete(token);
+              break;
+            }
+          }
+        }
+
+        running = true;
+        const raw_result = exported(...raw_args);
+        invoked = true;
+
+        for (const record of moved) {
+          record.status = "consumed";
+        }
+
+        if (callable.result.ownership === "move") {
+          if (typeof raw_result !== "number") {
+            throw new DuckAbiError(
+              "invalid_state",
+              "callables." + name + ".result",
+              "Managed callable returned a non-pointer state",
+            );
+          }
+
+          return state_token(callable.result.type, raw_result);
+        }
+
+        return runtime.decode_raw(
+          callable.result.type,
+          raw_result,
+          "callables." + name + ".result",
+        );
+      } catch (error) {
+        if (!invoked) {
+          for (const record of moved) {
+            if (record.status === "in_flight") {
+              record.status = "consumed";
+              runtime.free_raw(record.type, record.ptr);
+            }
+          }
+
+          for (const value of bootstrapped) {
+            runtime.free_raw(value.type, value.ptr);
+          }
+        }
+
+        throw error;
+      } finally {
+        running = false;
+      }
+    },
     dispose(): void {
+      const current_instance = instance;
+
+      if (current_instance) {
+        const runtime = abi_runtime(current_instance, manifest);
+
+        for (const token of live_states) {
+          const record = duck_state_records.get(token);
+
+          if (record && record.status === "live") {
+            record.status = "disposed";
+            runtime.free_raw(record.type, record.ptr);
+          }
+        }
+      }
+
+      live_states.clear();
       disposed = true;
       active_init_handles.clear();
       resources.clear();
@@ -286,7 +627,7 @@ function invoke_init_getter(
   const init_ref = abi_import.init;
 
   if (!init_ref) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_manifest",
       abi_import.name,
       "Init getter is missing its Init field reference",
@@ -296,7 +637,7 @@ function invoke_init_getter(
   const handle = active_init_handles.get(init_ref.field);
 
   if (handle === undefined) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "inactive_init",
       "init." + init_ref.field,
       "Init resources are available only during run",
@@ -307,32 +648,32 @@ function invoke_init_getter(
 }
 
 function invoke_sync_handler(
-  handler: IxHostHandler,
-  args: IxValue[],
+  handler: DuckHostHandler,
+  args: DuckValue[],
   path: string,
-  receiver: IxEffectObject | undefined,
-): IxValue {
-  let result: IxValue;
+  receiver: DuckEffectObject | undefined,
+): DuckValue {
+  let result: DuckValue;
 
   try {
     result = handler.apply(receiver, args);
   } catch (error) {
-    if (error instanceof IxAbiError) {
+    if (error instanceof DuckAbiError) {
       throw error;
     }
 
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "host_exception",
       path,
-      "Ix host handler threw: " + String(error),
+      "Duck host handler threw: " + String(error),
     );
   }
 
   if (is_promise_like(result)) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "async_handler",
       path,
-      "Ix host handlers must return synchronously",
+      "Duck host handlers must return synchronously",
     );
   }
 
@@ -360,7 +701,7 @@ function invoke_effect_operation(
   const effect_ref = abi_import.effect;
 
   if (!effect_ref) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_manifest",
       abi_import.name,
       "Effect import is missing its effect reference",
@@ -376,15 +717,15 @@ function invoke_effect_operation(
   const resource = resources.get(raw_handle);
 
   if (!resource) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "unknown_resource",
       abi_import.name + ".resource",
-      "Unknown or expired Ix effect resource handle",
+      "Unknown or expired Duck effect resource handle",
     );
   }
 
   if (resource.effect !== effect_ref.name) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "resource_type_mismatch",
       abi_import.name + ".resource",
       "Expected effect " + effect_ref.name + ", got " + resource.effect,
@@ -394,14 +735,14 @@ function invoke_effect_operation(
   const handler = resource.value[effect_ref.operation];
 
   if (typeof handler !== "function") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "missing_method",
       effect_ref.name + "." + effect_ref.operation,
-      "Missing Ix effect method",
+      "Missing Duck effect method",
     );
   }
 
-  const args: IxValue[] = [];
+  const args: DuckValue[] = [];
 
   for (let index = 0; index < abi_import.params.length; index += 1) {
     if (index === effect_ref.resource_param) {
@@ -411,7 +752,7 @@ function invoke_effect_operation(
     const param = abi_import.params[index];
 
     if (!param) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         abi_import.name,
         "Missing ABI effect parameter",
@@ -425,7 +766,7 @@ function invoke_effect_operation(
     ));
   }
 
-  let result: IxValue;
+  let result: DuckValue;
 
   try {
     result = invoke_sync_handler(
@@ -465,16 +806,16 @@ function free_transferred_params(
 
 function register_init_resources(
   manifest: AbiManifest,
-  init: IxInitValue | undefined,
+  init: DuckInitValue | undefined,
   resources: Map<number, EffectResource>,
   allocate_handle: () => number,
 ): number[] {
   if (!manifest.init) {
     if (init !== undefined) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "unexpected_init",
         "init",
-        "This Ix module does not declare an Init context",
+        "This Duck module does not declare an Init context",
       );
     }
 
@@ -492,7 +833,7 @@ function register_init_resources(
       const effect = manifest.effects[field.type.effect];
 
       if (!effect) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           "init." + field.name,
           "Missing declared effect: " + field.type.effect,
@@ -518,19 +859,19 @@ function register_init_resources(
 
 function validate_effect_object(
   operations: Record<string, AbiEffectOperation>,
-  value: IxEffectObject | undefined,
+  value: DuckEffectObject | undefined,
   path: string,
-): asserts value is IxEffectObject {
+): asserts value is DuckEffectObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw type_error(path, "effect object");
   }
 
   for (const name in operations) {
     if (typeof value[name] !== "function") {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "missing_method",
         path + "." + name,
-        "Missing Ix effect method",
+        "Missing Duck effect method",
       );
     }
   }
@@ -542,26 +883,26 @@ function check_manifest(manifest: AbiManifest): void {
     abi_version?: unknown;
   };
 
-  if (untrusted_manifest.abi_name !== ix_abi_name) {
-    throw new IxAbiError(
+  if (untrusted_manifest.abi_name !== duck_abi_name) {
+    throw new DuckAbiError(
       "manifest_mismatch",
       "abi_name",
-      "Expected " + ix_abi_name + ", got " +
+      "Expected " + duck_abi_name + ", got " +
         String(untrusted_manifest.abi_name),
     );
   }
 
-  if (untrusted_manifest.abi_version !== ix_abi_version) {
-    throw new IxAbiError(
+  if (untrusted_manifest.abi_version !== duck_abi_version) {
+    throw new DuckAbiError(
       "version_mismatch",
       "abi_version",
-      "Expected " + ix_abi_version + ", got " +
+      "Expected " + duck_abi_version + ", got " +
         String(untrusted_manifest.abi_version),
     );
   }
 
   if (manifest.target.profile !== "core-3-nonweb") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "target_mismatch",
       "target.profile",
       "Expected core-3-nonweb, got " + String(manifest.target.profile),
@@ -569,7 +910,7 @@ function check_manifest(manifest: AbiManifest): void {
   }
 
   if (manifest.target.pointer !== "wasm32") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "target_mismatch",
       "target.pointer",
       "Expected wasm32, got " + String(manifest.target.pointer),
@@ -577,7 +918,7 @@ function check_manifest(manifest: AbiManifest): void {
   }
 
   if (manifest.target.endianness !== "little") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "target_mismatch",
       "target.endianness",
       "Expected little endian, got " + String(manifest.target.endianness),
@@ -585,7 +926,7 @@ function check_manifest(manifest: AbiManifest): void {
   }
 
   if (manifest.target.i64_js !== "bigint") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "target_mismatch",
       "target.i64_js",
       "Expected BigInt i64 values, got " + String(manifest.target.i64_js),
@@ -594,11 +935,15 @@ function check_manifest(manifest: AbiManifest): void {
 
   check_manifest_types(manifest);
 
+  if (manifest.callables) {
+    check_manifest_callables(manifest);
+  }
+
   for (const import_name in manifest.imports) {
     const abi_import = manifest.imports[import_name];
 
     if (!abi_import || abi_import.name !== import_name) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "imports." + import_name,
         "Missing import or import name mismatch",
@@ -609,7 +954,7 @@ function check_manifest(manifest: AbiManifest): void {
       (!abi_import.effect && !abi_import.init) ||
       (abi_import.effect !== undefined && abi_import.init !== undefined)
     ) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "imports." + import_name,
         "Managed ABI imports must reference exactly one effect or Init field",
@@ -621,7 +966,7 @@ function check_manifest(manifest: AbiManifest): void {
     const effect = manifest.effects[effect_name];
 
     if (!effect || effect.name !== effect_name) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "effects." + effect_name,
         "Missing effect or effect name mismatch",
@@ -632,7 +977,7 @@ function check_manifest(manifest: AbiManifest): void {
       const operation = effect.operations[operation_name];
 
       if (!operation || operation.name !== operation_name) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           "effects." + effect_name + ".operations." + operation_name,
           "Missing operation or operation name mismatch",
@@ -646,7 +991,7 @@ function check_manifest(manifest: AbiManifest): void {
         abi_import.effect.name !== effect_name ||
         abi_import.effect.operation !== operation_name
       ) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           "effects." + effect_name + ".operations." + operation_name,
           "Effect operation import does not match",
@@ -661,7 +1006,7 @@ function check_manifest(manifest: AbiManifest): void {
         !resource_param || resource_param.type.tag !== "resource" ||
         resource_param.type.effect !== effect_name
       ) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           "imports." + operation.import,
           "Effect import is missing its resource parameter",
@@ -678,7 +1023,7 @@ function check_manifest(manifest: AbiManifest): void {
     const requirement = manifest.requirements.functions[function_name];
 
     if (!requirement) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "requirements.functions." + function_name,
         "Missing function effect requirement",
@@ -697,7 +1042,7 @@ function check_manifest(manifest: AbiManifest): void {
   if (manifest.init) {
     for (const field of manifest.init.fields) {
       if (!manifest.effects[field.type.effect]) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           "init." + field.name,
           "Init field references an unknown effect",
@@ -710,7 +1055,7 @@ function check_manifest(manifest: AbiManifest): void {
       manifest.entry.params.length !== 0 &&
       manifest.entry.params.length !== manifest.init.fields.length
     ) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "entry.params",
         "Entry parameter count must match Init fields",
@@ -726,7 +1071,7 @@ function check_manifest(manifest: AbiManifest): void {
           !field || !param || param.tag !== "resource" ||
           param.effect !== field.type.effect
         ) {
-          throw new IxAbiError(
+          throw new DuckAbiError(
             "invalid_manifest",
             "entry.params." + index.toString(),
             "Entry resource parameter must match its Init field",
@@ -744,7 +1089,7 @@ function check_manifest(manifest: AbiManifest): void {
           abi_import.init.field !== field.name ||
           abi_import.init.effect !== field.type.effect
         ) {
-          throw new IxAbiError(
+          throw new DuckAbiError(
             "invalid_manifest",
             "init." + field.name,
             "Init field getter import does not match",
@@ -755,6 +1100,94 @@ function check_manifest(manifest: AbiManifest): void {
   }
 }
 
+function check_manifest_callables(manifest: AbiManifest): void {
+  const exports = new Set<string>();
+
+  for (const name in manifest.callables) {
+    const callable = manifest.callables[name];
+
+    if (!callable || callable.name !== name) {
+      throw new DuckAbiError(
+        "invalid_manifest",
+        "callables." + name,
+        "Managed callable key and name must match",
+      );
+    }
+
+    if (callable.export.length === 0 || exports.has(callable.export)) {
+      throw new DuckAbiError(
+        "invalid_manifest",
+        "callables." + name + ".export",
+        "Managed callable exports must be non-empty and unique",
+      );
+    }
+
+    exports.add(callable.export);
+
+    for (let index = 0; index < callable.params.length; index += 1) {
+      const contract = callable.params[index];
+
+      if (!contract) {
+        throw new DuckAbiError(
+          "invalid_manifest",
+          "callables." + name + ".params." + index.toString(),
+          "Missing managed callable parameter contract",
+        );
+      }
+
+      check_callable_contract(
+        manifest,
+        contract,
+        "callables." + name + ".params." + index.toString(),
+      );
+    }
+
+    check_callable_contract(
+      manifest,
+      callable.result,
+      "callables." + name + ".result",
+    );
+  }
+}
+
+function check_callable_contract(
+  manifest: AbiManifest,
+  contract: { type: AbiTypeRef; ownership: "scalar" | "move" },
+  path: string,
+): void {
+  manifest_type_ref_layout(manifest, contract.type, path + ".type");
+  const scalar = contract.type.tag === "i32" ||
+    contract.type.tag === "i64" || contract.type.tag === "f32" ||
+    contract.type.tag === "unit";
+
+  if (contract.type.tag === "resource") {
+    throw new DuckAbiError(
+      "invalid_manifest",
+      path + ".type",
+      "Managed callable state cannot be an effect resource",
+    );
+  }
+
+  if (contract.ownership === "scalar" && !scalar) {
+    throw new DuckAbiError(
+      "invalid_manifest",
+      path + ".ownership",
+      "Scalar callable ownership requires a scalar type",
+    );
+  }
+
+  const movable = contract.type.tag === "text" ||
+    contract.type.tag === "bytes" || contract.type.tag === "named";
+
+  if (contract.ownership === "move" && !movable) {
+    throw new DuckAbiError(
+      "invalid_manifest",
+      path + ".ownership",
+      "Move callable ownership requires Text, Bytes, or a named aggregate",
+    );
+  }
+}
+
 function check_manifest_types(manifest: AbiManifest): void {
   const schema_ids = new Set<number>();
 
@@ -762,7 +1195,7 @@ function check_manifest_types(manifest: AbiManifest): void {
     const schema = manifest.types[name];
 
     if (!schema) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "types." + name,
         "Missing ABI schema",
@@ -770,7 +1203,7 @@ function check_manifest_types(manifest: AbiManifest): void {
     }
 
     if (schema.name !== name) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "types." + name + ".name",
         "ABI schema name must match its type key",
@@ -778,7 +1211,7 @@ function check_manifest_types(manifest: AbiManifest): void {
     }
 
     if (!Number.isInteger(schema.schema_id) || schema.schema_id <= 0) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "types." + name + ".schema_id",
         "ABI schema id must be a positive integer",
@@ -786,7 +1219,7 @@ function check_manifest_types(manifest: AbiManifest): void {
     }
 
     if (schema_ids.has(schema.schema_id)) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         "types." + name + ".schema_id",
         "ABI schema ids must be unique",
@@ -810,7 +1243,7 @@ function check_manifest_schema(
 
     for (const field of schema.fields) {
       if (field_names.has(field.name)) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           path + ".fields",
           "ABI struct field names must be unique",
@@ -826,7 +1259,7 @@ function check_manifest_schema(
       offset = align_to(offset, layout.align);
 
       if (field.offset !== offset) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           path + ".fields." + field.name + ".offset",
           "ABI struct field offset does not match its schema",
@@ -857,7 +1290,7 @@ function check_manifest_schema(
       const union_case = schema.cases[index];
 
       if (!union_case) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           path + ".cases." + index.toString(),
           "Missing ABI union case",
@@ -865,7 +1298,7 @@ function check_manifest_schema(
       }
 
       if (case_names.has(union_case.name)) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           path + ".cases",
           "ABI union case names must be unique",
@@ -875,7 +1308,7 @@ function check_manifest_schema(
       case_names.add(union_case.name);
 
       if (union_case.tag_value !== index) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_manifest",
           path + ".cases." + index.toString() + ".tag_value",
           "ABI union tag values must follow case order",
@@ -893,7 +1326,7 @@ function check_manifest_schema(
       }
     }
 
-    check_schema_layout(schema, align_to(8 + max_payload, 8), 8, path);
+    check_schema_layout(schema, align_to(4 + max_payload, 8), 8, path);
     return;
   }
 
@@ -905,7 +1338,7 @@ function check_manifest_schema(
     );
 
     if (!Number.isInteger(schema.length) || schema.length < 0) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path + ".length",
         "ABI fixed array length must be a non-negative integer",
@@ -918,7 +1351,7 @@ function check_manifest_schema(
     );
 
     if (schema.name !== expected_name) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path + ".name",
         "ABI fixed array name does not match its element schema and length",
@@ -929,7 +1362,7 @@ function check_manifest_schema(
     const size = stride * schema.length;
 
     if (!Number.isSafeInteger(size)) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path + ".size",
         "ABI fixed array size exceeds JavaScript's safe integer range",
@@ -937,7 +1370,7 @@ function check_manifest_schema(
     }
 
     if (schema.stride !== stride) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path + ".stride",
         "ABI fixed array stride does not match its element schema",
@@ -949,7 +1382,7 @@ function check_manifest_schema(
   }
 
   schema satisfies never;
-  throw new IxAbiError("invalid_manifest", path, "Unknown ABI schema tag");
+  throw new DuckAbiError("invalid_manifest", path, "Unknown ABI schema tag");
 }
 
 function check_schema_layout(
@@ -959,7 +1392,7 @@ function check_schema_layout(
   path: string,
 ): void {
   if (schema.size !== expected_size) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_manifest",
       path + ".size",
       "ABI schema size does not match its structure",
@@ -967,7 +1400,7 @@ function check_schema_layout(
   }
 
   if (schema.align !== expected_align) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_manifest",
       path + ".align",
       "ABI schema alignment does not match its structure",
@@ -993,8 +1426,9 @@ function manifest_type_ref_layout(
   }
 
   if (
-    type.tag === "i32" || type.tag === "text" || type.tag === "bytes" ||
-    type.tag === "i32_slice" || type.tag === "text_slice"
+    type.tag === "i32" || type.tag === "f32" || type.tag === "text" ||
+    type.tag === "bytes" || type.tag === "i32_slice" ||
+    type.tag === "text_slice"
   ) {
     return { size: 4, align: 4 };
   }
@@ -1003,11 +1437,22 @@ function manifest_type_ref_layout(
     const schema = manifest.types[type.name];
 
     if (!schema || schema.name !== type.name) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path,
         "ABI type reference names an unknown schema: " + type.name,
       );
+    }
+
+    if (type.indirect) {
+      if (schema.tag !== "struct" && schema.tag !== "array") {
+        throw new DuckAbiError(
+          "invalid_manifest",
+          path,
+          "Only struct and array ABI references can be indirect",
+        );
+      }
+      return { size: 4, align: 4 };
     }
 
     if (schema.tag === "struct" || schema.tag === "array") {
@@ -1017,7 +1462,27 @@ function manifest_type_ref_layout(
     return { size: 4, align: 4 };
   }
 
-  throw new IxAbiError("invalid_manifest", path, "Unknown ABI type reference");
+  throw new DuckAbiError(
+    "invalid_manifest",
+    path,
+    "Unknown ABI type reference",
+  );
+}
+
+function same_abi_type_ref(left: AbiTypeRef, right: AbiTypeRef): boolean {
+  if (left.tag !== right.tag) {
+    return false;
+  }
+
+  if (left.tag === "named" && right.tag === "named") {
+    return left.name === right.name && left.indirect === right.indirect;
+  }
+
+  if (left.tag === "resource" && right.tag === "resource") {
+    return left.effect === right.effect;
+  }
+
+  return true;
 }
 
 function check_effect_requirement(
@@ -1028,7 +1493,7 @@ function check_effect_requirement(
   const effect = manifest.effects[requirement.effect];
 
   if (!effect || !effect.operations[requirement.operation]) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_manifest",
       path,
       "Effect requirement references an unknown operation: " +
@@ -1043,7 +1508,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
   const free_value = instance.exports[manifest.exports.free];
 
   if (!(memory_value instanceof WebAssembly.Memory)) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "missing_export",
       "memory",
       "Missing managed memory export",
@@ -1051,7 +1516,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
   }
 
   if (typeof alloc_value !== "function" || typeof free_value !== "function") {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "missing_export",
       "allocator",
       "Missing managed allocator exports",
@@ -1066,7 +1531,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     const ptr = alloc_export(size, alignment);
 
     if (typeof ptr !== "number" || ptr <= 0) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "out_of_memory",
         "allocator",
         "ABI allocation failed",
@@ -1080,7 +1545,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     free_export(ptr);
   }
 
-  function decode_raw(type: AbiTypeRef, raw: unknown, path: string): IxValue {
+  function decode_raw(type: AbiTypeRef, raw: unknown, path: string): DuckValue {
     if (type.tag === "i32") {
       if (typeof raw !== "number") {
         throw type_error(path, "i32");
@@ -1095,6 +1560,14 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       }
 
       return raw;
+    }
+
+    if (type.tag === "f32") {
+      if (typeof raw !== "number") {
+        throw type_error(path, "f32 number");
+      }
+
+      return Math.fround(raw);
     }
 
     if (type.tag === "unit") {
@@ -1112,7 +1585,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     type: AbiTypeRef,
     ptr: number,
     path: string,
-  ): IxValue {
+  ): DuckValue {
     check_pointer(memory, ptr, 4, path);
     const view = new DataView(memory.buffer);
 
@@ -1128,7 +1601,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       try {
         return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       } catch (error) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_utf8",
           path,
           "Invalid UTF-8 Text: " + String(error),
@@ -1139,7 +1612,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     if (type.tag === "i32_slice" || type.tag === "text_slice") {
       const length = view.getUint32(ptr, true);
       check_pointer(memory, ptr + 4, length * 4, path);
-      const result: IxValue[] = [];
+      const result: DuckValue[] = [];
 
       for (let index = 0; index < length; index += 1) {
         const value = view.getUint32(ptr + 4 + index * 4, true);
@@ -1165,7 +1638,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     }
 
     if (type.tag !== "named") {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "type_mismatch",
         path,
         "Unsupported ABI pointer type",
@@ -1175,7 +1648,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     const schema = manifest.types[type.name];
 
     if (!schema) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path,
         "Missing ABI schema: " + type.name,
@@ -1190,18 +1663,28 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     ptr: number,
     path: string,
     view: DataView,
-  ): IxValue {
+  ): DuckValue {
     if (schema.tag === "struct") {
       check_pointer(memory, ptr, schema.size, path);
-      const result: { [name: string]: IxValue } = {};
+      const result: DuckValue[] = [];
 
-      for (const field of schema.fields) {
-        result[field.name] = decode_slot(
+      for (let index = 0; index < schema.fields.length; index += 1) {
+        const field = schema.fields[index];
+
+        if (field === undefined) {
+          throw new DuckAbiError(
+            "invalid_manifest",
+            path,
+            "Missing struct field schema " + index.toString(),
+          );
+        }
+
+        result.push(decode_slot(
           field.type,
           ptr + field.offset,
-          path + "." + field.name,
+          path + "[" + index.toString() + "]",
           view,
-        );
+        ));
       }
 
       return result;
@@ -1209,7 +1692,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
 
     if (schema.tag === "array") {
       check_pointer(memory, ptr, schema.size, path);
-      const result: IxValue[] = [];
+      const result: DuckValue[] = [];
 
       for (let index = 0; index < schema.length; index += 1) {
         result.push(
@@ -1230,14 +1713,14 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     const union_case = schema.cases[tag_value];
 
     if (!union_case) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_tag",
         path,
         "Invalid union tag " + tag_value.toString(),
       );
     }
 
-    const result: { tag: string; value?: IxValue } = { tag: union_case.name };
+    const result: { tag: string; value?: DuckValue } = { tag: union_case.name };
 
     if (union_case.payload.tag !== "unit") {
       result.value = decode_slot(
@@ -1256,13 +1739,17 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     address: number,
     path: string,
     view: DataView,
-  ): IxValue {
+  ): DuckValue {
     if (type.tag === "i32") {
       return view.getInt32(address, true);
     }
 
     if (type.tag === "i64") {
       return view.getBigInt64(address, true);
+    }
+
+    if (type.tag === "f32") {
+      return view.getFloat32(address, true);
     }
 
     if (type.tag === "unit") {
@@ -1272,7 +1759,10 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     if (type.tag === "named") {
       const schema = manifest.types[type.name];
 
-      if (schema && (schema.tag === "struct" || schema.tag === "array")) {
+      if (
+        schema && !type.indirect &&
+        (schema.tag === "struct" || schema.tag === "array")
+      ) {
         return decode_named(schema, address, path, view);
       }
     }
@@ -1282,7 +1772,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
 
   function encode_raw(
     type: AbiTypeRef,
-    value: IxValue,
+    value: DuckValue,
     path: string,
   ): number | bigint {
     if (type.tag === "i32") {
@@ -1301,6 +1791,14 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       return value;
     }
 
+    if (type.tag === "f32") {
+      if (typeof value !== "number") {
+        throw type_error(path, "number");
+      }
+
+      return Math.fround(value);
+    }
+
     if (type.tag === "unit") {
       return 0;
     }
@@ -1310,7 +1808,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
 
   function encode_pointer(
     type: AbiTypeRef,
-    value: IxValue,
+    value: DuckValue,
     path: string,
   ): number {
     if (type.tag === "text" || type.tag === "bytes") {
@@ -1361,7 +1859,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
         } else {
           const text_ptr = encode_pointer(
             { tag: "text" },
-            item as IxValue,
+            item as DuckValue,
             path,
           );
           new DataView(memory.buffer).setUint32(
@@ -1382,7 +1880,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     const schema = manifest.types[type.name];
 
     if (!schema) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_manifest",
         path,
         "Missing ABI schema: " + type.name,
@@ -1404,22 +1902,39 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
   function encode_named(
     schema: AbiType,
     ptr: number,
-    value: IxValue,
+    value: DuckValue,
     path: string,
   ): void {
     if (schema.tag === "struct") {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        throw type_error(path, "object");
+      if (!Array.isArray(value)) {
+        throw type_error(path, "exact product array");
       }
 
-      const object = value as { [name: string]: IxValue };
+      if (value.length !== schema.fields.length) {
+        throw new DuckAbiError(
+          "array_length_mismatch",
+          path,
+          "Expected product length " + schema.fields.length.toString() +
+            ", got " + value.length.toString(),
+        );
+      }
 
-      for (const field of schema.fields) {
+      for (let index = 0; index < schema.fields.length; index += 1) {
+        const field = schema.fields[index];
+
+        if (field === undefined) {
+          throw new DuckAbiError(
+            "invalid_manifest",
+            path,
+            "Missing struct field schema " + index.toString(),
+          );
+        }
+
         encode_slot(
           field.type,
           ptr + field.offset,
-          object[field.name],
-          path + "." + field.name,
+          value[index],
+          path + "[" + index.toString() + "]",
         );
       }
 
@@ -1432,7 +1947,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       }
 
       if (value.length !== schema.length) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "array_length_mismatch",
           path,
           "Expected array length " + schema.length.toString() + ", got " +
@@ -1458,11 +1973,11 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       throw type_error(path, "tagged union object");
     }
 
-    const union = value as { tag: string; value?: IxValue };
+    const union = value as { tag: string; value?: DuckValue };
     const union_case = schema.cases.find((item) => item.name === union.tag);
 
     if (!union_case) {
-      throw new IxAbiError(
+      throw new DuckAbiError(
         "invalid_tag",
         path,
         "Unknown union case: " + union.tag,
@@ -1484,7 +1999,7 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
   function encode_slot(
     type: AbiTypeRef,
     address: number,
-    value: IxValue,
+    value: DuckValue,
     path: string,
   ): void {
     if (type.tag === "i32") {
@@ -1505,6 +2020,15 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
       return;
     }
 
+    if (type.tag === "f32") {
+      if (typeof value !== "number") {
+        throw type_error(path, "number");
+      }
+
+      new DataView(memory.buffer).setFloat32(address, value, true);
+      return;
+    }
+
     if (type.tag === "unit") {
       return;
     }
@@ -1512,7 +2036,10 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
     if (type.tag === "named") {
       const schema = manifest.types[type.name];
 
-      if (schema && (schema.tag === "struct" || schema.tag === "array")) {
+      if (
+        schema && !type.indirect &&
+        (schema.tag === "struct" || schema.tag === "array")
+      ) {
         encode_named(schema, address, value, path);
         return;
       }
@@ -1566,14 +2093,20 @@ function abi_runtime(instance: WebAssembly.Instance, manifest: AbiManifest) {
   }
 
   function free_slot(type: AbiTypeRef, address: number, view: DataView): void {
-    if (type.tag === "i32" || type.tag === "i64" || type.tag === "unit") {
+    if (
+      type.tag === "i32" || type.tag === "i64" || type.tag === "f32" ||
+      type.tag === "unit"
+    ) {
       return;
     }
 
     if (type.tag === "named") {
       const schema = manifest.types[type.name];
 
-      if (schema && (schema.tag === "struct" || schema.tag === "array")) {
+      if (
+        schema && !type.indirect &&
+        (schema.tag === "struct" || schema.tag === "array")
+      ) {
         free_named_children(schema, address);
         return;
       }
@@ -1594,13 +2127,13 @@ function check_pointer(
   if (
     !Number.isInteger(ptr) || ptr < 0 || !Number.isInteger(length) || length < 0
   ) {
-    throw new IxAbiError("out_of_bounds", path, "Invalid memory range");
+    throw new DuckAbiError("out_of_bounds", path, "Invalid memory range");
   }
 
   const end = ptr + length;
 
   if (end < ptr || end > memory.buffer.byteLength) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "out_of_bounds",
       path,
       "Memory range is out of bounds",
@@ -1608,6 +2141,6 @@ function check_pointer(
   }
 }
 
-function type_error(path: string, expected: string): IxAbiError {
-  return new IxAbiError("type_mismatch", path, "Expected " + expected);
+function type_error(path: string, expected: string): DuckAbiError {
+  return new DuckAbiError("type_mismatch", path, "Expected " + expected);
 }

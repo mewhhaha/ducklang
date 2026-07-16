@@ -1,6 +1,6 @@
 # Grep Case Study
 
-This directory contains a small literal grep command-line program in Ix. It
+This directory contains a small literal grep command-line program in Duck. It
 accepts exactly `pattern path`, reads the file in 64 KiB chunks, and writes each
 matching line (including its newline when present) as raw bytes. Exit status is
 `0` when at least one line matches, `1` when none match, and `2` for an invalid
@@ -13,12 +13,18 @@ and `slice` currently allocate and copy, and matching is a naive byte search;
 this is a correctness slice, not a performance claim.
 
 The outer read loop is an unbounded, value-producing `loop`: each terminal path
-uses `break` to return the final exit status. Pattern comparison and output
-handling are separate Ix functions, while the loop owns the rolling buffer and
-stream state. Regexes, directory traversal, ignore files, diagnostics, and
-richer ripgrep options are not included. The program returns status `2` for
-expected I/O errors but cannot format their `Text` payloads for the
-byte-oriented `Stderr` capability yet.
+uses `break` to return the final exit status. The rolling buffer, its next
+unconsumed byte, EOF state, and accumulated status are explicit locals whose
+types are inferred from their values and uses. The `scan` parameter, result, and
+effect types are inferred as well. Guard clauses keep the read, match, and write
+transitions on one shallow path, and the same path handles terminated and
+unterminated final lines.
+
+The top-level file scope brackets the scan: it closes the reader after every
+structured scan result and never closes when opening failed. Regexes, directory
+traversal, ignore files, diagnostics, and richer ripgrep options are not
+included. The program returns status `2` for expected I/O errors but cannot
+format their `Text` payloads for the byte-oriented `Stderr` capability yet.
 
 ## Run
 
@@ -38,11 +44,11 @@ deno test --no-check --allow-read --allow-run \
 
 ## Boundary
 
-`host.ix` declares six capabilities:
+`host.duck` declares six capabilities:
 
 - `Process` provides indexed raw argv and the current directory.
 - `Walk` provides an unfiltered depth-first cursor with explicit enter/leave
-  events and pruning. Ix will own hidden-file, glob, and ignore policy.
+  events and pruning. Duck will own hidden-file, glob, and ignore policy.
 - `FileReader` owns one synchronous stream per runner.
 - `Stdin`, `Stdout`, and `Stderr` exchange byte chunks and terminal facts.
 
@@ -50,8 +56,8 @@ Expected I/O failures are typed union values. ABI violations and invalid host
 state are exceptions. Paths are UTF-8 `Text` in this Deno-first slice. File and
 stream payloads are owned `Bytes`; output calls receive bounded borrows.
 
-The live and mock implementations are selected by the TypeScript runner. The Ix
-module receives only the capability objects supplied through `Init`.
+The live and mock implementations are selected by the TypeScript runner. The
+Duck module receives only the capability objects supplied through `Init`.
 
 The current single-file program exercises `Process`, `FileReader`, and `Stdout`.
 `Walk`, `Stdin`, and `Stderr` remain part of the case study's minimal

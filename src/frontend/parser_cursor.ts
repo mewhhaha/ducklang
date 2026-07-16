@@ -6,6 +6,12 @@ import type { SourceSpan } from "./syntax.ts";
 import type { SyntaxDiagnostic } from "./syntax.ts";
 import { has_source_span, mark_source_span } from "./syntax.ts";
 import { record_node_name_sites } from "./name_site.ts";
+import {
+  create_fixity_table,
+  type FixityTable,
+  type InfixFixity,
+  type PrefixFixity,
+} from "./fixity.ts";
 
 export type RecoveryInterval = {
   diagnostic: SyntaxDiagnostic;
@@ -39,9 +45,22 @@ export class ParserCursor {
   protected recovering = false;
   protected recovery_diagnostics: SyntaxDiagnostic[] | undefined;
   protected recovery_intervals: RecoveryInterval[] | undefined;
+  protected fixities: FixityTable = create_fixity_table();
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
+  }
+
+  protected set_fixities(fixities: FixityTable): void {
+    this.fixities = fixities;
+  }
+
+  protected infix_fixity(operator: string): InfixFixity | undefined {
+    return this.fixities.infix.get(operator);
+  }
+
+  protected prefix_fixity(operator: string): PrefixFixity | undefined {
+    return this.fixities.prefix.get(operator);
   }
 
   protected begin_recovery(
@@ -312,12 +331,18 @@ export class ParserCursor {
       "continue",
       "declare",
       "effect",
+      "extend",
       "for",
       "if",
       "import",
       "let",
       "module",
       "return",
+      "duck",
+      "infix",
+      "infixl",
+      "infixr",
+      "prefix",
       "type",
     ]);
 

@@ -11,7 +11,7 @@ import {
   static_owner_value_materializes,
 } from "../../mutable_static_owner.ts";
 import { runtime_aggregate_type_expr } from "../../runtime_aggregate.ts";
-import { set_local } from "../util.ts";
+import { set_local } from "../../emit/local.ts";
 import { create_child_core_ctx, create_empty_core_ctx } from "./context.ts";
 import {
   clear_drop_analysis_local_facts,
@@ -96,9 +96,8 @@ export function collect_stmt_locals_for_proof(
     }
 
     if (core_unsafe_scratch_return_probe_error(error)) {
-      if (bind_unsafe_scratch_return_for_proof(backend, stmt, ctx)) {
-        return;
-      }
+      bind_unsafe_scratch_return_for_proof(backend, stmt, ctx);
+      return;
     }
 
     throw error;
@@ -155,6 +154,15 @@ function collect_drop_analysis_stmt_locals(
       );
 
     if (static_value) {
+      if (
+        stmt.kind === "let" && ctx.mutable_bindings &&
+        ctx.mutable_bindings.has(stmt.name) &&
+        backend.struct.static_struct_value(static_value, ctx) === undefined
+      ) {
+        collect_stmt_locals_for_proof(backend, stmt, ctx);
+        return;
+      }
+
       let materialized_struct_owner = false;
       if (
         stmt.kind === "let" &&
@@ -179,6 +187,12 @@ function collect_drop_analysis_stmt_locals(
       if (
         stmt.kind === "let" &&
         (materialized_struct_owner ||
+          (stmt.annotation !== undefined &&
+            core_runtime_aggregate_type_for_ownership(
+                backend,
+                static_value,
+                ctx,
+              ) !== undefined) ||
           (value.tag !== "scratch" &&
             static_owner_value_materializes(static_value, ctx)) ||
           (mutable_static_owner_value_materializes(static_value) &&
@@ -257,6 +271,14 @@ function collect_drop_analysis_stmt_locals(
     );
 
     if (static_value) {
+      if (
+        ctx.mutable_bindings && ctx.mutable_bindings.has(stmt.name) &&
+        backend.struct.static_struct_value(static_value, ctx) === undefined
+      ) {
+        collect_stmt_locals_for_proof(backend, stmt, ctx);
+        return;
+      }
+
       if (
         (value.tag !== "scratch" &&
           static_owner_value_materializes(static_value, ctx)) ||
@@ -588,7 +610,9 @@ function core_runtime_aggregate_ownership_probe_error(
   }
 
   if (
-    error.message === "Core runtime aggregate requires a static struct type"
+    error.message.startsWith(
+      "Core runtime aggregate requires a static struct type",
+    )
   ) {
     return true;
   }
@@ -605,6 +629,10 @@ function collect_expr_locals_for_proof(
     backend.local_collect.collect_expr_locals(expr, ctx);
   } catch (error) {
     if (core_unknown_host_boundary_probe_error(error)) {
+      return;
+    }
+
+    if (core_unsafe_scratch_return_probe_error(error)) {
       return;
     }
 

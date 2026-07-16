@@ -1,42 +1,73 @@
 run:
   deno run --allow-read --allow-write main.ts
 
-ix *args:
-  deno run --allow-read --allow-write ix.ts {{args}}
+duck *args:
+  deno run --allow-read --allow-write --allow-run=wat2wasm duck.ts {{args}}
 
 wasm wat_file="build/out.wat" wasm_file="build/out.wasm":
   mkdir -p build
   wat2wasm {{wat_file}} -o {{wasm_file}}
 
 fmt:
-  deno fmt *.ts src case-studies
+  deno fmt
 
 fmt-check:
-  deno fmt --check *.ts src case-studies
+  deno fmt --check
 
 lint:
   deno lint --ignore=.claude
 
-test:
-  deno test --no-check --allow-read --allow-write --allow-run --ignore=.claude
+typecheck:
+  deno check main.ts duck.ts
+  deno check scripts/*.ts
+  rg --files src case-studies examples -g '*.test.ts' -0 | xargs -0 deno check
+
+architecture-report:
+  deno run --allow-read scripts/dependency-boundaries.ts
+
+architecture-check:
+  deno run --allow-read scripts/dependency-boundaries.ts --check >/dev/null
+
+architecture-baseline:
+  deno run --allow-read --allow-write scripts/dependency-boundaries.ts --write-baseline
+
+source-test:
+  deno test --allow-read --allow-write --allow-run src examples scripts
+
+case-studies:
+  deno test --allow-read --allow-write --allow-run case-studies
+
+case-study study:
+  deno test --allow-read --allow-write --allow-run case-studies/{{study}}
+
+test: source-test case-studies
 
 examples:
-  deno test --no-check --allow-read --allow-write --allow-run examples/examples.test.ts
+  deno test --allow-read --allow-write --allow-run examples/examples.test.ts
 
-helix-grammar:
-  cd tree-sitter-ix && tree-sitter generate
-  cd tree-sitter-ix && tree-sitter test
-  cd tree-sitter-ix && rg --files ../examples -g '*.ix' -0 | xargs -0 tree-sitter parse --quiet --stat
-  cd tree-sitter-ix && tree-sitter query queries/highlights.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/indents.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/textobjects.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
-  cd tree-sitter-ix && tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.ix ../examples/handlers/01_local_counter.ix >/dev/null
+grammar-check:
+  deno run --allow-read --allow-write --allow-run=tree-sitter scripts/check-generated-grammar.ts
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter test
+  cd tree-sitter-duck && rg --files ../examples -g '*.duck' -0 | xargs -0 env XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter parse --quiet --stat
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter parse --quiet --stat ../src/frontend/prelude*.duck
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/highlights.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/indents.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/textobjects.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+  cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
+
+quality: fmt-check lint typecheck architecture-check
+
+performance:
+  deno task compiler:perf
+  deno task lsp:perf
+
+helix-grammar: grammar-check
 
 helix-register: helix-grammar
   scripts/setup_helix.sh
 
 install: helix-register
 
-check: fmt-check lint test
+check: quality grammar-check source-test case-studies performance

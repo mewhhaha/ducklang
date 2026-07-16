@@ -1,10 +1,10 @@
 import {
-  IxAbiError,
-  type IxEffectObject,
-  type IxHostInstance,
-  type IxInitValue,
-  IxRunner,
-  type IxValue,
+  DuckAbiError,
+  type DuckEffectObject,
+  type DuckHostInstance,
+  type DuckInitValue,
+  DuckRunner,
+  type DuckValue,
 } from "../../src/frontend.ts";
 
 export const io_error_code = {
@@ -15,18 +15,18 @@ export const io_error_code = {
   other: 5,
 } as const;
 
-export type GrepInit = IxInitValue & {
-  process: IxEffectObject;
-  walk: IxEffectObject;
-  file_reader: IxEffectObject;
-  stdin: IxEffectObject;
-  stdout: IxEffectObject;
-  stderr: IxEffectObject;
+export type GrepInit = DuckInitValue & {
+  process: DuckEffectObject;
+  walk: DuckEffectObject;
+  file_reader: DuckEffectObject;
+  stdin: DuckEffectObject;
+  stdout: DuckEffectObject;
+  stderr: DuckEffectObject;
 };
 
 export type GrepRunner = {
   init: GrepInit;
-  run: (program: IxHostInstance) => IxValue;
+  run: (program: DuckHostInstance) => DuckValue;
   dispose: () => void;
 };
 
@@ -65,7 +65,7 @@ type WalkFrame = {
 };
 
 type DisposableEffect = {
-  effect: IxEffectObject;
+  effect: DuckEffectObject;
   dispose: () => void;
 };
 
@@ -132,14 +132,14 @@ function create_runner(
   init: GrepInit,
   disposers: Array<() => void>,
 ): GrepRunner {
-  const runner = IxRunner(init);
+  const runner = DuckRunner(init);
   let disposed = false;
 
   return {
     init,
-    run(program: IxHostInstance): IxValue {
+    run(program: DuckHostInstance): DuckValue {
       if (disposed) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "disposed",
           "grep.runner",
           "Grep runner is disposed",
@@ -162,19 +162,19 @@ function create_runner(
   };
 }
 
-function create_process_effect(args: string[], cwd: string): IxEffectObject {
+function create_process_effect(args: string[], cwd: string): DuckEffectObject {
   const copied_args = [...args];
 
   return {
     arg_count(): number {
       return copied_args.length;
     },
-    arg(index_value: IxValue): string {
+    arg(index_value: DuckValue): string {
       const index = expect_i32(index_value, "Process.arg index");
       const value = copied_args[index];
 
       if (value === undefined) {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_argument",
           "Process.arg",
           "Argument index is out of bounds: " + index.toString(),
@@ -191,7 +191,7 @@ function create_process_effect(args: string[], cwd: string): IxEffectObject {
 
 function create_walk_effect(backend: WalkBackend): DisposableEffect {
   const frames: WalkFrame[] = [];
-  const pending: IxValue[] = [];
+  const pending: DuckValue[] = [];
   let active = false;
   let can_prune = false;
 
@@ -202,8 +202,8 @@ function create_walk_effect(backend: WalkBackend): DisposableEffect {
     can_prune = false;
   }
 
-  const effect: IxEffectObject = {
-    begin(path_value: IxValue): IxValue {
+  const effect: DuckEffectObject = {
+    begin(path_value: DuckValue): DuckValue {
       const path = expect_text(path_value, "Walk.begin path");
 
       if (active) {
@@ -232,7 +232,7 @@ function create_walk_effect(backend: WalkBackend): DisposableEffect {
         return error_result(path, error);
       }
     },
-    next(): IxValue {
+    next(): DuckValue {
       if (!active) {
         return error_result(
           "",
@@ -334,7 +334,7 @@ function create_walk_effect(backend: WalkBackend): DisposableEffect {
       const frame = frames[frames.length - 1];
 
       if (!active || !can_prune || !frame || frame.state !== "children") {
-        throw new IxAbiError(
+        throw new DuckAbiError(
           "invalid_state",
           "Walk.prune",
           "Walk.prune is valid only immediately after an enter event",
@@ -377,7 +377,7 @@ function entry_event(
   name: string,
   depth: number,
   size: bigint,
-): IxValue {
+): DuckValue {
   let tag: string = kind;
 
   if (kind === "directory") {
@@ -392,8 +392,8 @@ function walk_entry(
   name: string,
   depth: number,
   size: bigint,
-): IxValue {
-  return { path, name, depth, size };
+): DuckValue {
+  return [path, name, depth, size];
 }
 
 function deno_walk_backend(): WalkBackend {
@@ -501,8 +501,8 @@ function create_live_file_reader(): DisposableEffect {
     path = "";
   }
 
-  const effect: IxEffectObject = {
-    open(path_value: IxValue): IxValue {
+  const effect: DuckEffectObject = {
+    open(path_value: DuckValue): DuckValue {
       const requested = expect_text(path_value, "FileReader.open path");
 
       if (file) {
@@ -521,7 +521,7 @@ function create_live_file_reader(): DisposableEffect {
         return error_result(requested, error);
       }
     },
-    read(max_value: IxValue): IxValue {
+    read(max_value: DuckValue): DuckValue {
       const max = expect_positive_size(max_value, "FileReader.read max_bytes");
 
       if (!file) {
@@ -571,8 +571,8 @@ function create_mock_file_reader(
     path = "";
   }
 
-  const effect: IxEffectObject = {
-    open(path_value: IxValue): IxValue {
+  const effect: DuckEffectObject = {
+    open(path_value: DuckValue): DuckValue {
       const requested = expect_text(path_value, "FileReader.open path");
 
       if (bytes) {
@@ -597,7 +597,7 @@ function create_mock_file_reader(
       path = requested;
       return { tag: "ok" };
     },
-    read(max_value: IxValue): IxValue {
+    read(max_value: DuckValue): DuckValue {
       const max = expect_positive_size(max_value, "FileReader.read max_bytes");
 
       if (!bytes) {
@@ -626,9 +626,9 @@ function create_mock_file_reader(
   return { effect, dispose: close };
 }
 
-function create_live_stdin(): IxEffectObject {
+function create_live_stdin(): DuckEffectObject {
   return {
-    read(max_value: IxValue): IxValue {
+    read(max_value: DuckValue): DuckValue {
       const max = expect_positive_size(max_value, "Stdin.read max_bytes");
 
       try {
@@ -658,11 +658,11 @@ function create_live_stdin(): IxEffectObject {
   };
 }
 
-function create_memory_input(input: Uint8Array): IxEffectObject {
+function create_memory_input(input: Uint8Array): DuckEffectObject {
   let offset = 0;
 
   return {
-    read(max_value: IxValue): IxValue {
+    read(max_value: DuckValue): DuckValue {
       const max = expect_positive_size(max_value, "Stdin.read max_bytes");
 
       if (offset >= input.byteLength) {
@@ -680,9 +680,9 @@ function create_memory_input(input: Uint8Array): IxEffectObject {
   };
 }
 
-function create_live_output(stream: "stdout" | "stderr"): IxEffectObject {
+function create_live_output(stream: "stdout" | "stderr"): DuckEffectObject {
   return {
-    write(value: IxValue): IxValue {
+    write(value: DuckValue): DuckValue {
       const bytes = expect_bytes(value, stream + ".write bytes");
 
       try {
@@ -730,9 +730,9 @@ function create_live_output(stream: "stdout" | "stderr"): IxEffectObject {
   };
 }
 
-function create_memory_output(output: Uint8Array[]): IxEffectObject {
+function create_memory_output(output: Uint8Array[]): DuckEffectObject {
   return {
-    write(value: IxValue): IxValue {
+    write(value: DuckValue): DuckValue {
       output.push(expect_bytes(value, "mock output bytes").slice());
       return { tag: "ok" };
     },
@@ -746,22 +746,18 @@ function error_result(
   path: string,
   error: unknown,
   code?: number,
-): IxValue {
+): DuckValue {
   return { tag: "err", value: io_error(path, error, code) };
 }
 
-function io_error(path: string, error: unknown, code?: number): IxValue {
+function io_error(path: string, error: unknown, code?: number): DuckValue {
   let resolved_code = code;
 
   if (resolved_code === undefined) {
     resolved_code = classify_io_error(error);
   }
 
-  return {
-    code: resolved_code,
-    path,
-    message: error_message(error),
-  };
+  return [resolved_code, path, error_message(error)];
 }
 
 function classify_io_error(error: unknown): number {
@@ -784,19 +780,19 @@ function error_message(error: unknown): string {
   return String(error);
 }
 
-function expect_i32(value: IxValue, name: string): number {
+function expect_i32(value: DuckValue, name: string): number {
   if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new IxAbiError("type_mismatch", name, name + " must be an integer");
+    throw new DuckAbiError("type_mismatch", name, name + " must be an integer");
   }
 
   return value;
 }
 
-function expect_positive_size(value: IxValue, name: string): number {
+function expect_positive_size(value: DuckValue, name: string): number {
   const size = expect_i32(value, name);
 
   if (size <= 0) {
-    throw new IxAbiError(
+    throw new DuckAbiError(
       "invalid_argument",
       name,
       name + " must be positive",
@@ -806,17 +802,17 @@ function expect_positive_size(value: IxValue, name: string): number {
   return size;
 }
 
-function expect_text(value: IxValue, name: string): string {
+function expect_text(value: DuckValue, name: string): string {
   if (typeof value !== "string") {
-    throw new IxAbiError("type_mismatch", name, name + " must be Text");
+    throw new DuckAbiError("type_mismatch", name, name + " must be Text");
   }
 
   return value;
 }
 
-function expect_bytes(value: IxValue, name: string): Uint8Array {
+function expect_bytes(value: DuckValue, name: string): Uint8Array {
   if (!(value instanceof Uint8Array)) {
-    throw new IxAbiError("type_mismatch", name, name + " must be Bytes");
+    throw new DuckAbiError("type_mismatch", name, name + " must be Bytes");
   }
 
   return value;

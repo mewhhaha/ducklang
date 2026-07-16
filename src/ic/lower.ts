@@ -52,7 +52,7 @@ function lower(ic: Ic, env: Map<string, ValType>): ExprNode {
         );
       }
 
-      if (ic.prim === "i32.select" || ic.prim === "i64.select") {
+      if (ic.prim.endsWith(".select")) {
         const then_branch = args[0];
         const else_branch = args[1];
         const cond = args[2];

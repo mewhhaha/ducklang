@@ -88,7 +88,7 @@ Deno.test("powertools trace records successful frontend fact checks", () => {
 
 Deno.test("powertools WAT view uses the scalar IC Source route", () => {
   const text = "40 + 2\n";
-  const result = view_stage("file:///scratch/scalar.ix", text, "wat");
+  const result = view_stage("file:///scratch/scalar.duck", text, "wat");
 
   assert_equals(result, {
     ok: true,
@@ -97,7 +97,7 @@ Deno.test("powertools WAT view uses the scalar IC Source route", () => {
 });
 
 Deno.test("powertools discovers compile expand and runnable code lenses", () => {
-  const uri = "file:///workspace/examples/compile_time/01_comptime_adder.ix";
+  const uri = "file:///workspace/examples/compile_time/01_comptime_adder.duck";
   const lenses = powertools_code_lenses(uri, adder, "utf-16");
 
   assert_equals(lenses.map((lens) => lens.title), [
@@ -107,7 +107,7 @@ Deno.test("powertools discovers compile expand and runnable code lenses", () => 
   ]);
 
   const run = route_execute_command({
-    command: "ix.runExample",
+    command: "duck.runExample",
     uri,
     text: adder,
     encoding: "utf-16",
@@ -122,14 +122,14 @@ Deno.test("powertools discovers compile expand and runnable code lenses", () => 
         "--allow-write",
         "examples/examples.test.ts",
         "--filter",
-        "example runs: examples/compile_time/01_comptime_adder.ix",
+        "example runs: examples/compile_time/01_comptime_adder.duck",
       ],
     },
   });
 });
 
 Deno.test("powertools returns structured errors for broken and unsupported buffers", () => {
-  const broken = view_stage("file:///scratch/broken.ix", "let =", "wat");
+  const broken = view_stage("file:///scratch/broken.duck", "let =", "wat");
   assert_equals(broken.ok, false);
 
   if (!broken.ok) {
@@ -137,7 +137,7 @@ Deno.test("powertools returns structured errors for broken and unsupported buffe
   }
 
   const unsupported = view_stage(
-    "file:///workspace/examples/basics/08_dynamic_condition.ix",
+    "file:///workspace/examples/basics/08_dynamic_condition.duck",
     "0",
     "expr",
   );

@@ -8,7 +8,7 @@ import {
   runtime_union_payload,
 } from "../runtime_union_payload.ts";
 import { static_type_value } from "../type_static.ts";
-import { runtime_union_type_size } from "./size.ts";
+import { runtime_union_type_layout } from "./size.ts";
 import type {
   RuntimeUnionCtx,
   RuntimeUnionHooks,
@@ -109,9 +109,13 @@ export function runtime_union_case_info<ctx extends RuntimeUnionCtx>(
     }
   }
 
+  const layout = runtime_union_type_layout(type_value, ctx);
+
   return {
     tag_value,
-    size: runtime_union_type_size(type_value, ctx),
+    size: layout.size,
+    align: layout.align,
+    payload_offset: layout.payload_offset,
     payload,
   };
 }

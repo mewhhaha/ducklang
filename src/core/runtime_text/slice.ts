@@ -1,7 +1,7 @@
 import { expect } from "../../expect.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
-import { indent_lines } from "../backend/util.ts";
+import { indent_lines } from "../emit/format.ts";
 import { closure_heap_global } from "../closure_runtime.ts";
 import { emit_runtime_text_slice_copy } from "./copy.ts";
 import {
@@ -130,10 +130,24 @@ export function emit_runtime_text_freeze_copy<ctx extends RuntimeTextEmitCtx>(
   text: CoreExpr,
   ctx: ctx,
   hooks: Pick<RuntimeTextHooks<ctx>, "emit_expr">,
+  allocation?: RuntimeTextFreezeAllocation,
 ): Wat {
   const text_wat = hooks.emit_expr(text, ctx);
-  return emit_runtime_text_freeze_copy_from_wat(subject, text_wat, ctx);
+  return emit_runtime_text_freeze_copy_from_wat(
+    subject,
+    text_wat,
+    ctx,
+    allocation,
+  );
 }
+
+export type RuntimeTextFreezeAllocation = {
+  reason: "runtime_bytes" | "runtime_text";
+  layout:
+    | "runtime_bytes.length_prefixed_u8"
+    | "runtime_text.length_prefixed_utf8";
+  emission_site: "runtime_bytes.freeze_copy" | "runtime_text.freeze_copy";
+};
 
 export function emit_runtime_text_freeze_copy_from_wat<
   ctx extends RuntimeTextEmitCtx,
@@ -141,12 +155,26 @@ export function emit_runtime_text_freeze_copy_from_wat<
   subject: CoreExpr,
   text_wat: Wat,
   ctx: ctx,
+  allocation?: RuntimeTextFreezeAllocation,
 ): Wat {
   const locals = runtime_text_slice_plan(ctx);
   declare_runtime_text_slice_locals(locals, ctx);
   const exit_label = "text_freeze_exit_" + locals.id.toString();
   const loop_label = "text_freeze_loop_" + locals.id.toString();
   ctx.heap.needed = true;
+  let reason: "runtime_bytes" | "runtime_text" = "runtime_text";
+  let layout:
+    | "runtime_bytes.length_prefixed_u8"
+    | "runtime_text.length_prefixed_utf8" = "runtime_text.length_prefixed_utf8";
+  let emission_site:
+    | "runtime_bytes.freeze_copy"
+    | "runtime_text.freeze_copy" = "runtime_text.freeze_copy";
+
+  if (allocation) {
+    reason = allocation.reason;
+    layout = allocation.layout;
+    emission_site = allocation.emission_site;
+  }
 
   return [
     text_wat,
@@ -163,9 +191,9 @@ export function emit_runtime_text_freeze_copy_from_wat<
       subject,
       "local.get $" + locals.slice_len + "\ni32.const 4\ni32.add",
       8,
-      "runtime_text",
-      "runtime_text.length_prefixed_utf8",
-      "runtime_text.freeze_copy",
+      reason,
+      layout,
+      emission_site,
     ),
     "local.set $" + locals.result,
     "local.get $" + locals.result,

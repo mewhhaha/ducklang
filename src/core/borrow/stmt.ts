@@ -21,6 +21,7 @@ import type {
   CoreBorrowUse,
 } from "./types.ts";
 import type { CoreBorrowViewResultScanner } from "./view_result.ts";
+import { dynamic_if_let_can_match } from "../union_static.ts";
 
 type CoreBorrowStmtScanner<ctx> = {
   scan_expr: ScanBorrowExpr<ctx>;
@@ -58,6 +59,12 @@ function scan_borrow_stmts_with_scanner<ctx>(
   aliases: CoreBorrowAliases,
   scanner: CoreBorrowStmtScanner<ctx>,
 ): void {
+  let statement_ctx = ctx;
+
+  if (hooks.block_ctx && hooks.collect_stmt_locals) {
+    statement_ctx = hooks.block_ctx(ctx);
+  }
+
   for (let index = 0; index < statements.length; index += 1) {
     const stmt = statements[index];
 
@@ -68,7 +75,7 @@ function scan_borrow_stmts_with_scanner<ctx>(
     if (index + 1 >= statements.length) {
       scan_borrow_stmt_with_scanner(
         stmt,
-        ctx,
+        statement_ctx,
         hooks,
         parent,
         state,
@@ -79,7 +86,7 @@ function scan_borrow_stmts_with_scanner<ctx>(
     } else {
       scan_borrow_stmt_with_scanner(
         stmt,
-        ctx,
+        statement_ctx,
         hooks,
         parent,
         state,
@@ -91,6 +98,15 @@ function scan_borrow_stmts_with_scanner<ctx>(
 
     if (core_stmt_definitely_exits_sequence(stmt)) {
       return;
+    }
+
+    if (
+      hooks.collect_stmt_locals && index + 1 < statements.length &&
+      stmt.tag !== "expr" && stmt.tag !== "return" &&
+      stmt.tag !== "break" && stmt.tag !== "continue" &&
+      stmt.tag !== "unsupported"
+    ) {
+      hooks.collect_stmt_locals(stmt, statement_ctx);
     }
   }
 }
@@ -214,9 +230,16 @@ function scan_borrow_stmt_with_scanner<ctx>(
       const scope = add_scope(state, "loop", undefined, parent);
       const body_aliases = clone_borrow_aliases(aliases);
       clear_borrow_alias(stmt.index, body_aliases);
+      let body_ctx = ctx;
+
+      if (hooks.block_ctx && hooks.collect_stmt_locals) {
+        body_ctx = hooks.block_ctx(ctx);
+        hooks.collect_stmt_locals({ ...stmt, body: [] }, body_ctx);
+      }
+
       scan_borrow_stmts_with_scanner(
         stmt.body,
-        ctx,
+        body_ctx,
         hooks,
         scope.id,
         state,
@@ -246,22 +269,30 @@ function scan_borrow_stmt_with_scanner<ctx>(
       const scope = add_scope(state, "loop", undefined, parent);
       const body_aliases = clone_borrow_aliases(aliases);
       clear_borrow_alias(stmt.item, body_aliases);
-      bind_collection_loop_item_owner_alias(
-        stmt.item,
-        stmt.collection,
-        scope.id,
-        ctx,
-        hooks,
-        body_aliases,
-      );
 
       if (stmt.index) {
         clear_borrow_alias(stmt.index, body_aliases);
       }
 
+      let body_ctx = ctx;
+
+      if (hooks.block_ctx && hooks.collect_stmt_locals) {
+        body_ctx = hooks.block_ctx(ctx);
+        hooks.collect_stmt_locals({ ...stmt, body: [] }, body_ctx);
+      }
+
+      bind_collection_loop_item_owner_alias(
+        stmt.item,
+        stmt.collection,
+        scope.id,
+        body_ctx,
+        hooks,
+        body_aliases,
+      );
+
       scan_borrow_stmts_with_scanner(
         stmt.body,
-        ctx,
+        body_ctx,
         hooks,
         scope.id,
         state,
@@ -378,16 +409,73 @@ function scan_borrow_stmt_with_scanner<ctx>(
         );
       }
 
-      scan_borrow_stmts_with_scanner(
-        stmt.body,
-        ctx,
-        hooks,
-        scope.id,
-        state,
-        "bounded",
-        body_aliases,
-        scanner,
-      );
+      let body_ctx = ctx;
+      let body_reachable = true;
+      const union_case = hooks.static_union_case?.(stmt.target, ctx);
+
+      if (union_case) {
+        if (union_case.name !== stmt.case_name) {
+          body_reachable = false;
+        } else if (
+          hooks.if_let_branch_ctx && hooks.bind_core_if_let_payload_fact
+        ) {
+          body_ctx = hooks.if_let_branch_ctx(ctx);
+          hooks.bind_core_if_let_payload_fact(
+            stmt.value_name,
+            union_case,
+            body_ctx,
+          );
+        }
+      } else {
+        const dynamic_target = hooks.dynamic_union_if?.(stmt.target, ctx);
+
+        if (dynamic_target) {
+          if (!dynamic_if_let_can_match(stmt.case_name, dynamic_target)) {
+            body_reachable = false;
+          } else if (
+            hooks.if_let_branch_ctx && hooks.bind_dynamic_if_let_payload
+          ) {
+            body_ctx = hooks.if_let_branch_ctx(ctx);
+            hooks.bind_dynamic_if_let_payload(
+              stmt.case_name,
+              stmt.value_name,
+              dynamic_target,
+              body_ctx,
+            );
+          }
+        } else if (
+          hooks.runtime_union_target && hooks.runtime_union_match_info &&
+          hooks.static_runtime_union_match_branch_ctx
+        ) {
+          const runtime_target = hooks.runtime_union_target(stmt.target, ctx);
+
+          if (runtime_target) {
+            const info = hooks.runtime_union_match_info(
+              stmt.case_name,
+              runtime_target,
+              ctx,
+            );
+            body_ctx = hooks.static_runtime_union_match_branch_ctx(
+              stmt.value_name,
+              info,
+              ctx,
+            );
+          }
+        }
+      }
+
+      if (body_reachable) {
+        scan_borrow_stmts_with_scanner(
+          stmt.body,
+          body_ctx,
+          hooks,
+          scope.id,
+          state,
+          "bounded",
+          body_aliases,
+          scanner,
+        );
+      }
       merge_optional_branch_borrow_aliases(
         aliases,
         body_aliases,

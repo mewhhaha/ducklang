@@ -1,10 +1,10 @@
 import type { DataSegment } from "../../mod.ts";
-import type { CoreExpr, CoreStmt } from "../ast.ts";
+import type { CoreExpr, CoreFnType, CoreStmt } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import type {
   RuntimeUnionMatchInfo,
   RuntimeUnionTarget,
-} from "../runtime_union.ts";
+} from "../model/runtime_union.ts";
 import type { StaticTextCtx, StaticTextHooks } from "../text_static.ts";
 
 export type TextLayout = {
@@ -34,6 +34,14 @@ export type CoreTextLayoutHooks = {
     value: CoreExpr,
     ctx: StaticTextCtx,
   ) => CoreExpr | undefined;
+  core_expr_is_text: (
+    value: CoreExpr,
+    ctx: StaticTextCtx,
+  ) => boolean;
+  closure_fn_type: (
+    value: CoreExpr,
+    ctx: StaticTextCtx,
+  ) => CoreFnType | undefined;
   dynamic_union_if: NonNullable<StaticTextHooks["dynamic_union_if"]>;
   expr_type: StaticTextHooks["expr_type"];
   runtime_union_match_info: (
@@ -45,6 +53,14 @@ export type CoreTextLayoutHooks = {
     expr: CoreExpr,
     ctx: StaticTextCtx,
   ) => RuntimeUnionTarget | undefined;
+  runtime_union_type_expr: (
+    expr: CoreExpr,
+    ctx: StaticTextCtx,
+  ) => CoreExpr | undefined;
+  runtime_aggregate_type_expr: (
+    expr: CoreExpr,
+    ctx: StaticTextCtx,
+  ) => CoreExpr | undefined;
   static_collection_fields: StaticTextHooks["static_collection_fields"];
   static_core_call_value: (
     expr: CoreExpr,

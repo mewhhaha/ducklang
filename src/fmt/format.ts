@@ -470,10 +470,12 @@ function needs_space(
       return !is_value_end(previous);
     }
 
-    // Calls and indexing glue to the value they apply to.
-    if (
-      (token.text === "(" || token.text === "[") && is_value_end(previous)
-    ) {
+    if (token.text === "[" && is_value_end(previous)) {
+      return previous.span.end < token.span.start;
+    }
+
+    // Parenthesized calls glue to the value they apply to.
+    if (token.text === "(" && is_value_end(previous)) {
       return false;
     }
 

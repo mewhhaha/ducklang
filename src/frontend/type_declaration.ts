@@ -86,16 +86,23 @@ function type_declaration_binding(
       semantic,
     );
   } else if (declaration.body.tag === "product") {
-    value = {
-      tag: "struct_type",
-      fields: declaration.body.fields.map((field) => {
-        if (effects.has(field.type_name)) {
-          return { name: field.name, type_name: "I32" };
-        }
+    if (declaration.body.initializer !== undefined) {
+      value = {
+        tag: "comptime",
+        expr: declaration.body.initializer,
+      };
+    } else {
+      value = {
+        tag: "struct_type",
+        fields: declaration.body.fields.map((field) => {
+          if (effects.has(field.type_name)) {
+            return { name: field.name, type_name: "I32" };
+          }
 
-        return field;
-      }),
-    };
+          return field;
+        }),
+      };
+    }
   } else if (declaration.body.tag === "sum") {
     value = { tag: "union_type", cases: declaration.body.cases };
   } else {
@@ -155,6 +162,9 @@ function alias_uses_type_set_surface(text: string): boolean {
 
 function type_expr_uses_set_surface(type: TypeExpr): boolean {
   switch (type.tag) {
+    case "forall":
+      return type_expr_uses_set_surface(type.body);
+
     case "atom":
     case "top":
     case "never":
@@ -291,6 +301,12 @@ export function front_type_value_for_semantic_type(
 
 function runtime_type_name(type: SemType, declaration_name: string): string {
   switch (type.tag) {
+    case "forall":
+      throw new Error(
+        "Polymorphic type-set member has no runtime payload layout in " +
+          declaration_name,
+      );
+
     case "scalar":
       return type.name;
 
@@ -337,6 +353,13 @@ function runtime_type_name(type: SemType, declaration_name: string): string {
 
 function type_expr_for_semantic_type(type: SemType): TypeExpr {
   switch (type.tag) {
+    case "forall":
+      return {
+        tag: "forall",
+        params: type.params,
+        body: type_expr_for_semantic_type(type.body),
+      };
+
     case "top":
       return { tag: "top" };
 
@@ -446,6 +469,10 @@ function validate_declaration_names(declarations: Declaration[]): void {
   const names = new Set<string>();
 
   for (const declaration of declarations) {
+    if (declaration.tag === "extend" || declaration.tag === "fixity") {
+      continue;
+    }
+
     expect(
       !is_builtin_type_reference_name(declaration.name),
       "Declaration name conflicts with builtin type: " + declaration.name,

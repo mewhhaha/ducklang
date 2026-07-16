@@ -47,6 +47,14 @@ export function resolve_annotation_type(
     return { tag: "int", type: "i64" };
   }
 
+  if (annotation === "F32") {
+    return { tag: "int", type: "f32" };
+  }
+
+  if (annotation === "F32x4") {
+    return { tag: "f32x4" };
+  }
+
   if (annotation === "Text") {
     return { tag: "text" };
   }
@@ -112,7 +120,8 @@ function direct_annotation_front_type(
       if (
         type.name === "Bool" || type.name === "Unit" ||
         type.name === "Int" || type.name === "I32" ||
-        type.name === "U32" || type.name === "I64" ||
+        type.name === "U32" || type.name === "I64" || type.name === "F32" ||
+        type.name === "F32x4" ||
         type.name === "Text" || type.name === "Bytes" ||
         type.name === "Resume"
       ) {
@@ -254,6 +263,14 @@ export function binding_value_type_name(
 
   if (numeric_type === "i64") {
     return "I64";
+  }
+
+  if (numeric_type === "f32") {
+    return "F32";
+  }
+
+  if (hooks.infer_expr(value, env).tag === "f32x4") {
+    return "F32x4";
   }
 
   return front_type_name(hooks.infer_expr(value, env));

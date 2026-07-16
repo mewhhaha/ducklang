@@ -22,6 +22,10 @@ export function is_memory_prim(prim: Prim): boolean {
     return true;
   }
 
+  if (prim === "f32.load") {
+    return true;
+  }
+
   if (prim === "i32.load8_u") {
     return true;
   }

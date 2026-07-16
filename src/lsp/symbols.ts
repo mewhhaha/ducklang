@@ -127,7 +127,7 @@ function declaration_symbol(
         children.push(child);
       }
     }
-  } else {
+  } else if (declaration.tag === "type") {
     for (let index = 0; index < declaration.params.length; index += 1) {
       const param = declaration.params[index];
 
@@ -167,6 +167,26 @@ function declaration_symbol(
         }
       }
     }
+  } else if (declaration.tag === "duck") {
+    kind = symbol_kind.interface;
+
+    for (const member of declaration.members) {
+      const child = symbol_from_owner(
+        member,
+        "name",
+        undefined,
+        member.name,
+        symbol_kind.method,
+        positions,
+        [],
+      );
+
+      if (child !== undefined) {
+        children.push(child);
+      }
+    }
+  } else {
+    return undefined;
   }
 
   return symbol_from_owner(

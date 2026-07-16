@@ -2,13 +2,15 @@ import { expect } from "../../expect.ts";
 import type { ValType } from "../../op.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr, CoreFnType } from "../ast.ts";
-import { fresh_temp_local, set_local } from "../backend/util.ts";
+import { fresh_temp_local } from "../emit/name.ts";
+import { set_local } from "../emit/local.ts";
 import { unsupported_core_captured_assignment_message } from "../closure_capture.ts";
 import { core_expr_assigns_name } from "../scope_analysis.ts";
 import { scoped_static_core_call_expr } from "../static_call_rewrite.ts";
 import { static_block_result } from "../type_static.ts";
-import type { StaticValuePlan } from "../static_values.ts";
+import type { StaticValuePlan } from "../static_values/types.ts";
 import { check_static_core_call_arity } from "./arity.ts";
+import { core_name_use_count } from "../name_use_count.ts";
 import type {
   StaticCoreCallBlockCtx,
   StaticCoreCallCtx,
@@ -37,6 +39,7 @@ export function collect_scoped_static_core_call_locals<
     target,
     ctx,
     undefined,
+    ctx,
     hooks,
   );
   hooks.collect_expr_locals(plan.value, ctx);
@@ -64,6 +67,7 @@ export function scoped_static_core_call_value<
     target,
     body_ctx,
     undefined,
+    undefined,
     hooks,
   );
 
@@ -89,7 +93,7 @@ export function emit_scoped_static_core_call<
     temp_ctx,
     block_ctx,
     emit_ctx
-  >(expr, target, ctx, ctx, hooks);
+  >(expr, target, ctx, ctx, undefined, hooks);
   const lines: string[] = [];
 
   if (plan.setup !== "") {
@@ -151,6 +155,22 @@ function scoped_static_core_call_ctx<
     expect(arg, "Missing core static call argument " + index.toString());
     const value = hooks.apply_core_parameter_annotation(param, arg, ctx);
     const assigns_param = core_expr_assigns_name(target.body, param.name);
+    let runtime_value = value;
+    if (
+      (arg.tag === "var" || arg.tag === "linear") &&
+      (ctx.locals.has(arg.name) ||
+        ctx.materialized_bindings?.has(arg.name) === true)
+    ) {
+      runtime_value = arg;
+    }
+    const runtime_local =
+      (runtime_value.tag === "var" || runtime_value.tag === "linear") &&
+      (ctx.locals.has(runtime_value.name) ||
+        ctx.materialized_bindings?.has(runtime_value.name) === true);
+    const uses = core_name_use_count(target.body, param.name);
+    const share_repeated_demand = uses > 1 && !runtime_local &&
+      runtime_value.tag !== "num" && runtime_value.tag !== "var" &&
+      runtime_value.tag !== "linear" && runtime_value.tag !== "type_name";
 
     if (assigns_param) {
       const struct_value = hooks.static_struct_value(value, ctx);
@@ -166,7 +186,10 @@ function scoped_static_core_call_ctx<
       }
     }
 
-    if (!assigns_param && hooks.is_static_value_expr(value, ctx)) {
+    if (
+      !assigns_param && !runtime_local && !share_repeated_demand &&
+      hooks.is_static_value_expr(value, ctx)
+    ) {
       const planned = hooks.plan_static_value_expr(
         value,
         body_ctx,
@@ -190,16 +213,20 @@ function scoped_static_core_call_ctx<
         body_ctx.union_locals.delete(param.name);
       } else {
         body_ctx.statics.delete(param.name);
-        set_local(body_ctx.locals, param.name, hooks.expr_type(value, ctx));
+        set_local(
+          body_ctx.locals,
+          param.name,
+          hooks.expr_type(runtime_value, ctx),
+        );
         hooks.bind_core_struct_type(
           param.name,
-          value,
+          runtime_value,
           param.annotation,
           body_ctx,
         );
         hooks.bind_core_union_type(
           param.name,
-          value,
+          runtime_value,
           param.annotation,
           body_ctx,
         );
@@ -212,16 +239,20 @@ function scoped_static_core_call_ctx<
       }
     } else {
       body_ctx.statics.delete(param.name);
-      set_local(body_ctx.locals, param.name, hooks.expr_type(value, ctx));
+      set_local(
+        body_ctx.locals,
+        param.name,
+        hooks.expr_type(runtime_value, ctx),
+      );
       hooks.bind_core_struct_type(
         param.name,
-        value,
+        runtime_value,
         param.annotation,
         body_ctx,
       );
       hooks.bind_core_union_type(
         param.name,
-        value,
+        runtime_value,
         param.annotation,
         body_ctx,
       );
@@ -247,6 +278,7 @@ function scoped_static_core_call_plan<
   target: Extract<CoreExpr, { tag: "lam" }>,
   ctx: temp_ctx,
   emit_ctx: emit_ctx | undefined,
+  collect_ctx: block_ctx | undefined,
   hooks: StaticCoreCallHooks<static_ctx, temp_ctx, block_ctx, emit_ctx>,
 ): StaticValuePlan {
   check_static_core_call_arity(expr, target);
@@ -322,6 +354,22 @@ function scoped_static_core_call_plan<
     expect(arg, "Missing core static call argument " + index.toString());
     const value = hooks.apply_core_parameter_annotation(param, arg, ctx);
     const assigns_param = core_expr_assigns_name(target.body, param.name);
+    let runtime_value = value;
+    if (
+      (arg.tag === "var" || arg.tag === "linear") &&
+      (ctx.locals.has(arg.name) ||
+        ctx.materialized_bindings?.has(arg.name) === true)
+    ) {
+      runtime_value = arg;
+    }
+    const runtime_local =
+      (runtime_value.tag === "var" || runtime_value.tag === "linear") &&
+      (ctx.locals.has(runtime_value.name) ||
+        ctx.materialized_bindings?.has(runtime_value.name) === true);
+    const uses = core_name_use_count(target.body, param.name);
+    const share_repeated_demand = uses > 1 && !runtime_local &&
+      runtime_value.tag !== "num" && runtime_value.tag !== "var" &&
+      runtime_value.tag !== "linear" && runtime_value.tag !== "type_name";
 
     if (assigns_param) {
       const struct_value = hooks.static_struct_value(value, ctx);
@@ -349,7 +397,10 @@ function scoped_static_core_call_plan<
       }
     }
 
-    if (!assigns_param && hooks.is_static_value_expr(value, ctx)) {
+    if (
+      !assigns_param && !runtime_local && !share_repeated_demand &&
+      hooks.is_static_value_expr(value, ctx)
+    ) {
       const planned = hooks.plan_static_value_expr(value, ctx, emit_ctx);
       replacements.set(param.name, planned.value);
 
@@ -369,7 +420,12 @@ function scoped_static_core_call_plan<
       }
     }
 
-    const type = hooks.expr_type(value, ctx);
+    if (!emit_ctx && !collect_ctx && !assigns_param) {
+      replacements.set(param.name, runtime_value);
+      continue;
+    }
+
+    const type = hooks.expr_type(runtime_value, ctx);
     const name = fresh_temp_local(ctx, "arg_" + param.name);
     ctx.statics.delete(name);
     set_local(ctx.locals, name, type);
@@ -380,14 +436,16 @@ function scoped_static_core_call_plan<
       ctx.text_locals.delete(name);
     }
 
-    hooks.bind_core_struct_type(name, value, param.annotation, ctx);
-    hooks.bind_core_union_type(name, value, param.annotation, ctx);
+    hooks.bind_core_struct_type(name, runtime_value, param.annotation, ctx);
+    hooks.bind_core_union_type(name, runtime_value, param.annotation, ctx);
 
     replacements.set(param.name, { tag: "var", name });
 
     if (emit_ctx) {
-      setup.push(hooks.emit_expr(value, emit_ctx));
+      setup.push(hooks.emit_expr(runtime_value, emit_ctx));
       setup.push("local.set $" + name);
+    } else if (collect_ctx) {
+      hooks.collect_expr_locals(runtime_value, collect_ctx);
     }
   }
 

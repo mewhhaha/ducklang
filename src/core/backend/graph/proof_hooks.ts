@@ -28,7 +28,8 @@ export function core_ownership_hooks(
     bind_dynamic_if_let_payload: backend.union.bind_dynamic_if_let_payload,
     block_ctx: create_child_core_ctx,
     closure_fn_type: backend.closure.closure_fn_type,
-    collect_stmt_locals: backend.local_collect.collect_stmt_locals,
+    collect_stmt_locals: (stmt: CoreStmt, ctx: CoreCtx) =>
+      collect_stmt_locals_for_proof(backend, stmt, ctx),
     core_expr_is_text: backend.text.core_expr_is_text,
     dynamic_union_if: backend.union.dynamic_union_if,
     expr_type: backend.expr_type.expr_type,
@@ -46,6 +47,8 @@ export function core_ownership_hooks(
     static_struct_value: backend.struct.static_struct_value,
     static_core_call_requires_scope:
       backend.static_call.static_core_call_requires_scope,
+    scoped_static_core_call_value:
+      backend.static_call.scoped_static_core_call_value,
     static_core_call_target: backend.static_call.static_core_call_target,
     static_core_call_value: backend.static_call.static_core_call_value,
     static_capture_value: (name, ctx) => ctx.static_capture_values?.get(name),
@@ -105,6 +108,12 @@ export function core_allocation_hooks(
         return true;
       }
       return ctx.union_locals.has(name);
+    },
+    materialized_binding: (name: string, ctx: CoreCtx) => {
+      return ctx.materialized_bindings?.has(name) === true;
+    },
+    mutable_binding: (name: string, ctx: CoreCtx) => {
+      return ctx.mutable_bindings?.has(name) === true;
     },
     is_static_value_expr: backend.static_value.is_static_value_expr,
     static_collection_fields: backend.struct.static_collection_fields,
@@ -275,7 +284,9 @@ function core_runtime_aggregate_ownership_probe_error(
   }
 
   if (
-    error.message === "Core runtime aggregate requires a static struct type"
+    error.message.startsWith(
+      "Core runtime aggregate requires a static struct type",
+    )
   ) {
     return true;
   }

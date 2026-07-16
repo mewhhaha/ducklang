@@ -6,6 +6,7 @@ import {
 import { core_expr_ownership, type CoreOwnership } from "../ownership.ts";
 import type { StaticCoreCallCtx } from "../static_call.ts";
 import type { CoreHostBoundaryHooks, CoreHostBoundaryState } from "./types.ts";
+import { core_runtime_buffer_builtin } from "../runtime_buffer.ts";
 
 export function record_host_boundary_stmt_alias(
   stmt: CoreStmt,
@@ -185,6 +186,10 @@ function host_boundary_expr_allocates_in_scratch<
   ctx: ctx,
   hooks: CoreHostBoundaryHooks<ctx>,
 ): boolean {
+  if (core_runtime_buffer_builtin(expr)) {
+    return true;
+  }
+
   if (expr.tag === "app") {
     if (core_host_import_for_app(expr, ctx)) {
       return false;
@@ -194,6 +199,10 @@ function host_boundary_expr_allocates_in_scratch<
       if (!hooks.closure_fn_type(expr.func, ctx)) {
         return true;
       }
+    }
+
+    if (expr.func.tag === "var" && expr.func.name === "Bytes.generate") {
+      return true;
     }
 
     if (expr.func.tag === "var" && expr.func.name === "slice") {

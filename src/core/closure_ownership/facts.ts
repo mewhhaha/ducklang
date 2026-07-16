@@ -5,6 +5,7 @@ import type {
   CoreClosureOwnershipFacts,
   CoreClosureOwnershipHooks,
 } from "./types.ts";
+import { core_runtime_buffer_builtin } from "../runtime_buffer.ts";
 
 export function empty_closure_ownership_facts(): CoreClosureOwnershipFacts {
   return {
@@ -148,7 +149,15 @@ function closure_expr_ownership<ctx extends CoreClosureOwnershipCtx>(
 }
 
 function closure_expr_allocates_in_scratch(expr: CoreExpr): boolean {
+  if (core_runtime_buffer_builtin(expr)) {
+    return true;
+  }
+
   if (expr.tag === "app" && expr.func.tag === "var") {
+    if (expr.func.name === "Bytes.generate") {
+      return true;
+    }
+
     if (expr.func.name === "append") {
       return true;
     }

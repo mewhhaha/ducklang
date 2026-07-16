@@ -2,6 +2,7 @@ import { expect } from "../../expect.ts";
 import type { CoreExpr } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import { dynamic_if_let_can_match } from "../union_static.ts";
+import { core_expr_definitely_exits } from "../expr_type/control.ts";
 import type { CoreTextFactCtx, CoreTextFactHooks } from "./types.ts";
 
 export function core_if_let_text_fact<ctx extends CoreTextFactCtx>(
@@ -101,6 +102,14 @@ export function core_if_let_text_fact<ctx extends CoreTextFactCtx>(
     return then_text;
   }
 
+  if (core_expr_definitely_exits(value.then_branch)) {
+    return check_text(value.else_branch, ctx, hooks);
+  }
+
+  if (core_expr_definitely_exits(value.else_branch)) {
+    return then_text;
+  }
+
   return then_text && check_text(value.else_branch, ctx, hooks);
 }
 
@@ -161,10 +170,5 @@ function core_if_let_case_text_fact<ctx extends CoreTextFactCtx>(
   );
 
   const then_text = check_text(value.then_branch, branch_ctx, hooks);
-
-  if (value.implicit_else) {
-    return then_text;
-  }
-
-  return then_text && check_text(value.else_branch, ctx, hooks);
+  return then_text;
 }

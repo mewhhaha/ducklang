@@ -283,6 +283,15 @@ export function validate_atom_identities(source: Source): void {
         }
         return;
 
+      case "type_with":
+        visit_expr(expr.base);
+
+        for (const member of expr.members) {
+          visit_expr(member.name);
+          visit_expr(member.value);
+        }
+        return;
+
       case "struct_value":
         visit_expr(expr.type_expr);
 
@@ -467,6 +476,10 @@ export function validate_atom_identities(source: Source): void {
       } else {
         visit_type_text(declaration.body.type_name);
       }
+      continue;
+    }
+
+    if (declaration.tag !== "effect") {
       continue;
     }
 

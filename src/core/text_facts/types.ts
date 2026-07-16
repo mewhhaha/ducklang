@@ -3,6 +3,7 @@ import type {
   CoreField,
   CoreFnType,
   CoreHostImport,
+  CoreStmt,
 } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import type { RuntimeAggregateTypeHooks } from "../runtime_aggregate.ts";
@@ -11,6 +12,7 @@ import type {
   RuntimeUnionTarget,
 } from "../runtime_union.ts";
 import type { ValType } from "../../op.ts";
+export type { RuntimeTextEq } from "../runtime_text/types.ts";
 
 export type CoreTextFactCtx = {
   locals: Map<string, ValType>;
@@ -26,6 +28,10 @@ export type CoreTextFactHooks<ctx extends CoreTextFactCtx> =
   & RuntimeAggregateTypeHooks<ctx>
   & {
     expr_type: (expr: CoreExpr, ctx: ctx) => ValType;
+    core_binding_value: (
+      stmt: Extract<CoreStmt, { tag: "bind" }>,
+      ctx: ctx,
+    ) => CoreExpr;
     bind_core_if_let_payload_fact: (
       value_name: string | undefined,
       union_case: Extract<CoreExpr, { tag: "union_case" }>,
@@ -74,9 +80,3 @@ export type CoreTextFactHooks<ctx extends CoreTextFactCtx> =
       ctx: ctx,
     ) => Extract<CoreExpr, { tag: "union_case" }> | undefined;
   };
-
-export type RuntimeTextEq = {
-  left: CoreExpr;
-  right: CoreExpr;
-  prim: "i32.eq" | "i32.ne";
-};

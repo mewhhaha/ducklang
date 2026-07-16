@@ -1,5 +1,5 @@
 import { expect } from "../../expect.ts";
-import type { ResumeSignature } from "../../frontend/ast.ts";
+import type { ResumeSignature } from "../../type_syntax.ts";
 import type { CoreExpr, CoreFnType, CoreStmt } from "../ast.ts";
 import { clone_core_host_imports } from "../host_import.ts";
 import { bind_core_if_let_payload_fact } from "../if_let_payload.ts";
@@ -365,7 +365,7 @@ function resume_signature_fn_type(
 ): CoreFnType {
   const input = closure_param_info(
     {
-      name: "__ix_resume_input",
+      name: "__duck_resume_input",
       is_const: false,
       is_linear: false,
       annotation: signature.input_type,
@@ -379,7 +379,7 @@ function resume_signature_fn_type(
   );
   const output = closure_param_info(
     {
-      name: "__ix_resume_output",
+      name: "__duck_resume_output",
       is_const: false,
       is_linear: false,
       annotation: signature.output_type,

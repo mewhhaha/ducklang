@@ -61,6 +61,16 @@ function lower_statements_with_done(
   }
 
   if (stmt.tag === "host_import") {
+    if (stmt.value.module === "duck_effect") {
+      return lower_statements_with_done(
+        stmts,
+        index + 1,
+        env,
+        hooks,
+        on_done,
+      );
+    }
+
     throw new Error(
       "Cannot lower host import through pure Ic" + structured_core_route,
     );

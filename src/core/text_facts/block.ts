@@ -1,6 +1,7 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreStmt } from "../ast.ts";
-import { set_local } from "../backend/util.ts";
+import { set_local } from "../emit/local.ts";
+import { core_val_type_from_type_name } from "../type_static.ts";
 import type { CoreTextFactCtx, CoreTextFactHooks } from "./types.ts";
 
 export function core_text_block_fact<ctx extends CoreTextFactCtx>(
@@ -56,6 +57,7 @@ function bind_core_text_block_stmt<ctx extends CoreTextFactCtx>(
     bind_core_text_block_value(
       stmt.name,
       stmt.value,
+      stmt.annotation,
       ctx,
       hooks,
       check_text,
@@ -67,6 +69,7 @@ function bind_core_text_block_stmt<ctx extends CoreTextFactCtx>(
     bind_core_text_block_value(
       stmt.name,
       stmt.value,
+      undefined,
       ctx,
       hooks,
       check_text,
@@ -77,6 +80,7 @@ function bind_core_text_block_stmt<ctx extends CoreTextFactCtx>(
 function bind_core_text_block_value<ctx extends CoreTextFactCtx>(
   name: string,
   value: CoreExpr,
+  annotation: string | undefined,
   ctx: ctx,
   hooks: CoreTextFactHooks<ctx>,
   check_text: (
@@ -96,6 +100,14 @@ function bind_core_text_block_value<ctx extends CoreTextFactCtx>(
 
   ctx.statics.delete(name);
 
+  if (annotation) {
+    const type = core_val_type_from_type_name(annotation);
+
+    if (type) {
+      set_local(ctx.locals, name, type);
+    }
+  }
+
   if (check_text(value, ctx, hooks)) {
     set_local(ctx.locals, name, "i32");
     ctx.text_locals.add(name);
@@ -104,6 +116,18 @@ function bind_core_text_block_value<ctx extends CoreTextFactCtx>(
 
   if (value.tag === "num") {
     set_local(ctx.locals, name, value.type);
+  }
+
+  if (value.tag === "var" || value.tag === "linear") {
+    const type = ctx.locals.get(value.name);
+
+    if (type) {
+      set_local(ctx.locals, name, type);
+    }
+  }
+
+  if (value.tag === "prim") {
+    set_local(ctx.locals, name, hooks.expr_type(value, ctx));
   }
 
   ctx.text_locals.delete(name);

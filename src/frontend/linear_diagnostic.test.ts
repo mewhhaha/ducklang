@@ -4,13 +4,13 @@ import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
 
 function linear_diagnostics(text: string): SourceDiagnostic[] {
   return Source.analyze(text).diagnostics.filter((diagnostic) => {
-    return diagnostic.code.startsWith("IX22");
+    return diagnostic.code.startsWith("DUCK22");
   });
 }
 
 Deno.test("linear scalar ownership example remains valid", async () => {
   const text = await Deno.readTextFile(
-    "examples/ownership_modules/01_linear_scalar.ix",
+    "examples/ownership_modules/01_linear_scalar.duck",
   );
 
   assert_equals(Source.analyze(text).diagnostics, []);
@@ -20,7 +20,7 @@ Deno.test("linear consumption without rebinding reports the consumed expression"
   const diagnostics = linear_diagnostics("let !x = 1\n!x\n42");
 
   assert_equals(diagnostics, [{
-    code: "IX2203",
+    code: "DUCK2203",
     severity: "error",
     message: "Linear value x is consumed but not rebound",
     span: { start: 11, end: 13 },
@@ -40,7 +40,7 @@ Deno.test("linear branch mismatch reports the complete conditional", () => {
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2205",
+    code: "DUCK2205",
     severity: "error",
     message: "Linear branches must consume the same values",
     span: { start: 25, end: 50 },
@@ -60,7 +60,7 @@ Deno.test("linear fallthrough mismatch reports the branch statement", () => {
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2205",
+    code: "DUCK2205",
     severity: "error",
     message: "Linear loop if fallthrough changes carried values",
     span: { start: 22, end: 39 },
@@ -80,7 +80,7 @@ Deno.test("linear closure reuse reports both calls and its declaration", () => {
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2206",
+    code: "DUCK2206",
     severity: "error",
     message: "Linear closure take was already consumed",
     span: { start: 50, end: 56 },
@@ -137,7 +137,7 @@ Deno.test("linear diagnostics retain spans through synthesized closure branches"
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2205",
+    code: "DUCK2205",
     severity: "error",
     message: "Linear branches must consume the same values",
     span: { start: 37, end: 86 },
@@ -157,7 +157,7 @@ Deno.test("linear loop state mismatch reports the loop and moved declaration", (
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2205",
+    code: "DUCK2205",
     severity: "error",
     message: "Linear loop fallthrough changes carried values",
     span: { start: 23, end: 58 },
@@ -171,11 +171,45 @@ Deno.test("linear loop state mismatch reports the loop and moved declaration", (
   }]);
 });
 
+Deno.test("linear match loop arms validate terminal and fallthrough paths", () => {
+  const valid = linear_diagnostics(`
+let main = (!x, flag) => {
+  for i in 0..2 {
+    match flag {
+      | 1 => { x = !x + 1; break }
+      | _ => { x = !x + 1 }
+    }
+  }
+  x
+}
+main(40, 1)
+`);
+
+  assert_equals(valid, []);
+
+  const invalid = linear_diagnostics(`
+let main = (!x, flag) => {
+  for i in 0..2 {
+    match flag {
+      | 1 => { !x; break }
+      | _ => { x = !x + 1 }
+    }
+  }
+  x
+}
+main(40, 1)
+`);
+
+  assert_equals(invalid.map((diagnostic) => diagnostic.message), [
+    "Linear value x is consumed but not rebound",
+  ]);
+});
+
 Deno.test("linear rebind without consumption reports the assignment", () => {
   const diagnostics = linear_diagnostics("let !x = 1\nx = 2\n!x");
 
   assert_equals(diagnostics, [{
-    code: "IX2207",
+    code: "DUCK2207",
     severity: "error",
     message: "Linear value x was rebound without being consumed",
     span: { start: 11, end: 16 },
@@ -190,7 +224,7 @@ Deno.test("implicit linear use reports the exact variable reference", () => {
   const diagnostics = linear_diagnostics("let !x = 1\nx + 1");
 
   assert_equals(diagnostics, [{
-    code: "IX2204",
+    code: "DUCK2204",
     severity: "error",
     message: "Linear value x used without explicit consumption",
     span: { start: 11, end: 12 },
@@ -212,7 +246,7 @@ Deno.test("recursive linear closure validation reports the recursive call", () =
   );
 
   assert_equals(diagnostics, [{
-    code: "IX2290",
+    code: "DUCK2290",
     severity: "error",
     message: "Cannot validate recursive linear closure call yet: recurse",
     span: { start: 43, end: 52 },

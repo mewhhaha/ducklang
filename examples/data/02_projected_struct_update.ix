@@ -1,5 +1,0 @@
-type Point = (.x = Int, .y = Int)
-
-let point: Point = (.x = 20, .y = 21)
-
-(point with { x: point.x + 1 }).x + point.y

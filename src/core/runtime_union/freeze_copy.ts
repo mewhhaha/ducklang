@@ -2,7 +2,9 @@ import { expect } from "../../expect.ts";
 import type { ValType } from "../../op.ts";
 import type { Wat } from "../../wat.ts";
 import type { CoreExpr } from "../ast.ts";
-import { fresh_temp_local, indent_lines, set_local } from "../backend/util.ts";
+import { fresh_temp_local } from "../emit/name.ts";
+import { indent_lines } from "../emit/format.ts";
+import { set_local } from "../emit/local.ts";
 import { emit_persistent_alloc } from "../runtime_allocator.ts";
 import { load_instr, store_instr } from "../memory.ts";
 import {
@@ -21,7 +23,7 @@ import {
   type RuntimeUnionPayload,
   type RuntimeUnionPayloadField,
 } from "../runtime_union_payload.ts";
-import { runtime_union_type_size } from "./size.ts";
+import { runtime_union_type_layout } from "./size.ts";
 import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
 
 export type RuntimeUnionFreezeCopyCtx = TypeStaticCtx & {
@@ -89,6 +91,7 @@ export function emit_runtime_union_freeze_copy<
     "Core runtime union freeze copy contains unsupported payload pointers",
   );
   const source_wat = hooks.emit_expr(source, ctx);
+  const layout = runtime_union_type_layout(type_value, ctx);
   const plan = runtime_union_freeze_copy_plan(ctx);
   declare_runtime_union_freeze_copy_plan_locals(plan, ctx);
   ctx.heap.needed = true;
@@ -98,8 +101,8 @@ export function emit_runtime_union_freeze_copy<
     emit_persistent_alloc(
       ctx,
       subject,
-      "i32.const " + runtime_union_type_size(type_value, ctx).toString(),
-      8,
+      "i32.const " + layout.size.toString(),
+      layout.align,
       "runtime_union",
       "runtime_union.tag_and_aligned_payload",
       "runtime_union.freeze_copy",
@@ -116,6 +119,7 @@ export function emit_runtime_union_freeze_copy<
     plan.source,
     plan.result,
     type_value,
+    layout.payload_offset,
     ctx,
     lines,
     hooks,
@@ -370,6 +374,7 @@ function emit_runtime_union_freeze_copy_cases<
   source: string,
   result: string,
   type_value: Extract<CoreExpr, { tag: "union_type" }>,
+  payload_offset: number,
   ctx: ctx,
   lines: string[],
   hooks: RuntimeUnionFreezeCopyHooks<ctx>,
@@ -389,6 +394,7 @@ function emit_runtime_union_freeze_copy_cases<
       source,
       result,
       payload,
+      payload_offset,
       ctx,
       body,
       hooks,
@@ -411,6 +417,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
   source: string,
   result: string,
   payload: RuntimeUnionPayload,
+  payload_offset: number,
   ctx: ctx,
   lines: string[],
   hooks: RuntimeUnionFreezeCopyHooks<ctx>,
@@ -421,7 +428,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
         subject,
         source,
         result,
-        4,
+        payload_offset,
         payload.union_type_expr,
         ctx,
         lines,
@@ -434,7 +441,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
       subject,
       source,
       result,
-      4,
+      payload_offset,
       payload.type,
       payload.text,
       ctx,
@@ -462,6 +469,7 @@ function emit_runtime_union_freeze_copy_payload_stores<
       source,
       result,
       payload,
+      payload_offset,
       ctx,
       lines,
       hooks,
@@ -479,6 +487,7 @@ function emit_runtime_union_freeze_copy_aggregate_payload_store<
   source: string,
   result: string,
   payload: Extract<RuntimeUnionPayload, { tag: "aggregate" }>,
+  payload_offset: number,
   ctx: ctx,
   lines: string[],
   hooks: RuntimeUnionFreezeCopyHooks<ctx>,
@@ -488,7 +497,7 @@ function emit_runtime_union_freeze_copy_aggregate_payload_store<
   ctx.struct_locals.set(payload_local, payload.type_expr);
 
   lines.push("local.get $" + source);
-  lines.push(load_instr("i32", 4));
+  lines.push(load_instr("i32", payload_offset));
   lines.push("local.set $" + payload_local);
   lines.push("local.get $" + result);
   lines.push(
@@ -512,7 +521,7 @@ function emit_runtime_union_freeze_copy_aggregate_payload_store<
       },
     ),
   );
-  lines.push(store_instr("i32", 4));
+  lines.push(store_instr("i32", payload_offset));
 }
 
 function emit_runtime_union_freeze_copy_struct_payload_stores<

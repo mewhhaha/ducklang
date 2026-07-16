@@ -197,7 +197,7 @@ function check_struct_access_if_condition(
     return;
   }
 
-  if (type.tag === "int" && type.type !== "i64") {
+  if (type.tag === "int" && type.type === "i32") {
     return;
   }
 

@@ -3,6 +3,7 @@ import type { Wat } from "../../../../wat.ts";
 import type { CoreExpr, CoreField, CoreFnType } from "../../../ast.ts";
 import type { CoreEmitCtx } from "../../../emit_ctx.ts";
 import type { StaticCtx } from "../../../local_collect.ts";
+import type { CoreRuntimeBufferBuiltin } from "../../../runtime_buffer.ts";
 
 export type CoreBackendAppApi = {
   check_closure_call_args: (
@@ -31,6 +32,17 @@ export type CoreBackendAppApi = {
     ctx: CoreEmitCtx,
   ) => Wat;
   emit_expr: (expr: CoreExpr, ctx: CoreEmitCtx) => Wat;
+  emit_runtime_bytes_generate: (
+    subject: CoreExpr,
+    length: CoreExpr,
+    generator: CoreExpr,
+    ctx: CoreEmitCtx,
+  ) => Wat;
+  emit_runtime_buffer_builtin: (
+    subject: CoreExpr,
+    builtin: CoreRuntimeBufferBuiltin,
+    ctx: CoreEmitCtx,
+  ) => Wat;
   emit_runtime_text_byte_index: (
     collection: CoreExpr,
     index: CoreExpr,

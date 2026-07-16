@@ -290,31 +290,31 @@ function validate_linear_block(
       continue;
     } else if (stmt.tag === "break") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot lower break outside static range loop",
         stmt,
       );
     } else if (stmt.tag === "continue") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot lower continue outside static range loop",
         stmt,
       );
     } else if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot validate linear " + stmt.tag + " yet",
         stmt,
       );
     } else if (stmt.tag === "resume_dup") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Resumption duplication must be elaborated before linear validation",
         stmt,
       );
     } else {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot validate linear " + stmt.feature + " yet",
         stmt,
       );
@@ -379,7 +379,7 @@ function validate_linear_assignment(
   if (consumed.length > 0) {
     if (consumed.length !== 1) {
       throw_linear_diagnostic(
-        "IX2207",
+        "DUCK2207",
         "Linear assignment must consume exactly one value",
         diagnostic_subject,
       );
@@ -389,7 +389,7 @@ function validate_linear_assignment(
 
     if (name !== stmt.name) {
       throw_linear_diagnostic(
-        "IX2207",
+        "DUCK2207",
         "Linear value " + name + " must be rebound as " + name,
         diagnostic_subject,
         linear_binding_related(available, name),
@@ -404,7 +404,7 @@ function validate_linear_assignment(
     }
   } else if (was_available) {
     throw_linear_diagnostic(
-      "IX2207",
+      "DUCK2207",
       "Linear value " + stmt.name + " was rebound without being consumed",
       diagnostic_subject,
       linear_binding_related(available, stmt.name),

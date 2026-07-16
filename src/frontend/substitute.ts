@@ -94,8 +94,9 @@ export function substitute_front_expr(
     }
 
     case "product":
+    case "shape":
       return {
-        tag: "product",
+        ...expr,
         entries: expr.entries.map((entry) => ({
           ...entry,
           value: substitute_front_expr(entry.value, replacements),
@@ -115,6 +116,7 @@ export function substitute_front_expr(
           substitute_front_expr(item, replacements)
         ),
         rest,
+        leading_rest: expr.leading_rest,
       };
     }
 
@@ -226,6 +228,16 @@ export function substitute_front_expr(
         tag: "struct_update",
         base: substitute_front_expr(expr.base, replacements),
         fields: substitute_front_fields(expr.fields, replacements),
+      };
+
+    case "type_with":
+      return {
+        tag: "type_with",
+        base: substitute_front_expr(expr.base, replacements),
+        members: expr.members.map((member) => ({
+          name: substitute_front_expr(member.name, replacements),
+          value: substitute_front_expr(member.value, replacements),
+        })),
       };
 
     case "if":

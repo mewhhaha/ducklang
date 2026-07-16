@@ -11,7 +11,7 @@ export function create_core_backend_text(
 ): CoreBackendText {
   const static_text = create_core_backend_text_static(api);
   const text_facts = create_core_backend_text_facts(api, static_text);
-  const text_layout = create_core_backend_text_layout(api);
+  const text_layout = create_core_backend_text_layout(api, text_facts);
   const runtime_text = create_core_backend_text_runtime(api, text_facts);
 
   return {

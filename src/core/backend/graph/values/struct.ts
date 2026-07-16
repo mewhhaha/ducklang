@@ -53,7 +53,9 @@ function runtime_aggregate_collection_probe_error(error: unknown): boolean {
   }
 
   if (
-    error.message === "Core runtime aggregate requires a static struct type"
+    error.message.startsWith(
+      "Core runtime aggregate requires a static struct type",
+    )
   ) {
     return true;
   }

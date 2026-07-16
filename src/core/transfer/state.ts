@@ -11,6 +11,7 @@ export function clone_transfer_state<ctx>(
     transferred: new Map(state.transferred),
     functions: state.functions,
     aliases: new Map(state.aliases),
+    declared_owners: new Set(state.declared_owners),
     alias_subjects: new Map(state.alias_subjects),
     alias_ownership: new Map(state.alias_ownership),
     alias_rejection_reasons: new Map(state.alias_rejection_reasons),
@@ -43,6 +44,10 @@ export function merge_transfer_state<ctx>(
 
   for (const entry of source.alias_rejection_reasons.entries()) {
     target.alias_rejection_reasons.set(entry[0], entry[1]);
+  }
+
+  for (const owner of source.declared_owners) {
+    target.declared_owners.add(owner);
   }
 }
 
@@ -149,6 +154,10 @@ function record_conditional_transfer_issues<ctx>(
     const info = entry[1];
 
     if (info.count >= path_count) {
+      continue;
+    }
+
+    if (!target.declared_owners.has(owner)) {
       continue;
     }
 

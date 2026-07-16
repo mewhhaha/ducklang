@@ -15,14 +15,14 @@ declare effect Io { read: () => I32 }
   );
 });
 
-Deno.test("IC route rejects Ix-defined effect declarations", () => {
+Deno.test("IC route rejects Duck-defined effect declarations", () => {
   assert_throws(
     () =>
       Source.compile(`
 effect Counter { get: () => I32 }
 42
 `),
-    "Cannot lower Ix-defined effect Counter through pure Ic",
+    "Cannot lower Duck-defined effect Counter through pure Ic",
   );
 });
 
@@ -88,9 +88,9 @@ Deno.test("IC route rejects nested handlers before ordinary lowering", () => {
   assert_throws(() => Source.emit(source), core_route_message);
 });
 
-Deno.test("IC file route rejects Ix-defined effects", () => {
+Deno.test("IC file route rejects Duck-defined effects", () => {
   const directory = Deno.makeTempDirSync();
-  const path = directory + "/counter.ix";
+  const path = directory + "/counter.duck";
 
   try {
     Deno.writeTextFileSync(
@@ -102,7 +102,7 @@ return {}
     );
     assert_throws(
       () => Source.compile_file(path),
-      "Cannot lower Ix-defined effect Counter through pure Ic",
+      "Cannot lower Duck-defined effect Counter through pure Ic",
     );
   } finally {
     Deno.removeSync(directory, { recursive: true });

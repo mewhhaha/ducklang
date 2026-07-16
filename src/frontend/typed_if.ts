@@ -104,6 +104,10 @@ export function lower_if_as_front_type(
     select_prim = "i64.select";
   }
 
+  if (type.tag === "int" && type.type === "f32") {
+    select_prim = "f32.select";
+  }
+
   return {
     tag: "prim",
     prim: select_prim,
@@ -309,7 +313,7 @@ function check_typed_if_condition(
     return;
   }
 
-  if (type.tag === "int" && type.type !== "i64") {
+  if (type.tag === "int" && type.type === "i32") {
     return;
   }
 

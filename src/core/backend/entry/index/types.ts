@@ -13,6 +13,12 @@ export type CoreBackendIndexApi = {
   core_expr_is_text: (expr: CoreExpr, ctx: StaticCtx) => boolean;
   emit_expr: (expr: CoreExpr, ctx: CoreEmitCtx) => Wat;
   expr_type: (expr: CoreExpr, ctx: StaticCtx) => ValType;
+  plan_static_capture_expr: (
+    prefix: string,
+    expr: CoreExpr,
+    ctx: TempCtx,
+    emit_ctx: CoreEmitCtx | undefined,
+  ) => StaticValuePlan;
   plan_static_value_expr: (
     expr: CoreExpr,
     ctx: TempCtx,

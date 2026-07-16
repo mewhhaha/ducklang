@@ -27,7 +27,7 @@ function instance_on<token extends PropertyKey, instance extends object>(
   return instance;
 }
 
-export const format_typeclass = Symbol("binned.Format");
+export const format_typeclass = Symbol("ducklang.Format");
 
 export type Format<self> = {
   fmt: (value: self) => string;
@@ -57,7 +57,7 @@ export const Format = typeclass(format_typeclass, {
   },
 });
 
-export const emit_typeclass = Symbol("binned.Emit");
+export const emit_typeclass = Symbol("ducklang.Emit");
 
 export type Emit<from, to> = {
   emit: (value: from) => to;
@@ -80,7 +80,7 @@ export const Emit = typeclass(emit_typeclass, {
   },
 });
 
-export const data_typeclass = Symbol("binned.Data");
+export const data_typeclass = Symbol("ducklang.Data");
 
 export type Data<self, item> = {
   data: (value: self) => item[];
@@ -100,7 +100,7 @@ export const Data = typeclass(data_typeclass, {
   },
 });
 
-export const typed_typeclass = Symbol("binned.Typed");
+export const typed_typeclass = Symbol("ducklang.Typed");
 
 export type Typed<self, type> = {
   type: (value: self) => type;
@@ -120,7 +120,7 @@ export const Typed = typeclass(typed_typeclass, {
   },
 });
 
-export const callable_typeclass = Symbol("binned.Callable");
+export const callable_typeclass = Symbol("ducklang.Callable");
 
 export type CallableType<type> = {
   args: type[];
@@ -158,7 +158,7 @@ export const Callable = typeclass(callable_typeclass, {
   },
 });
 
-export const reduce_typeclass = Symbol("binned.Reduce");
+export const reduce_typeclass = Symbol("ducklang.Reduce");
 
 export type Reduce<ctx, from, to> = {
   reduce: (ctx: ctx, value: from) => to;

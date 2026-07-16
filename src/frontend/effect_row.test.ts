@@ -47,7 +47,7 @@ result
   const formatted = Source.fmt(source);
   assert_includes(
     formatted,
-    "run: () -> <Io | (Io & Io.read) \\ Io.print> Text",
+    "run: [] -> <Io | (Io & Io.read) \\ Io.print> Text",
   );
   assert_includes(formatted, "value <- Io.read ()");
   assert_includes(formatted, "_ <- Io.print value");
@@ -273,6 +273,36 @@ _ <- apply(() => {
   ]);
 });
 
+Deno.test("effect rows traverse effectful match arms", () => {
+  const analysis = Source.effects(`
+declare effect FileReader {
+  open: (&Text) => OpenResult
+  close: () => Unit
+}
+
+type OpenResult = | .ok | .err
+
+let with_file: (Text, () -> <e> I32) -> <FileReader.open | FileReader.close | e> I32 =
+  (path, const action) => {
+    open_result <- FileReader.open(&path)
+
+    match open_result {
+      | .ok => {
+        code <- action()
+        _ <- FileReader.close()
+        code
+      }
+      | .err => 2
+    }
+  }
+`);
+
+  assert_equals(analysis.functions.with_file?.effects, [
+    { effect: "FileReader", operation: "close" },
+    { effect: "FileReader", operation: "open" },
+  ]);
+});
+
 Deno.test("inline callback annotations survive unannotated function calls", () => {
   const analysis = Source.effects(`
 declare effect Io { print: () => Unit }
@@ -381,7 +411,7 @@ let forward = () => {
 }
 
 result <- forward()
-return { result }
+return { .result = result }
 `);
 });
 
@@ -421,7 +451,7 @@ value <- apply(item => {
   input + item
 }, 1)
 let result: I32 = value
-return { result }
+return { .result = result }
 `);
 
   const pure = Source.effects(`
@@ -476,6 +506,28 @@ result
   ]);
 });
 
+Deno.test("Rank-N function annotations preserve callback effect rows", () => {
+  const analysis = Source.effects(`
+declare effect Io { read: () => I32 }
+
+let apply: forall value. (value -> <e> value, value) -> <e> value =
+  (const callback, value) => {
+    result <- callback(value)
+    result
+  }
+
+result <- apply(() => {
+  value <- Io.read()
+  value
+}, ())
+result
+`);
+
+  assert_equals(analysis.module_effects, [
+    { effect: "Io", operation: "read" },
+  ]);
+});
+
 Deno.test("effectful named callback values fail before Core lowering", () => {
   assert_throws(
     () =>
@@ -496,7 +548,7 @@ let read: I32 -> <Io.read> I32 = value => {
 }
 
 result <- apply(read, 1)
-return { result }
+return { .result = result }
 `),
     "Effectful named function read cannot be used as a value yet",
   );
@@ -619,7 +671,7 @@ value <- apply(item => {
   input + item
 }, 1)
 let result: I32 = value
-return { result }
+return { .result = result }
 `);
 });
 

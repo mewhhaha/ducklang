@@ -1,10 +1,6 @@
 import { Expr } from "../expr.ts";
-import {
-  type FrontExpr,
-  Source,
-  type Source as SourceNode,
-  type Stmt,
-} from "../frontend.ts";
+import type { FrontExpr, Source as SourceNode, Stmt } from "../frontend/ast.ts";
+import { Source } from "../frontend/source.ts";
 import { source_span } from "../frontend/syntax.ts";
 import { evaluate_frontend_expression } from "../frontend/lower_graph.ts";
 import { Ic } from "../ic.ts";
@@ -69,7 +65,7 @@ export type ComptimeTraceStep = {
 export type PowertoolsCodeLens = {
   range: LspRange;
   title: string;
-  command: "ix.viewStage" | "ix.expandComptime" | "ix.runExample";
+  command: "duck.viewStage" | "duck.expandComptime" | "duck.runExample";
   arguments: unknown[];
 };
 
@@ -263,7 +259,7 @@ export function powertools_code_lenses(
   const lenses: PowertoolsCodeLens[] = [{
     range: range_at(positions, 0, 0),
     title: "▸ compile to WAT",
-    command: "ix.viewStage",
+    command: "duck.viewStage",
     arguments: [uri, "wat"],
   }];
 
@@ -276,7 +272,7 @@ export function powertools_code_lenses(
     lenses.push({
       range: range_at(positions, span.start, span.end),
       title: "▸ expand",
-      command: "ix.expandComptime",
+      command: "duck.expandComptime",
       arguments: [uri, positions.position_from_offset(span.start)],
     });
   });
@@ -287,7 +283,7 @@ export function powertools_code_lenses(
     lenses.push({
       range: range_at(positions, 0, 0),
       title: "▸ run example",
-      command: "ix.runExample",
+      command: "duck.runExample",
       arguments: [uri],
     });
   }
@@ -298,31 +294,31 @@ export function powertools_code_lenses(
 export function route_execute_command(
   request: ExecuteCommandRequest,
 ): ExecuteCommandResult {
-  if (request.command === "ix.viewStage") {
+  if (request.command === "duck.viewStage") {
     if (request.stage === undefined) {
       return {
         ok: false,
         code: "unsupported_route",
-        message: "ix.viewStage requires a stage",
+        message: "duck.viewStage requires a stage",
       };
     }
 
     return view_stage(request.uri, request.text, request.stage);
   }
 
-  if (request.command === "ix.expandComptime") {
+  if (request.command === "duck.expandComptime") {
     if (request.position === undefined) {
       return {
         ok: false,
         code: "no_comptime_target",
-        message: "ix.expandComptime requires a position",
+        message: "duck.expandComptime requires a position",
       };
     }
 
     return expand_comptime(request.text, request.position, request.encoding);
   }
 
-  if (request.command === "ix.runExample") {
+  if (request.command === "duck.runExample") {
     const example = example_for_uri(request.uri);
 
     if (example === undefined) {
@@ -352,7 +348,7 @@ export function route_execute_command(
   return {
     ok: false,
     code: "unknown_command",
-    message: "Unknown Ix powertools command: " + request.command,
+    message: "Unknown Duck powertools command: " + request.command,
   };
 }
 

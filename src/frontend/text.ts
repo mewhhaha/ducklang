@@ -16,7 +16,15 @@ export function concat_visible_text_values(
   right: FrontExpr,
 ): FrontExpr | undefined {
   if (left.tag === "text" && right.tag === "text") {
-    return { tag: "text", value: left.value + right.value };
+    if (left.encoding !== right.encoding) {
+      return undefined;
+    }
+
+    return {
+      tag: "text",
+      value: left.value + right.value,
+      encoding: left.encoding,
+    };
   }
 
   if (left.tag === "if") {
@@ -104,6 +112,7 @@ export function slice_visible_text_value(
     return {
       tag: "text",
       value: text_decoder.decode(bytes.slice(start, end)),
+      encoding: value.encoding,
     };
   } catch {
     throw new Error("Text slice must preserve valid UTF-8");

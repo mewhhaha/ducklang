@@ -81,6 +81,7 @@ function scan_transfer_stmt<ctx>(
     case "bind":
       scan_transfer_expr(stmt.value, scope, host_imports, state);
       state.transferred.delete(stmt.name);
+      state.declared_owners.add(stmt.name);
       bind_transfer_owner_alias(stmt.name, stmt.value, state);
       bind_transfer_function(stmt.name, stmt.value, state);
       return;
@@ -209,6 +210,10 @@ function scan_transfer_expr<ctx>(
     case "rec": {
       const body = clone_transfer_state(state);
       const previous_ctx = body.ctx;
+
+      for (const param of expr.params) {
+        body.declared_owners.add(param.name);
+      }
 
       if (body.hooks.closure_body_ctx) {
         const scoped_ctx = body.hooks.closure_body_ctx(expr, body.ctx);

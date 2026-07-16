@@ -62,6 +62,14 @@ export function core_binding_value_type_name<ctx extends CoreTypeCheckCtx>(
     return "I64";
   }
 
+  if (value_type === "f32") {
+    return "F32";
+  }
+
+  if (value_type === "v128") {
+    return "F32x4";
+  }
+
   value_type satisfies never;
   throw new Error("panic");
 }
@@ -84,7 +92,7 @@ function static_type_level_value_or_runtime_call<
   }
 }
 
-function ordinary_static_call_probe_error(error: unknown): boolean {
+export function ordinary_static_call_probe_error(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }

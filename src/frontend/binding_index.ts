@@ -55,6 +55,8 @@ export type BindingEntity = {
   scope: ScopeId;
   owner: EntityId | undefined;
   definition: OccurrenceId | undefined;
+  definition_subject: object;
+  definition_slot: string;
 };
 export type BindingScope = {
   id: ScopeId;
@@ -236,9 +238,14 @@ function predeclare(source: Source, scope: ScopeId, state: State): void {
   let declarations: Declaration[] = [];
   if (source.declarations !== undefined) declarations = source.declarations;
   for (const declaration of declarations) {
+    if (declaration.tag === "extend" || declaration.tag === "fixity") {
+      continue;
+    }
+
     let kind: BindingEntityKind = "record";
     if (declaration.tag === "type") kind = "type";
     if (declaration.tag === "effect") kind = "effect";
+    if (declaration.tag === "duck") kind = "type";
     const owner = define(
       declaration,
       "name",
@@ -330,6 +337,21 @@ function predeclare(source: Source, scope: ScopeId, state: State): void {
       }
     }
     if (declaration.tag === "effect") {
+      const declaration_scope = child_scope(scope, state, declaration);
+      for (let index = 0; index < declaration.params.length; index += 1) {
+        const param = declaration.params[index];
+        expect(param !== undefined, "Missing effect type parameter");
+        define(
+          declaration,
+          "params",
+          index,
+          param,
+          "type_parameter",
+          "definition",
+          declaration_scope,
+          state,
+        );
+      }
       for (const operation of declaration.operations) {
         define(
           operation,
@@ -343,9 +365,30 @@ function predeclare(source: Source, scope: ScopeId, state: State): void {
           owner,
         );
         for (const param of operation.params) {
-          visit_name_slot(param, "type_name", scope, state);
+          visit_name_slot(param, "type_name", declaration_scope, state);
         }
-        visit_name_slot(operation.result, "type_name", scope, state);
+        visit_name_slot(
+          operation.result,
+          "type_name",
+          declaration_scope,
+          state,
+        );
+      }
+    }
+    if (declaration.tag === "duck") {
+      for (const member of declaration.members) {
+        define(
+          member,
+          "name",
+          undefined,
+          member.name,
+          "field",
+          "definition",
+          scope,
+          state,
+          owner,
+        );
+        visit_type(member.type_expr, scope, state);
       }
     }
   }
@@ -737,6 +780,12 @@ function visit_expr(expr: FrontExpr, scope: ScopeId, state: State): void {
     }
     return;
   }
+  if (expr.tag === "shape") {
+    for (const entry of expr.entries) {
+      visit_expr(entry.value, scope, state);
+    }
+    return;
+  }
   if (expr.tag === "array") {
     for (const item of expr.items) {
       visit_expr(item, scope, state);
@@ -927,6 +976,15 @@ function visit_expr(expr: FrontExpr, scope: ScopeId, state: State): void {
     for (const field of expr.fields) {
       member_from_receiver(field, expr.base, field.name, scope, state);
       visit_expr(field.value, scope, state);
+    }
+    return;
+  }
+  if (expr.tag === "type_with") {
+    visit_expr(expr.base, scope, state);
+
+    for (const member of expr.members) {
+      visit_expr(member.name, scope, state);
+      visit_expr(member.value, scope, state);
     }
     return;
   }
@@ -1272,6 +1330,8 @@ function define(
     scope,
     owner: parent,
     definition: occurrence,
+    definition_subject: owner,
+    definition_slot: slot,
   });
   let type: FrontType | undefined;
   let nominal: EntityId | undefined;
@@ -1723,6 +1783,8 @@ function nominal_owner(
 function is_builtin(name: string): boolean {
   return name === "true" || name === "false" ||
     name === "construct" || name === "project" || name === "is_case" ||
+    name === "Utf8.encode" || name === "Utf8.decode" ||
+    name === "format_i32" || name === "format_i64" || name === "format_f32" ||
     is_const_builtin_name(name);
 }
 function mark_unvisited_sites(

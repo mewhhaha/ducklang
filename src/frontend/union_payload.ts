@@ -106,7 +106,10 @@ export function validate_union_payload_type(
   }
 
   if (expected === "Int" || expected === "I32" || expected === "U32") {
-    if (actual.tag !== "int" || actual.type === "i64") {
+    if (
+      actual.tag !== "int" ||
+      (actual.type !== undefined && actual.type !== "i32")
+    ) {
       throw new Error(
         "Union case " + name + " expects " + expected + ", got " +
           front_type_name(actual),
@@ -120,6 +123,17 @@ export function validate_union_payload_type(
     if (actual.tag !== "int" || actual.type !== "i64") {
       throw new Error(
         "Union case " + name + " expects I64, got " + front_type_name(actual),
+      );
+    }
+
+    return;
+  }
+
+  if (expected === "F32") {
+    if (actual.tag !== "int" || actual.type !== "f32") {
+      throw new Error(
+        "Union case " + name + " expects F32, got " +
+          front_type_name(actual),
       );
     }
 

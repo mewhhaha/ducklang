@@ -164,6 +164,7 @@ function scan_call_only_expr(
       return scan_call_only_expr(name, expr.value, false);
 
     case "product":
+    case "shape":
       return merge_call_only_scans(
         ...expr.entries.map((entry) =>
           scan_call_only_expr(name, entry.value, false)
@@ -399,6 +400,23 @@ function scan_call_only_expr(
         if (!result.valid) {
           return result;
         }
+      }
+
+      return result;
+    }
+
+    case "type_with": {
+      let result = scan_call_only_expr(name, expr.base, false);
+
+      for (const member of expr.members) {
+        result = merge_call_only_scans(
+          result,
+          scan_call_only_expr(name, member.name, false),
+        );
+        result = merge_call_only_scans(
+          result,
+          scan_call_only_expr(name, member.value, false),
+        );
       }
 
       return result;

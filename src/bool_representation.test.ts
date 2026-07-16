@@ -82,6 +82,7 @@ Deno.test("Bool uses four-byte layouts and scalar host contracts", () => {
     tag: "effect",
     implementation: "host",
     name: "Gate",
+    params: [],
     operations: [{
       name: "choose",
       params: [{ type_name: "Bool", ownership: "scalar" }],
@@ -108,7 +109,7 @@ Deno.test("Bool uses four-byte layouts and scalar host contracts", () => {
   const manifest = build_abi_manifest(effect);
   assert_equals(manifest.effects.Gate.operations.choose, {
     name: "choose",
-    import: "__ix_effect_Gate_choose",
+    import: "__duck_effect_Gate_choose",
     params: [{ type: { tag: "i32" }, ownership: "scalar" }],
     result: { type: { tag: "i32" }, ownership: "scalar" },
   });
@@ -141,8 +142,8 @@ Deno.test("direct and chained Bool aliases type aggregate fields", () => {
   const wat = Source.wat(`
 type Flag = Bool
 type Ready = Flag
-type Box = (.direct = Flag, .chained = Ready)
-let box: Box = (.direct = true, .chained = false)
+type Box = [.direct = Flag, .chained = Ready]
+let box: Box = [.direct = true, .chained = false]
 box.direct
 `);
 
@@ -154,8 +155,8 @@ Deno.test("direct and chained I32 aliases type aggregate fields", () => {
   const wat = Source.wat(`
 type Count = I32
 type Total = Count
-type Box = (.direct = Count, .chained = Total)
-let box: Box = (.direct = 40, .chained = 2)
+type Box = [.direct = Count, .chained = Total]
+let box: Box = [.direct = 40, .chained = 2]
 box.direct + box.chained
 `);
 
@@ -167,8 +168,8 @@ Deno.test("direct and chained I64 aliases type aggregate fields", () => {
   const wat = Source.wat(`
 type Wide = I64
 type Wider = Wide
-type Box = (.direct = Wide, .chained = Wider)
-let box: Box = (.direct = 40i64, .chained = 2i64)
+type Box = [.direct = Wide, .chained = Wider]
+let box: Box = [.direct = 40i64, .chained = 2i64]
 box.direct + box.chained
 `);
 
@@ -180,8 +181,8 @@ Deno.test("Bool aliases resolve in aggregate type patterns", () => {
   const wat = Source.wat(`
 type Flag = Bool
 type Ready = Flag
-type Box = (.direct = Flag, .chained = Ready)
-let struct { direct: Flag, chained: Ready } = Box
+type Box = [.direct = Flag, .chained = Ready]
+let struct { .direct= Flag, .chained= Ready } = Box
 0
 `);
 
@@ -208,12 +209,12 @@ module (!init: Init) where
 
 type Flag = Bool
 type Ready = Flag
-type Result = (.flag = Ready)
+type Result = [.flag = Ready]
 declare effect Host { get: () => Result }
 declare Init { host: Host }
 
 result <- Host.get ()
-return { result }
+return { .result = result }
 `);
 
   assert_equals(artifact.abi.types.Result, {
@@ -233,19 +234,19 @@ module (!init: Init) where
 type Flag = Bool
 type Ready = Flag
 declare effect Gate { choose: (Ready) => Flag }
-type Init = (.gate = Gate)
+type Init = [.gate = Gate]
 
 value <- Gate.choose true
-return { value }
+return { .value = value }
 `);
 
   assert_equals(artifact.abi.effects.Gate.operations.choose, {
     name: "choose",
-    import: "__ix_effect_Gate_choose",
+    import: "__duck_effect_Gate_choose",
     params: [{ type: { tag: "i32" }, ownership: "scalar" }],
     result: { type: { tag: "i32" }, ownership: "scalar" },
   });
-  assert_includes(artifact.wat, "(func $__ix_abi_main");
+  assert_includes(artifact.wat, "(func $__duck_abi_main");
 });
 
 Deno.test("managed Bool alias parameters reject I32 arguments", () => {
@@ -257,10 +258,10 @@ module (!init: Init) where
 type Flag = Bool
 type Ready = Flag
 declare effect Gate { choose: (Ready) => Flag }
-type Init = (.gate = Gate)
+type Init = [.gate = Gate]
 
 value <- Gate.choose 1
-return { value }
+return { .value = value }
 `),
     "Call to Gate.choose argument 1 expects Bool, got I32",
   );

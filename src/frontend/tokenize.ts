@@ -158,16 +158,87 @@ export function scan_source(text: string): SourceSyntax {
       }
       add_trivia("comment", start, start_line, start_column);
     } else if (is_digit(char)) {
-      while (index < text.length && is_digit(text[index] as string)) {
+      const hexadecimal = char === "0" &&
+        (text[index + 1] === "x" || text[index + 1] === "X");
+      let floating_point = false;
+
+      if (hexadecimal) {
         advance();
+        advance();
+        const digit_start = index;
+
+        while (index < text.length && is_hex_digit(text[index] as string)) {
+          advance();
+        }
+
+        if (index === digit_start) {
+          add_invalid(
+            start,
+            start_line,
+            start_column,
+            "Hexadecimal literal requires at least one digit",
+          );
+          continue;
+        }
+      } else {
+        while (index < text.length && is_digit(text[index] as string)) {
+          advance();
+        }
+
+        if (text[index] === "." && is_digit(text[index + 1] as string)) {
+          floating_point = true;
+          advance();
+
+          while (index < text.length && is_digit(text[index] as string)) {
+            advance();
+          }
+        }
+
+        if (text[index] === "e" || text[index] === "E") {
+          floating_point = true;
+          advance();
+
+          if (text[index] === "+" || text[index] === "-") {
+            advance();
+          }
+
+          const exponent_start = index;
+
+          while (index < text.length && is_digit(text[index] as string)) {
+            advance();
+          }
+
+          if (index === exponent_start) {
+            add_invalid(
+              start,
+              start_line,
+              start_column,
+              "Floating-point exponent requires at least one digit",
+            );
+            continue;
+          }
+        }
       }
 
       const suffix = text.slice(index, index + 3);
-      if (suffix === "i32" || suffix === "i64") {
+
+      if (
+        suffix === "i32" || suffix === "i64" ||
+        (!hexadecimal && suffix === "f32")
+      ) {
         advance();
         advance();
         advance();
+      } else if (floating_point) {
+        add_invalid(
+          start,
+          start_line,
+          start_column,
+          "Floating-point literal requires an f32 suffix",
+        );
+        continue;
       }
+
       add_token(
         "number",
         text.slice(start, index),
@@ -204,7 +275,21 @@ export function scan_source(text: string): SourceSyntax {
         advance();
         advance();
         add_token("symbol", two, start, start_line, start_column);
-      } else if ("{}()[],:.+-*%=/!<>.;|&#\\".includes(char)) {
+      } else if (is_operator_character(char)) {
+        while (
+          index < text.length &&
+          is_operator_character(text[index] as string)
+        ) {
+          advance();
+        }
+        add_token(
+          "symbol",
+          text.slice(start, index),
+          start,
+          start_line,
+          start_column,
+        );
+      } else if ("{}()[],:..;#@".includes(char)) {
         advance();
         if (char === ";") {
           add_token("newline", "\n", start, start_line, start_column);
@@ -254,6 +339,16 @@ function is_two_symbol(value: string): boolean {
     value === "::" || value === "<-" || value === "==" ||
     value === ".." || value === "!=" || value === "<=" ||
     value === ">=" || value === "&&" || value === "||";
+}
+
+function is_operator_character(value: string): boolean {
+  return "-!$%&*+/<=>?^|~\\".includes(value);
+}
+
+function is_hex_digit(value: string): boolean {
+  return is_digit(value) ||
+    (value >= "a" && value <= "f") ||
+    (value >= "A" && value <= "F");
 }
 
 function scan_literal(

@@ -16,6 +16,7 @@ import type {
 } from "../../runtime_union.ts";
 import type { TextLayout } from "../../text_layout.ts";
 import type { RuntimeTextEq } from "../../text_facts.ts";
+import type { CoreRuntimeBufferBuiltin } from "../../runtime_buffer.ts";
 
 export type CoreBackendTextApi = {
   core_binding_value: (
@@ -60,6 +61,14 @@ export type CoreBackendTextApi = {
     expr: CoreExpr,
     ctx: StaticCtx,
   ) => RuntimeUnionTarget | undefined;
+  runtime_union_type_expr: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => CoreExpr | undefined;
+  runtime_aggregate_type_expr: (
+    expr: CoreExpr,
+    ctx: StaticCtx,
+  ) => CoreExpr | undefined;
   emit_expr: (expr: CoreExpr, ctx: CoreEmitCtx) => Wat;
   expr_type: (expr: CoreExpr, ctx: StaticCtx) => ValType;
   static_runtime_union_match_branch_ctx: (
@@ -108,6 +117,17 @@ export type CoreBackendText = {
     value: CoreExpr,
     ctx: StaticCtx,
   ) => RuntimeTextEq | undefined;
+  emit_runtime_bytes_generate: (
+    subject: CoreExpr,
+    length: CoreExpr,
+    generator: CoreExpr,
+    ctx: CoreEmitCtx,
+  ) => Wat;
+  emit_runtime_buffer_builtin: (
+    subject: CoreExpr,
+    builtin: CoreRuntimeBufferBuiltin,
+    ctx: CoreEmitCtx,
+  ) => Wat;
   emit_runtime_text_byte_index: (
     collection: CoreExpr,
     index: CoreExpr,

@@ -6,13 +6,14 @@ import type {
   CoreParam,
   CoreStmt,
 } from "../ast.ts";
-import type { CoreStorageClass } from "../escape.ts";
+import type { CoreStorageClass } from "../model/storage.ts";
 import type {
   CoreAllocationByteSize,
   CoreAllocationLayout,
   CoreAllocationOwnedChild,
-} from "../allocation.ts";
-import type { CoreOwnership, CoreOwnershipHooks } from "../ownership.ts";
+} from "../model/allocation.ts";
+import type { CoreOwnership } from "../model/ownership.ts";
+import type { CoreOwnershipHooks } from "../ownership.ts";
 
 export type CoreDropEdge =
   | "scope_exit"
@@ -45,7 +46,7 @@ export type CoreDropStep =
     allocation_id?: string;
     allocation_ids?: string[];
     byte_size?: CoreAllocationByteSize;
-    alignment?: 4 | 8;
+    alignment?: 4 | 8 | 16;
     layout?: CoreAllocationLayout;
     owned_children?: CoreAllocationOwnedChild[];
   }

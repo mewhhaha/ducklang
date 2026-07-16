@@ -484,7 +484,17 @@ function drop_temporary_app_args<ctx>(
     union_payload = union_value.value;
   }
 
-  for (const arg of expr.args) {
+  for (let index = 0; index < expr.args.length; index += 1) {
+    const arg = expr.args[index];
+    if (!arg) {
+      throw new Error("Missing temporary app argument " + index.toString());
+    }
+    if (
+      expr.func.tag === "var" && expr.func.name === "Bytes.generate" &&
+      index === 1
+    ) {
+      continue;
+    }
     if (arg.tag === "var" || arg.tag === "linear") {
       continue;
     }

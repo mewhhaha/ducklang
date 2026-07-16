@@ -1,6 +1,7 @@
 import type { DataSegment } from "../../mod.ts";
+import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreField, CoreParam, CoreStmt } from "../ast.ts";
-import { set_local } from "../backend/util.ts";
+import { set_local } from "../emit/local.ts";
 import { closure_param_info } from "../closure_type/param.ts";
 import { align_to } from "../memory.ts";
 import { static_core_call_branch_value } from "../static_call.ts";
@@ -17,6 +18,8 @@ import {
 import { dynamic_if_let_can_match } from "../union_static.ts";
 import { core_text_layout_param_type } from "./param.ts";
 import type { CoreTextLayoutHooks, TextLayout } from "./types.ts";
+import { core_runtime_buffer_builtin } from "../runtime_buffer.ts";
+import { core_runtime_slice_fact } from "../runtime_slice.ts";
 
 type TextLayoutBranchCtx =
   | { tag: "scan"; ctx: StaticTextCtx }
@@ -190,16 +193,22 @@ export function build_text_layout(
       case "collection_loop":
         visit_expr(stmt.collection);
 
-        with_text_layout_ctx(create_text_layout_branch_ctx(ctx), () => {
-          if (stmt.index) {
-            bind_layout_loop_local(stmt.index);
-          }
-          bind_layout_loop_local(stmt.item);
+        {
+          const fields = hooks.static_collection_fields(stmt.collection, ctx);
+          const slice = core_runtime_slice_fact(stmt.collection);
 
-          for (const item of stmt.body) {
-            visit_stmt(item);
-          }
-        });
+          with_text_layout_ctx(create_text_layout_branch_ctx(ctx), () => {
+            if (stmt.index) {
+              bind_layout_loop_local(stmt.index);
+            }
+            bind_layout_loop_local(stmt.item);
+            bind_collection_item_text_fact(stmt.item, fields, slice);
+
+            for (const item of stmt.body) {
+              visit_stmt(item);
+            }
+          });
+        }
 
         return;
 
@@ -328,7 +337,21 @@ export function build_text_layout(
     annotation: string | undefined,
   ): void {
     ctx.statics.delete(name);
-    ctx.union_locals.delete(name);
+    const union_type = hooks.runtime_union_type_expr(value, ctx);
+
+    if (union_type) {
+      ctx.union_locals.set(name, union_type);
+    } else {
+      ctx.union_locals.delete(name);
+    }
+
+    const struct_type = hooks.runtime_aggregate_type_expr(value, ctx);
+
+    if (struct_type) {
+      ctx.struct_locals.set(name, struct_type);
+    } else {
+      ctx.struct_locals.delete(name);
+    }
 
     if (annotation) {
       const type = core_val_type_from_type_name(annotation);
@@ -358,6 +381,42 @@ export function build_text_layout(
       ctx.text_locals.add(name);
     } else {
       ctx.text_locals.delete(name);
+
+      if (!ctx.locals.has(name)) {
+        if (value.tag === "num") {
+          set_local(ctx.locals, name, value.type);
+        }
+
+        if (value.tag === "prim") {
+          set_local(ctx.locals, name, hooks.expr_type(value, ctx));
+        }
+
+        if (value.tag === "var" || value.tag === "linear") {
+          const type = ctx.locals.get(value.name);
+
+          if (type) {
+            set_local(ctx.locals, name, type);
+          }
+        }
+
+        if (value.tag === "app") {
+          if (
+            value.func.tag === "var" &&
+            (value.func.name === "len" || value.func.name === "get" ||
+              value.func.name === "panic" ||
+              value.func.name === "runtime_i32_slice" ||
+              value.func.name === "runtime_text_slice")
+          ) {
+            set_local(ctx.locals, name, hooks.expr_type(value, ctx));
+          } else {
+            const fn_type = hooks.closure_fn_type(value.func, ctx);
+
+            if (fn_type) {
+              set_local(ctx.locals, name, fn_type.result);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -368,6 +427,37 @@ export function build_text_layout(
     ctx.union_locals.delete(name);
     ctx.text_locals.delete(name);
     set_local(ctx.locals, name, "i32");
+  }
+
+  function bind_collection_item_text_fact(
+    name: string,
+    fields: CoreField[] | undefined,
+    slice: ReturnType<typeof core_runtime_slice_fact>,
+  ): void {
+    if (slice && slice.element_type === "Text") {
+      ctx.text_locals.add(name);
+      return;
+    }
+
+    if (!fields) {
+      return;
+    }
+
+    let text: boolean | undefined;
+    for (const field of fields) {
+      const field_is_text = hooks.core_expr_is_text(field.value, ctx);
+      if (text === undefined) {
+        text = field_is_text;
+      } else {
+        expect(
+          text === field_is_text,
+          "Core collection item text fact mismatch",
+        );
+      }
+    }
+    if (text) {
+      ctx.text_locals.add(name);
+    }
   }
 
   function layout_value_has_text_fact(
@@ -387,6 +477,14 @@ export function build_text_layout(
     }
 
     if (value.tag === "app" && value.func.tag === "var") {
+      if (core_runtime_buffer_builtin(value)) {
+        return true;
+      }
+
+      if (value.func.name === "Bytes.generate") {
+        return true;
+      }
+
       if (value.func.name === "append") {
         const left = value.args[0];
         const right = value.args[1];

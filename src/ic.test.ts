@@ -11,6 +11,10 @@ function i64(value: bigint): IcNode {
   return { tag: "num", type: "i64", value };
 }
 
+function f32(value: number): IcNode {
+  return { tag: "num", type: "f32", value };
+}
+
 function var_(name: string): IcNode {
   return { tag: "var", name };
 }
@@ -323,6 +327,93 @@ Deno.test("Ic.reduce folds i64 primitives with wrapping", () => {
   );
 });
 
+Deno.test("Ic.reduce folds f32 arithmetic and conversions", () => {
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "f32.add",
+      args: [f32(0.1), f32(0.2)],
+    }),
+    f32(Math.fround(Math.fround(0.1) + Math.fround(0.2))),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "f32.sqrt",
+      args: [f32(9)],
+    }),
+    f32(3),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "f32.convert_i32_s",
+      args: [i32(-17)],
+    }),
+    f32(-17),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.trunc_f32_s",
+      args: [f32(-17.75)],
+    }),
+    i32(-17),
+  );
+  assert_throws(
+    () =>
+      Ic.reduce({
+        tag: "prim",
+        prim: "i32.trunc_f32_s",
+        args: [f32(Number.NaN)],
+      }),
+    "i32_from_f32 traps for value NaN",
+  );
+});
+
+Deno.test("Ic.reduce folds integer bitwise operations and masked shifts", () => {
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.xor",
+      args: [i32(0xff), i32(0x0f)],
+    }),
+    i32(0xf0),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.shl",
+      args: [i32(1), i32(32)],
+    }),
+    i32(1),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i32.shr_u",
+      args: [i32(-1), i32(1)],
+    }),
+    i32(2147483647),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i64.shl",
+      args: [i64(1n), i64(65n)],
+    }),
+    i64(2n),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "i64.shr_u",
+      args: [i64(-1n), i64(1n)],
+    }),
+    i64(9223372036854775807n),
+  );
+});
+
 Deno.test("Ic.reduce folds comparison primitives to i32 booleans", () => {
   assert_equals(
     Ic.reduce({
@@ -626,4 +717,59 @@ Deno.test("Ic.emit lowers text values to Expr text pointers", () => {
   assert_equals(Data.data(Expr, expr), [
     { offset: 0, bytes: [5, 0, 0, 0, 104, 101, 108, 108, 111] },
   ]);
+});
+
+Deno.test("Ic.reduce preserves explicit F32x4 primitives for lowering", () => {
+  const vector: IcNode = {
+    tag: "prim",
+    prim: "f32x4.make",
+    args: [
+      { tag: "num", type: "f32", value: 1 },
+      { tag: "num", type: "f32", value: 2 },
+      { tag: "num", type: "f32", value: 3 },
+      { tag: "num", type: "f32", value: 4 },
+    ],
+  };
+  const program: IcNode = {
+    tag: "prim",
+    prim: "f32x4.extract_lane",
+    args: [
+      {
+        tag: "prim",
+        prim: "f32x4.add",
+        args: [vector, {
+          tag: "prim",
+          prim: "f32x4.splat",
+          args: [{ tag: "num", type: "f32", value: 1 }],
+        }],
+      },
+      i32(3),
+    ],
+  };
+
+  assert_equals(Ic.reduce(program), program);
+  const lowered = Emit.emit(Ic, program);
+  assert_equals(Typed.type(Expr, lowered), "f32");
+  assert_includes(Emit.emit(Expr, lowered), "f32x4.extract_lane 3");
+});
+
+Deno.test("Ic.validate requires literal F32x4 lanes from 0 through 3", () => {
+  const validation = Ic.validate({
+    tag: "prim",
+    prim: "f32x4.extract_lane",
+    args: [
+      {
+        tag: "prim",
+        prim: "f32x4.splat",
+        args: [{ tag: "num", type: "f32", value: 1 }],
+      },
+      i32(4),
+    ],
+  });
+
+  assert_equals(validation.ok, false);
+  assert_includes(
+    validation.issues[0]?.message || "",
+    "f32x4_extract_lane lane must be between 0 and 3, got 4",
+  );
 });

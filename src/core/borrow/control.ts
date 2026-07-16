@@ -34,6 +34,13 @@ export function core_stmt_definitely_exits_sequence(stmt: CoreStmt): boolean {
         return core_stmts_definitely_exit_sequence(stmt.expr.statements);
       }
 
+      if (
+        stmt.expr.tag === "app" && stmt.expr.func.tag === "var" &&
+        stmt.expr.func.name === "panic"
+      ) {
+        return true;
+      }
+
       return false;
 
     case "bind":

@@ -24,6 +24,7 @@ import type {
 } from "./types.ts";
 import { record_borrow_expr_with_scan } from "./record.ts";
 import { inherit_core_source_origin } from "../source_origin.ts";
+import { dynamic_if_let_can_match } from "../union_static.ts";
 
 function scan_borrow_expr<ctx>(
   expr: CoreExpr,
@@ -120,6 +121,33 @@ function scan_borrow_expr<ctx>(
         inherit_core_source_origin(inlined, expr);
         scan_borrow_expr(inlined, ctx, hooks, scope.id, state, use, aliases);
         return;
+      }
+
+      if (
+        hooks.static_core_call_target &&
+        hooks.static_core_call_requires_scope &&
+        hooks.scoped_static_core_call_value
+      ) {
+        const target = hooks.static_core_call_target(expr.func, ctx);
+
+        if (target && hooks.static_core_call_requires_scope(target)) {
+          const scoped = hooks.scoped_static_core_call_value(
+            expr,
+            target,
+            ctx,
+          );
+          inherit_core_source_origin(scoped.value, expr);
+          scan_borrow_expr(
+            scoped.value,
+            scoped.ctx,
+            hooks,
+            scope.id,
+            state,
+            use,
+            aliases,
+          );
+          return;
+        }
       }
 
       check_host_transfer_barriers(expr, ctx, hooks, scope.id, state, aliases);
@@ -275,7 +303,7 @@ function scan_borrow_expr<ctx>(
       );
       return;
 
-    case "if_let":
+    case "if_let": {
       scan_borrow_expr(
         expr.target,
         ctx,
@@ -285,7 +313,62 @@ function scan_borrow_expr<ctx>(
         "bounded",
         aliases,
       );
-      {
+      let then_ctx = ctx;
+      let then_reachable = true;
+      const union_case = hooks.static_union_case?.(expr.target, ctx);
+
+      if (union_case) {
+        if (union_case.name !== expr.case_name) {
+          then_reachable = false;
+        } else if (
+          hooks.if_let_branch_ctx && hooks.bind_core_if_let_payload_fact
+        ) {
+          then_ctx = hooks.if_let_branch_ctx(ctx);
+          hooks.bind_core_if_let_payload_fact(
+            expr.value_name,
+            union_case,
+            then_ctx,
+          );
+        }
+      } else {
+        const dynamic_target = hooks.dynamic_union_if?.(expr.target, ctx);
+
+        if (dynamic_target) {
+          if (!dynamic_if_let_can_match(expr.case_name, dynamic_target)) {
+            then_reachable = false;
+          } else if (
+            hooks.if_let_branch_ctx && hooks.bind_dynamic_if_let_payload
+          ) {
+            then_ctx = hooks.if_let_branch_ctx(ctx);
+            hooks.bind_dynamic_if_let_payload(
+              expr.case_name,
+              expr.value_name,
+              dynamic_target,
+              then_ctx,
+            );
+          }
+        } else if (
+          hooks.runtime_union_target && hooks.runtime_union_match_info &&
+          hooks.static_runtime_union_match_branch_ctx
+        ) {
+          const runtime_target = hooks.runtime_union_target(expr.target, ctx);
+
+          if (runtime_target) {
+            const info = hooks.runtime_union_match_info(
+              expr.case_name,
+              runtime_target,
+              ctx,
+            );
+            then_ctx = hooks.static_runtime_union_match_branch_ctx(
+              expr.value_name,
+              info,
+              ctx,
+            );
+          }
+        }
+      }
+
+      if (then_reachable) {
         const then_aliases = clone_borrow_aliases(aliases);
 
         if (expr.value_name) {
@@ -301,7 +384,7 @@ function scan_borrow_expr<ctx>(
 
         scan_borrow_expr(
           expr.then_branch,
-          ctx,
+          then_ctx,
           hooks,
           parent,
           state,
@@ -309,6 +392,7 @@ function scan_borrow_expr<ctx>(
           then_aliases,
         );
       }
+
       scan_borrow_expr(
         expr.else_branch,
         ctx,
@@ -319,6 +403,7 @@ function scan_borrow_expr<ctx>(
         aliases,
       );
       return;
+    }
 
     case "field":
       scan_borrow_expr(

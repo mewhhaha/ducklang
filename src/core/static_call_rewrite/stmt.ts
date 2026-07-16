@@ -1,20 +1,26 @@
 import type { CoreExpr, CoreStmt } from "../ast.ts";
-import { fresh_temp_local, type TempNameCtx } from "../backend/util.ts";
+import { fresh_temp_local } from "../emit/name.ts";
+import { type TempNameCtx } from "../emit/types.ts";
 import {
   replacement_var_name,
   scoped_static_core_call_names,
 } from "./names.ts";
 
+export type ScopedStaticCoreCallCtx = TempNameCtx & {
+  materialized_bindings?: Set<string>;
+  mutable_bindings?: Set<string>;
+};
+
 type ScopedStaticCoreCallExpr = (
   expr: CoreExpr,
   replacements: Map<string, CoreExpr>,
-  ctx: TempNameCtx,
+  ctx: ScopedStaticCoreCallCtx,
 ) => CoreExpr;
 
 export function scoped_static_core_call_block(
   stmts: CoreStmt[],
   replacements: Map<string, CoreExpr>,
-  ctx: TempNameCtx,
+  ctx: ScopedStaticCoreCallCtx,
   rewrite_expr: ScopedStaticCoreCallExpr,
 ): CoreStmt[] {
   const result: CoreStmt[] = [];
@@ -31,7 +37,7 @@ export function scoped_static_core_call_block(
 function scoped_static_core_call_stmt(
   stmt: CoreStmt,
   replacements: Map<string, CoreExpr>,
-  ctx: TempNameCtx,
+  ctx: ScopedStaticCoreCallCtx,
   rewrite_expr: ScopedStaticCoreCallExpr,
 ): CoreStmt {
   switch (stmt.tag) {
@@ -42,6 +48,12 @@ function scoped_static_core_call_stmt(
         ctx,
       );
       const name = fresh_temp_local(ctx, "local_" + stmt.name);
+      if (ctx.mutable_bindings?.has(stmt.name)) {
+        ctx.mutable_bindings.add(name);
+      }
+      if (ctx.materialized_bindings?.has(stmt.name)) {
+        ctx.materialized_bindings.add(name);
+      }
       replacements.set(stmt.name, { tag: "var", name });
       return {
         tag: "bind",
@@ -72,6 +84,12 @@ function scoped_static_core_call_stmt(
 
       if (existing && stmt.mode === "change") {
         const name = fresh_temp_local(ctx, "local_" + stmt.name);
+        if (ctx.mutable_bindings?.has(stmt.name)) {
+          ctx.mutable_bindings.add(name);
+        }
+        if (ctx.materialized_bindings?.has(stmt.name)) {
+          ctx.materialized_bindings.add(name);
+        }
         replacements.set(stmt.name, { tag: "var", name });
         return {
           tag: "assign",

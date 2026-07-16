@@ -78,6 +78,10 @@ export function eval_const_builtin(
       return i32_expr(array.expr.items.length);
     }
 
+    if (array !== undefined && array.expr.tag === "product") {
+      return i32_expr(array.expr.entries.length);
+    }
+
     const target = hooks.resolve_struct_value(collection, env);
     expect(target, "len requires a compile-time collection value");
     return i32_expr(target.expr.fields.length);

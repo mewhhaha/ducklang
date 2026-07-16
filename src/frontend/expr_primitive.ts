@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import { Ic, type Ic as IcNode } from "../ic.ts";
-import type { Prim } from "../op.ts";
+import type { NumType, Prim } from "../op.ts";
 import type { Binding, Env, FrontExpr, Stmt } from "./ast.ts";
 import { stmt_result_expr } from "./block_result.ts";
 import { structured_core_route } from "./diagnostic.ts";
@@ -242,9 +242,13 @@ function lower_numeric_primitive_operand(
   );
 }
 
-function numeric_primitive_operand_type(prim: Prim): "i32" | "i64" {
+function numeric_primitive_operand_type(prim: Prim): NumType {
   if (prim.startsWith("i64.")) {
     return "i64";
+  }
+
+  if (prim.startsWith("f32.")) {
+    return "f32";
   }
 
   return "i32";

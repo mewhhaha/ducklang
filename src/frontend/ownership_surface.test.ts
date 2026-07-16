@@ -15,6 +15,7 @@ declare effect Io {
     tag: "effect",
     implementation: "host",
     name: "Io",
+    params: [],
     operations: [
       {
         name: "write",

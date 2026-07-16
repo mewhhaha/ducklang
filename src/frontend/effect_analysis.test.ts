@@ -107,7 +107,7 @@ read
   ]);
 });
 
-Deno.test("effect analysis discharges Ix operations through handler factories", () => {
+Deno.test("effect analysis discharges Duck operations through handler factories", () => {
   const analysis = analyze_front_effects(parse_source(`
 effect Counter { get: () => I32, add: (I32) => Unit }
 
@@ -184,7 +184,7 @@ let inner = () => Counter {
 }
 try run() with inner()
 `)),
-    "Unresolved Ix effect at module boundary: Counter.add",
+    "Unresolved Duck effect at module boundary: Counter.add",
   );
 });
 
@@ -338,7 +338,7 @@ Counter {
   );
 });
 
-Deno.test("effect analysis rejects unresolved Ix operations at the root", () => {
+Deno.test("effect analysis rejects unresolved Duck operations at the root", () => {
   assert_throws(
     () =>
       analyze_front_effects(parse_source(`
@@ -349,6 +349,6 @@ let run = () => {
 }
 run()
 `)),
-    "Unresolved Ix effect at module boundary: Counter.get",
+    "Unresolved Duck effect at module boundary: Counter.get",
   );
 });

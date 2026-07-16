@@ -75,14 +75,16 @@ Deno.test("Resume uses an internal wasm32 pointer representation", () => {
 
 Deno.test("runtime aggregates and unions store Resume closure pointers", () => {
   const aggregate_wat = Source.wat(`
-const resume_box_type = struct { resume: Resume }
-resume_box_type { resume: (value: I32) => value + 1 }
+const { struct } = comptime (import "duck:prelude")()
+const resume_box_type = struct { .resume= Resume }
+[.resume = (value: I32) => value + 1] as resume_box_type
 `);
   assert_includes(aggregate_wat, "(type $closure_i32_i32_to_i32");
   assert_includes(aggregate_wat, "i32.store offset=0");
 
   const union_wat = Source.wat(`
-const suspended = union { more: Resume, done: I32 }
+type Suspended = | .more = Resume | .done = I32
+const suspended = Suspended
 suspended.more((value: I32) => value + 1)
 `);
   assert_includes(union_wat, "(type $closure_i32_i32_to_i32");
@@ -319,7 +321,7 @@ declare effect Io { suspend: () => Resume }
     () =>
       build_abi_manifest(Source.parse(`
 const resume_alias = Resume
-const ix_entry_result_type = resume_alias
+const duck_entry_result_type = resume_alias
 0
 `)),
     "Managed ABI cannot expose Resume values",

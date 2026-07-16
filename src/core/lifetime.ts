@@ -67,7 +67,7 @@ export function core_freeze_lifetime_decision(
       };
 
     case "unique_heap":
-      if (ownership.reason === "text") {
+      if (ownership.reason === "text" || ownership.reason === "bytes") {
         return {
           tag: "allowed",
           reason: "freeze of unique_heap text consumes the owned buffer as " +

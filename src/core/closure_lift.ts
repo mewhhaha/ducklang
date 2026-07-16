@@ -71,7 +71,17 @@ export function closure_env_size(lift: LiftedClosure): number {
     size = Math.max(size, capture.offset + val_type_size(capture.type));
   }
 
-  return align_to(size, 8);
+  return align_to(size, closure_env_alignment(lift));
+}
+
+export function closure_env_alignment(lift: LiftedClosure): 8 | 16 {
+  for (const capture of lift.captures) {
+    if (val_type_align(capture.type) === 16) {
+      return 16;
+    }
+  }
+
+  return 8;
 }
 
 export function ensure_closure_func_type(

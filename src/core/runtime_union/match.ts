@@ -3,6 +3,7 @@ import type { CoreTypeField } from "../ast.ts";
 import { runtime_union_payload } from "../runtime_union_payload.ts";
 import type { TypeStaticCtx } from "../type_static.ts";
 import type { RuntimeUnionMatchInfo, RuntimeUnionTarget } from "./types.ts";
+import { runtime_union_type_layout } from "./size.ts";
 
 export function runtime_union_match_info<ctx extends TypeStaticCtx>(
   case_name: string,
@@ -24,10 +25,12 @@ export function runtime_union_match_info<ctx extends TypeStaticCtx>(
 
   expect(declared, "Missing union case: " + case_name);
   const payload = runtime_union_payload(declared.type_name, ctx);
+  const layout = runtime_union_type_layout(target.type_value, ctx);
 
   return {
     case_name,
     tag_value,
+    payload_offset: layout.payload_offset,
     payload,
   };
 }

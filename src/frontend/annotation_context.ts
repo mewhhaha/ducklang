@@ -7,6 +7,7 @@ import { sem_type_from_expr } from "./semantic_type.ts";
 import { front_type_value_for_semantic_type } from "./type_declaration.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
+import { contextual_struct_fields } from "./struct_value_type.ts";
 
 export function apply_annotation_context(
   annotation: string,
@@ -34,23 +35,13 @@ export function apply_annotation_context(
   }
 
   if (type_value.tag === "struct_type") {
-    const struct = hooks.resolve_struct_value(value, env);
-
-    if (!struct || !is_object_type_expr(struct.expr.type_expr)) {
-      return value;
-    }
-
-    hooks.check_struct_fields(type_value, struct.expr.fields, struct.env);
-
-    return {
-      tag: "struct_value",
-      type_expr: { tag: "var", name: annotation },
-      fields: struct.expr.fields.map((field) => ({
-        name: field.name,
-        value: hooks.capture_expr(field.value, struct.env),
-      })),
-      bracketed: struct.expr.bracketed,
-    };
+    return apply_struct_annotation_context(
+      annotation,
+      type_value,
+      value,
+      env,
+      hooks,
+    );
   }
 
   return apply_union_annotation_context(
@@ -61,6 +52,67 @@ export function apply_annotation_context(
     env,
     hooks,
   );
+}
+
+function apply_struct_annotation_context(
+  annotation: string,
+  type_value: Extract<FrontExpr, { tag: "struct_type" }>,
+  value: FrontExpr,
+  env: Env,
+  hooks: AnnotationHooks,
+): FrontExpr {
+  if (value.tag === "captured") {
+    return {
+      tag: "captured",
+      expr: apply_struct_annotation_context(
+        annotation,
+        type_value,
+        value.expr,
+        value.env,
+        hooks,
+      ),
+      env: value.env,
+    };
+  }
+
+  if (value.tag === "if") {
+    return {
+      ...value,
+      then_branch: apply_struct_annotation_context(
+        annotation,
+        type_value,
+        value.then_branch,
+        env,
+        hooks,
+      ),
+      else_branch: apply_struct_annotation_context(
+        annotation,
+        type_value,
+        value.else_branch,
+        env,
+        hooks,
+      ),
+    };
+  }
+
+  const struct = hooks.resolve_struct_value(value, env);
+
+  if (!struct || !is_object_type_expr(struct.expr.type_expr)) {
+    return value;
+  }
+
+  const fields = contextual_struct_fields(type_value, struct.expr);
+  hooks.check_struct_fields(type_value, fields, struct.env);
+
+  return {
+    tag: "struct_value",
+    type_expr: { tag: "var", name: annotation },
+    fields: fields.map((field) => ({
+      name: field.name,
+      value: hooks.capture_expr(field.value, struct.env),
+    })),
+    bracketed: struct.expr.bracketed,
+  };
 }
 
 function apply_union_annotation_context(

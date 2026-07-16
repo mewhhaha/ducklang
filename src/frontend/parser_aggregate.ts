@@ -1,6 +1,6 @@
 import { expect } from "../expect.ts";
 import type {
-  Field,
+  ComputedTypeMember,
   FrontExpr,
   ProductExprEntry,
   Token,
@@ -24,24 +24,57 @@ export abstract class ParserAggregate extends ParserParams {
   private parse_bracket_value_inner(): FrontExpr {
     this.expect_symbol("[");
     this.skip_newlines();
-    const items: FrontExpr[] = [];
+    const entries: ProductExprEntry[] = [];
 
     if (this.match_symbol("]")) {
-      return { tag: "array", items, rest: undefined };
+      return { tag: "product", entries: [] };
     }
 
-    const first = this.parse_expr();
+    if (this.match_rest_prefix()) {
+      const rest = this.parse_expr();
+      this.expect_symbol(",");
+      this.skip_newlines();
+
+      while (true) {
+        const entry = this.parse_product_expr_entry();
+        expect(
+          entry.label === undefined,
+          "Product spreads cannot be combined with labels",
+        );
+        entries.push(entry);
+
+        if (this.match_symbol("]")) {
+          break;
+        }
+
+        this.expect_symbol(",");
+        this.skip_newlines();
+      }
+
+      return {
+        tag: "array",
+        items: entries.map((entry) => entry.value),
+        rest,
+        leading_rest: true,
+      };
+    }
+
+    const first = this.parse_product_expr_entry();
 
     if (this.match_array_separator()) {
+      expect(
+        first.label === undefined,
+        "Repeated product values cannot have labels",
+      );
       const length = this.parse_expr();
       this.expect_symbol("]");
-      return { tag: "array_repeat", value: first, length };
+      return { tag: "array_repeat", value: first.value, length };
     }
 
-    items.push(first);
+    entries.push(first);
 
     if (this.match_symbol("]")) {
-      return { tag: "array", items, rest: undefined };
+      return { tag: "product", entries };
     }
 
     this.expect_symbol(",");
@@ -56,7 +89,7 @@ export abstract class ParserAggregate extends ParserParams {
         break;
       }
 
-      items.push(this.parse_expr());
+      entries.push(this.parse_product_expr_entry());
 
       if (this.match_symbol("]")) {
         break;
@@ -66,7 +99,79 @@ export abstract class ParserAggregate extends ParserParams {
       this.skip_newlines();
     }
 
-    return { tag: "array", items, rest };
+    if (rest !== undefined) {
+      const items = entries.map((entry) => {
+        expect(
+          entry.label === undefined,
+          "Product spreads cannot be combined with labels",
+        );
+        return entry.value;
+      });
+      return { tag: "array", items, rest };
+    }
+
+    return { tag: "product", entries };
+  }
+
+  protected parse_shape_value(): Extract<FrontExpr, { tag: "shape" }> {
+    const start = this.index;
+    this.expect_symbol("{");
+    this.skip_newlines();
+    const entries: ProductExprEntry[] = [];
+    const names = new Set<string>();
+
+    while (!this.match_symbol("}")) {
+      const entry_start = this.index;
+      const explicit = this.match_symbol(".");
+      const label_token = this.peek();
+      const label = this.expect_name("Expected shape member name");
+      expect_snake_case(label, "Shape member");
+      expect(!names.has(label), "Duplicate shape member: " + label);
+      names.add(label);
+      let value: FrontExpr;
+
+      if (explicit) {
+        this.expect_symbol("=");
+        value = this.parse_expr();
+      } else {
+        value = this.concrete_node(entry_start, { tag: "var", name: label });
+        record_name_site(value, "name", label, label_token.span);
+      }
+
+      const entry = this.concrete_node(entry_start, {
+        label,
+        value,
+      });
+      record_name_site(entry, "name", label, label_token.span);
+      entries.push(entry);
+
+      if (this.match_symbol(",")) {
+        this.skip_newlines();
+      } else {
+        this.skip_newlines();
+      }
+    }
+
+    return this.concrete_node(start, { tag: "shape", entries });
+  }
+
+  protected parse_computed_type_members(): ComputedTypeMember[] {
+    this.expect_symbol("{");
+    this.skip_newlines();
+    const members: ComputedTypeMember[] = [];
+
+    while (!this.match_symbol("}")) {
+      this.expect_symbol(".");
+      this.expect_symbol("[");
+      const name = this.parse_expr();
+      this.expect_symbol("]");
+      this.expect_symbol("=");
+      members.push({ name, value: this.parse_expr() });
+      this.match_symbol(",");
+      this.skip_newlines();
+    }
+
+    return members;
   }
 
   protected parse_parenthesized_value(): FrontExpr {
@@ -78,12 +183,14 @@ export abstract class ParserAggregate extends ParserParams {
 
     const first = this.parse_product_expr_entry();
 
-    if (this.match_symbol(")")) {
-      if (first.label === undefined) {
-        return first.value;
-      }
+    expect(
+      first.label === undefined,
+      "Product values use `[...]`; parentheses only group expressions",
+    );
+    this.skip_newlines();
 
-      return { tag: "product", entries: [first] };
+    if (this.match_symbol(")")) {
+      return first.value;
     }
 
     this.expect_symbol(",");
@@ -91,7 +198,13 @@ export abstract class ParserAggregate extends ParserParams {
     const entries = [first];
 
     while (true) {
-      entries.push(this.parse_product_expr_entry());
+      const entry = this.parse_product_expr_entry();
+      expect(
+        entry.label === undefined,
+        "Product values use `[...]`; parentheses only group named entries",
+      );
+      entries.push(entry);
+      this.skip_newlines();
 
       if (this.match_symbol(")")) {
         break;
@@ -104,7 +217,59 @@ export abstract class ParserAggregate extends ParserParams {
     return { tag: "product", entries };
   }
 
-  private parse_product_expr_entry(): ProductExprEntry {
+  protected parse_parenthesized_call(): {
+    arg: FrontExpr;
+    args: FrontExpr[];
+  } {
+    this.skip_newlines();
+
+    if (this.match_symbol(")")) {
+      return { arg: { tag: "unit" }, args: [] };
+    }
+
+    const first = this.parse_product_expr_entry();
+    expect(
+      first.label === undefined,
+      "Product values use `[...]`; parentheses only group expressions",
+    );
+    this.skip_newlines();
+
+    if (this.match_symbol(")")) {
+      if (first.value.tag === "unit") {
+        return { arg: first.value, args: [] };
+      }
+
+      return { arg: first.value, args: [first.value] };
+    }
+
+    this.expect_symbol(",");
+    this.skip_newlines();
+    const entries = [first];
+
+    while (true) {
+      const entry = this.parse_product_expr_entry();
+      expect(
+        entry.label === undefined,
+        "Product values use `[...]`; parentheses only group named entries",
+      );
+      entries.push(entry);
+      this.skip_newlines();
+
+      if (this.match_symbol(")")) {
+        break;
+      }
+
+      this.expect_symbol(",");
+      this.skip_newlines();
+    }
+
+    return {
+      arg: { tag: "product", entries },
+      args: entries.map((entry) => entry.value),
+    };
+  }
+
+  protected parse_product_expr_entry(): ProductExprEntry {
     let label: string | undefined;
     let label_token: Token | undefined;
 
@@ -142,70 +307,13 @@ export abstract class ParserAggregate extends ParserParams {
     return true;
   }
 
-  protected parse_field_list(): Field[] {
-    this.expect_symbol("{");
-    this.skip_newlines();
-    const fields: Field[] = [];
-
-    while (!this.match_symbol("}")) {
-      const field_start = this.index;
-      const name = this.expect_name("Expected field name");
-      expect_snake_case(name, "Field");
-      this.expect_symbol(":");
-      const value = this.parse_expr();
-      fields.push(this.concrete_node(field_start, { name, value }));
-
-      if (this.match_symbol(",")) {
-        this.skip_newlines();
-      } else {
-        this.skip_newlines();
-      }
-    }
-
-    return fields;
-  }
-
-  protected parse_record_field_list(): Field[] {
-    this.expect_symbol("{");
-    this.skip_newlines();
-    const fields: Field[] = [];
-
-    while (!this.match_symbol("}")) {
-      const field_start = this.index;
-      const name = this.expect_name("Expected record field name");
-      expect_snake_case(name, "Record field");
-      let value: FrontExpr = { tag: "var", name };
-
-      if (this.match_symbol(":")) {
-        value = this.parse_expr();
-      }
-
-      fields.push(this.concrete_node(field_start, { name, value }));
-
-      if (this.match_symbol(",")) {
-        this.skip_newlines();
-      } else {
-        this.skip_newlines();
-      }
-    }
-
-    return fields;
-  }
-
-  protected is_object_literal(): boolean {
-    if (this.peek().kind !== "symbol" || this.peek().text !== "{") {
-      return false;
-    }
-
-    let offset = 1;
-
-    while (this.peek(offset).kind === "newline") {
-      offset += 1;
-    }
-
-    const first = this.peek(offset);
-
-    if (first.kind !== "name") {
+  protected is_shape_literal(
+    offset = 0,
+    allow_single_shorthand = false,
+  ): boolean {
+    if (
+      this.peek(offset).kind !== "symbol" || this.peek(offset).text !== "{"
+    ) {
       return false;
     }
 
@@ -215,13 +323,57 @@ export abstract class ParserAggregate extends ParserParams {
       offset += 1;
     }
 
-    const second = this.peek(offset);
+    if (
+      this.peek(offset).kind === "symbol" && this.peek(offset).text === "}"
+    ) {
+      return true;
+    }
 
-    if (second.kind !== "symbol") {
+    if (
+      this.peek(offset).kind === "symbol" &&
+      this.peek(offset).text === "." &&
+      this.peek(offset + 1).kind === "name" &&
+      this.peek(offset + 2).kind === "symbol" &&
+      this.peek(offset + 2).text === "="
+    ) {
+      return true;
+    }
+
+    if (this.peek(offset).kind !== "name") {
       return false;
     }
 
-    return second.text === ":" || second.text === ",";
+    if (allow_single_shorthand) {
+      return true;
+    }
+
+    offset += 1;
+
+    while (this.peek(offset).kind === "newline") {
+      offset += 1;
+    }
+
+    return this.peek(offset).kind === "symbol" &&
+      this.peek(offset).text === ",";
+  }
+
+  protected is_computed_type_member_literal(offset = 0): boolean {
+    if (
+      this.peek(offset).kind !== "symbol" || this.peek(offset).text !== "{"
+    ) {
+      return false;
+    }
+
+    offset += 1;
+
+    while (this.peek(offset).kind === "newline") {
+      offset += 1;
+    }
+
+    return this.peek(offset).kind === "symbol" &&
+      this.peek(offset).text === "." &&
+      this.peek(offset + 1).kind === "symbol" &&
+      this.peek(offset + 1).text === "[";
   }
 
   protected parse_type_field_list(): TypeField[] {
@@ -276,11 +428,12 @@ export abstract class ParserAggregate extends ParserParams {
         continue;
       }
 
+      this.expect_symbol(".");
       const name_token = this.peek();
       const name = this.expect_name("Expected type pattern field name");
-      const field_start = this.index - 1;
+      const field_start = this.index - 2;
       expect_snake_case(name, "Type pattern field");
-      this.expect_symbol(":");
+      this.expect_symbol("=");
       const annotation = this.consume_type_field_annotation();
       const field = { name, type_name: annotation.text };
       record_name_site(field, "name", name, name_token.span);

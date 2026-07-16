@@ -91,6 +91,10 @@ export function lower_rec_if(
     select_prim = "i64.select";
   }
 
+  if (branch_type.tag === "int" && branch_type.type === "f32") {
+    select_prim = "f32.select";
+  }
+
   return {
     tag: "prim",
     prim: select_prim,
@@ -182,7 +186,7 @@ function check_rec_if_condition(
     return;
   }
 
-  if (type.tag === "int" && type.type !== "i64") {
+  if (type.tag === "int" && type.type === "i32") {
     return;
   }
 

@@ -1,0 +1,163 @@
+==================
+Loop expression with a value break
+==================
+let result = loop {
+  break 42
+}
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (postfix_expression
+        (block
+          (break_statement
+            (postfix_expression
+              (number))))))))
+
+==================
+Wildcard and binderless ranges
+==================
+for _ in 0..2 {
+  ()
+}
+for 0..2 {
+  ()
+}
+---
+
+(source_file
+  (for_statement
+    (wildcard)
+    (condition_expression
+      (number))
+    (condition_expression
+      (number))
+    (block
+      (expression_statement
+        (postfix_expression
+          (unit_pattern)))))
+  (for_statement
+    (condition_expression
+      (number))
+    (condition_expression
+      (number))
+    (block
+      (expression_statement
+        (postfix_expression
+          (unit_pattern))))))
+
+==================
+Break without a value
+==================
+loop {
+  break
+}
+---
+
+(source_file
+  (expression_statement
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (postfix_expression
+        (block
+          (break_statement))))))
+
+==================
+Bare break does not consume the next line
+==================
+loop {
+  break
+  42
+}
+---
+
+(source_file
+  (expression_statement
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (postfix_expression
+        (block
+          (break_statement)
+          (expression_statement
+            (postfix_expression
+              (number))))))))
+
+==================
+No-demand binding positions
+==================
+let _ = 1
+let ignore = (_, const _) => 2
+const { .ignored = _, value } = pair
+let selected = if let .ok(_) = result { 1 } else { 0 }
+---
+
+(source_file
+  (binding_statement
+    (wildcard)
+    (postfix_expression
+      (number)))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list
+        (parameter
+          (wildcard))
+        (parameter
+          (wildcard)))
+      (postfix_expression
+        (number))))
+  (binding_statement
+    (named_shape_pattern
+      (named_shape_pattern_field
+        (identifier)
+        (wildcard))
+      (shorthand_shape_pattern_field
+        (identifier)))
+    (postfix_expression
+      (identifier)))
+  (binding_statement
+    (identifier)
+    (if_expression
+      (union_pattern
+        (identifier)
+        (wildcard))
+      (condition_expression
+        (identifier))
+      (block
+        (expression_statement
+          (postfix_expression
+            (number))))
+      (block
+        (expression_statement
+          (postfix_expression
+            (number)))))))
+
+==================
+Loop remains a contextual keyword
+==================
+let loop = value => value
+loop(42)
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (identifier))))
+  (expression_statement
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (parenthesized_or_product
+        (parenthesized_expression
+          (postfix_expression
+            (number)))))))

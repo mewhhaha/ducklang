@@ -13,7 +13,7 @@ import type {
 } from "./ast.ts";
 import { val_type_from_type_name } from "./types.ts";
 import { resolve_effect_row } from "./effect_row.ts";
-import { format_type_expr } from "./type_expr.ts";
+import { format_type_expr, function_type_expr } from "./type_expr.ts";
 import { prim_returns_bool } from "./numeric.ts";
 
 export type FrontEffectFunction = {
@@ -106,7 +106,7 @@ export function analyze_front_effects(source: Source): FrontEffectAnalysis {
     [],
   );
   const module_effects = effects_with_calls(module_scan, facts);
-  validate_resolved_ix_root(module_effects, index);
+  validate_resolved_duck_root(module_effects, index);
   const functions: Record<string, FrontEffectFunction> = {};
 
   for (const fact of facts.values()) {
@@ -306,8 +306,10 @@ function collect_function_facts_from_statements(
 
     let type_annotation: FunctionTypeExpr | undefined;
 
-    if (stmt.type_annotation?.tag === "arrow") {
-      type_annotation = stmt.type_annotation;
+    const declared_function_type = function_type_expr(stmt.type_annotation);
+
+    if (declared_function_type) {
+      type_annotation = declared_function_type;
       const params = function_type_params(type_annotation);
       expect(
         params.length === value.params.length,
@@ -657,8 +659,10 @@ function function_parameter_effects(
       callback_type = param_type;
     }
 
-    if (callback_type?.tag === "arrow") {
-      result.set(param.name, callback_type.effects);
+    const callback_function_type = function_type_expr(callback_type);
+
+    if (callback_function_type) {
+      result.set(param.name, callback_function_type.effects);
     }
   }
 
@@ -687,9 +691,11 @@ function function_parameter_result_types(
       callback_type = param_type;
     }
 
-    if (callback_type?.tag === "arrow") {
-      if (callback_type.result.tag === "name") {
-        result.set(param.name, callback_type.result.name);
+    const callback_function_type = function_type_expr(callback_type);
+
+    if (callback_function_type) {
+      if (callback_function_type.result.tag === "name") {
+        result.set(param.name, callback_function_type.result.name);
       } else {
         result.set(param.name, undefined);
       }
@@ -1015,9 +1021,20 @@ function validate_parameter_callback_arguments(
   analysis: AnalysisContext,
   facts: Map<string, FunctionFact>,
 ): void {
+  let args = expr.args;
+  const packed = expr.args[0];
+
+  if (
+    expr.args.length === 1 && packed !== undefined &&
+    packed.tag === "product" &&
+    packed.entries.length === called.params.length
+  ) {
+    args = packed.entries.map((entry) => entry.value);
+  }
+
   for (let index = 0; index < called.params.length; index += 1) {
     const param = called.params[index];
-    const arg = expr.args[index];
+    const arg = args[index];
     expect(param, "Missing parameter for " + called.name);
     expect(arg, "Missing argument for " + called.name);
     const param_type = param.type_annotation;
@@ -1117,7 +1134,7 @@ function latent_effects_of_expr(
   return parameter_row;
 }
 
-function validate_resolved_ix_root(
+function validate_resolved_duck_root(
   effects: Map<string, EffectRef>,
   index: EffectIndex,
 ): void {
@@ -1125,9 +1142,9 @@ function validate_resolved_ix_root(
     const declaration = index.effects.get(effect.effect);
     expect(declaration, "Missing effect declaration: " + effect.effect);
 
-    if (declaration.implementation === "ix") {
+    if (declaration.implementation === "duck") {
       throw new Error(
-        "Unresolved Ix effect at module boundary: " + effect_text(effect),
+        "Unresolved Duck effect at module boundary: " + effect_text(effect),
       );
     }
   }
@@ -1181,7 +1198,7 @@ function scan_statements(
         continue;
       }
 
-      if (facts && stmt.type_annotation?.tag === "arrow") {
+      if (facts && function_type_expr(stmt.type_annotation)) {
         throw new Error(
           "Typed function alias " + stmt.name +
             " is not supported yet; bind a function literal instead",
@@ -1778,6 +1795,28 @@ function scan_expr(
         handlers,
       ),
     );
+  } else if (expr.tag === "match") {
+    merge_scan(
+      direct,
+      calls,
+      scan_expr(expr.target, analysis, facts, false, handlers),
+    );
+
+    for (const arm of expr.arms) {
+      if (arm.guard !== undefined) {
+        merge_scan(
+          direct,
+          calls,
+          scan_expr(arm.guard, analysis, facts, false, handlers),
+        );
+      }
+
+      merge_scan(
+        direct,
+        calls,
+        scan_expr(arm.body, analysis, facts, false, handlers),
+      );
+    }
   } else if (expr.tag === "field") {
     merge_scan(
       direct,
@@ -1966,7 +2005,7 @@ function validate_handler_shape(
   const effect = index.effects.get(handler.effect);
   expect(effect, "Unknown handled effect: " + handler.effect);
   expect(
-    effect.implementation === "ix",
+    effect.implementation === "duck",
     "Cannot handle host-declared effect: " + handler.effect,
   );
   const state_names = new Set<string>();
@@ -2513,10 +2552,18 @@ function infer_simple_type(
       return "I64";
     }
 
+    if (expr.type === "f32") {
+      return "F32";
+    }
+
     return "I32";
   }
 
   if (expr.tag === "text") {
+    if (expr.encoding === "bytes") {
+      return "Bytes";
+    }
+
     return "Text";
   }
 
@@ -2576,6 +2623,10 @@ function infer_simple_type(
 
     if (expr.prim.startsWith("i64.")) {
       return "I64";
+    }
+
+    if (expr.prim.startsWith("f32.")) {
+      return "F32";
     }
 
     return "I32";
@@ -2924,7 +2975,8 @@ function effect_result_is_discardable_scalar(
     scalar_type_aliases,
   );
   return resolved === "Unit" || resolved === "Bool" || resolved === "Int" ||
-    resolved === "I32" || resolved === "U32" || resolved === "I64";
+    resolved === "I32" || resolved === "U32" || resolved === "I64" ||
+    resolved === "F32";
 }
 
 function resolved_scalar_type_name(

@@ -54,7 +54,7 @@ async function run_i32(source: string): Promise<number> {
   return Number(main());
 }
 
-Deno.test("Ix handler elaboration lowers a deep scalar counter", () => {
+Deno.test("Duck handler elaboration lowers a deep scalar counter", () => {
   const core = Source.core(counter_source);
   assert_equals(
     core.statements.some((stmt) => stmt.tag === "unsupported"),
@@ -64,11 +64,11 @@ Deno.test("Ix handler elaboration lowers a deep scalar counter", () => {
   assert_includes(wat, "i32.add");
 });
 
-Deno.test("Ix handler elaboration runs a deep scalar counter", async () => {
+Deno.test("Duck handler elaboration runs a deep scalar counter", async () => {
   assert_equals(await run_i32(counter_source), 2);
 });
 
-Deno.test("Ix handler elaboration lowers an inferred nested effect function", async () => {
+Deno.test("Duck handler elaboration lowers an inferred nested effect function", async () => {
   assert_equals(
     await run_i32(`
 effect Counter { get: () => I32 }
@@ -90,7 +90,7 @@ try run() with counter
   );
 });
 
-Deno.test("Ix handler elaboration lowers a typed nested effect function", async () => {
+Deno.test("Duck handler elaboration lowers a typed nested effect function", async () => {
   assert_equals(
     await run_i32(`
 effect Counter { get: () => I32 }
@@ -111,7 +111,7 @@ try run() with counter
   );
 });
 
-Deno.test("a pure nested function shadows an outer Ix function", async () => {
+Deno.test("a pure nested function shadows an outer Duck function", async () => {
   assert_equals(
     await run_i32(`
 effect Counter { get: () => I32 }
@@ -134,7 +134,7 @@ try run() with counter
   );
 });
 
-Deno.test("a nested Ix function can transitively shadow an outer Ix function", async () => {
+Deno.test("a nested Duck function can transitively shadow an outer Duck function", async () => {
   assert_equals(
     await run_i32(`
 effect Counter { get: () => I32 }
@@ -163,7 +163,7 @@ try run() with counter
   );
 });
 
-Deno.test("Ix handler clauses can abort without resuming", async () => {
+Deno.test("Duck handler clauses can abort without resuming", async () => {
   assert_equals(
     await run_i32(`
 effect Stop { stop: () => I32 }
@@ -181,7 +181,7 @@ try run() with stop
   );
 });
 
-Deno.test("Ix handler clauses can post-process a resumed result", async () => {
+Deno.test("Duck handler clauses can post-process a resumed result", async () => {
   assert_equals(
     await run_i32(`
 effect Ask { ask: () => I32 }
@@ -199,7 +199,7 @@ try run() with ask
   );
 });
 
-Deno.test("partial Ix handlers forward to an outer handler", async () => {
+Deno.test("partial Duck handlers forward to an outer handler", async () => {
   assert_equals(
     await run_i32(`
 effect Pair {
@@ -275,7 +275,7 @@ try (try run() with inner()) with outer
   );
 });
 
-Deno.test("Ix handler elaboration rejects consuming one handler twice", () => {
+Deno.test("Duck handler elaboration rejects consuming one handler twice", () => {
   assert_throws(
     () =>
       Source.core(`

@@ -44,7 +44,7 @@ export function consume_linear_expr(
   function consume(name: string, value: FrontExpr): void {
     if (consumed.includes(name) && available.has(name)) {
       throw_linear_diagnostic(
-        "IX2201",
+        "DUCK2201",
         "Linear value " + name + " used more than once",
         value,
         linear_binding_related(available, name),
@@ -68,7 +68,7 @@ export function consume_linear_expr(
       }
 
       throw_linear_diagnostic(
-        "IX2204",
+        "DUCK2204",
         "Linear value " + item.name + " used without explicit consumption",
         item,
         linear_binding_related(available, item.name),
@@ -218,6 +218,81 @@ export function consume_linear_expr(
       );
       return;
     }
+
+    if (item.tag === "match") {
+      consume_linear_condition_with_consumer(
+        item.target,
+        available,
+        closures,
+        active_calls,
+        hooks,
+        consume_linear_expr,
+      );
+      const before = available.clone();
+      let first_branch: LinearBranch | undefined;
+
+      for (const arm of item.arms) {
+        if (arm.guard !== undefined) {
+          consume_linear_condition_with_consumer(
+            arm.guard,
+            before,
+            closures,
+            active_calls,
+            hooks,
+            consume_linear_expr,
+          );
+        }
+
+        const branch = consume_linear_branch_with_consumer(
+          arm.body,
+          before,
+          mode,
+          closures,
+          active_calls,
+          hooks,
+          consume_linear_expr,
+        );
+
+        if (!first_branch) {
+          first_branch = branch;
+          continue;
+        }
+
+        merge_linear_branches(
+          item,
+          available,
+          consumed,
+          closures,
+          first_branch,
+          branch,
+        );
+      }
+
+      if (!first_branch) {
+        throw new Error("Match expression has no arms");
+      }
+
+      if (item.arms.length === 1) {
+        available.replace_with(first_branch.available);
+
+        for (const name of first_branch.consumed) {
+          if (!consumed.includes(name)) {
+            consumed.push(name);
+          }
+        }
+
+        for (const id of first_branch.used_closures) {
+          closures.used.add(id);
+          const consumed_at = first_branch.closure_consumes.get(id);
+
+          if (consumed_at) {
+            closures.consumed_at.set(id, consumed_at);
+          }
+        }
+      }
+
+      return;
+    }
   }
 
   function linear_closure_call_name(func: FrontExpr): string {
@@ -236,7 +311,7 @@ export function consume_linear_expr(
   ): void {
     if (active_calls.has(name)) {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot validate recursive linear closure call yet: " + name,
         call,
       );
@@ -322,7 +397,7 @@ export function consume_linear_expr(
         }
 
         throw_linear_diagnostic(
-          "IX2206",
+          "DUCK2206",
           "Linear closure " + name + " was already consumed",
           call,
           related,
@@ -343,7 +418,7 @@ export function consume_linear_expr(
       if (!local_available.has(used)) {
         if (consumed.includes(used)) {
           throw_linear_diagnostic(
-            "IX2201",
+            "DUCK2201",
             "Linear value " + used + " used more than once",
             call,
             linear_binding_related(available, used),
@@ -362,7 +437,7 @@ export function consume_linear_expr(
     const name = consumed[0];
     expect(name, "Missing discarded linear value");
     throw_linear_diagnostic(
-      "IX2203",
+      "DUCK2203",
       "Linear value " + name + " is consumed but not rebound",
       expr,
       linear_binding_related(available, name),

@@ -1,5 +1,12 @@
 import { assert_equals, assert_throws } from "./assert.ts";
-import { Prim, specialize_prim_for_operands } from "./op.ts";
+import {
+  f32x4_builtin_name,
+  f32x4_builtin_prim,
+  numeric_builtin_name,
+  numeric_builtin_prim,
+  Prim,
+  specialize_prim_for_operands,
+} from "./op.ts";
 import { Callable, Emit, Format } from "./trait.ts";
 
 Deno.test("Prim.fmt formats typed primitives", () => {
@@ -103,4 +110,69 @@ Deno.test("Prim.emit returns the typed primitive instruction", () => {
     "i64.mul",
     "i32.eq",
   ]);
+});
+
+Deno.test("Prim exposes f32 arithmetic and explicit conversions", () => {
+  assert_equals(Callable.type(Prim, "f32.add"), {
+    args: ["f32", "f32"],
+    result: "f32",
+  });
+  assert_equals(Callable.type(Prim, "f32.sqrt"), {
+    args: ["f32"],
+    result: "f32",
+  });
+  assert_equals(Callable.type(Prim, "f32.convert_i32_s"), {
+    args: ["i32"],
+    result: "f32",
+  });
+  assert_equals(Callable.type(Prim, "i32.trunc_f32_s"), {
+    args: ["f32"],
+    result: "i32",
+  });
+  assert_equals(Emit.emit(Prim, "f32.sqrt"), "f32.sqrt");
+  assert_equals(Emit.emit(Prim, "i32.trunc_f32_s"), "i32.trunc_f32_s");
+});
+
+Deno.test("Prim maps public integer and f32 builtins", () => {
+  assert_equals(numeric_builtin_prim("bit_and"), "i32.and");
+  assert_equals(numeric_builtin_prim("shift_right_u"), "i32.shr_u");
+  assert_equals(numeric_builtin_prim("f32_sqrt"), "f32.sqrt");
+  assert_equals(numeric_builtin_prim("f32_from_i32"), "f32.convert_i32_s");
+  assert_equals(numeric_builtin_prim("i32_from_f32"), "i32.trunc_f32_s");
+  assert_equals(numeric_builtin_name("i64.xor"), "bit_xor");
+  assert_equals(numeric_builtin_name("i64.shl"), "shift_left");
+
+  assert_equals(
+    specialize_prim_for_operands("i32.and", "i64", "i64"),
+    "i64.and",
+  );
+  assert_equals(
+    specialize_prim_for_operands("i32.add", "f32", "f32"),
+    "f32.add",
+  );
+  assert_throws(
+    () => specialize_prim_for_operands("i32.and", "f32", "f32"),
+    "Operator bit_and does not support f32 operands",
+  );
+});
+
+Deno.test("Prim exposes typed F32x4 operations and public builtins", () => {
+  assert_equals(f32x4_builtin_prim("f32x4"), "f32x4.make");
+  assert_equals(f32x4_builtin_prim("f32x4_mul"), "f32x4.mul");
+  assert_equals(
+    f32x4_builtin_name("f32x4.extract_lane"),
+    "f32x4_extract_lane",
+  );
+  assert_equals(Callable.type(Prim, "f32x4.make"), {
+    args: ["f32", "f32", "f32", "f32"],
+    result: "v128",
+  });
+  assert_equals(Callable.type(Prim, "f32x4.replace_lane"), {
+    args: ["v128", "i32", "f32"],
+    result: "v128",
+  });
+  assert_equals(
+    Callable.arity(Prim, "f32x4.replace_lane"),
+    Callable.type(Prim, "f32x4.replace_lane").args.length,
+  );
 });

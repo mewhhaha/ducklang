@@ -1,25 +1,59 @@
 import { format_text } from "../fmt/format.ts";
 import { run_lsp } from "../lsp/server.ts";
-import { Source } from "../frontend.ts";
+import { Source, type SourceDiagnostic } from "../frontend.ts";
+import { run_build, run_source } from "./compile.ts";
 
-const usage = `Usage: ix <command>
+const usage = `Usage: duck <command>
 
 Commands:
-  fmt [paths...] [--check]  Format .ix files in place; --check only reports
+  build <file> [options]    Compile a .duck file; defaults to Core Wasm
+  run <file> [options]      Compile and run a .duck file
+  fmt [paths...] [--check]  Format .duck files in place; --check only reports
   fmt --stdin               Format source from stdin to stdout
-  check <paths...>          Parse .ix files and report diagnostics
+  check <paths...>          Analyze .duck files and report diagnostics
   lsp                       Run the language server over stdio
+
+Build options:
+  --emit wat|wasm|all       Select outputs; defaults to wasm
+  --out <directory>         Write outputs under this directory
+  --route ic|core|managed   Select the compiler route; defaults to core
+  --managed                 Alias for --route managed
+  --host-interface <file>   Add managed host declarations
 `;
 
 export async function run_cli(args: string[]): Promise<number> {
   const command = args[0];
 
+  try {
+    return await dispatch_command(command, args.slice(1));
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(error.message);
+      return 1;
+    }
+
+    throw error;
+  }
+}
+
+async function dispatch_command(
+  command: string | undefined,
+  args: string[],
+): Promise<number> {
+  if (command === "build") {
+    return await run_build(args);
+  }
+
+  if (command === "run") {
+    return await run_source(args);
+  }
+
   if (command === "fmt") {
-    return await run_fmt(args.slice(1));
+    return await run_fmt(args);
   }
 
   if (command === "check") {
-    return await run_check(args.slice(1));
+    return await run_check(args);
   }
 
   if (command === "lsp") {
@@ -27,9 +61,12 @@ export async function run_cli(args: string[]): Promise<number> {
   }
 
   console.error(usage.trimEnd());
-  return command === undefined || command === "--help" || command === "help"
-    ? 0
-    : 1;
+
+  if (command === undefined || command === "--help" || command === "help") {
+    return 0;
+  }
+
+  return 1;
 }
 
 async function run_fmt(args: string[]): Promise<number> {
@@ -86,7 +123,11 @@ async function run_fmt(args: string[]): Promise<number> {
     return 1;
   }
 
-  return check && changed > 0 ? 1 : 0;
+  if (check && changed > 0) {
+    return 1;
+  }
+
+  return 0;
 }
 
 async function run_check(args: string[]): Promise<number> {
@@ -101,16 +142,78 @@ async function run_check(args: string[]): Promise<number> {
   let failed = 0;
 
   for (const file of files) {
-    const text = await Deno.readTextFile(file);
-    const failure = parse_failure(text);
+    const analysis = Source.analyze_file(file, { warnings: true });
 
-    if (failure !== undefined) {
-      console.error(file + ": " + failure);
-      failed += 1;
+    for (const diagnostic of analysis.diagnostics) {
+      console.error(format_source_diagnostic(
+        file,
+        analysis.syntax.text,
+        diagnostic,
+      ));
+
+      if (diagnostic.severity === "error") {
+        failed += 1;
+      }
     }
   }
 
   return failed > 0 ? 1 : 0;
+}
+
+function format_source_diagnostic(
+  file: string,
+  text: string,
+  diagnostic: SourceDiagnostic,
+): string {
+  const location = source_location(text, diagnostic.span.start);
+  const lines = [
+    file + ":" + location.line.toString() + ":" +
+    location.column.toString() + ": " + diagnostic.severity + "[" +
+    diagnostic.code + "]: " + diagnostic.message,
+  ];
+
+  if (diagnostic.related === undefined) {
+    return lines[0];
+  }
+
+  for (const related of diagnostic.related) {
+    let related_file = file;
+    let related_text = text;
+
+    if (related.uri !== undefined) {
+      const related_url = new URL(related.uri);
+      related_file = related_url.pathname;
+      related_text = Deno.readTextFileSync(related_url);
+    }
+
+    const related_location = source_location(related_text, related.span.start);
+    lines.push(
+      "  " + related_file + ":" + related_location.line.toString() + ":" +
+        related_location.column.toString() + ": note: " + related.message,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function source_location(
+  text: string,
+  offset: number,
+): { line: number; column: number } {
+  let line = 1;
+  let column = 1;
+
+  for (let index = 0; index < offset; index += 1) {
+    if (text[index] === "\n") {
+      line += 1;
+      column = 1;
+      continue;
+    }
+
+    column += 1;
+  }
+
+  return { line, column };
 }
 
 function parse_failure(text: string): string | undefined {
@@ -118,7 +221,11 @@ function parse_failure(text: string): string | undefined {
     Source.parse(text);
     return undefined;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 }
 
@@ -151,7 +258,7 @@ async function collect_files(paths: string[]): Promise<string[]> {
 
         if (entry.isDirectory) {
           pending.push(entry_path);
-        } else if (entry.name.endsWith(".ix")) {
+        } else if (entry.name.endsWith(".duck")) {
           files.push(entry_path);
         }
       }

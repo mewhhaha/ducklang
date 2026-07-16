@@ -134,6 +134,12 @@ function substitute_type_set_member(
   hooks: TypePatternHooks,
 ): TypeExpr {
   switch (type.tag) {
+    case "forall":
+      return {
+        ...type,
+        body: substitute_type_set_member(type.body, env, hooks),
+      };
+
     case "name":
       return { tag: "name", name: resolve_type_name(type.name, env, hooks) };
 

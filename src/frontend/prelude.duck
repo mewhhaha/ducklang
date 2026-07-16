@@ -1,0 +1,19 @@
+module () where
+
+const struct = (const shape) => {
+  let product_type = []
+
+  for field in shape {
+    product_type = [...product_type, field.value]
+  }
+
+  for index, field in shape {
+    product_type = product_type with {
+      .[field.name] = value => value[index]
+    }
+  }
+
+  product_type
+}
+
+return { struct }

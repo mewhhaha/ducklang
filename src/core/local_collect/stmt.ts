@@ -1,6 +1,6 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreStmt } from "../ast.ts";
-import { set_local } from "../backend/util.ts";
+import { set_local } from "../emit/local.ts";
 import { core_statement_cleanup_rows } from "../cleanup_emission.ts";
 import { collect_if_else_stmt_locals } from "../local_collect_if_else.ts";
 import { collect_core_if_let_stmt_locals } from "../local_collect_if_let.ts";
@@ -101,7 +101,11 @@ export function collect_core_stmt_locals(
         }
       }
 
-      if (hooks.is_static_value_expr(value, ctx)) {
+      if (
+        hooks.is_static_value_expr(value, ctx) &&
+        (ctx.mutable_bindings?.has(stmt.name) !== true ||
+          value.tag === "struct_value")
+      ) {
         const plan = hooks.plan_static_value_expr(value, ctx, undefined);
         const materialized_struct_owner = stmt.kind === "let" &&
           ctx.materialized_bindings?.has(stmt.name) === true &&
@@ -135,7 +139,14 @@ export function collect_core_stmt_locals(
             stmt.annotation,
             ctx,
           );
-          ctx.text_locals.delete(stmt.name);
+          if (
+            stmt.annotation === "Text" || stmt.annotation === "Bytes" ||
+            hooks.core_expr_is_text(plan.value, ctx)
+          ) {
+            ctx.text_locals.add(stmt.name);
+          } else {
+            ctx.text_locals.delete(stmt.name);
+          }
           bind_core_frozen_fact(stmt.name, value, ctx);
           return;
         }
@@ -174,7 +185,12 @@ export function collect_core_stmt_locals(
       {
         const value = hooks.core_assignment_value(stmt, ctx);
 
-        if (hooks.is_static_value_expr(value, ctx)) {
+        if (
+          hooks.is_static_value_expr(value, ctx) &&
+          (ctx.mutable_bindings?.has(stmt.name) !== true ||
+            value.tag === "struct_value" ||
+            value.tag === "struct_update")
+        ) {
           const plan = hooks.plan_static_value_expr(
             value,
             ctx,
@@ -202,7 +218,11 @@ export function collect_core_stmt_locals(
               stmt.mode,
               ctx,
             );
-            ctx.text_locals.delete(stmt.name);
+            if (hooks.core_expr_is_text(plan.value, ctx)) {
+              ctx.text_locals.add(stmt.name);
+            } else {
+              ctx.text_locals.delete(stmt.name);
+            }
             bind_core_frozen_fact(stmt.name, value, ctx);
             declare_assignment_cleanup_locals(stmt, value, ctx, hooks);
             return;

@@ -46,6 +46,7 @@ export function core_allocation_plan<ctx>(
     next_allocation: 0,
     next_block: 0,
     next_closure: 0,
+    next_loop: 0,
     next_scratch: 0,
     next_static_call: 0,
     current_allocation_instance: undefined,
@@ -348,7 +349,41 @@ export function link_drop_allocations(
     return linked_step;
   });
 
-  return { steps };
+  const owned_allocations = new Set<string>();
+  for (const fact of allocations.facts) {
+    for (const child of fact.owned_children || []) {
+      for (const allocation_id of child.allocation_ids) {
+        owned_allocations.add(allocation_id);
+      }
+    }
+  }
+
+  return {
+    steps: steps.filter((step) => {
+      if (step.tag !== "heap_drop") {
+        return true;
+      }
+      if (
+        step.edge === "conditional_cleanup" ||
+        step.edge === "loop_zero_iteration_cleanup"
+      ) {
+        return true;
+      }
+      const allocation_ids: string[] = [];
+      if (step.allocation_id) {
+        allocation_ids.push(step.allocation_id);
+      }
+      for (const allocation_id of step.allocation_ids || []) {
+        allocation_ids.push(allocation_id);
+      }
+      if (allocation_ids.length === 0) {
+        return true;
+      }
+      return !allocation_ids.every((allocation_id) => {
+        return owned_allocations.has(allocation_id);
+      });
+    }),
+  };
 }
 
 function allocation_subject_is_expr(
@@ -379,7 +414,11 @@ function linked_allocation_owned_children(
   allocations: CoreAllocationPlan,
 ): CoreAllocationPlan["facts"][number]["owned_children"] {
   if (parent.owned_children) {
-    return parent.owned_children;
+    return nested_allocation_owned_children(
+      parent.owned_children,
+      allocations,
+      new Set([parent.allocation_id]),
+    );
   }
 
   if (parent.reason !== "runtime_aggregate" || !parent.owner) {
@@ -436,7 +475,41 @@ function linked_allocation_owned_children(
       layout: child.layout,
     });
   }
-  return result;
+  return nested_allocation_owned_children(
+    result,
+    allocations,
+    new Set([parent.allocation_id]),
+  );
+}
+
+function nested_allocation_owned_children(
+  children: CoreAllocationOwnedChild[],
+  allocations: CoreAllocationPlan,
+  ancestors: ReadonlySet<string>,
+): CoreAllocationOwnedChild[] {
+  return children.map((child) => {
+    const child_facts = allocations.facts.filter((fact) => {
+      return child.allocation_ids.includes(fact.allocation_id) &&
+        !ancestors.has(fact.allocation_id);
+    });
+    const owned_children = merged_allocation_owned_children(child_facts);
+    if (!owned_children) {
+      return { ...child };
+    }
+
+    const next_ancestors = new Set(ancestors);
+    for (const fact of child_facts) {
+      next_ancestors.add(fact.allocation_id);
+    }
+    return {
+      ...child,
+      owned_children: nested_allocation_owned_children(
+        owned_children,
+        allocations,
+        next_ancestors,
+      ),
+    };
+  });
 }
 
 function merged_allocation_owned_children(
@@ -448,31 +521,55 @@ function merged_allocation_owned_children(
       continue;
     }
     for (const child of parent.owned_children) {
-      const existing = result.find((candidate) => {
-        return candidate.offset === child.offset &&
-          candidate.layout === child.layout &&
-          candidate.ownership.reason === child.ownership.reason;
-      });
-      if (existing) {
-        for (const allocation_id of child.allocation_ids) {
-          if (!existing.allocation_ids.includes(allocation_id)) {
-            existing.allocation_ids.push(allocation_id);
-          }
-        }
-        continue;
-      }
-      result.push({
-        allocation_ids: [...child.allocation_ids],
-        offset: child.offset,
-        ownership: child.ownership,
-        layout: child.layout,
-      });
+      merge_allocation_owned_child(result, child);
     }
   }
   if (result.length === 0) {
     return undefined;
   }
   return result;
+}
+
+function merge_allocation_owned_child(
+  children: CoreAllocationOwnedChild[],
+  child: CoreAllocationOwnedChild,
+): void {
+  const existing = children.find((candidate) => {
+    return candidate.offset === child.offset &&
+      candidate.layout === child.layout &&
+      candidate.ownership.reason === child.ownership.reason;
+  });
+  if (!existing) {
+    const owned_children: CoreAllocationOwnedChild[] = [];
+    for (const owned_child of child.owned_children || []) {
+      merge_allocation_owned_child(owned_children, owned_child);
+    }
+    const copy: CoreAllocationOwnedChild = {
+      allocation_ids: [...child.allocation_ids],
+      offset: child.offset,
+      ownership: child.ownership,
+      layout: child.layout,
+    };
+    if (owned_children.length > 0) {
+      copy.owned_children = owned_children;
+    }
+    children.push(copy);
+    return;
+  }
+
+  for (const allocation_id of child.allocation_ids) {
+    if (!existing.allocation_ids.includes(allocation_id)) {
+      existing.allocation_ids.push(allocation_id);
+    }
+  }
+  if (!child.owned_children) {
+    return;
+  }
+  const owned_children = existing.owned_children || [];
+  for (const owned_child of child.owned_children) {
+    merge_allocation_owned_child(owned_children, owned_child);
+  }
+  existing.owned_children = owned_children;
 }
 
 function allocations_share_cleanup_layout(

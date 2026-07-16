@@ -7,6 +7,7 @@ import {
 } from "../src/lsp/server.ts";
 
 type Measurement = {
+  source_path: string;
   cold_init_ms: number;
   keystroke_diagnostics_ms: number;
   completion_ms: number;
@@ -24,16 +25,16 @@ const budget = {
   heap_growth_bytes: 128 * 1024 * 1024,
 };
 
-const largest = largest_example();
-const uri = new URL("../" + largest.path, import.meta.url).href;
-const examples_root = new URL("../examples/", import.meta.url).href;
+const benchmark = benchmark_source();
+const uri = new URL("../" + benchmark.path, import.meta.url).href;
+const workspace_root = new URL("../", import.meta.url).href;
 const before_heap = Deno.memoryUsage().heapUsed;
 const state = create_state({ debounce_ms: 0, now: () => 1 });
 const init_start = performance.now();
 handle_message(state, {
   id: 1,
   method: "initialize",
-  params: { rootUri: examples_root },
+  params: { rootUri: workspace_root },
 });
 const cold_init_ms = performance.now() - init_start;
 handle_message(state, {
@@ -41,13 +42,13 @@ handle_message(state, {
   params: {
     textDocument: {
       uri,
-      languageId: "ix",
+      languageId: "duck",
       version: 1,
-      text: largest.text,
+      text: benchmark.text,
     },
   },
 });
-const edited = largest.text + "\n// performance edit\n";
+const edited = benchmark.text + "\n// performance edit\n";
 const diagnostic_start = performance.now();
 handle_message(state, {
   method: "textDocument/didChange",
@@ -71,6 +72,7 @@ const completion_ms = performance.now() - completion_start;
 const parsed = Source.parse_with_diagnostics(edited);
 const metrics = state.documents.cache_metrics(uri, "source_analysis");
 const measurement: Measurement = {
+  source_path: benchmark.path,
   cold_init_ms,
   keystroke_diagnostics_ms,
   completion_ms,
@@ -85,7 +87,7 @@ const measurement: Measurement = {
 console.log(JSON.stringify({ budget, measurement }, undefined, 2));
 enforce_budget(measurement);
 
-function largest_example(): { path: string; text: string } {
+function benchmark_source(): { path: string; text: string } {
   let largest: { path: string; text: string } | undefined;
 
   for (const example of success_examples) {
@@ -97,8 +99,17 @@ function largest_example(): { path: string; text: string } {
     }
   }
 
+  const grep_path = "case-studies/grep/grep.duck";
+  const grep_text = Deno.readTextFileSync(
+    new URL("../" + grep_path, import.meta.url),
+  );
+
+  if (largest === undefined || grep_text.length > largest.text.length) {
+    largest = { path: grep_path, text: grep_text };
+  }
+
   if (largest === undefined) {
-    throw new Error("No successful Ix examples are available for benchmarking");
+    throw new Error("No Duck source is available for benchmarking");
   }
 
   return largest;

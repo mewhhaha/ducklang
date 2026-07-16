@@ -86,7 +86,6 @@ export function runtime_aggregate_type_expr<
     const fn_type = hooks.closure_fn_type(value.func, ctx);
 
     if (fn_type) {
-      hooks.check_closure_call_args(value, fn_type, ctx);
       return fn_type.result_struct;
     }
   }

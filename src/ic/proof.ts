@@ -278,6 +278,7 @@ function classify_prim(
 
   if (
     ic.prim === "i32.load" || ic.prim === "i64.load" ||
+    ic.prim === "f32.load" ||
     ic.prim === "i32.load8_u" || ic.prim === "i64.load8_u"
   ) {
     check_load_address(ic.prim, args[0], path + ".args[0]", context);
@@ -297,7 +298,7 @@ function classify_prim(
     }
   }
 
-  if (ic.prim === "i32.select" || ic.prim === "i64.select") {
+  if (ic.prim.endsWith(".select")) {
     const selected = merge_selected_storage(args[0], args[1]);
 
     if (selected.tag === "static_address") {
@@ -404,14 +405,19 @@ function merge_selected_storage(
 }
 
 function check_load_address(
-  prim: "i32.load" | "i64.load" | "i32.load8_u" | "i64.load8_u",
+  prim:
+    | "i32.load"
+    | "i64.load"
+    | "f32.load"
+    | "i32.load8_u"
+    | "i64.load8_u",
   storage: ValueStorage | undefined,
   path: string,
   context: ProofContext,
 ): void {
   let width = 1n;
 
-  if (prim === "i32.load") {
+  if (prim === "i32.load" || prim === "f32.load") {
     width = 4n;
   } else if (prim === "i64.load") {
     width = 8n;

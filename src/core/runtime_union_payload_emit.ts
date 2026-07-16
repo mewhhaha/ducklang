@@ -1,13 +1,13 @@
 import { expect } from "../expect.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr } from "./ast.ts";
-import { find_core_field } from "./backend/util.ts";
+import { find_core_field } from "./analysis/field.ts";
 import { load_instr, store_instr } from "./memory.ts";
 import type { RuntimeUnionMatchInfo } from "./runtime_union.ts";
 import type {
   RuntimeUnionEmitCtx,
   RuntimeUnionEmitHooks,
-} from "./runtime_union_emit.ts";
+} from "./runtime_union_emit/types.ts";
 import type { RuntimeUnionBoundPayloadField } from "./runtime_union_match.ts";
 import type { RuntimeUnionPayloadField } from "./runtime_union_payload.ts";
 
@@ -37,14 +37,14 @@ export function emit_runtime_union_match_payload_setup(
   if (info.payload.tag === "aggregate") {
     return [
       "local.get $" + local_name,
-      load_instr("i32", 4),
+      load_instr("i32", info.payload_offset),
       "local.set $" + value_name,
     ].join("\n");
   }
 
   return [
     "local.get $" + local_name,
-    load_instr(info.payload.type, 4),
+    load_instr(info.payload.type, info.payload_offset),
     "local.set $" + value_name,
   ].join("\n");
 }

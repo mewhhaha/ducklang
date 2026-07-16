@@ -22,6 +22,7 @@ export function expr_contains_linear(expr: FrontExpr): boolean {
       return expr_contains_linear(expr.value);
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (expr_contains_linear(entry.value)) {
           return true;
@@ -149,6 +150,22 @@ export function expr_contains_linear(expr: FrontExpr): boolean {
       }
 
       return fields_contain_linear(expr.fields);
+
+    case "type_with":
+      if (expr_contains_linear(expr.base)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          expr_contains_linear(member.name) ||
+          expr_contains_linear(member.value)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
 
     case "if":
       return expr_contains_linear(expr.cond) ||

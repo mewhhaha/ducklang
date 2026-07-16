@@ -335,6 +335,10 @@ function eval_const_rec_expr(
       );
     }
 
+    if (expr.leading_rest === true) {
+      return { ...expr, items: [...rest.items, ...items], rest: undefined };
+    }
+
     return { ...expr, items: [...items, ...rest.items], rest: undefined };
   }
 
@@ -478,6 +482,10 @@ function materialize_const_rec_arg(
       throw new Error(
         "Compile-time array spread requires a fixed array value",
       );
+    }
+
+    if (expr.leading_rest === true) {
+      return { ...expr, items: [...rest.items, ...items], rest: undefined };
     }
 
     return { ...expr, items: [...items, ...rest.items], rest: undefined };

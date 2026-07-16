@@ -4,6 +4,7 @@ import {
   type RuntimeUnionPayload,
 } from "../runtime_union_payload.ts";
 import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
+import { runtime_union_type_layout } from "../runtime_union/size.ts";
 import { record_allocation } from "./record.ts";
 import type {
   CoreAllocationHooks,
@@ -143,6 +144,27 @@ export function record_runtime_union_allocations<ctx>(
     allocation_instance,
   );
 
+  let payload_offset = 4;
+
+  if (value.type_expr) {
+    const type_value = static_type_value(
+      value.type_expr,
+      ctx as ctx & TypeStaticCtx,
+    );
+    if (!type_value || type_value.tag !== "union_type") {
+      throw new Error("Missing runtime union allocation type");
+    }
+    const layout = runtime_union_type_layout(
+      type_value,
+      ctx as ctx & TypeStaticCtx,
+    );
+    payload_offset = layout.payload_offset;
+
+    if (parent && layout.align === 16) {
+      parent.alignment = 16;
+    }
+  }
+
   if (value.value) {
     const payload = runtime_union_case_payload(value, ctx);
     if (!payload) {
@@ -165,7 +187,7 @@ export function record_runtime_union_allocations<ctx>(
       state,
     );
     if (parent) {
-      attach_runtime_union_owned_children(parent, children);
+      attach_runtime_union_owned_children(parent, children, payload_offset);
     }
   }
 }
@@ -312,6 +334,7 @@ function runtime_union_direct_owned_children(
 export function attach_runtime_union_owned_children(
   parent: CoreAllocationState["facts"][number],
   candidates: CoreAllocationState["facts"],
+  payload_offset: number,
 ): void {
   if (parent.storage !== "persistent_unique_heap") {
     return;
@@ -347,7 +370,7 @@ export function attach_runtime_union_owned_children(
   }
   const owned_children = parent.owned_children || [];
   const existing = owned_children.find((candidate) => {
-    return candidate.offset === 4 &&
+    return candidate.offset === payload_offset &&
       candidate.layout === child.layout &&
       candidate.ownership.reason === child_ownership.reason;
   });
@@ -364,7 +387,7 @@ export function attach_runtime_union_owned_children(
   }
   owned_children.push({
     allocation_ids,
-    offset: 4,
+    offset: payload_offset,
     ownership: child_ownership,
     layout: child.layout,
   });

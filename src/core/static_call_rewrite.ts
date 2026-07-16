@@ -1,7 +1,9 @@
 import type { CoreExpr, CoreField } from "./ast.ts";
-import type { TempNameCtx } from "./backend/util.ts";
 import { record_core_expr_provenance } from "./subject_provenance.ts";
-import { scoped_static_core_call_block } from "./static_call_rewrite/stmt.ts";
+import {
+  scoped_static_core_call_block,
+  type ScopedStaticCoreCallCtx,
+} from "./static_call_rewrite/stmt.ts";
 import {
   shadow_core_call_name,
   shadow_core_call_params,
@@ -10,17 +12,33 @@ import {
 export function scoped_static_core_call_expr(
   expr: CoreExpr,
   replacements: Map<string, CoreExpr>,
-  ctx: TempNameCtx,
+  ctx: ScopedStaticCoreCallCtx,
 ): CoreExpr {
   switch (expr.tag) {
     case "num":
     case "text":
     case "type_name":
-    case "linear":
     case "struct_type":
     case "union_type":
     case "unsupported":
       return expr;
+
+    case "linear": {
+      const replacement = replacements.get(expr.name);
+
+      if (!replacement) {
+        return expr;
+      }
+
+      if (replacement.tag === "var") {
+        return record_core_expr_provenance({
+          tag: "linear",
+          name: replacement.name,
+        }, expr);
+      }
+
+      return replacement;
+    }
 
     case "var": {
       const replacement = replacements.get(expr.name);
@@ -233,7 +251,7 @@ export function scoped_static_core_call_expr(
 function scoped_static_core_call_fields(
   fields: CoreField[],
   replacements: Map<string, CoreExpr>,
-  ctx: TempNameCtx,
+  ctx: ScopedStaticCoreCallCtx,
 ): CoreField[] {
   return fields.map((field) => ({
     name: field.name,

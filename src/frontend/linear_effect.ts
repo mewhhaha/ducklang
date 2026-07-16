@@ -27,6 +27,7 @@ export function contains_reserved_linear_effect(
       return contains_reserved_linear_effect(expr.value, names);
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (contains_reserved_linear_effect(entry.value, names)) {
           return true;
@@ -201,6 +202,23 @@ export function contains_reserved_linear_effect(
       return false;
     }
 
+    case "type_with": {
+      if (contains_reserved_linear_effect(expr.base, names)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          contains_reserved_linear_effect(member.name, names) ||
+          contains_reserved_linear_effect(member.value, names)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
     case "if":
       return contains_reserved_linear_effect(expr.cond, names) ||
         contains_reserved_linear_effect(expr.then_branch, names) ||
@@ -353,6 +371,7 @@ function uses_linear_name(
       return uses_linear_name(expr.value, names, explicit_only);
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (uses_linear_name(entry.value, names, explicit_only)) {
           return true;
@@ -521,6 +540,23 @@ function uses_linear_name(
 
       for (const field of expr.fields) {
         if (uses_linear_name(field.value, names, explicit_only)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    case "type_with": {
+      if (uses_linear_name(expr.base, names, explicit_only)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          uses_linear_name(member.name, names, explicit_only) ||
+          uses_linear_name(member.value, names, explicit_only)
+        ) {
           return true;
         }
       }

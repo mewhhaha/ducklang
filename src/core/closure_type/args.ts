@@ -1,6 +1,6 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreFnType } from "../ast.ts";
-import { find_core_field } from "../backend/util.ts";
+import { find_core_field } from "../analysis/field.ts";
 import { same_runtime_aggregate_type_expr } from "../runtime_aggregate.ts";
 import { same_runtime_union_type_expr } from "../runtime_union.ts";
 import {
@@ -41,7 +41,7 @@ export function check_closure_call_args(
     if (expected_constraint) {
       hooks.apply_core_parameter_annotation(
         {
-          name: "__ix_closure_arg_" + index.toString(),
+          name: "__duck_closure_arg_" + index.toString(),
           is_const: false,
           is_linear: false,
           annotation: expected_constraint,

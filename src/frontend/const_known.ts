@@ -27,6 +27,7 @@ export function is_const_expr_known(
       return is_const_expr_known(expr.value, env, bound);
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (!is_const_expr_known(entry.value, env, bound)) {
           return false;
@@ -186,6 +187,23 @@ export function is_const_expr_known(
 
       for (const field of expr.fields) {
         if (!is_const_expr_known(field.value, env, bound)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    case "type_with": {
+      if (!is_const_expr_known(expr.base, env, bound)) {
+        return false;
+      }
+
+      for (const member of expr.members) {
+        if (
+          !is_const_expr_known(member.name, env, bound) ||
+          !is_const_expr_known(member.value, env, bound)
+        ) {
           return false;
         }
       }

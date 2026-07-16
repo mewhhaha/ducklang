@@ -1,14 +1,10 @@
 import { expect } from "../expect.ts";
-import { Prim } from "../op.ts";
-import { Emit } from "../trait.ts";
-import type { Wat } from "../wat.ts";
+import { emit_prim_call, type PrimOperandEmission } from "../op.ts";
+import { type Wat, wat_number } from "../wat.ts";
 import type { CoreExpr } from "./ast.ts";
-import {
-  find_core_field,
-  indent_lines,
-  maybe_static_i32,
-  static_indexed_field,
-} from "./backend/util.ts";
+import { find_core_field, static_indexed_field } from "./analysis/field.ts";
+import { indent_lines } from "./emit/format.ts";
+import { maybe_static_i32 } from "./analysis/static_i32.ts";
 import {
   emit_runtime_aggregate_field_load,
   emit_runtime_aggregate_field_pointer,
@@ -29,7 +25,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
 ): Wat {
   switch (expr.tag) {
     case "num":
-      return expr.type + ".const " + expr.value.toString();
+      return expr.type + ".const " + wat_number(expr.type, expr.value);
 
     case "text": {
       const offset = ctx.text_layout.offsets.get(expr.value);
@@ -158,14 +154,25 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
       hooks.check_core_text_concat_operand_visibility(expr, ctx);
       const prim = hooks.core_typed_prim(expr, ctx);
       hooks.expr_type(expr, ctx);
-      const lines: string[] = [];
+      const operands: PrimOperandEmission[] = [];
 
       for (const arg of expr.args) {
-        lines.push(emit_core_expr(arg, ctx, hooks));
+        let i32_literal: number | undefined;
+
+        if (
+          arg.tag === "num" && arg.type === "i32" &&
+          typeof arg.value === "number"
+        ) {
+          i32_literal = arg.value;
+        }
+
+        operands.push({
+          wat: emit_core_expr(arg, ctx, hooks),
+          i32_literal,
+        });
       }
 
-      lines.push(Emit.emit(Prim, prim));
-      return lines.join("\n");
+      return emit_prim_call(prim, operands);
     }
 
     case "app":
@@ -187,6 +194,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
       }
 
       const result_type = hooks.expr_type(expr, ctx);
+      const then_branch = emit_core_expr(expr.then_branch, ctx, hooks);
       let else_branch = emit_core_expr(expr.else_branch, ctx, hooks);
 
       if (expr.implicit_else) {
@@ -200,7 +208,7 @@ export function emit_core_expr<ctx extends CoreExprEmitCtx>(
       return [
         emit_core_expr(expr.cond, ctx, hooks),
         "if (result " + result_type + ")",
-        indent_lines(emit_core_expr(expr.then_branch, ctx, hooks), 2),
+        indent_lines(then_branch, 2),
         "else",
         indent_lines(else_branch, 2),
         "end",

@@ -1,0 +1,15 @@
+module (!init: Init) where
+
+declare effect Host {
+  print: (&Text) => I32
+}
+
+declare Init { host: Host }
+
+let message = scratch {
+  let temporary: Text = append("hel", "lo")
+  freeze temporary
+}
+
+result <- Host.print(&message)
+return { .result = result }

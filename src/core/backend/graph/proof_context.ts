@@ -19,7 +19,11 @@ export function core_borrow_closure_body_ctx(
 
   for (const param of expr.params) {
     if (param.is_const) {
-      continue;
+      return {
+        tag: "skip",
+        reason: "Cannot analyze closure-body borrows before const parameter " +
+          "specialization: " + param.name,
+      };
     }
 
     if (!param.annotation) {
@@ -52,6 +56,18 @@ export function core_borrow_closure_body_ctx(
       closure_ctx.text_locals.add(param.name);
     } else {
       closure_ctx.text_locals.delete(param.name);
+    }
+
+    if (info.struct_type) {
+      closure_ctx.struct_locals.set(param.name, info.struct_type);
+    } else {
+      closure_ctx.struct_locals.delete(param.name);
+    }
+
+    if (info.union_type) {
+      closure_ctx.union_locals.set(param.name, info.union_type);
+    } else {
+      closure_ctx.union_locals.delete(param.name);
     }
 
     if (closure_ctx.frozen_locals) {

@@ -30,6 +30,15 @@ export function create_core_backend_graph_app(
       ctx: EmitCtx,
     ) => index.emit_dynamic_index_expr(fields, index_expr, ctx),
     emit_expr: (expr, ctx) => deps.expr_emit().emit_expr(expr, ctx),
+    emit_runtime_bytes_generate: (subject, length, generator, ctx) =>
+      deps.text().emit_runtime_bytes_generate(
+        subject,
+        length,
+        generator,
+        ctx,
+      ),
+    emit_runtime_buffer_builtin: (subject, builtin, ctx) =>
+      deps.text().emit_runtime_buffer_builtin(subject, builtin, ctx),
     emit_runtime_text_byte_index: (
       collection: CoreExpr,
       index_expr: CoreExpr,

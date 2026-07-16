@@ -23,13 +23,13 @@ function actions(
       analysis.source,
       analysis.syntax,
       index,
-      "file:///fixture.ix",
+      "file:///fixture.duck",
       1,
       {
         start: positions.position_from_offset(start),
         end: positions.position_from_offset(end),
       },
-      analysis_diagnostics(analysis, "file:///fixture.ix", "utf-16"),
+      analysis_diagnostics(analysis, "file:///fixture.duck", "utf-16"),
       "utf-16",
     ),
   };
@@ -41,7 +41,7 @@ function apply(
 ) {
   const parsed = Source.parse_with_diagnostics(text);
   const resolved = resolve_code_action(action, {
-    uri: "file:///fixture.ix",
+    uri: "file:///fixture.duck",
     version: 1,
     text,
     parsed,
@@ -49,7 +49,7 @@ function apply(
     encoding: "utf-16",
   });
   expect(resolved !== undefined, "Expected a resolved action");
-  const edit = resolved.edit?.changes["file:///fixture.ix"]?.[0];
+  const edit = resolved.edit?.changes["file:///fixture.duck"]?.[0];
   expect(edit !== undefined, "Expected a workspace edit");
   const positions = new PositionIndex(text, "utf-16");
   const offsets = positions.offsets_from_range(edit.range);
@@ -160,18 +160,18 @@ Deno.test("code actions widen mixed integer operands", () => {
 });
 
 Deno.test("code actions complete concrete struct fields and union payloads", () => {
-  const struct_before = "type User = (.name = Text, .age = Int)\n" +
-    'let user = (.name = "Ada")\nuser.age\n';
+  const struct_before = "type User = [.name = Text, .age = Int]\n" +
+    'let user: User = [.name = "Ada"]\nuser.age\n';
   const struct_action = actions(struct_before).actions.find((candidate) =>
     candidate.title === "Add missing field age"
   );
   expect(struct_action !== undefined, "Expected missing-field quick fix");
   assert_equals(
     apply(struct_before, struct_action),
-    "type User = (.name = Text, .age = Int)\n" +
-      'let user = (.name = "Ada", .age = 0)\nuser.age\n',
+    "type User = [.name = Text, .age = Int]\n" +
+      'let user: User = [.name = "Ada", .age = 0]\nuser.age\n',
   );
-  const union_before = "type Result = .ok = Int | .err = Text\n" +
+  const union_before = "type Result = | .ok = Int | .err = Text\n" +
     'let result = Result.ok("wrong")\n';
   const union_action = actions(union_before).actions.find((candidate) =>
     candidate.title === "Replace union payload with I32 value"
@@ -179,7 +179,8 @@ Deno.test("code actions complete concrete struct fields and union payloads", () 
   expect(union_action !== undefined, "Expected union payload quick fix");
   assert_equals(
     apply(union_before, union_action),
-    "type Result = .ok = Int | .err = Text\nlet result = Result.ok(0)\n",
+    "type Result = | .ok = Int | .err = Text\n" +
+      "let result = Result.ok(0)\n",
   );
   assert_equals(
     Source.analyze(apply(struct_before, struct_action)).diagnostics,
@@ -192,7 +193,7 @@ Deno.test("code actions complete concrete struct fields and union payloads", () 
 });
 
 Deno.test("code actions use false for a missing Bool union payload", () => {
-  const before = "type Result = .ok = Bool | .err = Text\n" +
+  const before = "type Result = | .ok = Bool | .err = Text\n" +
     "let result = Result.ok(1)\n";
   const result = actions(before);
   const replacement = result.actions.find((candidate) =>
@@ -203,24 +204,24 @@ Deno.test("code actions use false for a missing Bool union payload", () => {
   const after = apply(before, replacement);
   assert_equals(
     after,
-    "type Result = .ok = Bool | .err = Text\n" +
+    "type Result = | .ok = Bool | .err = Text\n" +
       "let result = Result.ok(false)\n",
   );
   assert_equals(Source.analyze(after).diagnostics, []);
 });
 
-Deno.test("code actions rebuild and shadow frozen mutation", () => {
+Deno.test("code actions encode Text before byte mutation", () => {
   const before = 'let message: Text = freeze append("a", "b")\n' +
     "message[0] = 65\nlen(message)\n";
   const result = actions(before, 0, before.length, "core");
   const rebuild = result.actions.find((candidate) =>
-    candidate.title === "Rebuild and shadow frozen message"
+    candidate.title === "Encode message before byte mutation"
   );
-  expect(rebuild !== undefined, "Expected frozen mutation quick fix");
+  expect(rebuild !== undefined, "Expected Text encoding quick fix");
   assert_equals(
     apply(before, rebuild),
     'let message: Text = freeze append("a", "b")\n' +
-      'let message = append(message, "")\n' +
+      "let message = Utf8.encode(message)\n" +
       "message[0] = 65\nlen(message)\n",
   );
   assert_equals(
@@ -237,7 +238,7 @@ Deno.test("code actions lift an escaping scratch result to owned storage", () =>
   );
   expect(lift !== undefined, "Expected scratch escape quick fix");
   const after = apply(before, lift);
-  assert_equals(after, 'append ("a", "b")\n');
+  assert_equals(after, 'append ["a", "b"]\n');
   assert_equals(Source.analyze(after, { route: "core" }).diagnostics, []);
 });
 
@@ -317,7 +318,7 @@ Deno.test("code actions use false for a missing Bool handler result", () => {
 });
 
 Deno.test("code actions add an explicit missing if-let case", () => {
-  const before = "type Result = .ok = Int | .err = Text\n" +
+  const before = "type Result = | .ok = Int | .err = Text\n" +
     "let result = Result.ok(1)\n" +
     "if let .ok(value) = result { value } else { 0 }\n";
   const result = actions(before);
@@ -328,7 +329,7 @@ Deno.test("code actions add an explicit missing if-let case", () => {
   const after = apply(before, branch);
   assert_equals(
     after,
-    "type Result = .ok = Int | .err = Text\n" +
+    "type Result = | .ok = Int | .err = Text\n" +
       "let result = Result.ok(1)\n" +
       "if let .ok(value) = result { value } else if let .err(value) = result { 0 } else { 0 }\n",
   );

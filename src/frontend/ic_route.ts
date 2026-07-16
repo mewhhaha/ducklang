@@ -23,10 +23,10 @@ function validate_ic_route_source(
 
   for (const declaration of declarations) {
     if (
-      declaration.tag === "effect" && declaration.implementation === "ix"
+      declaration.tag === "effect" && declaration.implementation === "duck"
     ) {
       reject_ic_route(
-        "Ix-defined effect " + declaration.name,
+        "Duck-defined effect " + declaration.name,
         declaration,
         diagnostics,
       );
@@ -143,6 +143,7 @@ function validate_ic_route_expr(
       return;
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         validate_ic_route_expr(entry.value, diagnostics);
       }
@@ -243,6 +244,15 @@ function validate_ic_route_expr(
       }
       return;
 
+    case "type_with":
+      validate_ic_route_expr(expr.base, diagnostics);
+
+      for (const member of expr.members) {
+        validate_ic_route_expr(member.name, diagnostics);
+        validate_ic_route_expr(member.value, diagnostics);
+      }
+      return;
+
     case "struct_value":
       validate_ic_route_expr(expr.type_expr, diagnostics);
 
@@ -300,8 +310,7 @@ function reject_ic_route(
   }
 
   diagnostics.push(source_diagnostic(
-    "IX2901",
-    "error",
+    "DUCK2901",
     message,
     subject,
   ));

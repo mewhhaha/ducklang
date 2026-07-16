@@ -1,14 +1,14 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type IxEffectObject,
-  type IxValue,
+  type DuckEffectObject,
+  type DuckValue,
   Source,
 } from "../../src/frontend.ts";
 import { main } from "./grep.ts";
 import { mock_runner } from "./host.ts";
 
-const source_url = new URL("./grep.ix", import.meta.url);
-const host_interface_url = new URL("./host.ix", import.meta.url);
+const source_url = new URL("./grep.duck", import.meta.url);
+const host_interface_url = new URL("./host.duck", import.meta.url);
 const fixture_url = new URL("./fixtures/input.txt", import.meta.url);
 
 Deno.test("grep case study exposes the typed byte-stream host contract", () => {
@@ -144,6 +144,10 @@ Deno.test("grep rejects extra arguments", async () => {
   try {
     assert_equals(await main(runner), { code: 2 });
     assert_equals(runner.stdout, []);
+    assert_equals(call(runner.init.file_reader, "open", "input.bin"), {
+      tag: "ok",
+    });
+    assert_equals(call(runner.init.file_reader, "close"), undefined);
   } finally {
     runner.dispose();
   }
@@ -154,20 +158,20 @@ Deno.test("grep returns an I/O error for a typed FileReader.read error", async (
     args: ["needle", "input.bin"],
     files: { "input.bin": new TextEncoder().encode("needle\n") },
   });
-  runner.init.file_reader.read = function read_error(): IxValue {
+  runner.init.file_reader.read = function read_error(): DuckValue {
     return {
       tag: "err",
-      value: {
-        code: 5,
-        path: "input.bin",
-        message: "mock read failure",
-      },
+      value: [5, "input.bin", "mock read failure"],
     };
   };
 
   try {
     assert_equals(await main(runner), { code: 2 });
     assert_equals(runner.stdout, []);
+    assert_equals(call(runner.init.file_reader, "open", "input.bin"), {
+      tag: "ok",
+    });
+    assert_equals(call(runner.init.file_reader, "close"), undefined);
   } finally {
     runner.dispose();
   }
@@ -181,7 +185,7 @@ Deno.test("grep treats a closed Stdout as a successful match and stops output", 
     },
   });
   let writes = 0;
-  runner.init.stdout.write = function closed_output(): IxValue {
+  runner.init.stdout.write = function closed_output(): DuckValue {
     writes += 1;
     return { tag: "closed" };
   };
@@ -200,14 +204,10 @@ Deno.test("grep returns an I/O error for a typed Stdout.write error", async () =
     args: ["needle", "input.bin"],
     files: { "input.bin": new TextEncoder().encode("needle\n") },
   });
-  runner.init.stdout.write = function output_error(): IxValue {
+  runner.init.stdout.write = function output_error(): DuckValue {
     return {
       tag: "err",
-      value: {
-        code: 5,
-        path: "<stdout>",
-        message: "mock output failure",
-      },
+      value: [5, "<stdout>", "mock output failure"],
     };
   };
 
@@ -375,10 +375,10 @@ Deno.test("live grep runner matches pattern and reports exit status", async () =
 });
 
 function call(
-  effect: IxEffectObject,
+  effect: DuckEffectObject,
   name: string,
-  ...args: IxValue[]
-): IxValue {
+  ...args: DuckValue[]
+): DuckValue {
   const handler = effect[name];
 
   if (typeof handler !== "function") {
@@ -406,7 +406,7 @@ function concat_chunks(chunks: Uint8Array[]): Uint8Array {
   return result;
 }
 
-function event_tag(value: IxValue): string {
+function event_tag(value: DuckValue): string {
   if (
     typeof value !== "object" || value === null || Array.isArray(value) ||
     value instanceof Uint8Array || !("tag" in value) ||
@@ -418,7 +418,7 @@ function event_tag(value: IxValue): string {
   return value.tag;
 }
 
-function event_path(value: IxValue): string {
+function event_path(value: DuckValue): string {
   if (
     typeof value !== "object" || value === null || Array.isArray(value) ||
     value instanceof Uint8Array || !("value" in value)
@@ -429,12 +429,11 @@ function event_path(value: IxValue): string {
   const payload = value.value;
 
   if (
-    typeof payload !== "object" || payload === null || Array.isArray(payload) ||
-    payload instanceof Uint8Array || !("path" in payload) ||
-    typeof payload.path !== "string"
+    !Array.isArray(payload) || payload.length !== 4 ||
+    typeof payload[0] !== "string"
   ) {
     throw new Error("Expected walk event path");
   }
 
-  return payload.path;
+  return payload[0];
 }

@@ -1,8 +1,10 @@
 import { expect } from "../expect.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr, CoreFnType } from "./ast.ts";
-import { fresh_temp_local, set_local } from "./backend/util.ts";
+import { fresh_temp_local } from "./emit/name.ts";
+import { set_local } from "./emit/local.ts";
 import {
+  closure_env_alignment,
   closure_env_size,
   ensure_closure_func_type,
   ensure_lifted_closure,
@@ -51,7 +53,7 @@ export function emit_runtime_closure_with_type<ctx extends CoreClosureEmitCtx>(
       ctx,
       expr,
       "i32.const " + closure_env_size(lift).toString(),
-      8,
+      closure_env_alignment(lift),
       "closure",
       "closure_env.table_index_and_capture_slots",
       "closure.value",

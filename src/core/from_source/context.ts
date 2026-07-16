@@ -6,7 +6,12 @@ import type {
 } from "../../frontend/ast.ts";
 import { format_type_expr, parse_type_expr } from "../../frontend/type_expr.ts";
 import { tokenize } from "../../frontend/tokenize.ts";
-import type { CoreExpr, CoreHostImportOwnerReason, CoreParam } from "../ast.ts";
+import type {
+  CoreExpr,
+  CoreHostImportOwnerReason,
+  CoreParam,
+  CoreStmt,
+} from "../ast.ts";
 
 export type CoreNamedRecSource = {
   params: CoreParam[];
@@ -21,13 +26,16 @@ export type CoreFromSourceCtx = {
   host_import_names: Set<string>;
   host_import_type_values: Map<string, CoreHostImportOwnerReason>;
   linear_names: Set<string>;
+  lower_stmt: (stmt: Stmt, ctx: CoreFromSourceCtx) => CoreStmt;
   fresh: { next: number };
   namedRecs: Map<string, CoreNamedRecSource>;
   scalar_annotation_aliases: Map<string, string>;
   type_set_aliases: Map<string, TypeExpr>;
 };
 
-export function create_core_from_source_ctx(): CoreFromSourceCtx {
+export function create_core_from_source_ctx(
+  lower_stmt: (stmt: Stmt, ctx: CoreFromSourceCtx) => CoreStmt,
+): CoreFromSourceCtx {
   return {
     aliases: new Map(),
     capability_methods: new Map(),
@@ -36,6 +44,7 @@ export function create_core_from_source_ctx(): CoreFromSourceCtx {
     host_import_names: new Set(),
     host_import_type_values: new Map(),
     linear_names: new Set(),
+    lower_stmt,
     fresh: { next: 0 },
     namedRecs: new Map(),
     scalar_annotation_aliases: new Map(),
@@ -54,6 +63,7 @@ export function fork_core_from_source_ctx(
     host_import_names: new Set(ctx.host_import_names),
     host_import_type_values: new Map(ctx.host_import_type_values),
     linear_names: new Set(ctx.linear_names),
+    lower_stmt: ctx.lower_stmt,
     fresh: ctx.fresh,
     namedRecs: new Map(ctx.namedRecs),
     scalar_annotation_aliases: new Map(ctx.scalar_annotation_aliases),
@@ -136,6 +146,8 @@ const core_builtin_scalar_annotation_names = new Set([
   "Bool",
   "I32",
   "I64",
+  "F32",
+  "F32x4",
   "Int",
   "Resume",
   "U32",
@@ -293,6 +305,16 @@ function expand_core_annotation_aliases(
     };
   }
 
+  if (type.tag === "forall") {
+    const body = expand_core_annotation_aliases(type.body, ctx, resolving);
+
+    if (!body.changed) {
+      return { type, changed: false };
+    }
+
+    return { type: { ...type, body: body.type }, changed: true };
+  }
+
   if (type.tag !== "arrow") {
     const unreachable: never = type;
     void unreachable;
@@ -371,8 +393,12 @@ export function resolve_bound_core_value_name(
 
 const core_builtin_value_names = new Set([
   "Bool",
+  "Bytes.generate",
+  "Utf8.decode",
+  "Utf8.encode",
   "I32",
   "I64",
+  "F32",
   "Int",
   "Bytes",
   "Text",
@@ -381,6 +407,9 @@ const core_builtin_value_names = new Set([
   "Unit",
   "append",
   "get",
+  "format_i32",
+  "format_i64",
+  "format_f32",
   "len",
   "object_type",
   "panic",
@@ -445,6 +474,9 @@ function front_host_import_type_value_reason(
 
     case "captured":
       return front_host_import_type_value_reason(expr.expr, ctx, seen);
+
+    case "with":
+      return front_host_import_type_value_reason(expr.base, ctx, seen);
 
     default:
       return undefined;

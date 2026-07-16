@@ -1,4 +1,5 @@
 import { is_const_expr_known } from "../frontend/const_known.ts";
+import { diagnostic_codes } from "../diagnostic.ts";
 import type { BindingIndex } from "../frontend/binding_index.ts";
 import type { ParseSourceResult } from "../frontend/parser.ts";
 import { Source } from "../frontend/source.ts";
@@ -68,15 +69,15 @@ export function code_actions(
   const positions = new PositionIndex(syntax.text, encoding);
   const offsets = positions.offsets_from_range(range);
   const actions: LspCodeAction[] = [];
-  const diagnostic_codes = new Set<string>();
+  const active_diagnostic_codes = new Set<string>();
 
   for (const diagnostic of diagnostics) {
     if (diagnostic.code !== undefined) {
-      diagnostic_codes.add(diagnostic.code);
+      active_diagnostic_codes.add(diagnostic.code);
     }
   }
 
-  if (diagnostic_codes.has("IX2202")) {
+  if (active_diagnostic_codes.has(diagnostic_codes.linear_value_unused)) {
     const removable: Array<Extract<Stmt, { tag: "bind" }>> = [];
 
     for (const statement of source.statements) {
@@ -149,9 +150,9 @@ export function code_actions(
     }
   }
 
-  if (diagnostic_codes.has("IX2302")) {
+  if (active_diagnostic_codes.has(diagnostic_codes.operand_type_mismatch)) {
     for (const diagnostic of diagnostics) {
-      if (diagnostic.code !== "IX2302") {
+      if (diagnostic.code !== diagnostic_codes.operand_type_mismatch) {
         continue;
       }
 
@@ -207,8 +208,90 @@ export function code_actions(
     }
   }
 
+  if (active_diagnostic_codes.has(diagnostic_codes.frozen_mutation_rejected)) {
+    for (const diagnostic of diagnostics) {
+      if (diagnostic.code !== diagnostic_codes.frozen_mutation_rejected) {
+        continue;
+      }
+
+      const statement = source.statements.find((candidate) =>
+        candidate.tag === "index_assign" &&
+        overlaps(
+          source_span(candidate),
+          positions.offsets_from_range(diagnostic.range),
+        )
+      );
+
+      if (statement === undefined || statement.tag !== "index_assign") {
+        continue;
+      }
+
+      const span = source_span(statement);
+      const mutation = syntax.text.slice(span.start, span.end);
+      const binding = source.statements.find((candidate) =>
+        candidate.tag === "bind" && candidate.name === statement.name
+      );
+      let empty_value = '""';
+
+      if (
+        binding !== undefined && binding.tag === "bind" &&
+        binding.annotation === "Bytes"
+      ) {
+        empty_value = "Bytes.empty";
+      }
+
+      add_action(
+        actions,
+        syntax.text,
+        uri,
+        version,
+        "Rebuild and shadow frozen " + statement.name,
+        "quickfix",
+        span.start,
+        span.end,
+        "let " + statement.name + " = append(" + statement.name + ", " +
+          empty_value + ")\n" + mutation,
+        diagnostics,
+      );
+    }
+  }
+
   for (const diagnostic of diagnostics) {
-    if (diagnostic.code === "IX2201") {
+    if (
+      diagnostic.code === diagnostic_codes.annotation_type_mismatch &&
+      diagnostic.message ===
+        "Cannot index-assign Text; convert it with Utf8.encode first"
+    ) {
+      const statement = source.statements.find((candidate) =>
+        candidate.tag === "index_assign" &&
+        overlaps(
+          source_span(candidate),
+          positions.offsets_from_range(diagnostic.range),
+        )
+      );
+
+      if (statement === undefined || statement.tag !== "index_assign") {
+        continue;
+      }
+
+      const span = source_span(statement);
+      const mutation = syntax.text.slice(span.start, span.end);
+      add_action(
+        actions,
+        syntax.text,
+        uri,
+        version,
+        "Encode " + statement.name + " before byte mutation",
+        "quickfix",
+        span.start,
+        span.end,
+        "let " + statement.name + " = Utf8.encode(" + statement.name +
+          ")\n" + mutation,
+        diagnostics,
+      );
+    }
+
+    if (diagnostic.code === diagnostic_codes.linear_value_reused) {
       const span = positions.offsets_from_range(diagnostic.range);
       const occurrence = [...index.occurrences.values()].find((candidate) =>
         overlaps(candidate.span, span)
@@ -262,7 +345,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2304") {
+    if (diagnostic.code === diagnostic_codes.aggregate_field_mismatch) {
       const missing = /^Missing struct field: ([A-Za-z_][A-Za-z0-9_]*)$/.exec(
         diagnostic.message,
       );
@@ -311,7 +394,7 @@ export function code_actions(
 
       const value_span = source_span(binding.value);
       const close = syntax.text.lastIndexOf(
-        binding.value.tag === "product" ? ")" : "]",
+        "]",
         value_span.end,
       );
 
@@ -333,7 +416,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2305") {
+    if (diagnostic.code === diagnostic_codes.sum_payload_mismatch) {
       const mismatch =
         /^Union case [A-Za-z_][A-Za-z0-9_]* expects (Bool|Int), got /
           .exec(diagnostic.message);
@@ -388,46 +471,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2404") {
-      const statement = source.statements.find((candidate) =>
-        candidate.tag === "index_assign" &&
-        overlaps(
-          source_span(candidate),
-          positions.offsets_from_range(diagnostic.range),
-        )
-      );
-
-      if (statement === undefined || statement.tag !== "index_assign") {
-        continue;
-      }
-
-      const binding = source.statements.find((candidate) =>
-        candidate.tag === "bind" && candidate.name === statement.name &&
-        (candidate.annotation === "Text" || candidate.value.tag === "freeze")
-      );
-
-      if (binding === undefined || binding.tag !== "bind") {
-        continue;
-      }
-
-      const span = source_span(statement);
-      const mutation = syntax.text.slice(span.start, span.end);
-      add_action(
-        actions,
-        syntax.text,
-        uri,
-        version,
-        "Rebuild and shadow frozen " + statement.name,
-        "quickfix",
-        span.start,
-        span.end,
-        "let " + statement.name + " = append(" + statement.name +
-          ', "")\n' + mutation,
-        diagnostics,
-      );
-    }
-
-    if (diagnostic.code === "IX2403") {
+    if (diagnostic.code === diagnostic_codes.scratch_escape_rejected) {
       const diagnostic_span = positions.offsets_from_range(diagnostic.range);
       const scratch = source.statements.map(statement_expression).find((expr) =>
         expr !== undefined && expr.tag === "scratch" &&

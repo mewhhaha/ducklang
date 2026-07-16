@@ -3,10 +3,8 @@ import { Core } from "../core.ts";
 import { Source } from "../frontend.ts";
 
 const suspended_source = `
-const suspended_type = union {
-  suspended: Resume,
-  done: I32
-}
+type SuspendedType = | .suspended = Resume | .done = I32
+const suspended_type = SuspendedType
 
 effect Suspend {
   pause: () => I32
@@ -198,9 +196,9 @@ Deno.test("an immediate local resumption stays direct and import-free", () => {
   assert_equals(direct_wat.includes("(global $__closure_heap"), false);
   assert_equals(direct_wat.includes("call $__alloc"), false);
   assert_equals(direct_wat.includes("(memory $memory"), false);
-  assert_equals(direct_wat.includes("__ix_effect_Ask_ask"), false);
+  assert_equals(direct_wat.includes("__duck_effect_Ask_ask"), false);
   assert_equals(
-    direct_wat.includes('(import "ix_effect" "Ask.ask"'),
+    direct_wat.includes('(import "duck_effect" "Ask.ask"'),
     false,
   );
 });
@@ -212,19 +210,17 @@ Deno.test("an escaped resumption allocates and dispatches indirectly", () => {
   assert_includes(suspended_wat, "(table $__closure_table");
   assert_includes(suspended_wat, "(global $__closure_heap");
   assert_includes(suspended_wat, "call $__alloc");
-  assert_equals(suspended_wat.includes("__ix_effect_Suspend_pause"), false);
+  assert_equals(suspended_wat.includes("__duck_effect_Suspend_pause"), false);
   assert_equals(
-    suspended_wat.includes('(import "ix_effect" "Suspend.pause"'),
+    suspended_wat.includes('(import "duck_effect" "Suspend.pause"'),
     false,
   );
 });
 
 Deno.test("an abandoned resumption drops its union frame and closure", () => {
   const source = `
-const suspended_type = union {
-  suspended: Resume,
-  done: I32
-}
+type SuspendedType = | .suspended = Resume | .done = I32
+const suspended_type = SuspendedType
 effect Suspend { pause: () => I32 }
 let run = () => {
   value <- Suspend.pause()

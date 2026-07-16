@@ -1,9 +1,16 @@
 import { expect } from "./expect.ts";
-import { Prim, type ValType } from "./op.ts";
+import {
+  emit_prim_call,
+  type NumType,
+  Prim,
+  type PrimOperandEmission,
+  type ValType,
+} from "./op.ts";
 import { Callable, Data, Emit, Format, Typed } from "./trait.ts";
+import { wat_number } from "./wat.ts";
 
 export type Expr =
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "text"; value: string }
   | { tag: "var"; type: ValType; name: string }
   | { tag: "prim"; type: ValType; prim: Prim; args: Expr[] }
@@ -179,7 +186,7 @@ function emit(
 ): string {
   switch (expr.tag) {
     case "num":
-      return expr.type + ".const " + expr.value.toString();
+      return expr.type + ".const " + wat_number(expr.type, expr.value);
 
     case "text": {
       const offset = text_layout.offsets.get(expr);
@@ -226,9 +233,22 @@ function emit(
         );
       }
 
-      const lines = expr.args.map((item) => emit(item, env, text_layout));
-      lines.push(Emit.emit(Prim, expr.prim));
-      return lines.join("\n");
+      const operands: PrimOperandEmission[] = expr.args.map((item) => {
+        let i32_literal: number | undefined;
+
+        if (
+          item.tag === "num" && item.type === "i32" &&
+          typeof item.value === "number"
+        ) {
+          i32_literal = item.value;
+        }
+
+        return {
+          wat: emit(item, env, text_layout),
+          i32_literal,
+        };
+      });
+      return emit_prim_call(expr.prim, operands);
     }
 
     case "if": {
@@ -342,7 +362,7 @@ Expr.fmt = function fmt(expr: Expr): string {
         );
       }
 
-      if (expr.prim === "i32.select" || expr.prim === "i64.select") {
+      if (expr.prim.endsWith(".select")) {
         const then_branch = fmt(arg(expr.args, 0));
         const else_branch = fmt(arg(expr.args, 1));
         const cond = fmt(arg(expr.args, 2));
@@ -359,10 +379,15 @@ Expr.fmt = function fmt(expr: Expr): string {
         return `${op}(${value}):${expr.type}`;
       }
 
-      const left = fmt(arg(expr.args, 0));
-      const op = Format.fmt(Prim, expr.prim);
-      const right = fmt(arg(expr.args, 1));
-      return `(${left} ${op}:${expr.type} ${right})`;
+      if (expected === 2 && !expr.prim.startsWith("f32x4.")) {
+        const left = fmt(arg(expr.args, 0));
+        const op = Format.fmt(Prim, expr.prim);
+        const right = fmt(arg(expr.args, 1));
+        return `(${left} ${op}:${expr.type} ${right})`;
+      }
+
+      const args = expr.args.map((item) => fmt(item)).join(", ");
+      return Format.fmt(Prim, expr.prim) + "(" + args + "):" + expr.type;
     }
 
     case "if": {

@@ -24,7 +24,8 @@ export function should_skip_drop_owner_bind<ctx>(
 
   if (
     hooks.materialized_static_owner &&
-    hooks.materialized_static_owner(static_value, ctx)
+    (hooks.materialized_static_owner(static_value, ctx) ||
+      hooks.materialized_static_owner(expr, ctx))
   ) {
     return false;
   }
@@ -100,7 +101,8 @@ export function should_skip_drop_owner_assign<ctx>(
 
   if (
     hooks.materialized_static_owner &&
-    hooks.materialized_static_owner(static_value, ctx)
+    (hooks.materialized_static_owner(static_value, ctx) ||
+      hooks.materialized_static_owner(expr, ctx))
   ) {
     return false;
   }
@@ -231,7 +233,9 @@ function drop_closure_probe_error(error: unknown): boolean {
   }
 
   if (
-    error.message === "Core runtime aggregate requires a static struct type"
+    error.message.startsWith(
+      "Core runtime aggregate requires a static struct type",
+    )
   ) {
     return true;
   }

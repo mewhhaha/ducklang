@@ -1,0 +1,20 @@
+module () where
+
+effect State value {
+  get: () => value
+  put: (value) => Unit
+}
+
+effect Reader environment {
+  ask: () => environment
+}
+
+effect Writer output {
+  tell: (output) => Unit
+}
+
+effect Raise error {
+  raise: (error) => Unit
+}
+
+return {}

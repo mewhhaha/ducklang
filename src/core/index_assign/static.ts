@@ -1,11 +1,9 @@
 import { expect } from "../../expect.ts";
 import type { CoreExpr, CoreField } from "../ast.ts";
-import {
-  fresh_temp_local,
-  maybe_static_i32,
-  set_local,
-  static_indexed_field,
-} from "../backend/util.ts";
+import { fresh_temp_local } from "../emit/name.ts";
+import { maybe_static_i32 } from "../analysis/static_i32.ts";
+import { set_local } from "../emit/local.ts";
+import { static_indexed_field } from "../analysis/field.ts";
 import type {
   CoreIndexAssignCtx,
   CoreIndexAssignHooks,
@@ -55,15 +53,17 @@ export function plan_core_static_index_assign<
     }
   } else {
     if (!hooks.is_stable_static_expr(value)) {
-      const value_name = fresh_temp_local(ctx, "index_value");
-      set_local(ctx.locals, value_name, value_type);
+      const planned = hooks.plan_static_capture_expr(
+        "index_value",
+        value,
+        ctx,
+        emit_ctx,
+      );
+      value_expr = planned.value;
 
-      if (emit_ctx) {
-        setup.push(hooks.emit_expr(value, emit_ctx));
-        setup.push("local.set $" + value_name);
+      if (planned.setup !== "") {
+        setup.push(planned.setup);
       }
-
-      value_expr = { tag: "var", name: value_name };
     }
   }
 

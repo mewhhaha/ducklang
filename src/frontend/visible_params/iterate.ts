@@ -42,6 +42,7 @@ export function expr_iterates_collection_from_names(
       return false;
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (expr_iterates_collection_from_names(entry.value, names)) {
           return true;
@@ -145,6 +146,22 @@ export function expr_iterates_collection_from_names(
       }
 
       return fields_iterate_collection_from_names(expr.fields, names);
+
+    case "type_with":
+      if (expr_iterates_collection_from_names(expr.base, names)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          expr_iterates_collection_from_names(member.name, names) ||
+          expr_iterates_collection_from_names(member.value, names)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
 
     case "if":
       return expr_iterates_collection_from_names(expr.cond, names) ||

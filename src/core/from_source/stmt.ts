@@ -12,6 +12,8 @@ import {
 import { block_body, core_expr, core_param } from "./expr.ts";
 import { validate_named_recursive_tail_binding } from "./rec.ts";
 import { record_optional_core_source_origin } from "../source_origin.ts";
+import { substitute_core_call_expr } from "../substitute.ts";
+import { core_runtime_buffer_builtin } from "../runtime_buffer.ts";
 
 export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
   return record_optional_core_source_origin(
@@ -23,7 +25,7 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
 function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
   switch (stmt.tag) {
     case "bind": {
-      if (stmt.is_recursive) {
+      if (stmt.is_recursive || stmt.managed_export) {
         const name = bind_core_name(ctx, stmt.name);
 
         if (stmt.is_linear) {
@@ -49,6 +51,11 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
       }
 
       let value = core_expr(source_value, ctx);
+
+      if (value.tag === "block") {
+        inline_match_if_let_target(value);
+      }
+
       const name = bind_core_name(ctx, stmt.name);
 
       if (stmt.is_linear) {
@@ -82,6 +89,10 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
     case "assign": {
       resolve_bound_core_value_name(ctx, stmt.name);
       const value = core_expr(stmt.value, ctx);
+
+      if (value.tag === "block") {
+        inline_match_if_let_target(value);
+      }
 
       if (stmt.mode === "change") {
         const name = shadow_core_name(ctx, stmt.name);
@@ -201,7 +212,21 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         return if_else;
       }
 
-      return { tag: "expr", expr: core_expr(stmt.expr, ctx) };
+      const expr = core_expr(stmt.expr, ctx);
+
+      if (expr.tag === "block") {
+        inline_match_if_let_target(expr);
+        const final_stmt = expr.statements[expr.statements.length - 1];
+
+        if (final_stmt?.tag === "if_else_stmt") {
+          expr.statements.push({
+            tag: "expr",
+            expr: { tag: "num", type: "i32", value: 0 },
+          });
+        }
+      }
+
+      return { tag: "expr", expr };
     }
 
     case "import":
@@ -240,6 +265,40 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         text: stmt.text,
       };
   }
+}
+
+function inline_match_if_let_target(
+  expr: Extract<CoreExpr, { tag: "block" }>,
+): void {
+  const final_stmt = expr.statements[expr.statements.length - 1];
+
+  if (final_stmt?.tag !== "expr" || final_stmt.expr.tag !== "if_let") {
+    return;
+  }
+
+  const target = final_stmt.expr.target;
+
+  if (target.tag !== "var" || !target.name.startsWith("_match#target")) {
+    return;
+  }
+
+  const target_index = expr.statements.length - 2;
+  const target_binding = expr.statements[target_index];
+
+  if (
+    target_binding?.tag !== "bind" || target_binding.name !== target.name ||
+    (target_binding.value.tag !== "var" &&
+      target_binding.value.tag !== "if" &&
+      target_binding.value.tag !== "union_case")
+  ) {
+    return;
+  }
+
+  final_stmt.expr = substitute_core_call_expr(
+    final_stmt.expr,
+    new Map([[target.name, target_binding.value]]),
+  );
+  expr.statements.splice(target_index, 1);
 }
 
 function strip_capability_method_fields(
@@ -342,6 +401,9 @@ function runtime_capability_field_type_name(
     if (value.type === "i64") {
       return "I64";
     }
+    if (value.type === "f32") {
+      return "F32";
+    }
   }
   if (value.tag === "text") {
     return "Text";
@@ -356,6 +418,20 @@ function runtime_capability_field_type_name(
     return runtime_capability_field_type_name(field_name, value.body);
   }
   if (value.tag === "app" && value.func.tag === "var") {
+    const runtime_buffer_builtin = core_runtime_buffer_builtin(value);
+
+    if (runtime_buffer_builtin) {
+      if (runtime_buffer_builtin.result === "bytes") {
+        return "Bytes";
+      }
+
+      return "Text";
+    }
+
+    if (value.func.name === "Bytes.generate") {
+      return "Bytes";
+    }
+
     if (value.func.name === "append" || value.func.name === "slice") {
       return "Text";
     }
@@ -487,6 +563,32 @@ function capability_method_table(
     return { methods: table.methods, dynamic: true };
   }
 
+  if (value.tag === "product") {
+    const methods = new Map<string, string>();
+    let dynamic = false;
+
+    for (const entry of value.entries) {
+      if (entry.label === undefined) {
+        dynamic = true;
+        continue;
+      }
+
+      const host_import = capability_host_import_name(entry.value, ctx);
+
+      if (host_import) {
+        methods.set(entry.label, host_import);
+      } else {
+        dynamic = true;
+      }
+    }
+
+    if (methods.size === 0) {
+      return undefined;
+    }
+
+    return { methods, dynamic };
+  }
+
   if (value.tag !== "struct_value") {
     return undefined;
   }
@@ -550,6 +652,36 @@ function core_recursive_binding_value(
   ctx: CoreFromSourceCtx,
   name: string,
 ): CoreExpr {
+  if (stmt.managed_export) {
+    if (stmt.value.tag !== "lam" && stmt.value.tag !== "rec") {
+      throw new Error(
+        "Managed callable must be a lambda or recursive function: " +
+          stmt.name,
+      );
+    }
+
+    const params = stmt.value.params.map((param) => core_param(param, ctx));
+    ctx.namedRecs.set(name, { params, body: undefined });
+    const body_ctx = fork_core_from_source_ctx(ctx);
+    body_ctx.aliases.set(stmt.name, name);
+    body_ctx.aliases.set("rec", name);
+    body_ctx.namedRecs.set(name, { params, body: undefined });
+
+    for (const param of stmt.value.params) {
+      body_ctx.aliases.set(param.name, param.name);
+
+      if (param.is_linear) {
+        body_ctx.linear_names.add(param.name);
+      } else {
+        body_ctx.linear_names.delete(param.name);
+      }
+    }
+
+    const body = core_expr(stmt.value.body, body_ctx);
+    ctx.namedRecs.set(name, { params, body });
+    return { tag: "rec_ref", name, params };
+  }
+
   if (stmt.value.tag === "rec") {
     const body_ctx = fork_core_from_source_ctx(ctx);
 
@@ -699,9 +831,14 @@ function core_if_else_stmt(
     return undefined;
   }
 
+  const then_produces_value = block_produces_value(then_body);
+  const else_produces_value = conditional_branch_produces_value(
+    expr.else_branch,
+  );
+
   if (
-    block_produces_value(then_body) &&
-    conditional_branch_produces_value(expr.else_branch)
+    (then_produces_value || block_definitely_exits(then_body)) &&
+    (else_produces_value || expr_definitely_exits(expr.else_branch))
   ) {
     return undefined;
   }
@@ -770,6 +907,47 @@ function block_produces_value(stmts: Stmt[]): boolean {
 
   if (stmt.tag === "return") {
     return true;
+  }
+
+  return false;
+}
+
+function block_definitely_exits(stmts: Stmt[]): boolean {
+  for (const stmt of stmts) {
+    if (
+      stmt.tag === "break" || stmt.tag === "continue" ||
+      stmt.tag === "return"
+    ) {
+      return true;
+    }
+
+    if (stmt.tag === "expr" && expr_definitely_exits(stmt.expr)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function expr_definitely_exits(expr: FrontExpr): boolean {
+  const body = block_body(expr);
+
+  if (body) {
+    return block_definitely_exits(body);
+  }
+
+  if (expr.tag === "if") {
+    return expr_definitely_exits(expr.then_branch) &&
+      expr_definitely_exits(expr.else_branch);
+  }
+
+  if (expr.tag === "if_let") {
+    if (expr.implicit_else) {
+      return false;
+    }
+
+    return expr_definitely_exits(expr.then_branch) &&
+      expr_definitely_exits(expr.else_branch);
   }
 
   return false;

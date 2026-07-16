@@ -1,4 +1,5 @@
 import type { CoreExpr } from "./ast.ts";
+import { static_block_result } from "./type_static.ts";
 
 type StaticOwnerFactCtx = {
   statics: Map<string, CoreExpr>;
@@ -63,6 +64,19 @@ function static_owner_conditional_branch_materializes(
   ctx: StaticOwnerFactCtx,
   visiting: Set<string>,
 ): boolean {
+  const block_value = static_block_result(value);
+  if (block_value) {
+    return static_owner_conditional_branch_materializes(
+      block_value,
+      ctx,
+      visiting,
+    );
+  }
+
+  if (value.tag === "struct_value") {
+    return true;
+  }
+
   if (value.tag === "union_case") {
     return value.type_expr !== undefined;
   }

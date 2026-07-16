@@ -1,5 +1,21 @@
-import type { Prim, ValType } from "../op.ts";
-import type { SourceSpan } from "./syntax.ts";
+import type { NumType, Prim, ValType } from "../op.ts";
+import type {
+  ResumeSignature,
+  TypeExpr,
+  TypeField,
+  TypePattern,
+} from "../type_syntax.ts";
+
+export type { Token, TokenKind } from "./token.ts";
+export type {
+  ArrayLengthExpr,
+  EffectRowExpr,
+  ResumeSignature,
+  TypeExpr,
+  TypeField,
+  TypePattern,
+  TypeProductEntry,
+} from "../type_syntax.ts";
 
 export type Source = {
   tag: "program";
@@ -15,12 +31,42 @@ export type ModuleHeader = {
 export type Declaration =
   | EffectDeclaration
   | RecordDeclaration
-  | TypeDeclaration;
+  | TypeDeclaration
+  | DuckDeclaration
+  | ExtensionDeclaration
+  | FixityDeclaration;
+
+export type DuckDeclaration = {
+  tag: "duck";
+  name: string;
+  roles: string[];
+  members: DuckMember[];
+};
+
+export type DuckMember = {
+  name: string;
+  type_expr: TypeExpr;
+};
+
+export type ExtensionDeclaration = {
+  tag: "extend";
+  type_name: string;
+  fields: Field[];
+};
+
+export type FixityDeclaration = {
+  tag: "fixity";
+  fixity: "infixl" | "infixr" | "infix" | "prefix";
+  precedence: number;
+  operator: string;
+  target: string;
+};
 
 export type EffectDeclaration = {
   tag: "effect";
-  implementation: "host" | "ix";
+  implementation: "host" | "duck";
   name: string;
+  params: string[];
   operations: EffectOperation[];
 };
 
@@ -55,7 +101,12 @@ export type TypeDeclaration = {
   name: string;
   params: string[];
   body:
-    | { tag: "product"; fields: TypeField[]; positional: boolean }
+    | {
+      tag: "product";
+      fields: TypeField[];
+      positional: boolean;
+      initializer?: FrontExpr;
+    }
     | { tag: "sum"; cases: TypeField[] }
     | { tag: "alias"; type_name: string };
   recursive: boolean;
@@ -66,56 +117,11 @@ export type EffectRef = {
   operation: string;
 };
 
-export type EffectRowExpr =
-  | { tag: "family"; name: string }
-  | { tag: "operation"; effect: string; operation: string }
-  | { tag: "variable"; name: string }
-  | { tag: "group"; value: EffectRowExpr }
-  | { tag: "union"; left: EffectRowExpr; right: EffectRowExpr }
-  | { tag: "intersection"; left: EffectRowExpr; right: EffectRowExpr }
-  | { tag: "difference"; left: EffectRowExpr; right: EffectRowExpr };
-
-export type TypeExpr =
-  | { tag: "name"; name: string }
-  | { tag: "atom"; name: string }
-  | { tag: "top" }
-  | { tag: "never" }
-  | { tag: "frozen"; value: TypeExpr }
-  | { tag: "borrow"; value: TypeExpr }
-  | { tag: "union"; left: TypeExpr; right: TypeExpr }
-  | { tag: "intersection"; left: TypeExpr; right: TypeExpr }
-  | { tag: "difference"; left: TypeExpr; right: TypeExpr }
-  | { tag: "apply"; func: TypeExpr; arg: TypeExpr }
-  | { tag: "tuple"; items: TypeExpr[] }
-  | { tag: "product"; entries: TypeProductEntry[] }
-  | { tag: "array"; element: TypeExpr; length: ArrayLengthExpr }
-  | {
-    tag: "arrow";
-    param: TypeExpr;
-    effects: EffectRowExpr | undefined;
-    result: TypeExpr;
-  };
-
-export type TypeProductEntry = {
-  label?: string;
-  type_expr: TypeExpr;
-};
-
-export type ArrayLengthExpr =
-  | { tag: "number"; value: number }
-  | { tag: "name"; name: string }
-  | {
-    tag: "binary";
-    op: "+" | "-" | "*" | "/" | "%";
-    left: ArrayLengthExpr;
-    right: ArrayLengthExpr;
-  };
-
 export type PatternMode = "default" | "const" | "linear";
 
 export type PatternLiteral =
   | { tag: "bool"; value: boolean }
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "text"; value: string }
   | { tag: "atom"; name: string };
 
@@ -168,11 +174,6 @@ export type HandlerReturnClause = {
   body: FrontExpr;
 };
 
-export type ResumeSignature = {
-  input_type: string;
-  output_type: string;
-};
-
 export type Stmt =
   | { tag: "import"; name: string; path: string }
   | { tag: "host_import"; value: FrontHostImport }
@@ -182,6 +183,7 @@ export type Stmt =
     pattern?: Pattern;
     name: string;
     is_recursive?: boolean;
+    managed_export?: boolean;
     is_linear: boolean;
     annotation: string | undefined;
     type_annotation?: TypeExpr;
@@ -239,10 +241,10 @@ export type Stmt =
 
 export type FrontExpr =
   | { tag: "bool"; value: boolean }
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "atom"; name: string }
   | { tag: "unit" }
-  | { tag: "text"; value: string }
+  | { tag: "text"; value: string; encoding?: "bytes" }
   | { tag: "type_name"; name: string }
   | { tag: "var"; name: string; resume_signature?: ResumeSignature }
   | { tag: "prim"; prim: Prim; left: FrontExpr; right: FrontExpr }
@@ -254,9 +256,16 @@ export type FrontExpr =
     arg?: FrontExpr;
     args: FrontExpr[];
     resume_payload?: boolean;
+    operator_syntax?: OperatorSyntax;
   }
   | { tag: "product"; entries: ProductExprEntry[] }
-  | { tag: "array"; items: FrontExpr[]; rest: FrontExpr | undefined }
+  | { tag: "shape"; entries: ProductExprEntry[] }
+  | {
+    tag: "array";
+    items: FrontExpr[];
+    rest: FrontExpr | undefined;
+    leading_rest?: boolean;
+  }
   | { tag: "array_repeat"; value: FrontExpr; length: FrontExpr }
   | { tag: "import"; path: string }
   | { tag: "block"; statements: Stmt[] }
@@ -275,6 +284,7 @@ export type FrontExpr =
   }
   | { tag: "try_with"; body: FrontExpr; handler: FrontExpr }
   | { tag: "with"; base: FrontExpr; fields: Field[] }
+  | { tag: "type_with"; base: FrontExpr; members: ComputedTypeMember[] }
   | { tag: "set_type"; type_expr: TypeExpr }
   | { tag: "struct_type"; fields: TypeField[] }
   | {
@@ -326,6 +336,14 @@ export type ProductExprEntry = {
   value: FrontExpr;
 };
 
+export type OperatorSyntax = {
+  kind: "infix" | "prefix";
+  operator: string;
+  precedence: number;
+  associativity?: "left" | "right" | "none";
+  target: string;
+};
+
 export type MatchArm = {
   pattern: Pattern;
   guard: FrontExpr | undefined;
@@ -345,10 +363,9 @@ export type Field = {
   value: FrontExpr;
 };
 
-export type TypeField = {
-  name: string;
-  type_name: string;
-  set_member?: TypeExpr;
+export type ComputedTypeMember = {
+  name: FrontExpr;
+  value: FrontExpr;
 };
 
 export type FrontHostImportArgContract =
@@ -383,37 +400,11 @@ export type FrontHostImport = {
   result_owner: FrontHostImportResultContract | undefined;
 };
 
-export type TypePattern = {
-  kind: "struct" | "union";
-  fields: TypeField[];
-  open: boolean;
-};
-
-export type TokenKind =
-  | "name"
-  | "number"
-  | "string"
-  | "character"
-  | "symbol"
-  | "newline"
-  | "comment"
-  | "eof";
-
-export type Token = {
-  kind: TokenKind;
-  text: string;
-  /** Exact source spelling, including quotes and escapes for literals. */
-  raw: string;
-  /** UTF-16 source offsets, with an exclusive end. */
-  span: SourceSpan;
-  line: number;
-  column: number;
-};
-
 export type FrontType =
   | { tag: "never" }
   | { tag: "bool" }
-  | { tag: "int"; type: ValType | undefined }
+  | { tag: "int"; type: NumType | undefined }
+  | { tag: "f32x4" }
   | { tag: "atom"; name: string }
   | { tag: "text"; encoding?: "bytes" }
   | { tag: "type" }

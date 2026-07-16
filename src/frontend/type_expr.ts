@@ -20,6 +20,22 @@ export function format_type_expr(type: TypeExpr): string {
   return format(type, 0);
 }
 
+export function function_type_expr(
+  type: TypeExpr | undefined,
+): Extract<TypeExpr, { tag: "arrow" }> | undefined {
+  let current = type;
+
+  while (current?.tag === "forall") {
+    current = current.body;
+  }
+
+  if (current?.tag === "arrow") {
+    return current;
+  }
+
+  return undefined;
+}
+
 class TypeExprParser {
   private index = 0;
 
@@ -31,6 +47,36 @@ class TypeExprParser {
   }
 
   parse_arrow(): TypeExpr {
+    const token = this.peek();
+
+    if (token?.kind === "name" && token.text === "forall") {
+      this.index += 1;
+      const params: string[] = [];
+
+      while (true) {
+        const param = this.peek();
+
+        if (param?.kind !== "name") {
+          break;
+        }
+
+        expect(
+          is_snake_case(param.text) && param.text !== "_",
+          "Forall type parameter must use snake_case: " + param.text,
+        );
+        expect(
+          !params.includes(param.text),
+          "Duplicate forall type parameter: " + param.text,
+        );
+        params.push(param.text);
+        this.index += 1;
+      }
+
+      expect(params.length > 0, "Forall type requires at least one parameter");
+      this.expect_symbol(".");
+      return { tag: "forall", params, body: this.parse_arrow() };
+    }
+
     const param = this.parse_union();
 
     if (!this.match_symbol("->")) {
@@ -145,11 +191,41 @@ class TypeExprParser {
 
   private parse_atom(): TypeExpr {
     if (this.match_symbol("[")) {
-      const element = this.parse_arrow();
-      this.expect_array_separator();
-      const length = this.parse_array_length(0);
-      this.expect_symbol("]");
-      return { tag: "array", element, length };
+      if (this.match_symbol("]")) {
+        return { tag: "product", entries: [] };
+      }
+
+      const first = this.parse_product_entry();
+
+      if (this.match_array_separator()) {
+        expect(
+          first.label === undefined,
+          "Repeated product element cannot have a label",
+        );
+        const length = this.parse_array_length(0);
+        this.expect_symbol("]");
+        return { tag: "array", element: first.type_expr, length };
+      }
+
+      const entries = [first];
+
+      if (this.match_symbol("]")) {
+        return { tag: "product", entries };
+      }
+
+      this.expect_symbol(",");
+
+      while (true) {
+        entries.push(this.parse_product_entry());
+
+        if (this.match_symbol("]")) {
+          break;
+        }
+
+        this.expect_symbol(",");
+      }
+
+      return { tag: "product", entries };
     }
 
     if (this.match_symbol("(")) {
@@ -279,13 +355,15 @@ class TypeExprParser {
     return { tag: "name", name: token.text };
   }
 
-  private expect_array_separator(): void {
+  private match_array_separator(): boolean {
     const token = this.peek();
-    expect(
-      token && token.kind === "newline" && token.raw === ";",
-      "Expected `;` in fixed array type",
-    );
+
+    if (!token || token.kind !== "newline" || token.raw !== ";") {
+      return false;
+    }
+
     this.index += 1;
+    return true;
   }
 
   private parse_effect_row_union(): EffectRowExpr {
@@ -400,6 +478,13 @@ function format(type: TypeExpr, parent_precedence: number): string {
     return type.name;
   }
 
+  if (type.tag === "forall") {
+    const precedence = 0;
+    const text = "forall " + type.params.join(" ") + ". " +
+      format(type.body, precedence);
+    return parenthesize(text, precedence, parent_precedence);
+  }
+
   if (type.tag === "atom") {
     return "#" + type.name;
   }
@@ -438,7 +523,7 @@ function format(type: TypeExpr, parent_precedence: number): string {
 
       return text;
     });
-    return "(" + entries.join(", ") + ")";
+    return "[" + entries.join(", ") + "]";
   }
 
   if (type.tag === "tuple") {

@@ -1,5 +1,10 @@
 import { assert_equals, assert_includes } from "../src/assert.ts";
-import { IxHost, IxRunner, type IxValue, Source } from "../src/frontend.ts";
+import {
+  DuckHost,
+  DuckRunner,
+  type DuckValue,
+  Source,
+} from "../src/frontend.ts";
 import {
   compile_failure_examples,
   dependency_paths,
@@ -84,7 +89,7 @@ for (const example of trap_examples) {
   });
 }
 
-Deno.test("example manifest accounts for every .ix file", () => {
+Deno.test("example manifest accounts for every .duck file", () => {
   const expected = new Set<string>();
 
   for (const example of success_examples) {
@@ -103,9 +108,9 @@ Deno.test("example manifest accounts for every .ix file", () => {
     expected.add(path);
   }
 
-  const actual = new Set(collect_ix_files("examples"));
+  const actual = new Set(collect_duck_files("examples"));
   assert_equals([...actual].sort(), [...expected].sort());
-  assert_equals(success_examples.length, 71);
+  assert_equals(success_examples.length, 72);
   assert_equals(compile_failure_examples.length, 12);
   assert_equals(trap_examples.length, 4);
 });
@@ -130,7 +135,7 @@ function compile_example(example: SuccessExample): string {
 async function run_managed_example(example: SuccessExample): Promise<void> {
   const artifact = Source.artifact_file(example.path);
   const wasm = await wasm_from_wat(artifact.wat);
-  const program = await IxHost.instantiate(wasm, artifact.abi);
+  const program = await DuckHost.instantiate(wasm, artifact.abi);
 
   try {
     for (const example_run of example.runs) {
@@ -140,7 +145,7 @@ async function run_managed_example(example: SuccessExample): Promise<void> {
         throw new Error("Managed example is missing Init: " + example.path);
       }
 
-      const value = IxRunner(init()).run(program);
+      const value = DuckRunner(init()).run(program);
       assert_equals(managed_result(value, example.path), example_run.expected);
     }
   } finally {
@@ -159,24 +164,21 @@ async function run_managed_trap(
 
   const artifact = Source.artifact_file(example.path);
   const wasm = await wasm_from_wat(artifact.wat);
-  const program = await IxHost.instantiate(wasm, artifact.abi);
+  const program = await DuckHost.instantiate(wasm, artifact.abi);
 
   try {
-    IxRunner(init()).run(program);
+    DuckRunner(init()).run(program);
   } finally {
     program.dispose();
   }
 }
 
-function managed_result(value: IxValue, path: string): number | bigint {
-  if (
-    typeof value !== "object" || value === null || Array.isArray(value) ||
-    value instanceof Uint8Array || !("result" in value)
-  ) {
-    throw new Error("Managed example must return { result }: " + path);
+function managed_result(value: DuckValue, path: string): number | bigint {
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new Error("Managed example must return [result]: " + path);
   }
 
-  const result = value.result;
+  const result = value[0];
 
   if (typeof result !== "number" && typeof result !== "bigint") {
     throw new Error("Managed example result must be numeric: " + path);
@@ -208,7 +210,7 @@ async function run_wat(
 }
 
 async function wasm_from_wat(wat: string): Promise<Uint8Array<ArrayBuffer>> {
-  const directory = await Deno.makeTempDir({ prefix: "binned-example-" });
+  const directory = await Deno.makeTempDir({ prefix: "ducklang-example-" });
   const wat_path = directory + "/example.wat";
   const wasm_path = directory + "/example.wasm";
 
@@ -236,18 +238,18 @@ async function wasm_from_wat(wat: string): Promise<Uint8Array<ArrayBuffer>> {
   }
 }
 
-function collect_ix_files(path: string): string[] {
+function collect_duck_files(path: string): string[] {
   const files: string[] = [];
 
   for (const entry of Deno.readDirSync(path)) {
     const child = path + "/" + entry.name;
 
     if (entry.isDirectory) {
-      files.push(...collect_ix_files(child));
+      files.push(...collect_duck_files(child));
       continue;
     }
 
-    if (entry.isFile && entry.name.endsWith(".ix")) {
+    if (entry.isFile && entry.name.endsWith(".duck")) {
       files.push(child);
     }
   }

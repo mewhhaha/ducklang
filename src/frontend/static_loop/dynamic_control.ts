@@ -168,7 +168,7 @@ export function stmt_value_contains_loop_control(stmt: Stmt): boolean {
   return false;
 }
 
-function expr_contains_loop_control(expr: FrontExpr): boolean {
+export function expr_contains_loop_control(expr: FrontExpr): boolean {
   switch (expr.tag) {
     case "block":
       return contains_loop_control(expr.statements);
@@ -191,6 +191,7 @@ function expr_contains_loop_control(expr: FrontExpr): boolean {
       return false;
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (expr_contains_loop_control(entry.value)) {
           return true;
@@ -280,6 +281,22 @@ function expr_contains_loop_control(expr: FrontExpr): boolean {
 
       for (const field of expr.fields) {
         if (expr_contains_loop_control(field.value)) {
+          return true;
+        }
+      }
+
+      return false;
+
+    case "type_with":
+      if (expr_contains_loop_control(expr.base)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          expr_contains_loop_control(member.name) ||
+          expr_contains_loop_control(member.value)
+        ) {
           return true;
         }
       }
@@ -388,17 +405,18 @@ export function contains_loop_control(stmts: Stmt[]): boolean {
       continue;
     }
 
-    if (stmt.tag === "expr" && stmt.expr.tag === "block") {
-      if (contains_loop_control(stmt.expr.statements)) {
+    if (stmt.tag === "expr") {
+      if (expr_contains_loop_control(stmt.expr)) {
         return true;
       }
       continue;
     }
 
-    if (stmt.tag === "return" && stmt.value.tag === "block") {
-      if (contains_loop_control(stmt.value.statements)) {
+    if (stmt.tag === "return") {
+      if (expr_contains_loop_control(stmt.value)) {
         return true;
       }
+      continue;
     }
 
     if (stmt.tag === "resume_dup") {

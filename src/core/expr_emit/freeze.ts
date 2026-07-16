@@ -52,8 +52,17 @@ export function emit_core_freeze_expr<ctx extends CoreExprEmitCtx>(
     ),
   );
 
-  if (ownership.tag === "unique_heap" && ownership.reason === "text") {
-    return emit_core_freeze_text_value(expr, expr.value, ctx, emit_expr);
+  if (
+    ownership.tag === "unique_heap" &&
+    (ownership.reason === "text" || ownership.reason === "bytes")
+  ) {
+    return emit_core_freeze_text_value(
+      expr,
+      expr.value,
+      ctx,
+      emit_expr,
+      ownership.reason,
+    );
   }
 
   if (

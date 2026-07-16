@@ -16,6 +16,12 @@ export type CoreIndexAssignHooks<
   emit_expr: (expr: CoreExpr, ctx: emit_ctx) => Wat;
   expr_type: (expr: CoreExpr, ctx: ctx) => ValType;
   is_stable_static_expr: (expr: CoreExpr) => boolean;
+  plan_static_capture_expr: (
+    prefix: string,
+    expr: CoreExpr,
+    ctx: ctx,
+    emit_ctx: emit_ctx | undefined,
+  ) => CoreIndexAssignValuePlan;
   plan_static_value_expr: (
     expr: CoreExpr,
     ctx: ctx,

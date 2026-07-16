@@ -36,11 +36,11 @@ Deno.test("Bool and I32 annotations reject values of the other type", () => {
 
   assert_equals(
     bool_as_i32.diagnostics.map(({ code, message }) => ({ code, message })),
-    [{ code: "IX2306", message: "Binding annotation expects I32, got Bool" }],
+    [{ code: "DUCK2306", message: "Binding annotation expects I32, got Bool" }],
   );
   assert_equals(
     i32_as_bool.diagnostics.map(({ code, message }) => ({ code, message })),
-    [{ code: "IX2306", message: "Binding annotation expects Bool, got I32" }],
+    [{ code: "DUCK2306", message: "Binding annotation expects Bool, got I32" }],
   );
 });
 
@@ -51,13 +51,13 @@ Deno.test("Bool values cannot enter arithmetic or mixed equality", () => {
   assert_equals(
     arithmetic.diagnostics.map(({ code, message }) => ({ code, message })),
     [{
-      code: "IX2302",
+      code: "DUCK2302",
       message: "Primitive i32.add expects numeric operands, got Bool",
     }],
   );
   assert_equals(
     mixed_equality.diagnostics.map(({ code, message }) => ({ code, message })),
-    [{ code: "IX2302", message: "Boolean equality requires Bool operands" }],
+    [{ code: "DUCK2302", message: "Boolean equality requires Bool operands" }],
   );
 });
 
@@ -85,9 +85,9 @@ let checked: I32 = 1 is Int
   assert_equals(
     i32_annotations.diagnostics.map(({ code, message }) => ({ code, message })),
     [
-      { code: "IX2306", message: "Binding annotation expects I32, got Bool" },
-      { code: "IX2306", message: "Binding annotation expects I32, got Bool" },
-      { code: "IX2306", message: "Binding annotation expects I32, got Bool" },
+      { code: "DUCK2306", message: "Binding annotation expects I32, got Bool" },
+      { code: "DUCK2306", message: "Binding annotation expects I32, got Bool" },
+      { code: "DUCK2306", message: "Binding annotation expects I32, got Bool" },
     ],
   );
 });
@@ -112,11 +112,11 @@ Deno.test("conditions accept Bool and legacy I32 truthiness", () => {
 
 Deno.test("dynamic Bool struct indexes retain Bool semantics over i32", () => {
   const dynamic_read = `
-let pair = (.first = true, .second = false)
+let pair = [.first = true, .second = false]
 pair[input]
 `;
   const dynamic_update = `
-let pair = (.first = true, .second = false)
+let pair = [.first = true, .second = false]
 pair[input] = true
 pair[input]
 `;
@@ -134,24 +134,24 @@ pair[input]
 
 Deno.test("dynamic Bool struct indexes reject numeric use and mixed fields", () => {
   const static_bool = `
-let pair = (.first = true, .second = 2)
+let pair = [.first = true, .second = 2]
 pair[0]
 `;
   const arithmetic = `
-let pair = (.first = true, .second = false)
+let pair = [.first = true, .second = false]
 pair[input] + 1
 `;
   const numeric_update = `
-let pair = (.first = true, .second = false)
+let pair = [.first = true, .second = false]
 pair[input] = 1
 pair[input]
 `;
   const mixed_read = `
-let pair = (.first = true, .second = 2)
+let pair = [.first = true, .second = 2]
 pair[input]
 `;
   const mixed_update = `
-let pair = (.first = true, .second = 2)
+let pair = [.first = true, .second = 2]
 pair[input] = true
 pair[input]
 `;

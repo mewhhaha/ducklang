@@ -1,50 +1,15 @@
 import type { CoreExpr, CoreField, CoreFnType, CoreStmt } from "../ast.ts";
-import type { CoreStorageClass } from "../escape.ts";
-import type { CoreOwnership, CoreOwnershipHooks } from "../ownership.ts";
+import type { CoreOwnershipHooks } from "../ownership/types.ts";
+import type { CoreAllocationFact } from "../model/allocation.ts";
 
-export type CoreAllocationReason =
-  | "closure"
-  | "runtime_aggregate"
-  | "runtime_text"
-  | "runtime_union";
-
-export type CoreAllocationFact = {
-  id: string;
-  allocation_id: string;
-  scope: string;
-  storage: CoreStorageClass;
-  ownership: CoreOwnership;
-  reason: CoreAllocationReason;
-  expression: CoreExpr["tag"];
-  byte_size: CoreAllocationByteSize;
-  alignment: 4 | 8;
-  layout: CoreAllocationLayout;
-  owned_children?: CoreAllocationOwnedChild[];
-  owner?: string;
-};
-
-export type CoreAllocationOwnedChild = {
-  allocation_ids: string[];
-  offset: number;
-  ownership: Extract<CoreOwnership, { tag: "unique_heap" }>;
-  layout: CoreAllocationLayout;
-};
-
-export type CoreAllocationByteSize =
-  | { tag: "static"; value: number }
-  | { tag: "runtime"; formula: string };
-
-export type CoreAllocationLayout =
-  | "closure_env.table_index_and_capture_slots"
-  | "runtime_aggregate.aligned_fields"
-  | "runtime_text.length_prefixed_utf8"
-  | "runtime_union.tag_and_aligned_payload"
-  | "runtime_slice.length_and_i32_elements"
-  | "runtime_slice.length_and_frozen_text_pointers";
-
-export type CoreAllocationPlan = {
-  facts: CoreAllocationFact[];
-};
+export type {
+  CoreAllocationByteSize,
+  CoreAllocationFact,
+  CoreAllocationLayout,
+  CoreAllocationOwnedChild,
+  CoreAllocationPlan,
+  CoreAllocationReason,
+} from "../model/allocation.ts";
 
 export type CoreAllocationHooks<ctx> = CoreOwnershipHooks<ctx> & {
   core_assignment_value: (
@@ -65,6 +30,8 @@ export type CoreAllocationHooks<ctx> = CoreOwnershipHooks<ctx> & {
     ctx: ctx,
   ) => boolean;
   local_value_exists: (name: string, ctx: ctx) => boolean;
+  materialized_binding: (name: string, ctx: ctx) => boolean;
+  mutable_binding: (name: string, ctx: ctx) => boolean;
   is_static_value_expr: (expr: CoreExpr, ctx: ctx) => boolean;
   static_collection_fields: (
     expr: CoreExpr,
@@ -99,6 +66,7 @@ export type CoreAllocationState = {
   next_allocation: number;
   next_block: number;
   next_closure: number;
+  next_loop: number;
   next_scratch: number;
   next_static_call: number;
   current_allocation_instance: string | undefined;

@@ -50,7 +50,63 @@ export function static_core_call_binding_target<ctx>(
 export function static_core_call_requires_scope(
   target: Extract<CoreExpr, { tag: "lam" }>,
 ): boolean {
-  return core_expr_has_static_call_statement_scope(target.body);
+  if (!core_expr_has_static_call_statement_scope(target.body)) {
+    return false;
+  }
+
+  return !has_only_generated_demand_scopes(target.body, new WeakSet());
+}
+
+function has_only_generated_demand_scopes(
+  value: unknown,
+  visited: WeakSet<object>,
+): boolean {
+  if (value === null || typeof value !== "object") {
+    return true;
+  }
+
+  if (visited.has(value)) {
+    return true;
+  }
+
+  visited.add(value);
+
+  if ("tag" in value && value.tag === "loop") {
+    return false;
+  }
+
+  if ("tag" in value && value.tag === "block") {
+    if (!("statements" in value) || !Array.isArray(value.statements)) {
+      return false;
+    }
+
+    const first = value.statements[0];
+    const final = value.statements[1];
+
+    const generated_demand_block = value.statements.length === 2 &&
+      first !== null &&
+      typeof first === "object" && "tag" in first &&
+      first.tag === "bind" && "name" in first &&
+      typeof first.name === "string" &&
+      first.name.startsWith("_demand#") && final !== null &&
+      typeof final === "object" && "tag" in final && final.tag === "expr";
+    const transparent_result_block = value.statements.length === 1 &&
+      first !== null &&
+      typeof first === "object" && "tag" in first &&
+      (first.tag === "expr" || first.tag === "return");
+
+    if (!generated_demand_block && !transparent_result_block) {
+      return false;
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    if (!has_only_generated_demand_scopes(child, visited)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function static_core_call_branch_value<
