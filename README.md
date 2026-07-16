@@ -16,6 +16,13 @@ The language is a compact value-oriented playground for compile-time
 specialization, affine lowering, explicit sharing/erasure, ownership checks, and
 direct WebAssembly output.
 
+## Prerequisites
+
+Development uses Deno 2.9.2, Tree-sitter CLI 0.26.3, and `just`. WABT is a
+required external tool: its `wat2wasm` executable is used by Wasm integration
+tests and the build/run commands. On Debian and Ubuntu, install it with
+`apt-get install wabt`.
+
 ## Quick Start
 
 Run the demo compiler pipeline:
@@ -64,9 +71,6 @@ highlight, indentation, locals, textobject, symbol, and rainbow-bracket queries,
 and builds the grammar. `just helix-register` remains available as the explicit
 Helix-specific alias. Run `just helix-grammar` to validate the grammar without
 changing Helix configuration.
-
-The tests use Deno and expect `wat2wasm` to be available for Wasm integration
-checks.
 
 ## Tooling CLI
 

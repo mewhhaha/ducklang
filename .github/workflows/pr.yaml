@@ -4,7 +4,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  quality-and-grammar:
     runs-on: ubuntu-latest
     env:
       XDG_CACHE_HOME: /tmp/ducklang-tree-sitter-cache
@@ -15,32 +15,24 @@ jobs:
       - name: setup deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
-
-      - name: format
-        run: deno fmt --check
-
-      - name: lint
-        run: deno lint --ignore=.claude
-
-      - name: typecheck
-        run: |
-          deno check main.ts duck.ts
-          deno check scripts/*.ts
-          rg --files src case-studies examples -g '*.test.ts' -0 | xargs -0 deno check
-
-      - name: install wabt
-        run: |
-          sudo apt-get update -qq >/tmp/apt.log 2>&1
-          sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
+          deno-version: v2.9.2
 
       - name: install tree-sitter
         run: npm install --global tree-sitter-cli@0.26.3
 
-      - name: check grammar
+      - name: quality
         run: |
+          deno fmt --check
+          deno lint --ignore=.claude
+          deno check main.ts duck.ts
+          deno check scripts/*.ts
+          rg --files src case-studies examples -g '*.test.ts' -0 | xargs -0 deno check
+          deno run --allow-read scripts/dependency-boundaries.ts --check >/dev/null
+
+      - name: grammar
+        run: |
+          deno run --allow-read --allow-write --allow-run=tree-sitter scripts/check-generated-grammar.ts
           cd tree-sitter-duck
-          tree-sitter generate
           tree-sitter test
           rg --files ../examples -g '*.duck' -0 | xargs -0 tree-sitter parse --quiet --stat
           tree-sitter parse --quiet --stat ../src/frontend/prelude*.duck
@@ -50,14 +42,66 @@ jobs:
           tree-sitter query queries/locals.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
           tree-sitter query queries/tags.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
           tree-sitter query queries/rainbows.scm ../examples/effects/01_inferred_io.duck ../examples/handlers/01_local_counter.duck >/dev/null
-          cd ..
-          git diff --exit-code -- tree-sitter-duck/src/grammar.json tree-sitter-duck/src/node-types.json tree-sitter-duck/src/parser.c
 
-      - name: run tests
-        run: deno test --allow-read --allow-write --allow-run
+  source-and-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
 
-      - name: enforce LSP performance budgets
-        run: deno task lsp:perf
+      - name: setup deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.2
 
-      - name: enforce compiler performance budgets
-        run: deno task compiler:perf
+      - name: install wabt
+        run: |
+          sudo apt-get update -qq >/tmp/apt.log 2>&1
+          sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
+
+      - name: run source and example tests
+        run: deno test --allow-read --allow-write --allow-run src examples scripts
+
+  case-studies:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        study:
+          - chip8
+          - grep
+          - raytracer
+          - tar
+          - wav
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.2
+
+      - name: install wabt
+        run: |
+          sudo apt-get update -qq >/tmp/apt.log 2>&1
+          sudo apt-get install -y -qq wabt >>/tmp/apt.log 2>&1
+
+      - name: run case study
+        run: deno test --allow-read --allow-write --allow-run case-studies/${{ matrix.study }}
+
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.2
+
+      - name: enforce performance budgets
+        run: |
+          deno task compiler:perf
+          deno task lsp:perf
