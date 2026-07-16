@@ -1,12 +1,17 @@
 import { assert_equals } from "../assert.ts";
 import { parse_source } from "./parser.ts";
+import {
+  ducklang_effects_prelude_text,
+  ducklang_functional_prelude_text,
+  ducklang_prelude_text,
+} from "./prelude.ts";
 import { validate_frontend_semantics } from "./semantic_validation.ts";
 
 const failures = [
   {
     name: "03_illegal_type_change",
     diagnostic: {
-      code: "IX2301",
+      code: "DUCK2301",
       severity: "error",
       message: "Assignment changes type for value",
       span: { start: 15, end: 34 },
@@ -15,7 +20,7 @@ const failures = [
   {
     name: "04_mixed_integer_widths",
     diagnostic: {
-      code: "IX2302",
+      code: "DUCK2302",
       severity: "error",
       message: "Mixed i32 and i64 operands for operator +",
       span: { start: 0, end: 12 },
@@ -24,7 +29,7 @@ const failures = [
   {
     name: "05_invalid_condition_type",
     diagnostic: {
-      code: "IX2303",
+      code: "DUCK2303",
       severity: "error",
       message: "If condition expects Bool or I32, got Text",
       span: { start: 3, end: 8 },
@@ -33,19 +38,19 @@ const failures = [
   {
     name: "06_missing_struct_field",
     diagnostic: {
-      code: "IX2304",
+      code: "DUCK2304",
       severity: "error",
       message: "Missing struct field: age",
-      span: { start: 66, end: 74 },
+      span: { start: 128, end: 136 },
     },
   },
   {
     name: "07_invalid_union_payload",
     diagnostic: {
-      code: "IX2305",
+      code: "DUCK2305",
       severity: "error",
       message: "Union case ok expects Int, got Text",
-      span: { start: 51, end: 69 },
+      span: { start: 53, end: 71 },
     },
   },
 ];
@@ -53,7 +58,7 @@ const failures = [
 for (const failure of failures) {
   Deno.test("semantic validation reports " + failure.name, async () => {
     const text = await Deno.readTextFile(
-      "examples/failures/compile/" + failure.name + ".ix",
+      "examples/failures/compile/" + failure.name + ".duck",
     );
 
     assert_equals(validate_frontend_semantics(parse_source(text)), [
@@ -66,7 +71,7 @@ Deno.test("semantic validation maps fail calls to their call span", () => {
   assert_equals(
     validate_frontend_semantics(parse_source('comptime fail("bad")')),
     [{
-      code: "IX2102",
+      code: "DUCK2102",
       severity: "error",
       message: "fail: bad",
       span: { start: 9, end: 20 },
@@ -89,7 +94,7 @@ Deno.test("semantic validation keeps nested width errors structured and singular
       parse_source("let value = (1i32 + 2i64) + 3i64\nvalue"),
     ),
     [{
-      code: "IX2302",
+      code: "DUCK2302",
       severity: "error",
       message: "Mixed i32 and i64 operands for operator +",
       span: { start: 13, end: 24 },
@@ -99,11 +104,11 @@ Deno.test("semantic validation keeps nested width errors structured and singular
 
 Deno.test("semantic validation does not re-infer an invalid indexed branch", () => {
   const source = parse_source(
-    "let pair=(.a=true,.b=1)\nif true { pair[input] } else { 0 }",
+    "let pair=[.a=true,.b=1]\nif true { pair[input] } else { 0 }",
   );
 
   assert_equals(validate_frontend_semantics(source), [{
-    code: "IX2304",
+    code: "DUCK2304",
     severity: "error",
     message: "Mixed Bool and numeric indexed values",
     span: { start: 34, end: 45 },
@@ -115,17 +120,29 @@ Deno.test("semantic validation reuses constness checks with source spans", () =>
     "let runtime = 1\nconst invalid = runtime\ninvalid",
   );
   assert_equals(validate_frontend_semantics(source), [{
-    code: "IX2101",
+    code: "DUCK2101",
     severity: "error",
     message: "Const binding captures runtime value: runtime",
     span: { start: 32, end: 39 },
   }]);
 });
 
+Deno.test("semantic validation accepts every bundled source prelude", () => {
+  for (
+    const text of [
+      ducklang_prelude_text,
+      ducklang_functional_prelude_text,
+      ducklang_effects_prelude_text,
+    ]
+  ) {
+    assert_equals(validate_frontend_semantics(parse_source(text)), []);
+  }
+});
+
 Deno.test("semantic validation reports basic binding annotations", () => {
   const source = parse_source("let value: Text = 1\nvalue");
   assert_equals(validate_frontend_semantics(source), [{
-    code: "IX2306",
+    code: "DUCK2306",
     severity: "error",
     message: "Binding annotation expects Text, got I32",
     span: { start: 18, end: 19 },
@@ -147,7 +164,7 @@ Deno.test("semantic validation scopes the Core gate to Bool representation error
       scope: "bool-representation",
     }),
     [{
-      code: "IX2306",
+      code: "DUCK2306",
       severity: "error",
       message: "Binding annotation expects Bool, got I32",
       span: { start: 18, end: 19 },
@@ -159,7 +176,7 @@ Deno.test("semantic validation optionally reports unused binding warnings", () =
   const source = parse_source("let value = 1\n42");
   assert_equals(validate_frontend_semantics(source), []);
   assert_equals(validate_frontend_semantics(source, { warnings: true }), [{
-    code: "IX2003",
+    code: "DUCK2003",
     severity: "warning",
     message: "Unused runtime binding value",
     span: { start: 0, end: 13 },
@@ -176,9 +193,27 @@ Deno.test("semantic validation scopes lambda binders and const parameters", () =
   assert_equals(validate_frontend_semantics(source), []);
 });
 
-Deno.test("semantic validation accepts contextual Bytes literals", () => {
+Deno.test("semantic validation requires explicit Text to Bytes conversion", () => {
   const source = parse_source('let value: Bytes = "abc"\nlen(value)');
-  assert_equals(validate_frontend_semantics(source), []);
+  assert_equals(validate_frontend_semantics(source), [{
+    code: "DUCK2306",
+    severity: "error",
+    message: "Binding annotation expects Bytes, got Text",
+    span: { start: 19, end: 24 },
+  }]);
+});
+
+Deno.test("semantic validation distinguishes Bytes.empty from Text", () => {
+  const bytes = parse_source("let value: Bytes = Bytes.empty\nlen(value)");
+  assert_equals(validate_frontend_semantics(bytes), []);
+
+  const text = parse_source("let value: Text = Bytes.empty\nlen(value)");
+  const diagnostics = validate_frontend_semantics(text);
+  assert_equals(diagnostics.length, 1);
+  assert_equals(
+    diagnostics[0]?.message,
+    "Binding annotation expects Text, got Bytes",
+  );
 });
 
 Deno.test("semantic validation reports one const capture cause", () => {
@@ -187,15 +222,15 @@ Deno.test("semantic validation reports one const capture cause", () => {
   );
   const diagnostics = validate_frontend_semantics(source);
   assert_equals(diagnostics.length, 1);
-  assert_equals(diagnostics[0]?.code, "IX2101");
+  assert_equals(diagnostics[0]?.code, "DUCK2101");
 });
 
 Deno.test("semantic warning liveness traverses handlers and type tests", async () => {
   for (
     const path of [
-      "examples/handlers/01_local_counter.ix",
-      "examples/compile_time/10_extensions_and_protocols.ix",
-      "examples/data/14_type_sets.ix",
+      "examples/handlers/01_local_counter.duck",
+      "examples/compile_time/10_extensions_and_protocols.duck",
+      "examples/data/14_type_sets.duck",
     ]
   ) {
     const source = parse_source(await Deno.readTextFile(path));

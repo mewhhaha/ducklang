@@ -20,6 +20,10 @@ export function substitute_core_call_expr(
       const replacement = replacements.get(expr.name);
 
       if (replacement) {
+        if (replacement.tag === "var" || replacement.tag === "linear") {
+          return record_core_expr_provenance({ ...replacement }, replacement);
+        }
+
         return replacement;
       }
 

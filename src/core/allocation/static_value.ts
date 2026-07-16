@@ -69,6 +69,14 @@ export function scan_static_value_allocation_expr<ctx>(
     state.value_allocations.set(expr, unique);
     return undefined;
   }
+
+  if (expr.tag === "if") {
+    scan_expr(expr.cond, scope, ctx, hooks, state);
+    scan_expr(expr.then_branch, scope, ctx, hooks, state);
+    scan_expr(expr.else_branch, scope, ctx, hooks, state);
+    return undefined;
+  }
+
   const struct_value = hooks.static_struct_value(expr, ctx);
 
   if (struct_value) {

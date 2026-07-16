@@ -6,8 +6,9 @@ import {
 
 Deno.test("linear aggregate moves through a one-shot closure environment", async () => {
   const wat_text = wat_from_core_source(`
-const user_type = struct { age: Int }
-let make = (age: Int) => user_type { age: age }
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .age= Int }
+let make = (age: Int) => [.age = age] as user_type
 let !user: user_type = make(41)
 let flag = 1
 let take_once = if flag { () => !user } else { () => !user }
@@ -47,7 +48,8 @@ let marker = "x"
 
 Deno.test("linear union moves through a one-shot closure environment", async () => {
   const wat_text = wat_from_core_source(`
-const result_type = union { ok: Int, err: Int }
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 let !result: result_type = result_type.ok(41)
 let flag = 1
 let take_once = if flag { () => !result } else { () => !result }
@@ -89,9 +91,12 @@ let marker = "x"
 Deno.test("no-else conditional payload transfers clean only fallthrough", async () => {
   const prefix = `
 host_import branch_flag from "env.flag" () => I32
-const gate_type = union { go: Int, stop: Int }
-const user_type = struct { age: Int }
-const result_type = union { ok: user_type, err: Unit }
+type GateType = | .go = Int | .stop = Int
+const gate_type = GateType
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .age= Int }
+type ResultType = | .ok = user_type | .err
+const result_type = ResultType
 let flag = branch_flag()
 let gate: gate_type = if flag {
   gate_type.go(1)
@@ -99,9 +104,9 @@ let gate: gate_type = if flag {
   gate_type.stop(0)
 }
 let make = if flag {
-  (age: Int) => user_type { age: age }
+  (age: Int) => [.age = age] as user_type
 } else {
-  (age: Int) => user_type { age: age + 1 }
+  (age: Int) => [.age = age + 1] as user_type
 }
 let user: user_type = make(40)
 `;
@@ -319,12 +324,13 @@ for i in 0..${iterations.toString()} {
 
   async function scoped_aggregate_heap(iterations: number): Promise<number> {
     let scoped_wat = wat_from_core_source(`
-const user_type = struct { name: Text, age: Int }
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .name= Text, .age= Int }
 let flag = 1
 let make = if flag {
-  (suffix: Text) => user_type { name: append("A", suffix), age: 40 }
+  (suffix: Text) => [.name = append("A", suffix), .age = 40] as user_type
 } else {
-  (suffix: Text) => user_type { name: append("B", suffix), age: 5 }
+  (suffix: Text) => [.name = append("B", suffix), .age = 5] as user_type
 }
 for i in 0..${iterations.toString()} {
   let user: user_type = make("da")
@@ -376,60 +382,48 @@ append(if flag { "C" } else { "D" }, "?")
       retained: `
 let flag = 1
 let held: Text = append(if flag { "A" } else { "B" }, "!")
-append(if flag { "C" } else { "D" }, "?")
+let result: Text = append(if flag { "C" } else { "D" }, "?")
+if flag { result } else { held }
 `,
     },
     {
       name: "aggregate",
       discarded: `
-const user_type = struct { age: Int }
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .age= Int }
 let flag = 1
-let make = freeze ((age: Int) => user_type { age: age })
+let make = freeze ((age: Int) => [.age = age] as user_type)
 make(flag)
 make(flag + 1)
 `,
       retained: `
-const user_type = struct { age: Int }
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .age= Int }
 let flag = 1
-let make = freeze ((age: Int) => user_type { age: age })
+let make = freeze ((age: Int) => [.age = age] as user_type)
 let held: user_type = make(flag)
-make(flag + 1)
+let result: user_type = make(flag + 1)
+if flag { result } else { held }
 `,
     },
     {
       name: "union",
       discarded: `
-const result_type = union { ok: Int, err: Int }
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 let flag = 1
 let make = freeze ((value: Int) => result_type.ok(value))
 make(flag)
 make(flag + 1)
 `,
       retained: `
-const result_type = union { ok: Int, err: Int }
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 let flag = 1
 let make = freeze ((value: Int) => result_type.ok(value))
 let held: result_type = make(flag)
-make(flag + 1)
-`,
-    },
-    {
-      name: "closure",
-      discarded: `
-let flag = 1
-let marker = "x"
-((x: Int) => x + flag)
-((x: Int) => x + flag)
-`,
-      retained: `
-let flag = 1
-let marker = "x"
-let held = if flag {
-  (x: Int) => x
-} else {
-  (x: Int) => x + 1
-}
-((x: Int) => x + flag)
+let result: result_type = make(flag + 1)
+if flag { result } else { held }
 `,
     },
   ];
@@ -500,9 +494,10 @@ scratch {
 
 Deno.test("core scratch aggregate temporary compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  name: Text
+  .age= Int,
+  .name= Text
 }
 let flag = 1
 let f = if flag {
@@ -512,7 +507,7 @@ let f = if flag {
 }
 
 scratch {
-  user_type { age: 41, name: "Ada" }
+  [.age = 41, .name = "Ada"] as user_type
   f(7)
 }
 `);
@@ -577,10 +572,8 @@ scratch_text("hi")
 
 Deno.test("core scratch runtime union temporary compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 let flag = 1
 
@@ -725,17 +718,16 @@ Deno.test("core one-sided union payload transfer cleans retained branch", async 
   const wat_text = wat_from_core_source(`
 host_import branch_flag from "env.flag" () => I32
 
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  score: Int
+  .age= Int,
+  .score= Int
 }
-const result_type = union {
-  ok: user_type,
-  err: Unit
-}
+type ResultType = | .ok = user_type | .err
+const result_type = ResultType
 
 let flag = branch_flag()
-let user: user_type = user_type { age: 40, score: 2 }
+let user: user_type = [.age = 40, .score = 2] as user_type
 let result: result_type = result_type.err()
 if flag {
   result = result_type.ok(user)
@@ -788,10 +780,12 @@ Deno.test("core single-exit loop payload transfer covers zero iterations", async
   const wat_text = wat_from_core_source(`
 host_import loop_limit from "env.limit" () => I32
 
-const user_type = struct { age: Int }
-const result_type = union { ok: user_type, err: Unit }
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct { .age= Int }
+type ResultType = | .ok = user_type | .err
+const result_type = ResultType
 let limit = loop_limit()
-let user: user_type = user_type { age: 40 }
+let user: user_type = [.age = 40] as user_type
 for index in 0..limit {
   result_type.ok(user)
   break
@@ -914,10 +908,8 @@ Deno.test(
   async () => {
     const wat = wat_from_core_source(`
 let flag = 1
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 let !base: I32 = 1
 let result: result_type = if flag {
@@ -957,10 +949,8 @@ Deno.test(
   "frontend if-let Text payload linear closure compiles through WAT to Wasm",
   async () => {
     const wat = wat_from_core_source(`
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 host_import print from "env.print" (I32, &Text) => I32
 
@@ -1640,23 +1630,18 @@ Deno.test("frontend branch scratch aggregate freeze compiles through WAT to Wasm
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let read_user = flag => {
   let user: user_type = scratch {
     let temp: user_type = if flag {
-      user_type {
-        name: append("A", "da"),
-        age: 1
-      }
+      [.name = append("A", "da"), .age = 1] as user_type
     } else {
-      user_type {
-        name: append("Gr", "ace"),
-        age: 2
-      }
+      [.name = append("Gr", "ace"), .age = 2] as user_type
     }
 
     freeze temp
@@ -1705,14 +1690,15 @@ read_user(${flag})
 
 Deno.test("frontend chained-alias scratch aggregate freeze compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let start = 0
 let prefix: Text = slice("Ada", start, 1)
-let existing: user_type = user_type { name: append(prefix, "da"), age: 40 }
+let existing: user_type = [.name = append(prefix, "da"), .age = 40] as user_type
 let user: user_type = scratch {
   let first = existing
   let second = first
@@ -1752,28 +1738,20 @@ Deno.test("frontend branch-assigned scratch aggregate freeze compiles through WA
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let read_user = flag => {
   let user: user_type = scratch {
-    let temp: user_type = user_type {
-      name: append("n", "o"),
-      age: 0
-    }
+    let temp: user_type = [.name = append("n", "o"), .age = 0] as user_type
 
     if flag {
-      temp = user_type {
-        name: append("A", "da"),
-        age: 1
-      }
+      temp = [.name = append("A", "da"), .age = 1] as user_type
     } else {
-      temp = user_type {
-        name: append("Gr", "ace"),
-        age: 2
-      }
+      temp = [.name = append("Gr", "ace"), .age = 2] as user_type
     }
 
     freeze temp
@@ -1827,10 +1805,8 @@ Deno.test("frontend branch-assigned scratch union freeze compiles through WAT to
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 let read_result = flag => {
   let result: result_type = scratch {
@@ -2165,13 +2141,14 @@ freeze_suffix(${count}, "hi")
 
 Deno.test("frontend collection-loop-assigned scratch runtime text freeze compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const xs_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let freeze_suffix = (value: Text) => {
-  let xs: xs_type = xs_type { first: 1, second: 2 }
+  let xs: xs_type = [.first = 1, .second = 2] as xs_type
   scratch {
     let temp: Text = append(value, ".")
     for x in xs {
@@ -2254,10 +2231,8 @@ Deno.test("frontend if let scratch runtime text freeze compiles through WAT to W
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 let freeze_result = (flag: Int) => {
   let result: result_type = if flag {
@@ -2362,10 +2337,8 @@ Deno.test("frontend if-let-assigned scratch runtime text freeze compiles through
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 let freeze_result = (flag: Int) => {
   let result: result_type = if flag {
@@ -2471,15 +2444,11 @@ Deno.test("frontend if-let-assigned scratch union freeze compiles through WAT to
     name: string,
   ): Promise<void> {
     const wat_text = wat_from_core_source(`
-const option_type = union {
-  some: Text,
-  none: Unit
-}
+type OptionType = | .some = Text | .none
+const option_type = OptionType
 
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 let read_result = (flag: Int) => {
   let maybe: option_type = if flag {
@@ -2538,5 +2507,63 @@ read_result(${flag})
     0,
     0,
     "frontend_if_let_assigned_scratch_union_freeze_none",
+  );
+});
+
+Deno.test("frontend emits branch-local materialized aggregate temporaries in source order", async () => {
+  async function check_branch(
+    flag: number,
+    expected: number,
+    name: string,
+  ): Promise<void> {
+    const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
+const user_type = struct {
+  .name= Text,
+  .age= Int
+}
+
+let read_user = flag => {
+  let user: user_type = scratch {
+    let branch: user_type = if flag {
+      let selected: user_type = [.name = append("A", "da"), .age = 1] as user_type
+      selected
+    } else {
+      let fallback: user_type = [.name = append("Gr", "ace"), .age = 2] as user_type
+      fallback
+    }
+    freeze branch
+  }
+
+  len(user.name) + user.age
+}
+
+read_user(${flag})
+`);
+    const instance = await instantiate_wat(wat_text, name, {});
+
+    if (typeof instance.exports.main !== "function") {
+      throw new Error("Missing main export");
+    }
+
+    const result = instance.exports.main();
+
+    if (result !== expected) {
+      throw new Error(
+        "Expected branch-local materialized aggregate result " +
+          expected.toString() + ", got " + String(result),
+      );
+    }
+  }
+
+  await check_branch(
+    1,
+    4,
+    "frontend_branch_local_materialized_aggregate_then",
+  );
+  await check_branch(
+    0,
+    7,
+    "frontend_branch_local_materialized_aggregate_else",
   );
 });

@@ -1,15 +1,22 @@
-import { specialize_prim_for_operands, type ValType } from "../../op.ts";
+import {
+  type NumType,
+  Prim,
+  specialize_prim_for_operands,
+  type ValType,
+} from "../../op.ts";
 import type { Env, FrontExpr, FrontType } from "../ast.ts";
 import { lookup } from "../env.ts";
-import { prim_result_type } from "../numeric.ts";
+import { numeric_builtin_call, prim_result_type } from "../numeric.ts";
 import type { InferExprFn, InferHooks } from "./types.ts";
+import { Callable } from "../../trait.ts";
+import { infer_f32x4_builtin_call } from "../f32x4.ts";
 
 export function infer_prim_result_type(
   expr: Extract<FrontExpr, { tag: "prim" }>,
   env: Env,
   hooks: InferHooks,
   infer_expr: InferExprFn,
-): ValType {
+): NumType {
   const left_type = infer_prim_operand_type(expr.left, env, hooks, infer_expr);
   const right_type = infer_prim_operand_type(
     expr.right,
@@ -22,19 +29,102 @@ export function infer_prim_result_type(
     left_type,
     right_type,
   );
-  return prim_result_type(prim);
+  const result = prim_result_type(prim);
+
+  if (result === "v128") {
+    throw new Error("Infix primitives cannot produce F32x4 values");
+  }
+
+  return result;
 }
 
 export function infer_builtin_call_type(
   expr: Extract<FrontExpr, { tag: "app" }>,
   env: Env,
+  hooks: InferHooks,
+  infer_expr: InferExprFn,
 ): FrontType | undefined {
   if (expr.func.tag !== "var") {
     return undefined;
   }
 
+  const f32x4_call = infer_f32x4_builtin_call(expr, env);
+
+  if (f32x4_call) {
+    return f32x4_call;
+  }
+
+  const numeric_call = numeric_builtin_call(expr);
+
+  if (numeric_call && !lookup(env, expr.func.name)) {
+    const expected = Callable.arity(Prim, numeric_call.prim);
+
+    if (numeric_call.args.length !== expected) {
+      return { tag: "unknown" };
+    }
+
+    if (expected === 2) {
+      const left = numeric_call.args[0];
+      const right = numeric_call.args[1];
+
+      if (!left || !right) {
+        throw new Error("Missing numeric builtin argument");
+      }
+
+      const left_type = infer_prim_operand_type(
+        left,
+        env,
+        hooks,
+        infer_expr,
+      );
+      const right_type = infer_prim_operand_type(
+        right,
+        env,
+        hooks,
+        infer_expr,
+      );
+      const prim = specialize_prim_for_operands(
+        numeric_call.prim,
+        left_type,
+        right_type,
+      );
+      const result = prim_result_type(prim);
+
+      if (result === "v128") {
+        throw new Error("Numeric builtin cannot produce F32x4 values");
+      }
+
+      return { tag: "int", type: result };
+    }
+
+    const result = Callable.type(Prim, numeric_call.prim).result;
+    if (result === "v128") {
+      throw new Error("Numeric builtin cannot produce F32x4 values");
+    }
+    return { tag: "int", type: result };
+  }
+
   if (expr.func.name === "len" && expr.args.length === 1) {
     return { tag: "int", type: "i32" };
+  }
+
+  if (expr.func.name === "Bytes.generate" && expr.args.length === 2) {
+    return { tag: "text", encoding: "bytes" };
+  }
+
+  if (expr.func.name === "Utf8.encode" && expr.args.length === 1) {
+    return { tag: "text", encoding: "bytes" };
+  }
+
+  if (
+    (expr.func.name === "Utf8.decode" || expr.func.name === "format_i32" ||
+      expr.func.name === "format_i64") && expr.args.length === 1
+  ) {
+    return { tag: "text" };
+  }
+
+  if (expr.func.name === "format_f32" && expr.args.length === 2) {
+    return { tag: "text" };
   }
 
   if (expr.func.name === "slice" && expr.args.length === 3) {
@@ -85,7 +175,7 @@ function infer_builtin_text_arg_type(
   env: Env,
 ): Extract<FrontType, { tag: "text" }> | undefined {
   if (expr.tag === "text") {
-    return { tag: "text" };
+    return { tag: "text", encoding: expr.encoding };
   }
 
   if (expr.tag !== "var" && expr.tag !== "linear") {

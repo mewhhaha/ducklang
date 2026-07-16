@@ -25,7 +25,8 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
   protected parse_bind(kind: "let" | "const"): Stmt {
     if (
       kind === "let" && this.peek().kind === "name" &&
-      (this.peek().text === "struct" || this.peek().text === "union")
+      (this.peek().text === "struct" || this.peek().text === "union") &&
+      this.peek(1).kind === "symbol" && this.peek(1).text === "{"
     ) {
       const pattern = this.parse_type_pattern();
       this.expect_symbol("=");

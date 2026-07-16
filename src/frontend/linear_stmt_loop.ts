@@ -108,13 +108,27 @@ export function validate_linear_loop_body(
       );
       local_closures.delete(stmt.name);
     } else if (stmt.tag === "expr") {
-      ops.consume_expr(
-        stmt.expr,
-        local,
-        "discard",
-        local_closures,
-        active_calls,
-      );
+      if (linear_loop_expr_contains_control(stmt.expr)) {
+        const falls_through = validate_linear_loop_control_expr(
+          stmt.expr,
+          local,
+          local_closures,
+          active_calls,
+          ops,
+        );
+
+        if (!falls_through) {
+          return;
+        }
+      } else {
+        ops.consume_expr(
+          stmt.expr,
+          local,
+          "discard",
+          local_closures,
+          active_calls,
+        );
+      }
     } else if (stmt.tag === "bind") {
       if (stmt.is_linear) {
         ops.consume_expr(
@@ -227,19 +241,19 @@ export function validate_linear_loop_body(
       continue;
     } else if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot validate linear " + stmt.tag + " yet",
         stmt,
       );
     } else if (stmt.tag === "resume_dup") {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Resumption duplication must be elaborated before linear validation",
         stmt,
       );
     } else {
       throw_linear_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "Cannot validate linear " + stmt.feature + " yet",
         stmt,
       );
@@ -254,6 +268,319 @@ export function validate_linear_loop_body(
     subject,
   );
   merge_used_linear_closures(closures, local_closures);
+}
+
+function validate_linear_loop_control_expr(
+  expr: FrontExpr,
+  available: LinearState,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  ops: LinearStmtLoopOps,
+): boolean {
+  if (expr.tag === "block") {
+    validate_linear_loop_body(
+      expr.statements,
+      available,
+      closures,
+      active_calls,
+      ops,
+      expr,
+    );
+    return !linear_loop_expr_definitely_exits(expr);
+  }
+
+  if (expr.tag === "if") {
+    ops.consume_condition(expr.cond, available, closures, active_calls);
+    return validate_linear_loop_control_branches(
+      expr,
+      expr.then_branch,
+      expr.else_branch,
+      available,
+      closures,
+      active_calls,
+      ops,
+    );
+  }
+
+  if (expr.tag === "if_let") {
+    ops.consume_condition(expr.target, available, closures, active_calls);
+    return validate_linear_loop_control_branches(
+      expr,
+      expr.then_branch,
+      expr.else_branch,
+      available,
+      closures,
+      active_calls,
+      ops,
+    );
+  }
+
+  if (expr.tag === "match") {
+    ops.consume_condition(expr.target, available, closures, active_calls);
+    return validate_linear_loop_match_branches(
+      expr,
+      available,
+      closures,
+      active_calls,
+      ops,
+    );
+  }
+
+  ops.consume_expr(expr, available, "discard", closures, active_calls);
+  return true;
+}
+
+function validate_linear_loop_match_branches(
+  expr: Extract<FrontExpr, { tag: "match" }>,
+  available: LinearState,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  ops: LinearStmtLoopOps,
+): boolean {
+  let fallthrough_available: LinearState | undefined;
+  let fallthrough_closures: LinearClosureEnv | undefined;
+
+  for (const arm of expr.arms) {
+    const arm_available = available.clone();
+    const arm_closures = clone_linear_closures(closures);
+
+    if (arm.guard !== undefined) {
+      ops.consume_condition(
+        arm.guard,
+        arm_available,
+        arm_closures,
+        new Set(active_calls),
+      );
+    }
+
+    const falls_through = validate_linear_loop_control_branch(
+      arm.body,
+      arm_available,
+      arm_closures,
+      active_calls,
+      ops,
+    );
+
+    if (!falls_through) {
+      continue;
+    }
+
+    if (!fallthrough_available || !fallthrough_closures) {
+      fallthrough_available = arm_available;
+      fallthrough_closures = arm_closures;
+      continue;
+    }
+
+    expect_same_linear_state(
+      fallthrough_available,
+      arm_available,
+      "match arm",
+      expr,
+    );
+    expect_same_linear_closure_state(
+      fallthrough_closures,
+      arm_closures,
+      "match arm",
+      expr,
+    );
+  }
+
+  if (!fallthrough_available || !fallthrough_closures) {
+    return false;
+  }
+
+  available.replace_with(fallthrough_available);
+  merge_used_linear_closures(closures, fallthrough_closures);
+  return true;
+}
+
+function validate_linear_loop_control_branches(
+  subject: FrontExpr,
+  left_expr: FrontExpr,
+  right_expr: FrontExpr,
+  available: LinearState,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  ops: LinearStmtLoopOps,
+): boolean {
+  const left_available = available.clone();
+  const left_closures = clone_linear_closures(closures);
+  const left_falls_through = validate_linear_loop_control_branch(
+    left_expr,
+    left_available,
+    left_closures,
+    active_calls,
+    ops,
+  );
+  const right_available = available.clone();
+  const right_closures = clone_linear_closures(closures);
+  const right_falls_through = validate_linear_loop_control_branch(
+    right_expr,
+    right_available,
+    right_closures,
+    active_calls,
+    ops,
+  );
+
+  if (!left_falls_through && !right_falls_through) {
+    return false;
+  }
+
+  if (!left_falls_through) {
+    available.replace_with(right_available);
+    merge_used_linear_closures(closures, right_closures);
+    return true;
+  }
+
+  if (!right_falls_through) {
+    available.replace_with(left_available);
+    merge_used_linear_closures(closures, left_closures);
+    return true;
+  }
+
+  expect_same_linear_state(
+    left_available,
+    right_available,
+    "expression branch",
+    subject,
+  );
+  expect_same_linear_closure_state(
+    left_closures,
+    right_closures,
+    "expression branch",
+    subject,
+  );
+  available.replace_with(left_available);
+  merge_used_linear_closures(closures, left_closures);
+  return true;
+}
+
+function validate_linear_loop_control_branch(
+  expr: FrontExpr,
+  available: LinearState,
+  closures: LinearClosureEnv,
+  active_calls: Set<string>,
+  ops: LinearStmtLoopOps,
+): boolean {
+  if (linear_loop_expr_contains_control(expr)) {
+    return validate_linear_loop_control_expr(
+      expr,
+      available,
+      closures,
+      new Set(active_calls),
+      ops,
+    );
+  }
+
+  ops.consume_expr(
+    expr,
+    available,
+    "discard",
+    closures,
+    new Set(active_calls),
+  );
+  return true;
+}
+
+function linear_loop_expr_contains_control(expr: FrontExpr): boolean {
+  if (expr.tag === "block") {
+    for (const stmt of expr.statements) {
+      if (stmt.tag === "break" || stmt.tag === "continue") {
+        return true;
+      }
+
+      if (stmt.tag === "for_range" || stmt.tag === "for_collection") {
+        continue;
+      }
+
+      if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
+        if (linear_loop_statements_contain_control(stmt.body)) {
+          return true;
+        }
+        continue;
+      }
+
+      if (stmt.tag === "expr") {
+        if (linear_loop_expr_contains_control(stmt.expr)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  if (expr.tag === "if") {
+    return linear_loop_expr_contains_control(expr.then_branch) ||
+      linear_loop_expr_contains_control(expr.else_branch);
+  }
+
+  if (expr.tag === "if_let") {
+    return linear_loop_expr_contains_control(expr.then_branch) ||
+      linear_loop_expr_contains_control(expr.else_branch);
+  }
+
+  if (expr.tag === "match") {
+    for (const arm of expr.arms) {
+      if (linear_loop_expr_contains_control(arm.body)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function linear_loop_statements_contain_control(stmts: Stmt[]): boolean {
+  return linear_loop_expr_contains_control({ tag: "block", statements: stmts });
+}
+
+function linear_loop_expr_definitely_exits(expr: FrontExpr): boolean {
+  if (expr.tag === "block") {
+    for (const stmt of expr.statements) {
+      if (
+        stmt.tag === "break" || stmt.tag === "continue" ||
+        stmt.tag === "return"
+      ) {
+        return true;
+      }
+
+      if (
+        stmt.tag === "expr" &&
+        linear_loop_expr_definitely_exits(stmt.expr)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  if (expr.tag === "if") {
+    return linear_loop_expr_definitely_exits(expr.then_branch) &&
+      linear_loop_expr_definitely_exits(expr.else_branch);
+  }
+
+  if (expr.tag === "if_let") {
+    return linear_loop_expr_definitely_exits(expr.then_branch) &&
+      linear_loop_expr_definitely_exits(expr.else_branch);
+  }
+
+  if (expr.tag === "match") {
+    if (expr.arms.length === 0) {
+      return false;
+    }
+
+    for (const arm of expr.arms) {
+      if (!linear_loop_expr_definitely_exits(arm.body)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 export function expect_same_linear_closure_state(
@@ -296,7 +623,7 @@ export function expect_same_linear_closure_state(
   }
 
   throw_linear_diagnostic(
-    "IX2205",
+    "DUCK2205",
     "Linear closures must be consumed on every " + edge + " path",
     subject,
     related,

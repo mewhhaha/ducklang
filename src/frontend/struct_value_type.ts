@@ -55,6 +55,25 @@ export function check_struct_fields(
   }
 }
 
+export function contextual_struct_fields(
+  struct_type: Extract<FrontExpr, { tag: "struct_type" }>,
+  value: Extract<FrontExpr, { tag: "struct_value" }>,
+): Field[] {
+  if (value.bracketed !== "positional") {
+    return value.fields;
+  }
+
+  return value.fields.map((field, index) => {
+    const declared = struct_type.fields[index];
+
+    if (declared === undefined) {
+      return field;
+    }
+
+    return { name: declared.name, value: field.value };
+  });
+}
+
 export function resolve_struct_type_value(
   expr: FrontExpr,
   env: Env,
@@ -174,7 +193,10 @@ function validate_field_type(
   }
 
   if (expected === "Int" || expected === "I32" || expected === "U32") {
-    if (actual.tag !== "int" || actual.type === "i64") {
+    if (
+      actual.tag !== "int" ||
+      (actual.type !== undefined && actual.type !== "i32")
+    ) {
       throw new Error(
         "Struct field " + name + " expects " + expected + ", got " +
           front_type_name(actual),
@@ -188,6 +210,17 @@ function validate_field_type(
     if (actual.tag !== "int" || actual.type !== "i64") {
       throw new Error(
         "Struct field " + name + " expects I64, got " +
+          front_type_name(actual),
+      );
+    }
+
+    return;
+  }
+
+  if (expected === "F32") {
+    if (actual.tag !== "int" || actual.type !== "f32") {
+      throw new Error(
+        "Struct field " + name + " expects F32, got " +
           front_type_name(actual),
       );
     }

@@ -45,7 +45,7 @@ export type CoreDropStep =
     allocation_id?: string;
     allocation_ids?: string[];
     byte_size?: CoreAllocationByteSize;
-    alignment?: 4 | 8;
+    alignment?: 4 | 8 | 16;
     layout?: CoreAllocationLayout;
     owned_children?: CoreAllocationOwnedChild[];
   }

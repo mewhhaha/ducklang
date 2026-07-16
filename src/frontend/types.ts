@@ -6,8 +6,8 @@ import { format_type_expr } from "./type_expr.ts";
 export function is_builtin_type_name(name: string): boolean {
   return name === "Bool" || name === "Unit" || name === "Int" ||
     name === "I32" ||
-    name === "U32" || name === "I64" || name === "Text" || name === "Bytes" ||
-    name === "Resume";
+    name === "U32" || name === "I64" || name === "F32" || name === "F32x4" ||
+    name === "Text" || name === "Bytes" || name === "Resume";
 }
 
 export function front_type_from_type_name(name: string): FrontType {
@@ -24,6 +24,14 @@ export function front_type_from_type_name(name: string): FrontType {
 
   if (name === "I64") {
     return { tag: "int", type: "i64" };
+  }
+
+  if (name === "F32") {
+    return { tag: "int", type: "f32" };
+  }
+
+  if (name === "F32x4") {
+    return { tag: "f32x4" };
   }
 
   if (name === "Text") {
@@ -46,6 +54,14 @@ export function val_type_from_type_name(name: string): ValType | undefined {
     return "i64";
   }
 
+  if (name === "F32") {
+    return "f32";
+  }
+
+  if (name === "F32x4") {
+    return "v128";
+  }
+
   if (
     name === "Bool" || name === "Int" || name === "I32" || name === "U32" ||
     name === "Resume"
@@ -64,7 +80,14 @@ export function front_type_name(type: FrontType): string {
     case "bool":
       return "Bool";
 
+    case "f32x4":
+      return "F32x4";
+
     case "int":
+      if (type.type === "f32") {
+        return "F32";
+      }
+
       if (type.type === "i64") {
         return "I64";
       }
@@ -115,7 +138,15 @@ export function type_name_from_front_type(
     return "Bool";
   }
 
+  if (type.tag === "f32x4") {
+    return "F32x4";
+  }
+
   if (type.tag === "int") {
+    if (type.type === "f32") {
+      return "F32";
+    }
+
     if (type.type === "i64") {
       return "I64";
     }
@@ -180,6 +211,10 @@ export function common_front_type(
     }
   }
 
+  if (left.tag === "f32x4" && right.tag === "f32x4") {
+    return left;
+  }
+
   if (left.tag === "atom" && right.tag === "atom") {
     if (left.name === right.name) {
       return left;
@@ -205,6 +240,10 @@ export function same_type(left: FrontType, right: FrontType): boolean {
       return left.type === right.type;
     }
 
+    return true;
+  }
+
+  if (left.tag === "f32x4" && right.tag === "f32x4") {
     return true;
   }
 

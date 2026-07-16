@@ -4,15 +4,16 @@ import {
   success_examples,
 } from "../../examples/manifest.ts";
 import { Source } from "../frontend.ts";
+import { ducklang_prelude_text } from "./prelude.ts";
 
 Deno.test("Source.analyze reports reused fixture at its second consume", async () => {
   const text = await Deno.readTextFile(
-    "examples/failures/compile/01_reused_linear_value.ix",
+    "examples/failures/compile/01_reused_linear_value.duck",
   );
   const analysis = Source.analyze(text);
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2201",
+    code: "DUCK2201",
     severity: "error",
     message: "Linear value token was already consumed",
     span: { start: 25, end: 31 },
@@ -28,12 +29,12 @@ Deno.test("Source.analyze reports reused fixture at its second consume", async (
 
 Deno.test("Source.analyze reports unused fixture at its declaration", async () => {
   const text = await Deno.readTextFile(
-    "examples/failures/compile/02_unused_linear_value.ix",
+    "examples/failures/compile/02_unused_linear_value.duck",
   );
   const analysis = Source.analyze(text);
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2202",
+    code: "DUCK2202",
     severity: "error",
     message: "Linear value token was not consumed",
     span: { start: 0, end: 15 },
@@ -45,7 +46,7 @@ Deno.test("Source.analyze reports reused linear parameters with related spans", 
   const analysis = Source.analyze(text);
 
   assert_equals(analysis.diagnostics, [{
-    code: "IX2201",
+    code: "DUCK2201",
     severity: "error",
     message: "Linear value x was already consumed",
     span: { start: 24, end: 26 },
@@ -75,74 +76,74 @@ Deno.test("Source.analyze returns compiler-owned syntax diagnostics", () => {
   const analysis = Source.analyze("let =");
   const diagnostic = analysis.diagnostics[0];
 
-  assert_equals(diagnostic?.code, "IX1001");
+  assert_equals(diagnostic?.code, "DUCK1001");
   assert_equals(diagnostic?.severity, "error");
   assert_equals(diagnostic?.span.start === 0, false);
 });
 
 const failure_goldens = [
   {
-    code: "IX2201",
+    code: "DUCK2201",
     message: "Linear value token was already consumed",
     span: { start: 25, end: 31 },
   },
   {
-    code: "IX2202",
+    code: "DUCK2202",
     message: "Linear value token was not consumed",
     span: { start: 0, end: 15 },
   },
   {
-    code: "IX2301",
+    code: "DUCK2301",
     message: "Assignment changes type for value",
     span: { start: 15, end: 34 },
   },
   {
-    code: "IX2302",
+    code: "DUCK2302",
     message: "Mixed i32 and i64 operands for operator +",
     span: { start: 0, end: 12 },
   },
   {
-    code: "IX2303",
+    code: "DUCK2303",
     message: "If condition expects Bool or I32, got Text",
     span: { start: 3, end: 8 },
   },
   {
-    code: "IX2304",
+    code: "DUCK2304",
     message: "Missing struct field: age",
-    span: { start: 66, end: 74 },
+    span: { start: 128, end: 136 },
   },
   {
-    code: "IX2305",
+    code: "DUCK2305",
     message: "Union case ok expects Int, got Text",
-    span: { start: 51, end: 69 },
+    span: { start: 53, end: 71 },
   },
   {
-    code: "IX2401",
+    code: "DUCK2401",
     message: "Rejected borrow borrow#0 in block#0: borrow over unique_heap " +
       "text needs lexical lifetime tracking before the owner can be protected",
     span: { start: 85, end: 100 },
   },
   {
-    code: "IX2402",
+    code: "DUCK2402",
     message: "Cannot freeze borrowed owner message in program#0 while " +
       "borrow#0 is active",
     span: { start: 70, end: 84 },
   },
   {
-    code: "IX2403",
+    code: "DUCK2403",
     message: "Rejected baseline proof scratch#0 scratch_return: unique_heap " +
       "text cannot leave scratch without freeze or explicit promotion",
     span: { start: 0, end: 30 },
   },
   {
-    code: "IX2404",
+    code: "DUCK2404",
     message: "Cannot mutate frozen/shareable core binding: message",
-    span: { start: 44, end: 59 },
+    span: { start: 46, end: 61 },
   },
   {
-    code: "IX2501",
-    message: "Import ./missing_import_dependency.ix does not export missing",
-    span: { start: 65, end: 76 },
+    code: "DUCK2501",
+    message: "Import ./missing_import_dependency.duck does not export missing",
+    span: { start: 80, end: 87 },
   },
 ];
 
@@ -186,6 +187,16 @@ Deno.test("Source.analyze keeps every successful example route-agnostic", () => 
   }
 });
 
+Deno.test("Source.analyze accepts compile-time-only source modules", () => {
+  const analysis = Source.analyze(ducklang_prelude_text, {
+    route: "core",
+    uri: "file:///prelude.duck",
+    warnings: true,
+  });
+
+  assert_equals(analysis.diagnostics, []);
+});
+
 Deno.test("Source.analyze continues after a recovered parse statement", () => {
   const analysis = Source.analyze(
     "let =\nlet !token = 41\n!token + !token\n",
@@ -193,7 +204,7 @@ Deno.test("Source.analyze continues after a recovered parse statement", () => {
 
   assert_equals(
     analysis.diagnostics.map((diagnostic) => diagnostic.code),
-    ["IX1001", "IX2201"],
+    ["DUCK1001", "DUCK2201"],
   );
 });
 
@@ -207,7 +218,7 @@ Deno.test("Source.analyze gates pure Ic route diagnostics behind options", () =>
     throw new Error("Missing pure Ic route diagnostic");
   }
 
-  assert_equals(diagnostic.code, "IX2901");
+  assert_equals(diagnostic.code, "DUCK2901");
   assert_equals(
     text.slice(diagnostic.span.start, diagnostic.span.end),
     "effect Counter { get: () => I32 }",
@@ -216,15 +227,15 @@ Deno.test("Source.analyze gates pure Ic route diagnostics behind options", () =>
 
 Deno.test("Source.analyze keeps Core diagnostics enabled with imports", async () => {
   const scratch = await Deno.readTextFile(
-    "examples/failures/compile/10_scratch_heap_escape.ix",
+    "examples/failures/compile/10_scratch_heap_escape.duck",
   );
-  const text = 'const available = import "./dep.ix"\n' + scratch;
+  const text = 'const available = import "./dep.duck"\n' + scratch;
   const analysis = Source.analyze(text, {
     route: "core",
-    uri: "file:///main.ix",
+    uri: "file:///main.duck",
     resolve_import: (uri) => {
-      if (uri === "file:///dep.ix") {
-        return "module () where\nreturn { available: 1 }";
+      if (uri === "file:///dep.duck") {
+        return "module () where\nreturn { .available = 1 }";
       }
 
       return undefined;
@@ -232,17 +243,21 @@ Deno.test("Source.analyze keeps Core diagnostics enabled with imports", async ()
   });
 
   assert_equals(analysis.diagnostics.length, 1);
-  assert_equals(analysis.diagnostics[0]?.code, "IX2403");
+  assert_equals(analysis.diagnostics[0]?.code, "DUCK2403");
   assert_equals(
     analysis.diagnostics[0]?.span,
-    { start: 36, end: 66 },
+    { start: 38, end: 68 },
   );
 });
 
-Deno.test("Source.analyze contains known Core route coverage errors", () => {
+Deno.test("Source.analyze reports every escaping scratch result", () => {
   const text = 'scratch { append("a", "b") }\n' +
     'scratch { append("c", "d") }';
-  assert_equals(Source.analyze(text, { route: "core" }).diagnostics, []);
+  const diagnostics = Source.analyze(text, { route: "core" }).diagnostics;
+
+  assert_equals(diagnostics.length, 2);
+  assert_equals(diagnostics[0]?.code, "DUCK2403");
+  assert_equals(diagnostics[1]?.code, "DUCK2403");
 });
 
 Deno.test("Source.analyze stays within the largest-example latency budget", async () => {

@@ -1,7 +1,7 @@
 import { expect } from "./expect.ts";
-import type { ValType } from "./op.ts";
+import type { NumType, ValType } from "./op.ts";
 import { Emit, Format } from "./trait.ts";
-import { indent, type Wat } from "./wat.ts";
+import { indent, type Wat, wat_number } from "./wat.ts";
 
 export type Func = {
   name: string;
@@ -112,7 +112,7 @@ Format.register<Memory>(Memory);
 
 export type Global = {
   name: string;
-  type: ValType;
+  type: NumType;
   mutable: boolean;
   value: number | bigint;
 };
@@ -126,7 +126,9 @@ Global.fmt = function fmt(global: Global): Wat {
     type = "(mut " + type + ")";
   }
 
-  return `(global $${global.name} ${type} (${global.type}.const ${global.value.toString()}))`;
+  return `(global $${global.name} ${type} (${global.type}.const ${
+    wat_number(global.type, global.value)
+  }))`;
 };
 
 Format.register<Global>(Global);

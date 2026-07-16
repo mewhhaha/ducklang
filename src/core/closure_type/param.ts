@@ -39,6 +39,14 @@ export function closure_param_info<ctx>(
     return { type: "i64", is_text: false };
   }
 
+  if (annotation === "F32") {
+    return { type: "f32", is_text: false };
+  }
+
+  if (annotation === "F32x4") {
+    return { type: "v128", is_text: false };
+  }
+
   if (annotation === "Text" || annotation === "Bytes") {
     return { type: "i32", is_text: true };
   }

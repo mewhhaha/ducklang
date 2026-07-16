@@ -23,12 +23,24 @@ import {
 } from "../runtime_aggregate.ts";
 import type { RuntimeAggregateField } from "../runtime_aggregate.ts";
 import { core_runtime_slice_fact } from "../runtime_slice.ts";
+import {
+  core_bytes_generate_args,
+  core_bytes_generator_call,
+} from "../runtime_bytes.ts";
+import {
+  core_runtime_buffer_builtin,
+  runtime_buffer_allocation,
+} from "../runtime_buffer.ts";
 import { canonical_core_expr } from "../subject_provenance.ts";
 import {
   static_scratch_aggregate_alias_materializes,
   static_scratch_block_result_value,
 } from "../static_values.ts";
-import { static_type_value, type TypeStaticCtx } from "../type_static.ts";
+import {
+  static_block_result,
+  static_type_value,
+  type TypeStaticCtx,
+} from "../type_static.ts";
 import { record_allocation } from "./record.ts";
 import {
   core_allocation_fact_subject,
@@ -271,7 +283,8 @@ function scan_allocation_stmt<ctx>(
           dynamic_runtime_union = runtime_union_value.tag === "if";
         }
         if (
-          (state.mutable_bindings.has(stmt.name) || dynamic_runtime_union) &&
+          (state.mutable_bindings.has(stmt.name) ||
+            hooks.mutable_binding(stmt.name, ctx) || dynamic_runtime_union) &&
           value.tag !== "scratch" &&
           static_setup?.tag !== "union_case" &&
           !state.nonmaterialized_union_values.has(value)
@@ -294,7 +307,8 @@ function scan_allocation_stmt<ctx>(
             ctx,
             hooks,
             state,
-            state.materialized_bindings.has(stmt.name) &&
+            (state.materialized_bindings.has(stmt.name) ||
+              hooks.materialized_binding(stmt.name, ctx)) &&
               value.tag !== "scratch" &&
               !scope.scratch,
           );
@@ -455,7 +469,8 @@ function scan_allocation_stmt<ctx>(
           dynamic_runtime_union = runtime_union_value.tag === "if";
         }
         if (
-          (state.mutable_bindings.has(stmt.name) || dynamic_runtime_union) &&
+          (state.mutable_bindings.has(stmt.name) ||
+            hooks.mutable_binding(stmt.name, ctx) || dynamic_runtime_union) &&
           value.tag !== "scratch" &&
           static_setup?.tag !== "union_case" &&
           !state.nonmaterialized_union_values.has(value)
@@ -1256,6 +1271,47 @@ function register_runtime_union_emission_subjects(
   register_core_allocation_fact_emission_subject(fact, value);
 }
 
+function register_runtime_aggregate_emission_subjects<ctx>(
+  fact: CoreAllocationState["facts"][number],
+  value: CoreExpr,
+  ctx: ctx,
+  hooks: CoreAllocationHooks<ctx>,
+): void {
+  if (value.tag === "if") {
+    register_runtime_aggregate_emission_subjects(
+      fact,
+      value.then_branch,
+      ctx,
+      hooks,
+    );
+    register_runtime_aggregate_emission_subjects(
+      fact,
+      value.else_branch,
+      ctx,
+      hooks,
+    );
+    return;
+  }
+
+  const block_value = static_block_result(value);
+
+  if (block_value) {
+    register_runtime_aggregate_emission_subjects(
+      fact,
+      block_value,
+      ctx,
+      hooks,
+    );
+    return;
+  }
+
+  const struct_value = hooks.static_struct_value(value, ctx);
+
+  if (struct_value) {
+    register_core_allocation_fact_emission_subject(fact, struct_value);
+  }
+}
+
 function set_value_allocation_facts(
   value: CoreExpr,
   facts: CoreAllocationState["facts"],
@@ -1710,7 +1766,8 @@ function scan_mutable_static_struct_allocation<ctx>(
   ) {
     annotated_owner = false;
   }
-  const mutable_owner = state.mutable_bindings.has(name) &&
+  const mutable_owner =
+    (state.mutable_bindings.has(name) || hooks.mutable_binding(name, ctx)) &&
     mutable_static_owner_value_materializes(struct_value);
   let owned_fields_materialize = false;
   if (!scope.scratch) {
@@ -1736,6 +1793,12 @@ function scan_mutable_static_struct_allocation<ctx>(
   );
   if (parent) {
     register_core_allocation_fact_emission_subject(parent, struct_value);
+    register_runtime_aggregate_emission_subjects(
+      parent,
+      value,
+      ctx,
+      hooks,
+    );
   }
   scan_runtime_aggregate_fields(
     parent,
@@ -1979,6 +2042,66 @@ function scan_allocation_expr<ctx>(
         }
         return;
       }
+
+      const bytes_generate = core_bytes_generate_args(expr);
+
+      if (bytes_generate) {
+        scan_allocation_expr(
+          bytes_generate[0],
+          scope,
+          ctx,
+          hooks,
+          state,
+        );
+        scan_allocation_expr(
+          core_bytes_generator_call(
+            bytes_generate[1],
+            { tag: "num", type: "i32", value: 0 },
+          ),
+          scope,
+          ctx,
+          hooks,
+          state,
+        );
+        record_allocation(
+          expr,
+          "runtime_bytes",
+          scope,
+          state,
+          state.current_allocation_instance,
+        );
+        return;
+      }
+
+      const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+      if (runtime_buffer_builtin) {
+        scan_allocation_expr(
+          runtime_buffer_builtin.arg,
+          scope,
+          ctx,
+          hooks,
+          state,
+        );
+        if (runtime_buffer_builtin.precision !== undefined) {
+          scan_allocation_expr(
+            runtime_buffer_builtin.precision,
+            scope,
+            ctx,
+            hooks,
+            state,
+          );
+        }
+        record_allocation(
+          expr,
+          runtime_buffer_allocation(runtime_buffer_builtin).reason,
+          scope,
+          state,
+          state.current_allocation_instance,
+        );
+        return;
+      }
+
       set_closure_call_result_allocations(expr, state);
       if (
         expr.func.tag === "var" &&
@@ -2301,8 +2424,8 @@ function scan_allocation_expr<ctx>(
     }
 
     case "loop": {
-      const loop = "loop#" + state.next_block.toString();
-      state.next_block += 1;
+      const loop = "loop#" + state.next_loop.toString();
+      state.next_loop += 1;
       scan_allocation_scoped_stmts(
         expr.body,
         { name: loop, scratch: scope.scratch },
@@ -2337,9 +2460,18 @@ function scan_allocation_expr<ctx>(
         scan_allocation_expr(expr.value, scope, ctx, hooks, state);
 
         if (scope.scratch) {
+          const ownership = core_expr_ownership(expr.value, ctx, hooks);
+          let reason: "runtime_bytes" | "runtime_text" = "runtime_text";
+
+          if (
+            ownership.tag === "unique_heap" && ownership.reason === "bytes"
+          ) {
+            reason = "runtime_bytes";
+          }
+
           record_allocation(
             expr,
-            "runtime_text",
+            reason,
             { name: scope.name, scratch: undefined },
             state,
           );
@@ -3155,9 +3287,6 @@ function register_call_allocation_lifetimes(
     const fact = state.facts[index];
     if (!fact) {
       throw new Error("Missing static call allocation fact");
-    }
-    if (fact.storage === "scratch_arena") {
-      continue;
     }
     register_core_allocation_fact_lifetime_subject(fact, call);
   }

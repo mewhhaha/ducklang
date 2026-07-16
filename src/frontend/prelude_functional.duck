@@ -1,0 +1,77 @@
+module () where
+
+type Option value =
+  | .some = value
+  | .none
+
+type Result error value =
+  | .ok = value
+  | .err = error
+
+type Either left right =
+  | .left = left
+  | .right = right
+
+type Ordering =
+  | .less
+  | .equal
+  | .greater
+
+duck Eq Self {
+  .eq = [Self, Self] -> Bool
+}
+
+duck Ord Self {
+  .compare = [Self, Self] -> Ordering
+}
+
+duck Semigroup Self {
+  .append = [Self, Self] -> Self
+}
+
+duck Monoid Self {
+  .empty = [] -> Self
+  .append = [Self, Self] -> Self
+}
+
+duck Functor F A B {
+  .map = [F A, A -> B] -> F B
+}
+
+duck Applicative F A B {
+  .pure = A -> F A
+  .apply = [F (A -> B), F A] -> F B
+}
+
+duck Monad M A B {
+  .pure = A -> M A
+  .bind = [M A, A -> M B] -> M B
+}
+
+duck Foldable F A State {
+  .fold = [F A, State, [State, A] -> State] -> State
+}
+
+const identity = value => value
+
+const constant = value => _ => value
+
+const compose = [outer, inner] => value => outer (inner value)
+
+const pipe = [value, transform] => transform value
+
+const flip = call => [left, right] => call [right, left]
+
+const curry = call => left => right => call [left, right]
+
+const uncurry = call => [left, right] => call left right
+
+return {
+  identity,
+  constant,
+  compose,
+  pipe,
+  flip,
+  curry,
+  uncurry,
+}

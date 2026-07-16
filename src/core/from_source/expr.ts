@@ -17,6 +17,12 @@ import {
   elaborate_product_as_expr,
   elaborate_product_expr,
 } from "../../frontend/aggregate.ts";
+import { numeric_builtin_call } from "../../frontend/numeric.ts";
+import { Callable } from "../../trait.ts";
+import { Prim } from "../../op.ts";
+import { expect } from "../../expect.ts";
+import { f32x4_builtin_call } from "../../frontend/f32x4.ts";
+import { compiler_builtin_args } from "../../frontend/call_args.ts";
 
 export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
   return record_optional_core_source_origin(
@@ -178,6 +184,46 @@ function core_expr_untracked(
     }
 
     case "app": {
+      const f32x4_call = f32x4_builtin_call(expr);
+
+      if (f32x4_call) {
+        expect(expr.func.tag === "var", "F32x4 builtin requires a name");
+
+        if (!ctx.aliases.has(expr.func.name)) {
+          const expected = Callable.arity(Prim, f32x4_call.prim);
+          expect(
+            f32x4_call.args.length === expected,
+            expr.func.name + " expects " + expected + " arguments, got " +
+              f32x4_call.args.length,
+          );
+          return {
+            tag: "prim",
+            prim: f32x4_call.prim,
+            args: f32x4_call.args.map((arg) => core_expr(arg, ctx)),
+          };
+        }
+      }
+
+      const numeric_call = numeric_builtin_call(expr);
+
+      if (numeric_call) {
+        expect(expr.func.tag === "var", "Numeric builtin requires a name");
+
+        if (!ctx.aliases.has(expr.func.name)) {
+          const expected = Callable.arity(Prim, numeric_call.prim);
+          expect(
+            numeric_call.args.length === expected,
+            expr.func.name + " expects " + expected + " arguments, got " +
+              numeric_call.args.length,
+          );
+          return {
+            tag: "prim",
+            prim: numeric_call.prim,
+            args: numeric_call.args.map((arg) => core_expr(arg, ctx)),
+          };
+        }
+      }
+
       const host_method = core_host_import_method_app(expr, ctx);
 
       if (host_method) {
@@ -186,14 +232,12 @@ function core_expr_untracked(
 
       let args = expr.args;
 
-      if (expr.arg) {
-        if (expr.arg.tag === "product" && expr.func.tag !== "field") {
-          args = expr.arg.entries.map((entry) => entry.value);
-        } else if (expr.arg.tag === "unit") {
-          args = [];
-        } else {
-          args = [expr.arg];
-        }
+      if (
+        expr.func.tag === "var" &&
+        !ctx.aliases.has(expr.func.name) &&
+        core_product_builtin_names.has(expr.func.name)
+      ) {
+        args = compiler_builtin_args(expr);
       }
 
       const app: Extract<CoreExpr, { tag: "app" }> = {
@@ -211,6 +255,9 @@ function core_expr_untracked(
 
     case "product":
       return core_expr(elaborate_product_expr(expr), ctx);
+
+    case "shape":
+      throw new Error("Compile-time shape cannot be emitted as a Core result");
 
     case "array":
       return core_expr(elaborate_fixed_array_expr(expr), ctx);
@@ -297,6 +344,11 @@ function core_expr_untracked(
         base: core_expr(expr.base, ctx),
         fields: expr.fields.map((field) => core_field(field, ctx)),
       };
+
+    case "type_with":
+      throw new Error(
+        "Computed type members must be elaborated before Core lowering",
+      );
 
     case "union_type":
       return {
@@ -400,6 +452,15 @@ function core_expr_untracked(
       };
   }
 }
+
+const core_product_builtin_names = new Set([
+  "append",
+  "Bytes.generate",
+  "get",
+  "runtime_i32_slice",
+  "runtime_text_slice",
+  "slice",
+]);
 
 function flattened_product_function(
   expr: Extract<FrontExpr, { tag: "lam" | "rec" }>,

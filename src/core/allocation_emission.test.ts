@@ -9,6 +9,7 @@ import type { CoreAllocationPlan } from "./allocation.ts";
 import { core_allocation_fact_subject } from "./allocation.ts";
 import {
   register_core_allocation_fact,
+  register_core_allocation_fact_emission_subject,
   set_core_allocation_fact_external,
 } from "./allocation/metadata.ts";
 
@@ -92,6 +93,51 @@ Deno.test("Core allocation emission keeps identical sites tied to their subjects
   });
 
   assert_equals(state.permits, [first]);
+});
+
+Deno.test("Core allocation emission consumes each conditional subject once", () => {
+  const plan = allocation_plan();
+  const fact = plan.facts[0];
+  if (!fact) throw new Error("Missing allocation fixture");
+  const first = core_allocation_fact_subject(fact);
+  if (!first) throw new Error("Missing allocation fixture subject");
+  const second = {
+    tag: "prim" as const,
+    prim: "i32.add" as const,
+    args: [{ tag: "num" as const, type: "i32" as const, value: 1 }],
+  };
+  register_core_allocation_fact_emission_subject(fact, second);
+  const state = create_core_allocation_permit_state(plan);
+
+  consume_core_allocation_permit(state, {
+    subject: first,
+    reason: "runtime_text",
+    storage: "persistent_unique_heap",
+    layout: "runtime_text.length_prefixed_utf8",
+    emission_site: "runtime_text.concat",
+  });
+  assert_equals(state.permits, [fact]);
+
+  assert_throws(
+    () =>
+      consume_core_allocation_permit(state, {
+        subject: first,
+        reason: "runtime_text",
+        storage: "persistent_unique_heap",
+        layout: "runtime_text.length_prefixed_utf8",
+        emission_site: "runtime_text.concat",
+      }),
+    "Core allocation emission has no permit",
+  );
+
+  consume_core_allocation_permit(state, {
+    subject: second,
+    reason: "runtime_text",
+    storage: "persistent_unique_heap",
+    layout: "runtime_text.length_prefixed_utf8",
+    emission_site: "runtime_text.concat",
+  });
+  assert_equals(state.permits, []);
 });
 
 Deno.test("Core allocation emission allows unused scanner permits", () => {

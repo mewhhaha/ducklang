@@ -30,6 +30,7 @@ import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
 import {
   load_source,
   load_source_fragment_file,
+  resolve_bundled_source_imports,
   resolve_source_imports,
   source_file_url,
 } from "./load.ts";
@@ -46,6 +47,10 @@ import {
   validate_source_imports,
 } from "./import_diagnostic.ts";
 import { validate_frontend_semantics } from "./semantic_validation.ts";
+import { elaborate_front_ducks } from "./duck_elaborate.ts";
+import { specialize_front_effects } from "./effect_specialize.ts";
+import { analyze_core_demand } from "../core/demand.ts";
+import { erase_undemanded_front_bindings } from "./demand.ts";
 import {
   source_diagnostic,
   type SourceDiagnostic,
@@ -121,7 +126,7 @@ Source.analyze_parsed = function analyze_parsed(
 
   for (const diagnostic of parsed.diagnostics) {
     diagnostics.push({
-      code: "IX1001",
+      code: "DUCK1001",
       severity: "error",
       message: diagnostic.message,
       span: diagnostic.span,
@@ -200,9 +205,15 @@ Source.analyze_file = function analyze_file(
 };
 
 Source.emit = function emit(source: SourceNode): IcNode {
+  source = resolve_bundled_source_imports(source);
+  source = specialize_front_effects(source);
   validate_atom_identities(source);
   validate_ic_route(source);
-  return lower_program(elaborate_front_type_sets(source));
+  return lower_program(
+    elaborate_front_type_sets(
+      elaborate_front_effects(elaborate_front_ducks(source)),
+    ),
+  );
 };
 
 Source.fmt = format_source;
@@ -210,11 +221,16 @@ Source.fmt = format_source;
 Source.effects = function effects(
   input: string | SourceNode,
 ): FrontEffectAnalysis {
+  let source: SourceNode;
+
   if (typeof input === "string") {
-    return analyze_front_effects(Source.parse(input));
+    source = Source.parse(input);
+  } else {
+    source = input;
   }
 
-  return analyze_front_effects(input);
+  source = resolve_bundled_source_imports(source);
+  return analyze_front_effects(specialize_front_effects(source));
 };
 
 Source.compile = function compile(text: string): IcNode {
@@ -280,6 +296,7 @@ function artifact_from_source(
     reject_public_host_imports(source);
   }
 
+  source = source_with_managed_callable_exports(source);
   const compiled_source = prepare_core_source(source);
   const abi = build_abi_manifest(source, compiled_source);
   const core = core_from_elaborated_source(compiled_source);
@@ -289,6 +306,100 @@ function artifact_from_source(
     wat: Mod.emit(mod),
     abi,
   };
+}
+
+function source_with_managed_callable_exports(source: SourceNode): SourceNode {
+  const final_stmt = source.statements[source.statements.length - 1];
+
+  if (
+    !final_stmt || final_stmt.tag !== "return" ||
+    final_stmt.value.tag !== "struct_value"
+  ) {
+    return source;
+  }
+
+  const bindings = new Map<
+    string,
+    Extract<SourceNode["statements"][number], { tag: "bind" }>
+  >();
+
+  for (const stmt of source.statements) {
+    if (stmt.tag === "bind") {
+      bindings.set(stmt.name, stmt);
+    }
+  }
+
+  const managed_names = new Set<string>();
+  const result_fields: typeof final_stmt.value.fields = [];
+
+  for (const field of final_stmt.value.fields) {
+    if (field.value.tag !== "var") {
+      result_fields.push(field);
+      continue;
+    }
+
+    const binding = bindings.get(field.value.name);
+
+    if (
+      !binding || binding.type_annotation?.tag !== "arrow" ||
+      (binding.value.tag !== "lam" && binding.value.tag !== "rec")
+    ) {
+      result_fields.push(field);
+      continue;
+    }
+
+    if (field.name !== binding.name) {
+      throw new Error(
+        "Managed callable export field must match its binding name: " +
+          field.name + " refers to " + binding.name,
+      );
+    }
+
+    managed_names.add(binding.name);
+  }
+
+  if (managed_names.size === 0) {
+    return source;
+  }
+
+  const effects = analyze_front_effects(source);
+
+  for (const name of managed_names) {
+    const binding = bindings.get(name);
+
+    if (!binding || binding.type_annotation?.tag !== "arrow") {
+      throw new Error("Missing managed callable binding: " + name);
+    }
+
+    const function_effects = effects.functions[name];
+
+    if (
+      binding.type_annotation.effects !== undefined ||
+      (function_effects && function_effects.effects.length > 0)
+    ) {
+      throw new Error(
+        "Managed callable exports cannot use effects yet: " + name,
+      );
+    }
+  }
+
+  const managed_return: typeof final_stmt = {
+    ...final_stmt,
+    value: { ...final_stmt.value, fields: result_fields },
+  };
+  const statements: SourceNode["statements"] = source.statements.map((stmt) => {
+    if (stmt === final_stmt) {
+      return managed_return;
+    }
+
+    if (stmt.tag === "bind" && managed_names.has(stmt.name)) {
+      return { ...stmt, kind: "let", managed_export: true };
+    }
+
+    return stmt;
+  });
+
+  return { ...source, statements };
 }
 
 // These helpers are imported only by the backend fixture facade. They are not
@@ -383,6 +494,10 @@ function merge_host_interface(
   const names = new Set<string>();
 
   for (const declaration of declarations) {
+    if (declaration.tag === "extend" || declaration.tag === "fixity") {
+      continue;
+    }
+
     if (names.has(declaration.name)) {
       throw new Error(
         "Duplicate host interface declaration: " + declaration.name,
@@ -400,9 +515,11 @@ function core_from_source_with_internal_imports(source: SourceNode): CoreNode {
 }
 
 function prepare_core_source(source: SourceNode): SourceNode {
+  source = resolve_bundled_source_imports(source);
   derive_missing_source_spans(source, { start: 0, end: 0 });
+  source = specialize_front_effects(source);
   const diagnostics = validate_frontend_semantics(source, {
-    scope: "bool-representation",
+    scope: "core-representation",
   });
 
   for (const diagnostic of diagnostics) {
@@ -411,13 +528,17 @@ function prepare_core_source(source: SourceNode): SourceNode {
     }
   }
 
-  return elaborate_front_type_sets(elaborate_front_effects(source));
+  return erase_undemanded_front_bindings(
+    elaborate_front_type_sets(
+      elaborate_front_effects(elaborate_front_ducks(source)),
+    ),
+  );
 }
 
 function core_from_elaborated_source(source: SourceNode): CoreNode {
   validate_atom_identities(source);
   validate_source_linear(source);
-  return Core.from_source(source);
+  return analyze_core_demand(Core.from_source(source));
 }
 
 function reject_public_host_imports(source: SourceNode): void {
@@ -480,10 +601,6 @@ function core_route_diagnostics(source: SourceNode): SourceDiagnostic[] {
       return [rejection];
     }
 
-    if (is_core_route_coverage_error(error)) {
-      return [];
-    }
-
     throw error;
   }
 
@@ -544,7 +661,7 @@ function core_route_rejection_diagnostic(
           stmt.annotation.startsWith(declaration.name + " ")
         ) {
           return source_diagnostic(
-            "IX2306",
+            "DUCK2306",
             "error",
             error.message,
             stmt.value,
@@ -586,7 +703,7 @@ function core_route_rejection_diagnostic(
         for (const param of stmt.value.params) {
           if (param.annotation === annotation) {
             return source_diagnostic(
-              "IX2307",
+              "DUCK2307",
               "error",
               error.message,
               param,
@@ -613,7 +730,7 @@ function core_route_rejection_diagnostic(
       declaration.body.type_name === name
     ) {
       return source_diagnostic(
-        "IX2290",
+        "DUCK2290",
         "error",
         "Type alias " + declaration.name + " references unknown type " + name,
         declaration,
@@ -640,6 +757,46 @@ function source_for_route_analysis(
   source: SourceNode,
   options: SourceAnalyzeOptions,
 ): SourceNode | undefined {
+  if (source.module !== undefined) {
+    const const_functions = new Set<string>();
+
+    for (const stmt of source.statements) {
+      if (stmt.tag !== "bind" || stmt.kind !== "const") {
+        continue;
+      }
+
+      if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+        const_functions.add(stmt.name);
+        continue;
+      }
+
+      if (stmt.value.tag === "var" && const_functions.has(stmt.value.name)) {
+        const_functions.add(stmt.name);
+      }
+    }
+
+    const final_stmt = source.statements[source.statements.length - 1];
+
+    if (
+      final_stmt?.tag === "return" &&
+      final_stmt.value.tag === "struct_value"
+    ) {
+      for (const field of final_stmt.value.fields) {
+        // Compile-time module functions are specialized at import sites and
+        // have no standalone runtime result for the Core proof route.
+        if (field.value.tag === "lam" || field.value.tag === "rec") {
+          return undefined;
+        }
+
+        if (
+          field.value.tag === "var" && const_functions.has(field.value.name)
+        ) {
+          return undefined;
+        }
+      }
+    }
+  }
+
   if (source_import_expressions(source).length === 0) {
     return source;
   }
@@ -649,16 +806,6 @@ function source_for_route_analysis(
   }
 
   return resolve_source_imports(source, options.uri, options.resolve_import);
-}
-
-function is_core_route_coverage_error(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return error.message.startsWith(
-    "Cannot type core scratch block with non-scalar unique_heap text result yet",
-  );
 }
 
 function resolve_file_import(uri: string): string | undefined {

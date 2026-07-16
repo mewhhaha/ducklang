@@ -312,7 +312,7 @@ Deno.test("selected type-set closures share an injected argument layout", () => 
 module (!init: Init) where
 
 declare effect Input { flag: () => I32 }
-type Init = (.input = Input)
+type Init = [.input = Input]
 type Choice = Int | Text
 
 flag <- Input.flag()
@@ -322,10 +322,10 @@ let operation = if flag {
   (value: Choice) => if value is Text { len(value) } else { 0 }
 }
 let result: I32 = operation(42)
-return { result }
+return { .result = result }
 `);
 
-  assert_includes(artifact.wat, '"ix_effect" "Input.flag"');
+  assert_includes(artifact.wat, '"duck_effect" "Input.flag"');
   assert_includes(artifact.wat, "i32.const 42");
 });
 
@@ -359,7 +359,7 @@ let condition: I32 = 1
 let operation = if condition { (value: A) => value } else { (value: B) => value }
 operation(42)
 `),
-    "expects union parameter",
+    "Core closure if branch type mismatch",
   );
   assert_throws(
     () =>
@@ -380,11 +380,11 @@ module (!init: Init) where
 
 type Read = Int | Text
 declare effect Input { read: () => Read }
-type Init = (.input = Input)
+type Init = [.input = Input]
 
 value <- Input.read()
 let result: I32 = if value is Int { value } else { len(value) }
-return { result }
+return { .result = result }
 `);
   const read = artifact.abi.types.Read;
 
@@ -407,11 +407,11 @@ module (!init: Init) where
 type Maybe a = a | #nothing
 type MaybeInt = Maybe Int
 declare effect Input { value: () => MaybeInt }
-type Init = (.input = Input)
+type Init = [.input = Input]
 
 value <- Input.value()
 let result: I32 = if value is Int { value } else { 0 }
-return { result }
+return { .result = result }
 `);
 
   assert_equals(artifact.abi.effects.Input?.operations.value?.result, {
@@ -422,7 +422,7 @@ return { result }
     tag: "union",
     name: "MaybeInt",
     schema_id: 1,
-    size: 16,
+    size: 8,
     align: 8,
     cases: [
       { name: "set_0", tag_value: 0, payload: { tag: "i32" } },
@@ -475,10 +475,10 @@ if value is Int { value } else { 0 }
 
 Deno.test("record intersections merge compatible fields", () => {
   const wat = Source.wat(`
-type HasX = (.x = Int)
-type HasY = (.y = Int)
+type HasX = [.x = Int]
+type HasY = [.y = Int]
 type Point = HasX & HasY
-let point: Point = (.x = 40, .y = 2)
+let point: Point = [.x = 40, .y = 2]
 point.x + point.y
 `);
 

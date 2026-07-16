@@ -41,7 +41,7 @@ export function check_closure_call_args(
     if (expected_constraint) {
       hooks.apply_core_parameter_annotation(
         {
-          name: "__ix_closure_arg_" + index.toString(),
+          name: "__duck_closure_arg_" + index.toString(),
           is_const: false,
           is_linear: false,
           annotation: expected_constraint,

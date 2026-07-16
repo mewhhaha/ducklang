@@ -31,6 +31,27 @@ export function format_source(source: SourceNode): string {
 }
 
 function format_declaration(declaration: Declaration): string {
+  if (declaration.tag === "duck") {
+    const members = declaration.members.map((member) => {
+      return "." + member.name + " = " + format_type_expr(member.type_expr);
+    });
+    return "duck " + declaration.name + " " + declaration.roles.join(" ") +
+      " { " + members.join(", ") + " }";
+  }
+
+  if (declaration.tag === "extend") {
+    const fields = declaration.fields.map((field) => {
+      return "." + field.name + " = " + format_expr(field.value);
+    });
+    return "extend " + declaration.type_name + " { " +
+      fields.join(", ") + " }";
+  }
+
+  if (declaration.tag === "fixity") {
+    return declaration.fixity + " " + declaration.precedence.toString() +
+      " " + declaration.operator + " = " + declaration.target;
+  }
+
   if (declaration.tag === "record") {
     return "declare " + declaration.name + " { " +
       declaration.fields.map((field) => field.name + ": " + field.type_name)
@@ -53,7 +74,13 @@ function format_declaration(declaration: Declaration): string {
     prefix = "declare effect ";
   }
 
-  return prefix + declaration.name + " { " +
+  let head = prefix + declaration.name;
+
+  if (declaration.params.length > 0) {
+    head += " " + declaration.params.join(" ");
+  }
+
+  return head + " { " +
     operations.join(", ") + " }";
 }
 
@@ -78,7 +105,11 @@ function format_type_declaration(declaration: TypeDeclaration): string {
       }
     }
 
-    return head + " = (" + entries.join(", ") + ")";
+    if (declaration.body.positional) {
+      return head + " = [" + entries.join(", ") + "]";
+    }
+
+    return head + " = struct { " + entries.join(", ") + " }";
   }
 
   if (declaration.body.tag === "alias") {

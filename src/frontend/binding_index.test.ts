@@ -41,7 +41,8 @@ Deno.test("binding index keeps recursive self visible and linear repeats consuma
 
 Deno.test("binding index records members and dynamic receivers explicitly", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Result = | .ok\nlet value = Result.ok\nlet field = value.name\n",
+    "type Result = | .ok\n" +
+      "let value = Result.ok\nlet field = value.name\n",
   ));
   const result = [...indexed.entities.values()].find((entity) =>
     entity.name === "Result"
@@ -65,7 +66,8 @@ Deno.test("binding index is deterministic and preserves recovered later names", 
 
 Deno.test("binding index keeps declaration type parameters local to their declaration", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Maybe a = .just = a | .nothing\ntype Other = a\n0\n",
+    "type Maybe a = | .just = a | .nothing\n" +
+      "type Other = a\n0\n",
   ));
   const params = [...indexed.entities.values()].filter((entity) =>
     entity.name === "a"
@@ -80,9 +82,31 @@ Deno.test("binding index keeps declaration type parameters local to their declar
   assert_equals(references[1]?.unresolved, "unknown");
 });
 
+Deno.test("binding index scopes effect parameters across operation signatures", () => {
+  const indexed = build_binding_index(parse_source_with_diagnostics(
+    "effect State value { get: () => value, put: (value) => Unit }\n0\n",
+  ));
+  const param = [...indexed.entities.values()].find((entity) =>
+    entity.name === "value" && entity.kind === "type_parameter"
+  );
+  const references = [...indexed.occurrences.values()].filter((occurrence) =>
+    occurrence.name === "value" && occurrence.role === "reference"
+  );
+
+  if (param === undefined) {
+    throw new Error("Missing effect type parameter entity");
+  }
+
+  assert_equals(references.length, 2);
+  assert_equals(references.map((reference) => reference.entity), [
+    param.id,
+    param.id,
+  ]);
+});
+
 Deno.test("binding index uses nested annotation facts for statically known members", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Vec = (.x = Int)\nif true { let point: Vec = (.x = 1)\npoint.x }\n",
+    "type Vec = [.x = Int]\nif true { let point: Vec = [.x = 1]\npoint.x }\n",
   ));
   const member = [...indexed.occurrences.values()].find((occurrence) =>
     occurrence.name === "x" && occurrence.role === "member" &&
@@ -94,8 +118,9 @@ Deno.test("binding index uses nested annotation facts for statically known membe
 });
 
 Deno.test("binding index resolves cases and reports the current lexical generation", () => {
-  const text =
-    "type Result = .ok = Int\nlet x = 0\n{ let x = 1\nx }\nx\nlet result = .ok(1)\nif let .ok(value) = result { value }\n";
+  const text = "type Result = | .ok = Int\nlet x = 0\n" +
+    "{ let x = 1\nx }\nx\nlet result = .ok(1)\n" +
+    "if let .ok(value) = result { value }\n";
   const indexed = build_binding_index(parse_source_with_diagnostics(text));
   const occurrences = [...indexed.occurrences.values()];
   const xs = occurrences.filter((occurrence) => occurrence.name === "x");
@@ -170,7 +195,7 @@ Deno.test("binding index visibility selects the generation active at the offset"
 });
 
 Deno.test("binding index keeps owner members out of lexical visibility", () => {
-  const text = "type Pair = (.left = Int)\nleft\n";
+  const text = "type Pair = [.left = Int]\nleft\n";
   const indexed = build_binding_index(parse_source_with_diagnostics(text));
   const reference = [...indexed.occurrences.values()].find((occurrence) =>
     occurrence.name === "left" && occurrence.role === "reference"
@@ -185,7 +210,7 @@ Deno.test("binding index keeps owner members out of lexical visibility", () => {
 
 Deno.test("binding index resolves component annotation sites", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Pair = (.left = Int)\nlet value: Pair = (.left = 1)\nvalue.left\n",
+    "type Pair = [.left = Int]\nlet value: Pair = [.left = 1]\nvalue.left\n",
   ));
   const pair = [...indexed.entities.values()].find((entity) =>
     entity.name === "Pair"

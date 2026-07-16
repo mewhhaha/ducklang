@@ -7,7 +7,7 @@ import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 
 Deno.test("type expressions compose with whitespace application and arrows", () => {
   const type = parse_type_expr(tokenize(
-    "(List a, a -> <Stdin | Stdout | e> List b) -> <e> List b",
+    "[List a, a -> <Stdin | Stdout | e> List b] -> <e> List b",
   ));
 
   assert_equals(type, {
@@ -53,16 +53,16 @@ Deno.test("type expressions compose with whitespace application and arrows", () 
   });
   assert_equals(
     format_type_expr(type),
-    "(List a, a -> <Stdin | Stdout | e> List b) -> <e> List b",
+    "[List a, a -> <Stdin | Stdout | e> List b] -> <e> List b",
   );
 });
 
 Deno.test("type expression arrows associate right and keep lambda arrows distinct", () => {
   const type = parse_type_expr(tokenize("a -> b -> c"));
-  const no_args = parse_type_expr(tokenize("() -> <Stdin> Text"));
+  const no_args = parse_type_expr(tokenize("[] -> <Stdin> Text"));
 
   assert_equals(format_type_expr(type), "a -> b -> c");
-  assert_equals(format_type_expr(no_args), "() -> <Stdin> Text");
+  assert_equals(format_type_expr(no_args), "[] -> <Stdin> Text");
   assert_equals(parse_source("let id: a -> b = value").statements[0], {
     tag: "bind",
     kind: "let",
@@ -108,12 +108,12 @@ let count: I32 = 0
     throw new Error("Expected count binding");
   }
 
-  assert_equals(map.annotation, "(List a, a -> <e> b) -> <e> List b");
+  assert_equals(map.annotation, "[List a, a -> <e> b] -> <e> List b");
   assert_equals(map.type_annotation?.tag, "arrow");
   assert_equals(count.type_annotation, undefined);
   assert_equals(
     format_source(source),
-    "let map: (List a, a -> <e> b) -> <e> List b = value\n" +
+    "let map: [List a, a -> <e> b] -> <e> List b = value\n" +
       "let count: I32 = 0",
   );
 });

@@ -77,19 +77,3 @@ export function binary_precedence(op: string): number {
 
   return -1;
 }
-
-export function can_start_struct_value(expr: FrontExpr): boolean {
-  if (expr.tag === "var") {
-    return expr.name.endsWith("_type");
-  }
-
-  if (expr.tag === "app") {
-    return true;
-  }
-
-  if (expr.tag === "field") {
-    return true;
-  }
-
-  return false;
-}

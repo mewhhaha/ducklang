@@ -18,6 +18,8 @@ import {
   type StaticCoreCallCtx,
 } from "./static_call.ts";
 import { emit_persistent_alloc } from "./runtime_allocator.ts";
+import type { CoreRuntimeBufferBuiltin } from "./runtime_buffer.ts";
+import { core_runtime_buffer_builtin } from "./runtime_buffer.ts";
 
 export type CoreAppEmitHooks<
   ctx extends CoreHostImportCtx & StaticCoreCallCtx & TempNameCtx & {
@@ -52,6 +54,17 @@ export type CoreAppEmitHooks<
     ctx: ctx,
   ) => Wat;
   emit_expr: (expr: CoreExpr, ctx: ctx) => Wat;
+  emit_runtime_bytes_generate: (
+    subject: CoreExpr,
+    length: CoreExpr,
+    generator: CoreExpr,
+    ctx: ctx,
+  ) => Wat;
+  emit_runtime_buffer_builtin: (
+    subject: CoreExpr,
+    builtin: CoreRuntimeBufferBuiltin,
+    ctx: ctx,
+  ) => Wat;
   emit_runtime_text_byte_index: (
     collection: CoreExpr,
     index: CoreExpr,
@@ -203,6 +216,26 @@ export function emit_core_app<
   if (name === "panic") {
     hooks.app_type(expr, ctx);
     return "unreachable";
+  }
+
+  if (name === "Bytes.generate") {
+    hooks.app_type(expr, ctx);
+    const length = expr.args[0];
+    const generator = expr.args[1];
+    expect(length, "Missing core Bytes.generate length");
+    expect(generator, "Missing core Bytes.generate callback");
+    return hooks.emit_runtime_bytes_generate(expr, length, generator, ctx);
+  }
+
+  const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+  if (runtime_buffer_builtin) {
+    hooks.app_type(expr, ctx);
+    return hooks.emit_runtime_buffer_builtin(
+      expr,
+      runtime_buffer_builtin,
+      ctx,
+    );
   }
 
   const rec_target = hooks.static_core_rec_target(expr.func, ctx);

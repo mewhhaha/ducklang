@@ -37,7 +37,7 @@ Deno.test("name sites retain distinct repeated binding and reference spellings",
 
 Deno.test("name sites cover declarations, members, parameters, and annotations", () => {
   const text =
-    "type Pair item = (.left = Item)\neffect Io { read: (Item) => Item }\nlet value: Pair Item = Io.read ()\n";
+    "type Pair item = [.left = Item]\neffect Io result { read: (Item) => result }\nlet value: Pair Item = Io.read ()\n";
   const source = parse_source(text);
   const declaration = source.declarations?.[0];
   const effect = source.declarations?.[1];
@@ -65,6 +65,7 @@ Deno.test("name sites cover declarations, members, parameters, and annotations",
   );
   assert_equals(name_sites(effect).map((site) => site.slot + ":" + site.name), [
     "name:Io",
+    "params:result",
   ]);
   assert_equals(name_sites(effect.operations[0]!).map((site) => site.name), [
     "read",

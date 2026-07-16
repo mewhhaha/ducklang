@@ -16,6 +16,13 @@ export function create_core_backend_graph_index(
     core_expr_is_text: (expr, ctx) => deps.text().core_expr_is_text(expr, ctx),
     emit_expr: (expr, ctx) => deps.expr_emit().emit_expr(expr, ctx),
     expr_type: (expr, ctx) => deps.expr_type().expr_type(expr, ctx),
+    plan_static_capture_expr: (prefix, value, ctx, emit_ctx) =>
+      deps.static_value().plan_static_capture_expr(
+        prefix,
+        value,
+        ctx,
+        emit_ctx,
+      ),
     plan_static_value_expr: (value, ctx, emit_ctx) =>
       deps.static_value().plan_static_value_expr(value, ctx, emit_ctx),
     runtime_aggregate_type_expr: (expr, ctx) =>

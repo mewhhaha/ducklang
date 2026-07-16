@@ -48,15 +48,15 @@ produce explicit unsupported-feature diagnostics instead of becoming ordinary
 names.
 
 ```txt
+const { struct } = comptime (import "duck:prelude")()
+
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name = Text,
+  .age = Int
 }
 
-const option_type = t => union {
-  some: t,
-  none: Unit
-}
+type OptionType t = | .some = t | .none
+const option_type = OptionType
 
 const functor = f_type => {
   f_type.map
@@ -66,8 +66,8 @@ const functor = f_type => {
 
 ## File Modules
 
-Every loaded `.ix` file starts with a module header and ends with an explicit
-export record. A file without inputs uses an empty header:
+Every loaded `.duck` file starts with a module header and ends with an explicit
+export shape. A file without inputs uses an empty header:
 
 ```txt
 module () where
@@ -87,26 +87,26 @@ return { result }
 ```
 
 The module body is not indented and does not use braces. All top-level paths
-must reach a final `return { ... }`, and branch-produced export records must
-have compatible fields and types. `Source.parse` remains a fragment parser for
-tests and interactive compilation; file loading is what enforces the header and
-final export record.
+must reach a final `return { ... }`, and branch-produced export shapes must have
+compatible fields and types. `Source.parse` remains a fragment parser for tests
+and interactive compilation; file loading is what enforces the header and final
+export shape.
 
 An import loads a file but does not instantiate it or grant it authority.
-Instantiation is a separate call with an explicit dependency record:
+Instantiation is a separate call with an explicit dependency shape:
 
 ```txt
-const logger = import "./logger.ix"
-const { write } = logger({ io: !init.io })
+const logger = import "./logger.duck"
+const { .write = write } = logger { .io = !init.io }
 ```
 
 Module invocation is compiler-time wiring and specialization. Its result is the
-imported file's export record, so ordinary record destructuring selects exports.
-An `_` entry in that pattern selects no field and ignores the remaining export
-shape. The entry module's final record is returned by the managed JavaScript
-`IxRunner(init).run(program)` call. A runner captures one explicit handler set;
-selecting another runner swaps host or mock effects without recompiling the
-module.
+imported file's export product, so labeled product destructuring selects
+exports. An `_` entry in that pattern selects no field and ignores the remaining
+export shape. The entry module's final product is returned by the managed
+JavaScript `DuckRunner(init).run(program)` call. A runner captures one explicit
+handler set; selecting another runner swaps host or mock effects without
+recompiling the module.
 
 ## Bindings
 
@@ -160,7 +160,7 @@ Bindings may have annotations. Built-in scalar/type annotations are checked at
 the binding. When the annotation names a visible struct or union type-value,
 shorthand object and union-case values are checked and given that direct type
 context; for typed union annotations, declared case payload types also flow into
-shorthand object payloads such as `.ok({ age: 40 })`. Fact-checker annotations
+shorthand object payloads such as `.ok { .age = 40 }`. Fact-checker annotations
 run the named const fact checker against the bound value's type-value. An
 explicit runtime annotation can also provide type context for an otherwise
 unknown runtime value, while known incompatible values still fail at the
@@ -171,26 +171,35 @@ call boundary.
 let x: Int = 41
 let wide: I64 = 41i64
 
+const { struct } = comptime (import "duck:prelude")()
 const user_type: has_name = struct {
-  name: Int,
-  age: Int
+  .name = Int,
+  .age = Int
 }
 
-let user: has_name = user_type {
-  name: input,
-  age: 0
-}
+let user: user_type = [input, 0]
 ```
 
-Integer literals carry value types in Ic. Unsuffixed source integers are the
-`Int`/`i32` convention. Explicit suffixes are available for scalar lowering.
-Annotated `I64` bindings and parameters give i64 type context to arithmetic over
-runtime names; explicit mixed `i32`/`i64` operands are rejected.
+Numeric literals carry value types in Ic. Unsuffixed source integers are the
+`Int`/`i32` convention. Decimal fractions and exponents require the `f32`
+suffix. Hexadecimal integer literals use `0x` or `0X` and may carry an `i32` or
+`i64` suffix. Annotated `I64` and `F32` bindings and parameters give matching
+type context to arithmetic over runtime names; mixed-width operands are rejected
+instead of converted implicitly.
 
 ```txt
 let small = 42i32
 let wide = 42i64
+let mask = 0xff
+let ratio = 1.5f32
 ```
+
+Integer bitwise operations are named functions: `bit_and`, `bit_or`, `bit_xor`,
+`shift_left`, and `shift_right_u`. Each accepts two matching `I32` or two
+matching `I64` values. Shift counts use Wasm's masked-count semantics. The
+scalar conversion functions are explicit: `f32_from_i32` converts signed `I32`
+to `F32`, and `i32_from_f32` truncates toward zero and traps for NaN, infinity,
+or an out-of-range result. `f32_sqrt` computes an `F32` square root.
 
 Double-quoted string literals produce UTF-8 `Text`.
 
@@ -221,7 +230,7 @@ exactly one Unicode scalar after escape decoding.
 
 Literals can also be used as equality patterns in `if let`. Literal patterns do
 not introduce a binding; they select the branch when the target equals the
-literal. Both the ordinary Ix spelling and a parenthesized condition are
+literal. Both the ordinary Duck spelling and a parenthesized condition are
 accepted.
 
 ```txt
@@ -239,18 +248,46 @@ Union patterns remain structural and can bind their payload, as in
 
 `Bytes` is the raw, non-UTF-8 buffer type used by managed host effects. Runtime
 `Bytes` values support `len`, `get`, byte iteration, `slice`, and `append`, and
-bounded borrows can cross effect calls. There is no source `Bytes` literal or
-borrowed slice view yet.
+bounded borrows can cross effect calls. `Bytes.empty` is the canonical static
+empty buffer. Arbitrary raw byte literals and borrowed slice views are not
+supported yet.
+
+`Text` and `Bytes` are distinct source types even though both use the same
+runtime layout: an `i32` byte length followed by the bytes. They are never
+converted implicitly. Use `Utf8.encode(text)` to allocate and copy a `Text`
+value into a `Bytes` value, and `Utf8.decode(bytes)` to validate, allocate, and
+copy bytes into `Text`. Decoding traps for malformed, overlong, surrogate, or
+out-of-range UTF-8. Byte index assignment is supported only for `Bytes`; text
+must be encoded before its bytes can be changed.
+
+`format_i32(value)` and `format_i64(value)` allocate `Text` containing exact
+signed decimal notation, including the minimum integer values.
+`format_f32(value, precision)` allocates fixed-point `Text` with exactly
+`precision` digits after the decimal point. Precision is an `I32` from `0`
+through `6`; a value outside that range traps. It rounds the binary32 magnitude
+by computing `trunc(abs(value) * 10^precision + 0.5)` in Wasm before writing the
+digits, so its spelling is deterministic and does not rely on a host formatter.
+Negative values receive a leading `-`; negative zero formats as positive zero.
+NaN, infinities, and values whose rounded scaled magnitude does not fit in
+signed 64 bits trap. This is deliberately fixed-point formatting, not
+shortest-round-trip conversion.
+
+```duck
+format_f32(-12.5f32, 3) // "-12.500"
+format_f32(1.999f32, 2) // "2.00"
+```
 
 ### Text Operations
 
 Text values are UTF-8. The contract for text operations:
 
-- `+` and `append(left, right)` concatenate text values.
+- `+` concatenates text values. `append(left, right)` accepts two `Text` values
+  or two `Bytes` values, but never mixes them.
 - `len(value)` is the UTF-8 byte length.
 - `value[index]` and `get(value, index)` return the UTF-8 byte at `index` as
   `i32`, trapping on out-of-range indexes.
-- `slice(value, start, end)` selects a byte range.
+- `slice(value, start, end)` selects a byte range. Statically known `Text`
+  slices that split a UTF-8 sequence are rejected.
 - `==` and `!=` compare text by bytes and produce `Bool`, represented as `i32`
   after frontend lowering.
 - Collection loops over text iterate UTF-8 bytes.
@@ -300,7 +337,7 @@ contains them is specialized before Core lowering:
 
 ```txt
 const derive_name = (const target) => match target {
-  | struct { name: Text, .. } => value => value.name
+  | struct { .name = Text, .. } => value => value.name
   | _ => fail("derive_name requires a Text name field")
 }
 
@@ -330,7 +367,7 @@ reflection:
 
 ```txt
 const score_field = describe_fields(Player)[1]
-let player = construct(Player, { name: 20, score: 40 })
+let player = construct [Player, { .name = 20, .score = 40 }]
 let score = project(player, score_field)
 ```
 
@@ -420,20 +457,21 @@ Imported modules can take explicit const parameters for deterministic build
 configuration:
 
 ```txt
-// dependency.ix
+// dependency.duck
 module (const release: Bool) where
 const value = if release { 42 } else { 0 }
-return { value }
+return { .value = value }
 
-// main.ix
-const dependency = import "./dependency.ix"
-const { value } = dependency(true)
+// main.duck
+const dependency = import "./dependency.duck"
+const { .value = value } = dependency true
 ```
 
 Build constants are ordinary explicit inputs. Compile-time evaluation does not
 implicitly read environment variables, clocks, randomness, or the network. See
-`examples/compile_time/13_derived_nested_equality.ix` for a recursive derivation
-that specializes equality across records, fixed arrays, and union cases.
+`examples/compile_time/13_derived_nested_equality.duck` for a recursive
+derivation that specializes equality across records, fixed arrays, and union
+cases.
 
 ## Functions And Control Flow
 
@@ -569,22 +607,92 @@ shapes each route accepts is tracked in [coverage.md](coverage.md).
 
 Types are const values.
 
+The bundled source prelude is an ordinary module and is imported explicitly when
+`struct` is used:
+
 ```txt
-const user_type = struct {
-  name: Text,
-  age: Int
+const { struct } = comptime (import "duck:prelude")()
+```
+
+Bare destructuring fields bind the same local name. Use the dotted form when
+renaming, such as `{ .struct = make_struct }`.
+
+Module export shapes and `with` updates use the same shorthand. `{ code }` means
+`{ .code = code }`; keep the dotted form when the label and local expression
+differ, such as `{ .status = code }`.
+
+`struct` itself is defined in that source module without aggregate intrinsics.
+It loops over the ordered shape once to build the product type and again to add
+one accessor to that scoped type value for each field:
+
+```txt
+const struct = (const shape) => {
+  let product_type = []
+
+  for field in shape {
+    product_type = [...product_type, field.value]
+  }
+
+  for index, field in shape {
+    product_type = product_type with {
+      .[field.name] = value => value[index]
+    }
+  }
+
+  product_type
 }
 ```
 
-Type constructors are const functions returning type-values.
+Each shape iteration yields a compile-time entry with `.name` and `.value`.
+Leading spread appends the entry's type to the ordered product. The computed
+member form `type_value with { .[name] = function }` returns a new scoped type
+value with that namespace member; it does not mutate extensions for other
+structs with the same slot layout. Repeat types use `[Element; Length]`
+directly; there is no `array` constructor.
+
+There is no source `union` function. Named sums use leading-pipe declarations:
 
 ```txt
-const result_type = e => t => union {
-  ok: t,
-  err: e
-}
+type Result error value = | .ok = value | .err = error
+```
 
-const parse_result_type = result_type(Text)(Int)
+The same explicit import also provides common source-defined functional building
+blocks:
+
+```txt
+const { identity, compose, curry } =
+  comptime (import "duck:prelude/functional")()
+
+const add_two = value => value + 2
+const double = value => value * 2
+const combined = comptime compose [add_two, double]
+```
+
+The exported const functions are `identity`, `constant`, `compose`, `pipe`,
+`flip`, `curry`, and `uncurry`. Higher-order combinations that produce a new
+closure are specialized at `comptime`, preserving a direct runtime call.
+
+Importing `duck:prelude/functional` also brings the generic `Option`, `Result`,
+and `Either` sum types, the `Ordering` type, and the structural `Eq`, `Ord`,
+`Semigroup`, `Monoid`, `Functor`, `Applicative`, `Monad`, and `Foldable` ducks
+into lexical scope. Higher-kinded roles are written directly in duck signatures,
+for example `F A`, `A -> B`, and `F B`. Instances remain ordinary lexical
+`extend` declarations and can be checked explicitly with `comptime`.
+
+```txt
+const { struct } = comptime (import "duck:prelude")()
+
+const user_type = struct {
+  .name = Text,
+  .age = Int
+}
+```
+
+Named generic declarations are const functions returning type-values.
+
+```txt
+type Result error value = | .ok = value | .err = error
+type ParseResult = Result Text Int
 ```
 
 The experimental row syntax provides named `type` declarations as surface sugar
@@ -592,10 +700,10 @@ over those same const type-values. Bracket products may be labeled or
 positional:
 
 ```txt
-type Vec3 = (.x = Int, .y = Int, .z = Int)
+type Vec3 = struct { .x = Int, .y = Int, .z = Int }
 type Pair = [Int, Int]
 
-let point: Vec3 = (.x = 40, .y = 1, .z = 1)
+let point: Vec3 = [40, 1, 1]
 let pair: Pair = [point.x, point.y]
 ```
 
@@ -609,14 +717,10 @@ Reordering fields therefore changes both their indexes and their layout.
 Commas form products. Named and positional entries cannot be mixed when a
 product is declared or constructed, but both named and indexed access work on
 the resulting value. Sum declarations use `|` between cases and need no
-surrounding brackets. A leading `|` is accepted for multiline formatting:
+surrounding brackets. The leading `|` is required:
 
 ```txt
-type Maybe a = .just = a | .nothing
-
-type Maybe a =
-  | .just = a
-  | .nothing
+type Maybe a = | .just = a | .nothing
 
 type MaybeInt = Maybe Int
 ```
@@ -626,24 +730,18 @@ elaborate to the existing compile-time type constructors, and a named alias such
 as `Maybe Int` specializes one before Core lowering. The formatter emits sums in
 the multiline leading-pipe form.
 
-This first experiment supports closed top-level products, sums, aliases, and
-product values. It preserves existing field order, union tags, and ABI layouts;
-it does not implement structural row normalization, row spreads, open row
-variables, or width subtyping yet. Nested product payloads and applied row
-members are rejected before Core lowering. Recursive declarations are parsed but
+Ducklang supports closed top-level products, sums, aliases, and product values.
+It preserves field order, union tags, and ABI layouts; it does not implement
+open row variables or width subtyping. Recursive declarations are parsed but
 rejected explicitly because recursive generic substitution and recursive
 owned-child destruction are not implemented safely yet:
 
 ```txt
-type List a =
-  | .nil
-  | .cons = [a, List a]
+type List a = | .nil | .cons = [a, List a]
 ```
 
 This reports `Recursive algebraic type declarations are not supported yet: List`
-rather than emitting a partially owned recursive heap layout. Existing
-`struct { ... }` and `union { ... }` syntax remains supported as the underlying
-representation during the experiment.
+rather than emitting a partially owned recursive heap layout.
 
 Types also compose as sets. Union, intersection, and difference use the same
 operators as effect rows, with difference binding most tightly:
@@ -731,10 +829,7 @@ unsound.
 Struct construction validates field names and field types.
 
 ```txt
-let user = user_type {
-  name: "Ada",
-  age: 36
-}
+let user: user_type = ["Ada", 36]
 ```
 
 Union constructors validate case names and payload types.
@@ -747,7 +842,7 @@ Fact checkers are const functions over type-values.
 
 ```txt
 const has_name = t => {
-  let struct { name: Text, .. } = t
+  let struct { .name = Text, .. } = t
   t
 }
 
@@ -788,7 +883,7 @@ already typed union value.
 
 ```txt
 const result_like = t => {
-  let union { ok: Int, .. } = t
+  let union { .ok = Int, .. } = t
   t
 }
 
@@ -871,10 +966,13 @@ An extension can also hold a closed family of type-values. Selecting a field
 specializes the family to an ordinary struct or union before Core emission:
 
 ```txt
+type NumberCalcType = | .literal = Int | .add = add_args_type
+type TextCalcType = | .literal = Text
+
 const calc_types = 0
 const calc_types = calc_types with {
-  number: union { literal: Int, add: add_args_type },
-  text: union { literal: Text }
+  .number = NumberCalcType,
+  .text = TextCalcType
 }
 
 const number_calc_type = calc_types.number
@@ -885,7 +983,7 @@ The selected union controls which constructors exist, so
 `number_calc_type.add(...)` is valid while `text_calc_type.add(...)` is
 rejected. This is a closed, compile-time indexed family rather than a general
 GADT: abstract indices, existential packaging, and recursive indexed unions
-remain reserved. See `examples/compile_time/11_indexed_calculator.ix` for the
+remain reserved. See `examples/compile_time/11_indexed_calculator.duck` for the
 complete executable calculator.
 
 ## Linear Values And Host Effects
@@ -930,9 +1028,9 @@ return {}
 
 `declare effect Io` creates a nominal effect family, the operations `Io.read`
 and `Io.print`, and an opaque host-handler type that may appear in a context
-record. Ix cannot construct or inspect an `Io`; JavaScript supplies an instance
-through the entry `Init`. `declare` means the operations are host-implemented.
-Only declared effects appear in the managed JavaScript ABI.
+record. Duck cannot construct or inspect an `Io`; JavaScript supplies an
+instance through the entry `Init`. `declare` means the operations are
+host-implemented. Only declared effects appear in the managed JavaScript ABI.
 
 An unannotated function receives its minimal inferred operation row:
 
@@ -1018,25 +1116,59 @@ context:
 ```txt
 module (!init: Init) where
 
-const logger = import "./logger.ix"
-const { write } = logger({ io: !init.io })
+const logger = import "./logger.duck"
+const { .write = write } = logger { .io = !init.io }
 result <- write("hello")
 
-return { result }
+return { .result = result }
 ```
 
-Loading `logger.ix` alone grants no authority. Module invocation consumes or
+Loading `logger.duck` alone grants no authority. Module invocation consumes or
 borrows the resources named by its declared parameters and returns its export
 record.
 
-## Ix-Defined Effects And Handlers
+## Duck-Defined Effects And Handlers
 
-Plain `effect` declares operations implemented inside Ix:
+The `duck:prelude/effects` module declares four small standard effects:
+`State value` with `get`/`put`, `Reader environment` with `ask`, `Writer output`
+with `tell`, and `Raise error` with `raise`. The compiler infers each parameter
+from operation arguments, operation results, and values passed to handler
+resumptions. A used parameter must resolve to one concrete type throughout a
+compilation; incompatible uses are rejected at the effect boundary. Host effects
+remain concrete because their declarations define the ABI contract.
+
+```txt
+const _ = comptime (import "duck:prelude/effects")()
+
+let state = {
+  let current = 0
+  State {
+    get: (!resume) => !resume(current),
+    put: (value, !resume) => {
+      current = value
+      !resume(())
+    },
+    return: value => value,
+  }
+}
+```
+
+Plain `effect` declares operations implemented inside Duck:
 
 ```txt
 effect Counter {
   get: () => I32
   add: (I32) => Unit
+}
+```
+
+Type parameters follow the effect name and are scoped across all operation
+signatures:
+
+```txt
+effect State value {
+  get: () => value
+  put: (value) => Unit
 }
 ```
 
@@ -1075,7 +1207,7 @@ installed more than once.
 The mandatory `return` clause handles ordinary completion. Operation clauses
 receive the declared operation arguments followed by an affine resumption. A
 clause may invoke its resumption once, return without invoking it to abort the
-captured computation, pass it to other Ix code, or store it in an internal
+captured computation, pass it to other Duck code, or store it in an internal
 aggregate or union. Calling a resumption reinstalls the captured handler
 segment, so handlers are deep. The matched handler is inactive while its clause
 runs; calling the same effect directly from that clause therefore forwards
@@ -1202,6 +1334,10 @@ aggregate, union, and closure loop results are not supported yet. `break` and
 `continue` are control-flow statements, not general values. Declared host
 operations and calls to ordinary effectful functions may occur in the body.
 
+`match` arm blocks preserve the same nearest-loop behavior. An arm may fall
+through, `break value`, or `continue`; control transfers are checked per arm,
+and nested loops retain their own control boundary.
+
 ```txt
 let first_even = loop {
   if candidate % 2 == 0 {
@@ -1298,9 +1434,11 @@ selectable slot to have a compatible value type (the homogeneous runtime-index
 rule).
 
 ```txt
+const { struct } = comptime (import "duck:prelude")()
+
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first = Int,
+  .second = Int
 }
 
 let choose = (pair: pair_type, i) => {
@@ -1348,10 +1486,7 @@ panic("index out of bounds")
 Recoverable runtime errors use explicit unions.
 
 ```txt
-const result_type = e => t => union {
-  ok: t,
-  err: e
-}
+type Result error value = | .ok = value | .err = error
 ```
 
 ## Lowering

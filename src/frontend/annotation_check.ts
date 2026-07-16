@@ -16,6 +16,7 @@ import {
 } from "./semantic_type.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
+import { contextual_struct_fields } from "./struct_value_type.ts";
 
 export function check_binding_annotation(
   annotation: string,
@@ -183,7 +184,11 @@ function check_direct_type_annotation(
       );
     }
 
-    hooks.check_struct_fields(type_value, struct.expr.fields, struct.env);
+    hooks.check_struct_fields(
+      type_value,
+      contextual_struct_fields(type_value, struct.expr),
+      struct.env,
+    );
     return true;
   }
 
@@ -304,6 +309,32 @@ function check_builtin_binding_annotation(
     if (numeric_type !== "i64") {
       throw new Error(
         "Binding annotation expects I64, got " +
+          binding_value_type_name(value, env, hooks),
+      );
+    }
+
+    return;
+  }
+
+  if (annotation === "F32") {
+    const numeric_type = resolve_numeric_expr_type(value, env, hooks);
+
+    if (numeric_type !== "f32") {
+      throw new Error(
+        "Binding annotation expects F32, got " +
+          binding_value_type_name(value, env, hooks),
+      );
+    }
+
+    return;
+  }
+
+  if (annotation === "F32x4") {
+    const actual = hooks.infer_expr(value, env);
+
+    if (actual.tag !== "f32x4") {
+      throw new Error(
+        "Binding annotation expects F32x4, got " +
           binding_value_type_name(value, env, hooks),
       );
     }

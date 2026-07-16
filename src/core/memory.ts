@@ -10,12 +10,16 @@ export function load_instr(value_type: ValType, offset: number): Wat {
 }
 
 export function val_type_size(value_type: ValType): number {
-  if (value_type === "i32") {
+  if (value_type === "i32" || value_type === "f32") {
     return 4;
   }
 
   if (value_type === "i64") {
     return 8;
+  }
+
+  if (value_type === "v128") {
+    return 16;
   }
 
   value_type satisfies never;
@@ -34,4 +38,13 @@ export function align_to(value: number, alignment: number): number {
   }
 
   return value + alignment - remainder;
+}
+
+export function align_pointer_instr(alignment: number): Wat {
+  return [
+    "i32.const " + (alignment - 1).toString(),
+    "i32.add",
+    "i32.const " + (-alignment).toString(),
+    "i32.and",
+  ].join("\n");
 }

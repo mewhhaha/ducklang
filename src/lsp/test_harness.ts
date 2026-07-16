@@ -103,7 +103,7 @@ export function parse_workspace_fixture(text: string): WorkspaceFixture {
   };
 
   for (const line of text.split("\n")) {
-    const header = /^\/\/-\s+(.+\.ix)\s*$/.exec(line);
+    const header = /^\/\/-\s+(.+\.duck)\s*$/.exec(line);
 
     if (header === null) {
       lines.push(line);

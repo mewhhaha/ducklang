@@ -78,17 +78,17 @@ Deno.test("strict tokenize retains its filtered stream and comment option", () =
       "\n",
     ], ["eof", ""]],
   );
-  assert_throws(() => tokenize("$"), "Unexpected character: $");
+  assert_throws(() => tokenize("§"), "Unexpected character: §");
   assert_throws(() => tokenize('"\\q"'), "Unsupported string escape: \\q");
 });
 
 Deno.test("tolerant scanner reports malformed input without dropping it", () => {
-  const text = "@ \"\\q\" 'ab'";
+  const text = "§ \"\\q\" 'ab'";
   const syntax = scan_source(text);
 
   assert_equals(reconstruct(text), text);
   assert_equals(syntax.diagnostics.map((diagnostic) => diagnostic.message), [
-    "Unexpected character: @",
+    "Unexpected character: §",
     "Unsupported string escape: \\q",
     "Character literal must contain exactly one Unicode scalar value",
   ]);

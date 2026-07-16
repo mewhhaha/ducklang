@@ -6,7 +6,7 @@ import {
   consume_scratch_alloc,
   emit_persistent_alloc,
 } from "../runtime_allocator.ts";
-import { load_instr, store_instr } from "../memory.ts";
+import { align_pointer_instr, load_instr, store_instr } from "../memory.ts";
 import { scratch_heap_global } from "../scratch.ts";
 import type { TypeStaticCtx } from "../type_static.ts";
 import {
@@ -108,7 +108,7 @@ export function emit_runtime_aggregate_value<
       ctx,
       subject,
       "i32.const " + layout.size.toString(),
-      8,
+      runtime_aggregate_alloc_alignment(layout.align),
       "runtime_aggregate",
       "runtime_aggregate.aligned_fields",
       "runtime_aggregate.value",
@@ -122,9 +122,15 @@ export function emit_runtime_aggregate_value<
       "runtime_aggregate.aligned_fields",
       "runtime_aggregate.value",
     );
-    lines.push("global.get $" + heap_name);
-    lines.push("local.set $" + plan.local);
-    lines.push("global.get $" + heap_name);
+    if (layout.align === 16) {
+      lines.push("global.get $" + heap_name);
+      lines.push(align_pointer_instr(layout.align));
+      lines.push("local.tee $" + plan.local);
+    } else {
+      lines.push("global.get $" + heap_name);
+      lines.push("local.set $" + plan.local);
+      lines.push("global.get $" + heap_name);
+    }
     lines.push("i32.const " + layout.size.toString());
     lines.push("i32.add");
     lines.push("global.set $" + heap_name);
@@ -141,6 +147,14 @@ export function emit_runtime_aggregate_value<
 
   lines.push("local.get $" + plan.local);
   return lines.join("\n");
+}
+
+function runtime_aggregate_alloc_alignment(align: number): 4 | 8 | 16 {
+  if (align === 16) {
+    return 16;
+  }
+
+  return 8;
 }
 
 function runtime_aggregate_alloc_heap(

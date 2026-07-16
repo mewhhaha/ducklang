@@ -56,6 +56,8 @@ export type LspInlayHint = {
 
 type OffsetHint = LspInlayHint & { offset: number };
 
+const max_inlay_hint_label_characters = 16;
+
 export function default_inlay_hint_config(): InlayHintConfig {
   return {
     types: true,
@@ -93,6 +95,15 @@ export function inlay_hints(
   ): void => {
     if (offset < range.start || offset >= range.end) {
       return;
+    }
+
+    const label_characters = [...label];
+
+    if (label_characters.length > max_inlay_hint_label_characters) {
+      label = label_characters.slice(
+        0,
+        max_inlay_hint_label_characters - 3,
+      ).join("") + "...";
     }
 
     if (

@@ -1,4 +1,34 @@
+import type { NumType } from "./op.ts";
+
 export type Wat = string;
+
+export function wat_number(type: NumType, value: number | bigint): string {
+  if (type !== "f32") {
+    return value.toString();
+  }
+
+  if (typeof value !== "number") {
+    throw new Error("f32 literal must use a number value");
+  }
+
+  if (Number.isNaN(value)) {
+    return "nan";
+  }
+
+  if (value === Infinity) {
+    return "inf";
+  }
+
+  if (value === -Infinity) {
+    return "-inf";
+  }
+
+  if (Object.is(value, -0)) {
+    return "-0";
+  }
+
+  return Math.fround(value).toString();
+}
 
 export function indent(text: string, spaces: number): string {
   const pad = " ".repeat(spaces);

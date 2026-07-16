@@ -154,11 +154,21 @@ export class ParserParams extends ParserCursor {
     }
 
     if (this.match_symbol("[")) {
-      return this.parse_array_pattern();
+      return this.parse_bracket_pattern();
     }
 
     if (this.match_symbol("{")) {
-      return this.parse_record_pattern();
+      if (
+        this.peek().kind === "name" ||
+        (this.peek().kind === "symbol" &&
+          (this.peek().text === "." || this.peek().text === "}"))
+      ) {
+        return this.parse_shape_pattern();
+      }
+
+      throw this.error(
+        "Product patterns use `{ .name = pattern }` or positional `[...]`",
+      );
     }
 
     return this.parse_binding_pattern("default");
@@ -235,23 +245,27 @@ export class ParserParams extends ParserCursor {
     }
 
     const entries = [this.parse_product_pattern_entry()];
+    const first = entries[0];
+    expect(first, "Missing parenthesized pattern");
+    expect(
+      first.label === undefined,
+      "Product patterns use `[...]`; parentheses only group patterns",
+    );
 
     if (this.match_symbol(")")) {
-      const entry = entries[0];
-      expect(entry, "Missing parenthesized pattern");
-
-      if (entry.label === undefined) {
-        return entry.pattern;
-      }
-
-      return { tag: "product", entries };
+      return first.pattern;
     }
 
     this.expect_symbol(",");
     this.skip_newlines();
 
     while (true) {
-      entries.push(this.parse_product_pattern_entry());
+      const entry = this.parse_product_pattern_entry();
+      expect(
+        entry.label === undefined,
+        "Product patterns use `[...]`; parentheses only group named entries",
+      );
+      entries.push(entry);
 
       if (this.match_symbol(")")) {
         break;
@@ -289,13 +303,13 @@ export class ParserParams extends ParserCursor {
     return entry;
   }
 
-  private parse_array_pattern(): Pattern {
+  private parse_bracket_pattern(): Pattern {
     this.skip_newlines();
     const items: Pattern[] = [];
     let rest: Pattern | undefined;
 
     if (this.match_symbol("]")) {
-      return { tag: "array", items, rest };
+      return { tag: "product", entries: [] };
     }
 
     while (true) {
@@ -316,47 +330,48 @@ export class ParserParams extends ParserCursor {
       this.skip_newlines();
     }
 
-    return { tag: "array", items, rest };
+    if (rest !== undefined) {
+      return { tag: "array", items, rest };
+    }
+
+    return {
+      tag: "product",
+      entries: items.map((pattern) => ({ pattern })),
+    };
   }
 
-  private parse_record_pattern(): Pattern {
+  private parse_shape_pattern(): Pattern {
     this.skip_newlines();
-    const fields: import("./ast.ts").RecordPatternField[] = [];
-    let rest: Pattern | undefined;
+    const entries: import("./ast.ts").ProductPatternEntry[] = [];
+    const names = new Set<string>();
 
     while (!this.match_symbol("}")) {
-      if (this.match_rest_prefix()) {
-        rest = this.parse_pattern();
-        this.skip_newlines();
-        this.expect_symbol("}");
-        break;
-      }
-
-      const name = this.expect_name("Expected record pattern field");
-      expect_snake_case(name, "Record pattern field");
-      this.expect_param_name(name);
+      const explicit = this.match_symbol(".");
+      const label = this.expect_name("Expected product pattern label");
+      expect_snake_case(label, "Product pattern label");
+      expect(!names.has(label), "Duplicate product pattern label: " + label);
+      names.add(label);
       let pattern: Pattern = {
         tag: "binding",
-        name,
+        name: label,
         mode: "default",
         annotation: undefined,
       };
 
-      if (this.match_symbol(":")) {
+      if (explicit && this.match_symbol("=")) {
         pattern = this.parse_pattern();
       }
 
-      fields.push({ name, pattern });
+      entries.push({ label, pattern });
 
-      if (this.match_symbol("}")) {
-        break;
+      if (this.match_symbol(",")) {
+        this.skip_newlines();
+      } else {
+        this.skip_newlines();
       }
-
-      this.expect_symbol(",");
-      this.skip_newlines();
     }
 
-    return { tag: "record", fields, rest };
+    return { tag: "product", entries };
   }
 
   protected match_rest_prefix(): boolean {

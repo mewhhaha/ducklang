@@ -76,7 +76,7 @@ export function code_actions(
     }
   }
 
-  if (diagnostic_codes.has("IX2202")) {
+  if (diagnostic_codes.has("DUCK2202")) {
     const removable: Array<Extract<Stmt, { tag: "bind" }>> = [];
 
     for (const statement of source.statements) {
@@ -149,9 +149,9 @@ export function code_actions(
     }
   }
 
-  if (diagnostic_codes.has("IX2302")) {
+  if (diagnostic_codes.has("DUCK2302")) {
     for (const diagnostic of diagnostics) {
-      if (diagnostic.code !== "IX2302") {
+      if (diagnostic.code !== "DUCK2302") {
         continue;
       }
 
@@ -207,8 +207,90 @@ export function code_actions(
     }
   }
 
+  if (diagnostic_codes.has("DUCK2404")) {
+    for (const diagnostic of diagnostics) {
+      if (diagnostic.code !== "DUCK2404") {
+        continue;
+      }
+
+      const statement = source.statements.find((candidate) =>
+        candidate.tag === "index_assign" &&
+        overlaps(
+          source_span(candidate),
+          positions.offsets_from_range(diagnostic.range),
+        )
+      );
+
+      if (statement === undefined || statement.tag !== "index_assign") {
+        continue;
+      }
+
+      const span = source_span(statement);
+      const mutation = syntax.text.slice(span.start, span.end);
+      const binding = source.statements.find((candidate) =>
+        candidate.tag === "bind" && candidate.name === statement.name
+      );
+      let empty_value = '""';
+
+      if (
+        binding !== undefined && binding.tag === "bind" &&
+        binding.annotation === "Bytes"
+      ) {
+        empty_value = "Bytes.empty";
+      }
+
+      add_action(
+        actions,
+        syntax.text,
+        uri,
+        version,
+        "Rebuild and shadow frozen " + statement.name,
+        "quickfix",
+        span.start,
+        span.end,
+        "let " + statement.name + " = append(" + statement.name + ", " +
+          empty_value + ")\n" + mutation,
+        diagnostics,
+      );
+    }
+  }
+
   for (const diagnostic of diagnostics) {
-    if (diagnostic.code === "IX2201") {
+    if (
+      diagnostic.code === "DUCK2306" &&
+      diagnostic.message ===
+        "Cannot index-assign Text; convert it with Utf8.encode first"
+    ) {
+      const statement = source.statements.find((candidate) =>
+        candidate.tag === "index_assign" &&
+        overlaps(
+          source_span(candidate),
+          positions.offsets_from_range(diagnostic.range),
+        )
+      );
+
+      if (statement === undefined || statement.tag !== "index_assign") {
+        continue;
+      }
+
+      const span = source_span(statement);
+      const mutation = syntax.text.slice(span.start, span.end);
+      add_action(
+        actions,
+        syntax.text,
+        uri,
+        version,
+        "Encode " + statement.name + " before byte mutation",
+        "quickfix",
+        span.start,
+        span.end,
+        "let " + statement.name + " = Utf8.encode(" + statement.name +
+          ")\n" + mutation,
+        diagnostics,
+      );
+    }
+
+    if (diagnostic.code === "DUCK2201") {
       const span = positions.offsets_from_range(diagnostic.range);
       const occurrence = [...index.occurrences.values()].find((candidate) =>
         overlaps(candidate.span, span)
@@ -262,7 +344,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2304") {
+    if (diagnostic.code === "DUCK2304") {
       const missing = /^Missing struct field: ([A-Za-z_][A-Za-z0-9_]*)$/.exec(
         diagnostic.message,
       );
@@ -311,7 +393,7 @@ export function code_actions(
 
       const value_span = source_span(binding.value);
       const close = syntax.text.lastIndexOf(
-        binding.value.tag === "product" ? ")" : "]",
+        "]",
         value_span.end,
       );
 
@@ -333,7 +415,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2305") {
+    if (diagnostic.code === "DUCK2305") {
       const mismatch =
         /^Union case [A-Za-z_][A-Za-z0-9_]* expects (Bool|Int), got /
           .exec(diagnostic.message);
@@ -388,46 +470,7 @@ export function code_actions(
       );
     }
 
-    if (diagnostic.code === "IX2404") {
-      const statement = source.statements.find((candidate) =>
-        candidate.tag === "index_assign" &&
-        overlaps(
-          source_span(candidate),
-          positions.offsets_from_range(diagnostic.range),
-        )
-      );
-
-      if (statement === undefined || statement.tag !== "index_assign") {
-        continue;
-      }
-
-      const binding = source.statements.find((candidate) =>
-        candidate.tag === "bind" && candidate.name === statement.name &&
-        (candidate.annotation === "Text" || candidate.value.tag === "freeze")
-      );
-
-      if (binding === undefined || binding.tag !== "bind") {
-        continue;
-      }
-
-      const span = source_span(statement);
-      const mutation = syntax.text.slice(span.start, span.end);
-      add_action(
-        actions,
-        syntax.text,
-        uri,
-        version,
-        "Rebuild and shadow frozen " + statement.name,
-        "quickfix",
-        span.start,
-        span.end,
-        "let " + statement.name + " = append(" + statement.name +
-          ', "")\n' + mutation,
-        diagnostics,
-      );
-    }
-
-    if (diagnostic.code === "IX2403") {
+    if (diagnostic.code === "DUCK2403") {
       const diagnostic_span = positions.offsets_from_range(diagnostic.range);
       const scratch = source.statements.map(statement_expression).find((expr) =>
         expr !== undefined && expr.tag === "scratch" &&

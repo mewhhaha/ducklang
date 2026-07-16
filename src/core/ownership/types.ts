@@ -29,6 +29,7 @@ export type CoreOwnership =
   };
 
 export type CoreOwnershipPointerReason =
+  | "bytes"
   | "text"
   | "closure"
   | "runtime_union"

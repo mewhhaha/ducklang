@@ -1,4 +1,10 @@
-import { specialize_prim_for_operands } from "../op.ts";
+import {
+  type NumType,
+  Prim,
+  specialize_prim_for_operands,
+  type ValType,
+} from "../op.ts";
+import { Callable } from "../trait.ts";
 import { expect } from "../expect.ts";
 import type {
   ArrayLengthExpr,
@@ -28,10 +34,15 @@ import {
   source_diagnostic,
   type SourceDiagnostic,
 } from "./semantic_diagnostic.ts";
-import { prim_result_type, prim_returns_bool } from "./numeric.ts";
+import {
+  numeric_builtin_call,
+  prim_result_type,
+  prim_returns_bool,
+} from "./numeric.ts";
 import { dynamic_index_type_from_fields } from "./runtime_struct.ts";
 import { format_type_expr } from "./type_expr.ts";
 import { front_type_from_type_name, same_type } from "./types.ts";
+import { f32x4_builtin_call, validate_f32x4_lane_argument } from "./f32x4.ts";
 import { scan_source, source_tokens } from "./tokenize.ts";
 import { validate_union_payload_type } from "./union_payload.ts";
 import { fixed_array_length } from "./fixed_array_type.ts";
@@ -69,11 +80,12 @@ type SemanticHandler = {
 };
 
 export type SemanticValidationOptions = {
-  scope?: "all" | "bool-representation";
+  scope?: "all" | "bool-representation" | "core-representation";
   warnings?: boolean;
 };
 
 const bool_route_diagnostics = new WeakSet<SourceDiagnostic>();
+const core_route_diagnostics = new WeakSet<SourceDiagnostic>();
 const semantic_unit_atom_name = "()";
 
 export function validate_frontend_semantics(
@@ -122,6 +134,12 @@ export function validate_frontend_semantics(
     );
   }
 
+  if (options.scope === "core-representation") {
+    return diagnostics.filter((diagnostic) =>
+      core_route_diagnostics.has(diagnostic)
+    );
+  }
+
   return diagnostics;
 }
 
@@ -132,7 +150,54 @@ function bool_route_diagnostic(
 ): SourceDiagnostic {
   const diagnostic = source_diagnostic(code, "error", message, subject);
   bool_route_diagnostics.add(diagnostic);
+  core_route_diagnostics.add(diagnostic);
   return diagnostic;
+}
+
+function core_route_diagnostic(
+  code: string,
+  message: string,
+  subject: object,
+): SourceDiagnostic {
+  const diagnostic = source_diagnostic(code, "error", message, subject);
+  core_route_diagnostics.add(diagnostic);
+  return diagnostic;
+}
+
+function value_representation_diagnostic(
+  code: string,
+  message: string,
+  subject: object,
+  expected: FrontType,
+  value: FrontExpr,
+  env: SemanticEnv,
+): SourceDiagnostic | undefined {
+  if (bool_value_representation_mismatch(expected, value, env)) {
+    return bool_route_diagnostic(code, message, subject);
+  }
+
+  const actual = infer_type(value, env);
+
+  if (text_encoding_mismatch(expected, actual)) {
+    return core_route_diagnostic(code, message, subject);
+  }
+
+  return undefined;
+}
+
+function text_encoding_mismatch(
+  expected: FrontType,
+  actual: FrontType,
+): boolean {
+  if (expected.tag !== "text" || actual.tag !== "text") {
+    return false;
+  }
+
+  if (expected.encoding === "bytes") {
+    return actual.encoding !== "bytes";
+  }
+
+  return actual.encoding === "bytes";
 }
 
 function effect_index(
@@ -231,7 +296,7 @@ function validate_statement(
       } catch (error) {
         if (error instanceof Error) {
           diagnostics.push(
-            source_diagnostic("IX2101", "error", error.message, stmt.value),
+            source_diagnostic("DUCK2101", "error", error.message, stmt.value),
           );
         } else {
           throw error;
@@ -318,6 +383,8 @@ function validate_statement(
       }
     }
 
+    const binding_fields = contextual_binding_fields(stmt, env);
+
     if (binding === undefined) {
       binding = {
         type,
@@ -325,7 +392,7 @@ function validate_statement(
         value: stmt.value,
         value_env,
         resume_input_type,
-        struct_fields: struct_fields_of(stmt.value, env),
+        struct_fields: binding_fields,
         declaration: stmt,
         used: false,
       };
@@ -335,7 +402,7 @@ function validate_statement(
       binding.type = type;
       binding.type_annotation = stmt.type_annotation;
       binding.resume_input_type = resume_input_type;
-      binding.struct_fields = struct_fields_of(stmt.value, env);
+      binding.struct_fields = binding_fields;
     }
 
     env.bindings.set(stmt.name, binding);
@@ -369,10 +436,12 @@ function validate_statement(
       if (
         previous.type.tag === "bool" || value_type.tag === "bool"
       ) {
-        diagnostics.push(bool_route_diagnostic("IX2301", message, stmt));
+        diagnostics.push(bool_route_diagnostic("DUCK2301", message, stmt));
+      } else if (text_encoding_mismatch(previous.type, value_type)) {
+        diagnostics.push(core_route_diagnostic("DUCK2301", message, stmt));
       } else {
         diagnostics.push(source_diagnostic(
-          "IX2301",
+          "DUCK2301",
           "error",
           message,
           stmt,
@@ -448,13 +517,13 @@ function validate_statement(
         if (error instanceof Error) {
           if (struct_fields_include_bool(collection_type.field_types, env)) {
             diagnostics.push(bool_route_diagnostic(
-              "IX2304",
+              "DUCK2304",
               error.message,
               stmt.collection,
             ));
           } else {
             diagnostics.push(source_diagnostic(
-              "IX2304",
+              "DUCK2304",
               "error",
               error.message,
               stmt.collection,
@@ -509,6 +578,32 @@ function validate_statement(
 
     const binding = env.bindings.get(stmt.name);
 
+    if (binding && binding.type.tag === "text") {
+      if (binding.type.encoding !== "bytes") {
+        diagnostics.push(core_route_diagnostic(
+          "DUCK2306",
+          "Cannot index-assign Text; convert it with Utf8.encode first",
+          stmt,
+        ));
+        return;
+      }
+
+      const value_type = infer_type(stmt.value, env);
+
+      if (
+        value_type.tag !== "unknown" &&
+        (value_type.tag !== "int" || value_type.type !== "i32")
+      ) {
+        diagnostics.push(core_route_diagnostic(
+          "DUCK2306",
+          "Bytes index assignment expects I32, got " + type_name(value_type),
+          stmt.value,
+        ));
+      }
+
+      return;
+    }
+
     if (
       !binding || binding.type.tag !== "struct" ||
       !binding.type.field_types
@@ -534,13 +629,13 @@ function validate_statement(
       if (error instanceof Error) {
         if (struct_fields_include_bool(binding.type.field_types, env)) {
           diagnostics.push(bool_route_diagnostic(
-            "IX2304",
+            "DUCK2304",
             error.message,
             stmt,
           ));
         } else {
           diagnostics.push(source_diagnostic(
-            "IX2304",
+            "DUCK2304",
             "error",
             error.message,
             stmt,
@@ -555,13 +650,18 @@ function validate_statement(
 
     const actual = infer_type(stmt.value, env);
 
-    if (bool_value_representation_mismatch(expected, stmt.value, env)) {
-      diagnostics.push(bool_route_diagnostic(
-        "IX2306",
-        "Struct index update expects " + type_name(expected) + ", got " +
-          type_name(actual),
-        stmt.value,
-      ));
+    const representation_diagnostic = value_representation_diagnostic(
+      "DUCK2306",
+      "Struct index update expects " + type_name(expected) + ", got " +
+        type_name(actual),
+      stmt.value,
+      expected,
+      stmt.value,
+      env,
+    );
+
+    if (representation_diagnostic) {
+      diagnostics.push(representation_diagnostic);
     }
 
     return;
@@ -575,7 +675,7 @@ function validate_statement(
       stmt.value.func.object.tag !== "var"
     ) {
       diagnostics.push(source_diagnostic(
-        "IX2307",
+        "DUCK2307",
         "error",
         "Effect bind must call a declared effect operation",
         stmt.value,
@@ -588,7 +688,7 @@ function validate_statement(
 
     if (effect === undefined) {
       diagnostics.push(source_diagnostic(
-        "IX2307",
+        "DUCK2307",
         "error",
         "Unknown effect: " + effect_name,
         stmt.value.func.object,
@@ -603,7 +703,7 @@ function validate_statement(
 
     if (operation === undefined) {
       diagnostics.push(source_diagnostic(
-        "IX2307",
+        "DUCK2307",
         "error",
         "Unknown effect operation: " + effect_name + "." + operation_name,
         stmt.value.func,
@@ -749,6 +849,16 @@ function validate_expr(
     const left_type = infer_type(expr.left, env);
     const right_type = infer_type(expr.right, env);
 
+    if (left_type.tag === "f32x4" || right_type.tag === "f32x4") {
+      diagnostics.push(source_diagnostic(
+        "DUCK2302",
+        "error",
+        "F32x4 values require explicit f32x4_* builtins",
+        expr,
+      ));
+      return;
+    }
+
     if (left_type.tag === "bool" || right_type.tag === "bool") {
       const equality = expr.prim === "i32.eq" || expr.prim === "i32.ne";
 
@@ -766,7 +876,7 @@ function validate_expr(
       }
 
       diagnostics.push(bool_route_diagnostic(
-        "IX2302",
+        "DUCK2302",
         message,
         expr,
       ));
@@ -782,7 +892,7 @@ function validate_expr(
     } catch (error) {
       if (error instanceof Error) {
         diagnostics.push(
-          source_diagnostic("IX2302", "error", error.message, expr),
+          source_diagnostic("DUCK2302", "error", error.message, expr),
         );
         return;
       }
@@ -803,10 +913,10 @@ function validate_expr(
       if (
         condition.tag !== "unknown" &&
         condition.tag !== "bool" &&
-        (condition.tag !== "int" || condition.type === "i64")
+        (condition.tag !== "int" || condition.type !== "i32")
       ) {
         diagnostics.push(source_diagnostic(
-          "IX2303",
+          "DUCK2303",
           "error",
           "If condition expects Bool or I32, got " + type_name(condition),
           expr.cond,
@@ -884,7 +994,7 @@ function validate_expr(
       } catch (error) {
         if (error instanceof Error) {
           diagnostics.push(
-            source_diagnostic("IX2304", "error", error.message, expr),
+            source_diagnostic("DUCK2304", "error", error.message, expr),
           );
           return;
         }
@@ -897,6 +1007,44 @@ function validate_expr(
   }
 
   if (expr.tag === "app") {
+    const f32x4_call = f32x4_builtin_call(expr);
+
+    if (
+      f32x4_call && expr.func.tag === "var" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      const before = diagnostics.length;
+
+      for (const arg of f32x4_call.args) {
+        validate_expr(arg, env, diagnostics, check_comptime);
+      }
+
+      if (diagnostics.length === before) {
+        validate_f32x4_builtin_call(expr, f32x4_call, env, diagnostics);
+      }
+
+      return;
+    }
+
+    const numeric_call = numeric_builtin_call(expr);
+
+    if (
+      numeric_call && expr.func.tag === "var" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      const before = diagnostics.length;
+
+      for (const arg of numeric_call.args) {
+        validate_expr(arg, env, diagnostics, check_comptime);
+      }
+
+      if (diagnostics.length === before) {
+        validate_numeric_builtin_call(expr, numeric_call, env, diagnostics);
+      }
+
+      return;
+    }
+
     const before = diagnostics.length;
     validate_expr(expr.func, env, diagnostics, check_comptime);
 
@@ -907,6 +1055,16 @@ function validate_expr(
     if (diagnostics.length === before) {
       validate_union_constructor(expr, env, diagnostics);
       validate_call_arguments(expr, env, diagnostics, check_comptime);
+
+      if (expr.func.tag === "var" && expr.func.name === "Bytes.generate") {
+        validate_bytes_generate_call(expr, env, diagnostics);
+      }
+
+      validate_runtime_buffer_builtin_call(expr, env, diagnostics);
+
+      if (expr.func.tag === "var" && expr.func.name === "append") {
+        validate_append_buffer_call(expr, env, diagnostics);
+      }
 
       if (expr.func.tag === "var" && expr.func.name === "get") {
         const index = expr.args[1];
@@ -963,7 +1121,7 @@ function validate_expr(
       } catch (error) {
         if (error instanceof Error) {
           diagnostics.push(
-            source_diagnostic("IX2101", "error", error.message, expr),
+            source_diagnostic("DUCK2101", "error", error.message, expr),
           );
         } else {
           throw error;
@@ -1014,19 +1172,18 @@ function validate_expr(
       if (state.annotation !== undefined) {
         state_type = resolve_type_name(state.annotation, handler_env);
 
-        if (
-          bool_value_representation_mismatch(
-            state_type,
-            state.value,
-            handler_env,
-          )
-        ) {
-          diagnostics.push(bool_route_diagnostic(
-            "IX2306",
-            "Handler state " + state.name + " expects " +
-              type_name(state_type) + ", got " + type_name(value_type),
-            state.value,
-          ));
+        const representation_diagnostic = value_representation_diagnostic(
+          "DUCK2306",
+          "Handler state " + state.name + " expects " +
+            type_name(state_type) + ", got " + type_name(value_type),
+          state.value,
+          state_type,
+          state.value,
+          handler_env,
+        );
+
+        if (representation_diagnostic) {
+          diagnostics.push(representation_diagnostic);
         }
       }
 
@@ -1150,7 +1307,7 @@ function validate_expr(
         )
       ) {
         diagnostics.push(bool_route_diagnostic(
-          "IX2306",
+          "DUCK2306",
           "Handler return parameter " + param.name + " expects " +
             type_name(annotated_type) + ", got " + type_name(input_type),
           expr.body,
@@ -1197,6 +1354,17 @@ function validate_expr(
         env,
         diagnostics,
       );
+    }
+
+    return;
+  }
+
+  if (expr.tag === "type_with") {
+    validate_expr(expr.base, env, diagnostics, check_comptime);
+
+    for (const member of expr.members) {
+      validate_expr(member.name, env, diagnostics, check_comptime);
+      validate_expr(member.value, env, diagnostics, check_comptime);
     }
 
     return;
@@ -1261,13 +1429,13 @@ function validate_expr(
           struct_fields_include_bool(object_type.field_types, env)
         ) {
           diagnostics.push(bool_route_diagnostic(
-            "IX2304",
+            "DUCK2304",
             error.message,
             expr,
           ));
         } else {
           diagnostics.push(source_diagnostic(
-            "IX2304",
+            "DUCK2304",
             "error",
             error.message,
             expr,
@@ -1329,16 +1497,21 @@ function validate_expr(
         const expected = resolve_type_name(declared.type_name, env);
         const actual = infer_type(expr.value, env);
 
-        if (bool_value_representation_mismatch(expected, expr.value, env)) {
-          diagnostics.push(bool_route_diagnostic(
-            "IX2305",
-            "Union case " + expr.name + " expects " + type_name(expected) +
-              ", got " + type_name(actual),
-            expr,
-          ));
+        const representation_diagnostic = value_representation_diagnostic(
+          "DUCK2305",
+          "Union case " + expr.name + " expects " + type_name(expected) +
+            ", got " + type_name(actual),
+          expr,
+          expected,
+          expr.value,
+          env,
+        );
+
+        if (representation_diagnostic) {
+          diagnostics.push(representation_diagnostic);
         } else {
           diagnostics.push(
-            source_diagnostic("IX2305", "error", error.message, expr),
+            source_diagnostic("DUCK2305", "error", error.message, expr),
           );
         }
 
@@ -1351,15 +1524,218 @@ function validate_expr(
     const expected = resolve_type_name(declared.type_name, env);
     const actual = infer_type(expr.value, env);
 
-    if (bool_value_representation_mismatch(expected, expr.value, env)) {
-      diagnostics.push(bool_route_diagnostic(
-        "IX2305",
-        "Union case " + expr.name + " expects " + type_name(expected) +
-          ", got " + type_name(actual),
-        expr,
-      ));
+    const representation_diagnostic = value_representation_diagnostic(
+      "DUCK2305",
+      "Union case " + expr.name + " expects " + type_name(expected) +
+        ", got " + type_name(actual),
+      expr,
+      expected,
+      expr.value,
+      env,
+    );
+
+    if (representation_diagnostic) {
+      diagnostics.push(representation_diagnostic);
     }
   }
+}
+
+function validate_bytes_generate_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  if (expr.args.length !== 2) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate expects 2 arguments, got " + expr.args.length.toString(),
+      expr,
+    ));
+    return;
+  }
+
+  const length = expr.args[0];
+  const generator = expr.args[1];
+  expect(length, "Missing Bytes.generate length");
+  expect(generator, "Missing Bytes.generate callback");
+  const length_type = infer_type(length, env);
+
+  if (
+    length_type.tag !== "unknown" &&
+    (length_type.tag !== "int" || length_type.type !== "i32")
+  ) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate length expects I32, got " + type_name(length_type),
+      length,
+    ));
+  }
+
+  const callable = resolve_called_function(generator, env);
+
+  if (callable === undefined) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate callback must be a function",
+      generator,
+    ));
+    return;
+  }
+
+  if (callable_parameter_count(callable) !== 1) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate callback expects 1 I32 parameter",
+      generator,
+    ));
+    return;
+  }
+
+  const parameter_type = callable_parameter_type(callable, 0);
+
+  if (
+    parameter_type.tag !== "unknown" &&
+    (parameter_type.tag !== "int" || parameter_type.type !== "i32")
+  ) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate callback parameter expects I32, got " +
+        type_name(parameter_type),
+      generator,
+    ));
+  }
+
+  const result_type = callable_result_type(callable, new Set());
+
+  if (
+    result_type.tag !== "unknown" &&
+    (result_type.tag !== "int" || result_type.type !== "i32")
+  ) {
+    diagnostics.push(source_diagnostic(
+      "DUCK2307",
+      "error",
+      "Bytes.generate callback result expects I32, got " +
+        type_name(result_type),
+      generator,
+    ));
+  }
+}
+
+function validate_runtime_buffer_builtin_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  if (expr.func.tag !== "var") {
+    return;
+  }
+
+  const name = expr.func.name;
+
+  if (
+    name !== "Utf8.encode" && name !== "Utf8.decode" &&
+    name !== "format_i32" && name !== "format_i64" &&
+    name !== "format_f32"
+  ) {
+    return;
+  }
+
+  let expected_args = 1;
+
+  if (name === "format_f32") {
+    expected_args = 2;
+  }
+
+  if (expr.args.length !== expected_args) {
+    diagnostics.push(core_route_diagnostic(
+      "DUCK2307",
+      name + " expects " + expected_args.toString() + " arguments, got " +
+        expr.args.length.toString(),
+      expr,
+    ));
+    return;
+  }
+
+  const arg = expr.args[0];
+  expect(arg, "Missing " + name + " argument");
+  const actual = infer_type(arg, env);
+  let expected: FrontType;
+
+  if (name === "Utf8.encode") {
+    expected = { tag: "text" };
+  } else if (name === "Utf8.decode") {
+    expected = { tag: "text", encoding: "bytes" };
+  } else if (name === "format_i64") {
+    expected = { tag: "int", type: "i64" };
+  } else if (name === "format_f32") {
+    expected = { tag: "int", type: "f32" };
+  } else {
+    expected = { tag: "int", type: "i32" };
+  }
+
+  if (actual.tag !== "unknown" && !same_type(expected, actual)) {
+    diagnostics.push(core_route_diagnostic(
+      "DUCK2307",
+      name + " expects " + type_name(expected) + ", got " + type_name(actual),
+      arg,
+    ));
+  }
+
+  if (name !== "format_f32") {
+    return;
+  }
+
+  const precision = expr.args[1];
+  expect(precision, "Missing format_f32 precision argument");
+  const precision_type = infer_type(precision, env);
+
+  if (
+    precision_type.tag === "unknown" ||
+    same_type({ tag: "int", type: "i32" }, precision_type)
+  ) {
+    return;
+  }
+
+  diagnostics.push(core_route_diagnostic(
+    "DUCK2307",
+    "format_f32 precision expects I32, got " + type_name(precision_type),
+    precision,
+  ));
+}
+
+function validate_append_buffer_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  if (expr.args.length !== 2) {
+    return;
+  }
+
+  const left = expr.args[0];
+  const right = expr.args[1];
+  expect(left, "Missing append left argument");
+  expect(right, "Missing append right argument");
+  const left_type = infer_type(left, env);
+  const right_type = infer_type(right, env);
+
+  if (
+    left_type.tag !== "text" || right_type.tag !== "text" ||
+    left_type.encoding === right_type.encoding
+  ) {
+    return;
+  }
+
+  diagnostics.push(core_route_diagnostic(
+    "DUCK2307",
+    "append arguments must both be Text or both be Bytes",
+    expr,
+  ));
 }
 
 function validate_union_constructor(
@@ -1406,16 +1782,21 @@ function validate_union_constructor(
       const expected = resolve_type_name(declared.type_name, env);
       const actual = infer_type(payload, env);
 
-      if (bool_value_representation_mismatch(expected, payload, env)) {
-        diagnostics.push(bool_route_diagnostic(
-          "IX2305",
-          "Union case " + expr.func.name + " expects " +
-            type_name(expected) + ", got " + type_name(actual),
-          expr,
-        ));
+      const representation_diagnostic = value_representation_diagnostic(
+        "DUCK2305",
+        "Union case " + expr.func.name + " expects " +
+          type_name(expected) + ", got " + type_name(actual),
+        expr,
+        expected,
+        payload,
+        env,
+      );
+
+      if (representation_diagnostic) {
+        diagnostics.push(representation_diagnostic);
       } else {
         diagnostics.push(
-          source_diagnostic("IX2305", "error", error.message, expr),
+          source_diagnostic("DUCK2305", "error", error.message, expr),
         );
       }
 
@@ -1428,13 +1809,18 @@ function validate_union_constructor(
   const expected = resolve_type_name(declared.type_name, env);
   const actual = infer_type(payload, env);
 
-  if (bool_value_representation_mismatch(expected, payload, env)) {
-    diagnostics.push(bool_route_diagnostic(
-      "IX2305",
-      "Union case " + expr.func.name + " expects " + type_name(expected) +
-        ", got " + type_name(actual),
-      expr,
-    ));
+  const representation_diagnostic = value_representation_diagnostic(
+    "DUCK2305",
+    "Union case " + expr.func.name + " expects " + type_name(expected) +
+      ", got " + type_name(actual),
+    expr,
+    expected,
+    payload,
+    env,
+  );
+
+  if (representation_diagnostic) {
+    diagnostics.push(representation_diagnostic);
   }
 }
 
@@ -1497,21 +1883,21 @@ function validate_call_arguments(
     if (binding !== undefined && binding.resume_input_type !== undefined) {
       const arg = expr.args[0];
 
-      if (
-        arg !== undefined &&
-        bool_value_representation_mismatch(
-          binding.resume_input_type,
-          arg,
-          env,
-        )
-      ) {
-        diagnostics.push(bool_route_diagnostic(
-          "IX2307",
+      if (arg !== undefined) {
+        const representation_diagnostic = value_representation_diagnostic(
+          "DUCK2307",
           "Resumption " + expr.func.name + " expects " +
             type_name(binding.resume_input_type) + ", got " +
             type_name(infer_type(arg, env)),
           arg,
-        ));
+          binding.resume_input_type,
+          arg,
+          env,
+        );
+
+        if (representation_diagnostic) {
+          diagnostics.push(representation_diagnostic);
+        }
       }
 
       return;
@@ -1546,14 +1932,19 @@ function validate_call_arguments(
         const expected = resolve_type_name(param.type_name, env);
         const actual = infer_type(arg, env);
 
-        if (bool_value_representation_mismatch(expected, arg, env)) {
-          diagnostics.push(bool_route_diagnostic(
-            "IX2307",
-            "Call to " + effect.name + "." + operation.name + " argument " +
-              (index + 1).toString() + " expects " + type_name(expected) +
-              ", got " + type_name(actual),
-            arg,
-          ));
+        const representation_diagnostic = value_representation_diagnostic(
+          "DUCK2307",
+          "Call to " + effect.name + "." + operation.name + " argument " +
+            (index + 1).toString() + " expects " + type_name(expected) +
+            ", got " + type_name(actual),
+          arg,
+          expected,
+          arg,
+          env,
+        );
+
+        if (representation_diagnostic) {
+          diagnostics.push(representation_diagnostic);
         }
       }
 
@@ -1628,20 +2019,26 @@ function validate_call_arguments(
 
     const actual = infer_type(arg, env);
 
-    if (bool_value_representation_mismatch(expected, arg, env)) {
-      let parameter_label = "";
+    const message_prefix = "Call to " + target_name + " argument " +
+      (index + 1).toString();
+    let parameter_label = "";
 
-      if (param !== undefined) {
-        parameter_label = " for parameter " + param.name;
-      }
+    if (param !== undefined) {
+      parameter_label = " for parameter " + param.name;
+    }
 
-      diagnostics.push(bool_route_diagnostic(
-        "IX2307",
-        "Call to " + target_name + " argument " +
-          (index + 1).toString() + parameter_label +
-          " expects " + type_name(expected) + ", got " + type_name(actual),
-        arg,
-      ));
+    const representation_diagnostic = value_representation_diagnostic(
+      "DUCK2307",
+      message_prefix + parameter_label + " expects " + type_name(expected) +
+        ", got " + type_name(actual),
+      arg,
+      expected,
+      arg,
+      env,
+    );
+
+    if (representation_diagnostic) {
+      diagnostics.push(representation_diagnostic);
     }
   }
 
@@ -1742,10 +2139,10 @@ function validate_callable_argument(
       format_type_expr(expected) + ", got " + callable_type_name(actual);
 
     if (has_bool_mismatch) {
-      diagnostics.push(bool_route_diagnostic("IX2307", message, arg));
+      diagnostics.push(bool_route_diagnostic("DUCK2307", message, arg));
     } else {
       diagnostics.push(source_diagnostic(
-        "IX2307",
+        "DUCK2307",
         "error",
         message,
         arg,
@@ -1791,7 +2188,7 @@ function validate_callable_argument(
   }
 
   diagnostics.push(bool_route_diagnostic(
-    "IX2307",
+    "DUCK2307",
     "Call to " + target_name + " argument " + (index + 1).toString() +
       parameter_label + " expects " + format_type_expr(expected) +
       ", got " + callable_type_name(actual),
@@ -1913,7 +2310,7 @@ function same_callable_type(
         right_type,
         left.target_env,
         right.target_env,
-      )
+      ) || text_encoding_mismatch(left_type, right_type)
     ) {
       return false;
     }
@@ -1921,12 +2318,18 @@ function same_callable_type(
 
   const left_result = callable_result_type(left, active_calls);
   const right_result = callable_result_type(right, active_calls);
-  return !bool_representation_mismatch(
-    left_result,
-    right_result,
-    left.target_env,
-    right.target_env,
-  );
+  if (
+    bool_representation_mismatch(
+      left_result,
+      right_result,
+      left.target_env,
+      right.target_env,
+    )
+  ) {
+    return false;
+  }
+
+  return !text_encoding_mismatch(left_result, right_result);
 }
 
 function validate_struct_field_values(
@@ -1945,13 +2348,18 @@ function validate_struct_field_values(
     const expected = resolve_type_name(declared.type_name, env);
     const actual = infer_type(value.value, env);
 
-    if (bool_value_representation_mismatch(expected, value.value, env)) {
-      diagnostics.push(bool_route_diagnostic(
-        "IX2306",
-        "Struct field " + value.name + " expects " + type_name(expected) +
-          ", got " + type_name(actual),
-        value.value,
-      ));
+    const representation_diagnostic = value_representation_diagnostic(
+      "DUCK2306",
+      "Struct field " + value.name + " expects " + type_name(expected) +
+        ", got " + type_name(actual),
+      value.value,
+      expected,
+      value.value,
+      env,
+    );
+
+    if (representation_diagnostic) {
+      diagnostics.push(representation_diagnostic);
     }
   }
 }
@@ -2007,7 +2415,7 @@ function validate_branch_types(
 
     if (parameter_count !== callable_parameter_count(else_callable)) {
       diagnostics.push(source_diagnostic(
-        "IX2306",
+        "DUCK2306",
         "error",
         "Conditional function branches have incompatible parameter counts " +
           parameter_count.toString() + " and " +
@@ -2021,44 +2429,53 @@ function validate_branch_types(
       const then_param = callable_parameter_type(then_callable, index);
       const else_param = callable_parameter_type(else_callable, index);
 
-      if (
-        !bool_representation_mismatch(
-          then_param,
-          else_param,
-          then_callable.target_env,
-          else_callable.target_env,
-        )
-      ) {
+      const bool_mismatch = bool_representation_mismatch(
+        then_param,
+        else_param,
+        then_callable.target_env,
+        else_callable.target_env,
+      );
+      const text_mismatch = text_encoding_mismatch(then_param, else_param);
+
+      if (!bool_mismatch && !text_mismatch) {
         continue;
       }
 
-      diagnostics.push(bool_route_diagnostic(
-        "IX2306",
-        "Conditional function branches have incompatible parameter " +
-          (index + 1).toString() + " types " + type_name(then_param) +
-          " and " + type_name(else_param),
-        expr,
-      ));
+      const message = "Conditional function branches have incompatible " +
+        "parameter " + (index + 1).toString() + " types " +
+        type_name(then_param) + " and " + type_name(else_param);
+
+      if (bool_mismatch) {
+        diagnostics.push(bool_route_diagnostic("DUCK2306", message, expr));
+      } else {
+        diagnostics.push(core_route_diagnostic("DUCK2306", message, expr));
+      }
+
       return;
     }
 
     const then_result = callable_result_type(then_callable, new Set());
     const else_result = callable_result_type(else_callable, new Set());
 
-    if (
-      bool_representation_mismatch(
-        then_result,
-        else_result,
-        then_callable.target_env,
-        else_callable.target_env,
-      )
-    ) {
-      diagnostics.push(bool_route_diagnostic(
-        "IX2306",
+    const bool_mismatch = bool_representation_mismatch(
+      then_result,
+      else_result,
+      then_callable.target_env,
+      else_callable.target_env,
+    );
+    const text_mismatch = text_encoding_mismatch(then_result, else_result);
+
+    if (bool_mismatch || text_mismatch) {
+      const message =
         "Conditional function branches have incompatible result types " +
-          type_name(then_result) + " and " + type_name(else_result),
-        expr,
-      ));
+        type_name(then_result) + " and " + type_name(else_result);
+
+      if (bool_mismatch) {
+        diagnostics.push(bool_route_diagnostic("DUCK2306", message, expr));
+      } else {
+        diagnostics.push(core_route_diagnostic("DUCK2306", message, expr));
+      }
+
       return;
     }
   }
@@ -2066,22 +2483,22 @@ function validate_branch_types(
   const then_type = infer_type(expr.then_branch, then_env);
   const else_type = infer_type(expr.else_branch, env);
 
-  if (
-    !bool_value_representation_mismatch(
-      then_type,
-      expr.else_branch,
-      env,
-    )
-  ) {
+  const message = "Conditional branches have incompatible types " +
+    type_name(then_type) + " and " + type_name(else_type);
+  const representation_diagnostic = value_representation_diagnostic(
+    "DUCK2306",
+    message,
+    expr,
+    then_type,
+    expr.else_branch,
+    env,
+  );
+
+  if (!representation_diagnostic) {
     return;
   }
 
-  diagnostics.push(bool_route_diagnostic(
-    "IX2306",
-    "Conditional branches have incompatible types " + type_name(then_type) +
-      " and " + type_name(else_type),
-    expr,
-  ));
+  diagnostics.push(representation_diagnostic);
 }
 
 function validate_numeric_boundary(
@@ -2095,7 +2512,7 @@ function validate_numeric_boundary(
   }
 
   diagnostics.push(bool_route_diagnostic(
-    "IX2302",
+    "DUCK2302",
     label + " expects numeric value, got Bool",
     expr,
   ));
@@ -2373,11 +2790,163 @@ function validate_comptime_fail(
   }
 
   diagnostics.push(source_diagnostic(
-    "IX2102",
+    "DUCK2102",
     "error",
     "fail: " + call_message(expr.args),
     expr,
   ));
+}
+
+function validate_numeric_builtin_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  call: NonNullable<ReturnType<typeof numeric_builtin_call>>,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  const expected = Callable.arity(Prim, call.prim);
+
+  if (call.args.length !== expected) {
+    expect(expr.func.tag === "var", "Numeric builtin requires a name");
+    diagnostics.push(source_diagnostic(
+      "DUCK2302",
+      "error",
+      expr.func.name + " expects " + expected + " arguments, got " +
+        call.args.length,
+      expr,
+    ));
+    return;
+  }
+
+  try {
+    let prim = call.prim;
+
+    if (expected === 2) {
+      const left = call.args[0];
+      const right = call.args[1];
+      expect(left, "Missing numeric builtin argument 0");
+      expect(right, "Missing numeric builtin argument 1");
+      prim = specialize_prim_for_operands(
+        prim,
+        numeric_type(left, env),
+        numeric_type(right, env),
+      );
+    }
+
+    const signature = Callable.type(Prim, prim);
+
+    for (let index = 0; index < call.args.length; index += 1) {
+      const arg = call.args[index];
+      const expected_type = signature.args[index];
+      expect(arg, "Missing numeric builtin argument " + index);
+      expect(expected_type, "Missing numeric builtin argument type " + index);
+      const actual_type = numeric_type(arg, env);
+
+      if (actual_type !== undefined && actual_type !== expected_type) {
+        throw new Error(
+          "Numeric builtin argument " + index + " expects " + expected_type +
+            ", got " + actual_type,
+        );
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2302",
+        "error",
+        error.message,
+        expr,
+      ));
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function validate_f32x4_builtin_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  call: NonNullable<ReturnType<typeof f32x4_builtin_call>>,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+): void {
+  const signature = Callable.type(Prim, call.prim);
+
+  if (call.args.length !== signature.args.length) {
+    expect(expr.func.tag === "var", "F32x4 builtin requires a name");
+    diagnostics.push(source_diagnostic(
+      "DUCK2302",
+      "error",
+      expr.func.name + " expects " + signature.args.length +
+        " arguments, got " + call.args.length,
+      expr,
+    ));
+    return;
+  }
+
+  try {
+    validate_f32x4_lane_argument(call.prim, call.args);
+
+    for (let index = 0; index < call.args.length; index += 1) {
+      const arg = call.args[index];
+      const expected_type = signature.args[index];
+      expect(arg, "Missing f32x4 builtin argument " + index);
+      expect(expected_type, "Missing f32x4 builtin argument type " + index);
+      const actual = infer_type(arg, env);
+
+      if (actual.tag === "unknown") {
+        continue;
+      }
+
+      let matches = false;
+
+      if (expected_type === "v128" && actual.tag === "f32x4") {
+        matches = true;
+      }
+
+      if (
+        expected_type !== "v128" && actual.tag === "int" &&
+        actual.type === expected_type
+      ) {
+        matches = true;
+      }
+
+      if (!matches) {
+        throw new Error(
+          "F32x4 builtin argument " + index + " expects " +
+            source_name_for_val_type(expected_type) + ", got " +
+            type_name(actual),
+        );
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2302",
+        "error",
+        error.message,
+        expr,
+      ));
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function source_name_for_val_type(type: ValType): string {
+  if (type === "v128") {
+    return "F32x4";
+  }
+
+  if (type === "f32") {
+    return "F32";
+  }
+
+  if (type === "i64") {
+    return "I64";
+  }
+
+  return "I32";
 }
 
 function infer_type(
@@ -2402,7 +2971,7 @@ function infer_type(
   }
 
   if (expr.tag === "text") {
-    return { tag: "text" };
+    return { tag: "text", encoding: expr.encoding };
   }
 
   if (
@@ -2498,6 +3067,77 @@ function infer_type(
   }
 
   if (expr.tag === "app") {
+    const f32x4_call = f32x4_builtin_call(expr);
+
+    if (
+      f32x4_call && expr.func.tag === "var" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      const signature = Callable.type(Prim, f32x4_call.prim);
+
+      if (f32x4_call.args.length !== signature.args.length) {
+        return { tag: "unknown" };
+      }
+
+      if (signature.result === "v128") {
+        return { tag: "f32x4" };
+      }
+
+      expect(
+        signature.result === "f32",
+        "Unexpected f32x4 builtin result type: " + signature.result,
+      );
+      return { tag: "int", type: "f32" };
+    }
+
+    const numeric_call = numeric_builtin_call(expr);
+
+    if (
+      numeric_call && expr.func.tag === "var" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      const expected = Callable.arity(Prim, numeric_call.prim);
+
+      if (numeric_call.args.length !== expected) {
+        return { tag: "unknown" };
+      }
+
+      let prim = numeric_call.prim;
+
+      if (expected === 2) {
+        const left = numeric_call.args[0];
+        const right = numeric_call.args[1];
+        expect(left, "Missing numeric builtin argument 0");
+        expect(right, "Missing numeric builtin argument 1");
+        prim = specialize_prim_for_operands(
+          prim,
+          numeric_type(left, env, active_calls),
+          numeric_type(right, env, active_calls),
+        );
+      }
+
+      const result = Callable.type(Prim, prim).result;
+      expect(result !== "v128", "Numeric builtin cannot return F32x4");
+      return { tag: "int", type: result };
+    }
+
+    if (expr.func.tag === "var" && expr.func.name === "Bytes.generate") {
+      return { tag: "text", encoding: "bytes" };
+    }
+
+    if (expr.func.tag === "var" && expr.func.name === "Utf8.encode") {
+      return { tag: "text", encoding: "bytes" };
+    }
+
+    if (
+      expr.func.tag === "var" &&
+      (expr.func.name === "Utf8.decode" ||
+        expr.func.name === "format_i32" ||
+        expr.func.name === "format_i64" || expr.func.name === "format_f32")
+    ) {
+      return { tag: "text" };
+    }
+
     if (expr.func.tag === "field") {
       const cases = union_constructor_cases(expr.func.object, env);
 
@@ -2635,6 +3275,10 @@ function infer_type(
     return infer_type(expr.base, env, active_calls);
   }
 
+  if (expr.tag === "type_with") {
+    return infer_type(expr.base, env, active_calls);
+  }
+
   if (expr.tag === "field") {
     const object_type = infer_type(expr.object, env, active_calls);
 
@@ -2698,14 +3342,16 @@ function numeric_type(
   expr: FrontExpr,
   env: SemanticEnv,
   active_calls: Set<FrontExpr> = new Set(),
-): "i32" | "i64" | undefined {
+): NumType | undefined {
   if (expr.tag === "prim") {
     const specialized = specialize_prim_for_operands(
       expr.prim,
       numeric_type(expr.left, env, active_calls),
       numeric_type(expr.right, env, active_calls),
     );
-    return prim_result_type(specialized);
+    const result = prim_result_type(specialized);
+    expect(result !== "v128", "Numeric primitive cannot return F32x4");
+    return result;
   }
 
   const type = infer_type(expr, env, active_calls);
@@ -2867,7 +3513,7 @@ function validate_loop_break_types(
     }
 
     diagnostics.push(bool_route_diagnostic(
-      "IX2306",
+      "DUCK2306",
       "Loop break values have incompatible types " + type_name(result) +
         " and " + type_name(loop_break.type),
       loop_break.subject,
@@ -3127,6 +3773,17 @@ function scan_loop_break_expr(
     return;
   }
 
+  if (expr.tag === "type_with") {
+    scan_loop_break_expr(expr.base, env, active_calls, breaks);
+
+    for (const member of expr.members) {
+      scan_loop_break_expr(member.name, env, active_calls, breaks);
+      scan_loop_break_expr(member.value, env, active_calls, breaks);
+    }
+
+    return;
+  }
+
   if (expr.tag === "struct_value") {
     scan_loop_break_expr(expr.type_expr, env, active_calls, breaks);
 
@@ -3181,6 +3838,24 @@ function scan_loop_break_expr(
       active_calls,
       breaks,
     );
+    return;
+  }
+
+  if (expr.tag === "match") {
+    scan_loop_break_expr(expr.target, env, active_calls, breaks);
+    const target_type = infer_type(expr.target, env, active_calls);
+
+    for (const arm of expr.arms) {
+      const arm_env = child_env(env);
+      bind_pattern_types(arm.pattern, target_type, arm_env, false);
+
+      if (arm.guard !== undefined) {
+        scan_loop_break_expr(arm.guard, arm_env, active_calls, breaks);
+      }
+
+      scan_loop_break_expr(arm.body, arm_env, active_calls, breaks);
+    }
+
     return;
   }
 
@@ -3244,6 +3919,8 @@ function infer_struct_value_type(
       field_type_name = "I32";
     } else if (field_type.tag === "int" && field_type.type === "i64") {
       field_type_name = "I64";
+    } else if (field_type.tag === "int" && field_type.type === "f32") {
+      field_type_name = "F32";
     } else if (field_type.tag === "text") {
       field_type_name = "Text";
 
@@ -3835,6 +4512,43 @@ function struct_fields_of(
   return undefined;
 }
 
+function contextual_binding_fields(
+  stmt: Extract<Stmt, { tag: "bind" }>,
+  env: SemanticEnv,
+): Field[] | undefined {
+  const fields = struct_fields_of(stmt.value, env);
+
+  if (fields === undefined || stmt.value.tag !== "product") {
+    return fields;
+  }
+
+  if (stmt.value.entries.some((entry) => entry.label !== undefined)) {
+    return fields;
+  }
+
+  let annotation_type: FrontType = { tag: "unknown" };
+
+  if (stmt.annotation !== undefined) {
+    annotation_type = resolve_type_name(stmt.annotation, env);
+  } else if (stmt.type_annotation !== undefined) {
+    annotation_type = type_from_type_expr(stmt.type_annotation, env);
+  }
+
+  if (annotation_type.tag !== "struct" || !annotation_type.field_types) {
+    return fields;
+  }
+
+  return fields.map((field, index) => {
+    const declared = annotation_type.field_types?.[index];
+
+    if (declared === undefined) {
+      return field;
+    }
+
+    return { name: declared.name, value: field.value };
+  });
+}
+
 function bind_pattern_types(
   pattern: Pattern,
   type: FrontType,
@@ -4064,7 +4778,7 @@ function validate_annotated_lambda(
       param_type = declared;
     } else if (bool_representation_mismatch(expected, declared, body_env)) {
       diagnostics.push(bool_route_diagnostic(
-        "IX2306",
+        "DUCK2306",
         "Function parameter " + param.name + " expects " +
           type_name(expected) + ", got " + type_name(declared),
         expr,
@@ -4121,16 +4835,21 @@ function validate_annotated_lambda(
 
   const actual = infer_type(expr.body, body_env);
 
-  if (!bool_value_representation_mismatch(expected, expr.body, body_env)) {
-    return;
-  }
-
-  diagnostics.push(bool_route_diagnostic(
-    "IX2306",
+  const representation_diagnostic = value_representation_diagnostic(
+    "DUCK2306",
     "Function result expects " + type_name(expected) + ", got " +
       type_name(actual),
     expr.body,
-  ));
+    expected,
+    expr.body,
+    body_env,
+  );
+
+  if (!representation_diagnostic) {
+    return;
+  }
+
+  diagnostics.push(representation_diagnostic);
 }
 
 function bind_params(env: SemanticEnv, params: Param[]): void {
@@ -4327,7 +5046,7 @@ function append_unused_binding_warnings(
     }
 
     diagnostics.push(source_diagnostic(
-      "IX2003",
+      "DUCK2003",
       "warning",
       "Unused " + label + " binding " + declaration.name,
       declaration,
@@ -4541,7 +5260,7 @@ function validate_basic_annotation(
 
   if (bool_value_representation_mismatch(expected, stmt.value, env)) {
     diagnostics.push(bool_route_diagnostic(
-      "IX2306",
+      "DUCK2306",
       "Binding annotation expects " + annotation + ", got " +
         type_name(type),
       stmt.value,
@@ -4555,7 +5274,7 @@ function validate_basic_annotation(
     matches = type.tag === "bool";
   } else if (expected.tag === "text") {
     if (expected.encoding === "bytes") {
-      matches = type.tag === "text";
+      matches = type.tag === "text" && type.encoding === "bytes";
     } else {
       matches = type.tag === "text" && type.encoding !== "bytes";
     }
@@ -4572,8 +5291,13 @@ function validate_basic_annotation(
   const message = "Binding annotation expects " + annotation + ", got " +
     type_name(type);
 
+  if (expected.tag === "text") {
+    diagnostics.push(core_route_diagnostic("DUCK2306", message, stmt.value));
+    return;
+  }
+
   diagnostics.push(source_diagnostic(
-    "IX2306",
+    "DUCK2306",
     "error",
     message,
     stmt.value,
@@ -4601,7 +5325,7 @@ function validate_fixed_array_annotation(
   } catch (error) {
     if (error instanceof Error) {
       diagnostics.push(source_diagnostic(
-        "IX2306",
+        "DUCK2306",
         "error",
         error.message,
         stmt,
@@ -4612,13 +5336,19 @@ function validate_fixed_array_annotation(
     throw error;
   }
 
-  if (stmt.value.tag !== "array") {
+  let items: FrontExpr[];
+
+  if (stmt.value.tag === "product") {
+    items = stmt.value.entries.map((entry) => entry.value);
+  } else if (stmt.value.tag === "array") {
+    items = stmt.value.items;
+  } else {
     return;
   }
 
-  if (stmt.value.rest !== undefined) {
+  if (stmt.value.tag === "array" && stmt.value.rest !== undefined) {
     diagnostics.push(source_diagnostic(
-      "IX2306",
+      "DUCK2306",
       "error",
       "Fixed array annotation " + format_type_expr(annotation) +
         " cannot use an array spread",
@@ -4627,12 +5357,12 @@ function validate_fixed_array_annotation(
     return;
   }
 
-  if (stmt.value.items.length !== length) {
+  if (items.length !== length) {
     diagnostics.push(source_diagnostic(
-      "IX2306",
+      "DUCK2306",
       "error",
       "Binding annotation expects " + format_type_expr(annotation) + " with " +
-        length.toString() + " items, got " + stmt.value.items.length.toString(),
+        length.toString() + " items, got " + items.length.toString(),
       stmt.value,
     ));
     return;
@@ -4644,8 +5374,8 @@ function validate_fixed_array_annotation(
     return;
   }
 
-  for (let index = 0; index < stmt.value.items.length; index += 1) {
-    const item = stmt.value.items[index];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
     expect(item, "Missing fixed array item " + index.toString());
     const actual = infer_type(item, env);
 
@@ -4654,7 +5384,7 @@ function validate_fixed_array_annotation(
     }
 
     diagnostics.push(source_diagnostic(
-      "IX2306",
+      "DUCK2306",
       "error",
       "Binding annotation " + format_type_expr(annotation) + " item " +
         index.toString() + " expects " + type_name(expected) + ", got " +
@@ -4755,7 +5485,15 @@ function type_name(type: FrontType): string {
     return "Bool";
   }
 
+  if (type.tag === "f32x4") {
+    return "F32x4";
+  }
+
   if (type.tag === "text") {
+    if (type.encoding === "bytes") {
+      return "Bytes";
+    }
+
     return "Text";
   }
 
@@ -4769,6 +5507,10 @@ function type_name(type: FrontType): string {
 
   if (type.tag === "int" && type.type === "i64") {
     return "I64";
+  }
+
+  if (type.tag === "int" && type.type === "f32") {
+    return "F32";
   }
 
   if (type.tag === "int") {

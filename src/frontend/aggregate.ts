@@ -62,7 +62,11 @@ export function elaborate_fixed_array_expr(
 
 export function elaborate_product_as_expr(
   expr: Extract<FrontExpr, { tag: "as" }>,
-): Extract<FrontExpr, { tag: "product" }> {
+  result_type_value: FrontExpr = {
+    tag: "set_type",
+    type_expr: expr.type_expr,
+  },
+): Extract<FrontExpr, { tag: "struct_value" }> {
   if (expr.value.tag !== "product") {
     throw new Error(
       "Cannot erase `as`: source must be an ordered product value",
@@ -94,7 +98,10 @@ export function elaborate_product_as_expr(
     const source_layout = front_expr_runtime_layout(source.value);
     const target_layout = type_expr_runtime_layout(target.type_expr);
 
-    if (source_layout !== target_layout) {
+    if (
+      source_layout !== undefined && target_layout !== undefined &&
+      source_layout !== target_layout
+    ) {
       throw new Error(
         "Cannot erase `as`: product entry " + index.toString() +
           " has source layout " + source_layout + " and target layout " +
@@ -102,25 +109,28 @@ export function elaborate_product_as_expr(
       );
     }
 
-    const entry: Extract<FrontExpr, { tag: "product" }>["entries"][number] = {
-      value: source.value,
-    };
+    let name = "item_" + index.toString();
 
     if (target.label !== undefined) {
-      entry.label = target.label;
+      name = target.label;
     }
 
-    return entry;
+    return { name, value: source.value };
   });
 
-  return { tag: "product", entries };
+  return {
+    tag: "struct_value",
+    type_expr: result_type_value,
+    fields: entries,
+    bracketed: "named",
+  };
 }
 
 export function elaborate_array_repeat_expr(
   expr: Extract<FrontExpr, { tag: "array_repeat" }>,
   value_name: string,
 ): FrontExpr {
-  const length = constant_array_length(expr.length);
+  const length = constant_repeat_length(expr.length);
 
   if (length < 0) {
     throw new Error(
@@ -156,7 +166,7 @@ export function elaborate_array_repeat_expr(
   };
 }
 
-function front_expr_runtime_layout(expr: FrontExpr): string {
+function front_expr_runtime_layout(expr: FrontExpr): string | undefined {
   if (
     expr.tag === "bool" || expr.tag === "atom" || expr.tag === "unit"
   ) {
@@ -172,25 +182,35 @@ function front_expr_runtime_layout(expr: FrontExpr): string {
   }
 
   if (expr.tag === "product") {
-    return "(" + expr.entries.map((entry) =>
-      front_expr_runtime_layout(entry.value)
-    ).join(",") + ")";
+    const layouts = expr.entries.map((entry) => {
+      return front_expr_runtime_layout(entry.value);
+    });
+
+    if (layouts.some((layout) => layout === undefined)) {
+      return undefined;
+    }
+
+    return "(" + layouts.join(",") + ")";
   }
 
   if (expr.tag === "array" && expr.rest === undefined) {
-    return "(" + expr.items.map(front_expr_runtime_layout).join(",") + ")";
+    const layouts = expr.items.map(front_expr_runtime_layout);
+
+    if (layouts.some((layout) => layout === undefined)) {
+      return undefined;
+    }
+
+    return "(" + layouts.join(",") + ")";
   }
 
   if (expr.tag === "as") {
     return type_expr_runtime_layout(expr.type_expr);
   }
 
-  throw new Error(
-    "Cannot prove runtime layout for `as` source expression: " + expr.tag,
-  );
+  return undefined;
 }
 
-function type_expr_runtime_layout(type: TypeExpr): string {
+function type_expr_runtime_layout(type: TypeExpr): string | undefined {
   if (type.tag === "atom") {
     return "i32";
   }
@@ -198,6 +218,10 @@ function type_expr_runtime_layout(type: TypeExpr): string {
   if (type.tag === "name") {
     if (type.name === "I64") {
       return "i64";
+    }
+
+    if (type.name === "F32") {
+      return "f32";
     }
 
     if (
@@ -211,23 +235,25 @@ function type_expr_runtime_layout(type: TypeExpr): string {
       return "text";
     }
 
-    throw new Error(
-      "Cannot prove runtime layout for `as` target type: " + type.name,
-    );
+    return undefined;
   }
 
   if (type.tag === "product") {
-    return "(" + type.entries.map((entry) =>
-      type_expr_runtime_layout(entry.type_expr)
-    ).join(",") + ")";
+    const layouts = type.entries.map((entry) => {
+      return type_expr_runtime_layout(entry.type_expr);
+    });
+
+    if (layouts.some((layout) => layout === undefined)) {
+      return undefined;
+    }
+
+    return "(" + layouts.join(",") + ")";
   }
 
-  throw new Error(
-    "Cannot prove runtime layout for `as` target type: " + type.tag,
-  );
+  return undefined;
 }
 
-function constant_array_length(expr: FrontExpr): number {
+export function constant_repeat_length(expr: FrontExpr): number {
   if (expr.tag === "num" && expr.type === "i32") {
     if (typeof expr.value !== "number" || !Number.isInteger(expr.value)) {
       throw new Error("Array repeat length must be an integer i32 constant");
@@ -237,12 +263,12 @@ function constant_array_length(expr: FrontExpr): number {
   }
 
   if (expr.tag === "comptime") {
-    return constant_array_length(expr.expr);
+    return constant_repeat_length(expr.expr);
   }
 
   if (expr.tag === "prim") {
-    const left = constant_array_length(expr.left);
-    const right = constant_array_length(expr.right);
+    const left = constant_repeat_length(expr.left);
+    const right = constant_repeat_length(expr.right);
 
     if (expr.prim === "i32.add") {
       return (left + right) | 0;

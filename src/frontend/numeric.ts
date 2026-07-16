@@ -1,8 +1,14 @@
 import type { FrontExpr } from "./ast.ts";
 import type { Env, FrontType } from "./ast.ts";
-import { specialize_prim_for_operands } from "../op.ts";
-import type { Prim, ValType } from "../op.ts";
+import {
+  numeric_builtin_prim,
+  Prim,
+  specialize_prim_for_operands,
+} from "../op.ts";
+import type { ValType } from "../op.ts";
+import { Callable } from "../trait.ts";
 import { front_type_name } from "./types.ts";
+import { compiler_builtin_args } from "./call_args.ts";
 
 export type NumericOperandHooks = {
   infer_expr: (expr: FrontExpr, env: Env) => FrontType;
@@ -12,11 +18,43 @@ export type NumericOperandHooks = {
   ) => ValType | undefined;
 };
 
+export type NumericBuiltinCall = {
+  prim: Prim;
+  args: FrontExpr[];
+};
+
+export function numeric_builtin_call(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+): NumericBuiltinCall | undefined {
+  if (expr.func.tag !== "var") {
+    return undefined;
+  }
+
+  const prim = numeric_builtin_prim(expr.func.name);
+
+  if (!prim) {
+    return undefined;
+  }
+
+  return { prim, args: compiler_builtin_args(expr) };
+}
+
 export function i32_expr(value: number): FrontExpr {
   return { tag: "num", type: "i32", value };
 }
 
 export function parse_number_expr(text: string): FrontExpr {
+  if (text.endsWith("f32")) {
+    const literal = text.slice(0, text.length - 3);
+    const value = Math.fround(Number(literal));
+
+    if (!Number.isFinite(value)) {
+      throw new Error("f32 literal is out of range: " + literal);
+    }
+
+    return { tag: "num", type: "f32", value };
+  }
+
   if (text.endsWith("i64")) {
     const value = text.slice(0, text.length - 3);
     return { tag: "num", type: "i64", value: BigInt(value) };
@@ -36,6 +74,50 @@ export function binary_prim(
   right: FrontExpr,
 ): Prim | undefined {
   const type = binary_operand_type(left, right);
+
+  if (type === "f32") {
+    if (op === "+") {
+      return "f32.add";
+    }
+
+    if (op === "-") {
+      return "f32.sub";
+    }
+
+    if (op === "*") {
+      return "f32.mul";
+    }
+
+    if (op === "/") {
+      return "f32.div";
+    }
+
+    if (op === "==") {
+      return "f32.eq";
+    }
+
+    if (op === "!=") {
+      return "f32.ne";
+    }
+
+    if (op === "<") {
+      return "f32.lt";
+    }
+
+    if (op === "<=") {
+      return "f32.le";
+    }
+
+    if (op === ">") {
+      return "f32.gt";
+    }
+
+    if (op === ">=") {
+      return "f32.ge";
+    }
+
+    return undefined;
+  }
 
   if (type === "i64") {
     if (op === "+") {
@@ -139,6 +221,10 @@ export function binary_operand_type(
   const left_type = parse_numeric_expr_type(left);
   const right_type = parse_numeric_expr_type(right);
 
+  if (left_type === "f32" || right_type === "f32") {
+    return "f32";
+  }
+
   if (left_type === "i64" || right_type === "i64") {
     // Parsing only chooses a provisional primitive width. The semantic
     // operand check owns mixed-width rejection so tolerant parsing can keep
@@ -155,16 +241,30 @@ function parse_numeric_expr_type(expr: FrontExpr): ValType | undefined {
   }
 
   if (expr.tag === "prim") {
-    if (prim_result_type(expr.prim) === "i64") {
-      return "i64";
+    const result_type = prim_result_type(expr.prim);
+
+    if (result_type === "i64" || result_type === "f32") {
+      return result_type;
     }
 
-    if (!prim_can_retag_to_i64(expr.prim)) {
+    if (!prim_can_retag(expr.prim)) {
       return "i32";
     }
 
     const left_type = parse_numeric_expr_type(expr.left);
     const right_type = parse_numeric_expr_type(expr.right);
+
+    if (left_type === "f32" || right_type === "f32") {
+      if (left_type !== undefined && left_type !== "f32") {
+        return "i32";
+      }
+
+      if (right_type !== undefined && right_type !== "f32") {
+        return "i32";
+      }
+
+      return "f32";
+    }
 
     if (left_type === "i64" || right_type === "i64") {
       if (left_type === "i32" || right_type === "i32") {
@@ -197,16 +297,20 @@ function parse_numeric_expr_type(expr: FrontExpr): ValType | undefined {
   return undefined;
 }
 
-function prim_can_retag_to_i64(prim: Prim): boolean {
+function prim_can_retag(prim: Prim): boolean {
   return prim === "i32.add" || prim === "i32.sub" || prim === "i32.mul" ||
-    prim === "i32.div_s" || prim === "i32.rem_s";
+    prim === "i32.div_s" || prim === "i32.rem_s" || prim === "i32.and" ||
+    prim === "i32.or" || prim === "i32.xor" || prim === "i32.shl" ||
+    prim === "i32.shr_u";
 }
 
 export function prim_returns_bool(prim: Prim): boolean {
   return prim === "i32.eq" || prim === "i64.eq" || prim === "i32.ne" ||
     prim === "i64.ne" || prim === "i32.lt_s" || prim === "i64.lt_s" ||
     prim === "i32.le_s" || prim === "i64.le_s" || prim === "i32.gt_s" ||
-    prim === "i64.gt_s" || prim === "i32.ge_s" || prim === "i64.ge_s";
+    prim === "i64.gt_s" || prim === "i32.ge_s" || prim === "i64.ge_s" ||
+    prim === "f32.eq" || prim === "f32.ne" || prim === "f32.lt" ||
+    prim === "f32.le" || prim === "f32.gt" || prim === "f32.ge";
 }
 
 export function numeric_expr_type(expr: FrontExpr): ValType | undefined {
@@ -311,15 +415,7 @@ function numeric_operand_error(type: FrontType): string | undefined {
 }
 
 export function prim_result_type(prim: Prim): ValType {
-  if (
-    prim === "i64.add" || prim === "i64.sub" || prim === "i64.mul" ||
-    prim === "i64.div_s" || prim === "i64.rem_s" || prim === "i64.select" ||
-    prim === "i64.load" || prim === "i64.load8_u" || prim === "i64.trap"
-  ) {
-    return "i64";
-  }
-
-  return "i32";
+  return Callable.type(Prim, prim).result;
 }
 
 export function select_prim_for_branches(
@@ -328,6 +424,18 @@ export function select_prim_for_branches(
 ): Prim {
   const then_type = numeric_expr_type(then_branch);
   const else_type = numeric_expr_type(else_branch);
+
+  if (then_type === "f32" || else_type === "f32") {
+    if (then_type !== undefined && then_type !== "f32") {
+      throw new Error("Mixed f32 and " + then_type + " if branches");
+    }
+
+    if (else_type !== undefined && else_type !== "f32") {
+      throw new Error("Mixed f32 and " + else_type + " if branches");
+    }
+
+    return "f32.select";
+  }
 
   if (then_type === "i64" || else_type === "i64") {
     if (then_type === "i32" || else_type === "i32") {

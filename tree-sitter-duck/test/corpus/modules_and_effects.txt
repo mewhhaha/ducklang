@@ -1,0 +1,545 @@
+==================
+Inferred host effect
+==================
+
+module (!init: Init) where
+
+declare effect Io {
+  read: () => Text
+  print: (&Text) => Unit
+}
+
+declare Init {
+  io: Io
+}
+
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- Io.read()
+  _ <- Io.print(&name)
+  name
+}
+
+let result = greet()
+return { .result = result }
+
+---
+
+(source_file
+  (module_header
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_reference
+          (type_union
+            (type_intersection
+              (type_difference
+                (identifier))))))))
+  (declare_effect_statement
+    (effect_identifier)
+    (effect_operation_block
+      (effect_operation
+        (identifier)
+        (host_parameter_list)
+        (host_result
+          (type_reference)))
+      (effect_operation
+        (identifier)
+        (host_parameter_list
+          (host_parameter
+            (type_reference)))
+        (host_result
+          (type_reference)))))
+  (declare_record_statement
+    (identifier)
+    (type_field_block
+      (type_field
+        (identifier)
+        (type_reference))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (type_union
+          (type_intersection
+            (type_difference
+              (unit_type))))
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier))
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier)))))
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))))
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (block
+          (effect_binding_statement
+            (identifier)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (unit_pattern))))
+          (effect_binding_statement
+            (wildcard)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (parenthesized_expression
+                  (unary_expression
+                    (postfix_expression
+                      (identifier)))))))
+          (expression_statement
+            (postfix_expression
+              (identifier)))))))
+  (binding_statement
+    (identifier)
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (parenthesized_or_product
+        (unit_pattern))))
+  (module_return_statement
+    (object_literal
+      (field_block
+        (shape_field
+          (identifier)
+          (postfix_expression
+            (identifier)))))))
+
+==================
+Effect row expressions and effectful bind
+==================
+
+let run: () -> <Stdin | Stdout & (Trace \ Debug)> Text = () => {
+  line <- Stdin.read_line()
+  _ <- Stdout.write_line(&line)
+  line
+}
+
+let inspect: () -> <Stdin | Stdout.write_line | Trace \ Debug> Unit = () => ()
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (type_union
+          (type_intersection
+            (type_difference
+              (unit_type))))
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_family_reference
+                (effect_identifier))
+              (effect_intersection_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (parenthesized_effect_expression
+                  (effect_difference_expression
+                    (effect_family_reference
+                      (effect_identifier))
+                    (effect_family_reference
+                      (effect_identifier))))))))
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))))
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (block
+          (effect_binding_statement
+            (identifier)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (unit_pattern))))
+          (effect_binding_statement
+            (wildcard)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (parenthesized_expression
+                  (unary_expression
+                    (postfix_expression
+                      (identifier)))))))
+          (expression_statement
+            (postfix_expression
+              (identifier)))))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (type_union
+          (type_intersection
+            (type_difference
+              (unit_type))))
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_union_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (effect_operation_reference
+                  (effect_identifier)
+                  (identifier)))
+              (effect_difference_expression
+                (effect_family_reference
+                  (effect_identifier))
+                (effect_family_reference
+                  (effect_identifier))))))
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))))
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (unit_pattern)))))
+
+==================
+Source fragment
+==================
+
+let answer = 40 + 2
+answer
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (binary_expression
+      (postfix_expression
+        (number))
+      (postfix_expression
+        (number))))
+  (expression_statement
+    (postfix_expression
+      (identifier))))
+
+==================
+Duck handler and resumptions
+==================
+
+module () where
+
+effect Counter state {
+  get: () => I32
+  add: (I32) => Unit
+}
+
+let counter = {
+  let count: I32 = 0
+  Counter {
+    get: (!resume) => !resume(count),
+    add: (amount, !resume) => {
+      count = count + amount
+      !resume(())
+    },
+    return: value => { value, count },
+  }
+}
+
+let make = () => Counter {
+  get: (!resume) => !resume(0),
+  return: value => value,
+}
+
+let result = try run() with counter
+let (!left, !right) = dup !resume
+return { .result = result }
+
+---
+
+(source_file
+  (module_header
+    (parameter_list))
+  (effect_statement
+    (effect_identifier)
+    (identifier)
+    (effect_operation_block
+      (effect_operation
+        (identifier)
+        (host_parameter_list)
+        (host_result
+          (type_reference)))
+      (effect_operation
+        (identifier)
+        (host_parameter_list
+          (host_parameter
+            (type_reference)))
+        (host_result
+          (type_reference)))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (block
+        (binding_statement
+          (identifier)
+          (type_reference
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier)))))
+          (postfix_expression
+            (number)))
+        (expression_statement
+          (application_expression
+            (postfix_expression
+              (identifier))
+            (postfix_expression
+              (object_literal
+                (field_block
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter_list
+                        (parameter
+                          (identifier)))
+                      (application_expression
+                        (postfix_expression
+                          (linear_reference
+                            (identifier)))
+                        (parenthesized_or_product
+                          (parenthesized_expression
+                            (postfix_expression
+                              (identifier)))))))
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter_list
+                        (parameter
+                          (identifier))
+                        (parameter
+                          (identifier)))
+                      (postfix_expression
+                        (block
+                          (assignment
+                            (identifier)
+                            (binary_expression
+                              (postfix_expression
+                                (identifier))
+                              (postfix_expression
+                                (identifier))))
+                          (expression_statement
+                            (application_expression
+                              (postfix_expression
+                                (linear_reference
+                                  (identifier)))
+                              (parenthesized_or_product
+                                (parenthesized_expression
+                                  (postfix_expression
+                                    (unit_pattern))))))))))
+                  (field_definition
+                    (identifier)
+                    (arrow_function
+                      (parameter
+                        (identifier))
+                      (postfix_expression
+                        (object_literal
+                          (field_block
+                            (shorthand_field
+                              (identifier))
+                            (shorthand_field
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (application_expression
+        (postfix_expression
+          (identifier))
+        (postfix_expression
+          (object_literal
+            (field_block
+              (field_definition
+                (identifier)
+                (arrow_function
+                  (parameter_list
+                    (parameter
+                      (identifier)))
+                  (application_expression
+                    (postfix_expression
+                      (linear_reference
+                        (identifier)))
+                    (parenthesized_or_product
+                      (parenthesized_expression
+                        (postfix_expression
+                          (number)))))))
+              (field_definition
+                (identifier)
+                (arrow_function
+                  (parameter
+                    (identifier))
+                  (postfix_expression
+                    (identifier))))))))))
+  (binding_statement
+    (identifier)
+    (try_with_expression
+      (application_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (unit_pattern)))
+      (postfix_expression
+        (identifier))))
+  (resume_dup_statement
+    (identifier)
+    (identifier)
+    (linear_reference
+      (identifier)))
+  (module_return_statement
+    (object_literal
+      (field_block
+        (shape_field
+          (identifier)
+          (postfix_expression
+            (identifier)))))))
+
+==================
+Annotated effect row and module instantiation
+==================
+
+module (!init: Init) where
+
+let console = import "./console.duck"
+
+let greet: () -> <Io.read | Io.print> Text = () => {
+  name <- Io.read()
+  _ <- Io.print(&name)
+  name
+}
+
+const { run, close } = console({ .io = !init.io })
+let result = run()
+return { .result = result, .close = close }
+
+---
+
+(source_file
+  (module_header
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_reference
+          (type_union
+            (type_intersection
+              (type_difference
+                (identifier))))))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (import_expression
+        (string))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (function_type
+        (type_union
+          (type_intersection
+            (type_difference
+              (unit_type))))
+        (latent_effect_row
+          (effect_row
+            (effect_union_expression
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier))
+              (effect_operation_reference
+                (effect_identifier)
+                (identifier)))))
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))))
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (block
+          (effect_binding_statement
+            (identifier)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (unit_pattern))))
+          (effect_binding_statement
+            (wildcard)
+            (application_expression
+              (postfix_expression
+                (field_expression
+                  (identifier)
+                  (identifier)))
+              (parenthesized_or_product
+                (parenthesized_expression
+                  (unary_expression
+                    (postfix_expression
+                      (identifier)))))))
+          (expression_statement
+            (postfix_expression
+              (identifier)))))))
+  (binding_statement
+    (named_shape_pattern
+      (shorthand_shape_pattern_field
+        (identifier))
+      (shorthand_shape_pattern_field
+        (identifier)))
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (parenthesized_or_product
+        (parenthesized_expression
+          (postfix_expression
+            (object_literal
+              (field_block
+                (shape_field
+                  (identifier)
+                  (postfix_expression
+                    (field_expression
+                      (postfix_expression
+                        (linear_reference
+                          (identifier)))
+                      (identifier)))))))))))
+  (binding_statement
+    (identifier)
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (parenthesized_or_product
+        (unit_pattern))))
+  (module_return_statement
+    (object_literal
+      (field_block
+        (shape_field
+          (identifier)
+          (postfix_expression
+            (identifier)))
+        (shape_field
+          (identifier)
+          (postfix_expression
+            (identifier)))))))

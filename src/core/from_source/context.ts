@@ -136,6 +136,8 @@ const core_builtin_scalar_annotation_names = new Set([
   "Bool",
   "I32",
   "I64",
+  "F32",
+  "F32x4",
   "Int",
   "Resume",
   "U32",
@@ -371,8 +373,12 @@ export function resolve_bound_core_value_name(
 
 const core_builtin_value_names = new Set([
   "Bool",
+  "Bytes.generate",
+  "Utf8.decode",
+  "Utf8.encode",
   "I32",
   "I64",
+  "F32",
   "Int",
   "Bytes",
   "Text",
@@ -381,6 +387,9 @@ const core_builtin_value_names = new Set([
   "Unit",
   "append",
   "get",
+  "format_i32",
+  "format_i64",
+  "format_f32",
   "len",
   "object_type",
   "panic",
@@ -445,6 +454,9 @@ function front_host_import_type_value_reason(
 
     case "captured":
       return front_host_import_type_value_reason(expr.expr, ctx, seen);
+
+    case "with":
+      return front_host_import_type_value_reason(expr.base, ctx, seen);
 
     default:
       return undefined;

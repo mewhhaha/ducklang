@@ -8,21 +8,23 @@ type BinaryPrim = Exclude<
   Prim,
   | "i32.select"
   | "i64.select"
+  | "f32.select"
   | "i32.load"
   | "i64.load"
+  | "f32.load"
   | "i32.load8_u"
   | "i64.load8_u"
   | "i32.trap"
   | "i64.trap"
+  | "f32.trap"
+  | "f32.sqrt"
+  | "f32.convert_i32_s"
+  | "i32.trunc_f32_s"
 >;
-type I32Prim = Exclude<
-  Extract<Prim, `i32.${string}`>,
-  "i32.select" | "i32.load" | "i32.load8_u" | "i32.trap"
->;
-type I64Prim = Exclude<
-  Extract<Prim, `i64.${string}`>,
-  "i64.select" | "i64.load" | "i64.load8_u" | "i64.trap"
->;
+type UnaryPrim = "f32.sqrt" | "f32.convert_i32_s" | "i32.trunc_f32_s";
+type I32Prim = Extract<BinaryPrim, `i32.${string}`>;
+type I64Prim = Extract<BinaryPrim, `i64.${string}`>;
+type F32Prim = Extract<BinaryPrim, `f32.${string}`>;
 
 function arg(args: Ic[], index: number): Ic {
   const value = args[index];
@@ -32,15 +34,44 @@ function arg(args: Ic[], index: number): Ic {
 
 export function is_binary_prim(prim: Prim): prim is BinaryPrim {
   if (
-    prim === "i32.select" || prim === "i64.select" ||
-    prim === "i32.load" || prim === "i64.load" ||
-    prim === "i32.load8_u" || prim === "i64.load8_u" ||
-    prim === "i32.trap" || prim === "i64.trap"
+    prim.endsWith(".select") || prim.endsWith(".load") ||
+    prim.endsWith(".load8_u") || prim.endsWith(".trap") ||
+    is_unary_prim(prim)
   ) {
     return false;
   }
 
   return true;
+}
+
+export function is_unary_prim(prim: Prim): prim is UnaryPrim {
+  return prim === "f32.sqrt" || prim === "f32.convert_i32_s" ||
+    prim === "i32.trunc_f32_s";
+}
+
+export function fold_unary_prim(prim: UnaryPrim, value: Num): Ic {
+  if (prim === "f32.convert_i32_s") {
+    expect(value.type === "i32", "f32_from_i32 expects an i32 operand");
+    expect(typeof value.value === "number", "Expected i32 number");
+    return f32(value.value);
+  }
+
+  expect(value.type === "f32", prim + " expects an f32 operand");
+  expect(typeof value.value === "number", "Expected f32 number");
+  const float_value = Math.fround(value.value);
+
+  if (prim === "f32.sqrt") {
+    return f32(Math.sqrt(float_value));
+  }
+
+  if (
+    !Number.isFinite(float_value) || float_value < -2147483648 ||
+    float_value >= 2147483648
+  ) {
+    throw new Error("i32_from_f32 traps for value " + float_value.toString());
+  }
+
+  return i32(Math.trunc(float_value));
 }
 
 export function fold_select(prim: Prim, args: Ic[]): Ic {
@@ -68,17 +99,23 @@ export function fold_select(prim: Prim, args: Ic[]): Ic {
 }
 
 function select_prim(prim: Prim, then_branch: Ic, else_branch: Ic): Prim {
-  if (then_branch.tag === "num" && else_branch.tag === "num") {
-    if (then_branch.type === "i64" && else_branch.type === "i64") {
-      return "i64.select";
-    }
-
-    if (then_branch.type === "i32" && else_branch.type === "i32") {
-      return "i32.select";
-    }
+  if (then_branch.tag !== "num" || else_branch.tag !== "num") {
+    return prim;
   }
 
-  return prim;
+  if (then_branch.type !== else_branch.type) {
+    return prim;
+  }
+
+  if (then_branch.type === "i32") {
+    return "i32.select";
+  }
+
+  if (then_branch.type === "i64") {
+    return "i64.select";
+  }
+
+  return "f32.select";
 }
 
 export function fold_prim(
@@ -103,33 +140,16 @@ export function fold_prim(
     "Primitive " + prim + " argument 1 expects " + right_expected + ", got " +
       right.type,
   );
-  switch (prim) {
-    case "i32.add":
-    case "i32.sub":
-    case "i32.mul":
-    case "i32.div_s":
-    case "i32.rem_s":
-    case "i32.eq":
-    case "i32.ne":
-    case "i32.lt_s":
-    case "i32.le_s":
-    case "i32.gt_s":
-    case "i32.ge_s":
-      return fold_i32(prim, left, right);
 
-    case "i64.add":
-    case "i64.sub":
-    case "i64.mul":
-    case "i64.div_s":
-    case "i64.rem_s":
-    case "i64.eq":
-    case "i64.ne":
-    case "i64.lt_s":
-    case "i64.le_s":
-    case "i64.gt_s":
-    case "i64.ge_s":
-      return fold_i64(prim, left, right);
+  if (prim.startsWith("i32.")) {
+    return fold_i32(prim as I32Prim, left, right);
   }
+
+  if (prim.startsWith("i64.")) {
+    return fold_i64(prim as I64Prim, left, right);
+  }
+
+  return fold_f32(prim as F32Prim, left, right);
 }
 
 function fold_i32(
@@ -144,77 +164,43 @@ function fold_i32(
 
   switch (prim) {
     case "i32.add":
-      return { tag: "num", type: "i32", value: (left_value + right_value) | 0 };
-
+      return i32((left_value + right_value) | 0);
     case "i32.sub":
-      return { tag: "num", type: "i32", value: (left_value - right_value) | 0 };
-
+      return i32((left_value - right_value) | 0);
     case "i32.mul":
-      return {
-        tag: "num",
-        type: "i32",
-        value: Math.imul(left_value, right_value),
-      };
-
+      return i32(Math.imul(left_value, right_value));
     case "i32.div_s":
       if (right_value === 0) {
         throw new Error("i32.div_s by zero");
       }
-
-      return {
-        tag: "num",
-        type: "i32",
-        value: Math.trunc(left_value / right_value) | 0,
-      };
-
+      return i32(Math.trunc(left_value / right_value) | 0);
     case "i32.rem_s":
       if (right_value === 0) {
         throw new Error("i32.rem_s by zero");
       }
-
-      return { tag: "num", type: "i32", value: (left_value % right_value) | 0 };
-
+      return i32((left_value % right_value) | 0);
+    case "i32.and":
+      return i32(left_value & right_value);
+    case "i32.or":
+      return i32(left_value | right_value);
+    case "i32.xor":
+      return i32(left_value ^ right_value);
+    case "i32.shl":
+      return i32(left_value << (right_value & 31));
+    case "i32.shr_u":
+      return i32((left_value >>> (right_value & 31)) | 0);
     case "i32.eq":
-      if (left_value === right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value === right_value);
     case "i32.ne":
-      if (left_value !== right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value !== right_value);
     case "i32.lt_s":
-      if (left_value < right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value < right_value);
     case "i32.le_s":
-      if (left_value <= right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value <= right_value);
     case "i32.gt_s":
-      if (left_value > right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value > right_value);
     case "i32.ge_s":
-      if (left_value >= right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
+      return bool_num(left_value >= right_value);
   }
 }
 
@@ -230,88 +216,102 @@ function fold_i64(
 
   switch (prim) {
     case "i64.add":
-      return {
-        tag: "num",
-        type: "i64",
-        value: BigInt.asIntN(64, left_value + right_value),
-      };
-
+      return i64(left_value + right_value);
     case "i64.sub":
-      return {
-        tag: "num",
-        type: "i64",
-        value: BigInt.asIntN(64, left_value - right_value),
-      };
-
+      return i64(left_value - right_value);
     case "i64.mul":
-      return {
-        tag: "num",
-        type: "i64",
-        value: BigInt.asIntN(64, left_value * right_value),
-      };
-
+      return i64(left_value * right_value);
     case "i64.div_s":
       if (right_value === 0n) {
         throw new Error("i64.div_s by zero");
       }
-
-      return {
-        tag: "num",
-        type: "i64",
-        value: BigInt.asIntN(64, left_value / right_value),
-      };
-
+      return i64(left_value / right_value);
     case "i64.rem_s":
       if (right_value === 0n) {
         throw new Error("i64.rem_s by zero");
       }
-
-      return {
-        tag: "num",
-        type: "i64",
-        value: BigInt.asIntN(64, left_value % right_value),
-      };
-
+      return i64(left_value % right_value);
+    case "i64.and":
+      return i64(left_value & right_value);
+    case "i64.or":
+      return i64(left_value | right_value);
+    case "i64.xor":
+      return i64(left_value ^ right_value);
+    case "i64.shl": {
+      const shift = BigInt.asUintN(64, right_value) & 63n;
+      return i64(left_value << shift);
+    }
+    case "i64.shr_u": {
+      const shift = BigInt.asUintN(64, right_value) & 63n;
+      return i64(BigInt.asUintN(64, left_value) >> shift);
+    }
     case "i64.eq":
-      if (left_value === right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value === right_value);
     case "i64.ne":
-      if (left_value !== right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value !== right_value);
     case "i64.lt_s":
-      if (left_value < right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value < right_value);
     case "i64.le_s":
-      if (left_value <= right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value <= right_value);
     case "i64.gt_s":
-      if (left_value > right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
-
+      return bool_num(left_value > right_value);
     case "i64.ge_s":
-      if (left_value >= right_value) {
-        return { tag: "num", type: "i32", value: 1 };
-      }
-
-      return { tag: "num", type: "i32", value: 0 };
+      return bool_num(left_value >= right_value);
   }
+}
+
+function fold_f32(
+  prim: F32Prim,
+  left: Num,
+  right: Num,
+): Ic {
+  const left_value = left.value;
+  const right_value = right.value;
+  expect(typeof left_value === "number", "Expected f32 number");
+  expect(typeof right_value === "number", "Expected f32 number");
+  const left_f32 = Math.fround(left_value);
+  const right_f32 = Math.fround(right_value);
+
+  switch (prim) {
+    case "f32.add":
+      return f32(left_f32 + right_f32);
+    case "f32.sub":
+      return f32(left_f32 - right_f32);
+    case "f32.mul":
+      return f32(left_f32 * right_f32);
+    case "f32.div":
+      return f32(left_f32 / right_f32);
+    case "f32.eq":
+      return bool_num(left_f32 === right_f32);
+    case "f32.ne":
+      return bool_num(left_f32 !== right_f32);
+    case "f32.lt":
+      return bool_num(left_f32 < right_f32);
+    case "f32.le":
+      return bool_num(left_f32 <= right_f32);
+    case "f32.gt":
+      return bool_num(left_f32 > right_f32);
+    case "f32.ge":
+      return bool_num(left_f32 >= right_f32);
+  }
+}
+
+function i32(value: number): Ic {
+  return { tag: "num", type: "i32", value };
+}
+
+function i64(value: bigint): Ic {
+  return { tag: "num", type: "i64", value: BigInt.asIntN(64, value) };
+}
+
+function f32(value: number): Ic {
+  return { tag: "num", type: "f32", value: Math.fround(value) };
+}
+
+function bool_num(value: boolean): Ic {
+  if (value) {
+    return i32(1);
+  }
+
+  return i32(0);
 }

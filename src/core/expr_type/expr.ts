@@ -27,7 +27,9 @@ import {
   runtime_aggregate_field_info,
   runtime_aggregate_type_expr,
 } from "../runtime_aggregate.ts";
+import { dynamic_if_let_can_match } from "../union_static.ts";
 import { if_let_expr_type } from "./if_let.ts";
+import { core_expr_definitely_exits } from "./control.ts";
 import { prim_expr_type } from "./prim.ts";
 import type {
   CoreExprTypeBlockCtx,
@@ -115,6 +117,10 @@ export function expr_type<
         return hooks.runtime_union_value_type(union_value, ctx);
       }
 
+      if (hooks.runtime_union_target(expr, ctx)) {
+        return "i32";
+      }
+
       return hooks.app_type(expr, ctx);
     }
 
@@ -131,13 +137,34 @@ export function expr_type<
         return hooks.runtime_union_value_type(union_value, ctx);
       }
 
+      if (hooks.runtime_union_target(expr, ctx)) {
+        return "i32";
+      }
+
       const cond_type = expr_type(expr.cond, ctx, hooks);
       expect(cond_type === "i32", "Core if condition must be i32");
+      const then_exits = core_expr_definitely_exits(expr.then_branch);
+      const else_exits = core_expr_definitely_exits(expr.else_branch);
+
+      if (then_exits && else_exits) {
+        return "i32";
+      }
+
+      if (then_exits) {
+        return expr_type(expr.else_branch, ctx, hooks);
+      }
+
       const then_type = expr_type(expr.then_branch, ctx, hooks);
-      const else_type = expr_type(expr.else_branch, ctx, hooks);
+
       if (expr.implicit_else) {
         return then_type;
       }
+
+      if (else_exits) {
+        return then_type;
+      }
+
+      const else_type = expr_type(expr.else_branch, ctx, hooks);
 
       expect(then_type === else_type, "Core if branch type mismatch");
       return then_type;
@@ -528,12 +555,24 @@ function collect_loop_break_types<
         continue;
 
       case "if_let_stmt":
-        collect_loop_break_types(
-          stmt.body,
-          hooks.create_block_ctx(ctx),
-          hooks,
-          break_types,
-        );
+        {
+          const branch_ctx = loop_if_let_branch_ctx(
+            stmt.case_name,
+            stmt.value_name,
+            stmt.target,
+            ctx,
+            hooks,
+          );
+
+          if (branch_ctx) {
+            collect_loop_break_types(
+              stmt.body,
+              branch_ctx,
+              hooks,
+              break_types,
+            );
+          }
+        }
         continue;
 
       case "range_loop":
@@ -614,12 +653,24 @@ function collect_loop_expr_break_types<
 
     case "if_let":
       collect_loop_expr_break_types(expr.target, ctx, hooks, break_types);
-      collect_loop_expr_break_types(
-        expr.then_branch,
-        hooks.create_block_ctx(ctx),
-        hooks,
-        break_types,
-      );
+      {
+        const branch_ctx = loop_if_let_branch_ctx(
+          expr.case_name,
+          expr.value_name,
+          expr.target,
+          ctx,
+          hooks,
+        );
+
+        if (branch_ctx) {
+          collect_loop_expr_break_types(
+            expr.then_branch,
+            branch_ctx,
+            hooks,
+            break_types,
+          );
+        }
+      }
       collect_loop_expr_break_types(
         expr.else_branch,
         hooks.create_block_ctx(ctx),
@@ -687,6 +738,72 @@ function collect_loop_expr_break_types<
       }
       return;
   }
+}
+
+function loop_if_let_branch_ctx<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  case_name: string,
+  value_name: string | undefined,
+  target: CoreExpr,
+  ctx: block_ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+): block_ctx | undefined {
+  const union_case = hooks.static_union_case(target, ctx);
+
+  if (union_case) {
+    const branch_ctx = hooks.create_block_ctx(ctx);
+
+    if (union_case.name !== case_name) {
+      return undefined;
+    }
+
+    hooks.bind_core_if_let_payload_fact(
+      value_name,
+      union_case,
+      branch_ctx,
+    );
+
+    return branch_ctx;
+  }
+
+  const dynamic_target = hooks.dynamic_union_if(target, ctx);
+
+  if (dynamic_target) {
+    const branch_ctx = hooks.create_block_ctx(ctx);
+
+    if (!dynamic_if_let_can_match(case_name, dynamic_target)) {
+      return undefined;
+    }
+
+    hooks.bind_dynamic_if_let_payload(
+      case_name,
+      value_name,
+      dynamic_target,
+      branch_ctx,
+    );
+    hooks.clear_optional_core_union_local(value_name, branch_ctx);
+
+    return branch_ctx;
+  }
+
+  const runtime_target = hooks.runtime_union_target(target, ctx);
+
+  if (!runtime_target) {
+    throw new Error(
+      "Core loop if let target requires union type facts: " +
+        JSON.stringify(target),
+    );
+  }
+
+  const info = hooks.runtime_union_match_info(case_name, runtime_target, ctx);
+  const branch_ctx = hooks.static_runtime_union_match_branch_ctx(
+    value_name,
+    info,
+    ctx,
+  );
+  return hooks.create_block_ctx(branch_ctx);
 }
 
 function collect_loop_field_break_types<

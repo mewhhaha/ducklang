@@ -335,7 +335,8 @@ function check_core_host_import_call<ctx extends CoreHostImportCtx>(
   expect(
     expr.args.length === host_import.params.length,
     "Core host import " + host_import.name + " expects " +
-      host_import.params.length.toString() + " arguments",
+      host_import.params.length.toString() + " arguments, got " +
+      expr.args.length.toString(),
   );
   expect(
     host_import.params.length === host_import.args.length,

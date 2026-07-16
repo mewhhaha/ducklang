@@ -54,9 +54,9 @@ Deno.test("fixed arrays elaborate to positional object fields", () => {
 
 Deno.test("named products retain named update behavior", () => {
   const wat = Source.wat(`
-type Pair = (.left = I32, .right = I32)
-let pair: Pair = (.left = 1, .right = 2)
-let changed = pair with { left: 3 }
+type Pair = [.left = I32, .right = I32]
+let pair: Pair = [.left = 1, .right = 2]
+let changed = pair with { .left = 3 }
 changed.left
 `);
   assert_includes(wat, "i32.const 3");
@@ -94,23 +94,28 @@ Deno.test("product casts relabel only when ordered layouts agree", () => {
       },
     }),
     {
-      tag: "product",
-      entries: [
-        {
-          label: "left",
-          value: { tag: "num", type: "i32", value: 1 },
+      tag: "struct_value",
+      type_expr: {
+        tag: "set_type",
+        type_expr: {
+          tag: "product",
+          entries: [
+            { label: "left", type_expr: { tag: "name", name: "I32" } },
+            { label: "right", type_expr: { tag: "name", name: "I64" } },
+          ],
         },
-        {
-          label: "right",
-          value: { tag: "num", type: "i64", value: 2n },
-        },
+      },
+      fields: [
+        { name: "left", value: { tag: "num", type: "i32", value: 1 } },
+        { name: "right", value: { tag: "num", type: "i64", value: 2n } },
       ],
+      bracketed: "named",
     },
   );
   assert_throws(
     () =>
       Source.compile(
-        "(1, 2i64) as (.left = I32, .right = I32)",
+        "(1, 2i64) as [.left = I32, .right = I32]",
       ),
     "product entry 1 has source layout i64 and target layout i32",
   );
@@ -196,7 +201,7 @@ Deno.test("match coverage rejects duplicate and missing arms", () => {
   assert_throws(
     () =>
       Source.core(`
-type Result = .ok = I32 | .err
+type Result = | .ok = I32 | .err
 let result: Result = Result.ok(7)
 match result { | .ok value => value }
 `),
@@ -278,20 +283,21 @@ head + tail[1]
   assert_includes(wat, "i32.const 30");
 });
 
-Deno.test("record binding patterns support selected fields and rests", () => {
+Deno.test("labeled product patterns support selected fields", () => {
   const wat = Source.wat(`
-type Pair = (.left = I32, .right = I32)
-let pair: Pair = (.left = 20, .right = 22)
-let { left, ...rest } = pair
-left + rest.right
+type Pair = [.left = I32, .right = I32]
+let pair: Pair = [.left = 20, .right = 22]
+let { .left = left } = pair
+left + pair.right
 `);
   assert_includes(wat, "i32.add");
 });
 
-Deno.test("module export records bind through recursive patterns", () => {
+Deno.test("labeled products bind through recursive patterns", () => {
   const wat = Source.wat(`
-const exports = () => { return { add: 40, ignored: 2 } }
-const { add } = exports()
+type Exports = [.add = I32, .ignored = I32]
+let exports: Exports = [40, 2]
+const { .add = add } = exports
 add
 `);
   assert_includes(wat, "i32.const 40");
@@ -299,7 +305,7 @@ add
 
 Deno.test("module initializer results remain available as one binding", () => {
   const wat = Source.wat(`
-const exports = () => { return { run: 42 } }
+const exports = () => { return [.run = 42] }
 let application = exports()
 application.run
 `);

@@ -51,6 +51,8 @@ const scalar_names = new Set([
   "I32",
   "U32",
   "I64",
+  "F32",
+  "F32x4",
   "Text",
   "Bytes",
   "Resume",
@@ -175,7 +177,14 @@ export function sem_type_from_front_type(type: FrontType): SemType {
     case "bool":
       return { tag: "scalar", name: "Bool" };
 
+    case "f32x4":
+      return { tag: "scalar", name: "F32x4" };
+
     case "int":
+      if (type.type === "f32") {
+        return { tag: "scalar", name: "F32" };
+      }
+
       if (type.type === "i64") {
         return { tag: "scalar", name: "I64" };
       }
@@ -621,8 +630,8 @@ function sem_type_is_scalar(type: SemType): boolean {
   }
 
   return type.name === "Unit" || type.name === "Int" || type.name === "I32" ||
-    type.name === "U32" || type.name === "I64" || type.name === "Resume" ||
-    type.name === "Bool";
+    type.name === "U32" || type.name === "I64" || type.name === "F32" ||
+    type.name === "Resume" || type.name === "Bool";
 }
 
 export function sem_type_key(type: SemType): string {

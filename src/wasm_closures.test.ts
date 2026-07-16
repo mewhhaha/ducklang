@@ -186,10 +186,8 @@ f(41)
 
   const if_let_matching_wat = wat_from_core_source(`
 let flag = 1
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 let result: result_type = if flag {
   .ok(40)
@@ -229,10 +227,8 @@ f(2)
 
   const if_let_fallback_wat = wat_from_core_source(`
 let flag = 0
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 let result: result_type = if flag {
   .ok(40)
@@ -344,7 +340,7 @@ f(1)
   }
 
   const captured_text_assign_wat = wat_from_core_source(`
-let run = (text: Text, flag: Int) => {
+let run = (text: Bytes, flag: Int) => {
   let f = if flag {
     (byte: Int) => {
       text[0] = byte
@@ -357,7 +353,7 @@ let run = (text: Text, flag: Int) => {
   f(90)
 }
 
-run("Ada", 1)
+run(Utf8.encode("Ada"), 1)
 `);
   const captured_text_assign_instance = await instantiate_wat(
     captured_text_assign_wat,

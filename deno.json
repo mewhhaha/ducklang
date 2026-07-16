@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "ix": "deno run --allow-read --allow-write ix.ts",
+    "duck": "deno run --allow-read --allow-write duck.ts",
     "lsp:perf": "deno run --allow-read scripts/lsp-performance.ts"
   },
   "imports": {
@@ -15,8 +15,8 @@
   "fmt": {
     "exclude": [
       "AGENTS.md",
-      "tree-sitter-ix/src/grammar.json",
-      "tree-sitter-ix/src/node-types.json"
+      "tree-sitter-duck/src/grammar.json",
+      "tree-sitter-duck/src/node-types.json"
     ]
   }
 }

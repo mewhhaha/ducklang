@@ -13,6 +13,10 @@ import {
   register_core_allocation_fact,
   register_core_allocation_fact_scratch_scope,
 } from "./metadata.ts";
+import {
+  core_runtime_buffer_builtin,
+  runtime_buffer_allocation,
+} from "../runtime_buffer.ts";
 
 export function record_allocation(
   expr: CoreExpr,
@@ -106,6 +110,16 @@ function allocation_emission_site(
   }
 
   if (expr.tag === "app" && expr.func.tag === "var") {
+    const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+    if (runtime_buffer_builtin) {
+      return runtime_buffer_allocation(runtime_buffer_builtin).emission_site;
+    }
+
+    if (expr.func.name === "Bytes.generate") {
+      return "runtime_bytes.generate";
+    }
+
     if (expr.func.name === "append") {
       return "runtime_text.append";
     }
@@ -130,7 +144,7 @@ function allocation_layout(
   reason: CoreAllocationReason,
 ): {
   byte_size: import("./types.ts").CoreAllocationByteSize;
-  alignment: 4 | 8;
+  alignment: 4 | 8 | 16;
   layout: import("./types.ts").CoreAllocationLayout;
 } {
   if (
@@ -177,6 +191,14 @@ function allocation_layout(
     };
   }
 
+  if (reason === "runtime_bytes") {
+    return {
+      byte_size: { tag: "runtime", formula: "4 + runtime_byte_length" },
+      alignment: 4,
+      layout: "runtime_bytes.length_prefixed_u8",
+    };
+  }
+
   return {
     byte_size: { tag: "runtime", formula: "4 + runtime_byte_length" },
     alignment: 4,
@@ -211,6 +233,9 @@ function ownership_reason(
 
     case "runtime_aggregate":
       return "runtime_aggregate";
+
+    case "runtime_bytes":
+      return "bytes";
 
     case "runtime_text":
       return "text";

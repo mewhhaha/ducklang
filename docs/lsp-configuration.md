@@ -1,9 +1,9 @@
 # LSP workspace configuration
 
-The Ix language server accepts the same keys in `initializationOptions` and in
-`workspace/didChangeConfiguration` under `settings.ix`. Dynamic settings may
-also be sent at the top level of `settings`; `settings.ix` takes precedence for
-keys present in both places.
+The Duck language server accepts the same keys in `initializationOptions` and in
+`workspace/didChangeConfiguration` under `settings.duck`. Dynamic settings may
+also be sent at the top level of `settings`; `settings.duck` takes precedence
+for keys present in both places.
 
 ```json
 {
@@ -30,7 +30,7 @@ keys present in both places.
   settings are ignored; omitted settings retain their previous value.
 
 Workspace folders are indexed at initialization. When the supplied folder is an
-interior directory without Ix files, the server walks upward to the nearest
+interior directory without Duck files, the server walks upward to the nearest
 `AGENTS.md` or `.git` marker. Open editor buffers are overlays over disk files.
 Clients that supply an initialization `workDoneToken` receive `$/progress`
 begin/report/end notifications while files are indexed.

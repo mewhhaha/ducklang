@@ -145,11 +145,41 @@ class TypeExprParser {
 
   private parse_atom(): TypeExpr {
     if (this.match_symbol("[")) {
-      const element = this.parse_arrow();
-      this.expect_array_separator();
-      const length = this.parse_array_length(0);
-      this.expect_symbol("]");
-      return { tag: "array", element, length };
+      if (this.match_symbol("]")) {
+        return { tag: "product", entries: [] };
+      }
+
+      const first = this.parse_product_entry();
+
+      if (this.match_array_separator()) {
+        expect(
+          first.label === undefined,
+          "Repeated product element cannot have a label",
+        );
+        const length = this.parse_array_length(0);
+        this.expect_symbol("]");
+        return { tag: "array", element: first.type_expr, length };
+      }
+
+      const entries = [first];
+
+      if (this.match_symbol("]")) {
+        return { tag: "product", entries };
+      }
+
+      this.expect_symbol(",");
+
+      while (true) {
+        entries.push(this.parse_product_entry());
+
+        if (this.match_symbol("]")) {
+          break;
+        }
+
+        this.expect_symbol(",");
+      }
+
+      return { tag: "product", entries };
     }
 
     if (this.match_symbol("(")) {
@@ -279,13 +309,15 @@ class TypeExprParser {
     return { tag: "name", name: token.text };
   }
 
-  private expect_array_separator(): void {
+  private match_array_separator(): boolean {
     const token = this.peek();
-    expect(
-      token && token.kind === "newline" && token.raw === ";",
-      "Expected `;` in fixed array type",
-    );
+
+    if (!token || token.kind !== "newline" || token.raw !== ";") {
+      return false;
+    }
+
     this.index += 1;
+    return true;
   }
 
   private parse_effect_row_union(): EffectRowExpr {
@@ -438,7 +470,7 @@ function format(type: TypeExpr, parent_precedence: number): string {
 
       return text;
     });
-    return "(" + entries.join(", ") + ")";
+    return "[" + entries.join(", ") + "]";
   }
 
   if (type.tag === "tuple") {

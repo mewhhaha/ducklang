@@ -2,6 +2,7 @@ import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
 import type { Wat } from "../wat.ts";
 import type { CoreExpr, CoreStmt } from "./ast.ts";
+import type { CoreAllocationOwnedChild } from "./allocation.ts";
 import type { CoreLamCapturePlan } from "./closure_capture.ts";
 import { core_statement_cleanup_rows } from "./cleanup_emission.ts";
 import { emit_core_scratch_resets } from "./scratch.ts";
@@ -338,7 +339,11 @@ function emit_core_stmt_inner<
         }
       }
 
-      if (hooks.is_static_value_expr(value, ctx)) {
+      if (
+        hooks.is_static_value_expr(value, ctx) &&
+        (ctx.mutable_bindings?.has(stmt.name) !== true ||
+          value.tag === "struct_value")
+      ) {
         const plan = hooks.plan_static_value_expr(value, ctx, ctx);
         const materialized_struct_owner = stmt.kind === "let" &&
           ctx.materialized_bindings?.has(stmt.name) === true &&
@@ -411,7 +416,12 @@ function emit_core_stmt_inner<
       {
         const value = hooks.core_assignment_value(stmt, ctx);
 
-        if (hooks.is_static_value_expr(value, ctx)) {
+        if (
+          hooks.is_static_value_expr(value, ctx) &&
+          (ctx.mutable_bindings?.has(stmt.name) !== true ||
+            value.tag === "struct_value" ||
+            value.tag === "struct_update")
+        ) {
           const plan = hooks.plan_static_value_expr(value, ctx, ctx);
           if (
             static_scratch_aggregate_alias_materializes(value) ||
@@ -682,17 +692,35 @@ function emit_cleanup_rows(
       pointer = "local.get $" + row.owner;
     }
     const lines: string[] = [];
-    for (const child of row.owned_children) {
-      lines.push(pointer);
-      lines.push("i32.load offset=" + child.offset.toString());
-      lines.push("call $__free");
-      lines.push("drop");
-    }
+    emit_owned_child_cleanup(lines, pointer, [], row.owned_children);
     lines.push(pointer);
     lines.push("call $__free");
     lines.push("drop");
     return lines.join("\n");
   }).filter((line) => line !== "").join("\n");
+}
+
+function emit_owned_child_cleanup(
+  lines: string[],
+  pointer: string,
+  parent_offsets: number[],
+  children: CoreAllocationOwnedChild[],
+): void {
+  for (const child of children) {
+    const offsets = [...parent_offsets, child.offset];
+    emit_owned_child_cleanup(
+      lines,
+      pointer,
+      offsets,
+      child.owned_children || [],
+    );
+    lines.push(pointer);
+    for (const offset of offsets) {
+      lines.push("i32.load offset=" + offset.toString());
+    }
+    lines.push("call $__free");
+    lines.push("drop");
+  }
 }
 
 function join_cleanup(...items: Wat[]): Wat {

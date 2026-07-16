@@ -12,7 +12,7 @@ function assert_resumption_input_diagnostic(
   const call_start = source.indexOf(call_text);
   const argument_start = call_start + call_text.indexOf(argument_text);
   const diagnostic = {
-    code: "IX2307",
+    code: "DUCK2307",
     severity: "error" as const,
     message: "Resumption " + resumption_name + " expects " + expected_type +
       ", got " + actual_type,

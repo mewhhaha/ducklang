@@ -27,6 +27,7 @@ export type CoreAllocationPermitRequest = {
 export type CoreAllocationPermitState = {
   permits: CoreAllocationFact[];
   consumed: CoreAllocationFact[];
+  consumed_subjects: Map<CoreAllocationFact, Set<CoreExpr>>;
 };
 
 export function create_core_allocation_permit_state(
@@ -43,6 +44,7 @@ export function create_core_allocation_permit_state(
       return metadata.producer !== "external";
     }),
     consumed: [],
+    consumed_subjects: new Map(),
   };
 }
 
@@ -60,7 +62,11 @@ export function consume_core_allocation_permit(
     const subject_matches = Array.from(fact_subjects).some((subject) => {
       return canonical_core_expr(subject) === request_subject;
     });
+    const consumed_subjects = state.consumed_subjects.get(fact);
+    const subject_available = consumed_subjects === undefined ||
+      !consumed_subjects.has(request_subject);
     return subject_matches &&
+      subject_available &&
       fact.reason === request.reason &&
       fact.storage === request.storage &&
       fact.layout === request.layout &&
@@ -74,10 +80,21 @@ export function consume_core_allocation_permit(
       if (subject) {
         detail = describe_allocation_subject(subject);
       }
-      return fact.allocation_id + "=" + detail;
+      const emission_subjects = core_allocation_fact_emission_subjects(fact);
+      let emissions = "missing-emission-subjects";
+      if (emission_subjects) {
+        emissions = Array.from(emission_subjects).map((candidate) => {
+          return describe_allocation_subject(candidate);
+        }).join("|");
+      }
+      return fact.allocation_id + "=" + detail + "[" + emissions + "]";
     }).join(", ");
     const consumed = state.consumed.map((fact) => {
-      return fact.allocation_id;
+      const subject = core_allocation_fact_subject(fact);
+      if (!subject) {
+        return fact.allocation_id + "=missing-subject";
+      }
+      return fact.allocation_id + "=" + describe_allocation_subject(subject);
     }).join(", ");
     throw new Error(
       "Core allocation emission has no permit for " + request.reason +
@@ -89,12 +106,32 @@ export function consume_core_allocation_permit(
     );
   }
 
-  const consumed = state.permits.splice(index, 1);
-  const fact = consumed[0];
+  const fact = state.permits[index];
   if (!fact) {
     throw new Error("Core allocation permit consumption lost its fact");
   }
-  state.consumed.push(fact);
+
+  const request_subject = canonical_core_expr(request.subject);
+  let consumed_subjects = state.consumed_subjects.get(fact);
+  if (!consumed_subjects) {
+    consumed_subjects = new Set();
+    state.consumed_subjects.set(fact, consumed_subjects);
+    state.consumed.push(fact);
+  }
+  consumed_subjects.add(request_subject);
+
+  const emission_subjects = core_allocation_fact_emission_subjects(fact);
+  if (!emission_subjects) {
+    throw new Error("Core allocation permit lost its emission subjects");
+  }
+  const has_available_subject = Array.from(emission_subjects).some(
+    (subject) => {
+      return !consumed_subjects.has(canonical_core_expr(subject));
+    },
+  );
+  if (!has_available_subject) {
+    state.permits.splice(index, 1);
+  }
 }
 
 function describe_allocation_subject(subject: CoreExpr): string {
@@ -105,6 +142,18 @@ function describe_allocation_subject(subject: CoreExpr): string {
   }
   if (canonical.tag === "var" || canonical.tag === "linear") {
     detail += "(" + canonical.name + ")";
+  }
+  if (subject.tag === "struct_value") {
+    detail += "{" + subject.fields.map((field) => field.name).join(",") + "}";
+  }
+  if (canonical.tag === "struct_value" && canonical !== subject) {
+    detail += "{" + canonical.fields.map((field) => field.name).join(",") + "}";
+  }
+  if (subject.tag === "union_case") {
+    detail += "(." + subject.name + ")";
+  }
+  if (canonical.tag === "union_case" && canonical !== subject) {
+    detail += "(." + canonical.name + ")";
   }
   return detail;
 }

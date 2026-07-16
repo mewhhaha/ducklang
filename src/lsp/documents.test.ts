@@ -74,8 +74,8 @@ Deno.test("positions reject scalar splits and invalid ranges", () => {
 
 Deno.test("incremental changes apply in order with UTF-8 range lengths", () => {
   const documents = new DocumentStore("utf-8");
-  documents.open("file:///demo.ix", 1, "a😀中\nbeta\n");
-  const document = documents.apply_changes("file:///demo.ix", 2, [
+  documents.open("file:///demo.duck", 1, "a😀中\nbeta\n");
+  const document = documents.apply_changes("file:///demo.duck", 2, [
     {
       range: {
         start: { line: 0, character: 1 },
@@ -94,7 +94,7 @@ Deno.test("incremental changes apply in order with UTF-8 range lengths", () => {
     },
   ]);
   assert_equals(document, {
-    uri: "file:///demo.ix",
+    uri: "file:///demo.duck",
     version: 2,
     text: "aQ\nB\n",
   });
@@ -102,40 +102,40 @@ Deno.test("incremental changes apply in order with UTF-8 range lengths", () => {
 
 Deno.test("full document change is the fallback and versions only increase", () => {
   const documents = new DocumentStore();
-  documents.open("file:///demo.ix", 4, "old");
+  documents.open("file:///demo.duck", 4, "old");
   assert_equals(
-    documents.apply_changes("file:///demo.ix", 5, [{ text: "new😀" }]).text,
+    documents.apply_changes("file:///demo.duck", 5, [{ text: "new😀" }]).text,
     "new😀",
   );
   assert_throws(
-    () => documents.apply_changes("file:///demo.ix", 5, [{ text: "stale" }]),
+    () => documents.apply_changes("file:///demo.duck", 5, [{ text: "stale" }]),
     "must increase",
   );
   assert_throws(
-    () => documents.open("file:///demo.ix", 4, "stale"),
+    () => documents.open("file:///demo.duck", 4, "stale"),
     "must increase",
   );
 });
 
 Deno.test("document versions accept the signed LSP integer range", () => {
   const documents = new DocumentStore();
-  documents.open("file:///signed.ix", -1, "old");
+  documents.open("file:///signed.duck", -1, "old");
   assert_equals(
-    documents.apply_changes("file:///signed.ix", 0, [{ text: "new" }]),
-    { uri: "file:///signed.ix", version: 0, text: "new" },
+    documents.apply_changes("file:///signed.duck", 0, [{ text: "new" }]),
+    { uri: "file:///signed.duck", version: 0, text: "new" },
   );
   assert_throws(
-    () => documents.open("file:///large.ix", 2_147_483_648, "invalid"),
+    () => documents.open("file:///large.duck", 2_147_483_648, "invalid"),
     "signed 32-bit integer",
   );
 });
 
 Deno.test("invalid changes leave the current document unchanged", () => {
   const documents = new DocumentStore();
-  documents.open("file:///demo.ix", 1, "abc");
+  documents.open("file:///demo.duck", 1, "abc");
   assert_throws(
     () =>
-      documents.apply_changes("file:///demo.ix", 2, [{
+      documents.apply_changes("file:///demo.duck", 2, [{
         range: {
           start: { line: 0, character: 0 },
           end: { line: 0, character: 1 },
@@ -145,8 +145,8 @@ Deno.test("invalid changes leave the current document unchanged", () => {
       }]),
     "rangeLength",
   );
-  assert_equals(documents.get("file:///demo.ix"), {
-    uri: "file:///demo.ix",
+  assert_equals(documents.get("file:///demo.duck"), {
+    uri: "file:///demo.duck",
     version: 1,
     text: "abc",
   });
@@ -155,7 +155,7 @@ Deno.test("invalid changes leave the current document unchanged", () => {
 Deno.test("incremental ASCII edit scripts match a direct text oracle", () => {
   const documents = new DocumentStore();
   let expected = "abcdefghij";
-  documents.open("file:///demo.ix", 1, expected);
+  documents.open("file:///demo.duck", 1, expected);
   let seed = 17;
 
   for (let version = 2; version <= 80; version += 1) {
@@ -165,7 +165,7 @@ Deno.test("incremental ASCII edit scripts match a direct text oracle", () => {
     const end = start + (seed % (expected.length - start + 1));
     const replacement = String.fromCharCode(65 + (seed % 26));
     expected = expected.slice(0, start) + replacement + expected.slice(end);
-    const actual = documents.apply_changes("file:///demo.ix", version, [{
+    const actual = documents.apply_changes("file:///demo.duck", version, [{
       range: {
         start: { line: 0, character: start },
         end: { line: 0, character: end },
@@ -183,7 +183,7 @@ Deno.test("incremental Unicode edit scripts match a full-text oracle", () => {
 
   for (const encoding of encodings) {
     const documents = new DocumentStore(encoding);
-    const uri = "file:///" + encoding + ".ix";
+    const uri = "file:///" + encoding + ".duck";
     let expected = "alpha😀\r\n中beta\ngamma\rdelta";
     documents.open(uri, 1, expected);
     let seed = 29;
@@ -233,7 +233,7 @@ Deno.test("a top edit in a large document matches full replacement", () => {
 
   for (const encoding of ["utf-16", "utf-8"] as const) {
     const documents = new DocumentStore(encoding);
-    const uri = "file:///large_" + encoding + ".ix";
+    const uri = "file:///large_" + encoding + ".duck";
     documents.open(uri, 1, original);
     const end = original.indexOf("\n");
     const expected = replacement + original.slice(end);
@@ -251,19 +251,25 @@ Deno.test("a top edit in a large document matches full replacement", () => {
 
 Deno.test("analysis results are content-keyed, measured, and invalidated", () => {
   const documents = new DocumentStore();
-  documents.open("file:///demo.ix", 1, "one");
+  documents.open("file:///demo.duck", 1, "one");
   let calls = 0;
   const analyze = (text: string): string => {
     calls += 1;
     return text.toUpperCase();
   };
 
-  assert_equals(documents.compute("file:///demo.ix", "parse", analyze), "ONE");
-  assert_equals(documents.compute("file:///demo.ix", "parse", analyze), "ONE");
+  assert_equals(
+    documents.compute("file:///demo.duck", "parse", analyze),
+    "ONE",
+  );
+  assert_equals(
+    documents.compute("file:///demo.duck", "parse", analyze),
+    "ONE",
+  );
   assert_equals(calls, 1);
-  assert_equals(documents.compute_count("file:///demo.ix", "parse"), 1);
+  assert_equals(documents.compute_count("file:///demo.duck", "parse"), 1);
   const initial_metrics = documents.cache_metrics(
-    "file:///demo.ix",
+    "file:///demo.duck",
     "parse",
   );
   assert_equals(initial_metrics.computations, 1);
@@ -271,19 +277,28 @@ Deno.test("analysis results are content-keyed, measured, and invalidated", () =>
   assert_equals(initial_metrics.computed_bytes, 3);
   assert_equals(initial_metrics.invalidations, 1);
 
-  documents.apply_changes("file:///demo.ix", 2, [{ text: "two" }]);
+  documents.apply_changes("file:///demo.duck", 2, [{ text: "two" }]);
   const changed_hash = documents.cache_metrics(
-    "file:///demo.ix",
+    "file:///demo.duck",
     "parse",
   ).content_hash;
   assert_equals(changed_hash === initial_metrics.content_hash, false);
-  assert_equals(documents.compute("file:///demo.ix", "parse", analyze), "TWO");
-  documents.did_save("file:///demo.ix");
-  assert_equals(documents.compute("file:///demo.ix", "parse", analyze), "TWO");
-  documents.watched_file_changed("file:///demo.ix");
-  assert_equals(documents.compute("file:///demo.ix", "parse", analyze), "TWO");
+  assert_equals(
+    documents.compute("file:///demo.duck", "parse", analyze),
+    "TWO",
+  );
+  documents.did_save("file:///demo.duck");
+  assert_equals(
+    documents.compute("file:///demo.duck", "parse", analyze),
+    "TWO",
+  );
+  documents.watched_file_changed("file:///demo.duck");
+  assert_equals(
+    documents.compute("file:///demo.duck", "parse", analyze),
+    "TWO",
+  );
   assert_equals(calls, 4);
-  assert_equals(documents.cache_metrics("file:///demo.ix", "parse"), {
+  assert_equals(documents.cache_metrics("file:///demo.duck", "parse"), {
     content_hash: changed_hash,
     computations: 4,
     cache_hits: 1,

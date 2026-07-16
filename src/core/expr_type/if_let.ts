@@ -7,6 +7,7 @@ import {
   dynamic_if_let_can_match,
   find_core_type_field,
 } from "../union_static.ts";
+import { core_expr_definitely_exits } from "./control.ts";
 import type {
   CoreExprTypeBlockCtx,
   CoreExprTypeCtx,
@@ -49,14 +50,13 @@ export function if_let_expr_type<
       branch_ctx,
     );
 
-    const then_type = infer_expr_type(expr.then_branch, branch_ctx, hooks);
-    const else_type = infer_expr_type(expr.else_branch, ctx, hooks);
-    if (expr.implicit_else) {
-      return then_type;
-    }
-
-    expect(then_type === else_type, "Core if let branch type mismatch");
-    return then_type;
+    return matched_if_let_expr_type(
+      expr,
+      branch_ctx,
+      ctx,
+      hooks,
+      infer_expr_type,
+    );
   }
 
   const dynamic_target = hooks.dynamic_union_if(expr.target, ctx);
@@ -93,14 +93,13 @@ export function if_let_expr_type<
     );
     hooks.clear_optional_core_union_local(expr.value_name, branch_ctx);
 
-    const then_type = infer_expr_type(expr.then_branch, branch_ctx, hooks);
-    const else_type = infer_expr_type(expr.else_branch, ctx, hooks);
-    if (expr.implicit_else) {
-      return then_type;
-    }
-
-    expect(then_type === else_type, "Core if let branch type mismatch");
-    return then_type;
+    return matched_if_let_expr_type(
+      expr,
+      branch_ctx,
+      ctx,
+      hooks,
+      infer_expr_type,
+    );
   }
 
   const runtime_target = hooks.runtime_union_target(expr.target, ctx);
@@ -119,12 +118,47 @@ export function if_let_expr_type<
     info,
     ctx,
   );
-  const then_type = infer_expr_type(expr.then_branch, branch_ctx, hooks);
-  const else_type = infer_expr_type(expr.else_branch, ctx, hooks);
+  return matched_if_let_expr_type(
+    expr,
+    branch_ctx,
+    ctx,
+    hooks,
+    infer_expr_type,
+  );
+}
+
+function matched_if_let_expr_type<
+  ctx extends CoreExprTypeCtx,
+  block_ctx extends ctx & CoreExprTypeBlockCtx,
+>(
+  expr: Extract<CoreExpr, { tag: "if_let" }>,
+  then_ctx: ctx,
+  else_ctx: ctx,
+  hooks: CoreExprTypeHooks<ctx, block_ctx>,
+  infer_expr_type: CoreInferExprType<ctx, block_ctx>,
+): ValType {
+  const then_exits = core_expr_definitely_exits(expr.then_branch);
+  const else_exits = core_expr_definitely_exits(expr.else_branch);
+
+  if (then_exits && else_exits) {
+    return "i32";
+  }
+
+  if (then_exits) {
+    return infer_expr_type(expr.else_branch, else_ctx, hooks);
+  }
+
+  const then_type = infer_expr_type(expr.then_branch, then_ctx, hooks);
+
   if (expr.implicit_else) {
     return then_type;
   }
 
+  if (else_exits) {
+    return then_type;
+  }
+
+  const else_type = infer_expr_type(expr.else_branch, else_ctx, hooks);
   expect(then_type === else_type, "Core if let branch type mismatch");
   return then_type;
 }

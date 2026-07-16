@@ -23,6 +23,7 @@ import {
 import { is_builtin_type_name } from "./types.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
+import { f32x4_builtin_prim, numeric_builtin_prim } from "../op.ts";
 
 function array_length_is_known(
   length: ArrayLengthExpr,
@@ -38,6 +39,132 @@ function array_length_is_known(
 
   return array_length_is_known(length.left, type_parameters) &&
     array_length_is_known(length.right, type_parameters);
+}
+
+type SourceAggregateTypeValue = Extract<
+  FrontExpr,
+  { tag: "struct_type" | "union_type" }
+>;
+
+function source_aggregate_type_value(
+  value: FrontExpr,
+): SourceAggregateTypeValue | undefined {
+  if (
+    value.tag !== "app" || value.func.tag !== "var" ||
+    value.func.name !== "struct" ||
+    value.arg?.tag !== "shape"
+  ) {
+    return undefined;
+  }
+
+  const fields = [];
+
+  for (const entry of value.arg.entries) {
+    if (entry.label === undefined) {
+      return undefined;
+    }
+
+    const type_expr = source_constructor_type_expr(entry.value);
+
+    if (type_expr === undefined) {
+      return undefined;
+    }
+
+    fields.push({ name: entry.label, type_name: format_type_expr(type_expr) });
+  }
+
+  return { tag: "struct_type", fields };
+}
+
+function source_constructor_type_expr(value: FrontExpr): TypeExpr | undefined {
+  if (value.tag === "var" || value.tag === "type_name") {
+    return { tag: "name", name: value.name };
+  }
+
+  if (value.tag === "set_type") {
+    return value.type_expr;
+  }
+
+  if (value.tag === "product") {
+    const entries: Extract<TypeExpr, { tag: "product" }>["entries"] = [];
+
+    for (const entry of value.entries) {
+      const type_expr = source_constructor_type_expr(entry.value);
+
+      if (type_expr === undefined) {
+        return undefined;
+      }
+
+      entries.push({ label: entry.label, type_expr });
+    }
+
+    return { tag: "product", entries };
+  }
+
+  if (value.tag === "borrow" || value.tag === "freeze") {
+    const inner = source_constructor_type_expr(value.value);
+
+    if (inner === undefined) {
+      return undefined;
+    }
+
+    if (value.tag === "borrow") {
+      return { tag: "borrow", value: inner };
+    }
+
+    return { tag: "frozen", value: inner };
+  }
+
+  if (value.tag === "app") {
+    let type_expr = source_constructor_type_expr(value.func);
+
+    if (type_expr === undefined) {
+      return undefined;
+    }
+
+    for (const arg of value.args) {
+      const arg_type = source_constructor_type_expr(arg);
+
+      if (arg_type === undefined) {
+        return undefined;
+      }
+
+      type_expr = { tag: "apply", func: type_expr, arg: arg_type };
+    }
+
+    return type_expr;
+  }
+
+  if (value.tag === "array_repeat") {
+    const element = source_constructor_type_expr(value.value);
+    const length = source_constructor_array_length(value.length);
+
+    if (element === undefined || length === undefined) {
+      return undefined;
+    }
+
+    return { tag: "array", element, length };
+  }
+
+  return undefined;
+}
+
+function source_constructor_array_length(
+  value: FrontExpr,
+): ArrayLengthExpr | undefined {
+  if (
+    value.tag === "num" && value.type === "i32" &&
+    typeof value.value === "number" && Number.isSafeInteger(value.value) &&
+    value.value >= 0
+  ) {
+    return { tag: "number", value: value.value };
+  }
+
+  if (value.tag === "var") {
+    return { tag: "name", name: value.name };
+  }
+
+  return undefined;
 }
 
 export type SourceFieldTypeFact = {
@@ -83,6 +210,13 @@ export type SourceFacts = {
 
 type Scope = Map<string, SourceTypeFact>;
 
+type ClosureCallContext = {
+  callable: SourceTypeFact;
+  closure: Extract<FrontExpr, { tag: "lam" | "rec" }>;
+  scope: Scope;
+  calls: (SourceTypeFact | undefined)[][];
+};
+
 const cached_source_facts = new WeakMap<Source, SourceFacts>();
 
 export function source_facts(source: Source): SourceFacts {
@@ -98,6 +232,10 @@ export function source_facts(source: Source): SourceFacts {
   return facts;
 }
 
+export function invalidate_source_facts(source: Source): void {
+  cached_source_facts.delete(source);
+}
+
 export function source_inference_diagnostics(
   source: Source,
   facts: SourceFacts,
@@ -110,21 +248,52 @@ export function source_inference_diagnostics(
     "I32",
     "U32",
     "I64",
+    "F32",
+    "F32x4",
     "Text",
     "Bytes",
+    "Utf8.decode",
+    "Utf8.encode",
     "Resume",
     "Type",
+    "bit_and",
+    "bit_or",
+    "bit_xor",
+    "shift_left",
+    "shift_right_u",
+    "f32_sqrt",
+    "f32_from_i32",
+    "i32_from_f32",
+    "f32x4",
+    "f32x4_splat",
+    "f32x4_add",
+    "f32x4_sub",
+    "f32x4_mul",
+    "f32x4_div",
+    "f32x4_extract_lane",
+    "f32x4_replace_lane",
+    "format_i32",
+    "format_i64",
+    "format_f32",
   ]);
 
   for (const declaration of source.declarations || []) {
-    known_names.add(declaration.name);
+    if (declaration.tag !== "extend" && declaration.tag !== "fixity") {
+      known_names.add(declaration.name);
+    }
   }
 
   for (const statement of source.statements) {
+    let aggregate_type: SourceAggregateTypeValue | undefined;
+
+    if (statement.tag === "bind" && statement.kind === "const") {
+      aggregate_type = source_aggregate_type_value(statement.value);
+    }
+
     if (
       statement.tag === "bind" && statement.kind === "const" &&
       (statement.value.tag === "struct_type" ||
-        statement.value.tag === "union_type")
+        statement.value.tag === "union_type" || aggregate_type !== undefined)
     ) {
       known_names.add(statement.name);
     }
@@ -204,7 +373,7 @@ function append_unresolved_annotation_diagnostic(
   } catch (error) {
     if (error instanceof Error) {
       diagnostics.push(source_diagnostic(
-        "IX2311",
+        "DUCK2311",
         "error",
         error.message,
         subject,
@@ -337,13 +506,27 @@ class SourceFactRecorder {
     Extract<FrontExpr, { tag: "struct_type" | "union_type" }>
   >();
   readonly legacy_type_names = new WeakMap<object, string>();
+  readonly source_aggregate_type_values = new WeakMap<
+    object,
+    SourceAggregateTypeValue
+  >();
   readonly recorded_expressions = new WeakSet<object>();
   readonly return_type_stack: (SourceTypeFact | undefined)[][] = [];
   readonly validating_effects = new Set<string>();
+  readonly closure_call_contexts = new WeakMap<
+    SourceTypeFact,
+    ClosureCallContext
+  >();
+  readonly closure_calls: ClosureCallContext[] = [];
+  replaying_closure = false;
 
   constructor(readonly source: Source) {
     if (source.declarations !== undefined) {
       for (const declaration of source.declarations) {
+        if (declaration.tag === "extend" || declaration.tag === "fixity") {
+          continue;
+        }
+
         this.declarations.set(declaration.name, declaration);
 
         if (declaration.tag === "type" && declaration.body.tag === "sum") {
@@ -355,19 +538,33 @@ class SourceFactRecorder {
     }
 
     for (const statement of source.statements) {
+      let value: SourceAggregateTypeValue | undefined;
+
+      if (statement.tag === "bind" && statement.kind === "const") {
+        value = source_aggregate_type_value(statement.value);
+
+        if (value !== undefined) {
+          this.source_aggregate_type_values.set(statement.value, value);
+        }
+      }
+
       if (
         statement.tag !== "bind" || statement.kind !== "const" ||
         (statement.value.tag !== "struct_type" &&
-          statement.value.tag !== "union_type")
+          statement.value.tag !== "union_type" && value === undefined)
       ) {
         continue;
       }
 
-      this.legacy_type_values.set(statement.name, statement.value);
-      this.legacy_type_names.set(statement.value, statement.name);
+      if (value === undefined) {
+        value = statement.value as SourceAggregateTypeValue;
+      }
 
-      if (statement.value.tag === "union_type") {
-        for (const union_case of statement.value.cases) {
+      this.legacy_type_values.set(statement.name, value);
+      this.legacy_type_names.set(value, statement.name);
+
+      if (value.tag === "union_type") {
+        for (const union_case of value.cases) {
           this.add_case_owner(union_case.name, statement.name);
         }
       }
@@ -389,6 +586,10 @@ class SourceFactRecorder {
     const scope: Scope = new Map();
 
     for (const declaration of this.declarations.values()) {
+      if (declaration.tag === "extend" || declaration.tag === "fixity") {
+        continue;
+      }
+
       scope.set(declaration.name, this.namespace_for(declaration.name));
     }
 
@@ -406,11 +607,98 @@ class SourceFactRecorder {
     }
 
     this.record_statements(this.source.statements, scope, undefined);
+    this.record_called_closures();
     return this.facts;
+  }
+
+  record_called_closures(): void {
+    this.replaying_closure = true;
+
+    try {
+      for (const context of this.closure_calls) {
+        if (context.calls.length === 0) {
+          continue;
+        }
+
+        const parameter_types: SourceTypeFact[] = [];
+        let needs_inference = false;
+
+        for (let index = 0; index < context.closure.params.length; index += 1) {
+          const param = context.closure.params[index];
+
+          if (param === undefined) {
+            throw new Error("Missing source closure parameter " + index);
+          }
+
+          const annotated = this.parameter_type(param);
+
+          if (annotated !== undefined) {
+            parameter_types.push(annotated);
+            continue;
+          }
+
+          needs_inference = true;
+          const observed_types = context.calls.map((call) => call[index]);
+          const inferred = common_type_facts(observed_types);
+
+          if (inferred === undefined) {
+            parameter_types.length = 0;
+            break;
+          }
+
+          if (
+            observed_types.some((observed) =>
+              observed === undefined || observed.name !== inferred.name
+            )
+          ) {
+            parameter_types.length = 0;
+            break;
+          }
+
+          if (!source_type_fact_is_resolved(inferred)) {
+            parameter_types.length = 0;
+            break;
+          }
+
+          parameter_types.push(inferred);
+        }
+
+        if (
+          !needs_inference ||
+          parameter_types.length !== context.closure.params.length
+        ) {
+          continue;
+        }
+
+        const callable = this.record_closure(
+          context.closure,
+          new Map(context.scope),
+          undefined,
+          undefined,
+          parameter_types,
+        );
+
+        if (
+          callable === undefined || callable.call_params === undefined ||
+          callable.call_result === undefined
+        ) {
+          continue;
+        }
+
+        context.callable.call_params = callable.call_params;
+        context.callable.call_result = callable.call_result;
+      }
+    } finally {
+      this.replaying_closure = false;
+    }
   }
 
   record_declaration_definitions(): void {
     for (const declaration of this.declarations.values()) {
+      if (declaration.tag === "extend" || declaration.tag === "fixity") {
+        continue;
+      }
+
       const namespace = this.namespace_for(declaration.name);
 
       if (declaration.tag === "effect") {
@@ -437,7 +725,19 @@ class SourceFactRecorder {
         continue;
       }
 
-      if (declaration.body.tag === "product") {
+      if (declaration.tag === "duck") {
+        for (const member of declaration.members) {
+          this.record_definition(
+            member,
+            "name",
+            namespace.members?.get(member.name),
+          );
+        }
+
+        continue;
+      }
+
+      if (declaration.tag === "type" && declaration.body.tag === "product") {
         for (const field of declaration.body.fields) {
           this.record_definition(
             field,
@@ -445,7 +745,9 @@ class SourceFactRecorder {
             namespace.members?.get(field.name),
           );
         }
-      } else if (declaration.body.tag === "sum") {
+      } else if (
+        declaration.tag === "type" && declaration.body.tag === "sum"
+      ) {
         for (const union_case of declaration.body.cases) {
           this.record_definition(
             union_case,
@@ -777,6 +1079,15 @@ class SourceFactRecorder {
       );
       const body = new Map(scope);
 
+      if (
+        collection !== undefined && is_type_variable(collection) &&
+        statement.body.some((body_statement) =>
+          uses_shape_entry_projection(body_statement, statement.item)
+        )
+      ) {
+        Object.assign(collection, shape_type());
+      }
+
       if (statement.index !== undefined) {
         const index_type = named_type("I32");
         this.record_definition(statement, "index", index_type);
@@ -843,17 +1154,30 @@ class SourceFactRecorder {
     } else if (expr.tag === "num") {
       if (expr.type === "i64") {
         type = named_type("I64");
+      } else if (expr.type === "f32") {
+        type = named_type("F32");
       } else {
         type = named_type("I32");
       }
     } else if (expr.tag === "text") {
-      type = named_type("Text");
+      if (expr.encoding === "bytes") {
+        type = named_type("Bytes");
+      } else {
+        type = named_type("Text");
+      }
     } else if (expr.tag === "unit") {
       type = unit_type();
     } else if (expr.tag === "atom") {
       type = named_type("#" + expr.name);
     } else if (expr.tag === "var" || expr.tag === "linear") {
       type = scope.get(expr.name);
+
+      if (
+        type !== undefined && expected !== undefined &&
+        is_type_variable(type) && !is_type_variable(expected)
+      ) {
+        Object.assign(type, expected);
+      }
 
       if (type === undefined && expr.resume_signature !== undefined) {
         type = callable_type(
@@ -869,11 +1193,82 @@ class SourceFactRecorder {
       type = named_type("Type");
     } else if (expr.tag === "struct_type" || expr.tag === "union_type") {
       type = this.type_value_namespace(expr);
+    } else if (expr.tag === "shape") {
+      for (const entry of expr.entries) {
+        this.record_expr(entry.value, scope, undefined, break_types);
+      }
+
+      type = shape_type();
+    } else if (expr.tag === "array") {
+      for (const item of expr.items) {
+        this.record_expr(item, scope, undefined, break_types);
+      }
+
+      if (expr.rest !== undefined) {
+        const rest = this.record_expr(
+          expr.rest,
+          scope,
+          expected,
+          break_types,
+        );
+
+        if (
+          rest?.resolved_name === "StructSlots" ||
+          rest?.resolved_name === "StructMethods"
+        ) {
+          type = rest;
+        }
+      }
+
+      if (type === undefined && expected !== undefined) {
+        if (
+          expected.resolved_name === "StructSlots" ||
+          expected.resolved_name === "StructMethods"
+        ) {
+          type = expected;
+        }
+      }
+
+      if (type === undefined) {
+        type = named_type("Product");
+      }
+    } else if (expr.tag === "array_repeat") {
+      this.record_expr(expr.value, scope, undefined, break_types);
+      this.record_expr(
+        expr.length,
+        scope,
+        named_type("I32"),
+        break_types,
+      );
+      type = named_type("Product");
     } else if (expr.tag === "prim") {
       type = this.record_primitive(expr, scope, break_types);
     } else if (expr.tag === "lam" || expr.tag === "rec") {
       type = this.record_closure(expr, scope, expected, break_types);
+
+      if (type !== undefined && !this.replaying_closure) {
+        const context: ClosureCallContext = {
+          callable: type,
+          closure: expr,
+          scope: new Map(scope),
+          calls: [],
+        };
+        this.closure_call_contexts.set(type, context);
+        this.closure_calls.push(context);
+      }
     } else if (expr.tag === "app") {
+      let aggregate_type = this.source_aggregate_type_values.get(expr);
+
+      if (aggregate_type === undefined) {
+        aggregate_type = source_aggregate_type_value(expr);
+      }
+
+      if (aggregate_type !== undefined) {
+        type = this.type_value_namespace(aggregate_type);
+        this.store_expr_type(expr, type);
+        return type;
+      }
+
       const func = this.record_expr(expr.func, scope, undefined, break_types);
       const args: (SourceTypeFact | undefined)[] = [];
       const builtin = this.builtin_call_name(expr, scope);
@@ -887,7 +1282,37 @@ class SourceFactRecorder {
 
         let expected_arg: SourceTypeFact | undefined;
 
-        if (
+        if (builtin === "Bytes.generate") {
+          if (index === 0) {
+            expected_arg = named_type("I32");
+          } else if (index === 1) {
+            expected_arg = callable_type(
+              "Bytes.generate callback",
+              [named_type("I32")],
+              named_type("I32"),
+            );
+          }
+        } else if (builtin === "Utf8.encode") {
+          expected_arg = named_type("Text");
+        } else if (builtin === "Utf8.decode") {
+          expected_arg = named_type("Bytes");
+        } else if (builtin === "format_i32") {
+          expected_arg = named_type("I32");
+        } else if (builtin === "format_i64") {
+          expected_arg = named_type("I64");
+        } else if (builtin === "format_f32") {
+          if (index === 0) {
+            expected_arg = named_type("F32");
+          } else if (index === 1) {
+            expected_arg = named_type("I32");
+          }
+        } else if (builtin === "@shape.entries") {
+          expected_arg = named_type("Shape");
+        } else if (builtin === "@type.product") {
+          expected_arg = named_type("StructSlots");
+        } else if (builtin === "@type.namespace") {
+          expected_arg = type_namespace_argument_type();
+        } else if (
           builtin === undefined && func !== undefined &&
           func.call_params !== undefined
         ) {
@@ -895,6 +1320,17 @@ class SourceFactRecorder {
         }
 
         args.push(this.record_expr(arg, scope, expected_arg, break_types));
+      }
+
+      if (func !== undefined && !this.replaying_closure) {
+        const context = this.closure_call_contexts.get(func);
+
+        if (
+          context !== undefined &&
+          args.length === context.closure.params.length
+        ) {
+          context.calls.push(args);
+        }
       }
 
       if (builtin !== undefined) {
@@ -941,6 +1377,8 @@ class SourceFactRecorder {
       type = this.record_if(expr, scope, expected, break_types);
     } else if (expr.tag === "if_let") {
       type = this.record_if_let(expr, scope, expected, break_types);
+    } else if (expr.tag === "match") {
+      type = this.record_match(expr, scope, expected, break_types);
     } else if (expr.tag === "field") {
       type = this.record_field(expr, scope, break_types);
     } else if (expr.tag === "index") {
@@ -953,8 +1391,34 @@ class SourceFactRecorder {
       type = this.record_struct_update(expr, scope, expected, break_types);
     } else if (expr.tag === "with") {
       type = this.record_struct_update(expr, scope, expected, break_types);
+    } else if (expr.tag === "type_with") {
+      this.record_expr(expr.base, scope, named_type("Type"), break_types);
+
+      for (const member of expr.members) {
+        this.record_expr(
+          member.name,
+          scope,
+          named_type("Text"),
+          break_types,
+        );
+        this.record_expr(
+          member.value,
+          scope,
+          callable_type(
+            "type namespace member",
+            [named_type("Product")],
+            inference_type(),
+          ),
+          break_types,
+        );
+      }
+
+      type = named_type("Type");
     } else if (expr.tag === "union_case") {
       type = this.record_union_case(expr, scope, expected, break_types);
+    } else if (expr.tag === "as") {
+      type = this.type_from_type_expr(expr.type_expr);
+      this.record_expr(expr.value, scope, type, break_types);
     } else if (expr.tag === "is") {
       this.record_expr(expr.value, scope, undefined, break_types);
 
@@ -1009,7 +1473,7 @@ class SourceFactRecorder {
 
     if (exact_error !== undefined) {
       this.facts.inference_diagnostics.push(source_diagnostic(
-        "IX2310",
+        "DUCK2310",
         "error",
         exact_error,
         subject,
@@ -1031,10 +1495,20 @@ class SourceFactRecorder {
     if (
       expr.func.name === "len" || expr.func.name === "get" ||
       expr.func.name === "slice" || expr.func.name === "append" ||
+      expr.func.name === "Bytes.generate" ||
+      expr.func.name === "Utf8.encode" ||
+      expr.func.name === "Utf8.decode" ||
+      expr.func.name === "format_i32" || expr.func.name === "format_i64" ||
+      expr.func.name === "format_f32" ||
+      expr.func.name === "@shape.entries" ||
+      expr.func.name === "@type.product" ||
+      expr.func.name === "@type.namespace" ||
       expr.func.name === "describe_type" ||
       expr.func.name === "describe_fields" ||
       expr.func.name === "describe_cases" || expr.func.name === "construct" ||
-      expr.func.name === "project" || expr.func.name === "is_case"
+      expr.func.name === "project" || expr.func.name === "is_case" ||
+      f32x4_builtin_prim(expr.func.name) !== undefined ||
+      numeric_builtin_prim(expr.func.name) !== undefined
     ) {
       return expr.func.name;
     }
@@ -1069,7 +1543,8 @@ class SourceFactRecorder {
       const declaration = this.declarations.get(type.name);
 
       if (
-        declaration === undefined || declaration.tag === "effect" ||
+        declaration === undefined ||
+        (declaration.tag !== "record" && declaration.tag !== "type") ||
         (declaration.tag === "type" && declaration.params.length !== 0)
       ) {
         return false;
@@ -1171,7 +1646,7 @@ class SourceFactRecorder {
   }
 
   declaration_type_is_known(
-    declaration: Exclude<Declaration, { tag: "effect" }>,
+    declaration: Extract<Declaration, { tag: "record" | "type" }>,
     resolving: Set<string>,
   ): boolean {
     if (resolving.has(declaration.name)) {
@@ -1287,12 +1762,18 @@ class SourceFactRecorder {
     try {
       for (const operation of declaration.operations) {
         for (const param of operation.params) {
-          if (is_error_type(this.type_from_name(param.type_name))) {
+          if (
+            !declaration.params.includes(param.type_name) &&
+            is_error_type(this.type_from_name(param.type_name))
+          ) {
             return false;
           }
         }
 
-        if (is_error_type(this.type_from_name(operation.result.type_name))) {
+        if (
+          !declaration.params.includes(operation.result.type_name) &&
+          is_error_type(this.type_from_name(operation.result.type_name))
+        ) {
           return false;
         }
       }
@@ -1335,6 +1816,7 @@ class SourceFactRecorder {
     scope: Scope,
     expected: SourceTypeFact | undefined,
     break_types: (SourceTypeFact | undefined)[] | undefined,
+    inferred_params?: SourceTypeFact[],
   ): SourceTypeFact | undefined {
     const body_scope = new Map(scope);
     const params: (SourceTypeFact | undefined)[] = [];
@@ -1365,6 +1847,13 @@ class SourceFactRecorder {
         expected.call_params !== undefined
       ) {
         contextual = expected.call_params[index];
+      }
+
+      if (
+        type === undefined && inferred_params !== undefined &&
+        inferred_params[index] !== undefined
+      ) {
+        type = inferred_params[index];
       }
 
       if (
@@ -1519,6 +2008,67 @@ class SourceFactRecorder {
     return common_type_facts([then_type, else_type]);
   }
 
+  record_match(
+    expr: Extract<FrontExpr, { tag: "match" }>,
+    scope: Scope,
+    expected: SourceTypeFact | undefined,
+    break_types: (SourceTypeFact | undefined)[] | undefined,
+  ): SourceTypeFact | undefined {
+    const literal_types: SourceTypeFact[] = [];
+
+    for (const arm of expr.arms) {
+      if (arm.pattern.tag !== "literal") {
+        continue;
+      }
+
+      const literal = arm.pattern.value;
+
+      if (literal.tag === "bool") {
+        literal_types.push(named_type("Bool"));
+      } else if (literal.tag === "num") {
+        if (literal.type === "i64") {
+          literal_types.push(named_type("I64"));
+        } else if (literal.type === "f32") {
+          literal_types.push(named_type("F32"));
+        } else {
+          literal_types.push(named_type("I32"));
+        }
+      } else if (literal.tag === "text") {
+        literal_types.push(named_type("Text"));
+      } else {
+        literal_types.push(named_type("#" + literal.name));
+      }
+    }
+
+    const target_type = this.record_expr(
+      expr.target,
+      scope,
+      common_type_facts(literal_types),
+      break_types,
+    );
+    const result_types: (SourceTypeFact | undefined)[] = [];
+
+    for (const arm of expr.arms) {
+      const arm_scope = new Map(scope);
+      this.record_pattern_bindings(arm.pattern, target_type, arm_scope);
+
+      if (arm.guard !== undefined) {
+        this.record_expr(
+          arm.guard,
+          arm_scope,
+          named_type("Bool"),
+          break_types,
+        );
+      }
+
+      result_types.push(
+        this.record_expr(arm.body, arm_scope, expected, break_types),
+      );
+    }
+
+    return common_type_facts(result_types);
+  }
+
   record_field(
     expr: Extract<FrontExpr, { tag: "field" }>,
     scope: Scope,
@@ -1557,10 +2107,21 @@ class SourceFactRecorder {
     break_types: (SourceTypeFact | undefined)[] | undefined,
   ): SourceTypeFact | undefined {
     const object = this.record_expr(expr.object, scope, undefined, break_types);
-    const index = this.record_expr(expr.index, scope, undefined, break_types);
+    const index = this.record_expr(
+      expr.index,
+      scope,
+      named_type("I32"),
+      break_types,
+    );
 
     if (object === undefined) {
       return undefined;
+    }
+
+    if (
+      is_type_variable(object) && index !== undefined && is_i32_family(index)
+    ) {
+      Object.assign(object, named_type("Product"));
     }
 
     if (
@@ -1785,7 +2346,7 @@ class SourceFactRecorder {
       if (expected_fields !== undefined) {
         const expected_field = expected_fields[index];
 
-        if (entry.label === undefined && expected?.positional_fields) {
+        if (entry.label === undefined) {
           field_expected = expected_field?.type;
         } else if (
           entry.label !== undefined && expected_field?.name === entry.label
@@ -1821,8 +2382,11 @@ class SourceFactRecorder {
       return expected;
     }
 
-    if (expected !== undefined) {
-      return undefined;
+    if (
+      expected?.resolved_name === "StructSlots" ||
+      expected?.resolved_name === "StructMethods"
+    ) {
+      return expected;
     }
 
     return struct_type(inferred_fields, undefined, positional);
@@ -2017,16 +2581,32 @@ class SourceFactRecorder {
       let operation_found = false;
 
       if (declaration !== undefined && declaration.tag === "effect") {
+        const substitutions = new Map<string, SourceTypeFact>();
+
+        for (const param of declaration.params) {
+          substitutions.set(param, inference_type());
+        }
+
         const operation = declaration.operations.find((candidate) =>
           candidate.name === clause.name
         );
 
         if (operation !== undefined) {
           operation_found = true;
-          operation_params = operation.params.map((param) =>
-            this.type_from_name(param.type_name)
-          );
-          operation_result = this.type_from_name(operation.result.type_name);
+          operation_params = operation.params.map((param) => {
+            const substitution = substitutions.get(param.type_name);
+
+            if (substitution !== undefined) {
+              return substitution;
+            }
+
+            return this.type_from_name(param.type_name);
+          });
+          operation_result = substitutions.get(operation.result.type_name);
+
+          if (operation_result === undefined) {
+            operation_result = this.type_from_name(operation.result.type_name);
+          }
 
           if (
             operation_params.some((param) => is_error_type(param)) ||
@@ -2158,12 +2738,29 @@ class SourceFactRecorder {
     const members = new Map<string, SourceTypeFact>();
 
     if (declaration.tag === "effect") {
+      const substitutions = new Map<string, SourceTypeFact>();
+
+      for (const param of declaration.params) {
+        substitutions.set(param, inference_type());
+      }
+
       for (const operation of declaration.operations) {
-        const result = this.type_from_name(operation.result.type_name);
+        let result = substitutions.get(operation.result.type_name);
+
+        if (result === undefined) {
+          result = this.type_from_name(operation.result.type_name);
+        }
+
         const params = operation.params.map((param) => param.type_name);
-        const param_types = operation.params.map((param) =>
-          this.type_from_name(param.type_name)
-        );
+        const param_types = operation.params.map((param) => {
+          const substitution = substitutions.get(param.type_name);
+
+          if (substitution !== undefined) {
+            return substitution;
+          }
+
+          return this.type_from_name(param.type_name);
+        });
 
         if (
           is_error_type(result) ||
@@ -2181,15 +2778,21 @@ class SourceFactRecorder {
           );
         }
       }
+    } else if (declaration.tag === "duck") {
+      for (const member of declaration.members) {
+        members.set(member.name, named_type("unknown"));
+      }
     } else if (declaration.tag === "record") {
       for (const field of declaration.fields) {
         members.set(field.name, this.type_from_name(field.type_name));
       }
-    } else if (declaration.body.tag === "product") {
+    } else if (
+      declaration.tag === "type" && declaration.body.tag === "product"
+    ) {
       for (const field of declaration.body.fields) {
         members.set(field.name, this.type_from_name(field.type_name));
       }
-    } else if (declaration.body.tag === "sum") {
+    } else if (declaration.tag === "type" && declaration.body.tag === "sum") {
       for (const union_case of declaration.body.cases) {
         const payload = this.type_from_name(union_case.type_name);
 
@@ -2208,7 +2811,9 @@ class SourceFactRecorder {
           );
         }
       }
-    } else if (declaration.body.tag === "alias") {
+    } else if (
+      declaration.tag === "type" && declaration.body.tag === "alias"
+    ) {
       const fields = source_fields(instance);
 
       if (fields !== undefined) {
@@ -2244,7 +2849,10 @@ class SourceFactRecorder {
     const namespace = named_type("Type");
     namespace.members = members;
 
-    if (declaration.tag !== "effect" && !is_error_type(instance)) {
+    if (
+      declaration.tag !== "effect" && declaration.tag !== "duck" &&
+      !is_error_type(instance)
+    ) {
       namespace.constructed = instance;
     }
 
@@ -2394,7 +3002,8 @@ class SourceFactRecorder {
     const declaration = this.declarations.get(name);
 
     if (
-      declaration === undefined || declaration.tag === "effect" ||
+      declaration === undefined ||
+      (declaration.tag !== "record" && declaration.tag !== "type") ||
       (declaration.tag === "type" && declaration.params.length !== 0)
     ) {
       return named_type("unknown");
@@ -2564,7 +3173,16 @@ class SourceFactRecorder {
     }
 
     if (type_expr.tag === "product") {
-      for (const entry of type_expr.entries) {
+      const fields: SourceFieldTypeFact[] = [];
+
+      for (let index = 0; index < type_expr.entries.length; index += 1) {
+        const entry = type_expr.entries[index];
+
+        if (entry === undefined) {
+          throw new Error(
+            "Missing source product type entry " + index.toString(),
+          );
+        }
         const type = this.resolve_type_expr(
           entry.type_expr,
           substitutions,
@@ -2574,9 +3192,20 @@ class SourceFactRecorder {
         if (is_error_type(type)) {
           return named_type("unknown");
         }
+
+        let name = index.toString();
+
+        if (entry.label !== undefined) {
+          name = entry.label;
+        }
+
+        fields.push({ name, type });
       }
 
-      return named_type(format_type_expr(type_expr));
+      const positional = type_expr.entries.every((entry) =>
+        entry.label === undefined
+      );
+      return struct_type(fields, undefined, positional);
     }
 
     if (type_expr.tag === "array") {
@@ -2666,7 +3295,7 @@ class SourceFactRecorder {
   }
 
   populate_declaration_type(
-    declaration: Exclude<Declaration, { tag: "effect" }>,
+    declaration: Extract<Declaration, { tag: "record" | "type" }>,
     type: SourceTypeFact,
     substitutions: Map<string, SourceTypeFact>,
     resolving: Set<string>,
@@ -2888,6 +3517,114 @@ function builtin_call_result(
   name: string,
   args: (SourceTypeFact | undefined)[],
 ): SourceTypeFact | undefined {
+  if (name === "@shape.entries" && args.length === 1) {
+    return shape_entries_type();
+  }
+
+  if (
+    (name === "@type.product" || name === "@type.namespace") &&
+    args.length === 1
+  ) {
+    return named_type("Type");
+  }
+
+  if (name === "f32x4" && args.length === 4) {
+    if (args.every((arg) => arg?.resolved_name === "F32")) {
+      return named_type("F32x4");
+    }
+
+    return undefined;
+  }
+
+  if (name === "f32x4_splat" && args.length === 1) {
+    if (args[0]?.resolved_name === "F32") {
+      return named_type("F32x4");
+    }
+
+    return undefined;
+  }
+
+  if (
+    (name === "f32x4_add" || name === "f32x4_sub" ||
+      name === "f32x4_mul" || name === "f32x4_div") &&
+    args.length === 2
+  ) {
+    if (
+      args[0]?.resolved_name === "F32x4" &&
+      args[1]?.resolved_name === "F32x4"
+    ) {
+      return named_type("F32x4");
+    }
+
+    return undefined;
+  }
+
+  if (name === "f32x4_extract_lane" && args.length === 2) {
+    if (
+      args[0]?.resolved_name === "F32x4" && args[1] !== undefined &&
+      is_i32_family(args[1])
+    ) {
+      return named_type("F32");
+    }
+
+    return undefined;
+  }
+
+  if (name === "f32x4_replace_lane" && args.length === 3) {
+    if (
+      args[0]?.resolved_name === "F32x4" && args[1] !== undefined &&
+      is_i32_family(args[1]) && args[2]?.resolved_name === "F32"
+    ) {
+      return named_type("F32x4");
+    }
+
+    return undefined;
+  }
+
+  if (
+    (name === "bit_and" || name === "bit_or" || name === "bit_xor" ||
+      name === "shift_left" || name === "shift_right_u") &&
+    args.length === 2
+  ) {
+    const left = args[0];
+    const right = args[1];
+
+    if (
+      left !== undefined && right !== undefined &&
+      left.resolved_name === right.resolved_name &&
+      (left.resolved_name === "I32" || left.resolved_name === "Int" ||
+        left.resolved_name === "U32" || left.resolved_name === "I64")
+    ) {
+      return left;
+    }
+
+    return undefined;
+  }
+
+  if (name === "f32_sqrt" && args.length === 1) {
+    if (args[0]?.resolved_name === "F32") {
+      return named_type("F32");
+    }
+
+    return undefined;
+  }
+
+  if (name === "f32_from_i32" && args.length === 1) {
+    if (args[0] !== undefined && is_i32_family(args[0])) {
+      return named_type("F32");
+    }
+
+    return undefined;
+  }
+
+  if (name === "i32_from_f32" && args.length === 1) {
+    if (args[0]?.resolved_name === "F32") {
+      return named_type("I32");
+    }
+
+    return undefined;
+  }
+
   if (name === "describe_type" && args.length === 1) {
     const described = args[0]?.constructed;
 
@@ -2941,8 +3678,59 @@ function builtin_call_result(
   }
 
   if (name === "len") {
-    if (args.length === 1 && is_text_family(args[0])) {
+    if (args.length === 1 && args[0] !== undefined) {
       return named_type("I32");
+    }
+
+    return undefined;
+  }
+
+  if (name === "Bytes.generate") {
+    if (args.length === 2) {
+      return named_type("Bytes");
+    }
+
+    return undefined;
+  }
+
+  if (name === "Utf8.encode") {
+    if (args.length === 1 && args[0]?.resolved_name === "Text") {
+      return named_type("Bytes");
+    }
+
+    return undefined;
+  }
+
+  if (name === "Utf8.decode") {
+    if (args.length === 1 && args[0]?.resolved_name === "Bytes") {
+      return named_type("Text");
+    }
+
+    return undefined;
+  }
+
+  if (name === "format_i32") {
+    if (args.length === 1 && args[0] !== undefined && is_i32_family(args[0])) {
+      return named_type("Text");
+    }
+
+    return undefined;
+  }
+
+  if (name === "format_i64") {
+    if (args.length === 1 && args[0]?.resolved_name === "I64") {
+      return named_type("Text");
+    }
+
+    return undefined;
+  }
+
+  if (name === "format_f32") {
+    if (
+      args.length === 2 && args[0]?.resolved_name === "F32" &&
+      args[1] !== undefined && is_i32_family(args[1])
+    ) {
+      return named_type("Text");
     }
 
     return undefined;
@@ -3114,6 +3902,104 @@ function named_type(name: string, nominal?: string): SourceTypeFact {
     type_set: undefined,
     inference_variable: false,
   };
+}
+
+function shape_entries_type(): SourceTypeFact {
+  const entry = struct_type(
+    [
+      { name: "name", type: named_type("Text") },
+      { name: "type", type: named_type("Type") },
+      { name: "index", type: named_type("I32") },
+    ],
+    undefined,
+    false,
+  );
+  entry.name = "ShapeEntry";
+  entry.resolved_name = "ShapeEntry";
+
+  const entries = struct_type(
+    [{ name: "0", type: entry }],
+    undefined,
+    true,
+  );
+  entries.name = "ShapeEntries";
+  entries.resolved_name = "ShapeEntries";
+  return entries;
+}
+
+function shape_type(): SourceTypeFact {
+  const shape = struct_type(
+    [{ name: "0", type: shape_entry_type() }],
+    undefined,
+    true,
+  );
+  shape.name = "Shape";
+  shape.resolved_name = "Shape";
+  return shape;
+}
+
+function shape_entry_type(): SourceTypeFact {
+  const entry = struct_type(
+    [
+      { name: "name", type: named_type("Text") },
+      { name: "value", type: named_type("Type") },
+    ],
+    undefined,
+    false,
+  );
+  entry.name = "ShapeEntry";
+  entry.resolved_name = "ShapeEntry";
+  return entry;
+}
+
+function uses_shape_entry_projection(
+  value: unknown,
+  item_name: string,
+): boolean {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+
+  const node = value as Record<string, unknown>;
+
+  if (
+    node.tag === "field" &&
+    (node.name === "name" || node.name === "value")
+  ) {
+    const object = node.object as Record<string, unknown> | undefined;
+
+    if (object?.tag === "var" && object.name === item_name) {
+      return true;
+    }
+  }
+
+  for (const child of Object.values(node)) {
+    if (Array.isArray(child)) {
+      if (
+        child.some((entry) => uses_shape_entry_projection(entry, item_name))
+      ) {
+        return true;
+      }
+      continue;
+    }
+
+    if (uses_shape_entry_projection(child, item_name)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function type_namespace_argument_type(): SourceTypeFact {
+  return struct_type(
+    [
+      { name: "0", type: named_type("Type") },
+      { name: "1", type: named_type("StructMethods") },
+    ],
+    undefined,
+    true,
+  );
 }
 
 function inference_type(): SourceTypeFact {
@@ -3375,7 +4261,8 @@ function inference_scalar_from_source_name(
   if (
     name === "Bool" || name === "Unit" || name === "Int" ||
     name === "I32" || name === "U32" || name === "I64" ||
-    name === "Text" || name === "Bytes" || name === "Resume"
+    name === "F32" || name === "F32x4" || name === "Text" ||
+    name === "Bytes" || name === "Resume"
   ) {
     return name;
   }
@@ -4053,9 +4940,85 @@ function common_type_facts(
   return first;
 }
 
+function source_type_fact_is_resolved(
+  type: SourceTypeFact,
+  visiting = new WeakSet<SourceTypeFact>(),
+): boolean {
+  if (type.inference_variable || type.resolved_name === "unknown") {
+    return false;
+  }
+
+  if (visiting.has(type)) {
+    return true;
+  }
+
+  visiting.add(type);
+
+  if (type.call_params !== undefined) {
+    if (type.call_result === undefined) {
+      return false;
+    }
+
+    for (const param of type.call_params) {
+      if (
+        param === undefined || !source_type_fact_is_resolved(param, visiting)
+      ) {
+        return false;
+      }
+    }
+
+    if (!source_type_fact_is_resolved(type.call_result, visiting)) {
+      return false;
+    }
+  }
+
+  if (type.fields !== undefined) {
+    for (const field of type.fields) {
+      if (
+        field.type === undefined ||
+        !source_type_fact_is_resolved(field.type, visiting)
+      ) {
+        return false;
+      }
+    }
+  }
+
+  if (type.cases !== undefined) {
+    for (const payload of type.cases.values()) {
+      if (!source_type_fact_is_resolved(payload, visiting)) {
+        return false;
+      }
+    }
+  }
+
+  if (
+    type.alias_target !== undefined &&
+    !source_type_fact_is_resolved(type.alias_target, visiting)
+  ) {
+    return false;
+  }
+
+  if (
+    type.handler_input !== undefined &&
+    !source_type_fact_is_resolved(type.handler_input, visiting)
+  ) {
+    return false;
+  }
+
+  if (
+    type.handler_result !== undefined &&
+    !source_type_fact_is_resolved(type.handler_result, visiting)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function is_numeric_type(type: SourceTypeFact): boolean {
   return type.resolved_name === "I32" || type.resolved_name === "I64" ||
-    type.resolved_name === "Int" || type.resolved_name === "U32";
+    type.resolved_name === "F32" || type.resolved_name === "Int" ||
+    type.resolved_name === "U32";
 }
 
 function is_i32_family(type: SourceTypeFact): boolean {
@@ -4108,6 +5071,10 @@ function compatible_equality_operands(
       return prim.startsWith("i64.");
     }
 
+    if (left.resolved_name === "F32") {
+      return prim.startsWith("f32.");
+    }
+
     return prim.startsWith("i32.");
   }
 
@@ -4138,6 +5105,14 @@ function front_type_from_source_fact(
 
   if (type.resolved_name === "I64") {
     return { tag: "int", type: "i64" };
+  }
+
+  if (type.resolved_name === "F32") {
+    return { tag: "int", type: "f32" };
+  }
+
+  if (type.resolved_name === "F32x4") {
+    return { tag: "f32x4" };
   }
 
   if (type.resolved_name === "Text") {

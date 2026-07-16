@@ -26,8 +26,8 @@ let greet: () -> <Io.read | Io.print> Unit = () => {
   _ <- Io.print("hello")
 }
 
-const { a, b } = dependency(init)
-return { a, message: b }
+const { .a = a, .b = b } = dependency(init)
+return { a, .message = b }
 `);
 
   assert_equals(source.module, {
@@ -43,6 +43,7 @@ return { a, message: b }
       tag: "effect",
       implementation: "host",
       name: "Io",
+      params: [],
       operations: [
         {
           name: "print",
@@ -89,7 +90,7 @@ return { a, message: b }
   assert_includes(formatted, "declare effect Io");
   assert_includes(formatted, '_ <- Io.print "hello"');
   assert_includes(formatted, "const { a, b } = dependency init");
-  assert_includes(formatted, "return { a, message: b }");
+  assert_includes(formatted, "return { a, .message = b }");
 });
 
 Deno.test("no-demand binders parse as distinct internal names and format as underscores", () => {
@@ -133,10 +134,10 @@ let (_, value) = source
   const formatted = format_source(source);
   assert_includes(formatted, "let _ = 1");
   assert_includes(formatted, "const _ = 2");
-  assert_includes(formatted, "let pair = (_, const _) => 0");
-  assert_includes(formatted, "let count = rec (_, const _) => 0");
+  assert_includes(formatted, "let pair = [_, const _] => 0");
+  assert_includes(formatted, "let count = rec [_, const _] => 0");
   assert_includes(formatted, "if let .ok(_) = result");
-  assert_includes(formatted, "let (_, value) = source");
+  assert_includes(formatted, "let [_, value] = source");
 });
 
 Deno.test("no-demand binders cannot be used as linear values or expressions", () => {
@@ -215,7 +216,7 @@ let counter = {
       state = state + amount
       !resume(())
     },
-    return: value => { value, state },
+    return: value => [value, state],
   }
 }
 
@@ -231,8 +232,9 @@ result
 
   assert_equals(source.declarations?.[0], {
     tag: "effect",
-    implementation: "ix",
+    implementation: "duck",
     name: "Counter",
+    params: [],
     operations: [
       {
         name: "get",
@@ -311,7 +313,7 @@ result
   const formatted = format_source(source);
   assert_includes(formatted, "effect Counter");
   assert_includes(formatted, "Counter { get: (!resume) => !resume state");
-  assert_includes(formatted, "return: value => { value, state }");
+  assert_includes(formatted, "return: value => [value, state]");
   assert_includes(formatted, "let make = () => Counter {");
   assert_includes(formatted, "!resume ()");
   assert_includes(formatted, "try run () with counter");
@@ -362,7 +364,7 @@ Deno.test("handler keyword spelling is rejected", () => {
       parse_source(`
 effect Counter { get: () => I32 }
 let counter = handler Counter {
-  return { get: (!resume) => !resume(0) }
+  return { .get = (!resume) => !resume(0) }
 }
 counter
 `),
@@ -389,14 +391,14 @@ Deno.test("file loading requires a module header and record return", () => {
   const dir = Deno.makeTempDirSync();
 
   try {
-    const fragment = dir + "/fragment.ix";
+    const fragment = dir + "/fragment.duck";
     Deno.writeTextFileSync(fragment, "42\n");
     assert_throws(
       () => load_source(fragment),
       "File module must begin with `module (...) where`",
     );
 
-    const missing_return = dir + "/missing_return.ix";
+    const missing_return = dir + "/missing_return.duck";
     Deno.writeTextFileSync(missing_return, "module () where\n42\n");
     assert_throws(
       () => load_source(missing_return),
@@ -412,16 +414,17 @@ Deno.test("module imports bind dependency initializers", () => {
 
   try {
     Deno.writeTextFileSync(
-      dir + "/dependency.ix",
-      "module (value: I32) where\nreturn { value }\n",
+      dir + "/dependency.duck",
+      "module (value: I32) where\nreturn { .value = value }\n",
     );
     Deno.writeTextFileSync(
-      dir + "/main.ix",
-      'module () where\nconst dependency = import "./dependency.ix"\n' +
-        "const { value } = dependency(42)\nreturn { value }\n",
+      dir + "/main.duck",
+      'module () where\nconst dependency = import "./dependency.duck"\n' +
+        "const { .value = value } = dependency(42)\n" +
+        "return { .value = value }\n",
     );
 
-    const loaded = load_source(dir + "/main.ix");
+    const loaded = load_source(dir + "/main.duck");
     const dependency = loaded.statements[0];
     assert_equals(dependency && dependency.tag === "bind", true);
 
@@ -441,18 +444,19 @@ Deno.test("module imports specialize explicit const build parameters", () => {
 
   try {
     Deno.writeTextFileSync(
-      dir + "/dependency.ix",
+      dir + "/dependency.duck",
       "module (const release: Bool) where\n" +
         "const value = if release { 42 } else { 0 }\n" +
-        "return { value }\n",
+        "return { .value = value }\n",
     );
     Deno.writeTextFileSync(
-      dir + "/main.ix",
-      'module () where\nconst dependency = import "./dependency.ix"\n' +
-        "const { value } = dependency(true)\nreturn { value }\n",
+      dir + "/main.duck",
+      'module () where\nconst dependency = import "./dependency.duck"\n' +
+        "const { .value = value } = dependency(true)\n" +
+        "return { .value = value }\n",
     );
 
-    const wat = Source.wat(load_source(dir + "/main.ix"));
+    const wat = Source.wat(load_source(dir + "/main.duck"));
     assert_includes(wat, "i32.const 42");
   } finally {
     Deno.removeSync(dir, { recursive: true });

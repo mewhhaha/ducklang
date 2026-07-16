@@ -31,6 +31,7 @@ export function contains_unresolved_linear_effect(
       return contains_unresolved_linear_effect(expr.value, names, env, hooks);
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         if (
           contains_unresolved_linear_effect(entry.value, names, env, hooks)
@@ -247,6 +248,23 @@ export function contains_unresolved_linear_effect(
 
       for (const field of expr.fields) {
         if (contains_unresolved_linear_effect(field.value, names, env, hooks)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    case "type_with": {
+      if (contains_unresolved_linear_effect(expr.base, names, env, hooks)) {
+        return true;
+      }
+
+      for (const member of expr.members) {
+        if (
+          contains_unresolved_linear_effect(member.name, names, env, hooks) ||
+          contains_unresolved_linear_effect(member.value, names, env, hooks)
+        ) {
           return true;
         }
       }

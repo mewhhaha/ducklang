@@ -20,6 +20,9 @@ import type {
   CoreTextFactHooks,
   RuntimeTextEq,
 } from "./text_facts/types.ts";
+import { core_bytes_generate_args } from "./runtime_bytes.ts";
+import { core_runtime_buffer_builtin } from "./runtime_buffer.ts";
+import { core_expr_definitely_exits } from "./expr_type/control.ts";
 
 export type { CoreTextFactCtx, CoreTextFactHooks, RuntimeTextEq };
 
@@ -63,6 +66,14 @@ export function core_expr_is_text<ctx extends CoreTextFactCtx>(
       return core_expr_is_text(value.then_branch, ctx, hooks);
     }
 
+    if (core_expr_definitely_exits(value.then_branch)) {
+      return core_expr_is_text(value.else_branch, ctx, hooks);
+    }
+
+    if (core_expr_definitely_exits(value.else_branch)) {
+      return core_expr_is_text(value.then_branch, ctx, hooks);
+    }
+
     return core_expr_is_text(value.then_branch, ctx, hooks) &&
       core_expr_is_text(value.else_branch, ctx, hooks);
   }
@@ -84,12 +95,27 @@ export function core_expr_is_text<ctx extends CoreTextFactCtx>(
     const struct_value = hooks.static_struct_value(value.object, ctx);
 
     if (!struct_value) {
-      const field_info = runtime_aggregate_field_info(
-        value.object,
-        value.name,
-        ctx,
-        hooks,
-      );
+      let field_info;
+
+      try {
+        field_info = runtime_aggregate_field_info(
+          value.object,
+          value.name,
+          ctx,
+          hooks,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.startsWith(
+            "Core runtime aggregate requires a static struct type",
+          )
+        ) {
+          return false;
+        }
+
+        throw error;
+      }
 
       if (field_info && field_info.tag === "value") {
         return field_info.text;
@@ -122,6 +148,14 @@ export function core_expr_is_text<ctx extends CoreTextFactCtx>(
   }
 
   if (core_append_app_args(value, ctx, hooks)) {
+    return true;
+  }
+
+  if (core_bytes_generate_args(value)) {
+    return true;
+  }
+
+  if (core_runtime_buffer_builtin(value)) {
     return true;
   }
 
@@ -189,6 +223,14 @@ export function core_expr_has_runtime_text_fact<
       return core_expr_has_runtime_text_fact(value.then_branch, ctx, hooks);
     }
 
+    if (core_expr_definitely_exits(value.then_branch)) {
+      return core_expr_has_runtime_text_fact(value.else_branch, ctx, hooks);
+    }
+
+    if (core_expr_definitely_exits(value.else_branch)) {
+      return core_expr_has_runtime_text_fact(value.then_branch, ctx, hooks);
+    }
+
     return core_expr_has_runtime_text_fact(value.then_branch, ctx, hooks) &&
       core_expr_has_runtime_text_fact(value.else_branch, ctx, hooks);
   }
@@ -251,6 +293,14 @@ export function core_expr_has_runtime_text_fact<
     return true;
   }
 
+  if (core_bytes_generate_args(value)) {
+    return true;
+  }
+
+  if (core_runtime_buffer_builtin(value)) {
+    return true;
+  }
+
   if (
     core_get_app_text_fact(
       value,
@@ -294,11 +344,17 @@ function core_host_import_result_is_text<ctx extends CoreTextFactCtx>(
     return false;
   }
 
-  if (ownership.tag === "unique_heap" && ownership.reason === "text") {
+  if (
+    ownership.tag === "unique_heap" &&
+    (ownership.reason === "text" || ownership.reason === "bytes")
+  ) {
     return true;
   }
 
-  if (ownership.tag === "frozen_shareable" && ownership.reason === "text") {
+  if (
+    ownership.tag === "frozen_shareable" &&
+    (ownership.reason === "text" || ownership.reason === "bytes")
+  ) {
     return true;
   }
 
@@ -319,7 +375,7 @@ function core_host_import_result_is_unique_text<ctx extends CoreTextFactCtx>(
     return false;
   }
 
-  return ownership.reason === "text";
+  return ownership.reason === "text" || ownership.reason === "bytes";
 }
 
 function core_text_app_fn_type<ctx extends CoreTextFactCtx>(

@@ -1,4 +1,6 @@
 import type { FrontExpr, Param, Stmt } from "../ast.ts";
+import { Prim } from "../../op.ts";
+import { Format } from "../../trait.ts";
 import { format_binding_name } from "../names.ts";
 import { format_type_expr } from "../type_expr.ts";
 import {
@@ -7,7 +9,6 @@ import {
   format_pattern,
   format_type_field,
 } from "./common.ts";
-import { prim_symbol } from "./prim.ts";
 
 export function format_expr_with_stmt(
   expr: FrontExpr,
@@ -29,6 +30,14 @@ function format_expr(
   }
 
   if (expr.tag === "num") {
+    if (expr.type === "i64") {
+      return expr.value.toString() + "i64";
+    }
+
+    if (expr.type === "f32") {
+      return expr.value.toString() + "f32";
+    }
+
     return expr.value.toString();
   }
 
@@ -37,6 +46,10 @@ function format_expr(
   }
 
   if (expr.tag === "text") {
+    if (expr.encoding === "bytes") {
+      return "Bytes.empty";
+    }
+
     return Deno.inspect(expr.value);
   }
 
@@ -57,7 +70,7 @@ function format_expr(
   }
 
   if (expr.tag === "prim") {
-    const symbol = prim_symbol(expr.prim);
+    const symbol = Format.fmt(Prim, expr.prim);
     const precedence = primitive_precedence(symbol);
     const text = nested(expr.left, precedence) + " " + symbol + " " +
       nested(expr.right, precedence + 1);
@@ -77,7 +90,41 @@ function format_expr(
   }
 
   if (expr.tag === "app") {
-    const precedence = 40;
+    if (expr.operator_syntax !== undefined) {
+      const syntax = expr.operator_syntax;
+
+      if (syntax.kind === "prefix") {
+        const value = expr.args[0];
+
+        if (value === undefined) {
+          throw new Error("Missing prefix operator operand");
+        }
+
+        const text = syntax.operator + nested(value, syntax.precedence);
+        return parenthesize(text, syntax.precedence, parent_precedence);
+      }
+
+      const left = expr.args[0];
+      const right = expr.args[1];
+
+      if (left === undefined || right === undefined) {
+        throw new Error("Missing infix operator operand");
+      }
+
+      let left_precedence = syntax.precedence;
+      let right_precedence = syntax.precedence + 1;
+
+      if (syntax.associativity === "right") {
+        left_precedence += 1;
+        right_precedence = syntax.precedence;
+      }
+
+      const text = nested(left, left_precedence) + " " + syntax.operator +
+        " " + nested(right, right_precedence);
+      return parenthesize(text, syntax.precedence, parent_precedence);
+    }
+
+    const precedence = 110;
     const arg = application_arg(expr);
     const text = nested(expr.func, precedence) + " " +
       nested(arg, precedence + 1);
@@ -94,14 +141,35 @@ function format_expr(
 
       return text;
     });
-    return "(" + entries.join(", ") + ")";
+    return "[" + entries.join(", ") + "]";
+  }
+
+  if (expr.tag === "shape") {
+    const entries = expr.entries.map((entry) => {
+      if (entry.label === undefined) {
+        throw new Error("Shape entry is missing its label");
+      }
+
+      if (entry.value.tag === "var" && entry.value.name === entry.label) {
+        return entry.label;
+      }
+
+      return "." + entry.label + " = " + nested(entry.value);
+    });
+    return "{ " + entries.join(", ") + " }";
   }
 
   if (expr.tag === "array") {
     const items = expr.items.map((item) => nested(item));
 
     if (expr.rest) {
-      items.push("..." + nested(expr.rest));
+      const rest = "..." + nested(expr.rest);
+
+      if (expr.leading_rest === true) {
+        items.unshift(rest);
+      } else {
+        items.push(rest);
+      }
     }
 
     return "[" + items.join(", ") + "]";
@@ -178,8 +246,23 @@ function format_expr(
   }
 
   if (expr.tag === "with" || expr.tag === "struct_update") {
-    const text = nested(expr.base, 40) + " with { " +
-      expr.fields.map((field) => format_field(field, nested)).join(", ") +
+    const text = nested(expr.base, 110) + " with { " +
+      expr.fields.map((field) => {
+        if (field.value.tag === "var" && field.value.name === field.name) {
+          return field.name;
+        }
+
+        return "." + field.name + " = " + nested(field.value);
+      }).join(", ") +
+      " }";
+    return parenthesize(text, 35, parent_precedence);
+  }
+
+  if (expr.tag === "type_with") {
+    const text = nested(expr.base, 110) + " with { " +
+      expr.members.map((member) =>
+        ".[" + nested(member.name) + "] = " + nested(member.value)
+      ).join(", ") +
       " }";
     return parenthesize(text, 35, parent_precedence);
   }
@@ -200,7 +283,7 @@ function format_expr(
 
         return text;
       });
-      return "(" + entries.join(", ") + ")";
+      return "[" + entries.join(", ") + "]";
     }
 
     if (expr.type_expr.tag === "var" && expr.type_expr.name === "object_type") {
@@ -214,7 +297,7 @@ function format_expr(
       return "{ " + fields.join(", ") + " }";
     }
 
-    return nested(expr.type_expr, 40) + " { " +
+    return nested(expr.type_expr, 110) + " { " +
       expr.fields.map((field) => format_field(field, nested)).join(", ") +
       " }";
   }
@@ -242,20 +325,20 @@ function format_expr(
   }
 
   if (expr.tag === "field") {
-    const text = nested(expr.object, 50) + "." + expr.name;
-    return parenthesize(text, 50, parent_precedence);
+    const text = nested(expr.object, 120) + "." + expr.name;
+    return parenthesize(text, 120, parent_precedence);
   }
 
   if (expr.tag === "index") {
-    const text = nested(expr.object, 50) + "[" + nested(expr.index) + "]";
-    return parenthesize(text, 50, parent_precedence);
+    const text = nested(expr.object, 120) + "[" + nested(expr.index) + "]";
+    return parenthesize(text, 120, parent_precedence);
   }
 
   if (expr.tag === "is" || expr.tag === "as") {
-    let precedence = 5;
+    let precedence = 40;
 
     if (expr.tag === "as") {
-      precedence = 30;
+      precedence = 80;
     }
 
     const text = nested(expr.value, precedence) + " " + expr.tag + " " +
@@ -333,25 +416,25 @@ function format_callable_pattern(
 
 function primitive_precedence(symbol: string): number {
   if (symbol === "||") {
-    return 1;
+    return 20;
   }
 
   if (symbol === "&&") {
-    return 2;
+    return 30;
   }
 
   if (
     symbol === "==" || symbol === "!=" || symbol === "<" || symbol === ">" ||
     symbol === "<=" || symbol === ">="
   ) {
-    return 5;
+    return 40;
   }
 
   if (symbol === "+" || symbol === "-") {
-    return 10;
+    return 60;
   }
 
-  return 20;
+  return 70;
 }
 
 function parenthesize(

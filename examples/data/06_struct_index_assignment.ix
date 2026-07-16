@@ -1,5 +1,0 @@
-let pair = { first: 20, second: 0 }
-let index = 1
-pair[index] = 22
-
-pair.first + pair.second

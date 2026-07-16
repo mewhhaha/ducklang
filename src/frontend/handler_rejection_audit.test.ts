@@ -1,6 +1,8 @@
 import { build_abi_manifest } from "../abi.ts";
 import { assert_throws } from "../assert.ts";
 import { Source } from "../frontend.ts";
+import { resolve_bundled_source_imports } from "./load.ts";
+import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
 
 Deno.test("handler clauses match operation signatures", () => {
   assert_throws(
@@ -91,11 +93,14 @@ effect Counter { get: () => I32 }
 Deno.test("managed ABI rejects Resume nested in an aggregate", () => {
   assert_throws(
     () =>
-      build_abi_manifest(Source.parse(`
-const continuation_box = struct { continuation: Resume }
-const ix_entry_result_type = continuation_box
+      build_abi_manifest(elaborate_front_type_sets(
+        resolve_bundled_source_imports(Source.parse(`
+const { struct } = comptime (import "duck:prelude")()
+const continuation_box = struct { .continuation= Resume }
+const duck_entry_result_type = continuation_box
 0
 `)),
+      )),
     "Managed ABI cannot expose Resume values",
   );
 });
@@ -128,11 +133,13 @@ Counter {
   assert_throws(
     () =>
       Source.effects(`
-const wanted = struct { x: I32 }
-const other = struct { y: I32 }
+const { struct } = comptime (import "duck:prelude")()
+const wanted = struct { .x= I32 }
+const { struct } = comptime (import "duck:prelude")()
+const other = struct { .y= I32 }
 effect Read { read: () => wanted }
 Read {
-  read: (!resume) => !resume(other with { y: 1 }),
+  read: (!resume) => !resume(other with { .y = 1 }),
   return: value => value,
 }
 `),
@@ -142,7 +149,8 @@ Read {
   assert_throws(
     () =>
       Source.effects(`
-const outcome = union { suspended: Resume, done: I32 }
+type Outcome = | .suspended = Resume | .done = I32
+const outcome = Outcome
 effect Suspend { pause: () => I32 }
 Suspend {
   pause: (!resume) => outcome.suspended(!resume),

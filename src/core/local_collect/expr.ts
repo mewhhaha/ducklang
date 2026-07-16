@@ -17,6 +17,21 @@ import {
 import { collect_core_if_let_expr_locals } from "../local_collect_if_let.ts";
 import { collect_core_rec_call_locals } from "../local_collect_rec.ts";
 import {
+  core_bytes_generate_args,
+  core_bytes_generator_call,
+  declare_runtime_bytes_generate_locals,
+  runtime_bytes_generate_plan,
+} from "../runtime_bytes.ts";
+import { core_runtime_buffer_builtin } from "../runtime_buffer.ts";
+import {
+  declare_runtime_float_format_locals,
+  declare_runtime_integer_format_locals,
+  declare_runtime_utf8_locals,
+  runtime_float_format_plan,
+  runtime_integer_format_plan,
+  runtime_utf8_plan,
+} from "../runtime_buffer/plan.ts";
+import {
   declare_runtime_text_concat_locals,
   declare_runtime_text_eq_locals,
   declare_runtime_text_slice_locals,
@@ -129,6 +144,56 @@ export function collect_core_expr_locals(
         return;
       }
 
+      const bytes_generate = core_bytes_generate_args(expr);
+
+      if (bytes_generate) {
+        const length = bytes_generate[0];
+        const generator = bytes_generate[1];
+        const locals = runtime_bytes_generate_plan(ctx);
+        declare_runtime_bytes_generate_locals(locals, ctx);
+        api.collect_expr_locals(length, ctx, hooks);
+        api.collect_expr_locals(
+          core_bytes_generator_call(
+            generator,
+            { tag: "var", name: locals.index },
+          ),
+          ctx,
+          hooks,
+        );
+        return;
+      }
+
+      const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+      if (runtime_buffer_builtin) {
+        if (
+          runtime_buffer_builtin.name === "Utf8.encode" ||
+          runtime_buffer_builtin.name === "Utf8.decode"
+        ) {
+          const locals = runtime_utf8_plan(ctx);
+          declare_runtime_utf8_locals(locals, ctx);
+        } else if (runtime_buffer_builtin.name === "format_f32") {
+          const locals = runtime_float_format_plan(ctx);
+          declare_runtime_float_format_locals(locals, ctx);
+        } else {
+          let type: "i32" | "i64" = "i32";
+
+          if (runtime_buffer_builtin.name === "format_i64") {
+            type = "i64";
+          }
+
+          const locals = runtime_integer_format_plan(type, ctx);
+          declare_runtime_integer_format_locals(type, locals, ctx);
+        }
+
+        api.collect_expr_locals(runtime_buffer_builtin.arg, ctx, hooks);
+
+        if (runtime_buffer_builtin.precision !== undefined) {
+          api.collect_expr_locals(runtime_buffer_builtin.precision, ctx, hooks);
+        }
+        return;
+      }
+
       const branch_static_call = static_core_call_branch_app(
         expr,
         ctx,
@@ -151,6 +216,20 @@ export function collect_core_expr_locals(
 
       if (target && static_core_call_requires_scope(target)) {
         hooks.collect_scoped_static_core_call_locals(expr, target, ctx);
+        return;
+      }
+
+      const fn_type = local_collect_closure_fn_type(expr.func, ctx, hooks);
+
+      if (fn_type) {
+        hooks.check_closure_call_args(expr, fn_type, ctx);
+        collect_closure_call_locals(ctx);
+        api.collect_expr_locals(expr.func, ctx, hooks);
+
+        for (const arg of expr.args) {
+          api.collect_expr_locals(arg, ctx, hooks);
+        }
+
         return;
       }
 
@@ -182,13 +261,6 @@ export function collect_core_expr_locals(
           collect_stmt_locals: api.collect_stmt_locals,
         });
         return;
-      }
-
-      const fn_type = local_collect_closure_fn_type(expr.func, ctx, hooks);
-
-      if (fn_type) {
-        hooks.check_closure_call_args(expr, fn_type, ctx);
-        collect_closure_call_locals(ctx);
       }
 
       if (

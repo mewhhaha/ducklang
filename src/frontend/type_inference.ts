@@ -5,6 +5,8 @@ export type InferenceScalar =
   | "I32"
   | "U32"
   | "I64"
+  | "F32"
+  | "F32x4"
   | "Text"
   | "Bytes"
   | "Resume";
@@ -135,9 +137,10 @@ export function format_inference_type(type: InferenceType): string {
       }).join(", ") + "]";
 
     case "record":
-      return "{" + type.fields.map((field) => {
-        return field.label + ": " + format_inference_type(field.type);
-      }).join(", ") + "}";
+      return "[" + type.fields.map((field) => {
+        return "." + field.label + " = " +
+          format_inference_type(field.type);
+      }).join(", ") + "]";
 
     case "fixed_array":
       return "[" + format_inference_type(type.element) + "; " +

@@ -43,6 +43,8 @@ export function create_core_backend_app(
     emit_dynamic_closure_call: api.emit_dynamic_closure_call,
     emit_dynamic_index_expr: api.emit_dynamic_index_expr,
     emit_expr: api.emit_expr,
+    emit_runtime_bytes_generate: api.emit_runtime_bytes_generate,
+    emit_runtime_buffer_builtin: api.emit_runtime_buffer_builtin,
     emit_runtime_text_byte_index: api.emit_runtime_text_byte_index,
     emit_runtime_text_append: api.emit_runtime_text_append,
     emit_runtime_text_len: api.emit_runtime_text_len,

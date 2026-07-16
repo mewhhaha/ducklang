@@ -1,0 +1,19 @@
+{
+  "grammars": [
+    {
+      "name": "duck",
+      "camelcase": "Duck",
+      "scope": "source.duck",
+      "path": ".",
+      "file-types": [
+        "duck"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for Duck source files."
+  }
+}

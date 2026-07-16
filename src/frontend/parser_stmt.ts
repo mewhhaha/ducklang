@@ -19,13 +19,21 @@ import {
   type SyntaxDiagnostic,
 } from "./syntax.ts";
 import type { RecoveryInterval } from "./parser_cursor.ts";
+import type { FixityTable } from "./fixity.ts";
+import { is_fixity_keyword } from "./fixity.ts";
+import { parse_type_expr } from "./type_expr.ts";
 
 export class ParserStmt extends ParserTypeDeclaration {
   constructor(
     tokens: Token[],
     private readonly allow_host_imports_for_test = false,
+    fixities?: FixityTable,
   ) {
     super(tokens);
+
+    if (fixities !== undefined) {
+      this.set_fixities(fixities);
+    }
   }
 
   parse_program(): SourceNode {
@@ -55,7 +63,7 @@ export class ParserStmt extends ParserTypeDeclaration {
         const start = this.index;
         this.expect_name("Expected effect");
         declarations.push(
-          this.concrete_node(start, this.parse_effect_declaration("ix")),
+          this.concrete_node(start, this.parse_effect_declaration("duck")),
         );
         this.skip_newlines();
         continue;
@@ -66,6 +74,30 @@ export class ParserStmt extends ParserTypeDeclaration {
         declarations.push(
           this.concrete_node(start, this.parse_type_declaration()),
         );
+        this.skip_newlines();
+        continue;
+      }
+
+      if (this.peek().kind === "name" && this.peek().text === "duck") {
+        const start = this.index;
+        declarations.push(this.concrete_node(start, this.parse_duck()));
+        this.skip_newlines();
+        continue;
+      }
+
+      if (this.peek().kind === "name" && this.peek().text === "extend") {
+        const start = this.index;
+        declarations.push(this.concrete_node(start, this.parse_extension()));
+        this.skip_newlines();
+        continue;
+      }
+
+      if (
+        this.peek().kind === "name" &&
+        is_fixity_keyword(this.peek().text)
+      ) {
+        const start = this.index;
+        declarations.push(this.concrete_node(start, this.parse_fixity()));
         this.skip_newlines();
         continue;
       }
@@ -115,7 +147,7 @@ export class ParserStmt extends ParserTypeDeclaration {
           this.expect_name("Expected effect");
           const declaration = this.concrete_node(
             start,
-            this.parse_effect_declaration("ix"),
+            this.parse_effect_declaration("duck"),
           );
           declarations.push(declaration);
         } else if (this.peek().kind === "name" && this.peek().text === "type") {
@@ -124,6 +156,19 @@ export class ParserStmt extends ParserTypeDeclaration {
             this.parse_type_declaration(),
           );
           declarations.push(declaration);
+        } else if (
+          this.peek().kind === "name" && this.peek().text === "duck"
+        ) {
+          declarations.push(this.concrete_node(start, this.parse_duck()));
+        } else if (
+          this.peek().kind === "name" && this.peek().text === "extend"
+        ) {
+          declarations.push(this.concrete_node(start, this.parse_extension()));
+        } else if (
+          this.peek().kind === "name" &&
+          is_fixity_keyword(this.peek().text)
+        ) {
+          declarations.push(this.concrete_node(start, this.parse_fixity()));
         } else {
           const statement = this.parse_stmt();
           statements.push(statement);
@@ -219,12 +264,136 @@ export class ParserStmt extends ParserTypeDeclaration {
     }
   }
 
+  private parse_duck(): Declaration {
+    this.expect_name("Expected duck");
+    const name = this.expect_declaration_name("Duck");
+    this.reserve_declaration_name(name, "Duck declaration");
+    this.type_names.add(name);
+    const roles: string[] = [];
+
+    while (!(this.peek().kind === "symbol" && this.peek().text === "{")) {
+      const role = this.expect_name("Expected duck role or `{`");
+      expect(
+        /^[A-Z][A-Za-z0-9]*$/.test(role),
+        "Duck role must use PascalCase: " + role,
+      );
+      expect(!roles.includes(role), "Duplicate duck role: " + role);
+      roles.push(role);
+    }
+
+    expect(roles.length > 0, "Duck declaration requires at least one role");
+    this.expect_symbol("{");
+    this.skip_newlines();
+    const members: Extract<Declaration, { tag: "duck" }>["members"] = [];
+    const names = new Set<string>();
+
+    this.allow_pascal_type_names += 1;
+
+    try {
+      while (!this.match_symbol("}")) {
+        this.expect_symbol(".");
+        const member = this.expect_name("Expected duck member name");
+        expect_snake_case(member, "Duck member");
+        expect(!names.has(member), "Duplicate duck member: " + member);
+        names.add(member);
+        this.expect_symbol("=");
+        const annotation = this.consume_type_field_annotation();
+        members.push({
+          name: member,
+          type_expr: parse_type_expr(annotation.tokens),
+        });
+        this.match_symbol(",");
+        this.skip_newlines();
+      }
+    } finally {
+      this.allow_pascal_type_names -= 1;
+    }
+
+    expect(members.length > 0, "Duck declaration requires a member");
+    return { tag: "duck", name, roles, members };
+  }
+
+  private parse_extension(): Declaration {
+    this.expect_name("Expected extend");
+    const type_name = this.expect_name("Expected extension type");
+    expect(
+      /^[A-Z][A-Za-z0-9]*$/.test(type_name),
+      "Extension type must use PascalCase: " + type_name,
+    );
+    const shape = this.parse_shape_value();
+    const fields = shape.entries.map((entry) => {
+      expect(entry.label !== undefined, "Extension member requires a name");
+      return { name: entry.label, value: entry.value };
+    });
+    return { tag: "extend", type_name, fields };
+  }
+
+  private parse_fixity(): Declaration {
+    const keyword = this.expect_name("Expected fixity declaration");
+    expect(
+      is_fixity_keyword(keyword),
+      "Unknown fixity declaration: " + keyword,
+    );
+    const precedence_token = this.peek();
+    expect(
+      precedence_token.kind === "number" && /^\d+$/.test(precedence_token.text),
+      "Fixity precedence must be an integer from 0 to 100",
+    );
+    this.advance();
+    const precedence = Number(precedence_token.text);
+    expect(
+      precedence >= 0 && precedence <= 100,
+      "Fixity precedence must be an integer from 0 to 100, got " + precedence,
+    );
+    const operator_token = this.peek();
+    expect(
+      operator_token.kind === "symbol",
+      "Fixity declaration requires an operator symbol",
+    );
+    this.advance();
+    this.expect_symbol("=");
+    const target_parts = [this.expect_name("Expected fixity target namespace")];
+
+    while (this.match_symbol(".")) {
+      target_parts.push(this.expect_name("Expected fixity target member"));
+    }
+
+    expect(
+      target_parts.length >= 2,
+      "Fixity target must be a qualified namespace member",
+    );
+    return {
+      tag: "fixity",
+      fixity: keyword as "infixl" | "infixr" | "infix" | "prefix",
+      precedence,
+      operator: operator_token.text,
+      target: target_parts.join("."),
+    };
+  }
+
   private parse_effect_declaration(
-    implementation: "host" | "ix",
+    implementation: "host" | "duck",
   ): EffectDeclaration {
     const name = this.expect_declaration_name("Effect");
     this.reserve_declaration_name(name, "Effect declaration");
     this.effect_names.add(name);
+    const params: string[] = [];
+
+    while (!(this.peek().kind === "symbol" && this.peek().text === "{")) {
+      const param = this.expect_name("Expected effect type parameter or `{`");
+      expect_snake_case(param, "Effect type parameter");
+      expect(
+        !params.includes(param),
+        "Duplicate effect type parameter: " + param,
+      );
+      params.push(param);
+    }
+
+    expect(
+      implementation === "duck" || params.length === 0,
+      "Host effects require concrete ABI types",
+    );
+
     this.expect_symbol("{");
     this.skip_newlines();
     const operations: EffectOperation[] = [];
@@ -253,7 +422,7 @@ export class ParserStmt extends ParserTypeDeclaration {
       this.skip_newlines();
     }
 
-    return { tag: "effect", implementation, name, operations };
+    return { tag: "effect", implementation, name, params, operations };
   }
 
   private parse_effect_params(): EffectParam[] {
@@ -410,12 +579,26 @@ export class ParserStmt extends ParserTypeDeclaration {
     if (this.match_name("return")) {
       if (this.peek().kind === "symbol" && this.peek().text === "{") {
         const value_start = this.index;
+        expect(
+          this.is_shape_literal(0, true),
+          "Module exports and runtime shapes use `{ name }` or " +
+            "`{ .name = value }`",
+        );
+        const shape = this.parse_shape_value();
+
+        if (this.block_depth > 0) {
+          return { tag: "return", value: shape };
+        }
+
         return {
           tag: "return",
           value: this.concrete_node(value_start, {
             tag: "struct_value",
             type_expr: { tag: "var", name: "object_type" },
-            fields: this.parse_record_field_list(),
+            fields: shape.entries.map((entry) => {
+              expect(entry.label, "Module export requires a name");
+              return { name: entry.label, value: entry.value };
+            }),
           }),
         };
       }
@@ -516,5 +699,5 @@ export class ParserStmt extends ParserTypeDeclaration {
 function is_effect_scalar_type(type_name: string): boolean {
   return type_name === "Unit" || type_name === "Bool" ||
     type_name === "Int" || type_name === "I32" || type_name === "U32" ||
-    type_name === "I64";
+    type_name === "I64" || type_name === "F32";
 }

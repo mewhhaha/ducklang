@@ -107,12 +107,18 @@ function layout_union(cases: TypeField[]): LayoutInfo {
     }
   }
 
+  let payload_offset = tag_size;
+
+  if (max_align === 16) {
+    payload_offset = align_to(tag_size, max_align);
+  }
+
   return {
-    size: align_to(tag_size + max_payload, max_align),
+    size: align_to(payload_offset + max_payload, max_align),
     align: max_align,
     fields: [],
     tag_offset: 0,
-    payload_offset: tag_size,
+    payload_offset,
   };
 }
 
@@ -123,13 +129,17 @@ function layout_type_name(name: string): { size: number; align: number } {
 
   if (
     name === "Bool" || name === "Int" || name === "I32" || name === "U32" ||
-    name === "Resume"
+    name === "Resume" || name === "F32"
   ) {
     return { size: 4, align: 4 };
   }
 
   if (name === "I64") {
     return { size: 8, align: 8 };
+  }
+
+  if (name === "F32x4") {
+    return { size: 16, align: 16 };
   }
 
   if (name === "Text" || name === "Bytes") {

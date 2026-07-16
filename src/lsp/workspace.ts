@@ -46,7 +46,7 @@ export class WorkspaceModel {
     overlays: readonly TextDocument[],
     progress?: (event: WorkspaceLoadProgress) => void,
   ): void {
-    const uris = workspace_ix_files(this.roots);
+    const uris = workspace_duck_files(this.roots);
     const overlay_by_uri = new Map(
       overlays.map((document) => [document.uri, document]),
     );
@@ -488,7 +488,7 @@ function workspace_marker_exists(directory: URL): boolean {
   return false;
 }
 
-function workspace_ix_files(roots: string[]): string[] {
+function workspace_duck_files(roots: string[]): string[] {
   const files = new Set<string>();
 
   for (const root of roots) {
@@ -527,7 +527,7 @@ function collect_workspace_files(url: URL, files: Set<string>): void {
   }
 
   if (stat.isFile) {
-    if (url.pathname.endsWith(".ix")) {
+    if (url.pathname.endsWith(".duck")) {
       files.add(url.href);
     }
 
@@ -565,7 +565,7 @@ function collect_workspace_files(url: URL, files: Set<string>): void {
     if (entry.isDirectory) {
       child.pathname += "/";
       collect_workspace_files(child, files);
-    } else if (entry.isFile && entry.name.endsWith(".ix")) {
+    } else if (entry.isFile && entry.name.endsWith(".duck")) {
       files.add(child.href);
     }
   }

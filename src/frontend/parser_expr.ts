@@ -4,10 +4,11 @@ import { expect_snake_case } from "./names.ts";
 import { binary_prim, numeric_expr_type } from "./numeric.ts";
 import { ParserPrimary } from "./parser_primary.ts";
 import { pattern_bindings } from "./pattern.ts";
-import { binary_precedence, can_start_struct_value } from "./parser_support.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { record_annotation_name_sites, record_name_site } from "./name_site.ts";
 import { inherit_source_span } from "./syntax.ts";
+import { type InfixFixity, is_operator_symbol } from "./fixity.ts";
+import { wasm_intrinsic_prim } from "../op.ts";
 
 export abstract class ParserExpr extends ParserPrimary {
   #stop_postfix_block = 0;
@@ -97,29 +98,27 @@ export abstract class ParserExpr extends ParserPrimary {
 
   private parse_closure_body(): FrontExpr {
     if (this.peek().kind === "symbol" && this.peek().text === "{") {
-      if (this.is_object_literal()) {
-        const start = this.index;
-        return this.concrete_node(start, {
-          tag: "struct_value",
-          type_expr: { tag: "var", name: "object_type" },
-          fields: this.parse_record_field_list(),
-        });
-      }
-
       return this.parse_block();
     }
 
     return this.parse_expr();
   }
 
-  private parse_binary(min_precedence: number): FrontExpr {
+  private parse_binary(
+    min_precedence: number,
+    equal_parent?: InfixFixity,
+  ): FrontExpr {
     const start = this.index;
-    const expr = this.parse_binary_inner(min_precedence);
+    const expr = this.parse_binary_inner(min_precedence, equal_parent);
     return this.concrete_node(start, expr);
   }
 
-  private parse_binary_inner(min_precedence: number): FrontExpr {
+  private parse_binary_inner(
+    min_precedence: number,
+    equal_parent?: InfixFixity,
+  ): FrontExpr {
     let left = this.parse_unary();
+    let previous_fixity: InfixFixity | undefined;
 
     while (true) {
       const token = this.peek();
@@ -130,15 +129,27 @@ export abstract class ParserExpr extends ParserPrimary {
         break;
       }
 
-      let precedence = binary_precedence(token.text);
+      const fixity = this.infix_fixity(token.text);
+      let precedence = -1;
+
+      if (fixity !== undefined) {
+        precedence = fixity.precedence;
+      }
 
       if (token.text === "is") {
-        precedence = 5;
+        precedence = 40;
       } else if (token.text === "as") {
-        precedence = 30;
+        precedence = 80;
       }
 
       if (precedence < min_precedence) {
+        if (
+          token.kind === "symbol" && is_operator_symbol(token.text) &&
+          fixity === undefined
+        ) {
+          throw this.error("Undeclared infix operator: " + token.text);
+        }
+
         break;
       }
 
@@ -154,24 +165,33 @@ export abstract class ParserExpr extends ParserPrimary {
         continue;
       }
 
+      expect(fixity, "Missing infix fixity for " + token.text);
+      this.reject_mixed_associativity(equal_parent, fixity);
+      this.reject_mixed_associativity(previous_fixity, fixity);
       const op = this.advance().text;
-      const right = this.parse_binary(precedence + 1);
+      let right_precedence = precedence + 1;
 
-      if (op === "&&") {
+      if (fixity.associativity === "right") {
+        right_precedence = precedence;
+      }
+
+      const right = this.parse_binary(right_precedence, fixity);
+
+      if (fixity.builtin && op === "&&") {
         left = {
           tag: "if",
           cond: left,
           then_branch: normalize_boolean_expr(right),
           else_branch: { tag: "bool", value: false },
         };
-      } else if (op === "||") {
+      } else if (fixity.builtin && op === "||") {
         left = {
           tag: "if",
           cond: left,
           then_branch: { tag: "bool", value: true },
           else_branch: normalize_boolean_expr(right),
         };
-      } else {
+      } else if (fixity.builtin) {
         const prim = binary_prim(op, left, right);
 
         if (prim) {
@@ -179,10 +199,51 @@ export abstract class ParserExpr extends ParserPrimary {
         } else {
           left = { tag: "unsupported", feature: "operator " + op, text: op };
         }
+      } else {
+        left = {
+          tag: "app",
+          func: qualified_target(fixity.target),
+          arg: {
+            tag: "product",
+            entries: [{ value: left }, { value: right }],
+          },
+          args: [left, right],
+          operator_syntax: {
+            kind: "infix",
+            operator: op,
+            precedence,
+            associativity: fixity.associativity,
+            target: fixity.target,
+          },
+        };
       }
+
+      previous_fixity = fixity;
     }
 
     return left;
+  }
+
+  private reject_mixed_associativity(
+    left: InfixFixity | undefined,
+    right: InfixFixity,
+  ): void {
+    if (left === undefined || left.precedence !== right.precedence) {
+      return;
+    }
+
+    if (
+      left.associativity === right.associativity &&
+      left.associativity !== "none"
+    ) {
+      return;
+    }
+
+    throw this.error(
+      "Conflicting associativity at precedence " +
+        right.precedence.toString() + ": " + left.operator + " and " +
+        right.operator,
+    );
   }
 
   private parse_type_operand(): TypeExpr {
@@ -277,6 +338,29 @@ export abstract class ParserExpr extends ParserPrimary {
       return { tag: "scratch", body: this.parse_block() };
     }
 
+    const prefix_token = this.peek();
+
+    if (prefix_token.kind === "symbol") {
+      const fixity = this.prefix_fixity(prefix_token.text);
+
+      if (fixity !== undefined && !fixity.builtin) {
+        this.advance();
+        const value = this.parse_binary(fixity.precedence);
+        return {
+          tag: "app",
+          func: qualified_target(fixity.target),
+          arg: value,
+          args: [value],
+          operator_syntax: {
+            kind: "prefix",
+            operator: prefix_token.text,
+            precedence: fixity.precedence,
+            target: fixity.target,
+          },
+        };
+      }
+    }
+
     if (this.match_symbol("-")) {
       const right = this.parse_unary();
 
@@ -284,6 +368,11 @@ export abstract class ParserExpr extends ParserPrimary {
         if (right.type === "i64") {
           expect(typeof right.value === "bigint", "Expected i64 literal");
           return { tag: "num", type: "i64", value: -right.value };
+        }
+
+        if (right.type === "f32") {
+          expect(typeof right.value === "number", "Expected f32 literal");
+          return { tag: "num", type: "f32", value: Math.fround(-right.value) };
         }
 
         expect(typeof right.value === "number", "Expected i32 literal");
@@ -295,6 +384,15 @@ export abstract class ParserExpr extends ParserPrimary {
           tag: "prim",
           prim: "i64.sub",
           left: { tag: "num", type: "i64", value: 0n },
+          right,
+        };
+      }
+
+      if (numeric_expr_type(right) === "f32") {
+        return {
+          tag: "prim",
+          prim: "f32.sub",
+          left: { tag: "num", type: "f32", value: 0 },
           right,
         };
       }
@@ -336,10 +434,41 @@ export abstract class ParserExpr extends ParserPrimary {
 
     while (this.starts_application_argument()) {
       const arg = this.parse_postfix();
-      expr = { tag: "app", func: expr, arg, args: compatibility_args(arg) };
+      expr = this.apply_unary_product(expr, arg);
     }
 
     return expr;
+  }
+
+  private apply_unary_product(func: FrontExpr, arg: FrontExpr): FrontExpr {
+    if (func.tag !== "var" || !func.name.startsWith("@wasm.")) {
+      if (arg.tag === "unit") {
+        return { tag: "app", func, arg, args: [] };
+      }
+
+      return { tag: "app", func, arg, args: [arg] };
+    }
+
+    const prim = wasm_intrinsic_prim(func.name.slice("@wasm.".length));
+
+    if (prim === undefined) {
+      throw this.error("Unknown Wasm intrinsic: " + func.name);
+    }
+
+    const args = compatibility_args(arg);
+
+    if (args.length !== 2) {
+      throw this.error(
+        "Wasm intrinsic " + func.name + " expects a product of 2 values, got " +
+          args.length.toString(),
+      );
+    }
+
+    const left = args[0];
+    const right = args[1];
+    expect(left, "Missing Wasm intrinsic left operand");
+    expect(right, "Missing Wasm intrinsic right operand");
+    return { tag: "prim", prim, left, right };
   }
 
   private starts_application_argument(): boolean {
@@ -361,7 +490,8 @@ export abstract class ParserExpr extends ParserPrimary {
 
     return token.kind === "symbol" &&
       (token.text === "(" || token.text === "[" || token.text === "." ||
-        token.text === "#");
+        token.text === "#" || token.text === "@" ||
+        (token.text === "{" && this.is_shape_literal()));
   }
 
   private parse_postfix(): FrontExpr {
@@ -375,8 +505,8 @@ export abstract class ParserExpr extends ParserPrimary {
 
     while (true) {
       if (this.match_symbol("(")) {
-        const arg = this.parse_parenthesized_value();
-        expr = { tag: "app", func: expr, arg, args: compatibility_args(arg) };
+        const call = this.parse_parenthesized_call();
+        expr = { tag: "app", func: expr, arg: call.arg, args: call.args };
       } else if (this.match_symbol(".")) {
         const token = this.peek();
         const name = this.expect_name("Expected field name");
@@ -387,10 +517,34 @@ export abstract class ParserExpr extends ParserPrimary {
           expect_snake_case(name, "Field");
         }
 
-        const field = { tag: "field" as const, object: expr, name };
-        record_name_site(field, "name", name, token.span);
-        expr = field;
-      } else if (this.match_symbol("[")) {
+        if (expr.tag === "var" && expr.name === "Bytes") {
+          if (name === "empty") {
+            expr = { tag: "text", value: "", encoding: "bytes" };
+          } else if (name === "generate") {
+            expr = { tag: "var", name: "Bytes.generate" };
+          } else {
+            const field = { tag: "field" as const, object: expr, name };
+            record_name_site(field, "name", name, token.span);
+            expr = field;
+          }
+        } else if (expr.tag === "var" && expr.name === "Utf8") {
+          if (name === "encode" || name === "decode") {
+            expr = { tag: "var", name: "Utf8." + name };
+          } else {
+            const field = { tag: "field" as const, object: expr, name };
+            record_name_site(field, "name", name, token.span);
+            expr = field;
+          }
+        } else {
+          const field = { tag: "field" as const, object: expr, name };
+          record_name_site(field, "name", name, token.span);
+          expr = field;
+        }
+      } else if (
+        this.peek().kind === "symbol" && this.peek().text === "[" &&
+        !this.has_whitespace_before_current_token()
+      ) {
+        this.expect_symbol("[");
         const index = this.parse_expr();
         this.expect_symbol("]");
         expr = { tag: "index", object: expr, index };
@@ -398,16 +552,21 @@ export abstract class ParserExpr extends ParserPrimary {
         this.#stop_postfix_block === 0 && this.peek().kind === "symbol" &&
         this.peek().text === "{"
       ) {
-        if (expr.tag === "var" && this.effect_names.has(expr.name)) {
+        if (this.is_shape_literal()) {
+          break;
+        }
+
+        if (
+          expr.tag === "var" &&
+          (this.effect_names.has(expr.name) ||
+            /^[A-Z][A-Za-z0-9]*$/.test(expr.name))
+        ) {
           expr = this.parse_effect_handler_literal(expr.name);
-        } else if (can_start_struct_value(expr)) {
-          expr = {
-            tag: "struct_value",
-            type_expr: expr,
-            fields: this.parse_field_list(),
-          };
         } else {
-          throw this.error("Struct updates require `with { ... }`");
+          throw this.error(
+            "Runtime products use contextual `[...]` values; updates use " +
+              "`with { ... }`",
+          );
         }
       } else if (
         this.#stop_try_with > 0 && this.peek().kind === "name" &&
@@ -416,14 +575,27 @@ export abstract class ParserExpr extends ParserPrimary {
       ) {
         break;
       } else if (this.match_name("with")) {
+        if (this.is_computed_type_member_literal()) {
+          expr = {
+            tag: "type_with",
+            base: expr,
+            members: this.parse_computed_type_members(),
+          };
+          continue;
+        }
+
         expect(
-          this.peek().kind === "symbol" && this.peek().text === "{",
-          "Expected `{` after update `with`",
+          this.is_shape_literal(0, true),
+          "Expected an ordered shape after update `with`",
         );
+        const shape = this.parse_shape_value();
         expr = {
           tag: "struct_update",
           base: expr,
-          fields: this.parse_field_list(),
+          fields: shape.entries.map((entry) => {
+            expect(entry.label !== undefined, "Update member requires a name");
+            return { name: entry.label, value: entry.value };
+          }),
         };
       } else {
         break;
@@ -432,6 +604,30 @@ export abstract class ParserExpr extends ParserPrimary {
 
     return expr;
   }
+
+  private has_whitespace_before_current_token(): boolean {
+    const previous = this.tokens[this.index - 1];
+
+    if (previous === undefined) {
+      return false;
+    }
+
+    return previous.span.end < this.peek().span.start;
+  }
+}
+
+function qualified_target(target: string): FrontExpr {
+  const names = target.split(".");
+  const first = names[0];
+  expect(first, "Missing qualified operator target");
+  let expr: FrontExpr = { tag: "var", name: first };
+
+  for (const name of names.slice(1)) {
+    expect(name.length > 0, "Empty qualified operator target member");
+    expr = { tag: "field", object: expr, name };
+  }
+
+  return expr;
 }
 
 function normalize_boolean_expr(expr: FrontExpr): FrontExpr {
@@ -466,6 +662,10 @@ function compatibility_args(arg: FrontExpr): FrontExpr[] {
   }
 
   if (arg.tag === "product") {
+    if (arg.entries.some((entry) => entry.label !== undefined)) {
+      return [arg];
+    }
+
     return arg.entries.map((entry) => entry.value);
   }
 

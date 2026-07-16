@@ -35,7 +35,7 @@ export function infer_front_expr(
       return { tag: "int", type: "i32" };
 
     case "text":
-      return { tag: "text" };
+      return { tag: "text", encoding: expr.encoding };
 
     case "type_name":
       return { tag: "type" };
@@ -109,10 +109,23 @@ export function infer_front_expr(
       return { tag: "fn", params: expr.params };
 
     case "app":
-      return infer_app_expr_type(expr, env, hooks);
+      return infer_app_expr_type(expr, env, hooks, infer_front_expr);
 
     case "product":
       return infer_front_expr(elaborate_product_expr(expr), env, hooks);
+
+    case "shape":
+      return {
+        tag: "struct",
+        fields: expr.entries.map((entry) => {
+          if (entry.label === undefined) {
+            throw new Error("Shape entry is missing its label");
+          }
+
+          return entry.label;
+        }),
+        field_types: undefined,
+      };
 
     case "array":
       return infer_front_expr(elaborate_fixed_array_expr(expr), env, hooks);
@@ -144,12 +157,12 @@ export function infer_front_expr(
         return result_type;
       }
 
-      if (front_expr_is_static_shareable_text(expr.value, env, hooks)) {
-        return { tag: "text" };
-      }
-
       if (result_type.tag === "text") {
         return result_type;
+      }
+
+      if (front_expr_is_static_shareable_text(expr.value, env, hooks)) {
+        return { tag: "text" };
       }
 
       if (
@@ -171,12 +184,12 @@ export function infer_front_expr(
         return result_type;
       }
 
-      if (front_expr_is_static_shareable_text(expr.body, env, hooks)) {
-        return { tag: "text" };
-      }
-
       if (result_type.tag === "text") {
         return result_type;
+      }
+
+      if (front_expr_is_static_shareable_text(expr.body, env, hooks)) {
+        return { tag: "text" };
       }
 
       if (
@@ -208,6 +221,9 @@ export function infer_front_expr(
       );
 
     case "with":
+      return infer_front_expr(expr.base, env, hooks);
+
+    case "type_with":
       return infer_front_expr(expr.base, env, hooks);
 
     case "struct_type":
@@ -459,6 +475,15 @@ function collect_loop_breaks_from_expr(
       collect_loop_breaks_from_expr(expr.base, env, hooks, breaks);
       for (const field of expr.fields) {
         collect_loop_breaks_from_expr(field.value, env, hooks, breaks);
+      }
+      return;
+
+    case "type_with":
+      collect_loop_breaks_from_expr(expr.base, env, hooks, breaks);
+
+      for (const member of expr.members) {
+        collect_loop_breaks_from_expr(member.name, env, hooks, breaks);
+        collect_loop_breaks_from_expr(member.value, env, hooks, breaks);
       }
       return;
 

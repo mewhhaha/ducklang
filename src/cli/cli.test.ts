@@ -1,9 +1,9 @@
 import { assert_equals } from "../assert.ts";
 import { LspTestClient } from "../lsp/test_harness.ts";
 
-const entry = new URL("../../ix.ts", import.meta.url).pathname;
+const entry = new URL("../../duck.ts", import.meta.url).pathname;
 
-Deno.test("ix fmt --stdin formats a program", async () => {
+Deno.test("duck fmt --stdin formats a program", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "fmt", "--stdin"],
     stdin: "piped",
@@ -19,7 +19,7 @@ Deno.test("ix fmt --stdin formats a program", async () => {
   assert_equals(new TextDecoder().decode(output.stdout), "let a = 1\na\n");
 });
 
-Deno.test("ix lsp answers an initialize and formatting round trip", async () => {
+Deno.test("duck lsp answers an initialize and formatting round trip", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "lsp"],
     stdin: "piped",
@@ -40,8 +40,8 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     method: "textDocument/didOpen",
     params: {
       textDocument: {
-        uri: "file:///demo.ix",
-        languageId: "ix",
+        uri: "file:///demo.duck",
+        languageId: "duck",
         version: 1,
         text: "let  answer=41+1\nanswer\n",
       },
@@ -52,7 +52,7 @@ Deno.test("ix lsp answers an initialize and formatting round trip", async () => 
     id: 2,
     method: "textDocument/formatting",
     params: {
-      textDocument: { uri: "file:///demo.ix" },
+      textDocument: { uri: "file:///demo.duck" },
       options: { tabSize: 2, insertSpaces: true },
     },
   });

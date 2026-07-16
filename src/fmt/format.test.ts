@@ -73,6 +73,20 @@ Deno.test("format_text preserves fixed array separators", () => {
   );
 });
 
+Deno.test("format_text distinguishes product arguments from indexes", () => {
+  assert_equals(
+    format_text("let projected=value[0]\nlet built=Point.make [1,2]\n"),
+    "let projected = value[0]\nlet built = Point.make [1, 2]\n",
+  );
+});
+
+Deno.test("format_text preserves the empty Bytes value", () => {
+  assert_equals(
+    format_text("let bytes:Bytes=Bytes.empty\n"),
+    "let bytes: Bytes = Bytes.empty\n",
+  );
+});
+
 Deno.test("format_text canonicalizes string escapes", () => {
   assert_equals(
     format_text('let message = "line\\none"\n'),
@@ -87,7 +101,7 @@ Deno.test("format_text indents multiline binding values", () => {
   );
 });
 
-Deno.test("format_text is idempotent and AST-preserving on the examples", async () => {
+Deno.test("format_text preserves the examples and grep case study", async () => {
   const roots = ["examples"];
   const files: string[] = [];
 
@@ -103,13 +117,14 @@ Deno.test("format_text is idempotent and AST-preserving on the examples", async 
 
       if (entry.isDirectory) {
         roots.push(path);
-      } else if (entry.name.endsWith(".ix")) {
+      } else if (entry.name.endsWith(".duck")) {
         files.push(path);
       }
     }
   }
 
   files.sort();
+  files.push("case-studies/grep/grep.duck");
   assert_equals(files.length > 0, true);
 
   for (const path of files) {

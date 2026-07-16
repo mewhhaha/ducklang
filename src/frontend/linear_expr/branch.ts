@@ -75,7 +75,7 @@ export function merge_linear_branches(
 ): void {
   if (!same_names(left.consumed, right.consumed)) {
     throw_linear_diagnostic(
-      "IX2205",
+      "DUCK2205",
       "Linear branches must consume the same values",
       subject,
       branch_mismatch_related(left, right),
@@ -84,7 +84,7 @@ export function merge_linear_branches(
 
   if (!same_name_set(left.available, right.available)) {
     throw_linear_diagnostic(
-      "IX2205",
+      "DUCK2205",
       "Linear branches must leave the same available values",
       subject,
       branch_mismatch_related(left, right),
@@ -98,7 +98,7 @@ export function merge_linear_branches(
     )
   ) {
     throw_linear_diagnostic(
-      "IX2205",
+      "DUCK2205",
       "Linear branches must consume the same closures",
       subject,
       closure_branch_mismatch_related(closures, left, right),

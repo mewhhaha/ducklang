@@ -20,10 +20,11 @@ Two lowering routes are implemented, plus a managed ABI on top of the second:
 - The **structured Core route** (`Source.core`, `Source.mod`, `Source.wat`)
   lowers source into a typed structured representation and emits Wasm control
   flow directly. It covers statements, dynamic loops, runtime text, runtime
-  aggregates, first-class closures, Ix-defined handlers, and the
+  aggregates, first-class closures, Duck-defined handlers, and the
   ownership/lifetime proof gate.
-- The **managed ABI** (`Source.artifact`, `IxRunner`, `IxHost`) wraps the Core
-  route with the `ix-js-3` manifest and JavaScript marshaling for host effects.
+- The **managed ABI** (`Source.artifact`, `DuckRunner`, `DuckHost`) wraps the
+  Core route with the `duck-js-1` manifest and JavaScript marshaling for host
+  effects.
 
 A feature can be accepted on one route and reserved on the other. The examples
 manifest (`examples/manifest.ts`) records which route each example compiles
@@ -36,7 +37,7 @@ the structured Core path. When the annotation names a visible struct or union
 type-value, shorthand object and union-case values are checked and given that
 direct type context in both paths. For typed union annotations, declared case
 payload types also flow into shorthand object payloads such as
-`.ok({ age: 40 })`. The structured Core path rejects other binding annotations
+`.ok { .age = 40 }`. The structured Core path rejects other binding annotations
 until it has a fact-checker execution model. Fact-checker annotations are
 checked for const type-values and frontend-known aggregate values in the
 frontend. In the frontend Ic path, explicit runtime binding annotations can also
@@ -163,7 +164,7 @@ their inferred union-case table into later `=` shadowing checks.
 
 Creating an anonymous closure is pure; invoking it introduces its inferred
 latent effect row. The current runtime vertical slice specializes statically
-known `const` callbacks; general escaping Ix-effect closures remain reserved
+known `const` callbacks; general escaping Duck-effect closures remain reserved
 until CPS closure conversion supports them.
 
 ## Branches And Unions
@@ -360,8 +361,8 @@ storage, lifetime, and cleanup rules as source values.
 
 ## Handlers
 
-Ix-defined effect handlers compile only through the Core/managed-Wasm route. The
-IC-only route rejects plain effects, handlers, resumptions, and Unit handler
+Duck-defined effect handlers compile only through the Core/managed-Wasm route.
+The IC-only route rejects plain effects, handlers, resumptions, and Unit handler
 syntax explicitly.
 
 ## Host Effects And ABI

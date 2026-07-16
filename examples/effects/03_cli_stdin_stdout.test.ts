@@ -1,5 +1,5 @@
 import { assert_equals, assert_includes } from "../../src/assert.ts";
-import { IxRunner, Source } from "../../src/frontend.ts";
+import { DuckRunner, Source } from "../../src/frontend.ts";
 import {
   dry_run_stdin,
   type Init,
@@ -9,7 +9,7 @@ import {
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
-const source_url = new URL("./03_cli_stdin_stdout.ix", import.meta.url);
+const source_url = new URL("./03_cli_stdin_stdout.duck", import.meta.url);
 
 Deno.test("CLI artifact exposes Stdin and Stdout effects", () => {
   const artifact = Source.artifact_file(source_url.href);
@@ -21,12 +21,12 @@ Deno.test("CLI artifact exposes Stdin and Stdout effects", () => {
       {
         name: "stdin",
         type: { tag: "resource", effect: "Stdin" },
-        import: "__ix_init_stdin",
+        import: "__duck_init_stdin",
       },
       {
         name: "stdout",
         type: { tag: "resource", effect: "Stdout" },
-        import: "__ix_init_stdout",
+        import: "__duck_init_stdout",
       },
     ],
   });
@@ -44,11 +44,11 @@ Deno.test("CLI artifact exposes Stdin and Stdout effects", () => {
   });
   assert_includes(
     artifact.wat,
-    '(import "ix_effect" "Stdin.read_line"',
+    '(import "duck_effect" "Stdin.read_line"',
   );
   assert_includes(
     artifact.wat,
-    '(import "ix_effect" "Stdout.write_line"',
+    '(import "duck_effect" "Stdout.write_line"',
   );
 });
 
@@ -74,7 +74,7 @@ Deno.test("CLI main uses the supplied effect runner", async () => {
     },
   };
 
-  const runner = IxRunner(init);
+  const runner = DuckRunner(init);
   const result = await main(runner);
 
   assert_equals(result, {

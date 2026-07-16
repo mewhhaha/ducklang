@@ -89,6 +89,10 @@ function lower_append_builtin(
     throw new Error("append expects Text arguments");
   }
 
+  if (left_type.encoding !== right_type.encoding) {
+    throw new Error("append arguments must both be Text or both be Bytes");
+  }
+
   const left_text = hooks.visible_text_value(left, env, new Set());
   const right_text = hooks.visible_text_value(right, env, new Set());
 

@@ -37,10 +37,10 @@ Deno.test("resolved comptime values preserve structural type shape", () => {
 Deno.test("type match specializes a const function for a named type", () => {
   const wat = Source.wat(`
 type Name = Text
-type Player = (.name = Name, .score = Int)
+type Player = [.name = Name, .score = Int]
 
 const classify = target => match target {
-  | struct { name: Text, .. } => 40
+  | struct { .name= Text, .. } => 40
   | union { .. } => 0
   | _ => 1
 }
@@ -55,23 +55,21 @@ classify(Player) + 2
 
 Deno.test("type descriptors expose record sum product and array layout", () => {
   const record = Source.wat(`
-type Player = (.name = Text, .score = Int)
+type Player = [.name = Text, .score = Int]
 describe_type(Player).size + describe_fields(Player)[1].offset
 `);
   assert_includes(record, "i32.const 12");
   assert_includes(record, "i32.const 8");
 
   const sum = Source.wat(`
-type Result =
-  | .ok = Int
-  | .err = Text
+type Result = | .ok = Int | .err = Text
 
 describe_cases(Result)[1].tag
 `);
   assert_includes(sum, "i32.const 1");
 
   const product = Source.wat(`
-type Pair = (Int, I64)
+type Pair = [Int, I64]
 describe_type(Pair).size
 `);
   assert_includes(product, "i32.const 16");
@@ -97,11 +95,11 @@ describe_type(Buffer).length
 
 Deno.test("const-directed construction and projection erase to fixed access", () => {
   const wat = Source.wat(`
-type Player = (.name = Int, .score = Int)
+type Player = [.name = Int, .score = Int]
 
 const player_fields = describe_fields(Player)
 const score_field = player_fields[1]
-let player = construct(Player, { name: 20, score: 40 })
+let player = construct(Player, [.name = 20, .score = 40])
 
 project(player, score_field) + 2
 `);
@@ -113,9 +111,7 @@ project(player, score_field) + 2
 
 Deno.test("case descriptors construct inspect and project union cases", () => {
   const wat = Source.wat(`
-type Result =
-  | .ok = Int
-  | .err = Int
+type Result = | .ok = Int | .err = Int
 
 const cases = describe_cases(Result)
 const ok_case = cases[0]
@@ -235,7 +231,7 @@ comptime fold([1, 2, 3], 0, 0, (sum, value) => sum + value)
 
 Deno.test("const fold derives a runtime record function from field descriptors", () => {
   const wat = Source.wat(`
-type Player = (.left = Int, .right = Int)
+type Player = [.left = Int, .right = Int]
 
 const fold = rec (values, index, state, next) => {
   if index == len(values) {
@@ -256,7 +252,7 @@ const derive_sum = (const target) => {
 }
 
 const sum_player = comptime derive_sum(Player)
-let player: Player = (.left = 20, .right = 22)
+let player: Player = [.left = 20, .right = 22]
 sum_player(player)
 `);
 

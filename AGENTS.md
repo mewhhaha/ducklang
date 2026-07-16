@@ -202,7 +202,7 @@ Store module functions as a map keyed by function name. This makes export valida
 Compiler traits are typeclasses built on `@mewhhaha/typeclasses` (JSR). The trait definitions live in `src/trait.ts`: each trait exports its structural type, a token symbol, and a typeclass object created with the library's `typeclass()` whose static methods dispatch through the instance registered under the token.
 
 ```ts
-export const format_typeclass = Symbol("binned.Format");
+export const format_typeclass = Symbol("ducklang.Format");
 
 export type Format<self> = {
   fmt: (value: self) => string;

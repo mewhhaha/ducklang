@@ -110,6 +110,148 @@ if input {
   }
 });
 
+Deno.test("typed numeric builtins execute with Wasm scalar semantics", async () => {
+  const integer_wat = Source.wat(`
+let masked = bit_and(0xff, 0x0f)
+let shifted = shift_left(1, 5)
+let top_bit = shift_right_u(-1, 31)
+let toggled = bit_xor(shifted, top_bit)
+bit_or(masked, toggled)
+`);
+  const integer_instance = await instantiate_wat(
+    integer_wat,
+    "numeric_integer_builtins",
+    {},
+  );
+
+  if (typeof integer_instance.exports.main !== "function") {
+    throw new Error("Missing integer builtin main export");
+  }
+
+  const integer_result = integer_instance.exports.main();
+
+  if (integer_result !== 47) {
+    throw new Error(
+      "Expected integer builtin result 47, got " + integer_result,
+    );
+  }
+
+  const wide_wat = Source.wat("shift_right_u(-1i64, 63i64)");
+  const wide_instance = await instantiate_wat(
+    wide_wat,
+    "numeric_i64_shift",
+    {},
+  );
+
+  if (typeof wide_instance.exports.main !== "function") {
+    throw new Error("Missing i64 shift main export");
+  }
+
+  const wide_result = wide_instance.exports.main();
+
+  if (wide_result !== 1n) {
+    throw new Error("Expected unsigned i64 shift result 1, got " + wide_result);
+  }
+
+  const float_wat = Source.wat("f32_sqrt(f32_from_i32(81)) + 0.5f32");
+  const float_instance = await instantiate_wat(
+    float_wat,
+    "numeric_f32_builtins",
+    {},
+  );
+
+  if (typeof float_instance.exports.main !== "function") {
+    throw new Error("Missing f32 builtin main export");
+  }
+
+  const float_result = float_instance.exports.main();
+
+  if (float_result !== 9.5) {
+    throw new Error("Expected f32 builtin result 9.5, got " + float_result);
+  }
+
+  const trunc_wat = Ic.wat({
+    tag: "prim",
+    prim: "i32.trunc_f32_s",
+    args: [{ tag: "var", name: "value" }],
+  });
+  const trunc_instance = await instantiate_wat(
+    trunc_wat,
+    "numeric_f32_trunc",
+    {},
+  );
+
+  if (typeof trunc_instance.exports.main !== "function") {
+    throw new Error("Missing f32 truncation main export");
+  }
+
+  if (trunc_instance.exports.main(3.75) !== 3) {
+    throw new Error("Expected truncation toward zero");
+  }
+
+  let trapped = false;
+
+  try {
+    trunc_instance.exports.main(Number.NaN);
+  } catch (error) {
+    if (!(error instanceof WebAssembly.RuntimeError)) {
+      throw error;
+    }
+    trapped = true;
+  }
+
+  if (!trapped) {
+    throw new Error("Expected i32_from_f32 to trap for NaN");
+  }
+});
+
+Deno.test("F32x4 register operations return scalar values to JS", async () => {
+  const float_wat = Source.wat(`
+let add_vectors = (left: F32x4, right: F32x4) => {
+  f32x4_add(left, right)
+}
+let base = f32x4(1f32, 2f32, 3f32, 4f32)
+let added = add_vectors(base, f32x4_splat(1f32))
+let multiplied = f32x4_mul(added, f32x4_splat(2f32))
+f32x4_extract_lane(multiplied, 2)
+`);
+  const float_instance = await instantiate_wat(
+    float_wat,
+    "f32x4_scalar_f32",
+    {},
+  );
+
+  if (typeof float_instance.exports.main !== "function") {
+    throw new Error("Missing F32x4 f32 main export");
+  }
+
+  const float_result = float_instance.exports.main();
+
+  if (float_result !== 8) {
+    throw new Error("Expected F32x4 f32 result 8, got " + float_result);
+  }
+
+  const integer_wat = Source.wat(`
+let vector = f32x4_replace_lane(f32x4_splat(2f32), 1, 21f32)
+i32_from_f32(f32x4_extract_lane(vector, 1))
+`);
+  const integer_instance = await instantiate_wat(
+    integer_wat,
+    "f32x4_scalar_i32",
+    {},
+  );
+
+  if (typeof integer_instance.exports.main !== "function") {
+    throw new Error("Missing F32x4 i32 main export");
+  }
+
+  const integer_result = integer_instance.exports.main();
+
+  if (integer_result !== 21) {
+    throw new Error("Expected F32x4 i32 result 21, got " + integer_result);
+  }
+});
+
 Deno.test("core panic traps through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source('panic("boom")');
   const instance = await instantiate_wat(wat_text, "core_panic", {});
@@ -414,12 +556,12 @@ value
 
   const aggregate_wat = wat_from_core_source(`
 let flag = 1
-let user = { age: 0, score: 0 }
+let user = [.age = 0, .score = 0]
 
 if flag {
-  user = { age: 41, score: 1 }
+  user = [.age = 41, .score = 1]
 } else {
-  user = { age: 32, score: 9 }
+  user = [.age = 32, .score = 9]
 }
 
 flag = 0
@@ -481,12 +623,13 @@ len(message)
 
 Deno.test("core type checks compile away through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
-let struct { age: Int, .. } = user_type
+let struct { .age= Int, .. } = user_type
 
 41
 `);
@@ -539,10 +682,8 @@ Deno.test("core direct type annotations compile through WAT to Wasm", async () =
   const wat_text = wat_from_core_source(`
 const int_type = Int
 
-const result_type = union {
-  ok: int_type,
-  err: Int
-}
+type ResultType = | .ok = int_type | .err = Int
+const result_type = ResultType
 
 const alias_type = result_type
 
@@ -575,10 +716,8 @@ if let .ok(value) = result {
   }
 
   const dynamic_wat = wat_from_core_source(`
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 let input = 0
 let result: result_type = if input {
@@ -614,10 +753,8 @@ if let .ok(value) = result {
   }
 
   const dynamic_text_wat = wat_from_core_source(`
-const result_type = union {
-  ok: Text,
-  err: Text
-}
+type ResultType = | .ok = Text | .err = Text
+const result_type = ResultType
 
 let input = 1
 let left = "Ada"
@@ -665,19 +802,17 @@ len(value)
 
 Deno.test("core direct parameter annotations compile through WAT to Wasm", async () => {
   const struct_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 const sum_pair = (pair: pair_type) => {
   pair.first + pair.second
 }
 
-sum_pair({
-  first: 40,
-  second: 2
-})
+sum_pair([.first = 40, .second = 2])
 `);
   const struct_instance = await instantiate_wat(
     struct_wat,
@@ -700,10 +835,8 @@ sum_pair({
   }
 
   const union_wat = wat_from_core_source(`
-const result_type = union {
-  ok: Int,
-  err: Int
-}
+type ResultType = | .ok = Int | .err = Int
+const result_type = ResultType
 
 const unwrap = (result: result_type) => {
   if let .ok(value) = result {

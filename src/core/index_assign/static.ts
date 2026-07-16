@@ -55,15 +55,17 @@ export function plan_core_static_index_assign<
     }
   } else {
     if (!hooks.is_stable_static_expr(value)) {
-      const value_name = fresh_temp_local(ctx, "index_value");
-      set_local(ctx.locals, value_name, value_type);
+      const planned = hooks.plan_static_capture_expr(
+        "index_value",
+        value,
+        ctx,
+        emit_ctx,
+      );
+      value_expr = planned.value;
 
-      if (emit_ctx) {
-        setup.push(hooks.emit_expr(value, emit_ctx));
-        setup.push("local.set $" + value_name);
+      if (planned.setup !== "") {
+        setup.push(planned.setup);
       }
-
-      value_expr = { tag: "var", name: value_name };
     }
   }
 

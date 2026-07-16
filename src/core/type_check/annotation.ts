@@ -418,6 +418,30 @@ function apply_core_value_annotation<ctx extends CoreTypeCheckCtx>(
     return value;
   }
 
+  if (annotation === "F32") {
+    const actual = core_binding_value_type_name(value, ctx, hooks);
+
+    if (actual !== "F32") {
+      throw new Error(
+        "Core " + label + " annotation expects F32, got " + actual,
+      );
+    }
+
+    return value;
+  }
+
+  if (annotation === "F32x4") {
+    const actual = core_binding_value_type_name(value, ctx, hooks);
+
+    if (actual !== "F32x4") {
+      throw new Error(
+        "Core " + label + " annotation expects F32x4, got " + actual,
+      );
+    }
+
+    return value;
+  }
+
   if (annotation === "Text" || annotation === "Bytes") {
     const actual = core_binding_value_type_name(value, ctx, hooks);
 
@@ -749,6 +773,10 @@ function core_value_matches_set_member<ctx extends CoreTypeCheckCtx>(
 
   if (type.name === "I64") {
     return actual === "I64";
+  }
+
+  if (type.name === "F32") {
+    return actual === "F32";
   }
 
   if (type.name === "Text" || type.name === "Bytes") {

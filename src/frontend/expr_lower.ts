@@ -100,6 +100,9 @@ export function lower_expr(
     case "product":
       return lower_expr(elaborate_product_expr(expr), env, hooks);
 
+    case "shape":
+      throw new Error("Compile-time shape cannot be emitted as an Ic result");
+
     case "array":
       return lower_expr(elaborate_fixed_array_expr(expr), env, hooks);
 
@@ -154,10 +157,23 @@ export function lower_expr(
         "Try-with expression must be elaborated before Ic lowering",
       );
 
-    case "with":
+    case "with": {
+      let base = expr.base;
+
+      while (base.tag === "with") {
+        base = base.base;
+      }
+
+      if (base.tag === "struct_type") {
+        throw new Error(
+          "Compile-time struct type cannot be emitted as an Ic result",
+        );
+      }
+
       throw new Error(
         "Compile-time extension value cannot be emitted as an Ic result",
       );
+    }
 
     case "struct_type":
       throw new Error(
@@ -178,6 +194,11 @@ export function lower_expr(
         hooks.apply_struct_update(expr, env),
         env,
         hooks,
+      );
+
+    case "type_with":
+      throw new Error(
+        "Computed type members must be elaborated before Ic lowering",
       );
 
     case "union_type":

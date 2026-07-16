@@ -241,14 +241,24 @@ function drop_linked_allocation_ids(
   }
 
   if (step.owned_children) {
-    for (const child of step.owned_children) {
-      for (const allocation_id of child.allocation_ids) {
-        ids.add(allocation_id);
-      }
-    }
+    collect_owned_child_allocation_ids(ids, step.owned_children);
   }
 
   return ids;
+}
+
+function collect_owned_child_allocation_ids(
+  ids: Set<string>,
+  children: import("../allocation.ts").CoreAllocationOwnedChild[],
+): void {
+  for (const child of children) {
+    for (const allocation_id of child.allocation_ids) {
+      ids.add(allocation_id);
+    }
+    if (child.owned_children) {
+      collect_owned_child_allocation_ids(ids, child.owned_children);
+    }
+  }
 }
 
 function drop_has_complete_allocation_links(
@@ -297,7 +307,9 @@ function allocation_fact_complete(
     return false;
   }
 
-  if (fact.alignment !== 4 && fact.alignment !== 8) {
+  if (
+    fact.alignment !== 4 && fact.alignment !== 8 && fact.alignment !== 16
+  ) {
     return false;
   }
 

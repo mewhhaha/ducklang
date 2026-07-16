@@ -55,6 +55,8 @@ export type {
   FrontEffectFunction,
 } from "./frontend/effect_analysis.ts";
 export type {
+  AbiCallable,
+  AbiCallableValueContract,
   AbiEffect,
   AbiEffectFunctionRequirement,
   AbiEffectOperation,
@@ -73,18 +75,19 @@ export type {
 } from "./abi.ts";
 export {
   abi_fixed_array_schema_name,
-  ix_abi_name,
-  ix_abi_version,
+  duck_abi_name,
+  duck_abi_version,
 } from "./abi.ts";
 export {
-  IxAbiError,
-  type IxEffectObject,
-  IxHost,
-  type IxHostHandler,
-  type IxHostInstance,
-  type IxInitValue,
-  IxRunner,
-  type IxValue,
+  DuckAbiError,
+  type DuckEffectObject,
+  DuckHost,
+  type DuckHostHandler,
+  type DuckHostInstance,
+  type DuckInitValue,
+  DuckRunner,
+  type DuckStateToken,
+  type DuckValue,
 } from "./host.ts";
 export type {
   Core,

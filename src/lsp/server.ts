@@ -202,7 +202,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     if (progress_token !== undefined) {
       replies.push(progress_message(progress_token, {
         kind: "begin",
-        title: "Loading Ix workspace",
+        title: "Loading Duck workspace",
         percentage: 0,
       }));
     }
@@ -247,7 +247,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     if (progress_token !== undefined) {
       replies.push(progress_message(progress_token, {
         kind: "end",
-        message: "Ix workspace loaded",
+        message: "Duck workspace loaded",
       }));
     }
 
@@ -291,9 +291,9 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
         codeLensProvider: { resolveProvider: false },
         executeCommandProvider: {
           commands: [
-            "ix.viewStage",
-            "ix.expandComptime",
-            "ix.runExample",
+            "duck.viewStage",
+            "duck.expandComptime",
+            "duck.runExample",
           ],
         },
         semanticTokensProvider: {
@@ -306,12 +306,12 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
         },
       },
       experimental: {
-        ix: {
+        duck: {
           expandComptime: true,
           viewStage: ["ic", "expr", "mod", "wat"],
         },
       },
-      serverInfo: { name: "ix-lsp", version: "0.1.0" },
+      serverInfo: { name: "duck-lsp", version: "0.1.0" },
     }));
     return replies;
   }
@@ -644,7 +644,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     )];
   }
 
-  if (message.method === "ix/expandComptime") {
+  if (message.method === "duck/expandComptime") {
     const uri = uri_from_text_document(message.params);
     const params = as_record(message.params);
     let position: unknown;
@@ -660,7 +660,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
       return [respond(message, {
         ok: false,
         code: "no_comptime_target",
-        message: "ix/expandComptime requires an open document and position",
+        message: "duck/expandComptime requires an open document and position",
       })];
     }
 
@@ -680,7 +680,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     )];
   }
 
-  if (message.method === "ix/viewStage") {
+  if (message.method === "duck/viewStage") {
     const uri = uri_from_text_document(message.params);
     const params = as_record(message.params);
 
@@ -691,7 +691,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
       return [respond(message, {
         ok: false,
         code: "unsupported_route",
-        message: "ix/viewStage requires an open document and valid stage",
+        message: "duck/viewStage requires an open document and valid stage",
       })];
     }
 
@@ -741,7 +741,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
       return [respond(message, {
         ok: false,
         code: "unknown_command",
-        message: "Malformed Ix workspace command",
+        message: "Malformed Duck workspace command",
       })];
     }
 
@@ -1439,6 +1439,10 @@ function sibling_host_interface(
     }
 
     const declaration = declarations.find((candidate) => {
+      if (candidate.tag === "extend" || candidate.tag === "fixity") {
+        return false;
+      }
+
       return candidate.name === param.annotation;
     });
 
@@ -1452,7 +1456,7 @@ function sibling_host_interface(
     return undefined;
   }
 
-  const host_uri = new URL("./host.ix", uri).href;
+  const host_uri = new URL("./host.duck", uri).href;
 
   if (host_uri === uri) {
     return undefined;
@@ -1864,7 +1868,7 @@ function execute_command_from_params(
     encoding: state.documents.position_encoding,
   };
 
-  if (request.command === "ix.viewStage") {
+  if (request.command === "duck.viewStage") {
     const stage = request.arguments[1];
 
     if (is_stage(stage)) {
@@ -1872,7 +1876,7 @@ function execute_command_from_params(
     }
   }
 
-  if (request.command === "ix.expandComptime") {
+  if (request.command === "duck.expandComptime") {
     const position = request.arguments[1];
 
     if (is_lsp_position(position)) {
@@ -1931,7 +1935,7 @@ function import_completion_paths(state: ServerState, uri: string): string[] {
   try {
     for (const entry of Deno.readDirSync(directory)) {
       if (
-        entry.isFile && entry.name.endsWith(".ix") &&
+        entry.isFile && entry.name.endsWith(".duck") &&
         new URL(encodeURIComponent(entry.name), directory).href !==
           document_url.href
       ) {
@@ -1969,7 +1973,7 @@ function import_completion_paths(state: ServerState, uri: string): string[] {
 
     const encoded_name = candidate.pathname.split("/").pop();
 
-    if (encoded_name !== undefined && encoded_name.endsWith(".ix")) {
+    if (encoded_name !== undefined && encoded_name.endsWith(".duck")) {
       paths.add("./" + decodeURIComponent(encoded_name));
     }
   }
@@ -2086,10 +2090,10 @@ function initialization_workspace_settings(params: unknown): unknown {
     return undefined;
   }
 
-  const ix = as_record(options.ix);
+  const duck = as_record(options.duck);
 
-  if (ix !== undefined) {
-    return ix;
+  if (duck !== undefined) {
+    return duck;
   }
 
   return options;
@@ -2109,10 +2113,10 @@ function workspace_server_settings(params: unknown): unknown[] {
   }
 
   const result: unknown[] = [settings];
-  const ix = as_record(settings.ix);
+  const duck = as_record(settings.duck);
 
-  if (ix !== undefined) {
-    result.push(ix);
+  if (duck !== undefined) {
+    result.push(duck);
   }
 
   return result;
@@ -2165,10 +2169,10 @@ function workspace_inlay_hint_settings(params: unknown): unknown[] {
     inlay_hint_settings.push(settings.inlayHints);
   }
 
-  const ix = as_record(settings.ix);
+  const duck = as_record(settings.duck);
 
-  if (ix !== undefined && ix.inlayHints !== undefined) {
-    inlay_hint_settings.push(ix.inlayHints);
+  if (duck !== undefined && duck.inlayHints !== undefined) {
+    inlay_hint_settings.push(duck.inlayHints);
   }
 
   return inlay_hint_settings;

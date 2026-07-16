@@ -243,16 +243,10 @@ export function core_mod_from_artifact(
     artifact.data.length > 0 || artifact.table || artifact.needs_heap ||
     artifact.needs_scratch
   ) {
-    let export_name: string | undefined;
-
-    if (artifact.data.length > 0) {
-      export_name = "memory";
-    }
-
     mod.memory = {
       name: "memory",
       pages: 1,
-      export_name,
+      export_name: "memory",
     };
   }
 

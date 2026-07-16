@@ -1,8 +1,0 @@
-module (!init: Init) where
-
-const logger = import "./logger.ix"
-
-const { write } = logger({ io: !init.io })
-_ <- write("hello from Ix")
-
-return {}

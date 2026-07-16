@@ -4,6 +4,7 @@ import type { CoreOwnership, CoreOwnershipHooks } from "../ownership.ts";
 
 export type CoreAllocationReason =
   | "closure"
+  | "runtime_bytes"
   | "runtime_aggregate"
   | "runtime_text"
   | "runtime_union";
@@ -17,7 +18,7 @@ export type CoreAllocationFact = {
   reason: CoreAllocationReason;
   expression: CoreExpr["tag"];
   byte_size: CoreAllocationByteSize;
-  alignment: 4 | 8;
+  alignment: 4 | 8 | 16;
   layout: CoreAllocationLayout;
   owned_children?: CoreAllocationOwnedChild[];
   owner?: string;
@@ -28,6 +29,7 @@ export type CoreAllocationOwnedChild = {
   offset: number;
   ownership: Extract<CoreOwnership, { tag: "unique_heap" }>;
   layout: CoreAllocationLayout;
+  owned_children?: CoreAllocationOwnedChild[];
 };
 
 export type CoreAllocationByteSize =
@@ -37,6 +39,7 @@ export type CoreAllocationByteSize =
 export type CoreAllocationLayout =
   | "closure_env.table_index_and_capture_slots"
   | "runtime_aggregate.aligned_fields"
+  | "runtime_bytes.length_prefixed_u8"
   | "runtime_text.length_prefixed_utf8"
   | "runtime_union.tag_and_aligned_payload"
   | "runtime_slice.length_and_i32_elements"
@@ -65,6 +68,8 @@ export type CoreAllocationHooks<ctx> = CoreOwnershipHooks<ctx> & {
     ctx: ctx,
   ) => boolean;
   local_value_exists: (name: string, ctx: ctx) => boolean;
+  materialized_binding: (name: string, ctx: ctx) => boolean;
+  mutable_binding: (name: string, ctx: ctx) => boolean;
   is_static_value_expr: (expr: CoreExpr, ctx: ctx) => boolean;
   static_collection_fields: (
     expr: CoreExpr,
@@ -99,6 +104,7 @@ export type CoreAllocationState = {
   next_allocation: number;
   next_block: number;
   next_closure: number;
+  next_loop: number;
   next_scratch: number;
   next_static_call: number;
   current_allocation_instance: string | undefined;

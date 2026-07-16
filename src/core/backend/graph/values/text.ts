@@ -5,6 +5,7 @@ import type { CoreBackendGraphDeps } from "../../graph_deps.ts";
 import { type CoreBackendText, create_core_backend_text } from "../../text.ts";
 import type { CoreBackendStaticCall } from "../../values/static_call/types.ts";
 import type { CoreBackendStruct } from "../../values/struct/types.ts";
+import { runtime_aggregate_type_expr } from "../../../runtime_aggregate.ts";
 
 export function create_core_backend_values_text(
   deps: CoreBackendGraphDeps,
@@ -56,6 +57,13 @@ export function create_core_backend_values_text(
       deps.union().runtime_union_match_info(case_name, target, ctx),
     runtime_union_target: (expr: CoreExpr, ctx: StaticCtx) =>
       deps.union().runtime_union_target(expr, ctx),
+    runtime_union_type_expr: (expr: CoreExpr, ctx: StaticCtx) =>
+      deps.union().runtime_union_type_expr(expr, ctx),
+    runtime_aggregate_type_expr: (expr: CoreExpr, ctx: StaticCtx) =>
+      runtime_aggregate_type_expr(expr, ctx, {
+        check_closure_call_args: deps.closure().check_closure_call_args,
+        closure_fn_type: deps.closure().closure_fn_type,
+      }),
     emit_expr: (expr: CoreExpr, ctx: EmitCtx) =>
       deps.expr_emit().emit_expr(expr, ctx),
     expr_type: (expr: CoreExpr, ctx: StaticCtx) =>

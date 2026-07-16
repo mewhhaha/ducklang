@@ -115,7 +115,7 @@ export function elaborate_front_handlers(
   source: Source,
   options: HandlerElaborationOptions,
 ): Source {
-  if (!has_ix_effects(source) && !source_contains_handlers(source)) {
+  if (!has_duck_effects(source) && !source_contains_handlers(source)) {
     return source;
   }
 
@@ -131,10 +131,10 @@ export function elaborate_front_handlers(
   return { ...source, statements };
 }
 
-function has_ix_effects(source: Source): boolean {
+function has_duck_effects(source: Source): boolean {
   for (const declaration of source.declarations || []) {
     if (
-      declaration.tag === "effect" && declaration.implementation === "ix"
+      declaration.tag === "effect" && declaration.implementation === "duck"
     ) {
       return true;
     }
@@ -359,7 +359,7 @@ function collect_top_level_facts(
 
     if (
       (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
-      function_binding_has_ix_effects(stmt.name, stmt.value, elaboration)
+      function_binding_has_duck_effects(stmt.name, stmt.value, elaboration)
     ) {
       elaboration.functions.set(stmt.name, {
         name: stmt.name,
@@ -463,7 +463,7 @@ function rewrite_top_level_statements(
     if (stmt.tag === "bind") {
       if (
         (stmt.value.tag === "lam" || stmt.value.tag === "rec") &&
-        function_binding_has_ix_effects(stmt.name, stmt.value, elaboration)
+        function_binding_has_duck_effects(stmt.name, stmt.value, elaboration)
       ) {
         continue;
       }
@@ -706,9 +706,9 @@ function compile_expr(
 
     if (
       application.func.tag === "var" &&
-      ix_function_for_name(application.func.name, ctx, elaboration)
+      duck_function_for_name(application.func.name, ctx, elaboration)
     ) {
-      return compile_ix_function_call(expr, ctx, cont, elaboration);
+      return compile_duck_function_call(expr, ctx, cont, elaboration);
     }
 
     return compile_expr_list(
@@ -786,6 +786,25 @@ function compile_expr(
             const value = values[index];
             expect(value, "Missing compiled struct field " + field.name);
             return { ...field, value };
+          }),
+        }, next_ctx);
+      },
+      elaboration,
+    );
+  }
+
+  if (expr.tag === "product" || expr.tag === "shape") {
+    return compile_expr_list(
+      expr.entries.map((entry) => entry.value),
+      ctx,
+      [],
+      (values, next_ctx) => {
+        return cont({
+          ...expr,
+          entries: expr.entries.map((entry, index) => {
+            const value = values[index];
+            expect(value, "Missing compiled product entry " + index);
+            return { ...entry, value };
           }),
         }, next_ctx);
       },
@@ -963,7 +982,7 @@ function compile_try_with(
   const declaration = elaboration.index.effects.get(recipe.handler.effect);
   expect(declaration, "Unknown handled effect: " + recipe.handler.effect);
   expect(
-    declaration.implementation === "ix",
+    declaration.implementation === "duck",
     "Cannot handle host-declared effect: " + declaration.name,
   );
   consume_handler_recipe(recipe, elaboration);
@@ -1054,7 +1073,7 @@ function compile_handler_return(
     );
   }
   const clause_ctx = handler_clause_ctx(frame, ctx);
-  const parameter_name = "__ix_handler_return_" + frame.id.toString() + "_" +
+  const parameter_name = "__duck_handler_return_" + frame.id.toString() + "_" +
     elaboration.next_resume.toString();
   elaboration.next_resume += 1;
   clause_ctx.values.set(
@@ -1187,7 +1206,7 @@ function compile_statement_at(
       binding_ctx = clone_compile_ctx(ctx);
 
       if (
-        nested_function_has_ix_effects(
+        nested_function_has_duck_effects(
           stmt.name,
           stmt.value,
           ctx,
@@ -1336,7 +1355,7 @@ function compile_statement_at(
 
   if (stmt.tag === "for_range" || stmt.tag === "for_collection") {
     expect(
-      !stmt.body.some(stmt_has_ix_operation),
+      !stmt.body.some(stmt_has_duck_operation),
       "Local effects inside runtime loops require recursive CPS lowering",
     );
     const next = rest(ctx);
@@ -1455,7 +1474,7 @@ function compile_local_operation(
     "Effect operation argument count mismatch: " + effect_text(ref),
   );
   const match = matching_handler(ref, ctx.active);
-  expect(match, "Unresolved Ix effect operation: " + effect_text(ref));
+  expect(match, "Unresolved Duck effect operation: " + effect_text(ref));
   return compile_expr_list(
     args,
     ctx,
@@ -1635,7 +1654,7 @@ function consume_resume_value(
   resume.used = true;
   const next_ctx = clone_compile_ctx(ctx);
   next_ctx.unavailable_state.add(resume.handler_id);
-  const parameter_name = "__ix_resume_value_" +
+  const parameter_name = "__duck_resume_value_" +
     elaboration.next_resume.toString();
   elaboration.next_resume += 1;
   const body_result = resume_continuation_result(resume, {
@@ -1878,27 +1897,27 @@ function assert_resume_duplicable(
   }
 }
 
-function compile_ix_function_call(
+function compile_duck_function_call(
   expr: Extract<FrontExpr, { tag: "app" }>,
   ctx: CompileCtx,
   cont: CpsCont,
   elaboration: Elaboration,
 ): CpsResult {
   const application = application_parts(expr);
-  expect(application.func.tag === "var", "Expected named Ix effect function");
-  const binding = ix_function_for_name(
+  expect(application.func.tag === "var", "Expected named Duck effect function");
+  const binding = duck_function_for_name(
     application.func.name,
     ctx,
     elaboration,
   );
-  expect(binding, "Missing Ix effect function: " + application.func.name);
+  expect(binding, "Missing Duck effect function: " + application.func.name);
   expect(
     binding.value.tag === "lam",
-    "Recursive Ix effect CPS is not supported",
+    "Recursive Duck effect CPS is not supported",
   );
   expect(
     !ctx.active_calls.has(binding.name),
-    "Recursive Ix effect CPS is not supported: " + binding.name,
+    "Recursive Duck effect CPS is not supported: " + binding.name,
   );
   expect(
     binding.value.params.length === application.args.length,
@@ -2050,8 +2069,8 @@ function rewrite_pure_expr(
     );
     expect(
       !(expr.func.tag === "var" &&
-        ix_function_for_name(expr.func.name, ctx, elaboration)),
-      "Ix effect function call requires CPS elaboration",
+        duck_function_for_name(expr.func.name, ctx, elaboration)),
+      "Duck effect function call requires CPS elaboration",
     );
     return {
       ...expr,
@@ -2106,7 +2125,7 @@ function rewrite_pure_expr(
 
   if (expr.tag === "loop") {
     expect(
-      !expr.body.some(stmt_has_ix_operation),
+      !expr.body.some(stmt_has_duck_operation),
       "Local effects inside runtime loops require recursive CPS lowering",
     );
     return {
@@ -2479,7 +2498,7 @@ function validate_handler_uses(elaboration: Elaboration): void {
   }
 }
 
-function function_has_ix_effects(
+function function_has_duck_effects(
   name: string,
   elaboration: Elaboration,
 ): boolean {
@@ -2492,7 +2511,7 @@ function function_has_ix_effects(
   for (const ref of fact.effects) {
     const effect = elaboration.index.effects.get(ref.effect);
 
-    if (effect && effect.implementation === "ix") {
+    if (effect && effect.implementation === "duck") {
       return true;
     }
   }
@@ -2500,29 +2519,29 @@ function function_has_ix_effects(
   return false;
 }
 
-function function_binding_has_ix_effects(
+function function_binding_has_duck_effects(
   name: string,
   value: Extract<FrontExpr, { tag: "lam" | "rec" }>,
   elaboration: Elaboration,
 ): boolean {
-  if (function_body_has_direct_ix_effects(value.body, elaboration)) {
+  if (function_body_has_direct_duck_effects(value.body, elaboration)) {
     return true;
   }
 
-  return function_has_ix_effects(name, elaboration);
+  return function_has_duck_effects(name, elaboration);
 }
 
-function nested_function_has_ix_effects(
+function nested_function_has_duck_effects(
   name: string,
   value: Extract<FrontExpr, { tag: "lam" | "rec" }>,
   ctx: CompileCtx,
   elaboration: Elaboration,
 ): boolean {
-  if (function_body_has_direct_ix_effects(value.body, elaboration)) {
+  if (function_body_has_direct_duck_effects(value.body, elaboration)) {
     return true;
   }
 
-  if (function_body_calls_ix_function(value.body, ctx, elaboration)) {
+  if (function_body_calls_duck_function(value.body, ctx, elaboration)) {
     return true;
   }
 
@@ -2530,10 +2549,10 @@ function nested_function_has_ix_effects(
     return false;
   }
 
-  return function_has_ix_effects(name, elaboration);
+  return function_has_duck_effects(name, elaboration);
 }
 
-function function_body_has_direct_ix_effects(
+function function_body_has_direct_duck_effects(
   body: FrontExpr,
   elaboration: Elaboration,
 ): boolean {
@@ -2542,25 +2561,25 @@ function function_body_has_direct_ix_effects(
   }
 
   return body.statements.some((stmt) => {
-    return statement_has_direct_ix_effects(stmt, elaboration);
+    return statement_has_direct_duck_effects(stmt, elaboration);
   });
 }
 
-function function_body_calls_ix_function(
+function function_body_calls_duck_function(
   body: FrontExpr,
   ctx: CompileCtx,
   elaboration: Elaboration,
 ): boolean {
   if (body.tag !== "block") {
-    return expr_calls_ix_function(body, ctx, elaboration);
+    return expr_calls_duck_function(body, ctx, elaboration);
   }
 
   return body.statements.some((stmt) => {
-    return stmt_calls_ix_function(stmt, ctx, elaboration);
+    return stmt_calls_duck_function(stmt, ctx, elaboration);
   });
 }
 
-function stmt_calls_ix_function(
+function stmt_calls_duck_function(
   stmt: Stmt,
   ctx: CompileCtx,
   elaboration: Elaboration,
@@ -2570,68 +2589,76 @@ function stmt_calls_ix_function(
       return false;
     }
 
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "state_bind" || stmt.tag === "bind_pattern") {
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "resume_dup") {
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "assign") {
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "index_assign") {
-    return expr_calls_ix_function(stmt.index, ctx, elaboration) ||
-      expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.index, ctx, elaboration) ||
+      expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "for_range") {
-    return expr_calls_ix_function(stmt.start, ctx, elaboration) ||
-      expr_calls_ix_function(stmt.end, ctx, elaboration) ||
-      expr_calls_ix_function(stmt.step, ctx, elaboration) ||
-      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+    return expr_calls_duck_function(stmt.start, ctx, elaboration) ||
+      expr_calls_duck_function(stmt.end, ctx, elaboration) ||
+      expr_calls_duck_function(stmt.step, ctx, elaboration) ||
+      stmt.body.some((item) =>
+        stmt_calls_duck_function(item, ctx, elaboration)
+      );
   }
 
   if (stmt.tag === "for_collection") {
-    return expr_calls_ix_function(stmt.collection, ctx, elaboration) ||
-      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+    return expr_calls_duck_function(stmt.collection, ctx, elaboration) ||
+      stmt.body.some((item) =>
+        stmt_calls_duck_function(item, ctx, elaboration)
+      );
   }
 
   if (stmt.tag === "if_stmt") {
-    return expr_calls_ix_function(stmt.cond, ctx, elaboration) ||
-      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+    return expr_calls_duck_function(stmt.cond, ctx, elaboration) ||
+      stmt.body.some((item) =>
+        stmt_calls_duck_function(item, ctx, elaboration)
+      );
   }
 
   if (stmt.tag === "if_let_stmt") {
-    return expr_calls_ix_function(stmt.target, ctx, elaboration) ||
-      stmt.body.some((item) => stmt_calls_ix_function(item, ctx, elaboration));
+    return expr_calls_duck_function(stmt.target, ctx, elaboration) ||
+      stmt.body.some((item) =>
+        stmt_calls_duck_function(item, ctx, elaboration)
+      );
   }
 
   if (stmt.tag === "type_check") {
-    return expr_calls_ix_function(stmt.target, ctx, elaboration);
+    return expr_calls_duck_function(stmt.target, ctx, elaboration);
   }
 
   if (stmt.tag === "return") {
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "break" && stmt.value) {
-    return expr_calls_ix_function(stmt.value, ctx, elaboration);
+    return expr_calls_duck_function(stmt.value, ctx, elaboration);
   }
 
   if (stmt.tag === "expr") {
-    return expr_calls_ix_function(stmt.expr, ctx, elaboration);
+    return expr_calls_duck_function(stmt.expr, ctx, elaboration);
   }
 
   return false;
 }
 
-function expr_calls_ix_function(
+function expr_calls_duck_function(
   expr: FrontExpr,
   ctx: CompileCtx,
   elaboration: Elaboration,
@@ -2639,17 +2666,17 @@ function expr_calls_ix_function(
   if (expr.tag === "app") {
     if (
       expr.func.tag === "var" &&
-      ix_function_for_name(expr.func.name, ctx, elaboration)
+      duck_function_for_name(expr.func.name, ctx, elaboration)
     ) {
       return true;
     }
 
-    if (expr_calls_ix_function(expr.func, ctx, elaboration)) {
+    if (expr_calls_duck_function(expr.func, ctx, elaboration)) {
       return true;
     }
 
     return expr.args.some((arg) => {
-      return expr_calls_ix_function(arg, ctx, elaboration);
+      return expr_calls_duck_function(arg, ctx, elaboration);
     });
   }
 
@@ -2658,83 +2685,83 @@ function expr_calls_ix_function(
   }
 
   if (expr.tag === "prim") {
-    return expr_calls_ix_function(expr.left, ctx, elaboration) ||
-      expr_calls_ix_function(expr.right, ctx, elaboration);
+    return expr_calls_duck_function(expr.left, ctx, elaboration) ||
+      expr_calls_duck_function(expr.right, ctx, elaboration);
   }
 
   if (expr.tag === "block") {
     return expr.statements.some((stmt) => {
-      return stmt_calls_ix_function(stmt, ctx, elaboration);
+      return stmt_calls_duck_function(stmt, ctx, elaboration);
     });
   }
 
   if (expr.tag === "comptime" || expr.tag === "captured") {
-    return expr_calls_ix_function(expr.expr, ctx, elaboration);
+    return expr_calls_duck_function(expr.expr, ctx, elaboration);
   }
 
   if (expr.tag === "borrow" || expr.tag === "freeze") {
-    return expr_calls_ix_function(expr.value, ctx, elaboration);
+    return expr_calls_duck_function(expr.value, ctx, elaboration);
   }
 
   if (expr.tag === "scratch") {
-    return expr_calls_ix_function(expr.body, ctx, elaboration);
+    return expr_calls_duck_function(expr.body, ctx, elaboration);
   }
 
   if (expr.tag === "loop") {
     return expr.body.some((stmt) => {
-      return stmt_calls_ix_function(stmt, ctx, elaboration);
+      return stmt_calls_duck_function(stmt, ctx, elaboration);
     });
   }
 
   if (expr.tag === "with" || expr.tag === "struct_update") {
-    if (expr_calls_ix_function(expr.base, ctx, elaboration)) {
+    if (expr_calls_duck_function(expr.base, ctx, elaboration)) {
       return true;
     }
 
     return expr.fields.some((field) => {
-      return expr_calls_ix_function(field.value, ctx, elaboration);
+      return expr_calls_duck_function(field.value, ctx, elaboration);
     });
   }
 
   if (expr.tag === "struct_value") {
-    if (expr_calls_ix_function(expr.type_expr, ctx, elaboration)) {
+    if (expr_calls_duck_function(expr.type_expr, ctx, elaboration)) {
       return true;
     }
 
     return expr.fields.some((field) => {
-      return expr_calls_ix_function(field.value, ctx, elaboration);
+      return expr_calls_duck_function(field.value, ctx, elaboration);
     });
   }
 
   if (expr.tag === "if") {
-    return expr_calls_ix_function(expr.cond, ctx, elaboration) ||
-      expr_calls_ix_function(expr.then_branch, ctx, elaboration) ||
-      expr_calls_ix_function(expr.else_branch, ctx, elaboration);
+    return expr_calls_duck_function(expr.cond, ctx, elaboration) ||
+      expr_calls_duck_function(expr.then_branch, ctx, elaboration) ||
+      expr_calls_duck_function(expr.else_branch, ctx, elaboration);
   }
 
   if (expr.tag === "if_let") {
-    return expr_calls_ix_function(expr.target, ctx, elaboration) ||
-      expr_calls_ix_function(expr.then_branch, ctx, elaboration) ||
-      expr_calls_ix_function(expr.else_branch, ctx, elaboration);
+    return expr_calls_duck_function(expr.target, ctx, elaboration) ||
+      expr_calls_duck_function(expr.then_branch, ctx, elaboration) ||
+      expr_calls_duck_function(expr.else_branch, ctx, elaboration);
   }
 
   if (expr.tag === "field") {
-    return expr_calls_ix_function(expr.object, ctx, elaboration);
+    return expr_calls_duck_function(expr.object, ctx, elaboration);
   }
 
   if (expr.tag === "index") {
-    return expr_calls_ix_function(expr.object, ctx, elaboration) ||
-      expr_calls_ix_function(expr.index, ctx, elaboration);
+    return expr_calls_duck_function(expr.object, ctx, elaboration) ||
+      expr_calls_duck_function(expr.index, ctx, elaboration);
   }
 
   if (expr.tag === "union_case") {
-    if (expr.value && expr_calls_ix_function(expr.value, ctx, elaboration)) {
+    if (expr.value && expr_calls_duck_function(expr.value, ctx, elaboration)) {
       return true;
     }
 
     if (
       expr.type_expr &&
-      expr_calls_ix_function(expr.type_expr, ctx, elaboration)
+      expr_calls_duck_function(expr.type_expr, ctx, elaboration)
     ) {
       return true;
     }
@@ -2743,7 +2770,7 @@ function expr_calls_ix_function(
   return false;
 }
 
-function statement_has_direct_ix_effects(
+function statement_has_direct_duck_effects(
   stmt: Stmt,
   elaboration: Elaboration,
 ): boolean {
@@ -2751,19 +2778,19 @@ function statement_has_direct_ix_effects(
     const operation = operation_from_state_bind(stmt, elaboration.index);
     const effect = elaboration.index.effects.get(operation.effect);
     expect(effect, "Missing effect declaration: " + operation.effect);
-    return effect.implementation === "ix";
+    return effect.implementation === "duck";
   }
 
   if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
     return stmt.body.some((item) => {
-      return statement_has_direct_ix_effects(item, elaboration);
+      return statement_has_direct_duck_effects(item, elaboration);
     });
   }
 
   return false;
 }
 
-function ix_function_for_name(
+function duck_function_for_name(
   name: string,
   ctx: CompileCtx,
   elaboration: Elaboration,
@@ -3314,6 +3341,26 @@ function resume_fields_from_expr(
     return result;
   }
 
+  if (expr.tag === "product" || expr.tag === "shape") {
+    for (let index = 0; index < expr.entries.length; index += 1) {
+      const entry = expr.entries[index];
+      expect(entry, "Missing resumption product entry " + index);
+      const signature = resume_value_signature(entry.value, elaboration);
+
+      if (signature) {
+        let name = entry.label;
+
+        if (name === undefined) {
+          name = "item_" + index;
+        }
+
+        result.set(name, signature);
+      }
+    }
+
+    return result;
+  }
+
   if (expr.tag === "with" || expr.tag === "struct_update") {
     const base = resume_fields_from_expr(expr.base, elaboration);
 
@@ -3572,7 +3619,7 @@ function stmt_uses_name(stmt: Stmt, name: string): boolean {
   return false;
 }
 
-function stmt_has_ix_operation(stmt: Stmt): boolean {
+function stmt_has_duck_operation(stmt: Stmt): boolean {
   if (stmt.tag === "state_bind" || stmt.tag === "resume_dup") {
     return true;
   }
@@ -3582,11 +3629,11 @@ function stmt_has_ix_operation(stmt: Stmt): boolean {
   }
 
   if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
-    return stmt.body.some(stmt_has_ix_operation);
+    return stmt.body.some(stmt_has_duck_operation);
   }
 
   if (stmt.tag === "for_range" || stmt.tag === "for_collection") {
-    return stmt.body.some(stmt_has_ix_operation);
+    return stmt.body.some(stmt_has_duck_operation);
   }
 
   return false;
@@ -3890,7 +3937,7 @@ function unit_value(): FrontExpr {
 }
 
 function effect_import_name(effect: string, operation: string): string {
-  return "__ix_effect_" + effect + "_" + operation;
+  return "__duck_effect_" + effect + "_" + operation;
 }
 
 function effect_text(effect: EffectRef): string {

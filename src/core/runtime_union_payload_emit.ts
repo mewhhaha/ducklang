@@ -37,14 +37,14 @@ export function emit_runtime_union_match_payload_setup(
   if (info.payload.tag === "aggregate") {
     return [
       "local.get $" + local_name,
-      load_instr("i32", 4),
+      load_instr("i32", info.payload_offset),
       "local.set $" + value_name,
     ].join("\n");
   }
 
   return [
     "local.get $" + local_name,
-    load_instr(info.payload.type, 4),
+    load_instr(info.payload.type, info.payload_offset),
     "local.set $" + value_name,
   ].join("\n");
 }

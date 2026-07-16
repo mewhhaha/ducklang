@@ -27,7 +27,7 @@ export function fmt_ic(ic: Ic): string {
         "Primitive " + ic.prim + " expects " + expected + " arguments",
       );
 
-      if (ic.prim === "i32.select" || ic.prim === "i64.select") {
+      if (ic.prim.endsWith(".select")) {
         const then_branch = fmt_ic(arg(ic.args, 0));
         const else_branch = fmt_ic(arg(ic.args, 1));
         const cond = fmt_ic(arg(ic.args, 2));
@@ -44,10 +44,15 @@ export function fmt_ic(ic: Ic): string {
         return `${op}(${value})`;
       }
 
-      const left = fmt_ic(arg(ic.args, 0));
-      const op = Format.fmt(Prim, ic.prim);
-      const right = fmt_ic(arg(ic.args, 1));
-      return `${left} ${op} ${right}`;
+      if (expected === 2 && !ic.prim.startsWith("f32x4.")) {
+        const left = fmt_ic(arg(ic.args, 0));
+        const op = Format.fmt(Prim, ic.prim);
+        const right = fmt_ic(arg(ic.args, 1));
+        return `${left} ${op} ${right}`;
+      }
+
+      const args = ic.args.map((item) => fmt_ic(item)).join(", ");
+      return Format.fmt(Prim, ic.prim) + "(" + args + ")";
     }
 
     case "lam": {

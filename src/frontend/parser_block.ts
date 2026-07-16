@@ -5,12 +5,19 @@ import { mark_source_span } from "./syntax.ts";
 import { copy_name_sites } from "./name_site.ts";
 
 export abstract class ParserBlock extends ParserConditional {
+  protected block_depth = 0;
   protected abstract parse_stmt(): Stmt;
 
   protected parse_block(): FrontExpr {
     const start = this.index;
-    const block = this.parse_block_inner();
-    return this.concrete_node(start, block);
+    this.block_depth += 1;
+
+    try {
+      const block = this.parse_block_inner();
+      return this.concrete_node(start, block);
+    } finally {
+      this.block_depth -= 1;
+    }
   }
 
   private parse_block_inner(): FrontExpr {

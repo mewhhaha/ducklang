@@ -70,6 +70,7 @@ export type CoreTransferState<ctx> = {
   transferred: Map<string, CoreTransferEdge>;
   functions: Map<string, CoreTransferFunction>;
   aliases: Map<string, string>;
+  declared_owners: Set<string>;
   alias_subjects: Map<string, CoreExpr>;
   alias_ownership: Map<string, CoreOwnership | undefined>;
   alias_rejection_reasons: Map<string, string>;

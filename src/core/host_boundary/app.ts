@@ -24,6 +24,7 @@ import type {
   CoreHostBoundaryHooks,
   CoreHostBoundaryState,
 } from "./types.ts";
+import { is_core_runtime_buffer_builtin_name } from "../runtime_buffer.ts";
 
 export function scan_host_boundary_app<
   ctx extends CoreHostImportCtx & StaticCoreCallCtx,
@@ -183,6 +184,14 @@ function core_builtin_app_name(name: string): boolean {
   }
 
   if (name === "append") {
+    return true;
+  }
+
+  if (name === "Bytes.generate") {
+    return true;
+  }
+
+  if (is_core_runtime_buffer_builtin_name(name)) {
     return true;
   }
 

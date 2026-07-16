@@ -33,7 +33,7 @@ export class LinearState extends Set<string> {
       }
 
       throw_linear_diagnostic(
-        "IX2201",
+        "DUCK2201",
         "Linear value " + name + " was already consumed",
         value,
         linear_binding_related(this, name),
@@ -107,7 +107,7 @@ function throw_reused_linear_value(
     subject: binding.declaration,
   }];
   throw_linear_diagnostic(
-    "IX2201",
+    "DUCK2201",
     "Linear value " + name + " was already consumed",
     value,
     related,
@@ -119,7 +119,7 @@ export function throw_unused_linear_value(
   declaration: object,
 ): never {
   throw_linear_diagnostic(
-    "IX2202",
+    "DUCK2202",
     "Linear value " + name + " was not consumed",
     declaration,
   );
@@ -213,7 +213,7 @@ export function expect_same_linear_state(
     }
 
     throw_linear_diagnostic(
-      "IX2205",
+      "DUCK2205",
       "Linear loop " + edge + " changes carried values",
       subject,
       related,

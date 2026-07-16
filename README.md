@@ -1,6 +1,6 @@
-# Binned
+# Ducklang
 
-Binned is a small Interaction Calculus inspired compiler pipeline written in
+Ducklang is a small Interaction Calculus inspired compiler pipeline written in
 Deno. The project is intentionally direct and inspectable: source programs move
 through explicit stages instead of a large hidden compiler framework.
 
@@ -40,13 +40,14 @@ Compile and execute the complete source example suite:
 just examples
 ```
 
-Install the repository's Tree-sitter grammar and Helix queries for `.ix` files:
+Install the repository's Tree-sitter grammar and Helix queries for `.duck`
+files:
 
 ```sh
 just install
 ```
 
-This adds a managed `ix` block to `~/.config/helix/languages.toml`, installs
+This adds a managed `duck` block to `~/.config/helix/languages.toml`, installs
 highlight, indentation, locals, textobject, symbol, and rainbow-bracket queries,
 and builds the grammar. `just helix-register` remains available as the explicit
 Helix-specific alias. Run `just helix-grammar` to validate the grammar without
@@ -57,15 +58,15 @@ checks.
 
 ## Tooling CLI
 
-`ix.ts` is the language CLI. It hosts the formatter and the language server,
+`duck.ts` is the language CLI. It hosts the formatter and the language server,
 which live decoupled from the compiler pipeline in `src/fmt/` and `src/lsp/`:
 
 ```sh
-just ix fmt examples        # format .ix files in place
-just ix fmt --check src     # report unformatted files without writing
-just ix fmt --stdin         # format stdin to stdout
-just ix check examples      # parse files and report diagnostics
-just ix lsp                 # run the language server over stdio
+just duck fmt examples        # format .duck files in place
+just duck fmt --check src     # report unformatted files without writing
+just duck fmt --stdin         # format stdin to stdout
+just duck check examples      # parse files and report diagnostics
+just duck lsp                 # run the language server over stdio
 ```
 
 The formatter is deliberately biased: two-space indentation, fixed spacing,
@@ -75,7 +76,7 @@ refuses to rewrite files that do not parse. The language server provides parse
 diagnostics, document formatting, and document symbols.
 
 `just install` registers the language server and enables format-on-save for
-`.ix` files in Helix alongside the Tree-sitter grammar.
+`.duck` files in Helix alongside the Tree-sitter grammar.
 
 ## Example
 
@@ -93,19 +94,19 @@ value
 
 This is the header-free fragment compiled by the demo in `main.ts`: it parses
 source, lowers it through IC and Expr, wraps it in a Wasm module exporting
-`main` with the value `33`, and writes WAT. Loaded `.ix` files use the module
+`main` with the value `33`, and writes WAT. Loaded `.duck` files use the module
 header and export-record form shown in the next section.
 
 ## Source Language
 
-Loaded `.ix` files are modules. A module declares its inputs in the header and
-returns an export record at the end of the file:
+Loaded `.duck` files are modules. A module declares its inputs in the header and
+returns an ordered export shape at the end of the file:
 
 ```txt
 module () where
 
 let x = 40
-return { answer: x + 2 }
+return { .answer = x + 2 }
 ```
 
 `Source.parse` also accepts header-free fragments for tests and interactive use.
@@ -129,7 +130,7 @@ Const evaluation supports memoized structural recursion, type descriptors, and
 ordinary fixed-array construction. Fixed-array lengths may use arithmetic over
 const integers, such as `const width = 2` followed by `[Int; width + 1]`. The
 derived equality example combines records, arrays, and unions:
-[`examples/compile_time/13_derived_nested_equality.ix`](examples/compile_time/13_derived_nested_equality.ix).
+[`examples/compile_time/13_derived_nested_equality.duck`](examples/compile_time/13_derived_nested_equality.duck).
 
 Closures use arrow syntax:
 
@@ -189,10 +190,10 @@ module () where
 module (!init: Init) where
 module (const release: Bool) where
 
-const logger = import "./logger.ix"
-const { write } = logger({ io: !init.io })
+const logger = import "./logger.duck"
+const { .write = write } = logger { .io = !init.io }
 
-return { write }
+return { .write = write }
 ```
 
 Common expression forms:
@@ -226,7 +227,7 @@ if let .ok(value) = result { value } else { 0 }
 
 object.field
 object[index]
-object with { field: value }
+object with { .field = value }
 ```
 
 Built-in type names:
@@ -246,15 +247,14 @@ Type
 Types are compile-time values.
 
 ```txt
+const { struct } = comptime (import "duck:prelude")()
+
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name = Text,
+  .age = Int
 }
 
-let user = user_type {
-  name: "Ada",
-  age: 36
-}
+let user: user_type = [.name = "Ada", .age = 36]
 
 user.age
 ```
@@ -262,13 +262,9 @@ user.age
 Unions support typed constructors and `if let` matching:
 
 ```txt
-const option_type = t => union {
-  some: t,
-  none: Unit
-}
-
-const int_option_type = option_type(Int)
-let value = int_option_type.some(41)
+type Option t = | .some = t | .none
+type IntOption = Option Int
+let value = IntOption.some 41
 
 if let .some(x) = value {
   x + 1
@@ -299,8 +295,8 @@ append(left, right)
 
 ## Host Effects And Modules
 
-Host services are nominal opaque effects declared in an Ix host interface. Their
-methods are the operations tracked by the effect system:
+Host services are nominal opaque effects declared in a Ducklang host interface.
+Their methods are the operations tracked by the effect system:
 
 ```txt
 declare effect Io {
@@ -353,15 +349,15 @@ The entry module receives the sole root authority from JavaScript:
 ```txt
 module (!init: Init) where
 
-const console = import "./console.ix"
-const { greet } = console({ io: !init.io })
+const console = import "./console.duck"
+const { .greet = greet } = console { .io = !init.io }
 result <- greet("Ada")
 
-return { result }
+return { .result = result }
 ```
 
 `declare effect` means that the operations are implemented by the host. Plain
-`effect` defines operations handled entirely inside Ix:
+`effect` defines operations handled entirely inside Duck:
 
 ```txt
 effect Counter {
@@ -388,7 +384,7 @@ Effect implementation values are affine. Handlers are deep, omitted clauses
 forward outward, and the matched handler is inactive while a clause runs.
 Resumptions may abort, resume once, or be duplicated with checked
 `let (!left, !right) = dup !resume` when all captures are copy/share safe. Plain
-effects and resumptions remain internal to one Ix run and never appear in the
+effects and resumptions remain internal to one Duck run and never appear in the
 managed JavaScript manifest.
 
 ## Ownership And Host Effects
@@ -423,7 +419,7 @@ declare Init { console: Console }
 
 The compiler turns these operations into typed Wasm imports internally. There is
 no user-written raw-import statement; this keeps host authority visible in
-effect rows and makes the complete handler set swappable through `IxRunner`.
+effect rows and makes the complete handler set swappable through `DuckRunner`.
 
 ## Compiler Entry Points
 
@@ -437,8 +433,8 @@ Source.core(text); // Source -> structured Core
 Source.mod(text, "main"); // Source -> Core -> Mod
 Source.wat(text, "main"); // Source -> Core -> WAT
 Source.artifact(text, "main"); // managed module, WAT, and ABI manifest
-Source.artifact_file("main.ix", {
-  host_interface: "host.ix",
+Source.artifact_file("main.duck", {
+  host_interface: "host.duck",
 });
 ```
 
@@ -448,13 +444,13 @@ text, host effects, closures, and aggregate behavior.
 
 ### Managed JavaScript host ABI
 
-`Source.artifact` emits the `ix-js-3` manifest and a module with exported
-`memory`, `__ix_abi_alloc`, `__ix_abi_free`, and `__ix_abi_main`. Instantiate
-that artifact through `IxHost` to receive JavaScript values instead of raw Wasm
-pointers:
+`Source.artifact` emits the `duck-js-1` manifest and a module with exported
+`memory`, `__duck_abi_alloc`, `__duck_abi_free`, and `__duck_abi_main`.
+Instantiate that artifact through `DuckHost` to receive JavaScript values
+instead of raw Wasm pointers:
 
 ```ts
-import { IxHost, IxRunner, Source } from "./src/frontend.ts";
+import { DuckHost, DuckRunner, Source } from "./src/frontend.ts";
 
 const artifact = Source.artifact(`
 module (!init: Init) where
@@ -473,12 +469,12 @@ let run: () -> <Measure> I32 = () => {
 }
 
 result <- run()
-return { result }
+return { .result = result }
 `);
 const wasm = compileWat(artifact.wat);
-const program = await IxHost.instantiate(wasm, artifact.abi);
+const program = await DuckHost.instantiate(wasm, artifact.abi);
 
-const runner = IxRunner({
+const runner = DuckRunner({
   measure: {
     text(value) {
       return value.length;
@@ -492,11 +488,11 @@ program.dispose();
 For a separate host interface, compile the entry file with
 `Source.artifact_file(entry, { host_interface })`. The interface contributes
 only declarations; passing it does not instantiate or grant a resource. The JS
-objects captured by `IxRunner(init)` are the actual authority. Constructing a
+objects captured by `DuckRunner(init)` are the actual authority. Constructing a
 different runner swaps the complete handler set without changing the compiled
 program.
 
-The adapter marshals entry context and export records while host effects remain
+The adapter marshals entry context and export products while host effects remain
 opaque registry resources inside Wasm. It validates resource handles, required
 methods, UTF-8, bounds, union tags, handler availability, and ABI versions.
 Allocations grow Wasm memory when needed. `Source.wat` retains the lower-level
@@ -514,8 +510,8 @@ src/core.ts           structured Core path
 src/wasm_*.test.ts    end-to-end Wasm integration tests by feature area
 docs/language.md      source-language specification
 docs/coverage.md      per-route implementation coverage
-examples/             runnable .ix source programs and expected failures
-tree-sitter-ix/       Tree-sitter grammar and Helix queries for .ix files
+examples/             runnable .duck source programs and expected failures
+tree-sitter-duck/       Tree-sitter grammar and Helix queries for .duck files
 tasks/                planning notes and task breakdowns
 ```
 

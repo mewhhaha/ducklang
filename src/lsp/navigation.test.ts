@@ -28,12 +28,12 @@ Deno.test("navigation keeps shadow generations separate", () => {
     definition_location(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       first_reference,
       "utf-16",
     ),
     {
-      uri: "file:///main.ix",
+      uri: "file:///main.duck",
       range: {
         start: { line: 0, character: 4 },
         end: { line: 0, character: 5 },
@@ -44,7 +44,7 @@ Deno.test("navigation keeps shadow generations separate", () => {
     reference_locations(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       first_reference,
       true,
       "utf-16",
@@ -61,7 +61,7 @@ Deno.test("navigation keeps shadow generations separate", () => {
     reference_locations(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       last_reference,
       true,
       "utf-16",
@@ -81,19 +81,19 @@ Deno.test("document highlights distinguish linear consumption", () => {
 });
 
 Deno.test("type definition follows nominal binding facts", () => {
-  const text = "type Pair = (.left = Int)\n" +
-    "let value: Pair = (.left = 1)\nvalue.left\n";
+  const text = "type Pair = [.left = Int]\n" +
+    "let value: Pair = [.left = 1]\nvalue.left\n";
   const { index } = indexed(text);
   assert_equals(
     type_definition_location(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       text.lastIndexOf("value"),
       "utf-16",
     ),
     {
-      uri: "file:///main.ix",
+      uri: "file:///main.duck",
       range: {
         start: { line: 0, character: 5 },
         end: { line: 0, character: 9 },
@@ -103,17 +103,17 @@ Deno.test("type definition follows nominal binding facts", () => {
 });
 
 Deno.test("import definitions jump to the imported file from alias references", () => {
-  const text = 'const value = import "./dep.ix"\nvalue\n';
+  const text = 'const value = import "./dep.duck"\nvalue\n';
   const { parsed, index } = indexed(text);
   assert_equals(
     import_definition_location(
       parsed.source,
       index,
-      "file:///main.ix",
+      "file:///main.duck",
       text.lastIndexOf("value"),
     ),
     {
-      uri: "file:///dep.ix",
+      uri: "file:///dep.duck",
       range: {
         start: { line: 0, character: 0 },
         end: { line: 0, character: 0 },
@@ -123,18 +123,18 @@ Deno.test("import definitions jump to the imported file from alias references", 
 });
 
 Deno.test("import definitions jump to the imported file from expressions", () => {
-  const text = 'let module = import "./dep.ix"\n';
+  const text = 'let module = import "./dep.duck"\n';
   const { parsed, index } = indexed(text);
 
   assert_equals(
     import_definition_location(
       parsed.source,
       index,
-      "file:///main.ix",
-      text.indexOf("dep.ix"),
+      "file:///main.duck",
+      text.indexOf("dep.duck"),
     ),
     {
-      uri: "file:///dep.ix",
+      uri: "file:///dep.duck",
       range: {
         start: { line: 0, character: 0 },
         end: { line: 0, character: 0 },
@@ -149,7 +149,7 @@ Deno.test("rename edits exactly one shadow generation and preserves index shape"
   const edit = rename_symbol(
     index,
     text,
-    "file:///main.ix",
+    "file:///main.duck",
     text.indexOf("x\nx ="),
     "base",
     "utf-16",
@@ -160,10 +160,10 @@ Deno.test("rename edits exactly one shadow generation and preserves index shape"
   }
 
   assert_equals(
-    edit.changes["file:///main.ix"]?.map((item) => item.range.start.line),
+    edit.changes["file:///main.duck"]?.map((item) => item.range.start.line),
     [0, 1, 2],
   );
-  const edits = edit.changes["file:///main.ix"];
+  const edits = edit.changes["file:///main.duck"];
 
   if (edits === undefined) {
     throw new Error("Missing shadow rename edits");
@@ -182,7 +182,7 @@ Deno.test("rename respects const capture snapshots", () => {
   const edit = rename_symbol(
     index,
     text,
-    "file:///main.ix",
+    "file:///main.duck",
     text.indexOf("value", text.indexOf("=>")),
     "snapshot",
     "utf-16",
@@ -193,7 +193,7 @@ Deno.test("rename respects const capture snapshots", () => {
   }
 
   assert_equals(
-    edit.changes["file:///main.ix"]?.map((item) => item.range.start.line),
+    edit.changes["file:///main.duck"]?.map((item) => item.range.start.line),
     [0, 1],
   );
 });
@@ -202,16 +202,16 @@ for (
   const fixture of [
     {
       label: "field",
-      text: "type User = (.name = Text)\n" +
-        "let struct { name: Text } = User\n" +
-        'let value: User = (.name = "Ada")\nvalue.name\n',
+      text: "type User = [.name = Text]\n" +
+        "let struct { .name= Text } = User\n" +
+        'let value: User = [.name = "Ada"]\nvalue.name\n',
       selected: ".name",
       replacement: "label",
       count: 4,
     },
     {
       label: "union case",
-      text: "type Result = .ok = Int\n" +
+      text: "type Result = | .ok = Int\n" +
         "let value = Result.ok(1)\n" +
         "if let .ok(payload) = value { payload }\n",
       selected: ".ok",
@@ -236,7 +236,7 @@ for (
     const edit = rename_symbol(
       index,
       fixture.text,
-      "file:///main.ix",
+      "file:///main.duck",
       selected,
       fixture.replacement,
       "utf-16",
@@ -246,7 +246,7 @@ for (
       throw new Error("Expected " + fixture.label + " rename");
     }
 
-    const edits = edit.changes["file:///main.ix"];
+    const edits = edit.changes["file:///main.duck"];
 
     if (edits === undefined) {
       throw new Error("Missing rename edits");
@@ -274,7 +274,7 @@ Deno.test("rename rejects builtins, unresolved names, and capture", () => {
     rename_symbol(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       text.indexOf("left"),
       "right",
       "utf-16",
@@ -285,7 +285,7 @@ Deno.test("rename rejects builtins, unresolved names, and capture", () => {
     rename_symbol(
       index,
       text,
-      "file:///main.ix",
+      "file:///main.duck",
       text.indexOf("left"),
       "Bool",
       "utf-16",
@@ -295,14 +295,14 @@ Deno.test("rename rejects builtins, unresolved names, and capture", () => {
 });
 
 Deno.test("workspace symbols fuzzy-match declarations and members", () => {
-  const first = "type Account = (.display_name = Text)\n";
+  const first = "type Account = [.display_name = Text]\n";
   const second = "let calculate_total = 42\n";
   const first_index = indexed(first).index;
   const second_index = indexed(second).index;
   const symbols = workspace_symbols(
     [
-      { uri: "file:///one.ix", text: first, index: first_index },
-      { uri: "file:///two.ix", text: second, index: second_index },
+      { uri: "file:///one.duck", text: first, index: first_index },
+      { uri: "file:///two.duck", text: second, index: second_index },
     ],
     "dname",
     "utf-16",

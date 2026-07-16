@@ -89,6 +89,14 @@ export function format_pattern(pattern: Pattern): string {
       return "#" + pattern.value.name;
     }
 
+    if (pattern.value.tag === "num" && pattern.value.type === "i64") {
+      return pattern.value.value.toString() + "i64";
+    }
+
+    if (pattern.value.tag === "num" && pattern.value.type === "f32") {
+      return pattern.value.value.toString() + "f32";
+    }
+
     return pattern.value.value.toString();
   }
 
@@ -111,12 +119,29 @@ export function format_pattern(pattern: Pattern): string {
       let text = format_pattern(entry.pattern);
 
       if (entry.label !== undefined) {
-        text = "." + entry.label + " = " + text;
+        if (
+          entry.pattern.tag === "binding" &&
+          entry.pattern.name === entry.label &&
+          entry.pattern.mode === "default" &&
+          entry.pattern.annotation === undefined &&
+          entry.pattern.type_annotation === undefined
+        ) {
+          text = entry.label;
+        } else {
+          text = "." + entry.label + " = " + text;
+        }
       }
 
       return text;
     });
-    return "(" + entries.join(", ") + ")";
+    if (
+      pattern.entries.length > 0 &&
+      pattern.entries.every((entry) => entry.label !== undefined)
+    ) {
+      return "{ " + entries.join(", ") + " }";
+    }
+
+    return "[" + entries.join(", ") + "]";
   }
 
   if (pattern.tag === "record") {

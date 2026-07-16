@@ -37,10 +37,10 @@ function definition_type_name(
 
 Deno.test("source facts specialize generic product aliases recursively", () => {
   const source = parse_source(`
-type Box a = (.value = a)
+type Box a = [.value = a]
 type Alias a = Box a
 type Nested a = Alias a
-let box: Nested Bool = (.value = true)
+let box: Nested Bool = [.value = true]
 box.value
 `);
   const facts = source_facts(source);
@@ -74,6 +74,10 @@ Deno.test("source facts preserve names across the i32 runtime family", () => {
     source.statements.map((statement) => binding_type_name(statement, facts)),
     ["Int", "Int", "U32", "U32"],
   );
+});
+
+Deno.test("source facts expose Bytes.empty as Bytes", () => {
+  assert_equals(expression_type_names("Bytes.empty", "text"), ["Bytes"]);
 });
 
 Deno.test("source facts traverse unreachable expressions without changing returns", () => {
@@ -123,6 +127,102 @@ Deno.test("source facts infer each untyped call independently", () => {
       "app",
     ),
     ["unknown", "Bool"],
+  );
+});
+
+Deno.test("source facts apply consistent call types inside untyped functions", () => {
+  const source = parse_source(`
+let suffix = (bytes, pattern) => {
+  let tail = slice(bytes, 0, len(bytes))
+  let width = len(pattern)
+  slice(tail, 0, width)
+}
+let bytes: Bytes = Bytes.empty
+suffix(bytes, "")
+`);
+  const facts = source_facts(source);
+  const suffix = source.statements[0];
+
+  if (
+    suffix === undefined || suffix.tag !== "bind" ||
+    suffix.value.tag !== "lam" || suffix.value.body.tag !== "block"
+  ) {
+    throw new Error("Missing inferred suffix closure");
+  }
+
+  assert_equals(
+    suffix.value.params.map((param) =>
+      definition_type_name(param, "name", facts)
+    ),
+    ["Bytes", "Text"],
+  );
+  assert_equals(
+    suffix.value.body.statements.slice(0, 2).map((statement) =>
+      binding_type_name(statement, facts)
+    ),
+    ["Bytes", "I32"],
+  );
+
+  const conflicting = parse_source(
+    "let identity = value => value\nidentity(true)\nidentity(1)",
+  );
+  const conflicting_facts = source_facts(conflicting);
+  const identity = conflicting.statements[0];
+
+  if (
+    identity === undefined || identity.tag !== "bind" ||
+    identity.value.tag !== "lam"
+  ) {
+    throw new Error("Missing independently inferred identity closure");
+  }
+
+  assert_equals(
+    definition_type_name(identity.value.params[0]!, "name", conflicting_facts),
+    "unknown",
+  );
+
+  const aliases = parse_source(`
+let identity = value => value
+let int_value: Int = 1
+let i32_value: I32 = 2
+identity(int_value)
+identity(i32_value)
+`);
+  const alias_facts = source_facts(aliases);
+  const alias_identity = aliases.statements[0];
+
+  if (
+    alias_identity === undefined || alias_identity.tag !== "bind" ||
+    alias_identity.value.tag !== "lam"
+  ) {
+    throw new Error("Missing alias-sensitive identity closure");
+  }
+
+  assert_equals(
+    definition_type_name(alias_identity.value.params[0]!, "name", alias_facts),
+    "unknown",
+  );
+
+  const invalid_call = parse_source(
+    "let identity = value => value\nidentity(1, 2)",
+  );
+  const invalid_call_facts = source_facts(invalid_call);
+  const invalid_identity = invalid_call.statements[0];
+
+  if (
+    invalid_identity === undefined || invalid_identity.tag !== "bind" ||
+    invalid_identity.value.tag !== "lam"
+  ) {
+    throw new Error("Missing invalid-call identity closure");
+  }
+
+  assert_equals(
+    definition_type_name(
+      invalid_identity.value.params[0]!,
+      "name",
+      invalid_call_facts,
+    ),
+    "unknown",
   );
 });
 
@@ -185,8 +285,8 @@ Deno.test("source facts validate text builtins and runtime type tests", () => {
 
 Deno.test("source facts invalidate malformed aggregates and handlers", () => {
   const duplicate = parse_source(`
-type Pair = (.ready = Bool, .wide = I64)
-let pair: Pair = (.ready = true, .ready = false)
+type Pair = [.ready = Bool, .wide = I64]
+let pair: Pair = [.ready = true, .ready = false]
 pair.ready
 `);
   const duplicate_facts = source_facts(duplicate);
@@ -252,8 +352,8 @@ Deno.test("source facts validate handler inputs against handled values", () => {
 
 Deno.test("source facts do not infer annotated updates from unknown bases", () => {
   const source = parse_source(`
-type Pair = (.ready = Bool)
-let bad: Pair = missing with { ready: false }
+type Pair = [.ready = Bool]
+let bad: Pair = missing with { .ready = false }
 bad.ready
 `);
   const facts = source_facts(source);
@@ -267,9 +367,9 @@ bad.ready
   );
 });
 
-Deno.test("source facts distinguish named and positional destructuring", () => {
+Deno.test("source facts distinguish labeled and positional destructuring", () => {
   const named = parse_source(`
-let { missing } = { present: true }
+let { .missing = missing } = { .present = true }
 missing
 `);
   const named_facts = source_facts(named);
@@ -277,12 +377,12 @@ missing
 
   if (
     named_pattern === undefined || named_pattern.tag !== "bind" ||
-    named_pattern.pattern?.tag !== "record"
+    named_pattern.pattern?.tag !== "product"
   ) {
     throw new Error("Missing named binding pattern");
   }
 
-  const named_binding = named_pattern.pattern.fields[0]?.pattern;
+  const named_binding = named_pattern.pattern.entries[0]?.pattern;
 
   if (named_binding?.tag !== "binding") {
     throw new Error("Missing named record binding");
@@ -298,7 +398,7 @@ missing
   );
 
   const positional = parse_source(`
-type Pair = (Bool, I32)
+type Pair = [Bool, I32]
 let pair: Pair = (true, 1)
 let (left, right) = pair
 left
@@ -331,8 +431,8 @@ Deno.test("source facts require valid runtime type targets", () => {
   const invalid = [
     "effect Check { test: () => Bool }\n1 is Check",
     "type Alias = missing_type\n1 is Alias",
-    "type Box a = (.value = a)\n1 is Box",
-    "type Box a = (.value = a)\n1 is Box Bool Bool",
+    "type Box a = [.value = a]\n1 is Box",
+    "type Box a = [.value = a]\n1 is Box Bool Bool",
     "1 is missing_type",
     "1 is (I32 -> <missing_effect> Bool)",
     "1 is (I32 -> <effect_row> Bool)",
@@ -348,7 +448,7 @@ Deno.test("source facts require valid runtime type targets", () => {
 
   assert_equals(
     expression_type_names(
-      "type Box a = (.value = a)\n1 is Box Bool",
+      "type Box a = [.value = a]\n1 is Box Bool",
       "is",
     ),
     ["Bool"],
@@ -358,7 +458,7 @@ Deno.test("source facts require valid runtime type targets", () => {
 Deno.test("source facts expose unresolved declared types only as unknown", () => {
   const source = parse_source(`
 type Alias = missing_type
-type Broken = (.value = missing_type)
+type Broken = [.value = missing_type]
 effect Bad { run: (missing_type) => Bool }
 let identity = (value: Alias) => value
 Broken.value
@@ -451,73 +551,58 @@ Deno.test("source facts poison contextual parameters after arity errors", () => 
   assert_equals(binding_type_name(binding, facts), "unknown");
 });
 
-Deno.test("source facts validate legacy const struct types", () => {
+Deno.test("source facts resolve canonical labeled product fields", () => {
   const valid = parse_source(`
-const flags_type = struct { ready: Bool }
-let flags = flags_type { ready: true }
+const { struct } = comptime (import "duck:prelude")()
+type Flags = struct { .ready = Bool }
+let flags: Flags = [true]
 flags.ready
 `);
   const valid_facts = source_facts(valid);
 
   assert_equals(
     binding_type_name(valid.statements[1]!, valid_facts),
-    "flags_type",
+    "Flags",
   );
   assert_equals(
     expression_type_names(
       `
-const flags_type = struct { ready: Bool }
-let flags = flags_type { ready: true }
+const { struct } = comptime (import "duck:prelude")()
+type Flags = struct { .ready = Bool }
+let flags: Flags = [true]
 flags.ready
 `,
       "field",
     ),
     ["Bool"],
   );
-
-  for (
-    const value of [
-      "flags_type { ready: 1 }",
-      "flags_type {}",
-      "flags_type { ready: true, extra: false }",
-      "flags_type { ready: true, ready: false }",
-    ]
-  ) {
-    assert_equals(
-      expression_type_names(
-        "const flags_type = struct { ready: Bool }\n" + value,
-        "struct_value",
-      ),
-      ["unknown"],
-    );
-  }
 });
 
-Deno.test("source facts preserve legacy const union constructors", () => {
+Deno.test("source facts preserve declared sum constructors", () => {
   const text = `
-const result_type = union { ok: Int, err: Int }
-let constructor = result_type.ok
+type ResultType = | .ok = Int | .err = Int
+let constructor = ResultType.ok
 let qualified = constructor(40)
-let result: result_type = .ok(41)
+let result: ResultType = .ok(41)
 if let .ok(value) = result { value } else { 0 }
 `;
   const source = parse_source(text);
   const facts = source_facts(source);
-  const conditional = source.statements[4];
+  const conditional = source.statements[3];
 
   assert_equals(
-    source.statements.slice(1, 4).map((statement) =>
+    source.statements.slice(0, 3).map((statement) =>
       binding_type_name(statement, facts)
     ),
-    ["(Int) -> result_type", "result_type", "result_type"],
+    ["(Int) -> ResultType", "ResultType", "ResultType"],
   );
-  assert_equals(expression_type_names(text, "union_case"), ["result_type"]);
+  assert_equals(expression_type_names(text, "union_case"), ["ResultType"]);
 
   if (
     conditional === undefined || conditional.tag !== "expr" ||
     conditional.expr.tag !== "if_let"
   ) {
-    throw new Error("Missing legacy union conditional");
+    throw new Error("Missing union conditional");
   }
 
   assert_equals(
@@ -528,7 +613,8 @@ if let .ok(value) = result { value } else { 0 }
   for (const value of [".ok(true)", ".missing(1)"]) {
     assert_equals(
       expression_type_names(
-        "const result_type = union { ok: Int, err: Int }\n" +
+        "type ResultType = | .ok = Int | .err = Int\n" +
+          "const result_type = ResultType\n" +
           "let result: result_type = " + value,
         "union_case",
       ),

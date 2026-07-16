@@ -7,7 +7,10 @@ import { infer_rec_expr } from "./rec_infer.ts";
 import { is_rec_call } from "./rec_validate.ts";
 import type { StaticRecHooks } from "./rec_hooks.ts";
 import { bind_rec_args, resolve_rec_target } from "./rec_bind.ts";
-import { lower_static_rec_block } from "./rec_block.ts";
+import {
+  lower_static_rec_block,
+  type StaticRecExprLowerer,
+} from "./rec_block.ts";
 import {
   lower_rec_result_expr,
   type StaticRecBlockLowerer,
@@ -30,15 +33,16 @@ export function infer_static_rec_app_type(
 
   const rec = target.expr;
   validate_static_rec_linear_params(rec);
+  const call_args = static_rec_application_args(expr, rec.params.length);
 
-  if (expr.args.length !== rec.params.length) {
+  if (call_args.length !== rec.params.length) {
     throw new Error(
       "rec expected " + rec.params.length.toString() + " arguments, got " +
-        expr.args.length.toString(),
+        call_args.length.toString(),
     );
   }
 
-  const args = expr.args.map((arg) => hooks.capture_expr(arg, env));
+  const args = call_args.map((arg) => hooks.capture_expr(arg, env));
   const local = hooks.clone_env(target.env);
   bind_rec_args(rec, args, local, hooks);
   return infer_rec_expr(rec.body, local, hooks);
@@ -57,20 +61,26 @@ export function lower_static_rec_app(
 
   const rec = target.expr;
   validate_static_rec_linear_params(rec);
+  const call_args = static_rec_application_args(expr, rec.params.length);
 
-  if (expr.args.length !== rec.params.length) {
+  if (call_args.length !== rec.params.length) {
     throw new Error(
       "rec expected " + rec.params.length.toString() + " arguments, got " +
-        expr.args.length.toString(),
+        call_args.length.toString(),
     );
   }
 
-  let args = expr.args.map((arg) => hooks.capture_expr(arg, env));
+  let args = call_args.map((arg) => hooks.capture_expr(arg, env));
 
   for (let step = 0; step < 10000; step += 1) {
     const local = hooks.clone_env(target.env);
     bind_rec_args(rec, args, local, hooks);
-    const result = lower_static_rec_expr(rec.body, local, hooks);
+    const result = lower_static_rec_expr(
+      rec.body,
+      local,
+      hooks,
+      rec.params.length,
+    );
 
     if (!result) {
       throw new Error(
@@ -103,20 +113,27 @@ export function lower_static_rec_app_as_front_type(
 
   const rec = target.expr;
   validate_static_rec_linear_params(rec);
+  const call_args = static_rec_application_args(expr, rec.params.length);
 
-  if (expr.args.length !== rec.params.length) {
+  if (call_args.length !== rec.params.length) {
     throw new Error(
       "rec expected " + rec.params.length.toString() + " arguments, got " +
-        expr.args.length.toString(),
+        call_args.length.toString(),
     );
   }
 
-  let args = expr.args.map((arg) => hooks.capture_expr(arg, env));
+  let args = call_args.map((arg) => hooks.capture_expr(arg, env));
 
   for (let step = 0; step < 10000; step += 1) {
     const local = hooks.clone_env(target.env);
     bind_rec_args(rec, args, local, hooks);
-    const result = lower_static_rec_expr(rec.body, local, hooks, type);
+    const result = lower_static_rec_expr(
+      rec.body,
+      local,
+      hooks,
+      rec.params.length,
+      type,
+    );
 
     if (!result) {
       throw new Error(
@@ -150,8 +167,23 @@ function lower_static_rec_expr(
   expr: FrontExpr,
   env: Env,
   hooks: StaticRecHooks,
+  parameter_count: number,
   expected_type?: FrontType,
 ): StaticRecResult | undefined {
+  const lower_expr: StaticRecExprLowerer = (
+    nested_expr,
+    block_env,
+    block_hooks,
+    block_expected_type,
+  ) => {
+    return lower_static_rec_expr(
+      nested_expr,
+      block_env,
+      block_hooks,
+      parameter_count,
+      block_expected_type,
+    );
+  };
   const block_lowerer: StaticRecBlockLowerer = (
     stmts,
     block_env,
@@ -162,13 +194,19 @@ function lower_static_rec_expr(
       stmts,
       block_env,
       block_hooks,
-      lower_static_rec_expr,
+      lower_expr,
       lower_rec_result_expr_with_expected_type,
       block_expected_type,
     );
 
   if (expr.tag === "captured") {
-    return lower_static_rec_expr(expr.expr, expr.env, hooks, expected_type);
+    return lower_static_rec_expr(
+      expr.expr,
+      expr.env,
+      hooks,
+      parameter_count,
+      expected_type,
+    );
   }
 
   if (expr.tag === "block") {
@@ -196,6 +234,7 @@ function lower_static_rec_expr(
         expr.then_branch,
         env,
         hooks,
+        parameter_count,
         expected_type,
       );
     }
@@ -204,15 +243,18 @@ function lower_static_rec_expr(
       expr.else_branch,
       env,
       hooks,
+      parameter_count,
       expected_type,
     );
   }
 
   if (is_rec_call(expr)) {
     expect(expr.tag === "app", "Expected rec call");
+    const args = static_rec_application_args(expr, parameter_count);
+
     return {
       tag: "call",
-      args: expr.args.map((arg) => hooks.capture_expr(arg, env)),
+      args: args.map((arg) => hooks.capture_expr(arg, env)),
     };
   }
 
@@ -226,6 +268,24 @@ function lower_static_rec_expr(
       expected_type,
     ),
   };
+}
+
+function static_rec_application_args(
+  expr: Extract<FrontExpr, { tag: "app" }>,
+  parameter_count: number,
+): FrontExpr[] {
+  if (expr.args.length === parameter_count) {
+    return expr.args;
+  }
+
+  if (
+    parameter_count === 1 && expr.arg !== undefined &&
+    expr.arg.tag === "product"
+  ) {
+    return [expr.arg];
+  }
+
+  return expr.args;
 }
 
 function lower_rec_result_expr_with_expected_type(

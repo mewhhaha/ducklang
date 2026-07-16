@@ -43,7 +43,7 @@ export function parse_result_diagnostics(
       diagnostic.span.end,
     ),
     severity: 1,
-    source: "ix",
+    source: "duck",
     message: diagnostic.message,
   }));
 }
@@ -79,7 +79,7 @@ function source_diagnostic_to_lsp(
   const result: LspDiagnostic = {
     range: offset_range(text, positions, diagnostic.span),
     severity,
-    source: "ix",
+    source: "duck",
     code: diagnostic.code,
     message: diagnostic.message,
   };

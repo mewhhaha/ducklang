@@ -24,6 +24,16 @@ export function static_union_case<ctx extends CoreUnionCtx>(
     return constructor_case;
   }
 
+  const block_case = static_union_block_case(expr, ctx, hooks);
+
+  if (block_case) {
+    return block_case;
+  }
+
+  if (expr.tag === "block") {
+    return undefined;
+  }
+
   const inlined = hooks.static_core_call_value(expr, ctx);
 
   if (inlined) {
@@ -42,12 +52,6 @@ export function static_union_case<ctx extends CoreUnionCtx>(
     if (branch_static_call) {
       return static_union_case(branch_static_call, ctx, hooks);
     }
-  }
-
-  const block_case = static_union_block_case(expr, ctx, hooks);
-
-  if (block_case) {
-    return block_case;
   }
 
   if (expr.tag === "var") {
@@ -70,36 +74,17 @@ function static_union_block_case<ctx extends CoreUnionCtx>(
     return undefined;
   }
 
-  if (!hooks.block_ctx || !hooks.collect_stmt_locals) {
-    const stmt = expr.statements[0];
-
-    if (!stmt) {
-      return undefined;
-    }
-
-    if (expr.statements.length !== 1) {
-      return undefined;
-    }
-
-    return static_union_final_stmt_case(stmt, ctx, hooks);
+  if (expr.statements.length !== 1) {
+    return undefined;
   }
 
-  const block_ctx = hooks.block_ctx(ctx);
+  const stmt = expr.statements[0];
 
-  for (let index = 0; index < expr.statements.length; index += 1) {
-    const stmt = expr.statements[index];
-    expect(stmt, "Missing core union block statement " + index.toString());
-
-    const is_final = index + 1 >= expr.statements.length;
-
-    if (is_final) {
-      return static_union_final_stmt_case(stmt, block_ctx, hooks);
-    }
-
-    hooks.collect_stmt_locals(stmt, block_ctx);
+  if (!stmt) {
+    return undefined;
   }
 
-  return undefined;
+  return static_union_final_stmt_case(stmt, ctx, hooks);
 }
 
 function static_union_final_stmt_case<ctx extends CoreUnionCtx>(

@@ -1,0 +1,301 @@
+==================
+Aggregate constructors and canonical products
+==================
+
+const { struct } = comptime (import "duck:prelude")()
+
+type Point = struct {
+  .x = I32,
+  .y = I32,
+}
+
+type MaybeI32 = | .some = I32 | .none
+
+type Pixels = [Rgb; 640 * 480]
+let point: Point = [20, 22]
+let moved = point with { .x = 21 }
+let { .x = x } = moved
+
+---
+
+(source_file
+  (binding_statement
+    (named_shape_pattern
+      (shorthand_shape_pattern_field
+        (identifier)))
+    (unary_expression
+      (application_expression
+        (postfix_expression
+          (parenthesized_expression
+            (postfix_expression
+              (import_expression
+                (string)))))
+        (parenthesized_or_product
+          (unit_pattern)))))
+  (type_declaration_statement
+    (identifier)
+    (struct_type
+      (type_field_block
+        (named_type_field
+          (identifier)
+          (type_reference
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier))))))
+        (named_type_field
+          (identifier)
+          (type_reference
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier)))))))))
+  (type_declaration_statement
+    (identifier)
+    (type_sum
+      (type_case
+        (identifier)
+        (type_reference
+          (type_difference
+            (identifier))))
+      (type_case
+        (identifier))))
+
+  (type_declaration_statement
+    (identifier)
+    (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (array_type
+              (type_union
+                (type_intersection
+                  (type_difference
+                    (identifier))))
+              (binary_expression
+                (postfix_expression
+                  (number))
+                (postfix_expression
+                  (number)))))))))
+  (binding_statement
+    (identifier)
+    (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (identifier)))))
+    (postfix_expression
+      (array_expression
+        (postfix_expression
+          (number))
+        (postfix_expression
+          (number)))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (update_expression
+        (postfix_expression
+          (identifier))
+        (with_keyword)
+        (field_block
+          (shape_field
+            (identifier)
+            (postfix_expression
+              (number)))))))
+  (binding_statement
+    (named_shape_pattern
+      (named_shape_pattern_field
+        (identifier)
+        (identifier)))
+    (postfix_expression
+      (identifier))))
+
+==================
+Ducks, extensions, intrinsics, and custom operators
+==================
+
+duck Add Self Other Output {
+  .add = [Self, Other] -> Output
+}
+
+extend I32 {
+  .add = [left, right] => @wasm.add_i32 [left, right]
+}
+
+infixl 60 +++ = Add.add
+prefix 80 ^^ = Bool.not
+let sum = 20 +++ 22
+let inverted = ^^false
+
+---
+
+(source_file
+  (duck_declaration_statement
+    (identifier)
+    (identifier)
+    (identifier)
+    (identifier)
+    (duck_member_block
+      (duck_member
+        (identifier)
+        (type_reference
+          (function_type
+            (type_union
+              (type_intersection
+                (type_difference
+                  (type_product
+                    (positional_type_product
+                      (type_reference
+                        (type_union
+                          (type_intersection
+                            (type_difference
+                              (identifier)))))
+                      (type_reference
+                        (type_union
+                          (type_intersection
+                            (type_difference
+                              (identifier))))))))))
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier)))))))))
+  (extension_declaration_statement
+    (identifier)
+    (field_block
+      (shape_field
+        (identifier)
+        (arrow_function
+          (bracket_parameter_list
+            (parameter
+              (identifier))
+            (parameter
+              (identifier)))
+          (application_expression
+            (postfix_expression
+              (intrinsic_identifier))
+            (postfix_expression
+              (array_expression
+                (postfix_expression
+                  (identifier))
+                (postfix_expression
+                  (identifier)))))))))
+  (fixity_declaration_statement
+    (number)
+    (operator_symbol)
+    (qualified_identifier
+      (identifier)
+      (identifier)))
+  (fixity_declaration_statement
+    (number)
+    (operator_symbol)
+    (qualified_identifier
+      (identifier)
+      (identifier)))
+  (binding_statement
+    (identifier)
+    (binary_expression
+      (postfix_expression
+        (number))
+      (operator_symbol)
+      (postfix_expression
+        (number))))
+  (binding_statement
+    (identifier)
+    (unary_expression
+      (operator_symbol)
+      (postfix_expression
+        (boolean)))))
+
+==================
+Source-defined struct product namespaces
+==================
+
+let product_type = [...product_type, field.value]
+let product_type = product_type with {
+  .[field.name] = value => value[index]
+}
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (array_expression
+        (array_spread
+          (postfix_expression
+            (identifier)))
+        (postfix_expression
+          (field_expression
+            (postfix_expression
+              (identifier))
+            (identifier))))))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (update_expression
+        (postfix_expression
+          (identifier))
+        (with_keyword)
+        (field_block
+          (computed_shape_field
+            (postfix_expression
+              (field_expression
+                (postfix_expression
+                  (identifier))
+                (identifier)))
+            (arrow_function
+              (parameter
+                (identifier))
+              (postfix_expression
+                (index_expression
+                  (postfix_expression
+                    (identifier))
+                  (postfix_expression
+                    (identifier)))))))))))
+
+==================
+Shape destructuring shorthand and explicit renaming
+==================
+
+const { struct, .other = renamed } = module_value
+
+---
+
+(source_file
+  (binding_statement
+    (named_shape_pattern
+      (shorthand_shape_pattern_field
+        (identifier))
+      (named_shape_pattern_field
+        (identifier)
+        (identifier)))
+    (postfix_expression
+      (identifier))))
+
+==================
+Shape value shorthand and explicit fields
+==================
+
+module () where
+const code = 42
+return { code, .status = code }
+
+---
+
+(source_file
+  (module_header
+    (parameter_list))
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (number)))
+  (module_return_statement
+    (object_literal
+      (field_block
+        (shorthand_field
+          (identifier))
+        (shape_field
+          (identifier)
+          (postfix_expression
+            (identifier)))))))

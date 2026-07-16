@@ -187,6 +187,7 @@ export function collect_core_if_let_expr_locals(
       api.collect_expr_locals(expr.then_branch, then_ctx, hooks);
       ctx.next_loop = then_ctx.next_loop;
       ctx.next_temp = then_ctx.next_temp;
+      merge_generated_temp_facts(ctx, then_ctx);
     }
 
     api.collect_expr_locals(expr.else_branch, ctx, hooks);
@@ -237,6 +238,7 @@ export function collect_core_if_let_expr_locals(
   api.collect_expr_locals(expr.then_branch, branch_ctx, hooks);
   ctx.next_loop = branch_ctx.next_loop;
   ctx.next_temp = branch_ctx.next_temp;
+  merge_generated_temp_facts(ctx, branch_ctx);
 
   if (!expr.implicit_else) {
     api.collect_expr_locals(expr.else_branch, ctx, hooks);
@@ -272,6 +274,7 @@ function collect_dynamic_if_let_expr_case_locals(
   api.collect_expr_locals(expr.then_branch, branch_ctx, hooks);
   ctx.next_loop = branch_ctx.next_loop;
   ctx.next_temp = branch_ctx.next_temp;
+  merge_generated_temp_facts(ctx, branch_ctx);
 }
 
 function collect_dynamic_if_let_stmt_case_locals(
@@ -420,7 +423,11 @@ function merge_assigned_type_fact(
   else_facts: Map<string, CoreExpr>,
 ): void {
   const branch_type = branch_facts.get(name);
-  const else_type = else_facts.get(name);
+  let else_type = else_facts.get(name);
+
+  if (!else_type) {
+    else_type = target.get(name);
+  }
 
   if (!branch_type || !else_type) {
     target.delete(name);

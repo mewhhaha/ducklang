@@ -11,6 +11,8 @@ export function is_const_builtin_name(name: string): boolean {
     name === "describe_cases" ||
     name === "construct" || name === "project" || name === "is_case" ||
     name === "len" || name === "get" ||
+    name === "@shape.entries" || name === "@type.product" ||
+    name === "@type.namespace" ||
     is_builtin_type_name(name) ||
     name === "object_type" || name === "layout_type" ||
     name === "field_offsets_type";
@@ -40,6 +42,7 @@ export function validate_const_expr(
       return;
 
     case "product":
+    case "shape":
       for (const entry of expr.entries) {
         validate_const_expr(entry.value, env, bound, message);
       }
@@ -168,6 +171,16 @@ export function validate_const_expr(
 
       for (const field of expr.fields) {
         validate_const_expr(field.value, env, bound, message);
+      }
+
+      return;
+
+    case "type_with":
+      validate_const_expr(expr.base, env, bound, message);
+
+      for (const member of expr.members) {
+        validate_const_expr(member.name, env, bound, message);
+        validate_const_expr(member.value, env, bound, message);
       }
 
       return;

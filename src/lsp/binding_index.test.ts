@@ -4,8 +4,8 @@ import { DocumentStore } from "./documents.ts";
 
 Deno.test("binding index rebuilds only the edited document version", () => {
   const documents = new DocumentStore();
-  const first = "file:///first.ix";
-  const second = "file:///second.ix";
+  const first = "file:///first.duck";
+  const second = "file:///second.duck";
   documents.open(first, 1, "let first = 1\nfirst\n");
   documents.open(second, 4, "let second = 2\nsecond\n");
 

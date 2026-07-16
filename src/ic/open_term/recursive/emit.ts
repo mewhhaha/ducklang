@@ -1,7 +1,7 @@
 import { expect } from "../../../expect.ts";
 import { Prim, type ValType } from "../../../op.ts";
 import { Callable, Emit } from "../../../trait.ts";
-import { indent, type Wat } from "../../../wat.ts";
+import { indent, type Wat, wat_number } from "../../../wat.ts";
 import type { Ic } from "../../ast.ts";
 import { collect_app, is_memory_prim } from "./shared.ts";
 import type { EmitRecursiveCtx, FuncInfo } from "./types.ts";
@@ -56,7 +56,7 @@ function with_local_decls(
 function emit_recursive_ic(ctx: EmitRecursiveCtx, ic: Ic): Wat {
   switch (ic.tag) {
     case "num":
-      return ic.type + ".const " + ic.value.toString();
+      return ic.type + ".const " + wat_number(ic.type, ic.value);
 
     case "var":
       return "local.get $" + resolved_name(ctx, ic.name);

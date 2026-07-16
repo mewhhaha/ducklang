@@ -62,13 +62,22 @@ Deno.test("recovery abandons a missing delimiter at a strong statement", () => {
 
   assert_equals(parsed.diagnostics.length, 1);
   assert_equals(parsed.source.declarations?.length, 1);
-  assert_equals(parsed.source.declarations?.[0]?.name, "Pair");
+  const declaration = parsed.source.declarations?.[0];
+
+  if (
+    declaration === undefined || declaration.tag === "extend" ||
+    declaration.tag === "fixity"
+  ) {
+    throw new Error("Missing recovered Pair declaration");
+  }
+
+  assert_equals(declaration.name, "Pair");
   assert_equals(parsed.source.statements.length, 1);
 });
 
 Deno.test("scanner and parser diagnostics remain in source order", () => {
   const parsed = parse_source_with_diagnostics(
-    "let = 1\n@\nlet valid = 2\n",
+    "let = 1\n§\nlet valid = 2\n",
   );
 
   assert_equals(
@@ -114,7 +123,7 @@ Deno.test("parser supplies spans for every reachable AST object", () => {
 });
 
 Deno.test("strict and tolerant parsing share syntax and concrete source spans", () => {
-  const text = "type Pair = (.left = Int, .right = Int)\nlet value = 1 + 2\n";
+  const text = "type Pair = [.left = Int, .right = Int]\nlet value = 1 + 2\n";
   const strict = parse_source(text);
   const tolerant = parse_source_with_diagnostics(text);
 
@@ -131,7 +140,7 @@ Deno.test("strict and tolerant parsing share syntax and concrete source spans", 
 
   assert_equals(
     text.slice(source_span(declaration).start, source_span(declaration).end),
-    "type Pair = (.left = Int, .right = Int)",
+    "type Pair = [.left = Int, .right = Int]",
   );
   assert_equals(
     text.slice(source_span(statement).start, source_span(statement).end),
@@ -173,7 +182,7 @@ Deno.test("transparent parentheses preserve the inner expression span", () => {
 
 Deno.test("declaration members retain exact concrete spans", () => {
   const text = [
-    "type Pair = (.left = Int, .right = Int)",
+    "type Pair = [.left = Int, .right = Int]",
     "type Maybe = | .some = Int | .none",
     "declare effect Io { write: (&Text, I32) => #Text }",
     "",
@@ -209,12 +218,12 @@ Deno.test("declaration members retain exact concrete spans", () => {
 Deno.test("source-written aggregate and handler children retain exact spans", () => {
   const text = [
     "effect Counter { get: () => I32 }",
-    "let make = value => { result: value }",
+    "let make = value => [.result = value]",
     "let counter = Counter {",
     "  get: (!resume) => !resume(0),",
     "  return: value => value,",
     "}",
-    "return { result: make(1) }",
+    "return { .result = make(1) }",
     "",
   ].join("\n");
   const source = parse_source(text);
@@ -225,8 +234,8 @@ Deno.test("source-written aggregate and handler children retain exact spans", ()
   if (make === undefined || make.tag !== "bind" || make.value.tag !== "lam") {
     throw new Error("Missing object-returning closure");
   }
-  if (make.value.body.tag !== "struct_value") {
-    throw new Error("Missing closure object body");
+  if (make.value.body.tag !== "product") {
+    throw new Error("Missing closure product body");
   }
   if (
     counter === undefined || counter.tag !== "bind" ||
@@ -238,7 +247,7 @@ Deno.test("source-written aggregate and handler children retain exact spans", ()
     throw new Error("Missing record return");
   }
 
-  assert_concrete_slice(text, make.value.body, "{ result: value }");
+  assert_concrete_slice(text, make.value.body, "[.result = value]");
   assert_concrete_slice(
     text,
     counter.value.clauses[0],
@@ -249,12 +258,12 @@ Deno.test("source-written aggregate and handler children retain exact spans", ()
     counter.value.return_clause,
     "return: value => value",
   );
-  assert_concrete_slice(text, returned.value, "{ result: make(1) }");
+  assert_concrete_slice(text, returned.value, "{ .result = make(1) }");
 });
 
 Deno.test("all parseable examples have bounded contained spans", async () => {
   const paths: string[] = [];
-  await collect_ix_files("examples", paths);
+  await collect_duck_files("examples", paths);
 
   for (const path of paths) {
     const text = await Deno.readTextFile(path);
@@ -298,7 +307,7 @@ Deno.test("all parseable examples have bounded contained spans", async () => {
   }
 });
 
-async function collect_ix_files(
+async function collect_duck_files(
   directory: string,
   paths: string[],
 ): Promise<void> {
@@ -306,8 +315,8 @@ async function collect_ix_files(
     const path = directory + "/" + entry.name;
 
     if (entry.isDirectory) {
-      await collect_ix_files(path, paths);
-    } else if (entry.isFile && entry.name.endsWith(".ix")) {
+      await collect_duck_files(path, paths);
+    } else if (entry.isFile && entry.name.endsWith(".duck")) {
       paths.push(path);
     }
   }

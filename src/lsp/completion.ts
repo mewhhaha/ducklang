@@ -101,7 +101,7 @@ export function completions(
       ).map((path) => ({
         label: path,
         kind: completion_kind.file,
-        detail: "Ix source file",
+        detail: "Duck source file",
         sortText: "00_" + path,
         insertText: path,
       })),
@@ -504,6 +504,7 @@ function declared_member_detail(
   }
 
   const declaration = source.declarations.find((candidate) =>
+    candidate.tag !== "extend" && candidate.tag !== "fixity" &&
     candidate.name === owner.name
   );
 
@@ -829,7 +830,7 @@ function snippet(label: string, insert_text: string): LspCompletionItem {
   return {
     label,
     kind: completion_kind.snippet,
-    detail: "Ix snippet",
+    detail: "Duck snippet",
     sortText: "",
     insertText: insert_text,
     insertTextFormat: 2,

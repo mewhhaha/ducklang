@@ -1,6 +1,0 @@
-type Score = Int
-type Player = (.name = Text, .score = Score)
-
-let player: Player = (.name = "Ada", .score = 41)
-
-player.score + 1

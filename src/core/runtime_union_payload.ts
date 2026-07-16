@@ -2,7 +2,7 @@ import { expect } from "../expect.ts";
 import type { ValType } from "../op.ts";
 import type { CoreExpr } from "./ast.ts";
 import { find_core_field } from "./backend/util.ts";
-import { align_to, val_type_size } from "./memory.ts";
+import { align_to, val_type_align, val_type_size } from "./memory.ts";
 import {
   core_val_type_from_type_name,
   resolve_core_type_name,
@@ -112,9 +112,37 @@ export function runtime_union_payload<ctx extends TypeStaticCtx>(
   }
 
   throw new Error(
-    "Core runtime union payloads must be Int, I32, U32, I64, Text, Bytes, " +
-      "Unit, Resume, a union type, or a struct type",
+    "Core runtime union payloads must be Int, I32, U32, I64, F32, Text, Bytes, " +
+      "F32x4, Unit, Resume, a union type, or a struct type",
   );
+}
+
+export function runtime_union_payload_align(
+  payload: RuntimeUnionPayload,
+): number {
+  if (payload.tag === "none") {
+    return 1;
+  }
+
+  if (payload.tag === "value") {
+    return val_type_align(payload.type);
+  }
+
+  if (payload.tag === "aggregate") {
+    return val_type_align("i32");
+  }
+
+  let align = 1;
+
+  for (const field of runtime_union_payload_leaf_fields(payload.fields)) {
+    const field_align = val_type_align(field.type);
+
+    if (field_align > align) {
+      align = field_align;
+    }
+  }
+
+  return align;
 }
 
 export function runtime_union_payload_size(
@@ -241,7 +269,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
     const field_type = runtime_union_payload_type(field_type_name);
 
     if (field_type) {
-      offset.value = align_to(offset.value, val_type_size(field_type));
+      offset.value = align_to(offset.value, val_type_align(field_type));
       fields.push({
         tag: "value",
         name: field.name,
@@ -275,7 +303,7 @@ function runtime_union_struct_payload_fields<ctx extends TypeStaticCtx>(
     if (!type_value || type_value.tag !== "struct_type") {
       throw new Error(
         "Core runtime union struct payload field " + field.name +
-          " must be Int, I32, U32, I64, Text, Bytes, Resume, a union type, " +
+          " must be Int, I32, U32, I64, F32, F32x4, Text, Bytes, Resume, a union type, " +
           "or a static-shaped struct type",
       );
     }

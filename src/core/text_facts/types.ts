@@ -3,6 +3,7 @@ import type {
   CoreField,
   CoreFnType,
   CoreHostImport,
+  CoreStmt,
 } from "../ast.ts";
 import type { DynamicUnionIf } from "../if_let.ts";
 import type { RuntimeAggregateTypeHooks } from "../runtime_aggregate.ts";
@@ -26,6 +27,10 @@ export type CoreTextFactHooks<ctx extends CoreTextFactCtx> =
   & RuntimeAggregateTypeHooks<ctx>
   & {
     expr_type: (expr: CoreExpr, ctx: ctx) => ValType;
+    core_binding_value: (
+      stmt: Extract<CoreStmt, { tag: "bind" }>,
+      ctx: ctx,
+    ) => CoreExpr;
     bind_core_if_let_payload_fact: (
       value_name: string | undefined,
       union_case: Extract<CoreExpr, { tag: "union_case" }>,

@@ -98,8 +98,9 @@ function rename_linear_closure_expr(
       }, expr);
 
     case "product":
+    case "shape":
       return inherit_source_span({
-        tag: "product",
+        ...expr,
         entries: expr.entries.map((entry) => ({
           ...entry,
           value: rename_linear_closure_expr(entry.value, renames),
@@ -233,6 +234,16 @@ function rename_linear_closure_expr(
         tag: "struct_update",
         base: rename_linear_closure_expr(expr.base, renames),
         fields: rename_linear_closure_fields(expr.fields, renames),
+      }, expr);
+
+    case "type_with":
+      return inherit_source_span({
+        tag: "type_with",
+        base: rename_linear_closure_expr(expr.base, renames),
+        members: expr.members.map((member) => ({
+          name: rename_linear_closure_expr(member.name, renames),
+          value: rename_linear_closure_expr(member.value, renames),
+        })),
       }, expr);
 
     case "if":

@@ -1,4 +1,4 @@
-import { Prim } from "../op.ts";
+import { f32x4_lane_index, Prim } from "../op.ts";
 import { Callable } from "../trait.ts";
 import type { Ic } from "./ast.ts";
 import { expect_ic_label } from "./labels.ts";
@@ -115,6 +115,31 @@ function visit(ctx: Ctx, ic: Ic, path: string): void {
         visit(ctx, arg, path + ".args[" + index.toString() + "]");
       }
 
+      if (
+        ic.prim === "f32x4.extract_lane" ||
+        ic.prim === "f32x4.replace_lane"
+      ) {
+        const lane = ic.args[1];
+        let lane_value: number | undefined;
+
+        if (
+          lane?.tag === "num" && lane.type === "i32" &&
+          typeof lane.value === "number"
+        ) {
+          lane_value = lane.value;
+        }
+
+        try {
+          f32x4_lane_index(ic.prim, lane_value);
+        } catch (error) {
+          if (error instanceof Error) {
+            issue(ctx, path + ".args[1]", error.message);
+          } else {
+            throw error;
+          }
+        }
+      }
+
       return;
     }
 
@@ -165,6 +190,14 @@ function validate_num(
   if (ic.type === "i32") {
     if (typeof ic.value !== "number") {
       issue(ctx, path, "i32 literal must use a number value");
+    }
+
+    return;
+  }
+
+  if (ic.type === "f32") {
+    if (typeof ic.value !== "number") {
+      issue(ctx, path, "f32 literal must use a number value");
     }
 
     return;

@@ -3,7 +3,7 @@ import type {
   TypeExpr,
   TypePattern,
 } from "../frontend/ast.ts";
-import type { Prim, ValType } from "../op.ts";
+import type { NumType, Prim, ValType } from "../op.ts";
 
 export type Core = {
   tag: "program";
@@ -35,7 +35,7 @@ export type CoreCleanupEmission = {
   statement_index: number | undefined;
   statement_path: number[] | undefined;
   byte_size: import("./allocation.ts").CoreAllocationByteSize;
-  alignment: 4 | 8;
+  alignment: 4 | 8 | 16;
   layout: import("./allocation.ts").CoreAllocationLayout;
   owned_children: import("./allocation.ts").CoreAllocationOwnedChild[];
 };
@@ -148,7 +148,7 @@ export type CoreStmt =
 export type CoreExpr =
   | {
     tag: "num";
-    type: ValType;
+    type: NumType;
     value: number | bigint;
     atom_name?: string;
   }

@@ -14,14 +14,15 @@ let run = () => {
 `;
 
 const stored_resume_source = `
+const { struct } = comptime (import "duck:prelude")()
 const resume_box_type = struct {
-  resume: Resume
+  .resume= Resume
 }
 
 ${prelude}
 let suspend = Suspend {
   pause: (!resume) => {
-    let !box: resume_box_type = resume_box_type { resume: !resume }
+    let !box: resume_box_type = [.resume = !resume]
     let !later: Resume = !box.resume
     !later(41)
   },
@@ -122,7 +123,7 @@ Deno.test("extracting a stored resumption detaches its closure allocation", () =
   );
 });
 
-Deno.test("a resumption can pass through an affine Ix function", async () => {
+Deno.test("a resumption can pass through an affine Duck function", async () => {
   assert_equals(
     await run_i32(`${prelude}
 let invoke = (!later: Resume, value: I32) => !later(value)

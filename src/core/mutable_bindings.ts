@@ -297,23 +297,47 @@ function collect_rebound_names(stmt: CoreStmt, result: Set<string>): void {
   switch (stmt.tag) {
     case "assign":
       result.add(stmt.name);
+      collect_rebound_expr(stmt.value, result);
       return;
 
     case "range_loop":
+      for (const name of stmt.carried) {
+        result.add(name);
+      }
+      collect_rebound_expr(stmt.start, result);
+      collect_rebound_expr(stmt.end, result);
+      collect_rebound_expr(stmt.step, result);
+      for (const child of stmt.body) {
+        collect_rebound_names(child, result);
+      }
+      return;
+
     case "collection_loop":
       for (const name of stmt.carried) {
         result.add(name);
       }
+      collect_rebound_expr(stmt.collection, result);
+      for (const child of stmt.body) {
+        collect_rebound_names(child, result);
+      }
       return;
 
     case "if_stmt":
+      collect_rebound_expr(stmt.cond, result);
+      for (const child of stmt.body) {
+        collect_rebound_names(child, result);
+      }
+      return;
+
     case "if_let_stmt":
+      collect_rebound_expr(stmt.target, result);
       for (const child of stmt.body) {
         collect_rebound_names(child, result);
       }
       return;
 
     case "if_else_stmt":
+      collect_rebound_expr(stmt.cond, result);
       for (const child of stmt.then_body) {
         collect_rebound_names(child, result);
       }
@@ -323,13 +347,144 @@ function collect_rebound_names(stmt: CoreStmt, result: Set<string>): void {
       return;
 
     case "bind":
+      collect_rebound_expr(stmt.value, result);
+      return;
+
     case "index_assign":
+      result.add(stmt.name);
+      collect_rebound_expr(stmt.index, result);
+      collect_rebound_expr(stmt.value, result);
+      return;
+
     case "type_check":
+      collect_rebound_expr(stmt.target, result);
+      return;
+
     case "break":
-    case "continue":
+      if (stmt.value) {
+        collect_rebound_expr(stmt.value, result);
+      }
+      return;
+
     case "return":
+      collect_rebound_expr(stmt.value, result);
+      return;
+
     case "expr":
+      collect_rebound_expr(stmt.expr, result);
+      return;
+
+    case "continue":
     case "unsupported":
+      return;
+  }
+}
+
+function collect_rebound_expr(expr: CoreExpr, result: Set<string>): void {
+  switch (expr.tag) {
+    case "num":
+    case "text":
+    case "var":
+    case "linear":
+    case "type_name":
+    case "rec_ref":
+    case "struct_type":
+    case "union_type":
+    case "unsupported":
+      return;
+
+    case "prim":
+      for (const arg of expr.args) {
+        collect_rebound_expr(arg, result);
+      }
+      return;
+
+    case "lam":
+    case "rec":
+      collect_rebound_expr(expr.body, result);
+      return;
+
+    case "app":
+      collect_rebound_expr(expr.func, result);
+      for (const arg of expr.args) {
+        collect_rebound_expr(arg, result);
+      }
+      return;
+
+    case "block":
+      for (const stmt of expr.statements) {
+        collect_rebound_names(stmt, result);
+      }
+      return;
+
+    case "loop":
+      for (const stmt of expr.body) {
+        collect_rebound_names(stmt, result);
+      }
+      return;
+
+    case "comptime":
+      collect_rebound_expr(expr.expr, result);
+      return;
+
+    case "borrow":
+    case "freeze":
+      collect_rebound_expr(expr.value, result);
+      return;
+
+    case "scratch":
+      collect_rebound_expr(expr.body, result);
+      return;
+
+    case "with":
+      collect_rebound_expr(expr.base, result);
+      for (const field of expr.fields) {
+        collect_rebound_expr(field.value, result);
+      }
+      return;
+
+    case "struct_value":
+      collect_rebound_expr(expr.type_expr, result);
+      for (const field of expr.fields) {
+        collect_rebound_expr(field.value, result);
+      }
+      return;
+
+    case "struct_update":
+      collect_rebound_expr(expr.base, result);
+      for (const field of expr.fields) {
+        collect_rebound_expr(field.value, result);
+      }
+      return;
+
+    case "if":
+      collect_rebound_expr(expr.cond, result);
+      collect_rebound_expr(expr.then_branch, result);
+      collect_rebound_expr(expr.else_branch, result);
+      return;
+
+    case "if_let":
+      collect_rebound_expr(expr.target, result);
+      collect_rebound_expr(expr.then_branch, result);
+      collect_rebound_expr(expr.else_branch, result);
+      return;
+
+    case "field":
+      collect_rebound_expr(expr.object, result);
+      return;
+
+    case "index":
+      collect_rebound_expr(expr.object, result);
+      collect_rebound_expr(expr.index, result);
+      return;
+
+    case "union_case":
+      if (expr.value) {
+        collect_rebound_expr(expr.value, result);
+      }
+      if (expr.type_expr) {
+        collect_rebound_expr(expr.type_expr, result);
+      }
       return;
   }
 }

@@ -1,7 +1,7 @@
-import type { Prim, ValType } from "../op.ts";
+import type { NumType, Prim } from "../op.ts";
 
 export type Ic =
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "text"; value: string }
   | { tag: "var"; name: string }
   | { tag: "prim"; prim: Prim; args: Ic[] }

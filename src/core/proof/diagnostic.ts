@@ -21,7 +21,7 @@ export function core_proof_diagnostic(
       }
 
       return diagnostic(
-        "IX2401",
+        "DUCK2401",
         issue.message,
         subject,
       );
@@ -29,10 +29,10 @@ export function core_proof_diagnostic(
 
     if (issue.issue.tag === "borrowed_owner_barrier") {
       const barrier = issue.issue.barrier;
-      let code = "IX2402";
+      let code = "DUCK2402";
 
       if (barrier.action === "index_assign") {
-        code = "IX2404";
+        code = "DUCK2404";
       }
 
       const subject = find_core_diagnostic_subject(barrier);
@@ -58,7 +58,7 @@ export function core_proof_diagnostic(
     }
 
     return diagnostic(
-      "IX2402",
+      "DUCK2402",
       issue.message,
       subject,
     );
@@ -71,7 +71,7 @@ export function core_proof_diagnostic(
     }
 
     return diagnostic(
-      "IX2403",
+      "DUCK2403",
       issue.message,
       subject,
     );
@@ -87,7 +87,7 @@ export function core_proof_diagnostic(
     }
 
     return diagnostic(
-      "IX2404",
+      "DUCK2404",
       issue.message,
       subject,
     );

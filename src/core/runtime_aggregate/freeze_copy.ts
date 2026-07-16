@@ -39,12 +39,18 @@ export function emit_runtime_aggregate_freeze_copy<
   const plan = runtime_aggregate_plan(ctx);
   declare_runtime_aggregate_locals(plan, ctx);
   ctx.heap.needed = true;
+  let alignment: 4 | 8 | 16 = 8;
+
+  if (layout.align === 16) {
+    alignment = 16;
+  }
+
   const lines = [
     emit_persistent_alloc(
       ctx,
       subject,
       "i32.const " + layout.size.toString(),
-      8,
+      alignment,
       "runtime_aggregate",
       "runtime_aggregate.aligned_fields",
       "runtime_aggregate.freeze_copy",

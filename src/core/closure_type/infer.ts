@@ -365,7 +365,7 @@ function resume_signature_fn_type(
 ): CoreFnType {
   const input = closure_param_info(
     {
-      name: "__ix_resume_input",
+      name: "__duck_resume_input",
       is_const: false,
       is_linear: false,
       annotation: signature.input_type,
@@ -379,7 +379,7 @@ function resume_signature_fn_type(
   );
   const output = closure_param_info(
     {
-      name: "__ix_resume_output",
+      name: "__duck_resume_output",
       is_const: false,
       is_linear: false,
       annotation: signature.output_type,

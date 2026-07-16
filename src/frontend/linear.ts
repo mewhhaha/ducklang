@@ -103,7 +103,7 @@ function validate_loop_units_in_expr(expr: FrontExpr): void {
     });
     if (has_unit_break && has_value_break) {
       throw_linear_diagnostic(
-        "IX2291",
+        "DUCK2291",
         "Loop breaks must return one source type, got Unit and value",
         expr,
       );
@@ -196,6 +196,16 @@ function validate_loop_units_in_expr(expr: FrontExpr): void {
     validate_loop_units_in_expr(expr.base);
     for (const field of expr.fields) {
       validate_loop_units_in_expr(field.value);
+    }
+    return;
+  }
+
+  if (expr.tag === "type_with") {
+    validate_loop_units_in_expr(expr.base);
+
+    for (const member of expr.members) {
+      validate_loop_units_in_expr(member.name);
+      validate_loop_units_in_expr(member.value);
     }
     return;
   }
@@ -524,6 +534,15 @@ function validate_linear_expr_lambdas(expr: FrontExpr): void {
       validate_linear_expr_lambdas(expr.base);
       for (const field of expr.fields) {
         validate_linear_expr_lambdas(field.value);
+      }
+      return;
+
+    case "type_with":
+      validate_linear_expr_lambdas(expr.base);
+
+      for (const member of expr.members) {
+        validate_linear_expr_lambdas(member.name);
+        validate_linear_expr_lambdas(member.value);
       }
       return;
 

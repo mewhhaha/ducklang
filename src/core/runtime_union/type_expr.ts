@@ -11,12 +11,28 @@ import {
 import type { RuntimeUnionCtx, RuntimeUnionHooks } from "./types.ts";
 import { core_runtime_union_value } from "./value.ts";
 import { core_host_import_result_type_expr } from "../host_import.ts";
+import { static_core_call_branch_app } from "../static_call.ts";
 
 export function runtime_union_type_expr<ctx extends RuntimeUnionCtx>(
   value: CoreExpr,
   ctx: ctx,
   hooks: RuntimeUnionHooks<ctx>,
 ): CoreExpr | undefined {
+  if (value.tag === "if") {
+    const then_type = runtime_union_type_expr(value.then_branch, ctx, hooks);
+    const else_type = runtime_union_type_expr(value.else_branch, ctx, hooks);
+
+    if (!then_type && !else_type) {
+      return undefined;
+    }
+
+    expect(
+      same_runtime_union_type_expr(then_type, else_type, ctx),
+      "Core runtime union if branch type mismatch",
+    );
+    return then_type;
+  }
+
   const union_value = core_runtime_union_value(value, ctx, hooks);
 
   if (union_value) {
@@ -47,7 +63,29 @@ export function runtime_union_type_expr<ctx extends RuntimeUnionCtx>(
     const host_type = core_host_import_result_type_expr(value, ctx);
 
     if (host_type) {
-      return host_type;
+      const host_type_value = static_type_value(host_type, ctx);
+      if (host_type_value && host_type_value.tag === "union_type") {
+        return host_type;
+      }
+    }
+
+    const branch_call = static_core_call_branch_app(value, ctx, hooks);
+
+    if (branch_call) {
+      return runtime_union_type_expr(branch_call, ctx, hooks);
+    }
+
+    const inlined = hooks.static_core_call_value(value, ctx);
+
+    if (inlined) {
+      return runtime_union_type_expr(inlined, ctx, hooks);
+    }
+
+    const target = hooks.static_core_call_target(value.func, ctx);
+
+    if (target && hooks.static_core_call_requires_scope(target)) {
+      const scoped = hooks.scoped_static_core_call_value(value, target, ctx);
+      return runtime_union_type_expr(scoped.value, scoped.ctx, hooks);
     }
 
     const fn_type = hooks.closure_fn_type(value.func, ctx);
@@ -170,16 +208,18 @@ function runtime_union_block_result_type_expr<ctx extends RuntimeUnionCtx>(
   ctx: ctx,
   hooks: RuntimeUnionHooks<ctx>,
 ): CoreExpr | undefined {
-  const block_value = static_block_result(value);
-
-  if (block_value) {
-    return runtime_union_type_expr(block_value, ctx, hooks);
-  }
-
   const final_stmt = value.statements[value.statements.length - 1];
 
   if (!final_stmt) {
     return undefined;
+  }
+
+  const block_ctx = hooks.block_ctx(ctx);
+
+  for (let index = 0; index + 1 < value.statements.length; index += 1) {
+    const stmt = value.statements[index];
+    expect(stmt, "Missing core runtime union block statement");
+    hooks.collect_stmt_locals(stmt, block_ctx);
   }
 
   const final_expr = runtime_union_block_final_expr(final_stmt);
@@ -188,7 +228,7 @@ function runtime_union_block_result_type_expr<ctx extends RuntimeUnionCtx>(
     return undefined;
   }
 
-  const direct = runtime_union_type_expr(final_expr, ctx, hooks);
+  const direct = runtime_union_type_expr(final_expr, block_ctx, hooks);
 
   if (direct) {
     return direct;
@@ -203,7 +243,7 @@ function runtime_union_block_result_type_expr<ctx extends RuntimeUnionCtx>(
   return runtime_union_block_alias_type_expr(
     alias,
     value.statements,
-    ctx,
+    block_ctx,
     hooks,
   );
 }

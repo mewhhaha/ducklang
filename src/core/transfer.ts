@@ -35,6 +35,7 @@ export function core_transfer_validation<ctx>(
     transferred: new Map(),
     functions: top_level_transfer_functions(core),
     aliases: new Map(),
+    declared_owners: new Set(),
     alias_subjects: new Map(),
     alias_ownership: new Map(),
     alias_rejection_reasons: new Map(),

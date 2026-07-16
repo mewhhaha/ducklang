@@ -1,6 +1,7 @@
 import { assert_equals, assert_includes } from "../assert.ts";
 import { build_binding_index } from "../frontend/binding_index.ts";
 import { parse_source_with_diagnostics } from "../frontend/parser.ts";
+import { ducklang_prelude_text } from "../frontend/prelude.ts";
 import { hover, signature_help } from "./hover.ts";
 
 function analyzed(text: string) {
@@ -26,12 +27,34 @@ function assert_hover_type(
     throw new Error("Missing hover at offset " + offset);
   }
 
-  const type_lines = result.contents.value.split("\n").filter((line) =>
-    line.startsWith("type:") || /^(let|const) !?[^:]+: /.test(line)
+  const hover_lines = result.contents.value.split("\n");
+  const type_lines = hover_lines.filter((line, index) =>
+    line.startsWith("type:") ||
+    (hover_lines[index - 1] === "```duck" &&
+      /^(?:(?:let|const) )?!?[A-Za-z_@][A-Za-z0-9_@]*: /.test(line))
   );
   assert_equals(type_lines.length, 1);
   assert_equals(type_lines[0].includes(expected), true);
 }
+
+Deno.test("hover renders effect parameters as source types", () => {
+  const text =
+    "effect State value { get: () => value, put: (value) => Unit }\n0\n";
+  const { parsed, index } = analyzed(text);
+  const result = hover(
+    parsed.source,
+    parsed.syntax,
+    index,
+    text.indexOf("value"),
+    "utf-16",
+  );
+
+  if (result === undefined) {
+    throw new Error("Missing effect parameter hover");
+  }
+
+  assert_equals(result.contents.value, "```duck\nvalue: Type\n```");
+});
 
 Deno.test("hover shows folded const closure captures", () => {
   const text = "const make_adder = n => {\n  x => x + n\n}\n\n" +
@@ -49,8 +72,8 @@ Deno.test("hover shows folded const closure captures", () => {
   assert_equals(result, {
     contents: {
       kind: "markdown",
-      value: "```ix\nconst add_three: function\n```\n\n" +
-        "```ix\nx => x + n\n```\n\n" +
+      value: "```duck\nconst add_three: function\n```\n\n" +
+        "```duck\nx => x + n\n```\n\n" +
         "captures:\n- `n = 3`\n\n" +
         "latent effects: `<pure>`",
     },
@@ -103,7 +126,7 @@ Deno.test("hover names linear consume status and points", () => {
 
 Deno.test("hover shows declaration docs and complete layout facts", () => {
   const text = "// Point documentation.\n" +
-    "type Point = (.x = I32, .wide = I64)\n";
+    "type Point = struct { .x = I32, .wide = I64 }\n";
   const { parsed, index } = analyzed(text);
   const result = hover(
     parsed.source,
@@ -121,7 +144,7 @@ Deno.test("hover shows declaration docs and complete layout facts", () => {
     result.contents.value,
     "**type** `Point`\n\n" +
       "Point documentation.\n\n" +
-      "```ix\ntype Point = (.x = I32, .wide = I64)\n```\n\n" +
+      "```duck\ntype Point = struct { .x = I32, .wide = I64 }\n```\n\n" +
       "layout — size: `16`, align: `8`, field offsets: `x @ 0`, `wide @ 8`",
   );
 });
@@ -144,10 +167,10 @@ Deno.test("hover renders TSDoc for documented functions", () => {
     throw new Error("Missing documented function hover");
   }
 
-  assert_includes(result.contents.value, "```ix\nlet add_one: function\n```");
+  assert_includes(result.contents.value, "```duck\nlet add_one: function\n```");
   assert_equals(
     result.contents.value.startsWith(
-      "```ix\nlet add_one: function\n```\n\nAdds one to a value.",
+      "```duck\nlet add_one: function\n```\n\nAdds one to a value.",
     ),
     true,
   );
@@ -206,7 +229,7 @@ Deno.test("hover represents frozen, scratch, and borrow bindings as declarations
 
     assert_equals(
       result.contents.value,
-      "```ix\nlet " + expected.name + ": " + expected.type + "\n```",
+      "```duck\nlet " + expected.name + ": " + expected.type + "\n```",
     );
   }
 });
@@ -241,7 +264,7 @@ Deno.test("hover declarations show runtime, linear, and const binding modes", ()
 
     assert_includes(
       result.contents.value,
-      "```ix\n" + expected.declaration + "\n```",
+      "```duck\n" + expected.declaration + "\n```",
     );
   }
 });
@@ -265,7 +288,7 @@ Deno.test("hover uses declarations for nested annotated bindings", () => {
     throw new Error("Missing nested binding hover");
   }
 
-  assert_equals(result.contents.value, "```ix\nlet current: I32\n```");
+  assert_equals(result.contents.value, "```duck\nlet current: I32\n```");
 });
 
 Deno.test("hover reports Bool for boolean bindings and expressions", () => {
@@ -297,7 +320,7 @@ Deno.test("hover reports Bool for boolean bindings and expressions", () => {
     throw new Error("Missing boolean binding hover");
   }
 
-  assert_equals(binding.contents.value, "```ix\nlet ready: Bool\n```");
+  assert_equals(binding.contents.value, "```duck\nlet ready: Bool\n```");
   assert_equals(literal, {
     contents: { kind: "markdown", value: "**expression**\n\ntype: `Bool`" },
     range: {
@@ -337,8 +360,8 @@ Deno.test("hover excludes type positions from enclosing value expressions", () =
 
   assert_includes(is_expression.contents.value, "type: `Bool`");
 
-  const custom_text = "type Point = (.x = I32)\n" +
-    "let point: Point = (.x = 1)\n";
+  const custom_text = "type Point = struct { .x = I32 }\n" +
+    "let point: Point = [1]\n";
   const custom_analysis = analyzed(custom_text);
   const custom_annotation = hover(
     custom_analysis.parsed.source,
@@ -355,7 +378,7 @@ Deno.test("hover excludes type positions from enclosing value expressions", () =
   assert_includes(custom_annotation.contents.value, "**type** `Point`");
   assert_includes(
     custom_annotation.contents.value,
-    "```ix\ntype Point = (.x = I32)\n```",
+    "```duck\ntype Point = struct { .x = I32 }\n```",
   );
 });
 
@@ -383,7 +406,7 @@ Deno.test("handler state annotations suppress only their type token", () => {
 });
 
 Deno.test("hover preserves nominal parameter annotations", () => {
-  const text = "type Point = (.x = I32)\n" +
+  const text = "type Point = [.x = I32]\n" +
     "let f = (point: Point) => point\n";
   const { parsed, index } = analyzed(text);
 
@@ -394,11 +417,11 @@ Deno.test("hover preserves nominal parameter annotations", () => {
       throw new Error("Missing parameter hover");
     }
 
-    assert_includes(result.contents.value, "type: `Point`");
+    assert_includes(result.contents.value, "```duck\npoint: Point\n```");
   }
 
   const module_text = "module (point: Point) where\n" +
-    "type Point = (.x = I32)\n" +
+    "type Point = [.x = I32]\n" +
     "point\n";
   const module_analysis = analyzed(module_text);
 
@@ -420,7 +443,54 @@ Deno.test("hover preserves nominal parameter annotations", () => {
       throw new Error("Missing module parameter hover");
     }
 
-    assert_includes(result.contents.value, "type: `Point`");
+    assert_includes(result.contents.value, "```duck\npoint: Point\n```");
+  }
+});
+
+Deno.test("hover formats inferred prelude parameters as Duck declarations", () => {
+  const text = ducklang_prelude_text;
+  const { parsed, index } = analyzed(text);
+
+  for (
+    const expected of [
+      {
+        offset: text.indexOf("shape"),
+        declaration: "const shape: Shape",
+      },
+      {
+        offset: text.indexOf("field in"),
+        declaration: "let field: ShapeEntry",
+      },
+      {
+        offset: text.lastIndexOf("field in"),
+        declaration: "let field: ShapeEntry",
+      },
+      {
+        offset: text.indexOf("index,"),
+        declaration: "let index: I32",
+      },
+      {
+        offset: text.indexOf("value =>"),
+        declaration: "value: Product",
+      },
+    ]
+  ) {
+    const result = hover(
+      parsed.source,
+      parsed.syntax,
+      index,
+      expected.offset,
+      "utf-16",
+    );
+
+    if (result === undefined) {
+      throw new Error("Missing prelude parameter hover");
+    }
+
+    assert_equals(
+      result.contents.value,
+      "```duck\n" + expected.declaration + "\n```",
+    );
   }
 });
 
@@ -461,7 +531,7 @@ Deno.test("hover infers primitive result types from operands", () => {
 });
 
 Deno.test("hover infers results of known calls and declared fields", () => {
-  const text = "type Flags = (.ready = Bool)\n" +
+  const text = "type Flags = [.ready = Bool]\n" +
     "declare effect Choice { decide: (I32) => Bool }\n" +
     "let predicate: (I32) -> Bool = x => true\n" +
     "let choose = Choice.decide\n" +
@@ -541,7 +611,7 @@ Deno.test("hover rejects incompatible primitive operand types", () => {
     throw new Error("Missing mixed-width binding hover");
   }
 
-  assert_equals(binding.contents.value, "```ix\nlet mixed: unknown\n```");
+  assert_equals(binding.contents.value, "```duck\nlet mixed: unknown\n```");
 });
 
 Deno.test("hover documentation cannot add a generated type line", () => {
@@ -561,7 +631,7 @@ Deno.test("hover documentation cannot add a generated type line", () => {
     throw new Error("Missing documented binding hover");
   }
 
-  assert_includes(result.contents.value, "```ix\nlet ready: Bool\n```");
+  assert_includes(result.contents.value, "```duck\nlet ready: Bool\n```");
   assert_includes(result.contents.value, "> type: misleading documentation");
   assert_includes(result.contents.value, "Ordinary documentation.");
 });
@@ -581,12 +651,12 @@ Deno.test("hover folds boolean const values without losing their type", () => {
     throw new Error("Missing folded boolean hover");
   }
 
-  assert_includes(result.contents.value, "```ix\nconst ready: Bool\n```");
-  assert_includes(result.contents.value, "value:\n```ix\ntrue\n```");
+  assert_includes(result.contents.value, "```duck\nconst ready: Bool\n```");
+  assert_includes(result.contents.value, "value:\n```duck\ntrue\n```");
 });
 
 Deno.test("hover shows one honest type presentation for every value entity", () => {
-  const text = "type Result = .ok = Bool | .err = Text\n" +
+  const text = "type Result = | .ok = Bool | .err = Text\n" +
     "declare effect Choice { decide: (I32) => Bool }\n" +
     "let identity = value => value\n" +
     "let unresolved = missing\n";
@@ -614,8 +684,11 @@ Deno.test("hover shows one honest type presentation for every value entity", () 
       throw new Error("Missing value hover for " + expected.name);
     }
 
-    const type_lines = result.contents.value.split("\n").filter((line) =>
-      line.startsWith("type:") || /^(let|const) !?[^:]+: /.test(line)
+    const hover_lines = result.contents.value.split("\n");
+    const type_lines = hover_lines.filter((line, index) =>
+      line.startsWith("type:") ||
+      (hover_lines[index - 1] === "```duck" &&
+        /^(?:(?:let|const) )?!?[A-Za-z_@][A-Za-z0-9_@]*: /.test(line))
     );
     assert_equals(type_lines.length, 1);
     assert_equals(type_lines[0].includes(expected.type), true);
@@ -641,7 +714,7 @@ Deno.test("hover preserves finite type-set annotations", () => {
 });
 
 Deno.test("hover reports union case constructor types", () => {
-  const text = "type Result = .ok = Bool | .err\n" +
+  const text = "type Result = | .ok = Bool | .err\n" +
     "let constructor = Result.ok\n" +
     "let value = Result.err\n";
   const analysis = analyzed(text);
@@ -651,7 +724,7 @@ Deno.test("hover reports union case constructor types", () => {
 });
 
 Deno.test("hover keeps invalid recovered values unknown", () => {
-  const text = "type Pair = (.ready = Bool)\n" +
+  const text = "type Pair = [.ready = Bool]\n" +
     "effect Check { test: () => Bool }\n" +
     "let checker = Check { test: (!resume) => !resume(true), " +
     "return: (value: Bool) => value }\n" +
@@ -681,7 +754,7 @@ Deno.test("hover keeps invalid recovered values unknown", () => {
 
 Deno.test("hover exposes unresolved declarations and invalid arities as unknown", () => {
   const text = "type Alias = missing_type\n" +
-    "type Broken = (.value = missing_type)\n" +
+    "type Broken = [.value = missing_type]\n" +
     "effect Bad { run: (missing_type) => Bool }\n" +
     "effect Check { test: (I32) => Bool }\n" +
     "let identity = (value: Alias) => value\n" +
@@ -710,13 +783,13 @@ Deno.test("hover exposes unresolved declarations and invalid arities as unknown"
   }
 });
 
-Deno.test("hover preserves legacy const aggregate types", () => {
-  const text = "const flags_type = struct { ready: Bool }\n" +
-    "const result_type = union { ok: Int, err: Int }\n" +
-    "let flags = flags_type { ready: true }\n" +
-    "let constructor = result_type.ok\n" +
+Deno.test("hover preserves source struct and declared sum types", () => {
+  const text = "const flags_type = struct { .ready= Bool }\n" +
+    "type ResultType = | .ok = Int | .err = Int\n" +
+    "let flags = [.ready = true] as flags_type\n" +
+    "let constructor = ResultType.ok\n" +
     "let qualified = constructor(40)\n" +
-    "let result: result_type = .ok(41)\n" +
+    "let result: ResultType = .ok(41)\n" +
     "if let .ok(value) = result { value } else { 0 }\n" +
     "flags.ready\n";
   const analysis = analyzed(text);
@@ -725,17 +798,16 @@ Deno.test("hover preserves legacy const aggregate types", () => {
     const expected of [
       { offset: text.indexOf("flags ="), type: "flags_type" },
       {
-        offset: text.indexOf("flags_type { ready") +
-          "flags_type { ready: ".length,
+        offset: text.indexOf(".ready = true") + ".ready = ".length,
         type: "Bool",
       },
       {
-        offset: text.indexOf("result_type.ok") + "result_type.".length,
-        type: "(Int) -> result_type",
+        offset: text.indexOf("ResultType.ok") + "ResultType.".length,
+        type: "(Int) -> ResultType",
       },
-      { offset: text.indexOf("qualified ="), type: "result_type" },
-      { offset: text.indexOf("result: result_type"), type: "result_type" },
-      { offset: text.indexOf(".ok(41)"), type: "result_type" },
+      { offset: text.indexOf("qualified ="), type: "ResultType" },
+      { offset: text.indexOf("result: ResultType"), type: "ResultType" },
+      { offset: text.indexOf(".ok(41)"), type: "ResultType" },
       { offset: text.indexOf("value)"), type: "Int" },
       { offset: text.lastIndexOf("value"), type: "Int" },
       {
@@ -809,7 +881,7 @@ Deno.test("hover resolves typed parameters and higher-order calls", () => {
 });
 
 Deno.test("hover derives resumption call results from the handler return", () => {
-  const text = "type Result = .done = Bool\n" +
+  const text = "type Result = | .done = Bool\n" +
     "effect Check { test: () => Bool }\n" +
     "let checker = Check {\n" +
     "  test: (!resume) => {\n" +
@@ -838,11 +910,11 @@ Deno.test("hover derives resumption call results from the handler return", () =>
 });
 
 Deno.test("hover resolves struct fields and indexes through product aliases", () => {
-  const text = "type Pair = (.ready = Bool, .other = Bool)\n" +
+  const text = "type Pair = [.ready = Bool, .other = Bool]\n" +
     "type Alias = Pair\n" +
     "type Again = Alias\n" +
-    "let declared: Again = (.ready = true, .other = false)\n" +
-    "let inline = (.ready = true, .other = false)\n" +
+    "let declared: Again = [.ready = true, .other = false]\n" +
+    "let inline = [.ready = true, .other = false]\n" +
     "let index = 1\n" +
     "declared[0]\n" +
     "declared[index]\n" +
@@ -861,8 +933,8 @@ Deno.test("hover resolves struct fields and indexes through product aliases", ()
     assert_hover_type(text, analysis, offset, "Bool");
   }
 
-  const mixed = "type Pair = (.ready = Bool, .wide = I64)\n" +
-    "let pair: Pair = (.ready = true, .wide = 1i64)\n" +
+  const mixed = "type Pair = [.ready = Bool, .wide = I64]\n" +
+    "let pair: Pair = [.ready = true, .wide = 1i64]\n" +
     "pair[0]\n" +
     "pair[1]\n" +
     "pair[index]\n";
@@ -900,7 +972,7 @@ Deno.test("hover resolves struct fields and indexes through product aliases", ()
 });
 
 Deno.test("hover preserves nominal unions and if-let payload types", () => {
-  const text = "type Result = .ok = Bool | .err\n" +
+  const text = "type Result = | .ok = Bool | .err\n" +
     "let qualified = Result.ok(true)\n" +
     "let constructor = Result.ok\n" +
     "let alias = constructor\n" +
@@ -1129,7 +1201,7 @@ Deno.test("signature help follows nested calls and effect operations", () => {
 });
 
 Deno.test("hover follows compile-time descriptors through construction", () => {
-  const text = "type Player = (.name = Int, .score = Int)\n" +
+  const text = "type Player = [.name = Int, .score = Int]\n" +
     "const score_field = describe_fields(Player)[1]\n" +
     "let player = construct(Player, { name: 20, score: 40 })\n" +
     "let score = project(player, score_field)\n";

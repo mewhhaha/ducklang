@@ -1,3 +1,0 @@
-type User = (.name = Text, .age = Int)
-let user = (.name = "Ada")
-user.age

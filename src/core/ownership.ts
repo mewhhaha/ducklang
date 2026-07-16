@@ -3,6 +3,8 @@ import type { CoreExpr } from "./ast.ts";
 import type { RuntimeUnionTarget } from "./runtime_union.ts";
 import { static_block_result } from "./type_static.ts";
 import { core_runtime_slice_fact } from "./runtime_slice.ts";
+import { core_bytes_generate_args } from "./runtime_bytes.ts";
+import { core_runtime_buffer_builtin } from "./runtime_buffer.ts";
 import {
   core_expr_result_is_freeze,
   core_if_branch_ownership,
@@ -25,6 +27,16 @@ export function core_expr_ownership<ctx>(
   ctx: ctx,
   hooks: CoreOwnershipHooks<ctx>,
 ): CoreOwnership {
+  if (core_bytes_generate_args(expr)) {
+    return { tag: "unique_heap", reason: "bytes" };
+  }
+
+  const runtime_buffer_builtin = core_runtime_buffer_builtin(expr);
+
+  if (runtime_buffer_builtin) {
+    return { tag: "unique_heap", reason: runtime_buffer_builtin.result };
+  }
+
   if (core_runtime_slice_fact(expr)) {
     return { tag: "unique_heap", reason: "runtime_aggregate" };
   }
@@ -112,13 +124,17 @@ export function core_expr_ownership<ctx>(
   }
 
   if (
-    expr.tag === "if" &&
-    !expr.implicit_else &&
-    (
-      hooks.core_expr_is_text(expr, ctx) ||
+    expr.tag !== "var" &&
+    !(
+      expr.tag === "if" &&
       core_if_branches_are_freeze_results(expr)
-    )
+    ) &&
+    hooks.closure_fn_type(expr, ctx)
   ) {
+    return { tag: "unique_heap", reason: "closure" };
+  }
+
+  if (expr.tag === "if" && !expr.implicit_else) {
     const merged = core_if_branch_ownership(
       expr,
       ctx,

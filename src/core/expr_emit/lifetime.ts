@@ -46,11 +46,24 @@ export function emit_core_freeze_text_value<ctx extends CoreExprEmitCtx>(
   value: CoreExpr,
   ctx: ctx,
   emit_expr: (expr: CoreExpr, ctx: ctx) => Wat,
+  reason: "bytes" | "text",
 ): Wat {
   if (ctx.scratch_return_resets.length > 0) {
-    return emit_runtime_text_freeze_copy(subject, value, ctx, {
-      emit_expr,
-    });
+    if (reason === "bytes") {
+      return emit_runtime_text_freeze_copy(
+        subject,
+        value,
+        ctx,
+        { emit_expr },
+        {
+          reason: "runtime_bytes",
+          layout: "runtime_bytes.length_prefixed_u8",
+          emission_site: "runtime_bytes.freeze_copy",
+        },
+      );
+    }
+
+    return emit_runtime_text_freeze_copy(subject, value, ctx, { emit_expr });
   }
 
   return emit_expr(value, ctx);

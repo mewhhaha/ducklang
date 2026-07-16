@@ -32,7 +32,7 @@ export function freeze_promotes_runtime_text<ctx>(
     return false;
   }
 
-  return ownership.reason === "text";
+  return ownership.reason === "text" || ownership.reason === "bytes";
 }
 
 export function freeze_promotes_runtime_closure<ctx>(

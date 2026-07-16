@@ -98,7 +98,7 @@ export function format_stmt_with_expr(
           return field.name;
         }
 
-        return field.name + ": " + format_expr(field.value);
+        return "." + field.name + " = " + format_expr(field.value);
       });
       return "return { " + fields.join(", ") + " }";
     }

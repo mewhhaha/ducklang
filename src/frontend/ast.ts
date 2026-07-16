@@ -1,4 +1,4 @@
-import type { Prim, ValType } from "../op.ts";
+import type { NumType, Prim, ValType } from "../op.ts";
 import type { SourceSpan } from "./syntax.ts";
 
 export type Source = {
@@ -15,12 +15,42 @@ export type ModuleHeader = {
 export type Declaration =
   | EffectDeclaration
   | RecordDeclaration
-  | TypeDeclaration;
+  | TypeDeclaration
+  | DuckDeclaration
+  | ExtensionDeclaration
+  | FixityDeclaration;
+
+export type DuckDeclaration = {
+  tag: "duck";
+  name: string;
+  roles: string[];
+  members: DuckMember[];
+};
+
+export type DuckMember = {
+  name: string;
+  type_expr: TypeExpr;
+};
+
+export type ExtensionDeclaration = {
+  tag: "extend";
+  type_name: string;
+  fields: Field[];
+};
+
+export type FixityDeclaration = {
+  tag: "fixity";
+  fixity: "infixl" | "infixr" | "infix" | "prefix";
+  precedence: number;
+  operator: string;
+  target: string;
+};
 
 export type EffectDeclaration = {
   tag: "effect";
-  implementation: "host" | "ix";
+  implementation: "host" | "duck";
   name: string;
+  params: string[];
   operations: EffectOperation[];
 };
 
@@ -55,7 +85,12 @@ export type TypeDeclaration = {
   name: string;
   params: string[];
   body:
-    | { tag: "product"; fields: TypeField[]; positional: boolean }
+    | {
+      tag: "product";
+      fields: TypeField[];
+      positional: boolean;
+      initializer?: FrontExpr;
+    }
     | { tag: "sum"; cases: TypeField[] }
     | { tag: "alias"; type_name: string };
   recursive: boolean;
@@ -115,7 +150,7 @@ export type PatternMode = "default" | "const" | "linear";
 
 export type PatternLiteral =
   | { tag: "bool"; value: boolean }
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "text"; value: string }
   | { tag: "atom"; name: string };
 
@@ -182,6 +217,7 @@ export type Stmt =
     pattern?: Pattern;
     name: string;
     is_recursive?: boolean;
+    managed_export?: boolean;
     is_linear: boolean;
     annotation: string | undefined;
     type_annotation?: TypeExpr;
@@ -239,10 +275,10 @@ export type Stmt =
 
 export type FrontExpr =
   | { tag: "bool"; value: boolean }
-  | { tag: "num"; type: ValType; value: number | bigint }
+  | { tag: "num"; type: NumType; value: number | bigint }
   | { tag: "atom"; name: string }
   | { tag: "unit" }
-  | { tag: "text"; value: string }
+  | { tag: "text"; value: string; encoding?: "bytes" }
   | { tag: "type_name"; name: string }
   | { tag: "var"; name: string; resume_signature?: ResumeSignature }
   | { tag: "prim"; prim: Prim; left: FrontExpr; right: FrontExpr }
@@ -254,9 +290,16 @@ export type FrontExpr =
     arg?: FrontExpr;
     args: FrontExpr[];
     resume_payload?: boolean;
+    operator_syntax?: OperatorSyntax;
   }
   | { tag: "product"; entries: ProductExprEntry[] }
-  | { tag: "array"; items: FrontExpr[]; rest: FrontExpr | undefined }
+  | { tag: "shape"; entries: ProductExprEntry[] }
+  | {
+    tag: "array";
+    items: FrontExpr[];
+    rest: FrontExpr | undefined;
+    leading_rest?: boolean;
+  }
   | { tag: "array_repeat"; value: FrontExpr; length: FrontExpr }
   | { tag: "import"; path: string }
   | { tag: "block"; statements: Stmt[] }
@@ -275,6 +318,7 @@ export type FrontExpr =
   }
   | { tag: "try_with"; body: FrontExpr; handler: FrontExpr }
   | { tag: "with"; base: FrontExpr; fields: Field[] }
+  | { tag: "type_with"; base: FrontExpr; members: ComputedTypeMember[] }
   | { tag: "set_type"; type_expr: TypeExpr }
   | { tag: "struct_type"; fields: TypeField[] }
   | {
@@ -326,6 +370,14 @@ export type ProductExprEntry = {
   value: FrontExpr;
 };
 
+export type OperatorSyntax = {
+  kind: "infix" | "prefix";
+  operator: string;
+  precedence: number;
+  associativity?: "left" | "right" | "none";
+  target: string;
+};
+
 export type MatchArm = {
   pattern: Pattern;
   guard: FrontExpr | undefined;
@@ -342,6 +394,11 @@ export type Param = {
 
 export type Field = {
   name: string;
+  value: FrontExpr;
+};
+
+export type ComputedTypeMember = {
+  name: FrontExpr;
   value: FrontExpr;
 };
 
@@ -413,7 +470,8 @@ export type Token = {
 export type FrontType =
   | { tag: "never" }
   | { tag: "bool" }
-  | { tag: "int"; type: ValType | undefined }
+  | { tag: "int"; type: NumType | undefined }
+  | { tag: "f32x4" }
   | { tag: "atom"; name: string }
   | { tag: "text"; encoding?: "bytes" }
   | { tag: "type" }

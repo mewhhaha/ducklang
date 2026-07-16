@@ -9,14 +9,11 @@ Deno.test("frontend visible update closure compiles through WAT to Wasm", async 
   const wat_text = wat_from_source(`
 let birthday = user => {
   user with {
-    age: user.age + 1
+    .age = user.age + 1
   }
 }
 
-birthday({
-  name: "Ada",
-  age: 41
-}).age
+birthday([.name = "Ada", .age = 41]).age
 `);
   const instance = await instantiate_wat(
     wat_text,
@@ -41,8 +38,8 @@ birthday({
 
 Deno.test("core static aggregate bindings compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let xs = { first: 10, second: 20 }
-let user = { name: 1, age: 41 }
+let xs = [.first = 10, .second = 20]
+let user = [.name = 1, .age = 41]
 let total = 0
 
 for i, x in xs {
@@ -73,7 +70,7 @@ total + xs[1] + user.age
 
   const scratch_free_wat = wat_from_core_source(`
 let x = 40
-let user = scratch { { age: x + 1, bonus: 1 } }
+let user = scratch { [.age = x + 1, .bonus = 1] }
 user.age + user.bonus
 `);
   const scratch_free_instance = await instantiate_wat(
@@ -99,13 +96,14 @@ user.age + user.bonus
   }
 
   const annotated_scratch_free_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  name: Text
+  .age= Int,
+  .name= Text
 }
 let x = 40
 let user: user_type = scratch {
-  user_type { age: x + 1, name: "Ada" }
+  [.age = x + 1, .name = "Ada"] as user_type
 }
 user.age + len(user.name)
 `);
@@ -136,13 +134,14 @@ user.age + len(user.name)
   }
 
   const block_setup_scratch_free_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  name: Text
+  .age= Int,
+  .name= Text
 }
 let user: user_type = scratch {
   let temp: Text = freeze append("Ada", "!")
-  user_type { age: 40, name: temp }
+  [.age = 40, .name = temp] as user_type
 }
 user.age + len(user.name)
 `);
@@ -173,13 +172,14 @@ user.age + len(user.name)
   }
 
   const block_alias_scratch_free_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  name: Text
+  .age= Int,
+  .name= Text
 }
 let user: user_type = scratch {
   let name: Text = freeze append("Ada", "!")
-  let temp: user_type = user_type { age: 40, name: name }
+  let temp: user_type = [.age = 40, .name = name] as user_type
   temp
 }
 user.age + len(user.name)
@@ -213,7 +213,7 @@ user.age + len(user.name)
 
 Deno.test("core dynamic aggregate index expression compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let xs = { first: 10, second: 32 }
+let xs = [.first = 10, .second = 32]
 let i = 1
 
 xs[i]
@@ -241,7 +241,7 @@ xs[i]
 
 Deno.test("core aggregate len and get compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let xs = { first: 10, second: 32 }
+let xs = [.first = 10, .second = 32]
 let i = 1
 
 len(xs) + get(xs, i) + get(xs, 0)
@@ -269,22 +269,17 @@ len(xs) + get(xs, i) + get(xs, 0)
 
 Deno.test("core runtime aggregate collection facts compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let flag = 1
 let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
+  (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
+  (first: Int, second: Int) => [.first = second, .second = first] as pair_type
 }
 
 let pair: pair_type = make(10, 31)
@@ -318,26 +313,28 @@ len(pair) * 1000 + get(pair, i) * 100 + pair[0] * 10 + total
   }
 
   const nested_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const scores_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  scores: scores_type,
-  bonus: Int
+  .scores= scores_type,
+  .bonus= Int
 }
 
 let flag = 1
 let make_scores = if flag {
-  () => scores_type { first: 10, second: 20 }
+  () => [.first = 10, .second = 20] as scores_type
 } else {
-  () => scores_type { first: 1, second: 2 }
+  () => [.first = 1, .second = 2] as scores_type
 }
 let scores: scores_type = freeze make_scores()
 let make_user = if flag {
-  () => user_type { scores: scores, bonus: 1 }
+  () => [.scores = scores, .bonus = 1] as user_type
 } else {
-  () => user_type { scores: scores, bonus: 2 }
+  () => [.scores = scores, .bonus = 2] as user_type
 }
 let user: user_type = make_user()
 let total = 0
@@ -369,22 +366,17 @@ total + user.bonus
   }
 
   const control_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let flag = 1
 let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
+  (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
+  (first: Int, second: Int) => [.first = second, .second = first] as pair_type
 }
 
 let pair: pair_type = make(10, 31)
@@ -431,22 +423,17 @@ total
 
 Deno.test("core runtime aggregate scalar index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let flag = 1
 let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
+  (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
+  (first: Int, second: Int) => [.first = second, .second = first] as pair_type
 }
 
 let pair: pair_type = make(10, 31)
@@ -476,22 +463,17 @@ pair.first + pair.second
   }
 
   const trap_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let flag = 1
 let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
+  (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
+  (first: Int, second: Int) => [.first = second, .second = first] as pair_type
 }
 
 let pair: pair_type = make(10, 31)
@@ -530,22 +512,17 @@ pair.first
 
 Deno.test("core runtime aggregate Text index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const names_type = struct {
-  first: Text,
-  second: Text
+  .first= Text,
+  .second= Text
 }
 
 let flag = 1
 let make = if flag {
-  (first: Text, second: Text) => names_type {
-    first: first,
-    second: second
-  }
+  (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
-  (first: Text, second: Text) => names_type {
-    first: second,
-    second: first
-  }
+  (first: Text, second: Text) => [.first = second, .second = first] as names_type
 }
 
 let names: names_type = make("Ada", "Grace")
@@ -577,33 +554,29 @@ len(names.first) * 100 + len(names.second)
 
 Deno.test("core runtime aggregate nested index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  left: Int,
-  right: Int
+  .left= Int,
+  .right= Int
 }
 
+const { struct } = comptime (import "duck:prelude")()
 const slots_type = struct {
-  first: pair_type,
-  second: pair_type
+  .first= pair_type,
+  .second= pair_type
 }
 
 let flag = 1
 let make_slots = if flag {
-  (a: Int, b: Int, c: Int, d: Int) => slots_type {
-    first: pair_type { left: a, right: b },
-    second: pair_type { left: c, right: d }
-  }
+  (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = a, .right = b] as pair_type, .second = [.left = c, .right = d] as pair_type] as slots_type
 } else {
-  (a: Int, b: Int, c: Int, d: Int) => slots_type {
-    first: pair_type { left: c, right: d },
-    second: pair_type { left: a, right: b }
-  }
+  (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = c, .right = d] as pair_type, .second = [.left = a, .right = b] as pair_type] as slots_type
 }
 
 let slots: slots_type = make_slots(1, 2, 3, 4)
-slots[0] = pair_type { left: 10, right: 20 }
+slots[0] = [.left = 10, .right = 20] as pair_type
 let i = 1
-slots[i] = pair_type { left: 5, right: 7 }
+slots[i] = [.left = 5, .right = 7] as pair_type
 slots.first.left + slots.first.right + slots.second.left + slots.second.right
 `);
   const instance = await instantiate_wat(
@@ -631,38 +604,34 @@ Deno.test("core rejects first-class runtime aggregate nested mutation capture", 
   assert_throws(
     () =>
       wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  left: Int,
-  right: Int
+  .left= Int,
+  .right= Int
 }
 
+const { struct } = comptime (import "duck:prelude")()
 const slots_type = struct {
-  first: pair_type,
-  second: pair_type
+  .first= pair_type,
+  .second= pair_type
 }
 
 let flag = 1
 let make_slots = if flag {
-  (a: Int, b: Int, c: Int, d: Int) => slots_type {
-    first: pair_type { left: a, right: b },
-    second: pair_type { left: c, right: d }
-  }
+  (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = a, .right = b] as pair_type, .second = [.left = c, .right = d] as pair_type] as slots_type
 } else {
-  (a: Int, b: Int, c: Int, d: Int) => slots_type {
-    first: pair_type { left: c, right: d },
-    second: pair_type { left: a, right: b }
-  }
+  (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = c, .right = d] as pair_type, .second = [.left = a, .right = b] as pair_type] as slots_type
 }
 
 let slots: slots_type = make_slots(1, 2, 3, 4)
 let write = if flag {
   (i: Int, left: Int, right: Int) => {
-    slots[i] = pair_type { left: left, right: right }
+    slots[i] = [.left = left, .right = right] as pair_type
     0
   }
 } else {
   (i: Int, left: Int, right: Int) => {
-    slots[i] = pair_type { left: right, right: left }
+    slots[i] = [.left = right, .right = left] as pair_type
     0
   }
 }
@@ -679,22 +648,17 @@ Deno.test("core rejects first-class runtime aggregate Text mutation capture", ()
   assert_throws(
     () =>
       wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const names_type = struct {
-  first: Text,
-  second: Text
+  .first= Text,
+  .second= Text
 }
 
 let flag = 1
 let make = if flag {
-  (first: Text, second: Text) => names_type {
-    first: first,
-    second: second
-  }
+  (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
-  (first: Text, second: Text) => names_type {
-    first: second,
-    second: first
-  }
+  (first: Text, second: Text) => [.first = second, .second = first] as names_type
 }
 
 let names: names_type = make("Ada", "Grace")
@@ -721,22 +685,17 @@ Deno.test("core rejects first-class runtime aggregate scalar mutation capture", 
   assert_throws(
     () =>
       wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const pair_type = struct {
-  first: Int,
-  second: Int
+  .first= Int,
+  .second= Int
 }
 
 let flag = 1
 let make = if flag {
-  (first: Int, second: Int) => pair_type {
-    first: first,
-    second: second
-  }
+  (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
-  (first: Int, second: Int) => pair_type {
-    first: second,
-    second: first
-  }
+  (first: Int, second: Int) => [.first = second, .second = first] as pair_type
 }
 
 let pair: pair_type = make(10, 31)
@@ -761,22 +720,17 @@ write(0, 40) + write(1, 2)
 
 Deno.test("core runtime aggregate text collection facts compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const names_type = struct {
-  first: Text,
-  second: Text
+  .first= Text,
+  .second= Text
 }
 
 let flag = 1
 let make = if flag {
-  (first: Text, second: Text) => names_type {
-    first: first,
-    second: second
-  }
+  (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
-  (first: Text, second: Text) => names_type {
-    first: second,
-    second: first
-  }
+  (first: Text, second: Text) => [.first = second, .second = first] as names_type
 }
 
 let names: names_type = make("Ada", "Grace")
@@ -818,7 +772,7 @@ len(names) * 1000 + len(picked) * 100 + len(first) * 10 + total + borrowed_total
 Deno.test("core static aggregate runtime captures compile through WAT to Wasm", async () => {
   const struct_wat = wat_from_core_source(`
 let a = 1
-let xs = { first: a, second: 2 }
+let xs = [.first = a, .second = 2]
 a = 9
 xs[0] + xs[1]
 `);
@@ -875,16 +829,17 @@ if let .ok(x) = result {
 
 Deno.test("core runtime aggregate field loads compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let flag = 1
 let make = if flag {
-  (name: Text) => user_type { name: name, age: 40 }
+  (name: Text) => [.name = name, .age = 40] as user_type
 } else {
-  (name: Text) => user_type { name: name, age: 5 }
+  (name: Text) => [.name = name, .age = 5] as user_type
 }
 let user: user_type = make("Ada")
 
@@ -911,16 +866,17 @@ len(user.name) + user.age
   }
 
   const frozen_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let flag = 1
 let make = if flag {
-  (name: Text) => user_type { name: name, age: 40 }
+  (name: Text) => [.name = name, .age = 40] as user_type
 } else {
-  (name: Text) => user_type { name: name, age: 5 }
+  (name: Text) => [.name = name, .age = 5] as user_type
 }
 let user: user_type = make("Ada")
 let frozen: user_type = freeze user
@@ -948,15 +904,16 @@ len(frozen.name) + frozen.age
   }
 
   const scratch_frozen_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let start = 0
 let prefix: Text = slice("Ada", start, 1)
 let user: user_type = scratch {
-  freeze user_type { name: append(prefix, "da"), age: 40 }
+  freeze ([.name = append(prefix, "da"), .age = 40] as user_type)
 }
 
 len(user.name) + user.age
@@ -984,15 +941,16 @@ len(user.name) + user.age
   }
 
   const bound_scratch_frozen_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let start = 0
 let prefix: Text = slice("Ada", start, 1)
 let user: user_type = scratch {
-  let temp: user_type = user_type { name: append(prefix, "da"), age: 40 }
+  let temp: user_type = [.name = append(prefix, "da"), .age = 40] as user_type
   freeze temp
 }
 
@@ -1023,14 +981,15 @@ len(user.name) + user.age
   }
 
   const existing_alias_scratch_frozen_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let start = 0
 let prefix: Text = slice("Ada", start, 1)
-let existing: user_type = user_type { name: append(prefix, "da"), age: 40 }
+let existing: user_type = [.name = append(prefix, "da"), .age = 40] as user_type
 let user: user_type = scratch {
   let temp = existing
   freeze temp
@@ -1065,19 +1024,20 @@ len(user.name) + user.age
   }
 
   const branch_assignment_scratch_frozen_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let flag = 1
 let start = 0
 let prefix: Text = slice("Ada", start, 1)
-let existing: user_type = user_type { name: append(prefix, "da"), age: 40 }
+let existing: user_type = [.name = append(prefix, "da"), .age = 40] as user_type
 if flag {
-  existing = user_type { name: append(prefix, "!"), age: 41 }
+  existing = [.name = append(prefix, "!"), .age = 41] as user_type
 } else {
-  existing = user_type { name: append(prefix, "?"), age: 42 }
+  existing = [.name = append(prefix, "?"), .age = 42] as user_type
 }
 let user: user_type = scratch {
   let temp = existing
@@ -1113,26 +1073,22 @@ len(user.name) + user.age
   }
 
   const nested_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const name_type = struct {
-  first: Text,
-  last: Text
+  .first= Text,
+  .last= Text
 }
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  age: Int,
-  name: name_type
+  .age= Int,
+  .name= name_type
 }
 
 let flag = 1
 let make = if flag {
-  (first: Text) => user_type {
-    age: 40,
-    name: name_type { first: first, last: "Lovelace" }
-  }
+  (first: Text) => [.age = 40, .name = [.first = first, .last = "Lovelace"] as name_type] as user_type
 } else {
-  (first: Text) => user_type {
-    age: 5,
-    name: name_type { first: first, last: "Hopper" }
-  }
+  (first: Text) => [.age = 5, .name = [.first = first, .last = "Hopper"] as name_type] as user_type
 }
 let user: user_type = make("Ada")
 let name: name_type = user.name
@@ -1160,16 +1116,17 @@ len(name.first) + len(name.last) + user.age
   }
 
   const captured_wat = wat_from_core_source(`
+const { struct } = comptime (import "duck:prelude")()
 const user_type = struct {
-  name: Text,
-  age: Int
+  .name= Text,
+  .age= Int
 }
 
 let flag = 1
 let make = if flag {
-  (name: Text) => user_type { name: name, age: 41 }
+  (name: Text) => [.name = name, .age = 41] as user_type
 } else {
-  (name: Text) => user_type { name: name, age: 5 }
+  (name: Text) => [.name = name, .age = 5] as user_type
 }
 let user: user_type = freeze make("Ada")
 let get_age = if flag {
@@ -1203,9 +1160,9 @@ get_age()
 
 Deno.test("core struct update compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let user = { age: 40, score: 2 }
+let user = [.age = 40, .score = 2]
 let next = 41
-let updated = user with { age: next }
+let updated = user with { .age = next }
 next = 1
 updated.age + user.age + updated.score
 `);
@@ -1234,9 +1191,9 @@ Deno.test("core dynamic aggregate if bindings compile through WAT to Wasm", asyn
   const struct_wat = wat_from_core_source(`
 let flag = 0
 let user = if flag {
-  { age: 41, score: 1 }
+  [.age = 41, .score = 1]
 } else {
-  { age: 32, score: 10 }
+  [.age = 32, .score = 10]
 }
 
 flag = 1
@@ -1305,9 +1262,9 @@ Deno.test("core direct dynamic aggregate if access compiles through WAT to Wasm"
 let flag = 0
 
 (if flag {
-  { age: 41, score: 1 }
+  [.age = 41, .score = 1]
 } else {
-  { age: 32, score: 10 }
+  [.age = 32, .score = 10]
 }).age
 `);
   const field_instance = await instantiate_wat(
@@ -1335,9 +1292,9 @@ let flag = 0
 let i = 1
 
 (if flag {
-  { first: 41, second: 1 }
+  [.first = 41, .second = 1]
 } else {
-  { first: 32, second: 10 }
+  [.first = 32, .second = 10]
 })[i]
 `);
   const index_instance = await instantiate_wat(
@@ -1401,7 +1358,7 @@ if let .ok(value) = result {
 
 Deno.test("core static aggregate index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let xs = { first: 10, second: 20 }
+let xs = [.first = 10, .second = 20]
 let value = 32
 
 xs[1] = value
@@ -1428,7 +1385,7 @@ xs[0] + xs[1]
   }
 
   const captured_closure_wat = wat_from_core_source(`
-let pair = { first: 1, second: 2 }
+let pair = [.first = 1, .second = 2]
 let f = i => {
   pair[i] = 40
   pair[0] + pair[1]
@@ -1466,7 +1423,7 @@ let update = xs => {
   xs[0] + xs[1]
 }
 
-let pair = { first: 1, second: 2 }
+let pair = [.first = 1, .second = 2]
 update(pair) + pair[0] + pair[1]
 `);
   const param_closure_instance = await instantiate_wat(
@@ -1492,7 +1449,7 @@ update(pair) + pair[0] + pair[1]
 
 Deno.test("core dynamic aggregate index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let xs = { first: 10, second: 20 }
+let xs = [.first = 10, .second = 20]
 let i = 0
 let value = 32
 
@@ -1520,7 +1477,7 @@ xs[0] + xs[1]
   }
 
   const text_wat = wat_from_core_source(`
-let messages = { first: "Ada", second: "Grace" }
+let messages = [.first = "Ada", .second = "Grace"]
 let i = 1
 let next = "Edsger"
 
@@ -1551,15 +1508,11 @@ len(messages[1])
 
 Deno.test("core generic type constructors compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const option_type = t => union {
-  some: t,
-  none: Unit
-}
+type OptionType t = | .some = t | .none
+const option_type = OptionType
 
-const result_type = e => t => union {
-  ok: t,
-  err: e
-}
+type ResultType e t = | .ok = t | .err = e
+const result_type = ResultType
 
 const parse_result_type = result_type(Text)(Int)
 

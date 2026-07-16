@@ -2,12 +2,12 @@ import { format_text } from "../fmt/format.ts";
 import { run_lsp } from "../lsp/server.ts";
 import { Source } from "../frontend.ts";
 
-const usage = `Usage: ix <command>
+const usage = `Usage: duck <command>
 
 Commands:
-  fmt [paths...] [--check]  Format .ix files in place; --check only reports
+  fmt [paths...] [--check]  Format .duck files in place; --check only reports
   fmt --stdin               Format source from stdin to stdout
-  check <paths...>          Parse .ix files and report diagnostics
+  check <paths...>          Parse .duck files and report diagnostics
   lsp                       Run the language server over stdio
 `;
 
@@ -151,7 +151,7 @@ async function collect_files(paths: string[]): Promise<string[]> {
 
         if (entry.isDirectory) {
           pending.push(entry_path);
-        } else if (entry.name.endsWith(".ix")) {
+        } else if (entry.name.endsWith(".duck")) {
           files.push(entry_path);
         }
       }

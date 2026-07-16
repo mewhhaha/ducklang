@@ -1,11 +1,12 @@
 import type { Env, FrontExpr, FrontType } from "../ast.ts";
 import { infer_builtin_call_type } from "./prim.ts";
-import type { InferHooks } from "./types.ts";
+import type { InferExprFn, InferHooks } from "./types.ts";
 
 export function infer_app_expr_type(
   expr: Extract<FrontExpr, { tag: "app" }>,
   env: Env,
   hooks: InferHooks,
+  infer_expr: InferExprFn,
 ): FrontType {
   if (hooks.visible_text_value(expr, env, new Set())) {
     return { tag: "text" };
@@ -42,7 +43,7 @@ export function infer_app_expr_type(
     return specialized_call;
   }
 
-  const builtin_call = infer_builtin_call_type(expr, env);
+  const builtin_call = infer_builtin_call_type(expr, env, hooks, infer_expr);
 
   if (builtin_call) {
     return builtin_call;

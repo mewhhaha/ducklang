@@ -14,7 +14,13 @@ import { fresh_name, fresh_var } from "./names.ts";
 import { node_to_num, replace_ref } from "./node.ts";
 import { contains_ref, name_use_count } from "./scan.ts";
 import { subst } from "./substitute.ts";
-import { fold_prim, fold_select, is_binary_prim } from "../prim_reduce.ts";
+import {
+  fold_prim,
+  fold_select,
+  fold_unary_prim,
+  is_binary_prim,
+  is_unary_prim,
+} from "../prim_reduce.ts";
 
 export function reduce_ref(ctx: GraphCtx, ref: Ref): Ref {
   ctx.stats.steps += 1;
@@ -80,7 +86,7 @@ function reduce_prim(
     "Primitive " + current.prim + " expects " + expected + " arguments",
   );
 
-  if (current.prim === "i32.select" || current.prim === "i64.select") {
+  if (current.prim.endsWith(".select")) {
     return reduce_select(ctx, ref, current);
   }
 
@@ -106,15 +112,29 @@ function reduce_prim(
     }
   }
 
+  if (expected === 1 && is_unary_prim(current.prim)) {
+    const value_ref = args[0];
+    expect(value_ref !== undefined, "Missing unary primitive argument");
+    const value = ctx.nodes.get(value_ref);
+    expect(value, "Missing unary primitive argument node");
+
+    if (value.tag === "num") {
+      ctx.stats.prim_folds += 1;
+      const folded = fold_unary_prim(current.prim, node_to_num(value));
+      const folded_ref = from_ic(ctx, folded, new Map());
+      return replace_ref(ctx, ref, folded_ref);
+    }
+  }
+
   if (expected !== 2) {
     ctx.nodes.set(ref, { tag: "prim", prim: current.prim, args });
     return ref;
   }
 
-  expect(
-    is_binary_prim(current.prim),
-    "Expected binary primitive: " + current.prim,
-  );
+  if (!is_binary_prim(current.prim)) {
+    ctx.nodes.set(ref, { tag: "prim", prim: current.prim, args });
+    return ref;
+  }
   const left_ref = args[0];
   const right_ref = args[1];
   expect(left_ref !== undefined, "Missing primitive argument 0");

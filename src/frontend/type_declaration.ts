@@ -86,16 +86,23 @@ function type_declaration_binding(
       semantic,
     );
   } else if (declaration.body.tag === "product") {
-    value = {
-      tag: "struct_type",
-      fields: declaration.body.fields.map((field) => {
-        if (effects.has(field.type_name)) {
-          return { name: field.name, type_name: "I32" };
-        }
+    if (declaration.body.initializer !== undefined) {
+      value = {
+        tag: "comptime",
+        expr: declaration.body.initializer,
+      };
+    } else {
+      value = {
+        tag: "struct_type",
+        fields: declaration.body.fields.map((field) => {
+          if (effects.has(field.type_name)) {
+            return { name: field.name, type_name: "I32" };
+          }
 
-        return field;
-      }),
-    };
+          return field;
+        }),
+      };
+    }
   } else if (declaration.body.tag === "sum") {
     value = { tag: "union_type", cases: declaration.body.cases };
   } else {
@@ -446,6 +453,10 @@ function validate_declaration_names(declarations: Declaration[]): void {
   const names = new Set<string>();
 
   for (const declaration of declarations) {
+    if (declaration.tag === "extend" || declaration.tag === "fixity") {
+      continue;
+    }
+
     expect(
       !is_builtin_type_reference_name(declaration.name),
       "Declaration name conflicts with builtin type: " + declaration.name,

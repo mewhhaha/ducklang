@@ -12,7 +12,7 @@ Deno.test("Core proof maps ownership fixtures to ranged diagnostics", () => {
 
 let message: Text = append("a", "b")
 escape(message)`,
-      code: "IX2401",
+      code: "DUCK2401",
       span: { start: 85, end: 100 },
     },
     {
@@ -21,22 +21,22 @@ let view = &message
 let frozen = freeze message
 
 len(view) + len(frozen)`,
-      code: "IX2402",
+      code: "DUCK2402",
       span: { start: 70, end: 84 },
     },
     {
       text: `scratch {
   append("a", "b")
 }`,
-      code: "IX2403",
+      code: "DUCK2403",
       span: { start: 0, end: 30 },
     },
     {
-      text: `let message: Text = freeze append("a", "b")
+      text: `let message: Bytes = freeze Utf8.encode("ab")
 message[0] = 65
 len(message)`,
-      code: "IX2404",
-      span: { start: 44, end: 59 },
+      code: "DUCK2404",
+      span: { start: 46, end: 61 },
     },
   ];
 
