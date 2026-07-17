@@ -44,38 +44,6 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       );
     }
 
-    if (
-      kind === "let" && this.peek().kind === "symbol" &&
-      this.peek().text === "(" && this.peek(1).kind === "symbol" &&
-      this.peek(1).text === "!"
-    ) {
-      throw new Error(
-        "Legacy effect state bindings are not supported; use " +
-          "`value <- Effect.operation()`",
-      );
-    }
-
-    if (
-      this.peek().kind === "symbol" && this.peek().text === "(" &&
-      this.peek(1).kind === "name" &&
-      this.peek(2).kind === "symbol" && this.peek(2).text === "::"
-    ) {
-      throw new Error(
-        "Legacy effect contexts are not supported; annotate the function " +
-          "with `-> <row>`",
-      );
-    }
-
-    if (
-      this.peek().kind === "name" && this.peek(1).kind === "name" &&
-      /^[A-Z][A-Za-z0-9]*$/.test(this.peek().text)
-    ) {
-      throw new Error(
-        "Legacy effect contexts are not supported; remove the context name " +
-          "and use `-> <row>`",
-      );
-    }
-
     let is_recursive = false;
 
     if (kind === "let" && this.match_name("rec")) {

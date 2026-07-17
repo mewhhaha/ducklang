@@ -320,10 +320,10 @@ Deno.test("annotated handler returns reject computed Bool results", () => {
   assert_source_diagnostic(
     () =>
       Source.core(
-        "effect E { op:()=>Bool }; " +
-          "let h=E { op:(!resume)=>!resume(true), " +
-          "return:(v:I32)=>v+1 }; " +
-          "try (()=>true)() with h",
+        "effect E { op: () => Bool }; " +
+          "let h=E { op: (!resume) => !resume(true), " +
+          "return: (v: I32) => v+1 }; " +
+          "try (() => true)() with h",
       ),
     "DUCK2306",
     "Handler return parameter v expects I32, got Bool",
@@ -331,9 +331,9 @@ Deno.test("annotated handler returns reject computed Bool results", () => {
 });
 
 Deno.test("core analysis reports invalid Bool resumptions", () => {
-  const source = "effect E { op:()=>Bool }; " +
-    "let run=()=>{ x <- E.op(); x }; " +
-    "let h=E { op:(!resume)=>!resume(1), return:v=>v }; " +
+  const source = "effect E { op: () => Bool }; " +
+    "let run = () => { x <- E.op(); x }; " +
+    "let h=E { op: (!resume) => !resume(1), return: v => v }; " +
     "try run() with h";
 
   assert_analysis_diagnostic(
@@ -523,7 +523,7 @@ Deno.test("higher-order arrows reject incompatible callback signatures", () => {
   assert_source_diagnostic(
     () =>
       Source.wat(`
-let apply: (Bool -> Bool, Bool) -> Bool =
+let apply: [Bool -> Bool, Bool] -> Bool =
   (const callback, value) => callback(value)
 let number = (x: I32) => x
 apply(number, true)
@@ -537,7 +537,7 @@ Deno.test("higher-order arrows contextually validate callback bodies", () => {
   assert_source_diagnostic(
     () =>
       Source.core(`
-let apply: (Bool -> Bool, Bool) -> Bool =
+let apply: [Bool -> Bool, Bool] -> Bool =
   (const callback, value) => callback(value)
 apply(value => value + 1, true)
 `),
@@ -680,7 +680,7 @@ Deno.test("special rec calls retain contextual Bool parameters", () => {
   assert_source_diagnostic(
     () =>
       Source.core(`
-let loop: (Bool, I32) -> Bool = rec (flag, n) => {
+let loop: [Bool, I32] -> Bool = rec (flag, n) => {
   if n == 0 { flag } else { rec(1, n - 1) }
 }
 loop(true, 1)
@@ -751,23 +751,23 @@ Deno.test("mixed Bool and I32 branches are rejected before lowering", () => {
   assert_source_diagnostic(
     () =>
       Source.core(
-        "let input = 1\nlet value = if input { true } else { 1 }\nvalue + 1",
+        "let input = true\nlet value = if input { true } else { 1 }\nvalue + 1",
       ),
     "DUCK2306",
     "Conditional branches have incompatible types Bool and I32",
   );
 
-  Source.wat("let input = 1\nlet value: Bool = if input { true }\nvalue");
+  Source.wat("let input = true\nlet value: Bool = if input { true }\nvalue");
 });
 
 Deno.test("Bool branches reject Unit and atom alternatives", () => {
   assert_source_diagnostic(
-    () => Source.core("let input = 1\nif input { true } else { () }"),
+    () => Source.core("let input = true\nif input { true } else { () }"),
     "DUCK2306",
     "Conditional branches have incompatible types Bool and Unit",
   );
   assert_source_diagnostic(
-    () => Source.core("let input = 1\nif input { true } else { #yes }"),
+    () => Source.core("let input = true\nif input { true } else { #yes }"),
     "DUCK2306",
     "Conditional branches have incompatible types Bool and #yes",
   );
@@ -805,7 +805,7 @@ return { .value = value }
 });
 
 Deno.test("expression conditional loop breaks cannot mix Bool and I32", () => {
-  const source = "let input=1; " +
+  const source = "let input=true; " +
     "let x=loop { if input { break true } else { break 2 } }; " +
     "x+1";
 

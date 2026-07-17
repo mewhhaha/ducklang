@@ -631,6 +631,7 @@ function branch_params_support_demand_specialization(
   const scalar_annotations = new Set([
     "Bool",
     "F32",
+    "F64",
     "I32",
     "I64",
     "Int",

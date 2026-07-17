@@ -188,9 +188,9 @@ Numeric literals carry value types in Ic. Unsuffixed source integers are the
 `Int`/`i32` convention. `I<N>` and `U<N>` name signed and unsigned integers of
 any positive bit width; their literal suffixes are `i<N>` and `u<N>`. A literal
 must fit its declared type, including the signed minimum such as `-16i5`.
-Decimal fractions and exponents require the `f32` suffix. Hexadecimal integer
-literals use `0x` or `0X` and may carry the same integer suffixes. Mixed-width
-operands are rejected instead of converted implicitly.
+Decimal fractions and exponents require an `f32` or `f64` suffix. Hexadecimal
+integer literals use `0x` or `0X` and may carry the same integer suffixes.
+Mixed-width operands are rejected instead of converted implicitly.
 
 ```txt
 let small = 42i32
@@ -200,6 +200,7 @@ let signed_minimum = -16i5
 let identifier = 340282366920938463463374607431768211455u128
 let mask = 0xff
 let ratio = 1.5f32
+let precise_ratio = 1.5f64
 ```
 
 Integer bitwise operations are named functions: `@bit_and`, `@bit_or`,
@@ -219,8 +220,10 @@ traps for NaN, infinity, or an out-of-range result. `@f32_sqrt` computes an
 `@as(value, Target)` is an erased checked cast. `Target` must be a statically
 known type value, and the canonical source and target types must have identical
 runtime representations. This permits casts through exact aliases such as
-`UserId` and `I32`, but rejects width changes and semantic mismatches such as
-`I32` to `I64` or `Bool` to `I32`.
+`UserId` and `I32`. It also permits explicit casts between `Bool` and the
+`Int`/`I32`/`U32` scalar family: zero is false and any nonzero value is true in
+Boolean control flow. Ordinary assignments and calls still keep these types
+distinct. Width changes such as `I32` to `I64` remain rejected.
 
 Numeric casts that deliberately change width or reinterpret bits use explicit
 unsafe compiler names:
@@ -246,10 +249,10 @@ Double-quoted string literals produce UTF-8 `Text`.
 Boolean literals carry the semantic source type `Bool`. `Bool` is represented as
 `i32` after frontend lowering: `true` lowers to `1:i32` and `false` lowers to
 `0:i32`. Comparisons, equality, logical operators, and `value is T` produce
-`Bool`. Conditions and logical operators consume `Bool`; they also accept
-`Int`/`I32` under the retained truthiness compatibility rule, where zero is
-false and every nonzero value is true. `Bool` and `Int`/`I32` remain distinct
-source types, so annotations, arithmetic, and equality do not silently mix them.
+`Bool`. Conditions and logical operators consume `Bool`. Integers are not
+truthy; compare them explicitly when constructing a condition. `Bool` and
+`Int`/`I32` remain distinct source types, so annotations, arithmetic, and
+equality do not silently mix them.
 
 Character literals remain source-level scalar syntax over `i32`. A single-quoted
 character lowers to its Unicode scalar value as `i32`, and `if let` character
@@ -578,9 +581,8 @@ No-else `if` statements support fallthrough. Static conditions expand the chosen
 path. Dynamic conditions lower by treating the following statements as the
 implicit else path. In expression position, no-else `if` and `if let` use a
 typed scalar zero fallback, so an `I64` then-branch gets `0i64` while an `Int`
-then-branch gets `0`. A condition should be `Bool`; `Int`/`I32` conditions keep
-their compatibility truthiness behavior. Known text, struct, union, function,
-type-value, and `I64` conditions are rejected.
+then-branch gets `0`. Conditions must be `Bool`; numeric, text, struct, union,
+function, and type-value conditions are rejected.
 
 ```txt
 let value = 1
@@ -598,9 +600,8 @@ let value = if flag {
 }
 ```
 
-Logical operators are short-circuiting `if` sugar that produces `Bool`. Their
-operands use the same `Bool`-first, `Int`/`I32`-compatible truthiness rule as
-conditions.
+Logical operators are short-circuiting `if` sugar that accepts and produces
+`Bool`.
 
 The bare form `!name` is reserved for affine consumption. Negate a named Boolean
 with parentheses, as in `!(ready)`; literals and calls can use `!false` and
@@ -679,7 +680,7 @@ const { struct } = comptime import "duck:prelude" ()
 Bare destructuring fields bind the same local name. Use the dotted form when
 renaming, such as `{ .struct = make_struct }`.
 
-Module export shapes and `with` updates use the same shorthand. `{ code }` means
+Module export shapes and `:+` updates use the same shorthand. `{ code }` means
 `{ .code = code }`; keep the dotted form when the label and local expression
 differ, such as `{ .status = code }`.
 
@@ -696,9 +697,11 @@ const struct = (const shape) => {
   }
 
   for index, field in shape {
-    product_type = product_type with {
-      .[field.name] = value => value[index]
-    }
+    product_type = @type.member [
+      product_type,
+      field.name,
+      value => value[index]
+    ]
   }
 
   product_type
@@ -707,8 +710,8 @@ const struct = (const shape) => {
 
 Each shape iteration yields a compile-time entry with `.name` and `.value`.
 Leading spread appends the entry's type to the ordered product. The computed
-member form `type_value with { .[name] = function }` returns a new scoped type
-value with that namespace member; it does not mutate extensions for other
+member function `@type.member [type_value, name, function]` returns a new scoped
+type value with that namespace member; it does not mutate extensions for other
 structs with the same slot layout. Repeat types use `[Element; Length]`
 directly; there is no `array` constructor.
 
@@ -734,9 +737,9 @@ const signed = numeric :- I64
 
 `:+` extends a compile-time type value with namespace members or methods and
 rejects incompatible collisions. `:|`, `:&`, and `:-` are union, intersection,
-and difference. These operators are implicitly compile-time; the functions they
-dispatch to remain ordinary Duck source. `:>` is the representation-checked
-compiler boundary used to seal a value as a nominal type.
+and difference. Their source declarations dispatch to the corresponding
+`@type.*` compiler functions. `:>` is the representation-checked compiler
+boundary used to seal a value as a nominal type.
 
 `newtype` creates a fresh nominal type while preserving the representation of
 its argument:
@@ -1051,8 +1054,7 @@ compile-time statements, not runtime checks. Type aliases used inside struct
 fields, union payloads, and destructuring patterns preserve their binding-time
 environment, so later shadowing does not change the resolved type. Non-final
 expression statements proven to be compile-time-only, including type-values and
-`with` extension expressions, are validated as const expressions and then
-elided.
+`:+` extension expressions, are validated as const expressions and then elided.
 
 Runtime struct parameters can use fact-checker annotations when the argument is
 a frontend-known struct value. The call specializes at the call site so scalar
@@ -1108,14 +1110,15 @@ The frontend supports structural builtins:
 
 ## Extensions And Protocols
 
-`with` creates an extended const value and shadows the previous name. Extension
-is lexical, not global. Extension fields preserve their binding-time
-environment, including fields inherited through earlier extension layers.
+`:+` creates an extended const value. Rebinding the result under the same name
+shadows the previous value, so extension is lexical rather than global.
+Extension fields preserve their binding-time environment, including fields
+inherited through earlier extension layers.
 
 ```txt
 const box_type = t => t
 
-const box_type = box_type with {
+const box_type = box_type :+ {
   map: (value, const f) => {
     f(value)
   },
@@ -1164,7 +1167,7 @@ type NumberCalcType = | .literal = Int | .add = add_args_type
 type TextCalcType = | .literal = Text
 
 const calc_types = 0
-const calc_types = calc_types with {
+const calc_types = calc_types :+ {
   .number = NumberCalcType,
   .text = TextCalcType
 }
@@ -1262,9 +1265,9 @@ Type constructors compose by whitespace application. Row variables propagate
 callback effects through higher-order types:
 
 ```txt
-(List a, a -> <e> b) -> <e> List b
+[List a, a -> <e> b] -> <e> List b
 
-let apply: (I32 -> <e> I32, I32) -> <e> I32 =
+let apply: [I32 -> <e> I32, I32] -> <e> I32 =
   (const callback, value) => {
     result <- callback(value)
     result

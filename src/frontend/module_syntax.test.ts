@@ -22,7 +22,7 @@ let read_name = () => {
   name
 }
 
-let greet: () -> <Io.read | Io.print> Unit = () => {
+let greet: () -> <Io.read :| Io.print> Unit = () => {
   _ <- Io.print("hello")
 }
 
@@ -151,7 +151,7 @@ Deno.test("no-demand binders cannot be used as linear values or expressions", ()
   );
   assert_throws(
     () => parse_source("let (!_) = source"),
-    "Legacy effect state bindings are not supported; use `value <- Effect.operation()`",
+    "`!_` is not supported",
   );
   assert_throws(
     () => parse_source("_"),

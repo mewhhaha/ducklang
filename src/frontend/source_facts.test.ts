@@ -62,6 +62,10 @@ let value: UserId = 41
   assert_equals(recorded_type(valid_facts, valid_call)?.name, "I32");
   assert_equals(source_inference_diagnostics(valid, valid_facts), []);
 
+  const bool_cast = parse_source("@as(1, Bool)");
+  const bool_cast_facts = source_facts(bool_cast);
+  assert_equals(source_inference_diagnostics(bool_cast, bool_cast_facts), []);
+
   const invalid = parse_source("@as(1, I64)");
   const invalid_facts = source_facts(invalid);
   assert_equals(
@@ -426,7 +430,7 @@ Deno.test("source facts validate handler inputs against handled values", () => {
 Deno.test("source facts do not infer annotated updates from unknown bases", () => {
   const source = parse_source(`
 type Pair = [.ready = Bool]
-let bad: Pair = missing with { .ready = false }
+let bad: Pair = missing :+ { .ready = false }
 bad.ready
 `);
   const facts = source_facts(source);
@@ -626,7 +630,7 @@ Deno.test("source facts poison contextual parameters after arity errors", () => 
 
 Deno.test("source facts resolve canonical labeled product fields", () => {
   const valid = parse_source(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Flags = struct { .ready = Bool }
 let flags: Flags = [true]
 flags.ready
@@ -640,7 +644,7 @@ flags.ready
   assert_equals(
     expression_type_names(
       `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Flags = struct { .ready = Bool }
 let flags: Flags = [true]
 flags.ready

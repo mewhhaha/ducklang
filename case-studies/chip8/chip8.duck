@@ -2,7 +2,7 @@ module () where
 
 const { panic } = comptime import "duck:prelude/runtime" ()
 
-let initialize: (Bytes, I32) -> Bytes = (state: Bytes, key_mask: I32) => {
+let initialize: [Bytes, I32] -> Bytes = (state: Bytes, key_mask: I32) => {
   state[6192] = 0x02
   state[6193] = 0x00
   state[6199] = (key_mask >> 8) &&& 0xff
@@ -10,7 +10,7 @@ let initialize: (Bytes, I32) -> Bytes = (state: Bytes, key_mask: I32) => {
   state
 }
 
-let step: (Bytes, I32) -> Bytes = (state: Bytes, timer_period: I32) => {
+let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
   let register_base = 4096
   let framebuffer_base = 4112
   let framebuffer_size = 2048
@@ -255,7 +255,7 @@ let step: (Bytes, I32) -> Bytes = (state: Bytes, timer_period: I32) => {
   state
 }
 
-let run: (Bytes, I32, I32) -> Bytes =
+let run: [Bytes, I32, I32] -> Bytes =
   (machine: Bytes, max_steps: I32, timer_period: I32) => {
     let final_state = machine
 
@@ -267,7 +267,7 @@ let run: (Bytes, I32, I32) -> Bytes =
     final_state
   }
 
-let read: (Bytes, I32) -> I32 = (state: Bytes, field: I32) => {
+let read: [Bytes, I32] -> I32 = (state: Bytes, field: I32) => {
   let register_base = 4096
   let framebuffer_base = 4112
   let framebuffer_size = 2048

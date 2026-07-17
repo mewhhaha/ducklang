@@ -149,6 +149,15 @@ export abstract class ParserPrimary extends ParserBlock {
       return this.parse_bracket_value();
     }
 
+    if (
+      this.peek().kind === "symbol" && this.peek().text === "(" &&
+      this.peek(1).kind === "name" && this.peek(1).text === "import"
+    ) {
+      throw this.error(
+        'Import invocation uses `import "path" arguments` without grouping',
+      );
+    }
+
     if (this.match_symbol("(")) {
       return this.parse_parenthesized_value();
     }

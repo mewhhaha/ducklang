@@ -441,7 +441,7 @@ export const compile_failure_examples: CompileFailureExample[] = [
   {
     path: "examples/failures/compile/05_invalid_condition_type.duck",
     route: "ic",
-    message: "If condition expects Bool or I32, got Text",
+    message: "If condition expects Bool, got Text",
   },
   {
     path: "examples/failures/compile/06_missing_struct_field.duck",

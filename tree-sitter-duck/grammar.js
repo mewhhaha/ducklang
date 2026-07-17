@@ -36,6 +36,7 @@ module.exports = grammar({
     [$._primary_expression, $.linear_reference],
     [$._primary_expression, $.shorthand_field],
     [$.parameter],
+    [$.parameter, $.linear_reference],
     [$.parameter, $._primary_expression],
     [$.union_case],
     [$.field_block, $.block],
@@ -145,7 +146,7 @@ module.exports = grammar({
         PREC.EFFECT_UNION,
         seq(
           field("left", $._effect_row_expression),
-          choice(":|", "|"),
+          ":|",
           field("right", $._effect_row_expression),
         ),
       ),
@@ -155,7 +156,7 @@ module.exports = grammar({
         PREC.EFFECT_INTERSECTION,
         seq(
           field("left", $._effect_row_expression),
-          choice(":&", "&"),
+          ":&",
           field("right", $._effect_row_expression),
         ),
       ),
@@ -165,7 +166,7 @@ module.exports = grammar({
         PREC.EFFECT_DIFFERENCE,
         seq(
           field("left", $._effect_row_expression),
-          choice(":-", "\\"),
+          ":-",
           field("right", $._effect_row_expression),
         ),
       ),
@@ -241,6 +242,7 @@ module.exports = grammar({
 
     effect_operation: ($) =>
       seq(
+        optional("suspending"),
         field("name", $.identifier),
         ":",
         field("parameters", $.host_parameter_list),
@@ -314,7 +316,12 @@ module.exports = grammar({
         field("target", $.fixity_target),
       ),
 
-    fixity_target: ($) => choice(prec(1, $.qualified_identifier), $.identifier),
+    fixity_target: ($) =>
+      choice(
+        prec(1, $.qualified_identifier),
+        $.identifier,
+        $.intrinsic_identifier,
+      ),
 
     qualified_identifier: ($) =>
       prec.left(
@@ -596,26 +603,12 @@ module.exports = grammar({
       ),
 
     condition_binary_expression: ($) => {
-      const table = [
-        ["||", PREC.OR],
-        ["&&", PREC.AND],
-        [choice("==", "!="), PREC.EQUALITY],
-        [choice("<", "<=", ">", ">="), PREC.COMPARE],
-        [choice("+", "-"), PREC.ADD],
-        [choice("*", "/", "%"), PREC.MULTIPLY],
-        [$.operator_symbol, PREC.ADD],
-      ];
-
-      return choice(
-        ...table.map(([operator, precedence]) =>
-          prec.left(
-            precedence,
-            seq(
-              field("left", $.condition_expression),
-              field("operator", operator),
-              field("right", $.condition_expression),
-            ),
-          )
+      return prec.left(
+        PREC.ADD,
+        seq(
+          field("left", $.condition_expression),
+          field("operator", $.operator_symbol),
+          field("right", $.condition_expression),
         ),
       );
     },
@@ -637,8 +630,6 @@ module.exports = grammar({
           field(
             "operator",
             choice(
-              "-",
-              "!",
               "&",
               "freeze",
               "comptime",
@@ -690,26 +681,12 @@ module.exports = grammar({
       seq("(", $.condition_expression, ")"),
 
     binary_expression: ($) => {
-      const table = [
-        ["||", PREC.OR],
-        ["&&", PREC.AND],
-        [choice("==", "!="), PREC.EQUALITY],
-        [choice("<", "<=", ">", ">="), PREC.COMPARE],
-        [choice("+", "-"), PREC.ADD],
-        [choice("*", "/", "%"), PREC.MULTIPLY],
-        [$.operator_symbol, PREC.ADD],
-      ];
-
-      return choice(
-        ...table.map(([operator, precedence]) =>
-          prec.left(
-            precedence,
-            seq(
-              field("left", $._expression),
-              field("operator", operator),
-              field("right", $._expression),
-            ),
-          )
+      return prec.left(
+        PREC.ADD,
+        seq(
+          field("left", $._expression),
+          field("operator", $.operator_symbol),
+          field("right", $._expression),
         ),
       );
     },
@@ -741,8 +718,6 @@ module.exports = grammar({
           field(
             "operator",
             choice(
-              "-",
-              "!",
               "&",
               "freeze",
               "comptime",
@@ -828,7 +803,6 @@ module.exports = grammar({
       choice(
         $.field_expression,
         $.index_expression,
-        $.update_expression,
         $._primary_expression,
       ),
 
@@ -866,16 +840,6 @@ module.exports = grammar({
         seq(
           field("base", $.postfix_expression),
           field("fields", $.field_block),
-        ),
-      ),
-
-    update_expression: ($) =>
-      prec.left(
-        PREC.POSTFIX,
-        seq(
-          field("value", $.postfix_expression),
-          $.with_keyword,
-          field("updates", $.field_block),
         ),
       ),
 
@@ -1179,7 +1143,7 @@ module.exports = grammar({
           $.type_intersection,
           seq(
             field("left", $.type_union),
-            choice(":|", "|"),
+            ":|",
             field("right", $.type_intersection),
           ),
         ),
@@ -1192,7 +1156,7 @@ module.exports = grammar({
           $.type_difference,
           seq(
             field("left", $.type_intersection),
-            choice(":&", "&"),
+            ":&",
             field("right", $.type_difference),
           ),
         ),
@@ -1205,7 +1169,7 @@ module.exports = grammar({
           $._type_application,
           seq(
             field("left", $.type_difference),
-            choice(":-", "\\"),
+            ":-",
             field("right", $._type_application),
           ),
         ),
@@ -1286,8 +1250,6 @@ module.exports = grammar({
 
     as_keyword: () => token(prec(1, "as")),
 
-    with_keyword: () => token(prec(1, "with")),
-
     identifier: () => token(/[A-Za-z][A-Za-z0-9_]*/),
 
     intrinsic_identifier: () => token(/@[A-Za-z][A-Za-z0-9_.]*/),
@@ -1295,32 +1257,8 @@ module.exports = grammar({
     operator_symbol: () =>
       token(
         prec(
-          2,
-          choice(
-            ":+",
-            ":-",
-            ":&",
-            ":|",
-            ":>",
-            "<>",
-            "<*>",
-            "<$>",
-            ">>=",
-            "<|>",
-            "|>",
-            "<|",
-            /[~^?$][-!$%&*+\/<=>?@\\^|~]*/,
-            /@[-!$%&*+\/<=>?@\\^|~]+/,
-            /[-!%&*+\/<=>\\|][~^?$@][-!$%&*+\/<=>?@\\^|~]*/,
-            /[+*%][+*%\/]+/,
-            /--+/,
-            /<<+/,
-            />>+/,
-            /===+/,
-            /!!+/,
-            /&&&+/,
-            /\|\|\|+/,
-          ),
+          0,
+          /[-!$%&*+\/<=>?@\\^|~:]+/,
         ),
       ),
 
@@ -1328,7 +1266,7 @@ module.exports = grammar({
 
     row_variable: () => /[a-z_][A-Za-z0-9_]*/,
 
-    number: () => /[0-9]+([iu][1-9][0-9]*|f32)?/,
+    number: () => /[0-9]+([iu][1-9][0-9]*|f(32|64))?/,
 
     string: () => /"([^"\\]|\\[ntr"\\])*"/,
 

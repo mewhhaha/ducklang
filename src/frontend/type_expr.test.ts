@@ -121,7 +121,7 @@ Deno.test("type expression arrows associate right and keep lambda arrows distinc
 
 Deno.test("surface annotations retain simple strings and format rich types canonically", () => {
   const source = parse_source(`
-let map: ( List a , a -><e> b ) -><e> List b = value
+let map: [ List a , a -> <e> b ] -> <e> List b = value
 let count: I32 = 0
 `);
   const map = source.statements[0];
@@ -153,7 +153,9 @@ Deno.test("type expression rows reject variables in closed effect resolution", (
 });
 
 Deno.test("type expressions parse the structured type surface", () => {
-  const type = parse_type_expr(tokenize("#hello | #Text & &(List a) \\ Never"));
+  const type = parse_type_expr(
+    tokenize("#hello :| #Text :& &(List a) :- Never"),
+  );
 
   assert_equals(type, {
     tag: "union",
@@ -182,10 +184,10 @@ Deno.test("type expressions parse the structured type surface", () => {
 });
 
 Deno.test("type expression set operators bind tighter from union to difference", () => {
-  const type = parse_type_expr(tokenize("A | B & C \\ D"));
+  const type = parse_type_expr(tokenize("A :| B :& C :- D"));
   assert_equals(format_type_expr(type), "A :| B :& C :- D");
   assert_equals(
-    format_type_expr(parse_type_expr(tokenize("(A | B) & (C \\ D)"))),
+    format_type_expr(parse_type_expr(tokenize("(A :| B) :& (C :- D)"))),
     "(A :| B) :& C :- D",
   );
 });
@@ -197,6 +199,10 @@ Deno.test("structured type expressions round trip canonical syntax", () => {
 });
 
 Deno.test("structured type expressions reject malformed names", () => {
+  assert_throws(
+    () => parse_type_expr(tokenize("(I32, I32) -> I32")),
+    "Expected `)` in type annotation",
+  );
   assert_throws(
     () => parse_type_expr(tokenize("#Not-Snake")),
     "Unexpected token in type annotation",

@@ -53,7 +53,7 @@ Add.add [left, 22]
 
 Deno.test("type namespaces expose ordered labeled product projections", async () => {
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Vec3 = struct {
   .x = I32,
   .y = I32,
@@ -74,7 +74,7 @@ Vec3.x value + Vec3.y value * 10 + Vec3.z value * 100
 
 Deno.test("generic structs retain their source-built namespace", async () => {
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = left => right => struct {
   .first = left,
   .second = right,
@@ -120,7 +120,7 @@ Point.x point
   assert_equals(ducklang_prelude_text.includes("@type.namespace"), false);
 
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Point = struct { .x = I32 }
 let point: Point = [20]
 Point.x point
@@ -293,7 +293,7 @@ point_with_double.double point
 
 Deno.test("prelude exports compose into a specialized runtime function", async () => {
   const wat = Source.wat(`
-const { identity, compose } = comptime (import "duck:prelude/functional")()
+const { identity, compose } = comptime import "duck:prelude/functional" ()
 const add_two = value => value + 2
 const double = value => value * 2
 const combined = comptime compose [add_two, double]
@@ -444,7 +444,7 @@ Deno.test("prelude functor and monad operators dispatch through ducks", async ()
 const { identity } = comptime import "duck:prelude/functional" ()
 type Identity value = [.value = value]
 extend Identity {
-  .map = [wrapped, transform] => [.value = transform(wrapped.value)]
+  .map = [transform, wrapped] => [.value = transform(wrapped.value)]
   .bind = [wrapped, transform] => transform wrapped.value
 }
 type IntIdentity = Identity I32
@@ -493,7 +493,7 @@ identity converted.value
 
 Deno.test("prelude exports generic option types", async () => {
   const wat = Source.wat(`
-const { identity } = comptime (import "duck:prelude/functional")()
+const { identity } = comptime import "duck:prelude/functional" ()
 type IntOption = Option I32
 let value: IntOption = IntOption.some 42
 identity (if let .some(found) = value { found } else { 0 })
@@ -591,14 +591,30 @@ Deno.test("prelude declares functional contracts and standard effects", () => {
     ["<*>", "Applicative.apply"],
     [">>=", "Monad.bind"],
     ["<|>", "Alternative.or_else"],
-    ["<>", "Semigroup.append"],
-    ["|||", "bit_or"],
-    ["^^^", "bit_xor"],
-    ["&&&", "bit_and"],
-    ["<<", "shift_left"],
-    [">>", "shift_right_unsigned"],
+    ["<>", "@append"],
+    ["|||", "@bit_or"],
+    ["^^^", "@bit_xor"],
+    ["&&&", "@bit_and"],
+    ["<<", "@shift_left"],
+    [">>", "@shift_right_u"],
   ]);
-  assert_equals(runtime_fixities, []);
+  assert_equals(runtime_fixities, [
+    ["||", "@syntax.or"],
+    ["&&", "@syntax.and"],
+    ["==", "@syntax.eq"],
+    ["!=", "@syntax.ne"],
+    ["<", "@syntax.lt"],
+    ["<=", "@syntax.le"],
+    [">", "@syntax.gt"],
+    [">=", "@syntax.ge"],
+    ["+", "@syntax.add"],
+    ["-", "@syntax.sub"],
+    ["*", "@syntax.mul"],
+    ["/", "@syntax.div"],
+    ["%", "@syntax.rem"],
+    ["!", "@syntax.not"],
+    ["-", "@syntax.negate"],
+  ]);
   assert_equals(effects, [
     "State",
     "Reader",
@@ -755,10 +771,10 @@ Deno.test("higher-kinded duck signatures validate source type constructors", () 
   const wat = Source.wat(`
 type Identity value = value
 duck Functor F A B {
-  .map = [F A, A -> B] -> F B
+  .map = [A -> B, F A] -> F B
 }
 extend Identity {
-  .map = [value, transform] => transform value
+  .map = [transform, value] => transform value
 }
 comptime Functor [Identity, I32, I32]
 0
@@ -771,11 +787,11 @@ Deno.test("imported functional ducks report the missing constructor instance", (
   assert_throws(
     () =>
       Source.wat(`
-const { identity } = comptime (import "duck:prelude/functional")()
+const { identity } = comptime import "duck:prelude/functional" ()
 type IntOption = Option I32
 let value: IntOption = IntOption.some 41
 let increment = (value: I32) => value + 1
-let mapped: IntOption = Functor.map [value, increment]
+let mapped: IntOption = Functor.map [increment, value]
 identity mapped
 `),
     "Missing duck satisfaction for Functor.map at Option",
@@ -784,8 +800,8 @@ identity mapped
 
 Deno.test("prelude State effect infers its value type from a source handler", async () => {
   const wat = Source.wat(`
-const { identity } = comptime (import "duck:prelude/functional")()
-const _ = comptime (import "duck:prelude/effects")()
+const { identity } = comptime import "duck:prelude/functional" ()
+const _ = comptime import "duck:prelude/effects" ()
 let run = () => {
   before <- State.get()
   _ <- State.put(before + 2)
@@ -864,8 +880,8 @@ try (try run() with counter_handler) with message_handler
 
 Deno.test("prelude Writer effect infers its output type from calls", async () => {
   const wat = Source.wat(`
-const { identity } = comptime (import "duck:prelude/functional")()
-const _ = comptime (import "duck:prelude/effects")()
+const { identity } = comptime import "duck:prelude/functional" ()
+const _ = comptime import "duck:prelude/effects" ()
 let run = () => {
   _ <- Writer.tell("twenty")
   _ <- Writer.tell("two")
@@ -895,7 +911,7 @@ identity (try run() with writer)
 
 Deno.test("source-built struct namespaces stay scoped to their type value", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Cartesian = struct { .x = I32 }
 type Polar = struct { .radius = I32 }
 let cartesian: Cartesian = [20]
@@ -912,14 +928,14 @@ Cartesian.x cartesian + Polar.radius polar
 
 Deno.test("computed type members require compile-time Text names", () => {
   assert_throws(
-    () => Source.wat("comptime ([] with { .[1] = value => value })"),
+    () => Source.wat("comptime @type.member [[], 1, value => value]"),
     "Computed type member name must be non-empty Text",
   );
 });
 
 Deno.test("labeled product patterns project selected struct slots", () => {
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Point = struct { .x = I32, .y = I32 }
 let point: Point = [20, 22]
 let { .x = x } = point
@@ -931,7 +947,7 @@ x
 
 Deno.test("source struct construction composes with repeat types", () => {
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const point_type = struct { .x = I32, .y = I32 }
 type MaybeType = | .some = point_type | .none
 type RowType = [I32; 2 * 3]
@@ -959,7 +975,7 @@ Deno.test("repeat types reject array constructor syntax", () => {
 
 Deno.test("union namespaces contextualize labeled product payloads", () => {
   const wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type Point = struct { .x = I32, .y = I32 }
 type Shape = | .point = Point | .none
 let shape: Shape = Shape.point [20, 22]

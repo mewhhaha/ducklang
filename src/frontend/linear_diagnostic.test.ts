@@ -56,17 +56,17 @@ Deno.test("linear branch mismatch reports the complete conditional", () => {
 
 Deno.test("linear fallthrough mismatch reports the branch statement", () => {
   const diagnostics = linear_diagnostics(
-    "let bad = (!x) => {\n  if 1 {\n    !x\n  }\n  x\n}\nbad(41)",
+    "let bad = (!x) => {\n  if true {\n    !x\n  }\n  x\n}\nbad(41)",
   );
 
   assert_equals(diagnostics, [{
     code: "DUCK2205",
     severity: "error",
     message: "Linear loop if fallthrough changes carried values",
-    span: { start: 22, end: 39 },
+    span: { start: 22, end: 42 },
     related: [{
       message: "First consumed here",
-      span: { start: 33, end: 35 },
+      span: { start: 36, end: 38 },
     }, {
       message: "Linear value declared here",
       span: { start: 11, end: 13 },
@@ -107,12 +107,12 @@ Deno.test("static conditions select linear closures for Bool and I32 literals", 
     "}\n" +
     "main(1)",
     "let main = (!x) => {\n" +
-    "  let consume = if 1 { () => !x } else { () => 0 }\n" +
+    "  let consume = if true { () => !x } else { () => 0 }\n" +
     "  consume()\n" +
     "}\n" +
     "main(1)",
     "let main = (!x) => {\n" +
-    "  let consume = if 0 { () => 0 } else { () => !x }\n" +
+    "  let consume = if false { () => 0 } else { () => !x }\n" +
     "  consume()\n" +
     "}\n" +
     "main(1)",

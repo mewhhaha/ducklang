@@ -352,12 +352,18 @@ export class ParserStmt extends ParserTypeDeclaration {
     );
     this.advance();
     this.expect_symbol("=");
+    let target_prefix = "";
+
+    if (this.match_symbol("@")) {
+      target_prefix = "@";
+    }
+
     const target_parts = [this.expect_name("Expected fixity target")];
 
     while (this.match_symbol(".")) {
       target_parts.push(this.expect_name("Expected fixity target member"));
     }
-    const target = target_parts.join(".");
+    const target = target_prefix + target_parts.join(".");
 
     return {
       tag: "fixity",
@@ -397,7 +403,7 @@ export class ParserStmt extends ParserTypeDeclaration {
 
     while (!this.match_symbol("}")) {
       const operation_start = this.index;
-      let execution: EffectOperation["execution"] = "synchronous";
+      let execution: EffectOperation["execution"];
       if (
         this.peek().kind === "name" && this.peek().text === "suspending"
       ) {
@@ -415,13 +421,19 @@ export class ParserStmt extends ParserTypeDeclaration {
         result_start,
         this.parse_effect_result(this.consume_effect_type(",", "}")),
       );
-      operations.push(
-        this.concrete_node(operation_start, {
+      let parsed_operation: EffectOperation;
+      if (execution === "suspending") {
+        parsed_operation = {
           name: operation,
           execution,
           params,
           result,
-        }),
+        };
+      } else {
+        parsed_operation = { name: operation, params, result };
+      }
+      operations.push(
+        this.concrete_node(operation_start, parsed_operation),
       );
       this.match_symbol(",");
       this.skip_newlines();

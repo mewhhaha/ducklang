@@ -1,6 +1,6 @@
 module (!init: Init) where
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const { append, generate_bytes, get, length, panic, slice } = comptime import "duck:prelude/runtime" ()
 
 type TarSummary = struct { .entry_count = I32, .file_count = I32, .directory_count = I32, .other_count = I32, .total_size = I32, .names = Bytes }
@@ -31,7 +31,7 @@ let error_truncated_data = 5
 let error_end_marker = 6
 let error_total_out_of_range = 7
 
-let field_length: (Bytes, I32, I32) -> I32 =
+let field_length: [Bytes, I32, I32] -> I32 =
   (archive: Bytes, start: I32, width: I32) => {
     let end = start + width
     let length = width
@@ -46,7 +46,7 @@ let field_length: (Bytes, I32, I32) -> I32 =
     length
   }
 
-let zero_block: (Bytes, I32) -> Bool = (archive: Bytes, start: I32) => {
+let zero_block: [Bytes, I32] -> Bool = (archive: Bytes, start: I32) => {
   let zero = true
 
   for index in start..start + block_size {
@@ -59,7 +59,7 @@ let zero_block: (Bytes, I32) -> Bool = (archive: Bytes, start: I32) => {
   zero
 }
 
-let parse_octal: (Bytes, I32, I32) -> OctalResult =
+let parse_octal: [Bytes, I32, I32] -> OctalResult =
   (archive: Bytes, start: I32, width: I32) => {
     let value = 0
     let ended = false

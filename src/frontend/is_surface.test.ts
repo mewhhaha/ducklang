@@ -4,7 +4,7 @@ import { parse_source } from "./parser.ts";
 
 Deno.test("is parses type operands at comparison precedence", () => {
   const source = parse_source(
-    "let matches = value is #atom && other is &(Left | Right)",
+    "let matches = value is #atom && other is &(Left :| Right)",
   );
   const statement = source.statements[0];
 
@@ -42,7 +42,7 @@ Deno.test("is parses type operands at comparison precedence", () => {
 
 Deno.test("is stops before blocks and expression delimiters", () => {
   const source = parse_source(
-    "if value is #(Left | Right) { 1 }\ncall(value is Thing, other)",
+    "if value is #(Left :| Right) { 1 }\ncall(value is Thing, other)",
   );
   const first = source.statements[0];
   const second = source.statements[1];

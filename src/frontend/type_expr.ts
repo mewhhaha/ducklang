@@ -101,7 +101,7 @@ class TypeExprParser {
   private parse_union(): TypeExpr {
     let type = this.parse_intersection();
 
-    while (this.match_set_operator("|", ":|")) {
+    while (this.match_symbol(":|")) {
       type = { tag: "union", left: type, right: this.parse_intersection() };
     }
 
@@ -111,7 +111,7 @@ class TypeExprParser {
   private parse_intersection(): TypeExpr {
     let type = this.parse_difference();
 
-    while (this.match_set_operator("&", ":&")) {
+    while (this.match_symbol(":&")) {
       type = {
         tag: "intersection",
         left: type,
@@ -125,7 +125,7 @@ class TypeExprParser {
   private parse_difference(): TypeExpr {
     let type = this.parse_apply();
 
-    while (this.match_set_operator("\\", ":-")) {
+    while (this.match_symbol(":-")) {
       type = {
         tag: "difference",
         left: type,
@@ -234,29 +234,12 @@ class TypeExprParser {
       }
 
       const first = this.parse_product_entry();
-
-      if (this.match_symbol(")")) {
-        if (first.label === undefined) {
-          return first.type_expr;
-        }
-
-        return { tag: "product", entries: [first] };
-      }
-
-      this.expect_symbol(",");
-      const entries = [first];
-
-      while (true) {
-        entries.push(this.parse_product_entry());
-
-        if (this.match_symbol(")")) {
-          break;
-        }
-
-        this.expect_symbol(",");
-      }
-
-      return { tag: "product", entries };
+      expect(
+        first.label === undefined,
+        "Product types use `[...]`",
+      );
+      this.expect_symbol(")");
+      return first.type_expr;
     }
 
     const token = this.peek();
@@ -369,7 +352,7 @@ class TypeExprParser {
   private parse_effect_row_union(): EffectRowExpr {
     let row = this.parse_effect_row_intersection();
 
-    while (this.match_set_operator("|", ":|")) {
+    while (this.match_symbol(":|")) {
       row = {
         tag: "union",
         left: row,
@@ -383,7 +366,7 @@ class TypeExprParser {
   private parse_effect_row_intersection(): EffectRowExpr {
     let row = this.parse_effect_row_difference();
 
-    while (this.match_set_operator("&", ":&")) {
+    while (this.match_symbol(":&")) {
       row = {
         tag: "intersection",
         left: row,
@@ -397,7 +380,7 @@ class TypeExprParser {
   private parse_effect_row_difference(): EffectRowExpr {
     let row = this.parse_effect_row_atom();
 
-    while (this.match_set_operator("\\", ":-")) {
+    while (this.match_symbol(":-")) {
       row = {
         tag: "difference",
         left: row,
@@ -459,10 +442,6 @@ class TypeExprParser {
 
     this.index += 1;
     return true;
-  }
-
-  private match_set_operator(legacy: string, canonical: string): boolean {
-    return this.match_symbol(canonical) || this.match_symbol(legacy);
   }
 
   private expect_symbol(text: string): void {

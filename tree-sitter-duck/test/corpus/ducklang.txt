@@ -2,7 +2,7 @@
 Aggregate constructors and canonical products
 ==================
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 
 type Point = struct {
   .x = I32,
@@ -13,7 +13,7 @@ type MaybeI32 = | .some = I32 | .none
 
 type Pixels = [Rgb; 640 * 480]
 let point: Point = [20, 22]
-let moved = point with { .x = 21 }
+let moved = point :+ { .x = 21 }
 let { .x = x } = moved
 
 ---
@@ -26,11 +26,9 @@ let { .x = x } = moved
     (unary_expression
       (application_expression
         (postfix_expression
-          (parenthesized_expression
-            (postfix_expression
-              (import_expression
-                (string)))))
-        (parenthesized_or_product
+          (import_expression
+            (string)))
+        (postfix_expression
           (unit_pattern)))))
   (type_declaration_statement
     (identifier)
@@ -74,6 +72,7 @@ let { .x = x } = moved
               (binary_expression
                 (postfix_expression
                   (number))
+                (operator_symbol)
                 (postfix_expression
                   (number)))))))))
   (binding_statement
@@ -91,16 +90,17 @@ let { .x = x } = moved
           (number)))))
   (binding_statement
     (identifier)
-    (postfix_expression
-      (update_expression
-        (postfix_expression
-          (identifier))
-        (with_keyword)
-        (field_block
-          (shape_field
-            (identifier)
-            (postfix_expression
-              (number)))))))
+    (binary_expression
+      (postfix_expression
+        (identifier))
+      (operator_symbol)
+      (postfix_expression
+        (object_literal
+          (field_block
+            (shape_field
+              (identifier)
+              (postfix_expression
+                (number))))))))
   (binding_statement
     (named_shape_pattern
       (named_shape_pattern_field
@@ -133,14 +133,13 @@ let distance = 42 :> Centimeter
     (identifier)
     (type_reference
       (type_union
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier))))
         (type_intersection
           (type_difference
             (identifier))))))
-  (expression_statement
-    (unary_expression
-      (operator_symbol)
-      (postfix_expression
-        (identifier))))
   (binding_statement
     (identifier)
     (binary_expression
@@ -223,12 +222,14 @@ let inverted = ^^false
     (field_block
       (shape_field
         (identifier)
-        (arrow_function
-          (bracket_parameter_list
-            (parameter
-              (identifier))
-            (parameter
-              (identifier)))
+        (binary_expression
+          (postfix_expression
+            (array_expression
+              (postfix_expression
+                (identifier))
+              (postfix_expression
+                (identifier))))
+          (operator_symbol)
           (application_expression
             (postfix_expression
               (intrinsic_identifier))
@@ -272,9 +273,11 @@ Source-defined struct product namespaces
 ==================
 
 let product_type = [...product_type, field.value]
-let product_type = product_type with {
-  .[field.name] = value => value[index]
-}
+let product_type = @type.member [
+  product_type,
+  field.name,
+  value => value[index]
+]
 
 ---
 
@@ -293,27 +296,27 @@ let product_type = product_type with {
             (identifier))))))
   (binding_statement
     (identifier)
-    (postfix_expression
-      (update_expression
-        (postfix_expression
-          (identifier))
-        (with_keyword)
-        (field_block
-          (computed_shape_field
+    (application_expression
+      (postfix_expression
+        (intrinsic_identifier))
+      (postfix_expression
+        (array_expression
+          (postfix_expression
+            (identifier))
+          (postfix_expression
+            (field_expression
+              (postfix_expression
+                (identifier))
+              (identifier)))
+          (arrow_function
+            (parameter
+              (identifier))
             (postfix_expression
-              (field_expression
+              (index_expression
                 (postfix_expression
                   (identifier))
-                (identifier)))
-            (arrow_function
-              (parameter
-                (identifier))
-              (postfix_expression
-                (index_expression
-                  (postfix_expression
-                    (identifier))
-                  (postfix_expression
-                    (identifier)))))))))))
+                (postfix_expression
+                  (identifier))))))))))
 
 ==================
 Shape destructuring shorthand and explicit renaming
@@ -440,5 +443,6 @@ let signed: I5 = -16i5
           (type_difference
             (identifier)))))
     (unary_expression
+      (operator_symbol)
       (postfix_expression
         (number)))))

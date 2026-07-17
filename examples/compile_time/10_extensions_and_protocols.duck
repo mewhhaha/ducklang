@@ -4,7 +4,7 @@ const readable = operations => {
 }
 
 const scalar_operations = 0
-const scalar_operations = scalar_operations with {
+const scalar_operations = scalar_operations :+ {
   .read = value => value + 1
 }
 

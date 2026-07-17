@@ -152,7 +152,7 @@ add_factor(40i64)
   assert_includes(chained_wat, "i64.add");
 
   const dynamic_branch_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let factor: I64 = 2i64
 let choose = (x: I64) => {
   if flag {
@@ -269,7 +269,7 @@ sum
   assert_includes(wat, "br $collection_continue_0_1");
 
   const dynamic_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let sum = 0
 
 for i, x in if flag {
@@ -292,7 +292,7 @@ sum
   assert_includes(dynamic_wat, "i32.const 1");
 
   const const_call_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let sum = 0
 
 const make_xs = active => {
@@ -345,7 +345,7 @@ total
   assert_includes(wat, "br $text_collection_continue_0");
 
   const runtime_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let sum_text = if flag {
   (value: Text) => {
     let total = 0
@@ -372,7 +372,7 @@ sum_text("Ada")
 
 Deno.test("Core.emit types static-call block collection locals", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -500,7 +500,7 @@ bad(10)
 
 Deno.test("Core.mod specializes direct closures and tables capturing closures", () => {
   const dynamic_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag {
   (x: Int) => x + 1
 } else {
@@ -516,7 +516,7 @@ f(40)
   assert_includes(dynamic_wat, "i32.add");
 
   const capture_core = Source.core(Source.parse(`
-let flag = 0
+let flag = false
 let n = 2
 let f = if flag {
   (x: Int) => x + n
@@ -536,7 +536,7 @@ f(40)
   assert_includes(capture_wat, "call_indirect (type $closure_i32_i32_to_i32)");
 
   const dynamic_text_capture_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let message: Text = if flag {
   "Ada"
 } else {
@@ -568,7 +568,7 @@ f(1)
   );
 
   const helper_text_capture_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let message: Text = if flag {
   "Ada"
 } else {
@@ -598,7 +598,7 @@ f(1)
   );
 
   const captured_closure_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let add = freeze (if flag {
   (x: Int) => x + 1
 } else {
@@ -621,7 +621,7 @@ run(30)
   );
 
   const assigned_capture_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let factor = 2
 let f = if flag {
   (x: Int) => {
@@ -722,7 +722,7 @@ f(40i64)
   );
 
   const aggregate_param_closure_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 const user_alias = user_type
 
@@ -807,7 +807,7 @@ run(@Utf8.encode("Ada"), 1)
   assert_includes(captured_text_assign_wat, "i32.load8_u");
 
   const invalid_captured_assignment_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let x = 1
 let f = if flag {
   () => {
@@ -845,7 +845,7 @@ f()
   );
 
   const one_sided_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag {
   (x: Int) => x + 1
 } else {
@@ -865,7 +865,7 @@ f(40)
   assert_includes(one_sided_wat, "i32.add");
 
   const one_sided_text_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag {
   (value: Text) => @len(value)
 } else {
@@ -884,7 +884,7 @@ f("Ada")
   assert_includes(one_sided_text_wat, "i32.load");
 
   const one_sided_wide_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag {
   (x: I64) => x + 1i64
 } else {
@@ -903,7 +903,7 @@ f(40i64)
   assert_includes(one_sided_wide_wat, "i64.const 2");
 
   const if_let_dynamic_target_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 type ResultType = | .ok = I32 | .err = I32
 const result_type = ResultType
 let f = if let .ok(value) = if flag {
@@ -931,7 +931,7 @@ f(2)
   assert_includes(if_let_dynamic_target_wat, "local.set $value");
 
   const if_let_runtime_target_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
@@ -963,7 +963,7 @@ f(2)
   assert_includes(if_let_runtime_target_wat, "local.set $value");
 
   const linear_if_let_runtime_target_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
@@ -1002,7 +1002,7 @@ base
       Typed.type(
         Core,
         Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag {
   (value: Int) => value + 1
 } else {
@@ -1118,13 +1118,13 @@ let i = 0
 
 Deno.test("Core.emit lowers runtime aggregate collection facts", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1155,13 +1155,13 @@ for index, value in pair {
   assert_includes(wat, "i32.load offset=4");
 
   const control_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1200,18 +1200,18 @@ total
   assert_includes(control_wat, "local.set $total");
 
   const nested_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const scores_type = struct {
   .first= Int,
   .second= Int
 }
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .scores= scores_type,
   .bonus= Int
 }
 
-let flag = 1
+let flag = true
 let make_scores = if flag {
   () => [.first = 10, .second = 20] as scores_type
 } else {
@@ -1249,13 +1249,13 @@ Deno.test("Core preserves dynamic indexed runtime union item facts", () => {
   const core = Source.core(Source.parse(`
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const choices_type = struct {
   .first= result_type,
   .second= result_type
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: result_type, second: result_type) => [.first = first, .second = second] as choices_type
 } else {
@@ -1263,7 +1263,7 @@ let make = if flag {
 }
 
 let choices: choices_type = make(result_type.ok(40), result_type.err(2))
-let index = flag
+let index = 1
 let picked: result_type = @get(choices, index)
 if let .ok(value) = picked {
   value + 2
@@ -1302,15 +1302,15 @@ type FirstType = | .ok = Int | .err = Int
 const first_type = FirstType
 type SecondType = | .some = Int | .none
 const second_type = SecondType
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const mixed_type = struct {
   .first= first_type,
   .second= second_type
 }
 
-let flag = 1
 let mixed: mixed_type = [.first = first_type.ok(1), .second = second_type.some(2)] as mixed_type
-let picked: first_type = @get(mixed, flag)
+let index = 1
+let picked: first_type = @get(mixed, index)
 picked
 `)),
       ),
@@ -1333,13 +1333,13 @@ let index = 0
 
 Deno.test("Core.emit lowers runtime aggregate scalar index assignment", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1370,13 +1370,13 @@ pair.first + pair.second
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1396,13 +1396,13 @@ pair[0] = "Ada"
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1421,13 +1421,13 @@ pair[0] = 40
 
 Deno.test("Core.emit lowers runtime aggregate Text index assignment", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const names_type = struct {
   .first= Text,
   .second= Text
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
@@ -1458,13 +1458,13 @@ names[i] = names.first + " Hopper"
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const names_type = struct {
   .first= Text,
   .second= Text
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
@@ -1484,13 +1484,13 @@ names[0] = 42
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const mixed_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text, age: Int) => [.name = name, .age = age] as mixed_type
 } else {
@@ -1512,13 +1512,13 @@ Deno.test("Core.emit lowers runtime aggregate union index assignment", () => {
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= result_type,
   .second= result_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (first: Int, second: Int) => [.first = result_type.ok(first), .second = result_type.err(second)] as slots_type
 } else {
@@ -1549,13 +1549,13 @@ slots
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= result_type,
   .second= result_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (first: Int, second: Int) => [.first = result_type.ok(first), .second = result_type.err(second)] as slots_type
 } else {
@@ -1577,13 +1577,13 @@ slots[0] = 42
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const mixed_type = struct {
   .result= result_type,
   .count= Int
 }
 
-let flag = 1
+let flag = true
 let make_mixed = if flag {
   (value: Int, count: Int) => [.result = result_type.ok(value), .count = count] as mixed_type
 } else {
@@ -1604,13 +1604,13 @@ Deno.test("Core rejects runtime aggregate union mutation closure capture", () =>
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= result_type,
   .second= result_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (first: Int, second: Int) => [.first = result_type.ok(first), .second = result_type.err(second)] as slots_type
 } else {
@@ -1634,19 +1634,19 @@ slots
 
 Deno.test("Core.emit lowers runtime aggregate nested index assignment", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .left= Int,
   .right= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= pair_type,
   .second= pair_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = a, .right = b] as pair_type, .second = [.left = c, .right = d] as pair_type] as slots_type
 } else {
@@ -1676,19 +1676,19 @@ slots.first.left + slots.first.right + slots.second.left + slots.second.right
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .left= Int,
   .right= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= pair_type,
   .second= pair_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = a, .right = b] as pair_type, .second = [.left = c, .right = d] as pair_type] as slots_type
 } else {
@@ -1708,19 +1708,19 @@ slots[0] = 42
       Emit.emit(
         Mod,
         Core.mod(Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .left= Int,
   .right= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const mixed_type = struct {
   .pair= pair_type,
   .count= Int
 }
 
-let flag = 1
+let flag = true
 let make_mixed = if flag {
   (a: Int, b: Int, count: Int) => [.pair = [.left = a, .right = b] as pair_type, .count = count] as mixed_type
 } else {
@@ -1739,19 +1739,19 @@ mixed[i] = [.left = 4, .right = 5] as pair_type
 
 Deno.test("Core rejects runtime aggregate nested mutation closure capture", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .left= Int,
   .right= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const slots_type = struct {
   .first= pair_type,
   .second= pair_type
 }
 
-let flag = 1
+let flag = true
 let make_slots = if flag {
   (a: Int, b: Int, c: Int, d: Int) => [.first = [.left = a, .right = b] as pair_type, .second = [.left = c, .right = d] as pair_type] as slots_type
 } else {
@@ -1776,13 +1776,13 @@ slots.first.left + slots.first.right + slots.second.left + slots.second.right
 
 Deno.test("Core rejects runtime aggregate Text mutation closure capture", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const names_type = struct {
   .first= Text,
   .second= Text
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
@@ -1806,13 +1806,13 @@ write(1, " Hopper")
 
 Deno.test("Core rejects runtime aggregate scalar mutation closure capture", () => {
   const static_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1834,13 +1834,13 @@ write(0, 40) + write(1, 2)
   );
 
   const first_class_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
@@ -1864,13 +1864,13 @@ write(0, 40) + write(1, 2)
 
 Deno.test("Core rejects collection-loop borrowed views that escape the iteration", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const names_type = struct {
   .first= Text,
   .second= Text
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
@@ -1932,13 +1932,13 @@ for index, name in names {
 
 Deno.test("Core.emit keeps collection-loop borrowed reads inside the iteration", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const names_type = struct {
   .first= Text,
   .second= Text
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text, second: Text) => [.first = first, .second = second] as names_type
 } else {
@@ -1979,13 +1979,13 @@ for index, name in names {
       Typed.type(
         Core,
         Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const mixed_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text, age: Int) => [.name = name, .age = age] as mixed_type
 } else {
@@ -2042,7 +2042,7 @@ Deno.test("Core.emit rebuilds static struct update expressions", () => {
   const core = Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
 let next = 41
-let updated = user with { .age = next }
+let updated = user :+ { .age = next }
 next = 1
 updated.age + user.age + updated.score
 `));
@@ -2057,7 +2057,7 @@ updated.age + user.age + updated.score
 
   const direct_core = Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-(user with { .age = 41 }).age
+(user :+ { .age = 41 }).age
 `));
 
   assert_equals(Typed.type(Core, direct_core), "i32");
@@ -2065,7 +2065,7 @@ let user = [.age = 40, .score = 2]
 
   const assignment_core = Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-user = user with { .age = 41 }
+user = user :+ { .age = 41 }
 user.age
 `));
 
@@ -2079,7 +2079,7 @@ user.age
         Core,
         Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-let updated = user with { .missing = 1 }
+let updated = user :+ { .missing = 1 }
 updated.age
 `)),
       ),
@@ -2092,7 +2092,7 @@ updated.age
         Core,
         Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-let updated = user with { .age = 41i64 }
+let updated = user :+ { .age = 41i64 }
 updated.age
 `)),
       ),
@@ -2102,14 +2102,14 @@ updated.age
 
 Deno.test("Core.emit captures dynamic aggregate if bindings", () => {
   const struct_core = Source.core(Source.parse(`
-let flag = 0
+let flag = false
 let user = if flag {
   [.age = 41, .score = 1]
 } else {
   [.age = 32, .score = 10]
 }
 
-flag = 1
+flag = true
 user.age + user.score
 `));
   const struct_wat = Emit.emit(Core, struct_core);
@@ -2124,7 +2124,7 @@ user.age + user.score
   const union_core = Source.core(Source.parse(`
 type ResultType = | .ok = I32 | .err = I32
 const result_type = ResultType
-let flag = 1
+let flag = true
 let payload = 41
 let result = if flag {
   result_type.ok(payload)
@@ -2132,7 +2132,7 @@ let result = if flag {
   result_type.err(7)
 }
 
-flag = 0
+flag = false
 payload = 1
 if let .ok(value) = result {
   value + 1
@@ -2151,7 +2151,7 @@ if let .ok(value) = result {
 
 Deno.test("Core.emit lowers direct dynamic aggregate if access", () => {
   const field_core = Source.core(Source.parse(`
-let flag = 0
+let flag = false
 
 (if flag {
   [.age = 41, .score = 1]
@@ -2168,7 +2168,7 @@ let flag = 0
   assert_includes(field_wat, "i32.const 32");
 
   const index_core = Source.core(Source.parse(`
-let flag = 0
+let flag = false
 let i = 1
 
 (if flag {
@@ -2188,7 +2188,7 @@ let i = 1
   const same_case_union_core = Source.core(Source.parse(`
 type ResultType = | .ok = I32 | .err = I32
 const result_type = ResultType
-let flag = 0
+let flag = false
 let left = 41
 let right = 32
 let result = if flag {
@@ -2216,7 +2216,7 @@ if let .ok(value) = result {
 
 Deno.test("Core.emit lowers dynamic if else statements with assignments", () => {
   const core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let value = 0
 
 if flag {
@@ -2225,7 +2225,7 @@ if flag {
   value = 20
 }
 
-flag = 0
+flag = false
 value
 `));
   const wat = Emit.emit(Core, core);
@@ -2237,7 +2237,7 @@ value
   assert_includes(wat, "local.set $value");
 
   const expr_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 
 if flag {
   10
@@ -2287,7 +2287,7 @@ value
 
 Deno.test("Core.emit merges static if else assignments", () => {
   const aggregate_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let user = [.age = 0, .score = 0]
 
 if flag {
@@ -2296,7 +2296,7 @@ if flag {
   user = [.age = 32, .score = 9]
 }
 
-flag = 0
+flag = false
 user.age + user.score
 `));
   const aggregate_wat = Emit.emit(Core, aggregate_core);
@@ -2310,7 +2310,7 @@ user.age + user.score
   assert_includes(aggregate_wat, "local.set $_field_score#2");
 
   const text_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let message = ""
 
 if flag {
@@ -2319,7 +2319,7 @@ if flag {
   message = "world"
 }
 
-flag = 0
+flag = false
 @len(message)
 `));
   const text_wat = Emit.emit(Core, text_core);
@@ -2440,7 +2440,7 @@ user.age + user.bonus
   assert_equals(scratch_static_aggregate_wat.includes("__scratch_heap"), false);
 
   const annotated_scratch_static_aggregate_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -2481,7 +2481,7 @@ user.age + @len(user.name)
       Typed.type(
         Core,
         Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -2755,7 +2755,7 @@ if let .ok(value) = result {
 
   const typed_struct_payload_core = Source.core(Source.parse(`
 let input = 1
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -2881,7 +2881,7 @@ Deno.test("Core.emit lowers visible text concatenation to text data", () => {
   ]);
 
   const dynamic_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let message = if flag {
   "hi"
 } else {
@@ -2908,7 +2908,7 @@ message + "!"
   const dynamic_index_core = Source.core(Source.parse(`
 let messages = [.first = "Ada", .second = "Grace"]
 
-let i = if 1 {
+let i = if true {
   1
 } else {
   0
@@ -2944,7 +2944,7 @@ append("hi", "!")
   ]);
 
   const runtime_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let append = if flag {
   (left: Text, right: Text) => left + right
 } else {
@@ -2962,7 +2962,7 @@ append("hi", "!")
   assert_includes(runtime_wat, "block $text_concat_right_exit_");
 
   const scratch_runtime_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let scratch_text = if flag {
   (message: Text) => scratch {
     message + "!"
@@ -3016,7 +3016,7 @@ let name = 1
 
 Deno.test("Core.emit lowers runtime text equality to byte compare loop", () => {
   const core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let compare = if flag {
   (left: Text, right: Text) => left == right
 } else {
@@ -3038,7 +3038,7 @@ compare("Ada", "Ada")
 
 Deno.test("Core.emit lowers runtime text slice to copy loop", () => {
   const core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let slicer = if flag {
   (value: Text, start: Int, end: Int) => @slice(value, start, end)
 } else {
@@ -3075,14 +3075,14 @@ let message = "hello"
   assert_equals(Emit.emit(Core, binding_core), "\ni32.const 5");
 
   const dynamic_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let message = if flag {
   "hi"
 } else {
   "world"
 }
 
-flag = 0
+flag = false
 @len(message)
 `));
   const dynamic_wat = Emit.emit(Core, dynamic_core);
@@ -3097,7 +3097,7 @@ flag = 0
   const dynamic_index_core = Source.core(Source.parse(`
 let messages = [.first = "Ada", .second = "Grace"]
 
-let i = if 1 {
+let i = if true {
   1
 } else {
   0
@@ -3114,7 +3114,7 @@ let i = if 1 {
   assert_includes(dynamic_index_wat, "unreachable");
 
   const runtime_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let byte_len = if flag {
   (value: Text) => @len(value)
 } else {
@@ -3154,7 +3154,7 @@ let message = "Ada"
 
   const dynamic_core = Source.core(Source.parse(`
 let message = "Ada"
-let i = if 1 {
+let i = if true {
   2
 } else {
   0
@@ -3172,7 +3172,7 @@ message[i]
   assert_includes(dynamic_wat, "unreachable");
 
   const runtime_core = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let byte_at = if flag {
   (value: Text, i: Int) => value[i]
 } else {
@@ -3206,7 +3206,7 @@ Deno.test("Core.emit lowers panic to a runtime trap", () => {
   assert_equals(Emit.emit(Core, core), "unreachable");
 
   const branch_core = Source.core(Source.parse(`
-if 0 {
+if false {
   @panic("boom")
 } else {
   42
@@ -3254,7 +3254,7 @@ let text: Text = scratch {
   assert_includes(Emit.emit(Core, scratch_text), "global.set $__scratch_heap");
 
   const type_value = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type: Type = struct {
   .age= Int
 }
@@ -3386,7 +3386,7 @@ byte_len(1)
 
 Deno.test("Core.emit applies direct type annotation context", () => {
   const struct_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3421,7 +3421,7 @@ if let .ok(value) = result {
   const struct_alias_core = Source.core(Source.parse(`
 const int_type = Int
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= int_type,
   .second= Int
@@ -3522,7 +3522,7 @@ let value = if let .ok(text) = result {
         Source.core(Source.parse(`
 const text_type = Text
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= text_type
 }

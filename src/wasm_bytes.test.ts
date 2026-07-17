@@ -51,7 +51,7 @@ Deno.test("Bytes.generate rejects non-I32 boundaries", () => {
 Deno.test("Bytes.generate fills a fresh buffer through a captured callback", async () => {
   const wat = wat_from_core_source(`
 let factor = 100
-let flag = 1
+let flag = true
 let generator = if flag {
   (index: I32) => index * factor
 } else {

@@ -4,9 +4,9 @@ import { Source } from "../frontend.ts";
 Deno.test("value loops type direct breaks through if expression branches", () => {
   const wat = Source.wat(`
 let value = loop {
-  if 1 {
+  if true {
     break 7
-  } else if 0 {
+  } else if false {
     break 8
   } else {
     break 9
@@ -24,9 +24,9 @@ Deno.test("value loops reject bare and valued breaks before Core erases Unit", (
     () =>
       Source.wat(`
 let value = loop {
-  if 1 {
+  if true {
     break
-  } else if 0 {
+  } else if false {
     break 1
   } else {
     break

@@ -56,7 +56,7 @@ Deno.test("named products retain named update behavior", () => {
   const wat = Source.wat(`
 type Pair = [.left = I32, .right = I32]
 let pair: Pair = [.left = 1, .right = 2]
-let changed = pair with { .left = 3 }
+let changed = pair :+ { .left = 3 }
 changed.left
 `);
   assert_includes(wat, "i32.const 3");

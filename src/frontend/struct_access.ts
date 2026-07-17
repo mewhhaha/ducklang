@@ -14,11 +14,7 @@ import { numeric_expr_type } from "./numeric.ts";
 import { indexed_result_type_from_fields } from "./runtime_struct.ts";
 import type { StructValueTarget } from "./struct_values.ts";
 import { lower_expr_as_front_type } from "./typed_lower.ts";
-import {
-  front_type_from_type_name,
-  front_type_name,
-  val_type_from_type_name,
-} from "./types.ts";
+import { front_type_from_type_name, val_type_from_type_name } from "./types.ts";
 
 export type StructAccessHooks = {
   infer_expr: (expr: FrontExpr, env: Env) => FrontType;
@@ -137,7 +133,6 @@ export function lower_expr_as_declared_type(
     return hooks.lower_expr(expr, env);
   }
 
-  check_struct_access_if_condition(expr.cond, env, hooks);
   const cond = Ic.reduce(hooks.lower_expr(expr.cond, env));
 
   if (cond.tag === "num") {
@@ -180,30 +175,6 @@ export function lower_expr_as_declared_type(
       cond,
     ],
   };
-}
-
-function check_struct_access_if_condition(
-  expr: FrontExpr,
-  env: Env,
-  hooks: StructAccessHooks,
-): void {
-  const type = hooks.infer_expr(expr, env);
-
-  if (type.tag === "unknown") {
-    return;
-  }
-
-  if (type.tag === "bool") {
-    return;
-  }
-
-  if (type.tag === "int" && type.type === "i32") {
-    return;
-  }
-
-  throw new Error(
-    "If condition expects Bool or I32, got " + front_type_name(type),
-  );
 }
 
 export function declared_struct_field_type(

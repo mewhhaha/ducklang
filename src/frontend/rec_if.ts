@@ -6,7 +6,7 @@ import { lower_rec_dynamic_struct_if } from "./rec_if_struct.ts";
 import { infer_rec_expr } from "./rec_infer.ts";
 import { lower_rec_dynamic_union_if } from "./rec_union.ts";
 import type { StaticRecHooks } from "./rec_hooks.ts";
-import { common_front_type, front_type_name } from "./types.ts";
+import { common_front_type } from "./types.ts";
 
 export type RecResultLowerer = (expr: FrontExpr, env: Env) => IcNode;
 
@@ -16,7 +16,6 @@ export function lower_rec_if(
   hooks: StaticRecHooks,
   lower_result: RecResultLowerer,
 ): IcNode | undefined {
-  check_rec_if_condition(expr.cond, env, hooks);
   const cond = Ic.reduce(lower_result(expr.cond, env));
 
   if (cond.tag === "num") {
@@ -173,28 +172,4 @@ function resolve_rec_runtime_alias(
   }
 
   return { expr: binding.value, env: value_env };
-}
-
-function check_rec_if_condition(
-  expr: FrontExpr,
-  env: Env,
-  hooks: StaticRecHooks,
-): void {
-  const type = hooks.infer_expr(expr, env);
-
-  if (type.tag === "unknown") {
-    return;
-  }
-
-  if (type.tag === "bool") {
-    return;
-  }
-
-  if (type.tag === "int" && type.type === "i32") {
-    return;
-  }
-
-  throw new Error(
-    "If condition expects Bool or I32, got " + front_type_name(type),
-  );
 }

@@ -16,11 +16,11 @@ function type(text: string): SemType {
 
 Deno.test("semantic unions normalize as commutative idempotent sets", () => {
   assert_equals(
-    sem_type_key(type("Text | Int | Text")),
-    sem_type_key(type("Int | Text")),
+    sem_type_key(type("Text :| Int :| Text")),
+    sem_type_key(type("Int :| Text")),
   );
-  assert_equals(sem_type_key(type("_ | Text")), "top");
-  assert_equals(sem_type_key(type("Never | Text")), "scalar(Text)");
+  assert_equals(sem_type_key(type("_ :| Text")), "top");
+  assert_equals(sem_type_key(type("Never :| Text")), "scalar(Text)");
 });
 
 Deno.test("semantic forall keys ignore binder names", () => {
@@ -32,11 +32,11 @@ Deno.test("semantic forall keys ignore binder names", () => {
 
 Deno.test("semantic intersections and differences normalize finite unions", () => {
   assert_equals(
-    sem_type_key(intersect_sem_types(type("Int | Text"), type("Text"))),
+    sem_type_key(intersect_sem_types(type("Int :| Text"), type("Text"))),
     "scalar(Text)",
   );
   assert_equals(
-    sem_type_key(subtract_sem_type(type("Int | Text"), type("Text"))),
+    sem_type_key(subtract_sem_type(type("Int :| Text"), type("Text"))),
     "scalar(I32)",
   );
   assert_equals(

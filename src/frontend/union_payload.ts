@@ -140,6 +140,17 @@ export function validate_union_payload_type(
     return;
   }
 
+  if (expected === "F64") {
+    if (actual.tag !== "int" || actual.type !== "f64") {
+      throw new Error(
+        "Union case " + name + " expects F64, got " +
+          front_type_name(actual),
+      );
+    }
+
+    return;
+  }
+
   if (expected === "Text" || expected === "Bytes") {
     const expects_bytes = expected === "Bytes";
 

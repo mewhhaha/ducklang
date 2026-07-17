@@ -7,7 +7,7 @@ import { Emit, Typed } from "../trait.ts";
 
 Deno.test("Core links drops to alternative persistent allocations", () => {
   const branch = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
 1
 `));
@@ -25,7 +25,7 @@ let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
   ]);
 
   const replaced = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
 f = (x: Int) => x + 2
 1
@@ -45,7 +45,7 @@ f = (x: Int) => x + 2
   );
 
   const returned = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
 f
 `));
@@ -56,7 +56,7 @@ f
   const aliased_alternatives = Source.core(Source.parse(`
 let f = (x: Int) => x
 let g = (x: Int) => x + 1
-let h = if 1 { f } else { g }
+let h = if true { f } else { g }
 1
 `));
   const aliased_proof = Core.proof(aliased_alternatives);
@@ -276,7 +276,7 @@ Deno.test("Core finds loop breaks nested in expression control flow", () => {
 
 Deno.test("Core types match branches with terminal and fallthrough values", () => {
   const core = Source.core(Source.parse(`
-let flag = 0
+let flag = false
 let value = loop {
   let chosen = match flag {
     | 1 => { break 7 }
@@ -320,11 +320,11 @@ value
 
 Deno.test("Core moves a linear runtime aggregate into one-shot closure slots", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 let make = (age: Int) => [.age = age] as user_type
 let !user: user_type = make(41)
-let flag = 1
+let flag = true
 let take_once = if flag { () => !user } else { () => !user }
 user = take_once()
 !user
@@ -388,7 +388,7 @@ Deno.test("Core moves a linear runtime union into one-shot closure slots", () =>
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 let !result: result_type = result_type.ok(41)
-let flag = 1
+let flag = true
 let take_once = if flag { () => !result } else { () => !result }
 result = take_once()
 !result
@@ -576,9 +576,9 @@ Deno.test("Core promotes nested aggregate union Text out of scratch", () => {
   const source = `
 type ResultType = | .ok = Text | .err
 const result_type = ResultType
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const inner_type = struct { .result= result_type }
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const outer_type = struct { .inner= inner_type, .age= Int }
 
 let start = 0
@@ -655,9 +655,9 @@ if let .ok(text) = frozen.inner.result { @len(text) } else { 0 }
 
 Deno.test("Core links aggregate Text child destructors before outer cleanup", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= Int }
-let flag = 1
+let flag = true
 let make = if flag {
   (suffix: Text) => [.name = @append("A", suffix), .age = 40] as user_type
 } else {
@@ -873,13 +873,13 @@ for value in @runtime_text_slice(1, dynamic) {
 
 Deno.test("Core persistent allocation facts carry reusable-layout metadata", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= Int }
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 let text: Text = @append("A", "da")
 let user: user_type = [.name = text, .age = 40] as user_type
-let flag = 1
+let flag = true
 let make = if flag {
   (value: Int) => result_type.ok(value)
 } else {
@@ -1003,7 +1003,7 @@ freeze text
   assert_equals(frozen_wat.includes("call $__free"), false);
 
   const return_wat = Source.wat(`
-let flag = 1
+let flag = true
 let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
 return 1
 `);
@@ -1013,7 +1013,7 @@ return 1
   assert_equals(return_free < return_transfer, true);
 
   const conditional_return_wat = Source.wat(`
-let flag = 1
+let flag = true
 let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
 if flag {
   return 1
@@ -1059,7 +1059,7 @@ for i in 0..1 {
   assert_equals(loop_scope_free < loop_back_edge, true);
 
   const branch_scope_wat = Source.wat(`
-let flag = 1
+let flag = true
 if flag {
   let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
   2
@@ -1077,7 +1077,7 @@ Deno.test("Core anchors no-else conditional transfer cleanup on fallthrough", ()
 host_import branch_flag from "env.flag" () => I32
 type GateType = | .go = Int | .stop = Int
 const gate_type = GateType
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType
@@ -1158,7 +1158,7 @@ Deno.test("Core captures ownerless discarded pointers for cleanup", () => {
     {
       reason: "text",
       source: `
-let flag = 1
+let flag = true
 @append(if flag { "A" } else { "B" }, "!")
 @append(if flag { "C" } else { "D" }, "?")
 `,
@@ -1166,11 +1166,11 @@ let flag = 1
     {
       reason: "runtime_aggregate",
       source: `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
-let flag = 1
-[.age = flag] as user_type
-[.age = flag + 1] as user_type
+let age = 1
+[.age = age] as user_type
+[.age = age + 1] as user_type
 `,
     },
     {
@@ -1178,17 +1178,17 @@ let flag = 1
       source: `
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
-let flag = 1
-result_type.ok(flag)
-result_type.err(flag)
+let value = 1
+result_type.ok(value)
+result_type.err(value)
 `,
     },
     {
       reason: "closure",
       source: `
-let flag = 1
-((x: Int) => x + flag)
-((x: Int) => x + flag + 1)
+let offset = 1
+((x: Int) => x + offset)
+((x: Int) => x + offset + 1)
 `,
     },
   ];
@@ -1335,7 +1335,7 @@ for i in 0..1 {
   assert_equals(inner_break < outer_free, true);
 
   const alternatives = Source.core(Source.parse(`
-let flag = 1
+let flag = true
 let text: Text = if flag {
   @append("a", "b")
 } else {

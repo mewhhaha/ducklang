@@ -79,7 +79,7 @@ grow(1, 0)
   });
 
   const direct_struct_rec_field = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -106,7 +106,7 @@ make(0).age
   );
 
   const direct_struct_rec_get = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -135,7 +135,7 @@ let make = rec (n: Int) => {
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -240,7 +240,7 @@ loop(scratch { input }, 2)
   );
 
   const borrowed_struct_rec_arg = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -290,7 +290,7 @@ loop(scratch { input }, 2)
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -342,7 +342,7 @@ loop(if flag {
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -834,7 +834,7 @@ value + 1
   );
 
   const annotated_static_rec_struct_result = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -890,7 +890,7 @@ if let .some(value) = option {
   );
 
   const annotated_static_rec_struct_block_alias_result = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -1018,7 +1018,7 @@ loop(0, input)
   );
 
   const struct_param_annotation = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -1041,7 +1041,7 @@ loop(input, 0)
   );
 
   const struct_local_annotation = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -1067,7 +1067,7 @@ loop(0)
   );
 
   const struct_return_field_order = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1092,7 +1092,7 @@ user.age
   });
 
   const struct_param_static_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1115,7 +1115,7 @@ loop(input, 0)
   );
 
   const struct_param_static_get = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1138,7 +1138,7 @@ loop(input, 0)
   );
 
   const struct_dynamic_if_result = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1171,13 +1171,13 @@ loop(input, 0)
   assert_includes(struct_dynamic_if_result_text, "field_second");
 
   const nested_struct_dynamic_if_result = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const name_type = struct {
   .first= Text,
   .last= Text
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= name_type,
   .age= Int
@@ -1209,7 +1209,7 @@ let selected = loop(input, 0)
   assert_includes(nested_struct_dynamic_if_result_text, "field_age");
 
   const struct_dynamic_if_field = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1239,7 +1239,7 @@ loop(input, 0)
   assert_includes(struct_dynamic_if_field_text, "field_first");
 
   const struct_dynamic_if_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1271,7 +1271,7 @@ loop(input, 0, idx)
   assert_includes(struct_dynamic_if_index_text, "else trap");
 
   const struct_dynamic_if_statement = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1309,7 +1309,7 @@ loop(0)
   assert_includes(struct_dynamic_if_statement_text, "field_first");
 
   const struct_local_dynamic_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1340,7 +1340,7 @@ loop(0, idx)
   assert_includes(struct_local_dynamic_index_text, "else trap");
 
   const struct_local_dynamic_get = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1371,7 +1371,7 @@ loop(0, idx)
   assert_includes(struct_local_dynamic_get_text, "else trap");
 
   const struct_param_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1400,7 +1400,7 @@ loop(input, 0, idx, next)
   assert_includes(struct_param_dynamic_update_text, "then next_share01");
 
   const struct_local_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -1432,7 +1432,7 @@ loop(0, idx, next)
   assert_includes(struct_local_dynamic_update_text, "then next_share01");
 
   const struct_text_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -1681,7 +1681,7 @@ loop(input, 0)
   );
 
   const union_struct_payload_annotation = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
@@ -1817,7 +1817,7 @@ step(0)
 
   const rec_final_if_result = compile(`
 let step = rec (n) => {
-  if 0 {
+  if false {
     n
   }
 }
@@ -2168,7 +2168,7 @@ host_import host_make_frozen_aggregate from "env.make_frozen_aggregate" () => #r
   });
 
   const type_value_contracts = Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= Int }
 type ResultType = | .ok = Text | .err = Int
 const result_type = ResultType
@@ -2430,7 +2430,7 @@ Deno.test("Source reserves type values and lowers inferred shorthand unions", ()
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
@@ -2451,12 +2451,12 @@ Result
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
 
-user_type with {
+user_type :+ {
   .alias = user_type
 }
 `),
@@ -2464,7 +2464,7 @@ user_type with {
   );
 
   const unused_type_value = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
@@ -2480,7 +2480,7 @@ user_type
   });
 
   const unused_direct_type_value = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 struct {
   .name= Text
 }
@@ -2495,12 +2495,12 @@ struct {
   });
 
   const unused_type_extension = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
 
-user_type with {
+user_type :+ {
   .alias = user_type
 }
 
@@ -2517,7 +2517,7 @@ user_type with {
 type BoxType t = | .box = t
 const box_type = BoxType
 
-box_type with {
+box_type :+ {
   .map = (value, const f) => value
 }
 
@@ -2533,12 +2533,12 @@ box_type with {
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
 
-user_type with {
+user_type :+ {
   .default_name = input
 }
 
@@ -2627,7 +2627,7 @@ if let .ok(value) = if input {
   );
 });
 
-Deno.test("Source specializes with extensions and protocol-style const dispatch", () => {
+Deno.test("Source specializes extensions and protocol-style const dispatch", () => {
   const ic = compile(`
 const functor = f_type => {
   f_type.map
@@ -2635,7 +2635,7 @@ const functor = f_type => {
 }
 
 const box_type = t => t
-const box_type = box_type with {
+const box_type = box_type :+ {
   .map = (value, const f) => {
     f(value)
   }
@@ -2656,12 +2656,12 @@ result
 
 Deno.test("Source computes facts through type extensions", () => {
   const ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
 
-const user_type = user_type with {
+const user_type = user_type :+ {
   .default_age = 41
 }
 
@@ -2674,7 +2674,7 @@ const user_type = user_type with {
 type OptionType = | .some = Int | .none
 const option_type = OptionType
 
-const option_type = option_type with {
+const option_type = option_type :+ {
   .default_value = 41
 }
 
@@ -2691,7 +2691,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type: has_name = struct {
   .name= Int,
   .age= Int
@@ -2712,7 +2712,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2737,7 +2737,7 @@ const has_age = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -2781,7 +2781,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2802,7 +2802,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2822,7 +2822,7 @@ get_name(user)
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const unknown_direct_type = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2841,7 +2841,7 @@ get_name(user)
   );
 
   const unknown_binding_direct_type = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2858,7 +2858,7 @@ user.name + 1
   );
 
   const reassigned_binding_direct_type = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2876,7 +2876,7 @@ user.name + 1
   );
 
   const helper_direct_type = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Int,
   .age= Int
@@ -2911,7 +2911,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const age_only_type = struct {
   .age= Int
 }
@@ -3211,7 +3211,7 @@ const applicative = f_type => {
 }
 
 const box_type = t => t
-const box_type = box_type with {
+const box_type = box_type :+ {
   .map = (value, const f) => {
     f(value)
   },
@@ -3247,7 +3247,7 @@ const monad = m_type => {
 }
 
 const box_type = t => t
-const box_type = box_type with {
+const box_type = box_type :+ {
   .map = (value, const f) => {
     f(value)
   },
@@ -3285,7 +3285,7 @@ const applicative = f_type => {
 }
 
 const broken_type = t => t
-const broken_type = broken_type with {
+const broken_type = broken_type :+ {
   .pure = value => value
 }
 
@@ -3329,7 +3329,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const age_only_type = struct {
   .age= Int
 }
@@ -3351,7 +3351,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
@@ -3374,7 +3374,7 @@ const readable = ops => {
 }
 
 const scalar_ops = 0
-const scalar_ops = scalar_ops with {
+const scalar_ops = scalar_ops :+ {
   .read = value => value + 1
 }
 
@@ -3450,7 +3450,7 @@ const readable = ops => {
 }
 
 const text_ops = 0
-const text_ops = text_ops with {
+const text_ops = text_ops :+ {
   .read = message => host_read(&message)
 }
 
@@ -3545,7 +3545,7 @@ xs[0] + xs[1]
   );
 
   const typed_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3564,7 +3564,7 @@ pair.second + 1
   });
 
   const typed_runtime_static_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3587,7 +3587,7 @@ set_second(pair)
   });
 
   const typed_runtime_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3610,7 +3610,7 @@ set_index(pair, 1, 32)
   });
 
   const typed_runtime_wide_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const wide_type = struct {
   .first= I64,
   .second= I64
@@ -3633,7 +3633,7 @@ set_index(pair, 1, 32i64)
   });
 
   const typed_runtime_wide_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const wide_type = struct {
   .first= I64,
   .second= I64
@@ -3659,7 +3659,7 @@ set_index(pair, i, 32i64)
   );
 
   const typed_runtime_dynamic_runtime_fields = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3705,7 +3705,7 @@ messages[1]
   );
 
   const typed_runtime_text_dynamic_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -3731,7 +3731,7 @@ set_index(messages, i)
   );
 
   const typed_runtime_text_runtime_fields_update = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -3768,7 +3768,7 @@ set_index(messages, i)
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -4298,7 +4298,7 @@ size({
   const borrowed_annotated_struct_branch_binding = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -4321,7 +4321,7 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4344,7 +4344,7 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4367,7 +4367,7 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4390,7 +4390,7 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4414,7 +4414,7 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -4552,7 +4552,7 @@ if let .some(value) = option {
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -4570,7 +4570,7 @@ choose(if flag {
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4663,7 +4663,7 @@ let value: Text = {
 type MaybeType = | .some = Int | .none
 const maybe_type = MaybeType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4715,7 +4715,7 @@ if let .ok(value) = option {
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4772,7 +4772,7 @@ value + 1
   const borrowed_annotated_struct_binding = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4805,7 +4805,7 @@ if let .some(value) = option {
   const borrowed_annotated_struct_arg = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -5282,7 +5282,7 @@ byte_at(input)
   const borrowed_runtime_struct_field = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -5297,7 +5297,7 @@ let user: user_type = input
   const frozen_runtime_struct_field = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -5312,7 +5312,7 @@ let user: user_type = input
   const scratch_runtime_struct_field = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -5327,7 +5327,7 @@ let user: user_type = input
   const scratch_runtime_struct_index = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int

@@ -9,11 +9,11 @@ The machine is one owned `Bytes` value. Its 4 KiB memory, 16 byte registers,
 register, timers, key mask, and cycle counter occupy explicit offsets in that
 buffer. The Duck exports are pure state transitions:
 
-- `initialize: (Bytes, I32) -> Bytes` sets the program counter and key mask.
-- `step: (Bytes, I32) -> Bytes` executes one instruction and applies an optional
+- `initialize: [Bytes, I32] -> Bytes` sets the program counter and key mask.
+- `step: [Bytes, I32] -> Bytes` executes one instruction and applies an optional
   timer tick.
-- `run: (Bytes, I32, I32) -> Bytes` repeats `step` for an exact count.
-- `read: (Bytes, I32) -> I32` consumes a finished state to read one summary
+- `run: [Bytes, I32, I32] -> Bytes` repeats `step` for an exact count.
+- `read: [Bytes, I32] -> I32` consumes a finished state to read one summary
   field.
 
 The JavaScript adapter creates a fresh fixture buffer for every run, then

@@ -3,7 +3,7 @@ module (!init: Init) where
 const { struct } = comptime import "duck:prelude" ()
 
 declare effect Input {
-  flag: () => I32
+  flag: () => Bool
 }
 
 declare Init { input: Input }

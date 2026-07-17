@@ -395,12 +395,12 @@ f(40)
   });
 
   const aliased_struct_shadow = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const other_user_type = struct {
   .age= I32
 }
@@ -429,7 +429,7 @@ user.age + 1
   });
 
   const typed_to_anonymous_shadow = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -552,7 +552,7 @@ x
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const extended_type = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 type User = struct { .age = I32 }
 extend User { .default_age = 41 }
 const default_age = 0
@@ -714,12 +714,12 @@ f(message)
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const other_user_type = struct {
   .age= Text
 }
@@ -734,12 +734,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const other_user_type = struct {
   .age= I64
 }
@@ -754,7 +754,7 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -769,7 +769,7 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -826,7 +826,7 @@ message
   assert_equals(Ic.reduce(rebound), { tag: "text", value: "world" });
 
   const branch = compile(`
-if 1 {
+if true {
   "ready"
 } else {
   "no"
@@ -1853,8 +1853,9 @@ if (let 'c' = value) {
   });
 
   const literal_patterns = compile(`
+let flag = false
 let value = 0
-if let false = value {
+if let false = flag {
   value = 1
 }
 if let 1 = value {
@@ -2043,7 +2044,7 @@ scale(41)
 
   const static_branch_capture = compile(`
 const factor = 1
-const scale = if 1 {
+const scale = if true {
   x => x + factor
 } else {
   x => x + factor + 1
@@ -2075,7 +2076,7 @@ if 3 < limit {
 
   const block_value = compile(`
 {
-  const { struct } = comptime (import "duck:prelude")()
+  const { struct } = comptime import "duck:prelude" ()
   const age_type = struct { .age = Int }
   let age = 41
   let box: age_type = [age]
@@ -2092,7 +2093,7 @@ if 3 < limit {
 
 Deno.test("Source lowers pure runtime if expressions through select", () => {
   const ic = compile(`
-let input = 1
+let input = true
 
 if input {
   42
@@ -2234,7 +2235,7 @@ if first {
 
 Deno.test("Source lowers no-else if statements with fallthrough", () => {
   const selected = compile(`
-let flag = 1
+let flag = true
 
 if flag {
   return 42
@@ -2246,7 +2247,7 @@ if flag {
   assert_equals(Ic.reduce(selected), { tag: "num", type: "i32", value: 42 });
 
   const skipped = compile(`
-let flag = 0
+let flag = false
 
 if flag {
   return 42
@@ -2258,7 +2259,7 @@ if flag {
   assert_equals(Ic.reduce(skipped), { tag: "num", type: "i32", value: 7 });
 
   const fallthrough = compile(`
-let flag = 1
+let flag = true
 let value = 1
 
 if flag {
@@ -2474,7 +2475,7 @@ if "x" {
   0
 }
 `),
-    "If condition expects Bool or I32, got Text",
+    "If condition expects Bool, got Text",
   );
 
   assert_throws(
@@ -2486,7 +2487,7 @@ if [.age = 1] {
   0
 }
 `),
-    "If condition expects Bool or I32, got struct",
+    "If condition expects Bool, got struct",
   );
 
   assert_throws(
@@ -2500,7 +2501,7 @@ if f {
   0
 }
 `),
-    "If condition expects Bool or I32, got function",
+    "If condition expects Bool, got fn",
   );
 
   assert_throws(
@@ -2514,13 +2515,13 @@ if result {
   0
 }
 `),
-    "If condition expects Bool or I32, got union",
+    "If condition expects Bool, got union",
   );
 
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -2547,7 +2548,7 @@ let check = (value: I64) => {
 
 check(1i64)
 `),
-    "If condition expects Bool or I32, got I64",
+    "If condition expects Bool, got I64",
   );
 });
 
@@ -2556,19 +2557,19 @@ Deno.test("Source lowers logical operators through boolean if expressions", () =
 
   assert_equals(Ic.reduce(both), { tag: "num", type: "i32", value: 1 });
 
-  const either = compile("0 || 42");
+  const either = compile("false || true");
 
   assert_equals(Ic.reduce(either), { tag: "num", type: "i32", value: 1 });
 
-  const neither = compile("0 || 0");
+  const neither = compile("false || false");
 
   assert_equals(Ic.reduce(neither), { tag: "num", type: "i32", value: 0 });
 
-  const and_short = compile('0 && @fail("right branch")');
+  const and_short = compile('false && @fail("right branch")');
 
   assert_equals(Ic.reduce(and_short), { tag: "num", type: "i32", value: 0 });
 
-  const or_short = compile('1 || @fail("right branch")');
+  const or_short = compile('true || @fail("right branch")');
 
   assert_equals(Ic.reduce(or_short), { tag: "num", type: "i32", value: 1 });
 

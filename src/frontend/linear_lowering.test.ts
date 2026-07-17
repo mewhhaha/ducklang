@@ -148,7 +148,7 @@ add_once(41)
 
   const branch = compile(`
 let add_branch = (!x) => {
-  if 1 {
+  if true {
     x = !x + 1
   }
 
@@ -162,7 +162,7 @@ add_branch(41)
 
   const branch_return = compile(`
 let add_branch = (!x) => {
-  if 1 {
+  if true {
     return !x + 1
   }
 
@@ -441,7 +441,7 @@ main(42)
 
   const captured_static_if_then = compile(`
 let main = (!x) => {
-  let f = if 1 {
+  let f = if true {
     () => !x
   } else {
     () => 0
@@ -461,7 +461,7 @@ main(42)
 
   const captured_static_if_else = compile(`
 let main = (!x) => {
-  let f = if 0 {
+  let f = if false {
     () => 0
   } else {
     () => !x + 1
@@ -547,7 +547,7 @@ main(41)
   );
 
   const captured_dynamic_if = compile(`
-let main = (!x, flag) => {
+let main = (!x, flag: Bool) => {
   let f = if flag {
     () => !x
   } else {
@@ -557,7 +557,7 @@ let main = (!x, flag) => {
   f()
 }
 
-main(42, 1)
+main(42, true)
 `);
 
   assert_equals(Ic.reduce(captured_dynamic_if), {
@@ -577,7 +577,7 @@ let main = (!x, flag) => {
   f(2)
 }
 
-main(40, 0)
+main(40, false)
 `);
 
   assert_equals(Ic.reduce(captured_dynamic_if_param_names), {
@@ -597,7 +597,7 @@ let main = (!x, flag) => {
   f(2)
 }
 
-main(40, 0)
+main(40, false)
 `);
 
   assert_equals(Ic.reduce(captured_dynamic_if_equivalent_param_annotations), {
@@ -607,7 +607,7 @@ main(40, 0)
   });
 
   const captured_dynamic_if_type_alias_param_annotations = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 const user_alias = user_type
 
@@ -621,7 +621,7 @@ let main = (!x, flag) => {
   f([.age = 2] as user_type)
 }
 
-main(40, 0)
+main(40, false)
 `);
 
   assert_equals(Ic.reduce(captured_dynamic_if_type_alias_param_annotations), {
@@ -633,9 +633,9 @@ main(40, 0)
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const other_type = struct { .score= Int }
 
 let main = (!x, flag) => {
@@ -648,7 +648,7 @@ let main = (!x, flag) => {
   f([.age = 2] as user_type)
 }
 
-main(40, 0)
+main(40, false)
 `),
     "Dynamic function branches must have compatible parameters",
   );
@@ -739,7 +739,7 @@ let main = (!x, flag) => {
   f()
 }
 
-main(42, 1)
+main(42, true)
 `),
     "Linear branches must consume the same values",
   );
@@ -793,7 +793,7 @@ main(41)
     () =>
       compile(`
 let bad = (!x) => {
-  if 1 {
+  if true {
     !x
   }
 
@@ -1118,7 +1118,7 @@ let sum = 0
 
 for i in 0..4 {
   sum = sum + 1
-  if 1 {
+  if true {
     break
   }
   sum = sum + 100
@@ -1138,7 +1138,7 @@ let sum = 0
 
 for i in 0..4 {
   sum = sum + 1
-  if 1 {
+  if true {
     continue
   }
   sum = sum + 100
@@ -2041,7 +2041,7 @@ main(flag)
   );
 
   const dynamic_function_branch_struct_after_binding_ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -2137,7 +2137,7 @@ main(flag)
   );
 
   const dynamic_struct_break_after_top_level_binding_ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -2745,7 +2745,7 @@ sum([10, 31])
   const dynamic_break = compile(`
 const xs = [10, 20, 30]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2769,7 +2769,7 @@ main(flag)
   const dynamic_continue = compile(`
 const xs = [10, 20, 30]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2823,7 +2823,7 @@ main(option)
   const dynamic_collection_break_after_assignment = compile(`
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2853,7 +2853,7 @@ main(flag)
   const dynamic_collection_break_after_top_level_binding = compile(`
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2886,7 +2886,7 @@ main(flag)
   const dynamic_collection_continue_after_top_level_binding = compile(`
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2920,7 +2920,7 @@ main(flag)
   const dynamic_collection_text_break_after_top_level_binding = compile(`
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2952,7 +2952,7 @@ main(flag)
   );
 
   const dynamic_collection_struct_break_after_top_level_binding = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -2960,7 +2960,7 @@ const pair_type = struct {
 
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -2998,7 +2998,7 @@ const option_type = OptionType
 
 const xs = [10, 20]
 
-let main = flag => {
+let main = (flag: Bool) => {
   let total = 0
 
   for x in xs {
@@ -3035,7 +3035,7 @@ main(flag)
   const dynamic_collection_nested_break = compile(`
 const xs = [10, 20, 30]
 
-let main = (flag, other) => {
+let main = (flag: Bool, other: Bool) => {
   let total = 0
 
   for x in xs {
@@ -3065,7 +3065,7 @@ main(flag, other)
   const dynamic_collection_nested_break_before_trailing_stmt = compile(`
 const xs = [10, 20, 30]
 
-let main = (flag, other) => {
+let main = (flag: Bool, other: Bool) => {
   let total = 0
 
   for x in xs {
@@ -3103,7 +3103,7 @@ const option_type = OptionType
 
 const xs = [10, 20, 30]
 
-let main = (flag, option: option_type) => {
+let main = (flag: Bool, option: option_type) => {
   let total = 0
 
   for x in xs {
@@ -3319,7 +3319,7 @@ choose([10, 32], input)
 
   const dynamic_text_get = compile(`
 let rename = value => {
-  value with {
+  value :+ {
     .second = "Grace"
   }
 }
@@ -3336,7 +3336,7 @@ let rename = value => {
 
   const dynamic_text_byte = compile(`
 let rename = value => {
-  value with {
+  value :+ {
     .second = "Grace"
   }
 }
@@ -3355,7 +3355,7 @@ rename([.first = "Ada", .second = "Eve"])[input][1]
     () =>
       compile(`
 let rename = value => {
-  value with {
+  value :+ {
     .second = "Grace"
   }
 }
@@ -3369,7 +3369,7 @@ let rename = value => {
     () =>
       compile(`
 let rename = value => {
-  value with {
+  value :+ {
     .second = "Grace"
   }
 }
@@ -3447,7 +3447,7 @@ const messages = [.first = "Ada", .second = "Grace"]
 
 Deno.test("Source lowers typed runtime struct indexing to Ic", () => {
   const field_projection = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3471,7 +3471,7 @@ first_plus_one(pair)
   });
 
   const static_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3493,7 +3493,7 @@ second_plus_one(pair)
   });
 
   const dynamic_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3515,7 +3515,7 @@ choose(pair, i)
   assert_includes(dynamic_text, "else trap");
 
   const dynamic_runtime_fields = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3539,7 +3539,7 @@ choose(pair, i)
   assert_includes(dynamic_runtime_fields_text, "else trap");
 
   const dynamic_get = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3560,7 +3560,7 @@ choose(pair, i)
   assert_includes(dynamic_get_text, "if i#0_share00 == 1:i32 then 20:i32");
 
   const wide = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const wide_type = struct {
   .first= I64,
   .second= I64
@@ -3581,7 +3581,7 @@ choose(pair, i)
   assert_includes(wide_text, "if i#0_share00 == 1:i32 then 7:i64");
 
   const length = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3603,7 +3603,7 @@ count(pair) + 40
   });
 
   const collection_loop = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3631,7 +3631,7 @@ sum(pair)
   });
 
   const indexed_loop = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3659,7 +3659,7 @@ sum(pair)
   });
 
   const dynamic_runtime_struct_loop = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const triple_type = struct {
   .first= Int,
   .second= Int,
@@ -3855,7 +3855,7 @@ byte_at("Ada")
   });
 
   const range_len_loop = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -3883,7 +3883,7 @@ sum(pair)
   });
 
   const text_index = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -3906,7 +3906,7 @@ choose(messages, i)
   assert_includes(text_index_text, "else trap");
 
   const typed_text_index_len = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -3928,7 +3928,7 @@ let messages = [.first = "Ada", .second = "Grace"] as messages_type
   assert_includes(typed_text_index_len_text, "else trap");
 
   const runtime_text_index_len = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const messages_type = struct {
   .first= Text,
   .second= Text
@@ -3955,7 +3955,7 @@ byte_len(messages, i)
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int
 }
@@ -3974,7 +3974,7 @@ bad(pair)
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
@@ -4030,7 +4030,7 @@ for i in 0..3 {
 `;
 
   const dynamic_control_binding_core = Source.core(
-    "let input = 1\n" + dynamic_control_binding_source,
+    "let input = true\n" + dynamic_control_binding_source,
   );
   assert_equals(dynamic_control_binding_core.statements[1]?.tag, "range_loop");
 
@@ -4284,7 +4284,7 @@ total
   );
 
   const dynamic_control_annotated_struct_binding_source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -4348,12 +4348,12 @@ total
   );
 
   const dynamic_control_annotated_nested_struct_binding_source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const name_type = struct {
   .first= Text
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= name_type,
   .age= Int
@@ -4398,7 +4398,7 @@ total
 type MaybeType = | .some = Int | .none
 const maybe_type = MaybeType
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -4523,7 +4523,7 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
   );
 
   const dynamic_control_struct_call_binding_source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -4558,7 +4558,7 @@ if input_share01 then 0:i32 else if input_share00 then 3:i32 else 7:i32`,
   );
 
   const dynamic_control_struct_block_call_binding_source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .label= Text
@@ -4741,7 +4741,7 @@ total
   );
 
   const dynamic_control_no_else_if_let_struct_binding_source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }

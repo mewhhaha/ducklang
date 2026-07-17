@@ -89,7 +89,7 @@ f(41)
   assert_equals(Ic.reduce(alias), { tag: "num", type: "i32", value: 42 });
 
   const static_branch = compile(`
-let inc = if 1 {
+let inc = if true {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
@@ -162,7 +162,7 @@ byte_len_text(message)
   assert_throws(
     () =>
       compile(`
-let inc = if 1 {
+let inc = if true {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
@@ -208,7 +208,7 @@ scale(41)
   const static_branch = compile(`
 let factor = 1
 
-let scale = if 1 {
+let scale = if true {
   (x: Int) => x + factor
 } else {
   (x: Int) => x + factor + 1
@@ -368,7 +368,7 @@ choose(scratch { input })
   );
 
   const bound_wrapped_struct_arg = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -454,7 +454,7 @@ choose(if pick {
   const struct_branch_wrapped_arg = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -772,7 +772,7 @@ choose(message)
   );
 
   const annotated_struct_param = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -817,7 +817,7 @@ choose(message)
   );
 
   const one_sided_struct_param = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -1093,7 +1093,7 @@ if let .ok(value) = result {
 
 Deno.test("Source lowers compile-time struct layout facts", () => {
   const ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .big= I64
@@ -1122,7 +1122,7 @@ const result_layout = @layout(result_type)
 
 Deno.test("Source lowers structural fact helper builtins", () => {
   const ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
@@ -1147,7 +1147,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
@@ -1172,7 +1172,7 @@ const has_name = t => {
   t
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const age_only_type = struct {
   .age= Int
 }
@@ -1215,7 +1215,7 @@ const field_bytes = t => {
   total
 }
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int,
@@ -1232,7 +1232,7 @@ Deno.test("Source rejects missing layout information", () => {
   assert_throws(
     () =>
       compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const bad_type = struct {
   .nested= missing_type
 }
@@ -1245,7 +1245,7 @@ const bad_type = struct {
 
 Deno.test("Source enforces semantic casing", () => {
   const ic = compile(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -1485,7 +1485,7 @@ Deno.test("Source parses every Task 11 MVP grammar include", () => {
     },
     { feature: "closures", text: "x => x" },
     { feature: "return", text: "{ return 1 }" },
-    { feature: "if", text: "if 1 { 2 } else { 3 }" },
+    { feature: "if", text: "if true { 2 } else { 3 }" },
     {
       feature: "if let",
       text: "if let .ok(value) = .ok(1) { value } else { 0 }",
@@ -1516,9 +1516,9 @@ Deno.test("Source parses every Task 11 MVP grammar include", () => {
       text: "let apply = (const f, x) => f(x)\napply",
     },
     {
-      feature: "with extensions",
+      feature: "extensions",
       text: "const base = [.x = 1]\n" +
-        "const extended = base with { .y = 2 }\nextended",
+        "const extended = base :+ { .y = 2 }\nextended",
     },
     {
       feature: "fact checkers",
@@ -1605,7 +1605,7 @@ Deno.test("Source rejects every Task 11 MVP grammar exclude", () => {
       feature: "first-class source-level region objects beyond scratchpads",
       run: () => Source.parse("region { 1 }"),
       error:
-        "Runtime products use contextual `[...]` values; updates use `with { ... }`",
+        "Runtime products use contextual `[...]` values; updates use the source-defined type extension operator",
     },
     {
       feature: "attached scratch regions that survive scratch reset",

@@ -242,7 +242,7 @@ payloads, and destructuring patterns. Simple const type-constructor calls that
 return struct or union type-values, including curried calls like
 `result_type(Text)(Int)`, are instantiated before Core type checks and WAT
 emission. Non-final frontend expression statements proven to be
-compile-time-only, including type-values and `with` extension expressions, are
+compile-time-only, including type-values and `:+` extension expressions, are
 validated as const expressions and then elided before Ic lowering.
 
 Runtime indexes over const-known aggregates and typed runtime structs lower to

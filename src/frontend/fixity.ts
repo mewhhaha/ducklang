@@ -33,25 +33,6 @@ export type FixityTable = {
   prefix: Map<string, PrefixFixity>;
 };
 
-const builtin_fixities: Fixity[] = [
-  infix("infixr", 15, ":>", "@seal"),
-  infix("infixr", 20, "||", "Bool.or"),
-  infix("infixr", 30, "&&", "Bool.and"),
-  infix("infix", 40, "==", "Eq.eq"),
-  infix("infix", 40, "!=", "Eq.ne"),
-  infix("infix", 40, "<", "Ord.lt"),
-  infix("infix", 40, "<=", "Ord.le"),
-  infix("infix", 40, ">", "Ord.gt"),
-  infix("infix", 40, ">=", "Ord.ge"),
-  infix("infixl", 60, "+", "Add.add"),
-  infix("infixl", 60, "-", "Sub.sub"),
-  infix("infixl", 70, "*", "Mul.mul"),
-  infix("infixl", 70, "/", "Div.div"),
-  infix("infixl", 70, "%", "Rem.rem"),
-  prefix(80, "!", "Bool.not"),
-  prefix(80, "-", "Neg.neg"),
-];
-
 const prelude_fixities = [
   prelude_text,
   runtime_prelude_text,
@@ -115,10 +96,6 @@ function is_line_start(tokens: Token[], index: number): boolean {
 
 export function create_fixity_table(): FixityTable {
   const table: FixityTable = { infix: new Map(), prefix: new Map() };
-
-  for (const fixity of builtin_fixities) {
-    register_fixity(table, { ...fixity, builtin: true });
-  }
 
   for (const fixity of prelude_fixities) {
     register_fixity(table, fixity);
@@ -221,6 +198,13 @@ function read_fixity(
   let index = start + 4;
   const target_parts: string[] = [];
 
+  if (tokens[index]?.kind === "symbol" && tokens[index]?.text === "@") {
+    target_parts.push("@");
+    index += 1;
+  }
+
+  let expects_name = true;
+
   while (index < tokens.length) {
     const token = tokens[index];
     expect(token, "Missing fixity target token");
@@ -230,19 +214,19 @@ function read_fixity(
     }
 
     if (
-      (target_parts.length % 2 === 0 && token.kind !== "name") ||
-      (target_parts.length % 2 === 1 &&
-        (token.kind !== "symbol" || token.text !== "."))
+      (expects_name && token.kind !== "name") ||
+      (!expects_name && (token.kind !== "symbol" || token.text !== "."))
     ) {
       throw new Error("Fixity target must be a function or namespace member");
     }
 
     target_parts.push(token.text);
+    expects_name = !expects_name;
     index += 1;
   }
 
   expect(
-    target_parts.length >= 1 && target_parts.length % 2 === 1,
+    target_parts.length >= 1 && !expects_name,
     "Fixity target must be a function or namespace member",
   );
   const target = target_parts.join("");
@@ -271,6 +255,8 @@ function read_fixity(
     );
   }
 
+  fixity.builtin = target.startsWith("@syntax.");
+
   return { fixity, end: index - 1 };
 }
 
@@ -291,20 +277,6 @@ function infix(
   return {
     kind: "infix",
     associativity,
-    precedence,
-    operator,
-    target,
-    builtin: false,
-  };
-}
-
-function prefix(
-  precedence: number,
-  operator: string,
-  target: string,
-): PrefixFixity {
-  return {
-    kind: "prefix",
     precedence,
     operator,
     target,

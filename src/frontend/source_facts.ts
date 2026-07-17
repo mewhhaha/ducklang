@@ -260,6 +260,7 @@ export function source_inference_diagnostics(
     "U32",
     "I64",
     "F32",
+    "F64",
     "F32x4",
     "Text",
     "Bytes",
@@ -587,11 +588,11 @@ class SourceFactRecorder {
   readonly applied_declaration_types = new Map<string, SourceTypeFact>();
   readonly namespaces = new Map<string, SourceTypeFact>();
   readonly case_owners = new Map<string, string[]>();
-  readonly legacy_type_values = new Map<
+  readonly type_values = new Map<
     string,
     Extract<FrontExpr, { tag: "struct_type" | "union_type" }>
   >();
-  readonly legacy_type_names = new WeakMap<object, string>();
+  readonly type_value_names = new WeakMap<object, string>();
   readonly source_aggregate_type_values = new WeakMap<
     object,
     SourceAggregateTypeValue
@@ -647,8 +648,8 @@ class SourceFactRecorder {
         value = statement.value as SourceAggregateTypeValue;
       }
 
-      this.legacy_type_values.set(statement.name, value);
-      this.legacy_type_names.set(value, statement.name);
+      this.type_values.set(statement.name, value);
+      this.type_value_names.set(value, statement.name);
 
       if (value.tag === "union_type") {
         for (const union_case of value.cases) {
@@ -1298,6 +1299,8 @@ class SourceFactRecorder {
         type = named_type("I64");
       } else if (expr.type === "f32") {
         type = named_type("F32");
+      } else if (expr.type === "f64") {
+        type = named_type("F64");
       } else {
         type = named_type("I32");
       }
@@ -1334,7 +1337,7 @@ class SourceFactRecorder {
     } else if (expr.tag === "set_type") {
       type = named_type("Type");
     } else if (expr.tag === "struct_type" || expr.tag === "union_type") {
-      type = this.type_value_namespace(expr);
+      type = this.anonymous_type_value_namespace(expr);
     } else if (expr.tag === "shape") {
       for (const entry of expr.entries) {
         this.record_expr(entry.value, scope, undefined, break_types);
@@ -1516,7 +1519,7 @@ class SourceFactRecorder {
       }
 
       if (aggregate_type !== undefined) {
-        type = this.type_value_namespace(aggregate_type);
+        type = this.anonymous_type_value_namespace(aggregate_type);
         this.store_expr_type(expr, type);
         return type;
       }
@@ -1562,6 +1565,14 @@ class SourceFactRecorder {
           expected_arg = named_type("Shape");
         } else if (builtin === "@type.product") {
           expected_arg = named_type("StructSlots");
+        } else if (builtin === "@type.extend") {
+          if (index === 1) {
+            expected_arg = named_type("Shape");
+          }
+        } else if (builtin === "@type.member") {
+          if (index === 1) {
+            expected_arg = named_type("Text");
+          }
         } else if (
           builtin === "@type.union" || builtin === "@type.intersection" ||
           builtin === "@type.difference"
@@ -1800,6 +1811,8 @@ class SourceFactRecorder {
       expr.func.name === "@format_f32" ||
       expr.func.name === "@shape.entries" ||
       expr.func.name === "@type.product" ||
+      expr.func.name === "@type.extend" ||
+      expr.func.name === "@type.member" ||
       expr.func.name === "@type.union" ||
       expr.func.name === "@type.intersection" ||
       expr.func.name === "@type.difference" ||
@@ -1871,12 +1884,12 @@ class SourceFactRecorder {
         return true;
       }
 
-      const legacy = this.legacy_type_values.get(type.name);
+      const type_value = this.type_values.get(type.name);
 
-      if (legacy !== undefined) {
-        return this.legacy_type_value_is_known(
+      if (type_value !== undefined) {
+        return this.type_value_is_known(
           type.name,
-          legacy,
+          type_value,
           resolving,
         );
       }
@@ -2032,7 +2045,7 @@ class SourceFactRecorder {
     return true;
   }
 
-  legacy_type_value_is_known(
+  type_value_is_known(
     name: string,
     value: Extract<FrontExpr, { tag: "struct_type" | "union_type" }>,
     resolving: Set<string>,
@@ -2404,6 +2417,8 @@ class SourceFactRecorder {
           literal_types.push(named_type("I64"));
         } else if (literal.type === "f32") {
           literal_types.push(named_type("F32"));
+        } else if (literal.type === "f64") {
+          literal_types.push(named_type("F64"));
         } else {
           literal_types.push(named_type("I32"));
         }
@@ -3072,10 +3087,10 @@ class SourceFactRecorder {
       return cached;
     }
 
-    const legacy = this.legacy_type_values.get(name);
+    const type_value = this.type_values.get(name);
 
-    if (legacy !== undefined) {
-      return this.legacy_type_namespace(name, legacy);
+    if (type_value !== undefined) {
+      return this.declared_type_value_namespace(name, type_value);
     }
 
     const declaration = this.declarations.get(name);
@@ -3234,22 +3249,22 @@ class SourceFactRecorder {
     return namespace;
   }
 
-  type_value_namespace(
+  anonymous_type_value_namespace(
     value: Extract<FrontExpr, { tag: "struct_type" | "union_type" }>,
   ): SourceTypeFact {
-    const name = this.legacy_type_names.get(value);
+    const name = this.type_value_names.get(value);
 
     if (name !== undefined) {
       return this.namespace_for(name);
     }
 
-    const instance = this.legacy_type_instance(undefined, value, new Set());
+    const instance = this.type_value_instance(undefined, value, new Set());
     const namespace = named_type("Type");
     namespace.constructed = instance;
     return namespace;
   }
 
-  legacy_type_namespace(
+  declared_type_value_namespace(
     name: string,
     value: Extract<FrontExpr, { tag: "struct_type" | "union_type" }>,
   ): SourceTypeFact {
@@ -3259,7 +3274,7 @@ class SourceFactRecorder {
       return cached;
     }
 
-    const instance = this.legacy_type_instance(name, value, new Set());
+    const instance = this.type_value_instance(name, value, new Set());
     const members = new Map<string, SourceTypeFact>();
 
     if (value.tag === "struct_type") {
@@ -3294,7 +3309,7 @@ class SourceFactRecorder {
     return namespace;
   }
 
-  legacy_type_instance(
+  type_value_instance(
     name: string | undefined,
     value: Extract<FrontExpr, { tag: "struct_type" | "union_type" }>,
     resolving: Set<string>,
@@ -3367,10 +3382,10 @@ class SourceFactRecorder {
       return named_type(name);
     }
 
-    const legacy = this.legacy_type_values.get(name);
+    const type_value = this.type_values.get(name);
 
-    if (legacy !== undefined) {
-      return this.legacy_type_instance(name, legacy, resolving);
+    if (type_value !== undefined) {
+      return this.type_value_instance(name, type_value, resolving);
     }
 
     const declaration = this.declarations.get(name);
@@ -3978,6 +3993,14 @@ function builtin_call_result(
   name: string,
   args: (SourceTypeFact | undefined)[],
 ): SourceTypeFact | undefined {
+  if (name === "@type.extend" && args.length === 2) {
+    return args[0];
+  }
+
+  if (name === "@type.member" && args.length === 3) {
+    return args[0];
+  }
+
   if (name === "@shape.entries" && args.length === 1) {
     return shape_entries_type();
   }
@@ -5028,7 +5051,7 @@ function canonical_scalar_from_source_name(
   if (
     name === "Bool" || name === "Unit" || name === "Int" ||
     name === "I32" || name === "U32" || name === "I64" ||
-    name === "F32" || name === "F32x4" || name === "Text" ||
+    name === "F32" || name === "F64" || name === "F32x4" || name === "Text" ||
     name === "Bytes" || name === "Resume"
   ) {
     return name;
@@ -5917,7 +5940,8 @@ function is_numeric_type(type: SourceTypeFact): boolean {
   }
 
   return type.resolved_name === "I32" || type.resolved_name === "I64" ||
-    type.resolved_name === "F32" || type.resolved_name === "Int" ||
+    type.resolved_name === "F32" || type.resolved_name === "F64" ||
+    type.resolved_name === "Int" ||
     type.resolved_name === "U32";
 }
 
@@ -5977,8 +6001,7 @@ function same_numeric_type_family(
 }
 
 function is_condition_type(type: SourceTypeFact): boolean {
-  return type.resolved_name === "Bool" || type.resolved_name === "I32" ||
-    type.resolved_name === "Int" || type.resolved_name === "U32";
+  return type.resolved_name === "Bool";
 }
 
 function compatible_equality_operands(
@@ -6004,6 +6027,10 @@ function compatible_equality_operands(
 
     if (left.resolved_name === "F32") {
       return prim.startsWith("f32.");
+    }
+
+    if (left.resolved_name === "F64") {
+      return prim.startsWith("f64.");
     }
 
     return prim.startsWith("i32.");
@@ -6040,6 +6067,10 @@ function front_type_from_source_fact(
 
   if (type.resolved_name === "F32") {
     return { tag: "int", type: "f32" };
+  }
+
+  if (type.resolved_name === "F64") {
+    return { tag: "int", type: "f64" };
   }
 
   if (type.resolved_name === "F32x4") {

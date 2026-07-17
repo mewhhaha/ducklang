@@ -15,6 +15,10 @@ function f32(value: number): IcNode {
   return { tag: "num", type: "f32", value };
 }
 
+function f64(value: number): IcNode {
+  return { tag: "num", type: "f64", value };
+}
+
 function var_(name: string): IcNode {
   return { tag: "var", name };
 }
@@ -392,6 +396,25 @@ Deno.test("Ic.reduce folds f32 arithmetic and conversions", () => {
         args: [f32(Number.NaN)],
       }),
     "i32_from_f32 traps for value NaN",
+  );
+});
+
+Deno.test("Ic.reduce folds f64 arithmetic and conversion", () => {
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "f64.add",
+      args: [f64(20.5), f64(21.5)],
+    }),
+    f64(42),
+  );
+  assert_equals(
+    Ic.reduce({
+      tag: "prim",
+      prim: "f64.convert_i32_s",
+      args: [i32(42)],
+    }),
+    f64(42),
   );
 });
 

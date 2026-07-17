@@ -3,7 +3,7 @@ module (!init: Init) where
 const { length } = comptime import "duck:prelude/runtime" ()
 
 declare effect Input {
-  flag: () => I32
+  flag: () => Bool
 }
 
 declare Init { input: Input }

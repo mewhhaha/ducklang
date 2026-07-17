@@ -133,6 +133,23 @@ Deno.test("Prim exposes f32 arithmetic and explicit conversions", () => {
   assert_equals(Emit.emit(Prim, "i32.trunc_f32_s"), "i32.trunc_f32_s");
 });
 
+Deno.test("Prim exposes f64 arithmetic and i32 conversion", () => {
+  assert_equals(Callable.type(Prim, "f64.add"), {
+    args: ["f64", "f64"],
+    result: "f64",
+  });
+  assert_equals(Callable.type(Prim, "f64.ge"), {
+    args: ["f64", "f64"],
+    result: "i32",
+  });
+  assert_equals(Callable.type(Prim, "f64.convert_i32_s"), {
+    args: ["i32"],
+    result: "f64",
+  });
+  assert_equals(Emit.emit(Prim, "f64.add"), "f64.add");
+  assert_equals(Emit.emit(Prim, "f64.convert_i32_s"), "f64.convert_i32_s");
+});
+
 Deno.test("Prim maps public integer and f32 builtins", () => {
   assert_equals(numeric_builtin_prim("@bit_and"), "i32.and");
   assert_equals(numeric_builtin_prim("@shift_right_u"), "i32.shr_u");

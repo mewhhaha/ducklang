@@ -6,6 +6,7 @@ import {
   type FunctionalHostCapabilityDeclaration,
   type FunctionalHostType,
   FunctionalHostTypes,
+  type FunctionalModuleArtifact,
   FunctionalNumericConversion,
   type FunctionalSurfaceCaseArm,
   type FunctionalSurfaceDefinition,
@@ -45,6 +46,7 @@ const unit_type: FunctionalTypeSchema = { kind: "unit" };
 const integer_type: FunctionalTypeSchema = { kind: "integer" };
 
 export type LoweredDuckGpufuckModule = {
+  artifact: FunctionalModuleArtifact;
   encoded: EncodedFunctionalModule;
   automatic_init: FunctionalWasmInit;
 };
@@ -195,7 +197,7 @@ class DuckCoreLowering {
       automatic_init[duck_runtime_capability] =
         this.#automatic_runtime_bindings;
     }
-    return { encoded, automatic_init };
+    return { artifact, encoded, automatic_init };
   }
 
   private collect_types(): void {

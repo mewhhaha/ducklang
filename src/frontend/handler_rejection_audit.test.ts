@@ -95,7 +95,7 @@ Deno.test("managed ABI rejects Resume nested in an aggregate", () => {
     () =>
       build_abi_manifest(elaborate_front_type_sets(
         resolve_bundled_source_imports(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const continuation_box = struct { .continuation= Resume }
 const duck_entry_result_type = continuation_box
 0
@@ -133,17 +133,15 @@ Counter {
   assert_throws(
     () =>
       Source.effects(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const wanted = struct { .x= I32 }
-const { struct } = comptime (import "duck:prelude")()
-const other = struct { .y= I32 }
 effect Read { read: () => wanted }
 Read {
-  read: (!resume) => !resume(other with { .y = 1 }),
+  read: (!resume) => !resume("no"),
   return: value => value,
 }
 `),
-    "Resumption resume expects wanted, got other",
+    "Resumption resume expects wanted, got Text",
   );
 
   assert_throws(

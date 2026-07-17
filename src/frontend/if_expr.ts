@@ -33,7 +33,7 @@ export function lower_if_expr(
   env: Env,
   hooks: IfExprHooks,
 ): IcNode {
-  check_if_condition(expr.cond, env, hooks);
+  check_lowered_if_condition(expr.cond, env, hooks);
   const cond = Ic.reduce(
     hooks.lower_expr(unwrap_ownership_wrapper_expr(expr.cond), env),
   );
@@ -178,6 +178,26 @@ export function lower_if_expr(
   };
 }
 
+function check_lowered_if_condition(
+  expr: FrontExpr,
+  env: Env,
+  hooks: Pick<IfExprHooks, "infer_expr">,
+): void {
+  const type = hooks.infer_expr(expr, env);
+
+  if (type.tag === "unknown" || type.tag === "bool") {
+    return;
+  }
+
+  if (type.tag === "int" && type.type === "i32") {
+    return;
+  }
+
+  throw new Error(
+    "If condition expects Bool, got " + front_type_name(type),
+  );
+}
+
 function common_if_type(
   implicit_else: boolean | undefined,
   then_type: FrontType,
@@ -226,29 +246,5 @@ function throw_no_else_implicit_fallback(
     "No-else " + label +
       " implicit fallback supports Bool, Int, I64, Text, struct, or union, got " +
       front_type_name(type),
-  );
-}
-
-function check_if_condition(
-  expr: FrontExpr,
-  env: Env,
-  hooks: Pick<IfExprHooks, "infer_expr">,
-): void {
-  const type = hooks.infer_expr(expr, env);
-
-  if (type.tag === "unknown") {
-    return;
-  }
-
-  if (type.tag === "bool") {
-    return;
-  }
-
-  if (type.tag === "int" && type.type === "i32") {
-    return;
-  }
-
-  throw new Error(
-    "If condition expects Bool or I32, got " + front_type_name(type),
   );
 }

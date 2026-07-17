@@ -1,6 +1,6 @@
 type Result = | .ok = Int | .err = Text
 
-let flag = 1
+let flag = true
 let result: Result = if flag {
   Result.ok(40)
 } else {

@@ -47,7 +47,7 @@ Deno.test("Core type sets accept raw shared scalar representations", () => {
 
 Deno.test("Core type sets preserve validated explicit scalar cases", () => {
   const core = Source.core(Source.parse(`
-type Scalar = Bool | I32
+type Scalar = Bool :| I32
 let value: Scalar = 1
 value
 `));
@@ -79,7 +79,7 @@ ResultType.ok(41)
   const scratch_union_core = Source.core(Source.parse(`
 type ResultType = | .ok = Int | .err = Int
 
-let flag = 1
+let flag = true
 
 scratch {
   if flag {
@@ -115,7 +115,7 @@ scratch {
 type ResultType = | .ok = Int | .err = Int
 
 let keep = "x"
-let flag = 0
+let flag = false
 
 if flag {
   ResultType.ok(41)
@@ -160,7 +160,7 @@ ResultType.ok("Ada")
   assert_includes(text_wat, "i32.store offset=4");
 
   const struct_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -213,7 +213,7 @@ ResultType.ok([.age = 40, .score = 2] as user_type)
   );
 
   const aggregate_payload_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -281,7 +281,7 @@ if let .ok(found) = result {
   assert_includes(aggregate_payload_wat, "i32.load offset=4");
 
   const use_after_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -326,14 +326,14 @@ total + user.age
   );
 
   const branch_assignment_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let user: user_type = [.age = flag, .score = 2] as user_type
 let result: ResultType = ResultType.err()
 if flag {
@@ -384,14 +384,14 @@ total
 
   const branch_assignment_payload_transfer_use_after = Source.core(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let user: user_type = [.age = flag, .score = 2] as user_type
 let result: ResultType = ResultType.err()
 if flag {
@@ -440,14 +440,14 @@ total + user.age
 
   const one_sided_branch_assignment_payload_transfer = Source.core(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let user: user_type = [.age = flag, .score = 2] as user_type
 let result: ResultType = ResultType.err()
 if flag {
@@ -527,10 +527,10 @@ total
   );
 
   const one_sided_payload_use_after = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int, .score= Int }
 type ResultType = | .ok = user_type | .err
-let flag = 1
+let flag = true
 let user: user_type = [.age = flag, .score = 2] as user_type
 let result: ResultType = ResultType.err()
 if flag {
@@ -555,7 +555,7 @@ user.age
   );
 
   const loop_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -608,7 +608,7 @@ total
   const single_exit_loop_payload_transfer = Source.core(Source.parse(`
 host_import loop_limit from "env.limit" () => I32
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 type ResultType = | .ok = user_type | .err
 let limit = loop_limit()
@@ -676,7 +676,7 @@ limit
 
   const single_exit_loop_use_after = Source.core(Source.parse(`
 host_import loop_limit from "env.limit" () => I32
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 type ResultType = | .ok = user_type | .err
 let limit = loop_limit()
@@ -702,7 +702,7 @@ user.age
   );
 
   const alias_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -741,7 +741,7 @@ if let .ok(found) = result {
   assert_includes(alias_payload_transfer_wat, "(local $found i32)");
 
   const use_after_alias_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -782,7 +782,7 @@ total + user.age
   ]);
 
   const wrapper_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -846,7 +846,7 @@ if let .ok(found) = result {
   assert_includes(wrapper_payload_transfer_wat, "call $__free");
 
   const wrapper_payload_transfer_use_after = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -887,14 +887,14 @@ total + user.age
   ]);
 
   const branch_wrapper_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let wrap = if flag {
   (payload: user_type) => ResultType.ok(payload)
 } else {
@@ -977,14 +977,14 @@ if let .ok(found) = result {
   assert_includes(branch_wrapper_payload_transfer_wat, "call $__free");
 
   const branch_wrapper_payload_transfer_use_after = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let wrap = if flag {
   (payload: user_type) => ResultType.ok(payload)
 } else {
@@ -1027,14 +1027,14 @@ total + user.age
 
   const branch_wrapper_alias_payload_transfer_use_after = Source.core(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
 }
 type ResultType = | .ok = user_type | .err
 
-let flag = 1
+let flag = true
 let wrap = if flag {
   (payload: user_type) => ResultType.ok(payload)
 } else {
@@ -1081,7 +1081,7 @@ total + user.age
   );
 
   const higher_order_alias_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1126,7 +1126,7 @@ if let .ok(found) = result {
 
   const higher_order_alias_payload_transfer_use_after = Source.core(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1157,7 +1157,7 @@ total + user.age
   );
 
   const branch_higher_order_alias_payload_transfer = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1165,7 +1165,7 @@ const user_type = struct {
 type ResultType = | .ok = user_type | .err
 
 let wrap = (payload: user_type) => ResultType.ok(payload)
-let flag = 1
+let flag = true
 let relay = if flag {
   (const f, payload: user_type) => {
     let g = f
@@ -1217,7 +1217,7 @@ if let .ok(found) = result {
 
   const branch_higher_order_alias_payload_transfer_use_after = Source.core(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1225,7 +1225,7 @@ const user_type = struct {
 type ResultType = | .ok = user_type | .err
 
 let wrap = (payload: user_type) => ResultType.ok(payload)
-let flag = 1
+let flag = true
 let relay = if flag {
   (const f, payload: user_type) => {
     let g = f
@@ -1261,7 +1261,7 @@ total + user.age
 
 Deno.test("Core annotates shorthand aggregate payloads in dynamic union branches", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1269,7 +1269,7 @@ const user_type = struct {
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let result: result_type = if flag {
   result_type.ok([.age = 40, .score = 2])
 } else {
@@ -1292,7 +1292,7 @@ Deno.test("Core shares frozen runtime aggregate union payloads", () => {
   const shared_payload = Source.core(Source.parse(`
 host_import host_seed from "env.seed" () => I32
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= Int
@@ -1346,7 +1346,7 @@ payload_total + shared.age
   assert_includes(shared_payload_wat, "i32.load offset=4");
 
   const borrowed_payload = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -1394,7 +1394,7 @@ if let .ok(found) = result {
 
 Deno.test("Core.emit materializes runtime aggregate values", () => {
   const core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .score= I64,
@@ -1426,7 +1426,7 @@ user
   assert_includes(wat, "i32.store offset=16");
 
   const captured_field_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .age= Int,
   .score= Int
@@ -1447,13 +1447,13 @@ pair
   assert_includes(captured_field_wat, "i32.store offset=0");
 
   const runtime_field_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => [.name = name, .age = 40] as user_type
 } else {
@@ -1477,13 +1477,13 @@ let user: user_type = make("Ada")
   assert_includes(runtime_field_wat, "i32.load offset=4");
 
   const runtime_pointer_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => [.name = name, .age = 40] as user_type
 } else {
@@ -1504,13 +1504,13 @@ user
   );
 
   const frozen_runtime_pointer_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => [.name = name, .age = 40] as user_type
 } else {
@@ -1561,13 +1561,13 @@ let frozen: user_type = freeze user
   assert_includes(frozen_runtime_pointer_wat, "i32.load offset=4");
 
   const frozen_runtime_pointer_mutation_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => [.name = name, .age = 40] as user_type
 } else {
@@ -1606,18 +1606,18 @@ frozen.age
   );
 
   const nested_field_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const name_type = struct {
   .first= Text,
   .last= Text
 }
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= name_type
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text) => [.age = 40, .name = [.first = first, .last = "Lovelace"] as name_type] as user_type
 } else {
@@ -1642,13 +1642,13 @@ let name: name_type = user.name
   assert_includes(nested_field_wat, "i32.load offset=0");
 
   const captured_pointer_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
 }
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => [.name = name, .age = 41] as user_type
 } else {
@@ -1688,12 +1688,12 @@ get_age()
   assert_includes(captured_pointer_wat, "i32.load offset=4");
 
   const scratch_aggregate_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
 }
-let flag = 1
+let flag = true
 let f = if flag {
   (x: Int) => x
 } else {
@@ -1746,7 +1746,7 @@ scratch {
   );
 
   const escaping_scratch_aggregate_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -1810,7 +1810,7 @@ Deno.test("Core.emit matches stored runtime scalar Text and struct union pointer
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (x: Int) => result_type.ok(x)
 } else {
@@ -1839,7 +1839,7 @@ if let .ok(value) = result {
 type ResultType = | .ok = Text | .err
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (x: Text) => result_type.ok(x)
 } else {
@@ -1862,7 +1862,7 @@ if let .ok(value) = result {
   assert_includes(text_wat, "local.set $value");
 
   const struct_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
@@ -1870,7 +1870,7 @@ const user_type = struct {
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (name: Text) => result_type.ok([.name = name, .age = 40] as user_type)
 } else {
@@ -1894,12 +1894,12 @@ if let .ok(user) = result {
   assert_includes(struct_wat, "i32.load offset=4");
 
   const nested_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const name_type = struct {
   .first= Text,
   .last= Text
 }
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= name_type,
   .age= Int
@@ -1907,7 +1907,7 @@ const user_type = struct {
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (first: Text) => result_type.ok([.name = [.first = first, .last = "Lovelace"] as name_type, .age = 40] as user_type)
 } else {
@@ -1936,7 +1936,7 @@ const inner_type = InnerType
 type OuterType = | .ok = inner_type | .err
 const outer_type = OuterType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (value: Int) => outer_type.ok(inner_type.some(value))
 } else {
@@ -1965,7 +1965,7 @@ if let .ok(inner) = result {
   const nested_union_core = Source.core(Source.parse(`
 type InnerType = | .some = Int | .none
 const inner_type = InnerType
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const box_type = struct {
   .inner= inner_type,
   .bonus= Int
@@ -1973,7 +1973,7 @@ const box_type = struct {
 type ResultType = | .ok = box_type | .err
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let make = if flag {
   (value: Int) => result_type.ok([.inner = inner_type.some(value), .bonus = 1] as box_type)
 } else {
@@ -2003,7 +2003,7 @@ if let .ok(box) = result {
 
 Deno.test("Core.emit applies direct parameter annotation context", () => {
   const struct_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -2045,7 +2045,7 @@ unwrap(.ok(41))
       Typed.type(
         Core,
         Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -2162,13 +2162,13 @@ if let .some(value) = result {
 
 Deno.test("Core resolves type values stored in extension fields", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const add_args_type = struct { .left = Int, .right = Int }
 type NumberCalcType = | .literal = Int | .add = add_args_type
 type TextCalcType = | .literal = Text
 
 const calc_types = 0
-const calc_types = calc_types with {
+const calc_types = calc_types :+ {
   .number = NumberCalcType,
   .text = TextCalcType
 }
@@ -2194,13 +2194,13 @@ if let .add(args) = expression {
   assert_throws(
     () =>
       Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const add_args_type = struct { .left = Int, .right = Int }
 type NumberCalcType = | .literal = Int | .add = add_args_type
 type TextCalcType = | .literal = Text
 
 const calc_types = 0
-const calc_types = calc_types with {
+const calc_types = calc_types :+ {
   .number = NumberCalcType,
   .text = TextCalcType
 }
@@ -2216,7 +2216,7 @@ Deno.test("Core.emit elides type-level consts and type checks", () => {
   const core = Source.core(Source.parse(`
 const int_type = Int
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= int_type
@@ -2252,7 +2252,7 @@ let union { .ok= Int, .. } = result_type
       Typed.type(
         Core,
         Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int
 }
@@ -2286,7 +2286,7 @@ let struct { .ok= Int, .. } = result_type
       Typed.type(
         Core,
         Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .age= Int,
   .name= Text
@@ -2605,7 +2605,7 @@ if let .ok(value) = result {
   );
 
   const direct_type_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 struct {
   .name= Text
 }
@@ -2625,7 +2625,7 @@ struct {
   );
 
   const named_type_core = Source.core(Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text
 }
@@ -2963,7 +2963,7 @@ if let .ok(value) = result {
 
   const direct_struct_update_core = Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-user with { .age = 41 }
+user :+ { .age = 41 }
 `));
   assert_equals(
     Core.proof(direct_struct_update_core).issues[0]?.message,
@@ -2976,7 +2976,7 @@ user with { .age = 41 }
 
   const struct_update_projection_core = Source.core(Source.parse(`
 let user = [.age = 40, .score = 2]
-(user with { .age = 41 }).age
+(user :+ { .age = 41 }).age
 `));
   assert_equals(Core.proof(struct_update_projection_core).issues, []);
   assert_equals(

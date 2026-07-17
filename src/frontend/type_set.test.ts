@@ -21,7 +21,7 @@ async function run_i32_source(source: string, name: string): Promise<number> {
 
 Deno.test("type-set declarations format with canonical operator spacing", () => {
   assert_equals(
-    Source.fmt(Source.parse("type Value=Int|Text\\Never\n0")),
+    Source.fmt(Source.parse("type Value=Int:|Text:-Never\n0")),
     "type Value = Int :| Text :- Never\n0",
   );
 });
@@ -45,12 +45,12 @@ if value == #hello { 42 } else { 0 }
 
 Deno.test("finite atom and arbitrary type unions inject plain values", () => {
   const atoms = Source.wat(`
-type Truth = #true | #false
+type Truth = #true :| #false
 let value: Truth = #true
 if let .set_1(_) = value { 42 } else { 0 }
 `);
   const scalar = Source.wat(`
-type Scalar = Int | Text
+type Scalar = Int :| Text
 let value: Scalar = 42
 if let .set_0(number) = value { number } else { 0 }
 `);
@@ -63,7 +63,7 @@ Deno.test("Bool type sets reject known I32 values", () => {
   assert_throws(
     () =>
       Source.wat(`
-type Scalar = Bool | Text
+type Scalar = Bool :| Text
 let value: Scalar = 1
 if value is Bool { 42 } else { 0 }
 `),
@@ -75,7 +75,7 @@ Deno.test("I32 type sets reject known Bool values", () => {
   assert_throws(
     () =>
       Source.wat(`
-type Scalar = I32 | Text
+type Scalar = I32 :| Text
 let value: Scalar = true
 if value is I32 { 42 } else { 0 }
 `),
@@ -86,7 +86,7 @@ if value is I32 { 42 } else { 0 }
 Deno.test("Bool type-set bindings match Bool", async () => {
   const result = await run_i32_source(
     `
-type Scalar = Bool | Text
+type Scalar = Bool :| Text
 let value: Scalar = true
 if value is Bool { 42 } else { 0 }
 `,
@@ -99,7 +99,7 @@ if value is Bool { 42 } else { 0 }
 Deno.test("I32 type-set bindings match I32", async () => {
   const result = await run_i32_source(
     `
-type Scalar = I32 | Text
+type Scalar = I32 :| Text
 let value: Scalar = 1
 if value is I32 { 42 } else { 0 }
 `,
@@ -114,7 +114,7 @@ Deno.test("Bool and I32 aliases retain distinct type-set members", async () => {
     `
 type Truth = Bool
 type Count = I32
-type Scalar = Truth | Count
+type Scalar = Truth :| Count
 let value: Scalar = 1
 if value is Truth { 42 } else { 0 }
 `,
@@ -131,19 +131,19 @@ Deno.test("singleton and set annotations reject values outside the set", () => {
   );
   assert_throws(
     () =>
-      Source.wat("type Truth = #true | #false\nlet value: Truth = #other\n0"),
+      Source.wat("type Truth = #true :| #false\nlet value: Truth = #other\n0"),
     "binding annotation expects Truth",
   );
 });
 
 Deno.test("is narrows tagged type sets in both branches", () => {
   const then_wat = Source.wat(`
-type Scalar = Int | Text
+type Scalar = Int :| Text
 let value: Scalar = "hello"
 if value is Text { @len(value) } else { 0 }
 `);
   const else_wat = Source.wat(`
-type Scalar = Int | Text
+type Scalar = Int :| Text
 let value: Scalar = 42
 if value is Text { 0 } else { value + 0 }
 `);
@@ -165,14 +165,14 @@ if matches { 42 } else { 0 }
 
 Deno.test("finite intersections and differences normalize to runtime types", () => {
   const difference = Source.wat(`
-type Scalar = Int | Text
-type Number = Scalar \\ Text
+type Scalar = Int :| Text
+type Number = Scalar :- Text
 let value: Number = 42
 value
 `);
   const intersection = Source.wat(`
-type Scalar = Int | Text
-type Number = Scalar & Int
+type Scalar = Int :| Text
+type Number = Scalar :& Int
 let value: Number = 42
 value
 `);
@@ -182,8 +182,8 @@ value
   assert_throws(
     () =>
       Source.wat(`
-type Scalar = Int | Text
-type Number = Scalar \\ Text
+type Scalar = Int :| Text
+type Number = Scalar :- Text
 let value: Number = "no"
 0
 `),
@@ -193,15 +193,15 @@ let value: Number = "no"
 
 Deno.test("inline finite type sets lower without a named declaration", () => {
   const union = Source.wat(`
-let value: Int | Text = 42
+let value: Int :| Text = 42
 if value is Int { value } else { 0 }
 `);
   const intersection = Source.wat(`
-let value: (Int | Text) & Int = 42
+let value: (Int :| Text) :& Int = 42
 value
 `);
   const difference = Source.wat(`
-let value: (Int | Text) \\ Text = 42
+let value: (Int :| Text) :- Text = 42
 value
 `);
 
@@ -258,14 +258,14 @@ if value is #a09ohszq57r { 42 } else { 0 }
 
 Deno.test("ownership-qualified members reject an unsound runtime envelope", () => {
   assert_throws(
-    () => Source.wat("type Mixed = #Text | Int\n0"),
+    () => Source.wat("type Mixed = #Text :| Int\n0"),
     "Ownership-qualified runtime type-set members are not supported yet",
   );
 });
 
 Deno.test("negative is narrowing carries the remaining multi-case set", () => {
   const wat = Source.wat(`
-type Three = Int | Text | I64
+type Three = Int :| Text :| I64
 let value: Three = 9i64
 if value is Int {
   0
@@ -282,12 +282,12 @@ if value is Int {
 
 Deno.test("type-set parameters inject plain call arguments", () => {
   const named = Source.wat(`
-type Choice = Int | Text
+type Choice = Int :| Text
 let unwrap = (value: Choice) => if value is Int { value } else { 0 }
 unwrap(42)
 `);
   const inline = Source.wat(`
-let unwrap = (value: Int | Text) => if value is Int { value } else { 0 }
+let unwrap = (value: Int :| Text) => if value is Int { value } else { 0 }
 unwrap(42)
 `);
 
@@ -299,14 +299,14 @@ unwrap(42)
 
 Deno.test("type-set parameters forward their existing runtime envelope", () => {
   const named = Source.wat(`
-type Choice = Int | Text
+type Choice = Int :| Text
 let identity = (value: Choice) => value
 let forward = (value: Choice) => identity(value)
 forward(42)
 `);
   const inline = Source.wat(`
-let identity = (value: Int | Text) => value
-let forward = (value: Int | Text) => identity(value)
+let identity = (value: Int :| Text) => value
+let forward = (value: Int :| Text) => identity(value)
 forward(42)
 `);
 
@@ -320,7 +320,7 @@ module (!init: Init) where
 
 declare effect Input { flag: () => I32 }
 type Init = [.input = Input]
-type Choice = Int | Text
+type Choice = Int :| Text
 
 flag <- Input.flag()
 let operation = if flag {
@@ -338,15 +338,15 @@ return { .result = result }
 
 Deno.test("selected closures accept equivalent type-set aliases", () => {
   const alias = Source.wat(`
-type A = Int | Text
+type A = Int :| Text
 type B = A
 let condition: I32 = 1
 let operation = if condition { (value: A) => value } else { (value: B) => value }
 operation(42)
 `);
   const reordered = Source.wat(`
-type A = Int | Text
-type B = Text | Int
+type A = Int :| Text
+type B = Text :| Int
 let condition: I32 = 1
 let operation = if condition { (value: A) => value } else { (value: B) => value }
 operation(42)
@@ -360,8 +360,8 @@ Deno.test("selected closures reject incompatible type-set aliases", () => {
   assert_throws(
     () =>
       Source.wat(`
-type A = Int | Text
-type B = Int | I64
+type A = Int :| Text
+type B = Int :| I64
 let condition: I32 = 1
 let operation = if condition { (value: A) => value } else { (value: B) => value }
 operation(42)
@@ -371,8 +371,8 @@ operation(42)
   assert_throws(
     () =>
       Source.wat(`
-type A = #left | Text
-type B = #right | Text
+type A = #left :| Text
+type B = #right :| Text
 let condition: I32 = 1
 let operation = if condition { (value: A) => value } else { (value: B) => value }
 operation(#left)
@@ -385,7 +385,7 @@ Deno.test("finite type sets retain a tagged managed ABI schema", () => {
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-type Read = Int | Text
+type Read = Int :| Text
 declare effect Input { read: () => Read }
 type Init = [.input = Input]
 
@@ -411,7 +411,7 @@ Deno.test("generic type-set specializations retain their managed ABI schema", ()
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 type MaybeInt = Maybe Int
 declare effect Input { value: () => MaybeInt }
 type Init = [.input = Input]
@@ -440,13 +440,13 @@ return { .result = result }
 
 Deno.test("generic type sets specialize member facts", () => {
   const present = Source.wat(`
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 type MaybeInt = Maybe Int
 let value: MaybeInt = 42
 if value is Int { value } else { 0 }
 `);
   const absent = Source.wat(`
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 type MaybeInt = Maybe Int
 let value: MaybeInt = #nothing
 if value is #nothing { 42 } else { 0 }
@@ -458,7 +458,7 @@ if value is #nothing { 42 } else { 0 }
 
 Deno.test("nested generic type sets specialize recursively", () => {
   const wat = Source.wat(`
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 type Nested a = Maybe a
 type NestedInt = Nested Int
 let value: NestedInt = 42
@@ -471,7 +471,7 @@ if value is Int { value } else { 0 }
 Deno.test("generic type sets resolve named scalar arguments", () => {
   const wat = Source.wat(`
 type Number = Int
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 type MaybeNumber = Maybe Number
 let value: MaybeNumber = 42
 if value is Int { value } else { 0 }
@@ -484,7 +484,7 @@ Deno.test("record intersections merge compatible fields", () => {
   const wat = Source.wat(`
 type HasX = [.x = Int]
 type HasY = [.y = Int]
-type Point = HasX & HasY
+type Point = HasX :& HasY
 let point: Point = [.x = 40, .y = 2]
 point.x + point.y
 `);

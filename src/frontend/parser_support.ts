@@ -50,30 +50,3 @@ export function module_value(expr: FrontExpr): FrontExpr {
     body: expr.body,
   };
 }
-
-export function binary_precedence(op: string): number {
-  if (op === "||") {
-    return 1;
-  }
-
-  if (op === "&&") {
-    return 2;
-  }
-
-  if (op === "*" || op === "/" || op === "%") {
-    return 20;
-  }
-
-  if (op === "+" || op === "-") {
-    return 10;
-  }
-
-  if (
-    op === "==" || op === "!=" || op === "<" || op === ">" || op === "<=" ||
-    op === ">="
-  ) {
-    return 5;
-  }
-
-  return -1;
-}

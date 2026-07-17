@@ -109,6 +109,7 @@ Deno.test("Bool uses four-byte layouts and scalar host contracts", () => {
   const manifest = build_abi_manifest(effect);
   assert_equals(manifest.effects.Gate.operations.choose, {
     name: "choose",
+    execution: "synchronous",
     import: "__duck_effect_Gate_choose",
     params: [{ type: { tag: "i32" }, ownership: "scalar" }],
     result: { type: { tag: "i32" }, ownership: "scalar" },
@@ -242,6 +243,7 @@ return { .value = value }
 
   assert_equals(artifact.abi.effects.Gate.operations.choose, {
     name: "choose",
+    execution: "synchronous",
     import: "__duck_effect_Gate_choose",
     params: [{ type: { tag: "i32" }, ownership: "scalar" }],
     result: { type: { tag: "i32" }, ownership: "scalar" },

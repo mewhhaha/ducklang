@@ -6,7 +6,6 @@ import { clone_env, fresh, push_binding } from "./env.ts";
 import { lookup_type_field } from "./fields.ts";
 import { lower_lambda_binding } from "./ic_share.ts";
 import { unwrap_ownership_wrapper_expr } from "./ownership.ts";
-import { front_type_name } from "./types.ts";
 import {
   typed_if_else_branch,
   typed_if_let_else_branch,
@@ -47,7 +46,6 @@ export function lower_if_as_front_type(
     return hooks.lower_expr(expr, env);
   }
 
-  check_typed_if_condition(expr.cond, env, hooks);
   const cond = Ic.reduce(
     hooks.lower_expr(unwrap_ownership_wrapper_expr(expr.cond), env),
   );
@@ -300,28 +298,4 @@ function try_lower_dynamic_if_directly(
 
     throw err;
   }
-}
-
-function check_typed_if_condition(
-  expr: FrontExpr,
-  env: Env,
-  hooks: FrontTypedLowerHooks,
-): void {
-  const type = hooks.infer_expr(expr, env);
-
-  if (type.tag === "unknown") {
-    return;
-  }
-
-  if (type.tag === "bool") {
-    return;
-  }
-
-  if (type.tag === "int" && type.type === "i32") {
-    return;
-  }
-
-  throw new Error(
-    "If condition expects Bool or I32, got " + front_type_name(type),
-  );
 }

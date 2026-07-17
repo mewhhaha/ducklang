@@ -69,11 +69,8 @@ export class ParserParams extends ParserCursor {
 
       if (
         parens === 0 && brackets === 0 && braces === 0 &&
-        (token.text === "|" || token.text === "," || token.text === "+" ||
-          token.text === "-" || token.text === "*" || token.text === "/" ||
-          token.text === "%" || token.text === "==" || token.text === "!=" ||
-          token.text === "<" || token.text === ">" || token.text === "<=" ||
-          token.text === ">=" || token.text === "&&" || token.text === "||")
+        (token.text === "|" || token.text === "," ||
+          this.infix_fixity(token.text) !== undefined)
       ) {
         return false;
       }

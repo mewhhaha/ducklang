@@ -62,7 +62,7 @@ Deno.test("Source.analyze reports reused linear parameters with related spans", 
 
 Deno.test("Source.analyze accepts linear branches and closures with exact use", () => {
   const branch = Source.analyze(
-    "let main = (!x, flag) => if flag { !x } else { !x }\nmain(1, 1)",
+    "let main = (!x, flag) => if flag { !x } else { !x }\nmain(1, true)",
   );
   const closure = Source.analyze(
     "let main = (!x) => {\n  let consume = () => !x\n  consume()\n}\nmain(1)",
@@ -104,7 +104,7 @@ const failure_goldens = [
   },
   {
     code: "DUCK2303",
-    message: "If condition expects Bool or I32, got Text",
+    message: "If condition expects Bool, got Text",
     span: { start: 3, end: 8 },
   },
   {

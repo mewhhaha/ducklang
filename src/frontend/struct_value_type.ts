@@ -228,6 +228,17 @@ function validate_field_type(
     return;
   }
 
+  if (expected === "F64") {
+    if (actual.tag !== "int" || actual.type !== "f64") {
+      throw new Error(
+        "Struct field " + name + " expects F64, got " +
+          front_type_name(actual),
+      );
+    }
+
+    return;
+  }
+
   if (expected === "Text" || expected === "Bytes") {
     const expects_bytes = expected === "Bytes";
 

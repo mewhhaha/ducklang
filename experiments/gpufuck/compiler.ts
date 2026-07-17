@@ -2,6 +2,9 @@ import {
   compileFunctionalModuleToWasm,
   type EncodedFunctionalModule,
   type FunctionalCompileResult,
+  type FunctionalComptimeExecutionOptions,
+  type FunctionalComptimeExecutionResult,
+  type FunctionalComptimeModuleArtifact,
   type FunctionalWasmAsyncInit,
   type FunctionalWasmAsyncRunOptions,
   type FunctionalWasmExecution,
@@ -9,6 +12,7 @@ import {
   type FunctionalWasmInitBinding,
   type FunctionalWasmRunOptions,
   GpuFunctionalCompiler,
+  GpuFunctionalComptimeExecutor,
   type GpuFunctionalModule,
   requestWebGpuDevice,
   runFunctionalWasmModule,
@@ -36,9 +40,15 @@ export type ExperimentalDuckAsyncRunOptions =
     init?: FunctionalWasmAsyncInit;
   };
 
+export type ExperimentalDuckComptimeOptions =
+  FunctionalComptimeExecutionOptions;
+
+export type ExperimentalDuckComptimeResult = FunctionalComptimeExecutionResult;
+
 export class ExperimentalDuckCompiler {
   readonly #device: GPUDevice;
   readonly #compiler: GpuFunctionalCompiler;
+  #comptime: Promise<GpuFunctionalComptimeExecutor> | undefined;
 
   private constructor(device: GPUDevice, compiler: GpuFunctionalCompiler) {
     this.#device = device;
@@ -88,6 +98,26 @@ export class ExperimentalDuckCompiler {
     }
 
     return module;
+  }
+
+  async evaluate_comptime(
+    source: string,
+    options: ExperimentalDuckComptimeOptions = {},
+  ): Promise<ExperimentalDuckComptimeResult> {
+    return await this.#evaluate_comptime_module(
+      lower_gpufuck_text(source),
+      options,
+    );
+  }
+
+  async evaluate_comptime_file(
+    path: string,
+    options: ExperimentalDuckComptimeOptions = {},
+  ): Promise<ExperimentalDuckComptimeResult> {
+    return await this.#evaluate_comptime_module(
+      lower_gpufuck_file(path),
+      options,
+    );
   }
 
   async run(
@@ -168,6 +198,36 @@ export class ExperimentalDuckCompiler {
       throw compilation_error(result, 0);
     }
     return result.module;
+  }
+
+  async #evaluate_comptime_module(
+    lowered: LoweredDuckGpufuckModule,
+    options: ExperimentalDuckComptimeOptions,
+  ): Promise<ExperimentalDuckComptimeResult> {
+    const lowered_artifact = lowered.artifact;
+    let comptime_artifact: FunctionalComptimeModuleArtifact = {
+      name: lowered_artifact.name,
+      definitions: lowered_artifact.definitions,
+      typeDeclarations: lowered_artifact.typeDeclarations,
+      imports: lowered_artifact.imports,
+      exports: lowered_artifact.exports,
+      sourceByteLength: lowered_artifact.sourceByteLength,
+    };
+    if (lowered_artifact.options.evaluationProfile !== undefined) {
+      comptime_artifact = {
+        ...comptime_artifact,
+        evaluationProfile: lowered_artifact.options.evaluationProfile,
+      };
+    }
+    if (this.#comptime === undefined) {
+      this.#comptime = GpuFunctionalComptimeExecutor.create(this.#device);
+    }
+    const comptime = await this.#comptime;
+    return await comptime.executeExports(
+      [comptime_artifact],
+      [{ module: comptime_artifact.name, exportName: "main" }],
+      options,
+    );
   }
 
   destroy(): void {

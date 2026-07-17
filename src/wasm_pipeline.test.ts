@@ -433,7 +433,7 @@ add_factor(40i64)
   }
 
   const dynamic_branch_wat = wat_from_core_source(`
-let flag = 0
+let flag = false
 let factor: I64 = 2i64
 let choose = (x: I64) => {
   if flag {
@@ -529,7 +529,7 @@ below(3i64)
 
 Deno.test("core if else statements compile through WAT to Wasm", async () => {
   const then_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let value = 0
 
 if flag {
@@ -561,7 +561,7 @@ value
   }
 
   const else_wat = wat_from_core_source(`
-let flag = 0
+let flag = false
 let value = 0
 
 if flag {
@@ -593,7 +593,7 @@ value
   }
 
   const aggregate_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let user = [.age = 0, .score = 0]
 
 if flag {
@@ -602,7 +602,7 @@ if flag {
   user = [.age = 32, .score = 9]
 }
 
-flag = 0
+flag = false
 user.age + user.score
 `);
   const aggregate_instance = await instantiate_wat(
@@ -626,7 +626,7 @@ user.age + user.score
   }
 
   const text_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let message = ""
 
 if flag {
@@ -635,7 +635,7 @@ if flag {
   message = "world"
 }
 
-flag = 0
+flag = false
 @len(message)
 `);
   const text_instance = await instantiate_wat(
@@ -661,7 +661,7 @@ flag = 0
 
 Deno.test("core type checks compile away through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct {
   .name= Text,
   .age= Int
@@ -840,7 +840,7 @@ let value = if let .ok(text) = result {
 
 Deno.test("core direct parameter annotations compile through WAT to Wasm", async () => {
   const struct_wat = wat_from_core_source(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int

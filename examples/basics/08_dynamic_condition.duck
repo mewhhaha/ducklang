@@ -1,7 +1,7 @@
 module (!init: Init) where
 
 declare effect Input {
-  flag: () => I32
+  flag: () => Bool
 }
 
 declare Init { input: Input }

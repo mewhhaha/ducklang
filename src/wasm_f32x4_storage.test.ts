@@ -13,13 +13,13 @@ function exported_main(instance: WebAssembly.Instance): CallableFunction {
 
 Deno.test("runtime aggregates store and load 16-byte F32x4 fields", async () => {
   const wat = wat_from_core_source(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const packet_type = struct {
   .prefix= I32,
   .lanes= F32x4
 }
 
-let choose = if 1 {
+let choose = if true {
   (lanes: F32x4) => [.prefix = 7, .lanes = lanes] as packet_type
 } else {
   (lanes: F32x4) => [.prefix = 8, .lanes = lanes] as packet_type
@@ -56,7 +56,7 @@ let packet: packet_type = choose(@f32x4(1f32, 2f32, 3f32, 4f32))
 Deno.test("closure environments preserve captured F32x4 values", async () => {
   const wat = wat_from_core_source(`
 let vector: F32x4 = @f32x4(1f32, 2f32, 3f32, 4f32)
-let flag = 1
+let flag = true
 let lane = if flag {
   (add: F32) => @f32x4_extract_lane(vector, 2) + add
 } else {
@@ -79,7 +79,7 @@ Deno.test("runtime unions align F32x4 payloads after their tags", async () => {
 type ResultType = | .ok = F32x4 | .err = F32x4
 const result_type = ResultType
 
-let flag = 1
+let flag = true
 let result: result_type = if flag {
   result_type.ok(@f32x4(1f32, 2f32, 3f32, 4f32))
 } else {

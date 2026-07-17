@@ -1,4 +1,4 @@
-// Test-only facade for legacy raw host-boundary fixtures. It is deliberately
+// Test-only facade for internal raw host-boundary fixtures. It is deliberately
 // not re-exported by frontend.ts: user source must use declare effect + Init.
 import {
   artifact_from_source_with_internal_imports_for_test,

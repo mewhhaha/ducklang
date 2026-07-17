@@ -48,6 +48,7 @@ export function is_const_builtin_name(name: string): boolean {
     name === "@shape.entries" || name === "@type.product" ||
     name === "@type.namespace" || name === "@type.union" ||
     name === "@type.intersection" || name === "@type.difference" ||
+    name === "@type.extend" || name === "@type.member" ||
     is_builtin_type_name(name) ||
     name === "object_type" || name === "layout_type" ||
     name === "field_offsets_type";

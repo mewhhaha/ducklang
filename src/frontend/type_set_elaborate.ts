@@ -77,6 +77,12 @@ function elaborate_comptime_type_intrinsic(
     return undefined;
   }
 
+  let intrinsic_args = args;
+
+  if (args.length === 1 && unary_arg?.tag === "product") {
+    intrinsic_args = unary_arg.entries.map((entry) => entry.value);
+  }
+
   const binding = scope.bindings.get(func.name);
   let intrinsic: string | undefined;
 
@@ -98,12 +104,12 @@ function elaborate_comptime_type_intrinsic(
     intrinsic === "@type.union" || intrinsic === "@type.intersection" ||
     intrinsic === "@type.difference"
   ) {
-    if (args.length !== 2) {
+    if (intrinsic_args.length !== 2) {
       throw new Error(intrinsic + " expects exactly two type values");
     }
 
-    const left_arg = args[0];
-    const right_arg = args[1];
+    const left_arg = intrinsic_args[0];
+    const right_arg = intrinsic_args[1];
     expect(left_arg, "Missing left type operand for " + intrinsic);
     expect(right_arg, "Missing right type operand for " + intrinsic);
     const left = unwrap_const_result(
@@ -138,6 +144,78 @@ function elaborate_comptime_type_intrinsic(
         right: prelude_type_expr(right),
       },
     };
+  }
+
+  if (intrinsic === "@type.member") {
+    if (intrinsic_args.length !== 3) {
+      throw new Error("@type.member expects a type, name, and function");
+    }
+
+    const base = intrinsic_args[0];
+    const name_arg = intrinsic_args[1];
+    const value = intrinsic_args[2];
+    expect(base, "Missing @type.member base operand");
+    expect(name_arg, "Missing @type.member name operand");
+    expect(value, "Missing @type.member value operand");
+    return {
+      tag: "type_with",
+      base,
+      members: [{ name: name_arg, value }],
+    };
+  }
+
+  if (intrinsic === "@type.extend") {
+    if (intrinsic_args.length !== 2) {
+      throw new Error("@type.extend expects exactly two operands");
+    }
+
+    const base = intrinsic_args[0];
+    const additions_arg = intrinsic_args[1];
+    expect(base, "Missing @type.extend base operand");
+    expect(additions_arg, "Missing @type.extend additions operand");
+    let additions = unwrap_const_result(
+      resolve_scope_const_value(additions_arg, scope),
+    );
+
+    if (additions.tag !== "shape" && additions_arg.tag === "shape") {
+      additions = additions_arg;
+    }
+
+    if (
+      additions.tag !== "shape" &&
+      !scope_const_expr_known(additions, scope)
+    ) {
+      return undefined;
+    }
+
+    expect(
+      additions.tag === "shape",
+      "@type.extend expects an ordered shape, got " + additions.tag,
+    );
+    const fields = additions.entries.map((entry) => {
+      expect(entry.label !== undefined, "Extension member requires a name");
+      return { name: entry.label, value: entry.value };
+    });
+    const resolved_type = resolve_front_type_value(
+      base,
+      scope.type_values,
+      new Set(),
+    );
+    let extends_type = resolved_type !== undefined;
+
+    if (
+      base.tag === "var" && resolved_type?.tag === "var" &&
+      resolved_type.name === base.name && !scope.type_values.has(base.name) &&
+      !is_builtin_type_name(base.name)
+    ) {
+      extends_type = false;
+    }
+
+    if (extends_type) {
+      return { tag: "with", base, fields };
+    }
+
+    return { tag: "struct_update", base, fields };
   }
 
   let arg = unary_arg;

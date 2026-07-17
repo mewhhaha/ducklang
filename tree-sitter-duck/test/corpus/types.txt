@@ -67,7 +67,7 @@ const apply: (forall value. value -> value) -> I32 =
 Surface function types
 ==================
 
-let map: (List a, a -> <Stdin | e> b) -> <e> List b = () => ()
+let map: (List a, a -> <Stdin :| e> b) -> <e> List b = () => ()
 let nested: a -> b -> c = () => ()
 let unit: () -> Text = () => ()
 
@@ -313,10 +313,10 @@ let empty = []
 Type sets, atoms, and modalities
 ==================
 
-type Choice = #ready | Int \ Never
+type Choice = #ready :| Int :- Never
 type Any = _
 type Frozen = #(List a)
-let marker: #ready | #waiting = #ready
+let marker: #ready :| #waiting = #ready
 let view: &Text = &text
 if marker is #ready { 1 } else { 0 }
 

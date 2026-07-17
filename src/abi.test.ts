@@ -45,6 +45,7 @@ Deno.test("managed ABI describes declared effects and opaque Init fields", () =>
   });
   assert_equals(manifest.effects.Io.operations.print, {
     name: "print",
+    execution: "synchronous",
     import: "__duck_effect_Io_print",
     params: [{ type: { tag: "text" }, ownership: "bounded_borrow" }],
     result: { type: { tag: "unit" }, ownership: "scalar" },
@@ -162,7 +163,7 @@ return { .answer = 42 }
 `);
   const compiled = elaborate_front_type_sets(resolve_bundled_source_imports(
     Source.parse(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const duck_entry_result_type = struct { .answer= I32 }
 return [.answer = 42] as duck_entry_result_type
 `),
@@ -235,17 +236,25 @@ Deno.test("managed ABI builds deterministic schemas for source fixed arrays", ()
   });
 });
 
-Deno.test("managed ABI records scalar F32 effect contracts", () => {
+Deno.test("managed ABI records scalar float effect contracts", () => {
   const manifest = build_abi_manifest(Source.parse(`
-declare effect FloatMath { scale: (F32) => F32 }
+declare effect FloatMath { scale: (F32) => F32, widen: (F64) => F64 }
 return {}
 `));
 
   assert_equals(manifest.effects.FloatMath?.operations.scale, {
     name: "scale",
+    execution: "synchronous",
     import: "__duck_effect_FloatMath_scale",
     params: [{ type: { tag: "f32" }, ownership: "scalar" }],
     result: { type: { tag: "f32" }, ownership: "scalar" },
+  });
+  assert_equals(manifest.effects.FloatMath?.operations.widen, {
+    name: "widen",
+    execution: "synchronous",
+    import: "__duck_effect_FloatMath_widen",
+    params: [{ type: { tag: "f64" }, ownership: "scalar" }],
+    result: { type: { tag: "f64" }, ownership: "scalar" },
   });
 });
 
@@ -307,6 +316,7 @@ function effect_manifest(result: "i32" | "text"): AbiManifest {
         operations: {
           read: {
             name: "read",
+            execution: "synchronous",
             import: "__duck_effect_Io_read",
             params: [],
             result: { type: result_type, ownership: result_ownership },
@@ -383,10 +393,10 @@ Deno.test("managed ABI rejects a mismatched target profile", async () => {
 
 Deno.test("managed ABI rejects imports outside effects and Init", async () => {
   const manifest = effect_manifest("i32");
-  manifest.imports.legacy = {
-    name: "legacy",
+  manifest.imports.invalid = {
+    name: "invalid",
     module: "env",
-    field: "legacy",
+    field: "invalid",
     params: [],
     result: { type: { tag: "i32" }, ownership: "scalar" },
   };
@@ -400,7 +410,7 @@ Deno.test("managed ABI rejects imports outside effects and Init", async () => {
     }
 
     assert_equals(error.code, "invalid_manifest");
-    assert_equals(error.path, "imports.legacy");
+    assert_equals(error.path, "imports.invalid");
     assert_includes(error.message, "exactly one effect or Init field");
   }
 });
@@ -683,7 +693,7 @@ Deno.test("source managed product callables keep one source argument", async () 
   const artifact = Source.artifact(`
 module () where
 
-let add: (I32, I32) -> I32 = (left, right) => left + right
+let add: [I32, I32] -> I32 = (left, right) => left + right
 const sum_to: I32 -> I32 = rec (value: I32) => {
   if value == 0 { 0 } else { value + rec(value - 1) }
 }
@@ -875,6 +885,7 @@ function fixed_array_effect_manifest(): {
           operations: {
             read: {
               name: "read",
+              execution: "synchronous",
               import: "__duck_effect_Host_read",
               params: [],
               result: {
@@ -1212,12 +1223,12 @@ module (!init: Init) where
 declare effect Io { read: () => I32 }
 declare Init { io: Io }
 
-let apply: (I32 -> <e> I32, I32) -> <e> I32 = (const callback, value) => {
+let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
   result <- callback(value)
   result
 }
 
-let forward: (I32 -> <f> I32, I32) -> <f> I32 =
+let forward: [I32 -> <f> I32, I32] -> <f> I32 =
   (const callback, value) => {
     result <- apply(callback, value)
     result
@@ -1354,7 +1365,7 @@ Deno.test("managed ABI encodes JS structs containing Text", async () => {
   const source = `
 module (!init: Init) where
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= Int }
 declare effect Host { make_user: () => user_type }
 declare Init { host: Host }
@@ -1869,7 +1880,7 @@ declare effect Host {
 
 declare Init { host: Host }
 
-let check: () -> <Host.open | Host.touch> I32 = () => {
+let check: () -> <Host.open :| Host.touch> I32 = () => {
   opened <- Host.open()
 
   if let .err(code) = opened {
@@ -1932,7 +1943,7 @@ declare effect FileReader {
 
 declare Init { file_reader: FileReader }
 
-let with_file: (Text, () -> <e> I32) -> <FileReader.open | FileReader.close | e> I32 =
+let with_file: [Text, () -> <e> I32] -> <FileReader.open :| FileReader.close :| e> I32 =
   (path, const action) => {
     open_result <- FileReader.open(&path)
 

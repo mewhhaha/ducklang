@@ -75,7 +75,7 @@ Deno.test("Resume uses an internal wasm32 pointer representation", () => {
 
 Deno.test("runtime aggregates and unions store Resume closure pointers", () => {
   const aggregate_wat = Source.wat(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const resume_box_type = struct { .resume= Resume }
 [.resume = (value: I32) => value + 1] as resume_box_type
 `);

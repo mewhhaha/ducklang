@@ -163,7 +163,7 @@ io
 Deno.test("frontend runtime capability table compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
 host_import consume from "env.consume" (Text) => I32
-let flag = 1
+let flag = true
 let output = if flag {
   [.marker = @runtime_i32_slice(1, 7), .consume = consume]
 } else {
@@ -247,7 +247,7 @@ Deno.test(
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 0
+let flag = false
 let print_once = if flag {
   () => io.print("hello")
 } else {
@@ -327,7 +327,7 @@ const main = (!io: I32) => {
   io
 }
 
-let flag = 1
+let flag = true
 let run = if flag { main } else { main }
 let !io: I32 = 1
 io = run(!io)
@@ -659,7 +659,7 @@ Deno.test("core branch-selected ownership-transfer wrapper compiles through WAT 
   const wat = wat_from_core_source(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 0
+let flag = false
 let send = if flag {
   (msg: Text) => host_take(msg)
 } else {
@@ -769,7 +769,7 @@ Deno.test("core branch temporary ownership-transfer wrapper argument compiles th
 host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
-let flag = 0
+let flag = false
 send(if flag { @append("he", "llo") } else { @append("wo", "rld") })
 `);
   const instance = await instantiate_wat(
@@ -803,7 +803,7 @@ Deno.test("core branch-local ownership-transfer wrapper compiles through WAT to 
   const wat = wat_from_core_source(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 1
+let flag = true
 let message: Text = @append("he", "llo")
 if flag {
   let send = msg => host_take(msg)
@@ -990,7 +990,7 @@ Deno.test("core branch higher-order alias temporary ownership-transfer wrapper c
 host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
-let flag = 1
+let flag = true
 let relay = if flag {
   (const f, msg: Text) => {
     let g = f

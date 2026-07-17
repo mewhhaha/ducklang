@@ -1,14 +1,24 @@
 import type { FrontExpr, Param, Stmt } from "../ast.ts";
+import { expect } from "../../expect.ts";
 import { Prim } from "../../op.ts";
 import { Format } from "../../trait.ts";
 import { format_binding_name } from "../names.ts";
 import { format_type_expr } from "../type_expr.ts";
+import { create_fixity_table } from "../fixity.ts";
 import {
   format_field,
   format_params,
   format_pattern,
   format_type_field,
 } from "./common.ts";
+
+const type_extend_fixity = (() => {
+  const fixity = [...create_fixity_table().infix.values()].find(
+    (candidate) => candidate.target === "@type.extend",
+  );
+  expect(fixity, "Prelude has no infix declaration for @type.extend");
+  return fixity;
+})();
 
 export function format_expr_with_stmt(
   expr: FrontExpr,
@@ -113,13 +123,8 @@ function format_expr(
         return parenthesize(text, syntax.precedence, parent_precedence);
       }
 
-      let left = expr.args[0];
-      let right = expr.args[1];
-
-      if (syntax.operator === "<$>") {
-        left = expr.args[1];
-        right = expr.args[0];
-      }
+      const left = expr.args[0];
+      const right = expr.args[1];
 
       if (left === undefined || right === undefined) {
         throw new Error("Missing infix operator operand");
@@ -264,7 +269,8 @@ function format_expr(
   }
 
   if (expr.tag === "with" || expr.tag === "struct_update") {
-    const text = nested(expr.base, 110) + " with { " +
+    const text = nested(expr.base, type_extend_fixity.precedence) + " " +
+      type_extend_fixity.operator + " { " +
       expr.fields.map((field) => {
         if (field.value.tag === "var" && field.value.name === field.name) {
           return field.name;
@@ -273,16 +279,17 @@ function format_expr(
         return "." + field.name + " = " + nested(field.value);
       }).join(", ") +
       " }";
-    return parenthesize(text, 35, parent_precedence);
+    return parenthesize(text, type_extend_fixity.precedence, parent_precedence);
   }
 
   if (expr.tag === "type_with") {
-    const text = nested(expr.base, 110) + " with { " +
+    const text = nested(expr.base, type_extend_fixity.precedence) + " " +
+      type_extend_fixity.operator + " { " +
       expr.members.map((member) =>
         ".[" + nested(member.name) + "] = " + nested(member.value)
       ).join(", ") +
       " }";
-    return parenthesize(text, 35, parent_precedence);
+    return parenthesize(text, type_extend_fixity.precedence, parent_precedence);
   }
 
   if (expr.tag === "struct_type") {

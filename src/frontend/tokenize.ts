@@ -278,24 +278,10 @@ export function scan_source(text: string): SourceSyntax {
         () => index,
       );
     } else {
-      const two = text.slice(index, index + 2);
-      const standard_operator = standard_operator_at(text, index);
-
-      if (standard_operator !== undefined) {
-        for (let offset = 0; offset < standard_operator.length; offset += 1) {
-          advance();
-        }
-        add_token(
-          "symbol",
-          standard_operator,
-          start,
-          start_line,
-          start_column,
-        );
-      } else if (is_two_symbol(two)) {
+      if (text.startsWith("..", index)) {
         advance();
         advance();
-        add_token("symbol", two, start, start_line, start_column);
+        add_token("symbol", "..", start, start_line, start_column);
       } else if (is_operator_character(char)) {
         while (
           index < text.length &&
@@ -353,38 +339,6 @@ export function scan_source(text: string): SourceSyntax {
     },
   });
   return make_source_syntax(text, pieces, diagnostics);
-}
-
-function standard_operator_at(text: string, index: number): string | undefined {
-  for (
-    const operator of [
-      "&&&",
-      "|||",
-      "^^^",
-      "<*>",
-      "<$>",
-      ">>=",
-      "<|>",
-      "<<",
-      ">>",
-      "<>",
-      "|>",
-      "<|",
-    ]
-  ) {
-    if (text.startsWith(operator, index)) {
-      return operator;
-    }
-  }
-
-  return undefined;
-}
-
-function is_two_symbol(value: string): boolean {
-  return value === "=>" || value === "->" || value === ":=" ||
-    value === "::" || value === "<-" || value === "==" ||
-    value === ".." || value === "!=" || value === "<=" ||
-    value === ">=" || value === "&&" || value === "||";
 }
 
 function is_operator_character(value: string): boolean {

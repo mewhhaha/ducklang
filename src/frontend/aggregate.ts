@@ -224,6 +224,10 @@ function type_expr_runtime_layout(type: TypeExpr): string | undefined {
       return "f32";
     }
 
+    if (type.name === "F64") {
+      return "f64";
+    }
+
     if (
       type.name === "Bool" || type.name === "Int" || type.name === "I32" ||
       type.name === "U32" || type.name === "Unit" || type.name === "Resume"

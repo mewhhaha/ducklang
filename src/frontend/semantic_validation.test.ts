@@ -32,7 +32,7 @@ const failures = [
     diagnostic: {
       code: "DUCK2303",
       severity: "error",
-      message: "If condition expects Bool or I32, got Text",
+      message: "If condition expects Bool, got Text",
       span: { start: 3, end: 8 },
     },
   },
@@ -190,7 +190,7 @@ Deno.test("semantic validation scopes lambda binders and const parameters", () =
     'let flag = "outer"\n' +
       "let constant = (const x) => comptime x + 1\n" +
       "let condition = flag => if flag { 1 } else { 0 }\n" +
-      "constant(41) + condition(1)",
+      "constant(41) + condition(true)",
   );
   assert_equals(validate_frontend_semantics(source), []);
 });

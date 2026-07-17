@@ -6,6 +6,7 @@ let message = "hello\nworld"
 let newline = '\n'
 let quote = '\''
 let ready = true
+let precise = 42f64
 if ready { 'λ' } else { false }
 if (let 'c' = newline) { true } else { false }
 if let "ready" = message { 1 } else { 0 }
@@ -29,6 +30,10 @@ if let "ready" = message { 1 } else { 0 }
     name: (identifier)
     value: (postfix_expression
       (boolean)))
+  (binding_statement
+    name: (identifier)
+    value: (postfix_expression
+      (number)))
   (expression_statement
     (if_expression
       condition: (condition_expression

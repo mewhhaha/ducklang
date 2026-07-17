@@ -6,7 +6,7 @@ import {
 
 Deno.test("frontend dynamic i64 closure branch compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let flag = 0
+let flag = false
 let factor: I64 = 2i64
 let choose = if flag {
   (x: I64) => x + factor
@@ -39,7 +39,7 @@ choose(40i64)
 
 Deno.test("core first-class closures compile through WAT to Wasm", async () => {
   const dynamic_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let f = if flag {
   (x: Int) => x + 1
 } else {
@@ -150,7 +150,7 @@ f(41)
   }
 
   const branch_scratch_frozen_wat = wat_from_core_source(`
-let flag = 0
+let flag = false
 let f = scratch {
   if flag {
     freeze ((x: Int) => x + 1)
@@ -185,7 +185,7 @@ f(41)
   }
 
   const if_let_matching_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
@@ -226,7 +226,7 @@ f(2)
   }
 
   const if_let_fallback_wat = wat_from_core_source(`
-let flag = 0
+let flag = false
 type ResultType = | .ok = Int | .err = Int
 const result_type = ResultType
 
@@ -267,7 +267,7 @@ f(2)
   }
 
   const capture_wat = wat_from_core_source(`
-let flag = 0
+let flag = false
 let n = 2
 let f = if flag {
   (x: Int) => x + n
@@ -299,7 +299,7 @@ f(40)
   }
 
   const dynamic_text_capture_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let message: Text = if flag {
   "Ada"
 } else {
@@ -379,7 +379,7 @@ run(@Utf8.encode("Ada"), 1)
   }
 
   const captured_closure_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let add = if flag {
   (x: Int) => x + 1
 } else {
@@ -413,7 +413,7 @@ run(30)
   }
 
   const assigned_capture_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let factor = 2
 let f = if flag {
   (x: Int) => {

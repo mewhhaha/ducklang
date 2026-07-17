@@ -1613,7 +1613,19 @@ export class TypeEngine {
     }
 
     if (left.tag === "scalar" && right.tag === "scalar") {
-      return scalar_representation_compatible(left.name, right.name);
+      if (scalar_representation_compatible(left.name, right.name)) {
+        return true;
+      }
+
+      const left_is_bool = left.name === "Bool";
+      const right_is_bool = right.name === "Bool";
+      const left_is_i32 = left.name === "Int" || left.name === "I32" ||
+        left.name === "U32";
+      const right_is_i32 = right.name === "Int" || right.name === "I32" ||
+        right.name === "U32";
+
+      return (left_is_bool && right_is_i32) ||
+        (left_is_i32 && right_is_bool);
     }
 
     if (left.tag === "union" || left.tag === "intersection") {

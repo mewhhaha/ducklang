@@ -184,7 +184,7 @@ function format_expr(expr: CoreExpr): string {
       return "scratch " + format_expr(expr.body);
 
     case "with":
-      return format_expr(expr.base) + " with { ... }";
+      return format_expr(expr.base) + " update { ... }";
 
     case "struct_type":
       return "struct { " + expr.fields.map(format_type_field).join(", ") +

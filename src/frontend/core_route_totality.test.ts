@@ -3,7 +3,7 @@ import { Source } from "../frontend.ts";
 
 Deno.test("Core analysis diagnoses an invalid generic Bool type-set binding", () => {
   const analysis = Source.analyze(
-    "type Choice a = a | Text\nlet value: Choice Bool = 1",
+    "type Choice a = a :| Text\nlet value: Choice Bool = 1",
     { route: "core" },
   );
 
@@ -11,7 +11,7 @@ Deno.test("Core analysis diagnoses an invalid generic Bool type-set binding", ()
     code: "DUCK2306",
     severity: "error",
     message: "Type-set binding annotation expects Bool :| Text, got I32",
-    span: { start: 50, end: 51 },
+    span: { start: 51, end: 52 },
   }]);
 });
 

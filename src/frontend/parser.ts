@@ -97,7 +97,7 @@ function ordered_diagnostics(
 }
 
 // This intentionally lives outside the public frontend facade. Low-level
-// backend tests use it to construct the legacy raw host boundary directly.
+// backend tests use it to construct the internal raw host boundary directly.
 export function parse_source_with_host_imports_for_test(
   text: string,
 ): SourceNode {

@@ -8,7 +8,11 @@ import { pattern_bindings } from "./pattern.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { record_annotation_name_sites, record_name_site } from "./name_site.ts";
 import { inherit_source_span } from "./syntax.ts";
-import { type InfixFixity, is_operator_symbol } from "./fixity.ts";
+import {
+  type InfixFixity,
+  is_operator_symbol,
+  type PrefixFixity,
+} from "./fixity.ts";
 import { wasm_intrinsic_prim } from "../op.ts";
 
 export abstract class ParserExpr extends ParserPrimary {
@@ -59,7 +63,7 @@ export abstract class ParserExpr extends ParserPrimary {
       return {
         tag: "rec",
         pattern,
-        params: compatibility_params(pattern),
+        params: pattern_params(pattern),
         body: this.parse_arrow_body(pattern),
       };
     }
@@ -70,7 +74,7 @@ export abstract class ParserExpr extends ParserPrimary {
       return {
         tag: "lam",
         pattern,
-        params: compatibility_params(pattern),
+        params: pattern_params(pattern),
         body: this.parse_arrow_body(pattern),
       };
     }
@@ -170,7 +174,6 @@ export abstract class ParserExpr extends ParserPrimary {
       this.reject_mixed_associativity(equal_parent, fixity);
       this.reject_mixed_associativity(previous_fixity, fixity);
       const op = this.advance().text;
-      const compiler_intrinsic = compiler_operator_intrinsic(op);
       let right_precedence = precedence + 1;
 
       if (fixity.associativity === "right") {
@@ -179,10 +182,36 @@ export abstract class ParserExpr extends ParserPrimary {
 
       const right = this.parse_binary(right_precedence, fixity);
 
-      if (compiler_intrinsic !== undefined) {
+      if (fixity.builtin && fixity.target === "@syntax.and") {
         left = {
+          tag: "if",
+          cond: left,
+          then_branch: normalize_boolean_expr(right),
+          else_branch: { tag: "bool", value: false },
+        };
+      } else if (fixity.builtin && fixity.target === "@syntax.or") {
+        left = {
+          tag: "if",
+          cond: left,
+          then_branch: { tag: "bool", value: true },
+          else_branch: normalize_boolean_expr(right),
+        };
+      } else if (fixity.builtin) {
+        const prim = binary_prim(
+          syntax_binary_operator(fixity.target),
+          left,
+          right,
+        );
+
+        if (prim) {
+          left = { tag: "prim", prim, left, right };
+        } else {
+          left = { tag: "unsupported", feature: "operator " + op, text: op };
+        }
+      } else {
+        const application: FrontExpr = {
           tag: "app",
-          func: { tag: "var", name: compiler_intrinsic },
+          func: qualified_target(fixity.target),
           arg: {
             tag: "product",
             entries: [{ value: left }, { value: right }],
@@ -193,62 +222,11 @@ export abstract class ParserExpr extends ParserPrimary {
             operator: op,
             precedence,
             associativity: fixity.associativity,
-            target: compiler_intrinsic,
-          },
-        };
-      } else if (fixity.builtin && op === "&&") {
-        left = {
-          tag: "if",
-          cond: left,
-          then_branch: normalize_boolean_expr(right),
-          else_branch: { tag: "bool", value: false },
-        };
-      } else if (fixity.builtin && op === "||") {
-        left = {
-          tag: "if",
-          cond: left,
-          then_branch: { tag: "bool", value: true },
-          else_branch: normalize_boolean_expr(right),
-        };
-      } else if (fixity.builtin) {
-        const prim = binary_prim(op, left, right);
-
-        if (prim) {
-          left = { tag: "prim", prim, left, right };
-        } else {
-          left = { tag: "unsupported", feature: "operator " + op, text: op };
-        }
-      } else {
-        let first = left;
-        let second = right;
-
-        if (op === "<$>") {
-          first = right;
-          second = left;
-        }
-
-        const application: FrontExpr = {
-          tag: "app",
-          func: qualified_target(fixity.target),
-          arg: {
-            tag: "product",
-            entries: [{ value: first }, { value: second }],
-          },
-          args: [first, second],
-          operator_syntax: {
-            kind: "infix",
-            operator: op,
-            precedence,
-            associativity: fixity.associativity,
             target: fixity.target,
           },
         };
 
-        if (op.startsWith(":")) {
-          left = { tag: "comptime", expr: application, implicit: true };
-        } else {
-          left = application;
-        }
+        left = application;
       }
 
       previous_fixity = fixity;
@@ -301,12 +279,8 @@ export abstract class ParserExpr extends ParserPrimary {
       if (parens === 0 && brackets === 0 && token.kind === "symbol") {
         if (
           token.text === "{" || token.text === "}" || token.text === ")" ||
-          token.text === "]" ||
-          token.text === "," || token.text === "&&" || token.text === "||" ||
-          token.text === "==" || token.text === "!=" || token.text === "<" ||
-          token.text === "<=" || token.text === ">" || token.text === ">=" ||
-          token.text === "+" || token.text === "-" || token.text === "*" ||
-          token.text === "/" || token.text === "%" || token.text === "="
+          token.text === "]" || token.text === "," || token.text === "=" ||
+          this.infix_fixity(token.text) !== undefined
         ) {
           break;
         }
@@ -372,9 +346,10 @@ export abstract class ParserExpr extends ParserPrimary {
     }
 
     const prefix_token = this.peek();
+    let fixity: PrefixFixity | undefined;
 
     if (prefix_token.kind === "symbol") {
-      const fixity = this.prefix_fixity(prefix_token.text);
+      fixity = this.prefix_fixity(prefix_token.text);
 
       if (fixity !== undefined && !fixity.builtin) {
         this.advance();
@@ -394,7 +369,8 @@ export abstract class ParserExpr extends ParserPrimary {
       }
     }
 
-    if (this.match_symbol("-")) {
+    if (fixity?.target === "@syntax.negate") {
+      this.advance();
       this.allow_signed_minimum_literal += 1;
       let right: FrontExpr;
 
@@ -473,7 +449,7 @@ export abstract class ParserExpr extends ParserPrimary {
       };
     }
 
-    if (this.peek().kind === "symbol" && this.peek().text === "!") {
+    if (fixity?.target === "@syntax.not") {
       const next = this.peek(1);
       const after = this.peek(2);
       const non_affine_call = next.kind === "name" &&
@@ -484,7 +460,7 @@ export abstract class ParserExpr extends ParserPrimary {
         (next.text === "true" || next.text === "false");
 
       if (next.kind === "symbol" || non_affine_call || boolean_literal) {
-        this.expect_symbol("!");
+        this.advance();
         return {
           tag: "if",
           cond: this.parse_unary(),
@@ -523,7 +499,7 @@ export abstract class ParserExpr extends ParserPrimary {
       throw this.error("Unknown Wasm intrinsic: " + func.name);
     }
 
-    const args = compatibility_args(arg);
+    const args = unary_product_args(arg);
 
     if (args.length !== 2) {
       throw this.error(
@@ -634,38 +610,18 @@ export abstract class ParserExpr extends ParserPrimary {
         } else {
           throw this.error(
             "Runtime products use contextual `[...]` values; updates use " +
-              "`with { ... }`",
+              "the source-defined type extension operator",
           );
         }
       } else if (
         this.#stop_try_with > 0 && this.peek().kind === "name" &&
-        this.peek().text === "with" &&
-        !(this.peek(1).kind === "symbol" && this.peek(1).text === "{")
+        this.peek().text === "with"
       ) {
         break;
-      } else if (this.match_name("with")) {
-        if (this.is_computed_type_member_literal()) {
-          expr = {
-            tag: "type_with",
-            base: expr,
-            members: this.parse_computed_type_members(),
-          };
-          continue;
-        }
-
-        expect(
-          this.is_shape_literal(0, true),
-          "Expected an ordered shape after update `with`",
-        );
-        const shape = this.parse_shape_value();
-        expr = {
-          tag: "struct_update",
-          base: expr,
-          fields: shape.entries.map((entry) => {
-            expect(entry.label !== undefined, "Update member requires a name");
-            return { name: entry.label, value: entry.value };
-          }),
-        };
+      } else if (
+        this.peek().kind === "name" && this.peek().text === "with"
+      ) {
+        throw this.error("`with` is reserved for `try ... with ...`");
       } else {
         break;
       }
@@ -706,28 +662,40 @@ function validate_negated_integer_literal(expr: FrontExpr): void {
   }
 }
 
-function compiler_operator_intrinsic(operator: string): string | undefined {
-  switch (operator) {
-    case ":>":
-      return "@seal";
-    case "<>":
-      return "@append";
-    case "&&&":
-      return "@bit_and";
-    case "|||":
-      return "@bit_or";
-    case "^^^":
-      return "@bit_xor";
-    case "<<":
-      return "@shift_left";
-    case ">>":
-      return "@shift_right_u";
+function syntax_binary_operator(target: string): string {
+  switch (target) {
+    case "@syntax.eq":
+      return "==";
+    case "@syntax.ne":
+      return "!=";
+    case "@syntax.lt":
+      return "<";
+    case "@syntax.le":
+      return "<=";
+    case "@syntax.gt":
+      return ">";
+    case "@syntax.ge":
+      return ">=";
+    case "@syntax.add":
+      return "+";
+    case "@syntax.sub":
+      return "-";
+    case "@syntax.mul":
+      return "*";
+    case "@syntax.div":
+      return "/";
+    case "@syntax.rem":
+      return "%";
     default:
-      return undefined;
+      throw new Error("Unknown source operator target: " + target);
   }
 }
 
 function qualified_target(target: string): FrontExpr {
+  if (target.startsWith("@")) {
+    return { tag: "var", name: target };
+  }
+
   const names = target.split(".");
   const first = names[0];
   expect(first, "Missing qualified operator target");
@@ -750,7 +718,7 @@ function normalize_boolean_expr(expr: FrontExpr): FrontExpr {
   };
 }
 
-function compatibility_params(pattern: Pattern): Param[] {
+function pattern_params(pattern: Pattern): Param[] {
   return pattern_bindings(pattern).map((binding) => {
     const param: Param = {
       name: binding.name,
@@ -767,7 +735,7 @@ function compatibility_params(pattern: Pattern): Param[] {
   });
 }
 
-function compatibility_args(arg: FrontExpr): FrontExpr[] {
+function unary_product_args(arg: FrontExpr): FrontExpr[] {
   if (arg.tag === "unit") {
     return [];
   }

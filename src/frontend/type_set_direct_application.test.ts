@@ -3,7 +3,7 @@ import { Source } from "../frontend.ts";
 
 Deno.test("direct generic type-set binding annotations retain their envelope", () => {
   const wat = Source.wat(`
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 let value: Maybe Int = 42
 if value is Int { value } else { 0 }
 `);
@@ -14,7 +14,7 @@ if value is Int { value } else { 0 }
 
 Deno.test("direct generic type-set closure parameters inject call arguments", () => {
   const wat = Source.wat(`
-type Maybe a = a | #nothing
+type Maybe a = a :| #nothing
 let unwrap = (value: Maybe Int) => if value is Int { value } else { 0 }
 unwrap(42)
 `);

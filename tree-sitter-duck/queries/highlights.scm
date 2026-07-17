@@ -52,9 +52,6 @@
 (try_with_expression
   ["try" "with"] @keyword.control.exception)
 
-(update_expression
-  (with_keyword) @keyword.operator)
-
 (as_keyword) @keyword.operator
 
 [
@@ -97,24 +94,12 @@
   "=>"
   "->"
   ".."
-  "+"
-  "-"
-  "*"
-  "/"
-  "%"
-  "=="
-  "!="
-  "<"
-  "<="
-  ">"
-  ">="
-  "&&"
-  "||"
-  "!"
   "<-"
   "|"
   "&"
-  "\\"
+  ":|"
+  ":&"
+  ":-"
   (operator_symbol)
 ] @operator
 

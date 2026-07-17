@@ -444,7 +444,7 @@ function validate_statement(
       } else if (text_encoding_mismatch(previous.type, value_type)) {
         diagnostics.push(core_route_diagnostic("DUCK2301", message, stmt));
       } else {
-        diagnostics.push(source_diagnostic(
+        diagnostics.push(core_route_diagnostic(
           "DUCK2301",
           message,
           stmt,
@@ -909,12 +909,11 @@ function validate_expr(
 
       if (
         condition.tag !== "unknown" &&
-        condition.tag !== "bool" &&
-        (condition.tag !== "int" || condition.type !== "i32")
+        condition.tag !== "bool"
       ) {
         diagnostics.push(source_diagnostic(
           "DUCK2303",
-          "If condition expects Bool or I32, got " + type_name(condition),
+          "If condition expects Bool, got " + type_name(condition),
           expr.cond,
         ));
       }
@@ -2924,6 +2923,10 @@ function source_name_for_val_type(type: ValType): string {
     return "F32";
   }
 
+  if (type === "f64") {
+    return "F64";
+  }
+
   if (type === "i64") {
     return "I64";
   }
@@ -3910,6 +3913,8 @@ function infer_struct_value_type(
       field_type_name = "I64";
     } else if (field_type.tag === "int" && field_type.type === "f32") {
       field_type_name = "F32";
+    } else if (field_type.tag === "int" && field_type.type === "f64") {
+      field_type_name = "F64";
     } else if (field_type.tag === "text") {
       field_type_name = "Text";
 
@@ -5493,6 +5498,10 @@ function type_name(type: FrontType): string {
 
   if (type.tag === "int" && type.type === "f32") {
     return "F32";
+  }
+
+  if (type.tag === "int" && type.type === "f64") {
+    return "F64";
   }
 
   if (type.tag === "int") {

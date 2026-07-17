@@ -6,12 +6,12 @@ infixl 55 <$> = Functor.map
 infixl 55 <*> = Applicative.apply
 infixl 50 >>= = Monad.bind
 infixl 45 <|> = Alternative.or_else
-infixr 50 <> = Semigroup.append
-infixl 45 ||| = bit_or
-infixl 50 ^^^ = bit_xor
-infixl 55 &&& = bit_and
-infixl 60 << = shift_left
-infixl 60 >> = shift_right_unsigned
+infixr 50 <> = @append
+infixl 45 ||| = @bit_or
+infixl 50 ^^^ = @bit_xor
+infixl 55 &&& = @bit_and
+infixl 60 << = @shift_left
+infixl 60 >> = @shift_right_u
 
 type Option value =
   | .some = value
@@ -77,7 +77,7 @@ duck EuclideanRing Self {
 }
 
 duck Functor F A B {
-  .map = [F A, A -> B] -> F B
+  .map = [A -> B, F A] -> F B
 }
 
 duck Apply F A B {

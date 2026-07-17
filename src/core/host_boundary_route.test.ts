@@ -224,7 +224,7 @@ io
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 0
+let flag = false
 let print_once = if flag {
   () => io.print("hello")
 } else {
@@ -252,7 +252,7 @@ io
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 0
+let flag = false
 let print_once = if flag {
   (message: Text) => io.print(&message)
 } else {
@@ -270,7 +270,7 @@ io
 
   const branch_equivalent_param_linear_source = `
 let !base: I32 = 40
-let flag = 0
+let flag = false
 let add = if flag {
   (a: Int) => !base + a
 } else {
@@ -296,7 +296,7 @@ const result_type = ResultType
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 1
+let flag = true
 let result: result_type = if flag {
   result_type.ok("world")
 } else {
@@ -336,7 +336,7 @@ const result_type = ResultType
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 1
+let flag = true
 let make = if flag {
   (x: Text) => result_type.ok(x)
 } else {
@@ -484,7 +484,7 @@ io
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 0
+let flag = false
 let print_once = if flag {
   () => io.print("hello")
 } else {
@@ -503,7 +503,7 @@ io
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 0
+let flag = false
 let print_once = if flag {
   () => io.print("hello")
 } else {
@@ -552,7 +552,7 @@ io
 host_import print from "env.print" (I32, &Text) => I32
 
 let !io: I32 = 1
-let flag = 1
+let flag = true
 let print_once = () => io.print("hello")
 io = if flag {
   print_once()
@@ -683,7 +683,7 @@ const main = (!io: I32) => {
   io
 }
 
-let flag = 1
+let flag = true
 let run = if flag { main } else { main }
 let !io: I32 = 1
 io = run(!io)
@@ -706,7 +706,7 @@ io
 Deno.test("Source.core lowers runtime capability method tables", () => {
   const source = `
 host_import consume from "env.consume" (Text) => I32
-let flag = 1
+let flag = true
 let output = if flag {
   [.marker = @runtime_i32_slice(1, 7), .consume = consume]
 } else {
@@ -796,7 +796,7 @@ output.consume(@append("A", "da"))
       Source.wat(`
 host_import consume_a from "env.consume_a" (Text) => I32
 host_import consume_b from "env.consume_b" (Text) => I32
-let flag = 1
+let flag = true
 let output = if flag {
   [.marker = @runtime_i32_slice(1, 7), .consume = consume_a]
 } else {
@@ -1040,7 +1040,7 @@ read(&message)
   const branch_wrapper_borrow_host_call = Source.core(Source.parse(`
 host_import host_read from "env.read" (&Text) => I32
 
-let flag = 1
+let flag = true
 let read = if flag {
   (msg: Text) => host_read(msg)
 } else {
@@ -1221,7 +1221,7 @@ read(message)
   const branch_wrapper_unique_host_call = Source.core(Source.parse(`
 host_import host_read from "env.read" (&Text) => I32
 
-let flag = 1
+let flag = true
 let read = if flag {
   (msg: Text) => host_read(msg)
 } else {
@@ -1921,7 +1921,7 @@ send(message)
 host_import host_take from "env.take" (Text) => I32
 
 let send = msg => host_take(msg)
-let flag = 1
+let flag = true
 send(if flag { @append("a", "b") } else { @append("c", "d") })
 `));
   const branch_temporary_wrapper_transfer_proof = Core.proof(
@@ -2239,7 +2239,7 @@ relay(send, message)
 host_import host_take from "env.take" (Text) => I32
 
 let send = (msg: Text) => host_take(msg)
-let flag = 1
+let flag = true
 let relay = if flag {
   (const f, msg: Text) => {
     let g = f
@@ -2526,7 +2526,7 @@ send(message)
   const branch_wrapper_transfer = Source.core(Source.parse(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 1
+let flag = true
 let send = if flag {
   (msg: Text) => host_take(msg)
 } else {
@@ -2597,7 +2597,7 @@ send(message)
   const branch_wrapper_use_after_transfer = Source.core(Source.parse(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 1
+let flag = true
 let send = if flag {
   (msg: Text) => host_take(msg)
 } else {
@@ -2616,7 +2616,7 @@ send(message)
   const branch_local_wrapper_transfer = Source.core(Source.parse(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 1
+let flag = true
 let message: Text = @append("a", "b")
 if flag {
   let send = msg => host_take(msg)
@@ -2685,7 +2685,7 @@ if flag {
   const branch_local_wrapper_use_after_transfer = Source.core(Source.parse(`
 host_import host_take from "env.take" (Text) => I32
 
-let flag = 1
+let flag = true
 let message: Text = @append("a", "b")
 if flag {
   let send = msg => host_take(msg)
@@ -2870,7 +2870,7 @@ Deno.test("Core.proof accepts host-returned owner contracts", () => {
 
 Deno.test("Core transfers block-wrapped runtime union payload owners", () => {
   const source = `
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .age= Int }
 type ResultType = | .ok = user_type | .err
 let seed = 41
@@ -2944,7 +2944,7 @@ Deno.test("Core proof resolves locals declared in if-let statement bodies", () =
   const core = Source.core(Source.parse(`
 type ResultType = | .ok = Text | .err = Text
 const result_type = ResultType
-let flag = 1
+let flag = true
 let result: result_type = if flag {
   result_type.ok("yes")
 } else {
@@ -3033,7 +3033,7 @@ Deno.test("Core keeps branch-local aggregate union payloads allocated until thei
 host_import choose from "env.choose" () => I32
 host_import seed from "env.seed" () => I32
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= I32 }
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType
@@ -3071,7 +3071,7 @@ Deno.test("Core materializes generated bindings in scoped static calls", () => {
   const core = Source.core(Source.parse(`
 host_import seed from "env.seed" () => I32
 
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const user_type = struct { .name= Text, .age= I32 }
 type ResultType = | .ok = user_type | .err
 const result_type = ResultType

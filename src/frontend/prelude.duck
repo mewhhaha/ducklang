@@ -1,22 +1,12 @@
 module () where
 
-infixl 65 :+ = type_extend
-infixl 45 :| = type_union
-infixl 50 :& = type_intersection
-infixl 55 :- = type_difference
+infixr 15 :> = @seal
+infixl 65 :+ = @type.extend
+infixl 45 :| = @type.union
+infixl 50 :& = @type.intersection
+infixl 55 :- = @type.difference
 
-const type_extend: forall base additions. [base, additions] -> base =
-  [base, additions] => {
-    let extended = base
-
-    for member in additions {
-      extended = extended with {
-        .[member.name] = member.value
-      }
-    }
-
-    extended
-  }
+const type_extend = [base, additions] => @type.extend [base, additions]
 
 const type_union = [left, right] => @type.union(left, right)
 
@@ -36,9 +26,7 @@ const struct = (const shape) => {
   }
 
   for index, field in shape {
-    product_type = product_type with {
-      .[field.name] = value => value[index]
-    }
+    product_type = @type.member [product_type, field.name, value => value[index]]
   }
 
   product_type

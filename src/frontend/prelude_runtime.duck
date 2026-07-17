@@ -1,5 +1,21 @@
 module () where
 
+infixr 20 || = @syntax.or
+infixr 30 && = @syntax.and
+infix 40 == = @syntax.eq
+infix 40 != = @syntax.ne
+infix 40 < = @syntax.lt
+infix 40 <= = @syntax.le
+infix 40 > = @syntax.gt
+infix 40 >= = @syntax.ge
+infixl 60 + = @syntax.add
+infixl 60 - = @syntax.sub
+infixl 70 * = @syntax.mul
+infixl 70 / = @syntax.div
+infixl 70 % = @syntax.rem
+prefix 80 ! = @syntax.not
+prefix 80 - = @syntax.negate
+
 const append = [left, right] => @append(left, right)
 const length = value => @len(value)
 const get = [value, index] => @get(value, index)

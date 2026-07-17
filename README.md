@@ -265,7 +265,7 @@ if let .ok(value) = result { value } else { 0 }
 
 object.field
 object[index]
-object with { .field = value }
+object :+ { .field = value }
 ```
 
 Built-in type names:
@@ -356,7 +356,7 @@ let read_name = () => {
   name
 }
 
-let greet: () -> <Io.read | Io.print> Text = () => {
+let greet: () -> <Io.read :| Io.print> Text = () => {
   name <- read_name()
   _ <- Io.print(&name)
   name
@@ -370,13 +370,13 @@ compiler retains the linear context-renewal proof internally, so application
 code does not thread an effect token explicitly.
 
 Effect annotations are operation sets. A family such as `Io` expands to all of
-its operations. `|` is union, `&` is intersection, and `\` is difference. Rows
-propagate through calls, and a row annotation is an upper bound on the inferred
-minimal row. Type constructors compose by whitespace application, arrows
-associate right, and lowercase row variables propagate callback effects:
+its operations. `:|` is union, `:&` is intersection, and `:-` is difference.
+Rows propagate through calls, and a row annotation is an upper bound on the
+inferred minimal row. Type constructors compose by whitespace application,
+arrows associate right, and lowercase row variables propagate callback effects:
 
 ```duck
-(List a, a -> <e> b) -> <e> List b
+[List a, a -> <e> b] -> <e> List b
 ```
 
 Imported files are loaded first and then instantiated with an explicitly

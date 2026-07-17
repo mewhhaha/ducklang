@@ -61,8 +61,8 @@ Deno.test("format_text drops blanks hugging braces", () => {
 
 Deno.test("format_text keeps effect rows tight", () => {
   assert_equals(
-    format_text("let echo: () -> < Stdin |Stdout > Text = () => {\n1\n}\n"),
-    "let echo: () -> <Stdin | Stdout> Text = () => {\n  1\n}\n",
+    format_text("let echo: () -> < Stdin :|Stdout > Text = () => {\n1\n}\n"),
+    "let echo: () -> <Stdin :| Stdout> Text = () => {\n  1\n}\n",
   );
 });
 

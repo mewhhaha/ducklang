@@ -96,6 +96,7 @@ export function source_for_ic_route(source: Source): Source {
   derive_missing_source_spans(source, { start: 0, end: 0 });
   source = specialize_front_effects(source);
   require_rank_n_types(source);
+  require_condition_types(source);
   validate_atom_identities(source);
   validate_ic_route(source);
   return elaborate_source(source);
@@ -191,6 +192,20 @@ function require_core_representation(source: Source): void {
 
   for (const diagnostic of diagnostics) {
     if (diagnostic.severity === "error") {
+      throw new SourceDiagnosticError(diagnostic);
+    }
+  }
+}
+
+function require_condition_types(source: Source): void {
+  const diagnostics = validate_frontend_semantics(source);
+
+  for (const diagnostic of diagnostics) {
+    if (
+      diagnostic.severity === "error" &&
+      diagnostic.code === diagnostic_codes.condition_type_mismatch &&
+      diagnostic.message.startsWith("If condition expects Bool")
+    ) {
       throw new SourceDiagnosticError(diagnostic);
     }
   }

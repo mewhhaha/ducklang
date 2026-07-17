@@ -264,6 +264,10 @@ function named_rec_type_name_seed_value(
     return { tag: "num", type: "f32", value: 0 };
   }
 
+  if (name === "F64") {
+    return { tag: "num", type: "f64", value: 0 };
+  }
+
   if (name === "F32x4") {
     return {
       tag: "prim",

@@ -126,8 +126,8 @@ return { code, .status = renamed }
   );
   assert_equals(parse_source(format_source(source)), source);
 
-  const update = parse_source("let changed = value with { code }");
-  assert_equals(format_source(update), "let changed = value with { code }");
+  const update = parse_source("let changed = value :+ { code }");
+  assert_equals(format_source(update), "let changed = value :+ { code }");
   assert_equals(parse_source(format_source(update)), update);
 });
 
@@ -170,7 +170,7 @@ Deno.test("imports casts and updates have one canonical expression form", () => 
   const source = parse_source(`
 let dependency = import "./dependency.duck"
 let narrowed = value as [I32; width]
-let changed = value with { .count = 1 }
+let changed = value :+ { .count = 1 }
 `);
 
   assert_equals(binding_value(source.statements[0]), {
@@ -178,7 +178,7 @@ let changed = value with { .count = 1 }
     path: "./dependency.duck",
   });
   assert_equals(binding_value(source.statements[1]).tag, "as");
-  assert_equals(binding_value(source.statements[2]).tag, "struct_update");
+  assert_equals(binding_value(source.statements[2]).tag, "app");
   assert_equals(parse_source(format_source(source)), source);
 
   assert_throws(
@@ -191,9 +191,9 @@ let changed = value with { .count = 1 }
   );
 });
 
-Deno.test("import invocation formats without redundant parentheses", () => {
+Deno.test("import invocation does not permit redundant parentheses", () => {
   const source = parse_source(
-    'let dependency = (import "./dependency.duck")()\n',
+    'let dependency = import "./dependency.duck" ()\n',
   );
 
   assert_equals(
@@ -201,6 +201,10 @@ Deno.test("import invocation formats without redundant parentheses", () => {
     'let dependency = import "./dependency.duck" ()',
   );
   assert_equals(parse_source(format_source(source)), source);
+  assert_throws(
+    () => parse_source('let dependency = (import "./dependency.duck")()\n'),
+    'Import invocation uses `import "path" arguments` without grouping',
+  );
 });
 
 Deno.test("compiler functions retain their intrinsic prefix", () => {
@@ -230,27 +234,27 @@ Deno.test("compiler functions retain their intrinsic prefix", () => {
   );
 });
 
-Deno.test("computed type members round trip with leading product spreads", () => {
+Deno.test("source type member intrinsic round trips with product spreads", () => {
   const source = parse_source(`
 let accumulated = [...product_type, field.value]
-let enriched = product_type with {
-  .[field.name] = value => value[index]
-}
+let enriched = @type.member [product_type, field.name, value => value[index]]
 `);
   const accumulated = binding_value(source.statements[0]);
   const enriched = binding_value(source.statements[1]);
 
-  if (accumulated.tag !== "array" || enriched.tag !== "type_with") {
+  if (
+    accumulated.tag !== "array" || enriched.tag !== "app" ||
+    enriched.func.tag !== "var" || enriched.func.name !== "@type.member"
+  ) {
     throw new Error("Expected compile-time product type construction");
   }
 
   assert_equals(accumulated.leading_rest, true);
   assert_equals(accumulated.rest, { tag: "var", name: "product_type" });
-  assert_equals(enriched.members.length, 1);
   assert_equals(parse_source(format_source(source)), source);
 });
 
-Deno.test("legacy aggregate spellings are rejected", () => {
+Deno.test("noncanonical aggregate spellings are rejected", () => {
   assert_throws(
     () => parse_source("let pair = (.left = 1, .right = 2)"),
     "Product values use `[...]`",
@@ -311,12 +315,13 @@ let picked = match choice {
   );
 });
 
-Deno.test("numeric literals carry explicit integer and f32 widths", () => {
+Deno.test("numeric literals carry explicit integer and float widths", () => {
   const source = parse_source(`
 let byte_mask = 0xff
 let wide_mask = 0x100000000i64
 let ratio = 1.5f32
 let exponent = 1e2f32
+let precise = 20.5f64
 `);
 
   assert_equals(binding_value(source.statements[0]), {
@@ -339,12 +344,18 @@ let exponent = 1e2f32
     type: "f32",
     value: 100,
   });
+  assert_equals(binding_value(source.statements[4]), {
+    tag: "num",
+    type: "f64",
+    value: 20.5,
+  });
   assert_equals(
     format_source(source),
     "let byte_mask = 255\n" +
       "let wide_mask = 4294967296i64\n" +
       "let ratio = 1.5f32\n" +
-      "let exponent = 100f32",
+      "let exponent = 100f32\n" +
+      "let precise = 20.5f64",
   );
   assert_throws(
     () => parse_source("let value = 0x"),
@@ -352,6 +363,6 @@ let exponent = 1e2f32
   );
   assert_throws(
     () => parse_source("let value = 1.5"),
-    "Floating-point literal requires an f32 suffix",
+    "Floating-point literal requires an f32 or f64 suffix",
   );
 });

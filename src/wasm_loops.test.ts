@@ -641,7 +641,7 @@ sum_text("Ada")
   }
 
   const first_class_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let sum_text = if flag {
   (value: Text) => {
     let total = 0
@@ -798,7 +798,7 @@ f(10) + f(20) + factor
 
 Deno.test("core static-call block collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const { struct } = comptime (import "duck:prelude")()
+const { struct } = comptime import "duck:prelude" ()
 const pair_type = struct {
   .first= Int,
   .second= Int
@@ -839,7 +839,7 @@ sum([.first = 10, .second = 31])
 
 Deno.test("core dynamic shaped collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let flag = 1
+let flag = true
 let sum = 0
 
 for i, x in if flag {
@@ -873,7 +873,7 @@ sum
   }
 
   const const_call_wat = wat_from_core_source(`
-let flag = 1
+let flag = true
 let sum = 0
 
 const make_xs = active => {

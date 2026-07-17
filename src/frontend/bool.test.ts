@@ -44,6 +44,24 @@ Deno.test("Bool and I32 annotations reject values of the other type", () => {
   );
 });
 
+Deno.test("explicit checked casts convert i32-family numbers to Bool", () => {
+  const truthy = "if @as(2, Bool) { 1 } else { 0 }";
+  const falsy = "if @as(0, Bool) { 1 } else { 0 }";
+
+  assert_equals(Source.analyze(truthy).diagnostics, []);
+  assert_equals(Source.analyze(falsy).diagnostics, []);
+  assert_equals(Ic.reduce(Source.compile(truthy)), {
+    tag: "num",
+    type: "i32",
+    value: 1,
+  });
+  assert_equals(Ic.reduce(Source.compile(falsy)), {
+    tag: "num",
+    type: "i32",
+    value: 0,
+  });
+});
+
 Deno.test("Bool values cannot enter arithmetic or mixed equality", () => {
   const arithmetic = Source.analyze("true + 1");
   const mixed_equality = Source.analyze("true == 1");
@@ -92,22 +110,23 @@ let checked: I32 = 1 is Int
   );
 });
 
-Deno.test("conditions accept Bool and legacy I32 truthiness", () => {
+Deno.test("conditions require Bool", () => {
   const bool_condition = "if true { 42 } else { 0 }";
   const i32_condition = "if 2 { 42 } else { 0 }";
 
   assert_equals(Source.analyze(bool_condition).diagnostics, []);
-  assert_equals(Source.analyze(i32_condition).diagnostics, []);
   assert_equals(Ic.reduce(Source.compile(bool_condition)), {
     tag: "num",
     type: "i32",
     value: 42,
   });
-  assert_equals(Ic.reduce(Source.compile(i32_condition)), {
-    tag: "num",
-    type: "i32",
-    value: 42,
-  });
+  assert_equals(
+    Source.analyze(i32_condition).diagnostics.map(({ code, message }) => ({
+      code,
+      message,
+    })),
+    [{ code: "DUCK2303", message: "If condition expects Bool, got I32" }],
+  );
 });
 
 Deno.test("dynamic Bool struct indexes retain Bool semantics over i32", () => {

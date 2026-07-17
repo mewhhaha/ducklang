@@ -194,6 +194,15 @@ Deno.test("aliases normalize before canonical unification", () => {
   );
 });
 
+Deno.test("representation checks align Bool with the i32 scalar family", () => {
+  const engine = new TypeEngine();
+
+  assert_equals(engine.representation_compatible(bool, int), true);
+  assert_equals(engine.representation_compatible(bool, i32), true);
+  assert_equals(engine.representation_compatible(bool, text), false);
+  assert_equals(engine.subtype(i32, bool), false);
+});
+
 Deno.test("type sets normalize and participate in subtyping", () => {
   const engine = new TypeEngine();
   const repeated: Type = {

@@ -56,7 +56,7 @@ let rebuilt = [x, ...rec(index + 1, length)]
 let repeated = [x; 3]
 let source = import "./source.duck"
 let cast = x as Text
-let updated = x with { .field = y }
+let updated = x :+ { .field = y }
 let [first, ...rest] = values
 let result = match target {
 | .ok(value) if ready => value
@@ -87,6 +87,7 @@ type Values = [I32; 3]
               (binary_expression
                 (postfix_expression
                   (identifier))
+                (operator_symbol)
                 (postfix_expression
                   (number)))
               (postfix_expression
@@ -117,16 +118,17 @@ type Values = [I32; 3]
               (identifier)))))))
   (binding_statement
     (identifier)
-    (postfix_expression
-      (update_expression
-        (postfix_expression
-          (identifier))
-        (with_keyword)
-        (field_block
-          (shape_field
-            (identifier)
-            (postfix_expression
-              (identifier)))))))
+    (binary_expression
+      (postfix_expression
+        (identifier))
+      (operator_symbol)
+      (postfix_expression
+        (object_literal
+          (field_block
+            (shape_field
+              (identifier)
+              (postfix_expression
+                (identifier))))))))
   (binding_statement
     (array_pattern
       (identifier)
@@ -197,6 +199,7 @@ const fold = rec (values, index) => {
                 (condition_binary_expression
                   (condition_expression
                     (identifier))
+                  (operator_symbol)
                   (condition_expression
                     (condition_call_expression
                       (condition_expression
@@ -218,5 +221,6 @@ const fold = rec (values, index) => {
                       (binary_expression
                         (postfix_expression
                           (identifier))
+                        (operator_symbol)
                         (postfix_expression
                           (number))))))))))))))

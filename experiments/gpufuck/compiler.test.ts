@@ -1,5 +1,6 @@
 import { assert_equals } from "../../src/assert.ts";
 import type { FunctionalWasmHostValue } from "../../../gpufuck/functional.ts";
+import { success_examples } from "../../examples/manifest.ts";
 import { gpufuck_benchmark_cases } from "./benchmark_cases.ts";
 import { encode_gpufuck_module, ExperimentalDuckCompiler } from "./compiler.ts";
 
@@ -90,8 +91,8 @@ Deno.test("gpufuck experiment compiles the benchmark suite to runnable Wasm", as
       "20.5f32 + 21.5f32",
       "20.5f64 + 21.5f64",
       "@i32_from_f32(@f32x4_extract_lane(" +
-        "@f32x4_add(@f32x4(1f32, 2f32, 3f32, 4f32), " +
-        "@f32x4_splat(1f32)), 2))",
+      "@f32x4_add(@f32x4(1f32, 2f32, 3f32, 4f32), " +
+      "@f32x4_splat(1f32)), 2))",
     ]);
     const i64_instance = await WebAssembly.instantiate(numeric_modules[0]);
     const f32_instance = await WebAssembly.instantiate(numeric_modules[1]);
@@ -125,6 +126,57 @@ Deno.test("gpufuck experiment compiles the benchmark suite to runnable Wasm", as
     }
 
     assert_equals(main(), 381_455_585, "modular workload");
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("gpufuck experiment evaluates a pure Duck result at compile time", async () => {
+  const compiler = await ExperimentalDuckCompiler.create();
+  try {
+    const result = await compiler.evaluate_comptime(
+      "let answer = 40 + 2\nanswer",
+    );
+    if (!result.ok) {
+      throw new Error(
+        "gpufuck comptime evaluation failed: " + JSON.stringify(result),
+      );
+    }
+    assert_equals(result.exports.length, 1);
+    assert_equals(result.exports[0]?.value, {
+      kind: "integer",
+      value: 42,
+    });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("gpufuck experiment preserves comptime execution limits", async () => {
+  const compiler = await ExperimentalDuckCompiler.create();
+  try {
+    const result = await compiler.evaluate_comptime(
+      "40 + 2",
+      { maximumOutputBytes: 1 },
+    );
+    if (result.ok || result.stage !== "comptime") {
+      throw new Error(
+        "gpufuck comptime output limit returned an unexpected result: " +
+          JSON.stringify(result),
+      );
+    }
+    assert_equals(result.diagnostic.kind, "output-limit");
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("gpufuck experiment compiles every standalone success example", async () => {
+  const compiler = await ExperimentalDuckCompiler.create();
+  try {
+    for (const example of success_examples) {
+      await compiler.compile_file(example.path);
+    }
   } finally {
     compiler.destroy();
   }
@@ -232,7 +284,8 @@ return { .result = result + 1 }
       init: {
         Timer: {
           $resource: { kind: "resource", id: 1 },
-          wait: async (argument: FunctionalWasmHostValue) => argument,
+          wait: (argument: FunctionalWasmHostValue) =>
+            Promise.resolve(argument),
         },
       },
     });
