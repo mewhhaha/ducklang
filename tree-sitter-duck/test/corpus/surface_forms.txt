@@ -62,6 +62,11 @@ let result = match target {
 | .ok(value) if ready => value
 | _ => 0
 }
+let selected = match value {
+| 1 | 2 => 3
+| "hello ${name} why" => name
+| _ => ""
+}
 type Values = [I32; 3]
 
 ---
@@ -154,6 +159,26 @@ type Values = [I32; 3]
           (wildcard)
           (postfix_expression
             (number))))))
+  (binding_statement
+    (identifier)
+    (match_expression
+      (condition_expression
+        (identifier))
+      (match_case_block
+        (match_case
+          (alternative_pattern
+            (number)
+            (number))
+          (postfix_expression
+            (number)))
+        (match_case
+          (string)
+          (postfix_expression
+            (identifier)))
+        (match_case
+          (wildcard)
+          (postfix_expression
+            (string))))))
   (type_declaration_statement
     (identifier)
     (type_reference

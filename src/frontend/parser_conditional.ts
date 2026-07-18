@@ -216,11 +216,14 @@ export abstract class ParserConditional extends ParserAggregate {
       };
     }
 
-    const literal_token = this.peek();
-    const literal = front_literal_expr(literal_token);
+    const literal = front_literal_expr(this.peek());
+    const interpolated_text = literal?.tag === "text" &&
+      /\$\{[a-z_][A-Za-z0-9_]*\}/.test(literal.value);
+    const alternative = this.peek(1).kind === "symbol" &&
+      this.peek(1).text === "|";
 
-    if (!literal) {
-      const pattern = this.parse_pattern();
+    if (literal !== undefined && !interpolated_text && !alternative) {
+      this.advance();
       this.expect_symbol("=");
       const target = this.parse_expr_without_postfix_block();
 
@@ -228,10 +231,15 @@ export abstract class ParserConditional extends ParserAggregate {
         this.expect_symbol(")");
       }
 
-      return { tag: "pattern", pattern, target };
+      const prim = binary_prim("==", target, literal);
+      expect(prim, "Missing literal pattern equality primitive");
+      return {
+        tag: "literal",
+        cond: { tag: "prim", prim, left: target, right: literal },
+      };
     }
 
-    this.advance();
+    const pattern = this.parse_pattern();
     this.expect_symbol("=");
     const target = this.parse_expr_without_postfix_block();
 
@@ -239,11 +247,6 @@ export abstract class ParserConditional extends ParserAggregate {
       this.expect_symbol(")");
     }
 
-    const prim = binary_prim("==", target, literal);
-    expect(prim, "Missing literal pattern equality primitive");
-    return {
-      tag: "literal",
-      cond: { tag: "prim", prim, left: target, right: literal },
-    };
+    return { tag: "pattern", pattern, target };
   }
 }

@@ -14,6 +14,7 @@ import {
 } from "./parser_support.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import { record_annotation_name_sites } from "./name_site.ts";
+import { pattern_bindings } from "./pattern.ts";
 
 export class ParserParams extends ParserCursor {
   protected allow_pascal_type_names = 0;
@@ -98,8 +99,30 @@ export class ParserParams extends ParserCursor {
 
   protected parse_pattern(): Pattern {
     const start = this.index;
-    const pattern = this.parse_pattern_inner();
-    return this.concrete_node(start, pattern);
+    const alternatives = [this.parse_pattern_inner()];
+
+    while (this.match_symbol("|")) {
+      alternatives.push(this.parse_pattern_inner());
+    }
+
+    if (alternatives.length === 1) {
+      const pattern = alternatives[0];
+      expect(pattern, "Missing parsed pattern");
+      return this.concrete_node(start, pattern);
+    }
+
+    const expected = pattern_binding_signature(alternatives[0]);
+
+    for (const alternative of alternatives.slice(1)) {
+      const actual = pattern_binding_signature(alternative);
+      expect(
+        actual === expected,
+        "Pattern alternatives must bind the same names, modes, and " +
+          "annotations: expected " + expected + ", got " + actual,
+      );
+    }
+
+    return this.concrete_node(start, { tag: "or", alternatives });
   }
 
   private parse_pattern_inner(): Pattern {
@@ -125,6 +148,28 @@ export class ParserParams extends ParserCursor {
           literal.tag === "text",
         "Unsupported pattern literal",
       );
+      if (literal.tag === "text") {
+        const captures = Array.from(
+          literal.value.matchAll(/\$\{([a-z_][A-Za-z0-9_]*)\}/g),
+        );
+        expect(
+          captures.length <= 1,
+          "Text patterns support at most one capture",
+        );
+        const capture = captures[0];
+
+        if (capture !== undefined) {
+          const name = capture[1];
+          expect(name !== undefined, "Missing text pattern binding");
+          const start = capture.index;
+          expect(start !== undefined, "Missing text pattern capture offset");
+          const prefix = literal.value.slice(0, start);
+          const suffix = literal.value.slice(start + capture[0].length);
+          expect_snake_case(name, "Text pattern binding");
+          return { tag: "text_capture", prefix, name, suffix };
+        }
+      }
+
       return { tag: "literal", value: literal };
     }
 
@@ -140,7 +185,7 @@ export class ParserParams extends ParserCursor {
       let value: Pattern | undefined;
 
       if (this.starts_union_pattern_payload()) {
-        value = this.parse_pattern();
+        value = this.parse_pattern_inner();
       }
 
       return { tag: "union_case", name, value };
@@ -557,4 +602,26 @@ export class ParserParams extends ParserCursor {
 
     return { annotation: format_type_expr(parsed), type_annotation };
   }
+}
+
+function pattern_binding_signature(pattern: Pattern | undefined): string {
+  if (pattern === undefined) {
+    return "no bindings";
+  }
+
+  return pattern_bindings(pattern).map((binding) => {
+    let annotation = binding.annotation;
+
+    if (binding.type_annotation !== undefined) {
+      annotation = format_type_expr(binding.type_annotation);
+    }
+
+    let signature = binding.mode + " " + binding.name;
+
+    if (annotation !== undefined) {
+      signature += ": " + annotation;
+    }
+
+    return signature;
+  }).join(", ");
 }

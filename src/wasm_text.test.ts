@@ -923,6 +923,32 @@ same_result + byte_mismatch + length_mismatch + not_same_result
   }
 });
 
+Deno.test("text patterns capture the segment between fixed UTF-8 text", async () => {
+  const wat_text = wat_from_core_source(`
+let extract = (value: Text) => match value {
+  | "hello \${id} why" => @len(id)
+  | _ => 0
+}
+
+extract("hello żółw why") * 10 + extract("goodbye")
+`);
+  const instance = await instantiate_wat(
+    wat_text,
+    "runtime_text_capture_pattern",
+    {},
+  );
+
+  if (typeof instance.exports.main !== "function") {
+    throw new Error("Missing main export");
+  }
+
+  const result = instance.exports.main();
+
+  if (result !== 70) {
+    throw new Error("Expected captured UTF-8 byte length 7, got " + result);
+  }
+});
+
 Deno.test("frontend runtime text slice compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
 let flag = true

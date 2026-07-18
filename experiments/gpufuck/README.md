@@ -51,11 +51,13 @@ deno task compiler:gpufuck:runtime
 ```
 
 The benchmark preloads ten source files, warms both routes, then reports the
-median of 20 rounds. The current route measures parse, frontend work, lowering,
-and WAT emission. The experimental route reports parse/surface encoding, GPU
-semantic compilation, and binary Wasm emission separately. GPU device/compiler
-startup is reported but excluded from the warm total. WAT and Wasm byte counts
-are included as context, not compared as equivalent encodings.
+median of 20 rounds. Both routes are measured from Duck source through binary
+Wasm and execute their outputs for verification. The current route reports Duck
+parsing, frontend work, lowering, and WAT generation separately from `wat2wasm`
+emission. The experimental route reports Duck parsing, Core lowering and surface
+encoding separately from GPU semantic compilation and binary Wasm emission. GPU
+device/compiler startup is reported but excluded from the warm total. WAT and
+Wasm byte counts are included as context, not compared as equivalent encodings.
 
 The same command also reports seven-round medians for generated straight-line
 programs with 100, 500, 1,000, and 2,000 bindings. This makes the fixed GPU cost
@@ -63,12 +65,18 @@ and any larger-module crossover visible instead of extrapolating from tiny
 examples.
 
 On the July 2026 development checkout after filling the semantic adapter gaps,
-gpufuck was slower for the ten-file suite (29.20 ms versus 4.51 ms) and at every
-generated size. It compiled 1,000 bindings in 125.24 ms versus 87.34 ms, and
-2,000 bindings in 434.54 ms versus 250.65 ms. The broader lowering produces
-substantially more functional Core than the earlier scalar adapter, so the old
-large-input crossover no longer holds. These figures are local measurements, not
-stable performance guarantees.
+gpufuck was slower for the ten-file suite and at every generated size. With both
+routes measured from Duck source through binary Wasm, the warm median was 29.59
+ms through gpufuck versus 8.32 ms through the current routes. The current total
+comprised 4.84 ms of Duck compilation and 3.61 ms of `wat2wasm` emission. The
+gpufuck total comprised 3.66 ms of Duck lowering and encoding, 12.69 ms of GPU
+semantic compilation, and 12.97 ms of binary emission. WebGPU compiler startup
+took 242.67 ms and the first ten-file compilation took 54.55 ms. At 1,000
+generated bindings gpufuck took 128.30 ms versus 96.71 ms; at 2,000 bindings it
+took 458.97 ms versus 278.89 ms. The broader lowering produces substantially
+more functional Core than the earlier scalar adapter, so the old large-input
+crossover no longer holds. These figures are local measurements, not stable
+performance guarantees.
 
 The runtime benchmark uses the modular program in `workload/main.duck`. Four
 parameterized modules specialize constants used by three recursive 512-round
@@ -84,12 +92,13 @@ values. Recomputing measurements execute all three kernels on every call; the
 retained-value measurement intentionally evaluates once and measures lookup on
 later calls. This prevents retained lookup from being presented as kernel
 execution speed. In the July 2026 checkout, the compact modular gpufuck entry
-was 234 bytes versus 204 bytes and repeated the workload in 990 ns versus 983
-ns. Its fresh execution was 977 ns versus 964 ns. The managed callable
-recomputed in 1.03 us after initialization versus 992 ns, while its first call
-remained slower because it initializes the general functional runtime. The
-explicit retained fixture took 6.26 ns after its first evaluation. These are
-local measurements, not stable performance guarantees.
+was 234 bytes versus 204 bytes and repeated the workload in 996 ns versus 992
+ns. Its fresh execution took 982 ns versus 959 ns, and instantiation plus first
+execution took 3.08 us versus 2.49 us. The managed callable recomputed in 995 ns
+after initialization versus 998 ns, while instantiation plus first execution
+took 12.36 us versus 10.70 us. The explicit retained fixture took 6.21 ns after
+its first evaluation. These are local measurements, not stable performance
+guarantees.
 
 The compatibility test compiles all 73 non-failure, standalone programs in the
 current `examples/` manifest through gpufuck. The focused tests also execute

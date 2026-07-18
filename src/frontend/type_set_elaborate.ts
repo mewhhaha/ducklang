@@ -828,7 +828,8 @@ function elaborate_pattern_bindings(
 
   if (
     pattern.tag === "literal" || pattern.tag === "value" ||
-    pattern.tag === "union_case" || pattern.tag === "type"
+    pattern.tag === "union_case" || pattern.tag === "type" ||
+    pattern.tag === "or" || pattern.tag === "text_capture"
   ) {
     throw new Error(
       "Refutable " + pattern.tag +
@@ -1554,9 +1555,10 @@ function elaborate_match_expr(
   scope: TypeSetScope,
 ): FrontExpr {
   const target = rewrite_expr(expr.target, scope);
+  const arms = expand_match_alternatives(expr.arms);
 
-  if (expr.arms.some((arm) => arm.pattern.tag === "type")) {
-    return elaborate_type_match_expr(expr, target, scope);
+  if (arms.some((arm) => arm.pattern.tag === "type")) {
+    return elaborate_type_match_expr({ ...expr, arms }, target, scope);
   }
 
   const target_shape = resolve_binding_pattern_source(
@@ -1565,7 +1567,7 @@ function elaborate_match_expr(
     new Set(),
   );
   const union_type = union_type_for_value(target, scope);
-  validate_match_coverage(expr.arms, union_type);
+  validate_match_coverage(arms, union_type);
 
   if (
     scope.evaluating_const_call &&
@@ -1573,7 +1575,7 @@ function elaborate_match_expr(
       target.tag === "atom" || target.tag === "unit" ||
       target.tag === "text")
   ) {
-    for (const arm of expr.arms) {
+    for (const arm of arms) {
       let matches = arm.pattern.tag === "wildcard";
       let body = arm.body;
 
@@ -1603,6 +1605,27 @@ function elaborate_match_expr(
         } else if (value.tag === "atom" && target.tag === "atom") {
           matches = value.name === target.name;
         }
+      } else if (
+        arm.pattern.tag === "text_capture" && target.tag === "text"
+      ) {
+        const value = target.value;
+        matches = value.startsWith(arm.pattern.prefix) &&
+          value.endsWith(arm.pattern.suffix) &&
+          value.length >= arm.pattern.prefix.length + arm.pattern.suffix.length;
+
+        if (matches) {
+          const end = value.length - arm.pattern.suffix.length;
+          body = substitute_front_expr(
+            body,
+            new Map([[
+              arm.pattern.name,
+              {
+                tag: "text",
+                value: value.slice(arm.pattern.prefix.length, end),
+              },
+            ]]),
+          );
+        }
       }
 
       if (!matches) {
@@ -1620,7 +1643,7 @@ function elaborate_match_expr(
   const target_name = fresh_match_target_name(scope);
   let target_expr: FrontExpr = { tag: "var", name: target_name };
   let bind_target = true;
-  const first_arm = expr.arms[0];
+  const first_arm = arms[0];
 
   if (
     first_arm !== undefined &&
@@ -1635,8 +1658,8 @@ function elaborate_match_expr(
 
   let result: FrontExpr = { tag: "unit" };
 
-  for (let index = expr.arms.length - 1; index >= 0; index -= 1) {
-    const arm = expr.arms[index];
+  for (let index = arms.length - 1; index >= 0; index -= 1) {
+    const arm = arms[index];
     expect(arm, "Missing match arm " + index.toString());
     result = elaborate_match_arm(
       arm,
@@ -1668,6 +1691,23 @@ function elaborate_match_expr(
   }
 
   return { tag: "block", statements };
+}
+
+function expand_match_alternatives(arms: MatchArm[]): MatchArm[] {
+  const expanded: MatchArm[] = [];
+
+  for (const arm of arms) {
+    if (arm.pattern.tag !== "or") {
+      expanded.push(arm);
+      continue;
+    }
+
+    for (const alternative of arm.pattern.alternatives) {
+      expanded.push({ ...arm, pattern: alternative });
+    }
+  }
+
+  return expanded;
 }
 
 function elaborate_type_match_expr(
@@ -1905,6 +1945,20 @@ function elaborate_match_arm(
     };
   }
 
+  if (arm.pattern.tag === "text_capture") {
+    return elaborate_text_capture_arm(
+      arm,
+      arm.pattern,
+      target,
+      fallback,
+      scope,
+    );
+  }
+
+  if (arm.pattern.tag === "or") {
+    throw new Error("Pattern alternatives must be expanded before lowering");
+  }
+
   if (arm.pattern.tag === "type") {
     throw new Error("Type match must be elaborated at compile time");
   }
@@ -2027,6 +2081,167 @@ function elaborate_match_arm(
 
   arm.pattern satisfies never;
   throw new Error("Unsupported match pattern during elaboration");
+}
+
+function elaborate_text_capture_arm(
+  arm: MatchArm,
+  pattern: Extract<Pattern, { tag: "text_capture" }>,
+  target: FrontExpr,
+  fallback: FrontExpr,
+  scope: TypeSetScope,
+): FrontExpr {
+  const encoder = new TextEncoder();
+  const prefix_length = encoder.encode(pattern.prefix).length;
+  const suffix_length = encoder.encode(pattern.suffix).length;
+  const target_length: FrontExpr = {
+    tag: "app",
+    func: { tag: "var", name: "@len" },
+    arg: target,
+    args: [target],
+  };
+  const capture_end: FrontExpr = {
+    tag: "prim",
+    prim: "i32.sub",
+    left: target_length,
+    right: { tag: "num", type: "i32", value: suffix_length },
+  };
+  const capture: FrontExpr = {
+    tag: "app",
+    func: { tag: "var", name: "@slice" },
+    arg: {
+      tag: "product",
+      entries: [
+        { value: target },
+        { value: { tag: "num", type: "i32", value: prefix_length } },
+        { value: capture_end },
+      ],
+    },
+    args: [
+      target,
+      { tag: "num", type: "i32", value: prefix_length },
+      capture_end,
+    ],
+  };
+  const branch = clone_scope(scope);
+  branch.bindings.set(pattern.name, {
+    annotation: "Text",
+    value: undefined,
+  });
+  const matched = guarded_match_body(
+    arm.guard,
+    arm.body,
+    fallback,
+    branch,
+  );
+  const prefix_name = fresh_match_target_name(scope);
+  const suffix_name = fresh_match_target_name(scope);
+  const prefix: FrontExpr = {
+    tag: "app",
+    func: { tag: "var", name: "@slice" },
+    arg: {
+      tag: "product",
+      entries: [
+        { value: target },
+        { value: { tag: "num", type: "i32", value: 0 } },
+        { value: { tag: "num", type: "i32", value: prefix_length } },
+      ],
+    },
+    args: [
+      target,
+      { tag: "num", type: "i32", value: 0 },
+      { tag: "num", type: "i32", value: prefix_length },
+    ],
+  };
+  const suffix: FrontExpr = {
+    tag: "app",
+    func: { tag: "var", name: "@slice" },
+    arg: {
+      tag: "product",
+      entries: [
+        { value: target },
+        { value: capture_end },
+        { value: target_length },
+      ],
+    },
+    args: [target, capture_end, target_length],
+  };
+  const successful_branch: FrontExpr = {
+    tag: "block",
+    statements: [
+      {
+        tag: "bind",
+        kind: "let",
+        name: prefix_name,
+        is_linear: false,
+        annotation: "Text",
+        value: prefix,
+      },
+      {
+        tag: "bind",
+        kind: "let",
+        name: suffix_name,
+        is_linear: false,
+        annotation: "Text",
+        value: suffix,
+      },
+      {
+        tag: "bind",
+        kind: "let",
+        pattern: {
+          tag: "binding",
+          name: pattern.name,
+          mode: "default",
+          annotation: "Text",
+        },
+        name: pattern.name,
+        is_linear: false,
+        annotation: "Text",
+        value: capture,
+      },
+      {
+        tag: "expr",
+        expr: {
+          tag: "if",
+          cond: match_literal_condition(
+            { tag: "var", name: prefix_name },
+            {
+              tag: "literal",
+              value: { tag: "text", value: pattern.prefix },
+            },
+          ),
+          then_branch: {
+            tag: "if",
+            cond: match_literal_condition(
+              { tag: "var", name: suffix_name },
+              {
+                tag: "literal",
+                value: { tag: "text", value: pattern.suffix },
+              },
+            ),
+            then_branch: matched,
+            else_branch: fallback,
+          },
+          else_branch: fallback,
+        },
+      },
+    ],
+  };
+
+  return {
+    tag: "if",
+    cond: {
+      tag: "prim",
+      prim: "i32.ge_s",
+      left: target_length,
+      right: {
+        tag: "num",
+        type: "i32",
+        value: prefix_length + suffix_length,
+      },
+    },
+    then_branch: successful_branch,
+    else_branch: fallback,
+  };
 }
 
 function guarded_match_body(
@@ -2187,6 +2402,16 @@ function validate_match_coverage(
 
     if (arm.pattern.tag === "value") {
       continue;
+    }
+
+    if (arm.pattern.tag === "text_capture") {
+      continue;
+    }
+
+    if (arm.pattern.tag === "or") {
+      throw new Error(
+        "Pattern alternatives must be expanded before coverage analysis",
+      );
     }
 
     if (arm.pattern.tag === "union_case") {
@@ -2388,9 +2613,15 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         const body_scope = scope_for_params([param], scope);
         const source: FrontExpr = { tag: "var", name: param_name };
 
+        const compiletime_value_alternatives = pattern.tag === "or" &&
+          pattern.alternatives.every((alternative) => {
+            return alternative.tag === "value";
+          });
+
         if (
           pattern.tag === "literal" || pattern.tag === "union_case" ||
-          pattern.tag === "type"
+          pattern.tag === "type" || pattern.tag === "text_capture" ||
+          (pattern.tag === "or" && !compiletime_value_alternatives)
         ) {
           const message: FrontExpr = {
             tag: "text",
@@ -2423,6 +2654,15 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         }
 
         if (pattern.tag === "value") {
+          return {
+            ...expr,
+            pattern,
+            params: [{ ...param, is_const: true }],
+            body: rewrite_expr(expr.body, body_scope),
+          };
+        }
+
+        if (compiletime_value_alternatives) {
           return {
             ...expr,
             pattern,
@@ -2489,14 +2729,19 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         expect(
           args.length === 1,
           "Value-pattern function expects exactly one argument: " +
-            value_pattern.name,
+            value_pattern.names.join(" | "),
         );
         const value = args[0];
         expect(value !== undefined, "Missing value-pattern function argument");
 
-        if (!named_value_pattern_matches(value_pattern.name, value, scope)) {
+        const matches = value_pattern.names.some((name) => {
+          return named_value_pattern_matches(name, value, scope);
+        });
+
+        if (!matches) {
           throw new Error(
-            "Function argument does not match " + value_pattern.name + ": " +
+            "Function argument does not match " +
+              value_pattern.names.join(" | ") + ": " +
               format_expr(value),
           );
         }
@@ -3113,16 +3358,37 @@ function callable_value_pattern(
   expr: FrontExpr,
   scope: TypeSetScope,
   resolving: Set<string>,
-): { name: string; body: FrontExpr } | undefined {
+): { names: string[]; body: FrontExpr } | undefined {
   if (expr.tag === "lam") {
     if (expr.pattern?.tag === "value") {
-      return { name: expr.pattern.name, body: expr.body };
+      return { names: [expr.pattern.name], body: expr.body };
+    }
+
+    if (
+      expr.pattern?.tag === "or" &&
+      expr.pattern.alternatives.every((alternative) => {
+        return alternative.tag === "value";
+      })
+    ) {
+      return {
+        names: expr.pattern.alternatives.map((alternative) => {
+          expect(
+            alternative.tag === "value",
+            "Compile-time alternative must be a value pattern",
+          );
+          return alternative.name;
+        }),
+        body: expr.body,
+      };
     }
 
     return undefined;
   }
 
-  if (expr.tag === "rec" && expr.pattern?.tag === "value") {
+  if (
+    expr.tag === "rec" &&
+    (expr.pattern?.tag === "value" || expr.pattern?.tag === "or")
+  ) {
     throw new Error("Recursive value-pattern functions are not supported");
   }
 

@@ -4667,6 +4667,25 @@ function bind_pattern_types(
     return;
   }
 
+  if (pattern.tag === "text_capture") {
+    bind_local(
+      env,
+      pattern.name,
+      { tag: "text" },
+      undefined,
+      binding_is_const,
+      false,
+    );
+    return;
+  }
+
+  if (pattern.tag === "or") {
+    const first = pattern.alternatives[0];
+    expect(first, "Alternation pattern requires an alternative");
+    bind_pattern_types(first, type, env, binding_is_const);
+    return;
+  }
+
   if (pattern.tag === "union_case") {
     if (pattern.value === undefined) {
       return;

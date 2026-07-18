@@ -391,6 +391,20 @@ Aliases are normalized before field types are compared. Type-match functions are
 compile-time-only wiring: every call must provide compile-time type values, and
 the unused arms do not reach generated Wasm.
 
+Ordinary match arms may combine alternatives with `|`. Every alternative must
+bind the same names with the same modes and annotations:
+
+```txt
+match result {
+  | .cached(value) | .fresh(value) => value
+  | "hello ${name} why" => name
+  | _ => "unknown"
+}
+```
+
+A text pattern has one `${name}` capture. Its fixed prefix and suffix match
+UTF-8 bytes, and the capture receives the text between them.
+
 Structural descriptors expose the normalized kind and layout of a type:
 
 ```txt

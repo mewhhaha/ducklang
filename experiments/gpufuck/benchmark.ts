@@ -16,12 +16,16 @@ type BenchmarkSource = {
 };
 
 type CurrentMeasurement = {
-  compile_ms: number;
+  duck_compile_ms: number;
+  wasm_emit_ms: number;
+  total_ms: number;
   wat_bytes: number;
+  wasm_bytes: number;
+  modules: readonly Uint8Array<ArrayBuffer>[];
 };
 
 type GpufuckMeasurement = {
-  encode_ms: number;
+  duck_lower_and_encode_ms: number;
   gpu_compile_ms: number;
   wasm_emit_ms: number;
   total_ms: number;
@@ -43,7 +47,7 @@ for (const benchmark_case of gpufuck_benchmark_cases) {
 }
 
 for (let round = 0; round < warmup_rounds; round += 1) {
-  compile_current_suite(benchmark_sources);
+  await compile_current_suite(benchmark_sources);
 }
 
 const compiler_start = performance.now();
@@ -72,7 +76,7 @@ try {
   const gpufuck_samples: GpufuckMeasurement[] = [];
 
   for (let round = 0; round < measured_rounds; round += 1) {
-    current_samples.push(compile_current_suite(benchmark_sources));
+    current_samples.push(await compile_current_suite(benchmark_sources));
     gpufuck_samples.push(
       await compile_gpufuck_suite(compiler, benchmark_sources),
     );
@@ -85,12 +89,25 @@ try {
   }
 
   await verify_modules(last_gpufuck_sample.modules, benchmark_sources);
+  const last_current_sample = current_samples[current_samples.length - 1];
 
-  const current_compile_ms = median(
-    current_samples.map((sample) => sample.compile_ms),
+  if (last_current_sample === undefined) {
+    throw new Error("current benchmark did not produce a measured sample");
+  }
+
+  await verify_modules(last_current_sample.modules, benchmark_sources);
+
+  const current_duck_compile_ms = median(
+    current_samples.map((sample) => sample.duck_compile_ms),
   );
-  const gpufuck_encode_ms = median(
-    gpufuck_samples.map((sample) => sample.encode_ms),
+  const current_wasm_emit_ms = median(
+    current_samples.map((sample) => sample.wasm_emit_ms),
+  );
+  const current_total_ms = median(
+    current_samples.map((sample) => sample.total_ms),
+  );
+  const gpufuck_duck_lower_and_encode_ms = median(
+    gpufuck_samples.map((sample) => sample.duck_lower_and_encode_ms),
   );
   const gpufuck_compile_ms = median(
     gpufuck_samples.map((sample) => sample.gpu_compile_ms),
@@ -111,6 +128,7 @@ try {
   }
 
   const current_wat_bytes = first_current_sample.wat_bytes;
+  const current_wasm_bytes = first_current_sample.wasm_bytes;
   const gpufuck_wasm_bytes = first_gpufuck_sample.wasm_bytes;
 
   const scaling = [];
@@ -133,13 +151,13 @@ try {
       text: lines.join("\n"),
     };
     const sources = [source];
-    compile_current_suite(sources);
+    await compile_current_suite(sources);
     await compile_gpufuck_suite(compiler, sources);
     const current_scaling_samples: CurrentMeasurement[] = [];
     const gpufuck_scaling_samples: GpufuckMeasurement[] = [];
 
     for (let round = 0; round < scaling_rounds; round += 1) {
-      current_scaling_samples.push(compile_current_suite(sources));
+      current_scaling_samples.push(await compile_current_suite(sources));
       gpufuck_scaling_samples.push(
         await compile_gpufuck_suite(compiler, sources),
       );
@@ -155,8 +173,19 @@ try {
     }
 
     await verify_modules(last_sample.modules, sources);
+    const last_current_scaling_sample =
+      current_scaling_samples[scaling_rounds - 1];
+
+    if (last_current_scaling_sample === undefined) {
+      throw new Error(
+        "current scaling benchmark omitted " + binding_count.toString() +
+          "-binding sample",
+      );
+    }
+
+    await verify_modules(last_current_scaling_sample.modules, sources);
     const current_ms = median(
-      current_scaling_samples.map((sample) => sample.compile_ms),
+      current_scaling_samples.map((sample) => sample.total_ms),
     );
     const gpufuck_ms = median(
       gpufuck_scaling_samples.map((sample) => sample.total_ms),
@@ -181,23 +210,26 @@ try {
       },
       before: {
         compiler: "current IC/Core routes",
-        median_compile_ms: current_compile_ms,
+        median_duck_compile_ms: current_duck_compile_ms,
+        median_wasm_emit_ms: current_wasm_emit_ms,
+        median_total_ms: current_total_ms,
         wat_bytes: current_wat_bytes,
+        wasm_bytes: current_wasm_bytes,
       },
       after: {
         compiler: "experimental gpufuck route",
         startup_ms: compiler_startup_ms,
         first_compile_ms,
-        median_encode_ms: gpufuck_encode_ms,
+        median_duck_lower_and_encode_ms: gpufuck_duck_lower_and_encode_ms,
         median_gpu_compile_ms: gpufuck_compile_ms,
         median_wasm_emit_ms: gpufuck_emit_ms,
         median_total_ms: gpufuck_total_ms,
         wasm_bytes: gpufuck_wasm_bytes,
       },
       comparison: {
-        warm_compile_speedup: current_compile_ms / gpufuck_total_ms,
-        warm_compile_change_percent: (gpufuck_total_ms - current_compile_ms) /
-          current_compile_ms * 100,
+        warm_compile_speedup: current_total_ms / gpufuck_total_ms,
+        warm_compile_change_percent: (gpufuck_total_ms - current_total_ms) /
+          current_total_ms * 100,
       },
       scaling,
     },
@@ -208,11 +240,13 @@ try {
   device.destroy();
 }
 
-function compile_current_suite(
+async function compile_current_suite(
   sources: readonly BenchmarkSource[],
-): CurrentMeasurement {
-  const start = performance.now();
+): Promise<CurrentMeasurement> {
+  const total_start = performance.now();
+  const duck_compile_start = performance.now();
   let wat_bytes = 0;
+  const wat_modules: string[] = [];
 
   for (const source of sources) {
     let wat: string;
@@ -224,9 +258,51 @@ function compile_current_suite(
     }
 
     wat_bytes += new TextEncoder().encode(wat).byteLength;
+    wat_modules.push(wat);
   }
 
-  return { compile_ms: performance.now() - start, wat_bytes };
+  const duck_compile_ms = performance.now() - duck_compile_start;
+  const wasm_emit_start = performance.now();
+  const modules = await Promise.all(wat_modules.map(wasm_from_wat));
+  const wasm_emit_ms = performance.now() - wasm_emit_start;
+  let wasm_bytes = 0;
+
+  for (const module of modules) {
+    wasm_bytes += module.byteLength;
+  }
+
+  return {
+    duck_compile_ms,
+    wasm_emit_ms,
+    total_ms: performance.now() - total_start,
+    wat_bytes,
+    wasm_bytes,
+    modules,
+  };
+}
+
+async function wasm_from_wat(
+  wat: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const process = new Deno.Command("wat2wasm", {
+    args: ["-", "-o", "-"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = process.stdin.getWriter();
+  await writer.write(new TextEncoder().encode(wat));
+  await writer.close();
+  const output = await process.output();
+
+  if (!output.success) {
+    throw new Error(
+      "wat2wasm failed during compiler benchmark:\n" +
+        new TextDecoder().decode(output.stderr),
+    );
+  }
+
+  return output.stdout;
 }
 
 async function compile_gpufuck_suite(
@@ -234,11 +310,12 @@ async function compile_gpufuck_suite(
   sources: readonly BenchmarkSource[],
 ): Promise<GpufuckMeasurement> {
   const total_start = performance.now();
-  const encode_start = performance.now();
+  const duck_lower_and_encode_start = performance.now();
   const encoded_modules = sources.map((source) =>
     encode_gpufuck_module(source.text)
   );
-  const encode_ms = performance.now() - encode_start;
+  const duck_lower_and_encode_ms = performance.now() -
+    duck_lower_and_encode_start;
   const compile_start = performance.now();
   const results = await compiler.compileBatch(encoded_modules);
   const gpu_compile_ms = performance.now() - compile_start;
@@ -300,7 +377,7 @@ async function compile_gpufuck_suite(
   }
 
   return {
-    encode_ms,
+    duck_lower_and_encode_ms,
     gpu_compile_ms,
     wasm_emit_ms,
     total_ms: performance.now() - total_start,

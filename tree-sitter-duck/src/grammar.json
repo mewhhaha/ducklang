@@ -2397,6 +2397,10 @@
                       {
                         "type": "SYMBOL",
                         "name": "boolean"
+                      },
+                      {
+                        "type": "SYMBOL",
+                        "name": "grouped_value_alternative_pattern"
                       }
                     ]
                   }
@@ -2677,29 +2681,8 @@
                     "type": "FIELD",
                     "name": "pattern",
                     "content": {
-                      "type": "CHOICE",
-                      "members": [
-                        {
-                          "type": "SYMBOL",
-                          "name": "union_pattern"
-                        },
-                        {
-                          "type": "SYMBOL",
-                          "name": "number"
-                        },
-                        {
-                          "type": "SYMBOL",
-                          "name": "string"
-                        },
-                        {
-                          "type": "SYMBOL",
-                          "name": "character"
-                        },
-                        {
-                          "type": "SYMBOL",
-                          "name": "boolean"
-                        }
-                      ]
+                      "type": "SYMBOL",
+                      "name": "_match_pattern"
                     }
                   },
                   {
@@ -2734,29 +2717,8 @@
                         "type": "FIELD",
                         "name": "pattern",
                         "content": {
-                          "type": "CHOICE",
-                          "members": [
-                            {
-                              "type": "SYMBOL",
-                              "name": "union_pattern"
-                            },
-                            {
-                              "type": "SYMBOL",
-                              "name": "number"
-                            },
-                            {
-                              "type": "SYMBOL",
-                              "name": "string"
-                            },
-                            {
-                              "type": "SYMBOL",
-                              "name": "character"
-                            },
-                            {
-                              "type": "SYMBOL",
-                              "name": "boolean"
-                            }
-                          ]
+                          "type": "SYMBOL",
+                          "name": "_match_pattern"
                         }
                       },
                       {
@@ -3551,6 +3513,59 @@
       ]
     },
     "_match_pattern": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "alternative_pattern"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_single_match_pattern"
+        }
+      ]
+    },
+    "alternative_pattern": {
+      "type": "PREC_LEFT",
+      "value": 0,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "SYMBOL",
+            "name": "_single_match_pattern"
+          },
+          {
+            "type": "REPEAT1",
+            "content": {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "_pattern_pipe"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "_single_match_pattern"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "grouped_value_alternative_pattern": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "\\([A-Za-z][A-Za-z0-9_]*(\\s*\\|\\s*[A-Za-z][A-Za-z0-9_]*)+\\)"
+        }
+      }
+    },
+    "_single_match_pattern": {
       "type": "CHOICE",
       "members": [
         {
@@ -5846,6 +5861,17 @@
         "content": {
           "type": "STRING",
           "value": "."
+        }
+      }
+    },
+    "_pattern_pipe": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 2,
+        "content": {
+          "type": "STRING",
+          "value": "|"
         }
       }
     },

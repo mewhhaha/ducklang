@@ -138,6 +138,17 @@ export function validate_atom_identities(source: Source): void {
       return;
     }
 
+    if (pattern.tag === "text_capture") {
+      return;
+    }
+
+    if (pattern.tag === "or") {
+      for (const alternative of pattern.alternatives) {
+        visit_pattern(alternative);
+      }
+      return;
+    }
+
     if (pattern.tag === "union_case") {
       if (pattern.value !== undefined) {
         visit_pattern(pattern.value);

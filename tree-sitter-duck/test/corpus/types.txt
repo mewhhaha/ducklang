@@ -5,6 +5,7 @@ Function value patterns
 let structural = { a: I32 } => ()
 let exact = I32 => ()
 let literal = 42 => ()
+let alternative = (I32 | Text) => ()
 
 ---
 
@@ -32,6 +33,12 @@ let literal = 42 => ()
     name: (identifier)
     value: (arrow_function
       parameters: (number)
+      body: (postfix_expression
+        (unit_pattern))))
+  (binding_statement
+    name: (identifier)
+    value: (arrow_function
+      parameters: (grouped_value_alternative_pattern)
       body: (postfix_expression
         (unit_pattern)))))
 

@@ -367,6 +367,7 @@ let scalar = (value: I32) => value
 let field = { value: I32 } => value
 let exactly_42 = 42 => ()
 const only_i32 = I32 => ()
+const scalar_type = (I32 | Text) => ()
 ```
 
 ### 8. Sum types, generics, and matching
@@ -390,7 +391,20 @@ if let .some(found) = value {
 ```
 
 `match` handles larger sums with explicit arms and coverage checking. Union
-payloads may contain products, text, fixed arrays, or other unions.
+payloads may contain products, text, fixed arrays, or other unions. `|` joins
+patterns that bind the same names, so related cases can share one body. Text
+patterns can bind the segment between a fixed prefix and suffix:
+
+```duck
+match response {
+  | .cached(value) | .fresh(value) => value
+  | "hello ${id} why" => id
+  | _ => "unknown"
+}
+```
+
+The fixed portions are matched as UTF-8 bytes. The captured value is an owned
+`Text` slice.
 
 ### 9. Text, bytes, and runtime collections
 

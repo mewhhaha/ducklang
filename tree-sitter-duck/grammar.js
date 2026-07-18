@@ -585,6 +585,7 @@ module.exports = grammar({
                   $.string,
                   $.character,
                   $.boolean,
+                  $.grouped_value_alternative_pattern,
                 ),
               ),
               "=>",
@@ -854,6 +855,28 @@ module.exports = grammar({
       ),
 
     _match_pattern: ($) =>
+      choice(
+        $.alternative_pattern,
+        $._single_match_pattern,
+      ),
+
+    alternative_pattern: ($) =>
+      prec.left(
+        seq(
+          $._single_match_pattern,
+          repeat1(seq($._pattern_pipe, $._single_match_pattern)),
+        ),
+      ),
+
+    grouped_value_alternative_pattern: () =>
+      token(
+        prec(
+          3,
+          /\([A-Za-z][A-Za-z0-9_]*(\s*\|\s*[A-Za-z][A-Za-z0-9_]*)+\)/,
+        ),
+      ),
+
+    _single_match_pattern: ($) =>
       choice(
         $.type_pattern,
         $.union_pattern,
@@ -1360,6 +1383,8 @@ module.exports = grammar({
 
     _named_product_dot: () => token(prec(1, ".")),
 
+    _pattern_pipe: () => token(prec(2, "|")),
+
     as_keyword: () => token(prec(1, "as")),
 
     identifier: () => token(/[A-Za-z][A-Za-z0-9_]*/),
@@ -1403,13 +1428,7 @@ function ifLetCondition($) {
     "let",
     field(
       "pattern",
-      choice(
-        $.union_pattern,
-        $.number,
-        $.string,
-        $.character,
-        $.boolean,
-      ),
+      $._match_pattern,
     ),
     "=",
     field("value", $.condition_expression),

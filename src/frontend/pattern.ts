@@ -15,6 +15,24 @@ export function pattern_bindings(
     return [];
   }
 
+  if (pattern.tag === "text_capture") {
+    return [{
+      tag: "binding",
+      name: pattern.name,
+      mode: "default",
+      annotation: "Text",
+    }];
+  }
+
+  if (pattern.tag === "or") {
+    const first = pattern.alternatives[0];
+    if (first === undefined) {
+      return [];
+    }
+
+    return pattern_bindings(first);
+  }
+
   if (pattern.tag === "union_case") {
     if (pattern.value === undefined) {
       return [];

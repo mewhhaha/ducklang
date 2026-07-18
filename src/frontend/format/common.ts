@@ -104,12 +104,22 @@ export function format_pattern(pattern: Pattern): string {
     return pattern.value.value.toString();
   }
 
+  if (pattern.tag === "text_capture") {
+    return Deno.inspect(
+      pattern.prefix + "${" + pattern.name + "}" + pattern.suffix,
+    );
+  }
+
   if (pattern.tag === "value") {
     return pattern.name;
   }
 
   if (pattern.tag === "type") {
     return format_type_pattern(pattern.pattern);
+  }
+
+  if (pattern.tag === "or") {
+    return pattern.alternatives.map(format_pattern).join(" | ");
   }
 
   if (pattern.tag === "union_case") {

@@ -209,6 +209,42 @@ match result { | .ok value => value }
   );
 });
 
+Deno.test("match alternatives share one arm body", () => {
+  assert_equals(
+    Ic.reduce(Source.compile("match 2 { | 1 | 2 => 42 | _ => 0 }")),
+    { tag: "num", type: "i32", value: 42 },
+  );
+
+  const union = `
+type Choice = | .first = I32 | .second = I32
+let value: Choice = Choice.second(42)
+match value { | .first(x) | .second(x) => x }
+`;
+  assert_includes(Source.wat(union), "i32.const 42");
+  assert_throws(
+    () => Source.parse("match x { | .first(a) | .second(b) => a }"),
+    "Pattern alternatives must bind the same names, modes, and annotations",
+  );
+  assert_equals(
+    Ic.reduce(Source.compile("if let 1 | 2 = 2 { 42 } else { 0 }")),
+    { tag: "num", type: "i32", value: 42 },
+  );
+});
+
+Deno.test("compile-time value alternatives constrain function inputs", () => {
+  const source = `
+const classify = (I32 | Text) => 1
+const first = classify(I32)
+const second = classify(Text)
+first + second
+`;
+  assert_includes(Source.wat(source), "i32.add");
+  assert_throws(
+    () => Source.wat("const classify = (I32 | Text) => 1\nclassify(Bool)"),
+    "Function argument does not match I32 | Text: Bool",
+  );
+});
+
 Deno.test("shorthand union application becomes a payload constructor", () => {
   const core = Source.core(".some 7");
   const statement = core.statements[0];

@@ -2700,6 +2700,20 @@ class SourceFactRecorder {
       return;
     }
 
+    if (pattern.tag === "text_capture") {
+      const binding_type = named_type("Text");
+      this.record_definition(pattern, "name", binding_type);
+      scope.set(pattern.name, binding_type);
+      return;
+    }
+
+    if (pattern.tag === "or") {
+      const first = pattern.alternatives[0];
+      expect(first, "Alternation pattern requires an alternative");
+      this.record_pattern_bindings(first, type, scope);
+      return;
+    }
+
     if (pattern.tag === "union_case") {
       if (pattern.value !== undefined) {
         this.record_pattern_bindings(pattern.value, undefined, scope);

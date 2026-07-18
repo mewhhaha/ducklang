@@ -160,8 +160,10 @@ export type Pattern =
   | { tag: "wildcard"; mode: "default" | "const" }
   | { tag: "unit" }
   | { tag: "literal"; value: PatternLiteral }
+  | { tag: "text_capture"; prefix: string; name: string; suffix: string }
   | { tag: "value"; name: string }
   | { tag: "type"; pattern: TypePattern }
+  | { tag: "or"; alternatives: Pattern[] }
   | { tag: "union_case"; name: string; value: Pattern | undefined }
   | { tag: "product"; entries: ProductPatternEntry[]; value_pack?: true }
   | { tag: "record"; fields: RecordPatternField[]; rest: Pattern | undefined }

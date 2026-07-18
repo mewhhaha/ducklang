@@ -1112,6 +1112,27 @@ function visit_pattern(
     return;
   }
 
+  if (pattern.tag === "text_capture") {
+    define(
+      pattern,
+      "name",
+      undefined,
+      pattern.name,
+      default_kind,
+      "definition",
+      scope,
+      state,
+    );
+    return;
+  }
+
+  if (pattern.tag === "or") {
+    const first = pattern.alternatives[0];
+    expect(first, "Alternation pattern requires an alternative");
+    visit_pattern(first, default_kind, scope, state);
+    return;
+  }
+
   if (pattern.tag === "union_case") {
     case_reference(pattern, "name", pattern.name, scope, state);
 

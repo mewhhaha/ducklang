@@ -1,5 +1,64 @@
 [
   {
+    "type": "alternative_pattern",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array_pattern",
+          "named": true
+        },
+        {
+          "type": "boolean",
+          "named": true
+        },
+        {
+          "type": "character",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "named_product_pattern",
+          "named": true
+        },
+        {
+          "type": "named_shape_pattern",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "positional_product_pattern",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_pattern",
+          "named": true
+        },
+        {
+          "type": "union_pattern",
+          "named": true
+        },
+        {
+          "type": "wildcard",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "application_expression",
     "named": true,
     "fields": {
@@ -535,6 +594,10 @@
           },
           {
             "type": "function_shape_pattern",
+            "named": true
+          },
+          {
+            "type": "grouped_value_alternative_pattern",
             "named": true
           },
           {
@@ -3158,6 +3221,14 @@
         "required": false,
         "types": [
           {
+            "type": "alternative_pattern",
+            "named": true
+          },
+          {
+            "type": "array_pattern",
+            "named": true
+          },
+          {
             "type": "boolean",
             "named": true
           },
@@ -3166,7 +3237,23 @@
             "named": true
           },
           {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "named_product_pattern",
+            "named": true
+          },
+          {
+            "type": "named_shape_pattern",
+            "named": true
+          },
+          {
             "type": "number",
+            "named": true
+          },
+          {
+            "type": "positional_product_pattern",
             "named": true
           },
           {
@@ -3174,7 +3261,15 @@
             "named": true
           },
           {
+            "type": "type_pattern",
+            "named": true
+          },
+          {
             "type": "union_pattern",
+            "named": true
+          },
+          {
+            "type": "wildcard",
             "named": true
           }
         ]
@@ -3642,6 +3737,10 @@
         "required": true,
         "types": [
           {
+            "type": "alternative_pattern",
+            "named": true
+          },
+          {
             "type": "array_pattern",
             "named": true
           },
@@ -3893,6 +3992,10 @@
         "required": true,
         "types": [
           {
+            "type": "alternative_pattern",
+            "named": true
+          },
+          {
             "type": "array_pattern",
             "named": true
           },
@@ -3981,6 +4084,10 @@
         "multiple": false,
         "required": false,
         "types": [
+          {
+            "type": "alternative_pattern",
+            "named": true
+          },
           {
             "type": "array_pattern",
             "named": true
@@ -4379,6 +4486,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "alternative_pattern",
+          "named": true
+        },
         {
           "type": "array_pattern",
           "named": true
@@ -6320,6 +6431,10 @@
   {
     "type": "freeze",
     "named": false
+  },
+  {
+    "type": "grouped_value_alternative_pattern",
+    "named": true
   },
   {
     "type": "identifier",

@@ -752,12 +752,23 @@ function pattern_params(pattern: Pattern, source_offset: number): Param[] {
   if (
     pattern.tag === "literal" || pattern.tag === "value" ||
     pattern.tag === "wildcard" || pattern.tag === "type" ||
+    pattern.tag === "text_capture" || pattern.tag === "or" ||
     pattern.tag === "union_case" || pattern.tag === "product" ||
     pattern.tag === "record" || pattern.tag === "array"
   ) {
+    let is_const = pattern.tag === "value" || pattern.tag === "type";
+
+    if (
+      pattern.tag === "or" && pattern.alternatives.every((alternative) => {
+        return alternative.tag === "value" || alternative.tag === "type";
+      })
+    ) {
+      is_const = true;
+    }
+
     const param: Param = {
       name: "_pattern#param" + source_offset.toString(),
-      is_const: pattern.tag === "value" || pattern.tag === "type",
+      is_const,
       is_linear: false,
       annotation: undefined,
     };
