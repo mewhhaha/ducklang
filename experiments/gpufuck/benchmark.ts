@@ -6,7 +6,7 @@ import {
 } from "../../../gpufuck/functional.ts";
 import { Source } from "../../src/frontend.ts";
 import { gpufuck_benchmark_cases } from "./benchmark_cases.ts";
-import { encode_gpufuck_module } from "./compiler.ts";
+import { lower_duck_source_to_gpufuck } from "./core_lowering.ts";
 
 type BenchmarkSource = {
   path: string;
@@ -25,6 +25,8 @@ type CurrentMeasurement = {
 };
 
 type GpufuckMeasurement = {
+  duck_parse_ms: number;
+  core_lower_and_encode_ms: number;
   duck_lower_and_encode_ms: number;
   gpu_compile_ms: number;
   wasm_emit_ms: number;
@@ -108,6 +110,12 @@ try {
   );
   const gpufuck_duck_lower_and_encode_ms = median(
     gpufuck_samples.map((sample) => sample.duck_lower_and_encode_ms),
+  );
+  const gpufuck_duck_parse_ms = median(
+    gpufuck_samples.map((sample) => sample.duck_parse_ms),
+  );
+  const gpufuck_core_lower_and_encode_ms = median(
+    gpufuck_samples.map((sample) => sample.core_lower_and_encode_ms),
   );
   const gpufuck_compile_ms = median(
     gpufuck_samples.map((sample) => sample.gpu_compile_ms),
@@ -220,6 +228,8 @@ try {
         compiler: "experimental gpufuck route",
         startup_ms: compiler_startup_ms,
         first_compile_ms,
+        median_duck_parse_ms: gpufuck_duck_parse_ms,
+        median_core_lower_and_encode_ms: gpufuck_core_lower_and_encode_ms,
         median_duck_lower_and_encode_ms: gpufuck_duck_lower_and_encode_ms,
         median_gpu_compile_ms: gpufuck_compile_ms,
         median_wasm_emit_ms: gpufuck_emit_ms,
@@ -310,12 +320,26 @@ async function compile_gpufuck_suite(
   sources: readonly BenchmarkSource[],
 ): Promise<GpufuckMeasurement> {
   const total_start = performance.now();
-  const duck_lower_and_encode_start = performance.now();
-  const encoded_modules = sources.map((source) =>
-    encode_gpufuck_module(source.text)
-  );
-  const duck_lower_and_encode_ms = performance.now() -
-    duck_lower_and_encode_start;
+  const duck_parse_start = performance.now();
+  const parsed_sources = sources.map((source) => Source.parse(source.text));
+  const duck_parse_ms = performance.now() - duck_parse_start;
+  const core_lower_and_encode_start = performance.now();
+  const encoded_modules = parsed_sources.map((source, index) => {
+    const benchmark_source = sources[index];
+    if (benchmark_source === undefined) {
+      throw new Error(
+        "gpufuck benchmark omitted source " + index.toString() +
+          " during lowering",
+      );
+    }
+    const source_byte_length = new TextEncoder().encode(
+      benchmark_source.text,
+    ).byteLength;
+    return lower_duck_source_to_gpufuck(source, source_byte_length).encoded;
+  });
+  const core_lower_and_encode_ms = performance.now() -
+    core_lower_and_encode_start;
+  const duck_lower_and_encode_ms = duck_parse_ms + core_lower_and_encode_ms;
   const compile_start = performance.now();
   const results = await compiler.compileBatch(encoded_modules);
   const gpu_compile_ms = performance.now() - compile_start;
@@ -361,7 +385,9 @@ async function compile_gpufuck_suite(
 
   try {
     modules = await Promise.all(
-      compiled_modules.map(compileFunctionalModuleToWasm),
+      compiled_modules.map((module) => {
+        return compileFunctionalModuleToWasm(module);
+      }),
     );
   } finally {
     for (const module of compiled_modules) {
@@ -377,6 +403,8 @@ async function compile_gpufuck_suite(
   }
 
   return {
+    duck_parse_ms,
+    core_lower_and_encode_ms,
     duck_lower_and_encode_ms,
     gpu_compile_ms,
     wasm_emit_ms,
