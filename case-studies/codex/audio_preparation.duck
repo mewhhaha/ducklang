@@ -9,8 +9,6 @@ type AudioContentRewriteStatus =
 
 type AudioContentRewrite = [HistoryContents, AudioPreparationResults, AudioContentRewriteStatus, I32]
 
-type AudioContentRewriteInput = [HistoryContents, AudioPreparationResults, I32]
-
 const audio_failure_placeholder: I32 -> Text = status_code => {
   if status_code == 3 {
     "audio content omitted because its format is not supported; use wav, mp3, m4a, webm, or ogg"
@@ -21,11 +19,10 @@ const audio_failure_placeholder: I32 -> Text = status_code => {
   }
 }
 
-const rewrite_audio_contents: AudioContentRewriteInput -> AudioContentRewrite = input => {
-  let [input_contents, input_results, first_audio_index] = input
-  let current = input_contents
-  let remaining_results = input_results
-  let reversed = empty_history_contents()
+const rewrite_audio_contents: [HistoryContents, AudioPreparationResults, I32] -> AudioContentRewrite = (values, results, first_audio_index) => {
+  let current = values
+  let remaining_results = results
+  let reversed = empty_history_contents 0
   let status: AudioContentRewriteStatus = `AudioContentRewriteValid ()
   let audio_index = first_audio_index
 
@@ -63,7 +60,7 @@ const rewrite_audio_contents: AudioContentRewriteInput -> AudioContentRewrite = 
     }
   }
 
-  let rewritten_values = empty_history_contents()
+  let rewritten_values = empty_history_contents 0
   if let `AudioContentRewriteValid () = status {
     loop {
       if let `Cons node = reversed {
@@ -79,11 +76,10 @@ const rewrite_audio_contents: AudioContentRewriteInput -> AudioContentRewrite = 
   [rewritten_values, remaining_results, status, audio_index]
 }
 
-const apply_audio_preparation_results: AudioPreparationRequest -> AudioRewriteResult = request => {
-  let [request_responses, request_results] = request
-  let current = request_responses
-  let remaining_results = request_results
-  let reversed = empty_history_items()
+const apply_audio_preparation_results: [HistoryItems, AudioPreparationResults] -> AudioRewriteResult = (responses, results) => {
+  let current = responses
+  let remaining_results = results
+  let reversed = empty_history_items 0
   let status: AudioContentRewriteStatus = `AudioContentRewriteValid ()
   let audio_index = 0
 
@@ -95,7 +91,7 @@ const apply_audio_preparation_results: AudioPreparationRequest -> AudioRewriteRe
 
       if let `Message message = response {
         let [role, developer, contents] = message
-        let rewrite = rewrite_audio_contents([contents, remaining_results, audio_index])
+        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
         let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
         remaining_results = remaining
         status = next_status
@@ -105,7 +101,7 @@ const apply_audio_preparation_results: AudioPreparationRequest -> AudioRewriteRe
         }
       } else if let `FunctionOutput output = response {
         let [identifier, call_id, contents] = output
-        let rewrite = rewrite_audio_contents([contents, remaining_results, audio_index])
+        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
         let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
         remaining_results = remaining
         status = next_status
@@ -115,7 +111,7 @@ const apply_audio_preparation_results: AudioPreparationRequest -> AudioRewriteRe
         }
       } else if let `CustomOutput output = response {
         let [identifier, call_id, contents] = output
-        let rewrite = rewrite_audio_contents([contents, remaining_results, audio_index])
+        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
         let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
         remaining_results = remaining
         status = next_status
@@ -150,7 +146,7 @@ const apply_audio_preparation_results: AudioPreparationRequest -> AudioRewriteRe
     }
     `RejectedAudioRewrite (`ExtraAudioPreparations extra_count)
   } else {
-    let rewritten_responses = empty_history_items()
+    let rewritten_responses = empty_history_items 0
     loop {
       if let `Cons node = reversed {
         let [response, tail] = node

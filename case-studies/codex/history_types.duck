@@ -34,9 +34,9 @@ type HistoryTextOption = Option Text
 type InputModalities = [Bool, Bool]
 
 // Keep list construction beside these aliases so linked modules preserve their names.
-const empty_history_contents: () -> HistoryContents = () => `Nil ()
-const prepend_history_content: [HistoryContent, HistoryContents] -> HistoryContents = (content, contents) => `Cons ([content, contents])
-const empty_history_items: () -> HistoryItems = () => `Nil ()
-const prepend_history_item: [HistoryItem, HistoryItems] -> HistoryItems = (item, items) => `Cons ([item, items])
+const empty_history_contents: I32 -> HistoryContents = (ignored: I32) => `Nil ()
+const prepend_history_content: [HistoryContent, HistoryContents] -> HistoryContents = (content: HistoryContent, contents: HistoryContents) => `Cons ([content, contents])
+const empty_history_items: I32 -> HistoryItems = (ignored: I32) => `Nil ()
+const prepend_history_item: [HistoryItem, HistoryItems] -> HistoryItems = (item: HistoryItem, items: HistoryItems) => `Cons ([item, items])
 
 return { empty_history_contents, prepend_history_content, empty_history_items, prepend_history_item }
