@@ -8,8 +8,6 @@ type AudioPreparationResults =
   | `AudioResultsNil Unit
   | `AudioResultsCons AudioPreparationResultNode
 
-type AudioPreparationRequest = [HistoryItems, AudioPreparationResults]
-
 type AudioRewriteFailure =
   | `MissingAudioPreparation I32
   | `ExtraAudioPreparations I32

@@ -16,7 +16,7 @@ const verify_audio_preparation_mismatch_fixture: () -> I32 = () => {
   let responses: FixtureResponses = `Nil ()
   let response_node: FixtureResponseNode = [`Message (["user", false, contents]), responses]
   responses = `Cons response_node
-  let rewrite = apply_audio_preparation_results([responses, `AudioResultsNil ()])
+  let rewrite = apply_audio_preparation_results(responses, `AudioResultsNil ())
   if let `RejectedAudioRewrite failure = rewrite {
     if let `MissingAudioPreparation index = failure {
       if index == 0 { 1 } else { 0 }

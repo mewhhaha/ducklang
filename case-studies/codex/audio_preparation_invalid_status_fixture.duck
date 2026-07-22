@@ -23,7 +23,7 @@ const verify_audio_preparation_invalid_status_fixture: () -> I32 = () => {
   let results: FixturePreparationResults = `AudioResultsNil ()
   let result_node: FixturePreparationResultNode = [result, results]
   results = `AudioResultsCons result_node
-  let rewrite = apply_audio_preparation_results([responses, results])
+  let rewrite = apply_audio_preparation_results(responses, results)
   if let `RejectedAudioRewrite failure = rewrite {
     if let `InvalidAudioPreparationStatus status_code = failure {
       if status_code == 9 { 1 } else { 0 }

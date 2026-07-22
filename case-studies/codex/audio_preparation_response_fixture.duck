@@ -33,7 +33,7 @@ const verify_audio_preparation_response_fixture: () -> I32 = () => {
   let valid_result_node: FixturePreparationResultNode = [valid_result, results]
   results = `AudioResultsCons valid_result_node
 
-  let rewrite = apply_audio_preparation_results([responses, results])
+  let rewrite = apply_audio_preparation_results(responses, results)
   let score = 0
   if let `PreparedAudioResponses rewritten = rewrite {
     if let `Cons rewritten_node = rewritten {

@@ -15,7 +15,7 @@ const verify_audio_preparation_extra_fixture: () -> I32 = () => {
   let result_node: FixturePreparationResultNode = [result, results]
   results = `AudioResultsCons result_node
   let responses: FixtureResponses = `Nil ()
-  let rewrite = apply_audio_preparation_results([responses, results])
+  let rewrite = apply_audio_preparation_results(responses, results)
   if let `RejectedAudioRewrite failure = rewrite {
     if let `ExtraAudioPreparations count = failure {
       if count == 1 { 1 } else { 0 }
