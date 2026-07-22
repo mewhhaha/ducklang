@@ -1,0 +1,45 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_app_server_launch } = import "./cli_app_server_runtime.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexAppServerCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let capability_input: FixtureArgs = args.prepend("--ws-auth", args.prepend("capability-token", args.prepend("--ws-token-file", args.singleton("/tmp/token"))))
+let capability: FixtureResult = parse_app_server_launch(capability_input)
+if let `Ok command = capability {
+  if let `LaunchAppServer options = command {
+    if let `WebsocketCapabilityAuth source = options.websocket_auth {
+      if let `WebsocketTokenFile path = source {
+        if path == "/tmp/token" { score = score + 1 }
+      }
+    }
+  }
+}
+
+let signed_input: FixtureArgs = args.prepend("--listen", args.prepend("ws://127.0.0.1:4500", args.prepend("--ws-auth", args.prepend("signed-bearer-token", args.prepend("--ws-shared-secret-file", args.prepend("/tmp/secret", args.prepend("--ws-issuer", args.prepend("  issuer  ", args.prepend("--ws-audience", args.prepend("   ", args.prepend("--ws-max-clock-skew-seconds", args.singleton("9"))))))))))))
+let signed: FixtureResult = parse_app_server_launch(signed_input)
+if let `Ok command = signed {
+  if let `LaunchAppServer options = command {
+    if let `WebsocketSignedBearerAuth auth = options.websocket_auth {
+      if let `Some issuer = auth.issuer {
+        if issuer == "issuer" && auth.max_clock_skew_seconds == 9i64 {
+          if let `None () = auth.audience { score = score + 10 }
+        }
+      }
+    }
+  }
+}
+
+let missing_mode: FixtureResult = parse_app_server_launch(args.prepend("--ws-token-file", args.singleton("/tmp/token")))
+if let `Err _ = missing_mode { score = score + 100 }
+
+let invalid_digest: FixtureResult = parse_app_server_launch(args.prepend("--ws-auth", args.prepend("capability-token", args.prepend("--ws-token-sha256", args.singleton("1234")))))
+if let `Err _ = invalid_digest { score = score + 1000 }
+
+return { .score = score }

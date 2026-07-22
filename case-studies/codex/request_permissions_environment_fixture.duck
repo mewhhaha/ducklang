@@ -1,0 +1,47 @@
+module () where
+
+const {} = import "./request_permissions_types.duck" ()
+const { request_permissions_native_cwd, select_primary_request_permissions_environment, select_request_permissions_environment } = import "./request_permissions_environment.duck" ()
+
+type FixtureEnvironment = RequestPermissionsEnvironment
+type FixtureEnvironmentNode = RequestPermissionsEnvironmentNode
+type FixtureEnvironments = RequestPermissionsEnvironments
+let primary_node: FixtureEnvironmentNode = [
+  .environment = [.environment_id = "primary", .cwd = "/workspace", .is_primary = true, .native_cwd = `Native "/workspace"] as FixtureEnvironment,
+  .tail = `Nil ()]
+let primary_environments: FixtureEnvironments = `Cons primary_node
+let primary_score: I32 = scratch {
+  let selection = select_primary_request_permissions_environment primary_environments
+  if let `Selected selected = selection {
+    if selected.environment_id == "primary" { 1 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let missing_node: FixtureEnvironmentNode = [
+  .environment = [.environment_id = "primary", .cwd = "/workspace", .is_primary = true, .native_cwd = `Native "/workspace"] as FixtureEnvironment,
+  .tail = `Nil ()]
+let missing_environments: FixtureEnvironments = `Cons missing_node
+let missing_score: I32 = scratch {
+  let selection = select_request_permissions_environment(missing_environments, "missing")
+  if let `SelectionFailed message = selection {
+    if message == "unknown turn environment id `missing`" { 10 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let remote: FixtureEnvironment = [.environment_id = "remote", .cwd = "file://remote/work", .is_primary = false, .native_cwd = `Foreign "unsupported URI scheme"]
+let native_cwd_score: I32 = scratch {
+  let selection = request_permissions_native_cwd remote
+  if let `SelectionFailed message = selection {
+    if message == "request_permissions cwd `file://remote/work` is not native to the Codex host: unsupported URI scheme" { 100 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let score = primary_score + missing_score + native_cwd_score
+
+return { .score = score }

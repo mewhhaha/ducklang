@@ -1,0 +1,50 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type MessageHistoryPersistence =
+  | `SaveAll Unit
+  | `SaveNone Unit
+
+type MessageHistoryByteLimit = Option I32
+
+type MessageHistoryConfig = struct {
+  .persistence = MessageHistoryPersistence,
+  .max_bytes = MessageHistoryByteLimit,
+}
+
+type MessageHistoryEntry = struct {
+  .session_id = Text,
+  .timestamp = I64,
+  .text = Text,
+}
+
+type MessageHistoryEntryOption = Option MessageHistoryEntry
+
+type MessageHistoryAppend = struct {
+  .line = Text,
+  .max_bytes = MessageHistoryByteLimit,
+}
+
+type MessageHistoryAppendPlan =
+  | `SkipHistoryAppend Unit
+  | `AppendHistory MessageHistoryAppend
+
+type MessageHistoryTrimPlan =
+  | `KeepHistory Unit
+  | `RewriteHistory Text
+
+type MessageHistoryBatchEntry = struct {
+  .offset = I32,
+  .entry = MessageHistoryEntryOption,
+}
+
+type MessageHistoryBatchEntries = List MessageHistoryBatchEntry
+type MessageHistoryOffsetOption = Option I32
+
+type MessageHistoryBatch = struct {
+  .entries = MessageHistoryBatchEntries,
+  .next_older_offset = MessageHistoryOffsetOption,
+}
+
+return {}

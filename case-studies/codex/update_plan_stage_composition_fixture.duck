@@ -1,0 +1,27 @@
+module (!init: Init) where
+
+const {} = import "duck:prelude/json/values" ()
+const {} = import "./update_plan_types.duck" ()
+const { plan_parsed_update_plan } = import "./update_plan_policy.duck" ()
+
+let valid_document = "{\"plan\":[{\"step\":\"compile\",\"status\":\"pending\"}]}"
+valid_json <- CodexStages.parse_json(&valid_document)
+let score = 0
+
+if let `Ok value_and_position = valid_json {
+  let [value, _] = value_and_position
+  decoded <- CodexStages.decode_update_plan(value)
+  if let `Parsed args = decoded {
+    if let `Publish _ = plan_parsed_update_plan(args) {
+      score = score + 1
+    }
+  }
+}
+
+let malformed_document = "{"
+malformed_json <- CodexStages.parse_json(&malformed_document)
+if let `Err _ = malformed_json {
+  score = score + 10
+}
+
+return { .score = score }

@@ -1,0 +1,64 @@
+module () where
+
+const { monotonic_ms, unix_time_ms, unix_time_seconds, unix_time_seconds_value } = import "duck:prelude/abstractions" ()
+const {} = import "./turn_timing_types.duck" ()
+const { empty_turn_timing_state, mark_turn_started, response_signal_records_first_token, record_time_to_first_token, record_time_to_first_message, complete_turn_timing, turn_timing_duration_ms, turn_timing_started_at_unix_seconds } = import "./turn_timing.duck" ()
+
+let state = empty_turn_timing_state()
+let score = 0
+
+let before_start = record_time_to_first_token(state, `OutputDelta (), monotonic_ms(100i64))
+let before_start_missing = if let `None () = before_start.duration { true } else { false }
+state = before_start.state
+if before_start_missing {
+  score = score + 1
+}
+
+state = mark_turn_started(state, monotonic_ms(1000i64), unix_time_ms(2000000i64))
+let started_at_valid = if let `Some started_at_seconds = turn_timing_started_at_unix_seconds(&state) { started_at_seconds == 2000i64 } else { false }
+let ignored = record_time_to_first_token(state, `NoOutput (), monotonic_ms(1100i64))
+state = ignored.state
+let first_token = record_time_to_first_token(state, `OutputDelta (), monotonic_ms(1125i64))
+let token_valid = if let `Some duration = turn_timing_duration_ms(&first_token.duration) { duration == 125i64 } else { false }
+state = first_token.state
+let repeated_token = record_time_to_first_token(state, `ToolCall (), monotonic_ms(1200i64))
+let repeated_token_missing = if let `None () = repeated_token.duration { true } else { false }
+state = repeated_token.state
+if token_valid && started_at_valid && repeated_token_missing {
+  score = score + 10
+}
+
+let ignored_message = record_time_to_first_message(state, `OtherItem (), monotonic_ms(1300i64))
+state = ignored_message.state
+let first_message = record_time_to_first_message(state, `AgentMessage (), monotonic_ms(1400i64))
+let message_valid = if let `Some duration = turn_timing_duration_ms(&first_message.duration) { duration == 400i64 } else { false }
+state = first_message.state
+let repeated_message = record_time_to_first_message(state, `AgentMessage (), monotonic_ms(1500i64))
+let repeated_message_missing = if let `None () = repeated_message.duration { true } else { false }
+state = repeated_message.state
+if message_valid && repeated_message_missing {
+  score = score + 100
+}
+
+let completion = complete_turn_timing(&state, monotonic_ms(1600i64), unix_time_seconds(2001i64))
+let completion_valid = if let `Some duration = turn_timing_duration_ms(&completion.duration) { duration == 600i64 } else { false }
+if completion_valid && unix_time_seconds_value(completion.completed_at_unix_seconds) == 2001i64 {
+  score = score + 1000
+}
+
+let empty_output = `CompletedOutputText ""
+let completed_output = `CompletedOutputText "answer"
+let completed_reasoning = `CompletedReasoningText "thought"
+if !(response_signal_records_first_token(empty_output)) && response_signal_records_first_token(completed_output) && response_signal_records_first_token(completed_reasoning) {
+  score = score + 10000
+}
+
+let restarted = mark_turn_started(state, monotonic_ms(3000i64), unix_time_ms(4000000i64))
+let restarted_token = record_time_to_first_token(restarted, `ToolCall (), monotonic_ms(3010i64))
+let restarted_valid = if let `Some duration = turn_timing_duration_ms(&restarted_token.duration) { duration == 10i64 } else { false }
+let restarted_message_missing = if let `None () = restarted_token.state.first_message_at { true } else { false }
+if restarted_valid && restarted_message_missing {
+  score = score + 100000
+}
+
+return { .score = score }

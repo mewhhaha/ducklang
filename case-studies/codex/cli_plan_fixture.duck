@@ -1,0 +1,20 @@
+module () where
+
+const { parse_cli } = import "./cli.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+type FixtureNode = ListNode Text
+
+let empty: FixtureArgs = `Nil ()
+let node: FixtureNode = ["completion", empty]
+let input: FixtureArgs = `Cons node
+let plan: FixturePlan = parse_cli(input)
+let score = 0
+
+if let `GenerateCompletion options = plan {
+  if let `Bash () = options.shell { score = 1 }
+}
+
+return { .score = score }

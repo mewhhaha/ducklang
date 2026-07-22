@@ -1,0 +1,106 @@
+module () where
+
+const { append_text, format_i64 } = import "duck:prelude/runtime" ()
+const {} = import "./code_mode_runtime_response_types.duck" ()
+const { adapt_code_mode_runtime_items } = import "./code_mode_response_adapter.duck" ()
+const { resolve_code_mode_output_token_limit } = import "./code_mode_output_limit.duck" ()
+const { truncate_code_mode_output } = import "./code_mode_output_truncation.duck" ()
+
+type ResponseRuntime = CodeModeRuntimeResponse
+type ResponseImageDetailPolicy = CodeModeImageDetailPolicy
+type ResponseTokenLimit = CodeModeWaitU64Option
+type ResponseElapsed = CodeModeElapsed
+type ResponseOutput = CodeModeFunctionOutput
+type ResponseRuntimeItems = CodeModeRuntimeContentItems
+type ResponseRuntimeError = CodeModeRuntimeError
+type ResponseItem = FunctionOutputContentItem
+type ResponseItemNode = FunctionOutputContentItemNode
+type ResponseItems = FunctionOutputContentItems
+type ResponseState = [Text, ResponseRuntimeItems, ResponseRuntimeError, Bool]
+
+const handle_code_mode_runtime_response: [ResponseRuntime, ResponseImageDetailPolicy, ResponseTokenLimit, ResponseElapsed] -> ResponseOutput = (response, image_detail_policy, token_limit, elapsed) => {
+  let response_state: ResponseState = match response {
+    | `RuntimeYielded progress => {
+      let [cell_id, yielded_items] = progress
+      let typed_cell_id: Text = cell_id
+      [append_text("Script running with cell ID ")(typed_cell_id), yielded_items, `RuntimeErrorMissing (), true]
+    }
+    | `RuntimeTerminated progress => {
+      let [_, terminated_items] = progress
+      ["Script terminated", terminated_items, `RuntimeErrorMissing (), true]
+    }
+    | `RuntimeResult result => {
+      let [_, result_items, error] = result
+      if let `RuntimeErrorPresent _ = error {
+        ["Script failed", result_items, error, false]
+      } else {
+        ["Script completed", result_items, error, true]
+      }
+    }
+  }
+  let [status, runtime_items, runtime_error, success] = response_state
+
+  let content_items = adapt_code_mode_runtime_items(image_detail_policy, runtime_items)
+  if let `RuntimeErrorPresent error_text = runtime_error {
+    let typed_error_text: Text = error_text
+    let current = content_items
+    let reversed: ResponseItems = `Nil ()
+    let done = false
+
+    loop {
+      if let `Cons node = current {
+        let [item, tail] = node
+        let output_node: ResponseItemNode = [item, reversed]
+        reversed = `Cons output_node
+        current = tail
+      } else {
+        done = true
+      }
+
+      if done { break }
+    }
+
+    let error_item: ResponseItem = `InputText (append_text("Script error:\n")(typed_error_text))
+    let error_node: ResponseItemNode = [error_item, reversed]
+    reversed = `Cons error_node
+    content_items = `Nil ()
+    done = false
+
+    loop {
+      if let `Cons node = reversed {
+        let [item, tail] = node
+        let output_node: ResponseItemNode = [item, content_items]
+        content_items = `Cons output_node
+        reversed = tail
+      } else {
+        done = true
+      }
+
+      if done { break }
+    }
+  }
+
+  let maximum_tokens = resolve_code_mode_output_token_limit token_limit
+  content_items = truncate_code_mode_output(maximum_tokens, content_items)
+
+  let elapsed_microseconds = match elapsed {
+    | `ElapsedMicroseconds microseconds => microseconds
+  }
+  let wall_time_tenths = elapsed_microseconds / 100000i64
+  if elapsed_microseconds % 100000i64 >= 50000i64 {
+    wall_time_tenths = wall_time_tenths + 1i64
+  }
+  let wall_time_seconds = wall_time_tenths / 10i64
+  let wall_time_fraction = wall_time_tenths % 10i64
+  let wall_time_suffix = append_text(format_i64 wall_time_fraction)(" seconds\nOutput:\n")
+  let wall_time_decimal = append_text(".")(wall_time_suffix)
+  let wall_time = append_text(format_i64 wall_time_seconds)(wall_time_decimal)
+  let header_body = append_text("\nWall time ")(wall_time)
+  let header = append_text(status)(header_body)
+  let header_item: ResponseItem = `InputText header
+  let header_node: ResponseItemNode = [header_item, content_items]
+
+  [.content_items = `Cons header_node, .success = success]
+}
+
+return { handle_code_mode_runtime_response }

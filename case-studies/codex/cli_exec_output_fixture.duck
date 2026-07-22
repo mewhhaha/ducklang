@@ -1,0 +1,47 @@
+module () where
+
+const { parse_exec_options } = import "./cli_exec.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexExecOptionsResult
+
+const empty_args = () => {
+  let values: FixtureArgs = `Nil ()
+  values
+}
+
+const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => {
+  let node: ListNode Text = [value, tail]
+  let values: FixtureArgs = `Cons node
+  values
+}
+
+let input: FixtureArgs = prepend_arg("summarize", empty_args())
+input = prepend_arg("effort=high", input)
+input = prepend_arg("-c", input)
+input = prepend_arg("last.md", input)
+input = prepend_arg("-o", input)
+input = prepend_arg("--json", input)
+input = prepend_arg("never", input)
+input = prepend_arg("--color", input)
+input = prepend_arg("schema.json", input)
+input = prepend_arg("--output-schema", input)
+input = prepend_arg("--ignore-rules", input)
+input = prepend_arg("--ignore-user-config", input)
+input = prepend_arg("--skip-git-repo-check", input)
+input = prepend_arg("--strict-config", input)
+let parsed: FixtureResult = parse_exec_options input
+let score = if let `Ok options = parsed {
+  if let `Some schema = options.output_schema {
+    if let `Some output = options.last_message_file {
+      if let `Cons override_node = options.config_overrides {
+        let [override, _] = override_node
+        let color_ok = if let `ExecColorNever () = options.color { true } else { false }
+        if schema == "schema.json" && output == "last.md" && override == "effort=high" && color_ok && options.strict_config && options.skip_git_repo_check && options.ignore_user_config && options.ignore_rules && options.json { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = score }

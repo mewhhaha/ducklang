@@ -1,0 +1,25 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+
+type OutputImageDetail =
+  | `Auto Unit
+  | `Low Unit
+  | `High Unit
+  | `Original Unit
+
+type OutputImageDetailOption = Option OutputImageDetail
+type OutputImage = [Text, OutputImageDetailOption]
+
+type FunctionOutputContentItem =
+  | `InputText Text
+  | `InputImage OutputImage
+  | `InputAudio Text
+  | `EncryptedContent Text
+
+type FunctionOutputContentItemNode = [FunctionOutputContentItem, FunctionOutputContentItems]
+type FunctionOutputContentItems =
+  | `Nil Unit
+  | `Cons FunctionOutputContentItemNode
+
+return {}

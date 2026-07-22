@@ -1,0 +1,115 @@
+module () where
+
+const { json_array_empty } = import "duck:prelude/json" ()
+const {} = import "./app_server_turn_types.duck" ()
+
+type LifecycleJsonArray = JsonArray
+type LifecycleI64Option = AppServerI64Option
+type LifecycleTurn = AppServerTurn
+type LifecycleTerminal = AppServerTurnTerminal
+type LifecycleState = AppServerTurnState
+type LifecycleTransition = AppServerTurnTransition
+type LifecycleTransitionResult = AppServerTurnTransitionResult
+type LifecycleInterruptResult = AppServerTurnInterruptResult
+type LifecycleSteerResult = AppServerTurnSteerResult
+
+const initial_turn_state: Text -> LifecycleState = (thread_id: Text) => {
+  [thread_id, `None (), `None (), false]
+}
+
+const submitted_turn: [LifecycleState, Text] -> LifecycleTransition = (state: LifecycleState, turn_id: Text) => {
+  let [thread_id, _, last_terminal_turn_id, _] = state
+  let turn: LifecycleTurn = [turn_id, json_array_empty(), `NotLoaded (), `InProgress (), `None (), `None (), `None (), `None ()]
+  let next: LifecycleState = [thread_id, `Some turn, last_terminal_turn_id, false]
+  [next, turn]
+}
+
+let record_turn_started: [LifecycleState, Text, LifecycleI64Option] -> LifecycleTransitionResult = (state: LifecycleState, turn_id: Text, started_at: LifecycleI64Option) => {
+  let [thread_id, active, last_terminal_turn_id, interrupt_pending] = state
+
+  if let `Some turn = active {
+    let [active_id, items, items_view, status, error, _, completed_at, duration_ms] = turn
+
+    if active_id == turn_id {
+      let started: LifecycleTurn = [active_id, items, items_view, status, error, started_at, completed_at, duration_ms]
+      let next: LifecycleState = [thread_id, `Some started, last_terminal_turn_id, interrupt_pending]
+      `Ok ([next, started])
+    } else {
+      `Err ("expected active turn id " <> turn_id <> " but found " <> active_id)
+    }
+  } else {
+    `Err "no active turn to start"
+  }
+}
+
+let plan_turn_interrupt: [LifecycleState, Text] -> LifecycleInterruptResult = (state: LifecycleState, turn_id: Text) => {
+  let [thread_id, active, last_terminal_turn_id, _] = state
+
+  if turn_id == "" {
+    `Ok (`InterruptStartup state)
+  } else if let `Some turn = active {
+    let [active_id, _, _, _, _, _, _, _] = turn
+
+    if active_id == turn_id {
+      let next: LifecycleState = [thread_id, active, last_terminal_turn_id, true]
+      `Ok (`InterruptActive next)
+    } else {
+      `Err ("expected active turn id " <> turn_id <> " but found " <> active_id)
+    }
+  } else {
+    `Err "no active turn to interrupt"
+  }
+}
+
+let plan_turn_steer: [LifecycleState, Text] -> LifecycleSteerResult = (state: LifecycleState, expected_turn_id: Text) => {
+  let [_, active, _, _] = state
+
+  if let `Some turn = active {
+    let [active_id, _, _, _, _, _, _, _] = turn
+
+    if active_id == expected_turn_id {
+      `Ok active_id
+    } else {
+      `Err ("expected active turn id `" <> expected_turn_id <> "` but found `" <> active_id <> "`")
+    }
+  } else {
+    `Err "no active turn to steer"
+  }
+}
+
+let record_turn_terminal: [LifecycleState, Text, LifecycleTerminal, LifecycleJsonArray, LifecycleI64Option, LifecycleI64Option] -> LifecycleTransitionResult = (state: LifecycleState, turn_id: Text, terminal: LifecycleTerminal, items: LifecycleJsonArray, completed_at: LifecycleI64Option, duration_ms: LifecycleI64Option) => {
+  let [thread_id, active, _, _] = state
+
+  if let `Some turn = active {
+    let [active_id, _, _, _, _, started_at, _, _] = turn
+
+    if active_id == turn_id {
+      if let `TurnInterrupted () = terminal {
+        let completed: LifecycleTurn = [active_id, items, `Full (), `Interrupted (), `None (), started_at, completed_at, duration_ms]
+        let next: LifecycleState = [thread_id, `None (), `Some active_id, false]
+        `Ok ([next, completed])
+      } else if let `TurnFailed failure = terminal {
+        let completed: LifecycleTurn = [active_id, items, `Full (), `Failed (), `Some failure, started_at, completed_at, duration_ms]
+        let next: LifecycleState = [thread_id, `None (), `Some active_id, false]
+        `Ok ([next, completed])
+      } else {
+        let completed: LifecycleTurn = [active_id, items, `Full (), `Completed (), `None (), started_at, completed_at, duration_ms]
+        let next: LifecycleState = [thread_id, `None (), `Some active_id, false]
+        `Ok ([next, completed])
+      }
+    } else {
+      `Err ("expected active turn id " <> turn_id <> " but found " <> active_id)
+    }
+  } else {
+    `Err "no active turn to complete"
+  }
+}
+
+return {
+  initial_turn_state,
+  submitted_turn,
+  record_turn_started,
+  plan_turn_interrupt,
+  plan_turn_steer,
+  record_turn_terminal,
+}

@@ -1,0 +1,45 @@
+module () where
+
+const { json_array, json_array_empty, json_array_prepend, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const methods_module = import "./app_server_methods.duck"
+const {} = import "./app_server_types.duck" ()
+const { decode_turn_steer } = methods_module()
+
+type FixtureJson = AppServerJson
+type FixtureMethodResult = AppServerMethodDecodeResult
+
+let text_fields = json_object_empty()
+text_fields = json_object_prepend("text", json_string("focus on tests"), text_fields)
+text_fields = json_object_prepend("type", json_string("text"), text_fields)
+let inputs = json_array_prepend(json_object(text_fields), json_array_empty())
+let fields = json_object_empty()
+fields = json_object_prepend("input", json_array(inputs), fields)
+fields = json_object_prepend("clientUserMessageId", json_string("client-2"), fields)
+fields = json_object_prepend("expectedTurnId", json_string("turn-1"), fields)
+fields = json_object_prepend("threadId", json_string("thread-1"), fields)
+let params: FixtureJson = json_object(fields)
+let decoded: FixtureMethodResult = decode_turn_steer(params)
+let score = 0
+
+if let `MethodOk method = decoded {
+  if let `TurnSteer steer = method {
+    let [thread_id, expected_turn_id, client_id, values, raw_params] = steer
+    let client_valid = false
+    let input_valid = false
+    let params_valid = false
+    if let `Some value = client_id { client_valid = value == "client-2" }
+    if let `Cons _ = values { input_valid = true }
+    if let `Object _ = raw_params { params_valid = true }
+    if thread_id == "thread-1" && expected_turn_id == "turn-1" && client_valid && input_valid && params_valid { score = score + 1 }
+  }
+}
+
+let missing_fields = json_object_empty()
+missing_fields = json_object_prepend("input", json_array(inputs), missing_fields)
+missing_fields = json_object_prepend("threadId", json_string("thread-1"), missing_fields)
+let missing: FixtureMethodResult = decode_turn_steer(json_object(missing_fields))
+if let `MethodError message = missing {
+  if message == "turn/steer.params.expectedTurnId is required" { score = score + 10 }
+}
+
+return { .score = score }

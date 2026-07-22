@@ -1,0 +1,117 @@
+module () where
+
+const { duration_between, monotonic_ms, monotonic_ms_value, read_duration_ms, read_monotonic_ms, read_unix_time_seconds, unix_time_seconds_from_ms } = import "duck:prelude/abstractions" ()
+const {} = import "./turn_timing_types.duck" ()
+
+type TimingState = TurnTimingState
+type TimingResponseSignal = TurnTimingResponseSignal
+type TimingItemSignal = TurnTimingItemSignal
+type TimingInstant = MonotonicMs
+type TimingInstantOption = Option MonotonicMs
+type TimingUnixMillis = UnixTimeMs
+type TimingUnixSeconds = UnixTimeSeconds
+type TimingDurationOption = TurnTimingDurationOption
+type TimingRecord = TurnTimingRecord
+type TimingCompletion = TurnTimingCompletion
+
+const empty_turn_timing_state: () -> TimingState = () => {
+  [.started_at = `None (), .started_at_unix_seconds = `None (), .first_token_at = `None (), .first_message_at = `None ()]
+}
+
+const turn_timing_started_at_ms: &TimingState -> Option I64 = (state: &TimingState) => {
+  if let `Some stored_start = state.started_at {
+    `Some (read_monotonic_ms(&stored_start))
+  } else {
+    `None ()
+  }
+}
+
+const turn_timing_started_at_unix_seconds: &TimingState -> Option I64 = (state: &TimingState) => {
+  if let `Some stored_start = state.started_at_unix_seconds {
+    `Some (read_unix_time_seconds(&stored_start))
+  } else {
+    `None ()
+  }
+}
+
+const turn_timing_duration_ms: &TimingDurationOption -> Option I64 = (duration: &TimingDurationOption) => {
+  if let `Some elapsed = duration {
+    `Some (read_duration_ms(&elapsed))
+  } else {
+    `None ()
+  }
+}
+
+const mark_turn_started: [TimingState, TimingInstant, TimingUnixMillis] -> TimingState = (state: TimingState, started_at: TimingInstant, started_at_unix_ms: TimingUnixMillis) => {
+  state :+ { .started_at = `Some started_at, .started_at_unix_seconds = `Some (unix_time_seconds_from_ms(started_at_unix_ms)), .first_token_at = `None (), .first_message_at = `None () }
+}
+
+const response_signal_records_first_token: TimingResponseSignal -> Bool = signal => {
+  if let `OutputDelta () = signal {
+    true
+  } else if let `ReasoningDelta () = signal {
+    true
+  } else if let `CompletedOutputText text = signal {
+    text != ""
+  } else if let `CompletedReasoningText text = signal {
+    text != ""
+  } else if let `ToolCall () = signal {
+    true
+  } else {
+    false
+  }
+}
+
+const record_time_to_first_token: [TimingState, TimingResponseSignal, TimingInstant] -> TimingRecord = (state: TimingState, signal: TimingResponseSignal, now: TimingInstant) => {
+  let now_ms = monotonic_ms_value(now)
+  let already_recorded = if let `Some _ = state.first_token_at { true } else { false }
+  let started_at = turn_timing_started_at_ms(&state)
+  if !(response_signal_records_first_token(signal)) || already_recorded {
+    [.state = state, .duration = `None ()]
+  } else if let `Some started_at_ms = started_at {
+    let recorded_at: TimingInstantOption = `Some (monotonic_ms(now_ms))
+    let elapsed: TimingDurationOption = `Some (duration_between(monotonic_ms(started_at_ms), monotonic_ms(now_ms)))
+    let next_state = state :+ { .first_token_at = recorded_at }
+    [.state = next_state, .duration = elapsed]
+  } else {
+    [.state = state, .duration = `None ()]
+  }
+}
+
+const record_time_to_first_message: [TimingState, TimingItemSignal, TimingInstant] -> TimingRecord = (state: TimingState, signal: TimingItemSignal, now: TimingInstant) => {
+  let now_ms = monotonic_ms_value(now)
+  let is_agent_message = if let `AgentMessage () = signal { true } else { false }
+  let already_recorded = if let `Some _ = state.first_message_at { true } else { false }
+  let started_at = turn_timing_started_at_ms(&state)
+  if !(is_agent_message) || already_recorded {
+    [.state = state, .duration = `None ()]
+  } else if let `Some started_at_ms = started_at {
+    let recorded_at: TimingInstantOption = `Some (monotonic_ms(now_ms))
+    let elapsed: TimingDurationOption = `Some (duration_between(monotonic_ms(started_at_ms), monotonic_ms(now_ms)))
+    let next_state = state :+ { .first_message_at = recorded_at }
+    [.state = next_state, .duration = elapsed]
+  } else {
+    [.state = state, .duration = `None ()]
+  }
+}
+
+const complete_turn_timing: [&TimingState, TimingInstant, TimingUnixSeconds] -> TimingCompletion = (state: &TimingState, completed_at: TimingInstant, completed_at_unix_seconds: TimingUnixSeconds) => {
+  let completed_at_ms = monotonic_ms_value(completed_at)
+  let started_at = turn_timing_started_at_ms(state)
+  if let `Some started_at_ms = started_at {
+    [.completed_at_unix_seconds = completed_at_unix_seconds, .duration = `Some (duration_between(monotonic_ms(started_at_ms), monotonic_ms(completed_at_ms)))]
+  } else {
+    [.completed_at_unix_seconds = completed_at_unix_seconds, .duration = `None ()]
+  }
+}
+
+return {
+  empty_turn_timing_state,
+  turn_timing_started_at_unix_seconds,
+  turn_timing_duration_ms,
+  mark_turn_started,
+  response_signal_records_first_token,
+  record_time_to_first_token,
+  record_time_to_first_message,
+  complete_turn_timing,
+}

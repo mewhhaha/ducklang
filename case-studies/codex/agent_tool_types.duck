@@ -1,0 +1,130 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_types.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ()
+
+type AgentToolRegistrationConfig = struct {
+  .enabled = Bool,
+  .v2_enabled = Bool,
+  .direct_model_only = Bool,
+  .hide_spawn_metadata = Bool,
+  .namespace = Text,
+}
+
+type AgentToolContext = struct {
+  .v2_enabled = Bool,
+  .current_path = Text,
+  .current_depth = I32,
+  .maximum_depth = I32,
+  .source = AgentSessionSource,
+  .active_turn = Bool,
+  .active_agents = I32,
+  .maximum_threads = I32,
+}
+
+type AgentToolSpawnArguments = struct {
+  .task_name = Text,
+  .message = Text,
+  .fork_turns = AgentTextOption,
+  .model = AgentTextOption,
+  .reasoning_effort = AgentTextOption,
+}
+
+type AgentToolForkTurns =
+  | `ForkAllTurns Unit
+  | `ForkNoTurns Unit
+  | `ForkRecentTurns I64
+
+type AgentToolSpawnPlanRequest = struct {
+  .path = Text,
+  .message = Text,
+  .fork_turns = AgentToolForkTurns,
+  .model = AgentTextOption,
+  .reasoning_effort = AgentTextOption,
+}
+
+type AgentToolSpawnSnapshot = struct {
+  .task_name = Text,
+  .nickname = AgentTextOption,
+  .status = AgentStatus,
+}
+
+type AgentToolSpawnOutputInput = struct {
+  .snapshot = AgentToolSpawnSnapshot,
+  .hide_metadata = Bool,
+}
+
+type AgentToolSpawnExecutionOptions = struct {
+  .hide_metadata = Bool,
+}
+
+type AgentToolSpawnTelemetry = struct {
+  .role = Text,
+  .version = Text,
+}
+
+type AgentToolMailboxSnapshot = struct {
+  .updated_count = I32,
+  .steered = Bool,
+  .timed_out = Bool,
+}
+
+type AgentToolWaitRequest = struct {
+  .timeout_ms = I64,
+}
+
+type AgentToolEventReference = [Text, Text]
+type AgentToolLifecycleEvent =
+  | `AgentStarted AgentToolEventReference
+  | `AgentInteracted AgentToolEventReference
+  | `AgentInterrupted AgentToolEventReference
+  | `WaitStarted Text
+  | `WaitCompleted Text
+
+type AgentToolMessageArguments = struct {
+  .target = Text,
+  .message = Text,
+}
+
+type AgentToolControlOperation =
+  | `SendMessageCall AgentToolMessageArguments
+  | `FollowupTaskCall AgentToolMessageArguments
+  | `InterruptAgentCall Text
+  | `WaitAgentCall AgentI64Option
+  | `ListAgentsCall AgentTextOption
+
+type AgentToolOperation =
+  | `SpawnAgentCall AgentToolSpawnArguments
+  | `ControlAgentCall AgentToolControlOperation
+
+type AgentToolPlan =
+  | `SpawnAgentPlanned AgentToolSpawnPlanRequest
+  | `SendMessagePlanned AgentSendRequest
+  | `FollowupTaskPlanned AgentSendRequest
+  | `InterruptAgentPlanned Text
+  | `WaitAgentPlanned I64
+  | `ListAgentsPlanned AgentTextOption
+  | `AgentToolRejected Text
+
+type AgentToolSpawnDecodeResult =
+  | `AgentSpawnDecoded AgentToolSpawnArguments
+  | `AgentSpawnDecodeFailed Text
+
+type AgentToolMessageDecodeResult =
+  | `AgentMessageDecoded AgentToolMessageArguments
+  | `AgentMessageDecodeFailed Text
+
+type AgentToolTargetDecodeResult =
+  | `AgentTargetDecoded Text
+  | `AgentTargetDecodeFailed Text
+
+type AgentToolWaitDecodeResult =
+  | `AgentWaitDecoded AgentI64Option
+  | `AgentWaitDecodeFailed Text
+
+type AgentToolListDecodeResult =
+  | `AgentListDecoded AgentTextOption
+  | `AgentListDecodeFailed Text
+
+return {}

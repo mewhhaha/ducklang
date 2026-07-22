@@ -1,0 +1,37 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const { format_i32, text_append } = import "duck:prelude/runtime" ()
+
+type CodeModeSchemaDocument =
+  | `CodeModeSchemaDocumentMissing Unit
+  | `CodeModeSchemaDocumentPresent Text
+
+type CodeModeParsedSchema =
+  | `CodeModeParsedSchemaMissing Unit
+  | `CodeModeParsedSchemaPresent Json
+  | `CodeModeParsedSchemaFailed Text
+
+let parse_code_mode_schema: [Text, Text, CodeModeSchemaDocument] -> CodeModeParsedSchema = (tool_name, field_name, document) => {
+  if let `CodeModeSchemaDocumentMissing () = document {
+    return `CodeModeParsedSchemaMissing ()
+  }
+  let `CodeModeSchemaDocumentPresent source = document else {
+    return `CodeModeParsedSchemaFailed (text_append ["tool ", text_append [tool_name, text_append [" has invalid ", field_name]]])
+  }
+
+  let parsed = parse_json_document source
+  if let `Ok success = parsed {
+    let [value, _] = success
+    `CodeModeParsedSchemaPresent value
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    let prefix = text_append ["tool ", text_append [tool_name, text_append [" ", field_name]]]
+    let location = text_append [text_append [" schema at byte ", format_i32 position], ": "]
+    `CodeModeParsedSchemaFailed (text_append [prefix, text_append [location, message]])
+  } else {
+    `CodeModeParsedSchemaFailed (text_append ["tool ", text_append [tool_name, text_append [" ", text_append [field_name, " schema parser returned no result"]]]])
+  }
+}
+
+return { parse_code_mode_schema }

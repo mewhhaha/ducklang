@@ -1,0 +1,46 @@
+module () where
+
+const hook_types_module = import "./hook_types.duck"
+
+type HookOutputTextOption = Option Text
+
+type HookUniversalOutput = [Bool, HookOutputTextOption, Bool, HookOutputTextOption]
+type HookUniversalParse =
+  | `UniversalOk HookUniversalOutput
+  | `UniversalErr Text
+
+type HookStopOutput = [HookUniversalOutput, Bool, HookOutputTextOption, HookOutputTextOption]
+type HookStopParse =
+  | `StopOk HookStopOutput
+  | `StopErr Text
+
+type HookPermissionOutput = [HookUniversalOutput, HookPermissionDecisionOption, HookOutputTextOption]
+type HookPermissionParse =
+  | `PermissionOk HookPermissionOutput
+  | `PermissionErr Text
+
+type HookPreToolOutput = [HookUniversalOutput, HookOutputTextOption, HookOutputTextOption, HookUpdatedInput, HookOutputTextOption]
+type HookPreToolParse =
+  | `PreToolOk HookPreToolOutput
+  | `PreToolErr Text
+
+type HookContextOutput = [HookUniversalOutput, HookOutputTextOption]
+type HookContextParse =
+  | `ContextOk HookContextOutput
+  | `ContextErr Text
+
+type HookPostToolOutput = [HookUniversalOutput, Bool, HookOutputTextOption, HookOutputTextOption, HookOutputTextOption, HookOutputTextOption]
+type HookPostToolParse =
+  | `PostToolOk HookPostToolOutput
+  | `PostToolErr Text
+
+type HookUserPromptOutput = [HookUniversalOutput, Bool, HookOutputTextOption, HookOutputTextOption, HookOutputTextOption]
+type HookUserPromptParse =
+  | `UserPromptOk HookUserPromptOutput
+  | `UserPromptErr Text
+
+type HookStatelessParse =
+  | `StatelessOk HookUniversalOutput
+  | `StatelessErr Text
+
+return {}

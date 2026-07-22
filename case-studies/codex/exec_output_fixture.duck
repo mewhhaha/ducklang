@@ -1,0 +1,51 @@
+module () where
+
+const exec_types_module = import "./exec_types.duck"
+const exec_module = import "./exec.duck"
+const { clamp_initial_yield_time, clamp_write_stdin_yield_time, empty_output_buffer, initial_process_state, process_exited, process_failed, process_sandbox_denied, process_succeeded, push_output, render_output, resolve_max_output_tokens, retained_output_bytes, total_output_bytes } = exec_module()
+
+type FixtureI32Option = ExecI32Option
+type FixtureOutputBuffer = ExecOutputBuffer
+type FixtureProcessState = ExecProcessState
+
+let score: I32 = 0
+let output: FixtureOutputBuffer = empty_output_buffer 10
+output = push_output(output, "abcdefgh")
+output = push_output(output, "ijklmnop")
+
+if retained_output_bytes(output) == 10 { score = score + 1 }
+if total_output_bytes(output) == 16 { score = score + 10 }
+if render_output(output) == "abcde\n... 6 bytes omitted ...\nlmnop" { score = score + 100 }
+
+let discarded: FixtureOutputBuffer = push_output(empty_output_buffer(0), "abc")
+if retained_output_bytes(discarded) == 0 && total_output_bytes(discarded) == 3 {
+  score = score + 1000
+}
+
+let state: FixtureProcessState = initial_process_state()
+let exit_code: FixtureI32Option = `Some 0
+state = process_exited(state, exit_code)
+if process_succeeded(state) { score = score + 10000 }
+
+state = process_failed(state, "late failure")
+if !(process_succeeded(state)) { score = score + 100000 }
+
+state = process_sandbox_denied state
+let [_, _, _, sandbox_denied] = state
+if sandbox_denied { score = score + 1000000 }
+
+let default_tokens: FixtureI32Option = `None ()
+let requested_tokens: FixtureI32Option = `Some (-1)
+if resolve_max_output_tokens(default_tokens) == 10000 && resolve_max_output_tokens(requested_tokens) == 0 {
+  score = score + 10000000
+}
+
+if clamp_initial_yield_time(1, false) == 250 && clamp_initial_yield_time(1, true) == 2000 && clamp_initial_yield_time(40000, false) == 30000 {
+  score = score + 100000000
+}
+
+if clamp_write_stdin_yield_time("", 1, 1000) == 5000 && clamp_write_stdin_yield_time("", 1, 300000) == 5000 && clamp_write_stdin_yield_time("x", 1, 300000) == 250 {
+  score = score + 1000000000
+}
+
+return { .score = score }

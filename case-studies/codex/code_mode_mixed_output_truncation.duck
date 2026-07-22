@@ -1,0 +1,88 @@
+module () where
+
+const { format_i32, text_append, text_approx_token_count, text_truncate_middle_tokens, unsafe_i32_wrap_i64, unsafe_i64_extend_i32_signed } = import "duck:prelude/runtime" ()
+const {} = import "./original_image_detail_types.duck" ()
+
+type MixedTruncationItem = FunctionOutputContentItem
+type MixedTruncationItemNode = FunctionOutputContentItemNode
+type MixedTruncationItems = FunctionOutputContentItems
+
+const truncate_code_mode_mixed_output: [I64, MixedTruncationItems] -> MixedTruncationItems = (maximum_tokens, items) => {
+  let current = items
+  let remaining_tokens = maximum_tokens
+  let omitted_text_items = 0
+  let reversed: MixedTruncationItems = `Nil ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+
+      if let `InputText text = item {
+        if remaining_tokens == 0i64 {
+          omitted_text_items = omitted_text_items + 1
+        } else {
+          let cost = unsafe_i64_extend_i32_signed(text_approx_token_count text)
+
+          if cost <= remaining_tokens {
+            let output_node: MixedTruncationItemNode = [item, reversed]
+            reversed = `Cons output_node
+            remaining_tokens = remaining_tokens - cost
+          } else {
+            let snippet = text_truncate_middle_tokens(text, unsafe_i32_wrap_i64 remaining_tokens)
+            if snippet == "" {
+              omitted_text_items = omitted_text_items + 1
+            } else {
+              let snippet_item: MixedTruncationItem = `InputText snippet
+              let output_node: MixedTruncationItemNode = [snippet_item, reversed]
+              reversed = `Cons output_node
+            }
+            remaining_tokens = 0i64
+          }
+        }
+      } else if let `InputImage _ = item {
+        let output_node: MixedTruncationItemNode = [item, reversed]
+        reversed = `Cons output_node
+      } else if let `EncryptedContent _ = item {
+        let output_node: MixedTruncationItemNode = [item, reversed]
+        reversed = `Cons output_node
+      } else {
+        ()
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  if omitted_text_items > 0 {
+    let marker_count = text_append [format_i32 omitted_text_items, " text items ...]"]
+    let marker = text_append ["[omitted ", marker_count]
+    let marker_item: MixedTruncationItem = `InputText marker
+    let marker_node: MixedTruncationItemNode = [marker_item, reversed]
+    reversed = `Cons marker_node
+  }
+
+  let output: MixedTruncationItems = `Nil ()
+  done = false
+
+  loop {
+    if let `Cons node = reversed {
+      let [item, tail] = node
+      let output_node: MixedTruncationItemNode = [item, output]
+      output = `Cons output_node
+      reversed = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  output
+}
+
+return { truncate_code_mode_mixed_output }

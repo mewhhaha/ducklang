@@ -1,0 +1,17 @@
+module () where
+
+type InstructionDocument = [Text, Text]
+type InstructionSnapshotEntry =
+  | `File InstructionDocument
+  | `Directory Text
+  | `Other Text
+
+type InstructionSnapshot = List InstructionSnapshotEntry
+type InstructionDocuments = List InstructionDocument
+type InstructionDocumentOption = Option InstructionDocument
+type InstructionTextOption = Option Text
+type InstructionTexts = List Text
+type InstructionDiscoveryConfig = [Text, I32, InstructionTexts, InstructionTexts, InstructionDocumentOption]
+type LoadedInstructions = [InstructionTextOption, InstructionTexts]
+
+return {}

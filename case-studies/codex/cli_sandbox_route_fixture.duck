@@ -1,0 +1,21 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_cli } = import "./cli.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+
+const args = comptime list(Text)
+let input: FixtureArgs = args.prepend("sandbox", args.prepend("--permission-profile", args.prepend(":workspace", args.prepend("--", args.singleton("echo")))))
+let plan: FixturePlan = parse_cli(input)
+let score = 0
+
+if let `RunSandbox options = plan {
+  if let `Some profile = options.permissions_profile {
+    if profile == ":workspace" && args.length(options.command) == 1 { score = 1 }
+  }
+}
+
+return { .score = score }

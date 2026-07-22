@@ -1,0 +1,15 @@
+module () where
+
+declare effect CodeModeDispatchHost {
+  suspending enqueue: (&CodeModeDispatchRequest) => CodeModeDispatchChannelState
+  suspending mark_cell_ready: (Text) => Unit
+  suspending wait_until_ready: (Text) => CodeModeDispatchGateState
+  suspending close_cell: (Text) => Unit
+  suspending inject_notification: (&CodeModeNotificationOutput) => CodeModeNotificationInjection
+}
+
+declare Init {
+  code_mode_dispatch_host: CodeModeDispatchHost
+}
+
+return {}

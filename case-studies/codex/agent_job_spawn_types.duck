@@ -1,0 +1,39 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_common_types.duck" ()
+
+type AgentJobOptionalTextResult =
+  | `AgentJobTextDecoded AgentJobTextOption
+  | `AgentJobTextDecodeFailed Text
+
+type AgentJobSpawnArgs = struct {
+  .input_path = Text,
+  .instruction = Text,
+  .id_column = AgentJobTextOption,
+  .output_path = AgentJobTextOption,
+  .output_schema_json = AgentJobTextOption,
+  .max_concurrency = I32,
+  .max_runtime_seconds = AgentJobTextOption,
+}
+
+type AgentJobSpawnDecodedArgs = struct {
+  .csv_path = Text,
+  .instruction = Text,
+  .id_column = AgentJobTextOption,
+  .output_path = AgentJobTextOption,
+  .output_schema_json = AgentJobTextOption,
+  .max_concurrency = AgentJobTextOption,
+  .max_workers = AgentJobTextOption,
+  .max_runtime_seconds = AgentJobTextOption,
+}
+
+type AgentJobSpawnDecodeResult =
+  | `SpawnDecoded AgentJobSpawnDecodedArgs
+  | `SpawnDecodeFailed Text
+
+type AgentJobSpawnPlan =
+  | `ReadCsv AgentJobSpawnArgs
+  | `RejectSpawn Text
+
+return {}

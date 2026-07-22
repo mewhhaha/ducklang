@@ -1,0 +1,52 @@
+module () where
+
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./mcp_resource_types.duck" ()
+
+type ResourcePolicyListArgs = McpResourceListArgs
+type ResourcePolicyReadArgs = McpResourceReadArgs
+type ResourcePolicyTextOption = McpResourceTextOption
+type ResourcePolicyListValidation = McpResourceListValidation
+type ResourcePolicyReadValidation = McpResourceReadValidation
+
+const model_can_access_mcp_server: [Text, Bool] -> Bool = (server: Text, orchestrator_mcp_enabled: Bool) => {
+  orchestrator_mcp_enabled || server != "codex_apps"
+}
+
+const inaccessible_mcp_server_message: Text -> Text = server => {
+  text_append("MCP server '", text_append(server, "' is disabled by `orchestrator.mcp.enabled`"))
+}
+
+const validate_list_mcp_resource_args: [ResourcePolicyListArgs, Bool] -> ResourcePolicyListValidation = (args: ResourcePolicyListArgs, orchestrator_mcp_enabled: Bool) => {
+  let cursor_without_server = false
+  if let `Some _ = args.cursor {
+    if let `None () = args.server { cursor_without_server = true }
+  }
+
+  if cursor_without_server {
+    `ListValidationFailed "cursor can only be used when a server is specified"
+  } else if let `Some server = args.server {
+    if !(model_can_access_mcp_server(server, orchestrator_mcp_enabled)) {
+      `ListValidationFailed (inaccessible_mcp_server_message server)
+    } else {
+      `ListValid args
+    }
+  } else {
+    `ListValid args
+  }
+}
+
+const validate_read_mcp_resource_args: [ResourcePolicyReadArgs, Bool] -> ResourcePolicyReadValidation = (args: ResourcePolicyReadArgs, orchestrator_mcp_enabled: Bool) => {
+  if model_can_access_mcp_server(args.server, orchestrator_mcp_enabled) {
+    `ReadValid args
+  } else {
+    `ReadValidationFailed (inaccessible_mcp_server_message args.server)
+  }
+}
+
+return {
+  inaccessible_mcp_server_message,
+  model_can_access_mcp_server,
+  validate_list_mcp_resource_args,
+  validate_read_mcp_resource_args,
+}

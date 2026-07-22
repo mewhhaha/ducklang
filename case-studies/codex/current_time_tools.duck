@@ -1,0 +1,15 @@
+module () where
+
+const { current_time_tool_name, sleep_tool_name, current_time_tool_definitions, plan_sleep_request } = import "./current_time_tool_plan.duck" ()
+const { render_current_time_tool_output, render_sleep_tool_output } = import "./current_time_tool_output.duck" ()
+const { render_current_time_code_mode_output } = import "./current_time_code_mode.duck" ()
+
+return {
+  current_time_tool_name,
+  sleep_tool_name,
+  current_time_tool_definitions,
+  plan_sleep_request,
+  render_current_time_tool_output,
+  render_current_time_code_mode_output,
+  render_sleep_tool_output,
+}

@@ -1,0 +1,31 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_execpolicy_check } = import "./cli_execpolicy.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexExecPolicyCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let input: FixtureArgs = args.prepend("--rules", args.prepend("base.rules", args.prepend("-r", args.prepend("local.rules", args.prepend("--pretty", args.prepend("--resolve-host-executables", args.prepend("git", args.prepend("-C", args.prepend("repo", args.singleton("status"))))))))))
+let planned: FixtureResult = parse_execpolicy_check(input)
+if let `Ok command = planned {
+  if let `CheckExecPolicy options = command {
+    let first_rule = args.nth_or("", 0, options.rules)
+    let second_rule = args.nth_or("", 1, options.rules)
+    let program = args.nth_or("", 0, options.command)
+    let flag = args.nth_or("", 1, options.command)
+    let subcommand = args.nth_or("", 3, options.command)
+    if first_rule == "base.rules" && second_rule == "local.rules" && options.pretty && options.resolve_host_executables && program == "git" && flag == "-C" && subcommand == "status" {
+      score = score + 1
+    }
+  }
+}
+
+let invalid: FixtureResult = parse_execpolicy_check(args.singleton("git"))
+if let `Err _ = invalid { score = score + 10 }
+
+return { .score = score }

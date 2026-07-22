@@ -1,0 +1,43 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type WaitForEnvironmentStatus =
+  | `Ready Unit
+  | `Starting Unit
+
+type WaitForEnvironment = struct {
+  .environment_id = Text,
+  .status = WaitForEnvironmentStatus,
+}
+
+type WaitForEnvironmentNode = [WaitForEnvironment, WaitForEnvironments]
+type WaitForEnvironments =
+  | `Nil Unit
+  | `Cons WaitForEnvironmentNode
+
+type WaitForEnvironmentArgs = struct {
+  .environment_id = Text,
+}
+
+type WaitForEnvironmentPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type WaitForEnvironmentParseResult =
+  | `Parsed WaitForEnvironmentArgs
+  | `ParseFailed Text
+
+type WaitForEnvironmentPlan =
+  | `AlreadyReady Text
+  | `Wait Text
+  | `RejectRequest Text
+  | `Fatal Text
+
+type WaitForEnvironmentHostResponse = Bool
+
+type WaitForEnvironmentExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+return {}

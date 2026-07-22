@@ -1,0 +1,42 @@
+const parser_module = import "./citation_parser.duck"
+const { push_citation_chunk } = parser_module()
+const { text_fold_i32, text_length } = import "duck:prelude/runtime" ()
+
+type FixtureChunk = CitationChunk
+type FixtureParser = CitationParser
+type FixtureCitations = Citations
+
+const text_checksum = (text: Text) => {
+  text_fold_i32(text, 0, (checksum, byte) => checksum + byte)
+}
+
+let input = "Hello <oai-mem-citation>doc A</oai-mem-citation> world\nprefix <oai-mem-citation>doc B</oai-mem-citation> suffix\nUTF-8 żółw <oai-mem-citation>中</oai-mem-citation> done"
+let parser: FixtureParser = ["", false, ""] as FixtureParser
+let result: FixtureChunk = push_citation_chunk(parser, input)
+let [_, visible, citations] = result
+let visible_length = text_length(visible)
+let visible_checksum = text_checksum(visible)
+let citation_count = 0
+let citation_length = 0
+let citation_checksum = 0
+let current: FixtureCitations = citations
+let done = false
+
+loop {
+  if let `Cons node = current {
+    let typed_node: ListNode Text = node
+    let [citation, tail] = typed_node
+    citation_count = citation_count + 1
+    citation_length = citation_length + text_length(citation)
+    citation_checksum = citation_checksum + text_checksum(citation)
+    current = tail
+  } else {
+    done = true
+  }
+
+  if done {
+    break
+  }
+}
+
+visible_length * 10000000 + visible_checksum * 1000 + citation_length * 100 + citation_checksum + citation_count

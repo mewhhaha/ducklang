@@ -1,0 +1,28 @@
+module () where
+
+const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { decode_thread_fork } = import "./app_server_thread_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureResult = AppServerMethodDecodeResult
+
+let fields = json_object_empty()
+fields = json_object_prepend("lastTurnId", json_string("turn-2"), fields)
+fields = json_object_prepend("path", json_string("/rollouts/thread-1.jsonl"), fields)
+fields = json_object_prepend("threadId", json_string("thread-1"), fields)
+let decoded: FixtureResult = decode_thread_fork(json_object(fields))
+let score = if let `MethodOk method = decoded {
+  if let `ThreadFork params = method {
+    let [thread_id, last_turn_id, before_turn_id, path, _, _, _, _, _, _, _] = params
+    let last_valid = if let `Some value = last_turn_id { value == "turn-2" } else { false }
+    let before_absent = if let `None () = before_turn_id { true } else { false }
+    let path_valid = if let `Some value = path { value == "/rollouts/thread-1.jsonl" } else { false }
+    let thread_score = if thread_id == "thread-1" { 1 } else { 0 }
+    let last_score = if last_valid { 10 } else { 0 }
+    let before_score = if before_absent { 100 } else { 0 }
+    let path_score = if path_valid { 1000 } else { 0 }
+    thread_score + last_score + before_score + path_score
+  } else { 0 }
+} else { 0 }
+
+return { .score = score }

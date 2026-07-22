@@ -1,0 +1,12 @@
+module () where
+
+const {} = import "./agent_tool_types.duck" ()
+const { parse_agent_message_args } = import "./agent_tool_message_json.duck" ()
+
+let decoded = parse_agent_message_args "{\"target\":\"/root/reviewer\",\"message\":\"report status\"}"
+let score = 0
+if let `AgentMessageDecoded arguments = decoded {
+  if arguments.target == "/root/reviewer" && arguments.message == "report status" { score = 1 }
+}
+
+return { .score = score }

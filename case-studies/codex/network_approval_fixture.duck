@@ -1,0 +1,98 @@
+module () where
+
+const network_types_module = import "./network_types.duck"
+const network_module = import "./network_approval.duck"
+const { empty_network_approval_state, host_key_equal, plan_network_request, register_network_call, resolve_network_prompt } = network_module()
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureMode = NetworkApprovalMode
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureHostDecision = NetworkHostApprovalDecision
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureKey = NetworkHostKey
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureDecision = NetworkPolicyDecision
+type FixtureResult = NetworkPolicyResult
+
+let score = 0
+let https: FixtureProtocol = `Https ()
+let local_key: FixtureKey = ["local", "EXAMPLE.com", https, 443]
+let same_key: FixtureKey = ["local", "example.COM", https, 443]
+let other_port: FixtureKey = ["local", "example.com", https, 8443]
+
+if host_key_equal(local_key, same_key) && !(host_key_equal(local_key, other_port)) {
+  score = score + 1
+}
+
+let state: FixtureState = empty_network_approval_state()
+let deferred: FixtureMode = `Deferred ()
+let no_outcome: FixtureOutcome = `NoOutcome ()
+let call: FixtureCall = ["registration-1", "local", "curl https://example.com", deferred, no_outcome, false]
+state = register_network_call(state, call)
+
+let no_execution: FixtureTextOption = `None ()
+let local_environment: FixtureTextOption = `Some "local"
+let request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment]
+let policy: FixturePolicy = `OnRequest ()
+let profile: FixtureProfile = `Managed ()
+let planned: FixtureResult = plan_network_request(state, request, local_environment, policy, profile, true)
+let [planned_state, planned_decision] = planned
+
+if let `Prompt prompt = planned_decision {
+  let [_, registration_option, target, reason, is_owner] = prompt
+
+  if let `Some registration_id = registration_option {
+    if registration_id == "registration-1" && target == "https://example.com:443" && reason == "example.com is not in the allowed_domains" && is_owner {
+      score = score + 1
+    }
+  }
+
+}
+
+let duplicate: FixtureResult = plan_network_request(planned_state, request, local_environment, policy, profile, true)
+let [_, duplicate_decision] = duplicate
+if let `Await prompt = duplicate_decision {
+  let [_, _, _, _, is_owner] = prompt
+  if !(is_owner) { score = score + 1 }
+}
+
+state = if let `Prompt prompt = planned_decision {
+  resolve_network_prompt(planned_state, prompt, `AllowForSession ())
+} else {
+  planned_state
+}
+
+let cached: FixtureResult = plan_network_request(state, request, local_environment, policy, profile, true)
+let [_, cached_decision] = cached
+if let `Allow () = cached_decision {
+  score = score + 1
+}
+
+let remote_request: FixtureRequest = ["example.com", https, 443, no_execution, `Some "remote"]
+let remote: FixtureResult = plan_network_request(state, remote_request, local_environment, policy, profile, true)
+let [_, remote_decision] = remote
+if let `Prompt prompt = remote_decision {
+  let [_, registration_option, _, _, is_owner] = prompt
+  if let `None () = registration_option {
+    if is_owner { score = score + 1 }
+  }
+}
+
+let denied_plan: FixtureResult = plan_network_request(empty_network_approval_state(), request, local_environment, `Never (), profile, true)
+let [_, denied_decision] = denied_plan
+if let `Reject _ = denied_decision {
+  score = score + 1
+}
+
+let invalid_request: FixtureRequest = ["example.com", https, 443, `Some "missing-registration", `None ()]
+let invalid_plan: FixtureResult = plan_network_request(state, invalid_request, local_environment, policy, profile, true)
+let [_, invalid_decision] = invalid_plan
+if let `Reject _ = invalid_decision {
+  score = score + 1
+}
+
+return { .score = score }

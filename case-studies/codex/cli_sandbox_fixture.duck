@@ -1,0 +1,45 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_sandbox_options } = import "./cli_sandbox.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexSandboxOptionsResult
+
+const args = comptime list(Text)
+
+let profile_input: FixtureArgs = args.prepend("--permissions-profile", args.prepend(":workspace", args.prepend("--profile", args.prepend("work", args.prepend("-C", args.prepend("/tmp", args.prepend("--include-managed-config", args.prepend("--allow-unix-socket", args.prepend("/tmp/socket", args.prepend("--log-denials", args.prepend("--", args.prepend("echo", args.prepend("-n", args.singleton("hello"))))))))))))))
+let profile: FixtureResult = parse_sandbox_options(profile_input)
+let profile_score = if let `Ok options = profile {
+  if let `Some permission = options.permissions_profile {
+    if let `Some config = options.config_profile {
+      if let `Some cwd = options.cwd {
+        let socket_path = args.nth_or("", 0, options.allow_unix_sockets)
+        let program = args.nth_or("", 0, options.command)
+        let flag = args.nth_or("", 1, options.command)
+        if permission == ":workspace" && config == "work" && cwd == "/tmp" && options.include_managed_config && socket_path == "/tmp/socket" && options.log_denials && program == "echo" && flag == "-n" {
+          1
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+let state_input: FixtureArgs = args.prepend("--sandbox-state-json", args.prepend("{}", args.prepend("--sandbox-state-readable-root", args.prepend("/one", args.prepend("--sandbox-state-readable-root", args.prepend("/two", args.prepend("--sandbox-state-disable-network", args.prepend("--", args.singleton("pwd")))))))))
+let state: FixtureResult = parse_sandbox_options(state_input)
+let state_score = if let `Ok options = state {
+  if let `Some json = options.sandbox_state_json {
+    let first = args.nth_or("", 0, options.sandbox_state_readable_roots)
+    let second = args.nth_or("", 1, options.sandbox_state_readable_roots)
+    if json == "{}" && first == "/one" && second == "/two" && options.sandbox_state_disable_network { 10 } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+let missing_state: FixtureResult = parse_sandbox_options(args.prepend("--sandbox-state-readable-root", args.prepend("/tmp", args.singleton("echo"))))
+let missing_state_score = if let `Err _ = missing_state { 100 } else { 0 }
+
+let missing_profile: FixtureResult = parse_sandbox_options(args.prepend("-C", args.prepend("/tmp", args.singleton("echo"))))
+let missing_profile_score = if let `Err _ = missing_profile { 1000 } else { 0 }
+
+return { .score = profile_score + state_score + missing_state_score + missing_profile_score }

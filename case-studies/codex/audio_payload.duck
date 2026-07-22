@@ -1,0 +1,37 @@
+module () where
+
+const { inspect_standard_base64 } = import "duck:prelude/base64" ()
+const {} = import "./audio_types.duck" ()
+
+const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult = (parsed, code) => {
+  let canonical_mime: Text = ""
+  if code == 0 {
+    canonical_mime = "audio/wav"
+  } else if code == 1 {
+    canonical_mime = "audio/mpeg"
+  } else if code == 2 {
+    canonical_mime = "audio/mp4"
+  } else if code == 3 {
+    canonical_mime = "audio/webm"
+  } else if code == 4 {
+    canonical_mime = "audio/ogg"
+  }
+
+  if code == 5 {
+    return [.status_code = 3, .url = "", .reason = "", .size = 0, .mime = parsed.mime, .format_code = code]
+  }
+  if code < 0 || code > 5 {
+    return [.status_code = 2, .url = "", .reason = "invalid audio format code", .size = 0, .mime = parsed.mime, .format_code = code]
+  }
+
+  let inspection = inspect_standard_base64 parsed.payload
+  if inspection.error_kind != 0 {
+    [.status_code = 1, .url = "", .reason = "invalid base64 payload", .size = 0, .mime = parsed.mime, .format_code = code]
+  } else if inspection.decoded_length > 52428800 {
+    [.status_code = 4, .url = "", .reason = "", .size = inspection.decoded_length, .mime = parsed.mime, .format_code = code]
+  } else {
+    [.status_code = 0, .url = @append("data:", @append(canonical_mime, @append(";base64,", parsed.payload))), .reason = "", .size = inspection.decoded_length, .mime = parsed.mime, .format_code = code]
+  }
+}
+
+return { prepare_audio_payload }

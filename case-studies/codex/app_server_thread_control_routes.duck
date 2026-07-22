@@ -1,0 +1,37 @@
+module () where
+
+const { encode_error } = import "./app_server_wire_responses.duck" ()
+const { decode_thread_control_method } = import "./app_server_thread_control_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type ThreadControlRouteInput = AppServerRoute
+type ThreadControlRoutePlan = AppServerPlan
+type ThreadControlRouteDispatch = AppServerDispatch
+type ThreadControlRouteSend = AppServerSend
+
+const route_thread_control_request: ThreadControlRouteInput -> ThreadControlRoutePlan = (route: ThreadControlRouteInput) => {
+  let [session, id, method, params] = route
+  let decoded_method = if method == "thread/name/set" {
+    decode_thread_control_method(`SetThreadName (), params)
+  } else if method == "thread/increment_elicitation" {
+    decode_thread_control_method(`IncrementThreadElicitation (), params)
+  } else if method == "thread/decrement_elicitation" {
+    decode_thread_control_method(`DecrementThreadElicitation (), params)
+  } else {
+    `MethodError "unknown thread control method"
+  }
+
+  if let `MethodOk known_method = decoded_method {
+    let dispatch: ThreadControlRouteDispatch = [session, id, known_method]
+    `Dispatch dispatch
+  } else if let `MethodError message = decoded_method {
+    let send: ThreadControlRouteSend = [session, encode_error(id, "-32602", message)]
+    `Send send
+  } else {
+    `Drop ([session, "thread control method could not be decoded"])
+  }
+}
+
+return {
+  route_thread_control_request,
+}

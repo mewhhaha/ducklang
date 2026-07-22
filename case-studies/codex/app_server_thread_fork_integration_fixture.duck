@@ -1,0 +1,30 @@
+module () where
+
+const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { plan_decoded_thread_fork } = import "./app_server_thread_lifecycle.duck" ()
+const { decode_thread_fork } = import "./app_server_thread_methods.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+
+type FixtureDecodeResult = AppServerMethodDecodeResult
+type FixturePlanResult = AppServerThreadForkPlanResult
+
+let fields = json_object_empty()
+fields = json_object_prepend("deferGoalContinuation", json_bool(false), fields)
+fields = json_object_prepend("ephemeral", json_bool(false), fields)
+fields = json_object_prepend("lastTurnId", json_string("turn-2"), fields)
+fields = json_object_prepend("path", json_string("/rollouts/thread-1.jsonl"), fields)
+fields = json_object_prepend("threadId", json_string("thread-1"), fields)
+let decoded: FixtureDecodeResult = decode_thread_fork(json_object(fields))
+let score = if let `MethodOk method = decoded {
+  if let `ThreadFork params = method {
+    let planned: FixturePlanResult = plan_decoded_thread_fork(params)
+    if let `Ok plan = planned {
+      let persistence_valid = if let `PersistentThread () = plan.persistence { true } else { false }
+      let turns_valid = if let `TurnsIncluded () = plan.turns { true } else { false }
+      let continuation_valid = if let `GoalContinuationImmediate () = plan.goal_continuation { true } else { false }
+      if persistence_valid && turns_valid && continuation_valid { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = score }

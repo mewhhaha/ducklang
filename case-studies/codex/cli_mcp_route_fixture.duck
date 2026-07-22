@@ -1,0 +1,21 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_cli } = import "./cli.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+
+const args = comptime list(Text)
+let input: FixtureArgs = args.prepend("mcp", args.prepend("list", args.singleton("--json")))
+let plan: FixturePlan = parse_cli(input)
+let score = 0
+
+if let `ManageMcp command = plan {
+  if let `McpList json = command {
+    if json { score = 1 }
+  }
+}
+
+return { .score = score }

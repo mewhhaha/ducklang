@@ -1,0 +1,26 @@
+module () where
+
+const {} = import "./current_time_types.duck" ()
+const current_time_module = import "./current_time.duck"
+const { new_current_time_reminder_state, take_current_time_reminder } = current_time_module()
+
+type FixtureState = CurrentTimeReminderState
+
+let score = 0
+let state: FixtureState = new_current_time_reminder_state()
+let first = take_current_time_reminder(state, "window-1", 1781717655i64, 120i64, `AnyInference ())
+state = first.state
+if first.due { score = score + 1 }
+
+let early = take_current_time_reminder(state, "window-1", 1781717715i64, 120i64, `AnyInference ())
+state = early.state
+if !(early.due) { score = score + 10 }
+
+let elapsed = take_current_time_reminder(state, "window-1", 1781717775i64, 120i64, `AnyInference ())
+state = elapsed.state
+if elapsed.due { score = score + 100 }
+
+let backwards = take_current_time_reminder(state, "window-1", 1781717595i64, 0i64, `AnyInference ())
+if backwards.due { score = score + 1000 }
+
+return { .score = score }

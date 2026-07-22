@@ -1,0 +1,48 @@
+module (!init: Init) where
+
+const { list } = import "duck:prelude/list" ()
+const {} = import "./apply_patch_types.duck" ()
+const { run_apply_patch } = import "./apply_patch_execution.duck" ()
+
+type FixtureTexts = ApplyPatchTexts
+type FixtureChunk = ApplyPatchChunk
+type FixtureChunks = ApplyPatchChunks
+type FixtureAdd = ApplyPatchAdd
+type FixtureUpdate = ApplyPatchUpdate
+type FixtureHunk = ApplyPatchHunk
+type FixtureHunks = ApplyPatchHunks
+type FixtureDocument = ApplyPatchDocument
+
+const texts = comptime list(Text)
+const chunks = comptime list(FixtureChunk)
+const hunks = comptime list(FixtureHunk)
+
+let old_lines: FixtureTexts = texts.singleton("old")
+let new_lines: FixtureTexts = texts.singleton("new")
+let chunk: FixtureChunk = [.context = `None (), .old_lines = old_lines, .new_lines = new_lines, .end_of_file = false]
+let update_chunks: FixtureChunks = chunks.singleton(chunk)
+let update: FixtureUpdate = [.path = "old.txt", .move_path = `Some "moved/new.txt", .chunks = update_chunks]
+let addition: FixtureAdd = [.path = "added.txt", .content = "added\n"]
+let changes: FixtureHunks = hunks.prepend(`AddFile addition, hunks.prepend(`UpdateFile update, hunks.singleton(`DeleteFile "gone.txt")))
+let document: FixtureDocument = [.environment_id = `None (), .hunks = changes]
+
+let score: I32 = 0
+let result = run_apply_patch(document, "/repo")
+if let `PatchApplied output = result {
+  if output == "Success. Updated the following files:\nA added.txt\nM moved/new.txt\nD gone.txt\n" { score = score + 1 }
+}
+
+let partial_add: FixtureAdd = [.path = "partial.txt", .content = "partial\n"]
+let missing_old_lines: FixtureTexts = texts.singleton("old")
+let missing_new_lines: FixtureTexts = texts.singleton("new")
+let missing_chunk: FixtureChunk = [.context = `None (), .old_lines = missing_old_lines, .new_lines = missing_new_lines, .end_of_file = false]
+let missing_chunks: FixtureChunks = chunks.singleton(missing_chunk)
+let missing_update: FixtureUpdate = [.path = "missing.txt", .move_path = `None (), .chunks = missing_chunks]
+let partial_changes: FixtureHunks = hunks.prepend(`AddFile partial_add, hunks.singleton(`UpdateFile missing_update))
+let partial_document: FixtureDocument = [.environment_id = `None (), .hunks = partial_changes]
+let partial_result = run_apply_patch(partial_document, "/repo")
+if let `PatchRejected reason = partial_result {
+  if reason == "Failed to read file to update /repo/missing.txt" { score = score + 10 }
+}
+
+return { .score = score }

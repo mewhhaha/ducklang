@@ -1,0 +1,151 @@
+module () where
+
+const { parse_u32_decimal } = import "duck:prelude/numeric/parse" ()
+const { list, text_append, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type UtilityArgs = CodexCliArgs
+type UtilityCommandResult = CodexUtilityCommandResult
+type DoctorOptions = CodexDoctorOptions
+type ApplyTaskOptions = CodexApplyTaskOptions
+type ApplyTaskFacts = CodexApplyTaskFacts
+type ApplyTaskFactsResult = Result Text ApplyTaskFacts
+type ResponsesProxyOptions = CodexResponsesProxyOptions
+type ResponsesProxyFacts = CodexResponsesProxyFacts
+type ResponsesProxyFactsResult = Result Text ResponsesProxyFacts
+
+const texts = comptime list Text
+
+let rec scan_doctor_from: [UtilityArgs, DoctorOptions] -> UtilityCommandResult = (args: UtilityArgs, options: DoctorOptions) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--json" {
+      scan_doctor_from(tail, options :+ { .json = true })
+    } else if argument == "--summary" {
+      scan_doctor_from(tail, options :+ { .summary = true })
+    } else if argument == "--all" {
+      scan_doctor_from(tail, options :+ { .all = true })
+    } else if argument == "--no-color" {
+      scan_doctor_from(tail, options :+ { .no_color = true })
+    } else if argument == "--ascii" {
+      scan_doctor_from(tail, options :+ { .ascii = true })
+    } else {
+      `Err (text_append("unknown doctor option: ", argument))
+    }
+  } else {
+    `Ok (`RunDoctor options)
+  }
+}
+
+let parse_doctor_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
+  let initial: DoctorOptions = [.json = false, .summary = false, .all = false, .no_color = false, .ascii = false]
+  scan_doctor_from(args, initial)
+}
+
+let rec scan_apply_task_from: [UtilityArgs, ApplyTaskFacts] -> ApplyTaskFactsResult = (args: UtilityArgs, facts: ApplyTaskFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--config" || argument == "-c" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_apply_task_from(remaining, facts :+ { .config_overrides_reversed = texts.prepend(value, facts.config_overrides_reversed) })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown apply option: ", argument))
+    } else if let `None () = facts.task_id {
+      scan_apply_task_from(tail, facts :+ { .task_id = `Some argument })
+    } else {
+      `Err "apply accepts exactly one task id"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_apply_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
+  let initial: ApplyTaskFacts = [.task_id = `None (), .config_overrides_reversed = texts.empty()]
+  let scanned: ApplyTaskFactsResult = scan_apply_task_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    if let `Some task_id = facts.task_id {
+      let options: ApplyTaskOptions = [.task_id = task_id, .config_overrides = texts.reverse(facts.config_overrides_reversed)]
+      `Ok (`ApplyTask options)
+    } else {
+      `Err "apply requires a task id"
+    }
+  } else {
+    `Err "apply scanner returned an unknown result"
+  }
+}
+
+let rec scan_responses_proxy_from: [UtilityArgs, ResponsesProxyFacts] -> ResponsesProxyFactsResult = (args: UtilityArgs, facts: ResponsesProxyFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--port" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let parsed = parse_u32_decimal value
+        if let `Ok port = parsed {
+          if port <= 65535i64 {
+            scan_responses_proxy_from(remaining, facts :+ { .port = `Some port })
+          } else {
+            `Err "--port must be between 0 and 65535"
+          }
+        } else {
+          `Err "--port must be an integer between 0 and 65535"
+        }
+      } else {
+        `Err "missing value for --port"
+      }
+    } else if argument == "--server-info" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_responses_proxy_from(remaining, facts :+ { .server_info = `Some value })
+      } else {
+        `Err "missing value for --server-info"
+      }
+    } else if argument == "--http-shutdown" {
+      scan_responses_proxy_from(tail, facts :+ { .http_shutdown = true })
+    } else if argument == "--upstream-url" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_responses_proxy_from(remaining, facts :+ { .upstream_url = value })
+      } else {
+        `Err "missing value for --upstream-url"
+      }
+    } else if argument == "--dump-dir" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_responses_proxy_from(remaining, facts :+ { .dump_dir = `Some value })
+      } else {
+        `Err "missing value for --dump-dir"
+      }
+    } else {
+      `Err (text_append("unknown responses-api-proxy option: ", argument))
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_responses_proxy_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArgs) => {
+  let initial: ResponsesProxyFacts = [.port = `None (), .server_info = `None (), .http_shutdown = false, .upstream_url = "https://api.openai.com/v1/responses", .dump_dir = `None ()]
+  let scanned: ResponsesProxyFactsResult = scan_responses_proxy_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    let options: ResponsesProxyOptions = [.port = facts.port, .server_info = facts.server_info, .http_shutdown = facts.http_shutdown, .upstream_url = facts.upstream_url, .dump_dir = facts.dump_dir]
+    `Ok (`RunResponsesProxy options)
+  } else {
+    `Err "responses-api-proxy scanner returned an unknown result"
+  }
+}
+
+return {
+  parse_apply_options,
+  parse_doctor_options,
+  parse_responses_proxy_options,
+}

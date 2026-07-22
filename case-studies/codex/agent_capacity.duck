@@ -1,0 +1,29 @@
+module () where
+
+const {} = import "./agent_types.duck" ()
+
+type AgentCapacityVersion = AgentMultiAgentVersion
+type AgentCapacitySource = AgentSessionSource
+
+const next_spawn_depth = (current_depth: I32) => current_depth + 1
+const spawn_depth_allowed = (current_depth: I32, maximum_depth: I32) => next_spawn_depth current_depth <= maximum_depth
+
+const execution_capacity = (version: AgentCapacityVersion, source: AgentCapacitySource, active_turn: Bool, active_agents: I32, maximum_threads: I32) => {
+  if let `V2 () = version {
+    if let `SubAgent () = source {
+      if active_turn {
+        `CapacityAvailable ()
+      } else if active_agents < maximum_threads {
+        `CapacityAvailable ()
+      } else {
+        `AgentLimitReached maximum_threads
+      }
+    } else {
+      `CapacityAvailable ()
+    }
+  } else {
+    `CapacityAvailable ()
+  }
+}
+
+return { execution_capacity, next_spawn_depth, spawn_depth_allowed }

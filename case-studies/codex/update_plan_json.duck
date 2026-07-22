@@ -1,0 +1,24 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const { format_i32 } = import "duck:prelude/numeric" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./update_plan_types.duck" ()
+const { decode_update_plan_value, update_plan_parse_failure } = import "./update_plan_value.duck" ()
+
+type PlanJsonParseResult = UpdatePlanParseResult
+
+let parse_update_plan_args: Text -> PlanJsonParseResult = document => {
+  let parsed = parse_json_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    decode_update_plan_value value
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    update_plan_parse_failure(text_append([message, text_append([" at byte ", format_i32(position)])]))
+  } else {
+    update_plan_parse_failure "invalid JSON parse result"
+  }
+}
+
+return { parse_update_plan_args }

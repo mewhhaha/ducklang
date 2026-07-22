@@ -1,0 +1,43 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const {} = import "./code_mode_nested_tool_types.duck" ()
+const { code_mode_result } = import "./code_mode_result.duck" ()
+
+type FixtureContent = FunctionOutputContentItem
+type FixtureContentNode = FunctionOutputContentItemNode
+type FixtureContents = FunctionOutputContentItems
+type FixtureInput = CodeModeResultInput
+type FixtureJson = Json
+type FixtureJsonArray = JsonArray
+type FixtureJsonObject = JsonObject
+
+let score = 0
+
+let message_content: FixtureContent = `InputText "message"
+let message_node: FixtureContentNode = [message_content, `Nil ()]
+let message_contents: FixtureContents = `Cons message_node
+let message_input: FixtureInput = `ResultMessage message_contents
+if encode_json(code_mode_result message_input) == "\"message\"" { score = score + 1 }
+
+let text_input: FixtureInput = `ResultFunctionCall (`ResultTextBody "  ")
+if encode_json(code_mode_result text_input) == "\"  \"" { score = score + 10 }
+
+let content_input: FixtureInput = `ResultCustomCall (`ResultContentBody message_contents)
+if encode_json(code_mode_result content_input) == "\"message\"" { score = score + 100 }
+
+let tool_members: FixtureJsonObject = `Cons ([["name", `String "one"], `Nil ()])
+let tool: FixtureJson = `Object tool_members
+let tools: FixtureJsonArray = `Cons ([tool, `Nil ()])
+let search_input: FixtureInput = `ResultToolSearch tools
+if encode_json(code_mode_result search_input) == "[{\"name\":\"one\"}]" { score = score + 1000 }
+
+let mcp_members: FixtureJsonObject = `Cons ([["isError", `Bool false], `Nil ()])
+let mcp: FixtureJson = `Object mcp_members
+let mcp_input: FixtureInput = `ResultMcpCall mcp
+if encode_json(code_mode_result mcp_input) == "{\"isError\":false}" { score = score + 10000 }
+
+let json_output: FixtureInput = `ResultJsonToolOutput (`Number "42")
+if encode_json(code_mode_result json_output) == "42" { score = score + 100000 }
+
+return { .score = score }

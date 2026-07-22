@@ -1,0 +1,87 @@
+module () where
+
+type AgentTextOption =
+  | `None Unit
+  | `Some Text
+type AgentI64Option =
+  | `None Unit
+  | `Some I64
+
+type AgentStatus =
+  | `PendingInit Unit
+  | `Running Unit
+  | `Interrupted Unit
+  | `Completed AgentTextOption
+  | `Errored Text
+  | `Shutdown Unit
+  | `NotFound Unit
+
+type AgentEvent =
+  | `TurnStarted Unit
+  | `TurnComplete AgentTextOption
+  | `TurnInterrupted Unit
+  | `TurnBudgetLimited Unit
+  | `TurnAborted Text
+  | `AgentError Text
+  | `ShutdownComplete Unit
+  | `Unrelated Unit
+
+type AgentStatusChange =
+  | `StatusChanged AgentStatus
+  | `StatusUnchanged Unit
+
+type AgentMultiAgentVersion =
+  | `Disabled Unit
+  | `V1 Unit
+  | `V2 Unit
+
+type AgentSessionSource =
+  | `Root Unit
+  | `SubAgent Unit
+
+type AgentCapacityDecision =
+  | `CapacityAvailable Unit
+  | `AgentLimitReached I32
+
+type AgentInputValidation =
+  | `InputAccepted Text
+  | `InputRejected Text
+
+type AgentTimeoutDecision =
+  | `Timeout I64
+  | `InvalidTimeout Text
+
+type AgentStatusEntry = [Text, AgentStatus]
+type AgentStatusEntryNode = [AgentStatusEntry, AgentStatusEntries]
+type AgentStatusEntries =
+  | `Nil Unit
+  | `Cons AgentStatusEntryNode
+type AgentWaitOutcome = [AgentStatusEntries, Bool]
+
+type AgentIdNode = [Text, AgentIds]
+type AgentIds =
+  | `Nil Unit
+  | `Cons AgentIdNode
+
+type AgentSpawnRequest = [Text, Text]
+type AgentSpawnSnapshot = [Text, Text, AgentStatus]
+type AgentSendRequest = [Text, Text]
+type AgentWaitRequest = [AgentIds, I64]
+type AgentWaitSnapshot = [AgentStatusEntries, Bool]
+
+type AgentRecord = [Text, Text, AgentTextOption, AgentTextOption, AgentStatus, Bool, Bool]
+type AgentRecordNode = [AgentRecord, AgentRecords]
+type AgentRecords =
+  | `Nil Unit
+  | `Cons AgentRecordNode
+
+type AgentResidencyDecision =
+  | `ResidencyAvailable Unit
+  | `UnloadResident Text
+  | `ResidencyLimitReached I32
+
+type AgentPathResolution =
+  | `Path Text
+  | `InvalidPath Text
+
+return {}

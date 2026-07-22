@@ -1,0 +1,26 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_common_types.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ()
+const {} = import "./agent_job_csv_types.duck" ()
+const {} = import "./agent_job_item_types.duck" ()
+
+type AgentJobPreparedJob = struct {
+  .job_id = Text,
+  .name = Text,
+  .instruction = Text,
+  .headers = AgentJobTexts,
+  .input_path = Text,
+  .output_path = Text,
+  .output_schema_json = AgentJobTextOption,
+  .max_concurrency = I32,
+  .max_runtime_seconds = AgentJobTextOption,
+  .items = AgentJobPreparedItems,
+}
+
+type AgentJobPreparationResult =
+  | `JobPrepared AgentJobPreparedJob
+  | `JobPreparationFailed Text
+
+return {}

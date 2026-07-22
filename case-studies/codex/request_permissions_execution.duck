@@ -1,0 +1,30 @@
+module () where
+
+const {} = import "./request_permissions_types.duck" ()
+const { encode_request_permissions_response } = import "./request_permissions_output.duck" ()
+const { normalize_request_permissions_response, request_permissions_grant_application } = import "./request_permissions_policy.duck" ()
+
+type ExecutionPermissionsCompletion = RequestPermissionsCompletion
+type ExecutionPermissionsExecutionResult = RequestPermissionsExecutionResult
+type ExecutionPermissionsHostResponse = RequestPermissionsHostResponse
+type ExecutionPermissionsProfile = RequestPermissionProfile
+type ExecutionPermissionsResponse = RequestPermissionsResponse
+
+let complete_request_permissions_response: [ExecutionPermissionsProfile, Text, ExecutionPermissionsResponse] -> ExecutionPermissionsExecutionResult = (requested: ExecutionPermissionsProfile, environment_id: Text, response: ExecutionPermissionsResponse) => {
+  let normalized = normalize_request_permissions_response(requested, response)
+  let completion: ExecutionPermissionsCompletion = [.output = encode_request_permissions_response(normalized), .grant = request_permissions_grant_application(environment_id, normalized)]
+  `Completed completion
+}
+
+let finish_request_permissions: [ExecutionPermissionsProfile, Text, ExecutionPermissionsHostResponse] -> ExecutionPermissionsExecutionResult = (requested: ExecutionPermissionsProfile, environment_id: Text, host_response: ExecutionPermissionsHostResponse) => {
+  if let `Answered response = host_response {
+    complete_request_permissions_response(requested, environment_id, response)
+  } else {
+    `Rejected "request_permissions was cancelled before receiving a response"
+  }
+}
+
+return {
+  complete_request_permissions_response,
+  finish_request_permissions,
+}

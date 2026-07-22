@@ -1,0 +1,109 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type InstallTextOption =
+  | `InstallTextMissing Unit
+  | `InstallTextPresent Text
+type InstallTextNode = [Text, InstallTexts]
+type InstallTexts =
+  | `Nil Unit
+  | `Cons InstallTextNode
+
+type DiscoverableToolType =
+  | `Connector Unit
+  | `Plugin Unit
+
+type DiscoverableToolAction =
+  | `Install Unit
+  | `Enable Unit
+
+type PluginInstallCandidate = struct {
+  .id = Text,
+  .name = Text,
+  .description = InstallTextOption,
+  .tool_type = DiscoverableToolType,
+  .has_skills = Bool,
+  .mcp_server_names = InstallTexts,
+  .app_connector_ids = InstallTexts,
+  .install_url = InstallTextOption,
+  .remote_plugin_id = InstallTextOption,
+}
+
+type PluginInstallCandidates = List PluginInstallCandidate
+type PluginInstallCandidateOption =
+  | `InstallCandidateMissing Unit
+  | `InstallCandidatePresent PluginInstallCandidate
+
+type ToolSuggestPresentation =
+  | `ListTool Unit
+  | `RecommendationContext Unit
+
+type ListPluginInstallPayload = Bool
+
+type ListPluginInstallCallPlan =
+  | `ReturnCandidates Text
+  | `RejectRequest Text
+
+type RequestPluginInstallListArgs = struct {
+  .tool_type = DiscoverableToolType,
+  .action_type = DiscoverableToolAction,
+  .tool_id = Text,
+  .suggest_reason = Text,
+}
+
+type RequestPluginInstallRecommendedArgs = struct {
+  .plugin_id = Text,
+  .suggest_reason = Text,
+}
+
+type RequestPluginInstallPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type RequestPluginInstallParseResult =
+  | `ListArgs RequestPluginInstallListArgs
+  | `RecommendedArgs RequestPluginInstallRecommendedArgs
+  | `ParseFailed Text
+
+type RequestPluginInstallListParseResult =
+  | `Parsed RequestPluginInstallListArgs
+  | `ParseFailed Text
+
+type RequestPluginInstallRecommendedParseResult =
+  | `Parsed RequestPluginInstallRecommendedArgs
+  | `ParseFailed Text
+
+type RequestPluginInstallHostRequest = struct {
+  .suggestion_id = Text,
+  .suggest_reason = Text,
+  .candidate = PluginInstallCandidate,
+}
+
+type PluginInstallElicitationAction =
+  | `Accept Unit
+  | `Decline Unit
+  | `Cancel Unit
+  | `Unavailable Unit
+
+type RequestPluginInstallHostResponse = struct {
+  .sent = Bool,
+  .action = PluginInstallElicitationAction,
+  .persist_always = Bool,
+  .verified = Bool,
+}
+
+type RequestPluginInstallPlan =
+  | `Elicit RequestPluginInstallHostRequest
+  | `RespondToModel Text
+  | `Fatal Text
+
+type RequestPluginInstallCompletion = struct {
+  .output = Text,
+  .persist_disabled = Bool,
+  .merge_connector = Bool,
+  .record_telemetry = Bool,
+  .response_action = Text,
+}
+
+return {}

@@ -1,0 +1,672 @@
+module () where
+
+const { json_object_get } = import "duck:prelude/json" ()
+const { list, text_get, text_length } = import "duck:prelude/functional" ()
+const {} = import "./app_server_types.duck" ()
+const { decode_thread_archive, decode_thread_compact_start, decode_thread_delete, decode_thread_fork, decode_thread_items_list, decode_thread_metadata_update, decode_thread_resume, decode_thread_settings_update, decode_thread_start, decode_thread_turns_list, decode_thread_unarchive, decode_thread_unsubscribe } = import "./app_server_thread_methods.duck" ()
+const { decode_thread_control_method } = import "./app_server_thread_control_methods.duck" ()
+const { decode_thread_goal_clear, decode_thread_goal_get, decode_thread_goal_set } = import "./app_server_goal_methods.duck" ()
+
+type MethodJson = AppServerJson
+type MethodJsonObject = JsonObject
+type MethodJsonArray = JsonArray
+type MethodJsonLookup = JsonLookupResult
+type MethodTextOption = AppServerTextOption
+type MethodI32Option = AppServerI32Option
+type MethodBoolOption = AppServerBoolOption
+type MethodTexts = AppServerTexts
+type MethodThreadSortKey = AppServerThreadSortKey
+type MethodSortDirection = AppServerSortDirection
+type MethodThreadSourceKind = AppServerThreadSourceKind
+type MethodThreadSourceKinds = AppServerThreadSourceKinds
+type MethodThreadListParams = AppServerThreadListParams
+type MethodThreadReadParams = AppServerThreadReadParams
+type MethodUserInput = AppServerUserInput
+type MethodUserInputs = AppServerUserInputs
+type MethodTurnStartParams = AppServerTurnStartParams
+type MethodTurnSteerParams = AppServerTurnSteerParams
+type MethodTurnInterruptParams = AppServerTurnInterruptParams
+type MethodUnknown = AppServerUnknownMethod
+type Method = AppServerMethod
+type MethodDecodeResult = AppServerMethodDecodeResult
+type MethodTextResult = Result Text Text
+type MethodTextOptionResult = Result Text MethodTextOption
+type MethodI32Result = Result Text I32
+type MethodI32OptionResult = Result Text MethodI32Option
+type MethodBoolResult = Result Text Bool
+type MethodBoolOptionResult = Result Text MethodBoolOption
+type MethodTextsResult = Result Text MethodTexts
+type MethodThreadSortKeyResult = Result Text MethodThreadSortKey
+type MethodSortDirectionResult = Result Text MethodSortDirection
+type MethodThreadSourceKindResult = Result Text MethodThreadSourceKind
+type MethodThreadSourceKindsResult = Result Text MethodThreadSourceKinds
+type MethodUserInputResult = Result Text MethodUserInput
+type MethodUserInputsResult = Result Text MethodUserInputs
+
+const texts = comptime list(Text)
+const source_kinds = comptime list(MethodThreadSourceKind)
+const user_inputs = comptime list(MethodUserInput)
+
+const missing_text: () -> MethodTextOption = () => `None ()
+const missing_i32: () -> MethodI32Option = () => `None ()
+const missing_bool: () -> MethodBoolOption = () => `None ()
+
+const required_text: [MethodJsonObject, Text, Text] -> MethodTextResult = (object: MethodJsonObject, key: Text, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `String text = value {
+      `Ok text
+    } else {
+      `Err (context <> "." <> key <> " must be a string")
+    }
+  } else {
+    `Err (context <> "." <> key <> " is required")
+  }
+}
+
+const optional_text: [MethodJsonObject, Text, Text] -> MethodTextOptionResult = (object: MethodJsonObject, key: Text, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (missing_text())
+    } else if let `String text = value {
+      `Ok (`Some text)
+    } else {
+      `Err (context <> "." <> key <> " must be a string or null")
+    }
+  } else {
+    `Ok (missing_text())
+  }
+}
+
+const optional_bool: [MethodJsonObject, Text, Text] -> MethodBoolOptionResult = (object: MethodJsonObject, key: Text, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (missing_bool())
+    } else if let `Bool boolean = value {
+      `Ok (`Some boolean)
+    } else {
+      `Err (context <> "." <> key <> " must be a boolean or null")
+    }
+  } else {
+    `Ok (missing_bool())
+  }
+}
+
+const default_bool: [MethodJsonObject, Text, Text, Bool] -> MethodBoolResult = (object: MethodJsonObject, key: Text, context: Text, fallback: Bool) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Bool boolean = value {
+      `Ok boolean
+    } else {
+      `Err (context <> "." <> key <> " must be a boolean")
+    }
+  } else {
+    `Ok fallback
+  }
+}
+
+const json_nonnegative_i32: MethodJson -> MethodI32Result = (value: MethodJson) => {
+  if let `Number number = value {
+    let valid = text_length(number) > 0
+    let parsed = 0
+    let exceeds_i32 = false
+    let index = 0
+
+    loop {
+      if index >= text_length(number) { break }
+      let byte = text_get([number, index])
+
+      if byte < 48 || byte > 57 {
+        valid = false
+      } else if valid {
+        let digit = byte - 48
+        if parsed > 214748364 || parsed == 214748364 && digit > 7 {
+          valid = false
+          exceeds_i32 = true
+        } else {
+          parsed = parsed * 10 + digit
+        }
+      }
+
+      index = index + 1
+    }
+
+    if valid {
+      `Ok parsed
+    } else if exceeds_i32 {
+      `Err "number exceeds I32"
+    } else {
+      `Err "must be a non-negative integer"
+    }
+  } else {
+    `Err "must be a non-negative integer"
+  }
+}
+
+const optional_i32: [MethodJsonObject, Text, Text] -> MethodI32OptionResult = (object: MethodJsonObject, key: Text, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (missing_i32())
+    } else {
+      let decoded = json_nonnegative_i32(value)
+      if let `Ok number = decoded {
+        `Ok (`Some number)
+      } else if let `Err reason = decoded {
+        `Err (context <> "." <> key <> " " <> reason)
+      } else {
+        `Err (context <> "." <> key <> " could not be decoded")
+      }
+    }
+  } else {
+    `Ok (missing_i32())
+  }
+}
+
+let rec decode_text_values: [MethodJsonArray, MethodTexts, Text] -> MethodTextsResult = (values: MethodJsonArray, reversed: MethodTexts, context: Text) => {
+  if let `Cons node = values {
+    let [value, tail] = node
+
+    if let `String text = value {
+      decode_text_values(tail, texts.prepend(text, reversed), context)
+    } else {
+      `Err (context <> " must contain only strings")
+    }
+  } else {
+    `Ok (texts.reverse reversed)
+  }
+}
+
+const optional_texts: [MethodJsonObject, Text, Text] -> MethodTextsResult = (object: MethodJsonObject, key: Text, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (texts.empty())
+    } else if let `Array values = value {
+      decode_text_values(values, texts.empty(), context <> "." <> key)
+    } else {
+      `Err (context <> "." <> key <> " must be an array or null")
+    }
+  } else {
+    `Ok (texts.empty())
+  }
+}
+
+const optional_cwd: [MethodJsonObject, Text] -> MethodTextsResult = (object: MethodJsonObject, context: Text) => {
+  let lookup: MethodJsonLookup = json_object_get("cwd", object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (texts.empty())
+    } else if let `String cwd = value {
+      `Ok (texts.singleton cwd)
+    } else if let `Array values = value {
+      decode_text_values(values, texts.empty(), context <> ".cwd")
+    } else {
+      `Err (context <> ".cwd must be a string, array, or null")
+    }
+  } else {
+    `Ok (texts.empty())
+  }
+}
+
+const decode_sort_key: MethodJsonObject -> MethodThreadSortKeyResult = (object: MethodJsonObject) => {
+  let lookup: MethodJsonLookup = json_object_get("sortKey", object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (`CreatedAt ())
+    } else if let `String key = value {
+      if key == "created_at" {
+        `Ok (`CreatedAt ())
+      } else if key == "updated_at" {
+        `Ok (`UpdatedAt ())
+      } else if key == "recency_at" {
+        `Ok (`RecencyAt ())
+      } else {
+        `Err ("thread/list.params.sortKey has unknown value " <> key)
+      }
+    } else {
+      `Err "thread/list.params.sortKey must be a string or null"
+    }
+  } else {
+    `Ok (`CreatedAt ())
+  }
+}
+
+const decode_sort_direction: MethodJsonObject -> MethodSortDirectionResult = (object: MethodJsonObject) => {
+  let lookup: MethodJsonLookup = json_object_get("sortDirection", object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (`Descending ())
+    } else if let `String direction = value {
+      if direction == "asc" {
+        `Ok (`Ascending ())
+      } else if direction == "desc" {
+        `Ok (`Descending ())
+      } else {
+        `Err ("thread/list.params.sortDirection has unknown value " <> direction)
+      }
+    } else {
+      `Err "thread/list.params.sortDirection must be a string or null"
+    }
+  } else {
+    `Ok (`Descending ())
+  }
+}
+
+const source_kind_from_text: Text -> MethodThreadSourceKindResult = (value: Text) => {
+  if value == "cli" {
+    `Ok (`Cli ())
+  } else if value == "vscode" {
+    `Ok (`VsCode ())
+  } else if value == "exec" {
+    `Ok (`Exec ())
+  } else if value == "appServer" {
+    `Ok (`AppServer ())
+  } else if value == "subAgent" {
+    `Ok (`SubAgent ())
+  } else if value == "subAgentReview" {
+    `Ok (`SubAgentReview ())
+  } else if value == "subAgentCompact" {
+    `Ok (`SubAgentCompact ())
+  } else if value == "subAgentThreadSpawn" {
+    `Ok (`SubAgentThreadSpawn ())
+  } else if value == "subAgentOther" {
+    `Ok (`SubAgentOther ())
+  } else if value == "unknown" {
+    `Ok (`Unknown ())
+  } else {
+    `Err ("thread/list.params.sourceKinds has unknown value " <> value)
+  }
+}
+
+let rec decode_source_kind_values: [MethodJsonArray, MethodThreadSourceKinds] -> MethodThreadSourceKindsResult = (values: MethodJsonArray, reversed: MethodThreadSourceKinds) => {
+  if let `Cons node = values {
+    let [value, tail] = node
+
+    if let `String text = value {
+      let decoded = source_kind_from_text(text)
+      if let `Ok source_kind = decoded {
+        decode_source_kind_values(tail, source_kinds.prepend(source_kind, reversed))
+      } else if let `Err reason = decoded {
+        `Err reason
+      } else {
+        `Err "thread/list.params.sourceKinds could not be decoded"
+      }
+    } else {
+      `Err "thread/list.params.sourceKinds must contain only strings"
+    }
+  } else {
+    `Ok (source_kinds.reverse reversed)
+  }
+}
+
+const decode_source_kinds: MethodJsonObject -> MethodThreadSourceKindsResult = (object: MethodJsonObject) => {
+  let lookup: MethodJsonLookup = json_object_get("sourceKinds", object)
+
+  if let `Found value = lookup {
+    if let `Null () = value {
+      `Ok (source_kinds.empty())
+    } else if let `Array values = value {
+      decode_source_kind_values(values, source_kinds.empty())
+    } else {
+      `Err "thread/list.params.sourceKinds must be an array or null"
+    }
+  } else {
+    `Ok (source_kinds.empty())
+  }
+}
+
+const decode_thread_list: MethodJson -> MethodDecodeResult = (params: MethodJson) => {
+  if let `Object object = params {
+    let cursor = optional_text(object, "cursor", "thread/list.params")
+    let limit = optional_i32(object, "limit", "thread/list.params")
+    let sort_key = decode_sort_key(object)
+    let sort_direction = decode_sort_direction(object)
+    let model_providers = optional_texts(object, "modelProviders", "thread/list.params")
+    let kinds = decode_source_kinds(object)
+    let archived = optional_bool(object, "archived", "thread/list.params")
+    let cwd = optional_cwd(object, "thread/list.params")
+    let state_db_only = default_bool(object, "useStateDbOnly", "thread/list.params", false)
+    let search_term = optional_text(object, "searchTerm", "thread/list.params")
+    let parent = optional_text(object, "parentThreadId", "thread/list.params")
+    let ancestor = optional_text(object, "ancestorThreadId", "thread/list.params")
+
+    if let `Err reason = cursor {
+      `MethodError reason
+    } else if let `Err reason = limit {
+      `MethodError reason
+    } else if let `Err reason = sort_key {
+      `MethodError reason
+    } else if let `Err reason = sort_direction {
+      `MethodError reason
+    } else if let `Err reason = model_providers {
+      `MethodError reason
+    } else if let `Err reason = kinds {
+      `MethodError reason
+    } else if let `Err reason = archived {
+      `MethodError reason
+    } else if let `Err reason = cwd {
+      `MethodError reason
+    } else if let `Err reason = state_db_only {
+      `MethodError reason
+    } else if let `Err reason = search_term {
+      `MethodError reason
+    } else if let `Err reason = parent {
+      `MethodError reason
+    } else if let `Err reason = ancestor {
+      `MethodError reason
+    } else if let `Ok parent_id = parent {
+      if let `Ok ancestor_id = ancestor {
+        let both_relations = false
+        if let `Some _ = parent_id {
+          if let `Some _ = ancestor_id { both_relations = true }
+        }
+
+        if both_relations {
+          `MethodError "thread/list.params.parentThreadId and ancestorThreadId are mutually exclusive"
+        } else if let `Ok cursor_value = cursor {
+          if let `Ok limit_value = limit {
+            if let `Ok sort_key_value = sort_key {
+              if let `Ok sort_direction_value = sort_direction {
+                if let `Ok provider_values = model_providers {
+                  if let `Ok kind_values = kinds {
+                    if let `Ok archived_value = archived {
+                      if let `Ok cwd_values = cwd {
+                        if let `Ok state_db_value = state_db_only {
+                          if let `Ok search_value = search_term {
+                            let decoded: MethodThreadListParams = [cursor_value, limit_value, sort_key_value, sort_direction_value, provider_values, kind_values, archived_value, cwd_values, state_db_value, search_value, parent_id, ancestor_id]
+                            `MethodOk (`ThreadList decoded)
+                          } else { `MethodError "thread/list.params.searchTerm could not be decoded" }
+                        } else { `MethodError "thread/list.params.useStateDbOnly could not be decoded" }
+                      } else { `MethodError "thread/list.params.cwd could not be decoded" }
+                    } else { `MethodError "thread/list.params.archived could not be decoded" }
+                  } else { `MethodError "thread/list.params.sourceKinds could not be decoded" }
+                } else { `MethodError "thread/list.params.modelProviders could not be decoded" }
+              } else { `MethodError "thread/list.params.sortDirection could not be decoded" }
+            } else { `MethodError "thread/list.params.sortKey could not be decoded" }
+          } else { `MethodError "thread/list.params.limit could not be decoded" }
+        } else { `MethodError "thread/list.params.cursor could not be decoded" }
+      } else { `MethodError "thread/list.params.ancestorThreadId could not be decoded" }
+    } else {
+      `MethodError "thread/list.params.parentThreadId could not be decoded"
+    }
+  } else {
+    `MethodError "thread/list.params must be an object"
+  }
+}
+
+const decode_thread_read: MethodJson -> MethodDecodeResult = (params: MethodJson) => {
+  if let `Object object = params {
+    let thread_id = required_text(object, "threadId", "thread/read.params")
+    let include_turns = default_bool(object, "includeTurns", "thread/read.params", false)
+
+    if let `Err reason = thread_id {
+      `MethodError reason
+    } else if let `Err reason = include_turns {
+      `MethodError reason
+    } else if let `Ok id = thread_id {
+      if let `Ok include_turns_value = include_turns {
+        let decoded: MethodThreadReadParams = [id, include_turns_value]
+        `MethodOk (`ThreadRead decoded)
+      } else { `MethodError "thread/read.params.includeTurns could not be decoded" }
+    } else {
+      `MethodError "thread/read.params.threadId could not be decoded"
+    }
+  } else {
+    `MethodError "thread/read.params must be an object"
+  }
+}
+
+const decode_user_input: MethodJson -> MethodUserInputResult = (value: MethodJson) => {
+  if let `Object object = value {
+    let input_type = required_text(object, "type", "turn/start.params.input entry")
+
+    if let `Err reason = input_type {
+      `Err reason
+    } else if let `Ok kind = input_type {
+      if kind == "text" {
+        let text = required_text(object, "text", "turn/start.params.input text")
+        if let `Ok content = text {
+          let text_elements: MethodJson = `Array (`Nil ())
+          let lookup: MethodJsonLookup = json_object_get("textElements", object)
+          if let `Found elements = lookup { text_elements = elements }
+          if let `Array _ = text_elements { `Ok (`TextInput ([content, text_elements])) } else { `Err "turn/start.params.input text.textElements must be an array" }
+        } else if let `Err reason = text { `Err reason } else { `Err "turn/start.params.input text could not be decoded" }
+      } else if kind == "image" || kind == "localImage" {
+        let field = if kind == "image" { "url" } else { "path" }
+        let location = required_text(object, field, "turn/start.params.input image")
+        let detail = optional_text(object, "detail", "turn/start.params.input image")
+        if let `Err reason = location { `Err reason } else if let `Err reason = detail { `Err reason } else if let `Ok place = location {
+          if let `Ok detail_value = detail {
+            if kind == "image" { `Ok (`ImageInput ([detail_value, place])) } else { `Ok (`LocalImageInput ([detail_value, place])) }
+          } else { `Err "turn/start.params.input image.detail could not be decoded" }
+        } else { `Err "turn/start.params.input image location could not be decoded" }
+      } else if kind == "audio" || kind == "localAudio" {
+        let field = if kind == "audio" { "url" } else { "path" }
+        let location = required_text(object, field, "turn/start.params.input audio")
+        if let `Ok place = location {
+          if kind == "audio" { `Ok (`AudioInput place) } else { `Ok (`LocalAudioInput place) }
+        } else if let `Err reason = location { `Err reason } else { `Err "turn/start.params.input audio location could not be decoded" }
+      } else if kind == "skill" || kind == "mention" {
+        let name = required_text(object, "name", "turn/start.params.input reference")
+        let path = required_text(object, "path", "turn/start.params.input reference")
+        if let `Err reason = name { `Err reason } else if let `Err reason = path { `Err reason } else if let `Ok reference_name = name {
+          if let `Ok reference_path = path {
+            if kind == "skill" { `Ok (`SkillInput ([reference_name, reference_path])) } else { `Ok (`MentionInput ([reference_name, reference_path])) }
+          } else { `Err "turn/start.params.input reference.path could not be decoded" }
+        } else { `Err "turn/start.params.input reference.name could not be decoded" }
+      } else {
+        `Err ("turn/start.params.input has unknown type " <> kind)
+      }
+    } else {
+      `Err "turn/start.params.input type could not be decoded"
+    }
+  } else {
+    `Err "turn/start.params.input entries must be objects"
+  }
+}
+
+let rec decode_user_inputs: [MethodJsonArray, MethodUserInputs] -> MethodUserInputsResult = (values: MethodJsonArray, reversed: MethodUserInputs) => {
+  if let `Cons node = values {
+    let [value, tail] = node
+    let decoded = decode_user_input(value)
+
+    if let `Ok input = decoded {
+      decode_user_inputs(tail, user_inputs.prepend(input, reversed))
+    } else if let `Err reason = decoded {
+      `Err reason
+    } else {
+      `Err "turn/start.params.input entry could not be decoded"
+    }
+  } else {
+    `Ok (user_inputs.reverse reversed)
+  }
+}
+
+const decode_turn_start: MethodJson -> MethodDecodeResult = (params: MethodJson) => {
+  if let `Object object = params {
+    let thread_id = required_text(object, "threadId", "turn/start.params")
+    let client_id = optional_text(object, "clientUserMessageId", "turn/start.params")
+    let input_lookup: MethodJsonLookup = json_object_get("input", object)
+    let inputs: MethodUserInputsResult = `Err "turn/start.params.input is required"
+
+    if let `Found input_value = input_lookup {
+      if let `Array values = input_value {
+        inputs = decode_user_inputs(values, user_inputs.empty())
+      } else {
+        inputs = `Err "turn/start.params.input must be an array"
+      }
+    }
+
+    if let `Err reason = thread_id {
+      `MethodError reason
+    } else if let `Err reason = client_id {
+      `MethodError reason
+    } else if let `Err reason = inputs {
+      `MethodError reason
+    } else if let `Ok id = thread_id {
+      if let `Ok client_id_value = client_id {
+        if let `Ok input_values = inputs {
+          let decoded: MethodTurnStartParams = [id, client_id_value, input_values, params]
+          `MethodOk (`TurnStart decoded)
+        } else { `MethodError "turn/start.params.input could not be decoded" }
+      } else { `MethodError "turn/start.params.clientUserMessageId could not be decoded" }
+    } else {
+      `MethodError "turn/start.params.threadId could not be decoded"
+    }
+  } else {
+    `MethodError "turn/start.params must be an object"
+  }
+}
+
+const decode_turn_steer: MethodJson -> MethodDecodeResult = (params: MethodJson) => {
+  if let `Object object = params {
+    let thread_id = required_text(object, "threadId", "turn/steer.params")
+    let expected_turn_id = required_text(object, "expectedTurnId", "turn/steer.params")
+    let client_id = optional_text(object, "clientUserMessageId", "turn/steer.params")
+    let input_lookup: MethodJsonLookup = json_object_get("input", object)
+    let inputs: MethodUserInputsResult = `Err "turn/steer.params.input is required"
+
+    if let `Found input_value = input_lookup {
+      if let `Array values = input_value {
+        inputs = decode_user_inputs(values, user_inputs.empty())
+      } else {
+        inputs = `Err "turn/steer.params.input must be an array"
+      }
+    }
+
+    if let `Err reason = thread_id {
+      `MethodError reason
+    } else if let `Err reason = expected_turn_id {
+      `MethodError reason
+    } else if let `Err reason = client_id {
+      `MethodError reason
+    } else if let `Err reason = inputs {
+      `MethodError reason
+    } else if let `Ok id = thread_id {
+      if let `Ok expected = expected_turn_id {
+        if let `Ok client_id_value = client_id {
+          if let `Ok input_values = inputs {
+            let decoded: MethodTurnSteerParams = [id, expected, client_id_value, input_values, params]
+            `MethodOk (`TurnSteer decoded)
+          } else { `MethodError "turn/steer.params.input could not be decoded" }
+        } else { `MethodError "turn/steer.params.clientUserMessageId could not be decoded" }
+      } else { `MethodError "turn/steer.params.expectedTurnId could not be decoded" }
+    } else {
+      `MethodError "turn/steer.params.threadId could not be decoded"
+    }
+  } else {
+    `MethodError "turn/steer.params must be an object"
+  }
+}
+
+const decode_turn_interrupt: MethodJson -> MethodDecodeResult = (params: MethodJson) => {
+  if let `Object object = params {
+    let thread_id = required_text(object, "threadId", "turn/interrupt.params")
+    let turn_id = required_text(object, "turnId", "turn/interrupt.params")
+
+    if let `Err reason = thread_id {
+      `MethodError reason
+    } else if let `Err reason = turn_id {
+      `MethodError reason
+    } else if let `Ok thread = thread_id {
+      if let `Ok turn = turn_id {
+        let decoded: MethodTurnInterruptParams = [thread, turn]
+        `MethodOk (`TurnInterrupt decoded)
+      } else { `MethodError "turn/interrupt.params.turnId could not be decoded" }
+    } else {
+      `MethodError "turn/interrupt.params.threadId could not be decoded"
+    }
+  } else {
+    `MethodError "turn/interrupt.params must be an object"
+  }
+}
+
+const decode_app_server_method: [Text, MethodJson] -> MethodDecodeResult = (name: Text, params: MethodJson) => {
+  if name == "thread/list" {
+    decode_thread_list(params)
+  } else if name == "thread/read" {
+    decode_thread_read(params)
+  } else if name == "thread/start" {
+    decode_thread_start(params)
+  } else if name == "thread/resume" {
+    decode_thread_resume(params)
+  } else if name == "thread/fork" {
+    decode_thread_fork(params)
+  } else if name == "thread/archive" {
+    decode_thread_archive(params)
+  } else if name == "thread/unarchive" {
+    decode_thread_unarchive(params)
+  } else if name == "thread/delete" {
+    decode_thread_delete(params)
+  } else if name == "thread/unsubscribe" {
+    decode_thread_unsubscribe(params)
+  } else if name == "thread/compact/start" {
+    decode_thread_compact_start(params)
+  } else if name == "thread/metadata/update" {
+    decode_thread_metadata_update(params)
+  } else if name == "thread/settings/update" {
+    decode_thread_settings_update(params)
+  } else if name == "thread/turns/list" {
+    decode_thread_turns_list(params)
+  } else if name == "thread/items/list" {
+    decode_thread_items_list(params)
+  } else if name == "thread/name/set" {
+    decode_thread_control_method(`SetThreadName (), params)
+  } else if name == "thread/increment_elicitation" {
+    decode_thread_control_method(`IncrementThreadElicitation (), params)
+  } else if name == "thread/decrement_elicitation" {
+    decode_thread_control_method(`DecrementThreadElicitation (), params)
+  } else if name == "thread/goal/set" {
+    decode_thread_goal_set(params)
+  } else if name == "thread/goal/get" {
+    decode_thread_goal_get(params)
+  } else if name == "thread/goal/clear" {
+    decode_thread_goal_clear(params)
+  } else if name == "turn/start" {
+    decode_turn_start(params)
+  } else if name == "turn/steer" {
+    decode_turn_steer(params)
+  } else if name == "turn/interrupt" {
+    decode_turn_interrupt(params)
+  } else {
+    let unknown: MethodUnknown = [name, params]
+    `MethodOk (`UnknownMethod unknown)
+  }
+}
+
+return {
+  decode_app_server_method,
+  decode_thread_list,
+  decode_thread_read,
+  decode_thread_start,
+  decode_thread_resume,
+  decode_thread_fork,
+  decode_thread_archive,
+  decode_thread_unarchive,
+  decode_thread_delete,
+  decode_thread_unsubscribe,
+  decode_thread_compact_start,
+  decode_thread_metadata_update,
+  decode_thread_settings_update,
+  decode_thread_turns_list,
+  decode_thread_items_list,
+  decode_thread_control_method,
+  decode_thread_goal_set,
+  decode_thread_goal_get,
+  decode_thread_goal_clear,
+  decode_turn_start,
+  decode_turn_steer,
+  decode_turn_interrupt,
+}

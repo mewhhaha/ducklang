@@ -1,0 +1,62 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+const {} = import "./tool_search_policy_types.duck" ()
+
+type ToolSearchTextOption = Option Text
+
+type ToolSearchSourceInfo = struct {
+  .name = Text,
+  .description = ToolSearchTextOption,
+}
+type ToolSearchSourceInfoNode = [ToolSearchSourceInfo, ToolSearchSourceInfos]
+type ToolSearchSourceInfos =
+  | `Nil Unit
+  | `Cons ToolSearchSourceInfoNode
+type ToolSearchSourceInfoOption =
+  | `SearchSourceMissing Unit
+  | `SearchSourcePresent ToolSearchSourceInfo
+
+type ToolSearchFunction = [ToolSpec, Bool]
+type ToolSearchFunctionNode = [ToolSearchFunction, ToolSearchFunctions]
+type ToolSearchFunctions =
+  | `Nil Unit
+  | `Cons ToolSearchFunctionNode
+
+type ToolSearchNamespace = [Text, Text, ToolSearchFunctions]
+
+type ToolSearchLoadableSpec =
+  | `Function ToolSearchFunction
+  | `Namespace ToolSearchNamespace
+type ToolSearchLoadableSpecNode = [ToolSearchLoadableSpec, ToolSearchLoadableSpecs]
+type ToolSearchLoadableSpecs =
+  | `Nil Unit
+  | `Cons ToolSearchLoadableSpecNode
+
+type ToolSearchEntry = [Text, ToolSearchLoadableSpec]
+
+type ToolSearchInfo = [ToolSearchEntry, ToolSearchSourceInfoOption]
+type ToolSearchInfoNode = [ToolSearchInfo, ToolSearchInfos]
+type ToolSearchInfos =
+  | `Nil Unit
+  | `Cons ToolSearchInfoNode
+
+type ToolSearchOutput = struct {
+  .status = Text,
+  .execution = Text,
+  .tools = ToolSearchLoadableSpecs,
+}
+
+type ToolSearchCallPlan =
+  | `ReturnTools ToolSearchOutput
+  | `RejectRequest Text
+  | `Fatal Text
+
+type ToolSearchRankedEntry = [I32, I32, ToolSearchEntry]
+type ToolSearchRankedEntryNode = [ToolSearchRankedEntry, ToolSearchRankedEntries]
+type ToolSearchRankedEntries =
+  | `Nil Unit
+  | `Cons ToolSearchRankedEntryNode
+
+return {}

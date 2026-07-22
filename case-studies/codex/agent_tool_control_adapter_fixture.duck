@@ -1,0 +1,28 @@
+module (!init: Init) where
+
+const {} = import "./agent_tool_types.duck" ()
+const { run_followup_task, run_interrupt_agent, run_list_agents, run_send_message, run_wait_agent } = import "./agent_tool_control_execution.duck" ()
+
+type FixtureSendRequest = AgentSendRequest
+type FixtureTextOption = AgentTextOption
+
+let score = 0
+let send_request: FixtureSendRequest = ["/root/reviewer", "report status"]
+let sent = run_send_message("call-send", send_request)
+if sent == "" { score = score + 1 }
+
+let followup_request: FixtureSendRequest = ["/root/reviewer", "check tests"]
+let followed_up = run_followup_task("call-followup", followup_request)
+if followed_up == "" { score = score + 10 }
+
+let interrupted = run_interrupt_agent("call-interrupt", "/root/reviewer")
+if interrupted == "{\"previous_status\":\"interrupted\"}" { score = score + 100 }
+
+let mailbox = run_wait_agent("call-wait", 30000i64)
+if mailbox == "{\"message\":\"Wait completed.\",\"timed_out\":false}" { score = score + 1000 }
+
+let prefix: FixtureTextOption = `Some "/root"
+let statuses = run_list_agents prefix
+if statuses == "{\"agents\":[{\"agent_name\":\"/root/reviewer\",\"agent_status\":\"running\"}]}" { score = score + 10000 }
+
+return { .score = score }

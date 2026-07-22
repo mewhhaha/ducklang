@@ -1,0 +1,30 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_plugin_list } = import "./cli_plugin.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexPluginCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let input: FixtureArgs = args.prepend("--marketplace", args.prepend("debug", args.prepend("--json", args.singleton("--available"))))
+let listed: FixtureResult = parse_plugin_list(input)
+if let `Ok command = listed {
+  if let `PluginList options = command {
+    if let `Some marketplace_name = options.marketplace_name {
+      if marketplace_name == "debug" && options.json && options.available {
+        score = score + 1
+      }
+    }
+  }
+}
+
+let invalid: FixtureResult = parse_plugin_list(args.singleton("--available"))
+if let `Err _ = invalid {
+  score = score + 10
+}
+
+return { .score = score }

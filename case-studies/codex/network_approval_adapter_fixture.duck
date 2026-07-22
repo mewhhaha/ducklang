@@ -1,0 +1,48 @@
+module (!init: Init) where
+
+const network_types_module = import "./network_types.duck"
+const network_module = import "./network_approval.duck"
+const { empty_network_approval_state, finish_network_call, plan_network_request, record_blocked_request, register_network_call, resolve_network_prompt } = network_module()
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureMode = NetworkApprovalMode
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureResult = NetworkPolicyResult
+type FixtureFinish = NetworkFinishOutcome
+
+let score = 0
+let https: FixtureProtocol = `Https ()
+let deferred: FixtureMode = `Deferred ()
+let no_outcome: FixtureOutcome = `NoOutcome ()
+let call: FixtureCall = ["registration-1", "local", "curl https://example.com", deferred, no_outcome, false]
+let state: FixtureState = register_network_call(empty_network_approval_state(), call)
+let environment: FixtureTextOption = `Some "local"
+let request: FixtureRequest = ["example.com", https, 443, `None (), environment]
+let policy: FixturePolicy = `OnRequest ()
+let profile: FixtureProfile = `Managed ()
+let planned: FixtureResult = plan_network_request(state, request, environment, policy, profile, true)
+let [planned_state, decision] = planned
+
+if let `Prompt prompt = decision {
+  let [_, _, target, reason, is_owner] = prompt
+  host_decision <- NetworkApprovalHost.request(&target, &reason, is_owner)
+  state = resolve_network_prompt(planned_state, prompt, host_decision)
+  score = score + 1
+}
+
+let blocked = record_blocked_request(state, `Some "registration-1", "late network denial")
+let finished = finish_network_call(blocked, "registration-1")
+let [_, raw_finish] = finished
+let typed_finish: FixtureFinish = raw_finish
+
+if let `Rejected message = typed_finish {
+  if message == "late network denial" { score = score + 1 }
+}
+
+return { .score = score }

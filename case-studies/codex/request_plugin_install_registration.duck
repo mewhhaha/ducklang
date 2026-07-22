@@ -1,0 +1,46 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type RequestPluginDefinition = ToolDefinition
+type RequestPluginDefinitions = ToolDefinitions
+type RequestPluginName = ToolName
+type RequestPluginSpec = ToolSpec
+type RequestPluginSpecs = ToolSpecs
+type RequestPluginPresentation =
+  | `ListTool Unit
+  | `RecommendationContext Unit
+
+const request_plugin_install_tool_name: () -> RequestPluginName = () => ["", "request_plugin_install"]
+
+let request_plugin_install_definitions: [Bool, Bool] -> RequestPluginDefinitions = (enabled: Bool, has_candidates: Bool) => {
+  if enabled && has_candidates {
+    let definition: RequestPluginDefinition = [request_plugin_install_tool_name(), `Direct (), `RequestPluginInstall (), `FunctionPayload (), false, false]
+    `Cons ([definition, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+let request_plugin_install_specs: [Bool, Bool, RequestPluginPresentation] -> RequestPluginSpecs = (enabled: Bool, has_candidates: Bool, presentation: RequestPluginPresentation) => {
+  if !(enabled) || !(has_candidates) {
+    `Nil ()
+  } else if let `ListTool () = presentation {
+    let description = "# Request plugin/connector install\n\nUse this tool only after `list_available_plugins_to_install` returns a plugin or connector that exactly matches the user's explicit request.\n\nDo not use it for adjacent capabilities, broad recommendations, or tools that merely seem useful. Pass the returned `tool_type` through directly, and pass the returned `id` as `tool_id`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools."
+    let parameters = "{\"type\":\"object\",\"properties\":{\"action_type\":{\"type\":\"string\",\"description\":\"Suggested action for the tool. Use \\\"install\\\".\"},\"suggest_reason\":{\"type\":\"string\",\"description\":\"Concise one-line user-facing reason why this plugin or connector can help with the current request.\"},\"tool_id\":{\"type\":\"string\",\"description\":\"Connector or plugin id to suggest.\"},\"tool_type\":{\"type\":\"string\",\"description\":\"Type of discoverable tool to suggest. Use \\\"connector\\\" or \\\"plugin\\\".\"}},\"required\":[\"tool_type\",\"action_type\",\"tool_id\",\"suggest_reason\"],\"additionalProperties\":false}"
+    let spec: RequestPluginSpec = [request_plugin_install_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
+    `Cons ([spec, `Nil ()])
+  } else {
+    let description = "# Suggest a recommended plugin installation\n\nUse this tool only when all of the following are true:\n- The user explicitly asks to use a specific plugin that is not already available in the current context or active `tools` list.\n- Tool search has already been exhausted and did not find or make the requested tool callable.\n- The plugin is listed in `<recommended_plugins>`.\n\nDo not use it for adjacent capabilities, broad recommendations, or plugins that merely seem useful. Briefly explain why the plugin can help with the current request in `suggest_reason`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools."
+    let parameters = "{\"type\":\"object\",\"properties\":{\"plugin_id\":{\"type\":\"string\",\"description\":\"The parenthesized plugin ID from the `<recommended_plugins>` list.\"},\"suggest_reason\":{\"type\":\"string\",\"description\":\"Concise one-line user-facing reason why this plugin can help with the current request.\"}},\"required\":[\"plugin_id\",\"suggest_reason\"],\"additionalProperties\":false}"
+    let spec: RequestPluginSpec = [request_plugin_install_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
+    `Cons ([spec, `Nil ()])
+  }
+}
+
+return {
+  request_plugin_install_definitions,
+  request_plugin_install_specs,
+  request_plugin_install_tool_name,
+}

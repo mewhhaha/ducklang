@@ -1,0 +1,30 @@
+module (!init: Init) where
+
+const {} = import "./test_sync_types.duck" ()
+const { run_test_sync } = import "./test_sync_execution.duck" ()
+const { plan_test_sync } = import "./test_sync_policy.duck" ()
+
+type FixtureArgs = TestSyncArgs
+type FixtureBarrier = TestSyncBarrier
+
+let barrier: FixtureBarrier = [.id = "shared", .participants = "1", .timeout_ms = "1000"]
+let args: FixtureArgs = [.sleep_before_ms = `SyncDurationPresent "2", .sleep_after_ms = `SyncDurationPresent "3", .barrier = `SyncBarrierPresent barrier]
+let score = 0
+
+if let `RunSync normalized = plan_test_sync args {
+  let result = run_test_sync normalized
+  if let `Completed output = result {
+    if output == "ok" { score = 1 }
+  }
+}
+
+let timeout_barrier: FixtureBarrier = [.id = "timeout", .participants = "2", .timeout_ms = "5"]
+let timeout_args: FixtureArgs = [.sleep_before_ms = `SyncDurationMissing (), .sleep_after_ms = `SyncDurationPresent "9", .barrier = `SyncBarrierPresent timeout_barrier]
+if let `RunSync normalized = plan_test_sync timeout_args {
+  let result = run_test_sync normalized
+  if let `Rejected message = result {
+    if message == "test_sync_tool barrier wait timed out" { score = score + 10 }
+  }
+}
+
+return { .score = score }

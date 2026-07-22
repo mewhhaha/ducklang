@@ -1,0 +1,24 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const hook_types_module = import "./hook_types.duck"
+const hook_policy_module = import "./hook_policy.duck"
+const { resolve_permission_decisions } = hook_policy_module()
+
+type FixtureDecision = HookPermissionDecision
+type FixtureDecisions = HookPermissionDecisions
+
+const decisions = comptime list(FixtureDecision)
+
+let score: I32 = 0
+let permission_values: FixtureDecisions = decisions.prepend(`Allow (), decisions.prepend(`Deny "blocked", decisions.singleton(`Allow ())))
+
+if let `Some resolved = resolve_permission_decisions permission_values {
+  if let `Deny message = resolved {
+    if message == "blocked" {
+      score = score + 1
+    }
+  }
+}
+
+return { .score = score }

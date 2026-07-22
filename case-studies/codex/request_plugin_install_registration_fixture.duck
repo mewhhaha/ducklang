@@ -1,0 +1,31 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { request_plugin_install_definitions } = import "./request_plugin_install_registration.duck" ()
+
+type FixtureDefinitions = ToolDefinitions
+
+let score = 0
+let disabled: FixtureDefinitions = request_plugin_install_definitions(false, true)
+let empty: FixtureDefinitions = request_plugin_install_definitions(true, false)
+if let `Nil () = disabled {
+  if let `Nil () = empty { score = score + 1 }
+}
+
+let definitions: FixtureDefinitions = request_plugin_install_definitions(true, true)
+if let `Cons node = definitions {
+  let [definition, tail] = node
+  let [name, exposure, tool_handler, payload, parallel, waits] = definition
+  let [namespace, local_name] = name
+  if namespace == "" && local_name == "request_plugin_install" && !(parallel) && !(waits) {
+    if let `Direct () = exposure {
+      if let `RequestPluginInstall () = tool_handler {
+        if let `FunctionPayload () = payload {
+          if let `Nil () = tail { score = score + 10 }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

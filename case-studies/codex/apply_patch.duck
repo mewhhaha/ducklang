@@ -1,0 +1,20 @@
+module () where
+
+const { normalize_apply_patch_lines } = import "./apply_patch_boundary.duck" ()
+const { parse_apply_patch_lines } = import "./apply_patch_parser.duck" ()
+const {} = import "./apply_patch_types.duck" ()
+
+type ApplyPatchFacadeResult = ApplyPatchParseResult
+
+let parse_apply_patch: Text -> ApplyPatchFacadeResult = (patch: Text) => {
+  let normalized = normalize_apply_patch_lines patch
+  if let `Ok lines = normalized {
+    parse_apply_patch_lines lines
+  } else if let `Err reason = normalized {
+    `Err reason
+  } else {
+    `Err "apply_patch boundary returned no result"
+  }
+}
+
+return { parse_apply_patch }

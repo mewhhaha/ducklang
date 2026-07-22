@@ -1,0 +1,46 @@
+module () where
+
+const { unsafe_i32_wrap_i64, unsafe_i64_extend_i32_signed } = import "duck:prelude/numeric" ()
+const { parse_u32_decimal, parse_u64_decimal_text } = import "duck:prelude/numeric/parse" ()
+const {} = import "./agent_job_spawn_types.duck" ()
+
+type AgentJobSpawnLimitsArgs = AgentJobSpawnArgs
+type AgentJobSpawnLimitsDecoded = AgentJobSpawnDecodedArgs
+type AgentJobSpawnLimitsI64 = I64
+type AgentJobSpawnLimitsOption = AgentJobTextOption
+type AgentJobSpawnLimitsPlan = AgentJobSpawnPlan
+
+const prepare_agent_job_spawn_limits: [AgentJobSpawnLimitsDecoded, I32, AgentJobSpawnLimitsOption] -> AgentJobSpawnLimitsPlan = (decoded: AgentJobSpawnLimitsDecoded, maximum_threads: I32, configured_runtime_seconds: AgentJobSpawnLimitsOption) => {
+  let concurrency_text: AgentJobSpawnLimitsOption = decoded.max_concurrency
+  if let `None () = concurrency_text { concurrency_text = decoded.max_workers }
+  let requested_concurrency: AgentJobSpawnLimitsI64 = 16i64
+  let runtime: AgentJobSpawnLimitsOption = decoded.max_runtime_seconds
+  if let `None () = runtime { runtime = configured_runtime_seconds }
+  let failure = ""
+
+  if let `Some number = concurrency_text {
+    let parsed = parse_u32_decimal number
+    if let `Ok concurrency_value = parsed { requested_concurrency = concurrency_value } else { failure = "max_concurrency must be a non-negative integer" }
+  }
+  if let `Some number = runtime {
+    let parsed = parse_u64_decimal_text number
+    if let `Ok runtime_value = parsed {
+      runtime = `Some runtime_value
+      if runtime_value == "0" { failure = "max_runtime_seconds must be >= 1" }
+    } else {
+      failure = "max_runtime_seconds must be a non-negative integer"
+    }
+  }
+
+  if failure != "" {
+    `RejectSpawn failure
+  } else {
+    let bounded: AgentJobSpawnLimitsI64 = if requested_concurrency < 1i64 { 1i64 } else if requested_concurrency > 64i64 { 64i64 } else { requested_concurrency }
+    let maximum_threads_i64: AgentJobSpawnLimitsI64 = unsafe_i64_extend_i32_signed maximum_threads
+    if maximum_threads > 0 && bounded > maximum_threads_i64 { bounded = maximum_threads_i64 }
+    let args: AgentJobSpawnLimitsArgs = [.input_path = decoded.csv_path, .instruction = decoded.instruction, .id_column = decoded.id_column, .output_path = decoded.output_path, .output_schema_json = decoded.output_schema_json, .max_concurrency = unsafe_i32_wrap_i64 bounded, .max_runtime_seconds = runtime]
+    `ReadCsv args
+  }
+}
+
+return { prepare_agent_job_spawn_limits }

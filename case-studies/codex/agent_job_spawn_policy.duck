@@ -1,0 +1,25 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { agent_job_path_is_absolute, prepare_agent_job_spawn_environment } = import "./agent_job_spawn_environment_policy.duck" ()
+const { prepare_agent_job_spawn_limits } = import "./agent_job_spawn_limits_policy.duck" ()
+
+type AgentJobSpawnPolicyDecoded = AgentJobSpawnDecodedArgs
+type AgentJobSpawnPolicyOption = AgentJobTextOption
+type AgentJobSpawnPolicyPlan = AgentJobSpawnPlan
+
+const prepare_agent_job_spawn: [AgentJobSpawnPolicyDecoded, Text, I32, Bool, I32, AgentJobSpawnPolicyOption] -> AgentJobSpawnPolicyPlan = (decoded: AgentJobSpawnPolicyDecoded, cwd: Text, environment_count: I32, remote_environment: Bool, maximum_threads: I32, configured_runtime_seconds: AgentJobSpawnPolicyOption) => {
+  let prepared = prepare_agent_job_spawn_environment(decoded, cwd, environment_count, remote_environment, maximum_threads)
+  if let `SpawnDecoded environment_args = prepared {
+    prepare_agent_job_spawn_limits(environment_args, maximum_threads, configured_runtime_seconds)
+  } else if let `SpawnDecodeFailed reason = prepared {
+    `RejectSpawn reason
+  } else {
+    `RejectSpawn "agent job environment policy returned no result"
+  }
+}
+
+return {
+  agent_job_path_is_absolute,
+  prepare_agent_job_spawn,
+}

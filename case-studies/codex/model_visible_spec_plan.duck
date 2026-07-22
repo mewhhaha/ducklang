@@ -1,0 +1,381 @@
+module () where
+
+const { text_append, text_compare, text_ends_with, text_starts_with, text_trim_whitespace } = import "duck:prelude/runtime" ()
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ModelVisibleMode =
+  | `DirectModel Unit
+  | `CodeModel Unit
+  | `CodeModelOnly Unit
+
+type ModelVisibleNamespacePolicy =
+  | `NamespaceToolsEnabled Unit
+  | `NamespaceToolsDisabled Unit
+
+type ModelVisibleDescription =
+  | `OriginalDescription Text
+  | `CodeModeDescription Text
+
+type ModelVisibleFunction = [Text, ModelVisibleDescription]
+type ModelVisibleFunctionNode = [ModelVisibleFunction, ModelVisibleFunctions]
+type ModelVisibleFunctions =
+  | `VisibleFunctionsNil Unit
+  | `VisibleFunctionsCons ModelVisibleFunctionNode
+
+type ModelVisibleNamespace = [Text, Text, ModelVisibleFunctions]
+type ModelVisibleSpec =
+  | `VisibleFunction ModelVisibleFunction
+  | `VisibleFreeform ModelVisibleFunction
+  | `VisibleToolSearch Text
+  | `VisibleWebSearch Text
+  | `VisibleNamespace ModelVisibleNamespace
+type ModelVisibleSpecNode = [ModelVisibleSpec, ModelVisibleSpecs]
+type ModelVisibleSpecs =
+  | `VisibleSpecsNil Unit
+  | `VisibleSpecsCons ModelVisibleSpecNode
+
+type ModelVisibleRuntime = [ToolName, ToolExposure, ModelVisibleSpec]
+type ModelVisibleRuntimeNode = [ModelVisibleRuntime, ModelVisibleRuntimes]
+type ModelVisibleRuntimes =
+  | `VisibleRuntimesNil Unit
+  | `VisibleRuntimesCons ModelVisibleRuntimeNode
+
+type ModelVisibleTextNode = [Text, ModelVisibleTexts]
+type ModelVisibleTexts =
+  | `VisibleTextsNil Unit
+  | `VisibleTextsCons ModelVisibleTextNode
+
+type ModelVisibleNameNode = [ToolName, ModelVisibleNames]
+type ModelVisibleNames =
+  | `VisibleNamesNil Unit
+  | `VisibleNamesCons ModelVisibleNameNode
+
+type ModelVisibleFacts = struct {
+  .mode = ModelVisibleMode,
+  .excluded_namespaces = ModelVisibleTexts,
+  .namespace_policy = ModelVisibleNamespacePolicy,
+}
+
+const code_mode_name: ToolName -> Text = tool_name => {
+  let [namespace, local_name] = tool_name
+  if namespace == "" {
+    return local_name
+  }
+  if text_ends_with [namespace, "_"] || text_starts_with [local_name, "_"] {
+    return text_append [namespace, local_name]
+  }
+  text_append [text_append [namespace, "__"], local_name]
+}
+
+const exposure_is_direct_model_only: ToolExposure -> Bool = exposure => {
+  if let `DirectModelOnly () = exposure { true } else { false }
+}
+
+const spec_name: ModelVisibleSpec -> Text = spec => {
+  if let `VisibleFunction function = spec {
+    let [name, _] = function
+    name
+  } else if let `VisibleFreeform freeform = spec {
+    let [name, _] = freeform
+    name
+  } else if let `VisibleToolSearch name = spec {
+    name
+  } else if let `VisibleWebSearch name = spec {
+    name
+  } else if let `VisibleNamespace namespace = spec {
+    let [name, _, _] = namespace
+    name
+  } else {
+    ""
+  }
+}
+
+const is_nested_name: Text -> Bool = name => name != "exec" && name != "wait"
+
+const namespace_is_excluded: [Text, ModelVisibleTexts] -> Bool = (namespace, excluded_namespaces) => {
+  if namespace == "" {
+    return false
+  }
+
+  let current = excluded_namespaces
+  let found = false
+  let done = false
+  loop {
+    if let `VisibleTextsCons node = current {
+      let [candidate, tail] = node
+      if candidate == namespace {
+        found = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  found
+}
+
+const augment_description: ModelVisibleDescription -> ModelVisibleDescription = description => {
+  if let `OriginalDescription text = description {
+    `CodeModeDescription text
+  } else {
+    description
+  }
+}
+
+const augment_spec: ModelVisibleSpec -> ModelVisibleSpec = spec => {
+  if let `VisibleFunction function = spec {
+    let [name, description] = function
+    `VisibleFunction ([name, augment_description description])
+  } else if let `VisibleFreeform freeform = spec {
+    let [name, description] = freeform
+    `VisibleFreeform ([name, augment_description description])
+  } else if let `VisibleNamespace namespace = spec {
+    let [name, description, functions] = namespace
+    let current = functions
+    let reversed: ModelVisibleFunctions = `VisibleFunctionsNil ()
+    let done = false
+    loop {
+      if let `VisibleFunctionsCons node = current {
+        let [[function_name, function_description], tail] = node
+        let augmented: ModelVisibleFunction = [function_name, augment_description function_description]
+        reversed = `VisibleFunctionsCons ([augmented, reversed])
+        current = tail
+      } else {
+        done = true
+      }
+      if done { break }
+    }
+
+    current = reversed
+    let result: ModelVisibleFunctions = `VisibleFunctionsNil ()
+    done = false
+    loop {
+      if let `VisibleFunctionsCons node = current {
+        let [function, tail] = node
+        result = `VisibleFunctionsCons ([function, result])
+        current = tail
+      } else {
+        done = true
+      }
+      if done { break }
+    }
+    `VisibleNamespace ([name, description, result])
+  } else {
+    spec
+  }
+}
+
+let rec name_seen: [ToolName, ModelVisibleNames] -> Bool = (name, names) => {
+  let [namespace, local_name] = name
+  if let `VisibleNamesCons node = names {
+    let [[candidate_namespace, candidate_local_name], tail] = node
+    if namespace == candidate_namespace && local_name == candidate_local_name {
+      true
+    } else {
+      name_seen(name, tail)
+    }
+  } else {
+    false
+  }
+}
+
+let rec append_specs: [ModelVisibleSpecs, ModelVisibleSpecs] -> ModelVisibleSpecs = (first, second) => {
+  if let `VisibleSpecsCons node = first {
+    let [spec, tail] = node
+    `VisibleSpecsCons ([spec, append_specs(tail, second)])
+  } else {
+    second
+  }
+}
+
+let rec append_functions: [ModelVisibleFunctions, ModelVisibleFunctions] -> ModelVisibleFunctions = (first, second) => {
+  if let `VisibleFunctionsCons node = first {
+    let [function, tail] = node
+    `VisibleFunctionsCons ([function, append_functions(tail, second)])
+  } else {
+    second
+  }
+}
+
+let rec merge_spec: [ModelVisibleSpecs, ModelVisibleSpec] -> ModelVisibleSpecs = (specs, incoming) => {
+  if let `VisibleNamespace incoming_namespace = incoming {
+    let [incoming_name, _, _] = incoming_namespace
+    if let `VisibleSpecsCons node = specs {
+      let [existing, tail] = node
+      if let `VisibleNamespace existing_namespace = existing {
+        let [existing_name, _, _] = existing_namespace
+        if existing_name == incoming_name {
+          let [name, existing_description, existing_functions] = existing_namespace
+          let [_, incoming_description, incoming_functions] = incoming_namespace
+          let description = existing_description
+          if text_trim_whitespace existing_description == "" && text_trim_whitespace incoming_description != "" {
+            description = incoming_description
+          }
+          let merged_namespace: ModelVisibleNamespace = [name, description, append_functions(existing_functions, incoming_functions)]
+          `VisibleSpecsCons ([`VisibleNamespace merged_namespace, tail])
+        } else {
+          `VisibleSpecsCons ([existing, merge_spec(tail, incoming)])
+        }
+      } else {
+        `VisibleSpecsCons ([existing, merge_spec(tail, incoming)])
+      }
+    } else {
+      `VisibleSpecsCons ([incoming, `VisibleSpecsNil ()])
+    }
+  } else {
+    append_specs(specs, `VisibleSpecsCons ([incoming, `VisibleSpecsNil ()]))
+  }
+}
+
+let rec insert_function: [ModelVisibleFunction, ModelVisibleFunctions] -> ModelVisibleFunctions = (function, functions) => {
+  let [name, _] = function
+  if let `VisibleFunctionsCons node = functions {
+    let [existing, tail] = node
+    let [existing_name, _] = existing
+    if text_compare [name, existing_name] < 0 {
+      `VisibleFunctionsCons ([function, functions])
+    } else {
+      `VisibleFunctionsCons ([existing, insert_function(function, tail)])
+    }
+  } else {
+    `VisibleFunctionsCons ([function, `VisibleFunctionsNil ()])
+  }
+}
+
+let sort_functions: ModelVisibleFunctions -> ModelVisibleFunctions = functions => {
+  let current = functions
+  let sorted: ModelVisibleFunctions = `VisibleFunctionsNil ()
+  let done = false
+  loop {
+    if let `VisibleFunctionsCons node = current {
+      let [function, tail] = node
+      sorted = insert_function(function, sorted)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  sorted
+}
+
+let merge_model_namespaces: [ModelVisibleSpecs, ModelVisibleNamespacePolicy] -> ModelVisibleSpecs = (specs, namespace_policy) => {
+  let current = specs
+  let merged: ModelVisibleSpecs = `VisibleSpecsNil ()
+  let done = false
+  loop {
+    if let `VisibleSpecsCons node = current {
+      let [spec, tail] = node
+      merged = merge_spec(merged, spec)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  current = merged
+  let reversed: ModelVisibleSpecs = `VisibleSpecsNil ()
+  done = false
+  loop {
+    if let `VisibleSpecsCons node = current {
+      let [spec, tail] = node
+      if let `VisibleNamespace namespace = spec {
+        if let `NamespaceToolsEnabled () = namespace_policy {
+          let [name, description, functions] = namespace
+          let finalized_description = description
+          if text_trim_whitespace description == "" {
+            finalized_description = text_append [text_append ["Tools in the ", name], " namespace."]
+          }
+          let finalized: ModelVisibleNamespace = [name, finalized_description, sort_functions functions]
+          reversed = `VisibleSpecsCons ([`VisibleNamespace finalized, reversed])
+        }
+      } else {
+        reversed = `VisibleSpecsCons ([spec, reversed])
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  current = reversed
+  let result: ModelVisibleSpecs = `VisibleSpecsNil ()
+  done = false
+  loop {
+    if let `VisibleSpecsCons node = current {
+      let [spec, tail] = node
+      result = `VisibleSpecsCons ([spec, result])
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  result
+}
+
+let build_model_visible_specs: [ModelVisibleRuntimes, ModelVisibleSpecs, ModelVisibleFacts] -> ModelVisibleSpecs = (runtimes, hosted_specs, facts) => {
+  let current = runtimes
+  let seen: ModelVisibleNames = `VisibleNamesNil ()
+  let selected_reversed: ModelVisibleSpecs = `VisibleSpecsNil ()
+  let done = false
+  loop {
+    if let `VisibleRuntimesCons node = current {
+      let [[tool_name, exposure, spec], tail] = node
+      if !(name_seen(tool_name, seen)) {
+        seen = `VisibleNamesCons ([tool_name, seen])
+        let hidden_by_code_mode_only = false
+        if let `CodeModelOnly () = facts.mode {
+          if !(exposure_is_direct_model_only exposure) && is_nested_name(code_mode_name tool_name) {
+            hidden_by_code_mode_only = true
+          }
+        }
+
+        let direct_exposure = false
+        if let `Direct () = exposure {
+          direct_exposure = true
+        } else if let `DirectModelOnly () = exposure {
+          direct_exposure = true
+        }
+        if direct_exposure && !(hidden_by_code_mode_only) {
+          let selected = spec
+          let [namespace, _] = tool_name
+          let uses_code_executor = true
+          if let `DirectModel () = facts.mode { uses_code_executor = false }
+          if uses_code_executor && !(exposure_is_direct_model_only exposure) && !(namespace_is_excluded(namespace, facts.excluded_namespaces)) && is_nested_name(spec_name spec) {
+            selected = augment_spec spec
+          }
+          selected_reversed = `VisibleSpecsCons ([selected, selected_reversed])
+        }
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  let selected_current = selected_reversed
+  let selected: ModelVisibleSpecs = `VisibleSpecsNil ()
+  done = false
+  loop {
+    if let `VisibleSpecsCons node = selected_current {
+      let [spec, tail] = node
+      selected = `VisibleSpecsCons ([spec, selected])
+      selected_current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  merge_model_namespaces(append_specs(selected, hosted_specs), facts.namespace_policy)
+}
+
+return { build_model_visible_specs, merge_model_namespaces }

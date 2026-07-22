@@ -1,0 +1,230 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i32, text_append, text_get, text_length, text_replace_all, text_slice } = import "duck:prelude/runtime" ()
+const {} = import "./agent_job_csv_types.duck" ()
+
+type AgentJobCsvDocumentValue = AgentJobCsvDocument
+type AgentJobCsvParse = AgentJobCsvParseResult
+type AgentJobCsvRowList = AgentJobCsvRows
+type AgentJobCsvRowListNode = AgentJobCsvRowNode
+type AgentJobCsvTextList = AgentJobTexts
+type AgentJobCsvTextListNode = AgentJobTextNode
+type AgentJobTemplateJson = Json
+type AgentJobTemplateObject = JsonObject
+
+const reverse_agent_job_texts: AgentJobCsvTextList -> AgentJobCsvTextList = values => {
+  let current = values
+  let reversed: AgentJobCsvTextList = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      let reversed_node: AgentJobCsvTextListNode = [value, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const reverse_agent_job_rows: AgentJobCsvRowList -> AgentJobCsvRowList = values => {
+  let current = values
+  let reversed: AgentJobCsvRowList = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      let reversed_node: AgentJobCsvRowListNode = [value, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const agent_job_row_is_empty: AgentJobCsvTextList -> Bool = values => {
+  let current = values
+  let empty = true
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      if value != "" { empty = false }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  empty
+}
+
+const agent_job_text_count: AgentJobCsvTextList -> I32 = values => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const strip_csv_bom: AgentJobCsvTextList -> AgentJobCsvTextList = headers => {
+  if let `Cons node = headers {
+    let [first, tail] = node
+    if text_length(first) >= 3 && text_get([first, 0]) == 239 && text_get([first, 1]) == 187 && text_get([first, 2]) == 191 {
+      let stripped_node: AgentJobCsvTextListNode = [text_slice([first, 3, text_length(first)]), tail]
+      `Cons stripped_node
+    } else {
+      headers
+    }
+  } else {
+    headers
+  }
+}
+
+let parse_agent_job_csv: Text -> AgentJobCsvParse = content => {
+  let rows_reversed: AgentJobCsvRowList = `Nil ()
+  let row_reversed: AgentJobCsvTextList = `Nil ()
+  let field = ""
+  let segment_start = 0
+  let index = 0
+  let quoted = false
+  let failure = ""
+
+  loop {
+    if index >= text_length(content) { break }
+    let byte = text_get([content, index])
+
+    if quoted {
+      if byte == 34 {
+        field = text_append([field, text_slice([content, segment_start, index])])
+        if index + 1 < text_length(content) && text_get([content, index + 1]) == 34 {
+          field = text_append([field, "\""])
+          index = index + 2
+          segment_start = index
+        } else {
+          quoted = false
+          index = index + 1
+          segment_start = index
+        }
+      } else {
+        index = index + 1
+      }
+    } else if byte == 34 && field == "" && index == segment_start {
+      quoted = true
+      index = index + 1
+      segment_start = index
+    } else if byte == 44 || byte == 10 || byte == 13 {
+      field = text_append([field, text_slice([content, segment_start, index])])
+      let field_node: AgentJobCsvTextListNode = [field, row_reversed]
+      row_reversed = `Cons field_node
+      field = ""
+
+      if byte == 10 || byte == 13 {
+        let row = reverse_agent_job_texts row_reversed
+        if !(agent_job_row_is_empty row) {
+          let row_node: AgentJobCsvRowListNode = [row, rows_reversed]
+          rows_reversed = `Cons row_node
+        }
+        row_reversed = `Nil ()
+        if byte == 13 && index + 1 < text_length(content) && text_get([content, index + 1]) == 10 { index = index + 1 }
+      }
+
+      index = index + 1
+      segment_start = index
+    } else {
+      index = index + 1
+    }
+  }
+
+  if quoted {
+    failure = "unterminated quoted field"
+  } else if segment_start < text_length(content) || field != "" || agent_job_text_count(row_reversed) > 0 {
+    field = text_append([field, text_slice([content, segment_start, text_length(content)])])
+    let field_node: AgentJobCsvTextListNode = [field, row_reversed]
+    row_reversed = `Cons field_node
+    let row = reverse_agent_job_texts row_reversed
+    if !(agent_job_row_is_empty row) {
+      let row_node: AgentJobCsvRowListNode = [row, rows_reversed]
+      rows_reversed = `Cons row_node
+    }
+  }
+
+  if failure != "" {
+    `CsvParseFailed failure
+  } else {
+    let rows = reverse_agent_job_rows rows_reversed
+    if let `Cons first_node = rows {
+      let [headers, remaining] = first_node
+      let document: AgentJobCsvDocumentValue = [.headers = strip_csv_bom(headers), .rows = remaining]
+      `CsvParsed document
+    } else {
+      `CsvParseFailed "csv input must include a header row"
+    }
+  }
+}
+
+let render_agent_job_instruction: [Text, AgentJobTemplateObject] -> Text = (instruction: Text, row: AgentJobTemplateObject) => {
+  let rendered = text_replace_all([text_replace_all([instruction, "{{", "__CODEX_OPEN_BRACE__"]), "}}", "__CODEX_CLOSE_BRACE__"])
+  let current = row
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [member, tail] = node
+      let [key, value] = member
+      let replacement = if let `String text = value { text } else { encode_json value }
+      rendered = text_replace_all([rendered, text_append(["{", text_append([key, "}"])]), replacement])
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  text_replace_all([text_replace_all([rendered, "__CODEX_OPEN_BRACE__", "{"]), "__CODEX_CLOSE_BRACE__", "}"])
+}
+
+const validate_agent_job_csv_rows: AgentJobCsvDocumentValue -> Text = document => {
+  let expected = agent_job_text_count document.headers
+  let current = document.rows
+  let row_number = 2
+  let failure = ""
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [row, tail] = node
+      let actual = agent_job_text_count row
+      if failure == "" && actual != expected {
+        failure = text_append(["csv row ", text_append([format_i32(row_number), text_append([" has ", text_append([format_i32(actual), text_append([" fields but header has ", format_i32(expected)])])])])])
+      }
+      row_number = row_number + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  failure
+}
+
+return {
+  agent_job_text_count,
+  parse_agent_job_csv,
+  render_agent_job_instruction,
+  validate_agent_job_csv_rows,
+}

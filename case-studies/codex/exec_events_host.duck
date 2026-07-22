@@ -1,0 +1,14 @@
+module () where
+
+declare effect ExecEvents {
+  begin: (&ExecCommandBeginEvent) => Unit
+  output_delta: (&ExecCommandOutputDeltaEvent) => Unit
+  interaction: (&ExecTerminalInteractionEvent) => Unit
+  end: (&ExecCommandEndEvent) => Unit
+}
+
+declare Init {
+  exec_events: ExecEvents
+}
+
+return {}

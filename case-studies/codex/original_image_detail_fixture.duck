@@ -1,0 +1,83 @@
+module () where
+
+const {} = import "./original_image_detail_types.duck" ()
+const original_image_detail_module = import "./original_image_detail.duck"
+const { sanitize_original_image_detail } = original_image_detail_module()
+
+type FixtureDetail = OutputImageDetail
+type FixtureDetailOption = OutputImageDetailOption
+type FixtureItem = FunctionOutputContentItem
+type FixtureItemNode = FunctionOutputContentItemNode
+type FixtureItems = FunctionOutputContentItems
+
+const item_at: [FixtureItem, I32, FixtureItems] -> FixtureItem = (fallback, requested, values) => {
+  let current = values
+  let position = 0
+  let result = fallback
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      if position == requested {
+        result = item
+        done = true
+      } else {
+        position = position + 1
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  result
+}
+
+let score = 0
+let original: FixtureDetail = `Original ()
+let original_detail: FixtureDetailOption = `Some original
+let low: FixtureDetail = `Low ()
+let low_detail: FixtureDetailOption = `Some low
+
+let values: FixtureItems = `Nil ()
+let low_image: FixtureItem = `InputImage (["data:image/png;base64,BBB", low_detail])
+let original_image: FixtureItem = `InputImage (["data:image/png;base64,AAA", original_detail])
+let low_node: FixtureItemNode = [low_image, values]
+values = `Cons low_node
+let original_node: FixtureItemNode = [original_image, values]
+values = `Cons original_node
+let text_item: FixtureItem = `InputText "header"
+let text_node: FixtureItemNode = [text_item, values]
+values = `Cons text_node
+
+let sanitized = sanitize_original_image_detail(false, values)
+if let `InputText text = item_at(`InputText "", 0, sanitized) {
+  if text == "header" { score = score + 1 }
+}
+
+if let `InputImage image = item_at(`InputText "", 1, sanitized) {
+  let [_, detail] = image
+  if let `Some selected = detail {
+    if let `High () = selected { score = score + 10 }
+  }
+}
+
+if let `InputImage image = item_at(`InputText "", 2, sanitized) {
+  let [_, detail] = image
+  if let `Some selected = detail {
+    if let `Low () = selected { score = score + 100 }
+  }
+}
+
+let unchanged = sanitize_original_image_detail(true, values)
+if let `InputImage image = item_at(`InputText "", 1, unchanged) {
+  let [_, detail] = image
+  if let `Some selected = detail {
+    if let `Original () = selected { score = score + 1000 }
+  }
+}
+
+return { .score = score }

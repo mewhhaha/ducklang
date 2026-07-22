@@ -1,0 +1,75 @@
+module () where
+
+const {} = import "./cli_types.duck" ()
+
+type CliHeadArgs = CodexCliArgs
+type CliHeadCommand = CodexCliCommand
+
+const classify_cli_head: CliHeadArgs -> CliHeadCommand = (args: CliHeadArgs) => {
+  if let `Cons node = args {
+    let [name, tail] = node
+    if name == "exec" || name == "e" {
+      `Exec tail
+    } else if name == "review" {
+      `Review tail
+    } else if name == "login" {
+      `Login tail
+    } else if name == "logout" {
+      `Logout tail
+    } else if name == "mcp" {
+      `Mcp tail
+    } else if name == "plugin" {
+      `Plugin tail
+    } else if name == "mcp-server" {
+      `McpServer tail
+    } else if name == "app-server" {
+      `AppServer tail
+    } else if name == "remote-control" {
+      `RemoteControl tail
+    } else if name == "app" {
+      `App tail
+    } else if name == "completion" {
+      `Completion tail
+    } else if name == "update" {
+      `Update tail
+    } else if name == "doctor" {
+      `Doctor tail
+    } else if name == "sandbox" {
+      `Sandbox tail
+    } else if name == "debug" {
+      `Debug tail
+    } else if name == "execpolicy" {
+      `Execpolicy tail
+    } else if name == "apply" || name == "a" {
+      `Apply tail
+    } else if name == "resume" {
+      `Resume tail
+    } else if name == "archive" {
+      `Archive tail
+    } else if name == "delete" {
+      `Delete tail
+    } else if name == "unarchive" {
+      `Unarchive tail
+    } else if name == "fork" {
+      `Fork tail
+    } else if name == "cloud" || name == "cloud-tasks" {
+      `Cloud tail
+    } else if name == "responses-api-proxy" {
+      `ResponsesApiProxy tail
+    } else if name == "stdio-to-uds" {
+      `StdioToUds tail
+    } else if name == "exec-server" {
+      `ExecServer tail
+    } else if name == "features" {
+      `Features tail
+    } else {
+      `Interactive args
+    }
+  } else {
+    `Interactive args
+  }
+}
+
+return {
+  classify_cli_head,
+}

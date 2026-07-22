@@ -1,0 +1,41 @@
+module () where
+
+const {} = import "./code_mode_runtime_response_types.duck" ()
+const { handle_code_mode_runtime_response } = import "./code_mode_runtime_response.duck" ()
+
+type FixtureRuntimeItem = CodeModeRuntimeContentItem
+type FixtureRuntimeItemNode = CodeModeRuntimeContentItemNode
+type FixtureResponse = CodeModeRuntimeResponse
+
+let runtime_item: FixtureRuntimeItem = `RuntimeInputText "partial"
+let runtime_node: FixtureRuntimeItemNode = [runtime_item, `RuntimeItemsNil ()]
+let response: FixtureResponse = `RuntimeResult (["cell-1", `RuntimeItemsCons runtime_node, `RuntimeErrorPresent "boom"])
+let failed = handle_code_mode_runtime_response(response, `OriginalDetailUnsupported (), `WaitLimitPresent (`U64Decimal "100"), `ElapsedMicroseconds 940000i64)
+let score = 0
+
+if !(failed.success) {
+  if let `Cons header_node = failed.content_items {
+    let [header_item, header_tail] = header_node
+    if let `InputText header = header_item {
+      if header == "Script failed\nWall time 0.9 seconds\nOutput:\n" {
+        if let `Cons partial_node = header_tail {
+          let [partial_item, partial_tail] = partial_node
+          if let `InputText partial = partial_item {
+            if partial == "partial" {
+              if let `Cons error_node = partial_tail {
+                let [error_item, error_tail] = error_node
+                if let `InputText error = error_item {
+                  if error == "Script error:\nboom" {
+                    if let `Nil () = error_tail { score = 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

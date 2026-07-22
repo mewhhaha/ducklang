@@ -1,0 +1,33 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_plugin_add, parse_plugin_remove } = import "./cli_plugin.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexPluginCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let add_input: FixtureArgs = args.prepend("sample@debug", args.singleton("--json"))
+let added: FixtureResult = parse_plugin_add(add_input)
+if let `Ok command = added {
+  if let `PluginAdd options = command {
+    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug" && options.json {
+      score = score + 1
+    }
+  }
+}
+
+let remove_input: FixtureArgs = args.prepend("sample", args.prepend("-m", args.singleton("debug")))
+let removed: FixtureResult = parse_plugin_remove(remove_input)
+if let `Ok command = removed {
+  if let `PluginRemove options = command {
+    if options.selector.plugin_name == "sample" && options.selector.marketplace_name == "debug" {
+      score = score + 10
+    }
+  }
+}
+
+return { .score = score }

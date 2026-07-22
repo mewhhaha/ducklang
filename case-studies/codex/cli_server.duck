@@ -1,0 +1,119 @@
+module () where
+
+const { text_append, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type ServerArgs = CodexCliArgs
+type ServerCommandResult = CodexServerCommandResult
+type McpServerOptions = CodexMcpServerOptions
+type ExecServerOptions = CodexExecServerOptions
+type ExecServerFacts = CodexExecServerFacts
+type ExecServerFactsResult = Result Text ExecServerFacts
+
+let rec scan_mcp_server: [ServerArgs, Bool] -> ServerCommandResult = (args: ServerArgs, strict_config: Bool) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--strict-config" {
+      scan_mcp_server(tail, true)
+    } else {
+      `Err (text_append("unknown mcp-server option: ", argument))
+    }
+  } else {
+    let options: McpServerOptions = [.strict_config = strict_config]
+    `Ok (`StartMcpServer options)
+  }
+}
+
+let parse_mcp_server_options: ServerArgs -> ServerCommandResult = (args: ServerArgs) => {
+  scan_mcp_server(args, false)
+}
+
+let rec scan_exec_server_from: [ServerArgs, ExecServerFacts] -> ExecServerFactsResult = (args: ServerArgs, facts: ExecServerFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--strict-config" {
+      scan_exec_server_from(tail, facts :+ { .strict_config = true })
+    } else if argument == "--listen" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_exec_server_from(remaining, facts :+ { .listen = `Some value })
+      } else {
+        `Err "missing value for --listen"
+      }
+    } else if argument == "--remote" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_exec_server_from(remaining, facts :+ { .remote = `Some value })
+      } else {
+        `Err "missing value for --remote"
+      }
+    } else if argument == "--environment-id" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_exec_server_from(remaining, facts :+ { .environment_id = `Some value })
+      } else {
+        `Err "missing value for --environment-id"
+      }
+    } else if argument == "--name" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_exec_server_from(remaining, facts :+ { .name = `Some value })
+      } else {
+        `Err "missing value for --name"
+      }
+    } else if argument == "--use-agent-identity-auth" {
+      scan_exec_server_from(tail, facts :+ { .use_agent_identity_auth = true })
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown exec-server option: ", argument))
+    } else {
+      `Err "exec-server does not accept positional arguments"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_exec_server_options: ServerArgs -> ServerCommandResult = (args: ServerArgs) => {
+  let initial: ExecServerFacts = [.strict_config = false, .listen = `None (), .remote = `None (), .environment_id = `None (), .name = `None (), .use_agent_identity_auth = false]
+  let scanned: ExecServerFactsResult = scan_exec_server_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    if let `Some _ = facts.remote {
+      if let `Some _ = facts.listen {
+        `Err "--listen conflicts with --remote"
+      } else if let `None () = facts.environment_id {
+        `Err "--remote requires --environment-id"
+      } else {
+        let options: ExecServerOptions = [.strict_config = facts.strict_config, .listen = facts.listen, .remote = facts.remote, .environment_id = facts.environment_id, .name = facts.name, .use_agent_identity_auth = facts.use_agent_identity_auth]
+        `Ok (`StartExecServer options)
+      }
+    } else if facts.use_agent_identity_auth {
+      `Err "--use-agent-identity-auth requires --remote"
+    } else {
+      let options: ExecServerOptions = [.strict_config = facts.strict_config, .listen = facts.listen, .remote = facts.remote, .environment_id = facts.environment_id, .name = facts.name, .use_agent_identity_auth = facts.use_agent_identity_auth]
+      `Ok (`StartExecServer options)
+    }
+  } else {
+    `Err "exec-server scanner returned an unknown result"
+  }
+}
+
+const parse_stdio_to_uds_options: ServerArgs -> ServerCommandResult = (args: ServerArgs) => {
+  if let `Cons node = args {
+    let [socket_path, tail] = node
+    if let `Nil () = tail {
+      `Ok (`RelayStdioToUds socket_path)
+    } else {
+      `Err "stdio-to-uds accepts exactly one socket path"
+    }
+  } else {
+    `Err "stdio-to-uds requires a socket path"
+  }
+}
+
+return {
+  parse_exec_server_options,
+  parse_mcp_server_options,
+  parse_stdio_to_uds_options,
+}

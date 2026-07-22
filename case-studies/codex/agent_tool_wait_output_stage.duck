@@ -1,0 +1,12 @@
+module (!init: Init) where
+
+const {} = import "./agent_tool_types.duck" ()
+const { render_wait_agent_output } = import "./agent_tool_wait_output.duck" ()
+
+type AgentWaitOutputStageMailbox = AgentToolMailboxSnapshot
+
+input <- StageInput.input()
+let snapshot: AgentWaitOutputStageMailbox = input
+let output: Text = render_wait_agent_output snapshot
+
+return { .result = output }

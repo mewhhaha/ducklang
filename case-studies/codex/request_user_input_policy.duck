@@ -1,0 +1,109 @@
+module () where
+
+const {} = import "./request_user_input_types.duck" ()
+const { request_user_input_availability } = import "./request_user_input_availability.duck" ()
+
+type UserInputArgs = RequestUserInputArgs
+type UserInputAutoResolution = RequestUserInputAutoResolution
+type UserInputMode = RequestUserInputMode
+type UserInputNormalization = RequestUserInputNormalization
+type UserInputPlan = RequestUserInputPlan
+type UserInputQuestion = RequestUserInputQuestion
+type UserInputQuestionNode = RequestUserInputQuestionNode
+type UserInputQuestions = RequestUserInputQuestions
+
+// The named boundary gives native Core a terminal owner for the reversed list
+// before normalization selects its result branch.
+const reverse_questions: UserInputQuestions -> UserInputQuestions = questions => {
+  let current = questions
+  let reversed: UserInputQuestions = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [question, tail] = node
+      let reversed_node: UserInputQuestionNode = [question, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const normalize_request_user_input_args: UserInputArgs -> UserInputNormalization = args => {
+  let current = args.questions
+  let normalized_reversed: UserInputQuestions = `Nil ()
+  let valid = true
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [question, tail] = node
+      if let `Present options = question.options {
+        if let `Nil () = options {
+          valid = false
+          done = true
+        } else {
+          let normalized_question: UserInputQuestion = question :+ { .is_other = true }
+          let normalized_node: UserInputQuestionNode = [normalized_question, normalized_reversed]
+          normalized_reversed = `Cons normalized_node
+          current = tail
+        }
+      } else {
+        valid = false
+        done = true
+      }
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  let normalized_questions = reverse_questions(normalized_reversed)
+  if valid {
+    let auto_resolution: UserInputAutoResolution = if let `AutoResolutionAboveMaximum () = args.auto_resolution {
+      `AutoResolutionMs 240000i64
+    } else if let `AutoResolutionMs value = args.auto_resolution {
+      if value < 60000i64 {
+        `AutoResolutionMs 60000i64
+      } else if value > 240000i64 {
+        `AutoResolutionMs 240000i64
+      } else {
+        args.auto_resolution
+      }
+    } else {
+      args.auto_resolution
+    }
+    let normalized: UserInputArgs = [.questions = normalized_questions, .auto_resolution = auto_resolution]
+    `Normalized normalized
+  } else {
+    `Invalid "request_user_input requires non-empty options for every question"
+  }
+}
+
+const plan_request_user_input: [Bool, UserInputMode, Bool, UserInputArgs] -> UserInputPlan = (is_root_thread: Bool, mode: UserInputMode, default_mode_enabled: Bool, args: UserInputArgs) => {
+  if !(is_root_thread) {
+    `RejectRequest "request_user_input can only be used by the root thread"
+  } else {
+    let availability = request_user_input_availability(mode, default_mode_enabled)
+    if let `Unavailable message = availability {
+      `RejectRequest message
+    } else {
+      let normalization = normalize_request_user_input_args(args)
+      if let `Normalized normalized = normalization {
+        `PromptUser normalized
+      } else if let `Invalid message = normalization {
+        `RejectRequest message
+      } else {
+        `RejectRequest "request_user_input normalization produced no result"
+      }
+    }
+  }
+}
+
+return {
+  normalize_request_user_input_args,
+  plan_request_user_input,
+}

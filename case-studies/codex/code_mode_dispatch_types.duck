@@ -1,0 +1,87 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./code_mode_nested_tool_types.duck" ()
+
+type CodeModeNotification = struct {
+  .call_id = Text,
+  .cell_id = Text,
+  .text = Text,
+}
+
+type CodeModeDispatchRequest =
+  | `DispatchNestedInvocation CodeModeNestedToolInvocation
+  | `DispatchNotification CodeModeNotification
+
+type CodeModeDispatchCancellation =
+  | `DispatchActive Unit
+  | `DispatchCancelled Unit
+
+type CodeModeDispatchChannelState =
+  | `DispatchChannelOpen Unit
+  | `DispatchChannelUnavailable Unit
+
+type CodeModeDispatchSubmissionFacts = struct {
+  .request = CodeModeDispatchRequest,
+  .cancellation = CodeModeDispatchCancellation,
+  .channel = CodeModeDispatchChannelState,
+}
+
+type CodeModeDispatchSubmissionPlan =
+  | `QueueCodeModeDispatch CodeModeDispatchRequest
+  | `RejectCodeModeDispatch Text
+
+type CodeModeDispatchDeliveredResponse =
+  | `DispatchDeliveredSuccess Unit
+  | `DispatchDeliveredFailure Text
+
+type CodeModeDispatchResponseState =
+  | `DispatchResponseDelivered CodeModeDispatchDeliveredResponse
+  | `DispatchResponseStopped Unit
+  | `DispatchResponseCancelled Unit
+
+type CodeModeDispatchResponsePlan =
+  | `AcceptCodeModeDispatchResponse Unit
+  | `RejectCodeModeDispatchResponse Text
+
+type CodeModeDispatchGateState =
+  | `DispatchGateWaiting Unit
+  | `DispatchGateReady Unit
+  | `DispatchGateClosed Unit
+
+type CodeModeDispatchGateFacts = struct {
+  .request = CodeModeDispatchRequest,
+  .cancellation = CodeModeDispatchCancellation,
+  .gate = CodeModeDispatchGateState,
+}
+
+type CodeModeClosedNotification = struct {
+  .cell_id = Text,
+  .error = Text,
+}
+type CodeModeDispatchGatePlan =
+  | `WaitForCodeModeDispatchGate Text
+  | `SpawnNestedToolDispatch CodeModeNestedToolInvocation
+  | `RunCodeModeNotification CodeModeNotification
+  | `CloseNestedToolDispatchGate Text
+  | `CloseNotificationDispatchGate CodeModeClosedNotification
+
+type CodeModeNotificationOutput = struct {
+  .call_id = Text,
+  .name = Text,
+  .text = Text,
+}
+
+type CodeModeNotificationPlan =
+  | `CompleteBlankNotification Unit
+  | `InjectCodeModeNotification CodeModeNotificationOutput
+
+type CodeModeNotificationInjection =
+  | `NotificationInjected Unit
+  | `NotificationTurnMissing Unit
+
+type CodeModeNotificationCompletion =
+  | `NotificationComplete Unit
+  | `NotificationRejected Text
+
+return {}

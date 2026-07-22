@@ -1,0 +1,14 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./auto_compact_window_types.duck" ()
+const {} = import "./context_window_status_types.duck" ()
+
+type TokenBudgetI64Option = ContextWindowI64Option
+
+type NewContextWindowToolResult = struct {
+  .window = AutoCompactWindow,
+  .output = Text,
+}
+
+return {}

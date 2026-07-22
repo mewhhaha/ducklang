@@ -1,0 +1,12 @@
+module () where
+
+declare effect ViewImageHost {
+  suspending read: (&ViewImageHostRequest) => ViewImageHostResponse
+  suspending viewed: (&ViewImageViewEvent) => Unit
+}
+
+declare Init {
+  view_image_host: ViewImageHost
+}
+
+return {}

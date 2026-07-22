@@ -1,0 +1,88 @@
+module () where
+
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./cli_types.duck" ()
+
+type CliOptionsArgs = CodexCliArgs
+type CliOptionsCompletion = CodexCompletionOptions
+type CliOptionsCompletionResult = CodexCompletionOptionsResult
+type CliOptionsFeatureCommand = CodexFeatureCommand
+type CliOptionsFeatureResult = CodexFeatureCommandResult
+type CliOptionsShellResult = Result Text CodexCompletionShell
+
+const parse_completion_shell: Text -> CliOptionsShellResult = (name: Text) => {
+  if name == "bash" {
+    `Ok (`Bash ())
+  } else if name == "elvish" {
+    `Ok (`Elvish ())
+  } else if name == "fish" {
+    `Ok (`Fish ())
+  } else if name == "powershell" {
+    `Ok (`PowerShell ())
+  } else if name == "zsh" {
+    `Ok (`Zsh ())
+  } else {
+    `Err (text_append("unsupported completion shell: ", name))
+  }
+}
+
+const parse_completion_options: CliOptionsArgs -> CliOptionsCompletionResult = (args: CliOptionsArgs) => {
+  if let `Nil () = args {
+    let options: CliOptionsCompletion = [.shell = `Bash ()]
+    `Ok options
+  } else if let `Cons node = args {
+    let [name, tail] = node
+    if let `Nil () = tail {
+      let parsed: CliOptionsShellResult = parse_completion_shell name
+      if let `Ok shell = parsed {
+        let options: CliOptionsCompletion = [.shell = shell]
+        `Ok options
+      } else if let `Err message = parsed {
+        `Err message
+      } else {
+        `Err "completion shell parser returned an unknown result"
+      }
+    } else {
+      `Err "completion expects at most one shell"
+    }
+  } else {
+    `Err "completion arguments have an unknown shape"
+  }
+}
+
+const parse_feature_command: CliOptionsArgs -> CliOptionsFeatureResult = (args: CliOptionsArgs) => {
+  if let `Cons command_node = args {
+    let [command, command_tail] = command_node
+    if command == "list" {
+      if let `Nil () = command_tail {
+        `Ok (`List ())
+      } else {
+        `Err "features list does not accept arguments"
+      }
+    } else if command == "enable" || command == "disable" {
+      if let `Cons feature_node = command_tail {
+        let [feature, feature_tail] = feature_node
+        if let `Nil () = feature_tail {
+          if command == "enable" {
+            `Ok (`Enable feature)
+          } else {
+            `Ok (`Disable feature)
+          }
+        } else {
+          `Err (text_append(text_append("features ", command), " expects exactly one feature"))
+        }
+      } else {
+        `Err (text_append(text_append("features ", command), " requires a feature"))
+      }
+    } else {
+      `Err (text_append("unknown features command: ", command))
+    }
+  } else {
+    `Err "features requires list, enable, or disable"
+  }
+}
+
+return {
+  parse_completion_options,
+  parse_feature_command,
+}

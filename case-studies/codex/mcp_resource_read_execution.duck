@@ -1,0 +1,52 @@
+module (!init: Init) where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { bound_resource_output } = import "./mcp_resource_output_limit.duck" ()
+
+type ResourceReadExecutionEvent = McpResourceEvent
+type ResourceReadExecutionHostRequest = McpResourceHostRequest
+type ResourceReadExecutionHostResponse = McpResourceHostResponse
+type ResourceReadExecutionOutputInput = McpResourceReadOutputInput
+type ResourceReadExecutionPrepared = McpResourcePreparedCall
+type ResourceReadExecutionResult = McpResourceExecutionResult
+type ResourceReadExecutionTextResult = McpResourceTextResult
+
+let run_read_mcp_resource = (prepared: ResourceReadExecutionPrepared, maximum_bytes: I32) => {
+  if let `ReadResource args = prepared.operation {
+    let started: ResourceReadExecutionEvent = [.call_id = prepared.call_id, .server = args.server, .tool = "read_mcp_resource", .completed = false, .success = true, .message = `None ()]
+    _ <- McpResourceHost.event(&started)
+    let request: ResourceReadExecutionHostRequest = [.operation = prepared.operation]
+    response <- McpResourceHost.invoke(&request)
+    let host_response: ResourceReadExecutionHostResponse = response
+    let output: ResourceReadExecutionTextResult = if let `Read document = host_response {
+      let input: ResourceReadExecutionOutputInput = [.operation = prepared.operation, .document = document]
+      stage_output <- McpResourceStages.read_output(&input)
+      let typed_output: ResourceReadExecutionTextResult = stage_output
+      typed_output
+    } else if let `Failed reason = host_response {
+      `ResourceFailed reason
+    } else {
+      `ResourceFailed "MCP resource read host returned the wrong response"
+    }
+
+    if let `ResourceText text = output {
+      let completed: ResourceReadExecutionEvent = [.call_id = prepared.call_id, .server = args.server, .tool = "read_mcp_resource", .completed = true, .success = true, .message = `Some text]
+      _ <- McpResourceHost.event(&completed)
+      let result: ResourceReadExecutionResult = `Completed (bound_resource_output(text, maximum_bytes))
+      result
+    } else if let `ResourceFailed reason = output {
+      let completed: ResourceReadExecutionEvent = [.call_id = prepared.call_id, .server = args.server, .tool = "read_mcp_resource", .completed = true, .success = false, .message = `Some reason]
+      _ <- McpResourceHost.event(&completed)
+      let result: ResourceReadExecutionResult = `Rejected reason
+      result
+    } else {
+      let result: ResourceReadExecutionResult = `Rejected "MCP resource read output produced no result"
+      result
+    }
+  } else {
+    let result: ResourceReadExecutionResult = `Rejected "MCP resource read received the wrong operation"
+    result
+  }
+}
+
+return { run_read_mcp_resource }

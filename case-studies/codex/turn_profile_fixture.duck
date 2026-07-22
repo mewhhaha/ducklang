@@ -1,0 +1,68 @@
+module () where
+
+const { monotonic_ms, read_duration_ms } = import "duck:prelude/abstractions" ()
+const {} = import "./turn_profile_types.duck" ()
+const { empty_turn_profile_state, start_turn_profile, begin_sampling, begin_tool_blocking, end_turn_profile_phase, record_sampling_retry, complete_turn_profile } = import "./turn_profile.duck" ()
+
+let state = empty_turn_profile_state()
+let score = 0
+
+let before_start = begin_sampling(state, monotonic_ms(100i64))
+let before_start_started = before_start.started
+state = before_start.state
+if !(before_start_started) {
+  score = score + 1
+}
+
+state = start_turn_profile(state, monotonic_ms(1000i64))
+let first_sampling = begin_sampling(state, monotonic_ms(1100i64))
+let first_sampling_started = first_sampling.started
+state = first_sampling.state
+let duplicate_sampling = begin_sampling(state, monotonic_ms(1200i64))
+let duplicate_sampling_started = duplicate_sampling.started
+state = duplicate_sampling.state
+if first_sampling_started && !(duplicate_sampling_started) && state.sampling_request_count == 1i64 {
+  score = score + 10
+}
+
+let wrong_end = end_turn_profile_phase(state, monotonic_ms(1400i64), `ToolBlocking ())
+state = end_turn_profile_phase(wrong_end, monotonic_ms(1600i64), `Sampling ())
+if read_duration_ms(&state.sampling) == 500i64 {
+  score = score + 100
+}
+
+let tool = begin_tool_blocking(state, monotonic_ms(1600i64))
+let tool_started = tool.started
+state = end_turn_profile_phase(tool.state, monotonic_ms(1900i64), `ToolBlocking ())
+state = record_sampling_retry(state)
+if tool_started && read_duration_ms(&state.tool_blocking) == 300i64 && state.sampling_retry_count == 1i64 {
+  score = score + 1000
+}
+
+let second_sampling = begin_sampling(state, monotonic_ms(2000i64))
+let second_sampling_started = second_sampling.started
+state = end_turn_profile_phase(second_sampling.state, monotonic_ms(2200i64), `Sampling ())
+let completion = complete_turn_profile(state, monotonic_ms(2300i64))
+state = completion.state
+let profile = completion.profile
+let durations_valid = read_duration_ms(&profile.before_first_sampling) == 100i64 && read_duration_ms(&profile.sampling) == 700i64 && read_duration_ms(&profile.between_sampling_overhead) == 100i64 && read_duration_ms(&profile.tool_blocking) == 300i64 && read_duration_ms(&profile.after_last_sampling) == 100i64
+if second_sampling_started && durations_valid && profile.sampling_request_count == 2i64 && profile.sampling_retry_count == 1i64 {
+  score = score + 10000
+}
+
+let repeated = complete_turn_profile(state, monotonic_ms(2500i64))
+let after_completion = begin_tool_blocking(repeated.state, monotonic_ms(2600i64))
+let after_completion_started = after_completion.started
+let after_retry = record_sampling_retry(after_completion.state)
+if read_duration_ms(&repeated.profile.after_last_sampling) == 100i64 && !(after_completion_started) && after_retry.sampling_retry_count == 1i64 {
+  score = score + 100000
+}
+
+let reversed = start_turn_profile(empty_turn_profile_state(), monotonic_ms(500i64))
+let reversed_sampling = begin_sampling(reversed, monotonic_ms(400i64))
+let reversed_completion = complete_turn_profile(reversed_sampling.state, monotonic_ms(400i64))
+if read_duration_ms(&reversed_completion.profile.before_first_sampling) == 0i64 {
+  score = score + 1000000
+}
+
+return { .score = score }

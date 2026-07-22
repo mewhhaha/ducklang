@@ -1,0 +1,14 @@
+module () where
+
+declare effect MessageHistoryStore {
+  suspending snapshot_identity: () => Text
+  suspending snapshot_contents: () => Text
+  suspending append: (&Text) => Unit
+  suspending rewrite: (&Text) => Unit
+}
+
+declare Init {
+  message_history_store: MessageHistoryStore
+}
+
+return {}

@@ -1,0 +1,42 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type WaitEnvironmentToolDefinition = ToolDefinition
+type WaitEnvironmentToolDefinitionNode = ToolDefinitionNode
+type WaitEnvironmentToolDefinitions = ToolDefinitions
+type WaitEnvironmentToolName = ToolName
+type WaitEnvironmentToolSpec = ToolSpec
+type WaitEnvironmentToolSpecNode = ToolSpecNode
+type WaitEnvironmentToolSpecs = ToolSpecs
+
+const wait_for_environment_tool_name: () -> WaitEnvironmentToolName = () => ["", "wait_for_environment"]
+
+const wait_for_environment_tool_definitions: Bool -> WaitEnvironmentToolDefinitions = deferred_executor_enabled => {
+  if deferred_executor_enabled {
+    let definition: WaitEnvironmentToolDefinition = [wait_for_environment_tool_name(), `Direct (), `WaitForEnvironment (), `FunctionPayload (), false, false]
+    let empty: WaitEnvironmentToolDefinitions = `Nil ()
+    `Cons ([definition, empty] as WaitEnvironmentToolDefinitionNode)
+  } else {
+    `Nil ()
+  }
+}
+
+const wait_for_environment_tool_specs: Bool -> WaitEnvironmentToolSpecs = deferred_executor_enabled => {
+  if deferred_executor_enabled {
+    let description = "Wait for a selected execution environment marked as `starting` to become available. Use this when the current task needs that environment's files, commands, or installed capabilities. Do not wait if the task can be completed using tools already available, such as connectors. Waiting may take several minutes and blocks other tool calls. If startup fails, continue without that environment."
+    let parameters = "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"The exact environment ID marked as `starting` in `<environment_context>`.\"}},\"required\":[\"environment_id\"],\"additionalProperties\":false}"
+    let spec: WaitEnvironmentToolSpec = [wait_for_environment_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
+    let empty: WaitEnvironmentToolSpecs = `Nil ()
+    `Cons ([spec, empty] as WaitEnvironmentToolSpecNode)
+  } else {
+    `Nil ()
+  }
+}
+
+return {
+  wait_for_environment_tool_definitions,
+  wait_for_environment_tool_name,
+  wait_for_environment_tool_specs,
+}

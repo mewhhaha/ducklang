@@ -1,0 +1,26 @@
+module () where
+
+const { list, option } = import "duck:prelude/functional" ()
+const rollout_types_module = import "./rollout_types.duck"
+const rollout_scan_module = import "./rollout_scan.duck"
+const { select_model_context_items } = rollout_scan_module()
+
+type FixtureCompletedItem = RolloutCompletedItem
+type FixtureEvent = RolloutEvent
+type FixtureItem = RolloutItem
+type FixtureItems = RolloutItems
+type FixtureTextOption = RolloutTextOption
+
+const items = comptime list(FixtureItem)
+
+let newest_first: FixtureItems = items.empty()
+newest_first = items.prepend(`Event (`TurnStarted "turn-1"), newest_first)
+newest_first = items.prepend(`Event (`ItemCompleted ["turn-1", `UserMessage ()]), newest_first)
+newest_first = items.prepend(`TurnContext (`Some "turn-1"), newest_first)
+newest_first = items.prepend(`Compacted [true, true], newest_first)
+let replay = select_model_context_items(newest_first, `SessionMeta ())
+let score: I32 = 0
+
+if items.length(replay) == 5 { score = 1 }
+
+return { .score = score }

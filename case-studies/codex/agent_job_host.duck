@@ -1,0 +1,12 @@
+module () where
+
+declare effect AgentJobHost {
+  suspending record: (&AgentJobReportArgs) => Bool
+  suspending cancel: (&Text) => Unit
+}
+
+declare Init {
+  agent_job_host: AgentJobHost
+}
+
+return {}

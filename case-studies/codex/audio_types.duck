@@ -1,0 +1,31 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type ParsedAudioDataUrl = struct {
+  .mime = Text,
+  .payload = Text,
+}
+
+// 0 is parsed, 1 is an invalid data URL, and 2 is an oversized encoded payload.
+// Scalar status keeps owned text fields out of gpufuck's runtime-union boundary.
+type AudioDataUrlResult = struct {
+  .status_code = I32,
+  .reason = Text,
+  .size = I32,
+  .mime = Text,
+  .payload = Text,
+}
+
+// 0 is prepared; 1 is invalid data; 2 is an invalid format code;
+// 3 is unsupported media; and 4 is a decoded payload over the size limit.
+type AudioPreparationResult = struct {
+  .status_code = I32,
+  .url = Text,
+  .reason = Text,
+  .size = I32,
+  .mime = Text,
+  .format_code = I32,
+}
+
+return {}

@@ -1,0 +1,14 @@
+module () where
+
+declare effect AgentJobSpawnHost {
+  suspending create: (&AgentJobCreateRequest) => AgentJobCreateOutcome
+  suspending spawn: (&AgentJobSpawnWorkerRequest) => AgentJobSpawnOutcome
+  suspending wait: (&AgentJobWaitRequest) => AgentJobWaitOutcome
+  suspending finalize: (&AgentJobFinalizeRequest) => AgentJobFinalizeOutcome
+}
+
+declare Init {
+  agent_job_spawn_host: AgentJobSpawnHost
+}
+
+return {}

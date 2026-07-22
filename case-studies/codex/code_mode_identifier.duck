@@ -1,0 +1,31 @@
+module () where
+
+const { text_append, text_get, text_length, text_slice } = import "duck:prelude/runtime" ()
+
+const normalize_code_mode_identifier: Text -> Text = (name: Text) => {
+  let normalized: Text = ""
+  for index in 0..text_length name {
+    let byte = text_get [name, index]
+    let valid = false
+    if byte == 95 {
+      valid = true
+    } else if byte == 36 {
+      valid = true
+    } else if byte >= 65 && byte <= 90 {
+      valid = true
+    } else if byte >= 97 && byte <= 122 {
+      valid = true
+    } else if index > 0 && byte >= 48 && byte <= 57 {
+      valid = true
+    }
+
+    if valid {
+      normalized = text_append [normalized, text_slice [name, index, index + 1]]
+    } else if byte < 128 || byte > 191 {
+      normalized = text_append [normalized, "_"]
+    }
+  }
+  if normalized == "" { "_" } else { normalized }
+}
+
+return { normalize_code_mode_identifier }

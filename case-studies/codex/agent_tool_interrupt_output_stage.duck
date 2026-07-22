@@ -1,0 +1,12 @@
+module (!init: Init) where
+
+const agent_types_module = import "./agent_types.duck"
+const { render_interrupt_agent_output } = import "./agent_tool_interrupt_output.duck" ()
+
+type AgentInterruptOutputStageStatus = AgentStatus
+
+input <- StageInput.input()
+let status: AgentInterruptOutputStageStatus = input
+let output: Text = render_interrupt_agent_output status
+
+return { .result = output }

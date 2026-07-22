@@ -1,0 +1,57 @@
+module () where
+
+const { text_contains } = import "duck:prelude/runtime" ()
+const {} = import "./tool_search_types.duck" ()
+const { searchable_function, searchable_namespaced_function } = import "./tool_search_value.duck" ()
+
+type FixtureInfo = ToolSearchInfo
+type FixtureInfos = ToolSearchInfos
+type FixtureSpec = ToolSpec
+
+let score = 0
+let calendar_spec: FixtureSpec = [["", "create_event"], `FunctionSpec (), "Create a calendar event.", "{\"type\":\"object\",\"properties\":{\"timezone\":{\"description\":\"IANA timezone.\"}}}", `ToolOutputSchemaPresent "output schema", false]
+let direct: FixtureInfos = searchable_function(calendar_spec, `SearchSourceMissing ())
+if let `Cons node = direct {
+  let [search_info, tail] = node
+  let [entry, _] = search_info
+  let [search_text, loadable] = entry
+  if text_contains(search_text, "create event") && text_contains(search_text, "IANA timezone") {
+    if let `Function function = loadable {
+      let [function_spec, defer_loading] = function
+      let [_, _, _, _, output, _] = function_spec
+      if defer_loading {
+        if let `ToolOutputSchemaMissing () = output {
+          if let `Nil () = tail { score = score + 1 }
+        }
+      }
+    }
+  }
+}
+
+let namespaced_spec: FixtureSpec = [["mcp__calendar", "create_event"], `FunctionSpec (), "Create a calendar event.", "{}", `ToolOutputSchemaMissing (), false]
+let namespaced: FixtureInfos = searchable_namespaced_function("mcp__calendar", "  ", namespaced_spec, `SearchSourceMissing ())
+if let `Cons node = namespaced {
+  let [search_info, _] = node
+  let [entry, _] = search_info
+  let [_, loadable] = entry
+  if let `Namespace namespace = loadable {
+    let [namespace_name, namespace_description, namespace_tools] = namespace
+    if namespace_name == "mcp__calendar" && namespace_description == "Tools in the mcp__calendar namespace." {
+      if let `Cons tool_node = namespace_tools {
+        let [tool, tail] = tool_node
+        let [tool_spec, defer_loading] = tool
+        let [tool_name, _, _, _, _, _] = tool_spec
+        let [tool_namespace, tool_local_name] = tool_name
+        if defer_loading && tool_namespace == "" && tool_local_name == "create_event" {
+          if let `Nil () = tail { score = score + 10 }
+        }
+      }
+    }
+  }
+}
+
+let unsupported_spec: FixtureSpec = [["", "web_search"], `WebSearchSpec (), "Search the web.", "{}", `ToolOutputSchemaMissing (), false]
+let unsupported: FixtureInfos = searchable_function(unsupported_spec, `SearchSourceMissing ())
+if let `Nil () = unsupported { score = score + 100 }
+
+return { .score = score }

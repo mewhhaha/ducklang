@@ -1,0 +1,19 @@
+module () where
+
+const { parse_thread_turns_cursor, serialize_thread_turns_cursor } = import "./app_server_thread_turn_cursor.duck" ()
+
+let score = 0
+let parsed = parse_thread_turns_cursor("{\"turnId\":\"turn-2\",\"includeAnchor\":true}")
+if let `Ok cursor = parsed {
+  let [turn_id, included] = cursor
+  if turn_id == "turn-2" && included { score = score + 1 }
+}
+let malformed = parse_thread_turns_cursor("not-json")
+if let `Err reason = malformed {
+  if reason == "invalid cursor: not-json" { score = score + 10 }
+}
+if serialize_thread_turns_cursor(["turn-3", false]) == "{\"turnId\":\"turn-3\",\"includeAnchor\":false}" {
+  score = score + 100
+}
+
+return { .score = score }

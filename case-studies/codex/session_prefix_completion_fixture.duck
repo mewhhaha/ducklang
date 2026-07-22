@@ -1,0 +1,32 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const session_prefix_module = import "./session_prefix.duck"
+const { format_inter_agent_completion_message, format_subagent_context_line } = session_prefix_module()
+
+type FixtureTextOption = AgentTextOption
+type FixtureStatus = AgentStatus
+
+let score = 0
+let completed_message: FixtureTextOption = `Some "finished"
+let completed: FixtureStatus = `Completed completed_message
+let rendered = format_inter_agent_completion_message("/root", "/root/worker", completed)
+
+if let `Some message = rendered {
+  if message == "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nfinished" {
+    score = score + 1
+  }
+}
+
+let running: FixtureStatus = `Running ()
+if let `None () = format_inter_agent_completion_message("/root", "/root/worker", running) {
+  score = score + 10
+}
+
+let nickname: FixtureTextOption = `Some "reviewer"
+let empty_nickname: FixtureTextOption = `Some ""
+if format_subagent_context_line("/root/worker", nickname) == "- /root/worker: reviewer" && format_subagent_context_line("/root/worker", empty_nickname) == "- /root/worker" {
+  score = score + 100
+}
+
+return { .score = score }

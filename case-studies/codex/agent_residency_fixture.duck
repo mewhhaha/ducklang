@@ -1,0 +1,35 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const agents_module = import "./agents.duck"
+const agent_residency_module = import "./agent_residency.duck"
+const { collab_tool_call_failed } = agents_module()
+const { agent_records_empty, agent_records_prepend, reserve_residency } = agent_residency_module()
+
+type FixtureTextOption = AgentTextOption
+type FixtureStatus = AgentStatus
+type FixtureRecord = AgentRecord
+type FixtureRecords = AgentRecords
+
+let completed: FixtureStatus = `Completed (`Some "done")
+let running: FixtureStatus = `Running ()
+let errored: FixtureStatus = `Errored "boom"
+let no_text: FixtureTextOption = `None ()
+let lru: FixtureRecords = agent_records_prepend(["a", "/root/a", no_text, no_text, completed, false, false], agent_records_prepend(["b", "/root/b", no_text, no_text, running, false, false], agent_records_prepend(["c", "/root/c", no_text, no_text, errored, false, false], agent_records_empty())))
+let score: I32 = 0
+
+if let `UnloadResident agent_id = reserve_residency(lru, 0, 3, `Some "a") {
+  if agent_id == "c" { score = score + 1 }
+}
+
+let blocked: FixtureRecords = agent_records_prepend(["b", "/root/b", no_text, no_text, running, false, false], agent_records_empty())
+
+if let `ResidencyLimitReached capacity = reserve_residency(blocked, 0, 1, no_text) {
+  if capacity == 1 { score = score + 10 }
+}
+
+if collab_tool_call_failed(errored, true) {
+  score = score + 100
+}
+
+return { .score = score }

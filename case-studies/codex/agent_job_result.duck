@@ -1,0 +1,72 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const { json_string } = import "duck:prelude/json/values" ()
+const { format_i32, text_append, text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
+const {} = import "./agent_job_export_types.duck" ()
+
+type AgentJobResultFailure = AgentJobFailureSummary
+type AgentJobResultFailureList = AgentJobFailureSummaries
+type AgentJobResultCompletion = AgentJobRunCompletion
+type AgentJobRenderedFailures = [Text, I32]
+
+let agent_job_json_string: Text -> Text = value => encode_json(json_string(value))
+
+let render_agent_job_failure: AgentJobResultFailure -> Text = failure => {
+  let source_id = if let `Some value = failure.source_id { agent_job_json_string(value) } else { "null" }
+  let output = text_append(["{\"item_id\":", agent_job_json_string(failure.item_id)])
+  output = text_append([output, text_append([",\"source_id\":", source_id])])
+  output = text_append([output, text_append([",\"last_error\":", agent_job_json_string(failure.last_error)])])
+  text_append([output, "}"])
+}
+
+let render_agent_job_failures: AgentJobResultFailureList -> AgentJobRenderedFailures = failures => {
+  let current = failures
+  let rendered = "["
+  let count = 0
+  let done = false
+  loop {
+    if count >= 5 {
+      done = true
+    } else if let `Cons node = current {
+      let [failure, tail] = node
+      current = tail
+      if text_trim_ascii_whitespace(failure.last_error) != "" {
+        if count > 0 { rendered = text_append([rendered, ","]) }
+        rendered = text_append([rendered, render_agent_job_failure(failure)])
+        count = count + 1
+      }
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  [text_append([rendered, "]"]), count]
+}
+
+let render_spawn_agents_on_csv_result: AgentJobResultCompletion -> Text = completed => {
+  let job_error = completed.job_error
+  if let `Some message = job_error {
+    if text_trim_ascii_whitespace(message) == "" { job_error = `None () }
+  }
+  let [failures_json, failure_count] = render_agent_job_failures(completed.failed_item_errors)
+  if completed.failed_items > 0 && failure_count == 0 {
+    if let `None () = job_error {
+      job_error = `Some "agent job has failed items but no error details were recorded"
+    }
+  }
+  let job_error_json = if let `Some message = job_error { agent_job_json_string(message) } else { "null" }
+  let failed_item_errors_json = if failure_count > 0 { failures_json } else { "null" }
+  let status = if completed.cancelled { "cancelled" } else { "completed" }
+  let output = text_append(["{\"job_id\":", agent_job_json_string(completed.job_id)])
+  output = text_append([output, text_append([",\"status\":", agent_job_json_string(status)])])
+  output = text_append([output, text_append([",\"output_csv_path\":", agent_job_json_string(completed.output_path)])])
+  output = text_append([output, text_append([",\"total_items\":", format_i32(completed.total_items)])])
+  output = text_append([output, text_append([",\"completed_items\":", format_i32(completed.completed_items)])])
+  output = text_append([output, text_append([",\"failed_items\":", format_i32(completed.failed_items)])])
+  output = text_append([output, text_append([",\"job_error\":", job_error_json])])
+  output = text_append([output, text_append([",\"failed_item_errors\":", text_append([failed_item_errors_json, "}"])])])
+  output
+}
+
+return { render_spawn_agents_on_csv_result }

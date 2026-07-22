@@ -1,0 +1,37 @@
+module () where
+
+const {} = import "./request_user_input_types.duck" ()
+const { normalize_request_user_input_args } = import "./request_user_input_policy.duck" ()
+
+type FixtureArgs = RequestUserInputArgs
+type FixtureOption = RequestUserInputQuestionOption
+type FixtureOptionNode = RequestUserInputQuestionOptionNode
+type FixtureOptions = RequestUserInputQuestionOptions
+type FixtureQuestion = RequestUserInputQuestion
+type FixtureQuestionNode = RequestUserInputQuestionNode
+type FixtureQuestions = RequestUserInputQuestions
+
+let score_normalization: [FixtureArgs, I64, I32] -> I32 = (args: FixtureArgs, expected_auto_resolution: I64, weight: I32) => {
+  let score = 0
+  if let `Normalized normalized = normalize_request_user_input_args(args) {
+    if let `AutoResolutionMs value = normalized.auto_resolution {
+      if value == expected_auto_resolution {
+        if let `Cons node = normalized.questions {
+          let [normalized_question, _] = node
+          if normalized_question.is_other && normalized_question.is_secret { score = weight }
+        }
+      }
+    }
+  }
+  score
+}
+
+let low_questions: FixtureQuestions = `Cons ([[.id = "confirm", .header = "Confirm", .question = "Proceed?", .is_other = false, .is_secret = true, .options = `Present (`Cons ([[.label = "Continue (Recommended)", .description = "Proceed with the change."] as FixtureOption, `Nil ()] as FixtureOptionNode))] as FixtureQuestion, `Nil ()] as FixtureQuestionNode)
+let low: FixtureArgs = [.questions = low_questions, .auto_resolution = `AutoResolutionMs 1i64]
+let low_score = score_normalization(low, 60000i64, 1)
+
+let high_questions: FixtureQuestions = `Cons ([[.id = "confirm", .header = "Confirm", .question = "Proceed?", .is_other = false, .is_secret = true, .options = `Present (`Cons ([[.label = "Continue (Recommended)", .description = "Proceed with the change."] as FixtureOption, `Nil ()] as FixtureOptionNode))] as FixtureQuestion, `Nil ()] as FixtureQuestionNode)
+let high: FixtureArgs = [.questions = high_questions, .auto_resolution = `AutoResolutionMs 999999i64]
+let high_score = score_normalization(high, 240000i64, 10)
+
+return { .score = low_score + high_score }

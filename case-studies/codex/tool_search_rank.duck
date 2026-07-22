@@ -1,0 +1,247 @@
+module () where
+
+const { text_ascii_words, text_equal_ascii_case_insensitive } = import "duck:prelude/runtime" ()
+const {} = import "./tool_search_types.duck" ()
+const { natural_log_positive_q10 } = import "./tool_search_rank_math.duck" ()
+
+type SearchRankInfo = ToolSearchInfo
+type SearchRankInfos = ToolSearchInfos
+type SearchRankEntry = ToolSearchEntry
+type SearchRankedEntry = ToolSearchRankedEntry
+type SearchRankedEntryNode = ToolSearchRankedEntryNode
+type SearchRankedEntries = ToolSearchRankedEntries
+type SearchRankWords = List Text
+
+const word_count: [SearchRankWords, Text] -> I32 = (values: SearchRankWords, term: Text) => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [word, tail] = node
+      if text_equal_ascii_case_insensitive [word, term] { count = count + 1 }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const word_list_length: SearchRankWords -> I32 = values => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const search_info_count: SearchRankInfos -> I32 = values => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const document_frequency: [SearchRankInfos, Text] -> I32 = (search_infos: SearchRankInfos, term: Text) => {
+  let current = search_infos
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [search_info, tail] = node
+      let [entry, _] = search_info
+      let [search_text, _] = entry
+      if word_count(text_ascii_words search_text, term) > 0 { count = count + 1 }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I32 = (entry: SearchRankEntry, search_infos: SearchRankInfos, query_words: SearchRankWords, average_document_length: I32) => {
+  let [search_text, _] = entry
+  let document_words = text_ascii_words search_text
+  let document_length = word_list_length document_words
+  let document_count = search_info_count search_infos
+  let current = query_words
+  let score = 0
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [term, tail] = node
+      let term_frequency = word_count(document_words, term)
+      if term_frequency > 0 {
+        let matching_documents = document_frequency(search_infos, term)
+        let inverse_frequency_input = 1024 + ((2 * (document_count - matching_documents) + 1) * 1024) / (2 * matching_documents + 1)
+        let inverse_frequency = natural_log_positive_q10 inverse_frequency_input
+        let length_normalization = 256 + (768 * document_length) / average_document_length
+        let saturation = term_frequency * 1024 + (1229 * length_normalization) / 1024
+        score = score + (inverse_frequency * term_frequency * 2253) / saturation
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  score
+}
+
+const ranked_before: [SearchRankedEntry, SearchRankedEntry] -> Bool = (left: SearchRankedEntry, right: SearchRankedEntry) => {
+  let [left_position, left_score, _] = left
+  let [right_position, right_score, _] = right
+  if left_score == right_score { left_position < right_position } else { left_score > right_score }
+}
+
+const reverse_ranked: SearchRankedEntries -> SearchRankedEntries = values => {
+  let current = values
+  let reversed: SearchRankedEntries = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      reversed = `Cons ([value, reversed] as SearchRankedEntryNode)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const insert_ranked: [SearchRankedEntries, SearchRankedEntry] -> SearchRankedEntries = (values: SearchRankedEntries, value: SearchRankedEntry) => {
+  let remaining = values
+  let prefix_reversed: SearchRankedEntries = `Nil ()
+  let inserted: SearchRankedEntries = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = remaining {
+      let [current, tail] = node
+      if ranked_before(value, current) {
+        inserted = `Cons ([value, remaining] as SearchRankedEntryNode)
+        done = true
+      } else {
+        prefix_reversed = `Cons ([current, prefix_reversed] as SearchRankedEntryNode)
+        remaining = tail
+      }
+    } else {
+      inserted = `Cons ([value, `Nil ()] as SearchRankedEntryNode)
+      done = true
+    }
+    if done { break }
+  }
+
+  let prefix = prefix_reversed
+  done = false
+  loop {
+    if let `Cons node = prefix {
+      let [current, tail] = node
+      inserted = `Cons ([current, inserted] as SearchRankedEntryNode)
+      prefix = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  inserted
+}
+
+const take_ranked: [I32, SearchRankedEntries] -> SearchRankedEntries = (count: I32, values: SearchRankedEntries) => {
+  let current = values
+  let remaining = count
+  let reversed: SearchRankedEntries = `Nil ()
+  let done = remaining <= 0
+  loop {
+    if done { break }
+    if let `Cons node = current {
+      let [value, tail] = node
+      reversed = `Cons ([value, reversed] as SearchRankedEntryNode)
+      current = tail
+      remaining = remaining - 1
+      if remaining <= 0 { done = true }
+    } else {
+      done = true
+    }
+  }
+  reverse_ranked reversed
+}
+
+const rank_tool_search: [Text, I32, SearchRankInfos] -> SearchRankedEntries = (query: Text, limit: I32, search_infos: SearchRankInfos) => {
+  let document_count = search_info_count search_infos
+  if document_count == 0 || limit <= 0 {
+    let empty: SearchRankedEntries = `Nil ()
+    return empty
+  }
+
+  let current = search_infos
+  let total_document_words = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [search_info, tail] = node
+      let [entry, _] = search_info
+      let [search_text, _] = entry
+      total_document_words = total_document_words + word_list_length(text_ascii_words search_text)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  let average_document_length = total_document_words / document_count
+  if average_document_length <= 0 { average_document_length = 1 }
+
+  let query_words = text_ascii_words query
+  let ranked: SearchRankedEntries = `Nil ()
+  current = search_infos
+  let position = 0
+  done = false
+  loop {
+    if let `Cons node = current {
+      let [search_info, tail] = node
+      let [entry, _] = search_info
+      let result: SearchRankedEntry = [position, entry_score(entry, search_infos, query_words, average_document_length), entry]
+      ranked = insert_ranked(ranked, result)
+      position = position + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  take_ranked(limit, ranked)
+}
+
+return {
+  natural_log_positive_q10,
+  rank_tool_search,
+}

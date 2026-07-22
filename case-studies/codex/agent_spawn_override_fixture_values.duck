@@ -1,0 +1,18 @@
+module () where
+
+const {} = import "./agent_spawn_override_types.duck" ()
+const {} = import "./agent_types.duck" ()
+
+const fixture_override_efforts: [Text, Text] -> AgentSpawnOverrideEfforts = (first, second) => {
+  `Cons [first, `Cons [second, `Nil ()]]
+}
+
+const fixture_override_models: () -> AgentSpawnOverrideModels = () => {
+  `Cons [[.name = "alpha", .v2_supported = true, .visible = true, .default_reasoning_effort = `Some "high", .supported_reasoning_efforts = fixture_override_efforts("low", "high")], `Cons [[.name = "legacy", .v2_supported = false, .visible = true, .default_reasoning_effort = `None (), .supported_reasoning_efforts = `Nil ()], `Cons [[.name = "hidden", .v2_supported = true, .visible = false, .default_reasoning_effort = `Some "medium", .supported_reasoning_efforts = fixture_override_efforts("medium", "medium")], `Nil ()]]]
+}
+
+const fixture_override_input: [AgentTextOption, AgentTextOption, AgentTextOption, AgentTextOption] -> AgentSpawnOverrideInput = (requested_model, requested_effort, default_model, default_effort) => {
+  [.parent_model = "parent", .parent_reasoning_effort = `Some "medium", .parent_supported_reasoning_efforts = fixture_override_efforts("medium", "high"), .default_model = default_model, .default_reasoning_effort = default_effort, .requested_model = requested_model, .requested_reasoning_effort = requested_effort, .available_models = fixture_override_models()]
+}
+
+return { fixture_override_input }

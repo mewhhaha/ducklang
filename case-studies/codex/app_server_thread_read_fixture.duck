@@ -1,0 +1,36 @@
+module () where
+
+const { json_array_empty, json_object_empty, json_object_get } = import "duck:prelude/json" ()
+const app_server_threads_module = import "./app_server_threads.duck"
+const {} = import "./rollout_storage_types.duck" ()
+const { materialize_thread_read } = app_server_threads_module()
+
+type FixtureThread = RolloutThreadSummary
+
+const field_is_missing = (fields, key: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Missing () = lookup { true } else { false }
+}
+
+let thread: FixtureThread = ["/home/sessions/2025/01/03/rollout-thread-1.jsonl", "thread-1", "session-1", `None (), `None (), "Alpha task", "/repo", `Cli (), "openai", "0.1.0", `None (), "legacy", `None (), `None (), "2025-01-03T09:00:00Z", "2025-01-04T10:00:00+01:00", `None ()]
+let read_value = materialize_thread_read(thread, json_array_empty(), false)
+let read_thread_fields = json_object_empty()
+let score = 0
+
+if let `Object fields = read_value {
+  let thread_lookup = json_object_get("thread", fields)
+  if let `Found read_thread = thread_lookup {
+    if let `Object fields = read_thread { read_thread_fields = fields }
+  }
+}
+
+let id_lookup = json_object_get("id", read_thread_fields)
+if let `Found id = id_lookup {
+  if let `String value = id {
+    if value == "thread-1" && field_is_missing(read_thread_fields, "historyMode") && field_is_missing(read_thread_fields, "canAcceptDirectInput") {
+      score = 1
+    }
+  }
+}
+
+return { .score = score }

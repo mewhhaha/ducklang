@@ -1,0 +1,195 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const { goal_continuation_is_deferred, thread_is_ephemeral, turns_are_excluded } = import "./app_server_types.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+
+type LifecycleTextOption = AppServerTextOption
+type LifecycleJson = AppServerJson
+type LifecycleJsonOption = AppServerJsonOption
+type LifecycleHistoryMode = AppServerThreadHistoryMode
+type LifecycleHistoryModeOption = AppServerThreadHistoryModeOption
+type LifecycleStartSourceOption = AppServerThreadStartSourceOption
+type LifecycleRawEvents = AppServerExperimentalRawEvents
+type LifecycleLoadedThread = AppServerLoadedThread
+type LifecycleLoadedThreads = AppServerLoadedThreads
+type LifecycleStartPlan = AppServerThreadStartPlan
+type LifecycleStartInput = AppServerThreadStartPlanInput
+type LifecycleDecodedStartInput = AppServerDecodedThreadStartPlanInput
+type LifecycleStartPlanResult = AppServerThreadStartPlanResult
+type LifecycleResumeSource = AppServerThreadResumeSource
+type LifecycleResumePlan = AppServerThreadResumePlan
+type LifecycleResumeInput = AppServerThreadResumePlanInput
+type LifecycleDecodedResumeInput = AppServerDecodedThreadResumePlanInput
+type LifecycleResumePlanResult = AppServerThreadResumePlanResult
+type LifecycleForkSource = AppServerThreadForkSource
+type LifecycleForkBoundary = AppServerThreadForkBoundary
+type LifecycleForkParams = AppServerThreadForkParams
+type LifecycleForkPlan = AppServerThreadForkPlan
+type LifecycleForkInput = AppServerThreadForkPlanInput
+type LifecycleForkPlanResult = AppServerThreadForkPlanResult
+type LifecycleThreadPersistence = AppServerThreadPersistence
+type LifecycleExcludeTurns = AppServerExcludeTurns
+type LifecycleGoalContinuation = AppServerGoalContinuation
+type LifecycleUnsubscribeInput = AppServerThreadUnsubscribePlanInput
+type LifecycleUnsubscribeStatus = AppServerThreadUnsubscribeStatus
+
+const plan_thread_start: LifecycleStartInput -> LifecycleStartPlanResult = (input: LifecycleStartInput) => {
+  let [history_mode, start_source, persistence, raw_events, paginated_lists] = input
+  let effective_history_mode: LifecycleHistoryMode = if let `Some mode = history_mode { mode } else { `LegacyHistory () }
+  let initial_history = if let `Some source = start_source {
+    if let `ClearSource () = source { `ClearedHistory () } else { `NewHistory () }
+  } else { `NewHistory () }
+  if let `PaginatedHistory () = effective_history_mode {
+    if let `PaginatedListsUnsupported () = paginated_lists {
+      `Err "paginated threads require thread/turns/list and thread/items/list support"
+    } else {
+      let plan: LifecycleStartPlan = [effective_history_mode, initial_history, persistence, raw_events]
+      `Ok plan
+    }
+  } else {
+    let plan: LifecycleStartPlan = [effective_history_mode, initial_history, persistence, raw_events]
+    `Ok plan
+  }
+}
+
+const plan_decoded_thread_start: LifecycleDecodedStartInput -> LifecycleStartPlanResult = (input: LifecycleDecodedStartInput) => {
+  let [params, paginated_lists] = input
+  let persistence: LifecycleThreadPersistence = if let `Some ephemeral = params.ephemeral {
+    if ephemeral { `EphemeralThread () } else { `PersistentThread () }
+  } else {
+    `PersistentThread ()
+  }
+  let plan_input: LifecycleStartInput = [params.history_mode, params.session_start_source, persistence, params.experimental_raw_events, paginated_lists]
+  plan_thread_start(plan_input)
+}
+
+let plan_thread_resume: LifecycleResumeInput -> LifecycleResumePlanResult = (input: LifecycleResumeInput) => {
+  let [loaded, thread_id, history, path, turns, initial_turns_page] = input
+  let current = loaded
+  let running = false
+  let running_path: LifecycleTextOption = `None ()
+  let running_history_mode: LifecycleHistoryMode = `LegacyHistory ()
+  let running_thread: LifecycleLoadedThread = [thread_id, `None (), `LegacyHistory ()]
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [candidate, tail] = node
+      let [candidate_id, candidate_path, candidate_history_mode] = candidate
+      if candidate_id == thread_id {
+        running = true
+        running_path = candidate_path
+        running_history_mode = candidate_history_mode
+        running_thread = candidate
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let include_turns = !turns_are_excluded(turns)
+  let paginated = if let `PaginatedHistory () = running_history_mode { true } else { false }
+  let stale_path = false
+  let requested_path: Text = ""
+  let active_path: Text = ""
+  if running {
+    if let `Some requested = path {
+      if let `Some active = running_path {
+        requested_path = requested
+        active_path = active
+        stale_path = requested != active
+      }
+    }
+  }
+
+  if stale_path {
+    `Err ("cannot resume running thread " <> thread_id <> " with stale path: requested `" <> requested_path <> "`, active `" <> active_path <> "`")
+  } else if running && paginated && include_turns {
+    `Err "paginated threads do not support full-history thread/resume; pass excludeTurns=true"
+  } else if running && paginated {
+    if let `Some _ = initial_turns_page {
+      `Err "paginated threads do not support initialTurnsPage; use turnsBackwardsCursor and itemsBackwardsCursor"
+    } else {
+      let source: LifecycleResumeSource = `RejoinThread running_thread
+      let plan: LifecycleResumePlan = [source, include_turns, initial_turns_page]
+      `Ok plan
+    }
+  } else if running {
+    let source: LifecycleResumeSource = `RejoinThread running_thread
+    let plan: LifecycleResumePlan = [source, include_turns, initial_turns_page]
+    `Ok plan
+  } else if let `Some history_value = history {
+    let source: LifecycleResumeSource = `ResumeHistory history_value
+    let plan: LifecycleResumePlan = [source, include_turns, initial_turns_page]
+    `Ok plan
+  } else if let `Some path_value = path {
+    let source: LifecycleResumeSource = `ResumePath path_value
+    let plan: LifecycleResumePlan = [source, include_turns, initial_turns_page]
+    `Ok plan
+  } else {
+    let source: LifecycleResumeSource = `ResumeThreadId thread_id
+    let plan: LifecycleResumePlan = [source, include_turns, initial_turns_page]
+    `Ok plan
+  }
+}
+
+let plan_decoded_thread_resume: LifecycleDecodedResumeInput -> LifecycleResumePlanResult = (input: LifecycleDecodedResumeInput) => {
+  let [params, loaded] = input
+  let plan_input: LifecycleResumeInput = [loaded, params.thread_id, params.history, params.path, params.turns, params.initial_turns_page]
+  plan_thread_resume(plan_input)
+}
+
+const plan_thread_fork: LifecycleForkInput -> LifecycleForkPlanResult = (input: LifecycleForkInput) => {
+  let [thread_id, last_turn_id, before_turn_id, path, persistence, turns, goal_continuation] = input
+  let both_boundaries = false
+  if let `Some _ = last_turn_id { if let `Some _ = before_turn_id { both_boundaries = true } }
+
+  if both_boundaries {
+    `Err "`beforeTurnId` cannot be combined with `lastTurnId`"
+  } else if thread_is_ephemeral(persistence) && goal_continuation_is_deferred(goal_continuation) {
+    `Err "`deferGoalContinuation` cannot be combined with `ephemeral`"
+  } else {
+    let source: LifecycleForkSource = if let `Some path_value = path { `ForkPath path_value } else { `ForkThreadId thread_id }
+    let boundary: LifecycleForkBoundary = if let `Some last = last_turn_id {
+      `ForkThroughTurn last
+    } else if let `Some before = before_turn_id {
+      `ForkBeforeTurn before
+    } else {
+      `ForkAllTurns ()
+    }
+    let plan: LifecycleForkPlan = [source, boundary, persistence, turns, goal_continuation]
+    `Ok plan
+  }
+}
+
+const plan_decoded_thread_fork: LifecycleForkParams -> LifecycleForkPlanResult = (params: LifecycleForkParams) => {
+  let plan_input: LifecycleForkInput = [params.thread_id, params.last_turn_id, params.before_turn_id, params.path, params.persistence, params.turns, params.goal_continuation]
+  plan_thread_fork(plan_input)
+}
+
+const plan_thread_unsubscribe: LifecycleUnsubscribeInput -> LifecycleUnsubscribeStatus = (input: LifecycleUnsubscribeInput) => {
+  let [load_state, subscription] = input
+  if let `ThreadNotLoaded () = load_state {
+    `UnsubscribeNotLoaded ()
+  } else if let `ThreadSubscribed () = subscription {
+    `Unsubscribed ()
+  } else {
+    `UnsubscribeNotSubscribed ()
+  }
+}
+
+return {
+  plan_thread_start,
+  plan_decoded_thread_start,
+  plan_thread_resume,
+  plan_decoded_thread_resume,
+  plan_thread_fork,
+  plan_decoded_thread_fork,
+  plan_thread_unsubscribe,
+}

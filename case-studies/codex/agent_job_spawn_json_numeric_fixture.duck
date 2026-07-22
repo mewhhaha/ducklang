@@ -1,0 +1,22 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { decode_agent_job_spawn_numeric_options } = import "./agent_job_spawn_json_numeric.duck" ()
+
+type FixtureArgs = AgentJobSpawnDecodedArgs
+
+let base: FixtureArgs = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `None (), .output_schema_json = `None (), .max_concurrency = `None (), .max_workers = `None (), .max_runtime_seconds = `None ()]
+let score = 0
+let valid = decode_agent_job_spawn_numeric_options("{\"max_concurrency\":100,\"max_workers\":2,\"max_runtime_seconds\":90}", base)
+if let `SpawnDecoded args = valid {
+  let concurrency_valid = if let `Some value = args.max_concurrency { value == "100" } else { false }
+  let workers_valid = if let `Some value = args.max_workers { value == "2" } else { false }
+  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false }
+  if concurrency_valid && workers_valid && runtime_valid { score = 1 }
+}
+let invalid = decode_agent_job_spawn_numeric_options("{\"max_workers\":\"many\"}", base)
+if let `SpawnDecodeFailed reason = invalid {
+  if reason == "max_workers must be a number" { score = score + 10 }
+}
+
+return { .score = score }

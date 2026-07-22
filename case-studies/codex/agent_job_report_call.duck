@@ -1,0 +1,69 @@
+module () where
+
+const { encode_json, json_object_get, parse_json_document } = import "duck:prelude/json" ()
+const {} = import "./agent_job_report_types.duck" ()
+
+type AgentJobCallArgs = AgentJobReportArgs
+type AgentJobCallPayload = AgentJobPayload
+type AgentJobCallPlan = AgentJobReportPlan
+
+let plan_report_agent_job_result: AgentJobCallPayload -> AgentJobCallPlan = payload => {
+  if let `Unsupported () = payload {
+    `RejectRequest "report_agent_job_result handler received unsupported payload"
+  } else if let `Function document = payload {
+    let parsed = parse_json_document document
+    if let `Ok value_and_position = parsed {
+      let [value, _] = value_and_position
+      if let `Object object = value {
+        let job_lookup = json_object_get("job_id", object)
+        if let `Found job_field = job_lookup {
+          if let `String job_id = job_field {
+            let item_lookup = json_object_get("item_id", object)
+            if let `Found item_field = item_lookup {
+              if let `String item_id = item_field {
+                let result_lookup = json_object_get("result", object)
+                if let `Found result_field = result_lookup {
+                  if let `Object _ = result_field {
+                    let result_json = encode_json result_field
+                    let stop_lookup = json_object_get("stop", object)
+                    if let `Found stop_field = stop_lookup {
+                      if let `Bool stop = stop_field {
+                        let args: AgentJobCallArgs = [.job_id = job_id, .item_id = item_id, .result_json = result_json, .stop = stop]
+                        `RecordResult args
+                      } else {
+                        `RejectRequest "stop must be a boolean"
+                      }
+                    } else {
+                      let args: AgentJobCallArgs = [.job_id = job_id, .item_id = item_id, .result_json = result_json, .stop = false]
+                      `RecordResult args
+                    }
+                  } else {
+                    `RejectRequest "result must be a JSON object"
+                  }
+                } else {
+                  `RejectRequest "missing field `result`"
+                }
+              } else {
+                `RejectRequest "item_id must be a string"
+              }
+            } else {
+              `RejectRequest "missing field `item_id`"
+            }
+          } else {
+            `RejectRequest "job_id must be a string"
+          }
+        } else {
+          `RejectRequest "missing field `job_id`"
+        }
+      } else {
+        `RejectRequest "failed to parse function arguments: expected an object"
+      }
+    } else {
+      `RejectRequest "failed to parse function arguments: invalid JSON"
+    }
+  } else {
+    `RejectRequest "report_agent_job_result handler received unsupported payload"
+  }
+}
+
+return { plan_report_agent_job_result }

@@ -1,0 +1,48 @@
+module () where
+
+const { parse_request_permissions_args, parse_request_permissions_environment_id } = import "./request_permissions_json.duck" ()
+
+let document = "{\"environmentId\":\"remote\",\"reason\":\"read inputs\",\"permissions\":{\"network\":{\"enabled\":false},\"file_system\":{\"read\":[\"docs\"],\"write\":[\"/tmp/output\"]}}}"
+let score = 0
+
+if let `ParsedEnvironmentId environment_id = parse_request_permissions_environment_id document {
+  if let `Some value = environment_id {
+    if value == "remote" { score = score + 1 }
+  }
+}
+
+if let `Parsed args = parse_request_permissions_args(document, "/workspace") {
+  if let `Some environment_id = args.environment_id {
+    if environment_id == "remote" {
+      if let `Some reason = args.reason {
+        if reason == "read inputs" {
+          if let `NetworkPresent network = args.permissions.network {
+            if let `Some enabled = network.enabled {
+              if !(enabled) {
+                if let `FileSystemPresent file_system = args.permissions.file_system {
+                  if let `Cons read_node = file_system.entries {
+                    let [read, tail] = read_node
+                    if read.path == "/workspace/docs" {
+                      if let `Read () = read.access {
+                        if let `Cons write_node = tail {
+                          let [write, end] = write_node
+                          if write.path == "/tmp/output" {
+                            if let `Write () = write.access {
+                              if let `Nil () = end { score = score + 10 }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

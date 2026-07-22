@@ -1,0 +1,25 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { list_mcp_resource_templates_parameters, list_mcp_resource_templates_spec, list_mcp_resources_parameters, list_mcp_resources_spec, read_mcp_resource_parameters, read_mcp_resource_spec } = import "./mcp_resource_registration.duck" ()
+
+let score = 0
+let [list_name, list_kind, list_description, list_parameters, list_output, list_strict] = list_mcp_resources_spec()
+let [list_namespace, list_local_name] = list_name
+let list_output_valid = if let `ToolOutputSchemaMissing () = list_output { true } else { false }
+let list_kind_valid = if let `FunctionSpec () = list_kind { true } else { false }
+if list_namespace == "" && list_local_name == "list_mcp_resources" && list_kind_valid && list_description == "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible." && list_parameters == list_mcp_resources_parameters() && list_output_valid && !(list_strict) { score = score + 1 }
+
+let [template_name, template_kind, _, template_parameters, template_output, template_strict] = list_mcp_resource_templates_spec()
+let [template_namespace, template_local_name] = template_name
+let template_output_valid = if let `ToolOutputSchemaMissing () = template_output { true } else { false }
+let template_kind_valid = if let `FunctionSpec () = template_kind { true } else { false }
+if template_namespace == "" && template_local_name == "list_mcp_resource_templates" && template_kind_valid && template_parameters == list_mcp_resource_templates_parameters() && template_output_valid && !(template_strict) { score = score + 10 }
+
+let [read_name, read_kind, _, read_parameters, read_output, read_strict] = read_mcp_resource_spec()
+let [read_namespace, read_local_name] = read_name
+let read_output_valid = if let `ToolOutputSchemaMissing () = read_output { true } else { false }
+let read_kind_valid = if let `FunctionSpec () = read_kind { true } else { false }
+if read_namespace == "" && read_local_name == "read_mcp_resource" && read_kind_valid && read_parameters == read_mcp_resource_parameters() && read_output_valid && !(read_strict) { score = score + 100 }
+
+return { .score = score }

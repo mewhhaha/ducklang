@@ -1,0 +1,13 @@
+module () where
+
+declare effect ApplyPatchHost {
+  suspending read: (&Text) => ApplyPatchFileSnapshot
+  suspending write: (&ApplyPatchWriteRequest) => ApplyPatchMutationResult
+  suspending remove: (&Text) => ApplyPatchMutationResult
+}
+
+declare Init {
+  apply_patch_host: ApplyPatchHost
+}
+
+return {}

@@ -1,0 +1,77 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_common_types.duck" ()
+
+type AgentJobCreateHeaderNode = [Text, AgentJobCreateHeaders]
+type AgentJobCreateHeaders =
+  | `Nil Unit
+  | `Cons AgentJobCreateHeaderNode
+
+type AgentJobFailureSummary = struct {
+  .item_id = Text,
+  .source_id = AgentJobTextOption,
+  .last_error = Text,
+}
+
+type AgentJobFailureSummaryNode = [AgentJobFailureSummary, AgentJobFailureSummaries]
+type AgentJobFailureSummaries =
+  | `Nil Unit
+  | `Cons AgentJobFailureSummaryNode
+
+type AgentJobFinalItemStatus =
+  | `Pending Unit
+  | `Running Unit
+  | `Completed Unit
+  | `Failed Unit
+
+type AgentJobFinalItem = struct {
+  .row_values = AgentJobCreateHeaders,
+  .row_json = Text,
+  .item_id = Text,
+  .row_index = I32,
+  .source_id = AgentJobTextOption,
+  .status = AgentJobFinalItemStatus,
+  .attempt_count = I32,
+  .last_error = AgentJobTextOption,
+  .result_json = AgentJobTextOption,
+  .reported_at = AgentJobTextOption,
+  .completed_at = AgentJobTextOption,
+}
+
+type AgentJobFinalItemNode = [AgentJobFinalItem, AgentJobFinalItems]
+type AgentJobFinalItems =
+  | `Nil Unit
+  | `Cons AgentJobFinalItemNode
+
+type AgentJobRunCompletion = struct {
+  .job_id = Text,
+  .output_path = Text,
+  .total_items = I32,
+  .completed_items = I32,
+  .failed_items = I32,
+  .cancelled = Bool,
+  .job_error = AgentJobTextOption,
+  .failed_item_errors = AgentJobFailureSummaries,
+  .headers = AgentJobCreateHeaders,
+  .items = AgentJobFinalItems,
+}
+
+type AgentJobCsvExportResult =
+  | `CsvExported Text
+  | `CsvExportFailed Text
+
+type AgentJobCsvWriteRequest = struct {
+  .output_path = Text,
+  .content = Text,
+}
+
+type AgentJobCsvWriteOutcome =
+  | `CsvWritten Unit
+  | `CsvWriteFailed Text
+
+type AgentJobExportExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+return {}

@@ -1,0 +1,11 @@
+const { json_object_get } = import "duck:prelude/json/values" ()
+const { materialize_thread_elicitation_response } = import "./app_server_thread_controls.duck" ()
+
+let score = 0
+let response = materialize_thread_elicitation_response(2i64)
+if let `Object fields = response {
+  let paused_lookup = json_object_get("paused", fields)
+  if let `Found value = paused_lookup { if let `Bool paused = value { if paused { score = score + 1 } } }
+}
+
+return { .score = score }

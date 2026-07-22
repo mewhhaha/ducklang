@@ -1,0 +1,32 @@
+module () where
+
+const { parse_fork_options } = import "./cli_sessions.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexForkOptionsResult
+type FixtureNode = ListNode Text
+
+const prepend_arg = (value: Text, values: FixtureArgs) => {
+  let node: FixtureNode = [value, values]
+  let result: FixtureArgs = `Cons node
+  result
+}
+const singleton_arg = (value: Text) => {
+  let empty: FixtureArgs = `Nil ()
+  prepend_arg(value, empty)
+}
+let input: FixtureArgs = prepend_arg("--all", prepend_arg("thread-1", singleton_arg("continue here")))
+let parsed: FixtureResult = parse_fork_options(input)
+let score = 0
+
+if let `Ok options = parsed {
+  let valid = options.all
+  if options.last { valid = false }
+  if options.picker { valid = false }
+  if let `Some session_id = options.session_id { if session_id != "thread-1" { valid = false } } else { valid = false }
+  if let `Some prompt = options.prompt { if prompt != "continue here" { valid = false } } else { valid = false }
+  if valid { score = 1 }
+}
+
+return { .score = score }

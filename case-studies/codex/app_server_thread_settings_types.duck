@@ -1,0 +1,69 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/json" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerThreadSettings = struct {
+  .cwd = Text,
+  .approval_policy = AppServerJson,
+  .approvals_reviewer = AppServerJson,
+  .sandbox_policy = AppServerJson,
+  .active_permission_profile = AppServerJsonOption,
+  .model = Text,
+  .model_provider = Text,
+  .service_tier = AppServerTextOption,
+  .effort = AppServerTextOption,
+  .summary = AppServerTextOption,
+  .collaboration_mode = AppServerJson,
+  .multi_agent_mode = AppServerJson,
+  .personality = AppServerTextOption,
+}
+
+type AppServerThreadPermissionSettings = struct {
+  .approval_policy = AppServerJson,
+  .approvals_reviewer = AppServerJson,
+  .sandbox_policy = AppServerJson,
+  .active_permission_profile = AppServerJsonOption,
+}
+
+type AppServerThreadPermissionResolution =
+  | `PermissionSelectionNotRequested Unit
+  | `PermissionSelectionResolved AppServerThreadPermissionSettings
+  | `PermissionSelectionRejected Text
+
+type AppServerThreadPermissionSettingsOption = Option AppServerThreadPermissionSettings
+type AppServerThreadSettingsOverrides = struct {
+  .cwd = AppServerTextOption,
+  .approval_policy = AppServerJsonOption,
+  .approvals_reviewer = AppServerJsonOption,
+  .sandbox_policy = AppServerJsonOption,
+  .active_permission_profile = AppServerJsonOption,
+  .permission_selected = Bool,
+  .model = AppServerTextOption,
+  .service_tier = AppServerTextPatch,
+  .effort = AppServerTextOption,
+  .summary = AppServerTextOption,
+  .collaboration_mode = AppServerJsonOption,
+  .personality = AppServerTextOption,
+}
+
+type AppServerThreadSettingsUpdatePlan = struct {
+  .thread_id = Text,
+  .overrides = AppServerThreadSettingsOverrides,
+  .workspace_roots = AppServerTexts,
+}
+
+type AppServerThreadSettingsUpdatePlanInput = struct {
+  .current_cwd = Text,
+  .workspace_roots = AppServerTexts,
+  .permission_resolution = AppServerThreadPermissionResolution,
+  .params = AppServerThreadSettingsUpdateParams,
+}
+
+type AppServerThreadSettingsUpdatePlanResult =
+  | `NoThreadSettingsChanges Unit
+  | `ThreadSettingsUpdatePlanned AppServerThreadSettingsUpdatePlan
+  | `ThreadSettingsUpdateInvalid Text
+
+return {}

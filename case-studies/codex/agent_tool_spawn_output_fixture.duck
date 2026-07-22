@@ -1,0 +1,18 @@
+module () where
+
+const {} = import "./agent_tool_types.duck" ()
+const { render_spawn_agent_output } = import "./agent_tool_spawn_output.duck" ()
+
+type FixtureSnapshot = AgentToolSpawnSnapshot
+type FixtureOutputInput = AgentToolSpawnOutputInput
+
+let visible: FixtureSnapshot = [.task_name = "/root/reviewer", .nickname = `Some "reviewer", .status = `Running ()]
+let visible_input: FixtureOutputInput = [.snapshot = visible, .hide_metadata = false]
+let score = 0
+if render_spawn_agent_output visible_input == "{\"task_name\":\"/root/reviewer\",\"nickname\":\"reviewer\"}" { score = score + 1 }
+
+let hidden: FixtureSnapshot = [.task_name = "/root/reviewer", .nickname = `Some "reviewer", .status = `Running ()]
+let hidden_input: FixtureOutputInput = [.snapshot = hidden, .hide_metadata = true]
+if render_spawn_agent_output hidden_input == "{\"task_name\":\"/root/reviewer\"}" { score = score + 10 }
+
+return { .score = score }

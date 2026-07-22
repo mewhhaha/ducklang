@@ -1,0 +1,83 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./compaction_types.duck" ()
+
+type ResponsesMetadataTextOption = Option Text
+type ResponsesMetadataBoolOption = Option Bool
+type ResponsesMetadataI64Option = Option I64
+
+type ResponsesMetadataPair = [Text, Text]
+type ResponsesMetadataPairs = List ResponsesMetadataPair
+type ResponsesMetadataPairsOption = Option ResponsesMetadataPairs
+
+type ResponsesCompactionTrigger = CompactionTrigger
+type ResponsesCompactionReason = CompactionReason
+type ResponsesCompactionImplementation = CompactionImplementation
+type ResponsesCompactionPhase = CompactionPhase
+
+type ResponsesCompactionMetadata = struct {
+  .trigger = ResponsesCompactionTrigger,
+  .reason = ResponsesCompactionReason,
+  .implementation = ResponsesCompactionImplementation,
+  .phase = ResponsesCompactionPhase,
+}
+
+type ResponsesRequestKind =
+  | `Turn Unit
+  | `Prewarm Unit
+  | `Compaction ResponsesCompactionMetadata
+  | `Memory Unit
+type ResponsesRequestKindOption = Option ResponsesRequestKind
+
+type ResponsesThreadSource =
+  | `User Unit
+  | `Subagent Unit
+  | `Feature Text
+  | `MemoryConsolidation Unit
+type ResponsesThreadSourceOption = Option ResponsesThreadSource
+
+type ResponsesSubAgentSource =
+  | `Review Unit
+  | `Compact Unit
+  | `ThreadSpawn Unit
+  | `MemoryConsolidation Unit
+  | `Other Text
+
+type ResponsesSessionSource =
+  | `Cli Unit
+  | `VsCode Unit
+  | `Exec Unit
+  | `Mcp Unit
+  | `Custom Text
+  | `InternalMemoryConsolidation Unit
+  | `SubAgent ResponsesSubAgentSource
+  | `Unknown Unit
+
+type ResponsesWorkspace = struct {
+  .path = Text,
+  .associated_remote_urls = ResponsesMetadataPairsOption,
+  .latest_git_commit_hash = ResponsesMetadataTextOption,
+  .has_changes = ResponsesMetadataBoolOption,
+}
+type ResponsesWorkspaces = List ResponsesWorkspace
+
+type ResponsesMetadata = struct {
+  .installation_id = Text,
+  .session_id = Text,
+  .thread_id = Text,
+  .turn_id = ResponsesMetadataTextOption,
+  .window_id = Text,
+  .request_kind = ResponsesRequestKindOption,
+  .forked_from_thread_id = ResponsesMetadataTextOption,
+  .parent_thread_id = ResponsesMetadataTextOption,
+  .subagent_header = ResponsesMetadataTextOption,
+  .subagent_kind = ResponsesMetadataTextOption,
+  .thread_source = ResponsesThreadSourceOption,
+  .sandbox = ResponsesMetadataTextOption,
+  .workspaces = ResponsesWorkspaces,
+  .turn_started_at_unix_ms = ResponsesMetadataI64Option,
+  .extra = ResponsesMetadataPairs,
+}
+
+return {}

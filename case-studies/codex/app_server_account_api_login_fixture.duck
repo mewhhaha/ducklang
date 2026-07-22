@@ -1,0 +1,22 @@
+const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const { decode_account_api_key_login, decode_account_device_code_login } = import "./app_server_account_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_account_types.duck" ()
+
+type FixtureResult = AppServerAccountLoginDecodeResult
+
+let fields = json_object_prepend("apiKey", json_string("secret"), json_object_empty())
+let api_key: FixtureResult = decode_account_api_key_login(fields)
+let score = 0
+if let `AccountLoginOk login = api_key {
+  if let `AccountApiKeyLogin value = login {
+    if value == "secret" { score = score + 1 }
+  }
+}
+
+let device: FixtureResult = decode_account_device_code_login(json_object_empty())
+if let `AccountLoginOk login = device {
+  if let `AccountDeviceCodeLogin () = login { score = score + 10 }
+}
+
+return { .score = score }

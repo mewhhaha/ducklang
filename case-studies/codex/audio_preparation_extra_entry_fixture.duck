@@ -1,0 +1,5 @@
+module () where
+
+const { verify_audio_preparation_extra_fixture } = import "./audio_preparation_extra_fixture.duck" ()
+
+return { .score = verify_audio_preparation_extra_fixture() }

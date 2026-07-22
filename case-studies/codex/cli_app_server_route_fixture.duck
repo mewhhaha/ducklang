@@ -1,0 +1,23 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_cli } = import "./cli.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+
+const args = comptime list(Text)
+let input: FixtureArgs = args.prepend("app-server", args.prepend("proxy", args.prepend("--sock", args.singleton("codex.sock"))))
+let plan: FixturePlan = parse_cli(input)
+let score = 0
+
+if let `ManageAppServer command = plan {
+  if let `ProxyAppServer socket_path = command {
+    if let `Some path = socket_path {
+      if path == "codex.sock" { score = 1 }
+    }
+  }
+}
+
+return { .score = score }

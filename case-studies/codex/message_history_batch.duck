@@ -1,0 +1,129 @@
+module () where
+
+const { text_copy, text_find_from, text_length, text_slice } = import "duck:prelude/text" ()
+const { parse_message_history_entry } = import "./message_history_entry.duck" ()
+const {} = import "./message_history_types.duck" ()
+
+type MessageHistoryLookupEntryOption = MessageHistoryEntryOption
+type MessageHistoryLookupBatchEntry = MessageHistoryBatchEntry
+type MessageHistoryLookupBatchEntries = MessageHistoryBatchEntries
+type MessageHistoryLookupBatch = MessageHistoryBatch
+type MessageHistoryLookupOffsetOption = MessageHistoryOffsetOption
+type MessageHistoryRawRow = [I32, Text, I32]
+type MessageHistoryRawRows = List MessageHistoryRawRow
+
+const empty_raw_rows: () -> MessageHistoryRawRows = () => `Nil ()
+const prepend_raw_row: [MessageHistoryRawRow, MessageHistoryRawRows] -> MessageHistoryRawRows = (row: MessageHistoryRawRow, tail: MessageHistoryRawRows) => `Cons ([row, tail])
+const empty_batch_entries: () -> MessageHistoryLookupBatchEntries = () => `Nil ()
+const prepend_batch_entry: [MessageHistoryLookupBatchEntry, MessageHistoryLookupBatchEntries] -> MessageHistoryLookupBatchEntries = (entry: MessageHistoryLookupBatchEntry, tail: MessageHistoryLookupBatchEntries) => `Cons ([entry, tail])
+
+const reverse_batch_entries: MessageHistoryLookupBatchEntries -> MessageHistoryLookupBatchEntries = (entries: MessageHistoryLookupBatchEntries) => {
+  let current = entries
+  let reversed = empty_batch_entries()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      reversed = prepend_batch_entry(entry, reversed)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const collect_history_rows: [Text, I32] -> MessageHistoryRawRows = (contents: Text, end_offset: I32) => {
+  let rows = empty_raw_rows()
+  let length = text_length contents
+  let start = 0
+  let offset = 0
+
+  loop {
+    if start >= length || offset > end_offset { break }
+    let newline = text_find_from([contents, "\n", start])
+    let end = if newline < 0 { length } else { newline }
+    let byte_length = if newline < 0 { end - start } else { end - start + 1 }
+    let row: MessageHistoryRawRow = [offset, text_slice([contents, start, end]), byte_length]
+    rows = prepend_raw_row(row, rows)
+    offset = offset + 1
+    if newline < 0 { break }
+    start = newline + 1
+  }
+
+  rows
+}
+
+const empty_history_batch = () => {
+  let batch: MessageHistoryLookupBatch = [.entries = empty_batch_entries(), .next_older_offset = `None ()]
+  batch
+}
+
+let rec parse_history_row_at: [MessageHistoryRawRows, I32] -> MessageHistoryLookupEntryOption = (rows: MessageHistoryRawRows, offset: I32) => {
+  if let `Cons node = rows {
+    let [row, tail] = node
+    let [row_offset, line, _] = row
+    if row_offset == offset { parse_message_history_entry(text_copy(&line)) } else { parse_history_row_at(tail, offset) }
+  } else {
+    `None ()
+  }
+}
+
+let lookup_message_history_entry: [&Text, I32, Bool] -> MessageHistoryLookupEntryOption = (contents: &Text, offset: I32, identity_matches: Bool) => {
+  if identity_matches {
+    let rows = collect_history_rows(text_copy(contents), offset)
+    parse_history_row_at(rows, offset)
+  } else { `None () }
+}
+
+const lookup_message_history_batch_with_limits: [&Text, I32, Bool, I32, I32] -> MessageHistoryLookupBatch = (contents: &Text, end_offset: I32, identity_matches: Bool, row_limit: I32, byte_limit: I32) => {
+  if identity_matches {
+    let rows = collect_history_rows(text_copy(contents), end_offset)
+    let current = rows
+    let selected_reversed = empty_batch_entries()
+    let selected_rows = 0
+    let selected_bytes = 0
+    let oldest_offset = 0
+    let done = false
+
+    loop {
+      if let `Cons node = current {
+        let [row, tail] = node
+        let [offset, line, byte_length] = row
+        let oversized_first = selected_rows == 0 && byte_length > byte_limit
+        let exceeds_limit = selected_rows >= row_limit || selected_rows > 0 && selected_bytes + byte_length > byte_limit
+
+        if exceeds_limit {
+          done = true
+        } else {
+          let entry: MessageHistoryLookupBatchEntry = [.offset = offset, .entry = parse_message_history_entry(text_copy(&line))]
+          selected_reversed = prepend_batch_entry(entry, selected_reversed)
+          selected_rows = selected_rows + 1
+          selected_bytes = selected_bytes + byte_length
+          oldest_offset = offset
+          current = tail
+          if oversized_first { done = true }
+        }
+      } else {
+        done = true
+      }
+      if done { break }
+    }
+
+    let next: MessageHistoryLookupOffsetOption = `None ()
+    if selected_rows > 0 && oldest_offset > 0 { next = `Some (oldest_offset - 1) }
+    let batch: MessageHistoryLookupBatch = [.entries = reverse_batch_entries(selected_reversed), .next_older_offset = next]
+    batch
+  } else { empty_history_batch() }
+}
+
+const lookup_message_history_batch: [&Text, I32, Bool] -> MessageHistoryLookupBatch = (contents: &Text, end_offset: I32, identity_matches: Bool) => {
+  lookup_message_history_batch_with_limits(contents, end_offset, identity_matches, 128, 65536)
+}
+
+return {
+  lookup_message_history_entry,
+  lookup_message_history_batch,
+  lookup_message_history_batch_with_limits,
+}

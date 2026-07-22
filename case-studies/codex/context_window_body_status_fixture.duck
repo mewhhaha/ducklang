@@ -1,0 +1,52 @@
+module () where
+
+const {} = import "./context_window_status_types.duck" ()
+const { context_window_token_status } = import "./context_window_status.duck" ()
+
+type FixtureInput = ContextWindowTokenStatusInput
+
+let score = 0
+let input: FixtureInput = [
+  .active_context_tokens = 150i64,
+  .scope = `BodyAfterPrefix (),
+  .configured_auto_compact_scope_limit = `Some 80i64,
+  .model_auto_compact_scope_limit = `Some 90i64,
+  .full_context_window_limit = `Some 200i64,
+  .prefill_input_tokens = `Some 100i64,
+  .fallback_buffer_tokens = 10i64]
+let status = context_window_token_status(&input)
+if status.auto_compact_scope_tokens == 50i64 && !(status.token_limit_reached) {
+  if let `Some prefill_tokens = status.auto_compact_window_prefill_tokens {
+    if prefill_tokens == 100i64 {
+      if let `Some remaining = status.base_window_tokens_remaining {
+        if remaining == 30i64 { score = score + 1 }
+      }
+    }
+  }
+}
+
+let missing_prefill_input: FixtureInput = [
+  .active_context_tokens = 150i64,
+  .scope = `BodyAfterPrefix (),
+  .configured_auto_compact_scope_limit = `Some 80i64,
+  .model_auto_compact_scope_limit = `Some 90i64,
+  .full_context_window_limit = `Some 200i64,
+  .prefill_input_tokens = `None (),
+  .fallback_buffer_tokens = 10i64]
+let missing_prefill = context_window_token_status(&missing_prefill_input)
+if missing_prefill.auto_compact_scope_tokens == 0i64 {
+  if let `None () = missing_prefill.auto_compact_window_prefill_tokens { score = score + 10 }
+}
+
+let overflow_buffer: FixtureInput = [
+  .active_context_tokens = 9223372036854775806i64,
+  .scope = `BodyAfterPrefix (),
+  .configured_auto_compact_scope_limit = `Some 9223372036854775807i64,
+  .model_auto_compact_scope_limit = `None (),
+  .full_context_window_limit = `None (),
+  .prefill_input_tokens = `Some 0i64,
+  .fallback_buffer_tokens = 100i64]
+let saturated = context_window_token_status(&overflow_buffer)
+if !(saturated.token_limit_reached) { score = score + 100 }
+
+return { .score = score }

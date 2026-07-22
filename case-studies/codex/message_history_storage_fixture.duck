@@ -1,0 +1,44 @@
+module () where
+
+const { message_history_entry } = import "./message_history_entry.duck" ()
+const { plan_message_history_append, plan_message_history_after_append, plan_message_history_trim } = import "./message_history_storage.duck" ()
+const {} = import "./message_history_types.duck" ()
+
+type FixtureConfig = MessageHistoryConfig
+type FixtureEntry = MessageHistoryEntry
+type FixtureByteLimit = MessageHistoryByteLimit
+
+let rec fixture_byte_limit: I32 -> FixtureByteLimit = limit => {
+  if limit < 0 { `None () } else { `Some limit }
+}
+
+let entry = message_history_entry(@append("session-", "1"), 42i64, @append("hello ", "\"duck\"\n"))
+let disabled: FixtureConfig = [.persistence = `SaveNone (), .max_bytes = `None ()]
+let enabled: FixtureConfig = [.persistence = `SaveAll (), .max_bytes = `Some 40]
+let score = 0
+
+let skipped = plan_message_history_append(&entry, &disabled)
+if let `SkipHistoryAppend () = skipped { score = score + 1 }
+
+let planned = plan_message_history_append(&entry, &enabled)
+if let `AppendHistory append = planned {
+  if append.line == "{\"session_id\":\"session-1\",\"ts\":42,\"text\":\"hello \\\"duck\\\"\\n\"}\n" {
+    score = score + 10
+  }
+  let after_append = plan_message_history_after_append("old\nmiddle\n", &append)
+  if let `RewriteHistory contents = after_append {
+    if contents == append.line { score = score + 100 }
+  }
+}
+
+let trim_limit = fixture_byte_limit(10)
+let trimmed = plan_message_history_trim("1111\n2222\n3333\n", trim_limit)
+if let `RewriteHistory contents = trimmed {
+  if contents == "3333\n" { score = score + 1000 }
+}
+
+let unlimited_limit = fixture_byte_limit(-1)
+let unlimited = plan_message_history_trim("1111\n2222\n3333\n", unlimited_limit)
+if let `KeepHistory () = unlimited { score = score + 10000 }
+
+return { .score = score }

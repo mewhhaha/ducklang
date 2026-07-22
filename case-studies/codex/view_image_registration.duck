@@ -1,0 +1,61 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ImageToolDefinition = ToolDefinition
+type ImageToolDefinitions = ToolDefinitions
+type ImageToolName = ToolName
+type ImageToolSpec = ToolSpec
+type ImageToolSpecs = ToolSpecs
+type ImageToolOutputSchema = ToolOutputSchema
+
+const view_image_tool_name: () -> ImageToolName = () => ["", "view_image"]
+
+const view_image_tool_description: () -> Text = () => {
+  "View a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk."
+}
+
+const view_image_tool_definitions: Bool -> ImageToolDefinitions = has_environment => {
+  if has_environment {
+    let definition: ImageToolDefinition = [view_image_tool_name(), `Direct (), `ViewImage (), `FunctionPayload (), true, false]
+    `Cons ([definition, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+const view_image_parameters: [Bool, Bool] -> Text = (include_environment_id: Bool, can_request_original_detail: Bool) => {
+  if include_environment_id && can_request_original_detail {
+    "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
+  } else if can_request_original_detail {
+    "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
+  } else if include_environment_id {
+    "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
+  } else {
+    "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
+  }
+}
+
+const view_image_output_schema: () -> Text = () => {
+  "{\"type\":\"object\",\"properties\":{\"image_url\":{\"type\":\"string\",\"description\":\"Data URL for the loaded image.\"},\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail hint returned by view_image. Returns `high` for default resized behavior or `original` when original resolution is preserved.\"}},\"required\":[\"image_url\",\"detail\"],\"additionalProperties\":false}"
+}
+
+const view_image_tool_specs: [Bool, Bool, Bool] -> ImageToolSpecs = (has_environment: Bool, include_environment_id: Bool, can_request_original_detail: Bool) => {
+  if has_environment {
+    let output: ImageToolOutputSchema = `ToolOutputSchemaPresent (view_image_output_schema())
+    let spec: ImageToolSpec = [view_image_tool_name(), `FunctionSpec (), view_image_tool_description(), view_image_parameters(include_environment_id, can_request_original_detail), output, false]
+    `Cons ([spec, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+return {
+  view_image_output_schema,
+  view_image_parameters,
+  view_image_tool_definitions,
+  view_image_tool_description,
+  view_image_tool_name,
+  view_image_tool_specs,
+}

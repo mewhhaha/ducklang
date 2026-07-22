@@ -1,0 +1,19 @@
+module () where
+
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_stateless_output } = hook_output_module()
+
+type FixtureStatelessParse = HookStatelessParse
+
+let parsed: FixtureStatelessParse = parse_stateless_output("PreCompact", "{\"continue\":false,\"stopReason\":\"pause\",\"suppressOutput\":true}")
+let score = 0
+
+if let `StatelessOk universal = parsed {
+  let [continue_processing, stop_reason, suppress_output, _] = universal
+  if continue_processing { () } else { score = score * 10 + 1 }
+  if let `Some reason = stop_reason { if reason == "pause" { score = score * 10 + 1 } }
+  if suppress_output { score = score * 10 + 1 }
+}
+
+return { .score = score }

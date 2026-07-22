@@ -1,0 +1,45 @@
+module () where
+
+const { text_length } = import "duck:prelude/functional" ()
+const exec_types_module = import "./exec_types.duck"
+const events_module = import "./exec_events.duck"
+const { plan_output_delta, split_output_chunk } = events_module()
+
+type FixtureState = ExecLifecycleState
+type FixtureStream = ExecOutputStream
+type FixtureOutputSplit = ExecOutputSplit
+type FixtureDeltaPlan = ExecDeltaPlan
+
+let score = 0
+let split: FixtureOutputSplit = split_output_chunk("éé", 3)
+let [split_prefix, split_remaining] = split
+
+if text_length(split_prefix) == 2 && text_length(split_remaining) == 2 {
+  score = score + 1
+}
+
+let state: FixtureState = [true, false, 0]
+let stream: FixtureStream = `Stdout ()
+let delta: FixtureDeltaPlan = plan_output_delta(state, "call-1", stream, "hello")
+
+if let `EmitDelta emission = delta {
+  let [next, event, remaining] = emission
+  let [began, ended, emitted_deltas] = next
+  let [call_id, _, emitted] = event
+
+  if began && !(ended) && emitted_deltas == 1 && call_id == "call-1" && emitted == "hello" && remaining == "" {
+    score = score + 1
+  }
+}
+
+let capped: FixtureState = [true, false, 10000]
+if let `SuppressDelta _ = plan_output_delta(capped, "call-1", stream, "ignored") {
+  score = score + 1
+}
+
+let ended: FixtureState = [true, true, 2]
+if let `SuppressDelta _ = plan_output_delta(ended, "call-1", stream, "ignored") {
+  score = score + 1
+}
+
+return { .score = score }

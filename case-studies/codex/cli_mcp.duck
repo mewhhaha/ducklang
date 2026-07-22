@@ -1,0 +1,296 @@
+module () where
+
+const { list, text_append, text_find_from, text_length, text_slice, text_split, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type McpArgs = CodexCliArgs
+type McpTexts = CodexCliTexts
+type McpTextOption = CodexCliTextOption
+type McpCommand = CodexMcpCommand
+type McpCommandResult = CodexMcpCommandResult
+type McpNameJsonFacts = CodexMcpNameJsonFacts
+type McpLoginFacts = CodexMcpLoginFacts
+type McpAddFacts = CodexMcpAddFacts
+type McpEnvPair = CodexMcpEnvPair
+type McpEnv = CodexMcpEnv
+type McpStdioOptions = CodexMcpStdioOptions
+type McpHttpOptions = CodexMcpHttpOptions
+type McpNamedOutputOptions = CodexMcpNamedOutputOptions
+type McpLoginOptions = CodexMcpLoginOptions
+type McpNameJsonFactsResult = Result Text McpNameJsonFacts
+type McpLoginFactsResult = Result Text McpLoginFacts
+type McpAddFactsResult = Result Text McpAddFacts
+type McpEnvPairResult = Result Text McpEnvPair
+type McpTextResult = Result Text Text
+
+const texts = comptime list(Text)
+const env_pairs = comptime list(McpEnvPair)
+
+let rec scan_name_json_from: [McpArgs, McpNameJsonFacts] -> McpNameJsonFactsResult = (args: McpArgs, facts: McpNameJsonFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--json" {
+      scan_name_json_from(tail, facts :+ { .json = true })
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown MCP option: ", argument))
+    } else if let `None () = facts.name {
+      scan_name_json_from(tail, facts :+ { .name = `Some argument })
+    } else {
+      `Err "MCP command accepts exactly one server name"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_mcp_list: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let initial: McpNameJsonFacts = [.name = `None (), .json = false]
+  let parsed: McpNameJsonFactsResult = scan_name_json_from(args, initial)
+  if let `Err message = parsed {
+    `Err message
+  } else if let `Ok facts = parsed {
+    if let `Some _ = facts.name {
+      `Err "mcp list does not accept a server name"
+    } else {
+      `Ok (`McpList facts.json)
+    }
+  } else {
+    `Err "MCP list scanner returned an unknown result"
+  }
+}
+
+let parse_mcp_get: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let initial: McpNameJsonFacts = [.name = `None (), .json = false]
+  let parsed: McpNameJsonFactsResult = scan_name_json_from(args, initial)
+  if let `Err message = parsed {
+    `Err message
+  } else if let `Ok facts = parsed {
+    if let `Some name = facts.name {
+      let options: McpNamedOutputOptions = [.name = name, .json = facts.json]
+      `Ok (`McpGet options)
+    } else {
+      `Err "mcp get requires a server name"
+    }
+  } else {
+    `Err "MCP get scanner returned an unknown result"
+  }
+}
+
+const parse_env_pair: Text -> McpEnvPairResult = (value: Text) => {
+  let separator = text_find_from([value, "=", 0])
+  if separator <= 0 {
+    `Err (text_append("MCP environment entry must be KEY=VALUE: ", value))
+  } else {
+    let pair: McpEnvPair = [text_slice([value, 0, separator]), text_slice([value, separator + 1, text_length(value)])]
+    `Ok pair
+  }
+}
+
+let rec scan_mcp_add_from: [McpArgs, McpAddFacts] -> McpAddFactsResult = (args: McpArgs, facts: McpAddFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if facts.command_started {
+      scan_mcp_add_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed) })
+    } else if argument == "--" {
+      scan_mcp_add_from(tail, facts :+ { .command_started = true })
+    } else if argument == "--url" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_mcp_add_from(remaining, facts :+ { .url = `Some value })
+      } else {
+        `Err "missing value for --url"
+      }
+    } else if argument == "--bearer-token-env-var" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_mcp_add_from(remaining, facts :+ { .bearer_token_env_var = `Some value })
+      } else {
+        `Err "missing value for --bearer-token-env-var"
+      }
+    } else if argument == "--oauth-client-id" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_mcp_add_from(remaining, facts :+ { .oauth_client_id = `Some value })
+      } else {
+        `Err "missing value for --oauth-client-id"
+      }
+    } else if argument == "--oauth-resource" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_mcp_add_from(remaining, facts :+ { .oauth_resource = `Some value })
+      } else {
+        `Err "missing value for --oauth-resource"
+      }
+    } else if argument == "--env" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let parsed: McpEnvPairResult = parse_env_pair value
+        if let `Ok pair = parsed {
+          scan_mcp_add_from(remaining, facts :+ { .env_reversed = env_pairs.prepend(pair, facts.env_reversed) })
+        } else if let `Err message = parsed {
+          `Err message
+        } else {
+          `Err "MCP environment parser returned an unknown result"
+        }
+      } else {
+        `Err "missing value for --env"
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown mcp add option: ", argument))
+    } else if let `None () = facts.name {
+      scan_mcp_add_from(tail, facts :+ { .name = `Some argument })
+    } else {
+      scan_mcp_add_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed), .command_started = true })
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_mcp_add: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let initial: McpAddFacts = [.name = `None (), .url = `None (), .bearer_token_env_var = `None (), .oauth_client_id = `None (), .oauth_resource = `None (), .command_reversed = texts.empty(), .env_reversed = env_pairs.empty(), .command_started = false]
+  let parsed: McpAddFactsResult = scan_mcp_add_from(args, initial)
+  if let `Err message = parsed {
+    `Err message
+  } else if let `Ok facts = parsed {
+    if let `Some name = facts.name {
+      let command = texts.reverse facts.command_reversed
+      let env = env_pairs.reverse facts.env_reversed
+      if let `Some url = facts.url {
+        if texts.length(command) > 0 {
+          `Err "mcp add accepts either --url or a command, not both"
+        } else if env_pairs.length(env) > 0 {
+          `Err "--env is only valid for stdio MCP servers"
+        } else {
+          let options: McpHttpOptions = [.name = name, .url = url, .bearer_token_env_var = facts.bearer_token_env_var, .oauth_client_id = facts.oauth_client_id, .oauth_resource = facts.oauth_resource]
+          `Ok (`McpAddHttp options)
+        }
+      } else if texts.length(command) > 0 {
+        if let `Some _ = facts.bearer_token_env_var {
+          `Err "HTTP authentication options require --url"
+        } else if let `Some _ = facts.oauth_client_id {
+          `Err "HTTP authentication options require --url"
+        } else if let `Some _ = facts.oauth_resource {
+          `Err "HTTP authentication options require --url"
+        } else {
+          let options: McpStdioOptions = [.name = name, .command = command, .env = env]
+          `Ok (`McpAddStdio options)
+        }
+      } else {
+        `Err "mcp add requires --url or a command"
+      }
+    } else {
+      `Err "mcp add requires a server name"
+    }
+  } else {
+    `Err "MCP add scanner returned an unknown result"
+  }
+}
+
+let rec scan_mcp_login_from: [McpArgs, McpLoginFacts] -> McpLoginFactsResult = (args: McpArgs, facts: McpLoginFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--scopes" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let scopes = texts.append(facts.scopes, text_split(value, ","))
+        scan_mcp_login_from(remaining, facts :+ { .scopes = scopes })
+      } else {
+        `Err "missing value for --scopes"
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown mcp login option: ", argument))
+    } else if let `None () = facts.name {
+      scan_mcp_login_from(tail, facts :+ { .name = `Some argument })
+    } else {
+      `Err "mcp login accepts exactly one server name"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_mcp_login: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let initial: McpLoginFacts = [.name = `None (), .scopes = texts.empty()]
+  let parsed: McpLoginFactsResult = scan_mcp_login_from(args, initial)
+  if let `Err message = parsed {
+    `Err message
+  } else if let `Ok facts = parsed {
+    if let `Some name = facts.name {
+      let options: McpLoginOptions = [.name = name, .scopes = facts.scopes]
+      `Ok (`McpLogin options)
+    } else {
+      `Err "mcp login requires a server name"
+    }
+  } else {
+    `Err "MCP login scanner returned an unknown result"
+  }
+}
+
+const parse_exact_name: [Text, McpArgs] -> McpTextResult = (command: Text, args: McpArgs) => {
+  if let `Cons node = args {
+    let [name, tail] = node
+    if let `Nil () = tail {
+      `Ok name
+    } else {
+      `Err (text_append(text_append("mcp ", command), " accepts exactly one server name"))
+    }
+  } else {
+    `Err (text_append(text_append("mcp ", command), " requires a server name"))
+  }
+}
+
+let parse_mcp_remove: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let parsed = parse_exact_name("remove", args)
+  if let `Ok name = parsed {
+    `Ok (`McpRemove name)
+  } else if let `Err message = parsed {
+    `Err message
+  } else {
+    `Err "MCP remove parser returned an unknown result"
+  }
+}
+
+let parse_mcp_logout: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  let parsed = parse_exact_name("logout", args)
+  if let `Ok name = parsed {
+    `Ok (`McpLogout name)
+  } else if let `Err message = parsed {
+    `Err message
+  } else {
+    `Err "MCP logout parser returned an unknown result"
+  }
+}
+
+let parse_mcp_options: McpArgs -> McpCommandResult = (args: McpArgs) => {
+  if let `Cons node = args {
+    let [command, remaining] = node
+    if command == "list" {
+      parse_mcp_list remaining
+    } else if command == "get" {
+      parse_mcp_get remaining
+    } else if command == "add" {
+      parse_mcp_add remaining
+    } else if command == "remove" {
+      parse_mcp_remove remaining
+    } else if command == "login" {
+      parse_mcp_login remaining
+    } else if command == "logout" {
+      parse_mcp_logout remaining
+    } else {
+      `Err (text_append("unknown mcp command: ", command))
+    }
+  } else {
+    `Err "mcp requires list, get, add, remove, login, or logout"
+  }
+}
+
+return {
+  parse_mcp_add,
+  parse_mcp_get,
+  parse_mcp_list,
+  parse_mcp_login,
+  parse_mcp_logout,
+  parse_mcp_options,
+  parse_mcp_remove,
+}

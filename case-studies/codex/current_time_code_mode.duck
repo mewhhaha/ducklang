@@ -1,0 +1,10 @@
+module () where
+
+const { text_append } = import "duck:prelude/runtime" ()
+const { format_current_time_utc } = import "./current_time_format.duck" ()
+
+const render_current_time_code_mode_output: I64 -> Text = current_time => {
+  text_append("{\"current_time\":\"", text_append(format_current_time_utc(current_time), "\"}"))
+}
+
+return { render_current_time_code_mode_output }

@@ -1,0 +1,219 @@
+module () where
+
+const { list_append, list_drop, list_length, list_nth_or, list_prepend, list_singleton, list_take } = import "duck:prelude/list" ()
+const { text_join, text_replace_all, text_split, text_trim_ascii_whitespace, text_trim_end_ascii_whitespace } = import "duck:prelude/text" ()
+const {} = import "./apply_patch_types.duck" ()
+
+type PatchUpdateTextOption = ApplyPatchTextOption
+type PatchUpdateI32Option = Option I32
+type PatchUpdateTexts = ApplyPatchTexts
+type PatchUpdateChunk = ApplyPatchChunk
+type PatchUpdateChunks = ApplyPatchChunks
+type PatchUpdateReplacement = ApplyPatchReplacement
+type PatchUpdateReplacements = ApplyPatchReplacements
+type PatchUpdateResult = ApplyPatchUpdateResult
+
+const append = list_append(Text)
+const drop = list_drop(Text)
+const length = list_length(Text)
+const nth_or = list_nth_or(Text)
+const singleton = list_singleton(Text)
+const take = list_take(Text)
+const replacement_prepend = list_prepend(PatchUpdateReplacement)
+
+let normalize_match_line: Text -> Text = (line: Text) => {
+  let normalized = text_trim_ascii_whitespace(line)
+  normalized = text_replace_all([normalized, "‐", "-"])
+  normalized = text_replace_all([normalized, "‑", "-"])
+  normalized = text_replace_all([normalized, "‒", "-"])
+  normalized = text_replace_all([normalized, "–", "-"])
+  normalized = text_replace_all([normalized, "—", "-"])
+  normalized = text_replace_all([normalized, "―", "-"])
+  normalized = text_replace_all([normalized, "−", "-"])
+  normalized = text_replace_all([normalized, "‘", "'"])
+  normalized = text_replace_all([normalized, "’", "'"])
+  normalized = text_replace_all([normalized, "‚", "'"])
+  normalized = text_replace_all([normalized, "‛", "'"])
+  normalized = text_replace_all([normalized, "“", "\""])
+  normalized = text_replace_all([normalized, "”", "\""])
+  normalized = text_replace_all([normalized, "„", "\""])
+  normalized = text_replace_all([normalized, "‟", "\""])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  normalized = text_replace_all([normalized, " ", " "])
+  text_replace_all([normalized, "　", " "])
+}
+
+let patch_lines_match_at: [PatchUpdateTexts, PatchUpdateTexts, I32, I32] -> Bool = (source: PatchUpdateTexts, pattern: PatchUpdateTexts, start: I32, strictness: I32) => {
+  let position = 0
+  let current = pattern
+  let matches = true
+
+  loop {
+    if let `Cons node = current {
+      let [expected, tail] = node
+      let actual = nth_or("", start + position, source)
+
+      if strictness == 0 {
+        matches = actual == expected
+      } else if strictness == 1 {
+        matches = text_trim_end_ascii_whitespace(actual) == text_trim_end_ascii_whitespace(expected)
+      } else if strictness == 2 {
+        matches = text_trim_ascii_whitespace(actual) == text_trim_ascii_whitespace(expected)
+      } else {
+        matches = normalize_match_line(actual) == normalize_match_line(expected)
+      }
+
+      if !(matches) { break }
+      position = position + 1
+      current = tail
+    } else {
+      break
+    }
+  }
+
+  matches
+}
+
+let seek_patch_lines: [PatchUpdateTexts, PatchUpdateTexts, I32, Bool] -> PatchUpdateI32Option = (source: PatchUpdateTexts, pattern: PatchUpdateTexts, start: I32, end_of_file: Bool) => {
+  let source_length = length(source)
+  let pattern_length = length(pattern)
+  let found: PatchUpdateI32Option = `None ()
+
+  if pattern_length == 0 {
+    found = `Some start
+  } else if pattern_length <= source_length {
+    let first = start
+    if end_of_file { first = source_length - pattern_length }
+    let last = source_length - pattern_length
+    let strictness = 0
+
+    loop {
+      if strictness > 3 { break }
+      let index = first
+
+      loop {
+        if index > last { break }
+        if patch_lines_match_at(source, pattern, index, strictness) {
+          found = `Some index
+          break
+        }
+        index = index + 1
+      }
+
+      if let `Some _ = found { break }
+      strictness = strictness + 1
+    }
+  }
+
+  found
+}
+
+const apply_replacement = (lines: PatchUpdateTexts, replacement: PatchUpdateReplacement) => {
+  let prefix = take(replacement.start, lines)
+  let suffix = drop(replacement.start + replacement.old_count, lines)
+  append(prefix, append(replacement.new_lines, suffix))
+}
+
+let derive_apply_patch_update: [Text, Text, PatchUpdateChunks] -> PatchUpdateResult = (path: Text, original: Text, patch_chunks: PatchUpdateChunks) => {
+  let original_lines: PatchUpdateTexts = text_split([original, "\n"])
+  let original_length = length(original_lines)
+  if original_length > 0 && nth_or("not-empty", original_length - 1, original_lines) == "" {
+    original_lines = take(original_length - 1, original_lines)
+  }
+
+  let planned_replacements: PatchUpdateReplacements = `Nil ()
+  let line_index = 0
+  let current = patch_chunks
+  let failed = false
+  let failure: Text = ""
+
+  loop {
+    if failed { break }
+    if let `Cons node = current {
+      let [chunk, tail] = node
+      current = tail
+
+      if let `Some context = chunk.context {
+        let context_lines = singleton(context)
+        let found_context = seek_patch_lines(original_lines, context_lines, line_index, false)
+        if let `None () = found_context {
+          failed = true
+          failure = "Failed to find context '" <> context <> "' in " <> path
+        } else if let `Some index = found_context {
+          line_index = index + 1
+        }
+      }
+
+      if !(failed) {
+        let old_count = length(chunk.old_lines)
+        if old_count == 0 {
+          let insertion = length(original_lines)
+          if insertion > 0 && nth_or("not-empty", insertion - 1, original_lines) == "" {
+            insertion = insertion - 1
+          }
+          let replacement: PatchUpdateReplacement = [.start = insertion, .old_count = 0, .new_lines = chunk.new_lines]
+          planned_replacements = replacement_prepend(replacement, planned_replacements)
+        } else {
+          let pattern = chunk.old_lines
+          let new_lines = chunk.new_lines
+          let found = seek_patch_lines(original_lines, pattern, line_index, chunk.end_of_file)
+
+          if let `None () = found {
+            if nth_or("not-empty", length(pattern) - 1, pattern) == "" {
+              pattern = take(length(pattern) - 1, pattern)
+              if length(new_lines) > 0 && nth_or("not-empty", length(new_lines) - 1, new_lines) == "" {
+                new_lines = take(length(new_lines) - 1, new_lines)
+              }
+              found = seek_patch_lines(original_lines, pattern, line_index, chunk.end_of_file)
+            }
+          }
+
+          if let `None () = found {
+            failed = true
+            failure = "Failed to find expected lines in " <> path <> ":\n" <> text_join(chunk.old_lines, "\n")
+          } else if let `Some start = found {
+            let replacement: PatchUpdateReplacement = [.start = start, .old_count = length(pattern), .new_lines = new_lines]
+            planned_replacements = replacement_prepend(replacement, planned_replacements)
+            line_index = start + length(pattern)
+          }
+        }
+      }
+    } else {
+      break
+    }
+  }
+
+  if failed {
+    `Err failure
+  } else {
+    let updated = original_lines
+    let remaining = planned_replacements
+
+    loop {
+      if let `Cons node = remaining {
+        let [replacement, tail] = node
+        updated = apply_replacement(updated, replacement)
+        remaining = tail
+      } else {
+        break
+      }
+    }
+
+    if length(updated) == 0 || nth_or("not-empty", length(updated) - 1, updated) != "" {
+      updated = append(updated, singleton(""))
+    }
+    `Ok (text_join(updated, "\n"))
+  }
+}
+
+return { derive_apply_patch_update }

@@ -1,0 +1,33 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ClockDefinition = ToolDefinition
+type ClockDefinitions = ToolDefinitions
+type ClockName = ToolName
+
+const current_time_tool_name: () -> ClockName = () => ["clock", "curr_time"]
+const sleep_tool_name: () -> ClockName = () => ["clock", "sleep"]
+
+const current_time_tool_definitions: [Bool, Bool] -> ClockDefinitions = (enabled, sleep_enabled) => {
+  let definitions: ClockDefinitions = `Nil ()
+
+  if enabled && sleep_enabled {
+    let sleep: ClockDefinition = [sleep_tool_name(), `Direct (), `Sleep (), `FunctionPayload (), false, false]
+    definitions = `Cons ([sleep, definitions])
+  }
+
+  if enabled {
+    let current_time: ClockDefinition = [current_time_tool_name(), `Direct (), `CurrentTime (), `FunctionPayload (), false, false]
+    definitions = `Cons ([current_time, definitions])
+  }
+
+  definitions
+}
+
+return {
+  current_time_tool_name,
+  sleep_tool_name,
+  current_time_tool_definitions,
+}

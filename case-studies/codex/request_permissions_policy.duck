@@ -1,0 +1,355 @@
+module () where
+
+const {} = import "./request_permissions_types.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type PolicyPermissionsAccess = RequestPermissionAccess
+type PolicyPermissionsArgs = RequestPermissionsArgs
+type PolicyPermissionsFileSystem = RequestPermissionFileSystem
+type PolicyPermissionsFileSystemField = RequestPermissionFileSystemField
+type PolicyPermissionsGrant = RequestPermissionsGrant
+type PolicyPermissionsGrantApplication = RequestPermissionsGrantApplication
+type PolicyPermissionsNetwork = RequestPermissionNetwork
+type PolicyPermissionsNetworkField = RequestPermissionNetworkField
+type PolicyPermissionsNormalization = RequestPermissionsNormalization
+type PolicyPermissionsPath = RequestPermissionPath
+type PolicyPermissionsPathNode = RequestPermissionPathNode
+type PolicyPermissionsPaths = RequestPermissionPaths
+type PolicyPermissionsProfile = RequestPermissionProfile
+type PolicyPermissionsResponse = RequestPermissionsResponse
+type PolicyPermissionsScope = PermissionGrantScope
+type PolicyPermissionsApprovalPolicy = ToolApprovalPolicy
+type PolicyPermissionsGranularApprovals = ToolGranularApprovals
+
+const empty_request_permission_paths: () -> PolicyPermissionsPaths = () => `Nil ()
+
+const empty_request_permission_profile: () -> PolicyPermissionsProfile = () => {
+  [.network = `NetworkMissing (), .file_system = `FileSystemMissing ()]
+}
+
+const denied_request_permissions_response: () -> PolicyPermissionsResponse = () => {
+  [.permissions = empty_request_permission_profile(), .scope = `Turn (), .strict_auto_review = false]
+}
+
+const request_permission_paths_reverse: PolicyPermissionsPaths -> PolicyPermissionsPaths = paths => {
+  let current = paths
+  let reversed: PolicyPermissionsPaths = `Nil ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      let reversed_node: PolicyPermissionsPathNode = [entry, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  reversed
+}
+
+const request_permission_access_equal: [PolicyPermissionsAccess, PolicyPermissionsAccess] -> Bool = (left: PolicyPermissionsAccess, right: PolicyPermissionsAccess) => {
+  if let `Read () = left {
+    if let `Read () = right { true } else { false }
+  } else if let `Write () = left {
+    if let `Write () = right { true } else { false }
+  } else {
+    false
+  }
+}
+
+let rec request_permission_path_equal: [&PolicyPermissionsPath, &PolicyPermissionsPath] -> Bool = (left: &PolicyPermissionsPath, right: &PolicyPermissionsPath) => {
+  left.path == right.path && request_permission_access_equal(left.access, right.access)
+}
+
+let rec request_permission_paths_contain: [&PolicyPermissionsPaths, &PolicyPermissionsPath] -> Bool = (paths: &PolicyPermissionsPaths, candidate: &PolicyPermissionsPath) => {
+  let current: &PolicyPermissionsPaths = paths
+  let found = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      if request_permission_path_equal(&entry, candidate) {
+        found = true
+        done = true
+      } else {
+        current = &tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  found
+}
+
+const dedupe_request_permission_paths: PolicyPermissionsPaths -> PolicyPermissionsPaths = paths => {
+  let current = paths
+  let unique_reversed: PolicyPermissionsPaths = `Nil ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      if !(request_permission_paths_contain(&unique_reversed, &entry)) {
+        let unique_node: PolicyPermissionsPathNode = [entry, unique_reversed]
+        unique_reversed = `Cons unique_node
+      }
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  request_permission_paths_reverse unique_reversed
+}
+
+const request_permission_profile_is_empty: &PolicyPermissionsProfile -> Bool = (profile: &PolicyPermissionsProfile) => {
+  if let `NetworkMissing () = profile.network {
+    if let `FileSystemMissing () = profile.file_system { true } else { false }
+  } else {
+    false
+  }
+}
+
+const normalize_request_permissions_args: PolicyPermissionsArgs -> PolicyPermissionsNormalization = args => {
+  let network: PolicyPermissionsNetworkField = if let `NetworkPresent requested_network = args.permissions.network {
+    if let `Some _ = requested_network.enabled {
+      args.permissions.network
+    } else {
+      `NetworkMissing ()
+    }
+  } else {
+    `NetworkMissing ()
+  }
+
+  let file_system: PolicyPermissionsFileSystemField = if let `FileSystemPresent requested_file_system = args.permissions.file_system {
+    let entries = dedupe_request_permission_paths requested_file_system.entries
+    if let `Nil () = entries {
+      `FileSystemMissing ()
+    } else {
+      let normalized_file_system: PolicyPermissionsFileSystem = [.entries = entries]
+      `FileSystemPresent normalized_file_system
+    }
+  } else {
+    `FileSystemMissing ()
+  }
+
+  let permissions_empty = if let `NetworkMissing () = network {
+    if let `FileSystemMissing () = file_system { true } else { false }
+  } else {
+    false
+  }
+  let permissions: PolicyPermissionsProfile = [.network = network, .file_system = file_system]
+  if permissions_empty {
+    `Invalid "request_permissions requires at least one permission"
+  } else {
+    let normalized: PolicyPermissionsArgs = [.environment_id = args.environment_id, .reason = args.reason, .permissions = permissions]
+    `Normalized normalized
+  }
+}
+
+let rec request_permissions_approval_allowed: &PolicyPermissionsApprovalPolicy -> Bool = (policy: &PolicyPermissionsApprovalPolicy) => {
+  if let `Never () = policy {
+    false
+  } else if let `Granular raw_granular = policy {
+    let granular: PolicyPermissionsGranularApprovals = raw_granular
+    let [_, _, _, request_permissions, _] = granular
+    request_permissions
+  } else {
+    true
+  }
+}
+
+const request_permission_access_covers: [PolicyPermissionsAccess, PolicyPermissionsAccess] -> Bool = (requested: PolicyPermissionsAccess, granted: PolicyPermissionsAccess) => {
+  if let `Write () = requested {
+    true
+  } else if let `Read () = requested {
+    if let `Read () = granted { true } else { false }
+  } else {
+    false
+  }
+}
+
+let rec request_permission_path_is_within: [&Text, &Text] -> Bool = (path: &Text, root: &Text) => {
+  if path == root {
+    true
+  } else {
+    let path_length = @len(path)
+    let root_length = @len(root)
+    let prefix_matches = root_length <= path_length
+    let offset = 0
+
+    loop {
+      if !(prefix_matches) || offset >= root_length { break }
+      if @get([path, offset]) != @get([root, offset]) {
+        prefix_matches = false
+      }
+      offset = offset + 1
+    }
+
+    if !(prefix_matches) {
+      false
+    } else if root == "/" || root == "\\" {
+      true
+    } else if path_length <= root_length {
+      false
+    } else {
+      let separator = @get([path, root_length])
+      separator == 47 || separator == 92
+    }
+  }
+}
+
+let rec request_permission_path_is_requested: [&PolicyPermissionsPath, &PolicyPermissionsPaths] -> Bool = (granted: &PolicyPermissionsPath, requested: &PolicyPermissionsPaths) => {
+  let current: &PolicyPermissionsPaths = requested
+  let accepted = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [candidate, tail] = node
+      if request_permission_access_covers(candidate.access, granted.access) && request_permission_path_is_within(&granted.path, &candidate.path) {
+        accepted = true
+        done = true
+      } else {
+        current = &tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  accepted
+}
+
+const intersect_request_permission_paths: [&PolicyPermissionsFileSystem, PolicyPermissionsPaths] -> PolicyPermissionsPaths = (requested: &PolicyPermissionsFileSystem, granted: PolicyPermissionsPaths) => {
+  let requested_entries: &PolicyPermissionsPaths = &requested.entries
+  let current = granted
+  let accepted_reversed: PolicyPermissionsPaths = `Nil ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      if request_permission_path_is_requested(&entry, requested_entries) && !(request_permission_paths_contain(&accepted_reversed, &entry)) {
+        let accepted_node: PolicyPermissionsPathNode = [entry, accepted_reversed]
+        accepted_reversed = `Cons accepted_node
+      }
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  request_permission_paths_reverse accepted_reversed
+}
+
+const intersect_request_permission_profiles: [&PolicyPermissionsProfile, PolicyPermissionsProfile] -> PolicyPermissionsProfile = (requested: &PolicyPermissionsProfile, granted: PolicyPermissionsProfile) => {
+  let network: PolicyPermissionsNetworkField = if let `NetworkPresent requested_network = requested.network {
+    if let `Some requested_enabled = requested_network.enabled {
+      if requested_enabled {
+        if let `NetworkPresent granted_network = granted.network {
+          if let `Some granted_enabled = granted_network.enabled {
+            if granted_enabled {
+              let enabled: PolicyPermissionsNetwork = [.enabled = `Some true]
+              `NetworkPresent enabled
+            } else {
+              `NetworkMissing ()
+            }
+          } else {
+            `NetworkMissing ()
+          }
+        } else {
+          `NetworkMissing ()
+        }
+      } else {
+        `NetworkMissing ()
+      }
+    } else {
+      `NetworkMissing ()
+    }
+  } else {
+    `NetworkMissing ()
+  }
+
+  let file_system: PolicyPermissionsFileSystemField = if let `FileSystemPresent requested_file_system = requested.file_system {
+    if let `FileSystemPresent granted_file_system = granted.file_system {
+      let entries = intersect_request_permission_paths(&requested_file_system, granted_file_system.entries)
+      if let `Nil () = entries {
+        `FileSystemMissing ()
+      } else {
+        let accepted: PolicyPermissionsFileSystem = [.entries = entries]
+        `FileSystemPresent accepted
+      }
+    } else {
+      `FileSystemMissing ()
+    }
+  } else {
+    `FileSystemMissing ()
+  }
+
+  [.network = network, .file_system = file_system]
+}
+
+const normalize_request_permissions_response: [&PolicyPermissionsProfile, PolicyPermissionsResponse] -> PolicyPermissionsResponse = (requested: &PolicyPermissionsProfile, response: PolicyPermissionsResponse) => {
+  if response.strict_auto_review {
+    if let `Session () = response.scope {
+      let denied_permissions = empty_request_permission_profile()
+      let denied_scope: PolicyPermissionsScope = `Turn ()
+      let denied: PolicyPermissionsResponse = response :+ { .permissions = denied_permissions, .scope = denied_scope, .strict_auto_review = false }
+      denied
+    } else if request_permission_profile_is_empty(&response.permissions) {
+      response
+    } else {
+      let accepted_permissions = intersect_request_permission_profiles(requested, response.permissions)
+      let normalized: PolicyPermissionsResponse = [.permissions = accepted_permissions, .scope = response.scope, .strict_auto_review = true]
+      normalized
+    }
+  } else if request_permission_profile_is_empty(&response.permissions) {
+    response
+  } else {
+    let accepted_permissions = intersect_request_permission_profiles(requested, response.permissions)
+    let normalized: PolicyPermissionsResponse = [.permissions = accepted_permissions, .scope = response.scope, .strict_auto_review = false]
+    normalized
+  }
+}
+
+const request_permissions_grant_application: [Text, PolicyPermissionsResponse] -> PolicyPermissionsGrantApplication = (environment_id: Text, response: PolicyPermissionsResponse) => {
+  if request_permission_profile_is_empty(&response.permissions) {
+    `NoGrant ()
+  } else {
+    let grant: PolicyPermissionsGrant = [.environment_id = environment_id, .permissions = response.permissions, .strict_auto_review = response.strict_auto_review]
+    if let `Session () = response.scope {
+      `GrantForSession grant
+    } else {
+      `GrantForTurn grant
+    }
+  }
+}
+
+return {
+  dedupe_request_permission_paths,
+  denied_request_permissions_response,
+  empty_request_permission_paths,
+  empty_request_permission_profile,
+  intersect_request_permission_profiles,
+  normalize_request_permissions_args,
+  normalize_request_permissions_response,
+  request_permission_profile_is_empty,
+  request_permissions_approval_allowed,
+  request_permissions_grant_application,
+}

@@ -1,0 +1,559 @@
+module () where
+
+const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
+const { path_join, text_compare, text_contains_ascii_case_insensitive, text_ends_with, text_find_from, text_length, text_slice, text_starts_with } = import "duck:prelude/functional" ()
+const rollout_storage_types_module = import "./rollout_storage_types.duck"
+
+type StorageFile = RolloutStoredFile
+type StorageFiles = RolloutStoredFiles
+type StorageThread = RolloutThreadSummary
+type StorageThreads = RolloutThreadSummaries
+type StorageThreadOption = RolloutThreadSummaryOption
+type StorageSortKey = RolloutThreadSortKey
+type StorageTextOption = RolloutStorageTextOption
+type StorageTexts = RolloutStorageTexts
+type StorageGitInfo = RolloutGitInfo
+type StorageGitInfoOption = RolloutGitInfoOption
+type StorageSessionSource = RolloutSessionSource
+type StorageQuery = RolloutThreadQuery
+type StoragePage = RolloutThreadPage
+type StorageJsonObject = JsonObject
+type StorageJsonObjectOption = Option StorageJsonObject
+
+const empty_threads: () -> StorageThreads = () => `Nil ()
+
+const prepend_thread: [StorageThread, StorageThreads] -> StorageThreads = (thread: StorageThread, tail: StorageThreads) => {
+  `Cons ([thread, tail])
+}
+
+const singleton_thread: StorageThread -> StorageThreads = (thread: StorageThread) => {
+  prepend_thread(thread, empty_threads())
+}
+
+const reverse_threads: StorageThreads -> StorageThreads = (values: StorageThreads) => {
+  let current = values
+  let reversed: StorageThreads = empty_threads()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [thread, tail] = node
+      reversed = prepend_thread(thread, reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  reversed
+}
+
+const thread_count: StorageThreads -> I32 = (values: StorageThreads) => {
+  let current = values
+  let count = 0
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  count
+}
+
+const json_text_field: [StorageJsonObject, Text] -> Text = (object: StorageJsonObject, key: Text) => {
+  let result: Text = ""
+  let lookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `String text = value {
+      result = text
+    }
+  }
+
+  result
+}
+
+const json_optional_text_field: [StorageJsonObject, Text] -> StorageTextOption = (object: StorageJsonObject, key: Text) => {
+  let result: StorageTextOption = StorageTextOption.None()
+  let lookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `String text = value {
+      result = StorageTextOption.Some(text)
+    }
+  }
+
+  result
+}
+
+const json_object_field: [StorageJsonObject, Text] -> StorageJsonObjectOption = (object: StorageJsonObject, key: Text) => {
+  let result: StorageJsonObjectOption = StorageJsonObjectOption.None()
+  let lookup = json_object_get(key, object)
+
+  if let `Found value = lookup {
+    if let `Object nested = value {
+      result = StorageJsonObjectOption.Some(nested)
+    }
+  }
+
+  result
+}
+
+const preview_from_event: StorageJsonObject -> Text = (event: StorageJsonObject) => {
+  let event_type = json_text_field(event, "type")
+  let preview: Text = ""
+
+  if event_type == "user_message" || event_type == "agent_message" {
+    preview = json_text_field(event, "message")
+  } else if event_type == "thread_goal_updated" {
+    let goal = json_object_field(event, "goal")
+
+    if let `Some object = goal {
+      preview = json_text_field(object, "objective")
+    }
+  } else if event_type == "item_completed" {
+    let item = json_object_field(event, "item")
+
+    if let `Some object = item {
+      if json_text_field(object, "type") == "user_message" {
+        preview = json_text_field(object, "message")
+      }
+    }
+  }
+
+  preview
+}
+
+const git_info_from_meta: StorageJsonObject -> StorageGitInfoOption = (meta: StorageJsonObject) => {
+  let result: StorageGitInfoOption = `None ()
+  let git = json_object_field(meta, "git")
+
+  if let `Some object = git {
+    let info: StorageGitInfo = [json_optional_text_field(object, "commit_hash"), json_optional_text_field(object, "branch"), json_optional_text_field(object, "repository_url")]
+    result = `Some info
+  }
+
+  result
+}
+
+const session_source_from_meta: StorageJsonObject -> StorageSessionSource = (meta: StorageJsonObject) => {
+  let result: StorageSessionSource = `VsCode ()
+  let lookup = json_object_get("source", meta)
+
+  if let `Found value = lookup {
+    if let `String source = value {
+      if source == "cli" {
+        result = `Cli ()
+      } else if source == "vscode" {
+        result = `VsCode ()
+      } else if source == "exec" {
+        result = `Exec ()
+      } else if source == "mcp" {
+        result = `AppServer ()
+      } else {
+        result = `Unknown ()
+      }
+    } else if let `Object source = value {
+      let custom = json_optional_text_field(source, "custom")
+      let subagent = json_object_get("subagent", source)
+
+      if let `Some name = custom {
+        result = `Custom name
+      } else if let `Found subagent_source = subagent {
+        result = `SubAgent subagent_source
+      } else {
+        result = `Unknown ()
+      }
+    }
+  }
+
+  result
+}
+
+const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: StorageFile) => {
+  let [path, updated_at, contents] = file
+  let thread_id: Text = ""
+  let session_id: Text = ""
+  let forked_from_id: StorageTextOption = `None ()
+  let parent_thread_id: StorageTextOption = `None ()
+  let preview: Text = ""
+  let cwd: Text = ""
+  let source: StorageSessionSource = `VsCode ()
+  let model_provider: Text = ""
+  let cli_version: Text = ""
+  let thread_source: StorageTextOption = `None ()
+  let history_mode: Text = "legacy"
+  let agent_nickname: StorageTextOption = `None ()
+  let agent_role: StorageTextOption = `None ()
+  let created_at: Text = ""
+  let git_info: StorageGitInfoOption = `None ()
+  let start = 0
+  let saw_meta = false
+  let scanned_lines = 0
+  let done = false
+
+  loop {
+    if done || start >= text_length(contents) || scanned_lines >= 210 {
+      break
+    }
+
+    let newline = text_find_from([contents, "\n", start])
+    let end = if newline < 0 { text_length(contents) } else { newline }
+    let line = text_slice([contents, start, end])
+
+    if line != "" {
+      let parsed = parse_json_document(line)
+
+      if let `Ok value_and_index = parsed {
+        let [value, _] = value_and_index
+
+        if let `Object object = value {
+          let record_type = json_text_field(object, "type")
+          let payload = json_object_field(object, "payload")
+
+          if let `Some payload_object = payload {
+            if record_type == "session_meta" && !(saw_meta) {
+              thread_id = json_text_field(payload_object, "id")
+              session_id = json_text_field(payload_object, "session_id")
+              forked_from_id = json_optional_text_field(payload_object, "forked_from_id")
+              parent_thread_id = json_optional_text_field(payload_object, "parent_thread_id")
+              cwd = json_text_field(payload_object, "cwd")
+              source = session_source_from_meta(payload_object)
+              model_provider = json_text_field(payload_object, "model_provider")
+              cli_version = json_text_field(payload_object, "cli_version")
+              thread_source = json_optional_text_field(payload_object, "thread_source")
+              let stored_history_mode = json_text_field(payload_object, "history_mode")
+              if stored_history_mode != "" { history_mode = stored_history_mode }
+              agent_nickname = json_optional_text_field(payload_object, "agent_nickname")
+              agent_role = json_optional_text_field(payload_object, "agent_role")
+              created_at = json_text_field(payload_object, "timestamp")
+              git_info = git_info_from_meta(payload_object)
+              if session_id == "" { session_id = thread_id }
+              saw_meta = true
+            } else if record_type == "event_msg" && preview == "" {
+              preview = preview_from_event(payload_object)
+            }
+          }
+        }
+      }
+
+      scanned_lines = scanned_lines + 1
+    }
+
+    if newline < 0 {
+      done = true
+    } else {
+      start = newline + 1
+    }
+  }
+
+  if saw_meta {
+    let summary: StorageThread = [path, thread_id, session_id, forked_from_id, parent_thread_id, preview, cwd, source, model_provider, cli_version, thread_source, history_mode, agent_nickname, agent_role, created_at, updated_at, git_info]
+    StorageThreadOption.Some(summary)
+  } else {
+    StorageThreadOption.None()
+  }
+}
+
+const text_list_allows: [StorageTexts, Text] -> Bool = (allowed: StorageTexts, value: Text) => {
+  let current = allowed
+  let saw_candidate = false
+  let found = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [candidate, tail] = node
+      saw_candidate = true
+
+      if candidate == value {
+        found = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  if saw_candidate { found } else { true }
+}
+
+const session_source_text: StorageSessionSource -> Text = (source: StorageSessionSource) => {
+  if let `Cli () = source {
+    "cli"
+  } else if let `VsCode () = source {
+    "vscode"
+  } else if let `Exec () = source {
+    "exec"
+  } else if let `AppServer () = source {
+    "mcp"
+  } else {
+    "unknown"
+  }
+}
+
+const thread_matches_query: [StorageThread, StorageFile, StorageQuery] -> Bool = (thread: StorageThread, file: StorageFile, query: StorageQuery) => {
+  let [_, _, contents] = file
+  let [_, _, _, allowed_sources, cwd_filters, model_providers, search_term, _] = query
+  let source_text = session_source_text(thread.source)
+  let source_allowed = text_list_allows(allowed_sources, source_text)
+  let cwd_allowed = text_list_allows(cwd_filters, thread.cwd)
+  let provider_allowed = text_list_allows(model_providers, thread.model_provider)
+  let search_matches = search_term == "" || text_contains_ascii_case_insensitive([contents, search_term])
+  source_allowed && cwd_allowed && provider_allowed && search_matches
+}
+
+const thread_sort_value: [StorageThread, StorageSortKey] -> Text = (thread: StorageThread, sort_key: StorageSortKey) => {
+  if let `UpdatedAt () = sort_key { thread.updated_at } else { thread.created_at }
+}
+
+const thread_precedes: [StorageThread, StorageThread, StorageSortKey] -> Bool = (left: StorageThread, right: StorageThread, sort_key: StorageSortKey) => {
+  let left_value = thread_sort_value(left, sort_key)
+  let right_value = thread_sort_value(right, sort_key)
+  let comparison = text_compare([left_value, right_value])
+
+  if comparison == 0 {
+    text_compare([left.thread_id, right.thread_id]) > 0
+  } else {
+    comparison > 0
+  }
+}
+
+const thread_after_cursor: [StorageThread, StorageTextOption, StorageSortKey] -> Bool = (thread: StorageThread, cursor: StorageTextOption, sort_key: StorageSortKey) => {
+  if let `Some value = cursor {
+    text_compare([thread_sort_value(thread, sort_key), value]) < 0
+  } else {
+    true
+  }
+}
+
+const sort_threads: [StorageThreads, StorageSortKey] -> StorageThreads = (values: StorageThreads, sort_key: StorageSortKey) => {
+  let current = values
+  let sorted: StorageThreads = empty_threads()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      let remaining = sorted
+      let prefix_reversed: StorageThreads = empty_threads()
+      let inserted = false
+
+      loop {
+        if let `Cons sorted_node = remaining {
+          let [sorted_value, sorted_tail] = sorted_node
+
+          if thread_precedes(value, sorted_value, sort_key) {
+            remaining = prepend_thread(value, remaining)
+            inserted = true
+            break
+          } else {
+            prefix_reversed = prepend_thread(sorted_value, prefix_reversed)
+            remaining = sorted_tail
+          }
+        } else {
+          remaining = singleton_thread value
+          inserted = true
+          break
+        }
+      }
+
+      if inserted {
+        let prefix = prefix_reversed
+
+        loop {
+          if let `Cons prefix_node = prefix {
+            let [prefix_value, prefix_tail] = prefix_node
+            remaining = prepend_thread(prefix_value, remaining)
+            prefix = prefix_tail
+          } else {
+            break
+          }
+        }
+      }
+
+      sorted = remaining
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  sorted
+}
+
+const take_threads: [I32, StorageThreads] -> StorageThreads = (count: I32, values: StorageThreads) => {
+  let current = values
+  let remaining = count
+  let taken_reversed: StorageThreads = empty_threads()
+  let done = remaining <= 0
+
+  loop {
+    if done {
+      break
+    }
+
+    if let `Cons node = current {
+      let [thread, tail] = node
+      taken_reversed = prepend_thread(thread, taken_reversed)
+      current = tail
+      remaining = remaining - 1
+
+      if remaining <= 0 {
+        done = true
+      }
+    } else {
+      done = true
+    }
+  }
+
+  reverse_threads taken_reversed
+}
+
+const list_rollout_threads: [StorageFiles, StorageQuery] -> StoragePage = (snapshot: StorageFiles, query: StorageQuery) => {
+  let [page_size, cursor, sort_key, _, _, _, _, scan_limit] = query
+  let current = snapshot
+  let candidates: StorageThreads = empty_threads()
+  let scanned = 0
+  let scan_done = scan_limit <= 0
+
+  loop {
+    if scan_done {
+      break
+    }
+
+    if let `Cons node = current {
+      let [file, tail] = node
+      scanned = scanned + 1
+      let summary = summarize_rollout_file file
+
+      if let `Some thread = summary {
+        if thread_matches_query(thread, file, query) && thread_after_cursor(thread, cursor, sort_key) {
+          candidates = prepend_thread(thread, candidates)
+        }
+      }
+
+      current = tail
+      if scanned >= scan_limit {
+        scan_done = true
+      }
+    } else {
+      scan_done = true
+    }
+  }
+
+  let reached_scan_limit = scanned >= scan_limit
+  if let `Nil () = current {
+    reached_scan_limit = false
+  }
+
+  let sorted = sort_threads(candidates, sort_key)
+  let page_items = take_threads(page_size, sorted)
+  let has_more = thread_count(sorted) > thread_count(page_items)
+  let next_cursor: StorageTextOption = StorageTextOption.None()
+
+  if has_more {
+    let page_current = page_items
+
+    loop {
+      if let `Cons node = page_current {
+        let [thread, tail] = node
+        next_cursor = StorageTextOption.Some(thread_sort_value(thread, sort_key))
+        page_current = tail
+      } else {
+        break
+      }
+    }
+  }
+
+  let page: StoragePage = [page_items, next_cursor, scanned, reached_scan_limit]
+  page
+}
+
+const find_rollout_path_by_id: [StorageFiles, Text] -> StorageTextOption = (snapshot: StorageFiles, thread_id: Text) => {
+  let current = snapshot
+  let result: StorageTextOption = StorageTextOption.None()
+  let done = false
+
+  loop {
+    if done {
+      break
+    }
+
+    if let `Cons node = current {
+      let [file, tail] = node
+      let summary = summarize_rollout_file file
+
+      if let `Some thread = summary {
+        if thread.thread_id == thread_id {
+          result = StorageTextOption.Some(thread.path)
+          done = true
+        }
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+  }
+
+  result
+}
+
+const rollout_path: [Text, Text, Text] -> StorageTextOption = (codex_home: Text, timestamp: Text, thread_id: Text) => {
+  if text_length(timestamp) < 19 {
+    StorageTextOption.None()
+  } else {
+    let year = text_slice([timestamp, 0, 4])
+    let month = text_slice([timestamp, 5, 7])
+    let day = text_slice([timestamp, 8, 10])
+    let filename = "rollout-" <> timestamp <> "-" <> thread_id <> ".jsonl"
+    let dated = path_join([path_join([path_join([path_join([codex_home, "sessions"]), year]), month]), day])
+    StorageTextOption.Some(path_join([dated, filename]))
+  }
+}
+
+const is_rollout_path: Text -> Bool = (path: Text) => {
+  let name_start = 0
+
+  for index in 0..text_length(path) {
+    if text_slice([path, index, index + 1]) == "/" {
+      name_start = index + 1
+    }
+  }
+
+  let name = text_slice([path, name_start, text_length(path)])
+  text_starts_with([name, "rollout-"]) && text_ends_with([name, ".jsonl"])
+}
+
+return {
+  summarize_rollout_file,
+  list_rollout_threads,
+  find_rollout_path_by_id,
+  rollout_path,
+  is_rollout_path,
+}

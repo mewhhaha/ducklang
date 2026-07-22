@@ -1,0 +1,12 @@
+module () where
+
+declare effect TestSyncHost {
+  suspending sleep: (Text) => Unit
+  suspending barrier: (&TestSyncBarrier) => TestSyncBarrierHostResult
+}
+
+declare Init {
+  test_sync_host: TestSyncHost
+}
+
+return {}

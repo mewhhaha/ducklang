@@ -1,0 +1,35 @@
+module () where
+
+const {} = import "./update_plan_types.duck" ()
+
+type PlanPolicyCallPlan = UpdatePlanCallPlan
+type PlanPolicyCompletion = UpdatePlanCompletion
+type PlanPolicyMode = UpdatePlanMode
+type PlanPolicyPayload = UpdatePlanPayload
+type PlanPolicyPayloadPlan = UpdatePlanPayloadPlan
+type PlanPolicyArgs = UpdatePlanArgs
+
+let plan_update_plan_payload: [PlanPolicyPayload, PlanPolicyMode] -> PlanPolicyPayloadPlan = (payload: PlanPolicyPayload, mode: PlanPolicyMode) => {
+  if let `Unsupported () = payload {
+    `RejectPayload "update_plan handler received unsupported payload"
+  } else if let `Plan () = mode {
+    `RejectPayload "update_plan is a TODO/checklist tool and is not allowed in Plan mode"
+  } else if let `Function arguments = payload {
+    `ParseArguments arguments
+  } else {
+    `RejectPayload "update_plan handler received unsupported payload"
+  }
+}
+
+let plan_parsed_update_plan: PlanPolicyArgs -> PlanPolicyCallPlan = args => `Publish args
+
+let update_plan_completion: () -> PlanPolicyCompletion = () => {
+  let completion: PlanPolicyCompletion = [.text = "Plan updated", .success = true, .code_mode = "{}"]
+  completion
+}
+
+return {
+  plan_parsed_update_plan,
+  plan_update_plan_payload,
+  update_plan_completion,
+}

@@ -1,0 +1,36 @@
+module () where
+
+const hook_types_module = import "./hook_types.duck"
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_stop_output } = hook_output_module()
+
+let parsed = parse_stop_output("Stop", "{\"continue\":false,\"stopReason\":\"done\",\"decision\":\"block\",\"reason\":\"retry\"}")
+let score: I32 = 0
+
+if let `StopOk output = parsed {
+  let [universal, should_block, reason, invalid] = output
+  let [continue_processing, stop_reason, _, _] = universal
+
+  if continue_processing {
+    ()
+  } else {
+    score = score + 1
+  }
+
+  if let `Some value = stop_reason {
+    if value == "done" { score = score + 10 }
+  }
+
+  if should_block {
+    if let `Some value = reason {
+      if value == "retry" {
+        if let `None () = invalid {
+          score = score + 100
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

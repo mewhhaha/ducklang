@@ -1,0 +1,48 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_exec_server_options, parse_mcp_server_options, parse_stdio_to_uds_options } = import "./cli_server.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexServerCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let mcp: FixtureResult = parse_mcp_server_options(args.singleton("--strict-config"))
+if let `Ok command = mcp {
+  if let `StartMcpServer options = command {
+    if options.strict_config { score = score + 1 }
+  }
+}
+
+let exec_input: FixtureArgs = args.prepend("--remote", args.prepend("https://example.com", args.prepend("--environment-id", args.prepend("env-7", args.prepend("--name", args.prepend("runner", args.prepend("--use-agent-identity-auth", args.singleton("--strict-config"))))))))
+let exec: FixtureResult = parse_exec_server_options(exec_input)
+if let `Ok command = exec {
+  if let `StartExecServer options = command {
+    if let `Some remote = options.remote {
+      if let `Some environment_id = options.environment_id {
+        if let `Some name = options.name {
+          if remote == "https://example.com" && environment_id == "env-7" && name == "runner" && options.use_agent_identity_auth && options.strict_config {
+            score = score + 10
+          }
+        }
+      }
+    }
+  }
+}
+
+let invalid: FixtureResult = parse_exec_server_options(args.prepend("--remote", args.singleton("https://example.com")))
+if let `Err _ = invalid {
+  score = score + 100
+}
+
+let relay: FixtureResult = parse_stdio_to_uds_options(args.singleton("/tmp/codex.sock"))
+if let `Ok command = relay {
+  if let `RelayStdioToUds socket_path = command {
+    if socket_path == "/tmp/codex.sock" { score = score + 1000 }
+  }
+}
+
+return { .score = score }

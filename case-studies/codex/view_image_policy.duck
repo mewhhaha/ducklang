@@ -1,0 +1,75 @@
+module () where
+
+const { path_resolve } = import "duck:prelude/path" ()
+const { text_append } = import "duck:prelude/text" ()
+const {} = import "./view_image_types.duck" ()
+
+type ImagePolicyArgs = ViewImageArgs
+type ImagePolicyDetail = ViewImageDetail
+type ImagePolicyEnvironment = ViewImageEnvironment
+type ImagePolicyEnvironmentSelection = ViewImageEnvironmentSelection
+type ImagePolicyEnvironments = ViewImageEnvironments
+type ImagePolicyPlan = ViewImageCallPlan
+type ImagePolicyPrepared = ViewImagePreparedCall
+type ImagePolicyTextOption = ViewImageTextOption
+
+const select_view_image_environment: [ImagePolicyEnvironments, ImagePolicyTextOption] -> ImagePolicyEnvironmentSelection = (environments: ImagePolicyEnvironments, requested_id: ImagePolicyTextOption) => {
+  let current = environments
+  let selection: ImagePolicyEnvironmentSelection = `SelectionFailed "view_image is unavailable in this session"
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [environment, tail] = node
+      let matches = if let `ImageEnvironmentPresent environment_id = requested_id {
+        environment.environment_id == environment_id
+      } else {
+        environment.is_primary
+      }
+
+      if matches {
+        selection = `Selected environment
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  if let `Selected environment = selection {
+    `Selected environment
+  } else if let `ImageEnvironmentPresent environment_id = requested_id {
+    `SelectionFailed (text_append ["unknown turn environment id `", text_append [environment_id, "`"]])
+  } else {
+    selection
+  }
+}
+
+const prepare_view_image: [Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool] -> ImagePolicyPlan = (call_id: Text, args: ImagePolicyArgs, environments: ImagePolicyEnvironments, can_request_original_detail: Bool) => {
+  let selection = select_view_image_environment(environments, args.environment_id)
+  if let `Selected selected = selection {
+    let detail: ImagePolicyDetail = `High ()
+    if let `ImageDetailPresent requested = args.detail {
+      if can_request_original_detail {
+        if let `Original () = requested { detail = `Original () }
+      }
+    }
+
+    let path = path_resolve(selected.cwd, args.path)
+    let prepared: ImagePolicyPrepared = [.call_id = call_id, .environment_id = selected.environment_id, .path = path, .detail = detail]
+    `ReadImage prepared
+  } else if let `SelectionFailed message = selection {
+    `RejectRequest message
+  } else {
+    `RejectRequest "view_image environment selection produced no result"
+  }
+}
+
+return {
+  prepare_view_image,
+  select_view_image_environment,
+}

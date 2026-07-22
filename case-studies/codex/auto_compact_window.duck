@@ -1,0 +1,111 @@
+module () where
+
+const { once, once_claim } = import "duck:prelude/abstractions" ()
+const { saturating_add_i64 } = import "duck:prelude/numeric" ()
+const {} = import "./auto_compact_window_types.duck" ()
+
+type CompactWindow = AutoCompactWindow
+type CompactWindowIds = AutoCompactWindowIds
+type CompactWindowClaim = AutoCompactWindowClaim
+type CompactWindowSnapshot = AutoCompactWindowSnapshot
+type CompactWindowTokenOption = AutoCompactWindowTokenOption
+
+const new_auto_compact_window: CompactWindowIds -> CompactWindow = ids => {
+  [.window_number = 0i64, .ids = ids, .new_context_window_requested = false, .prefill_input_tokens = `None (), .token_budget_reminder = once(), .auto_compact_fallback = once()]
+}
+
+const clear_auto_compact_prefill: CompactWindow -> CompactWindow = window => {
+  window :+ { .prefill_input_tokens = `None () }
+}
+
+const restore_auto_compact_window: [CompactWindow, I64, CompactWindowIds] -> CompactWindow = (window: CompactWindow, window_number: I64, ids: CompactWindowIds) => {
+  window :+ { .window_number = window_number, .ids = ids }
+}
+
+const advance_auto_compact_window: [CompactWindow, Text] -> CompactWindow = (window: CompactWindow, next_window_id: Text) => {
+  let next_ids: CompactWindowIds = [.first_window_id = window.ids.first_window_id, .previous_window_id = `Some window.ids.window_id, .window_id = next_window_id]
+  window :+ {
+    .window_number = saturating_add_i64(window.window_number, 1i64),
+    .ids = next_ids,
+    .new_context_window_requested = false,
+    .token_budget_reminder = once(),
+    .auto_compact_fallback = once(),
+  }
+}
+
+const claim_token_budget_reminder: CompactWindow -> CompactWindowClaim = window => {
+  let claim = once_claim(window.token_budget_reminder)
+  let claimed_window: CompactWindow = window :+ { .token_budget_reminder = claim.state }
+  [.window = claimed_window, .granted = claim.granted]
+}
+
+const claim_auto_compact_fallback: CompactWindow -> CompactWindowClaim = window => {
+  let claim = once_claim(window.auto_compact_fallback)
+  let claimed_window: CompactWindow = window :+ { .auto_compact_fallback = claim.state }
+  [.window = claimed_window, .granted = claim.granted]
+}
+
+const request_new_context_window: CompactWindow -> CompactWindow = window => {
+  window :+ { .new_context_window_requested = true }
+}
+
+const take_new_context_window_request: CompactWindow -> CompactWindowClaim = window => {
+  let granted = window.new_context_window_requested
+  let cleared_window: CompactWindow = window :+ { .new_context_window_requested = false }
+  [.window = cleared_window, .granted = granted]
+}
+
+const ensure_server_observed_prefill: [CompactWindow, I64] -> CompactWindow = (window: CompactWindow, input_tokens: I64) => {
+  if let `Some current = window.prefill_input_tokens {
+    if let `ServerObserved _ = current {
+      window
+    } else {
+      let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 }
+      window :+ { .prefill_input_tokens = `Some (`ServerObserved tokens) }
+    }
+  } else {
+    let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 }
+    window :+ { .prefill_input_tokens = `Some (`ServerObserved tokens) }
+  }
+}
+
+const set_estimated_prefill: [CompactWindow, I64] -> CompactWindow = (window: CompactWindow, input_tokens: I64) => {
+  if let `Some current = window.prefill_input_tokens {
+    if let `ServerObserved _ = current {
+      window
+    } else {
+      let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 }
+      window :+ { .prefill_input_tokens = `Some (`Estimated tokens) }
+    }
+  } else {
+    let tokens = if input_tokens > 0i64 { input_tokens } else { 0i64 }
+    window :+ { .prefill_input_tokens = `Some (`Estimated tokens) }
+  }
+}
+
+const auto_compact_window_snapshot: &CompactWindow -> CompactWindowSnapshot = (window: &CompactWindow) => {
+  let prefill: CompactWindowTokenOption = `None ()
+  if let `Some current = window.prefill_input_tokens {
+    if let `ServerObserved tokens = current {
+      prefill = `Some tokens
+    } else if let `Estimated tokens = current {
+      prefill = `Some tokens
+    }
+  }
+
+  [.prefill_input_tokens = prefill]
+}
+
+return {
+  new_auto_compact_window,
+  clear_auto_compact_prefill,
+  restore_auto_compact_window,
+  advance_auto_compact_window,
+  claim_token_budget_reminder,
+  claim_auto_compact_fallback,
+  request_new_context_window,
+  take_new_context_window_request,
+  ensure_server_observed_prefill,
+  set_estimated_prefill,
+  auto_compact_window_snapshot,
+}

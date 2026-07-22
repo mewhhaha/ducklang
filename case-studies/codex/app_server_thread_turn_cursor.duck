@@ -1,0 +1,46 @@
+module () where
+
+const { encode_json, json_bool, json_object, json_object_empty, json_object_get, json_object_prepend, json_string, parse_json_document } = import "duck:prelude/json" ()
+const {} = import "./app_server_turn_types.duck" ()
+
+type TurnCursorJsonLookup = JsonLookupResult
+type TurnCursor = AppServerThreadTurnsCursor
+type TurnCursorResult = AppServerThreadTurnsCursorResult
+
+let invalid_cursor: Text -> TurnCursorResult = (cursor: Text) => `Err ("invalid cursor: " <> cursor)
+
+let parse_thread_turns_cursor: Text -> TurnCursorResult = (cursor: Text) => {
+  let parsed = parse_json_document(cursor)
+
+  if let `Ok decoded = parsed {
+    let [value, _] = decoded
+    if let `Object fields = value {
+      let turn_id: TurnCursorJsonLookup = json_object_get("turnId", fields)
+      let include_anchor: TurnCursorJsonLookup = json_object_get("includeAnchor", fields)
+      if let `Found turn_id_value = turn_id {
+        if let `String id = turn_id_value {
+          if let `Found include_anchor_value = include_anchor {
+            if let `Bool included = include_anchor_value {
+              `Ok ([id, included])
+            } else { invalid_cursor cursor }
+          } else { invalid_cursor cursor }
+        } else { invalid_cursor cursor }
+      } else { invalid_cursor cursor }
+    } else { invalid_cursor cursor }
+  } else {
+    invalid_cursor cursor
+  }
+}
+
+const serialize_thread_turns_cursor: TurnCursor -> Text = (cursor: TurnCursor) => {
+  let [turn_id, include_anchor] = cursor
+  let fields = json_object_empty()
+  fields = json_object_prepend("includeAnchor", json_bool(include_anchor), fields)
+  fields = json_object_prepend("turnId", json_string(turn_id), fields)
+  encode_json(json_object(fields))
+}
+
+return {
+  parse_thread_turns_cursor,
+  serialize_thread_turns_cursor,
+}

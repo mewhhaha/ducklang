@@ -1,0 +1,52 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { request_user_input_tool_definitions, request_user_input_tool_specs } = import "./request_user_input_registration.duck" ()
+
+type FixtureDefinitions = ToolDefinitions
+type FixtureSpecs = ToolSpecs
+
+let definitions_score: I32 = scratch {
+  let score = 0
+  let disabled: FixtureDefinitions = request_user_input_tool_definitions false
+  if let `Nil () = disabled { score = score + 1 }
+
+  let enabled: FixtureDefinitions = request_user_input_tool_definitions true
+  if let `Cons node = enabled {
+    let [definition, tail] = node
+    let [name, exposure, tool_handler, payload, parallel, waits] = definition
+    let [namespace, local_name] = name
+    if namespace == "" && local_name == "request_user_input" && !(parallel) && !(waits) {
+      if let `DirectModelOnly () = exposure {
+        if let `RequestUserInput () = tool_handler {
+          if let `FunctionPayload () = payload {
+            if let `Nil () = tail { score = score + 10 }
+          }
+        }
+      }
+    }
+  }
+
+  score
+}
+
+let specs_score: I32 = scratch {
+  let score = 0
+  let specs: FixtureSpecs = request_user_input_tool_specs(true, false)
+  if let `Cons node = specs {
+    let [spec, tail] = node
+    let [_, kind, description, parameters, output, strict] = spec
+    let description_valid = description == "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from 60000 to 240000 milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in Plan mode."
+    let schema_valid = parameters == "{\"type\":\"object\",\"properties\":{\"autoResolutionMs\":{\"type\":\"number\",\"description\":\"Optional auto-resolution window in milliseconds, from 60000 to 240000. Include this only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required before continuing. Use 60000 for lightly helpful context and up to 240000 when the answer would materially unblock better work.\"},\"questions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"header\":{\"type\":\"string\",\"description\":\"Short header label shown in the UI (12 or fewer chars).\"},\"id\":{\"type\":\"string\",\"description\":\"Stable identifier for mapping answers (snake_case).\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"description\":{\"type\":\"string\",\"description\":\"One short sentence explaining impact/tradeoff if selected.\"},\"label\":{\"type\":\"string\",\"description\":\"User-facing label (1-5 words).\"}},\"required\":[\"label\",\"description\"],\"additionalProperties\":false},\"description\":\"Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \\\"(Recommended)\\\". Do not include an \\\"Other\\\" option in this list; the client will add a free-form \\\"Other\\\" option automatically.\"},\"question\":{\"type\":\"string\",\"description\":\"Single-sentence prompt shown to the user.\"}},\"required\":[\"id\",\"header\",\"question\",\"options\"],\"additionalProperties\":false},\"description\":\"Questions to show the user. Prefer 1 and do not exceed 3\"}},\"required\":[\"questions\"],\"additionalProperties\":false}"
+    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
+    if description_valid && schema_valid && output_valid && !(strict) {
+      if let `FunctionSpec () = kind {
+        if let `Nil () = tail { score = score + 100 }
+      }
+    }
+  }
+
+  score
+}
+
+return { .score = definitions_score + specs_score }

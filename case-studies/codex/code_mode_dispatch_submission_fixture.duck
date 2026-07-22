@@ -1,0 +1,78 @@
+module () where
+
+const {} = import "./code_mode_dispatch_types.duck" ()
+const { plan_code_mode_dispatch_submission } = import "./code_mode_dispatch.duck" ()
+
+type FixtureFacts = CodeModeDispatchSubmissionFacts
+type FixtureInvocation = CodeModeNestedToolInvocation
+type FixtureNotification = CodeModeNotification
+type FixtureRequest = CodeModeDispatchRequest
+
+let invocation: FixtureInvocation = [
+  .cell_id = "cell-tool",
+  .runtime_tool_call_id = "runtime-tool",
+  .tool_name = ["", "lookup"],
+  .tool_kind = `NestedFunction (),
+  .input = `None ()]
+let nested_request: FixtureRequest = `DispatchNestedInvocation invocation
+let notification: FixtureNotification = [
+  .call_id = "call-notify",
+  .cell_id = "cell-notify",
+  .text = "working"]
+let notification_request: FixtureRequest = `DispatchNotification notification
+
+let score = 0
+
+let nested_open: FixtureFacts = [
+  .request = nested_request,
+  .cancellation = `DispatchActive (),
+  .channel = `DispatchChannelOpen ()]
+if let `QueueCodeModeDispatch queued = plan_code_mode_dispatch_submission nested_open {
+  if let `DispatchNestedInvocation queued_invocation = queued {
+    if queued_invocation.cell_id == "cell-tool" { score = score + 1 }
+  }
+}
+
+let notification_open: FixtureFacts = [
+  .request = notification_request,
+  .cancellation = `DispatchActive (),
+  .channel = `DispatchChannelOpen ()]
+if let `QueueCodeModeDispatch queued = plan_code_mode_dispatch_submission notification_open {
+  if let `DispatchNotification queued_notification = queued {
+    if queued_notification.call_id == "call-notify" { score = score + 10 }
+  }
+}
+
+let nested_cancelled: FixtureFacts = [
+  .request = nested_request,
+  .cancellation = `DispatchCancelled (),
+  .channel = `DispatchChannelOpen ()]
+if let `RejectCodeModeDispatch message = plan_code_mode_dispatch_submission nested_cancelled {
+  if message == "code mode nested tool call cancelled" { score = score + 100 }
+}
+
+let notification_cancelled: FixtureFacts = [
+  .request = notification_request,
+  .cancellation = `DispatchCancelled (),
+  .channel = `DispatchChannelOpen ()]
+if let `RejectCodeModeDispatch message = plan_code_mode_dispatch_submission notification_cancelled {
+  if message == "code mode notification cancelled" { score = score + 1000 }
+}
+
+let nested_unavailable: FixtureFacts = [
+  .request = nested_request,
+  .cancellation = `DispatchActive (),
+  .channel = `DispatchChannelUnavailable ()]
+if let `RejectCodeModeDispatch message = plan_code_mode_dispatch_submission nested_unavailable {
+  if message == "code mode nested tool dispatcher is unavailable" { score = score + 10000 }
+}
+
+let notification_unavailable: FixtureFacts = [
+  .request = notification_request,
+  .cancellation = `DispatchActive (),
+  .channel = `DispatchChannelUnavailable ()]
+if let `RejectCodeModeDispatch message = plan_code_mode_dispatch_submission notification_unavailable {
+  if message == "code mode notification dispatcher is unavailable" { score = score + 100000 }
+}
+
+return { .score = score }

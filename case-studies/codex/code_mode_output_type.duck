@@ -1,0 +1,48 @@
+module () where
+
+const { json_object_get } = import "duck:prelude/json/values" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const { render_json_schema_to_typescript } = import "./code_mode_schema_renderer.duck" ()
+
+const object_has_type: [JsonObject, Text] -> Bool = (object, expected) => {
+  if let `Found value = json_object_get("type", object) {
+    if let `String actual = value { actual == expected } else { false }
+  } else {
+    false
+  }
+}
+
+const materialize_code_mode_output_type: Json -> Text = schema => {
+  let fallback = render_json_schema_to_typescript schema
+  let `Object output_object = schema else { return fallback }
+  let `Found properties_value = json_object_get("properties", output_object) else { return fallback }
+  let `Object properties = properties_value else { return fallback }
+
+  let `Found content_value = json_object_get("content", properties) else { return fallback }
+  let `Object content = content_value else { return fallback }
+  if !(object_has_type(content, "array")) { return fallback }
+  let `Found content_items_value = json_object_get("items", content) else { return fallback }
+  let `Object content_items = content_items_value else { return fallback }
+  if !(object_has_type(content_items, "object")) { return fallback }
+
+  let `Found error_value = json_object_get("isError", properties) else { return fallback }
+  let `Object error_schema = error_value else { return fallback }
+  if !(object_has_type(error_schema, "boolean")) { return fallback }
+
+  let `Found meta_value = json_object_get("_meta", properties) else { return fallback }
+  let `Object meta_schema = meta_value else { return fallback }
+  if !(object_has_type(meta_schema, "object")) { return fallback }
+
+  if let `Found structured = json_object_get("structuredContent", properties) {
+    let structured_type = render_json_schema_to_typescript structured
+    if structured_type == "unknown" {
+      "CallToolResult"
+    } else {
+      text_append [text_append ["CallToolResult<", structured_type], ">"]
+    }
+  } else {
+    "CallToolResult"
+  }
+}
+
+return { materialize_code_mode_output_type }

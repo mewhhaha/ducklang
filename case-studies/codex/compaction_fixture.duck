@@ -1,0 +1,66 @@
+module () where
+
+const { list, text_append } = import "duck:prelude/functional" ()
+const compaction_module = import "./compaction.duck"
+const { compact_history, content_items_to_text, summary_prefix } = compaction_module()
+
+type FixtureItem = HistoryItem
+type FixtureContent = HistoryContent
+type FixtureMessage = HistoryMessage
+
+const items = comptime list(FixtureItem)
+const contents = comptime list(FixtureContent)
+
+const message_item = (role: Text, text: Text) => {
+  let message_contents = contents.singleton(`InputText text)
+  let message: FixtureMessage = [role, false, message_contents]
+  `Message message
+}
+
+let history = items.empty()
+history = items.prepend(message_item("user", "latest"), history)
+history = items.prepend(message_item("assistant", "intermediate"), history)
+history = items.prepend(message_item("user", "abcdefghijklmnopqrst"), history)
+history = items.prepend(message_item("user", text_append([summary_prefix, "\nold summary"])), history)
+history = items.prepend(message_item("user", "old message"), history)
+
+let compacted = compact_history(history, "fresh summary", 6)
+let score: I32 = items.length(compacted)
+let first = items.nth_or(`Other (), 0, compacted)
+let second = items.nth_or(`Other (), 1, compacted)
+let third = items.nth_or(`Other (), 2, compacted)
+
+if let `Message message = first {
+  let [role, _, message_contents] = message
+  let text = content_items_to_text message_contents
+
+  if let `Some value = text {
+    if role == "user" && value == "abcdefgh…1 tokens truncated…mnopqrst" {
+      score = score + 10
+    }
+  }
+}
+
+if let `Message message = second {
+  let [_, _, message_contents] = message
+  let text = content_items_to_text message_contents
+
+  if let `Some value = text {
+    if value == "latest" {
+      score = score + 100
+    }
+  }
+}
+
+if let `Message message = third {
+  let [_, _, message_contents] = message
+  let text = content_items_to_text message_contents
+
+  if let `Some value = text {
+    if value == "fresh summary" {
+      score = score + 1000
+    }
+  }
+}
+
+return { .score = score }

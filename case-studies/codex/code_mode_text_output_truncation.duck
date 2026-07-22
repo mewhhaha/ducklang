@@ -1,0 +1,57 @@
+module () where
+
+const { format_i32, text_append, text_approx_token_count, text_length, text_line_count, text_truncate_middle_tokens, unsafe_i32_wrap_i64, unsafe_i64_extend_i32_signed } = import "duck:prelude/runtime" ()
+const {} = import "./original_image_detail_types.duck" ()
+
+type TextTruncationItem = FunctionOutputContentItem
+type TextTruncationItemNode = FunctionOutputContentItemNode
+type TextTruncationItems = FunctionOutputContentItems
+
+const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncationItems = (maximum_tokens, items) => {
+  let current = items
+  let combined = ""
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      if let `InputText text = item {
+        if combined != "" {
+          combined = text_append [combined, "\n"]
+        }
+        combined = text_append [combined, text]
+      }
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let within_budget = false
+  if maximum_tokens >= 536870912i64 {
+    within_budget = true
+  } else {
+    let combined_bytes = unsafe_i64_extend_i32_signed(text_length combined)
+    within_budget = combined_bytes <= maximum_tokens * 4i64
+  }
+
+  if within_budget {
+    items
+  } else {
+    let original_tokens = text_approx_token_count combined
+    let total_lines = text_line_count combined
+    let truncated = text_truncate_middle_tokens(combined, unsafe_i32_wrap_i64 maximum_tokens)
+    let truncated_output = text_append ["\n\n", truncated]
+    let line_count = text_append [format_i32 total_lines, truncated_output]
+    let output_lines = text_append [")\nTotal output lines: ", line_count]
+    let token_count = text_append [format_i32 original_tokens, output_lines]
+    let warning = text_append ["Warning: truncated output (original token count: ", token_count]
+    let warning_item: TextTruncationItem = `InputText warning
+    let warning_node: TextTruncationItemNode = [warning_item, `Nil ()]
+    `Cons warning_node
+  }
+}
+
+return { truncate_code_mode_text_output }

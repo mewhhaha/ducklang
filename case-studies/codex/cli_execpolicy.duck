@@ -1,0 +1,77 @@
+module () where
+
+const { list, text_append } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type ExecPolicyArgs = CodexCliArgs
+type ExecPolicyCommandResult = CodexExecPolicyCommandResult
+type ExecPolicyCheckOptions = CodexExecPolicyCheckOptions
+type ExecPolicyCheckFacts = CodexExecPolicyCheckFacts
+type ExecPolicyCheckFactsResult = Result Text ExecPolicyCheckFacts
+
+const texts = comptime list(Text)
+
+let rec scan_execpolicy_check_from: [ExecPolicyArgs, ExecPolicyCheckFacts] -> ExecPolicyCheckFactsResult = (args: ExecPolicyArgs, facts: ExecPolicyCheckFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if facts.command_started {
+      scan_execpolicy_check_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed) })
+    } else if argument == "--" {
+      scan_execpolicy_check_from(tail, facts :+ { .command_started = true })
+    } else if argument == "--rules" || argument == "-r" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_execpolicy_check_from(remaining, facts :+ { .rules_reversed = texts.prepend(value, facts.rules_reversed) })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if argument == "--pretty" {
+      scan_execpolicy_check_from(tail, facts :+ { .pretty = true })
+    } else if argument == "--resolve-host-executables" {
+      scan_execpolicy_check_from(tail, facts :+ { .resolve_host_executables = true })
+    } else {
+      scan_execpolicy_check_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed), .command_started = true })
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_execpolicy_check: ExecPolicyArgs -> ExecPolicyCommandResult = (args: ExecPolicyArgs) => {
+  let initial: ExecPolicyCheckFacts = [.rules_reversed = texts.empty(), .pretty = false, .resolve_host_executables = false, .command_reversed = texts.empty(), .command_started = false]
+  let scanned: ExecPolicyCheckFactsResult = scan_execpolicy_check_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    let rules = texts.reverse facts.rules_reversed
+    let command = texts.reverse facts.command_reversed
+    if texts.length(rules) == 0 {
+      `Err "execpolicy check requires at least one --rules path"
+    } else if texts.length(command) == 0 {
+      `Err "execpolicy check requires a command"
+    } else {
+      let options: ExecPolicyCheckOptions = [.rules = rules, .pretty = facts.pretty, .resolve_host_executables = facts.resolve_host_executables, .command = command]
+      `Ok (`CheckExecPolicy options)
+    }
+  } else {
+    `Err "execpolicy check scanner returned an unknown result"
+  }
+}
+
+let parse_execpolicy_options: ExecPolicyArgs -> ExecPolicyCommandResult = (args: ExecPolicyArgs) => {
+  if let `Cons node = args {
+    let [command, remaining] = node
+    if command == "check" {
+      parse_execpolicy_check remaining
+    } else {
+      `Err (text_append("unknown execpolicy command: ", command))
+    }
+  } else {
+    `Err "execpolicy requires check"
+  }
+}
+
+return {
+  parse_execpolicy_check,
+  parse_execpolicy_options,
+}

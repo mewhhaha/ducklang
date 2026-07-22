@@ -1,0 +1,32 @@
+module () where
+
+type McpTextOption = Option Text
+type McpBoolOption = Option Bool
+type McpTexts = List Text
+
+type McpToolVisibility =
+  | `Model Unit
+  | `App Unit
+  | `ModelAndApp Unit
+  | `Hidden Unit
+
+type McpToolAnnotations = [McpBoolOption, McpBoolOption, McpBoolOption]
+type McpTool = [Text, Text, Text, Text, McpTextOption, McpTextOption, McpToolVisibility, Bool, McpToolAnnotations]
+type McpTools = List McpTool
+
+type McpToolRuntime = [McpTool, ToolExposure]
+type McpToolRuntimes = List McpToolRuntime
+
+type McpApprovalMode =
+  | `Auto Unit
+  | `Prompt Unit
+  | `Writes Unit
+  | `Never Unit
+
+type McpApprovalDecision =
+  | `Accept Unit
+  | `AcceptForSession Unit
+  | `AcceptAndRemember Unit
+  | `Decline McpTextOption
+
+return {}

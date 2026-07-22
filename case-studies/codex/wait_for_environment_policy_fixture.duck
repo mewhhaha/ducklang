@@ -1,0 +1,66 @@
+module () where
+
+const {} = import "./wait_for_environment_types.duck" ()
+const { finish_wait_for_environment, plan_wait_for_environment, ready_environment_output } = import "./wait_for_environment_policy.duck" ()
+
+type FixtureEnvironment = WaitForEnvironment
+type FixtureEnvironmentNode = WaitForEnvironmentNode
+type FixtureEnvironments = WaitForEnvironments
+type FixtureHostResponse = WaitForEnvironmentHostResponse
+
+// The named boundary keeps the execution result under one native owner.
+const fixture_failure_score: [Text, FixtureHostResponse] -> I32 = (environment_id: Text, response: FixtureHostResponse) => {
+  let result = finish_wait_for_environment(environment_id, response)
+  if let `Rejected message = result {
+    if message == "Environment `warming` failed to start and is unavailable. Continue without it." { 10000 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let ready_empty: FixtureEnvironments = `Nil ()
+let ready_tail_node: FixtureEnvironmentNode = [[.environment_id = "duplicate", .status = `Ready ()] as FixtureEnvironment, ready_empty]
+let ready_tail: FixtureEnvironments = `Cons ready_tail_node
+let ready_head_node: FixtureEnvironmentNode = [[.environment_id = "duplicate", .status = `Starting ()] as FixtureEnvironment, ready_tail]
+let ready_environments: FixtureEnvironments = `Cons ready_head_node
+let ready_score: I32 = scratch {
+  let plan = plan_wait_for_environment(ready_environments, "duplicate")
+  if let `AlreadyReady environment_id = plan {
+    if environment_id == "duplicate" { 1 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let starting_empty: FixtureEnvironments = `Nil ()
+let starting_node: FixtureEnvironmentNode = [[.environment_id = "warming", .status = `Starting ()] as FixtureEnvironment, starting_empty]
+let starting_environments: FixtureEnvironments = `Cons starting_node
+let starting_score: I32 = scratch {
+  let plan = plan_wait_for_environment(starting_environments, "warming")
+  if let `Wait environment_id = plan {
+    if environment_id == "warming" { 10 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let missing_empty: FixtureEnvironments = `Nil ()
+let missing_node: FixtureEnvironmentNode = [[.environment_id = "other", .status = `Ready ()] as FixtureEnvironment, missing_empty]
+let missing_environments: FixtureEnvironments = `Cons missing_node
+let missing_score: I32 = scratch {
+  let plan = plan_wait_for_environment(missing_environments, "missing")
+  if let `RejectRequest message = plan {
+    if message == "environment `missing` is neither ready nor starting" { 100 } else { 0 }
+  } else {
+    0
+  }
+}
+
+let output = ready_environment_output("env-\"1")
+let output_score = if output == "{\"environment_id\":\"env-\\\"1\",\"status\":\"ready\"}" { 1000 } else { 0 }
+
+let failed_to_start: FixtureHostResponse = false
+let failure_score = fixture_failure_score("warming", failed_to_start)
+
+let score = ready_score + starting_score + missing_score + output_score + failure_score
+return { .score = score }

@@ -1,0 +1,23 @@
+module () where
+
+const { format_i32, text_take_utf8_characters, text_truncate_middle_bytes, text_truncate_middle_tokens, text_utf8_length } = import "duck:prelude/functional" ()
+
+let score: I32 = 0
+
+if text_truncate_middle_bytes("éabcdefghij", 5) == "é…7 chars truncated…hij" {
+  score = score + 1
+}
+
+if text_truncate_middle_tokens("abcdefghijklmnopqrst", 2) == "abcd…3 tokens truncated…qrst" {
+  score = score + 10
+}
+
+if format_i32(-2147483648) == "-2147483648" {
+  score = score + 100
+}
+
+if text_utf8_length("aé🙂") == 3 && text_take_utf8_characters("aé🙂z", 3) == "aé🙂" {
+  score = score + 1000
+}
+
+return { .score = score }

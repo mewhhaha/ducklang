@@ -1,0 +1,75 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_export_types.duck" ()
+const {} = import "./agent_job_prepare_types.duck" ()
+const {} = import "./agent_job_runner_types.duck" ()
+
+type AgentJobCreateOutcome =
+  | `JobCreated Unit
+  | `JobCreateFailed Text
+
+type AgentJobCreateItem = [Text, I32, AgentJobTextOption, AgentJobCreateHeaders, Text, Text]
+type AgentJobCreateItemNode = [AgentJobCreateItem, AgentJobCreateItems]
+type AgentJobCreateItems =
+  | `Nil Unit
+  | `Cons AgentJobCreateItemNode
+
+type AgentJobCreateRequest = struct {
+  .job_id = Text,
+  .name = Text,
+  .instruction = Text,
+  .headers = AgentJobCreateHeaders,
+  .input_path = Text,
+  .output_path = Text,
+  .output_schema_json = AgentJobTextOption,
+  .max_runtime_seconds = AgentJobTextOption,
+  .items = AgentJobCreateItems,
+}
+
+type AgentJobSpawnWorkerRequest = struct {
+  .job_id = Text,
+  .item_id = Text,
+  .prompt = Text,
+}
+
+type AgentJobActiveThreadNode = [Text, AgentJobActiveThreads]
+type AgentJobActiveThreads =
+  | `Nil Unit
+  | `Cons AgentJobActiveThreadNode
+
+type AgentJobWaitRequest = struct {
+  .job_id = Text,
+  .active_threads = AgentJobActiveThreads,
+  .max_runtime_seconds = Text,
+}
+
+type AgentJobWaitOutcome =
+  | `WorkerCompleted AgentJobWorkerCompletion
+  | `WorkerWaitFailed Text
+
+type AgentJobFinalizeRequest = struct {
+  .job_id = Text,
+  .output_path = Text,
+  .total_items = I32,
+  .completed_items = I32,
+  .failed_items = I32,
+  .cancelled = Bool,
+  .runner_error = Text,
+}
+
+type AgentJobFinalizeFacts = struct {
+  .job_error = AgentJobTextOption,
+  .failed_item_errors = AgentJobFailureSummaries,
+  .items = AgentJobFinalItems,
+}
+
+type AgentJobFinalizeOutcome =
+  | `JobFinalized AgentJobFinalizeFacts
+  | `JobFinalizeFailed Text
+
+type AgentJobSpawnExecutionResult =
+  | `Completed AgentJobRunCompletion
+  | `Rejected Text
+
+return {}

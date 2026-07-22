@@ -1,0 +1,87 @@
+module () where
+
+const { json_object_get, json_object_key_count, json_object_length } = import "duck:prelude/json/values" ()
+const {} = import "duck:prelude/json/values" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./plugin_install_types.duck" ()
+
+type InstallValueListArgs = RequestPluginInstallListArgs
+type InstallValueListParseResult = RequestPluginInstallListParseResult
+type InstallValueRecommendedArgs = RequestPluginInstallRecommendedArgs
+type InstallValueRecommendedParseResult = RequestPluginInstallRecommendedParseResult
+type InstallValueToolType = DiscoverableToolType
+type InstallValueAction = DiscoverableToolAction
+type InstallValueJson = Json
+type InstallValueObject = JsonObject
+
+let list_install_parse_failure: Text -> InstallValueListParseResult = reason => `ParseFailed (text_append(["failed to parse function arguments: ", reason]))
+let recommended_install_parse_failure: Text -> InstallValueRecommendedParseResult = reason => `ParseFailed (text_append(["failed to parse function arguments: ", reason]))
+
+let decode_list_plugin_install_value: InstallValueObject -> InstallValueListParseResult = object => {
+  let known_count = json_object_key_count("action_type", object) + json_object_key_count("suggest_reason", object) + json_object_key_count("tool_id", object) + json_object_key_count("tool_type", object)
+  if json_object_length(object) != known_count {
+    list_install_parse_failure "request_plugin_install arguments contain an unknown field"
+  } else if json_object_key_count("action_type", object) != 1 || json_object_key_count("suggest_reason", object) != 1 || json_object_key_count("tool_id", object) != 1 || json_object_key_count("tool_type", object) != 1 {
+    list_install_parse_failure "request_plugin_install requires exactly one tool_type, action_type, tool_id, and suggest_reason"
+  } else {
+    let tool_id = ""
+    let suggest_reason = ""
+    let tool_type: InstallValueToolType = `Connector ()
+    let action: InstallValueAction = `Install ()
+    let failure = ""
+
+    let id_lookup = json_object_get("tool_id", object)
+    if let `Found field = id_lookup { if let `String value = field { tool_id = value } else { failure = "tool_id must be a string" } }
+    let reason_lookup = json_object_get("suggest_reason", object)
+    if let `Found field = reason_lookup { if let `String value = field { suggest_reason = value } else { failure = "suggest_reason must be a string" } }
+    let type_lookup = json_object_get("tool_type", object)
+    if let `Found field = type_lookup {
+      if let `String value = field {
+        if value == "connector" { tool_type = `Connector () } else if value == "plugin" { tool_type = `Plugin () } else { failure = "tool_type must be connector or plugin" }
+      } else { failure = "tool_type must be a string" }
+    }
+    let action_lookup = json_object_get("action_type", object)
+    if let `Found field = action_lookup {
+      if let `String value = field {
+        if value == "install" { action = `Install () } else if value == "enable" { action = `Enable () } else { failure = "action_type must be install or enable" }
+      } else { failure = "action_type must be a string" }
+    }
+
+    if failure == "" {
+      let args: InstallValueListArgs = [.tool_type = tool_type, .action_type = action, .tool_id = tool_id, .suggest_reason = suggest_reason]
+      `Parsed args
+    } else {
+      list_install_parse_failure failure
+    }
+  }
+}
+
+let decode_recommended_plugin_install_value: InstallValueObject -> InstallValueRecommendedParseResult = object => {
+  let id_count = json_object_key_count("plugin_id", object) + json_object_key_count("tool_id", object)
+  let known_count = id_count + json_object_key_count("suggest_reason", object)
+  if json_object_length(object) != known_count {
+    recommended_install_parse_failure "request_plugin_install arguments contain an unknown field"
+  } else if id_count != 1 || json_object_key_count("suggest_reason", object) != 1 {
+    recommended_install_parse_failure "request_plugin_install requires exactly one plugin_id and suggest_reason"
+  } else {
+    let plugin_id = ""
+    let suggest_reason = ""
+    let failure = ""
+    let id_key = if json_object_key_count("plugin_id", object) == 1 { "plugin_id" } else { "tool_id" }
+    let id_lookup = json_object_get(id_key, object)
+    if let `Found field = id_lookup { if let `String value = field { plugin_id = value } else { failure = "plugin_id must be a string" } }
+    let reason_lookup = json_object_get("suggest_reason", object)
+    if let `Found field = reason_lookup { if let `String value = field { suggest_reason = value } else { failure = "suggest_reason must be a string" } }
+    if failure == "" {
+      let args: InstallValueRecommendedArgs = [.plugin_id = plugin_id, .suggest_reason = suggest_reason]
+      `Parsed args
+    } else { recommended_install_parse_failure failure }
+  }
+}
+
+return {
+  decode_list_plugin_install_value,
+  decode_recommended_plugin_install_value,
+  list_install_parse_failure,
+  recommended_install_parse_failure,
+}

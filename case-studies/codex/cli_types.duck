@@ -1,0 +1,734 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type CodexCliArgs = List Text
+type CodexCliCommand =
+  | `Interactive CodexCliArgs
+  | `Exec CodexCliArgs
+  | `Review CodexCliArgs
+  | `Login CodexCliArgs
+  | `Logout CodexCliArgs
+  | `Mcp CodexCliArgs
+  | `Plugin CodexCliArgs
+  | `McpServer CodexCliArgs
+  | `AppServer CodexCliArgs
+  | `RemoteControl CodexCliArgs
+  | `App CodexCliArgs
+  | `Completion CodexCliArgs
+  | `Update CodexCliArgs
+  | `Doctor CodexCliArgs
+  | `Sandbox CodexCliArgs
+  | `Debug CodexCliArgs
+  | `Execpolicy CodexCliArgs
+  | `Apply CodexCliArgs
+  | `Resume CodexCliArgs
+  | `Archive CodexCliArgs
+  | `Delete CodexCliArgs
+  | `Unarchive CodexCliArgs
+  | `Fork CodexCliArgs
+  | `Cloud CodexCliArgs
+  | `ResponsesApiProxy CodexCliArgs
+  | `StdioToUds CodexCliArgs
+  | `ExecServer CodexCliArgs
+  | `Features CodexCliArgs
+
+type CodexCompletionShell =
+  | `Bash Unit
+  | `Elvish Unit
+  | `Fish Unit
+  | `PowerShell Unit
+  | `Zsh Unit
+
+type CodexCompletionOptions = struct {
+  .shell = CodexCompletionShell
+}
+
+type CodexFeatureCommand =
+  | `List Unit
+  | `Enable Text
+  | `Disable Text
+
+type CodexCompletionOptionsResult = Result Text CodexCompletionOptions
+type CodexFeatureCommandResult = Result Text CodexFeatureCommand
+
+type CodexCliTextOption = Option Text
+type CodexCliTexts = List Text
+
+type CodexCliSandboxMode =
+  | `SandboxReadOnly Unit
+  | `SandboxWorkspaceWrite Unit
+  | `SandboxDangerFullAccess Unit
+
+type CodexCliSandboxModeOption = Option CodexCliSandboxMode
+
+type CodexCliApprovalMode =
+  | `ApprovalUntrusted Unit
+  | `ApprovalOnRequest Unit
+  | `ApprovalNever Unit
+
+type CodexCliApprovalModeOption = Option CodexCliApprovalMode
+
+type CodexSessionFlagFacts = struct {
+  .last = Bool,
+  .all = Bool,
+  .include_non_interactive = Bool,
+  .force = Bool,
+  .oss = Bool,
+  .bypass_approvals_and_sandbox = Bool,
+  .bypass_hook_trust = Bool,
+  .search = Bool,
+  .no_alt_screen = Bool,
+  .strict_config = Bool,
+  .used_tui_only_option = Bool,
+}
+
+type CodexSessionScalarFacts = struct {
+  .model = CodexCliTextOption,
+  .local_provider = CodexCliTextOption,
+  .profile = CodexCliTextOption,
+  .sandbox = CodexCliSandboxModeOption,
+  .cwd = CodexCliTextOption,
+  .approval = CodexCliApprovalModeOption,
+  .remote = CodexCliTextOption,
+  .remote_auth_token_env = CodexCliTextOption,
+}
+
+type CodexSessionListFacts = struct {
+  .images = CodexCliTexts,
+  .additional_writable_roots = CodexCliTexts,
+  .config_overrides = CodexCliTexts,
+}
+
+type CodexSessionPositionals = struct {
+  .first = CodexCliTextOption,
+  .second = CodexCliTextOption,
+  .extra = Bool,
+}
+
+type CodexCliSharedOptions = struct {
+  .images = CodexCliTexts,
+  .model = CodexCliTextOption,
+  .oss = Bool,
+  .local_provider = CodexCliTextOption,
+  .profile = CodexCliTextOption,
+  .sandbox = CodexCliSandboxModeOption,
+  .bypass_approvals_and_sandbox = Bool,
+  .bypass_hook_trust = Bool,
+  .cwd = CodexCliTextOption,
+  .additional_writable_roots = CodexCliTexts,
+  .approval = CodexCliApprovalModeOption,
+  .search = Bool,
+  .no_alt_screen = Bool,
+  .strict_config = Bool,
+  .config_overrides = CodexCliTexts,
+  .remote = CodexCliTextOption,
+  .remote_auth_token_env = CodexCliTextOption,
+}
+
+type CodexSessionArgumentScan = struct {
+  .shared = CodexCliSharedOptions,
+  .positionals = CodexCliTexts,
+  .last = Bool,
+  .all = Bool,
+  .include_non_interactive = Bool,
+  .force = Bool,
+  .used_tui_only_option = Bool,
+}
+
+type CodexSessionArgumentScanResult = Result Text CodexSessionArgumentScan
+
+type CodexResumeOptions = struct {
+  .shared = CodexCliSharedOptions,
+  .session_id = CodexCliTextOption,
+  .prompt = CodexCliTextOption,
+  .picker = Bool,
+  .last = Bool,
+  .all = Bool,
+  .include_non_interactive = Bool,
+}
+
+type CodexForkOptions = struct {
+  .shared = CodexCliSharedOptions,
+  .session_id = CodexCliTextOption,
+  .prompt = CodexCliTextOption,
+  .picker = Bool,
+  .last = Bool,
+  .all = Bool,
+}
+
+type CodexArchiveOptions = struct {
+  .shared = CodexCliSharedOptions,
+  .target = Text,
+}
+
+type CodexDeleteOptions = struct {
+  .shared = CodexCliSharedOptions,
+  .target = Text,
+  .force = Bool,
+}
+
+type CodexResumeOptionsResult = Result Text CodexResumeOptions
+type CodexForkOptionsResult = Result Text CodexForkOptions
+type CodexArchiveOptionsResult = Result Text CodexArchiveOptions
+type CodexDeleteOptionsResult = Result Text CodexDeleteOptions
+
+type CodexDeviceLoginOptions = struct {
+  .issuer_base_url = CodexCliTextOption,
+  .client_id = CodexCliTextOption,
+}
+
+type CodexLoginFacts = struct {
+  .with_api_key = Bool,
+  .with_access_token = Bool,
+  .device_auth = Bool,
+  .deprecated_api_key = Bool,
+  .status = Bool,
+  .issuer_base_url = CodexCliTextOption,
+  .client_id = CodexCliTextOption,
+}
+
+type CodexLoginAction =
+  | `LoginStatus Unit
+  | `BrowserLogin Unit
+  | `DeviceLogin CodexDeviceLoginOptions
+  | `ApiKeyLogin Unit
+  | `AccessTokenLogin Unit
+
+type CodexLoginActionResult = Result Text CodexLoginAction
+type CodexLogoutResult = Result Text Unit
+
+type CodexMcpEnvPair = [Text, Text]
+type CodexMcpEnv = List CodexMcpEnvPair
+
+type CodexMcpStdioOptions = struct {
+  .name = Text,
+  .command = CodexCliTexts,
+  .env = CodexMcpEnv,
+}
+
+type CodexMcpHttpOptions = struct {
+  .name = Text,
+  .url = Text,
+  .bearer_token_env_var = CodexCliTextOption,
+  .oauth_client_id = CodexCliTextOption,
+  .oauth_resource = CodexCliTextOption,
+}
+
+type CodexMcpNamedOutputOptions = struct {
+  .name = Text,
+  .json = Bool,
+}
+
+type CodexMcpLoginOptions = struct {
+  .name = Text,
+  .scopes = CodexCliTexts,
+}
+
+type CodexMcpCommand =
+  | `McpList Bool
+  | `McpGet CodexMcpNamedOutputOptions
+  | `McpAddStdio CodexMcpStdioOptions
+  | `McpAddHttp CodexMcpHttpOptions
+  | `McpRemove Text
+  | `McpLogin CodexMcpLoginOptions
+  | `McpLogout Text
+
+type CodexMcpCommandResult = Result Text CodexMcpCommand
+
+type CodexMcpNameJsonFacts = struct {
+  .name = CodexCliTextOption,
+  .json = Bool,
+}
+
+type CodexMcpLoginFacts = struct {
+  .name = CodexCliTextOption,
+  .scopes = CodexCliTexts,
+}
+
+type CodexMcpAddFacts = struct {
+  .name = CodexCliTextOption,
+  .url = CodexCliTextOption,
+  .bearer_token_env_var = CodexCliTextOption,
+  .oauth_client_id = CodexCliTextOption,
+  .oauth_resource = CodexCliTextOption,
+  .command_reversed = CodexCliTexts,
+  .env_reversed = CodexMcpEnv,
+  .command_started = Bool,
+}
+
+type CodexPluginSelector = struct {
+  .plugin_name = Text,
+  .marketplace_name = Text,
+}
+
+type CodexPluginMutationOptions = struct {
+  .selector = CodexPluginSelector,
+  .json = Bool,
+}
+
+type CodexPluginListOptions = struct {
+  .marketplace_name = CodexCliTextOption,
+  .json = Bool,
+  .available = Bool,
+}
+
+type CodexMarketplaceAddOptions = struct {
+  .source = Text,
+  .ref_name = CodexCliTextOption,
+  .sparse_paths = CodexCliTexts,
+  .json = Bool,
+}
+
+type CodexMarketplaceUpgradeOptions = struct {
+  .marketplace_name = CodexCliTextOption,
+  .json = Bool,
+}
+
+type CodexMarketplaceRemoveOptions = struct {
+  .marketplace_name = Text,
+  .json = Bool,
+}
+
+type CodexPluginCommand =
+  | `PluginAdd CodexPluginMutationOptions
+  | `PluginList CodexPluginListOptions
+  | `PluginRemove CodexPluginMutationOptions
+  | `MarketplaceAdd CodexMarketplaceAddOptions
+  | `MarketplaceList Bool
+  | `MarketplaceUpgrade CodexMarketplaceUpgradeOptions
+  | `MarketplaceRemove CodexMarketplaceRemoveOptions
+
+type CodexPluginCommandResult = Result Text CodexPluginCommand
+
+type CodexPluginFacts = struct {
+  .selector = CodexCliTextOption,
+  .marketplace_name = CodexCliTextOption,
+  .json = Bool,
+  .available = Bool,
+}
+
+type CodexMarketplaceAddFacts = struct {
+  .source = CodexCliTextOption,
+  .ref_name = CodexCliTextOption,
+  .sparse_paths_reversed = CodexCliTexts,
+  .json = Bool,
+}
+
+type CodexMarketplaceFacts = struct {
+  .marketplace_name = CodexCliTextOption,
+  .json = Bool,
+}
+
+type CodexCloudExecOptions = struct {
+  .query = CodexCliTextOption,
+  .environment = Text,
+  .attempts = I64,
+  .branch = CodexCliTextOption,
+}
+
+type CodexCloudListOptions = struct {
+  .environment = CodexCliTextOption,
+  .limit = I64,
+  .cursor = CodexCliTextOption,
+  .json = Bool,
+}
+
+type CodexCloudTaskAttemptOptions = struct {
+  .task_id = Text,
+  .attempt = Option I64,
+}
+
+type CodexCloudCommand =
+  | `CloudBrowse Unit
+  | `CloudExec CodexCloudExecOptions
+  | `CloudStatus Text
+  | `CloudList CodexCloudListOptions
+  | `CloudApply CodexCloudTaskAttemptOptions
+  | `CloudDiff CodexCloudTaskAttemptOptions
+
+type CodexCloudCommandResult = Result Text CodexCloudCommand
+
+type CodexCloudExecFacts = struct {
+  .query = CodexCliTextOption,
+  .environment = CodexCliTextOption,
+  .attempts = I64,
+  .branch = CodexCliTextOption,
+}
+
+type CodexCloudListFacts = struct {
+  .environment = CodexCliTextOption,
+  .limit = I64,
+  .cursor = CodexCliTextOption,
+  .json = Bool,
+}
+
+type CodexCloudTaskFacts = struct {
+  .task_id = CodexCliTextOption,
+  .attempt = Option I64,
+}
+
+type CodexMcpServerOptions = struct {
+  .strict_config = Bool,
+}
+
+type CodexExecServerOptions = struct {
+  .strict_config = Bool,
+  .listen = CodexCliTextOption,
+  .remote = CodexCliTextOption,
+  .environment_id = CodexCliTextOption,
+  .name = CodexCliTextOption,
+  .use_agent_identity_auth = Bool,
+}
+
+type CodexServerCommand =
+  | `StartMcpServer CodexMcpServerOptions
+  | `StartExecServer CodexExecServerOptions
+  | `RelayStdioToUds Text
+
+type CodexServerCommandResult = Result Text CodexServerCommand
+
+type CodexExecServerFacts = struct {
+  .strict_config = Bool,
+  .listen = CodexCliTextOption,
+  .remote = CodexCliTextOption,
+  .environment_id = CodexCliTextOption,
+  .name = CodexCliTextOption,
+  .use_agent_identity_auth = Bool,
+}
+
+type CodexDesktopAppOptions = struct {
+  .path = Text,
+  .download_url = CodexCliTextOption,
+}
+
+type CodexRemoteControlOperation =
+  | `RemoteControlForeground Unit
+  | `RemoteControlStart Unit
+  | `RemoteControlStop Unit
+  | `RemoteControlPair Unit
+
+type CodexRemoteControlOptions = struct {
+  .operation = CodexRemoteControlOperation,
+  .json = Bool,
+}
+
+type CodexApplicationCommand =
+  | `OpenDesktopApp CodexDesktopAppOptions
+  | `RunRemoteControl CodexRemoteControlOptions
+
+type CodexApplicationCommandResult = Result Text CodexApplicationCommand
+
+type CodexDesktopAppFacts = struct {
+  .path = CodexCliTextOption,
+  .download_url = CodexCliTextOption,
+}
+
+type CodexRemoteControlFacts = struct {
+  .operation = Option CodexRemoteControlOperation,
+  .json = Bool,
+}
+
+type CodexAppServerTransport =
+  | `AppServerStdio Unit
+  | `AppServerUnixSocket CodexCliTextOption
+  | `AppServerWebSocket Text
+  | `AppServerOff Unit
+
+type CodexAppServerWebsocketAuthMode =
+  | `WebsocketCapabilityToken Unit
+  | `WebsocketSignedBearerToken Unit
+
+type CodexAppServerCapabilityTokenSource =
+  | `WebsocketTokenFile Text
+  | `WebsocketTokenSha256 Text
+
+type CodexAppServerSignedBearerOptions = struct {
+  .shared_secret_file = Text,
+  .issuer = CodexCliTextOption,
+  .audience = CodexCliTextOption,
+  .max_clock_skew_seconds = I64,
+}
+
+type CodexAppServerWebsocketAuth =
+  | `WebsocketAuthNone Unit
+  | `WebsocketCapabilityAuth CodexAppServerCapabilityTokenSource
+  | `WebsocketSignedBearerAuth CodexAppServerSignedBearerOptions
+
+type CodexAppServerLaunchOptions = struct {
+  .strict_config = Bool,
+  .transport = CodexAppServerTransport,
+  .remote_control = Bool,
+  .analytics_default_enabled = Bool,
+  .websocket_auth = CodexAppServerWebsocketAuth,
+}
+
+type CodexAppServerDaemonOperation =
+  | `AppServerDaemonBootstrap Bool
+  | `AppServerDaemonStart Unit
+  | `AppServerDaemonRestart Unit
+  | `AppServerDaemonEnableRemoteControl Unit
+  | `AppServerDaemonDisableRemoteControl Unit
+  | `AppServerDaemonStop Unit
+  | `AppServerDaemonVersion Unit
+  | `AppServerDaemonPidUpdateLoop Unit
+
+type CodexAppServerGenerateTsOptions = struct {
+  .out_dir = Text,
+  .prettier = CodexCliTextOption,
+  .experimental = Bool,
+}
+
+type CodexAppServerGenerateJsonOptions = struct {
+  .out_dir = Text,
+  .experimental = Bool,
+}
+
+type CodexAppServerCommand =
+  | `LaunchAppServer CodexAppServerLaunchOptions
+  | `ManageAppServerDaemon CodexAppServerDaemonOperation
+  | `ProxyAppServer CodexCliTextOption
+  | `GenerateAppServerTs CodexAppServerGenerateTsOptions
+  | `GenerateAppServerJsonSchema CodexAppServerGenerateJsonOptions
+  | `GenerateAppServerInternalJsonSchema Text
+
+type CodexAppServerCommandResult = Result Text CodexAppServerCommand
+
+type CodexAppServerLaunchFacts = struct {
+  .strict_config = Bool,
+  .listen = CodexCliTextOption,
+  .stdio = Bool,
+  .remote_control = Bool,
+  .analytics_default_enabled = Bool,
+  .ws_auth = Option CodexAppServerWebsocketAuthMode,
+  .ws_token_file = CodexCliTextOption,
+  .ws_token_sha256 = CodexCliTextOption,
+  .ws_shared_secret_file = CodexCliTextOption,
+  .ws_issuer = CodexCliTextOption,
+  .ws_audience = CodexCliTextOption,
+  .ws_max_clock_skew_seconds = Option I64,
+}
+
+type CodexAppServerGenerateFacts = struct {
+  .out_dir = CodexCliTextOption,
+  .prettier = CodexCliTextOption,
+  .experimental = Bool,
+}
+
+type CodexDoctorOptions = struct {
+  .json = Bool,
+  .summary = Bool,
+  .all = Bool,
+  .no_color = Bool,
+  .ascii = Bool,
+}
+
+type CodexApplyTaskOptions = struct {
+  .task_id = Text,
+  .config_overrides = CodexCliTexts,
+}
+
+type CodexResponsesProxyOptions = struct {
+  .port = Option I64,
+  .server_info = CodexCliTextOption,
+  .http_shutdown = Bool,
+  .upstream_url = Text,
+  .dump_dir = CodexCliTextOption,
+}
+
+type CodexUtilityCommand =
+  | `RunDoctor CodexDoctorOptions
+  | `ApplyTask CodexApplyTaskOptions
+  | `RunResponsesProxy CodexResponsesProxyOptions
+
+type CodexUtilityCommandResult = Result Text CodexUtilityCommand
+
+type CodexApplyTaskFacts = struct {
+  .task_id = CodexCliTextOption,
+  .config_overrides_reversed = CodexCliTexts,
+}
+
+type CodexResponsesProxyFacts = struct {
+  .port = Option I64,
+  .server_info = CodexCliTextOption,
+  .http_shutdown = Bool,
+  .upstream_url = Text,
+  .dump_dir = CodexCliTextOption,
+}
+
+type CodexDebugPromptInputOptions = struct {
+  .prompt = CodexCliTextOption,
+  .images = CodexCliTexts,
+}
+
+type CodexDebugTraceReduceOptions = struct {
+  .trace_bundle = Text,
+  .output = CodexCliTextOption,
+}
+
+type CodexDebugCommand =
+  | `DebugModels Bool
+  | `DebugAppServerMessage Text
+  | `DebugPromptInput CodexDebugPromptInputOptions
+  | `DebugTraceReduce CodexDebugTraceReduceOptions
+  | `DebugClearMemories Unit
+
+type CodexDebugCommandResult = Result Text CodexDebugCommand
+
+type CodexDebugTraceFacts = struct {
+  .trace_bundle = CodexCliTextOption,
+  .output = CodexCliTextOption,
+}
+
+type CodexExecPolicyCheckOptions = struct {
+  .rules = CodexCliTexts,
+  .pretty = Bool,
+  .resolve_host_executables = Bool,
+  .command = CodexCliTexts,
+}
+
+type CodexExecPolicyCommand = `CheckExecPolicy CodexExecPolicyCheckOptions
+
+type CodexExecPolicyCommandResult = Result Text CodexExecPolicyCommand
+
+type CodexExecPolicyCheckFacts = struct {
+  .rules_reversed = CodexCliTexts,
+  .pretty = Bool,
+  .resolve_host_executables = Bool,
+  .command_reversed = CodexCliTexts,
+  .command_started = Bool,
+}
+
+type CodexExecColor =
+  | `ExecColorAlways Unit
+  | `ExecColorNever Unit
+  | `ExecColorAuto Unit
+
+type CodexExecMode =
+  | `ExecStartMode Unit
+  | `ExecResumeMode Unit
+  | `ExecReviewMode Unit
+
+type CodexReviewCommit = struct {
+  .sha = Text,
+  .title = CodexCliTextOption,
+}
+
+type CodexReviewTarget =
+  | `ReviewUncommitted Unit
+  | `ReviewBase Text
+  | `ReviewCommit CodexReviewCommit
+  | `ReviewCustom Text
+
+type CodexExecStart = struct {
+  .prompt = CodexCliTextOption,
+}
+
+type CodexExecResume = struct {
+  .session_id = CodexCliTextOption,
+  .last = Bool,
+  .all = Bool,
+  .images = CodexCliTexts,
+  .prompt = CodexCliTextOption,
+}
+
+type CodexExecCommand =
+  | `ExecStart CodexExecStart
+  | `ExecResume CodexExecResume
+  | `ExecReview CodexReviewTarget
+
+type CodexExecOptions = struct {
+  .shared = CodexCliSharedOptions,
+  .strict_config = Bool,
+  .skip_git_repo_check = Bool,
+  .ephemeral = Bool,
+  .ignore_user_config = Bool,
+  .ignore_rules = Bool,
+  .output_schema = CodexCliTextOption,
+  .color = CodexExecColor,
+  .json = Bool,
+  .last_message_file = CodexCliTextOption,
+  .config_overrides = CodexCliTexts,
+  .command = CodexExecCommand,
+}
+
+type CodexExecOptionsResult = Result Text CodexExecOptions
+
+type CodexExecFacts = struct {
+  .shared = CodexCliSharedOptions,
+  .mode = CodexExecMode,
+  .command_selected = Bool,
+  .options_done = Bool,
+  .skip_git_repo_check = Bool,
+  .ephemeral = Bool,
+  .ignore_user_config = Bool,
+  .ignore_rules = Bool,
+  .output_schema = CodexCliTextOption,
+  .color = CodexExecColor,
+  .json = Bool,
+  .last_message_file = CodexCliTextOption,
+  .positionals = CodexCliTexts,
+  .resume_last = Bool,
+  .resume_all = Bool,
+  .resume_images = CodexCliTexts,
+  .review_uncommitted = Bool,
+  .review_base = CodexCliTextOption,
+  .review_commit = CodexCliTextOption,
+  .review_title = CodexCliTextOption,
+}
+
+type CodexSandboxOptions = struct {
+  .sandbox_state_json = CodexCliTextOption,
+  .sandbox_state_readable_roots = CodexCliTexts,
+  .sandbox_state_disable_network = Bool,
+  .permissions_profile = CodexCliTextOption,
+  .config_profile = CodexCliTextOption,
+  .cwd = CodexCliTextOption,
+  .include_managed_config = Bool,
+  .allow_unix_sockets = CodexCliTexts,
+  .log_denials = Bool,
+  .command = CodexCliTexts,
+}
+
+type CodexSandboxOptionsResult = Result Text CodexSandboxOptions
+
+type CodexSandboxFacts = struct {
+  .sandbox_state_json = CodexCliTextOption,
+  .sandbox_state_readable_roots_reversed = CodexCliTexts,
+  .sandbox_state_disable_network = Bool,
+  .permissions_profile = CodexCliTextOption,
+  .config_profile = CodexCliTextOption,
+  .cwd = CodexCliTextOption,
+  .include_managed_config = Bool,
+  .allow_unix_sockets_reversed = CodexCliTexts,
+  .log_denials = Bool,
+  .command_reversed = CodexCliTexts,
+  .command_started = Bool,
+}
+
+type CodexCliPlan =
+  | `Command CodexCliCommand
+  | `GenerateCompletion CodexCompletionOptions
+  | `ManageFeature CodexFeatureCommand
+  | `UpdateBinary Unit
+  | `ResumeSession CodexResumeOptions
+  | `ForkSession CodexForkOptions
+  | `ArchiveSession CodexArchiveOptions
+  | `UnarchiveSession CodexArchiveOptions
+  | `DeleteSession CodexDeleteOptions
+  | `Authenticate CodexLoginAction
+  | `LogoutAuth Unit
+  | `ManageMcp CodexMcpCommand
+  | `ManagePlugin CodexPluginCommand
+  | `ManageCloud CodexCloudCommand
+  | `ManageServer CodexServerCommand
+  | `ManageApplication CodexApplicationCommand
+  | `ManageAppServer CodexAppServerCommand
+  | `ManageUtility CodexUtilityCommand
+  | `ManageDebug CodexDebugCommand
+  | `ManageExecPolicy CodexExecPolicyCommand
+  | `RunExec CodexExecOptions
+  | `RunSandbox CodexSandboxOptions
+  | `Invalid Text
+
+return {}

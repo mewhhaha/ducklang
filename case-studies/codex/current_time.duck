@@ -1,0 +1,80 @@
+module () where
+
+const {} = import "./current_time_types.duck" ()
+
+type TimeDeliveryMode = CurrentTimeDeliveryMode
+type TimeItem = CurrentTimeRecordedItem
+type TimeProviderResolution = CurrentTimeProviderResolution
+type TimeReminderDecision = CurrentTimeReminderDecision
+type TimeReminderState = CurrentTimeReminderState
+type TimeSource = CurrentTimeSource
+
+const new_current_time_reminder_state: () -> TimeReminderState = () => {
+  [.last_delivery_time = `None (), .last_window_id = `None (), .pending_user_or_tool_output_boundary = false]
+}
+
+const resolve_current_time_provider: [TimeSource, Bool] -> TimeProviderResolution = (source, external_provider_available) => {
+  if let `System () = source {
+    `SystemProvider ()
+  } else if external_provider_available {
+    `ExternalProvider ()
+  } else {
+    `MissingExternalProvider "features.current_time_reminder.clock_source is external, but no external current-time provider is available"
+  }
+}
+
+const note_current_time_recorded_item: [TimeReminderState, TimeItem] -> TimeReminderState = (state, item) => {
+  let boundary = if let `UserTurnBoundary () = item {
+    true
+  } else if let `FunctionCallOutput () = item {
+    true
+  } else if let `CustomToolCallOutput () = item {
+    true
+  } else if let `ToolSearchOutput () = item {
+    true
+  } else {
+    false
+  }
+
+  if boundary {
+    state :+ { .pending_user_or_tool_output_boundary = true }
+  } else {
+    state
+  }
+}
+
+const take_current_time_reminder: [TimeReminderState, Text, I64, I64, TimeDeliveryMode] -> TimeReminderDecision = (state, window_id, current_time, interval_seconds, delivery_mode) => {
+  let is_new_window = if let `Some previous_window_id = state.last_window_id {
+    previous_window_id != window_id
+  } else {
+    true
+  }
+  let follows_boundary = state.pending_user_or_tool_output_boundary
+  let interval_elapsed = if let `Some last_delivery_time = state.last_delivery_time {
+    current_time - last_delivery_time >= interval_seconds
+  } else {
+    true
+  }
+  let consumed_state = state :+ { .pending_user_or_tool_output_boundary = false }
+
+  let requires_boundary = if let `AfterUserOrToolOutput () = delivery_mode { true } else { false }
+  if requires_boundary && !(is_new_window) && !(follows_boundary) {
+    [.state = consumed_state, .due = false]
+  } else {
+    let due = is_new_window || interval_seconds == 0i64 || interval_elapsed
+
+    if due {
+      let delivered_state = consumed_state :+ { .last_delivery_time = `Some current_time, .last_window_id = `Some window_id }
+      [.state = delivered_state, .due = true]
+    } else {
+      [.state = consumed_state, .due = false]
+    }
+  }
+}
+
+return {
+  new_current_time_reminder_state,
+  resolve_current_time_provider,
+  note_current_time_recorded_item,
+  take_current_time_reminder,
+}

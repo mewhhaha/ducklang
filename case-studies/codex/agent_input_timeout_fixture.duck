@@ -1,0 +1,31 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const agents_module = import "./agents.duck"
+const { normalize_wait_timeout, validate_collab_input } = agents_module()
+
+type FixtureI64Option = AgentI64Option
+
+let score: I32 = 0
+
+if let `InputRejected _ = validate_collab_input(`Some "message", 1) {
+  score = score + 1
+}
+
+if let `InputAccepted value = validate_collab_input(`Some " work ", -1) {
+  if value == " work " { score = score + 10 }
+}
+
+let short_timeout: FixtureI64Option = `Some 1i64
+
+if let `Timeout timeout = normalize_wait_timeout(short_timeout) {
+  if timeout == 10000i64 { score = score + 100 }
+}
+
+let invalid_timeout: FixtureI64Option = `Some (0i64 - 1i64)
+
+if let `InvalidTimeout _ = normalize_wait_timeout(invalid_timeout) {
+  score = score + 1000
+}
+
+return { .score = score }

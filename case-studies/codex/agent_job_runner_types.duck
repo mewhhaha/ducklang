@@ -1,0 +1,46 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_item_types.duck" ()
+
+type AgentJobActiveWorker = struct {
+  .item_id = Text,
+  .thread_id = Text,
+}
+
+type AgentJobActiveWorkerNode = [AgentJobActiveWorker, AgentJobActiveWorkers]
+type AgentJobActiveWorkers =
+  | `Nil Unit
+  | `Cons AgentJobActiveWorkerNode
+
+type AgentJobRunnerState = struct {
+  .pending = AgentJobPreparedItems,
+  .active = AgentJobActiveWorkers,
+  .total_items = I32,
+  .completed_items = I32,
+  .failed_items = I32,
+  .spawn_blocked = Bool,
+  .cancelled = Bool,
+}
+
+type AgentJobRunnerAction =
+  | `SpawnWorker AgentJobPreparedItem
+  | `WaitForWorker AgentJobActiveWorkers
+  | `FinalizeJob Bool
+
+type AgentJobSpawnOutcome =
+  | `WorkerSpawned Text
+  | `WorkerSpawnDeferred Unit
+  | `WorkerSpawnFailed Text
+
+type AgentJobWorkerCompletion = struct {
+  .thread_id = Text,
+  .reported = Bool,
+  .cancel_requested = Bool,
+}
+
+type AgentJobRunnerTransition =
+  | `RunnerAdvanced AgentJobRunnerState
+  | `RunnerInvariantFailed Text
+
+return {}

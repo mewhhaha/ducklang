@@ -1,0 +1,65 @@
+module () where
+
+const { json_array_empty, json_object_empty, json_object_get } = import "duck:prelude/json" ()
+const turns_module = import "./app_server_turns.duck"
+const {} = import "./app_server_turn_types.duck" ()
+const { materialize_turn_notification, materialize_turn_steer_response } = turns_module()
+
+type FixtureTurn = AppServerTurn
+
+const field_is_string = (fields, key: Text, expected: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `String text = value { text == expected } else { false }
+  } else {
+    false
+  }
+}
+
+const field_is_number = (fields, key: Text, expected: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `Number text = value { text == expected } else { false }
+  } else {
+    false
+  }
+}
+
+const field_is_null = (fields, key: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `Null () = value { true } else { false }
+  } else {
+    false
+  }
+}
+
+let turn: FixtureTurn = ["turn-1", json_array_empty(), `Full (), `Interrupted (), `None (), `Some 100i64, `Some 102i64, `Some 2000i64]
+let value = materialize_turn_notification("thread-1", turn)
+let fields = json_object_empty()
+let turn_fields = json_object_empty()
+let score = 0
+
+if let `Object object = value {
+  fields = object
+  let lookup = json_object_get("turn", object)
+  if let `Found nested = lookup {
+    if let `Object object = nested { turn_fields = object }
+  }
+}
+
+if field_is_string(fields, "threadId", "thread-1") && field_is_string(turn_fields, "id", "turn-1") && field_is_string(turn_fields, "status", "interrupted") {
+  score = score + 1
+}
+if field_is_string(turn_fields, "itemsView", "full") && field_is_null(turn_fields, "error") {
+  score = score + 10
+}
+if field_is_number(turn_fields, "startedAt", "100") && field_is_number(turn_fields, "completedAt", "102") && field_is_number(turn_fields, "durationMs", "2000") {
+  score = score + 100
+}
+
+if let `Object response = materialize_turn_steer_response("turn-1") {
+  if field_is_string(response, "turnId", "turn-1") { score = score + 1000 }
+}
+
+return { .score = score }

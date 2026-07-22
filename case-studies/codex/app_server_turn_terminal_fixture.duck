@@ -1,0 +1,60 @@
+module () where
+
+const { json_array_empty } = import "duck:prelude/json" ()
+const lifecycle_module = import "./app_server_turn_lifecycle.duck"
+const {} = import "./app_server_turn_types.duck" ()
+const { initial_turn_state, plan_turn_interrupt, record_turn_started, record_turn_terminal, submitted_turn } = lifecycle_module()
+
+type FixtureState = AppServerTurnState
+type FixtureTransition = AppServerTurnTransition
+type FixtureTransitionResult = AppServerTurnTransitionResult
+type FixtureInterruptResult = AppServerTurnInterruptResult
+type FixtureTurn = AppServerTurn
+
+const interrupted_turn_valid = (turn: FixtureTurn) => {
+  let [_, _, view, status, error, started_at, completed_at, duration_ms] = turn
+  let valid = true
+  let view_valid = false
+  let status_valid = false
+  let started_valid = false
+  let completed_valid = false
+  let duration_valid = false
+  if let `Full () = view { view_valid = true }
+  if let `Interrupted () = status { status_valid = true }
+  if let `Some _ = error { valid = false }
+  if let `Some value = started_at { started_valid = value == 100i64 }
+  if let `Some value = completed_at { completed_valid = value == 102i64 }
+  if let `Some value = duration_ms { duration_valid = value == 2000i64 }
+  valid && view_valid && status_valid && started_valid && completed_valid && duration_valid
+}
+
+let initial: FixtureState = initial_turn_state("thread-1")
+let submitted: FixtureTransition = submitted_turn(initial, "turn-1")
+let [submitted_state, _] = submitted
+let started_result: FixtureTransitionResult = record_turn_started(submitted_state, "turn-1", `Some 100i64)
+let started_state = submitted_state
+if let `Ok transition = started_result {
+  let [state, _] = transition
+  started_state = state
+}
+
+let score = 0
+let terminal_result: FixtureTransitionResult = record_turn_terminal(started_state, "turn-1", `TurnInterrupted (), json_array_empty(), `Some 102i64, `Some 2000i64)
+let terminal_state = started_state
+if let `Ok transition = terminal_result {
+  let [state, turn] = transition
+  terminal_state = state
+  if interrupted_turn_valid(turn) { score = score + 1 }
+}
+
+let completed_interrupt: FixtureInterruptResult = plan_turn_interrupt(terminal_state, "turn-1")
+if let `Err message = completed_interrupt {
+  if message == "no active turn to interrupt" { score = score + 10 }
+}
+
+let startup_interrupt: FixtureInterruptResult = plan_turn_interrupt(terminal_state, "")
+if let `Ok decision = startup_interrupt {
+  if let `InterruptStartup _ = decision { score = score + 100 }
+}
+
+return { .score = score }

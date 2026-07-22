@@ -1,0 +1,44 @@
+module () where
+
+const {} = import "./agent_tool_types.duck" ()
+const { plan_spawn_agent_call } = import "./agent_tool_spawn_call.duck" ()
+
+type FixtureContext = AgentToolContext
+type FixturePlan = AgentToolPlan
+type FixtureSpawnArguments = AgentToolSpawnArguments
+
+let context: FixtureContext = [.v2_enabled = true, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
+let arguments: FixtureSpawnArguments = [.task_name = "reviewer", .message = "inspect the compiler", .fork_turns = `Some " 3 ", .model = `Some "gpt-5.6", .reasoning_effort = `None ()]
+let plan: FixturePlan = plan_spawn_agent_call(context, arguments)
+let score = 0
+if let `SpawnAgentPlanned request = plan {
+  if request.path == "/root/reviewer" && request.message == "inspect the compiler" {
+    if let `ForkRecentTurns turns = request.fork_turns {
+      if turns == 3i64 {
+        if let `Some model = request.model {
+          if model == "gpt-5.6" { score = 1 }
+        }
+      }
+    }
+  }
+}
+
+let all_arguments: FixtureSpawnArguments = [.task_name = "writer", .message = "write the patch", .fork_turns = `Some " ALL ", .model = `None (), .reasoning_effort = `None ()]
+let all_plan: FixturePlan = plan_spawn_agent_call(context, all_arguments)
+if let `SpawnAgentPlanned request = all_plan {
+  if let `ForkAllTurns () = request.fork_turns { score = score + 10 }
+}
+
+let none_arguments: FixtureSpawnArguments = [.task_name = "tester", .message = "run the tests", .fork_turns = `Some "\tNoNe\n", .model = `None (), .reasoning_effort = `None ()]
+let none_plan: FixturePlan = plan_spawn_agent_call(context, none_arguments)
+if let `SpawnAgentPlanned request = none_plan {
+  if let `ForkNoTurns () = request.fork_turns { score = score + 100 }
+}
+
+let blank_arguments: FixtureSpawnArguments = [.task_name = "reader", .message = "read the code", .fork_turns = `Some "  ", .model = `None (), .reasoning_effort = `None ()]
+let blank_plan: FixturePlan = plan_spawn_agent_call(context, blank_arguments)
+if let `SpawnAgentPlanned request = blank_plan {
+  if let `ForkAllTurns () = request.fork_turns { score = score + 1000 }
+}
+
+return { .score = score }

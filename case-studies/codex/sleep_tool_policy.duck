@@ -1,0 +1,15 @@
+module () where
+
+const {} = import "./current_time_types.duck" ()
+
+type ClockSleepRequest = CurrentTimeSleepRequest
+
+const plan_sleep_request: I64 -> ClockSleepRequest = duration_ms => {
+  if duration_ms >= 1i64 && duration_ms <= 43200000i64 {
+    `ValidSleep duration_ms
+  } else {
+    `InvalidSleep "duration_ms must be between 1 and 43200000"
+  }
+}
+
+return { plan_sleep_request }

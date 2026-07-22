@@ -1,0 +1,11 @@
+module () where
+
+declare effect RequestPermissionsHost {
+  suspending request: (&RequestPermissionsHostRequest) => RequestPermissionsHostResponse
+}
+
+declare Init {
+  request_permissions_host: RequestPermissionsHost
+}
+
+return {}

@@ -1,0 +1,13 @@
+module () where
+
+const current_time_module = import "./current_time.duck"
+const { resolve_current_time_provider } = current_time_module()
+
+let score = 0
+if let `SystemProvider () = resolve_current_time_provider(`System (), false) { score = score + 1 }
+if let `ExternalProvider () = resolve_current_time_provider(`External (), true) { score = score + 10 }
+if let `MissingExternalProvider message = resolve_current_time_provider(`External (), false) {
+  if message == "features.current_time_reminder.clock_source is external, but no external current-time provider is available" { score = score + 100 }
+}
+
+return { .score = score }

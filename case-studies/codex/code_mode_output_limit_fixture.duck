@@ -1,0 +1,40 @@
+module () where
+
+const {} = import "./code_mode_wait_types.duck" ()
+const { resolve_code_mode_output_token_limit } = import "./code_mode_output_limit.duck" ()
+
+type FixtureU64 = CodeModeWaitU64
+type FixtureLimit = CodeModeWaitU64Option
+
+let score = 0
+
+let default_limit: FixtureLimit = `WaitLimitMissing ()
+if resolve_code_mode_output_token_limit default_limit == 10000i64 {
+  score = score + 1
+}
+
+let five: FixtureU64 = `U64Decimal "5"
+let five_limit: FixtureLimit = `WaitLimitPresent five
+if resolve_code_mode_output_token_limit five_limit == 5i64 {
+  score = score + 10
+}
+
+let bounded_maximum: FixtureU64 = `U64Decimal "9223372036854775807"
+let bounded_limit: FixtureLimit = `WaitLimitPresent bounded_maximum
+if resolve_code_mode_output_token_limit bounded_limit == 9223372036854775807i64 {
+  score = score + 100
+}
+
+let saturated_minimum: FixtureU64 = `U64Decimal "9223372036854775808"
+let saturated_limit: FixtureLimit = `WaitLimitPresent saturated_minimum
+if resolve_code_mode_output_token_limit saturated_limit == 9223372036854775807i64 {
+  score = score + 1000
+}
+
+let u64_maximum: FixtureU64 = `U64Decimal "18446744073709551615"
+let maximum_limit: FixtureLimit = `WaitLimitPresent u64_maximum
+if resolve_code_mode_output_token_limit maximum_limit == 9223372036854775807i64 {
+  score = score + 10000
+}
+
+return { .score = score }

@@ -1,0 +1,48 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type ToolSourceEnvironment =
+  | `NoEnvironment Unit
+  | `SingleEnvironment Unit
+  | `MultipleEnvironments Unit
+
+type ToolSourceShell =
+  | `UnifiedExecShell Unit
+  | `LegacyShell Unit
+  | `DisabledShell Unit
+
+type ToolSourcePluginInstall =
+  | `NoPluginInstall Unit
+  | `RecommendPluginInstall Unit
+  | `ListPluginInstall Unit
+
+type ToolSourceCollaboration =
+  | `CollaborationDisabled Unit
+  | `CollaborationV1 Unit
+  | `CollaborationV2 Unit
+
+type ToolSourceFacts = struct {
+  .guardian_reviewer = Bool,
+  .environment = ToolSourceEnvironment,
+  .shell = ToolSourceShell,
+  .has_mcp_servers = Bool,
+  .deferred_executor = Bool,
+  .request_user_input = Bool,
+  .request_permissions = Bool,
+  .token_budget = Bool,
+  .current_time = Bool,
+  .sleep_tool = Bool,
+  .plugin_install = ToolSourcePluginInstall,
+  .apply_patch = Bool,
+  .test_sync = Bool,
+  .collaboration = ToolSourceCollaboration,
+  .collaboration_direct_model_only = Bool,
+  .namespace_tools = Bool,
+  .collaboration_namespace = Text,
+  .tool_search = Bool,
+  .agent_jobs = Bool,
+  .agent_job_worker = Bool,
+}
+
+return {}

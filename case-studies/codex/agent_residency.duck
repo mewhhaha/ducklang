@@ -1,0 +1,99 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const agents_module = import "./agents.duck"
+const { agent_status_is_final } = agents_module()
+
+type ResidencyTextOption = AgentTextOption
+type ResidencyRecord = AgentRecord
+type ResidencyRecords = AgentRecords
+type ResidencyRecordNode = AgentRecordNode
+
+const agent_records_empty = () => AgentRecords.Nil()
+
+const agent_records_prepend = (record: ResidencyRecord, tail: ResidencyRecords) => {
+  let node: ResidencyRecordNode = [record, tail]
+  AgentRecords.Cons(node)
+}
+
+const agent_records_length = (values: ResidencyRecords) => {
+  let current = values
+  let count = 0
+
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      break
+    }
+  }
+
+  count
+}
+
+const resident_is_unloadable = (record: ResidencyRecord) => {
+  let [_, _, _, _, status, active_turn, pending_mailbox] = record
+
+  if agent_status_is_final status {
+    if active_turn {
+      false
+    } else if pending_mailbox {
+      false
+    } else {
+      true
+    }
+  } else {
+    false
+  }
+}
+
+const choose_resident_to_unload: [ResidencyRecords, ResidencyTextOption] -> ResidencyTextOption = (lru_records: ResidencyRecords, protected_id: ResidencyTextOption) => {
+  let current = lru_records
+  let candidate: ResidencyTextOption = `None ()
+
+  loop {
+    if let `Cons node = current {
+      let [record, tail] = node
+      let [agent_id, _, _, _, _, _, _] = record
+      let protected = if let `Some expected = protected_id { expected == agent_id } else { false }
+
+      if protected {
+        current = tail
+      } else if resident_is_unloadable record {
+        candidate = `Some agent_id
+        break
+      } else {
+        current = tail
+      }
+    } else {
+      break
+    }
+  }
+
+  candidate
+}
+
+const reserve_residency = (lru_records: ResidencyRecords, pending_slots: I32, capacity: I32, protected_id: ResidencyTextOption) => {
+  if agent_records_length(lru_records) + pending_slots < capacity {
+    `ResidencyAvailable ()
+  } else {
+    let candidate = choose_resident_to_unload(lru_records, protected_id)
+
+    if let `Some agent_id = candidate {
+      `UnloadResident agent_id
+    } else {
+      `ResidencyLimitReached capacity
+    }
+  }
+}
+
+return {
+  agent_records_empty,
+  agent_records_prepend,
+  agent_records_length,
+  resident_is_unloadable,
+  choose_resident_to_unload,
+  reserve_residency,
+}

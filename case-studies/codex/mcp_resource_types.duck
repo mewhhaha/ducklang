@@ -1,0 +1,106 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type McpResourceTextOption =
+  | `None Unit
+  | `Some Text
+
+type McpResourceListArgs = struct {
+  .server = McpResourceTextOption,
+  .cursor = McpResourceTextOption,
+}
+
+type McpResourceReadArgs = struct {
+  .server = Text,
+  .uri = Text,
+}
+
+type McpResourcePayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type McpResourceParsedArgs =
+  | `ListParsed McpResourceListArgs
+  | `ReadParsed McpResourceReadArgs
+  | `ParseFailed Text
+
+type McpResourceOptionalTextResult =
+  | `TextDecoded McpResourceTextOption
+  | `TextDecodeFailed Text
+
+type McpResourceListValidation =
+  | `ListValid McpResourceListArgs
+  | `ListValidationFailed Text
+
+type McpResourceReadValidation =
+  | `ReadValid McpResourceReadArgs
+  | `ReadValidationFailed Text
+
+type McpResourceOperation =
+  | `ListResources McpResourceListArgs
+  | `ListResourceTemplates McpResourceListArgs
+  | `ReadResource McpResourceReadArgs
+
+type McpResourcePreparedCall = struct {
+  .call_id = Text,
+  .operation = McpResourceOperation,
+}
+
+type McpResourceCallPlan =
+  | `RunMcpResource McpResourcePreparedCall
+  | `RejectRequest Text
+
+type McpResourceTextNode = [Text, McpResourceTexts]
+type McpResourceTexts =
+  | `Nil Unit
+  | `Cons McpResourceTextNode
+
+type McpResourcePage = struct {
+  .server = Text,
+  .values = McpResourceTexts,
+  .next_cursor = McpResourceTextOption,
+}
+type McpResourcePageNode = [McpResourcePage, McpResourcePages]
+type McpResourcePages =
+  | `Nil Unit
+  | `Cons McpResourcePageNode
+
+type McpResourceHostRequest = struct {
+  .operation = McpResourceOperation,
+}
+
+type McpResourceReadOutputInput = struct {
+  .operation = McpResourceOperation,
+  .document = Text,
+}
+
+type McpResourceListOutputInput = struct {
+  .operation = McpResourceOperation,
+  .pages = McpResourcePages,
+  .orchestrator_mcp_enabled = Bool,
+}
+
+type McpResourceHostResponse =
+  | `Listed McpResourcePages
+  | `Read Text
+  | `Failed Text
+
+type McpResourceEvent = struct {
+  .call_id = Text,
+  .server = Text,
+  .tool = Text,
+  .completed = Bool,
+  .success = Bool,
+  .message = McpResourceTextOption,
+}
+
+type McpResourceExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+type McpResourceTextResult =
+  | `ResourceText Text
+  | `ResourceFailed Text
+
+return {}

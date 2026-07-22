@@ -1,0 +1,33 @@
+module () where
+
+const { parse_login_options } = import "./cli_auth.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureNode = ListNode Text
+type FixtureLoginResult = CodexLoginActionResult
+
+const prepend = (value: Text, values: FixtureArgs) => {
+  let node: FixtureNode = [value, values]
+  let result: FixtureArgs = `Cons node
+  result
+}
+
+let empty: FixtureArgs = `Nil ()
+let args = prepend("--device-auth", prepend("--experimental_issuer", prepend("https://issuer.example", prepend("--experimental-client-id", prepend("client-1", empty)))))
+let parsed: FixtureLoginResult = parse_login_options(args)
+let score = 0
+
+if let `Ok action = parsed {
+  if let `DeviceLogin options = action {
+    if let `Some issuer = options.issuer_base_url {
+      if let `Some client_id = options.client_id {
+        if issuer == "https://issuer.example" && client_id == "client-1" {
+          score = 1
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

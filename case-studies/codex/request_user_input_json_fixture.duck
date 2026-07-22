@@ -1,0 +1,33 @@
+module () where
+
+const { parse_request_user_input_args } = import "./request_user_input_json.duck" ()
+
+let parsed = parse_request_user_input_args("{\"questions\":[{\"id\":\"pick_one\",\"header\":\"Pick\",\"question\":\"Choose.\",\"isSecret\":true,\"options\":[{\"label\":\"A\",\"description\":\"First.\"},{\"label\":\"B\",\"description\":\"Second.\"}]}],\"autoResolutionMs\":18446744073709551615}")
+let score = 0
+
+if let `Parsed args = parsed {
+  if let `AutoResolutionAboveMaximum () = args.auto_resolution {
+    if let `Cons question_node = args.questions {
+      let [question, question_tail] = question_node
+      if question.id == "pick_one" && question.header == "Pick" && question.question == "Choose." && !(question.is_other) && question.is_secret {
+        if let `Present options = question.options {
+          if let `Cons option_node = options {
+            let [first, option_tail] = option_node
+            if first.label == "A" && first.description == "First." {
+              if let `Cons second_node = option_tail {
+                let [second, options_end] = second_node
+                if second.label == "B" && second.description == "Second." {
+                  if let `Nil () = options_end {
+                    if let `Nil () = question_tail { score = 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

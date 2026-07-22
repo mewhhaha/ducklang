@@ -1,0 +1,103 @@
+module () where
+
+const { json_array_empty, json_array_prepend, json_object_get } = import "duck:prelude/json/values" ()
+const { list_map } = import "duck:prelude/collections" ()
+const {} = import "./app_server_turn_types.duck" ()
+
+type ItemViewsJson = AppServerJson
+type ItemViewsJsonArray = JsonArray
+type ItemViewsJsonOption = AppServerJsonOption
+type ItemViewsTextOption = AppServerTextOption
+type ItemViewsTurn = AppServerTurn
+type ItemViewsTurns = AppServerTurns
+type ItemViewsView = AppServerTurnItemsView
+
+const item_text_field: [ItemViewsJson, Text] -> ItemViewsTextOption = (item: ItemViewsJson, field: Text) => {
+  if let `Object object = item {
+    if let `Found value = json_object_get(field, object) {
+      if let `String text = value { `Some text } else { `None () }
+    } else {
+      `None ()
+    }
+  } else {
+    `None ()
+  }
+}
+
+const item_has_type: [ItemViewsJson, Text] -> Bool = (item: ItemViewsJson, expected: Text) => {
+  if let `Some item_type = item_text_field(item, "type") {
+    item_type == expected
+  } else {
+    false
+  }
+}
+
+const item_ids_differ: [ItemViewsJson, ItemViewsJson] -> Bool = (left: ItemViewsJson, right: ItemViewsJson) => {
+  let left_id = item_text_field(left, "id")
+  let right_id = item_text_field(right, "id")
+
+  if let `Some left_value = left_id {
+    if let `Some right_value = right_id { left_value != right_value } else { true }
+  } else {
+    true
+  }
+}
+
+const summarize_turn_items: ItemViewsJsonArray -> ItemViewsJsonArray = (items: ItemViewsJsonArray) => {
+  let current = items
+  let first_user_message: ItemViewsJsonOption = `None ()
+  let final_agent_message: ItemViewsJsonOption = `None ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      if item_has_type(item, "userMessage") {
+        if let `None () = first_user_message { first_user_message = `Some item }
+      }
+      if item_has_type(item, "agentMessage") { final_agent_message = `Some item }
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let summary = json_array_empty()
+  if let `Some agent_message = final_agent_message {
+    if let `Some user_message = first_user_message {
+      if item_ids_differ(user_message, agent_message) {
+        summary = json_array_prepend(agent_message, summary)
+      }
+    } else {
+      summary = json_array_prepend(agent_message, summary)
+    }
+  }
+  if let `Some user_message = first_user_message {
+    summary = json_array_prepend(user_message, summary)
+  }
+  summary
+}
+
+const project_turn_items: [ItemViewsTurn, ItemViewsView] -> ItemViewsTurn = (turn: ItemViewsTurn, view: ItemViewsView) => {
+  let [id, items, _, status, error, started_at, completed_at, duration_ms] = turn
+
+  if let `NotLoaded () = view {
+    [id, json_array_empty(), `NotLoaded (), status, error, started_at, completed_at, duration_ms]
+  } else if let `Summary () = view {
+    [id, summarize_turn_items(items), `Summary (), status, error, started_at, completed_at, duration_ms]
+  } else {
+    [id, items, `Full (), status, error, started_at, completed_at, duration_ms]
+  }
+}
+
+const apply_thread_turns_items_view: [ItemViewsTurns, ItemViewsView] -> ItemViewsTurns = (values: ItemViewsTurns, view: ItemViewsView) => {
+  list_map(ItemViewsTurn, values, turn => project_turn_items(turn, view))
+}
+
+return {
+  summarize_turn_items,
+  project_turn_items,
+  apply_thread_turns_items_view,
+}

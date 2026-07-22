@@ -1,0 +1,20 @@
+module () where
+
+declare effect CodeModeExecuteHost {
+  suspending start_timer: () => CodeModeExecuteTimer
+  suspending execute: (&CodeModeExecuteRequest) => CodeModeExecuteStartResult
+  suspending start_trace: (&CodeModeExecuteTraceStart) => CodeModeExecuteTrace
+  suspending mark_cell_ready: (Text) => Unit
+  suspending initial_response: (Text) => CodeModeExecuteInitialResponseResult
+  suspending record_initial_response: (&CodeModeExecuteTrace, &CodeModeRuntimeResponse) => Unit
+  suspending record_ended: (&CodeModeExecuteTrace, &CodeModeRuntimeResponse) => Unit
+  suspending close_cell: (Text) => Unit
+  suspending wait_until_elicitations_clear: () => Unit
+  suspending elapsed_microseconds: (&CodeModeExecuteTimer) => I64
+}
+
+declare Init {
+  code_mode_execute_host: CodeModeExecuteHost
+}
+
+return {}

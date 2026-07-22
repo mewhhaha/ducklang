@@ -1,0 +1,97 @@
+const { json_array, json_array_empty, json_array_prepend, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const {} = import "./app_server_types.duck" ()
+const app_server_methods_module = import "./app_server_methods.duck"
+const { decode_turn_interrupt, decode_turn_start } = app_server_methods_module()
+
+type FixtureJson = AppServerJson
+type FixtureMethodResult = AppServerMethodDecodeResult
+type FixtureInputs = AppServerUserInputs
+
+const count_inputs = (values: FixtureInputs) => {
+  let current = values
+  let count = 0
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  count
+}
+
+const input_one: [Text, Text, Text] -> FixtureJson = (kind: Text, key: Text, value: Text) => {
+  let fields = json_object_empty()
+  fields = json_object_prepend(key, json_string(value), fields)
+  fields = json_object_prepend("type", json_string(kind), fields)
+  json_object(fields)
+}
+
+const input_two: [Text, Text, Text, Text, Text] -> FixtureJson = (kind: Text, first_key: Text, first_value: Text, second_key: Text, second_value: Text) => {
+  let fields = json_object_empty()
+  fields = json_object_prepend(second_key, json_string(second_value), fields)
+  fields = json_object_prepend(first_key, json_string(first_value), fields)
+  fields = json_object_prepend("type", json_string(kind), fields)
+  json_object(fields)
+}
+
+let score = 0
+let text_fields = json_object_empty()
+text_fields = json_object_prepend("textElements", json_array(json_array_empty()), text_fields)
+text_fields = json_object_prepend("text", json_string("hello"), text_fields)
+text_fields = json_object_prepend("type", json_string("text"), text_fields)
+let inputs = json_array_empty()
+inputs = json_array_prepend(input_two("mention", "name", "AGENTS.md", "path", "/repo/AGENTS.md"), inputs)
+inputs = json_array_prepend(input_two("skill", "name", "review", "path", "/skills/review/SKILL.md"), inputs)
+inputs = json_array_prepend(input_one("localAudio", "path", "/tmp/audio.wav"), inputs)
+inputs = json_array_prepend(input_one("audio", "url", "https://example.test/audio.wav"), inputs)
+inputs = json_array_prepend(input_one("localImage", "path", "/tmp/image.png"), inputs)
+inputs = json_array_prepend(input_two("image", "url", "https://example.test/image.png", "detail", "high"), inputs)
+inputs = json_array_prepend(json_object(text_fields), inputs)
+let start_fields = json_object_empty()
+start_fields = json_object_prepend("model", json_string("gpt-5"), start_fields)
+start_fields = json_object_prepend("input", json_array(inputs), start_fields)
+start_fields = json_object_prepend("clientUserMessageId", json_string("client-1"), start_fields)
+start_fields = json_object_prepend("threadId", json_string("thread-1"), start_fields)
+let start_params: FixtureJson = json_object(start_fields)
+let start_result: FixtureMethodResult = decode_turn_start(start_params)
+if let `MethodOk method = start_result {
+  if let `TurnStart params = method {
+    let [thread_id, client_id, inputs, raw_params] = params
+    let client_valid = false
+    let params_valid = false
+    if let `Some value = client_id { client_valid = value == "client-1" }
+    if let `Object _ = raw_params { params_valid = true }
+    if thread_id == "thread-1" && client_valid && params_valid && count_inputs(inputs) == 7 { score = score + 1 }
+  }
+}
+
+let interrupt_fields = json_object_empty()
+interrupt_fields = json_object_prepend("turnId", json_string("turn-1"), interrupt_fields)
+interrupt_fields = json_object_prepend("threadId", json_string("thread-1"), interrupt_fields)
+let interrupt_params: FixtureJson = json_object(interrupt_fields)
+let interrupt_result: FixtureMethodResult = decode_turn_interrupt(interrupt_params)
+if let `MethodOk method = interrupt_result {
+  if let `TurnInterrupt params = method {
+    let [thread_id, turn_id] = params
+    if thread_id == "thread-1" && turn_id == "turn-1" { score = score + 10 }
+  }
+}
+
+let invalid_fields = json_object_empty()
+invalid_fields = json_object_prepend("input", json_object(json_object_empty()), invalid_fields)
+invalid_fields = json_object_prepend("threadId", json_string("thread-1"), invalid_fields)
+let invalid_params: FixtureJson = json_object(invalid_fields)
+let invalid_result: FixtureMethodResult = decode_turn_start(invalid_params)
+if let `MethodError message = invalid_result {
+  if message == "turn/start.params.input must be an array" { score = score + 100 }
+}
+
+score

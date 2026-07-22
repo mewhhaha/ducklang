@@ -1,0 +1,72 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_types.duck" ()
+
+type AgentSpawnOverrideEffortNode = [Text, AgentSpawnOverrideEfforts]
+type AgentSpawnOverrideEfforts =
+  | `Nil Unit
+  | `Cons AgentSpawnOverrideEffortNode
+
+type AgentSpawnOverrideModel = struct {
+  .name = Text,
+  .v2_supported = Bool,
+  .visible = Bool,
+  .default_reasoning_effort = AgentTextOption,
+  .supported_reasoning_efforts = AgentSpawnOverrideEfforts,
+}
+type AgentSpawnOverrideModelNode = [AgentSpawnOverrideModel, AgentSpawnOverrideModels]
+type AgentSpawnOverrideModels =
+  | `Nil Unit
+  | `Cons AgentSpawnOverrideModelNode
+
+type AgentSpawnOverrideModelOption =
+  | `NoOverrideModel Unit
+  | `OverrideModel AgentSpawnOverrideModel
+
+type AgentSpawnOverrideFacts = struct {
+  .parent_model = Text,
+  .parent_reasoning_effort = AgentTextOption,
+  .parent_supported_reasoning_efforts = AgentSpawnOverrideEfforts,
+  .default_model = AgentTextOption,
+  .default_reasoning_effort = AgentTextOption,
+  .available_models = AgentSpawnOverrideModels,
+}
+
+type AgentSpawnOverrideInput = struct {
+  .parent_model = Text,
+  .parent_reasoning_effort = AgentTextOption,
+  .parent_supported_reasoning_efforts = AgentSpawnOverrideEfforts,
+  .default_model = AgentTextOption,
+  .default_reasoning_effort = AgentTextOption,
+  .requested_model = AgentTextOption,
+  .requested_reasoning_effort = AgentTextOption,
+  .available_models = AgentSpawnOverrideModels,
+}
+
+type AgentSpawnOverrideSelection = struct {
+  .model = Text,
+  .reasoning_effort = AgentTextOption,
+}
+
+type AgentSpawnOverrideModelSelection = struct {
+  .model = Text,
+  .default_reasoning_effort = AgentTextOption,
+  .supported_reasoning_efforts = AgentSpawnOverrideEfforts,
+}
+
+type AgentSpawnOverrideModelResult =
+  | `SpawnOverrideModelSelected AgentSpawnOverrideModelSelection
+  | `SpawnOverrideModelRejected Text
+
+type AgentSpawnOverrideEffortInput = struct {
+  .model = AgentSpawnOverrideModelSelection,
+  .default_reasoning_effort = AgentTextOption,
+  .requested_reasoning_effort = AgentTextOption,
+}
+
+type AgentSpawnOverrideResult =
+  | `SpawnOverrideSelected AgentSpawnOverrideSelection
+  | `SpawnOverrideRejected Text
+
+return {}

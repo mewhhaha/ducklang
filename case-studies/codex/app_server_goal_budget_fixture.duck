@@ -1,0 +1,17 @@
+const { plan_thread_goal_set } = import "./app_server_goals.duck" ()
+const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_goal_types.duck" ()
+
+type FixtureGoal = AppServerThreadGoal
+type FixtureGoalOption = AppServerThreadGoalOption
+type FixtureParams = AppServerThreadGoalSetParams
+type FixtureResult = AppServerThreadGoalSetPlanResult
+
+let goal: FixtureGoal = ["thread-7", "Old", `GoalActive (), `Some 10i64, 2i64, 3i64, 4i64, 5i64]
+let current: FixtureGoalOption = `Some goal
+let params: FixtureParams = ["thread-7", `None (), `None (), `Set 0i64]
+let result: FixtureResult = plan_thread_goal_set(current, params)
+let score = 0
+if let `GoalSetInvalid reason = result { if reason == "goal budgets must be positive when provided" { score = score + 1 } }
+
+return { .score = score }

@@ -1,0 +1,29 @@
+module () where
+
+const { plan_exec_command } = import "./cli_exec.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+
+const empty_args = () => {
+  let values: FixtureArgs = `Nil ()
+  values
+}
+
+const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => {
+  let node: ListNode Text = [value, tail]
+  let values: FixtureArgs = `Cons node
+  values
+}
+
+let exec_input: FixtureArgs = prepend_arg("summarize", empty_args())
+exec_input = prepend_arg("--ephemeral", exec_input)
+let exec_plan: FixturePlan = plan_exec_command exec_input
+let exec_score = if let `RunExec options = exec_plan {
+  if let `ExecStart start = options.command {
+    if let `Some prompt = start.prompt { if options.ephemeral && prompt == "summarize" { 1 } else { 0 } } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = exec_score }

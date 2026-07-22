@@ -1,0 +1,202 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+const {} = import "./tool_source_types.duck" ()
+
+type SourceDefinition = [ToolName, ToolExposure, ToolHandler, ToolPayloadKind, Bool, Bool]
+type SourceDefinitionNode = [SourceDefinition, ToolSourceDefinitions]
+type ToolSourceDefinitions =
+  | `Nil Unit
+  | `Cons SourceDefinitionNode
+
+let rec append_tool_definitions: [ToolSourceDefinitions, ToolSourceDefinitions] -> ToolSourceDefinitions = (first, second) => {
+  if let `Cons node = first {
+    let [definition, remaining] = node
+    `Cons ([definition, append_tool_definitions(remaining, second)])
+  } else {
+    second
+  }
+}
+
+const single_tool_definition: SourceDefinition -> ToolSourceDefinitions = definition => {
+  `Cons ([definition, `Nil ()])
+}
+
+const environment_available: ToolSourceEnvironment -> Bool = environment => {
+  if let `NoEnvironment () = environment { false } else { true }
+}
+
+const shell_tool_definitions: [ToolSourceEnvironment, ToolSourceShell] -> ToolSourceDefinitions = (environment, shell) => {
+  if !(environment_available environment) {
+    return `Nil ()
+  }
+
+  if let `UnifiedExecShell () = shell {
+    let exec: SourceDefinition = [["", "exec_command"], `Direct (), `UnifiedExec (), `FunctionPayload (), true, false]
+    let write_stdin: SourceDefinition = [["", "write_stdin"], `Direct (), `WriteStdin (), `FunctionPayload (), true, false]
+    let legacy: SourceDefinition = [["", "shell_command"], `Hidden (), `Shell (), `FunctionPayload (), true, true]
+    `Cons ([exec, `Cons ([write_stdin, `Cons ([legacy, `Nil ()])])])
+  } else if let `LegacyShell () = shell {
+    let legacy: SourceDefinition = [["", "shell_command"], `Direct (), `Shell (), `FunctionPayload (), true, true]
+    `Cons ([legacy, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+const guardian_tool_definitions: ToolSourceEnvironment -> ToolSourceDefinitions = environment => {
+  if !(environment_available environment) {
+    return `Nil ()
+  }
+
+  let exec: SourceDefinition = [["", "exec_command"], `Direct (), `UnifiedExec (), `FunctionPayload (), true, false]
+  let write_stdin: SourceDefinition = [["", "write_stdin"], `Direct (), `WriteStdin (), `FunctionPayload (), true, false]
+  let view_image: SourceDefinition = [["", "view_image"], `Direct (), `ViewImage (), `FunctionPayload (), true, false]
+  `Cons ([exec, `Cons ([write_stdin, `Cons ([view_image, `Nil ()])])])
+}
+
+let plugin_tool_definitions: ToolSourcePluginInstall -> ToolSourceDefinitions = plugin_install => {
+  if let `ListPluginInstall () = plugin_install {
+    let list: SourceDefinition = [["", "list_available_plugins_to_install"], `Direct (), `ListAvailablePluginsToInstall (), `FunctionPayload (), false, false]
+    let request: SourceDefinition = [["", "request_plugin_install"], `Direct (), `RequestPluginInstall (), `FunctionPayload (), false, false]
+    `Cons ([list, `Cons ([request, `Nil ()])])
+  } else if let `RecommendPluginInstall () = plugin_install {
+    let request: SourceDefinition = [["", "request_plugin_install"], `Direct (), `RequestPluginInstall (), `FunctionPayload (), false, false]
+    single_tool_definition request
+  } else {
+    `Nil ()
+  }
+}
+
+let utility_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
+  let update_plan: SourceDefinition = [["", "update_plan"], `Direct (), `UpdatePlan (), `FunctionPayload (), false, false]
+  let definitions = single_tool_definition update_plan
+
+  if facts.deferred_executor {
+    let wait_for_environment: SourceDefinition = [["", "wait_for_environment"], `Direct (), `WaitForEnvironment (), `FunctionPayload (), false, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition wait_for_environment)
+  }
+
+  if facts.request_user_input {
+    let request_user_input: SourceDefinition = [["", "request_user_input"], `DirectModelOnly (), `RequestUserInput (), `FunctionPayload (), false, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition request_user_input)
+  }
+
+  if environment_available facts.environment && facts.request_permissions {
+    let request_permissions: SourceDefinition = [["", "request_permissions"], `Direct (), `RequestPermissions (), `FunctionPayload (), false, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition request_permissions)
+  }
+
+  if facts.token_budget {
+    let new_context: SourceDefinition = [["", "new_context_window"], `DirectModelOnly (), `NewContextWindow (), `FunctionPayload (), false, false]
+    let remaining: SourceDefinition = [["", "get_context_remaining"], `Direct (), `GetContextRemaining (), `FunctionPayload (), false, false]
+    definitions = append_tool_definitions(definitions, `Cons ([new_context, `Cons ([remaining, `Nil ()])]))
+  }
+
+  if facts.current_time {
+    let current_time: SourceDefinition = [["clock", "curr_time"], `Direct (), `CurrentTime (), `FunctionPayload (), false, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition current_time)
+    if facts.sleep_tool {
+      let sleep: SourceDefinition = [["clock", "sleep"], `Direct (), `Sleep (), `FunctionPayload (), false, false]
+      definitions = append_tool_definitions(definitions, single_tool_definition sleep)
+    }
+  }
+
+  definitions = append_tool_definitions(definitions, plugin_tool_definitions facts.plugin_install)
+
+  if environment_available facts.environment && facts.apply_patch {
+    let apply_patch: SourceDefinition = [["", "apply_patch"], `Direct (), `ApplyPatch (), `CustomPayload (), false, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition apply_patch)
+  }
+
+  if facts.test_sync {
+    let test_sync: SourceDefinition = [["", "test_sync_tool"], `Direct (), `TestSync (), `FunctionPayload (), true, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition test_sync)
+  }
+
+  if environment_available facts.environment {
+    let view_image: SourceDefinition = [["", "view_image"], `Direct (), `ViewImage (), `FunctionPayload (), true, false]
+    definitions = append_tool_definitions(definitions, single_tool_definition view_image)
+  }
+
+  definitions
+}
+
+const collaboration_v1_tool_definitions: Bool -> ToolSourceDefinitions = tool_search => {
+  let exposure = if tool_search { `Deferred () } else { `Direct () }
+  let spawn: SourceDefinition = [["multi_agent_v1", "spawn_agent"], exposure, `SpawnAgent (), `FunctionPayload (), false, false]
+  let send: SourceDefinition = [["multi_agent_v1", "send_input"], exposure, `SendAgentInput (), `FunctionPayload (), false, false]
+  let resume: SourceDefinition = [["multi_agent_v1", "resume_agent"], exposure, `ResumeAgent (), `FunctionPayload (), false, false]
+  let wait: SourceDefinition = [["multi_agent_v1", "wait_agent"], exposure, `WaitAgent (), `FunctionPayload (), false, false]
+  let close: SourceDefinition = [["multi_agent_v1", "close_agent"], exposure, `CloseAgent (), `FunctionPayload (), false, false]
+  `Cons ([spawn, `Cons ([send, `Cons ([resume, `Cons ([wait, `Cons ([close, `Nil ()])])])])])
+}
+
+const mcp_tool_definitions: Bool -> ToolSourceDefinitions = has_servers => {
+  if !(has_servers) {
+    return `Nil ()
+  }
+
+  let resources: SourceDefinition = [["", "list_mcp_resources"], `Direct (), `ListMcpResources (), `FunctionPayload (), true, false]
+  let templates: SourceDefinition = [["", "list_mcp_resource_templates"], `Direct (), `ListMcpResourceTemplates (), `FunctionPayload (), true, false]
+  let read: SourceDefinition = [["", "read_mcp_resource"], `Direct (), `ReadMcpResource (), `FunctionPayload (), true, false]
+  `Cons ([resources, `Cons ([templates, `Cons ([read, `Nil ()])])])
+}
+
+const collaboration_v2_tool_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
+  let exposure = if facts.collaboration_direct_model_only { `DirectModelOnly () } else { `Direct () }
+  let namespace = if facts.namespace_tools { facts.collaboration_namespace } else { "" }
+  let spawn: SourceDefinition = [[namespace, "spawn_agent"], exposure, `SpawnAgent (), `FunctionPayload (), false, false]
+  let send: SourceDefinition = [[namespace, "send_message"], exposure, `SendAgentMessage (), `FunctionPayload (), true, false]
+  let followup: SourceDefinition = [[namespace, "followup_task"], exposure, `FollowupAgentTask (), `FunctionPayload (), true, false]
+  let wait: SourceDefinition = [[namespace, "wait_agent"], exposure, `WaitAgent (), `FunctionPayload (), false, false]
+  let interrupt: SourceDefinition = [[namespace, "interrupt_agent"], exposure, `InterruptAgent (), `FunctionPayload (), true, false]
+  let list: SourceDefinition = [[namespace, "list_agents"], exposure, `ListAgents (), `FunctionPayload (), true, false]
+  `Cons ([spawn, `Cons ([send, `Cons ([followup, `Cons ([wait, `Cons ([interrupt, `Cons ([list, `Nil ()])])])])])])
+}
+
+const collaboration_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
+  if let `CollaborationV2 () = facts.collaboration {
+    collaboration_v2_tool_definitions facts
+  } else if let `CollaborationV1 () = facts.collaboration {
+    collaboration_v1_tool_definitions facts.tool_search
+  } else {
+    `Nil ()
+  }
+}
+
+const collaboration_enabled: ToolSourceCollaboration -> Bool = collaboration => {
+  if let `CollaborationDisabled () = collaboration { false } else { true }
+}
+
+const agent_job_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinitions = facts => {
+  if !(facts.agent_jobs) || !(collaboration_enabled facts.collaboration) {
+    return `Nil ()
+  }
+
+  let spawn: SourceDefinition = [["", "spawn_agents_on_csv"], `Direct (), `SpawnAgentsOnCsv (), `FunctionPayload (), false, false]
+  if !(facts.agent_job_worker) {
+    return single_tool_definition spawn
+  }
+
+  let report: SourceDefinition = [["", "report_agent_job_result"], `Direct (), `ReportAgentJobResult (), `FunctionPayload (), false, false]
+  `Cons ([spawn, `Cons ([report, `Nil ()])])
+}
+
+let tool_source_definitions: [ToolSourceFacts, ToolSourceDefinitions, ToolSourceDefinitions, ToolSourceDefinitions] -> ToolSourceDefinitions = (facts, configured_runtimes, extension_runtimes, dynamic_runtimes) => {
+  if facts.guardian_reviewer {
+    return guardian_tool_definitions facts.environment
+  }
+
+  let definitions = shell_tool_definitions(facts.environment, facts.shell)
+  definitions = append_tool_definitions(definitions, mcp_tool_definitions facts.has_mcp_servers)
+  definitions = append_tool_definitions(definitions, utility_tool_definitions facts)
+  definitions = append_tool_definitions(definitions, collaboration_tool_source_definitions facts)
+  definitions = append_tool_definitions(definitions, agent_job_tool_source_definitions facts)
+  definitions = append_tool_definitions(definitions, configured_runtimes)
+  definitions = append_tool_definitions(definitions, extension_runtimes)
+  append_tool_definitions(definitions, dynamic_runtimes)
+}
+
+return { tool_source_definitions }

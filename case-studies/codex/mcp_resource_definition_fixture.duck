@@ -1,0 +1,24 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { list_mcp_resource_templates_definition, list_mcp_resources_definition, read_mcp_resource_definition } = import "./mcp_resource_registration.duck" ()
+
+let score = 0
+let [list_name, list_exposure, list_handler, list_payload, list_parallel, list_waits] = list_mcp_resources_definition()
+let [list_namespace, list_local_name] = list_name
+let list_exposure_valid = if let `Direct () = list_exposure { true } else { false }
+let list_handler_valid = if let `ListMcpResources () = list_handler { true } else { false }
+let list_payload_valid = if let `FunctionPayload () = list_payload { true } else { false }
+if list_namespace == "" && list_local_name == "list_mcp_resources" && list_exposure_valid && list_handler_valid && list_payload_valid && list_parallel && !(list_waits) { score = score + 1 }
+
+let [template_name, _, template_handler, _, template_parallel, template_waits] = list_mcp_resource_templates_definition()
+let [template_namespace, template_local_name] = template_name
+let template_handler_valid = if let `ListMcpResourceTemplates () = template_handler { true } else { false }
+if template_namespace == "" && template_local_name == "list_mcp_resource_templates" && template_handler_valid && template_parallel && !(template_waits) { score = score + 10 }
+
+let [read_name, _, read_handler, _, read_parallel, read_waits] = read_mcp_resource_definition()
+let [read_namespace, read_local_name] = read_name
+let read_handler_valid = if let `ReadMcpResource () = read_handler { true } else { false }
+if read_namespace == "" && read_local_name == "read_mcp_resource" && read_handler_valid && read_parallel && !(read_waits) { score = score + 100 }
+
+return { .score = score }

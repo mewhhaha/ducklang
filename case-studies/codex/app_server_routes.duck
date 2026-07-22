@@ -1,0 +1,35 @@
+module () where
+
+const { encode_error } = import "./app_server_wire_responses.duck" ()
+const { decode_app_server_method } = import "./app_server_methods.duck" ()
+const { text_starts_with } = import "duck:prelude/text" ()
+const {} = import "./app_server_types.duck" ()
+
+type RouteInput = AppServerRoute
+type RoutePlan = AppServerPlan
+type RouteDispatch = AppServerDispatch
+type RouteSend = AppServerSend
+
+const route_app_server_request: RouteInput -> RoutePlan = (route: RouteInput) => {
+  let [session, id, method, params] = route
+
+  if text_starts_with([method, "account/"]) {
+    return `Route route
+  }
+
+  let decoded_method = decode_app_server_method(method, params)
+
+  if let `MethodOk known_method = decoded_method {
+    let dispatch: RouteDispatch = [session, id, known_method]
+    `Dispatch dispatch
+  } else if let `MethodError message = decoded_method {
+    let send: RouteSend = [session, encode_error(id, "-32602", message)]
+    `Send send
+  } else {
+    `Drop ([session, "request method could not be decoded"])
+  }
+}
+
+return {
+  route_app_server_request,
+}

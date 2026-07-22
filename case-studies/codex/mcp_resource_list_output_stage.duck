@@ -1,0 +1,12 @@
+module (!init: Init) where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { list_payload_json } = import "./mcp_resource_output.duck" ()
+
+type ResourceListOutputStageInput = McpResourceListOutputInput
+
+input <- StageInput.input()
+let typed_input: ResourceListOutputStageInput = input
+let output = list_payload_json(typed_input.operation, typed_input.pages, typed_input.orchestrator_mcp_enabled)
+
+return { .result = output }

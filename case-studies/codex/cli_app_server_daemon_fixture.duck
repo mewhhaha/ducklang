@@ -1,0 +1,38 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_app_server_daemon, parse_app_server_proxy } = import "./cli_app_server_tools.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexAppServerCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let bootstrap: FixtureResult = parse_app_server_daemon(args.prepend("bootstrap", args.singleton("--remote-control")))
+if let `Ok command = bootstrap {
+  if let `ManageAppServerDaemon operation = command {
+    if let `AppServerDaemonBootstrap remote_control = operation {
+      if remote_control { score = score + 1 }
+    }
+  }
+}
+
+let version: FixtureResult = parse_app_server_daemon(args.singleton("version"))
+if let `Ok command = version {
+  if let `ManageAppServerDaemon operation = command {
+    if let `AppServerDaemonVersion () = operation { score = score + 10 }
+  }
+}
+
+let proxy: FixtureResult = parse_app_server_proxy(args.prepend("--sock", args.singleton("codex.sock")))
+if let `Ok command = proxy {
+  if let `ProxyAppServer socket_path = command {
+    if let `Some path = socket_path {
+      if path == "codex.sock" { score = score + 100 }
+    }
+  }
+}
+
+return { .score = score }

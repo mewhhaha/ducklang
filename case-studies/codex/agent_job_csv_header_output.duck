@@ -1,0 +1,37 @@
+module () where
+
+const { csv_append_field, csv_text_append } = import "duck:prelude/csv" ()
+const {} = import "./agent_job_export_types.duck" ()
+
+type AgentJobCsvHeaderOutputHeaders = AgentJobCreateHeaders
+
+const render_agent_job_csv_headers: AgentJobCsvHeaderOutputHeaders -> Text = headers => {
+  let current = headers
+  let line = ""
+  let first = true
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [header, tail] = node
+      line = csv_append_field(line, header, first)
+      first = false
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  line = csv_append_field(line, "job_id", first)
+  line = csv_append_field(line, "item_id", false)
+  line = csv_append_field(line, "row_index", false)
+  line = csv_append_field(line, "source_id", false)
+  line = csv_append_field(line, "status", false)
+  line = csv_append_field(line, "attempt_count", false)
+  line = csv_append_field(line, "last_error", false)
+  line = csv_append_field(line, "result_json", false)
+  line = csv_append_field(line, "reported_at", false)
+  line = csv_append_field(line, "completed_at", false)
+  csv_text_append([line, "\n"])
+}
+
+return { render_agent_job_csv_headers }

@@ -1,0 +1,92 @@
+module () where
+
+const { json_array_empty, json_object_empty, json_object_get } = import "duck:prelude/json" ()
+const app_server_threads_module = import "./app_server_threads.duck"
+const {} = import "./rollout_storage_types.duck" ()
+const { materialize_thread_list, materialize_thread_read } = app_server_threads_module()
+
+type FixtureTextOption = RolloutStorageTextOption
+type FixtureGitInfo = RolloutGitInfo
+type FixtureGitInfoOption = RolloutGitInfoOption
+type FixtureThread = RolloutThreadSummary
+type FixtureThreads = RolloutThreadSummaries
+type FixturePage = RolloutThreadPage
+const field_is_string = (fields, key: Text, expected: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `String text = value { text == expected } else { false }
+  } else {
+    false
+  }
+}
+
+const field_is_number = (fields, key: Text, expected: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `Number text = value { text == expected } else { false }
+  } else {
+    false
+  }
+}
+
+const field_is_null = (fields, key: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `Null () = value { true } else { false }
+  } else {
+    false
+  }
+}
+
+const nested_field_is_string = (fields, key: Text, nested_key: Text, expected: Text) => {
+  let lookup = json_object_get(key, fields)
+  if let `Found value = lookup {
+    if let `Object nested = value {
+      field_is_string(nested, nested_key, expected)
+    } else {
+      false
+    }
+  } else {
+    false
+  }
+}
+
+let thread: FixtureThread = ["/home/sessions/2025/01/03/rollout-thread-1.jsonl", "thread-1", "session-1", `Some "fork-1", `Some "parent-1", "Alpha task", "/repo", `Cli (), "openai", "0.1.0", `Some "user", "legacy", `Some "Atlas", `Some "explorer", "2025-01-03T09:00:00Z", "2025-01-04T10:00:00+01:00", `Some ([`Some "abc123", `Some "main", `Some "https://example.test/repo"] as FixtureGitInfo)]
+let threads: FixtureThreads = `Cons ([thread, `Nil ()])
+let page: FixturePage = [threads, `Some "next-page", 1, false]
+let backwards: FixtureTextOption = `Some "previous-page"
+let list_value = materialize_thread_list(page, backwards, true)
+let list_fields = json_object_empty()
+let thread_fields = json_object_empty()
+let score = 0
+
+if let `Object fields = list_value {
+  list_fields = fields
+  let data_lookup = json_object_get("data", fields)
+  if let `Found data = data_lookup {
+    if let `Array values = data {
+      if let `Cons node = values {
+        let [first, _] = node
+        if let `Object first_fields = first { thread_fields = first_fields }
+      }
+    }
+  }
+}
+
+if field_is_number(thread_fields, "createdAt", "1735894800") && field_is_number(thread_fields, "updatedAt", "1735981200") {
+  score = score + 1
+}
+if nested_field_is_string(thread_fields, "status", "type", "notLoaded") && field_is_string(thread_fields, "source", "cli") {
+  score = score + 10
+}
+if field_is_string(list_fields, "nextCursor", "next-page") && field_is_string(list_fields, "backwardsCursor", "previous-page") {
+  score = score + 100
+}
+if field_is_string(thread_fields, "historyMode", "legacy") && field_is_null(thread_fields, "canAcceptDirectInput") {
+  score = score + 1000
+}
+if nested_field_is_string(thread_fields, "gitInfo", "sha", "abc123") && nested_field_is_string(thread_fields, "gitInfo", "branch", "main") && nested_field_is_string(thread_fields, "gitInfo", "originUrl", "https://example.test/repo") {
+  score = score + 10000
+}
+
+return { .score = score }

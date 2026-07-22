@@ -1,0 +1,130 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type HostedSpecMode =
+  | `Cached Unit
+  | `Indexed Unit
+  | `Live Unit
+  | `Disabled Unit
+
+type HostedSpecToolType =
+  | `TextOnly Unit
+  | `TextAndImage Unit
+
+type HostedSpecContextSize =
+  | `Low Unit
+  | `Medium Unit
+  | `High Unit
+
+type HostedSpecUserLocationType =
+  `Approximate Unit
+
+type HostedSpecDomainsNode = [Text, HostedSpecDomains]
+type HostedSpecDomains =
+  | `DomainsNil Unit
+  | `DomainsCons HostedSpecDomainsNode
+type HostedSpecDomainsOption =
+  | `DomainsMissing Unit
+  | `DomainsPresent HostedSpecDomains
+
+type HostedSpecTextOption =
+  | `SearchTextMissing Unit
+  | `SearchTextPresent Text
+
+type HostedSpecFilters = struct {
+  .allowed_domains = HostedSpecDomainsOption,
+}
+type HostedSpecFiltersOption =
+  | `FiltersMissing Unit
+  | `FiltersPresent HostedSpecFilters
+
+type HostedSpecUserLocation = struct {
+  .location_type = HostedSpecUserLocationType,
+  .country = HostedSpecTextOption,
+  .region = HostedSpecTextOption,
+  .city = HostedSpecTextOption,
+  .timezone = HostedSpecTextOption,
+}
+type HostedSpecUserLocationOption =
+  | `UserLocationMissing Unit
+  | `UserLocationPresent HostedSpecUserLocation
+type HostedSpecContextSizeOption =
+  | `ContextSizeMissing Unit
+  | `ContextSizePresent HostedSpecContextSize
+
+type HostedSpecConfig = struct {
+  .filters = HostedSpecFiltersOption,
+  .user_location = HostedSpecUserLocationOption,
+  .search_context_size = HostedSpecContextSizeOption,
+}
+type HostedSpecConfigOption =
+  | `SearchConfigMissing Unit
+  | `SearchConfigPresent HostedSpecConfig
+
+type HostedSpec =
+  | `HostedSpecMissing Unit
+  | `CachedText HostedSpecConfigOption
+  | `CachedTextAndImage HostedSpecConfigOption
+  | `IndexedText HostedSpecConfigOption
+  | `IndexedTextAndImage HostedSpecConfigOption
+  | `LiveText HostedSpecConfigOption
+  | `LiveTextAndImage HostedSpecConfigOption
+
+type HostedSpecBoolOption =
+  | `HostedBoolMissing Unit
+  | `HostedBoolPresent Bool
+
+const create_hosted_web_search_spec: [HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType] -> HostedSpec = (mode, config, tool_type) => {
+  if let `Disabled () = mode {
+    return `HostedSpecMissing ()
+  }
+
+  if let `Cached () = mode {
+    if let `TextAndImage () = tool_type {
+      return `CachedTextAndImage config
+    }
+    return `CachedText config
+  }
+
+  if let `Indexed () = mode {
+    if let `TextAndImage () = tool_type {
+      return `IndexedTextAndImage config
+    }
+    return `IndexedText config
+  }
+
+  if let `TextAndImage () = tool_type {
+    `LiveTextAndImage config
+  } else {
+    `LiveText config
+  }
+}
+
+const hosted_web_search_external_access: HostedSpec -> HostedSpecBoolOption = spec => {
+  if let `HostedSpecMissing () = spec {
+    `HostedBoolMissing ()
+  } else if let `CachedText _ = spec {
+    `HostedBoolPresent false
+  } else if let `CachedTextAndImage _ = spec {
+    `HostedBoolPresent false
+  } else {
+    `HostedBoolPresent true
+  }
+}
+
+const hosted_web_search_indexed_access: HostedSpec -> HostedSpecBoolOption = spec => {
+  if let `IndexedText _ = spec {
+    `HostedBoolPresent true
+  } else if let `IndexedTextAndImage _ = spec {
+    `HostedBoolPresent true
+  } else {
+    `HostedBoolMissing ()
+  }
+}
+
+return {
+  create_hosted_web_search_spec,
+  hosted_web_search_external_access,
+  hosted_web_search_indexed_access,
+}

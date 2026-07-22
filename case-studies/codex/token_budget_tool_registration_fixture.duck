@@ -1,0 +1,64 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { token_budget_tool_definitions, token_budget_tool_specs } = import "./token_budget_tool_registration.duck" ()
+
+type FixtureDefinitions = ToolDefinitions
+type FixtureSpecs = ToolSpecs
+
+let definitions_score: I32 = scratch {
+  let score = 0
+  let disabled: FixtureDefinitions = token_budget_tool_definitions false
+  if let `Nil () = disabled { score = score + 1 }
+
+  let enabled: FixtureDefinitions = token_budget_tool_definitions true
+  if let `Cons new_context_node = enabled {
+    let [new_context, remaining_tail] = new_context_node
+    let [new_context_name, new_context_exposure, new_context_handler, _, supports_parallel, waits_for_cancellation] = new_context
+    let [new_context_namespace, new_context_local_name] = new_context_name
+    if let `Cons remaining_node = remaining_tail {
+      let [remaining, end] = remaining_node
+      let [remaining_name, remaining_exposure, remaining_handler, _, remaining_parallel, remaining_waits] = remaining
+      let [remaining_namespace, remaining_local_name] = remaining_name
+      let names_valid = new_context_namespace == "" && new_context_local_name == "new_context" && remaining_namespace == "" && remaining_local_name == "get_context_remaining"
+      let metadata_valid = !(supports_parallel) && !(waits_for_cancellation) && !(remaining_parallel) && !(remaining_waits)
+      if names_valid && metadata_valid {
+        if let `DirectModelOnly () = new_context_exposure {
+          if let `NewContextWindow () = new_context_handler {
+            if let `Direct () = remaining_exposure {
+              if let `GetContextRemaining () = remaining_handler {
+                if let `Nil () = end { score = score + 10 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  score
+}
+
+let specs_score: I32 = scratch {
+  let score = 0
+  let specs: FixtureSpecs = token_budget_tool_specs true
+  if let `Cons new_context_spec_node = specs {
+    let [new_context_spec, remaining_specs_tail] = new_context_spec_node
+    let [_, _, new_context_description, parameters, new_context_output, strict] = new_context_spec
+    if let `Cons remaining_spec_node = remaining_specs_tail {
+      let [remaining_spec, specs_end] = remaining_spec_node
+      let [_, _, remaining_description, remaining_parameters, remaining_output, remaining_strict] = remaining_spec
+      let descriptions_valid = new_context_description == "Start a new context window. Does not clear, reset, or otherwise affect environment state." && remaining_description == "Get the remaining tokens in the current context window."
+      let parameters_valid = parameters == "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}" && remaining_parameters == parameters
+      let new_context_output_valid = if let `ToolOutputSchemaMissing () = new_context_output { true } else { false }
+      let remaining_output_valid = if let `ToolOutputSchemaPresent schema = remaining_output { schema == "{\"type\":\"object\",\"properties\":{\"tokens_left\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"description\":\"Remaining tokens in the current context window, or null when unavailable.\"}},\"required\":[\"tokens_left\"],\"additionalProperties\":false}" } else { false }
+      if descriptions_valid && parameters_valid && new_context_output_valid && remaining_output_valid && !(strict) && !(remaining_strict) {
+        if let `Nil () = specs_end { score = score + 100 }
+      }
+    }
+  }
+
+  score
+}
+
+return { .score = definitions_score + specs_score }

@@ -1,0 +1,60 @@
+module () where
+
+const {} = import "./code_mode_runtime_response_types.duck" ()
+const { handle_code_mode_runtime_response } = import "./code_mode_runtime_response.duck" ()
+
+type FixtureRuntimeItem = CodeModeRuntimeContentItem
+type FixtureRuntimeItemNode = CodeModeRuntimeContentItemNode
+type FixtureResponse = CodeModeRuntimeResponse
+
+let score = 0
+
+let success_item: FixtureRuntimeItem = `RuntimeInputText "ok"
+let success_node: FixtureRuntimeItemNode = [success_item, `RuntimeItemsNil ()]
+let success_response: FixtureResponse = `RuntimeResult (["cell-1", `RuntimeItemsCons success_node, `RuntimeErrorMissing ()])
+let completed = handle_code_mode_runtime_response(success_response, `OriginalDetailUnsupported (), `WaitLimitMissing (), `ElapsedMicroseconds 1250000i64)
+if completed.success {
+  if let `Cons header_node = completed.content_items {
+    let [header_item, header_tail] = header_node
+    if let `InputText header = header_item {
+      if header == "Script completed\nWall time 1.3 seconds\nOutput:\n" {
+        if let `Cons output_node = header_tail {
+          let [output_item, output_tail] = output_node
+          if let `InputText text = output_item {
+            if text == "ok" {
+              if let `Nil () = output_tail { score = score + 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let yielded_response: FixtureResponse = `RuntimeYielded (["cell-2", `RuntimeItemsNil ()])
+let yielded = handle_code_mode_runtime_response(yielded_response, `OriginalDetailUnsupported (), `WaitLimitMissing (), `ElapsedMicroseconds 0i64)
+if yielded.success {
+  if let `Cons header_node = yielded.content_items {
+    let [header_item, header_tail] = header_node
+    if let `InputText header = header_item {
+      if header == "Script running with cell ID cell-2\nWall time 0.0 seconds\nOutput:\n" {
+        if let `Nil () = header_tail { score = score + 10 }
+      }
+    }
+  }
+}
+
+let terminated_response: FixtureResponse = `RuntimeTerminated (["cell-3", `RuntimeItemsNil ()])
+let terminated = handle_code_mode_runtime_response(terminated_response, `OriginalDetailUnsupported (), `WaitLimitMissing (), `ElapsedMicroseconds 149999i64)
+if terminated.success {
+  if let `Cons header_node = terminated.content_items {
+    let [header_item, header_tail] = header_node
+    if let `InputText header = header_item {
+      if header == "Script terminated\nWall time 0.1 seconds\nOutput:\n" {
+        if let `Nil () = header_tail { score = score + 100 }
+      }
+    }
+  }
+}
+
+return { .score = score }

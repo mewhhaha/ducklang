@@ -1,0 +1,71 @@
+module () where
+
+const { encode_json_string } = import "duck:prelude/json/encode" ()
+const { text_truncate_middle_tokens } = import "duck:prelude/functional" ()
+const agent_types_module = import "./agent_types.duck"
+
+type SessionPrefixStatus = AgentStatus
+type SessionPrefixTextOption = AgentTextOption
+
+const error_next_action = "This agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task."
+
+let agent_status_json: SessionPrefixStatus -> Text = status => {
+  if let `PendingInit () = status {
+    "\"pending_init\""
+  } else if let `Running () = status {
+    "\"running\""
+  } else if let `Interrupted () = status {
+    "\"interrupted\""
+  } else if let `Completed message = status {
+    let value = if let `Some text = message { encode_json_string text } else { "null" }
+    "{\"completed\":" <> value <> "}"
+  } else if let `Errored error = status {
+    "{\"errored\":" <> encode_json_string(error) <> "}"
+  } else if let `Shutdown () = status {
+    "\"shutdown\""
+  } else {
+    "\"not_found\""
+  }
+}
+
+let format_subagent_notification_message = (agent_reference: Text, status: SessionPrefixStatus) => {
+  "<subagent_notification>\n{\"agent_path\":" <> encode_json_string(agent_reference) <> ",\"status\":" <> agent_status_json(status) <> "}\n</subagent_notification>"
+}
+
+let format_inter_agent_completion_message: [Text, Text, SessionPrefixStatus] -> SessionPrefixTextOption = (task_name: Text, sender: Text, status: SessionPrefixStatus) => {
+  let payload: SessionPrefixTextOption = if let `Completed message = status {
+    if let `Some text = message { `Some text } else { `Some "" }
+  } else if let `Errored error = status {
+    let truncated = text_truncate_middle_tokens(error, 900)
+    `Some ("Agent errored: " <> truncated <> "\n\n" <> error_next_action)
+  } else if let `Shutdown () = status {
+    `Some "Agent shut down."
+  } else if let `NotFound () = status {
+    `Some "Agent was not found."
+  } else {
+    `None ()
+  }
+
+  let completion: SessionPrefixTextOption = if let `Some message = payload {
+    `Some ("Message Type: FINAL_ANSWER\nTask name: " <> task_name <> "\nSender: " <> sender <> "\nPayload:\n" <> message)
+  } else {
+    `None ()
+  }
+
+  completion
+}
+
+let format_subagent_context_line = (agent_reference: Text, nickname: SessionPrefixTextOption) => {
+  if let `Some value = nickname {
+    if value == "" { "- " <> agent_reference } else { "- " <> agent_reference <> ": " <> value }
+  } else {
+    "- " <> agent_reference
+  }
+}
+
+return {
+  agent_status_json,
+  format_subagent_notification_message,
+  format_inter_agent_completion_message,
+  format_subagent_context_line,
+}

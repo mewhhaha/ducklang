@@ -1,0 +1,29 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/abstractions" ()
+
+type ResponseRetryDurationOption = Option DurationMs
+
+type ResponseStreamRequest =
+  | `Sampling Unit
+  | `RemoteCompactionV2 Unit
+
+type ResponseStreamError = struct {
+  .message = Text,
+  .requested_delay = ResponseRetryDurationOption,
+}
+
+type ResponseRetryDirective = struct {
+  .retries = I64,
+  .delay = DurationMs,
+  .report_error = Bool,
+  .notification = Text,
+}
+
+type ResponseRetryPlan =
+  | `Retry ResponseRetryDirective
+  | `Fallback Text
+  | `Fail Text
+
+return {}

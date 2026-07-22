@@ -1,0 +1,21 @@
+module () where
+
+const { encode_json_string } = import "duck:prelude/json/encode" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./view_image_types.duck" ()
+
+type ImageOutputDetail = ViewImageDetail
+type ImageOutputValue = ViewImageOutput
+
+const view_image_detail_text: ImageOutputDetail -> Text = detail => {
+  if let `Original () = detail { "original" } else { "high" }
+}
+
+let view_image_output_json: ImageOutputValue -> Text = output => {
+  text_append ["{\"image_url\":", text_append [encode_json_string output.image_url, text_append [",\"detail\":", text_append [encode_json_string(view_image_detail_text output.detail), "}"]]]]
+}
+
+return {
+  view_image_detail_text,
+  view_image_output_json,
+}

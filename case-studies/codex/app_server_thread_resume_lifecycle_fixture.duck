@@ -1,0 +1,21 @@
+module () where
+
+const { json_array_empty } = import "duck:prelude/json" ()
+const { plan_thread_resume } = import "./app_server_thread_lifecycle.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureResult = AppServerThreadResumePlanResult
+type FixtureJson = AppServerJson
+type FixtureInput = AppServerThreadResumePlanInput
+
+let history: FixtureJson = `Array (json_array_empty())
+let input: FixtureInput = [`Nil (), "thread-1", `Some history, `Some "/rollouts/thread-1.jsonl", `TurnsIncluded (), `None ()]
+let planned: FixtureResult = plan_thread_resume(input)
+let score = if let `Ok plan = planned {
+  let [source, include_turns, _] = plan
+  let source_valid = if let `ResumeHistory value = source { if let `Array _ = value { true } else { false } } else { false }
+  if source_valid && include_turns { 1 } else { 0 }
+} else { 0 }
+
+return { .score = score }

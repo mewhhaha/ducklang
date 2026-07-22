@@ -1,0 +1,65 @@
+module () where
+
+const { text_append } = import "duck:prelude/text" ()
+const { encode_message_history_line, message_history_entry } = import "./message_history_entry.duck" ()
+const { lookup_message_history_batch_with_limits, lookup_message_history_entry } = import "./message_history_batch.duck" ()
+const {} = import "./message_history_types.duck" ()
+
+type FixtureEntries = MessageHistoryBatchEntries
+
+let first_two_entry_texts_match: [FixtureEntries, Text, Text] -> Bool = (entries: FixtureEntries, expected_first: Text, expected_second: Text) => {
+  let first_matches = false
+  let second_matches = false
+  if let `Cons first_node = entries {
+    let [first_entry, tail] = first_node
+    if let `Some entry = first_entry.entry {
+      first_matches = entry.text == expected_first
+    } else {
+      first_matches = expected_first == ""
+    }
+    if let `Cons second_node = tail {
+      let [second_entry, _] = second_node
+      if let `Some entry = second_entry.entry {
+        second_matches = entry.text == expected_second
+      } else {
+        second_matches = expected_second == ""
+      }
+    }
+  }
+  first_matches && second_matches
+}
+
+let oldest = message_history_entry("session-1", 1i64, "oldest")
+let middle = message_history_entry("session-1", 2i64, "middle")
+let newest = message_history_entry("session-1", 3i64, "newest")
+let contents = text_append([text_append([text_append([encode_message_history_line(&oldest), "not-json\n"]), encode_message_history_line(&middle)]), encode_message_history_line(&newest)])
+let score = 0
+
+let found = lookup_message_history_entry(&contents, 2, true)
+if let `Some _ = found { score = score + 1 }
+
+let stale = lookup_message_history_entry(&contents, 2, false)
+if let `None () = stale { score = score + 10 }
+
+let first = lookup_message_history_batch_with_limits(&contents, 3, true, 2, 65536)
+let first_entries_match = first_two_entry_texts_match(first.entries, "newest", "middle")
+let first_next_older_offset = first.next_older_offset
+if first_entries_match {
+  if let `Some offset = first_next_older_offset {
+    if offset == 1 { score = score + 100 }
+  }
+}
+
+let second = lookup_message_history_batch_with_limits(&contents, 1, true, 2, 65536)
+let second_entries_match = first_two_entry_texts_match(second.entries, "", "oldest")
+let second_next_older_offset = second.next_older_offset
+if second_entries_match {
+  if let `None () = second_next_older_offset { score = score + 1000 }
+}
+
+let mismatch = lookup_message_history_batch_with_limits(&contents, 3, false, 2, 65536)
+let mismatch_entries_empty = if let `Nil () = mismatch.entries { true } else { false }
+let mismatch_offset_missing = if let `None () = mismatch.next_older_offset { true } else { false }
+if mismatch_entries_empty && mismatch_offset_missing { score = score + 10000 }
+
+return { .score = score }

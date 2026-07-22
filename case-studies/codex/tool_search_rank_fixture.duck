@@ -1,0 +1,46 @@
+module () where
+
+const {} = import "./tool_search_types.duck" ()
+const { natural_log_positive_q10, rank_tool_search } = import "./tool_search_rank.duck" ()
+const { append_search_infos, searchable_function } = import "./tool_search_value.duck" ()
+
+type FixtureInfo = ToolSearchInfo
+type FixtureInfos = ToolSearchInfos
+type FixtureRanked = ToolSearchRankedEntries
+type FixtureSpec = ToolSpec
+
+let calendar: FixtureSpec = [["", "create_event"], `FunctionSpec (), "Create and schedule calendar events with attendees.", "{\"timezone\":\"IANA timezone\"}", `ToolOutputSchemaMissing (), false]
+let files: FixtureSpec = [["", "read_file"], `FunctionSpec (), "Read a local source file from disk.", "{\"path\":\"filesystem path\"}", `ToolOutputSchemaMissing (), false]
+let search: FixtureSpec = [["", "search_calendar"], `FunctionSpec (), "Search calendar entries.", "{\"query\":\"search query\"}", `ToolOutputSchemaMissing (), false]
+
+let values: FixtureInfos = `Nil ()
+values = append_search_infos(values, searchable_function(files, `SearchSourceMissing ()))
+values = append_search_infos(values, searchable_function(calendar, `SearchSourceMissing ()))
+values = append_search_infos(values, searchable_function(search, `SearchSourceMissing ()))
+
+let score = 0
+let logarithm = natural_log_positive_q10 2048
+if logarithm >= 709 && logarithm <= 711 { score = score + 1 }
+
+let ranked: FixtureRanked = rank_tool_search("create calendar event", 2, values)
+if let `Cons first_node = ranked {
+  let [first, tail] = first_node
+  let [_, _, first_entry] = first
+  let [_, first_output] = first_entry
+  if let `Function function = first_output {
+    let [function_spec, _] = function
+    let [name, _, _, _, _, _] = function_spec
+    let [_, local_name] = name
+    if local_name == "create_event" { score = score + 10 }
+  }
+
+  if let `Cons second_node = tail {
+    let [second, rest] = second_node
+    let [_, second_score, _] = second
+    if second_score > 0 {
+      if let `Nil () = rest { score = score + 100 }
+    }
+  }
+}
+
+return { .score = score }

@@ -1,0 +1,24 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { request_plugin_install_specs } = import "./request_plugin_install_registration.duck" ()
+
+type FixtureSpecs = ToolSpecs
+
+let score = 0
+let specs: FixtureSpecs = request_plugin_install_specs(true, true, `ListTool ())
+if let `Cons node = specs {
+  let [spec, tail] = node
+  let [name, kind, description, parameters, output, strict] = spec
+  let [namespace, local_name] = name
+  let expected_description = "# Request plugin/connector install\n\nUse this tool only after `list_available_plugins_to_install` returns a plugin or connector that exactly matches the user's explicit request.\n\nDo not use it for adjacent capabilities, broad recommendations, or tools that merely seem useful. Pass the returned `tool_type` through directly, and pass the returned `id` as `tool_id`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools."
+  let expected_parameters = "{\"type\":\"object\",\"properties\":{\"action_type\":{\"type\":\"string\",\"description\":\"Suggested action for the tool. Use \\\"install\\\".\"},\"suggest_reason\":{\"type\":\"string\",\"description\":\"Concise one-line user-facing reason why this plugin or connector can help with the current request.\"},\"tool_id\":{\"type\":\"string\",\"description\":\"Connector or plugin id to suggest.\"},\"tool_type\":{\"type\":\"string\",\"description\":\"Type of discoverable tool to suggest. Use \\\"connector\\\" or \\\"plugin\\\".\"}},\"required\":[\"tool_type\",\"action_type\",\"tool_id\",\"suggest_reason\"],\"additionalProperties\":false}"
+  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
+  if namespace == "" && local_name == "request_plugin_install" && description == expected_description && parameters == expected_parameters && output_valid && !(strict) {
+    if let `FunctionSpec () = kind {
+      if let `Nil () = tail { score = 100 }
+    }
+  }
+}
+
+return { .score = score }

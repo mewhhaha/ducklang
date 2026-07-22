@@ -1,0 +1,53 @@
+module () where
+
+const { classify_audio_format } = import "./audio_format.duck" ()
+
+type AudioFormatCase = [Text, I32, I32]
+type AudioFormatCases = List AudioFormatCase
+type AudioFormatCaseNode = ListNode AudioFormatCase
+
+const verify_audio_format_fixture: () -> I32 = () => {
+  let cases: AudioFormatCases = `Nil ()
+  let case_node: AudioFormatCaseNode = [["video/mp4", 5, 100000], cases]
+  cases = `Cons case_node
+  case_node = [["audio/flac", 5, 100000], cases]
+  cases = `Cons case_node
+  case_node = [["audio/ogg", 4, 10000], cases]
+  cases = `Cons case_node
+  case_node = [["audio/webm", 3, 1000], cases]
+  cases = `Cons case_node
+  case_node = [["audio/x-m4a", 2, 100], cases]
+  cases = `Cons case_node
+  case_node = [["audio/m4a", 2, 100], cases]
+  cases = `Cons case_node
+  case_node = [["audio/mp4", 2, 100], cases]
+  cases = `Cons case_node
+  case_node = [["AUDIO/MP3", 1, 10], cases]
+  cases = `Cons case_node
+  case_node = [["audio/mpeg", 1, 10], cases]
+  cases = `Cons case_node
+  case_node = [["audio/vnd.wave", 0, 1], cases]
+  cases = `Cons case_node
+  case_node = [["audio/wave", 0, 1], cases]
+  cases = `Cons case_node
+  case_node = [["Audio/X-WaV", 0, 1], cases]
+  cases = `Cons case_node
+  case_node = [["audio/wav", 0, 1], cases]
+  cases = `Cons case_node
+
+  let score = 0
+  loop {
+    if let `Cons node = cases {
+      let [format_case, tail] = node
+      let [mime, expected, weight] = format_case
+      let actual = classify_audio_format mime
+      if actual == expected { score = score + weight }
+      cases = tail
+    } else {
+      break
+    }
+  }
+  score
+}
+
+return { verify_audio_format_fixture }

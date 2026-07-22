@@ -1,0 +1,24 @@
+module () where
+
+const {} = import "./request_user_input_types.duck" ()
+const { normalize_request_user_input_args } = import "./request_user_input_policy.duck" ()
+
+type FixtureArgs = RequestUserInputArgs
+type FixtureQuestion = RequestUserInputQuestion
+type FixtureQuestionNode = RequestUserInputQuestionNode
+type FixtureQuestions = RequestUserInputQuestions
+
+let missing_questions: FixtureQuestions = `Cons ([[.id = "confirm", .header = "Confirm", .question = "Proceed?", .is_other = false, .is_secret = false, .options = `Missing ()] as FixtureQuestion, `Nil ()] as FixtureQuestionNode)
+let missing: FixtureArgs = [.questions = missing_questions, .auto_resolution = `NoAutoResolution ()]
+let empty_questions: FixtureQuestions = `Cons ([[.id = "confirm", .header = "Confirm", .question = "Proceed?", .is_other = false, .is_secret = false, .options = `Present (`Nil ())] as FixtureQuestion, `Nil ()] as FixtureQuestionNode)
+let empty: FixtureArgs = [.questions = empty_questions, .auto_resolution = `NoAutoResolution ()]
+let score = 0
+
+if let `Invalid message = normalize_request_user_input_args(missing) {
+  if message == "request_user_input requires non-empty options for every question" { score = score + 1 }
+}
+if let `Invalid message = normalize_request_user_input_args(empty) {
+  if message == "request_user_input requires non-empty options for every question" { score = score + 10 }
+}
+
+return { .score = score }

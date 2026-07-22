@@ -1,0 +1,39 @@
+module () where
+
+const { json_null, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const { decode_test_sync_value } = import "./test_sync_value.duck" ()
+
+let barrier_fields = json_object_prepend("id", json_string "shared", json_object_prepend("participants", json_number "2", json_object_prepend("ignored", json_string "allowed", json_object_empty())))
+let fields = json_object_prepend("sleep_before_ms", json_number "0002", json_object_prepend("sleep_after_ms", json_null(), json_object_prepend("barrier", json_object barrier_fields, json_object_prepend("unknown", json_string "ignored", json_object_empty()))))
+let score = 0
+
+if let `Parsed args = decode_test_sync_value(json_object fields) {
+  if let `SyncDurationPresent before = args.sleep_before_ms {
+    if before == "2" {
+      if let `SyncDurationMissing () = args.sleep_after_ms {
+        if let `SyncBarrierPresent barrier = args.barrier {
+          if barrier.id == "shared" && barrier.participants == "2" && barrier.timeout_ms == "1000" { score = score + 1 }
+        }
+      }
+    }
+  }
+}
+
+let maximum_fields = json_object_prepend("sleep_after_ms", json_number "18446744073709551615", json_object_empty())
+if let `Parsed args = decode_test_sync_value(json_object maximum_fields) {
+  if let `SyncDurationPresent maximum = args.sleep_after_ms {
+    if maximum == "18446744073709551615" { score = score + 10 }
+  }
+}
+
+let overflow_fields = json_object_prepend("sleep_before_ms", json_number "18446744073709551616", json_object_empty())
+if let `ParseFailed message = decode_test_sync_value(json_object overflow_fields) {
+  if message == "failed to parse function arguments: sleep_before_ms number exceeds U64" { score = score + 100 }
+}
+
+let duplicate_fields = json_object_prepend("sleep_before_ms", json_number "1", json_object_prepend("sleep_before_ms", json_number "2", json_object_empty()))
+if let `ParseFailed message = decode_test_sync_value(json_object duplicate_fields) {
+  if message == "failed to parse function arguments: sleep_before_ms must appear at most once" { score = score + 1000 }
+}
+
+return { .score = score }

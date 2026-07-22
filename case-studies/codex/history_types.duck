@@ -1,0 +1,42 @@
+module () where
+
+type HistoryContent =
+  | `InputText Text
+  | `InputImage Text
+  | `InputAudio Text
+  | `OutputText Text
+  | `Encrypted Text
+
+type HistoryContents = List HistoryContent
+type HistoryMessage = [Text, Bool, HistoryContents]
+type HistoryCall = [Text, Text, Text, Text]
+type HistoryOutput = [Text, Text, HistoryContents]
+type HistoryPairedCall = [Text, Text]
+type HistoryToolSearchOutput = [Text, Text]
+
+type HistoryItem =
+  | `Message HistoryMessage
+  | `AgentMessage HistoryContents
+  | `Reasoning Text
+  | `FunctionCall HistoryCall
+  | `FunctionOutput HistoryOutput
+  | `CustomCall HistoryCall
+  | `CustomOutput HistoryOutput
+  | `LocalShellCall HistoryPairedCall
+  | `ToolSearchCall HistoryPairedCall
+  | `ToolSearchOutput HistoryToolSearchOutput
+  | `Compaction Text
+  | `Other Unit
+
+type HistoryItems = List HistoryItem
+type HistoryItemOption = Option HistoryItem
+type HistoryTextOption = Option Text
+type InputModalities = [Bool, Bool]
+
+// Keep list construction beside these aliases so linked modules preserve their names.
+const empty_history_contents: () -> HistoryContents = () => `Nil ()
+const prepend_history_content: [HistoryContent, HistoryContents] -> HistoryContents = (content, contents) => `Cons ([content, contents])
+const empty_history_items: () -> HistoryItems = () => `Nil ()
+const prepend_history_item: [HistoryItem, HistoryItems] -> HistoryItems = (item, items) => `Cons ([item, items])
+
+return { empty_history_contents, prepend_history_content, empty_history_items, prepend_history_item }

@@ -1,0 +1,25 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+const { tool_search_tool_name } = import "./tool_search_name.duck" ()
+const { merge_search_sources, render_search_sources, tool_search_description } = import "./tool_search_sources.duck" ()
+const { tool_search_parameters, tool_search_tool_specs } = import "./tool_search_spec.duck" ()
+
+type SearchRegistrationDefinition = ToolDefinition
+type SearchRegistrationDefinitions = ToolDefinitions
+
+const tool_search_tool_definitions: () -> SearchRegistrationDefinitions = () => {
+  let definition: SearchRegistrationDefinition = [tool_search_tool_name(), `Direct (), `ToolSearch (), `ToolSearchPayload (), true, false]
+  `Cons ([definition, `Nil ()])
+}
+
+return {
+  merge_search_sources,
+  render_search_sources,
+  tool_search_description,
+  tool_search_parameters,
+  tool_search_tool_definitions,
+  tool_search_tool_name,
+  tool_search_tool_specs,
+}

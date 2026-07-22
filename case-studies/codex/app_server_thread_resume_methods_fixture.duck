@@ -1,0 +1,22 @@
+module () where
+
+const { json_array, json_array_empty, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { decode_thread_resume } = import "./app_server_thread_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureResult = AppServerMethodDecodeResult
+
+let fields = json_object_empty()
+fields = json_object_prepend("path", json_string(""), fields)
+fields = json_object_prepend("history", json_array(json_array_empty()), fields)
+fields = json_object_prepend("threadId", json_string("thread-1"), fields)
+let decoded: FixtureResult = decode_thread_resume(json_object(fields))
+let score = if let `MethodOk method = decoded {
+  if let `ThreadResume params = method {
+    let history_valid = if let `Some value = params.history { if let `Array _ = value { true } else { false } } else { false }
+    let path_absent = if let `None () = params.path { true } else { false }
+    if params.thread_id == "thread-1" && history_valid && path_absent { 1 } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = score }

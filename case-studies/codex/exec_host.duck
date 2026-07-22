@@ -1,0 +1,13 @@
+module () where
+
+declare effect ProcessHost {
+  suspending start: (&ExecLaunch) => ExecProcessSnapshot
+  suspending write: (I32, &Text, I32) => ExecProcessSnapshot
+  suspending terminate: (I32) => Unit
+}
+
+declare Init {
+  process_host: ProcessHost
+}
+
+return {}

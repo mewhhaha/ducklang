@@ -1,0 +1,58 @@
+module () where
+
+const {} = import "./rollout_budget_types.duck" ()
+const budget_module = import "./rollout_budget.duck"
+const { new_rollout_budget, configure_rollout_budget, record_rollout_budget_usage, pending_rollout_budget_reminder, mark_rollout_budget_reminder_delivered, rearm_rollout_budget_reminder } = budget_module()
+
+type FixtureBudget = RolloutBudget
+type FixtureConfig = RolloutBudgetConfig
+type FixtureReminder = RolloutBudgetReminder
+type FixtureThresholdNode = RolloutBudgetThresholdNode
+type FixtureThresholds = RolloutBudgetThresholds
+type FixtureUsage = RolloutBudgetTokenUsage
+
+let thresholds: FixtureThresholds = `Nil ()
+let threshold_25: FixtureThresholdNode = [25, thresholds]
+thresholds = `Cons threshold_25
+let threshold_50: FixtureThresholdNode = [50, thresholds]
+thresholds = `Cons threshold_50
+let threshold_75: FixtureThresholdNode = [75, thresholds]
+thresholds = `Cons threshold_75
+let config: FixtureConfig = [.limit_tokens = 100, .reminder_at_remaining_tokens = thresholds, .sampling_token_weight = 1.0f64, .prefill_token_weight = 1.0f64]
+
+let score = 0
+let budget: FixtureBudget = configure_rollout_budget(new_rollout_budget(), config)
+let initial: FixtureReminder = [.remaining_tokens = -1, .reminder_index = -1]
+if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-1") {
+  initial = reminder
+  if reminder.remaining_tokens == 100 && reminder.reminder_index == 0 { score = score + 1 }
+}
+
+budget = mark_rollout_budget_reminder_delivered(budget, "root", "window-1", &initial)
+if let `None () = pending_rollout_budget_reminder(&budget, &"root", &"window-1") { score = score + 10 }
+
+let usage: FixtureUsage = [.input_tokens = 40, .cached_input_tokens = 0, .output_tokens = 0]
+let usage_result = record_rollout_budget_usage(budget, usage)
+budget = usage_result.budget
+let crossed: FixtureReminder = initial
+if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-1") {
+  crossed = reminder
+  if reminder.remaining_tokens == 60 && reminder.reminder_index == 1 { score = score + 100 }
+}
+
+if let `Some reminder = pending_rollout_budget_reminder(&budget, &"child", &"window-1") {
+  if reminder.remaining_tokens == 60 && reminder.reminder_index == 1 { score = score + 1000 }
+}
+
+budget = mark_rollout_budget_reminder_delivered(budget, "root", "window-1", &crossed)
+if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-2") {
+  if reminder.remaining_tokens == 60 && reminder.reminder_index == 1 { score = score + 10000 }
+}
+
+budget = mark_rollout_budget_reminder_delivered(budget, "root", "window-2", &crossed)
+budget = rearm_rollout_budget_reminder(budget, "root")
+if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-2") {
+  if reminder.remaining_tokens == 60 && reminder.reminder_index == 1 { score = score + 100000 }
+}
+
+return { .score = score }

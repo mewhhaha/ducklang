@@ -1,0 +1,36 @@
+module () where
+
+type ContextTextOption = Option Text
+type ContextI32Option = Option I32
+type ContextTexts = List Text
+
+type ContextEnvironmentStatus =
+  | `Available Unit
+  | `Starting Unit
+  | `Unavailable Unit
+type ContextEnvironment = [Text, Text, ContextEnvironmentStatus, ContextTextOption]
+type ContextEnvironments = List ContextEnvironment
+
+type ContextNetwork = [ContextTexts, ContextTexts]
+type ContextNetworkOption = Option ContextNetwork
+
+type ContextFileSystemPath =
+  | `Path Text
+  | `Glob Text
+  | `Special Text
+type ContextFileSystemEntry = [Text, ContextFileSystemPath]
+type ContextFileSystemEntries = List ContextFileSystemEntry
+type ContextManagedRestricted = [ContextFileSystemEntries, ContextI32Option]
+type ContextFileSystemProfile =
+  | `ManagedRestricted ContextManagedRestricted
+  | `ManagedUnrestricted Unit
+  | `Disabled Unit
+  | `External Unit
+type ContextFileSystem = [ContextTexts, ContextFileSystemProfile]
+type ContextFileSystemOption = Option ContextFileSystem
+
+type EnvironmentContext = [ContextEnvironments, ContextTextOption, ContextTextOption, ContextNetworkOption, ContextFileSystemOption, ContextTextOption]
+
+type ModelContextFragment = [Text, Bool, Text]
+
+return {}

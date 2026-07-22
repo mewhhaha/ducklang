@@ -1,0 +1,69 @@
+module () where
+
+const { encode_json_string } = import "duck:prelude/json/encode" ()
+const { text_append } = import "duck:prelude/text" ()
+const {} = import "./wait_for_environment_types.duck" ()
+
+type WaitEnvironments = WaitForEnvironments
+type WaitEnvironmentHostResponse = WaitForEnvironmentHostResponse
+type WaitEnvironmentPlan = WaitForEnvironmentPlan
+type WaitEnvironmentResult = WaitForEnvironmentExecutionResult
+const plan_wait_for_environment: [WaitEnvironments, Text] -> WaitEnvironmentPlan = (environments: WaitEnvironments, environment_id: Text) => {
+  let current = environments
+  let ready = false
+  let starting = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [environment, tail] = node
+      if environment.environment_id == environment_id {
+        if let `Ready () = environment.status {
+          ready = true
+          done = true
+        } else if let `Starting () = environment.status {
+          starting = true
+          current = tail
+        } else {
+          current = tail
+        }
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  if ready {
+    `AlreadyReady environment_id
+  } else if starting {
+    `Wait environment_id
+  } else {
+    let suffix: Text = text_append(environment_id, "` is neither ready nor starting")
+    `RejectRequest (text_append("environment `", suffix))
+  }
+}
+
+const ready_environment_output: Text -> Text = environment_id => {
+  let encoded_environment_id: Text = encode_json_string(environment_id)
+  let encoded: Text = text_append("{\"environment_id\":", encoded_environment_id)
+  text_append(encoded, ",\"status\":\"ready\"}")
+}
+
+const finish_wait_for_environment: [Text, WaitEnvironmentHostResponse] -> WaitEnvironmentResult = (environment_id: Text, response: WaitEnvironmentHostResponse) => {
+  if response {
+    `Completed (ready_environment_output environment_id)
+  } else {
+    let suffix: Text = text_append(environment_id, "` failed to start and is unavailable. Continue without it.")
+    `Rejected (text_append("Environment `", suffix))
+  }
+}
+
+return {
+  finish_wait_for_environment,
+  plan_wait_for_environment,
+  ready_environment_output,
+}

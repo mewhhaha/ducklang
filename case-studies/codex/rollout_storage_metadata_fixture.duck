@@ -1,0 +1,38 @@
+module () where
+
+const rollout_storage_types_module = import "./rollout_storage_types.duck"
+const rollout_storage_module = import "./rollout_storage.duck"
+const { find_rollout_path_by_id, is_rollout_path, rollout_path, summarize_rollout_file } = rollout_storage_module()
+
+type FixtureFile = RolloutStoredFile
+type FixtureFiles = RolloutStoredFiles
+
+let path = "/home/sessions/2025/01/03/rollout-2025-01-03T09-00-00-thread-new.jsonl"
+let meta = "{\"timestamp\":\"2025-01-03T09:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-new\",\"timestamp\":\"2025-01-03T09:00:00Z\",\"cwd\":\"/repo\",\"source\":\"cli\",\"model_provider\":\"openai\"}}"
+let event = "{\"timestamp\":\"2025-01-03T09:00:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Alpha task\"}}"
+let file: FixtureFile = [path, "2025-01-05T00:00:00Z", meta <> "\nnot-json\n" <> event <> "\n"]
+let snapshot: FixtureFiles = `Cons ([file, `Nil ()])
+let score: I32 = 0
+
+let generated = rollout_path("/home", "2025-01-03T09-00-00", "thread-new")
+if let `Some generated_path = generated {
+  if generated_path == path && is_rollout_path(generated_path) {
+    score = score + 1
+  }
+}
+
+let summary = summarize_rollout_file file
+if let `Some thread = summary {
+  if thread.preview == "Alpha task" && thread.thread_id == "thread-new" {
+    score = score + 10
+  }
+}
+
+let found = find_rollout_path_by_id(snapshot, "thread-new")
+if let `Some found_path = found {
+  if found_path == path {
+    score = score + 100
+  }
+}
+
+return { .score = score }

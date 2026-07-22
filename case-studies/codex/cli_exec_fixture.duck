@@ -1,0 +1,19 @@
+module () where
+
+const { parse_exec_options } = import "./cli_exec.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexExecOptionsResult
+
+let input: FixtureArgs = `Cons (["--ephemeral", `Cons (["summarize", `Nil ()])])
+let parsed: FixtureResult = parse_exec_options input
+let start_score = if let `Ok options = parsed {
+  if let `ExecStart start = options.command {
+    if let `Some prompt = start.prompt {
+      if prompt == "summarize" && options.ephemeral { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = start_score }

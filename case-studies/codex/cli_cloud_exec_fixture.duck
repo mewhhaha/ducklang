@@ -1,0 +1,32 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_cloud_exec } = import "./cli_cloud.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexCloudCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let input: FixtureArgs = args.prepend("repair the build", args.prepend("--env", args.prepend("env-7", args.prepend("--attempts", args.prepend("3", args.prepend("--branch", args.singleton("feature")))))))
+let planned: FixtureResult = parse_cloud_exec(input)
+if let `Ok command = planned {
+  if let `CloudExec options = command {
+    if let `Some query = options.query {
+      if let `Some branch = options.branch {
+        if query == "repair the build" && options.environment == "env-7" && options.attempts == 3i64 && branch == "feature" {
+          score = score + 1
+        }
+      }
+    }
+  }
+}
+
+let invalid: FixtureResult = parse_cloud_exec(args.prepend("--env", args.prepend("env-7", args.prepend("--attempts", args.singleton("5")))))
+if let `Err _ = invalid {
+  score = score + 10
+}
+
+return { .score = score }

@@ -1,0 +1,40 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type SandboxTagNetworkPolicy =
+  | `Enabled Unit
+  | `Restricted Unit
+
+type SandboxTagFileSystemKind =
+  | `RestrictedFileSystem Unit
+  | `UnrestrictedFileSystem Unit
+  | `ExternalFileSystem Unit
+
+type SandboxTagFileSystem = struct {
+  .kind = SandboxTagFileSystemKind,
+  .has_full_disk_write_access = Bool,
+  .has_writable_roots = Bool,
+}
+
+type SandboxTagManagedProfile = struct {
+  .file_system = SandboxTagFileSystem,
+  .network = SandboxTagNetworkPolicy,
+}
+
+type SandboxTagPermissionProfile =
+  | `DisabledProfile Unit
+  | `ExternalProfile SandboxTagNetworkPolicy
+  | `ManagedProfile SandboxTagManagedProfile
+
+type SandboxTagWindowsLevel =
+  | `WindowsDisabled Unit
+  | `WindowsElevated Unit
+  | `WindowsStandard Unit
+
+type SandboxTagPlatform = struct {
+  .is_windows = Bool,
+  .platform_sandbox_tag = Option Text,
+}
+
+return {}

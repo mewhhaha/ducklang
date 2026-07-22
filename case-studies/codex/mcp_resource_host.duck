@@ -1,0 +1,12 @@
+module () where
+
+declare effect McpResourceHost {
+  suspending event: (&McpResourceEvent) => Unit
+  suspending invoke: (&McpResourceHostRequest) => McpResourceHostResponse
+}
+
+declare Init {
+  mcp_resource_host: McpResourceHost
+}
+
+return {}

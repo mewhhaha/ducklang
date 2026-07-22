@@ -1,0 +1,60 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const hook_types_module = import "./hook_types.duck"
+const hook_policy_module = import "./hook_policy.duck"
+const { event_uses_matcher, hook_key, hook_may_run, hook_scope, normalize_hook_handler } = hook_policy_module()
+
+type FixtureTextOption = HookTextOption
+type FixtureTexts = HookTexts
+type FixtureEvent = HookEvent
+type FixtureSource = HookSource
+type FixtureMatcher = HookMatcher
+type FixtureHandlerConfig = HookHandlerConfig
+type FixtureStateOption = HookStateOption
+
+const texts = comptime list(Text)
+
+let score: I32 = 0
+let no_text: FixtureTextOption = `None ()
+let pre_tool: FixtureEvent = `PreToolUse ()
+let session_start: FixtureEvent = `SessionStart ()
+let session_end: FixtureEvent = `SessionEnd ()
+let stop: FixtureEvent = `Stop ()
+let user: FixtureSource = `User ()
+let match_all: FixtureMatcher = `MatchAll ()
+
+if event_uses_matcher(pre_tool) {
+  if event_uses_matcher(stop) {
+    ()
+  } else if let `Thread () = hook_scope(session_start) {
+    if hook_key("project", pre_tool, 2, 3) == "project:pre_tool_use:2:3" {
+      score = score + 1
+    }
+  }
+}
+
+let stop_config: FixtureHandlerConfig = `Command (["cleanup", `Some 99, true, no_text])
+let stop_normalized = normalize_hook_handler(session_end, match_all, stop_config, "/repo/hooks.json", user, 2)
+
+if let `Configured configured = stop_normalized {
+  let [configured_handler, warnings] = configured
+  let [_, _, _, timeout, _, _, _, _] = configured_handler
+
+  if timeout == 3 && texts.length(warnings) == 1 {
+    score = score + 10
+  }
+}
+
+let trusted_state: FixtureStateOption = `PresentHookState ([`Enabled (), `TrustedHash "same"])
+let disabled_state: FixtureStateOption = `PresentHookState ([`Disabled (), `TrustedHash "same"])
+
+if hook_may_run(false, false, "same", trusted_state) {
+  if hook_may_run(false, false, "same", disabled_state) {
+    ()
+  } else {
+    score = score + 100
+  }
+}
+
+return { .score = score }

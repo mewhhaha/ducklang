@@ -1,0 +1,405 @@
+module () where
+
+const { list, path_basename, path_join, path_parent, text_append, text_get, text_length, text_slice, text_starts_with } = import "duck:prelude/functional" ()
+const skill_types_module = import "./skill_types.duck"
+const skill_metadata_module = import "./skill_metadata.duck"
+const { frontmatter, parse_skill_policy, policy_allows_implicit_invocation, policy_allows_product, yaml_scalar } = skill_metadata_module()
+
+type CatalogTextOption = SkillTextOption
+type CatalogBoolOption = SkillBoolOption
+type CatalogTexts = SkillTexts
+type CatalogProduct = SkillProduct
+type CatalogProductOption = SkillProductOption
+type CatalogScope = SkillScope
+type CatalogPolicy = SkillPolicy
+type CatalogInterface = SkillInterface
+type CatalogDependency = SkillToolDependency
+type CatalogDependencies = SkillToolDependencies
+type CatalogMetadata = SkillMetadata
+type CatalogDocument = SkillDocument
+type CatalogDocumentOption = SkillDocumentOption
+type CatalogDocumentParse = SkillDocumentParse
+type CatalogDocuments = SkillDocuments
+type CatalogSnapshotEntry = SkillSnapshotEntry
+type CatalogSnapshotEntries = SkillSnapshotEntries
+type CatalogRoot = SkillRootSnapshot
+type CatalogRoots = SkillRootSnapshots
+type CatalogError = SkillError
+type CatalogErrors = SkillErrors
+type CatalogOutcome = SkillLoadOutcome
+type CatalogDiscoveryState = SkillDiscoveryState
+type CatalogDiscoveryProgress = SkillDiscoveryProgress
+type CatalogStructuredSelection = SkillStructuredSelection
+type CatalogStructuredSelections = SkillStructuredSelections
+type CatalogSelection = SkillSelection
+
+const texts = comptime list(Text)
+const documents = comptime list(CatalogDocument)
+const errors = comptime list(CatalogError)
+const roots = comptime list(CatalogRoot)
+const dependencies = comptime list(CatalogDependency)
+
+const append_text = (left: Text, right: Text) => text_append([left, right])
+const prepend_text_value = (value: Text, values: CatalogTexts) => texts.prepend(value, values)
+const append_text_values = (left: CatalogTexts, right: CatalogTexts) => texts.append(left, right)
+const append_document = (values: CatalogDocuments, document: CatalogDocument) => documents.append(values, documents.singleton(document))
+
+let rec text_values_contain: [CatalogTexts, Text] -> Bool = (values: CatalogTexts, expected: Text) => {
+  if let `Cons node = values {
+    let [value, tail] = node
+    if value == expected { true } else { text_values_contain(tail, expected) }
+  } else {
+    false
+  }
+}
+
+let rec text_value_count: [CatalogTexts, Text] -> I32 = (values: CatalogTexts, expected: Text) => {
+  if let `Cons node = values {
+    let [value, tail] = node
+    let rest = text_value_count(tail, expected)
+    if value == expected { rest + 1 } else { rest }
+  } else {
+    0
+  }
+}
+
+let rec snapshot_file: [CatalogSnapshotEntries, Text] -> CatalogTextOption = (entries: CatalogSnapshotEntries, path: Text) => {
+  if let `Cons node = entries {
+    let [entry, tail] = node
+
+    if let `File file = entry {
+      let [candidate_path, contents] = file
+      if candidate_path == path { `Some contents } else { snapshot_file(tail, path) }
+    } else {
+      snapshot_file(tail, path)
+    }
+  } else {
+    `None ()
+  }
+}
+
+const path_has_hidden_component_below = (path: Text, root: Text) => {
+  let relative_start = if text_starts_with([path, append_text(root, "/")]) { text_length(root) + 1 } else { 0 }
+
+  let hidden = false
+  let component_start = relative_start
+
+  if component_start < text_length(path) {
+    for index in component_start..text_length(path) {
+      if text_get([path, index]) == 47 {
+        if index > component_start && text_get([path, component_start]) == 46 {
+          hidden = true
+        }
+
+        component_start = index + 1
+      }
+    }
+  }
+
+  hidden
+}
+
+const path_depth_below = (path: Text, root: Text) => {
+  let start = if text_starts_with([path, append_text(root, "/")]) { text_length(root) + 1 } else { 0 }
+
+  let depth = 0
+
+  if start < text_length(path) {
+    for index in start..text_length(path) {
+      if text_get([path, index]) == 47 {
+        depth = depth + 1
+      }
+    }
+  }
+
+  depth
+}
+
+const skill_entry_ineligibility = (path: Text, root_path: Text, disabled_paths: CatalogTexts, skip_hidden: Bool, maximum_depth: I32) => {
+  let visible = if skip_hidden {
+    if path_has_hidden_component_below(path, root_path) { false } else { true }
+  } else {
+    true
+  }
+  let within_depth = path_depth_below(path, root_path) <= maximum_depth
+
+  if visible {
+    if within_depth {
+      if path_basename(path) == "SKILL.md" {
+        if text_values_contain(disabled_paths, path) { 4 } else { 0 }
+      } else {
+        3
+      }
+    } else {
+      2
+    }
+  } else {
+    1
+  }
+}
+
+const parse_skill_document = (path: Text, contents: Text, metadata_yaml: CatalogTextOption, scope: CatalogScope, plugin_id: CatalogTextOption, namespace: CatalogTextOption, product: CatalogProductOption) => {
+  let extracted = frontmatter contents
+
+  if let `Some yaml = extracted {
+    let base_name = if let `Some value = yaml_scalar(yaml, "name") { value } else { path_basename(path_parent(path)) }
+    let description: CatalogTextOption = yaml_scalar(yaml, "description")
+
+    if text_length(base_name) > 64 {
+      [`None (), `Some "skill name exceeds 64 characters"] as CatalogDocumentParse
+    } else if let `Some description_text = description {
+      let qualified_name = if let `Some prefix = namespace { append_text(prefix, append_text(":", base_name)) } else { base_name }
+
+      if text_length(qualified_name) > 128 {
+        [`None (), `Some "qualified skill name exceeds 128 characters"] as CatalogDocumentParse
+      } else {
+        let short_description = yaml_scalar(yaml, "short-description")
+        let policy = parse_skill_policy metadata_yaml
+
+        if policy_allows_product(policy, product) {
+          let empty_text: CatalogTextOption = `None ()
+          let interface: CatalogInterface = [empty_text, empty_text, empty_text, empty_text, empty_text, empty_text]
+          let metadata: CatalogMetadata = [qualified_name, description_text, short_description, interface, dependencies.empty(), policy, path, scope, plugin_id]
+          [`Some ([metadata, contents] as CatalogDocument), `None ()] as CatalogDocumentParse
+        } else {
+          [`None (), `None ()] as CatalogDocumentParse
+        }
+      }
+    } else {
+      [`None (), `Some "missing field `description`"] as CatalogDocumentParse
+    }
+  } else {
+    [`None (), `Some "missing YAML frontmatter delimited by ---"] as CatalogDocumentParse
+  }
+}
+
+const discover_skill_entry = (entry: CatalogSnapshotEntry, entries: CatalogSnapshotEntries, root_path: Text, scope: CatalogScope, plugin_id: CatalogTextOption, namespace: CatalogTextOption, disabled_paths: CatalogTexts, product: CatalogProductOption, skip_hidden: Bool, maximum_depth: I32, state: CatalogDiscoveryState) => {
+  let [loaded_reversed, errors_reversed] = state
+
+  if let `File file = entry {
+    let [path, contents] = file
+    let ineligibility = skill_entry_ineligibility(path, root_path, disabled_paths, skip_hidden, maximum_depth)
+
+    if ineligibility != 0 {
+      state
+    } else {
+      let metadata_path = path_join([path_join([path_parent(path), "agents"]), "openai.yaml"])
+      let metadata_yaml = snapshot_file(entries, metadata_path)
+      let parsed: CatalogDocumentParse = parse_skill_document(path, contents, metadata_yaml, scope, plugin_id, namespace, product)
+      let [document, message] = parsed
+
+      if let `Some loaded = document {
+        [documents.prepend(loaded, loaded_reversed), errors_reversed] as CatalogDiscoveryState
+      } else if let `Some failure = message {
+        [loaded_reversed, errors.prepend([path, failure], errors_reversed)] as CatalogDiscoveryState
+      } else {
+        state
+      }
+    }
+  } else {
+    state
+  }
+}
+
+let rec discover_skill_entries: [CatalogSnapshotEntries, CatalogSnapshotEntries, Text, CatalogScope, CatalogTextOption, CatalogTextOption, CatalogTexts, CatalogProductOption, Bool, I32, I32, CatalogDiscoveryState] -> CatalogDiscoveryProgress = (entries: CatalogSnapshotEntries, all_entries: CatalogSnapshotEntries, root_path: Text, scope: CatalogScope, plugin_id: CatalogTextOption, namespace: CatalogTextOption, disabled_paths: CatalogTexts, product: CatalogProductOption, skip_hidden: Bool, maximum_depth: I32, remaining_entries: I32, state: CatalogDiscoveryState) => {
+  if remaining_entries <= 0 {
+    let [loaded_reversed, errors_reversed] = state
+    [[loaded_reversed, errors.prepend([root_path, "skills scan reached its traversal limit"], errors_reversed)] as CatalogDiscoveryState, 0] as CatalogDiscoveryProgress
+  } else if let `Cons node = entries {
+    let [entry, tail] = node
+    let next_state = discover_skill_entry(entry, all_entries, root_path, scope, plugin_id, namespace, disabled_paths, product, skip_hidden, maximum_depth, state)
+    discover_skill_entries(tail, all_entries, root_path, scope, plugin_id, namespace, disabled_paths, product, skip_hidden, maximum_depth, remaining_entries - 1, next_state)
+  } else {
+    [state, remaining_entries] as CatalogDiscoveryProgress
+  }
+}
+
+let rec discover_skill_roots: [CatalogRoots, CatalogTexts, CatalogProductOption, Bool, I32, I32, CatalogDiscoveryState] -> CatalogDiscoveryProgress = (snapshots: CatalogRoots, disabled_paths: CatalogTexts, product: CatalogProductOption, skip_hidden: Bool, maximum_depth: I32, remaining_entries: I32, state: CatalogDiscoveryState) => {
+  if let `Cons node = snapshots {
+    let [root, tail] = node
+    let [root_path, scope, plugin_id, namespace, entries] = root
+    let progress = discover_skill_entries(entries, entries, root_path, scope, plugin_id, namespace, disabled_paths, product, skip_hidden, maximum_depth, remaining_entries, state)
+    let [next_state, next_remaining] = progress
+    discover_skill_roots(tail, disabled_paths, product, skip_hidden, maximum_depth, next_remaining, next_state)
+  } else {
+    [state, remaining_entries] as CatalogDiscoveryProgress
+  }
+}
+
+const discover_skills = (snapshots: CatalogRoots, disabled_paths: CatalogTexts, product: CatalogProductOption, skip_hidden: Bool, maximum_depth: I32, maximum_entries: I32) => {
+  let initial: CatalogDiscoveryState = [documents.empty(), errors.empty()]
+  let progress = discover_skill_roots(snapshots, disabled_paths, product, skip_hidden, maximum_depth, maximum_entries, initial)
+  let [state, _] = progress
+  let [loaded_reversed, errors_reversed] = state
+  [documents.reverse(loaded_reversed), errors.reverse(errors_reversed)] as CatalogOutcome
+}
+
+const document_name = (document: CatalogDocument) => {
+  let [metadata, _] = document
+  let [name, _, _, _, _, _, _, _, _] = metadata
+  name
+}
+
+const document_path = (document: CatalogDocument) => {
+  let [metadata, _] = document
+  let [_, _, _, _, _, _, path, _, _] = metadata
+  path
+}
+
+let rec documents_contain_path: [CatalogDocuments, Text] -> Bool = (values: CatalogDocuments, path: Text) => {
+  if let `Cons node = values {
+    let [document, tail] = node
+    if document_path(document) == path { true } else { documents_contain_path(tail, path) }
+  } else {
+    false
+  }
+}
+
+let rec documents_contain_name: [CatalogDocuments, Text] -> Bool = (values: CatalogDocuments, name: Text) => {
+  if let `Cons node = values {
+    let [document, tail] = node
+    if document_name(document) == name { true } else { documents_contain_name(tail, name) }
+  } else {
+    false
+  }
+}
+
+let rec document_name_count: [CatalogDocuments, Text] -> I32 = (values: CatalogDocuments, name: Text) => {
+  if let `Cons node = values {
+    let [document, tail] = node
+    let rest = document_name_count(tail, name)
+    if document_name(document) == name { rest + 1 } else { rest }
+  } else {
+    0
+  }
+}
+
+let rec find_document_path: [CatalogDocuments, Text] -> CatalogDocumentOption = (values: CatalogDocuments, path: Text) => {
+  if let `Cons node = values {
+    let [document, tail] = node
+    if document_path(document) == path { `Some document } else { find_document_path(tail, path) }
+  } else {
+    `None ()
+  }
+}
+
+const mention_name_char = (byte: I32) => {
+  if byte >= 48 && byte <= 57 {
+    true
+  } else if byte >= 65 && byte <= 90 {
+    true
+  } else if byte >= 97 && byte <= 122 {
+    true
+  } else if byte == 45 {
+    true
+  } else if byte == 95 {
+    true
+  } else {
+    byte == 58
+  }
+}
+
+let rec mention_name_end: [Text, I32] -> I32 = (input: Text, index: I32) => {
+  if index < text_length(input) {
+    if mention_name_char(text_get([input, index])) { mention_name_end(input, index + 1) } else { index }
+  } else {
+    index
+  }
+}
+
+let rec extract_plain_skill_mentions_from: [Text, I32, CatalogTexts] -> CatalogTexts = (input: Text, index: I32, mentioned_reversed: CatalogTexts) => {
+  if index >= text_length(input) {
+    mentioned_reversed
+  } else if text_get([input, index]) == 36 {
+    let start = index + 1
+
+    if start < text_length(input) {
+      if mention_name_char(text_get([input, start])) {
+        let end = mention_name_end(input, start + 1)
+        let name = text_slice([input, start, end])
+        let next_mentions: CatalogTexts = if text_values_contain(mentioned_reversed, name) { mentioned_reversed } else { prepend_text_value(name, mentioned_reversed) }
+        extract_plain_skill_mentions_from(input, end, next_mentions)
+      } else {
+        extract_plain_skill_mentions_from(input, index + 1, mentioned_reversed)
+      }
+    } else {
+      mentioned_reversed
+    }
+  } else {
+    extract_plain_skill_mentions_from(input, index + 1, mentioned_reversed)
+  }
+}
+
+const extract_plain_skill_mentions = (input: Text) => {
+  texts.reverse(extract_plain_skill_mentions_from(input, 0, texts.empty()))
+}
+
+let rec select_structured_skills: [CatalogDocuments, CatalogStructuredSelections, CatalogDocuments] -> CatalogDocuments = (available: CatalogDocuments, structured: CatalogStructuredSelections, selected: CatalogDocuments) => {
+  if let `Cons node = structured {
+    let [selection, tail] = node
+    let [_, path] = selection
+    let candidate = find_document_path(available, path)
+    let next_selected: CatalogDocuments = if let `Some document = candidate {
+      if documents_contain_path(selected, path) { selected } else { append_document(selected, document) }
+    } else {
+      selected
+    }
+    select_structured_skills(available, tail, next_selected)
+  } else {
+    selected
+  }
+}
+
+let rec collect_input_mentions: [CatalogTexts, CatalogTexts] -> CatalogTexts = (inputs: CatalogTexts, mentioned: CatalogTexts) => {
+  if let `Cons node = inputs {
+    let [input, tail] = node
+    collect_input_mentions(tail, append_text_values(mentioned, extract_plain_skill_mentions(input)))
+  } else {
+    mentioned
+  }
+}
+
+let rec select_mentioned_skills: [CatalogDocuments, CatalogDocuments, CatalogTexts, CatalogTexts, CatalogDocuments] -> CatalogDocuments = (remaining: CatalogDocuments, available: CatalogDocuments, mentioned: CatalogTexts, connector_slugs: CatalogTexts, selected: CatalogDocuments) => {
+  if let `Cons node = remaining {
+    let [document, tail] = node
+    let name = document_name document
+    let unique_skill = document_name_count(available, name) == 1
+    let no_connector = text_value_count(connector_slugs, name) == 0
+    let not_selected = if documents_contain_name(selected, name) { false } else { true }
+    let next_selected: CatalogDocuments = if text_values_contain(mentioned, name) {
+      if unique_skill {
+        if no_connector {
+          if not_selected { append_document(selected, document) } else { selected }
+        } else {
+          selected
+        }
+      } else {
+        selected
+      }
+    } else {
+      selected
+    }
+    select_mentioned_skills(tail, available, mentioned, connector_slugs, next_selected)
+  } else {
+    selected
+  }
+}
+
+const select_explicit_skills = (available: CatalogDocuments, structured: CatalogStructuredSelections, inputs: CatalogTexts, connector_slugs: CatalogTexts) => {
+  let structured_selected: CatalogDocuments = select_structured_skills(available, structured, documents.empty())
+  let mentioned: CatalogTexts = collect_input_mentions(inputs, texts.empty())
+  let selected: CatalogDocuments = select_mentioned_skills(available, available, mentioned, connector_slugs, structured_selected)
+  [selected, errors.empty()] as CatalogSelection
+}
+
+return {
+  parse_skill_document,
+  frontmatter,
+  yaml_scalar,
+  parse_skill_policy,
+  policy_allows_product,
+  policy_allows_implicit_invocation,
+  discover_skills,
+  extract_plain_skill_mentions,
+  select_explicit_skills,
+}

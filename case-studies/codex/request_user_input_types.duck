@@ -1,0 +1,94 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type RequestUserInputMode =
+  | `Plan Unit
+  | `Default Unit
+  | `PairProgramming Unit
+  | `Execute Unit
+
+type RequestUserInputQuestionOption = struct {
+  .label = Text,
+  .description = Text,
+}
+
+type RequestUserInputQuestionOptionNode = [RequestUserInputQuestionOption, RequestUserInputQuestionOptions]
+type RequestUserInputQuestionOptions =
+  | `Nil Unit
+  | `Cons RequestUserInputQuestionOptionNode
+
+type RequestUserInputQuestionOptionsField =
+  | `Missing Unit
+  | `Present RequestUserInputQuestionOptions
+
+type RequestUserInputQuestion = struct {
+  .id = Text,
+  .header = Text,
+  .question = Text,
+  .is_other = Bool,
+  .is_secret = Bool,
+  .options = RequestUserInputQuestionOptionsField,
+}
+
+type RequestUserInputQuestionNode = [RequestUserInputQuestion, RequestUserInputQuestions]
+type RequestUserInputQuestions =
+  | `Nil Unit
+  | `Cons RequestUserInputQuestionNode
+
+type RequestUserInputAutoResolution =
+  | `NoAutoResolution Unit
+  | `AutoResolutionMs I64
+  | `AutoResolutionAboveMaximum Unit
+
+type RequestUserInputArgs = struct {
+  .questions = RequestUserInputQuestions,
+  .auto_resolution = RequestUserInputAutoResolution,
+}
+
+type RequestUserInputNormalization =
+  | `Normalized RequestUserInputArgs
+  | `Invalid Text
+
+type RequestUserInputAvailability =
+  | `Available Unit
+  | `Unavailable Text
+
+type RequestUserInputPlan =
+  | `PromptUser RequestUserInputArgs
+  | `RejectRequest Text
+
+type RequestUserInputAnswerTexts =
+  | `Nil Unit
+  | `Cons RequestUserInputAnswerTextNode
+type RequestUserInputAnswerTextNode = [Text, RequestUserInputAnswerTexts]
+
+type RequestUserInputAnswer = struct {
+  .question_id = Text,
+  .answers = RequestUserInputAnswerTexts,
+}
+
+type RequestUserInputAnswerNode = [RequestUserInputAnswer, RequestUserInputAnswers]
+type RequestUserInputAnswers =
+  | `Nil Unit
+  | `Cons RequestUserInputAnswerNode
+
+type RequestUserInputResponse = struct {
+  .answers = RequestUserInputAnswers,
+}
+
+type RequestUserInputHostRequest = struct {
+  .call_id = Text,
+  .turn_id = Text,
+  .args = RequestUserInputArgs,
+}
+
+type RequestUserInputHostResponse =
+  | `Cancelled Unit
+  | `Answered RequestUserInputResponse
+
+type RequestUserInputExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+return {}

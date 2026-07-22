@@ -1,0 +1,22 @@
+module () where
+
+const {} = import "./audio_types.duck" ()
+const {} = import "./history_types.duck" ()
+
+type AudioPreparationResultNode = [AudioPreparationResult, AudioPreparationResults]
+type AudioPreparationResults =
+  | `AudioResultsNil Unit
+  | `AudioResultsCons AudioPreparationResultNode
+
+type AudioPreparationRequest = [HistoryItems, AudioPreparationResults]
+
+type AudioRewriteFailure =
+  | `MissingAudioPreparation I32
+  | `ExtraAudioPreparations I32
+  | `InvalidAudioPreparationStatus I32
+
+type AudioRewriteResult =
+  | `PreparedAudioResponses HistoryItems
+  | `RejectedAudioRewrite AudioRewriteFailure
+
+return {}

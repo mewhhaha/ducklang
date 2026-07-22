@@ -1,0 +1,27 @@
+module () where
+
+const {} = import "./agent_job_export_types.duck" ()
+const { render_spawn_agents_on_csv_result } = import "./agent_job_result.duck" ()
+
+type FixtureFailure = AgentJobFailureSummary
+type FixtureFailureNode = AgentJobFailureSummaryNode
+type FixtureFailures = AgentJobFailureSummaries
+type FixtureCompletion = AgentJobRunCompletion
+
+let second: FixtureFailure = [.item_id = "row-2", .source_id = `None (), .last_error = "did not report"]
+let second_node: FixtureFailureNode = [second, `Nil ()]
+let first: FixtureFailure = [.item_id = "alpha", .source_id = `Some "source-a", .last_error = "spawn failed"]
+let first_node: FixtureFailureNode = [first, `Cons second_node]
+let failures: FixtureFailures = `Cons first_node
+let completed: FixtureCompletion = [.job_id = "job-1", .output_path = "/repo/output.csv", .total_items = 3, .completed_items = 1, .failed_items = 2, .cancelled = true, .job_error = `Some "cancelled by worker request", .failed_item_errors = failures, .headers = `Nil (), .items = `Nil ()]
+let output = render_spawn_agents_on_csv_result completed
+let expected = "{\"job_id\":\"job-1\",\"status\":\"cancelled\",\"output_csv_path\":\"/repo/output.csv\",\"total_items\":3,\"completed_items\":1,\"failed_items\":2,\"job_error\":\"cancelled by worker request\",\"failed_item_errors\":[{\"item_id\":\"alpha\",\"source_id\":\"source-a\",\"last_error\":\"spawn failed\"},{\"item_id\":\"row-2\",\"source_id\":null,\"last_error\":\"did not report\"}]}"
+let score = if output == expected { 1 } else { 0 }
+
+let missing_completed: FixtureCompletion = [.job_id = "job-2", .output_path = "out.csv", .total_items = 3, .completed_items = 1, .failed_items = 2, .cancelled = true, .job_error = `None (), .failed_item_errors = `Nil (), .headers = `Nil (), .items = `Nil ()]
+let missing = render_spawn_agents_on_csv_result missing_completed
+if missing == "{\"job_id\":\"job-2\",\"status\":\"cancelled\",\"output_csv_path\":\"out.csv\",\"total_items\":3,\"completed_items\":1,\"failed_items\":2,\"job_error\":\"agent job has failed items but no error details were recorded\",\"failed_item_errors\":null}" {
+  score = score + 10
+}
+
+return { .score = score }

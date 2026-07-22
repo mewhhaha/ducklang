@@ -1,0 +1,17 @@
+module () where
+
+const {} = import "./context_window_status_types.duck" ()
+const { context_window_token_status } = import "./context_window_status.duck" ()
+const { render_context_remaining_tool_output, render_context_remaining_code_mode_output } = import "./token_budget_tools.duck" ()
+
+type FixtureInput = ContextWindowTokenStatusInput
+
+let score = 0
+let input: FixtureInput = [.active_context_tokens = 66i64, .scope = `Total (), .configured_auto_compact_scope_limit = `None (), .model_auto_compact_scope_limit = `Some 100i64, .full_context_window_limit = `Some 90i64, .prefill_input_tokens = `None (), .fallback_buffer_tokens = 0i64]
+let status = context_window_token_status(&input)
+if render_context_remaining_tool_output(&status.base_window_tokens_remaining) == "You have 24 tokens left in this context window." { score = score + 1 }
+if render_context_remaining_tool_output(&input.configured_auto_compact_scope_limit) == "You have unknown tokens left in this context window." { score = score + 10 }
+if render_context_remaining_code_mode_output(&status.base_window_tokens_remaining) == "{\"tokens_left\":24}" { score = score + 100 }
+if render_context_remaining_code_mode_output(&input.configured_auto_compact_scope_limit) == "{\"tokens_left\":null}" { score = score + 1000 }
+
+return { .score = score }

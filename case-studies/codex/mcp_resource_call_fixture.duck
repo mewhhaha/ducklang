@@ -1,0 +1,37 @@
+module () where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { plan_list_mcp_resource_call, plan_read_mcp_resource_call } = import "./mcp_resource_call.duck" ()
+
+let score = 0
+
+let list_all = plan_list_mcp_resource_call("call-1", `Function "{}", false, false)
+if let `RunMcpResource prepared = list_all {
+  if let `ListResources args = prepared.operation {
+    if let `None () = args.server { score = score + 1 }
+  }
+}
+
+let cursor_without_server = plan_list_mcp_resource_call("call-2", `Function "{\"cursor\":\"next\"}", true, false)
+if let `RejectRequest message = cursor_without_server {
+  if message == "cursor can only be used when a server is specified" { score = score + 10 }
+}
+
+let disabled_apps = plan_list_mcp_resource_call("call-3", `Function "{\"server\":\" codex_apps \"}", false, false)
+if let `RejectRequest message = disabled_apps {
+  if message == "MCP server 'codex_apps' is disabled by `orchestrator.mcp.enabled`" { score = score + 100 }
+}
+
+let read = plan_read_mcp_resource_call("call-4", `Function "{\"server\":\"docs\",\"uri\":\"skill://alpha\"}", false)
+if let `RunMcpResource prepared = read {
+  if let `ReadResource args = prepared.operation {
+    if args.server == "docs" && args.uri == "skill://alpha" { score = score + 1000 }
+  }
+}
+
+let missing_uri = plan_read_mcp_resource_call("call-5", `Function "{\"server\":\"docs\",\"uri\":\"  \"}", false)
+if let `RejectRequest message = missing_uri {
+  if message == "failed to parse function arguments: uri must be provided" { score = score + 10000 }
+}
+
+return { .score = score }

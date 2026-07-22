@@ -1,0 +1,11 @@
+module () where
+
+declare effect UpdatePlanHost {
+  publish: (&UpdatePlanArgs) => Unit
+}
+
+declare Init {
+  update_plan_host: UpdatePlanHost
+}
+
+return {}

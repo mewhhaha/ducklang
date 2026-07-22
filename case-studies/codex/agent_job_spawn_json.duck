@@ -1,0 +1,36 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { decode_agent_job_spawn_required } = import "./agent_job_spawn_json_required.duck" ()
+const { decode_agent_job_spawn_text_options } = import "./agent_job_spawn_json_text.duck" ()
+const { decode_agent_job_spawn_schema } = import "./agent_job_spawn_json_schema.duck" ()
+const { decode_agent_job_spawn_numeric_options } = import "./agent_job_spawn_json_numeric.duck" ()
+
+type AgentJobSpawnJsonResult = AgentJobSpawnDecodeResult
+
+let decode_agent_job_spawn_json: Text -> AgentJobSpawnJsonResult = document => {
+  let required = decode_agent_job_spawn_required document
+  if let `SpawnDecodeFailed reason = required {
+    `SpawnDecodeFailed reason
+  } else if let `SpawnDecoded required_args = required {
+    let text_options = decode_agent_job_spawn_text_options(document, required_args)
+    if let `SpawnDecodeFailed reason = text_options {
+      `SpawnDecodeFailed reason
+    } else if let `SpawnDecoded text_args = text_options {
+      let schema = decode_agent_job_spawn_schema(document, text_args)
+      if let `SpawnDecodeFailed reason = schema {
+        `SpawnDecodeFailed reason
+      } else if let `SpawnDecoded schema_args = schema {
+        decode_agent_job_spawn_numeric_options(document, schema_args)
+      } else {
+        `SpawnDecodeFailed "output_schema decoder returned no result"
+      }
+    } else {
+      `SpawnDecodeFailed "text option decoder returned no result"
+    }
+  } else {
+    `SpawnDecodeFailed "required argument decoder returned no result"
+  }
+}
+
+return { decode_agent_job_spawn_json }

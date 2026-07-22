@@ -1,0 +1,56 @@
+module () where
+
+type RolloutTextOption = Option Text
+
+type RolloutHistoryMode =
+  | `Legacy Unit
+  | `Paginated Unit
+
+type RolloutMessage = [Text, Bool]
+type RolloutResponse =
+  | `Message RolloutMessage
+  | `AgentMessage Unit
+  | `Reasoning Unit
+  | `FunctionCall Unit
+  | `FunctionOutput Unit
+  | `ToolCall Unit
+  | `ToolOutput Unit
+  | `WebSearch Unit
+  | `ImageGeneration Unit
+  | `Compaction Unit
+  | `ContextCompaction Unit
+  | `AdditionalTools Unit
+  | `CompactionTrigger Unit
+  | `Other Unit
+
+type RolloutCompletedItem =
+  | `UserMessage Unit
+  | `Plan Unit
+  | `Sleep Unit
+  | `Other Unit
+
+type RolloutCompleted = [Text, RolloutCompletedItem]
+type RolloutEvent =
+  | `ItemCompleted RolloutCompleted
+  | `TurnStarted Text
+  | `TurnComplete Text
+  | `TurnAborted RolloutTextOption
+  | `ThreadRolledBack Unit
+  | `Durable Unit
+  | `LegacyOnly Unit
+  | `Transient Unit
+
+type RolloutCompaction = [Bool, Bool]
+type RolloutItem =
+  | `Response RolloutResponse
+  | `InterAgent Unit
+  | `InterAgentMetadata Unit
+  | `Event RolloutEvent
+  | `Compacted RolloutCompaction
+  | `TurnContext RolloutTextOption
+  | `WorldState Unit
+  | `SessionMeta Unit
+
+type RolloutItems = List RolloutItem
+
+return {}

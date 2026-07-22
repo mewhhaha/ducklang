@@ -1,0 +1,43 @@
+module () where
+
+const {} = import "./agent_job_runner_types.duck" ()
+const { apply_agent_job_completion, apply_agent_job_spawn } = import "./agent_job_runner_transition.duck" ()
+
+type FixtureItem = AgentJobPreparedItem
+type FixtureItemNode = AgentJobPreparedItemNode
+type FixtureItems = AgentJobPreparedItems
+type FixtureState = AgentJobRunnerState
+
+let item: FixtureItem = [.item_id = "row-1", .row_index = 0, .source_id = `None (), .row_values = `Nil (), .row_json = "{}", .prompt = "run"]
+let item_node: FixtureItemNode = [item, `Nil ()]
+let pending: FixtureItems = `Cons item_node
+let state: FixtureState = [.pending = pending, .active = `Nil (), .total_items = 1, .completed_items = 0, .failed_items = 0, .spawn_blocked = false, .cancelled = false]
+let score = 0
+
+let spawned = apply_agent_job_spawn(state, `WorkerSpawned "thread-1")
+if let `RunnerAdvanced next = spawned {
+  state = next
+  if let `Nil () = state.pending { score = score + 1 }
+}
+
+let completed = apply_agent_job_completion(state, [.thread_id = "thread-1", .reported = true, .cancel_requested = true])
+if let `RunnerAdvanced next = completed {
+  state = next
+  if state.completed_items == 1 && state.cancelled { score = score + 10 }
+}
+
+let unknown = apply_agent_job_completion(state, [.thread_id = "missing", .reported = true, .cancel_requested = false])
+if let `RunnerInvariantFailed message = unknown {
+  if message == "agent job completion referenced inactive worker missing" { score = score + 100 }
+}
+
+let failed_state: FixtureState = [.pending = pending, .active = `Nil (), .total_items = 1, .completed_items = 0, .failed_items = 0, .spawn_blocked = false, .cancelled = false]
+let deferred = apply_agent_job_spawn(failed_state, `WorkerSpawnDeferred ())
+if let `RunnerAdvanced blocked = deferred {
+  let failed = apply_agent_job_spawn(blocked, `WorkerSpawnFailed "capacity")
+  if let `RunnerAdvanced next = failed {
+    if blocked.spawn_blocked && next.failed_items == 1 && !(next.spawn_blocked) { score = score + 1000 }
+  }
+}
+
+return { .score = score }

@@ -1,0 +1,26 @@
+const { json_object_get } = import "duck:prelude/json/values" ()
+const { materialize_thread_goal_cleared_notification, materialize_thread_goal_updated_notification } = import "./app_server_goal_responses.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureGoal = AppServerThreadGoal
+
+let goal: FixtureGoal = ["thread-1", "Ship Codex", `GoalActive (), `None (), 0i64, 0i64, 10i64, 20i64]
+let updated = materialize_thread_goal_updated_notification(goal, `None ())
+let score = 0
+if let `Object fields = updated {
+  let thread_valid = false
+  let thread_lookup = json_object_get("threadId", fields)
+  if let `Found thread_json = thread_lookup { if let `String thread_id = thread_json { thread_valid = thread_id == "thread-1" } }
+  let turn_valid = false
+  let turn_lookup = json_object_get("turnId", fields)
+  if let `Found turn_json = turn_lookup { if let `Null () = turn_json { turn_valid = true } }
+  if thread_valid && turn_valid { score = score + 1 }
+}
+
+let cleared = materialize_thread_goal_cleared_notification("thread-1")
+if let `Object fields = cleared {
+  let thread_lookup = json_object_get("threadId", fields)
+  if let `Found thread_json = thread_lookup { if let `String thread_id = thread_json { if thread_id == "thread-1" { score = score + 10 } } }
+}
+
+return { .score = score }

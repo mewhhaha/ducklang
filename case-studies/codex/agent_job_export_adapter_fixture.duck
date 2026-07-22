@@ -1,0 +1,28 @@
+module (!init: Init) where
+
+const {} = import "./agent_job_export_types.duck" ()
+const { run_agent_job_export } = import "./agent_job_export_execution.duck" ()
+
+type FixtureCompletion = AgentJobRunCompletion
+type FixtureHeaderNode = AgentJobCreateHeaderNode
+type FixtureHeaders = AgentJobCreateHeaders
+type FixtureItem = AgentJobFinalItem
+type FixtureItemNode = AgentJobFinalItemNode
+type FixtureItems = AgentJobFinalItems
+
+let header_node: FixtureHeaderNode = ["name", `Nil ()]
+let headers: FixtureHeaders = `Cons header_node
+let value_node: FixtureHeaderNode = ["Ada", `Nil ()]
+let values: FixtureHeaders = `Cons value_node
+let item: FixtureItem = [.row_values = values, .row_json = "{\"name\":\"Ada\"}", .item_id = "row-1", .row_index = 0, .source_id = `None (), .status = `Completed (), .attempt_count = 1, .last_error = `None (), .result_json = `Some "{\"answer\":42}", .reported_at = `None (), .completed_at = `None ()]
+let item_node: FixtureItemNode = [item, `Nil ()]
+let items: FixtureItems = `Cons item_node
+let completed: FixtureCompletion = [.job_id = "job-1", .output_path = "/repo/output.csv", .total_items = 1, .completed_items = 1, .failed_items = 0, .cancelled = false, .job_error = `None (), .failed_item_errors = `Nil (), .headers = headers, .items = items]
+
+let score = 0
+let result = run_agent_job_export completed
+if let `Completed output_path = result {
+  if output_path == "/repo/output.csv" { score = 1 }
+}
+
+return { .score = score }

@@ -1,0 +1,69 @@
+module () where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const { parse_resource_json } = import "./mcp_resource_json.duck" ()
+const { validate_list_mcp_resource_args, validate_read_mcp_resource_args } = import "./mcp_resource_policy.duck" ()
+
+type ResourceCallOperation = McpResourceOperation
+type ResourceCallPayload = McpResourcePayload
+type ResourceCallPlan = McpResourceCallPlan
+type ResourceCallPrepared = McpResourcePreparedCall
+
+const plan_list_mcp_resource_call: [Text, ResourceCallPayload, Bool, Bool] -> ResourceCallPlan = (call_id: Text, payload: ResourceCallPayload, templates: Bool, orchestrator_mcp_enabled: Bool) => {
+  if let `Unsupported () = payload {
+    let tool_name = if templates { "list_mcp_resource_templates" } else { "list_mcp_resources" }
+    `RejectRequest (text_append(tool_name, " handler received unsupported payload"))
+  } else if let `Function arguments = payload {
+    let parsed = parse_resource_json(arguments, false)
+    if let `ParseFailed reason = parsed {
+      `RejectRequest reason
+    } else if let `ListParsed args = parsed {
+      let validated = validate_list_mcp_resource_args(args, orchestrator_mcp_enabled)
+      if let `ListValidationFailed reason = validated {
+        `RejectRequest reason
+      } else if let `ListValid valid_args = validated {
+        let operation: ResourceCallOperation = if templates { `ListResourceTemplates valid_args } else { `ListResources valid_args }
+        let prepared: ResourceCallPrepared = [.call_id = call_id, .operation = operation]
+        `RunMcpResource prepared
+      } else {
+        `RejectRequest "MCP resource list validation produced no result"
+      }
+    } else {
+      `RejectRequest "failed to parse function arguments: expected list arguments"
+    }
+  } else {
+    `RejectRequest "MCP resource list handler received unsupported payload"
+  }
+}
+
+const plan_read_mcp_resource_call: [Text, ResourceCallPayload, Bool] -> ResourceCallPlan = (call_id: Text, payload: ResourceCallPayload, orchestrator_mcp_enabled: Bool) => {
+  if let `Unsupported () = payload {
+    `RejectRequest "read_mcp_resource handler received unsupported payload"
+  } else if let `Function arguments = payload {
+    let parsed = parse_resource_json(arguments, true)
+    if let `ParseFailed reason = parsed {
+      `RejectRequest reason
+    } else if let `ReadParsed args = parsed {
+      let validated = validate_read_mcp_resource_args(args, orchestrator_mcp_enabled)
+      if let `ReadValidationFailed reason = validated {
+        `RejectRequest reason
+      } else if let `ReadValid valid_args = validated {
+        let operation: ResourceCallOperation = `ReadResource valid_args
+        let prepared: ResourceCallPrepared = [.call_id = call_id, .operation = operation]
+        `RunMcpResource prepared
+      } else {
+        `RejectRequest "MCP resource read validation produced no result"
+      }
+    } else {
+      `RejectRequest "failed to parse function arguments: expected read arguments"
+    }
+  } else {
+    `RejectRequest "read_mcp_resource handler received unsupported payload"
+  }
+}
+
+return {
+  plan_list_mcp_resource_call,
+  plan_read_mcp_resource_call,
+}

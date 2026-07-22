@@ -1,0 +1,135 @@
+const { build_code_mode_executor_plan } = import "./code_mode_executor_plan.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type FixtureRuntime = CodeModePlanRuntime
+type FixtureRuntimes = CodeModePlanRuntimes
+type FixtureTexts = CodeModePlanTexts
+type FixtureDefinitions = CodeModePlanDefinitions
+type FixtureNamespaces = CodeModePlanNamespaceDescriptions
+type FixtureFacts = CodeModePlanFacts
+type FixturePlan = CodeModeExecutorPlan
+
+let zeta: FixtureRuntime = [["", "zeta"], `Direct (), `CodeFunctionSpec (), "Zeta tool", ""]
+let beta: FixtureRuntime = [["beta", "lookup"], `Direct (), `CodeFunctionSpec (), "Beta lookup", "Beta tools"]
+let alpha_zulu: FixtureRuntime = [["alpha", "zulu"], `Direct (), `CodeFunctionSpec (), "Alpha zulu", ""]
+let alpha_first: FixtureRuntime = [["alpha", "alpha"], `Direct (), `CodeFunctionSpec (), "Alpha first", "Alpha tools"]
+let deferred: FixtureRuntime = [["search", "lookup"], `Deferred (), `CodeFunctionSpec (), "Search lookup", "Search tools"]
+let hidden: FixtureRuntime = [["", "hidden"], `Hidden (), `CodeFunctionSpec (), "Hidden", ""]
+let direct_model_only: FixtureRuntime = [["direct", "only"], `DirectModelOnly (), `CodeFunctionSpec (), "Direct only", "Direct tools"]
+let excluded: FixtureRuntime = [["excluded", "lookup"], `Direct (), `CodeFunctionSpec (), "Excluded", "Excluded tools"]
+let tool_search: FixtureRuntime = [["", "tool_search"], `Direct (), `CodeToolSearchSpec (), "Search tools", ""]
+let exec: FixtureRuntime = [["", "exec"], `Direct (), `CodeFreeformSpec (), "Code executor", ""]
+let wait: FixtureRuntime = [["", "wait"], `Direct (), `CodeFunctionSpec (), "Wait", ""]
+let runtimes: FixtureRuntimes = `CodeRuntimesCons ([zeta, `CodeRuntimesCons ([beta, `CodeRuntimesCons ([alpha_zulu, `CodeRuntimesCons ([alpha_first, `CodeRuntimesCons ([deferred, `CodeRuntimesCons ([hidden, `CodeRuntimesCons ([direct_model_only, `CodeRuntimesCons ([excluded, `CodeRuntimesCons ([tool_search, `CodeRuntimesCons ([exec, `CodeRuntimesCons ([wait, `CodeRuntimesNil ()])])])])])])])])])])])
+let excluded_namespaces: FixtureTexts = `CodeTextsCons (["excluded", `CodeTextsNil ()])
+let facts: FixtureFacts = [.mode = `CodeModeOnly (), .deferred_guidance = true, .excluded_namespaces = excluded_namespaces]
+let plan: FixturePlan = build_code_mode_executor_plan(runtimes, facts)
+let score = 0
+
+let executor_trace = ""
+let names = plan.executor_names
+let done = false
+loop {
+  if let `CodeTextsCons node = names {
+    let [name, tail] = node
+    executor_trace = executor_trace <> name <> "|"
+    names = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if plan.code_mode_only && executor_trace == "exec|wait|" { score = score + 1 }
+
+let nested_trace = ""
+let nested = plan.nested_runtimes
+done = false
+loop {
+  if let `CodeRuntimesCons node = nested {
+    let [runtime, tail] = node
+    let [[namespace, local_name], _, _, _, _] = runtime
+    nested_trace = nested_trace <> namespace <> "." <> local_name <> "|"
+    nested = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if nested_trace == ".zeta|beta.lookup|alpha.zulu|alpha.alpha|search.lookup|.tool_search|.exec|.wait|" { score = score + 10 }
+
+let enabled_trace = ""
+let enabled: FixtureDefinitions = plan.enabled_tools
+done = false
+loop {
+  if let `CodeDefinitionsCons node = enabled {
+    let [[name, _, _, _], tail] = node
+    enabled_trace = enabled_trace <> name <> "|"
+    enabled = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if enabled_trace == "zeta|alpha__alpha|alpha__zulu|beta__lookup|" { score = score + 100 }
+
+let deferred_trace = ""
+let deferred_definitions: FixtureDefinitions = plan.deferred_tools
+done = false
+loop {
+  if let `CodeDefinitionsCons node = deferred_definitions {
+    let [[name, _, _, _], tail] = node
+    deferred_trace = deferred_trace <> name <> "|"
+    deferred_definitions = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if deferred_trace == "search__lookup|" { score = score + 1000 }
+
+let namespace_trace = ""
+let namespaces: FixtureNamespaces = plan.namespace_descriptions
+done = false
+loop {
+  if let `CodeNamespacesCons node = namespaces {
+    let [[namespace, description], tail] = node
+    namespace_trace = namespace_trace <> namespace <> ":" <> description <> "|"
+    namespaces = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if namespace_trace == "alpha:Alpha tools|beta:Beta tools|" { score = score + 10000 }
+
+let direct_facts: FixtureFacts = [.mode = `DirectTools (), .deferred_guidance = true, .excluded_namespaces = excluded_namespaces]
+let direct_plan: FixturePlan = build_code_mode_executor_plan(runtimes, direct_facts)
+if !(direct_plan.code_mode_only) {
+  if let `CodeTextsNil () = direct_plan.executor_names {
+    if let `CodeRuntimesNil () = direct_plan.nested_runtimes {
+      if let `CodeDefinitionsNil () = direct_plan.enabled_tools { score = score + 100000 }
+    }
+  }
+}
+
+let no_guidance_facts: FixtureFacts = [.mode = `CodeMode (), .deferred_guidance = false, .excluded_namespaces = excluded_namespaces]
+let no_guidance: FixturePlan = build_code_mode_executor_plan(runtimes, no_guidance_facts)
+let nested_kept = false
+let no_guidance_nested = no_guidance.nested_runtimes
+done = false
+loop {
+  if let `CodeRuntimesCons node = no_guidance_nested {
+    let [runtime, tail] = node
+    let [[namespace, local_name], _, _, _, _] = runtime
+    if namespace == "search" && local_name == "lookup" { nested_kept = true }
+    no_guidance_nested = tail
+  } else {
+    done = true
+  }
+  if done { break }
+}
+if !(no_guidance.code_mode_only) && nested_kept {
+  if let `CodeDefinitionsNil () = no_guidance.deferred_tools { score = score + 1000000 }
+}
+
+return { .score = score }

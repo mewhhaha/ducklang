@@ -1,0 +1,57 @@
+module () where
+
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./agent_spawn_override_types.duck" ()
+
+type SpawnOverrideModelMatch = AgentSpawnOverrideModelOption
+type SpawnOverrideModelStageSelection = AgentSpawnOverrideModelSelection
+type SpawnOverrideModelCatalog = AgentSpawnOverrideModels
+type SpawnOverrideModelTextOption = AgentTextOption
+
+const select_spawn_override_model: AgentSpawnOverrideInput -> AgentSpawnOverrideModelResult = input => {
+  let selected_model: SpawnOverrideModelTextOption = input.default_model
+  if let `Some requested = input.requested_model { selected_model = `Some requested }
+
+  if let `None () = selected_model {
+    let selection: SpawnOverrideModelStageSelection = [.model = input.parent_model, .default_reasoning_effort = input.parent_reasoning_effort, .supported_reasoning_efforts = input.parent_supported_reasoning_efforts]
+    return `SpawnOverrideModelSelected selection
+  }
+
+  if let `Some requested_model = selected_model {
+    let matched: SpawnOverrideModelMatch = `NoOverrideModel ()
+    let models: SpawnOverrideModelCatalog = input.available_models
+    let available = ""
+    let visible_count = 0
+    let done = false
+    loop {
+      if let `Cons node = models {
+        let [model, tail] = node
+        if model.name == requested_model && model.v2_supported { matched = `OverrideModel model }
+        if model.visible && model.v2_supported && visible_count < 5 {
+          if available == "" { available = model.name } else { available = text_append(available, text_append(", ", model.name)) }
+          visible_count = visible_count + 1
+        }
+        models = tail
+      } else {
+        done = true
+      }
+      if let `OverrideModel _ = matched { break }
+      if done { break }
+    }
+
+    if let `NoOverrideModel () = matched {
+      return `SpawnOverrideModelRejected (text_append("Unknown model `", text_append(requested_model, text_append("` for spawn_agent. Available models: ", available))))
+    }
+
+    if let `OverrideModel model = matched {
+      let selection: SpawnOverrideModelStageSelection = [.model = model.name, .default_reasoning_effort = model.default_reasoning_effort, .supported_reasoning_efforts = model.supported_reasoning_efforts]
+      `SpawnOverrideModelSelected selection
+    } else {
+      `SpawnOverrideModelRejected "spawn_agent model selection produced no model"
+    }
+  } else {
+    `SpawnOverrideModelRejected "spawn_agent model selection produced no request"
+  }
+}
+
+return { select_spawn_override_model }

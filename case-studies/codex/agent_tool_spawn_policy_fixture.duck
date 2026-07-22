@@ -1,0 +1,33 @@
+module () where
+
+const { text_contains } = import "duck:prelude/runtime" ()
+const {} = import "./agent_tool_types.duck" ()
+const { plan_spawn_agent_call } = import "./agent_tool_spawn_call.duck" ()
+
+type FixtureContext = AgentToolContext
+type FixturePlan = AgentToolPlan
+type FixtureSpawnArguments = AgentToolSpawnArguments
+
+let score = 0
+let depth_context: FixtureContext = [.v2_enabled = true, .current_path = "/root/worker", .current_depth = 2, .maximum_depth = 2, .source = `SubAgent (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
+let depth_arguments: FixtureSpawnArguments = [.task_name = "reviewer", .message = "inspect the compiler", .fork_turns = `None (), .model = `None (), .reasoning_effort = `None ()]
+let depth: FixturePlan = plan_spawn_agent_call(depth_context, depth_arguments)
+if let `AgentToolRejected message = depth {
+  if text_contains(message, "depth 3 exceeds maximum depth 2") { score = score + 1 }
+}
+
+let capacity_context: FixtureContext = [.v2_enabled = true, .current_path = "/root/worker", .current_depth = 1, .maximum_depth = 2, .source = `SubAgent (), .active_turn = false, .active_agents = 4, .maximum_threads = 4]
+let capacity_arguments: FixtureSpawnArguments = [.task_name = "reviewer", .message = "inspect the compiler", .fork_turns = `None (), .model = `None (), .reasoning_effort = `None ()]
+let capacity: FixturePlan = plan_spawn_agent_call(capacity_context, capacity_arguments)
+if let `AgentToolRejected message = capacity {
+  if text_contains(message, "maximum 4") { score = score + 10 }
+}
+
+let disabled_context: FixtureContext = [.v2_enabled = false, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
+let disabled_arguments: FixtureSpawnArguments = [.task_name = "reviewer", .message = "inspect the compiler", .fork_turns = `None (), .model = `None (), .reasoning_effort = `None ()]
+let disabled: FixturePlan = plan_spawn_agent_call(disabled_context, disabled_arguments)
+if let `AgentToolRejected message = disabled {
+  if message == "collaboration tools require multi-agent V2" { score = score + 100 }
+}
+
+return { .score = score }

@@ -1,0 +1,58 @@
+const parser_module = import "./citation_parser.duck"
+const { push_citation_chunk } = parser_module()
+const { text_append, text_fold_i32, text_length } = import "duck:prelude/runtime" ()
+
+type FixtureChunk = CitationChunk
+type FixtureParser = CitationParser
+type FixtureCitations = Citations
+type FixtureObservation = [FixtureParser, Text, I32, I32, I32]
+
+const text_checksum = (text: Text) => {
+  text_fold_i32(text, 0, (checksum, byte) => checksum + byte)
+}
+
+let observe_chunk: FixtureChunk -> FixtureObservation = (chunk: FixtureChunk) => {
+  let [parser, visible, citations] = chunk
+  let citation_count = 0
+  let citation_length = 0
+  let citation_checksum = 0
+  let current: FixtureCitations = citations
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let typed_node: ListNode Text = node
+      let [citation, tail] = typed_node
+      citation_count = citation_count + 1
+      citation_length = citation_length + text_length(citation)
+      citation_checksum = citation_checksum + text_checksum(citation)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  [parser, visible, citation_count, citation_length, citation_checksum]
+}
+
+let parser: FixtureParser = ["", false, ""] as FixtureParser
+let first: FixtureObservation = observe_chunk(push_citation_chunk(parser, "Hello <oai-mem-ci"))
+let [parser_1, visible_1, count_1, length_1, checksum_1] = first
+let second: FixtureObservation = observe_chunk(push_citation_chunk(parser_1, "tation>doc A</oai-mem-citation> world\nprefix <oai-mem-citation>doc"))
+let [parser_2, visible_2, count_2, length_2, checksum_2] = second
+let third: FixtureObservation = observe_chunk(push_citation_chunk(parser_2, " B</oai-mem-cita"))
+let [parser_3, visible_3, count_3, length_3, checksum_3] = third
+let fourth: FixtureObservation = observe_chunk(push_citation_chunk(parser_3, "tion> suffix\nUTF-8 żółw <oai-mem-citation>中</oai-mem-citation> do"))
+let [parser_4, visible_4, count_4, length_4, checksum_4] = fourth
+let fifth: FixtureObservation = observe_chunk(push_citation_chunk(parser_4, "ne"))
+let [_, visible_5, count_5, length_5, checksum_5] = fifth
+let visible = text_append [visible_1, text_append [visible_2, text_append [visible_3, text_append [visible_4, visible_5]]]]
+let citation_count = count_1 + count_2 + count_3 + count_4 + count_5
+let citation_length = length_1 + length_2 + length_3 + length_4 + length_5
+let citation_checksum = checksum_1 + checksum_2 + checksum_3 + checksum_4 + checksum_5
+
+text_length(visible) * 10000000 + text_checksum(visible) * 1000 + citation_length * 100 + citation_checksum + citation_count

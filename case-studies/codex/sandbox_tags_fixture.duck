@@ -1,0 +1,86 @@
+module () where
+
+const {} = import "./sandbox_tags_types.duck" ()
+const { should_require_platform_sandbox, permission_profile_sandbox_tag, permission_profile_policy_tag } = import "./sandbox_tags.duck" ()
+
+type FixtureFileSystem = SandboxTagFileSystem
+type FixtureProfile = SandboxTagPermissionProfile
+type FixturePlatform = SandboxTagPlatform
+type FixtureNetworkPolicy = SandboxTagNetworkPolicy
+type FixtureWindowsLevel = SandboxTagWindowsLevel
+
+let rec fixture_profile: Bool -> FixtureProfile = disabled => {
+  if disabled { `DisabledProfile () } else { `ExternalProfile (`Restricted ()) }
+}
+
+let rec fixture_managed_profile: [FixtureFileSystem, FixtureNetworkPolicy] -> FixtureProfile = (file_system: FixtureFileSystem, network: FixtureNetworkPolicy) => {
+  `ManagedProfile ([.file_system = file_system, .network = network])
+}
+
+let rec fixture_network_policy: Bool -> FixtureNetworkPolicy = enabled => {
+  if enabled { `Enabled () } else { `Restricted () }
+}
+
+let rec fixture_windows_level: Bool -> FixtureWindowsLevel = elevated => {
+  if elevated { `WindowsElevated () } else { `WindowsDisabled () }
+}
+
+let unrestricted: FixtureFileSystem = [.kind = `UnrestrictedFileSystem (), .has_full_disk_write_access = true, .has_writable_roots = true]
+let restricted_read_only: FixtureFileSystem = [.kind = `RestrictedFileSystem (), .has_full_disk_write_access = false, .has_writable_roots = false]
+let restricted_workspace: FixtureFileSystem = [.kind = `RestrictedFileSystem (), .has_full_disk_write_access = false, .has_writable_roots = true]
+let restricted_root_write: FixtureFileSystem = [.kind = `RestrictedFileSystem (), .has_full_disk_write_access = true, .has_writable_roots = true]
+let external_file_system: FixtureFileSystem = [.kind = `ExternalFileSystem (), .has_full_disk_write_access = false, .has_writable_roots = false]
+let linux: FixturePlatform = [.is_windows = false, .platform_sandbox_tag = `Some "landlock"]
+let windows: FixturePlatform = [.is_windows = true, .platform_sandbox_tag = `Some "windows_restricted_token"]
+let score = 0
+
+let disabled = fixture_profile(true)
+let external = fixture_profile(false)
+let windows_disabled = fixture_windows_level(false)
+let disabled_sandbox_tag = permission_profile_sandbox_tag(&disabled, &windows_disabled, false, &linux)
+let disabled_policy_tag = permission_profile_policy_tag(&disabled)
+if disabled_sandbox_tag == "none" && disabled_policy_tag == "danger-full-access" {
+  score = score + 1
+}
+let external_sandbox_tag = permission_profile_sandbox_tag(&external, &windows_disabled, false, &linux)
+let external_policy_tag = permission_profile_policy_tag(&external)
+if external_sandbox_tag == "external" && external_policy_tag == "external-sandbox" {
+  score = score + 10
+}
+
+let managed_unrestricted = fixture_managed_profile(unrestricted, fixture_network_policy(true))
+let managed_read_only = fixture_managed_profile(restricted_read_only, fixture_network_policy(false))
+let managed_workspace = fixture_managed_profile(restricted_workspace, fixture_network_policy(false))
+let managed_root_write = fixture_managed_profile(restricted_root_write, fixture_network_policy(true))
+let unrestricted_sandbox_tag = permission_profile_sandbox_tag(&managed_unrestricted, &windows_disabled, false, &linux)
+let unrestricted_policy_tag = permission_profile_policy_tag(&managed_unrestricted)
+if unrestricted_sandbox_tag == "none" && unrestricted_policy_tag == "danger-full-access" {
+  score = score + 100
+}
+let read_only_sandbox_tag = permission_profile_sandbox_tag(&managed_read_only, &windows_disabled, false, &linux)
+let read_only_policy_tag = permission_profile_policy_tag(&managed_read_only)
+if read_only_sandbox_tag == "landlock" && read_only_policy_tag == "read-only" {
+  score = score + 1000
+}
+let workspace_sandbox_tag = permission_profile_sandbox_tag(&managed_workspace, &windows_disabled, false, &linux)
+let workspace_policy_tag = permission_profile_policy_tag(&managed_workspace)
+if workspace_sandbox_tag == "landlock" && workspace_policy_tag == "workspace-write" {
+  score = score + 10000
+}
+let root_write_sandbox_tag = permission_profile_sandbox_tag(&managed_root_write, &windows_disabled, false, &linux)
+if root_write_sandbox_tag == "none" {
+  score = score + 100000
+}
+let windows_elevated = fixture_windows_level(true)
+let enforced_sandbox_tag = permission_profile_sandbox_tag(&managed_unrestricted, &windows_disabled, true, &linux)
+let elevated_sandbox_tag = permission_profile_sandbox_tag(&managed_workspace, &windows_elevated, false, &windows)
+if enforced_sandbox_tag == "landlock" && elevated_sandbox_tag == "windows_elevated" {
+  score = score + 1000000
+}
+
+let restricted_network = fixture_network_policy(false)
+if !(should_require_platform_sandbox(&external_file_system, &restricted_network, false)) && should_require_platform_sandbox(&external_file_system, &restricted_network, true) {
+  score = score + 10000000
+}
+
+return { .score = score }

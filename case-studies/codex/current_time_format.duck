@@ -1,0 +1,17 @@
+module () where
+
+const { unix_seconds_utc } = import "duck:prelude/time" ()
+const { text_append } = import "duck:prelude/runtime" ()
+
+const format_current_time_utc: I64 -> Text = current_time => {
+  text_append(unix_seconds_utc(current_time), " UTC")
+}
+
+const render_current_time_reminder: I64 -> Text = current_time => {
+  text_append("It is ", text_append(unix_seconds_utc(current_time), " UTC."))
+}
+
+return {
+  format_current_time_utc,
+  render_current_time_reminder,
+}

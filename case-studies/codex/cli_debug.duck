@@ -1,0 +1,154 @@
+module () where
+
+const { list, text_append, text_split, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type DebugArgs = CodexCliArgs
+type DebugCommandResult = CodexDebugCommandResult
+type DebugPromptInputOptions = CodexDebugPromptInputOptions
+type DebugTraceReduceOptions = CodexDebugTraceReduceOptions
+type DebugTraceFacts = CodexDebugTraceFacts
+type DebugTraceFactsResult = Result Text DebugTraceFacts
+
+const texts = comptime list(Text)
+
+const parse_debug_models: DebugArgs -> DebugCommandResult = (args: DebugArgs) => {
+  if let `Nil () = args {
+    `Ok (`DebugModels false)
+  } else if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--bundled" {
+      if let `Nil () = tail {
+        `Ok (`DebugModels true)
+      } else {
+        `Err "debug models accepts only --bundled"
+      }
+    } else {
+      `Err (text_append("unknown debug models option: ", argument))
+    }
+  } else {
+    `Err "debug models arguments have an unknown shape"
+  }
+}
+
+const parse_debug_app_server: DebugArgs -> DebugCommandResult = (args: DebugArgs) => {
+  if let `Cons command_node = args {
+    let [command, remaining] = command_node
+    if command == "send-message-v2" {
+      if let `Cons message_node = remaining {
+        let [message, tail] = message_node
+        if let `Nil () = tail {
+          `Ok (`DebugAppServerMessage message)
+        } else {
+          `Err "debug app-server send-message-v2 accepts exactly one message"
+        }
+      } else {
+        `Err "debug app-server send-message-v2 requires a message"
+      }
+    } else {
+      `Err (text_append("unknown debug app-server command: ", command))
+    }
+  } else {
+    `Err "debug app-server requires send-message-v2"
+  }
+}
+
+let rec scan_debug_prompt_from: [DebugArgs, DebugPromptInputOptions] -> DebugCommandResult = (args: DebugArgs, options: DebugPromptInputOptions) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--image" || argument == "-i" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let images = texts.append(options.images, text_split(value, ","))
+        scan_debug_prompt_from(remaining, options :+ { .images = images })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown debug prompt-input option: ", argument))
+    } else if let `None () = options.prompt {
+      scan_debug_prompt_from(tail, options :+ { .prompt = `Some argument })
+    } else {
+      `Err "debug prompt-input accepts at most one prompt"
+    }
+  } else {
+    `Ok (`DebugPromptInput options)
+  }
+}
+
+let parse_debug_prompt_input: DebugArgs -> DebugCommandResult = (args: DebugArgs) => {
+  let initial: DebugPromptInputOptions = [.prompt = `None (), .images = texts.empty()]
+  scan_debug_prompt_from(args, initial)
+}
+
+let rec scan_debug_trace_from: [DebugArgs, DebugTraceFacts] -> DebugTraceFactsResult = (args: DebugArgs, facts: DebugTraceFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--output" || argument == "-o" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_debug_trace_from(remaining, facts :+ { .output = `Some value })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown debug trace-reduce option: ", argument))
+    } else if let `None () = facts.trace_bundle {
+      scan_debug_trace_from(tail, facts :+ { .trace_bundle = `Some argument })
+    } else {
+      `Err "debug trace-reduce accepts exactly one trace bundle"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_debug_trace_reduce: DebugArgs -> DebugCommandResult = (args: DebugArgs) => {
+  let initial: DebugTraceFacts = [.trace_bundle = `None (), .output = `None ()]
+  let scanned: DebugTraceFactsResult = scan_debug_trace_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    if let `Some trace_bundle = facts.trace_bundle {
+      let options: DebugTraceReduceOptions = [.trace_bundle = trace_bundle, .output = facts.output]
+      `Ok (`DebugTraceReduce options)
+    } else {
+      `Err "debug trace-reduce requires a trace bundle"
+    }
+  } else {
+    `Err "debug trace-reduce scanner returned an unknown result"
+  }
+}
+
+let parse_debug_options: DebugArgs -> DebugCommandResult = (args: DebugArgs) => {
+  if let `Cons node = args {
+    let [command, remaining] = node
+    if command == "models" {
+      parse_debug_models remaining
+    } else if command == "app-server" {
+      parse_debug_app_server remaining
+    } else if command == "prompt-input" {
+      parse_debug_prompt_input remaining
+    } else if command == "trace-reduce" {
+      parse_debug_trace_reduce remaining
+    } else if command == "clear-memories" {
+      if let `Nil () = remaining {
+        `Ok (`DebugClearMemories ())
+      } else {
+        `Err "debug clear-memories does not accept arguments"
+      }
+    } else {
+      `Err (text_append("unknown debug command: ", command))
+    }
+  } else {
+    `Err "debug requires models, app-server, prompt-input, trace-reduce, or clear-memories"
+  }
+}
+
+return {
+  parse_debug_app_server,
+  parse_debug_models,
+  parse_debug_options,
+  parse_debug_prompt_input,
+  parse_debug_trace_reduce,
+}

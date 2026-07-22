@@ -1,0 +1,27 @@
+module () where
+
+const { json_object_get } = import "duck:prelude/json" ()
+const { plan_thread_unsubscribe } = import "./app_server_thread_lifecycle.duck" ()
+const { materialize_thread_unsubscribe_response } = import "./app_server_thread_responses.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+
+type FixtureInput = AppServerThreadUnsubscribePlanInput
+
+const status_text = (input: FixtureInput) => {
+  let status = plan_thread_unsubscribe(input)
+  if let `Object fields = materialize_thread_unsubscribe_response(status) {
+    if let `Found value = json_object_get("status", fields) {
+      if let `String text = value { text } else { "" }
+    } else { "" }
+  } else { "" }
+}
+
+let not_loaded: FixtureInput = [`ThreadNotLoaded (), `ThreadSubscribed ()]
+let not_subscribed: FixtureInput = [`ThreadLoaded (), `ThreadNotSubscribed ()]
+let unsubscribed: FixtureInput = [`ThreadLoaded (), `ThreadSubscribed ()]
+let score = 0
+if status_text(not_loaded) == "notLoaded" { score = score + 1 }
+if status_text(not_subscribed) == "notSubscribed" { score = score + 10 }
+if status_text(unsubscribed) == "unsubscribed" { score = score + 100 }
+
+return { .score = score }

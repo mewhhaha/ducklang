@@ -1,0 +1,34 @@
+module () where
+
+const natural_log_positive_q10: I32 -> I32 = value_q10 => {
+  let normalized = value_q10
+  let exponent = 0
+
+  loop {
+    if normalized >= 2048 {
+      normalized = normalized / 2
+      exponent = exponent + 1
+    } else if normalized < 1024 {
+      normalized = normalized * 2
+      exponent = exponent - 1
+    } else {
+      break
+    }
+  }
+
+  let ratio = ((normalized - 1024) * 1024) / (normalized + 1024)
+  let ratio_squared = (ratio * ratio) / 1024
+  let power = ratio
+  let denominator = 1
+  let series = 0
+
+  for _ in 0..8 {
+    series = series + power / denominator
+    power = (power * ratio_squared) / 1024
+    denominator = denominator + 2
+  }
+
+  2 * series + exponent * 710
+}
+
+return { natural_log_positive_q10 }

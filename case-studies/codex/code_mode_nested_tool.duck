@@ -1,0 +1,71 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./code_mode_nested_tool_types.duck" ()
+
+type NestedInvocation = CodeModeNestedToolInvocation
+type NestedPayload = CodeModeNestedToolPayload
+type NestedDispatch = CodeModeNestedToolDispatch
+type NestedPlan = CodeModeNestedToolPlan
+
+const reject_nested_tool_input: [ToolName, Text] -> NestedPlan = (tool_name, expectation) => {
+  let [namespace, local_name] = tool_name
+  let rendered_name = text_append [namespace, local_name]
+  `RejectNestedTool (text_append ["tool `", text_append [rendered_name, text_append ["` expects ", expectation]]])
+}
+
+const plan_code_mode_nested_tool: NestedInvocation -> NestedPlan = invocation => {
+  let [namespace, local_name] = invocation.tool_name
+  if namespace == "" && local_name == "exec" {
+    return `RejectNestedTool "exec cannot invoke itself"
+  }
+
+  let payload: NestedPayload = match invocation.tool_kind {
+    | `NestedFunction () => {
+      match invocation.input {
+        | `None () => `NestedFunctionPayload "{}"
+        | `Some input => {
+          if let `Object _ = input {
+            `NestedFunctionPayload (encode_json input)
+          } else {
+            return reject_nested_tool_input(invocation.tool_name, "a JSON object for arguments")
+          }
+        }
+        | _ => {
+          return reject_nested_tool_input(invocation.tool_name, "a JSON object for arguments")
+        }
+      }
+    }
+    | `NestedFreeform () => {
+      match invocation.input {
+        | `Some input => {
+          if let `String text = input {
+            `NestedCustomPayload text
+          } else {
+            return reject_nested_tool_input(invocation.tool_name, "a string input")
+          }
+        }
+        | `None () => {
+          return reject_nested_tool_input(invocation.tool_name, "a string input")
+        }
+        | _ => {
+          return reject_nested_tool_input(invocation.tool_name, "a string input")
+        }
+      }
+    }
+    | _ => {
+      return reject_nested_tool_input(invocation.tool_name, "a supported code-mode payload")
+    }
+  }
+
+  let dispatch: NestedDispatch = [
+    .cell_id = invocation.cell_id,
+    .runtime_tool_call_id = invocation.runtime_tool_call_id,
+    .tool_name = invocation.tool_name,
+    .call_id_prefix = "exec-",
+    .payload = payload]
+  `DispatchNestedTool dispatch
+}
+
+return { plan_code_mode_nested_tool }

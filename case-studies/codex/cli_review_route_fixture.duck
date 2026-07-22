@@ -1,0 +1,17 @@
+module () where
+
+const { plan_review_command } = import "./cli_exec.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixturePlan = CodexCliPlan
+
+let input: FixtureArgs = `Cons (["--uncommitted", `Nil ()])
+let plan: FixturePlan = plan_review_command input
+let score = if let `RunExec options = plan {
+  if let `ExecReview target = options.command {
+    if let `ReviewUncommitted () = target { 1 } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = score }

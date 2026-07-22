@@ -1,0 +1,12 @@
+module () where
+
+declare effect CodexStages {
+  suspending parse_json: (&Text) => JsonParseResult
+  suspending decode_update_plan: (Json) => UpdatePlanParseResult
+}
+
+declare Init {
+  stages: CodexStages
+}
+
+return {}

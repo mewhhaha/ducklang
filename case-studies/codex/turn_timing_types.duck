@@ -1,0 +1,37 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/abstractions" ()
+
+type TurnTimingResponseSignal =
+  | `OutputDelta Unit
+  | `ReasoningDelta Unit
+  | `CompletedOutputText Text
+  | `CompletedReasoningText Text
+  | `ToolCall Unit
+  | `NoOutput Unit
+
+type TurnTimingItemSignal =
+  | `AgentMessage Unit
+  | `OtherItem Unit
+
+type TurnTimingDurationOption = Option DurationMs
+
+type TurnTimingState = struct {
+  .started_at = Option MonotonicMs,
+  .started_at_unix_seconds = Option UnixTimeSeconds,
+  .first_token_at = Option MonotonicMs,
+  .first_message_at = Option MonotonicMs,
+}
+
+type TurnTimingRecord = struct {
+  .state = TurnTimingState,
+  .duration = TurnTimingDurationOption,
+}
+
+type TurnTimingCompletion = struct {
+  .completed_at_unix_seconds = UnixTimeSeconds,
+  .duration = TurnTimingDurationOption,
+}
+
+return {}

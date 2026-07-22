@@ -1,0 +1,105 @@
+module () where
+
+const { build_model_visible_specs } = import "./model_visible_spec_plan.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type FixtureFunction = ModelVisibleFunction
+type FixtureRuntime = ModelVisibleRuntime
+type FixtureRuntimes = ModelVisibleRuntimes
+type FixtureFunctions = ModelVisibleFunctions
+type FixtureNamespace = ModelVisibleNamespace
+type FixtureSpecs = ModelVisibleSpecs
+type FixtureTexts = ModelVisibleTexts
+type FixtureFacts = ModelVisibleFacts
+
+let trace_specs: FixtureSpecs -> Text = specs => {
+  let current = specs
+  let trace = ""
+  let done = false
+  loop {
+    if let `VisibleSpecsCons node = current {
+      let [spec, tail] = node
+      if let `VisibleFunction function = spec {
+        let [name, description_state] = function
+        let description = ""
+        let augmentation = "N"
+        if let `OriginalDescription text = description_state {
+          description = text
+        } else if let `CodeModeDescription text = description_state {
+          description = text
+          augmentation = "A"
+        }
+        trace = trace <> name <> ":" <> description <> ":" <> augmentation <> "|"
+      } else if let `VisibleNamespace namespace = spec {
+        let [name, description, functions] = namespace
+        trace = trace <> "namespace:" <> name <> ":" <> description <> ":"
+        let function_current = functions
+        let functions_done = false
+        loop {
+          if let `VisibleFunctionsCons function_node = function_current {
+            let [[function_name, description_state], function_tail] = function_node
+            let augmentation = "N"
+            if let `CodeModeDescription _ = description_state { augmentation = "A" }
+            trace = trace <> function_name <> ":" <> augmentation <> ","
+            function_current = function_tail
+          } else {
+            functions_done = true
+          }
+          if functions_done { break }
+        }
+        trace = trace <> "|"
+      } else if let `VisibleWebSearch name = spec {
+        trace = trace <> "web:" <> name <> "|"
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  trace
+}
+
+let first_function: FixtureFunction = ["foo", `OriginalDescription "first"]
+let duplicate_function: FixtureFunction = ["foo", `OriginalDescription "second"]
+let direct_model_only_function: FixtureFunction = ["request_user_input", `OriginalDescription "ask"]
+let exec_function: FixtureFunction = ["exec", `OriginalDescription "execute"]
+let wait_function: FixtureFunction = ["wait", `OriginalDescription "wait"]
+let excluded_function: FixtureFunction = ["excluded__lookup", `OriginalDescription "excluded"]
+
+let first: FixtureRuntime = [["", "foo"], `Direct (), `VisibleFunction first_function]
+let duplicate: FixtureRuntime = [["", "foo"], `Direct (), `VisibleFunction duplicate_function]
+let deferred: FixtureRuntime = [["", "deferred"], `Deferred (), `VisibleFunction (["deferred", `OriginalDescription "deferred"])]
+let hidden: FixtureRuntime = [["", "hidden"], `Hidden (), `VisibleFunction (["hidden", `OriginalDescription "hidden"])]
+let direct_model_only: FixtureRuntime = [["", "request_user_input"], `DirectModelOnly (), `VisibleFunction direct_model_only_function]
+let exec: FixtureRuntime = [["", "exec"], `Direct (), `VisibleFunction exec_function]
+let wait: FixtureRuntime = [["", "wait"], `Direct (), `VisibleFunction wait_function]
+let excluded: FixtureRuntime = [["excluded", "lookup"], `Direct (), `VisibleFunction excluded_function]
+let alpha_functions: FixtureFunctions = `VisibleFunctionsCons ([["lookup", `OriginalDescription "lookup"], `VisibleFunctionsNil ()])
+let alpha_namespace: FixtureNamespace = ["alpha", "Alpha tools", alpha_functions]
+let alpha: FixtureRuntime = [["alpha", "lookup"], `Direct (), `VisibleNamespace alpha_namespace]
+let runtimes: FixtureRuntimes = `VisibleRuntimesCons ([first, `VisibleRuntimesCons ([duplicate, `VisibleRuntimesCons ([deferred, `VisibleRuntimesCons ([hidden, `VisibleRuntimesCons ([direct_model_only, `VisibleRuntimesCons ([exec, `VisibleRuntimesCons ([wait, `VisibleRuntimesCons ([excluded, `VisibleRuntimesCons ([alpha, `VisibleRuntimesNil ()])])])])])])])])])
+
+let hosted: FixtureSpecs = `VisibleSpecsCons ([`VisibleWebSearch "web_search", `VisibleSpecsNil ()])
+let excluded_namespaces: FixtureTexts = `VisibleTextsCons (["excluded", `VisibleTextsNil ()])
+let code_facts: FixtureFacts = [.mode = `CodeModel (), .excluded_namespaces = excluded_namespaces, .namespace_policy = `NamespaceToolsEnabled ()]
+let code_only_facts: FixtureFacts = [.mode = `CodeModelOnly (), .excluded_namespaces = excluded_namespaces, .namespace_policy = `NamespaceToolsEnabled ()]
+let direct_facts: FixtureFacts = [.mode = `DirectModel (), .excluded_namespaces = excluded_namespaces, .namespace_policy = `NamespaceToolsEnabled ()]
+
+let score = 0
+let code_specs: FixtureSpecs = build_model_visible_specs(runtimes, hosted, code_facts)
+if trace_specs code_specs == "foo:first:A|request_user_input:ask:N|exec:execute:N|wait:wait:N|excluded__lookup:excluded:N|namespace:alpha:Alpha tools:lookup:A,|web:web_search|" {
+  score = score + 1
+}
+
+let code_only_specs: FixtureSpecs = build_model_visible_specs(runtimes, hosted, code_only_facts)
+if trace_specs code_only_specs == "request_user_input:ask:N|exec:execute:N|wait:wait:N|web:web_search|" {
+  score = score + 10
+}
+
+let direct_specs: FixtureSpecs = build_model_visible_specs(runtimes, hosted, direct_facts)
+if trace_specs direct_specs == "foo:first:N|request_user_input:ask:N|exec:execute:N|wait:wait:N|excluded__lookup:excluded:N|namespace:alpha:Alpha tools:lookup:N,|web:web_search|" {
+  score = score + 100
+}
+
+return { .score = score }

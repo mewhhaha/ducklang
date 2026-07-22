@@ -1,0 +1,28 @@
+module () where
+
+const { plan_code_mode_wait_lifecycle } = import "./code_mode_wait_lifecycle.duck" ()
+const {} = import "./code_mode_wait_types.duck" ()
+
+type FixtureLifecyclePlan = CodeModeWaitLifecyclePlan
+
+let score = 0
+
+let yielded: FixtureLifecyclePlan = plan_code_mode_wait_lifecycle(`LiveCell (["cell-3", `Yielded ()]))
+if let `CellRemainsOpen cell_id = yielded {
+  if cell_id == "cell-3" { score = score + 1 }
+}
+
+let completed: FixtureLifecyclePlan = plan_code_mode_wait_lifecycle(`LiveCell (["cell-4", `Result ()]))
+if let `CloseCell cell_id = completed {
+  if cell_id == "cell-4" { score = score + 10 }
+}
+
+let terminated: FixtureLifecyclePlan = plan_code_mode_wait_lifecycle(`LiveCell (["cell-5", `Terminated ()]))
+if let `CloseCell cell_id = terminated {
+  if cell_id == "cell-5" { score = score + 100 }
+}
+
+let missing: FixtureLifecyclePlan = plan_code_mode_wait_lifecycle(`MissingCell (["cell-6", `Result ()]))
+if let `NoCellToClose () = missing { score = score + 1000 }
+
+return { .score = score }

@@ -1,0 +1,58 @@
+module () where
+
+const {} = import "./tool_search_types.duck" ()
+const { coalesce_tool_search_results } = import "./tool_search_output.duck" ()
+const { deferred_function } = import "./tool_search_value.duck" ()
+
+type FixtureFunction = ToolSearchFunction
+type FixtureFunctionNode = ToolSearchFunctionNode
+type FixtureFunctions = ToolSearchFunctions
+type FixtureEntry = ToolSearchEntry
+type FixtureLoadable = ToolSearchLoadableSpec
+type FixtureLoadables = ToolSearchLoadableSpecs
+type FixtureNamespace = ToolSearchNamespace
+type FixtureRanked = ToolSearchRankedEntry
+type FixtureRankedNode = ToolSearchRankedEntryNode
+type FixtureRankedEntries = ToolSearchRankedEntries
+type FixtureSpec = ToolSpec
+
+let create_spec: FixtureSpec = [["mcp__calendar", "create_event"], `FunctionSpec (), "Create events.", "{}", `ToolOutputSchemaMissing (), false]
+let list_spec: FixtureSpec = [["mcp__calendar", "list_events"], `FunctionSpec (), "List events.", "{}", `ToolOutputSchemaMissing (), false]
+let file_spec: FixtureSpec = [["", "read_file"], `FunctionSpec (), "Read files.", "{}", `ToolOutputSchemaMissing (), false]
+
+let first_tools: FixtureFunctions = `Cons ([deferred_function create_spec, `Nil ()] as FixtureFunctionNode)
+let second_tools: FixtureFunctions = `Cons ([deferred_function list_spec, `Nil ()] as FixtureFunctionNode)
+let first_namespace: FixtureNamespace = ["mcp__calendar", "Calendar tools.", first_tools]
+let second_namespace: FixtureNamespace = ["mcp__calendar", "Calendar tools.", second_tools]
+let first_entry: FixtureEntry = ["create event", `Namespace first_namespace]
+let file_entry: FixtureEntry = ["read file", `Function (deferred_function file_spec)]
+let second_entry: FixtureEntry = ["list event", `Namespace second_namespace]
+
+let ranked: FixtureRankedEntries = `Nil ()
+ranked = `Cons ([[2, 1, second_entry], ranked] as FixtureRankedNode)
+ranked = `Cons ([[1, 2, file_entry], ranked] as FixtureRankedNode)
+ranked = `Cons ([[0, 3, first_entry], ranked] as FixtureRankedNode)
+
+let score = 0
+let coalesced: FixtureLoadables = coalesce_tool_search_results ranked
+if let `Cons first_node = coalesced {
+  let [first, tail] = first_node
+  if let `Namespace namespace = first {
+    let [_, _, namespace_tools] = namespace
+    if let `Cons first_tool_node = namespace_tools {
+      let [_, tool_tail] = first_tool_node
+      if let `Cons second_tool_node = tool_tail {
+        let [_, tool_rest] = second_tool_node
+        if let `Nil () = tool_rest { score = score + 1 }
+      }
+    }
+  }
+  if let `Cons second_node = tail {
+    let [second, rest] = second_node
+    if let `Function _ = second {
+      if let `Nil () = rest { score = score + 10 }
+    }
+  }
+}
+
+return { .score = score }

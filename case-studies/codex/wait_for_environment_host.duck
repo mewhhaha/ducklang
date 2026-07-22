@@ -1,0 +1,11 @@
+module () where
+
+declare effect WaitForEnvironmentHost {
+  suspending wait: (&Text) => WaitForEnvironmentHostResponse
+}
+
+declare Init {
+  wait_for_environment_host: WaitForEnvironmentHost
+}
+
+return {}

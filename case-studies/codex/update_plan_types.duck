@@ -1,0 +1,55 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type UpdatePlanTextOption =
+  | `None Unit
+  | `Some Text
+
+type UpdatePlanStepStatus =
+  | `Pending Unit
+  | `InProgress Unit
+  | `Completed Unit
+
+type UpdatePlanStep = struct {
+  .step = Text,
+  .status = UpdatePlanStepStatus,
+}
+
+type UpdatePlanStepNode = [UpdatePlanStep, UpdatePlanSteps]
+type UpdatePlanSteps =
+  | `Nil Unit
+  | `Cons UpdatePlanStepNode
+
+type UpdatePlanArgs = struct {
+  .explanation = UpdatePlanTextOption,
+  .plan = UpdatePlanSteps,
+}
+
+type UpdatePlanMode =
+  | `Plan Unit
+  | `Default Unit
+
+type UpdatePlanPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type UpdatePlanParseResult =
+  | `Parsed UpdatePlanArgs
+  | `ParseFailed Text
+
+type UpdatePlanPayloadPlan =
+  | `ParseArguments Text
+  | `RejectPayload Text
+
+type UpdatePlanCallPlan =
+  | `Publish UpdatePlanArgs
+  | `RejectRequest Text
+
+type UpdatePlanCompletion = struct {
+  .text = Text,
+  .success = Bool,
+  .code_mode = Text,
+}
+
+return {}

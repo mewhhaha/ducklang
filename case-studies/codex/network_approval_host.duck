@@ -1,0 +1,11 @@
+module () where
+
+declare effect NetworkApprovalHost {
+  suspending request: (&Text, &Text, Bool) => NetworkHostApprovalDecision
+}
+
+declare Init {
+  network_approval_host: NetworkApprovalHost
+}
+
+return {}

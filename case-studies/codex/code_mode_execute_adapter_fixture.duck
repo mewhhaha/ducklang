@@ -1,0 +1,56 @@
+module (!init: Init) where
+
+const {} = import "./code_mode_execute_types.duck" ()
+const { run_code_mode_execute } = import "./code_mode_execute_execution.duck" ()
+
+type FixtureInvocation = CodeModeExecuteInvocation
+type FixtureExecution = CodeModeExecuteExecution
+
+let score = 0
+
+let successful: FixtureInvocation = [
+  .call_id = "call-ok",
+  .tool_name = ["", "exec"],
+  .payload = `ExecuteCustomPayload "text('ok')",
+  .enabled_tools = `ExecuteToolsNil ()]
+let successful_execution: FixtureExecution = [
+  .invocation = successful,
+  .turn_sub_id = "turn-sub",
+  .image_detail_policy = `OriginalDetailUnsupported ()]
+let successful_result = run_code_mode_execute successful_execution
+if let `CodeModeExecuteCompleted completion = successful_result {
+  if let `RuntimeResult result = completion.response {
+    let [cell_id, content_items, error] = result
+    if cell_id == "cell-1" {
+      if let `RuntimeItemsCons node = content_items {
+        let [content, _] = node
+        if let `RuntimeInputText text = content {
+          if text == "done" {
+            if let `RuntimeErrorMissing () = error {
+              if let `WaitLimitMissing () = completion.token_limit {
+                if let `ElapsedMicroseconds elapsed = completion.elapsed {
+                  if elapsed == 150000i64 { score = score + 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let failed: FixtureInvocation = [
+  .call_id = "call-fail",
+  .tool_name = ["", "exec"],
+  .payload = `ExecuteCustomPayload "text('fail')",
+  .enabled_tools = `ExecuteToolsNil ()]
+let failed_execution: FixtureExecution = [
+  .invocation = failed,
+  .turn_sub_id = "turn-sub",
+  .image_detail_policy = `OriginalDetailUnsupported ()]
+if let `CodeModeExecuteRejected message = run_code_mode_execute failed_execution {
+  if message == "runtime unavailable" { score = score + 10 }
+}
+
+return { .score = score }

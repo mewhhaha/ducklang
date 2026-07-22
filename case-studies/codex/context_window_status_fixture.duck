@@ -1,0 +1,60 @@
+module () where
+
+const {} = import "./context_window_status_types.duck" ()
+const { context_window_token_status } = import "./context_window_status.duck" ()
+
+type FixtureInput = ContextWindowTokenStatusInput
+
+let score = 0
+
+let total_input: FixtureInput = [
+  .active_context_tokens = 100i64,
+  .scope = `Total (),
+  .configured_auto_compact_scope_limit = `Some 75i64,
+  .model_auto_compact_scope_limit = `Some 100i64,
+  .full_context_window_limit = `Some 120i64,
+  .prefill_input_tokens = `Some 70i64,
+  .fallback_buffer_tokens = 10i64]
+let total = context_window_token_status(&total_input)
+if total.auto_compact_scope_tokens == 100i64 && !(total.token_limit_reached) {
+  if let `Some remaining = total.base_window_tokens_remaining {
+    if remaining == 0i64 { score = score + 1 }
+  }
+}
+
+let buffered_input: FixtureInput = [
+  .active_context_tokens = 110i64,
+  .scope = `Total (),
+  .configured_auto_compact_scope_limit = `Some 75i64,
+  .model_auto_compact_scope_limit = `Some 100i64,
+  .full_context_window_limit = `Some 120i64,
+  .prefill_input_tokens = `Some 70i64,
+  .fallback_buffer_tokens = 10i64]
+let buffered = context_window_token_status(&buffered_input)
+if buffered.token_limit_reached && !(buffered.full_context_window_limit_reached) { score = score + 10 }
+
+let full_input: FixtureInput = [
+  .active_context_tokens = 120i64,
+  .scope = `Total (),
+  .configured_auto_compact_scope_limit = `Some 75i64,
+  .model_auto_compact_scope_limit = `None (),
+  .full_context_window_limit = `Some 120i64,
+  .prefill_input_tokens = `Some 70i64,
+  .fallback_buffer_tokens = 10i64]
+let full = context_window_token_status(&full_input)
+if full.token_limit_reached && full.full_context_window_limit_reached { score = score + 100 }
+
+let unlimited_input: FixtureInput = [
+  .active_context_tokens = 100i64,
+  .scope = `Total (),
+  .configured_auto_compact_scope_limit = `Some 75i64,
+  .model_auto_compact_scope_limit = `None (),
+  .full_context_window_limit = `None (),
+  .prefill_input_tokens = `Some 70i64,
+  .fallback_buffer_tokens = 10i64]
+let unlimited = context_window_token_status(&unlimited_input)
+if let `None () = unlimited.base_window_tokens_remaining {
+  if !(unlimited.token_limit_reached) { score = score + 1000 }
+}
+
+return { .score = score }

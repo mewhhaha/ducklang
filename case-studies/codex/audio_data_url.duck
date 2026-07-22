@@ -1,0 +1,89 @@
+module () where
+
+const {} = import "./audio_types.duck" ()
+
+const ascii_lowercase = (byte: I32) => {
+  if byte >= 65 && byte <= 90 { byte + 32 } else { byte }
+}
+
+const parse_audio_data_url: Text -> AudioDataUrlResult = audio_url => {
+  let status_code = 0
+  let failure_reason: Text = ""
+  let failure_size = 0
+  let source_length = @len audio_url
+
+  if source_length < 5 {
+    status_code = 1
+    failure_reason = "audio input must be a data URL"
+  } else {
+    let prefix_matches = ascii_lowercase(@get(audio_url, 0)) == 100 && ascii_lowercase(@get(audio_url, 1)) == 97 && ascii_lowercase(@get(audio_url, 2)) == 116 && ascii_lowercase(@get(audio_url, 3)) == 97 && @get(audio_url, 4) == 58
+    if !(prefix_matches) {
+      status_code = 1
+      failure_reason = "audio input must be a data URL"
+    }
+  }
+
+  let payload_separator = -1
+  if status_code == 0 {
+    for index in 5..source_length {
+      if payload_separator < 0 && @get(audio_url, index) == 44 {
+        payload_separator = index
+      }
+    }
+    if payload_separator < 0 {
+      status_code = 1
+      failure_reason = "missing payload separator"
+    }
+  }
+
+  let mime_end = -1
+  let mime: Text = ""
+  if status_code == 0 {
+    for index in 5..payload_separator {
+      if mime_end < 0 && @get(audio_url, index) == 59 {
+        mime_end = index
+      }
+    }
+    if mime_end < 0 {
+      mime_end = payload_separator
+    }
+    mime = @slice(audio_url, 5, mime_end)
+    if mime == "" {
+      status_code = 1
+      failure_reason = "missing media type"
+    }
+  }
+
+  if status_code == 0 {
+    let parameter_start = mime_end + 1
+    let has_base64_parameter = false
+
+    for index in (mime_end + 1)..(payload_separator + 1) {
+      if index == payload_separator || @get(audio_url, index) == 59 {
+        let parameter_matches = index - parameter_start == 6 && ascii_lowercase(@get(audio_url, parameter_start)) == 98 && ascii_lowercase(@get(audio_url, parameter_start + 1)) == 97 && ascii_lowercase(@get(audio_url, parameter_start + 2)) == 115 && ascii_lowercase(@get(audio_url, parameter_start + 3)) == 101 && ascii_lowercase(@get(audio_url, parameter_start + 4)) == 54 && ascii_lowercase(@get(audio_url, parameter_start + 5)) == 52
+        if parameter_matches {
+          has_base64_parameter = true
+        }
+        parameter_start = index + 1
+      }
+    }
+
+    if !(has_base64_parameter) {
+      status_code = 1
+      failure_reason = "audio payload is not base64 encoded"
+    }
+  }
+
+  let payload: Text = ""
+  if status_code == 0 {
+    payload = @slice(audio_url, payload_separator + 1, source_length)
+    if @len payload > 69905068 {
+      status_code = 2
+      failure_size = @len payload
+    }
+  }
+
+  [.status_code = status_code, .reason = failure_reason, .size = failure_size, .mime = mime, .payload = payload]
+}
+
+return { parse_audio_data_url }

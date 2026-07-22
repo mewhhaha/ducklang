@@ -1,0 +1,54 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type RolloutBudgetThresholdNode = [I32, RolloutBudgetThresholds]
+type RolloutBudgetThresholds =
+  | `Nil Unit
+  | `Cons RolloutBudgetThresholdNode
+
+type RolloutBudgetConfig = struct {
+  .limit_tokens = I32,
+  .reminder_at_remaining_tokens = RolloutBudgetThresholds,
+  .sampling_token_weight = F64,
+  .prefill_token_weight = F64,
+}
+
+type RolloutBudgetTokenUsage = struct {
+  .input_tokens = I32,
+  .cached_input_tokens = I32,
+  .output_tokens = I32,
+}
+
+type ThreadBudgetDelivery = struct {
+  .thread_id = Text,
+  .window_id = Text,
+  .reminder_index = I32,
+}
+
+type ThreadBudgetDeliveryNode = [ThreadBudgetDelivery, ThreadBudgetDeliveries]
+type ThreadBudgetDeliveries =
+  | `Nil Unit
+  | `Cons ThreadBudgetDeliveryNode
+
+type RolloutBudgetState = struct {
+  .config = RolloutBudgetConfig,
+  .weighted_tokens_used = F64,
+  .deliveries = ThreadBudgetDeliveries,
+}
+
+type RolloutBudget = Option RolloutBudgetState
+
+type RolloutBudgetReminder = struct {
+  .remaining_tokens = I32,
+  .reminder_index = I32,
+}
+
+type RolloutBudgetReminderOption = Option RolloutBudgetReminder
+
+type RolloutBudgetUsageResult = struct {
+  .budget = RolloutBudget,
+  .exhausted = Bool,
+}
+
+return {}

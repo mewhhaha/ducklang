@@ -1,0 +1,124 @@
+module () where
+
+const { list, text_append, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type SandboxArgs = CodexCliArgs
+type SandboxOptions = CodexSandboxOptions
+type SandboxOptionsResult = CodexSandboxOptionsResult
+type SandboxFacts = CodexSandboxFacts
+type SandboxFactsResult = Result Text SandboxFacts
+
+const texts = comptime list(Text)
+
+let rec scan_sandbox_from: [SandboxArgs, SandboxFacts] -> SandboxFactsResult = (args: SandboxArgs, facts: SandboxFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if facts.command_started {
+      scan_sandbox_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed) })
+    } else if argument == "--" {
+      scan_sandbox_from(tail, facts :+ { .command_started = true })
+    } else if argument == "--sandbox-state-json" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .sandbox_state_json = `Some value })
+      } else {
+        `Err "missing value for --sandbox-state-json"
+      }
+    } else if argument == "--sandbox-state-readable-root" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .sandbox_state_readable_roots_reversed = texts.prepend(value, facts.sandbox_state_readable_roots_reversed) })
+      } else {
+        `Err "missing value for --sandbox-state-readable-root"
+      }
+    } else if argument == "--sandbox-state-disable-network" {
+      scan_sandbox_from(tail, facts :+ { .sandbox_state_disable_network = true })
+    } else if argument == "--permission-profile" || argument == "--permissions-profile" || argument == "-P" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .permissions_profile = `Some value })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if argument == "--profile" || argument == "-p" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .config_profile = `Some value })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if argument == "--cd" || argument == "-C" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .cwd = `Some value })
+      } else {
+        `Err (text_append("missing value for ", argument))
+      }
+    } else if argument == "--include-managed-config" {
+      scan_sandbox_from(tail, facts :+ { .include_managed_config = true })
+    } else if argument == "--allow-unix-socket" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_sandbox_from(remaining, facts :+ { .allow_unix_sockets_reversed = texts.prepend(value, facts.allow_unix_sockets_reversed) })
+      } else {
+        `Err "missing value for --allow-unix-socket"
+      }
+    } else if argument == "--log-denials" {
+      scan_sandbox_from(tail, facts :+ { .log_denials = true })
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown sandbox option: ", argument))
+    } else {
+      scan_sandbox_from(tail, facts :+ { .command_reversed = texts.prepend(argument, facts.command_reversed), .command_started = true })
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_sandbox_options: SandboxArgs -> SandboxOptionsResult = (args: SandboxArgs) => {
+  let initial: SandboxFacts = [.sandbox_state_json = `None (), .sandbox_state_readable_roots_reversed = texts.empty(), .sandbox_state_disable_network = false, .permissions_profile = `None (), .config_profile = `None (), .cwd = `None (), .include_managed_config = false, .allow_unix_sockets_reversed = texts.empty(), .log_denials = false, .command_reversed = texts.empty(), .command_started = false]
+  let scanned: SandboxFactsResult = scan_sandbox_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    let readable_roots = texts.reverse facts.sandbox_state_readable_roots_reversed
+    let allow_unix_sockets = texts.reverse facts.allow_unix_sockets_reversed
+    let command = texts.reverse facts.command_reversed
+    let conflict: Option Text = if let `Some _ = facts.sandbox_state_json {
+      if let `Some _ = facts.permissions_profile {
+        `Some "--sandbox-state-json conflicts with --permission-profile"
+      } else if let `Some _ = facts.cwd {
+        `Some "--sandbox-state-json conflicts with --cd"
+      } else if facts.include_managed_config {
+        `Some "--sandbox-state-json conflicts with --include-managed-config"
+      } else { `None () }
+    } else if texts.length(readable_roots) > 0 {
+      `Some "--sandbox-state-readable-root requires --sandbox-state-json"
+    } else if facts.sandbox_state_disable_network {
+      `Some "--sandbox-state-disable-network requires --sandbox-state-json"
+    } else if let `Some _ = facts.cwd {
+      if let `None () = facts.permissions_profile {
+        `Some "--cd requires --permission-profile"
+      } else { `None () }
+    } else if facts.include_managed_config {
+      if let `None () = facts.permissions_profile {
+        `Some "--include-managed-config requires --permission-profile"
+      } else { `None () }
+    } else { `None () }
+    if let `Some message = conflict {
+      `Err message
+    } else if texts.length(command) == 0 {
+      `Err "sandbox requires a command"
+    } else {
+      let options: SandboxOptions = [.sandbox_state_json = facts.sandbox_state_json, .sandbox_state_readable_roots = readable_roots, .sandbox_state_disable_network = facts.sandbox_state_disable_network, .permissions_profile = facts.permissions_profile, .config_profile = facts.config_profile, .cwd = facts.cwd, .include_managed_config = facts.include_managed_config, .allow_unix_sockets = allow_unix_sockets, .log_denials = facts.log_denials, .command = command]
+      `Ok options
+    }
+  } else {
+    `Err "sandbox scanner returned an unknown result"
+  }
+}
+
+return {
+  parse_sandbox_options,
+}

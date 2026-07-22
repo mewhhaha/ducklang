@@ -1,0 +1,21 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./agent_job_common_types.duck" ()
+
+type AgentJobReportArgs = struct {
+  .job_id = Text,
+  .item_id = Text,
+  .result_json = Text,
+  .stop = Bool,
+}
+
+type AgentJobReportPlan =
+  | `RecordResult AgentJobReportArgs
+  | `RejectRequest Text
+
+type AgentJobReportExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+return {}

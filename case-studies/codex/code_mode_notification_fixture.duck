@@ -1,0 +1,38 @@
+module () where
+
+const {} = import "./code_mode_dispatch_types.duck" ()
+const { finish_code_mode_notification, plan_code_mode_notification } = import "./code_mode_dispatch.duck" ()
+
+type FixtureNotification = CodeModeNotification
+
+let score = 0
+
+let blank: FixtureNotification = [
+  .call_id = "call-blank",
+  .cell_id = "cell-blank",
+  .text = "　\n"]
+if let `CompleteBlankNotification () = plan_code_mode_notification blank {
+  score = score + 1
+}
+
+let visible: FixtureNotification = [
+  .call_id = "call-visible",
+  .cell_id = "cell-visible",
+  .text = " working "]
+if let `InjectCodeModeNotification output = plan_code_mode_notification visible {
+  if output.call_id == "call-visible" && output.name == "exec" && output.text == " working " {
+    score = score + 10
+  }
+}
+
+if let `NotificationComplete () = finish_code_mode_notification("cell-visible", `NotificationInjected ()) {
+  score = score + 100
+}
+
+if let `NotificationRejected message = finish_code_mode_notification("cell-missing", `NotificationTurnMissing ()) {
+  if message == "failed to inject exec notify message for cell cell-missing: no active turn" {
+    score = score + 1000
+  }
+}
+
+return { .score = score }

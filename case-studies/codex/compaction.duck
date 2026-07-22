@@ -1,0 +1,206 @@
+module () where
+
+const { list, text_append, text_approx_token_count, text_starts_with, text_truncate_middle_tokens } = import "duck:prelude/functional" ()
+const history_types_module = import "./history_types.duck"
+
+type CompactionContent = HistoryContent
+type CompactionContents = List CompactionContent
+type CompactionItem = HistoryItem
+type CompactionItems = List CompactionItem
+type CompactionMessage = HistoryMessage
+type CompactionTextOption = Option Text
+
+const compaction_contents = comptime list(CompactionContent)
+const compaction_items = comptime list(CompactionItem)
+const compaction_texts = comptime list(Text)
+
+const summary_prefix: Text = "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:"
+
+const compaction_content_text: (CompactionContent) -> CompactionTextOption = content => if let `InputText text = content {
+  `Some text
+} else if let `OutputText text = content {
+  `Some text
+} else {
+  `None ()
+}
+
+const content_items_to_text: (CompactionContents) -> CompactionTextOption = values => {
+  let current = values
+  let text: Text = ""
+  let has_text = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [content, tail] = node
+      let content_text = compaction_content_text content
+
+      if let `Some part = content_text {
+        if part == "" {
+          ()
+        } else if has_text {
+          text = text_append([text, text_append(["\n", part])])
+        } else {
+          text = part
+          has_text = true
+        }
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  if has_text {
+    `Some text
+  } else {
+    `None ()
+  }
+}
+
+const is_summary_message = (message: Text) => {
+  text_starts_with([message, text_append([summary_prefix, "\n"])])
+}
+
+const user_message_text: (CompactionItem) -> CompactionTextOption = item => if let `Message message = item {
+  let [role, contextual, contents] = message
+
+  if role == "user" {
+    if contextual {
+      `None ()
+    } else {
+      let text = content_items_to_text contents
+
+      if let `Some message_text = text {
+        if is_summary_message(message_text) {
+          `None ()
+        } else {
+          `Some message_text
+        }
+      } else {
+        `None ()
+      }
+    }
+  } else {
+    `None ()
+  }
+} else {
+  `None ()
+}
+
+const collect_user_messages = (values: CompactionItems) => {
+  let current = values
+  let messages_reversed = compaction_texts.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let message = user_message_text item
+
+      if let `Some text = message {
+        messages_reversed = compaction_texts.prepend(text, messages_reversed)
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  compaction_texts.reverse messages_reversed
+}
+
+const select_recent_user_messages = (values: List Text, maximum_tokens: I32) => {
+  let current = compaction_texts.reverse values
+  let selected: List Text = compaction_texts.empty()
+  let remaining = maximum_tokens
+  let done = remaining <= 0
+
+  loop {
+    if done {
+      break
+    }
+
+    if let `Cons node = current {
+      let [message, tail] = node
+      let tokens = text_approx_token_count message
+
+      if tokens <= remaining {
+        selected = compaction_texts.prepend(message, selected)
+        remaining = remaining - tokens
+        current = tail
+
+        if remaining == 0 {
+          done = true
+        }
+      } else {
+        selected = compaction_texts.prepend(text_truncate_middle_tokens(message, remaining), selected)
+        done = true
+      }
+    } else {
+      done = true
+    }
+  }
+
+  selected
+}
+
+const user_message_item = (text: Text) => {
+  let contents = compaction_contents.singleton(`InputText text)
+  let message: CompactionMessage = ["user", false, contents]
+  `Message message
+}
+
+const build_compacted_history = (initial_context: CompactionItems, user_messages: List Text, summary_text: Text, maximum_tokens: I32) => {
+  let selected = select_recent_user_messages(user_messages, maximum_tokens)
+  let history_reversed = compaction_items.reverse initial_context
+  let current = selected
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [message, tail] = node
+      history_reversed = compaction_items.prepend(user_message_item(message), history_reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  let summary = summary_text
+
+  if summary == "" {
+    summary = "(no summary available)"
+  }
+
+  history_reversed = compaction_items.prepend(user_message_item(summary), history_reversed)
+  compaction_items.reverse history_reversed
+}
+
+const compact_history = (values: CompactionItems, summary_text: Text, maximum_user_tokens: I32) => {
+  let user_messages = collect_user_messages values
+  build_compacted_history(compaction_items.empty(), user_messages, summary_text, maximum_user_tokens)
+}
+
+return {
+  summary_prefix,
+  content_items_to_text,
+  collect_user_messages,
+  build_compacted_history,
+  compact_history,
+  is_summary_message,
+}

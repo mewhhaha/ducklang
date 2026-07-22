@@ -1,0 +1,68 @@
+module () where
+
+const {} = import "./agent_types.duck" ()
+const { execution_capacity, next_spawn_depth, spawn_depth_allowed } = import "./agent_capacity.duck" ()
+const { normalize_wait_timeout, validate_collab_input } = import "./agent_input_policy.duck" ()
+const { resolve_agent_path, valid_agent_name, validate_absolute_agent_path, validate_relative_agent_path } = import "./agent_path.duck" ()
+
+type AgentsStatus = AgentStatus
+type AgentsEvent = AgentEvent
+
+const agent_status_is_final = (status: AgentsStatus) => {
+  if let `PendingInit () = status {
+    false
+  } else if let `Running () = status {
+    false
+  } else if let `Interrupted () = status {
+    false
+  } else {
+    true
+  }
+}
+
+const agent_status_from_event = (event: AgentsEvent) => {
+  if let `TurnStarted () = event {
+    `StatusChanged (`Running ())
+  } else if let `TurnComplete message = event {
+    `StatusChanged (`Completed message)
+  } else if let `TurnInterrupted () = event {
+    `StatusChanged (`Interrupted ())
+  } else if let `TurnBudgetLimited () = event {
+    `StatusChanged (`Interrupted ())
+  } else if let `TurnAborted reason = event {
+    `StatusChanged (`Errored reason)
+  } else if let `AgentError message = event {
+    `StatusChanged (`Errored message)
+  } else if let `ShutdownComplete () = event {
+    `StatusChanged (`Shutdown ())
+  } else {
+    `StatusUnchanged ()
+  }
+}
+
+const collab_tool_call_failed = (status: AgentsStatus, has_receiver: Bool) => {
+  if let `Errored _ = status {
+    true
+  } else if let `NotFound () = status {
+    true
+  } else if has_receiver {
+    false
+  } else {
+    true
+  }
+}
+
+return {
+  agent_status_is_final,
+  agent_status_from_event,
+  collab_tool_call_failed,
+  next_spawn_depth,
+  spawn_depth_allowed,
+  execution_capacity,
+  validate_collab_input,
+  normalize_wait_timeout,
+  valid_agent_name,
+  validate_relative_agent_path,
+  validate_absolute_agent_path,
+  resolve_agent_path,
+}

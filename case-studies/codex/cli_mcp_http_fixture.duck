@@ -1,0 +1,32 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_mcp_add } = import "./cli_mcp.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexMcpCommandResult
+
+const args = comptime list(Text)
+
+let input: FixtureArgs = args.prepend("server-b", args.prepend("--url", args.prepend("https://mcp.example", args.prepend("--bearer-token-env-var", args.prepend("MCP_TOKEN", args.prepend("--oauth-client-id", args.prepend("client-1", args.prepend("--oauth-resource", args.singleton("resource-1")))))))))
+let parsed: FixtureResult = parse_mcp_add(input)
+let score = 0
+
+if let `Ok command = parsed {
+  if let `McpAddHttp options = command {
+    if options.name == "server-b" && options.url == "https://mcp.example" {
+      if let `Some token_env = options.bearer_token_env_var {
+        if let `Some client_id = options.oauth_client_id {
+          if let `Some resource = options.oauth_resource {
+            if token_env == "MCP_TOKEN" && client_id == "client-1" && resource == "resource-1" {
+              score = 1
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

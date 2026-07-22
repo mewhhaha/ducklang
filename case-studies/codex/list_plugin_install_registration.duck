@@ -1,0 +1,48 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ListPluginDefinitions = ToolDefinitions
+type ListPluginDefinition = ToolDefinition
+type ListPluginName = ToolName
+type ListPluginSpec = ToolSpec
+type ListPluginSpecs = ToolSpecs
+type ListPluginPresentation =
+  | `ListTool Unit
+  | `RecommendationContext Unit
+
+const list_available_plugins_to_install_tool_name: () -> ListPluginName = () => ["", "list_available_plugins_to_install"]
+
+let list_available_plugins_to_install_definitions: [Bool, Bool, ListPluginPresentation] -> ListPluginDefinitions = (enabled: Bool, has_candidates: Bool, presentation: ListPluginPresentation) => {
+  if enabled && has_candidates {
+    if let `ListTool () = presentation {
+      let definition: ListPluginDefinition = [list_available_plugins_to_install_tool_name(), `Direct (), `ListAvailablePluginsToInstall (), `FunctionPayload (), false, false]
+      `Cons ([definition, `Nil ()])
+    } else {
+      `Nil ()
+    }
+  } else {
+    `Nil ()
+  }
+}
+
+let list_available_plugins_to_install_specs: [Bool, Bool, ListPluginPresentation] -> ListPluginSpecs = (enabled: Bool, has_candidates: Bool, presentation: ListPluginPresentation) => {
+  if enabled && has_candidates {
+    if let `ListTool () = presentation {
+      let description = "# List plugin/connector install candidates\n\nUse this tool only when both are true:\n- The user explicitly asks to use a specific plugin or connector that is not already available in the current context or active `tools` list.\n- `tool_search` is not available, or it has already been called and did not find or make the requested tool callable.\n\nReturns known plugins and connectors that can be passed to `request_plugin_install`. When both a plugin and a connector match, prefer the plugin; use the connector only when its corresponding plugin is already installed.\n"
+      let spec: ListPluginSpec = [list_available_plugins_to_install_tool_name(), `FunctionSpec (), description, "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}", `ToolOutputSchemaMissing (), false]
+      `Cons ([spec, `Nil ()])
+    } else {
+      `Nil ()
+    }
+  } else {
+    `Nil ()
+  }
+}
+
+return {
+  list_available_plugins_to_install_definitions,
+  list_available_plugins_to_install_specs,
+  list_available_plugins_to_install_tool_name,
+}

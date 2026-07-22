@@ -1,0 +1,20 @@
+module (!init: Init) where
+
+const {} = import "./agent_tool_types.duck" ()
+const { plan_spawn_agent_call } = import "./agent_tool_spawn_call.duck" ()
+const { run_spawn_agent } = import "./agent_tool_spawn_execution.duck" ()
+
+type FixtureContext = AgentToolContext
+type FixturePlan = AgentToolPlan
+type FixtureSpawnArguments = AgentToolSpawnArguments
+
+let context: FixtureContext = [.v2_enabled = true, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
+let arguments: FixtureSpawnArguments = [.task_name = "reviewer", .message = "inspect the compiler", .fork_turns = `Some "3", .model = `Some "gpt-5.6", .reasoning_effort = `Some "high"]
+let plan: FixturePlan = plan_spawn_agent_call(context, arguments)
+let score = 0
+if let `SpawnAgentPlanned request = plan {
+  let output = run_spawn_agent("call-spawn", request, [.hide_metadata = false])
+  if output == "{\"task_name\":\"/root/reviewer\",\"nickname\":\"reviewer\"}" { score = 1 }
+}
+
+return { .score = score }

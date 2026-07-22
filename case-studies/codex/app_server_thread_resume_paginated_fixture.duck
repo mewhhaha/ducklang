@@ -1,0 +1,20 @@
+module () where
+
+const { plan_thread_resume } = import "./app_server_thread_lifecycle.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureThread = AppServerLoadedThread
+type FixtureThreads = AppServerLoadedThreads
+type FixtureResult = AppServerThreadResumePlanResult
+type FixtureInput = AppServerThreadResumePlanInput
+
+let running: FixtureThread = ["thread-1", `None (), `PaginatedHistory ()]
+let loaded: FixtureThreads = `Cons ([running, `Nil ()])
+let input: FixtureInput = [loaded, "thread-1", `None (), `None (), `TurnsIncluded (), `None ()]
+let planned: FixtureResult = plan_thread_resume(input)
+let score = if let `Err message = planned {
+  if message == "paginated threads do not support full-history thread/resume; pass excludeTurns=true" { 1 } else { 0 }
+} else { 0 }
+
+return { .score = score }

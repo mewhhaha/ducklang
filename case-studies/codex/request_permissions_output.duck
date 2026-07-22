@@ -1,0 +1,97 @@
+module () where
+
+const { encode_json_string } = import "duck:prelude/json/encode" ()
+const { text_append } = import "duck:prelude/text" ()
+const {} = import "./request_permissions_types.duck" ()
+
+type OutputPermissionsBooleanOption = RequestPermissionsBooleanOption
+type OutputPermissionsFileSystemField = RequestPermissionFileSystemField
+type OutputPermissionsNetworkField = RequestPermissionNetworkField
+type OutputPermissionsProfile = RequestPermissionProfile
+type OutputPermissionsResponse = RequestPermissionsResponse
+
+const encode_request_permission_profile: OutputPermissionsProfile -> Text = (profile: OutputPermissionsProfile) => {
+  let encoded = "{"
+  let first = true
+  let network: OutputPermissionsNetworkField = profile.network
+  if let `NetworkPresent value = network {
+    let enabled: OutputPermissionsBooleanOption = value.enabled
+    let enabled_json: Text = if let `Some boolean = enabled {
+      if boolean { "true" } else { "false" }
+    } else {
+      "null"
+    }
+    let encoded_network = text_append("\"network\":{\"enabled\":", enabled_json)
+    encoded_network = text_append(encoded_network, "}")
+    encoded = text_append(encoded, encoded_network)
+    first = false
+  }
+
+  let file_system: OutputPermissionsFileSystemField = profile.file_system
+  if let `FileSystemPresent value = file_system {
+    if !(first) { encoded = text_append(encoded, ",") }
+    encoded = text_append(encoded, "\"file_system\":{")
+    let current = value.entries
+    let encoded_read_paths = "["
+    let encoded_write_paths = "["
+    let has_read_path = false
+    let has_write_path = false
+    let done = false
+
+    loop {
+      if let `Cons node = current {
+        let [entry, tail] = node
+        let encoded_path: Text = encode_json_string(entry.path)
+        if let `Read () = entry.access {
+          if has_read_path { encoded_read_paths = text_append(encoded_read_paths, ",") }
+          encoded_read_paths = text_append(encoded_read_paths, encoded_path)
+          has_read_path = true
+        } else if let `Write () = entry.access {
+          if has_write_path { encoded_write_paths = text_append(encoded_write_paths, ",") }
+          encoded_write_paths = text_append(encoded_write_paths, encoded_path)
+          has_write_path = true
+        }
+        current = tail
+      } else {
+        done = true
+      }
+
+      if done { break }
+    }
+
+    encoded_read_paths = text_append(encoded_read_paths, "]")
+    encoded_write_paths = text_append(encoded_write_paths, "]")
+    let first_access = true
+    if has_read_path {
+      let encoded_read = text_append("\"read\":", encoded_read_paths)
+      encoded = text_append(encoded, encoded_read)
+      first_access = false
+    }
+    if has_write_path {
+      if !(first_access) { encoded = text_append(encoded, ",") }
+      let encoded_write = text_append("\"write\":", encoded_write_paths)
+      encoded = text_append(encoded, encoded_write)
+    }
+    encoded = text_append(encoded, "}")
+  }
+
+  text_append(encoded, "}")
+}
+
+const encode_request_permissions_response: OutputPermissionsResponse -> Text = (response: OutputPermissionsResponse) => {
+  let scope: Text = if let `Session () = response.scope { "session" } else { "turn" }
+  let encoded_profile = encode_request_permission_profile(response.permissions)
+  let encoded_scope = encode_json_string(scope)
+  let encoded = text_append("{\"permissions\":", encoded_profile)
+  encoded = text_append(encoded, ",\"scope\":")
+  encoded = text_append(encoded, encoded_scope)
+  if response.strict_auto_review {
+    encoded = text_append(encoded, ",\"strict_auto_review\":true")
+  }
+  text_append(encoded, "}")
+}
+
+return {
+  encode_request_permission_profile,
+  encode_request_permissions_response,
+}

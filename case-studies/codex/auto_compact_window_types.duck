@@ -1,0 +1,40 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/abstractions" ()
+const {} = import "./context_window_status_types.duck" ()
+
+type AutoCompactWindowIdOption = Option Text
+
+type AutoCompactWindowIds = struct {
+  .first_window_id = Text,
+  .previous_window_id = AutoCompactWindowIdOption,
+  .window_id = Text,
+}
+
+type AutoCompactWindowPrefill =
+  | `ServerObserved I64
+  | `Estimated I64
+
+type AutoCompactWindowPrefillOption = Option AutoCompactWindowPrefill
+type AutoCompactWindowTokenOption = ContextWindowI64Option
+
+type AutoCompactWindow = struct {
+  .window_number = I64,
+  .ids = AutoCompactWindowIds,
+  .new_context_window_requested = Bool,
+  .prefill_input_tokens = AutoCompactWindowPrefillOption,
+  .token_budget_reminder = Once,
+  .auto_compact_fallback = Once,
+}
+
+type AutoCompactWindowSnapshot = struct {
+  .prefill_input_tokens = AutoCompactWindowTokenOption,
+}
+
+type AutoCompactWindowClaim = struct {
+  .window = AutoCompactWindow,
+  .granted = Bool,
+}
+
+return {}

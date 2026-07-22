@@ -1,0 +1,24 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const { format_i32 } = import "duck:prelude/numeric" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./test_sync_types.duck" ()
+const { decode_test_sync_value, sync_parse_failure } = import "./test_sync_value.duck" ()
+
+type SyncJsonParseResult = TestSyncParseResult
+
+let parse_test_sync_args: Text -> SyncJsonParseResult = document => {
+  let parsed = parse_json_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    decode_test_sync_value value
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    sync_parse_failure(text_append([message, text_append([" at byte ", format_i32(position)])]))
+  } else {
+    sync_parse_failure "invalid JSON parse result"
+  }
+}
+
+return { parse_test_sync_args }

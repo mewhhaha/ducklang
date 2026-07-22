@@ -1,0 +1,85 @@
+module () where
+
+const { text_append, text_byte_is_ascii_digit, text_byte_is_ascii_lower, text_find_from, text_get, text_length, text_slice, text_starts_with } = import "duck:prelude/runtime" ()
+const {} = import "./agent_types.duck" ()
+
+const append_agent_path_text = (left: Text, right: Text) => text_append [left, right]
+
+const valid_agent_name = (name: Text) => {
+  if name == "" || name == "root" || name == "." || name == ".." {
+    false
+  } else {
+    let valid = true
+    for byte in name {
+      if text_byte_is_ascii_lower byte || text_byte_is_ascii_digit byte || byte == 95 { () } else { valid = false }
+    }
+    valid
+  }
+}
+
+const validate_relative_agent_path = (reference: Text) => {
+  if reference == "" {
+    `InvalidPath "agent path must not be empty"
+  } else if text_get [reference, text_length reference - 1] == 47 {
+    `InvalidPath "relative agent path must not end with `/`"
+  } else {
+    let start = 0
+    let valid = true
+    let invalid_segment: Text = ""
+    loop {
+      let separator = text_find_from [reference, "/", start]
+      let end = if separator < 0 { text_length reference } else { separator }
+      let segment = text_slice [reference, start, end]
+      if valid_agent_name segment {
+        if separator < 0 { break } else { start = separator + 1 }
+      } else {
+        valid = false
+        invalid_segment = segment
+        break
+      }
+    }
+
+    if valid {
+      `Path reference
+    } else if invalid_segment == "root" || invalid_segment == "." || invalid_segment == ".." {
+      `InvalidPath (append_agent_path_text("agent_name `", append_agent_path_text(invalid_segment, "` is reserved")))
+    } else if invalid_segment == "" {
+      `InvalidPath "agent_name must not be empty"
+    } else {
+      `InvalidPath "agent_name must use only lowercase letters, digits, and underscores"
+    }
+  }
+}
+
+const validate_absolute_agent_path = (path: Text) => {
+  if path == "/morpheus" || path == "/root" {
+    `Path path
+  } else if text_starts_with [path, "/root/"] {
+    let relative = text_slice [path, 6, text_length path]
+    let validated = validate_relative_agent_path relative
+    if let `Path _ = validated { `Path path } else if let `InvalidPath message = validated { `InvalidPath message } else { `InvalidPath "invalid absolute agent path" }
+  } else {
+    `InvalidPath "absolute agent paths must start with `/root` or be `/morpheus`"
+  }
+}
+
+const resolve_agent_path = (current_path: Text, reference: Text) => {
+  if reference == "" {
+    `InvalidPath "agent path must not be empty"
+  } else if reference == "/root" {
+    `Path "/root"
+  } else if text_get [reference, 0] == 47 {
+    validate_absolute_agent_path reference
+  } else {
+    let validated = validate_relative_agent_path reference
+    if let `Path relative = validated {
+      `Path (append_agent_path_text(current_path, append_agent_path_text("/", relative)))
+    } else if let `InvalidPath message = validated {
+      `InvalidPath message
+    } else {
+      `InvalidPath "invalid relative agent path"
+    }
+  }
+}
+
+return { resolve_agent_path, valid_agent_name, validate_absolute_agent_path, validate_relative_agent_path }

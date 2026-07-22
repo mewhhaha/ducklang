@@ -1,0 +1,332 @@
+module () where
+
+const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i32 } = import "duck:prelude/numeric" ()
+const { text_append, text_contains, text_get, text_length, text_starts_with } = import "duck:prelude/runtime" ()
+const {} = import "./request_permissions_types.duck" ()
+
+type JsonPermissionsAccess = RequestPermissionAccess
+type JsonPermissionsArgs = RequestPermissionsArgs
+type JsonPermissionsBooleanOption = RequestPermissionsBooleanOption
+type JsonPermissionsEnvironmentParseResult = RequestPermissionsEnvironmentParseResult
+type JsonPermissionsFileSystem = RequestPermissionFileSystem
+type JsonPermissionsFileSystemField = RequestPermissionFileSystemField
+type JsonPermissionsJson = Json
+type JsonPermissionsJsonObject = JsonObject
+type JsonPermissionsJsonParseResult = JsonParseResult
+type JsonPermissionsNetwork = RequestPermissionNetwork
+type JsonPermissionsNetworkField = RequestPermissionNetworkField
+type JsonPermissionsParseResult = RequestPermissionsParseResult
+type JsonPermissionsPath = RequestPermissionPath
+type JsonPermissionsPathNode = RequestPermissionPathNode
+type JsonPermissionsPaths = RequestPermissionPaths
+type JsonPermissionsProfile = RequestPermissionProfile
+type JsonPermissionsTextOption = RequestPermissionsTextOption
+
+type RequestPermissionPathsParseResult =
+  | `PathsParsed JsonPermissionsPaths
+  | `PathsParseFailed Text
+
+type RequestPermissionProfileParseResult =
+  | `ProfileParsed JsonPermissionsProfile
+  | `ProfileParseFailed Text
+
+let request_permissions_parse_failure: Text -> JsonPermissionsParseResult = reason => {
+  `ParseFailed (text_append(["failed to parse function arguments: ", reason]))
+}
+
+let request_permissions_environment_parse_failure: Text -> JsonPermissionsEnvironmentParseResult = reason => {
+  `EnvironmentParseFailed (text_append(["failed to parse function arguments: ", reason]))
+}
+
+let parse_request_permissions_document: Text -> JsonPermissionsJsonParseResult = document => parse_json_document(document)
+
+let parse_request_permissions_environment_id_from_object: JsonPermissionsJsonObject -> JsonPermissionsEnvironmentParseResult = object => {
+  let lookup = json_object_get("environment_id", object)
+  if let `Missing () = lookup {
+    lookup = json_object_get("environmentId", object)
+  }
+
+  if let `Found value = lookup {
+    if let `String environment_id = value {
+      let result: JsonPermissionsTextOption = `Some environment_id
+      `ParsedEnvironmentId result
+    } else if let `Null () = value {
+      let result: JsonPermissionsTextOption = `None ()
+      `ParsedEnvironmentId result
+    } else {
+      request_permissions_environment_parse_failure("environment_id must be a string or null")
+    }
+  } else {
+    let result: JsonPermissionsTextOption = `None ()
+    `ParsedEnvironmentId result
+  }
+}
+
+let parse_request_permissions_environment_id: Text -> JsonPermissionsEnvironmentParseResult = document => {
+  let parsed = parse_request_permissions_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      parse_request_permissions_environment_id_from_object object
+    } else {
+      request_permissions_environment_parse_failure("request_permissions arguments must be an object")
+    }
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    request_permissions_environment_parse_failure(text_append([message, text_append([" at byte ", format_i32(position)])]))
+  } else {
+    request_permissions_environment_parse_failure("invalid JSON parse result")
+  }
+}
+
+let request_permission_path_is_absolute: Text -> Bool = path => {
+  if text_starts_with([path, "/"]) || text_starts_with([path, "\\\\"]) {
+    true
+  } else if text_length(path) >= 3 && text_get([path, 1]) == 58 {
+    let first = text_get([path, 0])
+    let separator = text_get([path, 2])
+    let drive_letter = (first >= 65 && first <= 90) || (first >= 97 && first <= 122)
+    drive_letter && (separator == 47 || separator == 92)
+  } else {
+    false
+  }
+}
+
+let resolve_request_permission_path: [Text, Text] -> Text = (cwd: Text, path: Text) => {
+  if request_permission_path_is_absolute path || cwd == "" {
+    path
+  } else if text_get([cwd, text_length(cwd) - 1]) == 47 || text_get([cwd, text_length(cwd) - 1]) == 92 {
+    text_append([cwd, path])
+  } else if text_contains([cwd, "\\"]) && !(text_contains([cwd, "/"])) {
+    text_append([cwd, text_append(["\\", path])])
+  } else {
+    text_append([cwd, text_append(["/", path])])
+  }
+}
+
+let request_permission_paths_reverse: JsonPermissionsPaths -> JsonPermissionsPaths = paths => {
+  let current = paths
+  let reversed: JsonPermissionsPaths = `Nil ()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      let reversed_node: JsonPermissionsPathNode = [entry, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  reversed
+}
+
+let parse_request_permission_paths: [JsonPermissionsJson, Text, JsonPermissionsAccess, Text] -> RequestPermissionPathsParseResult = (value: JsonPermissionsJson, field_name: Text, access: JsonPermissionsAccess, cwd: Text) => {
+  if let `Null () = value {
+    `PathsParsed (`Nil ())
+  } else if let `Array values = value {
+    let current = values
+    let reversed: JsonPermissionsPaths = `Nil ()
+    let index = 0
+    let failure = ""
+    let done = false
+
+    loop {
+      if let `Cons node = current {
+        let [path_value, tail] = node
+        if let `String path = path_value {
+          let entry: JsonPermissionsPath = [.path = resolve_request_permission_path(cwd, path), .access = access]
+          let reversed_node: JsonPermissionsPathNode = [entry, reversed]
+          reversed = `Cons reversed_node
+          current = tail
+          index = index + 1
+        } else {
+          failure = text_append([field_name, text_append(["[", text_append([format_i32(index), "] must be a string"])])])
+          done = true
+        }
+      } else {
+        done = true
+      }
+
+      if done { break }
+    }
+
+    if failure == "" {
+      `PathsParsed (request_permission_paths_reverse reversed)
+    } else {
+      `PathsParseFailed failure
+    }
+  } else {
+    `PathsParseFailed (text_append([field_name, " must be an array or null"]))
+  }
+}
+
+let prepend_request_permission_paths: [JsonPermissionsPaths, JsonPermissionsPaths] -> JsonPermissionsPaths = (prefix: JsonPermissionsPaths, suffix: JsonPermissionsPaths) => {
+  let current = request_permission_paths_reverse prefix
+  let combined = suffix
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      let combined_node: JsonPermissionsPathNode = [entry, combined]
+      combined = `Cons combined_node
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  combined
+}
+
+let parse_request_permission_profile: [JsonPermissionsJson, Text] -> RequestPermissionProfileParseResult = (value: JsonPermissionsJson, cwd: Text) => {
+  if let `Object object = value {
+    let network: JsonPermissionsNetworkField = `NetworkMissing ()
+    let file_system: JsonPermissionsFileSystemField = `FileSystemMissing ()
+    let failure = ""
+
+    let network_lookup = json_object_get("network", object)
+    if let `Found network_value = network_lookup {
+      if let `Null () = network_value {
+        network = `NetworkMissing ()
+      } else if let `Object network_object = network_value {
+        let enabled: JsonPermissionsBooleanOption = `None ()
+        let enabled_lookup = json_object_get("enabled", network_object)
+        if let `Found enabled_value = enabled_lookup {
+          if let `Bool boolean = enabled_value {
+            enabled = `Some boolean
+          } else if let `Null () = enabled_value {
+            enabled = `None ()
+          } else {
+            failure = "permissions.network.enabled must be a boolean or null"
+          }
+        }
+        if failure == "" {
+          let parsed_network: JsonPermissionsNetwork = [.enabled = enabled]
+          network = `NetworkPresent parsed_network
+        }
+      } else {
+        failure = "permissions.network must be an object or null"
+      }
+    }
+
+    if failure == "" {
+      let file_system_lookup = json_object_get("file_system", object)
+      if let `Found file_system_value = file_system_lookup {
+        if let `Null () = file_system_value {
+          file_system = `FileSystemMissing ()
+        } else if let `Object file_system_object = file_system_value {
+          let read_paths: JsonPermissionsPaths = `Nil ()
+          let write_paths: JsonPermissionsPaths = `Nil ()
+          let read_lookup = json_object_get("read", file_system_object)
+          if let `Found read_value = read_lookup {
+            let parsed_read = parse_request_permission_paths(read_value, "permissions.file_system.read", `Read (), cwd)
+            if let `PathsParsed paths = parsed_read {
+              read_paths = paths
+            } else if let `PathsParseFailed message = parsed_read {
+              failure = message
+            }
+          }
+
+          if failure == "" {
+            let write_lookup = json_object_get("write", file_system_object)
+            if let `Found write_value = write_lookup {
+              let parsed_write = parse_request_permission_paths(write_value, "permissions.file_system.write", `Write (), cwd)
+              if let `PathsParsed paths = parsed_write {
+                write_paths = paths
+              } else if let `PathsParseFailed message = parsed_write {
+                failure = message
+              }
+            }
+          }
+
+          if failure == "" {
+            let parsed_file_system: JsonPermissionsFileSystem = [.entries = prepend_request_permission_paths(read_paths, write_paths)]
+            file_system = `FileSystemPresent parsed_file_system
+          }
+        } else {
+          failure = "permissions.file_system must be an object or null"
+        }
+      }
+    }
+
+    if failure == "" {
+      let profile: JsonPermissionsProfile = [.network = network, .file_system = file_system]
+      `ProfileParsed profile
+    } else {
+      `ProfileParseFailed failure
+    }
+  } else {
+    `ProfileParseFailed "permissions must be an object"
+  }
+}
+
+let parse_request_permissions_args: [Text, Text] -> JsonPermissionsParseResult = (document: Text, cwd: Text) => {
+  let parsed = parse_request_permissions_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      let environment_result = parse_request_permissions_environment_id_from_object object
+      if let `EnvironmentParseFailed message = environment_result {
+        `ParseFailed message
+      } else if let `ParsedEnvironmentId environment_id = environment_result {
+        let reason: JsonPermissionsTextOption = `None ()
+        let failure = ""
+        let reason_lookup = json_object_get("reason", object)
+        if let `Found reason_value = reason_lookup {
+          if let `String text = reason_value {
+            reason = `Some text
+          } else if let `Null () = reason_value {
+            reason = `None ()
+          } else {
+            failure = "reason must be a string or null"
+          }
+        }
+
+        if failure != "" {
+          request_permissions_parse_failure failure
+        } else {
+          let permissions_lookup = json_object_get("permissions", object)
+          if let `Found permissions_value = permissions_lookup {
+            let profile_result = parse_request_permission_profile(permissions_value, cwd)
+            if let `ProfileParsed permissions = profile_result {
+              let args: JsonPermissionsArgs = [.environment_id = environment_id, .reason = reason, .permissions = permissions]
+              `Parsed args
+            } else if let `ProfileParseFailed message = profile_result {
+              request_permissions_parse_failure message
+            } else {
+              request_permissions_parse_failure "permission profile parsing produced no result"
+            }
+          } else {
+            request_permissions_parse_failure "permissions is required"
+          }
+        }
+      } else {
+        request_permissions_parse_failure "environment selection parsing produced no result"
+      }
+    } else {
+      request_permissions_parse_failure "request_permissions arguments must be an object"
+    }
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    request_permissions_parse_failure(text_append([message, text_append([" at byte ", format_i32(position)])]))
+  } else {
+    request_permissions_parse_failure "invalid JSON parse result"
+  }
+}
+
+return {
+  parse_request_permissions_args,
+  parse_request_permissions_environment_id,
+  request_permission_path_is_absolute,
+  resolve_request_permission_path,
+}

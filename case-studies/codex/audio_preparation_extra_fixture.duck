@@ -1,0 +1,26 @@
+module () where
+
+const {} = import "./history_types.duck" ()
+const {} = import "./audio_preparation_types.duck" ()
+const { apply_audio_preparation_results } = import "./audio_preparation.duck" ()
+
+type FixtureResponses = HistoryItems
+type FixturePreparationResult = AudioPreparationResult
+type FixturePreparationResults = AudioPreparationResults
+type FixturePreparationResultNode = AudioPreparationResultNode
+
+const verify_audio_preparation_extra_fixture: () -> I32 = () => {
+  let result: FixturePreparationResult = [.status_code = 0, .url = "data:audio/wav;base64,YQ==", .reason = "", .size = 1, .mime = "audio/wav", .format_code = 0]
+  let results: FixturePreparationResults = `AudioResultsNil ()
+  let result_node: FixturePreparationResultNode = [result, results]
+  results = `AudioResultsCons result_node
+  let responses: FixtureResponses = `Nil ()
+  let rewrite = apply_audio_preparation_results([responses, results])
+  if let `RejectedAudioRewrite failure = rewrite {
+    if let `ExtraAudioPreparations count = failure {
+      if count == 1 { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 }
+}
+
+return { verify_audio_preparation_extra_fixture }

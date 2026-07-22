@@ -1,0 +1,66 @@
+module () where
+
+const { text_contains } = import "duck:prelude/runtime" ()
+const {} = import "./tool_search_types.duck" ()
+const { merge_search_sources, render_search_sources, tool_search_parameters, tool_search_tool_definitions, tool_search_tool_specs } = import "./tool_search_registration.duck" ()
+
+type FixtureSource = ToolSearchSourceInfo
+type FixtureSourceNode = ToolSearchSourceInfoNode
+type FixtureSources = ToolSearchSourceInfos
+type FixtureDefinitions = ToolDefinitions
+type FixtureSpecs = ToolSpecs
+
+let raw: FixtureSources = `Nil ()
+raw = `Cons ([[.name = "docs", .description = `None ()], raw] as FixtureSourceNode)
+raw = `Cons ([[.name = "Google Drive", .description = `Some "Drive, Docs, Sheets, and Slides."], raw] as FixtureSourceNode)
+raw = `Cons ([[.name = "Google Drive", .description = `None ()], raw] as FixtureSourceNode)
+
+let score = 0
+let merged: FixtureSources = merge_search_sources raw
+let merged_count = 0
+let current = merged
+let count_done = false
+loop {
+  if let `Cons node = current {
+    let [_, tail] = node
+    merged_count = merged_count + 1
+    current = tail
+  } else {
+    count_done = true
+  }
+  if count_done { break }
+}
+if merged_count == 2 && render_search_sources raw == "- Google Drive: Drive, Docs, Sheets, and Slides.\n- docs" { score = score + 1 }
+
+let definitions: FixtureDefinitions = tool_search_tool_definitions()
+if let `Cons node = definitions {
+  let [definition, tail] = node
+  let [name, exposure, tool_handler, payload, parallel, waits] = definition
+  let [namespace, local_name] = name
+  if namespace == "" && local_name == "tool_search" && parallel && !(waits) {
+    if let `Direct () = exposure {
+      if let `ToolSearch () = tool_handler {
+        if let `ToolSearchPayload () = payload {
+          if let `Nil () = tail { score = score + 10 }
+        }
+      }
+    }
+  }
+}
+
+let parameters = tool_search_parameters 8
+if parameters == "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of tools to return. Defaults to 8.\"},\"query\":{\"type\":\"string\",\"description\":\"Search query for deferred tools.\"}},\"required\":[\"query\"],\"additionalProperties\":false}" { score = score + 100 }
+
+let specs: FixtureSpecs = tool_search_tool_specs(raw, 8)
+if let `Cons node = specs {
+  let [spec, tail] = node
+  let [_, kind, description, actual_parameters, output, strict] = spec
+  let no_output = if let `ToolOutputSchemaMissing () = output { true } else { false }
+  if text_contains(description, "Searches over deferred tool metadata with BM25") && text_contains(description, "- Google Drive: Drive, Docs, Sheets, and Slides.\n- docs") && actual_parameters == parameters && no_output && !(strict) {
+    if let `ToolSearchSpec () = kind {
+      if let `Nil () = tail { score = score + 1000 }
+    }
+  }
+}
+
+return { .score = score }

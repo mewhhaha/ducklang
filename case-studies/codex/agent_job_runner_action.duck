@@ -1,0 +1,68 @@
+module () where
+
+const {} = import "./agent_job_runner_types.duck" ()
+
+type AgentJobActionActive = AgentJobActiveWorkers
+type AgentJobActionPending = AgentJobPreparedItems
+type AgentJobActionState = AgentJobRunnerState
+type AgentJobActionStep = AgentJobRunnerAction
+
+const agent_job_active_count: AgentJobActionActive -> I32 = values => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const agent_job_item_count: AgentJobActionPending -> I32 = values => {
+  let current = values
+  let count = 0
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  count
+}
+
+const start_agent_job_runner: AgentJobActionPending -> AgentJobActionState = pending => {
+  [.pending = pending, .active = `Nil (), .total_items = agent_job_item_count(pending), .completed_items = 0, .failed_items = 0, .spawn_blocked = false, .cancelled = false]
+}
+
+const next_agent_job_runner_action: [AgentJobActionState, I32] -> AgentJobActionStep = (state: AgentJobActionState, maximum_concurrency: I32) => {
+  let active_count = agent_job_active_count(state.active)
+  let may_retry_spawn = !(state.spawn_blocked) || active_count == 0
+  if !(state.cancelled) && may_retry_spawn && active_count < maximum_concurrency {
+    if let `Cons node = state.pending {
+      let [item, _] = node
+      return `SpawnWorker item
+    }
+  }
+  if let `Cons _ = state.active {
+    `WaitForWorker state.active
+  } else {
+    `FinalizeJob state.cancelled
+  }
+}
+
+return {
+  agent_job_active_count,
+  next_agent_job_runner_action,
+  start_agent_job_runner,
+}

@@ -1,0 +1,49 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/abstractions" ()
+
+type TurnProfilePhase =
+  | `Sampling Unit
+  | `ToolBlocking Unit
+
+type TurnProfilePhaseOption = Option TurnProfilePhase
+
+type TurnProfile = struct {
+  .before_first_sampling = DurationMs,
+  .sampling = DurationMs,
+  .between_sampling_overhead = DurationMs,
+  .tool_blocking = DurationMs,
+  .after_last_sampling = DurationMs,
+  .sampling_request_count = I64,
+  .sampling_retry_count = I64,
+}
+
+type TurnProfileOption = Option TurnProfile
+
+type TurnProfileState = struct {
+  .started_at = Option MonotonicMs,
+  .last_transition_at = Option MonotonicMs,
+  .active_phase = TurnProfilePhaseOption,
+  .seen_sampling = Bool,
+  .before_first_sampling = DurationMs,
+  .sampling = DurationMs,
+  .between_sampling_overhead = DurationMs,
+  .tool_blocking = DurationMs,
+  .pending_idle_after_sampling = DurationMs,
+  .sampling_request_count = I64,
+  .sampling_retry_count = I64,
+  .completed_profile = TurnProfileOption,
+}
+
+type TurnProfileTransition = struct {
+  .state = TurnProfileState,
+  .started = Bool,
+}
+
+type TurnProfileCompletion = struct {
+  .state = TurnProfileState,
+  .profile = TurnProfile,
+}
+
+return {}

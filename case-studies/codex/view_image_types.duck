@@ -1,0 +1,83 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type ViewImageTextOption =
+  | `ImageEnvironmentMissing Unit
+  | `ImageEnvironmentPresent Text
+
+type ViewImageDetail =
+  | `High Unit
+  | `Original Unit
+
+type ViewImageDetailOption =
+  | `ImageDetailMissing Unit
+  | `ImageDetailPresent ViewImageDetail
+
+type ViewImageArgs = struct {
+  .path = Text,
+  .environment_id = ViewImageTextOption,
+  .detail = ViewImageDetailOption,
+}
+
+type ViewImagePayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type ViewImageParseResult =
+  | `Parsed ViewImageArgs
+  | `ParseFailed Text
+
+type ViewImageEnvironment = struct {
+  .environment_id = Text,
+  .cwd = Text,
+  .is_primary = Bool,
+}
+
+type ViewImageEnvironmentNode = [ViewImageEnvironment, ViewImageEnvironments]
+type ViewImageEnvironments =
+  | `Nil Unit
+  | `Cons ViewImageEnvironmentNode
+
+type ViewImageEnvironmentSelection =
+  | `Selected ViewImageEnvironment
+  | `SelectionFailed Text
+
+type ViewImagePreparedCall = struct {
+  .call_id = Text,
+  .environment_id = Text,
+  .path = Text,
+  .detail = ViewImageDetail,
+}
+
+type ViewImageCallPlan =
+  | `ReadImage ViewImagePreparedCall
+  | `RejectRequest Text
+  | `Fatal Text
+
+type ViewImageHostRequest = struct {
+  .environment_id = Text,
+  .path = Text,
+}
+
+type ViewImageHostResponse =
+  | `Loaded Text
+  | `LocateFailed Text
+  | `NotFile Unit
+  | `ReadFailed Text
+
+type ViewImageViewEvent = struct {
+  .call_id = Text,
+  .path = Text,
+}
+
+type ViewImageOutput = struct {
+  .image_url = Text,
+  .detail = ViewImageDetail,
+}
+
+type ViewImageExecutionResult =
+  | `Completed ViewImageOutput
+  | `Rejected Text
+
+return {}

@@ -1,0 +1,20 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/abstractions" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerThreadDeleteRoot =
+  | `LoadedThreadRoot AppServerThreadPersistence
+  | `StoredThreadRoot Unit
+  | `StateOnlyThreadRoot Unit
+  | `MissingThreadRoot Unit
+
+type AppServerThreadDeleteSubtree = NonEmpty Text
+type AppServerThreadDeletePlan = struct {
+  .thread_id = Text,
+  .delete_order = AppServerTexts,
+}
+type AppServerThreadDeletePlanResult = Result Text AppServerThreadDeletePlan
+
+return {}

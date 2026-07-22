@@ -1,0 +1,81 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const context_types_module = import "./context_types.duck"
+const context_module = import "./context.duck"
+const { render_environment_context } = context_module()
+const fragment_module = import "./context_fragments.duck"
+const { render_internal_context, render_rollout_budget, render_user_instructions, valid_internal_context_source } = fragment_module()
+
+type FixtureTextOption = ContextTextOption
+type FixtureI32Option = ContextI32Option
+type FixtureTexts = ContextTexts
+type FixtureEnvironmentStatus = ContextEnvironmentStatus
+type FixtureEnvironment = ContextEnvironment
+type FixtureEnvironments = ContextEnvironments
+type FixtureNetwork = ContextNetwork
+type FixtureNetworkOption = ContextNetworkOption
+type FixtureFileSystemPath = ContextFileSystemPath
+type FixtureFileSystemEntry = ContextFileSystemEntry
+type FixtureFileSystemEntries = ContextFileSystemEntries
+type FixtureRestricted = ContextManagedRestricted
+type FixtureFileSystemProfile = ContextFileSystemProfile
+type FixtureFileSystem = ContextFileSystem
+type FixtureFileSystemOption = ContextFileSystemOption
+type FixtureEnvironmentContext = EnvironmentContext
+
+const texts = comptime list(Text)
+const environments = comptime list(FixtureEnvironment)
+const filesystem_entries = comptime list(FixtureFileSystemEntry)
+
+let environment_values: FixtureEnvironments = environments.empty()
+let remote: FixtureEnvironment = ["remote", "/remote", `Starting (), `None ()]
+let local: FixtureEnvironment = ["local&", "/repo<a", `Available (), `Some ("bash")]
+environment_values = environments.prepend(local, environment_values)
+environment_values = environments.prepend(remote, environment_values)
+
+let allowed: FixtureTexts = texts.singleton("*.openai.com")
+let denied: FixtureTexts = texts.singleton("blocked.example.com")
+let network: FixtureNetwork = [allowed, denied]
+
+let entries: FixtureFileSystemEntries = filesystem_entries.empty()
+let denied_glob: FixtureFileSystemEntry = ["deny", `Glob ("/repo/private/**")]
+let write_repo: FixtureFileSystemEntry = ["write", `Path ("/repo<a")]
+let write_repo_duplicate: FixtureFileSystemEntry = ["write", `Path ("/repo<a")]
+entries = filesystem_entries.prepend(denied_glob, entries)
+entries = filesystem_entries.prepend(write_repo, entries)
+entries = filesystem_entries.prepend(write_repo_duplicate, entries)
+let restricted: FixtureRestricted = [entries, `Some (4)]
+let roots: FixtureTexts = texts.singleton("/repo<a")
+let filesystem: FixtureFileSystem = [roots, `ManagedRestricted restricted]
+
+let context: FixtureEnvironmentContext = [environment_values, `Some ("2026-07-18"), `Some ("Europe/Warsaw"), `Some (network), `Some (filesystem), `Some ("- agent-1\n- agent-2")]
+
+let expected: Text = "<environment_context>\n  <environments>\n    <environment id=\"local&amp;\">\n      <cwd>/repo&lt;a</cwd>\n      <shell>bash</shell>\n    </environment>\n    <environment id=\"remote\">\n      <cwd>/remote</cwd>\n      <status>starting</status>\n    </environment>\n  </environments>\n  <current_date>2026-07-18</current_date>\n  <timezone>Europe/Warsaw</timezone>\n  <network enabled=\"true\"><allowed>*.openai.com</allowed><denied>blocked.example.com</denied></network>\n  <filesystem><workspace_roots><root>/repo&lt;a</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\" glob_scan_max_depth=\"4\"><entry access=\"write\"><path>/repo&lt;a</path></entry><entry access=\"deny\" escalatable=\"false\"><glob>/repo/private/**</glob></entry></file_system></permission_profile></filesystem>\n  <subagents>\n    - agent-1\n    - agent-2\n  </subagents>\n</environment_context>"
+let rendered: Text = render_environment_context context
+let score: I32 = 0
+
+if rendered == expected {
+  score = score + 1
+}
+
+if render_user_instructions(`Some ("/repo<a"), "Be precise") == "# AGENTS.md instructions for /repo<a\n\n<INSTRUCTIONS>\nBe precise\n</INSTRUCTIONS>" {
+  score = score + 10
+}
+
+if render_rollout_budget(2048) == "<rollout_budget>\nYou have 2048 weighted tokens left in the shared session token budget.\n</rollout_budget>" {
+  score = score + 100
+}
+
+if valid_internal_context_source("goal_2") && !valid_internal_context_source("Goal-2") {
+  score = score + 1000
+}
+
+let internal = render_internal_context("goal", "continue")
+if let `Some value = internal {
+  if value == "<codex_internal_context source=\"goal\">\ncontinue\n</codex_internal_context>" {
+    score = score + 10000
+  }
+}
+
+return { .score = score }

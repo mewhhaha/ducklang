@@ -1,0 +1,85 @@
+module () where
+
+const {} = import "./original_image_detail_types.duck" ()
+const mixed_output_truncation_module = import "./code_mode_mixed_output_truncation.duck"
+const { truncate_code_mode_mixed_output } = mixed_output_truncation_module()
+
+type FixtureItem = FunctionOutputContentItem
+type FixtureItemNode = FunctionOutputContentItemNode
+type FixtureItems = FunctionOutputContentItems
+type FixtureDetailOption = OutputImageDetailOption
+
+let score = 0
+let detail: FixtureDetailOption = `None ()
+let image_item: FixtureItem = `InputImage (["data:image/png;base64,AA", detail])
+
+let mixed: FixtureItems = `Nil ()
+let omitted_item: FixtureItem = `InputText "tail"
+let omitted_node: FixtureItemNode = [omitted_item, mixed]
+mixed = `Cons omitted_node
+let encrypted_item: FixtureItem = `EncryptedContent "ciphertext"
+let encrypted_node: FixtureItemNode = [encrypted_item, mixed]
+mixed = `Cons encrypted_node
+let audio_item: FixtureItem = `InputAudio "audio"
+let audio_node: FixtureItemNode = [audio_item, mixed]
+mixed = `Cons audio_node
+let image_node: FixtureItemNode = [image_item, mixed]
+mixed = `Cons image_node
+let mixed_text_item: FixtureItem = `InputText "abcdefghijklmnopqrst"
+let mixed_text_node: FixtureItemNode = [mixed_text_item, mixed]
+mixed = `Cons mixed_text_node
+
+let truncated_mixed = truncate_code_mode_mixed_output(2i64, mixed)
+if let `Cons first = truncated_mixed {
+  let [first_item, first_tail] = first
+  if let `InputText first_text = first_item {
+    if first_text == "abcd…3 tokens truncated…qrst" {
+      if let `Cons second = first_tail {
+        let [second_item, second_tail] = second
+        if let `InputImage image = second_item {
+          let [image_url, _] = image
+          if image_url == "data:image/png;base64,AA" {
+            if let `Cons third = second_tail {
+              let [third_item, third_tail] = third
+              if let `EncryptedContent encrypted = third_item {
+                if encrypted == "ciphertext" {
+                  if let `Cons fourth = third_tail {
+                    let [fourth_item, fourth_tail] = fourth
+                    if let `InputText marker = fourth_item {
+                      if marker == "[omitted 1 text items ...]" {
+                        if let `Nil () = fourth_tail { score = score + 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let zero_budget: FixtureItems = `Nil ()
+let zero_image_node: FixtureItemNode = [image_item, zero_budget]
+zero_budget = `Cons zero_image_node
+let empty_item: FixtureItem = `InputText ""
+let empty_node: FixtureItemNode = [empty_item, zero_budget]
+zero_budget = `Cons empty_node
+let truncated_zero = truncate_code_mode_mixed_output(0i64, zero_budget)
+if let `Cons first = truncated_zero {
+  let [first_item, first_tail] = first
+  if let `InputImage _ = first_item {
+    if let `Cons second = first_tail {
+      let [second_item, second_tail] = second
+      if let `InputText marker = second_item {
+        if marker == "[omitted 1 text items ...]" {
+          if let `Nil () = second_tail { score = score + 10 }
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

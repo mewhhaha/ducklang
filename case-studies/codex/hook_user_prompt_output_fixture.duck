@@ -1,0 +1,20 @@
+module () where
+
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_user_prompt_output } = hook_output_module()
+
+type FixtureUserPromptParse = HookUserPromptParse
+
+let parsed: FixtureUserPromptParse = parse_user_prompt_output("{\"decision\":\"block\",\"reason\":\"slow down\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"remember\"}}")
+let score = 0
+
+if let `UserPromptOk output = parsed {
+  let [_, should_block, reason, invalid_block, additional_context] = output
+  if should_block { score = score * 10 + 1 }
+  if let `Some value = reason { if value == "slow down" { score = score * 10 + 1 } }
+  if let `None () = invalid_block { score = score * 10 + 1 }
+  if let `Some value = additional_context { if value == "remember" { score = score * 10 + 1 } }
+}
+
+return { .score = score }

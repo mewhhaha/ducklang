@@ -1,0 +1,140 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { text_append } = import "duck:prelude/text" ()
+const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_thread_settings_types.duck" ()
+
+type SettingsParams = AppServerThreadSettingsUpdateParams
+type SettingsPermissionOption = AppServerThreadPermissionSettingsOption
+type SettingsPermissionResolution = AppServerThreadPermissionResolution
+type SettingsPermissionResult = Result Text SettingsPermissionOption
+type SettingsOverrides = AppServerThreadSettingsOverrides
+type SettingsPlan = AppServerThreadSettingsUpdatePlan
+type SettingsPlanInput = AppServerThreadSettingsUpdatePlanInput
+type SettingsPlanResult = AppServerThreadSettingsUpdatePlanResult
+type SettingsResolvedPlanResult = Result Text SettingsPlan
+type SettingsJson = AppServerJson
+type SettingsJsonOption = AppServerJsonOption
+type SettingsTextOption = AppServerTextOption
+type SettingsTexts = AppServerTexts
+
+const settings_texts = comptime list(Text)
+
+const settings_texts_contains: [SettingsTexts, Text] -> Bool = (values: SettingsTexts, expected: Text) => {
+  let current = values
+  let found = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      if value == expected {
+        found = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  found
+}
+
+const retarget_workspace_roots: [Text, Text, SettingsTexts] -> SettingsTexts = (current_cwd: Text, next_cwd: Text, roots: SettingsTexts) => {
+  let current = roots
+  let reversed = settings_texts.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [root, tail] = node
+      let retargeted = if root == current_cwd { next_cwd } else { root }
+      if !(settings_texts_contains(reversed, retargeted)) {
+        reversed = settings_texts.prepend(retargeted, reversed)
+      }
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  settings_texts.reverse(reversed)
+}
+
+const resolve_permission_settings: [SettingsPermissionResolution, SettingsTextOption] -> SettingsPermissionResult = (permission_resolution: SettingsPermissionResolution, requested: SettingsTextOption) => {
+  if let `Some _ = requested {
+    if let `PermissionSelectionResolved permission = permission_resolution {
+      `Ok (`Some permission)
+    } else if let `PermissionSelectionRejected reason = permission_resolution {
+      `Err (text_append("invalid thread settings override: ", reason))
+    } else {
+      `Err "thread/settings/update permission selection was not resolved"
+    }
+  } else if let `PermissionSelectionNotRequested () = permission_resolution {
+    `Ok (`None ())
+  } else {
+    `Err "thread/settings/update received an unexpected permission resolution"
+  }
+}
+
+const prefer_explicit_json: [SettingsJsonOption, SettingsJson] -> SettingsJsonOption = (explicit: SettingsJsonOption, fallback: SettingsJson) => {
+  if let `Some value = explicit { `Some value } else { `Some fallback }
+}
+
+const resolve_thread_settings_update: SettingsPlanInput -> SettingsResolvedPlanResult = (input: SettingsPlanInput) => {
+  let params = input.params
+  let permission_result = resolve_permission_settings(input.permission_resolution, params.permissions)
+  if let `Ok permission = permission_result {
+    let roots: SettingsTexts = if let `Some requested_cwd = params.cwd {
+      retarget_workspace_roots(input.current_cwd, requested_cwd, input.workspace_roots)
+    } else {
+      input.workspace_roots
+    }
+    if let `Some resolved = permission {
+      let approval_policy = prefer_explicit_json(params.approval_policy, resolved.approval_policy)
+      let approvals_reviewer = prefer_explicit_json(params.approvals_reviewer, resolved.approvals_reviewer)
+      let sandbox_policy = prefer_explicit_json(params.sandbox_policy, resolved.sandbox_policy)
+      let overrides: SettingsOverrides = [params.cwd, approval_policy, approvals_reviewer, sandbox_policy, resolved.active_permission_profile, true, params.model, params.service_tier, params.effort, params.summary, params.collaboration_mode, params.personality]
+      let plan: SettingsPlan = [params.thread_id, overrides, roots]
+      `Ok plan
+    } else {
+      let active_permission_profile: SettingsJsonOption = `None ()
+      let overrides: SettingsOverrides = [params.cwd, params.approval_policy, params.approvals_reviewer, params.sandbox_policy, active_permission_profile, false, params.model, params.service_tier, params.effort, params.summary, params.collaboration_mode, params.personality]
+      let plan: SettingsPlan = [params.thread_id, overrides, roots]
+      `Ok plan
+    }
+  } else if let `Err reason = permission_result {
+    `Err reason
+  } else {
+    `Err "thread/settings/update permission selection could not be classified"
+  }
+}
+
+const plan_thread_settings_update: SettingsPlanInput -> SettingsPlanResult = (input: SettingsPlanInput) => {
+  if !(input.params.has_changes) {
+    `NoThreadSettingsChanges ()
+  } else {
+    let resolved = resolve_thread_settings_update(input)
+    if let `Ok plan = resolved {
+      `ThreadSettingsUpdatePlanned plan
+    } else if let `Err reason = resolved {
+      `ThreadSettingsUpdateInvalid reason
+    } else {
+      `ThreadSettingsUpdateInvalid "thread/settings/update plan could not be classified"
+    }
+  }
+}
+
+return {
+  plan_thread_settings_update,
+  retarget_workspace_roots,
+  resolve_permission_settings,
+  resolve_thread_settings_update,
+}

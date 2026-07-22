@@ -1,0 +1,69 @@
+module () where
+
+type NetworkTextOption = Option Text
+
+type NetworkApprovalProtocol =
+  | `Http Unit
+  | `Https Unit
+  | `Socks5Tcp Unit
+  | `Socks5Udp Unit
+
+type NetworkApprovalMode =
+  | `Immediate Unit
+  | `Deferred Unit
+
+type NetworkPermissionProfile =
+  | `Managed Unit
+  | `Disabled Unit
+  | `External Unit
+
+type NetworkApprovalPolicy =
+  | `UnlessTrusted Unit
+  | `OnRequest Unit
+  | `Granular Unit
+  | `Never Unit
+
+type NetworkHostApprovalDecision =
+  | `AllowOnce Unit
+  | `AllowForSession Unit
+  | `Deny Unit
+
+type NetworkApprovalOutcome =
+  | `NoOutcome Unit
+  | `DeniedByUser Unit
+  | `DeniedByPolicy Text
+
+type NetworkHostKey = [Text, Text, NetworkApprovalProtocol, I32]
+type NetworkHostKeys = List NetworkHostKey
+
+type NetworkApprovalCall = [Text, Text, Text, NetworkApprovalMode, NetworkApprovalOutcome, Bool]
+type NetworkApprovalCalls = List NetworkApprovalCall
+type NetworkCallOption = Option NetworkApprovalCall
+
+type NetworkApprovalState = [NetworkApprovalCalls, NetworkHostKeys, NetworkHostKeys, NetworkHostKeys]
+
+type NetworkRequest = [Text, NetworkApprovalProtocol, I32, NetworkTextOption, NetworkTextOption]
+
+type NetworkRequestAttribution =
+  | `Owner NetworkApprovalCall
+  | `Environment Text
+  | `Missing Unit
+  | `Invalid Unit
+  | `Ambiguous Unit
+
+type NetworkApprovalPrompt = [NetworkHostKey, NetworkTextOption, Text, Text, Bool]
+type NetworkPolicyDecision =
+  | `Allow Unit
+  | `Prompt NetworkApprovalPrompt
+  | `Await NetworkApprovalPrompt
+  | `Reject Text
+
+type NetworkPolicyResult = [NetworkApprovalState, NetworkPolicyDecision]
+
+type NetworkFinishOutcome =
+  | `Finished Unit
+  | `Rejected Text
+
+type NetworkFinishResult = [NetworkApprovalState, NetworkFinishOutcome]
+
+return {}

@@ -1,0 +1,45 @@
+module () where
+
+const { list } = import "duck:prelude/list" ()
+const {} = import "./apply_patch_types.duck" ()
+const { derive_apply_patch_update } = import "./apply_patch_update.duck" ()
+
+type FixtureTexts = ApplyPatchTexts
+type FixtureChunk = ApplyPatchChunk
+type FixtureChunks = ApplyPatchChunks
+
+const texts = comptime list(Text)
+const chunks = comptime list(FixtureChunk)
+
+let score: I32 = 0
+
+let first_old: FixtureTexts = texts.singleton("  let old = true")
+let first_new: FixtureTexts = texts.singleton("  let fresh = true")
+let first: FixtureChunk = [.context = `Some "function run", .old_lines = first_old, .new_lines = first_new, .end_of_file = false]
+let second: FixtureChunk = [.context = `None (), .old_lines = texts.empty(), .new_lines = texts.singleton("tail"), .end_of_file = false]
+let changes: FixtureChunks = chunks.prepend(first, chunks.singleton(second))
+
+if let `Ok updated = derive_apply_patch_update("src/main.ts", "header\nfunction run\n  let old = true\nend\n", changes) {
+  if updated == "header\nfunction run\n  let fresh = true\nend\ntail\n" { score = score + 1 }
+}
+
+let fuzzy_old: FixtureTexts = texts.singleton("value - 'duck'")
+let fuzzy_new: FixtureTexts = texts.singleton("value = ready")
+let fuzzy: FixtureChunk = [.context = `None (), .old_lines = fuzzy_old, .new_lines = fuzzy_new, .end_of_file = false]
+if let `Ok updated = derive_apply_patch_update("unicode.txt", "  value — ’duck’  \n", chunks.singleton(fuzzy)) {
+  if updated == "value = ready\n" { score = score + 10 }
+}
+
+let eof_old: FixtureTexts = texts.singleton("last")
+let eof_new: FixtureTexts = texts.singleton("done")
+let eof: FixtureChunk = [.context = `None (), .old_lines = eof_old, .new_lines = eof_new, .end_of_file = true]
+if let `Ok updated = derive_apply_patch_update("tail.txt", "last\nother\nlast\n", chunks.singleton(eof)) {
+  if updated == "last\nother\ndone\n" { score = score + 100 }
+}
+
+let missing: FixtureChunk = [.context = `None (), .old_lines = texts.singleton("missing"), .new_lines = texts.singleton("replacement"), .end_of_file = false]
+if let `Err reason = derive_apply_patch_update("missing.txt", "present\n", chunks.singleton(missing)) {
+  if reason == "Failed to find expected lines in missing.txt:\nmissing" { score = score + 1000 }
+}
+
+return { .score = score }

@@ -1,0 +1,23 @@
+module () where
+
+type CompactionTrigger =
+  | `Manual Unit
+  | `Auto Unit
+
+type CompactionReason =
+  | `UserRequested Unit
+  | `ContextLimit Unit
+  | `ModelDownshift Unit
+  | `CompHashChanged Unit
+
+type CompactionImplementation =
+  | `Responses Unit
+  | `ResponsesCompactionV2 Unit
+  | `ResponsesCompact Unit
+
+type CompactionPhase =
+  | `StandaloneTurn Unit
+  | `PreTurn Unit
+  | `MidTurn Unit
+
+return {}

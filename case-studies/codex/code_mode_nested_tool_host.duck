@@ -1,0 +1,11 @@
+module () where
+
+declare effect CodeModeNestedToolHost {
+  suspending dispatch: (&CodeModeNestedToolDispatch) => Json
+}
+
+declare Init {
+  code_mode_nested_tool_host: CodeModeNestedToolHost
+}
+
+return {}

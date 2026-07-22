@@ -1,0 +1,33 @@
+module (!init: Init) where
+
+const {} = import "./request_user_input_types.duck" ()
+const { finish_request_user_input } = import "./request_user_input_execution.duck" ()
+const { plan_request_user_input } = import "./request_user_input_policy.duck" ()
+
+type FixtureArgs = RequestUserInputArgs
+type FixtureHostRequest = RequestUserInputHostRequest
+type FixtureHostResponse = RequestUserInputHostResponse
+type FixtureOption = RequestUserInputQuestionOption
+type FixtureOptionNode = RequestUserInputQuestionOptionNode
+type FixtureOptions = RequestUserInputQuestionOptions
+type FixtureQuestion = RequestUserInputQuestion
+type FixtureQuestionNode = RequestUserInputQuestionNode
+type FixtureQuestions = RequestUserInputQuestions
+
+let option: FixtureOption = [.label = "A (Recommended)", .description = "Use the first path."]
+let options: FixtureOptions = `Cons ([option, `Nil ()] as FixtureOptionNode)
+let question: FixtureQuestion = [.id = "pick_one", .header = "Pick", .question = "Which path?", .is_other = false, .is_secret = true, .options = `Present options]
+let questions: FixtureQuestions = `Cons ([question, `Nil ()] as FixtureQuestionNode)
+let args: FixtureArgs = [.questions = questions, .auto_resolution = `AutoResolutionMs 1i64]
+let score = 0
+
+if let `PromptUser normalized = plan_request_user_input(true, `Plan (), false, args) {
+  let host_request: FixtureHostRequest = [.call_id = "call-1", .turn_id = "turn-1", .args = normalized]
+  host_response <- RequestUserInputHost.request(&host_request)
+  let typed_response: FixtureHostResponse = host_response
+  if let `Completed output = finish_request_user_input(typed_response) {
+    if output == "{\"answers\":{\"pick_one\":{\"answers\":[\"A\"]}}}" { score = 1 }
+  }
+}
+
+return { .score = score }

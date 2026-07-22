@@ -1,0 +1,89 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ResourceRegistrationDefinition = ToolDefinition
+type ResourceRegistrationDefinitions = ToolDefinitions
+type ResourceRegistrationName = ToolName
+type ResourceRegistrationSpec = ToolSpec
+type ResourceRegistrationSpecs = ToolSpecs
+
+const list_mcp_resources_name: () -> ResourceRegistrationName = () => ["", "list_mcp_resources"]
+const list_mcp_resource_templates_name: () -> ResourceRegistrationName = () => ["", "list_mcp_resource_templates"]
+const read_mcp_resource_name: () -> ResourceRegistrationName = () => ["", "read_mcp_resource"]
+
+const list_mcp_resources_definition: () -> ResourceRegistrationDefinition = () => {
+  [list_mcp_resources_name(), `Direct (), `ListMcpResources (), `FunctionPayload (), true, false]
+}
+
+const list_mcp_resource_templates_definition: () -> ResourceRegistrationDefinition = () => {
+  [list_mcp_resource_templates_name(), `Direct (), `ListMcpResourceTemplates (), `FunctionPayload (), true, false]
+}
+
+const read_mcp_resource_definition: () -> ResourceRegistrationDefinition = () => {
+  [read_mcp_resource_name(), `Direct (), `ReadMcpResource (), `FunctionPayload (), true, false]
+}
+
+const mcp_resource_tool_definitions: Bool -> ResourceRegistrationDefinitions = enabled => {
+  if enabled {
+    let list_resources = list_mcp_resources_definition()
+    let list_templates = list_mcp_resource_templates_definition()
+    let read_resource = read_mcp_resource_definition()
+    `Cons ([list_resources, `Cons ([list_templates, `Cons ([read_resource, `Nil ()])])])
+  } else {
+    `Nil ()
+  }
+}
+
+const list_mcp_resources_parameters: () -> Text = () => {
+  "{\"type\":\"object\",\"properties\":{\"cursor\":{\"type\":\"string\",\"description\":\"Opaque cursor from a previous list_mcp_resources call; omit for the first page.\"},\"server\":{\"type\":\"string\",\"description\":\"MCP server name. Omit to list resources from every configured server.\"}},\"additionalProperties\":false}"
+}
+
+const list_mcp_resource_templates_parameters: () -> Text = () => {
+  "{\"type\":\"object\",\"properties\":{\"cursor\":{\"type\":\"string\",\"description\":\"Opaque cursor from a previous list_mcp_resource_templates call; omit for the first page.\"},\"server\":{\"type\":\"string\",\"description\":\"MCP server name. Omit to list resource templates from every configured server.\"}},\"additionalProperties\":false}"
+}
+
+const read_mcp_resource_parameters: () -> Text = () => {
+  "{\"type\":\"object\",\"properties\":{\"server\":{\"type\":\"string\",\"description\":\"MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources.\"},\"uri\":{\"type\":\"string\",\"description\":\"Resource URI to read. Must be one of the URIs returned by list_mcp_resources.\"}},\"required\":[\"server\",\"uri\"],\"additionalProperties\":false}"
+}
+
+const list_mcp_resources_spec: () -> ResourceRegistrationSpec = () => {
+  [list_mcp_resources_name(), `FunctionSpec (), "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.", list_mcp_resources_parameters(), `ToolOutputSchemaMissing (), false]
+}
+
+const list_mcp_resource_templates_spec: () -> ResourceRegistrationSpec = () => {
+  [list_mcp_resource_templates_name(), `FunctionSpec (), "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.", list_mcp_resource_templates_parameters(), `ToolOutputSchemaMissing (), false]
+}
+
+const read_mcp_resource_spec: () -> ResourceRegistrationSpec = () => {
+  [read_mcp_resource_name(), `FunctionSpec (), "Read a specific resource from an MCP server given the server name and resource URI.", read_mcp_resource_parameters(), `ToolOutputSchemaMissing (), false]
+}
+
+const mcp_resource_tool_specs: Bool -> ResourceRegistrationSpecs = enabled => {
+  if enabled {
+    let list_resources = list_mcp_resources_spec()
+    let list_templates = list_mcp_resource_templates_spec()
+    let read_resource = read_mcp_resource_spec()
+    `Cons ([list_resources, `Cons ([list_templates, `Cons ([read_resource, `Nil ()])])])
+  } else {
+    `Nil ()
+  }
+}
+
+return {
+  list_mcp_resource_templates_definition,
+  list_mcp_resource_templates_name,
+  list_mcp_resource_templates_parameters,
+  list_mcp_resource_templates_spec,
+  list_mcp_resources_definition,
+  list_mcp_resources_name,
+  list_mcp_resources_parameters,
+  list_mcp_resources_spec,
+  mcp_resource_tool_definitions,
+  mcp_resource_tool_specs,
+  read_mcp_resource_definition,
+  read_mcp_resource_name,
+  read_mcp_resource_parameters,
+  read_mcp_resource_spec,
+}

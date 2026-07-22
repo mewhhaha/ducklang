@@ -1,0 +1,155 @@
+module () where
+
+const { json_object_get, json_object_key_count_borrowed, json_object_length_borrowed } = import "duck:prelude/json/values" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i32 } = import "duck:prelude/numeric" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./update_plan_types.duck" ()
+
+type PlanValueArgs = UpdatePlanArgs
+type PlanValueParseResult = UpdatePlanParseResult
+type PlanValueStatus = UpdatePlanStepStatus
+type PlanValueStep = UpdatePlanStep
+type PlanValueStepNode = UpdatePlanStepNode
+type PlanValueSteps = UpdatePlanSteps
+type PlanValueTextOption = UpdatePlanTextOption
+
+let update_plan_parse_failure: Text -> PlanValueParseResult = reason => {
+  `ParseFailed (text_append(["failed to parse function arguments: ", reason]))
+}
+
+let reverse_update_plan_steps: PlanValueSteps -> PlanValueSteps = steps => {
+  let current = steps
+  let reversed: PlanValueSteps = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [step, tail] = node
+      let reversed_node: PlanValueStepNode = [step, reversed]
+      reversed = `Cons reversed_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+let decode_update_plan_value: Json -> PlanValueParseResult = value => {
+  if let `Object object = value {
+    let known_root_key_count = json_object_key_count_borrowed("explanation", &object) + json_object_key_count_borrowed("plan", &object)
+    let root_keys_valid = json_object_length_borrowed(&object) == known_root_key_count
+    if !(root_keys_valid) {
+      update_plan_parse_failure "update_plan arguments contain an unknown field"
+    } else if json_object_key_count_borrowed("explanation", &object) > 1 || json_object_key_count_borrowed("plan", &object) > 1 {
+      update_plan_parse_failure "update_plan arguments contain a duplicate field"
+    } else {
+      let explanation: PlanValueTextOption = `None ()
+      let failure = ""
+      let explanation_lookup = json_object_get("explanation", object)
+      if let `Found explanation_value = explanation_lookup {
+        if let `String text = explanation_value {
+          explanation = `Some text
+        } else if let `Null () = explanation_value {
+          explanation = `None ()
+        } else {
+          failure = "explanation must be a string or null"
+        }
+      }
+
+      if failure != "" {
+        update_plan_parse_failure failure
+      } else {
+        let plan_lookup = json_object_get("plan", object)
+        if let `Found plan_value = plan_lookup {
+          if let `Array values = plan_value {
+            let current = values
+            let reversed: PlanValueSteps = `Nil ()
+            let index = 0
+            let plan_failure = ""
+            let done = false
+
+            loop {
+              if let `Cons node = current {
+                let [step_value, tail] = node
+                if let `Object fields = step_value {
+                  let context = "plan[" <> format_i32(index) <> "]"
+                  let known_step_key_count = json_object_key_count_borrowed("step", &fields) + json_object_key_count_borrowed("status", &fields)
+                  let keys_valid = json_object_length_borrowed(&fields) == known_step_key_count
+                  if !(keys_valid) {
+                    plan_failure = context <> " contains an unknown field"
+                    done = true
+                  } else if json_object_key_count_borrowed("step", &fields) != 1 || json_object_key_count_borrowed("status", &fields) != 1 {
+                    plan_failure = context <> " requires exactly one step and status"
+                    done = true
+                  } else {
+                    let step_text = ""
+                    let status: PlanValueStatus = `Pending ()
+                    let step_lookup = json_object_get("step", fields)
+                    if let `Found step_field = step_lookup {
+                      if let `String text = step_field { step_text = text } else { plan_failure = context <> ".step must be a string" }
+                    }
+
+                    if plan_failure == "" {
+                      let status_lookup = json_object_get("status", fields)
+                      if let `Found status_field = status_lookup {
+                        if let `String status_text = status_field {
+                          if status_text == "pending" {
+                            status = `Pending ()
+                          } else if status_text == "in_progress" {
+                            status = `InProgress ()
+                          } else if status_text == "completed" {
+                            status = `Completed ()
+                          } else {
+                            plan_failure = context <> ".status must be pending, in_progress, or completed"
+                          }
+                        } else {
+                          plan_failure = context <> ".status must be a string"
+                        }
+                      }
+                    }
+
+                    if plan_failure == "" {
+                      let step: PlanValueStep = [.step = step_text, .status = status]
+                      let reversed_node: PlanValueStepNode = [step, reversed]
+                      reversed = `Cons reversed_node
+                      current = tail
+                      index = index + 1
+                    } else {
+                      done = true
+                    }
+                  }
+                } else {
+                  plan_failure = "plan must contain only objects"
+                  done = true
+                }
+              } else {
+                done = true
+              }
+              if done { break }
+            }
+
+            if plan_failure == "" {
+              let args: PlanValueArgs = [.explanation = explanation, .plan = reverse_update_plan_steps(reversed)]
+              `Parsed args
+            } else {
+              update_plan_parse_failure plan_failure
+            }
+          } else {
+            update_plan_parse_failure "plan must be an array"
+          }
+        } else {
+          update_plan_parse_failure "plan is required"
+        }
+      }
+    }
+  } else {
+    update_plan_parse_failure "update_plan arguments must be an object"
+  }
+}
+
+return {
+  decode_update_plan_value,
+  update_plan_parse_failure,
+}

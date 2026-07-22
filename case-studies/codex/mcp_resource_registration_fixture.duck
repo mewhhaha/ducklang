@@ -1,0 +1,56 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { list_mcp_resource_templates_parameters, list_mcp_resources_parameters, mcp_resource_tool_definitions, mcp_resource_tool_specs, read_mcp_resource_parameters } = import "./mcp_resource_registration.duck" ()
+
+type FixtureDefinitions = ToolDefinitions
+type FixtureSpecs = ToolSpecs
+
+let score = 0
+let disabled: FixtureDefinitions = mcp_resource_tool_definitions(false)
+if let `Nil () = disabled { score = score + 1 }
+
+let definitions: FixtureDefinitions = mcp_resource_tool_definitions(true)
+if let `Cons first_node = definitions {
+  let [first, tail] = first_node
+  let [first_name, _, first_handler, first_payload, first_parallel, _] = first
+  let [_, first_local_name] = first_name
+  if let `Cons second_node = tail {
+    let [second, tail] = second_node
+    let [_, _, second_handler, _, second_parallel, _] = second
+    if let `Cons third_node = tail {
+      let [third, rest] = third_node
+      let [_, _, third_handler, _, third_parallel, _] = third
+      if first_local_name == "list_mcp_resources" && first_parallel && second_parallel && third_parallel {
+        if let `FunctionPayload () = first_payload {
+          if let `ListMcpResources () = first_handler {
+            if let `ListMcpResourceTemplates () = second_handler {
+              if let `ReadMcpResource () = third_handler {
+                if let `Nil () = rest { score = score + 10 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let specs: FixtureSpecs = mcp_resource_tool_specs(true)
+if let `Cons first_node = specs {
+  let [first, tail] = first_node
+  let [_, _, _, first_parameters, _, _] = first
+  if let `Cons second_node = tail {
+    let [second, tail] = second_node
+    let [_, _, _, second_parameters, _, _] = second
+    if let `Cons third_node = tail {
+      let [third, rest] = third_node
+      let [_, _, _, third_parameters, _, _] = third
+      if first_parameters == list_mcp_resources_parameters() && second_parameters == list_mcp_resource_templates_parameters() && third_parameters == read_mcp_resource_parameters() {
+        if let `Nil () = rest { score = score + 100 }
+      }
+    }
+  }
+}
+
+return { .score = score }

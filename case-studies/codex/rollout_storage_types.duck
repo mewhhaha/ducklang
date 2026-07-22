@@ -1,0 +1,56 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type RolloutStoredFile = [Text, Text, Text]
+type RolloutStoredFiles = List RolloutStoredFile
+
+type RolloutStorageTextOption = Option Text
+type RolloutGitInfo = struct {
+  .sha = RolloutStorageTextOption,
+  .branch = RolloutStorageTextOption,
+  .origin_url = RolloutStorageTextOption,
+}
+type RolloutGitInfoOption = Option RolloutGitInfo
+
+type RolloutSessionSource =
+  | `Cli Unit
+  | `VsCode Unit
+  | `Exec Unit
+  | `AppServer Unit
+  | `Custom Text
+  | `SubAgent Json
+  | `Unknown Unit
+
+type RolloutThreadSummary = struct {
+  .path = Text,
+  .thread_id = Text,
+  .session_id = Text,
+  .forked_from_id = RolloutStorageTextOption,
+  .parent_thread_id = RolloutStorageTextOption,
+  .preview = Text,
+  .cwd = Text,
+  .source = RolloutSessionSource,
+  .model_provider = Text,
+  .cli_version = Text,
+  .thread_source = RolloutStorageTextOption,
+  .history_mode = Text,
+  .agent_nickname = RolloutStorageTextOption,
+  .agent_role = RolloutStorageTextOption,
+  .created_at = Text,
+  .updated_at = Text,
+  .git_info = RolloutGitInfoOption,
+}
+type RolloutThreadSummaries = List RolloutThreadSummary
+type RolloutThreadSummaryOption = Option RolloutThreadSummary
+
+type RolloutThreadSortKey =
+  | `CreatedAt Unit
+  | `UpdatedAt Unit
+
+type RolloutStorageTexts = List Text
+
+type RolloutThreadQuery = [I32, RolloutStorageTextOption, RolloutThreadSortKey, RolloutStorageTexts, RolloutStorageTexts, RolloutStorageTexts, Text, I32]
+type RolloutThreadPage = [RolloutThreadSummaries, RolloutStorageTextOption, I32, Bool]
+
+return {}

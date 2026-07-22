@@ -1,0 +1,37 @@
+module () where
+
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./request_user_input_types.duck" ()
+
+type AvailabilityResult = RequestUserInputAvailability
+type AvailabilityMode = RequestUserInputMode
+
+const request_user_input_mode_name: AvailabilityMode -> Text = mode => {
+  if let `Plan () = mode {
+    "Plan"
+  } else if let `Default () = mode {
+    "Default"
+  } else if let `PairProgramming () = mode {
+    "Pair Programming"
+  } else {
+    "Execute"
+  }
+}
+
+const request_user_input_availability: [AvailabilityMode, Bool] -> AvailabilityResult = (mode: AvailabilityMode, default_mode_enabled: Bool) => {
+  if let `Plan () = mode {
+    `Available ()
+  } else if let `Default () = mode {
+    if default_mode_enabled { `Available () } else { `Unavailable "request_user_input is unavailable in Default mode" }
+  } else {
+    let mode_name: Text = request_user_input_mode_name(mode)
+    let mode_suffix: Text = text_append([mode_name, " mode"])
+    let message: Text = text_append(["request_user_input is unavailable in ", mode_suffix])
+    `Unavailable message
+  }
+}
+
+return {
+  request_user_input_mode_name,
+  request_user_input_availability,
+}

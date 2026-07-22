@@ -1,0 +1,25 @@
+module () where
+
+const hook_types_module = import "./hook_types.duck"
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_pre_tool_output } = hook_output_module()
+
+let parsed = parse_pre_tool_output("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\"}}")
+let score: I32 = 0
+
+if let `PreToolOk output = parsed {
+  let [_, block_reason, _, updated_input, invalid] = output
+
+  if let `None () = block_reason {
+    if let `NoUpdatedInput () = updated_input {
+      if let `Some message = invalid {
+        if message == "PreToolUse hook returned unsupported permissionDecision:ask" {
+          score = 1
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

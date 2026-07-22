@@ -1,0 +1,32 @@
+module (!init: Init) where
+
+const { list } = import "duck:prelude/list" ()
+const {} = import "./plugin_install_types.duck" ()
+const { finish_request_plugin_install } = import "./request_plugin_install_execution.duck" ()
+const { plan_list_plugin_install_request } = import "./request_plugin_install_policy.duck" ()
+
+type FixtureCandidate = PluginInstallCandidate
+type FixtureCandidates = PluginInstallCandidates
+type FixtureHostResponse = RequestPluginInstallHostResponse
+type FixtureListArgs = RequestPluginInstallListArgs
+type FixtureTextOption = InstallTextOption
+type FixtureTexts = InstallTexts
+
+const candidate_values = comptime list(FixtureCandidate)
+let none: FixtureTextOption = `InstallTextMissing ()
+let empty_texts: FixtureTexts = `Nil ()
+let candidate: FixtureCandidate = [.id = "calendar", .name = "Calendar", .description = `InstallTextPresent "Plan events", .tool_type = `Connector (), .has_skills = false, .mcp_server_names = empty_texts, .app_connector_ids = empty_texts, .install_url = `InstallTextPresent "https://example.com/calendar", .remote_plugin_id = none]
+let values: FixtureCandidates = candidate_values.singleton(candidate)
+let args: FixtureListArgs = [.tool_type = `Connector (), .action_type = `Install (), .tool_id = "calendar", .suggest_reason = "  Plan events  "]
+let score = 0
+
+if let `Elicit request = plan_list_plugin_install_request("call-1", false, args, values) {
+  host_response <- RequestPluginInstallHost.request(&request)
+  let response: FixtureHostResponse = host_response
+  let completion = finish_request_plugin_install(request, response)
+  if completion.output == "{\"completed\":true,\"user_confirmed\":true,\"tool_type\":\"connector\",\"action_type\":\"install\",\"tool_id\":\"calendar\",\"tool_name\":\"Calendar\",\"suggest_reason\":\"Plan events\"}" && completion.merge_connector {
+    score = 1
+  }
+}
+
+return { .score = score }

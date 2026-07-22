@@ -1,0 +1,62 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const hook_types_module = import "./hook_types.duck"
+const hooks_module = import "./hooks.duck"
+const { hook_matcher_matches, parse_hook_matcher, select_hook_handlers } = hooks_module()
+
+type FixtureTextOption = HookTextOption
+type FixtureTexts = HookTexts
+type FixtureEvent = HookEvent
+type FixtureSource = HookSource
+type FixtureHandlerConfig = HookHandlerConfig
+type FixtureHandler = HookConfiguredHandler
+type FixtureHandlers = HookConfiguredHandlers
+
+const texts = comptime list(Text)
+const handlers = comptime list(FixtureHandler)
+
+let score: I32 = 0
+let pre_tool: FixtureEvent = `PreToolUse ()
+let user: FixtureSource = `User ()
+
+let exact = parse_hook_matcher(pre_tool, `Some "apply_patch|Write|Edit")
+
+if let `Ok matcher = exact {
+  if hook_matcher_matches(matcher, "Write") {
+    if hook_matcher_matches(matcher, "Bash") {
+      ()
+    } else {
+      score = score + 1
+    }
+  }
+}
+
+let ignored = parse_hook_matcher(`Stop (), `Some "[")
+
+if let `Ok matcher = ignored {
+  if hook_matcher_matches(matcher, "anything") {
+    score = score + 32
+  }
+}
+
+let first_matcher = parse_hook_matcher(pre_tool, `Some "^apply_patch$")
+let second_matcher = parse_hook_matcher(pre_tool, `Some "Edit|Write")
+let available: FixtureHandlers = handlers.empty()
+
+if let `Ok first = first_matcher {
+  if let `Ok second = second_matcher {
+    let first_handler: FixtureHandler = [pre_tool, first, "first", 5, `None (), "/repo/hooks.json", user, 0]
+    let second_handler: FixtureHandler = [pre_tool, second, "second", 600, `None (), "/repo/hooks.json", user, 1]
+    available = handlers.prepend(first_handler, handlers.singleton(second_handler))
+  }
+}
+
+let matcher_inputs: FixtureTexts = texts.prepend("apply_patch", texts.prepend("Write", texts.singleton("Edit")))
+let selected = select_hook_handlers(available, pre_tool, matcher_inputs)
+
+if handlers.length(selected) == 2 {
+  score = score + 64
+}
+
+return { .score = score }

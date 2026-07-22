@@ -1,0 +1,83 @@
+module () where
+
+const { min_i64, saturating_add_i64 } = import "duck:prelude/numeric" ()
+const {} = import "./context_window_status_types.duck" ()
+
+type WindowStatus = ContextWindowTokenStatus
+type WindowStatusInput = ContextWindowTokenStatusInput
+type WindowI64Option = ContextWindowI64Option
+
+const remaining_token_count: [I64, I64] -> I64 = (limit: I64, used: I64) => {
+  if used >= limit { 0i64 } else { limit - used }
+}
+
+const token_count_at_least: [I64, I64] -> Bool = (used: I64, limit: I64) => {
+  used >= limit
+}
+
+const tokens_remaining: [&WindowI64Option, I64] -> WindowI64Option = (limit: &WindowI64Option, used: I64) => {
+  if let `Some limit_value = limit {
+    `Some (remaining_token_count(limit_value, used))
+  } else {
+    `None ()
+  }
+}
+
+const context_window_token_status: &WindowStatusInput -> WindowStatus = (input: &WindowStatusInput) => {
+  let scope_tokens: I64 = input.active_context_tokens
+  let scope_limit: WindowI64Option = `None ()
+  if let `Some model_scope_limit = input.model_auto_compact_scope_limit {
+    scope_limit = `Some model_scope_limit
+  }
+  let full_limit: WindowI64Option = `None ()
+  if let `Some context_limit = input.full_context_window_limit {
+    full_limit = `Some context_limit
+  }
+  let prefill: WindowI64Option = `None ()
+
+  if let `BodyAfterPrefix () = input.scope {
+    if let `Some configured_limit = input.configured_auto_compact_scope_limit {
+      scope_limit = `Some configured_limit
+    }
+    let baseline: I64 = input.active_context_tokens
+    if let `Some observed = input.prefill_input_tokens {
+      baseline = observed
+      prefill = `Some observed
+    }
+    scope_tokens = remaining_token_count(input.active_context_tokens, baseline)
+  }
+
+  let scope_remaining: WindowI64Option = tokens_remaining(&scope_limit, scope_tokens)
+  let full_remaining: WindowI64Option = tokens_remaining(&full_limit, input.active_context_tokens)
+  let base_remaining: WindowI64Option = full_remaining
+  if let `Some scope_value = scope_remaining {
+    if let `Some full_value = full_remaining {
+      base_remaining = `Some (min_i64(scope_value, full_value))
+    } else {
+      base_remaining = `Some scope_value
+    }
+  }
+
+  let full_limit_reached: Bool = false
+  if let `Some full_limit_value = full_limit {
+    full_limit_reached = token_count_at_least(input.active_context_tokens, full_limit_value)
+  }
+
+  let buffered_limit_reached: Bool = false
+  if let `Some limit = scope_limit {
+    let buffered_limit: I64 = saturating_add_i64(limit, input.fallback_buffer_tokens)
+    buffered_limit_reached = token_count_at_least(scope_tokens, buffered_limit)
+  }
+
+  [
+    .active_context_tokens = input.active_context_tokens,
+    .auto_compact_scope_tokens = scope_tokens,
+    .auto_compact_scope_limit = scope_limit,
+    .full_context_window_limit = full_limit,
+    .base_window_tokens_remaining = base_remaining,
+    .auto_compact_window_prefill_tokens = prefill,
+    .full_context_window_limit_reached = full_limit_reached,
+    .token_limit_reached = buffered_limit_reached || full_limit_reached]
+}
+
+return { context_window_token_status }

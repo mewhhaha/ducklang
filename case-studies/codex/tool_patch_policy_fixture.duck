@@ -1,0 +1,49 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const tool_types_module = import "./tool_types.duck"
+const tool_policy_module = import "./tool_policy.duck"
+const { assess_patch_safety } = tool_policy_module()
+
+type FixtureSandbox = ToolFileSystemSandbox
+type FixtureSandboxKind = ToolFileSystemSandboxKind
+type FixtureApproval = ToolApprovalPolicy
+type FixturePatchTarget = ToolPatchTarget
+type FixturePatchTargets = ToolPatchTargets
+type FixturePatchSafety = ToolPatchSafety
+
+const paths = comptime list(Text)
+const patch_targets = comptime list(FixturePatchTarget)
+
+let score: I32 = 0
+let writable_roots = paths.singleton "/repo"
+let restricted_kind: FixtureSandboxKind = `Restricted ()
+let restricted: FixtureSandbox = [restricted_kind, writable_roots, false, false]
+let on_request: FixtureApproval = `OnRequest ()
+let never: FixtureApproval = `Never ()
+let unless_trusted: FixtureApproval = `UnlessTrusted ()
+let inside: FixturePatchTargets = patch_targets.singleton(["/repo/src/main.ts", `None ()])
+let safety: FixturePatchSafety = assess_patch_safety(inside, on_request, `Managed (), restricted, true)
+
+score = score + if let `AutoApprove state = safety {
+  let [sandboxed, explicitly_approved] = state
+  if sandboxed && !(explicitly_approved) { 1 } else { 0 }
+} else { 0 }
+
+let outside: FixturePatchTargets = patch_targets.singleton(["/etc/passwd", `None ()])
+safety = assess_patch_safety(outside, never, `Managed (), restricted, true)
+score = score + if let `Reject _ = safety { 1 } else { 0 }
+
+safety = assess_patch_safety(inside, unless_trusted, `Managed (), restricted, true)
+score = score + if let `AskUser () = safety { 1 } else { 0 }
+
+safety = assess_patch_safety(patch_targets.empty(), on_request, `Managed (), restricted, true)
+score = score + if let `Reject _ = safety { 1 } else { 0 }
+
+safety = assess_patch_safety(inside, on_request, `Disabled (), restricted, false)
+score = score + if let `AutoApprove state = safety {
+  let [sandboxed, _] = state
+  if !(sandboxed) { 1 } else { 0 }
+} else { 0 }
+
+return { .score = score }

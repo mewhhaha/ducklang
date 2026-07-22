@@ -1,0 +1,59 @@
+module () where
+
+type SkillTextOption = Option Text
+type SkillBoolOption = Option Bool
+type SkillI32Option = Option I32
+type SkillTexts = List Text
+
+type SkillProduct =
+  | `Chatgpt Unit
+  | `Codex Unit
+  | `Atlas Unit
+type SkillProductOption = Option SkillProduct
+
+type SkillScope =
+  | `User Unit
+  | `Repo Unit
+  | `System Unit
+  | `Admin Unit
+
+type SkillPolicy = [SkillBoolOption, SkillTexts]
+type SkillInterface = [SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption]
+type SkillToolDependency = [Text, Text, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption]
+type SkillToolDependencies = List SkillToolDependency
+
+type SkillMetadata = [Text, Text, SkillTextOption, SkillInterface, SkillToolDependencies, SkillPolicy, Text, SkillScope, SkillTextOption]
+type SkillDocument = [SkillMetadata, Text]
+type SkillDocumentOption = Option SkillDocument
+type SkillDocumentParse = [SkillDocumentOption, SkillTextOption]
+type SkillDocuments = List SkillDocument
+
+type SkillSnapshotFile = [Text, Text]
+type SkillSnapshotEntry =
+  | `File SkillSnapshotFile
+  | `Directory Text
+type SkillSnapshotEntries = List SkillSnapshotEntry
+type SkillRootSnapshot = [Text, SkillScope, SkillTextOption, SkillTextOption, SkillSnapshotEntries]
+type SkillRootSnapshots = List SkillRootSnapshot
+
+type SkillError = [Text, Text]
+type SkillErrors = List SkillError
+type SkillLoadOutcome = [SkillDocuments, SkillErrors]
+type SkillDiscoveryState = [SkillDocuments, SkillErrors]
+type SkillDiscoveryProgress = [SkillDiscoveryState, I32]
+
+type SkillStructuredSelection = [Text, Text]
+type SkillStructuredSelections = List SkillStructuredSelection
+type SkillSelection = [SkillDocuments, SkillErrors]
+
+type SkillRenderReport = [I32, I32, I32, I32, I32]
+type SkillMetadataBudget =
+  | `Characters I32
+  | `Tokens I32
+type SkillRenderLine = [Text, Text, Text, SkillScope]
+type SkillRenderLines = List SkillRenderLine
+type SkillRenderAccum = [SkillTexts, I32, I32, I32, I32]
+type AvailableSkills = [SkillTexts, SkillRenderReport, SkillTextOption]
+type AvailableSkillsOption = Option AvailableSkills
+
+return {}

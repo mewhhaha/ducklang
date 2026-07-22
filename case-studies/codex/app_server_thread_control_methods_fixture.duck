@@ -1,0 +1,51 @@
+const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const { decode_thread_control_method } = import "./app_server_thread_control_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureMethodResult = AppServerMethodDecodeResult
+
+let name_fields = json_object_empty()
+name_fields = json_object_prepend("name", json_string("  Work  "), name_fields)
+name_fields = json_object_prepend("threadId", json_string("thread-1"), name_fields)
+
+let score = 0
+let name_result: FixtureMethodResult = decode_thread_control_method(`SetThreadName (), json_object(name_fields))
+if let `MethodOk method = name_result {
+  if let `ThreadControl control = method {
+    if let `ThreadSetName params = control {
+      let [thread_id, name] = params
+      if thread_id == "thread-1" && name == "  Work  " { score = score + 1 }
+    }
+  }
+}
+
+let increment_fields = json_object_empty()
+increment_fields = json_object_prepend("threadId", json_string("thread-2"), increment_fields)
+let increment_result: FixtureMethodResult = decode_thread_control_method(`IncrementThreadElicitation (), json_object(increment_fields))
+if let `MethodOk method = increment_result {
+  if let `ThreadControl control = method {
+    if let `ThreadIncrementElicitation thread_id = control {
+      if thread_id == "thread-2" { score = score + 10 }
+    }
+  }
+}
+
+let decrement_fields = json_object_empty()
+decrement_fields = json_object_prepend("threadId", json_string("thread-3"), decrement_fields)
+let decrement_result: FixtureMethodResult = decode_thread_control_method(`DecrementThreadElicitation (), json_object(decrement_fields))
+if let `MethodOk method = decrement_result {
+  if let `ThreadControl control = method {
+    if let `ThreadDecrementElicitation thread_id = control {
+      if thread_id == "thread-3" { score = score + 100 }
+    }
+  }
+}
+
+let invalid_fields = json_object_empty()
+invalid_fields = json_object_prepend("name", json_string("Work"), invalid_fields)
+let invalid_result: FixtureMethodResult = decode_thread_control_method(`SetThreadName (), json_object(invalid_fields))
+if let `MethodError reason = invalid_result {
+  if reason == "thread/name/set.params.threadId is required" { score = score + 1000 }
+}
+
+return { .score = score }

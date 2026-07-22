@@ -1,0 +1,102 @@
+module () where
+
+const { list_length, list_reverse, list_take } = import "duck:prelude/collections" ()
+const { apply_thread_turns_items_view } = import "./app_server_thread_item_views.duck" ()
+const {} = import "./app_server_turn_types.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type TurnPaginationTurn = AppServerTurn
+type TurnPaginationTurns = AppServerTurns
+type TurnPaginationTurnsResult = Result Text TurnPaginationTurns
+type TurnPaginationCursorOption = AppServerThreadTurnsCursorOption
+type TurnPaginationTextOption = AppServerTextOption
+type TurnPaginationInput = AppServerThreadTurnsPaginationInput
+type TurnPaginationPage = AppServerThreadTurnsCursorPage
+type TurnPaginationPageResult = AppServerThreadTurnsCursorPageResult
+
+let turns_from_cursor: [TurnPaginationTurns, TurnPaginationCursorOption] -> TurnPaginationTurnsResult = (ordered: TurnPaginationTurns, cursor: TurnPaginationCursorOption) => {
+  if let `None () = cursor {
+    `Ok ordered
+  } else if let `Some anchor = cursor {
+      let [anchor_id, include_anchor] = anchor
+      let current = ordered
+      let found = false
+      let remaining: TurnPaginationTurns = `Nil ()
+      let done = false
+
+      loop {
+        if let `Cons node = current {
+          let [turn, tail] = node
+          let [turn_id, _, _, _, _, _, _, _] = turn
+          if turn_id == anchor_id {
+            found = true
+            if include_anchor { remaining = current } else { remaining = tail }
+            done = true
+          } else {
+            current = tail
+          }
+        } else {
+          done = true
+        }
+
+        if done { break }
+      }
+
+      if found { `Ok remaining } else { `Err "invalid cursor: anchor turn is no longer present" }
+  } else {
+    `Ok ordered
+  }
+}
+
+let paginate_thread_turns: TurnPaginationInput -> TurnPaginationPageResult = (input: TurnPaginationInput) => {
+  let [history, cursor, page_size, sort_direction, items_view] = input
+  let projected: TurnPaginationTurns = apply_thread_turns_items_view(history, items_view)
+  let ordered: TurnPaginationTurns = if let `Descending () = sort_direction { list_reverse(TurnPaginationTurn, projected) } else { projected }
+  let selected = turns_from_cursor(ordered, cursor)
+
+  if let `Err reason = selected {
+    `Err reason
+  } else if let `Ok remaining = selected {
+    let more_turns_available = list_length(remaining) > page_size
+    let page_turns: TurnPaginationTurns = list_take(TurnPaginationTurn, page_size, remaining)
+    let first_id: TurnPaginationTextOption = `None ()
+    let last_id: TurnPaginationTextOption = `None ()
+    let current = page_turns
+    let done = false
+
+    loop {
+      if let `Cons node = current {
+        let [turn, tail] = node
+        let [turn_id, _, _, _, _, _, _, _] = turn
+        if let `None () = first_id { first_id = `Some turn_id }
+        last_id = `Some turn_id
+        current = tail
+      } else {
+        done = true
+      }
+
+      if done { break }
+    }
+
+    let backwards_cursor: TurnPaginationCursorOption = `None ()
+    if let `Some turn_id = first_id {
+      backwards_cursor = `Some ([turn_id, true])
+    }
+
+    let next_cursor: TurnPaginationCursorOption = `None ()
+    if more_turns_available {
+      if let `Some turn_id = last_id {
+        next_cursor = `Some ([turn_id, false])
+      }
+    }
+
+    let page: TurnPaginationPage = [page_turns, next_cursor, backwards_cursor]
+    `Ok page
+  } else {
+    `Err "thread/turns/list could not paginate turns"
+  }
+}
+
+return {
+  paginate_thread_turns,
+}

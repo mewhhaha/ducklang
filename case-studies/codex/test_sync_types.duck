@@ -1,0 +1,54 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type TestSyncDurationOption =
+  | `SyncDurationMissing Unit
+  | `SyncDurationPresent Text
+
+type TestSyncBarrier = struct {
+  .id = Text,
+  .participants = Text,
+  .timeout_ms = Text,
+}
+
+type TestSyncBarrierOption =
+  | `SyncBarrierMissing Unit
+  | `SyncBarrierPresent TestSyncBarrier
+
+type TestSyncArgs = struct {
+  .sleep_before_ms = TestSyncDurationOption,
+  .sleep_after_ms = TestSyncDurationOption,
+  .barrier = TestSyncBarrierOption,
+}
+
+type TestSyncPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type TestSyncParseResult =
+  | `Parsed TestSyncArgs
+  | `ParseFailed Text
+
+type TestSyncDurationParseResult =
+  | `DurationParsed TestSyncDurationOption
+  | `DurationParseFailed Text
+
+type TestSyncBarrierParseResult =
+  | `BarrierParsed TestSyncBarrierOption
+  | `BarrierParseFailed Text
+
+type TestSyncPlan =
+  | `RunSync TestSyncArgs
+  | `RejectRequest Text
+
+type TestSyncBarrierHostResult =
+  | `Released Unit
+  | `ParticipantsMismatch Text
+  | `TimedOut Unit
+
+type TestSyncExecutionResult =
+  | `Completed Text
+  | `Rejected Text
+
+return {}

@@ -1,0 +1,129 @@
+module () where
+
+const { list, option } = import "duck:prelude/functional" ()
+const rollout_types_module = import "./rollout_types.duck"
+
+type ScanResponse = RolloutResponse
+type ScanCompletedItem = RolloutCompletedItem
+type ScanEvent = RolloutEvent
+type ScanItem = RolloutItem
+type ScanItems = RolloutItems
+type ScanTextOption = RolloutTextOption
+
+const rollout_items = comptime list(ScanItem)
+
+const compatible_turn_ids = (active: ScanTextOption, candidate: ScanTextOption) => {
+  if let `Some active_id = active {
+    if let `Some candidate_id = candidate { active_id == candidate_id } else { true }
+  } else {
+    true
+  }
+}
+
+const select_model_context_items = (values: ScanItems, session_meta: ScanItem) => {
+  let current = values
+  let selected_newest_first: ScanItems = rollout_items.empty()
+  let saw_compaction = false
+  let saw_completed_context = false
+  let must_scan_to_start = false
+  let active_turn_id: ScanTextOption = `None ()
+  let active_has_user = false
+  let active_has_context = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      selected_newest_first = rollout_items.prepend(item, selected_newest_first)
+
+      if !(must_scan_to_start) {
+        match item {
+          | `Compacted compaction => {
+            let [has_replacement_history, has_window_number] = compaction
+            if has_replacement_history && has_window_number {
+              saw_compaction = true
+            } else {
+              must_scan_to_start = true
+            }
+          }
+          | `Event event => {
+            match event {
+              | `ThreadRolledBack () => { must_scan_to_start = true }
+              | `ItemCompleted completed => {
+                let [turn_id, completed_item] = completed
+                let candidate = `Some (turn_id)
+                if let `None () = active_turn_id { active_turn_id = candidate }
+                if compatible_turn_ids(active_turn_id, candidate) {
+                  match completed_item {
+                    | `UserMessage () => { active_has_user = true }
+                    | _ => ()
+                  }
+                }
+              }
+              | `TurnComplete turn_id => {
+                if let `None () = active_turn_id {
+                  active_turn_id = `Some (turn_id)
+                }
+              }
+              | `TurnAborted turn_id => {
+                if let `None () = active_turn_id { active_turn_id = turn_id }
+              }
+              | `TurnStarted turn_id => {
+                let candidate = `Some (turn_id)
+                if compatible_turn_ids(active_turn_id, candidate) {
+                  if active_has_user && active_has_context {
+                    saw_completed_context = true
+                  }
+                  active_turn_id = `None ()
+                  active_has_user = false
+                  active_has_context = false
+                }
+              }
+              | _ => ()
+            }
+          }
+          | `TurnContext turn_id => {
+            if let `None () = active_turn_id { active_turn_id = turn_id }
+            if compatible_turn_ids(active_turn_id, turn_id) {
+              active_has_context = true
+            }
+          }
+          | `Response response => {
+            match response {
+              | `AgentMessage () => { active_has_user = true }
+              | `Message message => {
+                let [role, inter_agent] = message
+                if role == "assistant" && inter_agent {
+                  active_has_user = true
+                }
+              }
+              | _ => ()
+            }
+          }
+          | `InterAgent () => { active_has_user = true }
+          | _ => ()
+        }
+      }
+
+      current = tail
+      if !(must_scan_to_start) && saw_compaction && saw_completed_context {
+        done = true
+      }
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let chronological = rollout_items.reverse selected_newest_first
+  if !(must_scan_to_start) && saw_compaction && saw_completed_context {
+    rollout_items.prepend(session_meta, chronological)
+  } else {
+    chronological
+  }
+}
+
+return {
+  select_model_context_items,
+}

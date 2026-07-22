@@ -1,0 +1,32 @@
+module (!init: Init) where
+
+const {} = import "./agent_job_execution_types.duck" ()
+const { run_spawn_agents_on_csv } = import "./agent_job_spawn_execution.duck" ()
+
+type FixtureCsvTextNode = AgentJobTextNode
+type FixtureCsvTexts = AgentJobTexts
+type FixtureItem = AgentJobPreparedItem
+type FixtureItemNode = AgentJobPreparedItemNode
+type FixtureItems = AgentJobPreparedItems
+type FixtureJob = AgentJobPreparedJob
+
+let third: FixtureItem = [.item_id = "row-3", .row_index = 2, .source_id = `None (), .row_values = `Nil (), .row_json = "{\"name\":\"third\"}", .prompt = "process third"]
+let third_node: FixtureItemNode = [third, `Nil ()]
+let second: FixtureItem = [.item_id = "row-2", .row_index = 1, .source_id = `None (), .row_values = `Nil (), .row_json = "{\"name\":\"second\"}", .prompt = "process second"]
+let second_node: FixtureItemNode = [second, `Cons third_node]
+let first: FixtureItem = [.item_id = "row-1", .row_index = 0, .source_id = `Some "alpha", .row_values = `Nil (), .row_json = "{\"name\":\"first\"}", .prompt = "process first"]
+let first_node: FixtureItemNode = [first, `Cons second_node]
+let items: FixtureItems = `Cons first_node
+let header_node: FixtureCsvTextNode = ["name", `Nil ()]
+let headers: FixtureCsvTexts = `Cons header_node
+let job: FixtureJob = [.job_id = "job-1", .name = "agent-job-job-1", .instruction = "process {name}", .headers = headers, .input_path = "/repo/input.csv", .output_path = "/repo/output.csv", .output_schema_json = `None (), .max_concurrency = 2, .max_runtime_seconds = `Some "60", .items = items]
+
+let score = 0
+let result = run_spawn_agents_on_csv job
+if let `Completed completed = result {
+  if completed.job_id == "job-1" && completed.output_path == "/repo/output.csv" && completed.total_items == 3 && completed.completed_items == 1 && completed.failed_items == 2 && completed.cancelled {
+    score = 1
+  }
+}
+
+return { .score = score }

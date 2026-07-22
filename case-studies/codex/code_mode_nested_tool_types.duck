@@ -1,0 +1,50 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/json/values" ()
+const {} = import "./original_image_detail_types.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type CodeModeNestedToolKind =
+  | `NestedFunction Unit
+  | `NestedFreeform Unit
+
+type CodeModeNestedToolInput = Option Json
+
+type CodeModeNestedToolInvocation = struct {
+  .cell_id = Text,
+  .runtime_tool_call_id = Text,
+  .tool_name = ToolName,
+  .tool_kind = CodeModeNestedToolKind,
+  .input = CodeModeNestedToolInput,
+}
+
+type CodeModeNestedToolPayload =
+  | `NestedFunctionPayload Text
+  | `NestedCustomPayload Text
+
+type CodeModeNestedToolDispatch = struct {
+  .cell_id = Text,
+  .runtime_tool_call_id = Text,
+  .tool_name = ToolName,
+  .call_id_prefix = Text,
+  .payload = CodeModeNestedToolPayload,
+}
+
+type CodeModeNestedToolPlan =
+  | `DispatchNestedTool CodeModeNestedToolDispatch
+  | `RejectNestedTool Text
+
+type CodeModeResultBody =
+  | `ResultTextBody Text
+  | `ResultContentBody FunctionOutputContentItems
+
+type CodeModeResultInput =
+  | `ResultMessage FunctionOutputContentItems
+  | `ResultFunctionCall CodeModeResultBody
+  | `ResultCustomCall CodeModeResultBody
+  | `ResultToolSearch JsonArray
+  | `ResultMcpCall Json
+  | `ResultJsonToolOutput Json
+
+return {}

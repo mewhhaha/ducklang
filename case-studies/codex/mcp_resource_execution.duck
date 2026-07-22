@@ -1,0 +1,64 @@
+module (!init: Init) where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { bound_resource_output, list_payload_json, read_payload_json } = import "./mcp_resource_output.duck" ()
+
+type ResourceExecutionEvent = McpResourceEvent
+type ResourceExecutionHostRequest = McpResourceHostRequest
+type ResourceExecutionHostResponse = McpResourceHostResponse
+type ResourceExecutionPrepared = McpResourcePreparedCall
+type ResourceExecutionResult = McpResourceExecutionResult
+type ResourceExecutionTextResult = McpResourceTextResult
+
+let run_mcp_resource = (prepared: ResourceExecutionPrepared, orchestrator_mcp_enabled: Bool, maximum_bytes: I32) => {
+  let server = if let `ListResources args = prepared.operation {
+    if let `Some name = args.server { name } else { "codex" }
+  } else if let `ListResourceTemplates args = prepared.operation {
+    if let `Some name = args.server { name } else { "codex" }
+  } else if let `ReadResource args = prepared.operation {
+    args.server
+  } else {
+    "codex"
+  }
+  let tool = if let `ListResources _ = prepared.operation {
+    "list_mcp_resources"
+  } else if let `ListResourceTemplates _ = prepared.operation {
+    "list_mcp_resource_templates"
+  } else if let `ReadResource _ = prepared.operation {
+    "read_mcp_resource"
+  } else {
+    "mcp_resource"
+  }
+  let started: ResourceExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = false, .success = true, .message = `None ()]
+  _ <- McpResourceHost.event(&started)
+  let request: ResourceExecutionHostRequest = [.operation = prepared.operation]
+  response <- McpResourceHost.invoke(&request)
+  let host_response: ResourceExecutionHostResponse = response
+
+  let output: ResourceExecutionTextResult = if let `Listed pages = host_response {
+    list_payload_json(prepared.operation, pages, orchestrator_mcp_enabled)
+  } else if let `Read document = host_response {
+    read_payload_json(prepared.operation, document)
+  } else if let `Failed reason = host_response {
+    `ResourceFailed reason
+  } else {
+    `ResourceFailed "MCP resource host returned no result"
+  }
+
+  if let `ResourceText text = output {
+    let completed: ResourceExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = true, .success = true, .message = `Some text]
+    _ <- McpResourceHost.event(&completed)
+    let result: ResourceExecutionResult = `Completed (bound_resource_output(text, maximum_bytes))
+    result
+  } else if let `ResourceFailed reason = output {
+    let completed: ResourceExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = true, .success = false, .message = `Some reason]
+    _ <- McpResourceHost.event(&completed)
+    let result: ResourceExecutionResult = `Rejected reason
+    result
+  } else {
+    let result: ResourceExecutionResult = `Rejected "MCP resource output produced no result"
+    result
+  }
+}
+
+return { run_mcp_resource }

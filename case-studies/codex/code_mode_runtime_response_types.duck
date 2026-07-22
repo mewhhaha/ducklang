@@ -1,0 +1,38 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./original_image_detail_types.duck" ()
+const {} = import "./code_mode_wait_types.duck" ()
+
+type CodeModeRuntimeContentItem =
+  | `RuntimeInputText Text
+  | `RuntimeInputImage OutputImage
+
+type CodeModeRuntimeContentItemNode = [CodeModeRuntimeContentItem, CodeModeRuntimeContentItems]
+type CodeModeRuntimeContentItems =
+  | `RuntimeItemsNil Unit
+  | `RuntimeItemsCons CodeModeRuntimeContentItemNode
+
+type CodeModeRuntimeError =
+  | `RuntimeErrorMissing Unit
+  | `RuntimeErrorPresent Text
+
+type CodeModeRuntimeResult = [Text, CodeModeRuntimeContentItems, CodeModeRuntimeError]
+type CodeModeRuntimeProgress = [Text, CodeModeRuntimeContentItems]
+type CodeModeRuntimeResponse =
+  | `RuntimeYielded CodeModeRuntimeProgress
+  | `RuntimeTerminated CodeModeRuntimeProgress
+  | `RuntimeResult CodeModeRuntimeResult
+
+type CodeModeImageDetailPolicy =
+  | `OriginalDetailSupported Unit
+  | `OriginalDetailUnsupported Unit
+
+type CodeModeElapsed = `ElapsedMicroseconds I64
+
+type CodeModeFunctionOutput = struct {
+  .content_items = FunctionOutputContentItems,
+  .success = Bool,
+}
+
+return {}

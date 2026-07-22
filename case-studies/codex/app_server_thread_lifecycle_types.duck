@@ -1,0 +1,102 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerLoadedThread = struct {
+  .thread_id = Text,
+  .path = AppServerTextOption,
+  .history_mode = AppServerThreadHistoryMode,
+}
+
+type AppServerLoadedThreads = List AppServerLoadedThread
+
+type AppServerThreadInitialHistory =
+  | `NewHistory Unit
+  | `ClearedHistory Unit
+
+type AppServerThreadStartPlan = struct {
+  .history_mode = AppServerThreadHistoryMode,
+  .initial_history = AppServerThreadInitialHistory,
+  .persistence = AppServerThreadPersistence,
+  .experimental_raw_events = AppServerExperimentalRawEvents,
+}
+
+type AppServerThreadStartPlanInput = struct {
+  .history_mode = AppServerThreadHistoryModeOption,
+  .session_start_source = AppServerThreadStartSourceOption,
+  .persistence = AppServerThreadPersistence,
+  .experimental_raw_events = AppServerExperimentalRawEvents,
+  .paginated_lists = AppServerPaginatedListSupport,
+}
+
+type AppServerDecodedThreadStartPlanInput = struct {
+  .params = AppServerThreadStartParams,
+  .paginated_lists = AppServerPaginatedListSupport,
+}
+
+type AppServerThreadStartPlanResult = Result Text AppServerThreadStartPlan
+
+type AppServerThreadResumeSource =
+  | `RejoinThread AppServerLoadedThread
+  | `ResumeHistory AppServerJson
+  | `ResumePath Text
+  | `ResumeThreadId Text
+
+type AppServerThreadResumePlan = struct {
+  .source = AppServerThreadResumeSource,
+  .include_turns = Bool,
+  .initial_turns_page = AppServerJsonOption,
+}
+
+type AppServerThreadResumePlanInput = struct {
+  .loaded = AppServerLoadedThreads,
+  .thread_id = Text,
+  .history = AppServerJsonOption,
+  .path = AppServerTextOption,
+  .turns = AppServerExcludeTurns,
+  .initial_turns_page = AppServerJsonOption,
+}
+
+type AppServerDecodedThreadResumePlanInput = struct {
+  .params = AppServerThreadResumeParams,
+  .loaded = AppServerLoadedThreads,
+}
+
+type AppServerThreadResumePlanResult = Result Text AppServerThreadResumePlan
+
+type AppServerThreadForkSource =
+  | `ForkPath Text
+  | `ForkThreadId Text
+
+type AppServerThreadForkBoundary =
+  | `ForkAllTurns Unit
+  | `ForkThroughTurn Text
+  | `ForkBeforeTurn Text
+
+type AppServerThreadForkPlan = struct {
+  .source = AppServerThreadForkSource,
+  .boundary = AppServerThreadForkBoundary,
+  .persistence = AppServerThreadPersistence,
+  .turns = AppServerExcludeTurns,
+  .goal_continuation = AppServerGoalContinuation,
+}
+
+type AppServerThreadForkPlanInput = struct {
+  .thread_id = Text,
+  .last_turn_id = AppServerTextOption,
+  .before_turn_id = AppServerTextOption,
+  .path = AppServerTextOption,
+  .persistence = AppServerThreadPersistence,
+  .turns = AppServerExcludeTurns,
+  .goal_continuation = AppServerGoalContinuation,
+}
+
+type AppServerThreadForkPlanResult = Result Text AppServerThreadForkPlan
+
+type AppServerThreadUnsubscribePlanInput = struct {
+  .load_state = AppServerThreadLoadState,
+  .subscription = AppServerThreadSubscription,
+}
+
+return {}

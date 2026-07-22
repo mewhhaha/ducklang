@@ -1,0 +1,107 @@
+module () where
+
+const rollout_storage_types_module = import "./rollout_storage_types.duck"
+const rollout_storage_module = import "./rollout_storage.duck"
+const { list_rollout_threads } = rollout_storage_module()
+
+type FixtureFile = RolloutStoredFile
+type FixtureFiles = RolloutStoredFiles
+type FixtureThread = RolloutThreadSummary
+type FixtureThreads = RolloutThreadSummaries
+type FixtureSortKey = RolloutThreadSortKey
+type FixtureTextOption = RolloutStorageTextOption
+type FixtureTexts = RolloutStorageTexts
+type FixtureQuery = RolloutThreadQuery
+type FixturePage = RolloutThreadPage
+
+const empty_files: () -> FixtureFiles = () => `Nil ()
+const prepend_file: [FixtureFile, FixtureFiles] -> FixtureFiles = (file: FixtureFile, tail: FixtureFiles) => `Cons ([file, tail])
+const empty_texts: () -> FixtureTexts = () => `Nil ()
+const singleton_text: Text -> FixtureTexts = (text: Text) => `Cons ([text, empty_texts()])
+
+const thread_count = (values: FixtureThreads) => {
+  let current = values
+  let count = 0
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  count
+}
+
+const stored_file = (path: Text, updated_at: Text, thread_id: Text, created_at: Text, preview: Text) => {
+  let meta = "{\"timestamp\":\"" <> created_at <> "\",\"type\":\"session_meta\",\"payload\":{\"id\":\"" <> thread_id <> "\",\"timestamp\":\"" <> created_at <> "\",\"cwd\":\"/repo\",\"source\":\"cli\",\"model_provider\":\"openai\"}}"
+  let event = "{\"timestamp\":\"" <> created_at <> "\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"" <> preview <> "\"}}"
+  let file: FixtureFile = [path, updated_at, meta <> "\nnot-json\n" <> event <> "\n"]
+  file
+}
+
+const query = (page_size: I32, cursor: FixtureTextOption, sort_key: FixtureSortKey, search_term: Text, scan_limit: I32) => {
+  let value: FixtureQuery = [page_size, cursor, sort_key, singleton_text("cli"), singleton_text("/repo"), singleton_text("openai"), search_term, scan_limit]
+  value
+}
+
+const first_preview = (values: FixtureThreads) => {
+  if let `Cons node = values {
+    let [thread, _] = node
+    thread.preview
+  } else {
+    ""
+  }
+}
+
+let malformed: FixtureFile = ["/home/sessions/2025/01/04/rollout-bad.jsonl", "2025-01-07T00:00:00Z", "not-json\n"]
+let old = stored_file("/home/sessions/2025/01/01/rollout-2025-01-01T09-00-00-thread-old.jsonl", "2025-01-06T00:00:00Z", "thread-old", "2025-01-01T09:00:00Z", "Gamma task")
+let middle = stored_file("/home/sessions/2025/01/02/rollout-2025-01-02T09-00-00-thread-middle.jsonl", "2025-01-04T00:00:00Z", "thread-middle", "2025-01-02T09:00:00Z", "Beta task")
+let newest = stored_file("/home/sessions/2025/01/03/rollout-2025-01-03T09-00-00-thread-new.jsonl", "2025-01-05T00:00:00Z", "thread-new", "2025-01-03T09:00:00Z", "Alpha task")
+
+let snapshot: FixtureFiles = empty_files()
+snapshot = prepend_file(malformed, snapshot)
+snapshot = prepend_file(old, snapshot)
+snapshot = prepend_file(middle, snapshot)
+snapshot = prepend_file(newest, snapshot)
+
+let score: I32 = 0
+let first_page: FixturePage = list_rollout_threads(snapshot, query(2, `None (), `CreatedAt (), "", 10))
+let [first_page_items, first_page_cursor, _, _] = first_page
+if thread_count(first_page_items) == 2 && first_preview(first_page_items) == "Alpha task" {
+  score = score + 100
+}
+
+if let `Some cursor = first_page_cursor {
+  let second_page: FixturePage = list_rollout_threads(snapshot, query(2, `Some (cursor), `CreatedAt (), "", 10))
+  let [second_page_items, _, _, _] = second_page
+  if thread_count(second_page_items) == 1 && first_preview(second_page_items) == "Gamma task" {
+    score = score + 1000
+  }
+}
+
+let updated_page: FixturePage = list_rollout_threads(snapshot, query(3, `None (), `UpdatedAt (), "", 10))
+let [updated_page_items, _, _, _] = updated_page
+if first_preview(updated_page_items) == "Gamma task" {
+  score = score + 10000
+}
+
+let search_page: FixturePage = list_rollout_threads(snapshot, query(3, `None (), `CreatedAt (), "bEtA TASK", 10))
+let [search_page_items, _, _, _] = search_page
+if thread_count(search_page_items) == 1 && first_preview(search_page_items) == "Beta task" {
+  score = score + 100000
+}
+
+let capped: FixturePage = list_rollout_threads(snapshot, query(3, `None (), `CreatedAt (), "", 2))
+let [_, _, capped_scanned, capped_reached] = capped
+if capped_reached && capped_scanned == 2 {
+  score = score + 10000000
+}
+
+return { .score = score }

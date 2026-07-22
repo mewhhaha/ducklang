@@ -1,0 +1,28 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const agent_wait_module = import "./agent_wait.duck"
+const { agent_status_fails } = agent_wait_module()
+
+type FixtureStatus = AgentStatus
+
+let errored: FixtureStatus = `Errored "boom"
+let not_found: FixtureStatus = `NotFound ()
+let completed: FixtureStatus = `Completed (`Some "done")
+let score: I32 = 0
+
+if agent_status_fails errored {
+  score = 1
+}
+
+if agent_status_fails not_found {
+  score = score * 10 + 1
+}
+
+if agent_status_fails completed {
+  score = 0
+} else {
+  score = score * 10 + 1
+}
+
+return { .score = score }

@@ -1,0 +1,24 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type AgentJobTextNode = [Text, AgentJobTexts]
+type AgentJobTexts =
+  | `Nil Unit
+  | `Cons AgentJobTextNode
+
+type AgentJobCsvRowNode = [AgentJobTexts, AgentJobCsvRows]
+type AgentJobCsvRows =
+  | `Nil Unit
+  | `Cons AgentJobCsvRowNode
+
+type AgentJobCsvDocument = struct {
+  .headers = AgentJobTexts,
+  .rows = AgentJobCsvRows,
+}
+
+type AgentJobCsvParseResult =
+  | `CsvParsed AgentJobCsvDocument
+  | `CsvParseFailed Text
+
+return {}

@@ -1,0 +1,29 @@
+module () where
+
+const {} = import "./code_mode_wait_types.duck" ()
+const { parse_code_mode_wait_args } = import "./code_mode_wait_json.duck" ()
+
+type WaitRequest = CodeModeWaitRequest
+
+const plan_code_mode_wait_call: CodeModeWaitPayload -> CodeModeWaitCallPlan = payload => {
+  let `Function arguments = payload else {
+    return `Fatal "wait expects JSON arguments"
+  }
+
+  let parsed = parse_code_mode_wait_args arguments
+  if let `ParseFailed message = parsed {
+    return `RejectRequest message
+  }
+  let `Parsed args = parsed else {
+    return `RejectRequest "wait argument parsing produced no result"
+  }
+
+  if args.terminate {
+    `Terminate ([args.cell_id, args.max_tokens])
+  } else {
+    let request: WaitRequest = [.cell_id = args.cell_id, .yield_time_ms = args.yield_time_ms]
+    `Wait ([request, args.max_tokens])
+  }
+}
+
+return { plan_code_mode_wait_call }

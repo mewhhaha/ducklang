@@ -1,0 +1,86 @@
+module () where
+
+type ExecTextOption = Option Text
+type ExecBoolOption = Option Bool
+type ExecI32Option = Option I32
+type ExecTexts = List Text
+
+type ExecShellType =
+  | `Zsh Unit
+  | `Bash Unit
+  | `PowerShell Unit
+  | `Sh Unit
+  | `Cmd Unit
+
+type ExecShell = [Text, ExecShellType]
+type ExecShellMode =
+  | `Direct Unit
+  | `ZshFork ExecShell
+
+type ExecResolvedCommand = [ExecTexts, ExecShellType]
+type ExecLoginResolution =
+  | `LoginAllowed Bool
+  | `LoginRejected Text
+type ExecCommandResolution = Result Text ExecResolvedCommand
+
+type ExecOutputBuffer = [I32, Text, Text, I32]
+type ExecProcessState = [Bool, ExecI32Option, ExecTextOption, Bool]
+type ExecProcessSnapshot = [I32, Text, ExecProcessState]
+type ExecLaunch = [Text, Text, Text, Text, I32, Text, Bool, I32, Bool]
+
+type ExecProcessRecord = [I32, Text, Text, I32, Bool, Bool]
+type ExecProcessRecords = List ExecProcessRecord
+
+type ExecCommandSource =
+  | `Agent Unit
+  | `UserShell Unit
+  | `UnifiedExecStartup Unit
+  | `UnifiedExecInteraction Unit
+
+type ExecCommandStatus =
+  | `Completed Unit
+  | `Failed Unit
+  | `Declined Unit
+
+type ExecOutputStream =
+  | `Stdout Unit
+  | `Stderr Unit
+
+type ExecEventI32Option =
+  | `None Unit
+  | `Some I32
+
+type ExecEventTextOption =
+  | `None Unit
+  | `Some Text
+
+type ExecEventCommand = [Text, Text, Text, Text, I32]
+
+type ExecLifecycleState = [Bool, Bool, I32]
+type ExecCommandBeginEvent = [Text, ExecEventI32Option, Text, I64, ExecEventCommand, Text, ExecCommandSource, ExecEventTextOption]
+type ExecCommandOutputDeltaEvent = [Text, ExecOutputStream, Text]
+type ExecOutputSplit = [Text, Text]
+type ExecTerminalInteractionEvent = [Text, I32, Text]
+type ExecCommandEndEvent = [Text, ExecEventI32Option, Text, I64, ExecEventCommand, Text, ExecCommandSource, ExecEventTextOption, Text, Text, Text, I32, I32, Text, ExecCommandStatus]
+
+type ExecBeginEmission = [ExecLifecycleState, ExecCommandBeginEvent]
+type ExecBeginPlan =
+  | `EmitBegin ExecBeginEmission
+  | `SuppressBegin ExecLifecycleState
+
+type ExecDeltaEmission = [ExecLifecycleState, ExecCommandOutputDeltaEvent, Text]
+type ExecDeltaPlan =
+  | `EmitDelta ExecDeltaEmission
+  | `SuppressDelta ExecLifecycleState
+
+type ExecInteractionPlan =
+  | `EmitInteraction ExecTerminalInteractionEvent
+  | `SuppressInteraction Unit
+
+type ExecEndEmission = [ExecLifecycleState, ExecCommandEndEvent]
+type ExecEndPlan =
+  | `EmitEnd ExecEndEmission
+  | `SuppressEnd ExecLifecycleState
+  | `MissingBegin Unit
+
+return {}

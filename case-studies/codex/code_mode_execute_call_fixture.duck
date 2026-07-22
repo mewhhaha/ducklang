@@ -1,0 +1,74 @@
+module () where
+
+const {} = import "./code_mode_execute_types.duck" ()
+const { plan_code_mode_execute_call } = import "./code_mode_execute.duck" ()
+
+type FixtureDefinition = CodeModeExecuteToolDefinition
+type FixtureDefinitionNode = CodeModeExecuteToolDefinitionNode
+type FixtureDefinitions = CodeModeExecuteToolDefinitions
+type FixtureInvocation = CodeModeExecuteInvocation
+type FixtureJson = Json
+
+let input_schema: FixtureJson = `Object (`Nil ())
+let definition: FixtureDefinition = [
+  .name = "lookup",
+  .tool_name = ["", "lookup"],
+  .description = "Look up a value.",
+  .kind = `NestedFunction (),
+  .input_schema = `Some input_schema,
+  .output_schema = `None ()]
+let definition_node: FixtureDefinitionNode = [definition, `ExecuteToolsNil ()]
+let enabled_tools: FixtureDefinitions = `ExecuteToolsCons definition_node
+
+let score = 0
+
+let valid: FixtureInvocation = [
+  .call_id = "call-exec",
+  .tool_name = ["", "exec"],
+  .payload = `ExecuteCustomPayload "// @exec: {\"yield_time_ms\":5,\"max_output_tokens\":7}\ntext('ok')",
+  .enabled_tools = enabled_tools]
+if let `StartCodeModeExecute request = plan_code_mode_execute_call valid {
+  if request.tool_call_id == "call-exec" && request.source == "text('ok')" {
+    if let `CodeModeExecLimitPresent yield_time_ms = request.yield_time_ms {
+      if let `CodeModeExecLimitPresent max_output_tokens = request.max_output_tokens {
+        if yield_time_ms == 5i64 && max_output_tokens == 7i64 {
+          if let `ExecuteToolsCons node = request.enabled_tools {
+            let [enabled, _] = node
+            if enabled.name == "lookup" { score = score + 1 }
+          }
+        }
+      }
+    }
+  }
+}
+
+let namespaced: FixtureInvocation = [
+  .call_id = "call-namespaced",
+  .tool_name = ["tools__", "exec"],
+  .payload = `ExecuteCustomPayload "text('nested')",
+  .enabled_tools = `ExecuteToolsNil ()]
+if let `RejectCodeModeExecute message = plan_code_mode_execute_call namespaced {
+  if message == "exec expects raw JavaScript source text" { score = score + 10 }
+}
+
+let unsupported: FixtureInvocation = [
+  .call_id = "call-function",
+  .tool_name = ["", "exec"],
+  .payload = `ExecuteUnsupportedPayload (),
+  .enabled_tools = `ExecuteToolsNil ()]
+if let `RejectCodeModeExecute message = plan_code_mode_execute_call unsupported {
+  if message == "exec expects raw JavaScript source text" { score = score + 100 }
+}
+
+let blank: FixtureInvocation = [
+  .call_id = "call-blank",
+  .tool_name = ["", "exec"],
+  .payload = `ExecuteCustomPayload "  ",
+  .enabled_tools = `ExecuteToolsNil ()]
+if let `RejectCodeModeExecute message = plan_code_mode_execute_call blank {
+  if message == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." {
+    score = score + 1000
+  }
+}
+
+return { .score = score }

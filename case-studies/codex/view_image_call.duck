@@ -1,0 +1,30 @@
+module () where
+
+const {} = import "./view_image_types.duck" ()
+const { parse_view_image_args } = import "./view_image_json.duck" ()
+const { prepare_view_image } = import "./view_image_policy.duck" ()
+
+type ImageCallEnvironments = ViewImageEnvironments
+type ImageCallPayload = ViewImagePayload
+type ImageCallPlan = ViewImageCallPlan
+
+const plan_view_image_call: [Text, ImageCallPayload, ImageCallEnvironments, Bool, Bool] -> ImageCallPlan = (call_id: Text, payload: ImageCallPayload, environments: ImageCallEnvironments, supports_image_inputs: Bool, can_request_original_detail: Bool) => {
+  if !(supports_image_inputs) {
+    `RejectRequest "view_image is not allowed because you do not support image inputs"
+  } else if let `Unsupported () = payload {
+    `Fatal "view_image handler received unsupported payload"
+  } else if let `Function arguments = payload {
+    let parsed = parse_view_image_args arguments
+    if let `Parsed args = parsed {
+      prepare_view_image(call_id, args, environments, can_request_original_detail)
+    } else if let `ParseFailed message = parsed {
+      `RejectRequest message
+    } else {
+      `RejectRequest "view_image argument parsing produced no result"
+    }
+  } else {
+    `Fatal "view_image handler received unsupported payload"
+  }
+}
+
+return { plan_view_image_call }

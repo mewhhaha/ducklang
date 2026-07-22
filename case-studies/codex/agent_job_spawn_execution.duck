@@ -1,0 +1,108 @@
+module (!init: Init) where
+
+const {} = import "./agent_job_execution_types.duck" ()
+const { agent_job_active_threads, agent_job_create_request } = import "./agent_job_host_projection.duck" ()
+const { next_agent_job_runner_action, start_agent_job_runner } = import "./agent_job_runner_action.duck" ()
+const { apply_agent_job_completion, apply_agent_job_spawn } = import "./agent_job_runner_transition.duck" ()
+
+type AgentJobExecutionCreateOutcome = AgentJobCreateOutcome
+type AgentJobExecutionFinalizeFacts = AgentJobFinalizeFacts
+type AgentJobExecutionFinalizeOutcome = AgentJobFinalizeOutcome
+type AgentJobExecutionFinalizeRequest = AgentJobFinalizeRequest
+type AgentJobExecutionJob = AgentJobPreparedJob
+type AgentJobExecutionRunCompletion = AgentJobRunCompletion
+type AgentJobExecutionResult = AgentJobSpawnExecutionResult
+type AgentJobExecutionSpawnOutcome = AgentJobSpawnOutcome
+type AgentJobExecutionSpawnRequest = AgentJobSpawnWorkerRequest
+type AgentJobExecutionState = AgentJobRunnerState
+type AgentJobExecutionTextOption = AgentJobTextOption
+type AgentJobExecutionTransition = AgentJobRunnerTransition
+type AgentJobExecutionWaitOutcome = AgentJobWaitOutcome
+type AgentJobExecutionWaitRequest = AgentJobWaitRequest
+
+let run_spawn_agents_on_csv = (job: AgentJobExecutionJob) => {
+  let create_request = agent_job_create_request job
+  created <- AgentJobSpawnHost.create(&create_request)
+  let create_outcome: AgentJobExecutionCreateOutcome = created
+  if let `JobCreateFailed reason = create_outcome {
+    let result: AgentJobExecutionResult = `Rejected reason
+    result
+  } else if let `JobCreated () = create_outcome {
+    let state: AgentJobExecutionState = start_agent_job_runner(job.items)
+    let runner_error: AgentJobExecutionTextOption = `None ()
+    loop {
+      let action = next_agent_job_runner_action(state, job.max_concurrency)
+      if let `SpawnWorker item = action {
+        let request: AgentJobExecutionSpawnRequest = [.job_id = job.job_id, .item_id = item.item_id, .prompt = item.prompt]
+        spawned <- AgentJobSpawnHost.spawn(&request)
+        let outcome: AgentJobExecutionSpawnOutcome = spawned
+        let transition = apply_agent_job_spawn(state, outcome)
+        if let `RunnerAdvanced next = transition {
+          state = next
+        } else if let `RunnerInvariantFailed reason = transition {
+          runner_error = `Some reason
+          break
+        } else {
+          runner_error = `Some "agent job spawn transition returned no result"
+          break
+        }
+      } else if let `WaitForWorker active = action {
+        let active_threads = agent_job_active_threads active
+        let max_runtime_seconds = if let `Some value = job.max_runtime_seconds { value } else { "1800" }
+        let request: AgentJobExecutionWaitRequest = [.job_id = job.job_id, .active_threads = active_threads, .max_runtime_seconds = max_runtime_seconds]
+        waited <- AgentJobSpawnHost.wait(&request)
+        let outcome: AgentJobExecutionWaitOutcome = waited
+        if let `WorkerCompleted completion = outcome {
+          let transition: AgentJobExecutionTransition = apply_agent_job_completion(state, completion)
+          if let `RunnerAdvanced next = transition {
+            state = next
+          } else if let `RunnerInvariantFailed reason = transition {
+            runner_error = `Some reason
+            break
+          } else {
+            runner_error = `Some "agent job completion transition returned no result"
+            break
+          }
+        } else if let `WorkerWaitFailed reason = outcome {
+          runner_error = `Some reason
+          break
+        } else {
+          runner_error = `Some "agent job host returned no wait outcome"
+          break
+        }
+      } else if let `FinalizeJob _ = action {
+        break
+      } else {
+        runner_error = `Some "agent job runner returned no action"
+        break
+      }
+    }
+
+    let runner_error_text = if let `Some reason = runner_error { reason } else { "" }
+    let finalize_request: AgentJobExecutionFinalizeRequest = [.job_id = job.job_id, .output_path = job.output_path, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items, .cancelled = state.cancelled, .runner_error = runner_error_text]
+    finalized <- AgentJobSpawnHost.finalize(&finalize_request)
+    let finalize_outcome: AgentJobExecutionFinalizeOutcome = finalized
+    if let `JobFinalizeFailed reason = finalize_outcome {
+      let result: AgentJobExecutionResult = `Rejected reason
+      result
+    } else if let `JobFinalized facts = finalize_outcome {
+      if let `Some reason = runner_error {
+        let result: AgentJobExecutionResult = `Rejected reason
+        result
+      } else {
+        let final_facts: AgentJobExecutionFinalizeFacts = facts
+        let completed: AgentJobExecutionRunCompletion = [.job_id = job.job_id, .output_path = job.output_path, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items, .cancelled = state.cancelled, .job_error = final_facts.job_error, .failed_item_errors = final_facts.failed_item_errors, .headers = create_request.headers, .items = final_facts.items]
+        let result: AgentJobExecutionResult = `Completed completed
+        result
+      }
+    } else {
+      let result: AgentJobExecutionResult = `Rejected "agent job host returned no finalization outcome"
+      result
+    }
+  } else {
+    let result: AgentJobExecutionResult = `Rejected "agent job host returned no creation outcome"
+    result
+  }
+}
+
+return { run_spawn_agents_on_csv }

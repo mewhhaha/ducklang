@@ -1,0 +1,68 @@
+module (!init: Init) where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { bound_resource_output } = import "./mcp_resource_output_limit.duck" ()
+
+type ResourceListExecutionEvent = McpResourceEvent
+type ResourceListExecutionHostRequest = McpResourceHostRequest
+type ResourceListExecutionHostResponse = McpResourceHostResponse
+type ResourceListExecutionOutputInput = McpResourceListOutputInput
+type ResourceListExecutionPrepared = McpResourcePreparedCall
+type ResourceListExecutionResult = McpResourceExecutionResult
+type ResourceListExecutionTextResult = McpResourceTextResult
+
+let run_list_mcp_resources = (prepared: ResourceListExecutionPrepared, orchestrator_mcp_enabled: Bool, maximum_bytes: I32) => {
+  let supported = if let `ListResources _ = prepared.operation {
+    true
+  } else if let `ListResourceTemplates _ = prepared.operation {
+    true
+  } else {
+    false
+  }
+
+  if !(supported) {
+    let result: ResourceListExecutionResult = `Rejected "MCP resource list received the wrong operation"
+    result
+  } else {
+    let server = if let `ListResources args = prepared.operation {
+      if let `Some name = args.server { name } else { "codex" }
+    } else if let `ListResourceTemplates args = prepared.operation {
+      if let `Some name = args.server { name } else { "codex" }
+    } else {
+      "codex"
+    }
+    let tool = if let `ListResources _ = prepared.operation { "list_mcp_resources" } else { "list_mcp_resource_templates" }
+    let started: ResourceListExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = false, .success = true, .message = `None ()]
+    _ <- McpResourceHost.event(&started)
+    let request: ResourceListExecutionHostRequest = [.operation = prepared.operation]
+    response <- McpResourceHost.invoke(&request)
+    let host_response: ResourceListExecutionHostResponse = response
+    let output: ResourceListExecutionTextResult = if let `Listed pages = host_response {
+      let input: ResourceListExecutionOutputInput = [.operation = prepared.operation, .pages = pages, .orchestrator_mcp_enabled = orchestrator_mcp_enabled]
+      stage_output <- McpResourceStages.list_output(&input)
+      let typed_output: ResourceListExecutionTextResult = stage_output
+      typed_output
+    } else if let `Failed reason = host_response {
+      `ResourceFailed reason
+    } else {
+      `ResourceFailed "MCP resource list host returned the wrong response"
+    }
+
+    if let `ResourceText text = output {
+      let completed: ResourceListExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = true, .success = true, .message = `Some text]
+      _ <- McpResourceHost.event(&completed)
+      let result: ResourceListExecutionResult = `Completed (bound_resource_output(text, maximum_bytes))
+      result
+    } else if let `ResourceFailed reason = output {
+      let completed: ResourceListExecutionEvent = [.call_id = prepared.call_id, .server = server, .tool = tool, .completed = true, .success = false, .message = `Some reason]
+      _ <- McpResourceHost.event(&completed)
+      let result: ResourceListExecutionResult = `Rejected reason
+      result
+    } else {
+      let result: ResourceListExecutionResult = `Rejected "MCP resource list output produced no result"
+      result
+    }
+  }
+}
+
+return { run_list_mcp_resources }

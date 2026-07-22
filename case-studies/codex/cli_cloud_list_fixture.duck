@@ -1,0 +1,34 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_cloud_list } = import "./cli_cloud.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexCloudCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let defaults: FixtureResult = parse_cloud_list(args.empty())
+if let `Ok command = defaults {
+  if let `CloudList options = command {
+    if options.limit == 20i64 { score = score + 1 }
+  }
+}
+
+let input: FixtureArgs = args.prepend("--env", args.prepend("env-7", args.prepend("--limit", args.prepend("4", args.prepend("--cursor", args.prepend("next", args.singleton("--json")))))))
+let planned: FixtureResult = parse_cloud_list(input)
+if let `Ok command = planned {
+  if let `CloudList options = command {
+    if let `Some environment = options.environment {
+      if let `Some cursor = options.cursor {
+        if environment == "env-7" && options.limit == 4i64 && cursor == "next" && options.json {
+          score = score + 10
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

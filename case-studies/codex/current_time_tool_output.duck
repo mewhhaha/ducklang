@@ -1,0 +1,22 @@
+module () where
+
+const { format_microseconds_seconds_4 } = import "duck:prelude/time" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./current_time_types.duck" ()
+const { render_current_time_reminder } = import "./current_time_format.duck" ()
+
+type ClockSleepHostResult = CurrentTimeSleepHostResult
+
+const render_current_time_tool_output: I64 -> Text = current_time => {
+  render_current_time_reminder(current_time)
+}
+
+const render_sleep_tool_output: ClockSleepHostResult -> Text = result => {
+  let message = if result.interrupted { "Sleep interrupted by new input." } else { "Sleep completed." }
+  text_append("Wall time: ", text_append(format_microseconds_seconds_4(result.elapsed_microseconds), text_append(" seconds\n", message)))
+}
+
+return {
+  render_current_time_tool_output,
+  render_sleep_tool_output,
+}

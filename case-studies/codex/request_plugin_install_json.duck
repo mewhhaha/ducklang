@@ -1,0 +1,37 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const { format_i32 } = import "duck:prelude/numeric" ()
+const { text_append } = import "duck:prelude/runtime" ()
+const {} = import "./plugin_install_types.duck" ()
+const { decode_list_plugin_install_value, decode_recommended_plugin_install_value, list_install_parse_failure, recommended_install_parse_failure } = import "./request_plugin_install_value.duck" ()
+
+type InstallJsonParseResult = RequestPluginInstallParseResult
+type InstallJsonPresentation = ToolSuggestPresentation
+
+let parse_request_plugin_install_args: [InstallJsonPresentation, Text] -> InstallJsonParseResult = (presentation: InstallJsonPresentation, document: Text) => {
+  let parsed = parse_json_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      if let `ListTool () = presentation {
+        let decoded = decode_list_plugin_install_value object
+        if let `Parsed args = decoded { `ListArgs args } else if let `ParseFailed message = decoded { `ParseFailed message } else { `ParseFailed "failed to parse function arguments: invalid list parse result" }
+      } else {
+        let decoded = decode_recommended_plugin_install_value object
+        if let `Parsed args = decoded { `RecommendedArgs args } else if let `ParseFailed message = decoded { `ParseFailed message } else { `ParseFailed "failed to parse function arguments: invalid recommended parse result" }
+      }
+    } else if let `ListTool () = presentation {
+      list_install_parse_failure "request_plugin_install arguments must be an object"
+    } else {
+      recommended_install_parse_failure "request_plugin_install arguments must be an object"
+    }
+  } else if let `Err error = parsed {
+    let [position, message] = error
+    `ParseFailed (text_append(["failed to parse function arguments: ", text_append([message, text_append([" at byte ", format_i32(position)])])]))
+  } else {
+    `ParseFailed "failed to parse function arguments: invalid JSON parse result"
+  }
+}
+
+return { parse_request_plugin_install_args }

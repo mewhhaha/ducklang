@@ -1,0 +1,71 @@
+module () where
+
+const { list } = import "duck:prelude/list" ()
+const {} = import "./apply_patch_types.duck" ()
+const {} = import "./tool_types.duck" ()
+const { apply_patch_targets } = import "./apply_patch_policy.duck" ()
+const tool_policy_module = import "./tool_policy.duck"
+const { assess_patch_safety } = tool_policy_module()
+
+type FixtureAdd = ApplyPatchAdd
+type FixtureChunk = ApplyPatchChunk
+type FixtureChunks = ApplyPatchChunks
+type FixtureDocument = ApplyPatchDocument
+type FixtureHunk = ApplyPatchHunk
+type FixtureHunks = ApplyPatchHunks
+type FixturePatchTarget = ToolPatchTarget
+type FixturePaths = ToolPaths
+type FixtureSandbox = ToolFileSystemSandbox
+type FixtureUpdate = ApplyPatchUpdate
+
+const chunks = comptime list(FixtureChunk)
+const hunks = comptime list(FixtureHunk)
+const paths = comptime list(Text)
+
+let addition: FixtureAdd = [.path = "new.txt", .content = "new\n"]
+let update: FixtureUpdate = [.path = "old.txt", .move_path = `Some "moved.txt", .chunks = chunks.empty()]
+let changes: FixtureHunks = hunks.prepend(`AddFile addition, hunks.prepend(`UpdateFile update, hunks.singleton(`DeleteFile "/repo/gone.txt")))
+let document: FixtureDocument = [.environment_id = `Some "primary", .hunks = changes]
+let targets = apply_patch_targets(document, "/repo")
+let score: I32 = 0
+
+if let `Cons first_node = targets {
+  let [first, tail] = first_node
+  let [first_path, first_move] = first
+  if first_path == "/repo/new.txt" {
+    if let `None () = first_move {
+      if let `Cons second_node = tail {
+        let [second, final] = second_node
+        let [second_path, second_move] = second
+        if second_path == "/repo/old.txt" {
+          if let `Some destination = second_move {
+            if destination == "/repo/moved.txt" {
+              if let `Cons third_node = final {
+                let [third, end] = third_node
+                let [third_path, _] = third
+                if third_path == "/repo/gone.txt" {
+                  if let `Nil () = end { score = score + 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let writable: FixturePaths = paths.singleton("/repo")
+let sandbox: FixtureSandbox = [`Restricted (), writable, false, false]
+let safety = assess_patch_safety(targets, `OnRequest (), `Managed (), sandbox, true)
+if let `AutoApprove state = safety {
+  let [sandboxed, explicitly_approved] = state
+  if sandboxed && !(explicitly_approved) { score = score + 10 }
+}
+
+let outside_changes: FixtureHunks = hunks.singleton(`DeleteFile "/etc/passwd")
+let outside: FixtureDocument = [.environment_id = `None (), .hunks = outside_changes]
+safety = assess_patch_safety(apply_patch_targets(outside, "/repo"), `Never (), `Managed (), sandbox, true)
+if let `Reject _ = safety { score = score + 100 }
+
+return { .score = score }

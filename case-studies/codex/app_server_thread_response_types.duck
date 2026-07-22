@@ -1,0 +1,33 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerThreadResponseView =
+  | `StableThreadResponse Unit
+  | `ExperimentalThreadResponse Unit
+
+type AppServerThreadResponseMetadata = struct {
+  .thread = AppServerJson,
+  .model = Text,
+  .model_provider = Text,
+  .service_tier = AppServerJsonOption,
+  .cwd = Text,
+  .runtime_workspace_roots = AppServerTexts,
+  .instruction_sources = AppServerTexts,
+  .approval_policy = AppServerJson,
+  .approvals_reviewer = AppServerJson,
+  .sandbox = AppServerJson,
+  .active_permission_profile = AppServerJsonOption,
+  .reasoning_effort = AppServerJsonOption,
+  .view = AppServerThreadResponseView,
+}
+
+type AppServerThreadResumeResponseMetadata = struct {
+  .common = AppServerThreadResponseMetadata,
+  .initial_turns_page = AppServerJsonOption,
+  .turns_backwards_cursor = AppServerTextOption,
+  .items_backwards_cursor = AppServerTextOption,
+}
+
+return {}

@@ -1,0 +1,17 @@
+module () where
+
+const { json_object, json_object_empty, json_object_get, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { materialize_empty_thread_response, materialize_thread_id_notification, materialize_thread_unarchive_response } = import "./app_server_thread_responses.duck" ()
+
+let empty_score = if let `Object _ = materialize_empty_thread_response() { 1 } else { 0 }
+let thread = json_object(json_object_prepend("id", json_string("thread-1"), json_object_empty()))
+let unarchive_score = if let `Object fields = materialize_thread_unarchive_response(thread) {
+  if let `Found _ = json_object_get("thread", fields) { 10 } else { 0 }
+} else { 0 }
+let notification_score = if let `Object fields = materialize_thread_id_notification("thread-1") {
+  if let `Found value = json_object_get("threadId", fields) {
+    if let `String id = value { if id == "thread-1" { 100 } else { 0 } } else { 0 }
+  } else { 0 }
+} else { 0 }
+
+return { .score = empty_score + unarchive_score + notification_score }

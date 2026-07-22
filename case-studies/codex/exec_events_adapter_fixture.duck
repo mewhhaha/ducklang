@@ -1,0 +1,56 @@
+module (!init: Init) where
+
+const exec_types_module = import "./exec_types.duck"
+const events_module = import "./exec_events.duck"
+const { initial_lifecycle_state, plan_exec_begin, plan_exec_end, plan_output_delta, plan_terminal_interaction } = events_module()
+
+type FixtureI32Option = ExecEventI32Option
+type FixtureTextOption = ExecEventTextOption
+type FixtureCommand = ExecEventCommand
+type FixtureSource = ExecCommandSource
+type FixtureStream = ExecOutputStream
+type FixtureState = ExecLifecycleState
+type FixtureBeginPlan = ExecBeginPlan
+type FixtureDeltaPlan = ExecDeltaPlan
+type FixtureInteractionPlan = ExecInteractionPlan
+type FixtureEndPlan = ExecEndPlan
+
+let score = 0
+let state: FixtureState = initial_lifecycle_state()
+let process_id: FixtureI32Option = ExecEventI32Option.Some(1000)
+let no_input: FixtureTextOption = ExecEventTextOption.None()
+let command: FixtureCommand = ["/bin/zsh", "-c", "printf hello", "", 3]
+let source: FixtureSource = `UnifiedExecStartup ()
+let begin: FixtureBeginPlan = plan_exec_begin(state, "call-1", process_id, "turn-1", 100i64, command, "/repo", source, no_input)
+
+if let `EmitBegin emission = begin {
+  let [next, event] = emission
+  _ <- ExecEvents.begin(&event)
+  state = next
+  score = score + 1
+}
+
+let stream: FixtureStream = `Stdout ()
+let delta: FixtureDeltaPlan = plan_output_delta(state, "call-1", stream, "hello")
+
+if let `EmitDelta emission = delta {
+  let [next, event, _] = emission
+  _ <- ExecEvents.output_delta(&event)
+  state = next
+  score = score + 1
+}
+
+let interaction: FixtureInteractionPlan = plan_terminal_interaction("call-1", 1000, process_id, "yes\n")
+if let `EmitInteraction event = interaction {
+  _ <- ExecEvents.interaction(&event)
+  score = score + 1
+}
+
+let ended: FixtureEndPlan = plan_exec_end(state, "call-1", process_id, "turn-1", 200i64, command, "/repo", source, no_input, "hello", "", "hello", 0, 100, "hello", false)
+if let `EmitEnd emission = ended {
+  let [_, event] = emission
+  _ <- ExecEvents.end(&event)
+  score = score + 1
+}
+
+return { .score = score }

@@ -1,0 +1,76 @@
+module () where
+
+const {} = import "./code_mode_runtime_response_types.duck" ()
+
+type AdapterPolicy = CodeModeImageDetailPolicy
+type AdapterRuntimeItems = CodeModeRuntimeContentItems
+type AdapterOutputDetail = OutputImageDetail
+type AdapterOutputItem = FunctionOutputContentItem
+type AdapterOutputItemNode = FunctionOutputContentItemNode
+type AdapterOutputItems = FunctionOutputContentItems
+
+const adapt_code_mode_runtime_items: [AdapterPolicy, AdapterRuntimeItems] -> AdapterOutputItems = (policy, runtime_items) => {
+  let original_detail_supported = false
+  if let `OriginalDetailSupported () = policy {
+    original_detail_supported = true
+  }
+
+  let current = runtime_items
+  let reversed: AdapterOutputItems = `Nil ()
+  let done = false
+
+  loop {
+    if let `RuntimeItemsCons node = current {
+      let [runtime_item, tail] = node
+      let output_item: AdapterOutputItem = match runtime_item {
+        | `RuntimeInputText text => `InputText text
+        | `RuntimeInputImage image => {
+          let [image_url, requested_detail] = image
+          let output_detail = requested_detail
+
+          if let `None () = requested_detail {
+            let high: AdapterOutputDetail = `High ()
+            output_detail = `Some high
+          } else if let `Some detail = requested_detail {
+            if let `Original () = detail {
+              if !original_detail_supported {
+                let high: AdapterOutputDetail = `High ()
+                output_detail = `Some high
+              }
+            }
+          }
+
+          `InputImage ([image_url, output_detail])
+        }
+      }
+
+      let output_node: AdapterOutputItemNode = [output_item, reversed]
+      reversed = `Cons output_node
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let output: AdapterOutputItems = `Nil ()
+  done = false
+
+  loop {
+    if let `Cons node = reversed {
+      let [item, tail] = node
+      let output_node: AdapterOutputItemNode = [item, output]
+      output = `Cons output_node
+      reversed = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  output
+}
+
+return { adapt_code_mode_runtime_items }

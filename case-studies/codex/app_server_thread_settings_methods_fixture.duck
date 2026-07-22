@@ -1,0 +1,55 @@
+const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const methods_module = import "./app_server_methods.duck"
+const {} = import "./app_server_types.duck" ()
+const { decode_thread_settings_update } = methods_module()
+
+type FixtureMethodResult = AppServerMethodDecodeResult
+
+let fields = json_object_empty()
+fields = json_object_prepend("approvalPolicy", json_string("never"), fields)
+fields = json_object_prepend("effort", json_string("high"), fields)
+fields = json_object_prepend("serviceTier", `Null (), fields)
+fields = json_object_prepend("model", json_string("gpt-5"), fields)
+fields = json_object_prepend("cwd", json_string("/workspace"), fields)
+fields = json_object_prepend("threadId", json_string("thread-1"), fields)
+
+let score = 0
+let decoded: FixtureMethodResult = decode_thread_settings_update(json_object(fields))
+if let `MethodOk method = decoded {
+  if let `ThreadSettingsUpdate params = method {
+    let cwd_valid = if let `Some value = params.cwd { value == "/workspace" } else { false }
+    let model_valid = if let `Some value = params.model { value == "gpt-5" } else { false }
+    let tier_valid = if let `Clear () = params.service_tier { true } else { false }
+    let effort_valid = if let `Some value = params.effort { value == "high" } else { false }
+    let approval_valid = if let `Some value = params.approval_policy { if let `String text = value { text == "never" } else { false } } else { false }
+    if params.thread_id == "thread-1" && cwd_valid && model_valid && tier_valid && effort_valid && approval_valid && params.has_changes { score = score + 1 }
+  }
+}
+
+let conflict_fields = json_object_empty()
+conflict_fields = json_object_prepend("permissions", json_string(":workspace"), conflict_fields)
+conflict_fields = json_object_prepend("sandboxPolicy", json_object(json_object_empty()), conflict_fields)
+conflict_fields = json_object_prepend("threadId", json_string("thread-1"), conflict_fields)
+let conflict: FixtureMethodResult = decode_thread_settings_update(json_object(conflict_fields))
+if let `MethodError reason = conflict {
+  if reason == "`permissions` cannot be combined with `sandboxPolicy`" { score = score + 10 }
+}
+
+let invalid_fields = json_object_empty()
+invalid_fields = json_object_prepend("serviceTier", json_object(json_object_empty()), invalid_fields)
+invalid_fields = json_object_prepend("threadId", json_string("thread-1"), invalid_fields)
+let invalid: FixtureMethodResult = decode_thread_settings_update(json_object(invalid_fields))
+if let `MethodError reason = invalid {
+  if reason == "thread/settings/update.params.serviceTier must be a string or null" { score = score + 100 }
+}
+
+let empty_fields = json_object_empty()
+empty_fields = json_object_prepend("threadId", json_string("thread-1"), empty_fields)
+let empty: FixtureMethodResult = decode_thread_settings_update(json_object(empty_fields))
+if let `MethodOk method = empty {
+  if let `ThreadSettingsUpdate params = method {
+    if !(params.has_changes) { score = score + 1000 }
+  }
+}
+
+return { .score = score }

@@ -1,0 +1,87 @@
+module () where
+
+const { encode_json_string, parse_json_document } = import "duck:prelude/json" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i64 } = import "duck:prelude/numeric" ()
+const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
+const { text_append, text_copy } = import "duck:prelude/text" ()
+const {} = import "./message_history_types.duck" ()
+
+type MessageHistoryCodecEntry = MessageHistoryEntry
+type MessageHistoryCodecEntryOption = MessageHistoryEntryOption
+type MessageHistoryCodecJson = Json
+type MessageHistoryCodecTextOption = Option Text
+type MessageHistoryCodecTimestampOption = Option I64
+
+const message_history_entry: [Text, I64, Text] -> MessageHistoryCodecEntry = (session_id: Text, timestamp: I64, text: Text) => {
+  [.session_id = session_id, .timestamp = timestamp, .text = text]
+}
+
+const encode_message_history_line: &MessageHistoryCodecEntry -> Text = (entry: &MessageHistoryCodecEntry) => {
+  let encoded = text_append ["{\"session_id\":", encode_json_string(text_copy(&entry.session_id))]
+  encoded = text_append [encoded, ",\"ts\":"]
+  encoded = text_append [encoded, format_i64 entry.timestamp]
+  encoded = text_append [encoded, ",\"text\":"]
+  encoded = text_append [encoded, encode_json_string(text_copy(&entry.text))]
+  text_append [encoded, "}\n"]
+}
+
+const parse_message_history_entry: Text -> MessageHistoryCodecEntryOption = (line: Text) => {
+  let parsed = parse_json_document line
+  if let `Ok value_and_index = parsed {
+    let [value, _] = value_and_index
+    let document_value: MessageHistoryCodecJson = value
+    if let `Object object = document_value {
+      let session_id: MessageHistoryCodecTextOption = `None ()
+      let timestamp: MessageHistoryCodecTimestampOption = `None ()
+      let text: MessageHistoryCodecTextOption = `None ()
+      let current = object
+      let done = false
+
+      loop {
+        if let `Cons node = current {
+          let [member, tail] = node
+          let [key, field_value] = member
+
+          if key == "session_id" {
+            if let `String session_text = field_value {
+              session_id = `Some session_text
+            }
+          } else if key == "ts" {
+            if let `Number timestamp_text = field_value {
+              let parsed_timestamp = parse_i64_decimal timestamp_text
+              if let `Ok parsed_value = parsed_timestamp {
+                timestamp = `Some parsed_value
+              }
+            }
+          } else if key == "text" {
+            if let `String message_text = field_value {
+              text = `Some message_text
+            }
+          }
+
+          current = tail
+        } else {
+          done = true
+        }
+
+        if done { break }
+      }
+
+      if let `Some session = session_id {
+        if let `Some time = timestamp {
+          if let `Some message = text {
+            let entry: MessageHistoryCodecEntry = [.session_id = session, .timestamp = time, .text = message]
+            `Some entry
+          } else { `None () }
+        } else { `None () }
+      } else { `None () }
+    } else { `None () }
+  } else { `None () }
+}
+
+return {
+  message_history_entry,
+  encode_message_history_line,
+  parse_message_history_entry,
+}

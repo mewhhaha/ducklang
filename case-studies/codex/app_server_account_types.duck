@@ -1,0 +1,52 @@
+module () where
+
+const {} = import "./app_server_types.duck" ()
+
+type AppServerAccountLoginBrand =
+  | `CodexBrand Unit
+  | `ChatgptBrand Unit
+
+type AppServerAccountLoginBrandOption = Option AppServerAccountLoginBrand
+type AppServerAccountChatgptLogin = [Bool, Bool, AppServerAccountLoginBrandOption]
+type AppServerAccountAuthTokensLogin = [Text, Text, AppServerTextOption]
+type AppServerAccountBedrockLogin = [Text, Text]
+type AppServerAccountLoginParams =
+  | `AccountApiKeyLogin Text
+  | `AccountChatgptLogin AppServerAccountChatgptLogin
+  | `AccountDeviceCodeLogin Unit
+  | `AccountAuthTokensLogin AppServerAccountAuthTokensLogin
+  | `AccountBedrockLogin AppServerAccountBedrockLogin
+
+type AppServerAccountLoginKind =
+  | `ApiKeyLoginKind Unit
+  | `ChatgptLoginKind Unit
+  | `DeviceCodeLoginKind Unit
+  | `AuthTokensLoginKind Unit
+  | `BedrockLoginKind Unit
+
+type AppServerAccountLoginRoute = [AppServerAccountLoginKind, AppServerJson]
+type AppServerAccountLoginDecodeResult =
+  | `AccountLoginOk AppServerAccountLoginParams
+  | `AccountLoginError Text
+
+type AppServerAccountRateLimitResetParams = [Text, AppServerTextOption]
+type AppServerAccountNudgeCreditType =
+  | `CreditsNudge Unit
+  | `UsageLimitNudge Unit
+
+type AppServerAccountMethod =
+  | `AccountLoginStart AppServerAccountLoginRoute
+  | `AccountLoginCancel Text
+  | `AccountLogout Unit
+  | `AccountRead Bool
+  | `AccountRateLimitsRead Unit
+  | `AccountRateLimitResetConsume AppServerAccountRateLimitResetParams
+  | `AccountUsageRead Unit
+  | `AccountWorkspaceMessagesRead Unit
+  | `AccountSendAddCreditsNudge AppServerAccountNudgeCreditType
+
+type AppServerAccountMethodDecodeResult =
+  | `AccountMethodOk AppServerAccountMethod
+  | `AccountMethodError Text
+
+return {}

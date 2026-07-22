@@ -1,0 +1,45 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { classify_cli_head } = import "./cli.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureCommand = CodexCliCommand
+
+const args = comptime list(Text)
+let score = 0
+
+let exec_args: FixtureArgs = args.prepend("exec", args.singleton("--json"))
+let exec: FixtureCommand = classify_cli_head(exec_args)
+if let `Exec remaining = exec {
+  if let `Cons node = remaining {
+    let [flag, done] = node
+    if let `Nil () = done { if flag == "--json" { score = score + 1 } }
+  }
+}
+
+let exec_alias: FixtureCommand = classify_cli_head(args.singleton("e"))
+if let `Exec _ = exec_alias { score = score + 10 }
+
+let apply_alias: FixtureCommand = classify_cli_head(args.singleton("a"))
+if let `Apply _ = apply_alias { score = score + 100 }
+
+let cloud_alias: FixtureCommand = classify_cli_head(args.singleton("cloud-tasks"))
+if let `Cloud _ = cloud_alias { score = score + 1000 }
+
+let prompt_args: FixtureArgs = args.singleton("explain this repository")
+let prompt: FixtureCommand = classify_cli_head(prompt_args)
+if let `Interactive preserved = prompt {
+  if let `Cons node = preserved {
+    let [value, _] = node
+    if value == "explain this repository" { score = score + 10000 }
+  }
+}
+
+let empty: FixtureCommand = classify_cli_head(args.empty())
+if let `Interactive remaining = empty {
+  if let `Nil () = remaining { score = score + 100000 }
+}
+
+return { .score = score }

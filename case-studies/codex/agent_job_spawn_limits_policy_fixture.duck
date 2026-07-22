@@ -1,0 +1,21 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { prepare_agent_job_spawn_limits } = import "./agent_job_spawn_limits_policy.duck" ()
+
+type FixtureArgs = AgentJobSpawnDecodedArgs
+
+let score = 0
+let valid_decoded: FixtureArgs = [.csv_path = "/workspace/input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "/workspace/out.csv", .output_schema_json = `None (), .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "90"]
+let valid = prepare_agent_job_spawn_limits(valid_decoded, 8, `None ())
+if let `ReadCsv args = valid {
+  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false }
+  if args.input_path == "/workspace/input.csv" && args.max_concurrency == 8 && runtime_valid { score = 1 }
+}
+let zero_runtime_decoded: FixtureArgs = [.csv_path = "/workspace/input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "/workspace/out.csv", .output_schema_json = `None (), .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "0"]
+let rejected = prepare_agent_job_spawn_limits(zero_runtime_decoded, 8, `None ())
+if let `RejectSpawn reason = rejected {
+  if reason == "max_runtime_seconds must be >= 1" { score = score + 10 }
+}
+
+return { .score = score }

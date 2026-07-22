@@ -1,0 +1,40 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./tool_types.duck" ()
+
+type ApplyRegistrationDefinition = ToolDefinition
+type ApplyRegistrationDefinitions = ToolDefinitions
+type ApplyRegistrationName = ToolName
+type ApplyRegistrationSpec = ToolSpec
+type ApplyRegistrationSpecs = ToolSpecs
+
+const apply_patch_tool_name: () -> ApplyRegistrationName = () => ["", "apply_patch"]
+
+const apply_patch_tool_definitions: Bool -> ApplyRegistrationDefinitions = enabled => {
+  if enabled {
+    let definition: ApplyRegistrationDefinition = [apply_patch_tool_name(), `Direct (), `ApplyPatch (), `CustomPayload (), false, false]
+    `Cons ([definition, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+const apply_patch_grammar: () -> Text = () => "Patch := Begin [ EnvironmentId ] { FileOp } End\nBegin := \"*** Begin Patch\" NEWLINE\nEnvironmentId := \"*** Environment ID: \" environmentId NEWLINE\nEnd := \"*** End Patch\" NEWLINE\nFileOp := AddFile | DeleteFile | UpdateFile\nAddFile := \"*** Add File: \" path NEWLINE { \"+\" line NEWLINE }\nDeleteFile := \"*** Delete File: \" path NEWLINE\nUpdateFile := \"*** Update File: \" path NEWLINE [ MoveTo ] { Hunk }\nMoveTo := \"*** Move to: \" newPath NEWLINE\nHunk := \"@@\" [ header ] NEWLINE { HunkLine } [ \"*** End of File\" NEWLINE ]\nHunkLine := (\" \" | \"-\" | \"+\") text NEWLINE"
+
+const apply_patch_tool_specs: Bool -> ApplyRegistrationSpecs = enabled => {
+  if enabled {
+    let description = "Use apply_patch to edit files with a source-oriented patch containing one or more add, delete, or update operations."
+    let spec: ApplyRegistrationSpec = [apply_patch_tool_name(), `FreeformSpec (), description, apply_patch_grammar(), `ToolOutputSchemaMissing (), false]
+    `Cons ([spec, `Nil ()])
+  } else {
+    `Nil ()
+  }
+}
+
+return {
+  apply_patch_grammar,
+  apply_patch_tool_definitions,
+  apply_patch_tool_name,
+  apply_patch_tool_specs,
+}

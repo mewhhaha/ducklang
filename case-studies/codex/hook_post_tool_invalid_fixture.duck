@@ -1,0 +1,23 @@
+module () where
+
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_post_tool_output } = hook_output_module()
+
+type FixturePostToolParse = HookPostToolParse
+
+let parsed: FixturePostToolParse = parse_post_tool_output("{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"updatedMCPToolOutput\":{\"content\":\"replacement\"}}}")
+let score = 0
+
+if let `PostToolOk output = parsed {
+  let [_, should_block, _, _, _, invalid] = output
+  if should_block {
+    ()
+  } else if let `Some message = invalid {
+    if message == "PostToolUse hook returned unsupported updatedMCPToolOutput" {
+      score = 1
+    }
+  }
+}
+
+return { .score = score }

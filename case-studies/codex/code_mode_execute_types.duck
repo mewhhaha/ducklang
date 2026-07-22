@@ -1,0 +1,108 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "duck:prelude/json/values" ()
+const {} = import "./code_mode_exec_source.duck" ()
+const {} = import "./code_mode_nested_tool_types.duck" ()
+const {} = import "./code_mode_runtime_response_types.duck" ()
+
+type CodeModeExecuteToolDefinition = struct {
+  .name = Text,
+  .tool_name = ToolName,
+  .description = Text,
+  .kind = CodeModeNestedToolKind,
+  .input_schema = Option Json,
+  .output_schema = Option Json,
+}
+
+type CodeModeExecuteToolDefinitionNode = [CodeModeExecuteToolDefinition, CodeModeExecuteToolDefinitions]
+type CodeModeExecuteToolDefinitions =
+  | `ExecuteToolsNil Unit
+  | `ExecuteToolsCons CodeModeExecuteToolDefinitionNode
+
+type CodeModeExecutePayload =
+  | `ExecuteCustomPayload Text
+  | `ExecuteUnsupportedPayload Unit
+
+type CodeModeExecuteInvocation = struct {
+  .call_id = Text,
+  .tool_name = ToolName,
+  .payload = CodeModeExecutePayload,
+  .enabled_tools = CodeModeExecuteToolDefinitions,
+}
+
+type CodeModeExecuteRequest = struct {
+  .tool_call_id = Text,
+  .enabled_tools = CodeModeExecuteToolDefinitions,
+  .source = Text,
+  .yield_time_ms = CodeModeExecLimit,
+  .max_output_tokens = CodeModeExecLimit,
+}
+
+type CodeModeExecuteCallPlan =
+  | `StartCodeModeExecute CodeModeExecuteRequest
+  | `RejectCodeModeExecute Text
+
+type CodeModeStartedCell = struct {
+  .cell_id = Text,
+}
+
+type CodeModeExecuteTraceStart = struct {
+  .turn_sub_id = Text,
+  .cell_id = Text,
+  .tool_call_id = Text,
+  .source = Text,
+}
+
+type CodeModeExecuteStartedPlan = struct {
+  .trace = CodeModeExecuteTraceStart,
+  .mark_ready_cell_id = Text,
+  .await_initial_response_cell_id = Text,
+}
+
+type CodeModeExecuteInitialLifecycle =
+  | `ExecuteInitialCellYielded Text
+  | `ExecuteInitialCellEnded Text
+
+type CodeModeExecuteElicitationBarrier =
+  `WaitUntilCodeModeElicitationsClear Unit
+
+type CodeModeExecuteInitialPlan = struct {
+  .lifecycle = CodeModeExecuteInitialLifecycle,
+  .barrier = CodeModeExecuteElicitationBarrier,
+}
+
+type CodeModeExecuteStartResult =
+  | `CodeModeExecuteStarted CodeModeStartedCell
+  | `CodeModeExecuteStartFailed Text
+
+type CodeModeExecuteTimer = struct {
+  .token = Text,
+}
+
+type CodeModeExecuteTrace = struct {
+  .trace_id = Text,
+}
+
+type CodeModeExecuteInitialResponseResult =
+  | `CodeModeInitialResponse CodeModeRuntimeResponse
+  | `CodeModeInitialResponseFailed Text
+
+type CodeModeExecuteExecution = struct {
+  .invocation = CodeModeExecuteInvocation,
+  .turn_sub_id = Text,
+  .image_detail_policy = CodeModeImageDetailPolicy,
+}
+
+type CodeModeExecuteCompletion = struct {
+  .response = CodeModeRuntimeResponse,
+  .image_detail_policy = CodeModeImageDetailPolicy,
+  .token_limit = CodeModeWaitU64Option,
+  .elapsed = CodeModeElapsed,
+}
+
+type CodeModeExecuteResult =
+  | `CodeModeExecuteCompleted CodeModeExecuteCompletion
+  | `CodeModeExecuteRejected Text
+
+return {}

@@ -1,0 +1,58 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i32, text_append } = import "duck:prelude/runtime" ()
+const {} = import "./agent_tool_types.duck" ()
+
+type AgentListJsonOption = AgentTextOption
+
+const list_decode_failure: Text -> AgentToolListDecodeResult = reason => {
+  `AgentListDecodeFailed (text_append("failed to parse list_agents arguments: ", reason))
+}
+
+const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => {
+  let parsed = parse_json_document document
+  if let `Err error = parsed {
+    let [position, message] = error
+    return list_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)))
+  }
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      let path_prefix: AgentListJsonOption = `None ()
+      let seen_prefix = false
+      let failure = ""
+      let current = object
+      let done = false
+      loop {
+        if failure != "" { break }
+        if let `Cons node = current {
+          let [member, tail] = node
+          let [key, field] = member
+          if key != "path_prefix" {
+            failure = text_append("unknown list_agents field: ", key)
+          } else if seen_prefix {
+            failure = "path_prefix must not be repeated"
+          } else if let `String prefix = field {
+            path_prefix = `Some prefix
+            seen_prefix = true
+          } else {
+            failure = "path_prefix must be a string"
+          }
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+      if failure == "" { `AgentListDecoded path_prefix } else { list_decode_failure failure }
+    } else {
+      list_decode_failure "arguments must be an object"
+    }
+  } else {
+    list_decode_failure "JSON parsing produced no result"
+  }
+}
+
+return { parse_list_agents_args }

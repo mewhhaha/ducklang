@@ -1,0 +1,54 @@
+module () where
+
+const {} = import "duck:prelude/types" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerTurnI64Option = Option I64
+
+type AppServerTurnStatus =
+  | `Completed Unit
+  | `Interrupted Unit
+  | `Failed Unit
+  | `InProgress Unit
+
+type AppServerTurnError = [Text, AppServerJsonOption, AppServerTextOption]
+type AppServerTurnErrorOption = Option AppServerTurnError
+type AppServerTurn = [Text, JsonArray, AppServerTurnItemsView, AppServerTurnStatus, AppServerTurnErrorOption, AppServerTurnI64Option, AppServerTurnI64Option, AppServerTurnI64Option]
+type AppServerTurnOption = Option AppServerTurn
+type AppServerTurnTerminal =
+  | `TurnCompleted Unit
+  | `TurnInterrupted Unit
+  | `TurnFailed AppServerTurnError
+
+type AppServerTurnState = [Text, AppServerTurnOption, AppServerTextOption, Bool]
+type AppServerTurnTransition = [AppServerTurnState, AppServerTurn]
+type AppServerTurnTransitionResult = Result Text AppServerTurnTransition
+type AppServerTurnInterruptDecision =
+  | `InterruptStartup AppServerTurnState
+  | `InterruptActive AppServerTurnState
+
+type AppServerTurnInterruptResult = Result Text AppServerTurnInterruptDecision
+type AppServerTurnSteerResult = Result Text Text
+
+type AppServerTurns = List AppServerTurn
+type AppServerThreadTurnsPage = [AppServerTurns, AppServerTextOption, AppServerTextOption]
+type AppServerThreadTurnsPageResult = Result Text AppServerThreadTurnsPage
+type AppServerThreadTurnsCursor = [Text, Bool]
+type AppServerThreadTurnsCursorResult = Result Text AppServerThreadTurnsCursor
+type AppServerThreadTurnsCursorOption = Option AppServerThreadTurnsCursor
+type AppServerThreadTurnsCursorPage = [AppServerTurns, AppServerThreadTurnsCursorOption, AppServerThreadTurnsCursorOption]
+type AppServerThreadTurnsCursorPageResult = Result Text AppServerThreadTurnsCursorPage
+type AppServerThreadTurnsPaginationInput = [AppServerTurns, AppServerThreadTurnsCursorOption, I32, AppServerSortDirection, AppServerTurnItemsView]
+type AppServerThreadItemEntry = [Text, AppServerJson]
+type AppServerThreadItemEntries = List AppServerThreadItemEntry
+type AppServerThreadItemsPage = [AppServerThreadItemEntries, AppServerTextOption, AppServerTextOption]
+
+type AppServerThreadTurnsListRoute =
+  | `LegacyTurnsReplay Unit
+  | `PaginatedTurnsStore Unit
+
+type AppServerThreadTurnsListPlan = [AppServerThreadTurnsListParams, AppServerThreadTurnsListRoute]
+type AppServerThreadTurnsListPlanResult = Result Text AppServerThreadTurnsListPlan
+type AppServerThreadItemsListPlanResult = Result Text AppServerThreadItemsListParams
+
+return {}

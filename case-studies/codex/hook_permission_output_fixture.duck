@@ -1,0 +1,36 @@
+module () where
+
+const hook_types_module = import "./hook_types.duck"
+const hook_output_types_module = import "./hook_output_types.duck"
+const hook_output_module = import "./hook_output.duck"
+const { parse_permission_output } = hook_output_module()
+
+let parsed = parse_permission_output("{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\" blocked \"}}}")
+let score: I32 = 0
+
+if let `PermissionOk output = parsed {
+  let [universal, decision, invalid] = output
+  let [continue_processing, _, suppress_output, _] = universal
+
+  if continue_processing {
+    score = score + 1
+  }
+
+  if suppress_output {
+    ()
+  } else {
+    score = score + 10
+  }
+
+  if let `Some value = decision {
+    if let `Deny message = value {
+      if message == "blocked" {
+        if let `None () = invalid {
+          score = score + 100
+        }
+      }
+    }
+  }
+}
+
+return { .score = score }

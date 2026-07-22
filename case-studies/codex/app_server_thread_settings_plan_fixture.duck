@@ -1,0 +1,27 @@
+module () where
+
+const { json_object, json_object_empty, json_string } = import "duck:prelude/json/values" ()
+const { list } = import "duck:prelude/functional" ()
+const {} = import "./app_server_thread_settings_types.duck" ()
+
+type FixtureOverrides = AppServerThreadSettingsOverrides
+type FixturePlan = AppServerThreadSettingsUpdatePlan
+type FixturePlanResult = AppServerThreadSettingsUpdatePlanResult
+type FixtureTextOption = AppServerTextOption
+type FixtureJsonOption = AppServerJsonOption
+type FixtureTexts = AppServerTexts
+
+const texts = comptime list(Text)
+let no_text: FixtureTextOption = `None ()
+let no_json: FixtureJsonOption = `None ()
+let overrides: FixtureOverrides = [no_text, `Some (json_string("never")), `Some (json_string("user")), `Some (json_string("workspace-write")), no_json, false, no_text, `Keep (), no_text, no_text, no_json, no_text]
+let roots: FixtureTexts = texts.singleton("/workspace")
+let plan: FixturePlan = ["thread-1", overrides, roots]
+let result: FixturePlanResult = `ThreadSettingsUpdatePlanned plan
+let score = 0
+
+if let `ThreadSettingsUpdatePlanned selected = result {
+  if selected.thread_id == "thread-1" { score = score + 1 }
+}
+
+return { .score = score }

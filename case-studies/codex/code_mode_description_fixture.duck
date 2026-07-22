@@ -1,0 +1,29 @@
+module () where
+
+const { code_mode_freeform_definition, code_mode_function_definition, materialize_code_mode_description } = import "./code_mode_description.duck" ()
+
+let score = 0
+let function_definition = code_mode_function_definition("hidden_dynamic_tool", "Test tool", "{ city: string; }", "{ ok: boolean; }")
+let function_description = materialize_code_mode_description function_definition
+if function_description == "Test tool\n\nexec tool declaration:\n```ts\ndeclare const tools: { hidden_dynamic_tool(args: { city: string; }): Promise<{ ok: boolean; }>; };\n```" {
+  score = score + 1
+}
+
+let freeform_definition = code_mode_freeform_definition("apply-patch", "Apply changes", "unknown")
+let freeform_description = materialize_code_mode_description freeform_definition
+if freeform_description == "Apply changes\n\nexec tool declaration:\n```ts\ndeclare const tools: { apply_patch(input: string): Promise<unknown>; };\n```" {
+  score = score + 10
+}
+
+let exec_definition = code_mode_freeform_definition("exec", "Executor", "never")
+if materialize_code_mode_description exec_definition == "Executor" { score = score + 100 }
+
+let mcp_definition = code_mode_function_definition("mcp__sample__echo", "Echo", "{}", "CallToolResult<{ echo: string; }>")
+let mcp_expected = "Echo\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sample__echo(args: {}): Promise<CallToolResult<{ echo: string; }>>; };\n```"
+if materialize_code_mode_description mcp_definition == mcp_expected { score = score + 1000 }
+
+let raw_definition = code_mode_function_definition("mcp__sample__raw", "Raw", "unknown", "CallToolResult")
+let raw_expected = "Raw\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sample__raw(args: unknown): Promise<CallToolResult>; };\n```"
+if materialize_code_mode_description raw_definition == raw_expected { score = score + 10000 }
+
+return { .score = score }

@@ -1,0 +1,100 @@
+module () where
+
+const { encode_json, json_object, json_object_empty, json_object_get, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { list } = import "duck:prelude/functional" ()
+const config_types_module = import "./config_types.duck"
+const config_module = import "./config.duck"
+const { active_user_file, effective_config, effective_user_config, validate_layer_order } = config_module()
+
+type FixtureLayerSource = ConfigLayerSource
+type FixtureLayer = ConfigLayer
+type FixtureLayers = ConfigLayers
+type FixtureTextOption = ConfigTextOption
+type FixtureValidation = ConfigValidation
+type FixtureJson = Json
+
+const layers = comptime list(FixtureLayer)
+
+const object_one = (key: Text, value: FixtureJson) => {
+  json_object(json_object_prepend(key, value, json_object_empty()))
+}
+
+let base_permissions = json_object_empty()
+base_permissions = json_object_prepend("approval", json_string("on-request"), base_permissions)
+base_permissions = json_object_prepend("sandbox", json_string("workspace-write"), base_permissions)
+let base = json_object_empty()
+base = json_object_prepend("permissions", json_object(base_permissions), base)
+base = json_object_prepend("model", json_string("base"), base)
+
+let user_permissions = object_one("approval", json_string("never"))
+let user = object_one("permissions", user_permissions)
+let profile = object_one("model", json_string("profile"))
+let disabled_project = object_one("model", json_string("disabled"))
+let session = object_one("model", json_string("session"))
+
+let config_layers: FixtureLayers = layers.empty()
+config_layers = layers.prepend([`SessionFlags (), session, `None ()], config_layers)
+config_layers = layers.prepend([`Project "/repo/.codex", disabled_project, `Some ("untrusted")], config_layers)
+config_layers = layers.prepend([`User (["/home/me/work.toml", `Some ("work")]), profile, `None ()], config_layers)
+config_layers = layers.prepend([`User (["/home/me/config.toml", `None ()]), user, `None ()], config_layers)
+config_layers = layers.prepend([`System "/etc/codex/config.toml", json_object(base), `None ()], config_layers)
+
+let score: I32 = 0
+let validation = validate_layer_order config_layers
+
+if let `Valid () = validation {
+  score = score + 1
+}
+
+let effective = effective_config config_layers
+if let `Object effective_object = effective {
+  let model = json_object_get("model", effective_object)
+  let permissions = json_object_get("permissions", effective_object)
+
+  if let `Found model_value = model {
+    if let `String model_name = model_value {
+      if let `Found permission_value = permissions {
+        if let `Object permission_object = permission_value {
+          let approval = json_object_get("approval", permission_object)
+          let sandbox = json_object_get("sandbox", permission_object)
+
+          if let `Found approval_value = approval {
+            if let `String approval_name = approval_value {
+              if let `Found sandbox_value = sandbox {
+                if let `String sandbox_name = sandbox_value {
+                  if model_name == "session" && approval_name == "never" && sandbox_name == "workspace-write" {
+                    score = score + 10
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+let active = active_user_file config_layers
+if let `Some path = active {
+  if path == "/home/me/work.toml" {
+    score = score + 100
+  }
+}
+
+let users = effective_user_config config_layers
+if let `Some config = users {
+  if encode_json(config) == "{\"permissions\":{\"approval\":\"never\"},\"model\":\"profile\"}" {
+    score = score + 1000
+  }
+}
+
+let invalid: FixtureLayers = layers.empty()
+invalid = layers.prepend([`System "/etc/codex/config.toml", json_object(base), `None ()], invalid)
+invalid = layers.prepend([`SessionFlags (), session, `None ()], invalid)
+
+if let `Invalid _ = validate_layer_order(invalid) {
+  score = score + 10000
+}
+
+return { .score = score }

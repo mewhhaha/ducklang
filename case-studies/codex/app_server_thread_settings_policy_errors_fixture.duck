@@ -1,0 +1,47 @@
+module () where
+
+const { json_object, json_object_empty, json_string } = import "duck:prelude/json/values" ()
+const { list } = import "duck:prelude/functional" ()
+const { plan_thread_settings_update } = import "./app_server_thread_settings.duck" ()
+const {} = import "./app_server_thread_settings_types.duck" ()
+
+type FixtureParams = AppServerThreadSettingsUpdateParams
+type FixturePlanResult = AppServerThreadSettingsUpdatePlanResult
+type FixturePlanInput = AppServerThreadSettingsUpdatePlanInput
+type FixtureResolution = AppServerThreadPermissionResolution
+type FixturePermission = AppServerThreadPermissionSettings
+type FixtureTextOption = AppServerTextOption
+type FixtureJsonOption = AppServerJsonOption
+type FixtureTexts = AppServerTexts
+
+const texts = comptime list(Text)
+let no_text: FixtureTextOption = `None ()
+let no_json: FixtureJsonOption = `None ()
+let roots: FixtureTexts = texts.singleton("/old")
+let params: FixtureParams = ["thread-1", no_text, no_json, no_json, no_json, `Some ":workspace", no_text, `Keep (), no_text, no_text, no_json, no_text, true, json_object(json_object_empty())]
+let score = 0
+
+let rejected_resolution: FixtureResolution = `PermissionSelectionRejected "configured permission profile is disallowed"
+let rejected_input: FixturePlanInput = ["/old", roots, rejected_resolution, params]
+let rejected: FixturePlanResult = plan_thread_settings_update(rejected_input)
+if let `ThreadSettingsUpdateInvalid reason = rejected {
+  if reason == "invalid thread settings override: configured permission profile is disallowed" { score = score + 1 }
+}
+
+let missing_resolution: FixtureResolution = `PermissionSelectionNotRequested ()
+let missing_input: FixturePlanInput = ["/old", roots, missing_resolution, params]
+let missing: FixturePlanResult = plan_thread_settings_update(missing_input)
+if let `ThreadSettingsUpdateInvalid reason = missing {
+  if reason == "thread/settings/update permission selection was not resolved" { score = score + 10 }
+}
+
+let permission: FixturePermission = [json_string("never"), json_string("user"), json_string("workspace-write"), no_json]
+let unexpected_resolution: FixtureResolution = `PermissionSelectionResolved permission
+let without_permission: FixtureParams = ["thread-1", no_text, no_json, no_json, no_json, no_text, `Some "model-2", `Keep (), no_text, no_text, no_json, no_text, true, json_object(json_object_empty())]
+let unexpected_input: FixturePlanInput = ["/old", roots, unexpected_resolution, without_permission]
+let unexpected: FixturePlanResult = plan_thread_settings_update(unexpected_input)
+if let `ThreadSettingsUpdateInvalid reason = unexpected {
+  if reason == "thread/settings/update received an unexpected permission resolution" { score = score + 100 }
+}
+
+return { .score = score }

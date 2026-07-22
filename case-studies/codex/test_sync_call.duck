@@ -1,0 +1,27 @@
+module () where
+
+const {} = import "./test_sync_types.duck" ()
+const { parse_test_sync_args } = import "./test_sync_json.duck" ()
+const { plan_test_sync } = import "./test_sync_policy.duck" ()
+
+type SyncCallPayload = TestSyncPayload
+type SyncCallPlan = TestSyncPlan
+
+let plan_test_sync_call: SyncCallPayload -> SyncCallPlan = payload => {
+  if let `Unsupported () = payload {
+    `RejectRequest "test_sync_tool handler received unsupported payload"
+  } else if let `Function arguments = payload {
+    let parsed = parse_test_sync_args arguments
+    if let `Parsed args = parsed {
+      plan_test_sync args
+    } else if let `ParseFailed message = parsed {
+      `RejectRequest message
+    } else {
+      `RejectRequest "test_sync_tool argument parsing produced no result"
+    }
+  } else {
+    `RejectRequest "test_sync_tool handler received unsupported payload"
+  }
+}
+
+return { plan_test_sync_call }

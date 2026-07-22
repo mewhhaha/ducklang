@@ -1,0 +1,15 @@
+module () where
+
+const { decode_agent_job_spawn_required } = import "./agent_job_spawn_json_required.duck" ()
+
+let score = 0
+let valid = decode_agent_job_spawn_required "{\"csv_path\":\"input.csv\",\"instruction\":\"Review {path}\"}"
+if let `SpawnDecoded args = valid {
+  if args.csv_path == "input.csv" && args.instruction == "Review {path}" { score = 1 }
+}
+let missing = decode_agent_job_spawn_required "{\"instruction\":\"run\"}"
+if let `SpawnDecodeFailed reason = missing {
+  if reason == "missing field `csv_path`" { score = score + 10 }
+}
+
+return { .score = score }

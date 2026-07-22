@@ -1,0 +1,12 @@
+module () where
+
+declare effect CurrentTimeHost {
+  suspending current_time: () => I64
+  suspending sleep: (I64) => CurrentTimeSleepHostResult
+}
+
+declare Init {
+  current_time_host: CurrentTimeHost
+}
+
+return {}

@@ -1,0 +1,54 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type CodeModeWaitU64 = `U64Decimal Text
+type CodeModeWaitU64Option =
+  | `WaitLimitMissing Unit
+  | `WaitLimitPresent CodeModeWaitU64
+
+type CodeModeWaitArgs = struct {
+  .cell_id = Text,
+  .yield_time_ms = CodeModeWaitU64,
+  .max_tokens = CodeModeWaitU64Option,
+  .terminate = Bool,
+}
+
+type CodeModeWaitPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type CodeModeWaitParseResult =
+  | `Parsed CodeModeWaitArgs
+  | `ParseFailed Text
+
+type CodeModeWaitRequest = struct {
+  .cell_id = Text,
+  .yield_time_ms = CodeModeWaitU64,
+}
+
+type CodeModeWaitExecution = [CodeModeWaitRequest, CodeModeWaitU64Option]
+type CodeModeWaitTermination = [Text, CodeModeWaitU64Option]
+
+type CodeModeWaitCallPlan =
+  | `Wait CodeModeWaitExecution
+  | `Terminate CodeModeWaitTermination
+  | `RejectRequest Text
+  | `Fatal Text
+
+type CodeModeRuntimeStatus =
+  | `Yielded Unit
+  | `Terminated Unit
+  | `Result Unit
+
+type CodeModeWaitOutcomeCell = [Text, CodeModeRuntimeStatus]
+type CodeModeWaitOutcome =
+  | `LiveCell CodeModeWaitOutcomeCell
+  | `MissingCell CodeModeWaitOutcomeCell
+
+type CodeModeWaitLifecyclePlan =
+  | `CellRemainsOpen Text
+  | `CloseCell Text
+  | `NoCellToClose Unit
+
+return {}

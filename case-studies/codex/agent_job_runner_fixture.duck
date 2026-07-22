@@ -1,0 +1,48 @@
+module () where
+
+const {} = import "./agent_job_runner_types.duck" ()
+const { apply_agent_job_completion, apply_agent_job_spawn, next_agent_job_runner_action, start_agent_job_runner } = import "./agent_job_runner.duck" ()
+
+type FixtureItem = AgentJobPreparedItem
+type FixtureItemNode = AgentJobPreparedItemNode
+type FixtureItems = AgentJobPreparedItems
+type FixtureState = AgentJobRunnerState
+
+let third: FixtureItem = [.item_id = "row-3", .row_index = 2, .source_id = `None (), .row_values = `Nil (), .row_json = "{}", .prompt = "third"]
+let third_node: FixtureItemNode = [third, `Nil ()]
+let second: FixtureItem = [.item_id = "row-2", .row_index = 1, .source_id = `None (), .row_values = `Nil (), .row_json = "{}", .prompt = "second"]
+let second_node: FixtureItemNode = [second, `Cons third_node]
+let first: FixtureItem = [.item_id = "row-1", .row_index = 0, .source_id = `None (), .row_values = `Nil (), .row_json = "{}", .prompt = "first"]
+let first_node: FixtureItemNode = [first, `Cons second_node]
+let pending: FixtureItems = `Cons first_node
+let state: FixtureState = start_agent_job_runner pending
+let score = 0
+
+if let `SpawnWorker item = next_agent_job_runner_action(state, 2) {
+  if item.item_id == "row-1" { score = score + 1 }
+}
+let spawned = apply_agent_job_spawn(state, `WorkerSpawned "thread-1")
+if let `RunnerAdvanced next = spawned { state = next }
+let spawned = apply_agent_job_spawn(state, `WorkerSpawned "thread-2")
+if let `RunnerAdvanced next = spawned { state = next }
+if let `WaitForWorker _ = next_agent_job_runner_action(state, 2) { score = score + 10 }
+
+let completed = apply_agent_job_completion(state, [.thread_id = "thread-1", .reported = true, .cancel_requested = false])
+if let `RunnerAdvanced next = completed { state = next }
+if state.completed_items == 1 {
+  if let `SpawnWorker item = next_agent_job_runner_action(state, 2) {
+    if item.item_id == "row-3" { score = score + 100 }
+  }
+}
+let spawned = apply_agent_job_spawn(state, `WorkerSpawned "thread-3")
+if let `RunnerAdvanced next = spawned { state = next }
+let completed = apply_agent_job_completion(state, [.thread_id = "thread-2", .reported = false, .cancel_requested = true])
+if let `RunnerAdvanced next = completed { state = next }
+if state.failed_items == 1 && state.cancelled { score = score + 1000 }
+let completed = apply_agent_job_completion(state, [.thread_id = "thread-3", .reported = true, .cancel_requested = false])
+if let `RunnerAdvanced next = completed { state = next }
+if let `FinalizeJob cancelled = next_agent_job_runner_action(state, 2) {
+  if cancelled && state.completed_items == 2 && state.total_items == 3 { score = score + 10000 }
+}
+
+return { .score = score }

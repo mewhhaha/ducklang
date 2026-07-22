@@ -1,0 +1,30 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const { parse_json_document } = import "duck:prelude/json" ()
+const { json_object, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const {} = import "./mcp_resource_types.duck" ()
+
+type ResourceReadOutputOperation = McpResourceOperation
+type ResourceReadOutputTextResult = McpResourceTextResult
+
+let read_payload_json: [ResourceReadOutputOperation, Text] -> ResourceReadOutputTextResult = (operation: ResourceReadOutputOperation, document: Text) => {
+  if let `ReadResource args = operation {
+    let parsed = parse_json_document document
+    if let `Ok value_and_position = parsed {
+      let [value, _] = value_and_position
+      if let `Object object = value {
+        let fields = json_object_prepend("server", json_string args.server, json_object_prepend("uri", json_string args.uri, object))
+        `ResourceText (encode_json(json_object fields))
+      } else {
+        `ResourceFailed "MCP resource read returned a non-object result"
+      }
+    } else {
+      `ResourceFailed "MCP resource read returned invalid JSON"
+    }
+  } else {
+    `ResourceFailed "MCP resource read received the wrong operation"
+  }
+}
+
+return { read_payload_json }

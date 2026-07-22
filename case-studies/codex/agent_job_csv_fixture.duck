@@ -1,0 +1,41 @@
+module () where
+
+const { json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const { parse_agent_job_csv, render_agent_job_instruction, validate_agent_job_csv_rows } = import "./agent_job_csv.duck" ()
+
+let score = 0
+let parsed = parse_agent_job_csv "id,name,path\r\n1,\"alpha, beta\",src/lib.rs\r\n2,\"a\"\"b\",docs/readme.md\r\n\r\n"
+if let `CsvParsed document = parsed {
+  if validate_agent_job_csv_rows(document) == "" {
+    if let `Cons first_node = document.rows {
+      let [first, tail] = first_node
+      if let `Cons id_node = first {
+        let [id, first_tail] = id_node
+        if let `Cons name_node = first_tail {
+          let [name, _] = name_node
+          if id == "1" && name == "alpha, beta" { score = score + 1 }
+        }
+      }
+      if let `Cons second_node = tail {
+        let [second, _] = second_node
+        if let `Cons _ = second { score = score + 10 }
+      }
+    }
+  }
+}
+
+let bad = parse_agent_job_csv "id,name\n1,alpha,extra\n"
+if let `CsvParsed document = bad {
+  if validate_agent_job_csv_rows(document) == "csv row 2 has 3 fields but header has 2" { score = score + 100 }
+}
+
+let row = json_object_prepend("path", json_string("src/lib.rs"), json_object_prepend("area", json_string("test"), `Nil ()))
+let rendered = render_agent_job_instruction("Review {path} in {area}. Keep {{literal}} and {missing}.", row)
+if rendered == "Review src/lib.rs in test. Keep {literal} and {missing}." { score = score + 1000 }
+
+let unterminated = parse_agent_job_csv "id,name\n1,\"alpha"
+if let `CsvParseFailed message = unterminated {
+  if message == "unterminated quoted field" { score = score + 10000 }
+}
+
+return { .score = score }

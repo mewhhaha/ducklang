@@ -1,0 +1,32 @@
+module () where
+
+const { plan_code_mode_wait_call } = import "./code_mode_wait.duck" ()
+const {} = import "./code_mode_wait_types.duck" ()
+
+type FixtureCallPlan = CodeModeWaitCallPlan
+
+let score = 0
+
+let wait_plan: FixtureCallPlan = plan_code_mode_wait_call(`Function "{\"cell_id\":\"cell-1\",\"yield_time_ms\":25,\"max_tokens\":9}")
+if let `Wait execution = wait_plan {
+  let [request, max_tokens] = execution
+  if let `U64Decimal yield_time_ms = request.yield_time_ms {
+    if request.cell_id == "cell-1" && yield_time_ms == "25" {
+      if let `WaitLimitPresent value = max_tokens {
+        if let `U64Decimal max_tokens_text = value {
+          if max_tokens_text == "9" { score = score + 1 }
+        }
+      }
+    }
+  }
+}
+
+let terminate_plan: FixtureCallPlan = plan_code_mode_wait_call(`Function "{\"cell_id\":\"cell-2\",\"terminate\":true}")
+if let `Terminate termination = terminate_plan {
+  let [cell_id, max_tokens] = termination
+  if cell_id == "cell-2" {
+    if let `WaitLimitMissing () = max_tokens { score = score + 10 }
+  }
+}
+
+return { .score = score }

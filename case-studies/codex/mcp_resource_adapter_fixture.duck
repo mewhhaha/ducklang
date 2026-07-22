@@ -1,0 +1,38 @@
+module (!init: Init) where
+
+const {} = import "./mcp_resource_types.duck" ()
+const { run_list_mcp_resources } = import "./mcp_resource_list_execution.duck" ()
+const { run_read_mcp_resource } = import "./mcp_resource_read_execution.duck" ()
+
+type FixtureListArgs = McpResourceListArgs
+type FixtureOperation = McpResourceOperation
+type FixturePreparedCall = McpResourcePreparedCall
+type FixtureReadArgs = McpResourceReadArgs
+
+let score = 0
+
+let list_args: FixtureListArgs = [.server = `None (), .cursor = `None ()]
+let list_operation: FixtureOperation = `ListResources list_args
+let list_call: FixturePreparedCall = [.call_id = "call-list", .operation = list_operation]
+let list_result = run_list_mcp_resources(list_call, false, 1024)
+if let `Completed output = list_result {
+  if output == "{\"resources\":[{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"name\":\"alpha\"}]}" { score = score + 1 }
+}
+
+let readable_args: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"]
+let readable_operation: FixtureOperation = `ReadResource readable_args
+let readable: FixturePreparedCall = [.call_id = "call-read", .operation = readable_operation]
+let readable_result = run_read_mcp_resource(readable, 1024)
+if let `Completed output = readable_result {
+  if output == "{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"contents\":[{\"text\":\"hello\"}]}" { score = score + 10 }
+}
+
+let missing_args: FixtureReadArgs = [.server = "docs", .uri = "skill://missing"]
+let missing_operation: FixtureOperation = `ReadResource missing_args
+let missing: FixturePreparedCall = [.call_id = "call-missing", .operation = missing_operation]
+let missing_result = run_read_mcp_resource(missing, 1024)
+if let `Rejected message = missing_result {
+  if message == "resource not found: skill://missing" { score = score + 100 }
+}
+
+return { .score = score }

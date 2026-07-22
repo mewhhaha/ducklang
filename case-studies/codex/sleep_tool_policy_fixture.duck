@@ -1,0 +1,20 @@
+module () where
+
+const {} = import "./current_time_types.duck" ()
+const { plan_sleep_request } = import "./sleep_tool_policy.duck" ()
+
+let score = 0
+if let `ValidSleep duration_ms = plan_sleep_request(43200000i64) {
+  if duration_ms == 43200000i64 { score = score + 1 }
+}
+if let `InvalidSleep message = plan_sleep_request(0i64) {
+  if message == "duration_ms must be between 1 and 43200000" { score = score + 10 }
+}
+if let `InvalidSleep message = plan_sleep_request(-1i64) {
+  if message == "duration_ms must be between 1 and 43200000" { score = score + 100 }
+}
+if let `InvalidSleep message = plan_sleep_request(43200001i64) {
+  if message == "duration_ms must be between 1 and 43200000" { score = score + 1000 }
+}
+
+return { .score = score }

@@ -1,0 +1,11 @@
+module () where
+
+const { current_time_tool_name, sleep_tool_name, current_time_tool_definitions } = import "./current_time_tool_registration.duck" ()
+const { plan_sleep_request } = import "./sleep_tool_policy.duck" ()
+
+return {
+  current_time_tool_name,
+  sleep_tool_name,
+  current_time_tool_definitions,
+  plan_sleep_request,
+}

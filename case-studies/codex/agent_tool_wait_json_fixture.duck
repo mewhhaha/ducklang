@@ -1,0 +1,13 @@
+module () where
+
+const { parse_wait_agent_args } = import "./agent_tool_wait_json.duck" ()
+
+let decoded = parse_wait_agent_args "{\"timeout_ms\":45000}"
+let score = 0
+if let `AgentWaitDecoded timeout = decoded {
+  if let `Some timeout_ms = timeout {
+    if timeout_ms == 45000i64 { score = 1 }
+  }
+}
+
+return { .score = score }

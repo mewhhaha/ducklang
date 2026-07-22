@@ -1,0 +1,16 @@
+module () where
+
+const { plan_thread_start } = import "./app_server_thread_lifecycle.duck" ()
+const {} = import "./app_server_thread_lifecycle_types.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureResult = AppServerThreadStartPlanResult
+type FixtureInput = AppServerThreadStartPlanInput
+
+let input: FixtureInput = [`Some (`PaginatedHistory ()), `Some (`ClearSource ()), `EphemeralThread (), `RawEventsEnabled (), `PaginatedListsUnsupported ()]
+let planned: FixtureResult = plan_thread_start(input)
+let score = if let `Err message = planned {
+  if message == "paginated threads require thread/turns/list and thread/items/list support" { 1 } else { 0 }
+} else { 0 }
+
+return { .score = score }

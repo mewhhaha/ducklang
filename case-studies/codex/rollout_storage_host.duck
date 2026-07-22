@@ -1,0 +1,14 @@
+module () where
+
+declare effect RolloutStore {
+  suspending snapshot_length: () => I32
+  suspending snapshot_file: (I32) => RolloutStoredFile
+  suspending append: (&Text, &Text) => Unit
+  suspending flush: () => Unit
+}
+
+declare Init {
+  rollout_store: RolloutStore
+}
+
+return {}

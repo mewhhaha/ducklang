@@ -1,0 +1,40 @@
+module () where
+
+const {} = import "./code_mode_nested_tool_types.duck" ()
+const { plan_code_mode_nested_tool } = import "./code_mode_nested_tool.duck" ()
+
+type FixtureInvocation = CodeModeNestedToolInvocation
+
+let score = 0
+
+let self_call: FixtureInvocation = [
+  .cell_id = "cell-1",
+  .runtime_tool_call_id = "runtime-1",
+  .tool_name = ["", "exec"],
+  .tool_kind = `NestedFreeform (),
+  .input = `Some (`String "text('loop')")]
+if let `RejectNestedTool message = plan_code_mode_nested_tool self_call {
+  if message == "exec cannot invoke itself" { score = score + 1 }
+}
+
+let invalid_function: FixtureInvocation = [
+  .cell_id = "cell-2",
+  .runtime_tool_call_id = "runtime-2",
+  .tool_name = ["mcp__sample__", "lookup"],
+  .tool_kind = `NestedFunction (),
+  .input = `Some (`String "invalid")]
+if let `RejectNestedTool message = plan_code_mode_nested_tool invalid_function {
+  if message == "tool `mcp__sample__lookup` expects a JSON object for arguments" { score = score + 10 }
+}
+
+let missing_freeform: FixtureInvocation = [
+  .cell_id = "cell-3",
+  .runtime_tool_call_id = "runtime-3",
+  .tool_name = ["", "apply_patch"],
+  .tool_kind = `NestedFreeform (),
+  .input = `None ()]
+if let `RejectNestedTool message = plan_code_mode_nested_tool missing_freeform {
+  if message == "tool `apply_patch` expects a string input" { score = score + 100 }
+}
+
+return { .score = score }

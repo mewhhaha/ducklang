@@ -1,0 +1,63 @@
+module () where
+
+const exec_types_module = import "./exec_types.duck"
+const events_module = import "./exec_events.duck"
+const { initial_lifecycle_state, plan_exec_begin, plan_exec_end } = events_module()
+
+type FixtureI32Option = ExecEventI32Option
+type FixtureTextOption = ExecEventTextOption
+type FixtureCommand = ExecEventCommand
+type FixtureSource = ExecCommandSource
+type FixtureState = ExecLifecycleState
+type FixtureBeginPlan = ExecBeginPlan
+type FixtureEndPlan = ExecEndPlan
+
+let score = 0
+let initial: FixtureState = initial_lifecycle_state()
+let process_id: FixtureI32Option = `Some 1000
+let no_input: FixtureTextOption = `None ()
+let command: FixtureCommand = ["/bin/zsh", "-c", "printf hello", "", 3]
+let source: FixtureSource = `UnifiedExecStartup ()
+let begin: FixtureBeginPlan = plan_exec_begin(initial, "call-1", process_id, "turn-1", 100i64, command, "/repo", source, no_input)
+let began: FixtureState = initial
+
+if let `EmitBegin emission = begin {
+  let [next, event] = emission
+  let [call_id, event_process_id, turn_id, _, _, cwd, _, _] = event
+
+  if call_id == "call-1" && turn_id == "turn-1" && cwd == "/repo" {
+    if let `Some value = event_process_id {
+      if value == 1000 { score = score + 1 }
+    }
+  }
+
+  began = next
+}
+
+if let `SuppressBegin _ = plan_exec_begin(began, "call-1", process_id, "turn-1", 101i64, command, "/repo", source, no_input) {
+  score = score + 1
+}
+
+let ended: FixtureEndPlan = plan_exec_end(began, "call-1", process_id, "turn-1", 200i64, command, "/repo", source, no_input, "hello", "", "hello", 0, 100, "hello", false)
+let completed: FixtureState = began
+
+if let `EmitEnd emission = ended {
+  let [next, event] = emission
+  let [call_id, _, _, _, _, _, _, _, stdout, stderr, aggregated, exit_code, duration_ms, formatted, status] = event
+
+  if call_id == "call-1" && stdout == "hello" && stderr == "" && aggregated == "hello" && exit_code == 0 && duration_ms == 100 && formatted == "hello" {
+    if let `Completed () = status { score = score + 1 }
+  }
+
+  completed = next
+}
+
+if let `SuppressEnd _ = plan_exec_end(completed, "call-1", process_id, "turn-1", 201i64, command, "/repo", source, no_input, "", "", "", 0, 0, "", false) {
+  score = score + 1
+}
+
+if let `MissingBegin () = plan_exec_end(initial, "call-2", `None (), "turn-1", 202i64, command, "/repo", source, no_input, "", "failed", "failed", -1, 0, "failed", false) {
+  score = score + 1
+}
+
+return { .score = score }

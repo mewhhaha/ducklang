@@ -1,0 +1,80 @@
+const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
+const { decode_account_login_start } = import "./app_server_account_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_account_types.duck" ()
+
+type FixtureJson = AppServerJson
+type FixtureResult = AppServerAccountMethodDecodeResult
+type FixtureCase = [FixtureJson, I32]
+type FixtureCases = List FixtureCase
+type FixtureCaseNode = ListNode FixtureCase
+
+let cases: FixtureCases = `Nil ()
+
+let invalid_fields = json_object_prepend("type", json_string("password"), json_object_empty())
+let invalid_case: FixtureCase = [json_object(invalid_fields), -1]
+let invalid_node: FixtureCaseNode = [invalid_case, cases]
+cases = `Cons invalid_node
+
+let bedrock_fields = json_object_prepend("type", json_string("amazonBedrock"), json_object_empty())
+let bedrock_case: FixtureCase = [json_object(bedrock_fields), 5]
+let bedrock_node: FixtureCaseNode = [bedrock_case, cases]
+cases = `Cons bedrock_node
+
+let token_fields = json_object_prepend("type", json_string("chatgptAuthTokens"), json_object_empty())
+let token_case: FixtureCase = [json_object(token_fields), 4]
+let token_node: FixtureCaseNode = [token_case, cases]
+cases = `Cons token_node
+
+let device_fields = json_object_prepend("type", json_string("chatgptDeviceCode"), json_object_empty())
+let device_case: FixtureCase = [json_object(device_fields), 3]
+let device_node: FixtureCaseNode = [device_case, cases]
+cases = `Cons device_node
+
+let chatgpt_fields = json_object_prepend("type", json_string("chatgpt"), json_object_empty())
+let chatgpt_case: FixtureCase = [json_object(chatgpt_fields), 2]
+let chatgpt_node: FixtureCaseNode = [chatgpt_case, cases]
+cases = `Cons chatgpt_node
+
+let api_fields = json_object_prepend("type", json_string("apiKey"), json_object_empty())
+let api_case: FixtureCase = [json_object(api_fields), 1]
+let api_node: FixtureCaseNode = [api_case, cases]
+cases = `Cons api_node
+
+let score = 0
+let remaining = cases
+loop {
+  if let `Cons node = remaining {
+    let typed_node: FixtureCaseNode = node
+    let [test_case, tail] = typed_node
+    let [params, expected] = test_case
+    let decoded: FixtureResult = decode_account_login_start(params)
+    let observed = 0
+
+    if let `AccountMethodOk account = decoded {
+      if let `AccountLoginStart route = account {
+        let [kind, _] = route
+        if let `ApiKeyLoginKind () = kind {
+          observed = 1
+        } else if let `ChatgptLoginKind () = kind {
+          observed = 2
+        } else if let `DeviceCodeLoginKind () = kind {
+          observed = 3
+        } else if let `AuthTokensLoginKind () = kind {
+          observed = 4
+        } else if let `BedrockLoginKind () = kind {
+          observed = 5
+        }
+      }
+    } else if let `AccountMethodError reason = decoded {
+      if reason == "account/login/start.params.type has an unknown value" { observed = -1 }
+    }
+
+    if observed == expected { score = score + 1 }
+    remaining = tail
+  } else {
+    break
+  }
+}
+
+return { .score = score }

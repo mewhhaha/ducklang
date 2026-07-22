@@ -1,0 +1,80 @@
+module () where
+
+const { merge_model_namespaces } = import "./model_visible_spec_plan.duck" ()
+
+type FixtureFunction = ModelVisibleFunction
+type FixtureFunctions = ModelVisibleFunctions
+type FixtureNamespace = ModelVisibleNamespace
+type FixtureSpecs = ModelVisibleSpecs
+
+let trace_functions: FixtureFunctions -> Text = functions => {
+  let current = functions
+  let trace = ""
+  let done = false
+  loop {
+    if let `VisibleFunctionsCons node = current {
+      let [[name, _], tail] = node
+      trace = trace <> name <> ","
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  trace
+}
+
+let trace_specs: FixtureSpecs -> Text = specs => {
+  let current = specs
+  let trace = ""
+  let done = false
+  loop {
+    if let `VisibleSpecsCons node = current {
+      let [spec, tail] = node
+      if let `VisibleFunction function = spec {
+        let [name, _] = function
+        trace = trace <> "function:" <> name <> "|"
+      } else if let `VisibleNamespace namespace = spec {
+        let [name, description, functions] = namespace
+        trace = trace <> "namespace:" <> name <> ":" <> description <> ":" <> trace_functions functions <> "|"
+      } else if let `VisibleWebSearch name = spec {
+        trace = trace <> "web:" <> name <> "|"
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  trace
+}
+
+let beta_first_functions: FixtureFunctions = `VisibleFunctionsCons ([["zulu", `OriginalDescription "zulu"], `VisibleFunctionsCons ([["alpha", `OriginalDescription "alpha"], `VisibleFunctionsNil ()])])
+let beta_second_functions: FixtureFunctions = `VisibleFunctionsCons ([["middle", `OriginalDescription "middle"], `VisibleFunctionsNil ()])
+let alpha_first_functions: FixtureFunctions = `VisibleFunctionsCons ([["b", `OriginalDescription "b"], `VisibleFunctionsNil ()])
+let alpha_second_functions: FixtureFunctions = `VisibleFunctionsCons ([["a", `OriginalDescription "a"], `VisibleFunctionsNil ()])
+let beta_first: FixtureNamespace = ["beta", " ", beta_first_functions]
+let beta_second: FixtureNamespace = ["beta", "Beta tools", beta_second_functions]
+let alpha_first: FixtureNamespace = ["alpha", "Alpha tools", alpha_first_functions]
+let alpha_second: FixtureNamespace = ["alpha", "", alpha_second_functions]
+
+let specs: FixtureSpecs = `VisibleSpecsCons ([`VisibleFunction (["zeta", `OriginalDescription "zeta"]), `VisibleSpecsCons ([`VisibleNamespace beta_first, `VisibleSpecsCons ([`VisibleNamespace alpha_first, `VisibleSpecsCons ([`VisibleNamespace beta_second, `VisibleSpecsCons ([`VisibleNamespace alpha_second, `VisibleSpecsCons ([`VisibleWebSearch "web_search", `VisibleSpecsNil ()])])])])])])
+let enabled: FixtureSpecs = merge_model_namespaces(specs, `NamespaceToolsEnabled ())
+let disabled: FixtureSpecs = merge_model_namespaces(specs, `NamespaceToolsDisabled ())
+
+let score = 0
+if trace_specs enabled == "function:zeta|namespace:beta:Beta tools:alpha,middle,zulu,|namespace:alpha:Alpha tools:a,b,|web:web_search|" {
+  score = score + 1
+}
+if trace_specs disabled == "function:zeta|web:web_search|" {
+  score = score + 10
+}
+
+let gamma_functions: FixtureFunctions = `VisibleFunctionsCons ([["lookup", `OriginalDescription "lookup"], `VisibleFunctionsNil ()])
+let gamma_specs: FixtureSpecs = `VisibleSpecsCons ([`VisibleNamespace (["gamma", "", gamma_functions]), `VisibleSpecsNil ()])
+let gamma: FixtureSpecs = merge_model_namespaces(gamma_specs, `NamespaceToolsEnabled ())
+if trace_specs gamma == "namespace:gamma:Tools in the gamma namespace.:lookup,|" {
+  score = score + 100
+}
+
+return { .score = score }

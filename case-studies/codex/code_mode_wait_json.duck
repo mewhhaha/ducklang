@@ -1,0 +1,115 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const { parse_u64_decimal_text } = import "duck:prelude/numeric/parse" ()
+const { format_i32, text_append } = import "duck:prelude/runtime" ()
+const {} = import "./code_mode_wait_types.duck" ()
+
+type WaitArgs = CodeModeWaitArgs
+type WaitU64 = CodeModeWaitU64
+type WaitU64Option = CodeModeWaitU64Option
+
+let wait_parse_failure: Text -> CodeModeWaitParseResult = reason => {
+  `ParseFailed (text_append ["failed to parse function arguments: ", reason])
+}
+
+let parse_code_mode_wait_args: Text -> CodeModeWaitParseResult = document => {
+  let parsed = parse_json_document document
+  if let `Err error = parsed {
+    let [position, message] = error
+    return wait_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
+  }
+  let `Ok value_and_position = parsed else {
+    return wait_parse_failure "invalid JSON parse result"
+  }
+  let [value, _] = value_and_position
+  let `Object object = value else {
+    return wait_parse_failure "wait arguments must be an object"
+  }
+
+  let cell_id = ""
+  let cell_id_count = 0
+  let default_yield: WaitU64 = `U64Decimal "10000"
+  let yield_time_ms = default_yield
+  let yield_time_count = 0
+  let max_tokens: WaitU64Option = `WaitLimitMissing ()
+  let max_tokens_count = 0
+  let terminate = false
+  let terminate_count = 0
+  let current = object
+  let done = false
+  let failure = ""
+
+  loop {
+    if let `Cons node = current {
+      let [[key, field_value], tail] = node
+      if key == "cell_id" {
+        cell_id_count = cell_id_count + 1
+        if cell_id_count > 1 {
+          failure = "duplicate field `cell_id`"
+        } else if let `String value = field_value {
+          cell_id = value
+        } else {
+          failure = "field `cell_id` must be a string"
+        }
+      } else if key == "yield_time_ms" {
+        yield_time_count = yield_time_count + 1
+        if yield_time_count > 1 {
+          failure = "duplicate field `yield_time_ms`"
+        } else if let `Number number = field_value {
+          let decoded = parse_u64_decimal_text number
+          if let `Ok canonical = decoded {
+            yield_time_ms = `U64Decimal canonical
+          } else if let `Err reason = decoded {
+            failure = text_append ["field `yield_time_ms` ", text_append [reason, text_append ["; got ", number]]]
+          } else {
+            failure = "field `yield_time_ms` produced no U64 parse result"
+          }
+        } else {
+          failure = "field `yield_time_ms` must be a non-negative integer"
+        }
+      } else if key == "max_tokens" {
+        max_tokens_count = max_tokens_count + 1
+        if max_tokens_count > 1 {
+          failure = "duplicate field `max_tokens`"
+        } else if let `Null () = field_value {
+          max_tokens = `WaitLimitMissing ()
+        } else if let `Number number = field_value {
+          let decoded = parse_u64_decimal_text number
+          if let `Ok canonical = decoded {
+            let value: WaitU64 = `U64Decimal canonical
+            max_tokens = `WaitLimitPresent value
+          } else if let `Err reason = decoded {
+            failure = text_append ["field `max_tokens` ", text_append [reason, text_append ["; got ", number]]]
+          } else {
+            failure = "field `max_tokens` produced no U64 parse result"
+          }
+        } else {
+          failure = "field `max_tokens` must be a non-negative integer"
+        }
+      } else if key == "terminate" {
+        terminate_count = terminate_count + 1
+        if terminate_count > 1 {
+          failure = "duplicate field `terminate`"
+        } else if let `Bool value = field_value {
+          terminate = value
+        } else {
+          failure = "field `terminate` must be a boolean"
+        }
+      }
+      current = tail
+      if failure != "" { done = true }
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  if failure != "" { return wait_parse_failure failure }
+  if cell_id_count == 0 { return wait_parse_failure "missing field `cell_id`" }
+
+  let args: WaitArgs = [.cell_id = cell_id, .yield_time_ms = yield_time_ms, .max_tokens = max_tokens, .terminate = terminate]
+  `Parsed args
+}
+
+return { parse_code_mode_wait_args }

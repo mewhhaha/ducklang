@@ -1,0 +1,11 @@
+module () where
+
+declare effect StageInput {
+  document: () => Text
+}
+
+declare Init {
+  stage_input: StageInput
+}
+
+return {}

@@ -1,0 +1,69 @@
+module () where
+
+const {} = import "./agent_job_common_types.duck" ()
+const { agent_job_worker_source_enabled } = import "./agent_job_worker_source.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type AgentJobDefinition = ToolDefinition
+type AgentJobDefinitions = ToolDefinitions
+type AgentJobName = ToolName
+type AgentJobSpec = ToolSpec
+type AgentJobSpecs = ToolSpecs
+type AgentJobSource = AgentJobTextOption
+
+const spawn_agents_on_csv_tool_name: () -> AgentJobName = () => ["", "spawn_agents_on_csv"]
+const report_agent_job_result_tool_name: () -> AgentJobName = () => ["", "report_agent_job_result"]
+
+const agent_job_worker_enabled: [Bool, Bool, AgentJobSource] -> Bool = (feature_enabled: Bool, collaboration_enabled: Bool, source: AgentJobSource) => {
+  if !(feature_enabled) || !(collaboration_enabled) {
+    false
+  } else if let `Some label = source {
+    agent_job_worker_source_enabled label
+  } else {
+    false
+  }
+}
+
+const agent_job_tool_definitions: [Bool, Bool, AgentJobSource] -> AgentJobDefinitions = (feature_enabled: Bool, collaboration_enabled: Bool, source: AgentJobSource) => {
+  if !(feature_enabled) || !(collaboration_enabled) {
+    let empty: AgentJobDefinitions = `Nil ()
+    empty
+  } else {
+    let spawn: AgentJobDefinition = [spawn_agents_on_csv_tool_name(), `Direct (), `SpawnAgentsOnCsv (), `FunctionPayload (), false, false]
+    if agent_job_worker_enabled(feature_enabled, collaboration_enabled, source) {
+      let report: AgentJobDefinition = [report_agent_job_result_tool_name(), `Direct (), `ReportAgentJobResult (), `FunctionPayload (), false, false]
+      `Cons ([spawn, `Cons ([report, `Nil ()])])
+    } else {
+      `Cons ([spawn, `Nil ()])
+    }
+  }
+}
+
+const agent_job_tool_specs: [Bool, Bool, AgentJobSource] -> AgentJobSpecs = (feature_enabled: Bool, collaboration_enabled: Bool, source: AgentJobSource) => {
+  if !(feature_enabled) || !(collaboration_enabled) {
+    let empty: AgentJobSpecs = `Nil ()
+    empty
+  } else {
+    let description = "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
+    let parameters = "{\"type\":\"object\",\"properties\":{\"csv_path\":{\"type\":\"string\",\"description\":\"Path to the CSV file containing input rows.\"},\"id_column\":{\"type\":\"string\",\"description\":\"CSV column to use as stable item id. Omit to use row numbers.\"},\"instruction\":{\"type\":\"string\",\"description\":\"Instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row.\"},\"max_concurrency\":{\"type\":\"number\",\"description\":\"Maximum concurrent workers for this job. Defaults to 16 and is capped by config.\"},\"max_runtime_seconds\":{\"type\":\"number\",\"description\":\"Maximum runtime per worker before failure. Defaults to 1800 seconds; config may set a different default.\"},\"max_workers\":{\"type\":\"number\",\"description\":\"Alias for max_concurrency. Defaults to 16 and is capped by config.\"},\"output_csv_path\":{\"type\":\"string\",\"description\":\"Output CSV path for exported results. Omit to create one next to the input CSV.\"},\"output_schema\":{\"type\":\"object\",\"properties\":{},\"description\":\"JSON Schema for each worker result. Omit to accept any result object.\"}},\"required\":[\"csv_path\",\"instruction\"],\"additionalProperties\":false}"
+    let spawn: AgentJobSpec = [spawn_agents_on_csv_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
+
+    if agent_job_worker_enabled(feature_enabled, collaboration_enabled, source) {
+      let report_description = "Worker-only tool to report a result for an agent job item. Main agents should not call this."
+      let report_parameters = "{\"type\":\"object\",\"properties\":{\"item_id\":{\"type\":\"string\",\"description\":\"Identifier of the job item.\"},\"job_id\":{\"type\":\"string\",\"description\":\"Identifier of the job.\"},\"result\":{\"type\":\"object\",\"properties\":{},\"description\":\"Result object for this job item.\"},\"stop\":{\"type\":\"boolean\",\"description\":\"True cancels remaining job items after this result is recorded; false or omitted continues the job.\"}},\"required\":[\"job_id\",\"item_id\",\"result\"],\"additionalProperties\":false}"
+      let report: AgentJobSpec = [report_agent_job_result_tool_name(), `FunctionSpec (), report_description, report_parameters, `ToolOutputSchemaMissing (), false]
+      `Cons ([spawn, `Cons ([report, `Nil ()])])
+    } else {
+      `Cons ([spawn, `Nil ()])
+    }
+  }
+}
+
+return {
+  agent_job_tool_definitions,
+  agent_job_tool_specs,
+  agent_job_worker_enabled,
+  agent_job_worker_source_enabled,
+  report_agent_job_result_tool_name,
+  spawn_agents_on_csv_tool_name,
+}

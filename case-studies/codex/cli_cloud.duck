@@ -1,0 +1,241 @@
+module () where
+
+const { parse_u32_decimal } = import "duck:prelude/numeric/parse" ()
+const { text_append, text_starts_with } = import "duck:prelude/functional" ()
+const {} = import "./cli_types.duck" ()
+
+type CloudArgs = CodexCliArgs
+type CloudCommandResult = CodexCloudCommandResult
+type CloudExecOptions = CodexCloudExecOptions
+type CloudListOptions = CodexCloudListOptions
+type CloudTaskAttemptOptions = CodexCloudTaskAttemptOptions
+type CloudExecFacts = CodexCloudExecFacts
+type CloudListFacts = CodexCloudListFacts
+type CloudTaskFacts = CodexCloudTaskFacts
+type CloudExecFactsResult = Result Text CloudExecFacts
+type CloudListFactsResult = Result Text CloudListFacts
+type CloudTaskFactsResult = Result Text CloudTaskFacts
+type CloudAttemptResult = Result Text I64
+
+const parse_cloud_attempt: Text -> CloudAttemptResult = (value: Text) => {
+  let parsed = parse_u32_decimal value
+  if let `Ok attempt = parsed {
+    if attempt >= 1i64 && attempt <= 4i64 {
+      `Ok attempt
+    } else {
+      `Err "attempts must be between 1 and 4"
+    }
+  } else {
+    `Err "attempts must be an integer between 1 and 4"
+  }
+}
+
+let rec scan_cloud_exec_from: [CloudArgs, CloudExecFacts] -> CloudExecFactsResult = (args: CloudArgs, facts: CloudExecFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--env" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_cloud_exec_from(remaining, facts :+ { .environment = `Some value })
+      } else {
+        `Err "missing value for --env"
+      }
+    } else if argument == "--attempts" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let parsed: CloudAttemptResult = parse_cloud_attempt value
+        if let `Ok attempts = parsed {
+          scan_cloud_exec_from(remaining, facts :+ { .attempts = attempts })
+        } else if let `Err message = parsed {
+          `Err message
+        } else {
+          `Err "cloud attempt parser returned an unknown result"
+        }
+      } else {
+        `Err "missing value for --attempts"
+      }
+    } else if argument == "--branch" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_cloud_exec_from(remaining, facts :+ { .branch = `Some value })
+      } else {
+        `Err "missing value for --branch"
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown cloud exec option: ", argument))
+    } else if let `None () = facts.query {
+      scan_cloud_exec_from(tail, facts :+ { .query = `Some argument })
+    } else {
+      `Err "cloud exec accepts at most one query"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_cloud_exec: CloudArgs -> CloudCommandResult = (args: CloudArgs) => {
+  let initial: CloudExecFacts = [.query = `None (), .environment = `None (), .attempts = 1i64, .branch = `None ()]
+  let scanned: CloudExecFactsResult = scan_cloud_exec_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    if let `Some environment = facts.environment {
+      let options: CloudExecOptions = [.query = facts.query, .environment = environment, .attempts = facts.attempts, .branch = facts.branch]
+      `Ok (`CloudExec options)
+    } else {
+      `Err "cloud exec requires --env"
+    }
+  } else {
+    `Err "cloud exec scanner returned an unknown result"
+  }
+}
+
+let rec scan_cloud_list_from: [CloudArgs, CloudListFacts] -> CloudListFactsResult = (args: CloudArgs, facts: CloudListFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--env" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_cloud_list_from(remaining, facts :+ { .environment = `Some value })
+      } else {
+        `Err "missing value for --env"
+      }
+    } else if argument == "--limit" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let parsed = parse_u32_decimal value
+        if let `Ok limit = parsed {
+          if limit >= 1i64 && limit <= 20i64 {
+            scan_cloud_list_from(remaining, facts :+ { .limit = limit })
+          } else {
+            `Err "limit must be between 1 and 20"
+          }
+        } else {
+          `Err "limit must be an integer between 1 and 20"
+        }
+      } else {
+        `Err "missing value for --limit"
+      }
+    } else if argument == "--cursor" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        scan_cloud_list_from(remaining, facts :+ { .cursor = `Some value })
+      } else {
+        `Err "missing value for --cursor"
+      }
+    } else if argument == "--json" {
+      scan_cloud_list_from(tail, facts :+ { .json = true })
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown cloud list option: ", argument))
+    } else {
+      `Err "cloud list does not accept positional arguments"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_cloud_list: CloudArgs -> CloudCommandResult = (args: CloudArgs) => {
+  let initial: CloudListFacts = [.environment = `None (), .limit = 20i64, .cursor = `None (), .json = false]
+  let scanned: CloudListFactsResult = scan_cloud_list_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    let options: CloudListOptions = [.environment = facts.environment, .limit = facts.limit, .cursor = facts.cursor, .json = facts.json]
+    `Ok (`CloudList options)
+  } else {
+    `Err "cloud list scanner returned an unknown result"
+  }
+}
+
+const parse_cloud_status: CloudArgs -> CloudCommandResult = (args: CloudArgs) => {
+  if let `Cons node = args {
+    let [task_id, tail] = node
+    if let `Nil () = tail {
+      `Ok (`CloudStatus task_id)
+    } else {
+      `Err "cloud status accepts exactly one task id"
+    }
+  } else {
+    `Err "cloud status requires a task id"
+  }
+}
+
+let rec scan_cloud_task_from: [CloudArgs, CloudTaskFacts] -> CloudTaskFactsResult = (args: CloudArgs, facts: CloudTaskFacts) => {
+  if let `Cons node = args {
+    let [argument, tail] = node
+    if argument == "--attempt" {
+      if let `Cons value_node = tail {
+        let [value, remaining] = value_node
+        let parsed: CloudAttemptResult = parse_cloud_attempt value
+        if let `Ok attempt = parsed {
+          scan_cloud_task_from(remaining, facts :+ { .attempt = `Some attempt })
+        } else if let `Err message = parsed {
+          `Err message
+        } else {
+          `Err "cloud attempt parser returned an unknown result"
+        }
+      } else {
+        `Err "missing value for --attempt"
+      }
+    } else if text_starts_with(argument, "-") {
+      `Err (text_append("unknown cloud task option: ", argument))
+    } else if let `None () = facts.task_id {
+      scan_cloud_task_from(tail, facts :+ { .task_id = `Some argument })
+    } else {
+      `Err "cloud task command accepts exactly one task id"
+    }
+  } else {
+    `Ok facts
+  }
+}
+
+let parse_cloud_task: [Text, CloudArgs] -> CloudCommandResult = (command: Text, args: CloudArgs) => {
+  let initial: CloudTaskFacts = [.task_id = `None (), .attempt = `None ()]
+  let scanned: CloudTaskFactsResult = scan_cloud_task_from(args, initial)
+  if let `Err message = scanned {
+    `Err message
+  } else if let `Ok facts = scanned {
+    if let `Some task_id = facts.task_id {
+      let options: CloudTaskAttemptOptions = [.task_id = task_id, .attempt = facts.attempt]
+      if command == "apply" {
+        `Ok (`CloudApply options)
+      } else if command == "diff" {
+        `Ok (`CloudDiff options)
+      } else {
+        `Err (text_append("unknown cloud task command: ", command))
+      }
+    } else {
+      `Err (text_append(text_append("cloud ", command), " requires a task id"))
+    }
+  } else {
+    `Err "cloud task scanner returned an unknown result"
+  }
+}
+
+let parse_cloud_options: CloudArgs -> CloudCommandResult = (args: CloudArgs) => {
+  if let `Cons node = args {
+    let [command, remaining] = node
+    if command == "exec" {
+      parse_cloud_exec remaining
+    } else if command == "status" {
+      parse_cloud_status remaining
+    } else if command == "list" {
+      parse_cloud_list remaining
+    } else if command == "apply" || command == "diff" {
+      parse_cloud_task(command, remaining)
+    } else {
+      `Err (text_append("unknown cloud command: ", command))
+    }
+  } else {
+    `Ok (`CloudBrowse ())
+  }
+}
+
+return {
+  parse_cloud_exec,
+  parse_cloud_list,
+  parse_cloud_options,
+  parse_cloud_status,
+  parse_cloud_task,
+}

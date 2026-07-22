@@ -1,0 +1,57 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const tool_types_module = import "./tool_types.duck"
+const mcp_types_module = import "./mcp_types.duck"
+const mcp_module = import "./mcp.duck"
+const { build_mcp_tool_runtimes } = mcp_module()
+
+type FixtureTextOption = McpTextOption
+type FixtureBoolOption = McpBoolOption
+type FixtureTexts = McpTexts
+type FixtureVisibility = McpToolVisibility
+type FixtureAnnotations = McpToolAnnotations
+type FixtureTool = McpTool
+type FixtureTools = McpTools
+type FixtureRuntime = McpToolRuntime
+type FixtureRuntimes = McpToolRuntimes
+
+const texts = comptime list(Text)
+const tools = comptime list(FixtureTool)
+const runtimes = comptime list(FixtureRuntime)
+
+let no_text: FixtureTextOption = `None ()
+let no_bool: FixtureBoolOption = `None ()
+let annotations: FixtureAnnotations = [no_bool, no_bool, no_bool]
+let visible: FixtureVisibility = `Model ()
+let hidden: FixtureVisibility = `App ()
+let custom: FixtureTool = ["docs", "search", "mcp__docs", "search", no_text, no_text, visible, true, annotations]
+let hidden_custom: FixtureTool = ["docs", "hidden", "mcp__docs", "hidden", no_text, no_text, hidden, true, annotations]
+let calendar: FixtureTool = ["codex_apps", "events/list", "mcp__codex_apps__calendar", "list", `Some "calendar", `Some "Calendar", visible, true, annotations]
+let drive: FixtureTool = ["codex_apps", "files/list", "mcp__codex_apps__drive", "list", `Some "drive", `Some "Drive", visible, true, annotations]
+let available: FixtureTools = tools.prepend(custom, tools.prepend(hidden_custom, tools.prepend(calendar, tools.singleton(drive))))
+let allowed: FixtureTexts = texts.singleton("calendar")
+let direct: FixtureRuntimes = build_mcp_tool_runtimes(available, allowed, false)
+let deferred: FixtureRuntimes = build_mcp_tool_runtimes(available, allowed, true)
+let score = 0
+
+if runtimes.length(direct) == 2 && runtimes.length(deferred) == 2 {
+  score = score + 1
+}
+
+if let `Cons node = direct {
+  let [runtime, _] = node
+  let [tool, exposure] = runtime
+  let [server_name, remote_name, _, _, _, _, _, _, _] = tool
+  if server_name == "docs" && remote_name == "search" {
+    if let `Direct () = exposure { score = score + 1 }
+  }
+}
+
+if let `Cons node = deferred {
+  let [runtime, _] = node
+  let [_, exposure] = runtime
+  if let `Deferred () = exposure { score = score + 1 }
+}
+
+return { .score = score }

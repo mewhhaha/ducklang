@@ -1,0 +1,35 @@
+module () where
+
+const { text_repeat } = import "duck:prelude/text" ()
+const {} = import "./plugin_install_types.duck" ()
+const { plan_list_available_plugins_to_install } = import "./list_plugin_install.duck" ()
+
+type FixtureCandidate = PluginInstallCandidate
+type FixtureCandidateNode = ListNode FixtureCandidate
+type FixtureCandidates = PluginInstallCandidates
+type FixturePayload = ListPluginInstallPayload
+type FixtureTextOption = InstallTextOption
+type FixtureTextNode = InstallTextNode
+type FixtureTexts = InstallTexts
+
+let no_text: FixtureTextOption = `InstallTextMissing ()
+let empty_texts: FixtureTexts = `Nil ()
+let calendar: FixtureCandidate = [.id = "calendar", .name = "Calendar", .description = no_text, .tool_type = `Connector (), .has_skills = false, .mcp_server_names = empty_texts, .app_connector_ids = empty_texts, .install_url = `InstallTextPresent "https://example.com/calendar", .remote_plugin_id = no_text]
+let same_a: FixtureCandidate = [.id = "a", .name = "Same", .description = `InstallTextPresent "short", .tool_type = `Plugin (), .has_skills = false, .mcp_server_names = empty_texts, .app_connector_ids = empty_texts, .install_url = no_text, .remote_plugin_id = `InstallTextPresent "plugins~a"]
+let same_z: FixtureCandidate = [.id = "z", .name = "Same", .description = `InstallTextPresent (text_repeat(["x", 241])), .tool_type = `Plugin (), .has_skills = true, .mcp_server_names = `Cons (["sample-mcp", `Nil ()] as FixtureTextNode), .app_connector_ids = `Cons (["connector-sample", `Nil ()] as FixtureTextNode), .install_url = no_text, .remote_plugin_id = `InstallTextPresent "plugins~z"]
+let values: FixtureCandidates = `Cons ([same_z, `Cons ([calendar, `Cons ([same_a, `Nil ()] as FixtureCandidateNode)] as FixtureCandidateNode)] as FixtureCandidateNode)
+let score = 0
+
+let function_payload: FixturePayload = true
+if let `ReturnCandidates output = plan_list_available_plugins_to_install(function_payload, values) {
+  let expected = "{\"tools\":[{\"id\":\"calendar\",\"name\":\"Calendar\",\"description\":null,\"tool_type\":\"connector\",\"has_skills\":false,\"mcp_server_names\":[],\"app_connector_ids\":[]},{\"id\":\"a\",\"name\":\"Same\",\"description\":\"short\",\"tool_type\":\"plugin\",\"has_skills\":false,\"mcp_server_names\":[],\"app_connector_ids\":[]},{\"id\":\"z\",\"name\":\"Same\",\"description\":\"" <> text_repeat(["x", 240]) <> "\",\"tool_type\":\"plugin\",\"has_skills\":true,\"mcp_server_names\":[\"sample-mcp\"],\"app_connector_ids\":[\"connector-sample\"]}]}"
+  if output == expected { score = score + 1 }
+}
+
+let unsupported_payload: FixturePayload = false
+let no_candidates: FixtureCandidates = `Nil ()
+if let `RejectRequest message = plan_list_available_plugins_to_install(unsupported_payload, no_candidates) {
+  if message == "list_available_plugins_to_install handler received unsupported payload" { score = score + 10 }
+}
+
+return { .score = score }

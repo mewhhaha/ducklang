@@ -1,0 +1,21 @@
+module () where
+
+type PluginTextOption = Option Text
+type PluginTexts = List Text
+
+type LoadedPlugin = [Text, PluginTextOption, PluginTextOption, PluginTextOption, Text, Bool, PluginTextOption, Bool, PluginTexts, PluginTexts, PluginTexts, PluginTexts, PluginTexts]
+type LoadedPlugins = List LoadedPlugin
+
+type PluginCapabilitySummary = [Text, Text, PluginTextOption, Bool, PluginTexts, PluginTexts]
+type PluginCapabilitySummaries = List PluginCapabilitySummary
+type PluginCapabilitySummaryOption = Option PluginCapabilitySummary
+
+type PluginLoadOutcome = [LoadedPlugins, PluginCapabilitySummaries]
+type PluginSelection = List PluginCapabilitySummary
+
+type PluginId = [Text, Text]
+type PluginIdParse =
+  | `Ok PluginId
+  | `Err Text
+
+return {}

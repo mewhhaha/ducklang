@@ -1,0 +1,28 @@
+module () where
+
+const {} = import "./wait_for_environment_types.duck" ()
+const { parse_wait_for_environment_args } = import "./wait_for_environment_json.duck" ()
+const { plan_wait_for_environment } = import "./wait_for_environment_policy.duck" ()
+
+type WaitEnvironmentCallEnvironments = WaitForEnvironments
+type WaitEnvironmentCallPayload = WaitForEnvironmentPayload
+type WaitEnvironmentCallPlan = WaitForEnvironmentPlan
+
+let plan_wait_for_environment_call: [WaitEnvironmentCallPayload, WaitEnvironmentCallEnvironments] -> WaitEnvironmentCallPlan = (payload: WaitEnvironmentCallPayload, environments: WaitEnvironmentCallEnvironments) => {
+  if let `Unsupported () = payload {
+    `Fatal "wait_for_environment handler received unsupported payload"
+  } else if let `Function arguments = payload {
+    let parsed = parse_wait_for_environment_args arguments
+    if let `Parsed args = parsed {
+      plan_wait_for_environment(environments, args.environment_id)
+    } else if let `ParseFailed message = parsed {
+      `RejectRequest message
+    } else {
+      `RejectRequest "wait_for_environment argument parsing produced no result"
+    }
+  } else {
+    `Fatal "wait_for_environment handler received unsupported payload"
+  }
+}
+
+return { plan_wait_for_environment_call }

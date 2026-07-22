@@ -1,0 +1,50 @@
+module () where
+
+const {} = import "./tool_types.duck" ()
+const { apply_patch_grammar, apply_patch_tool_definitions, apply_patch_tool_specs } = import "./apply_patch_registration.duck" ()
+
+type FixtureDefinitions = ToolDefinitions
+type FixtureSpecs = ToolSpecs
+
+let score: I32 = 0
+let definitions: FixtureDefinitions = apply_patch_tool_definitions true
+if let `Cons node = definitions {
+  let [definition, tail] = node
+  let [name, exposure, dispatch, payload, parallel, waits] = definition
+  let [namespace, local_name] = name
+  if namespace == "" && local_name == "apply_patch" && !(parallel) && !(waits) {
+    if let `Direct () = exposure {
+      if let `ApplyPatch () = dispatch {
+        if let `CustomPayload () = payload {
+          if let `Nil () = tail { score = score + 1 }
+        }
+      }
+    }
+  }
+}
+
+let grammar = apply_patch_grammar()
+if grammar == "Patch := Begin [ EnvironmentId ] { FileOp } End\nBegin := \"*** Begin Patch\" NEWLINE\nEnvironmentId := \"*** Environment ID: \" environmentId NEWLINE\nEnd := \"*** End Patch\" NEWLINE\nFileOp := AddFile | DeleteFile | UpdateFile\nAddFile := \"*** Add File: \" path NEWLINE { \"+\" line NEWLINE }\nDeleteFile := \"*** Delete File: \" path NEWLINE\nUpdateFile := \"*** Update File: \" path NEWLINE [ MoveTo ] { Hunk }\nMoveTo := \"*** Move to: \" newPath NEWLINE\nHunk := \"@@\" [ header ] NEWLINE { HunkLine } [ \"*** End of File\" NEWLINE ]\nHunkLine := (\" \" | \"-\" | \"+\") text NEWLINE" {
+  score = score + 10
+}
+
+let specs: FixtureSpecs = apply_patch_tool_specs true
+if let `Cons node = specs {
+  let [spec, tail] = node
+  let [_, kind, description, parameters, output, strict] = spec
+  if description == "Use apply_patch to edit files with a source-oriented patch containing one or more add, delete, or update operations." && parameters == grammar && !(strict) {
+    if let `FreeformSpec () = kind {
+      if let `ToolOutputSchemaMissing () = output {
+        if let `Nil () = tail { score = score + 100 }
+      }
+    }
+  }
+}
+
+let disabled_definitions: FixtureDefinitions = apply_patch_tool_definitions false
+let disabled_specs: FixtureSpecs = apply_patch_tool_specs false
+if let `Nil () = disabled_definitions {
+  if let `Nil () = disabled_specs { score = score + 1000 }
+}
+
+return { .score = score }

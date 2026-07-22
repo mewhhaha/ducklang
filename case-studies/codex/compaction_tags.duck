@@ -1,0 +1,51 @@
+module () where
+
+const {} = import "./compaction_types.duck" ()
+
+type CompactionTagsTrigger = CompactionTrigger
+type CompactionTagsReason = CompactionReason
+type CompactionTagsImplementation = CompactionImplementation
+type CompactionTagsPhase = CompactionPhase
+
+const compaction_trigger_tag: CompactionTagsTrigger -> Text = trigger => {
+  if let `Manual () = trigger { "manual" } else { "auto" }
+}
+
+const compaction_reason_tag: CompactionTagsReason -> Text = reason => {
+  if let `UserRequested () = reason {
+    "user_requested"
+  } else if let `ContextLimit () = reason {
+    "context_limit"
+  } else if let `ModelDownshift () = reason {
+    "model_downshift"
+  } else {
+    "comp_hash_changed"
+  }
+}
+
+const compaction_implementation_tag: CompactionTagsImplementation -> Text = implementation => {
+  if let `Responses () = implementation {
+    "responses"
+  } else if let `ResponsesCompactionV2 () = implementation {
+    "responses_compaction_v2"
+  } else {
+    "responses_compact"
+  }
+}
+
+const compaction_phase_tag: CompactionTagsPhase -> Text = phase => {
+  if let `StandaloneTurn () = phase {
+    "standalone_turn"
+  } else if let `PreTurn () = phase {
+    "pre_turn"
+  } else {
+    "mid_turn"
+  }
+}
+
+return {
+  compaction_trigger_tag,
+  compaction_reason_tag,
+  compaction_implementation_tag,
+  compaction_phase_tag,
+}

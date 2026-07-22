@@ -1,0 +1,30 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./compaction_types.duck" ()
+
+type CompactionModelError =
+  | `InvalidRequest Text
+  | `UnexpectedStatus Text
+  | `ContextWindowExceeded Unit
+  | `UsageLimitReached Text
+  | `ServerOverloaded Unit
+  | `InternalServerError Unit
+  | `RetryLimit Text
+  | `Other Text
+
+type CompactionFallbackTextOption = Option Text
+
+type CompactionFallbackTelemetry = struct {
+  .metric = Text,
+  .increment = I32,
+  .previous_model = Text,
+  .current_model = Text,
+  .reason = Text,
+  .implementation = Text,
+  .outcome = Text,
+  .fallback_error = CompactionFallbackTextOption,
+  .message = Text,
+}
+
+return {}

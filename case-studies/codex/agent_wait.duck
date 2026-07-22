@@ -1,0 +1,103 @@
+module () where
+
+const agent_types_module = import "./agent_types.duck"
+const agents_module = import "./agents.duck"
+const { agent_status_is_final } = agents_module()
+
+type WaitStatusEntries = AgentStatusEntries
+type WaitStatusEntry = AgentStatusEntry
+type WaitStatusEntryNode = AgentStatusEntryNode
+
+const status_entries_empty = () => AgentStatusEntries.Nil()
+
+const status_entries_prepend = (entry: WaitStatusEntry, tail: WaitStatusEntries) => {
+  let node: WaitStatusEntryNode = [entry, tail]
+  AgentStatusEntries.Cons(node)
+}
+
+const status_entries_length = (entries: WaitStatusEntries) => {
+  let current = entries
+  let count = 0
+
+  loop {
+    if let `Cons node = current {
+      let [_, tail] = node
+      count = count + 1
+      current = tail
+    } else {
+      break
+    }
+  }
+
+  count
+}
+
+const final_statuses = (available: WaitStatusEntries) => {
+  let current = available
+  let selected: WaitStatusEntries = status_entries_empty()
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      let [_, status] = entry
+
+      if agent_status_is_final status {
+        selected = status_entries_prepend(entry, selected)
+      }
+
+      current = tail
+    } else {
+      break
+    }
+  }
+
+  selected
+}
+
+const select_wait_outcome = (initial: WaitStatusEntries, newly_final: WaitStatusEntries) => {
+  let initial_final = final_statuses initial
+  let selected: WaitStatusEntries = if status_entries_length(initial_final) > 0 { initial_final } else { newly_final }
+  [selected, status_entries_length(selected) == 0]
+}
+
+const agent_status_fails: AgentStatus -> Bool = status => {
+  if let `Errored _ = status {
+    true
+  } else if let `NotFound () = status {
+    true
+  } else {
+    false
+  }
+}
+
+const wait_statuses_fail: WaitStatusEntries -> Bool = statuses => {
+  let current = statuses
+  let failed = false
+
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node
+      let [_, status] = entry
+
+      if agent_status_fails status {
+        failed = true
+        break
+      } else {
+        current = tail
+      }
+    } else {
+      break
+    }
+  }
+
+  failed
+}
+
+return {
+  status_entries_empty,
+  status_entries_prepend,
+  status_entries_length,
+  select_wait_outcome,
+  agent_status_fails,
+  wait_statuses_fail,
+}

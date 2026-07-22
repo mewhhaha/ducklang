@@ -1,0 +1,34 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+const {} = import "./app_server_types.duck" ()
+
+type AppServerThreadGoalCreatePlan = struct {
+  .thread_id = Text,
+  .objective = Text,
+  .status = AppServerThreadGoalStatus,
+  .token_budget = AppServerI64Option,
+}
+
+type AppServerThreadGoalUpdatePlan = struct {
+  .thread_id = Text,
+  .objective = AppServerTextOption,
+  .status = AppServerThreadGoalStatusOption,
+  .token_budget = FieldPatch I64,
+}
+
+type AppServerThreadGoalSetPlan =
+  | `CreateThreadGoal AppServerThreadGoalCreatePlan
+  | `UpdateThreadGoal AppServerThreadGoalUpdatePlan
+
+type AppServerThreadGoalSetPlanResult =
+  | `GoalSetPlanned AppServerThreadGoalSetPlan
+  | `GoalSetInvalid Text
+  | `GoalSetMissing Text
+
+type AppServerThreadGoalAvailability =
+  | `ThreadGoalsAvailable Unit
+  | `ThreadGoalsDisabled Unit
+  | `EphemeralThreadGoalsUnsupported Text
+
+return {}

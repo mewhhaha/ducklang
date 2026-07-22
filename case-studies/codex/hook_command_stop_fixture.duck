@@ -1,0 +1,26 @@
+module () where
+
+const hook_types_module = import "./hook_types.duck"
+const hook_command_module = import "./hook_command.duck"
+const { action_is_stop, evaluate_hook_command } = hook_command_module()
+
+type FixtureResult = HookCommandResult
+
+let score: I32 = 0
+
+let plain: FixtureResult = [`None (), `Some 0, "plain output", ""]
+let [plain_status, _, _, _, _, _, _] = evaluate_hook_command(`Stop (), plain)
+if let `Failed () = plain_status { score = score + 1 }
+
+let override: FixtureResult = [`None (), `Some 0, "{\"continue\":false,\"stopReason\":\"done\",\"decision\":\"block\",\"reason\":\"retry\"}", ""]
+let [override_status, _, override_action, _, _, _, _] = evaluate_hook_command(`Stop (), override)
+if let `Stopped () = override_status {
+  let [_, reason] = override_action
+  if action_is_stop override_action {
+    if let `Some value = reason {
+      if value == "done" { score = score + 1 }
+    }
+  }
+}
+
+return { .score = score }

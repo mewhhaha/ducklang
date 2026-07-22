@@ -1,0 +1,62 @@
+module () where
+
+const { json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { decode_thread_items_list, decode_thread_turns_list } = import "./app_server_methods.duck" ()
+const {} = import "./app_server_types.duck" ()
+
+type FixtureMethodResult = AppServerMethodDecodeResult
+
+let score = 0
+let turns_fields = json_object_empty()
+turns_fields = json_object_prepend("itemsView", json_string("notLoaded"), turns_fields)
+turns_fields = json_object_prepend("sortDirection", json_string("asc"), turns_fields)
+turns_fields = json_object_prepend("limit", json_number("4294967295"), turns_fields)
+turns_fields = json_object_prepend("cursor", json_string("turn-2"), turns_fields)
+turns_fields = json_object_prepend("threadId", json_string("thread-1"), turns_fields)
+let turns: FixtureMethodResult = decode_thread_turns_list(json_object(turns_fields))
+if let `MethodOk method = turns {
+  if let `ThreadTurnsList params = method {
+    let [thread_id, cursor, page_size, sort_direction, items_view] = params
+    let cursor_valid = if let `Some value = cursor { value == "turn-2" } else { false }
+    let direction_valid = if let `Ascending () = sort_direction { true } else { false }
+    let view_valid = if let `NotLoaded () = items_view { true } else { false }
+    if thread_id == "thread-1" && page_size == 100 && cursor_valid && direction_valid && view_valid { score = score + 1 }
+  }
+}
+
+let default_fields = json_object_prepend("threadId", json_string("thread-default"), json_object_empty())
+let defaults: FixtureMethodResult = decode_thread_turns_list(json_object(default_fields))
+if let `MethodOk method = defaults {
+  if let `ThreadTurnsList params = method {
+    let [_, cursor, page_size, sort_direction, items_view] = params
+    let cursor_valid = if let `None () = cursor { true } else { false }
+    let direction_valid = if let `Descending () = sort_direction { true } else { false }
+    let view_valid = if let `Summary () = items_view { true } else { false }
+    if page_size == 25 && cursor_valid && direction_valid && view_valid { score = score + 10 }
+  }
+}
+
+let overflow_fields = json_object_empty()
+overflow_fields = json_object_prepend("limit", json_number("4294967296"), overflow_fields)
+overflow_fields = json_object_prepend("threadId", json_string("thread-1"), overflow_fields)
+let overflow: FixtureMethodResult = decode_thread_turns_list(json_object(overflow_fields))
+if let `MethodError reason = overflow {
+  if reason == "thread/turns/list.params.limit number exceeds U32" { score = score + 100 }
+}
+
+let items_fields = json_object_empty()
+items_fields = json_object_prepend("limit", json_number("0"), items_fields)
+items_fields = json_object_prepend("turnId", json_string("turn-9"), items_fields)
+items_fields = json_object_prepend("threadId", json_string("thread-1"), items_fields)
+let items: FixtureMethodResult = decode_thread_items_list(json_object(items_fields))
+if let `MethodOk method = items {
+  if let `ThreadItemsList params = method {
+    let [thread_id, turn_id, cursor, page_size, sort_direction] = params
+    let turn_valid = if let `Some value = turn_id { value == "turn-9" } else { false }
+    let cursor_valid = if let `None () = cursor { true } else { false }
+    let direction_valid = if let `Ascending () = sort_direction { true } else { false }
+    if thread_id == "thread-1" && page_size == 1 && turn_valid && cursor_valid && direction_valid { score = score + 1000 }
+  }
+}
+
+return { .score = score }

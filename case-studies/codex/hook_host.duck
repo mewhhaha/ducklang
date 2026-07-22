@@ -1,0 +1,11 @@
+module () where
+
+declare effect HookCommandHost {
+  suspending run: (&HookCommandRequest) => HookCommandResult
+}
+
+declare Init {
+  hook_command_host: HookCommandHost
+}
+
+return {}

@@ -1,0 +1,69 @@
+module () where
+
+const {} = import "./request_permissions_types.duck" ()
+const { parse_request_permissions_args, parse_request_permissions_environment_id } = import "./request_permissions_json.duck" ()
+const { request_permissions_native_cwd, select_primary_request_permissions_environment, select_request_permissions_environment } = import "./request_permissions_environment.duck" ()
+const { normalize_request_permissions_args } = import "./request_permissions_policy.duck" ()
+
+type CallPermissionsCallPlan = RequestPermissionsCallPlan
+type CallPermissionsEnvironments = RequestPermissionsEnvironments
+type CallPermissionsNativeCwd = RequestPermissionsNativeCwd
+type CallPermissionsPayload = RequestPermissionsPayload
+type CallPermissionsPreparedCall = RequestPermissionsPreparedCall
+
+const plan_request_permissions_call: [CallPermissionsPayload, CallPermissionsEnvironments] -> CallPermissionsCallPlan = (payload: CallPermissionsPayload, environments: CallPermissionsEnvironments) => {
+  if let `Unsupported () = payload {
+    `RejectRequest "request_permissions handler received unsupported payload"
+  } else if let `Function arguments = payload {
+    let environment_parse = parse_request_permissions_environment_id arguments
+    if let `EnvironmentParseFailed message = environment_parse {
+      `RejectRequest message
+    } else if let `ParsedEnvironmentId environment_id = environment_parse {
+      let selection = if let `Some requested_environment_id = environment_id {
+        select_request_permissions_environment(environments, requested_environment_id)
+      } else {
+        select_primary_request_permissions_environment environments
+      }
+      if let `SelectionFailed message = selection {
+        `RejectRequest message
+      } else if let `Selected environment = selection {
+        let native_selection = request_permissions_native_cwd environment
+        if let `SelectionFailed message = native_selection {
+          `RejectRequest message
+        } else if let `Selected native_environment = native_selection {
+          let native_cwd: CallPermissionsNativeCwd = native_environment.native_cwd
+          if let `Native cwd = native_cwd {
+            let parsed = parse_request_permissions_args(arguments, cwd)
+            if let `ParseFailed message = parsed {
+              `RejectRequest message
+            } else if let `Parsed args = parsed {
+              let normalization = normalize_request_permissions_args args
+              if let `Invalid message = normalization {
+                `RejectRequest message
+              } else if let `Normalized normalized = normalization {
+                let prepared: CallPermissionsPreparedCall = [.environment = native_environment, .args = normalized]
+                `Prompt prepared
+              } else {
+                `RejectRequest "request_permissions normalization produced no result"
+              }
+            } else {
+              `RejectRequest "request_permissions argument parsing produced no result"
+            }
+          } else {
+            `RejectRequest "request_permissions selected environment has no native cwd"
+          }
+        } else {
+          `RejectRequest "request_permissions native cwd selection produced no result"
+        }
+      } else {
+        `RejectRequest "request_permissions environment selection produced no result"
+      }
+    } else {
+      `RejectRequest "request_permissions environment parsing produced no result"
+    }
+  } else {
+    `RejectRequest "request_permissions handler received unsupported payload"
+  }
+}
+
+return { plan_request_permissions_call }

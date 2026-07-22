@@ -1,0 +1,117 @@
+module () where
+
+const { parse_json_document } = import "duck:prelude/json" ()
+const {} = import "duck:prelude/json/values" ()
+const { format_i32, text_append } = import "duck:prelude/runtime" ()
+const {} = import "./agent_tool_types.duck" ()
+
+type AgentSpawnJsonTextOption = AgentTextOption
+
+const spawn_decode_failure: Text -> AgentToolSpawnDecodeResult = reason => {
+  `AgentSpawnDecodeFailed (text_append("failed to parse spawn_agent arguments: ", reason))
+}
+
+const parse_spawn_agent_args: Text -> AgentToolSpawnDecodeResult = document => {
+  let parsed = parse_json_document document
+  if let `Err error = parsed {
+    let [position, message] = error
+    return spawn_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)))
+  }
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      let task_name: AgentSpawnJsonTextOption = `None ()
+      let message: AgentSpawnJsonTextOption = `None ()
+      let fork_turns: AgentSpawnJsonTextOption = `None ()
+      let model: AgentSpawnJsonTextOption = `None ()
+      let reasoning_effort: AgentSpawnJsonTextOption = `None ()
+      let seen_task_name = false
+      let seen_message = false
+      let seen_fork_turns = false
+      let seen_model = false
+      let seen_reasoning_effort = false
+      let failure = ""
+      let current = object
+      let done = false
+
+      loop {
+        if failure != "" { break }
+        if let `Cons node = current {
+          let [member, tail] = node
+          let [key, field] = member
+          if key == "task_name" {
+            if seen_task_name {
+              failure = "task_name must not be repeated"
+            } else if let `String text = field {
+              task_name = `Some text
+              seen_task_name = true
+            } else {
+              failure = "task_name must be a string"
+            }
+          } else if key == "message" {
+            if seen_message {
+              failure = "message must not be repeated"
+            } else if let `String text = field {
+              message = `Some text
+              seen_message = true
+            } else {
+              failure = "message must be a string"
+            }
+          } else if key == "fork_turns" {
+            if seen_fork_turns {
+              failure = "fork_turns must not be repeated"
+            } else if let `String text = field {
+              fork_turns = `Some text
+              seen_fork_turns = true
+            } else {
+              failure = "fork_turns must be a string"
+            }
+          } else if key == "model" {
+            if seen_model {
+              failure = "model must not be repeated"
+            } else if let `String text = field {
+              model = `Some text
+              seen_model = true
+            } else {
+              failure = "model must be a string"
+            }
+          } else if key == "reasoning_effort" {
+            if seen_reasoning_effort {
+              failure = "reasoning_effort must not be repeated"
+            } else if let `String text = field {
+              reasoning_effort = `Some text
+              seen_reasoning_effort = true
+            } else {
+              failure = "reasoning_effort must be a string"
+            }
+          } else {
+            failure = text_append("unknown spawn_agent field: ", key)
+          }
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+
+      if failure != "" { return spawn_decode_failure failure }
+      if let `None () = task_name { return spawn_decode_failure "task_name is required" }
+      if let `None () = message { return spawn_decode_failure "message is required" }
+      if let `Some decoded_task_name = task_name {
+        if let `Some decoded_message = message {
+          `AgentSpawnDecoded [.task_name = decoded_task_name, .message = decoded_message, .fork_turns = fork_turns, .model = model, .reasoning_effort = reasoning_effort]
+        } else {
+          spawn_decode_failure "message decoding produced no value"
+        }
+      } else {
+        spawn_decode_failure "task_name decoding produced no value"
+      }
+    } else {
+      spawn_decode_failure "arguments must be an object"
+    }
+  } else {
+    spawn_decode_failure "JSON parsing produced no result"
+  }
+}
+
+return { parse_spawn_agent_args }

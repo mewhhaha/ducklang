@@ -1,0 +1,36 @@
+module () where
+
+const skill_types_module = import "./skill_types.duck"
+const metadata_module = import "./skill_metadata.duck"
+const { frontmatter, parse_skill_policy, policy_allows_implicit_invocation, policy_allows_product, yaml_scalar } = metadata_module()
+
+type FixtureTextOption = SkillTextOption
+type FixtureProductOption = SkillProductOption
+
+let metadata: FixtureTextOption = `Some "policy:\n  allow_implicit_invocation: false\n  products: [codex, chatgpt]"
+let policy = parse_skill_policy metadata
+let codex: FixtureProductOption = `Some (`Codex ())
+let atlas: FixtureProductOption = `Some (`Atlas ())
+let score = 0
+
+if let `Some yaml = frontmatter("---\nname: search\ndescription: Search source trees\n---\nUse rg.") {
+  if let `Some description = yaml_scalar(yaml, "description") {
+    if description == "Search source trees" {
+      score = score + 1
+    }
+  }
+}
+
+if !policy_allows_implicit_invocation(policy) {
+  score = score + 10
+}
+
+if policy_allows_product(policy, codex) {
+  score = score + 100
+}
+
+if !policy_allows_product(policy, atlas) {
+  score = score + 1000
+}
+
+return { .score = score }

@@ -1,0 +1,21 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { decode_agent_job_spawn_text_options } = import "./agent_job_spawn_json_text.duck" ()
+
+type FixtureArgs = AgentJobSpawnDecodedArgs
+
+let base: FixtureArgs = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `None (), .output_schema_json = `None (), .max_concurrency = `None (), .max_workers = `None (), .max_runtime_seconds = `None ()]
+let score = 0
+let valid = decode_agent_job_spawn_text_options("{\"id_column\":\"id\",\"output_csv_path\":\"out.csv\"}", base)
+if let `SpawnDecoded args = valid {
+  let id_valid = if let `Some value = args.id_column { value == "id" } else { false }
+  let output_valid = if let `Some value = args.output_path { value == "out.csv" } else { false }
+  if id_valid && output_valid { score = 1 }
+}
+let invalid = decode_agent_job_spawn_text_options("{\"id_column\":42}", base)
+if let `SpawnDecodeFailed reason = invalid {
+  if reason == "id_column must be a string" { score = score + 10 }
+}
+
+return { .score = score }

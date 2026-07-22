@@ -1,0 +1,24 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type HostedWebSearchMode =
+  | `Cached Unit
+  | `Indexed Unit
+  | `Live Unit
+  | `Disabled Unit
+
+type HostedWebSearchToolType =
+  | `TextOnly Unit
+  | `TextAndImage Unit
+
+type HostedToolAvailabilityFacts = struct {
+  .use_responses_lite = Bool,
+  .namespace_tools = Bool,
+  .standalone_web_search = Bool,
+  .has_web_run_executor = Bool,
+  .provider_web_search = Bool,
+  .web_search_mode = HostedWebSearchMode,
+}
+
+return {}

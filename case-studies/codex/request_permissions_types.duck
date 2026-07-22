@@ -1,0 +1,146 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type RequestPermissionsTextOption =
+  | `None Unit
+  | `Some Text
+
+type RequestPermissionsBooleanOption =
+  | `None Unit
+  | `Some Bool
+
+type RequestPermissionAccess =
+  | `Read Unit
+  | `Write Unit
+
+type RequestPermissionPath = struct {
+  .path = Text,
+  .access = RequestPermissionAccess,
+}
+
+type RequestPermissionPathNode = [RequestPermissionPath, RequestPermissionPaths]
+type RequestPermissionPaths =
+  | `Nil Unit
+  | `Cons RequestPermissionPathNode
+
+type RequestPermissionNetwork = struct {
+  .enabled = RequestPermissionsBooleanOption,
+}
+
+type RequestPermissionNetworkField =
+  | `NetworkMissing Unit
+  | `NetworkPresent RequestPermissionNetwork
+
+type RequestPermissionFileSystem = struct {
+  .entries = RequestPermissionPaths,
+}
+
+type RequestPermissionFileSystemField =
+  | `FileSystemMissing Unit
+  | `FileSystemPresent RequestPermissionFileSystem
+
+type RequestPermissionProfile = struct {
+  .network = RequestPermissionNetworkField,
+  .file_system = RequestPermissionFileSystemField,
+}
+
+type RequestPermissionsArgs = struct {
+  .environment_id = RequestPermissionsTextOption,
+  .reason = RequestPermissionsTextOption,
+  .permissions = RequestPermissionProfile,
+}
+
+type RequestPermissionsNativeCwd =
+  | `Native Text
+  | `Foreign Text
+
+type RequestPermissionsEnvironment = struct {
+  .environment_id = Text,
+  .cwd = Text,
+  .is_primary = Bool,
+  .native_cwd = RequestPermissionsNativeCwd,
+}
+
+type RequestPermissionsEnvironmentNode = struct {
+  .environment = RequestPermissionsEnvironment,
+  .tail = RequestPermissionsEnvironments,
+}
+type RequestPermissionsEnvironments =
+  | `Nil Unit
+  | `Cons RequestPermissionsEnvironmentNode
+
+type RequestPermissionsEnvironmentSelection =
+  | `Selected RequestPermissionsEnvironment
+  | `SelectionFailed Text
+
+type RequestPermissionsNormalization =
+  | `Normalized RequestPermissionsArgs
+  | `Invalid Text
+
+type RequestPermissionsPayload =
+  | `Function Text
+  | `Unsupported Unit
+
+type RequestPermissionsPreparedCall = struct {
+  .environment = RequestPermissionsEnvironment,
+  .args = RequestPermissionsArgs,
+}
+
+type RequestPermissionsCallPlan =
+  | `Prompt RequestPermissionsPreparedCall
+  | `RejectRequest Text
+
+type RequestPermissionsParseResult =
+  | `Parsed RequestPermissionsArgs
+  | `ParseFailed Text
+
+type RequestPermissionsEnvironmentParseResult =
+  | `ParsedEnvironmentId RequestPermissionsTextOption
+  | `EnvironmentParseFailed Text
+
+type PermissionGrantScope =
+  | `Turn Unit
+  | `Session Unit
+
+type RequestPermissionsResponse = struct {
+  .permissions = RequestPermissionProfile,
+  .scope = PermissionGrantScope,
+  .strict_auto_review = Bool,
+}
+
+type RequestPermissionsHostRequest = struct {
+  .call_id = Text,
+  .turn_id = Text,
+  .environment_id = Text,
+  .started_at_ms = I64,
+  .reason = RequestPermissionsTextOption,
+  .permissions = RequestPermissionProfile,
+  .cwd = Text,
+}
+
+type RequestPermissionsHostResponse =
+  | `Cancelled Unit
+  | `Answered RequestPermissionsResponse
+
+type RequestPermissionsGrant = struct {
+  .environment_id = Text,
+  .permissions = RequestPermissionProfile,
+  .strict_auto_review = Bool,
+}
+
+type RequestPermissionsGrantApplication =
+  | `NoGrant Unit
+  | `GrantForTurn RequestPermissionsGrant
+  | `GrantForSession RequestPermissionsGrant
+
+type RequestPermissionsCompletion = struct {
+  .output = Text,
+  .grant = RequestPermissionsGrantApplication,
+}
+
+type RequestPermissionsExecutionResult =
+  | `Completed RequestPermissionsCompletion
+  | `Rejected Text
+
+return {}

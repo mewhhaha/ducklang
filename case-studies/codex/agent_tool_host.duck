@@ -1,0 +1,28 @@
+module () where
+
+declare effect AgentCollaborationHost {
+  suspending spawn_override_facts: () => AgentSpawnOverrideFacts
+  suspending spawn: (&AgentToolSpawnPlanRequest) => AgentToolSpawnSnapshot
+  suspending spawn_telemetry: (&AgentToolSpawnTelemetry) => Unit
+  suspending send: (&AgentSendRequest) => Unit
+  suspending followup: (&AgentSendRequest) => Unit
+  suspending interrupt: (&Text) => AgentStatus
+  suspending wait: (&AgentToolWaitRequest) => AgentToolMailboxSnapshot
+  suspending list: (&AgentTextOption) => AgentStatusEntries
+  suspending event: (&AgentToolLifecycleEvent) => Unit
+}
+
+declare effect AgentCollaborationStages {
+  suspending spawn_override: (&AgentSpawnOverrideInput) => AgentSpawnOverrideResult
+  suspending spawn_output: (&AgentToolSpawnOutputInput) => Text
+  suspending interrupt_output: (&AgentStatus) => Text
+  suspending wait_output: (&AgentToolMailboxSnapshot) => Text
+  suspending list_output: (&AgentStatusEntries) => Text
+}
+
+declare Init {
+  agent_collaboration_host: AgentCollaborationHost
+  agent_collaboration_stages: AgentCollaborationStages
+}
+
+return {}

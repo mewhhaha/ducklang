@@ -1,0 +1,73 @@
+module () where
+
+const { csv_append_field, csv_format_i32, csv_text_append } = import "duck:prelude/csv" ()
+const {} = import "./agent_job_export_types.duck" ()
+
+type AgentJobCsvRowOutputHeaders = AgentJobCreateHeaders
+type AgentJobCsvRowOutputItem = AgentJobFinalItem
+type AgentJobCsvRowOutputResult = AgentJobCsvExportResult
+type AgentJobCsvRowOutputStatus = AgentJobFinalItemStatus
+type AgentJobCsvRowOutputTextOption = AgentJobTextOption
+
+const agent_job_csv_option: AgentJobCsvRowOutputTextOption -> Text = value => {
+  if let `Some text = value { text } else { "" }
+}
+
+const agent_job_csv_status: AgentJobCsvRowOutputStatus -> Text = status => {
+  if let `Pending () = status {
+    "pending"
+  } else if let `Running () = status {
+    "running"
+  } else if let `Completed () = status {
+    "completed"
+  } else if let `Failed () = status {
+    "failed"
+  } else {
+    ""
+  }
+}
+
+const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvRowOutputItem] -> AgentJobCsvRowOutputResult = (job_id: Text, headers: AgentJobCsvRowOutputHeaders, item: AgentJobCsvRowOutputItem) => {
+  let current_headers = headers
+  let current_values = item.row_values
+  let line = ""
+  let first = true
+  let matches = true
+  let done = false
+  loop {
+    if let `Cons header_node = current_headers {
+      let [_, header_tail] = header_node
+      if let `Cons value_node = current_values {
+        let [value, value_tail] = value_node
+        line = csv_append_field(line, value, first)
+        first = false
+        current_headers = header_tail
+        current_values = value_tail
+      } else {
+        matches = false
+        done = true
+      }
+    } else {
+      if let `Cons _ = current_values { matches = false }
+      done = true
+    }
+    if done { break }
+  }
+  if !(matches) {
+    `CsvExportFailed (csv_text_append(["row values for item ", csv_text_append([item.item_id, " do not match csv headers"])]))
+  } else {
+    line = csv_append_field(line, job_id, first)
+    line = csv_append_field(line, item.item_id, false)
+    line = csv_append_field(line, csv_format_i32(item.row_index), false)
+    line = csv_append_field(line, agent_job_csv_option(item.source_id), false)
+    line = csv_append_field(line, agent_job_csv_status(item.status), false)
+    line = csv_append_field(line, csv_format_i32(item.attempt_count), false)
+    line = csv_append_field(line, agent_job_csv_option(item.last_error), false)
+    line = csv_append_field(line, agent_job_csv_option(item.result_json), false)
+    line = csv_append_field(line, agent_job_csv_option(item.reported_at), false)
+    line = csv_append_field(line, agent_job_csv_option(item.completed_at), false)
+    `CsvExported (csv_text_append([line, "\n"]))
+  }
+}
+
+return { render_agent_job_csv_row }

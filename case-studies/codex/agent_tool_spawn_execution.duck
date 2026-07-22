@@ -1,0 +1,41 @@
+module (!init: Init) where
+
+const {} = import "./agent_tool_types.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ()
+
+type AgentSpawnExecutionRequest = AgentToolSpawnPlanRequest
+type AgentSpawnExecutionSnapshot = AgentToolSpawnSnapshot
+type AgentSpawnExecutionOutputInput = AgentToolSpawnOutputInput
+type AgentSpawnExecutionEvent = AgentToolLifecycleEvent
+type AgentSpawnExecutionFacts = AgentSpawnOverrideFacts
+type AgentSpawnExecutionOverrideInput = AgentSpawnOverrideInput
+type AgentSpawnExecutionOverrideResult = AgentSpawnOverrideResult
+type AgentSpawnExecutionOptions = AgentToolSpawnExecutionOptions
+type AgentSpawnExecutionTelemetry = AgentToolSpawnTelemetry
+
+let run_spawn_agent = (call_id: Text, request: AgentSpawnExecutionRequest, options: AgentSpawnExecutionOptions) => {
+  observed <- AgentCollaborationHost.spawn_override_facts()
+  let facts: AgentSpawnExecutionFacts = observed
+  let override_input: AgentSpawnExecutionOverrideInput = [.parent_model = facts.parent_model, .parent_reasoning_effort = facts.parent_reasoning_effort, .parent_supported_reasoning_efforts = facts.parent_supported_reasoning_efforts, .default_model = facts.default_model, .default_reasoning_effort = facts.default_reasoning_effort, .requested_model = request.model, .requested_reasoning_effort = request.reasoning_effort, .available_models = facts.available_models]
+  selected <- AgentCollaborationStages.spawn_override(&override_input)
+  let override_result: AgentSpawnExecutionOverrideResult = selected
+  if let `SpawnOverrideRejected message = override_result {
+    message
+  } else if let `SpawnOverrideSelected overrides = override_result {
+    let resolved_request: AgentSpawnExecutionRequest = [.path = request.path, .message = request.message, .fork_turns = request.fork_turns, .model = `Some overrides.model, .reasoning_effort = overrides.reasoning_effort]
+    spawned <- AgentCollaborationHost.spawn(&resolved_request)
+    let snapshot: AgentSpawnExecutionSnapshot = spawned
+    let started: AgentSpawnExecutionEvent = `AgentStarted [call_id, snapshot.task_name]
+    _ <- AgentCollaborationHost.event(&started)
+    let telemetry: AgentSpawnExecutionTelemetry = [.role = "default", .version = "v2"]
+    _ <- AgentCollaborationHost.spawn_telemetry(&telemetry)
+    let input: AgentSpawnExecutionOutputInput = [.snapshot = snapshot, .hide_metadata = options.hide_metadata]
+    output <- AgentCollaborationStages.spawn_output(&input)
+    let text: Text = output
+    text
+  } else {
+    "spawn_agent override stage returned no result"
+  }
+}
+
+return { run_spawn_agent }

@@ -1,0 +1,35 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_debug_prompt_input, parse_debug_trace_reduce } = import "./cli_debug.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexDebugCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let prompt_input: FixtureArgs = args.prepend("hello", args.prepend("--image", args.singleton("a.png,b.png")))
+let prompt: FixtureResult = parse_debug_prompt_input(prompt_input)
+if let `Ok command = prompt {
+  if let `DebugPromptInput options = command {
+    if let `Some text = options.prompt {
+      let first = args.nth_or("", 0, options.images)
+      let second = args.nth_or("", 1, options.images)
+      if text == "hello" && first == "a.png" && second == "b.png" { score = score + 1 }
+    }
+  }
+}
+
+let trace_input: FixtureArgs = args.prepend("bundle", args.prepend("--output", args.singleton("state.json")))
+let trace: FixtureResult = parse_debug_trace_reduce(trace_input)
+if let `Ok command = trace {
+  if let `DebugTraceReduce options = command {
+    if let `Some output = options.output {
+      if options.trace_bundle == "bundle" && output == "state.json" { score = score + 10 }
+    }
+  }
+}
+
+return { .score = score }

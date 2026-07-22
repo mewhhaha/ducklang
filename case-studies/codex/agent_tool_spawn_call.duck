@@ -1,0 +1,72 @@
+module () where
+
+const { format_i32, text_append, text_equal_ascii_case_insensitive, text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
+const { parse_u32_decimal } = import "duck:prelude/numeric/parse" ()
+const {} = import "./agent_tool_types.duck" ()
+const { execution_capacity, spawn_depth_allowed } = import "./agent_capacity.duck" ()
+const { validate_collab_input } = import "./agent_input_policy.duck" ()
+const { resolve_agent_path } = import "./agent_path.duck" ()
+
+type AgentSpawnCallForkTurnsResult =
+  | `ForkTurnsParsed AgentToolForkTurns
+  | `ForkTurnsRejected Text
+
+const parse_fork_turns: AgentTextOption -> AgentSpawnCallForkTurnsResult = requested => {
+  if let `None () = requested { return `ForkTurnsParsed (`ForkAllTurns ()) }
+  if let `Some raw_value = requested {
+    let value = text_trim_ascii_whitespace raw_value
+    if value == "" || text_equal_ascii_case_insensitive [value, "all"] {
+      `ForkTurnsParsed (`ForkAllTurns ())
+    } else if text_equal_ascii_case_insensitive [value, "none"] {
+      `ForkTurnsParsed (`ForkNoTurns ())
+    } else {
+      let parsed = parse_u32_decimal value
+      if let `Ok turns = parsed {
+        if turns > 0i64 {
+          `ForkTurnsParsed (`ForkRecentTurns turns)
+        } else {
+          `ForkTurnsRejected "fork_turns must be `none`, `all`, or a positive integer string"
+        }
+      } else {
+        `ForkTurnsRejected "fork_turns must be `none`, `all`, or a positive integer string"
+      }
+    }
+  } else {
+    `ForkTurnsRejected "fork_turns parsing produced no result"
+  }
+}
+
+const plan_spawn_agent_call: [AgentToolContext, AgentToolSpawnArguments] -> AgentToolPlan = (context, arguments) => {
+  if !(context.v2_enabled) { return `AgentToolRejected "collaboration tools require multi-agent V2" }
+
+  if !(spawn_depth_allowed(context.current_depth, context.maximum_depth)) {
+    let attempted_depth = context.current_depth + 1
+    return `AgentToolRejected (text_append("agent spawn depth ", text_append(format_i32 attempted_depth, text_append(" exceeds maximum depth ", format_i32 context.maximum_depth))))
+  }
+
+  let capacity = execution_capacity(`V2 (), context.source, context.active_turn, context.active_agents, context.maximum_threads)
+  if let `AgentLimitReached maximum_threads = capacity {
+    return `AgentToolRejected (text_append("agent thread limit reached: maximum ", format_i32 maximum_threads))
+  }
+
+  let validated = validate_collab_input(`Some arguments.message, -1)
+  if let `InputRejected message = validated { return `AgentToolRejected message }
+
+  let parsed_fork_turns = parse_fork_turns arguments.fork_turns
+  if let `ForkTurnsRejected message = parsed_fork_turns {
+    `AgentToolRejected message
+  } else if let `ForkTurnsParsed fork_turns = parsed_fork_turns {
+    let target = resolve_agent_path(context.current_path, arguments.task_name)
+    if let `InvalidPath message = target {
+      `AgentToolRejected message
+    } else if let `Path path = target {
+      `SpawnAgentPlanned [.path = path, .message = arguments.message, .fork_turns = fork_turns, .model = arguments.model, .reasoning_effort = arguments.reasoning_effort]
+    } else {
+      `AgentToolRejected "agent spawn target resolution produced no path"
+    }
+  } else {
+    `AgentToolRejected "fork_turns parsing produced no value"
+  }
+}
+
+return { plan_spawn_agent_call }

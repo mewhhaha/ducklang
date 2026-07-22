@@ -1,0 +1,11 @@
+module () where
+
+declare effect StageInput {
+  input: () => AgentStatus
+}
+
+declare Init {
+  stage_input: StageInput
+}
+
+return {}

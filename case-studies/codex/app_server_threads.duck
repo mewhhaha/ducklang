@@ -1,0 +1,166 @@
+module () where
+
+const { json_array, json_array_empty, json_array_prepend, json_bool, json_null, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
+const { format_i64 } = import "duck:prelude/numeric" ()
+const { rfc3339_unix_seconds } = import "duck:prelude/time" ()
+const {} = import "./rollout_storage_types.duck" ()
+
+type ThreadJson = Json
+type ThreadJsonArray = JsonArray
+type ThreadJsonObject = JsonObject
+type ThreadTextOption = RolloutStorageTextOption
+type ThreadGitInfo = RolloutGitInfo
+type ThreadGitInfoOption = RolloutGitInfoOption
+type ThreadSessionSource = RolloutSessionSource
+type ThreadSummary = RolloutThreadSummary
+type ThreadSummaries = RolloutThreadSummaries
+type ThreadPage = RolloutThreadPage
+type ThreadTimestampValues = [I64, I64, Bool]
+
+const optional_text_json: ThreadTextOption -> ThreadJson = (value: ThreadTextOption) => {
+  if let `Some text = value { json_string(text) } else { json_null() }
+}
+
+let single_field_object: [Text, ThreadJson] -> ThreadJson = (name: Text, value: ThreadJson) => {
+  json_object(json_object_prepend(name, value, json_object_empty()))
+}
+
+const session_source_json: ThreadSessionSource -> ThreadJson = (source: ThreadSessionSource) => {
+  if let `Cli () = source {
+    json_string("cli")
+  } else if let `VsCode () = source {
+    json_string("vscode")
+  } else if let `Exec () = source {
+    json_string("exec")
+  } else if let `AppServer () = source {
+    json_string("appServer")
+  } else if let `Custom name = source {
+    single_field_object("custom", json_string(name))
+  } else if let `SubAgent value = source {
+    single_field_object("subAgent", value)
+  } else {
+    json_string("unknown")
+  }
+}
+
+const git_info_json: ThreadGitInfoOption -> ThreadJson = (git: ThreadGitInfoOption) => {
+  if let `Some info = git {
+    let fields = json_object_empty()
+    fields = json_object_prepend("originUrl", optional_text_json(info.origin_url), fields)
+    fields = json_object_prepend("branch", optional_text_json(info.branch), fields)
+    fields = json_object_prepend("sha", optional_text_json(info.sha), fields)
+    json_object(fields)
+  } else {
+    json_null()
+  }
+}
+
+let timestamp_values: [Text, Text] -> ThreadTimestampValues = (created_text: Text, updated_text: Text) => {
+  let [created_valid, created_at] = rfc3339_unix_seconds(created_text)
+  let [updated_valid, updated_at] = rfc3339_unix_seconds(updated_text)
+  let normalized_created_at = if created_valid { created_at } else { 0i64 }
+  let normalized_updated_at = if updated_valid {
+    updated_at
+  } else if created_valid {
+    created_at
+  } else {
+    0i64
+  }
+
+  [normalized_created_at, normalized_updated_at, created_valid || updated_valid]
+}
+
+const materialize_app_server_thread: [ThreadSummary, ThreadJsonArray, Bool] -> ThreadJson = (summary: ThreadSummary, turns: ThreadJsonArray, experimental: Bool) => {
+  let [created_at, updated_at, has_recency] = timestamp_values(summary.created_at, summary.updated_at)
+  let status_fields = json_object_prepend("type", json_string("notLoaded"), json_object_empty())
+  let fields = json_object_empty()
+  fields = json_object_prepend("turns", json_array(turns), fields)
+  fields = json_object_prepend("name", json_null(), fields)
+  fields = json_object_prepend("gitInfo", git_info_json(summary.git_info), fields)
+  fields = json_object_prepend("agentRole", optional_text_json(summary.agent_role), fields)
+  fields = json_object_prepend("agentNickname", optional_text_json(summary.agent_nickname), fields)
+  fields = json_object_prepend("threadSource", optional_text_json(summary.thread_source), fields)
+  fields = json_object_prepend("source", session_source_json(summary.source), fields)
+  fields = json_object_prepend("cliVersion", json_string(summary.cli_version), fields)
+  fields = json_object_prepend("cwd", json_string(summary.cwd), fields)
+  if summary.path == "" {
+    fields = json_object_prepend("path", json_null(), fields)
+  } else {
+    fields = json_object_prepend("path", json_string(summary.path), fields)
+  }
+  fields = json_object_prepend("status", json_object(status_fields), fields)
+  if has_recency {
+    fields = json_object_prepend("recencyAt", json_number(format_i64(updated_at)), fields)
+  } else {
+    fields = json_object_prepend("recencyAt", json_null(), fields)
+  }
+  fields = json_object_prepend("updatedAt", json_number(format_i64(updated_at)), fields)
+  fields = json_object_prepend("createdAt", json_number(format_i64(created_at)), fields)
+  fields = json_object_prepend("modelProvider", json_string(summary.model_provider), fields)
+  fields = json_object_prepend("ephemeral", json_bool(false), fields)
+  fields = json_object_prepend("preview", json_string(summary.preview), fields)
+  fields = json_object_prepend("parentThreadId", optional_text_json(summary.parent_thread_id), fields)
+  fields = json_object_prepend("forkedFromId", optional_text_json(summary.forked_from_id), fields)
+  fields = json_object_prepend("sessionId", json_string(summary.session_id), fields)
+  if experimental {
+    fields = json_object_prepend("canAcceptDirectInput", json_null(), fields)
+    fields = json_object_prepend("historyMode", json_string(summary.history_mode), fields)
+    fields = json_object_prepend("extra", json_null(), fields)
+  }
+  fields = json_object_prepend("id", json_string(summary.thread_id), fields)
+  json_object(fields)
+}
+
+const thread_json_array: [ThreadSummaries, Bool] -> ThreadJsonArray = (summaries: ThreadSummaries, experimental: Bool) => {
+  let current = summaries
+  let reversed = json_array_empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [summary, tail] = node
+      reversed = json_array_prepend(materialize_app_server_thread(summary, json_array_empty(), experimental), reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  let result = json_array_empty()
+  done = false
+
+  loop {
+    if let `Cons node = reversed {
+      let [value, tail] = node
+      result = json_array_prepend(value, result)
+      reversed = tail
+    } else {
+      done = true
+    }
+
+    if done { break }
+  }
+
+  result
+}
+
+const materialize_thread_list: [ThreadPage, ThreadTextOption, Bool] -> ThreadJson = (page: ThreadPage, backwards_cursor: ThreadTextOption, experimental: Bool) => {
+  let [summaries, next_cursor, _, _] = page
+  let fields = json_object_empty()
+  fields = json_object_prepend("backwardsCursor", optional_text_json(backwards_cursor), fields)
+  fields = json_object_prepend("nextCursor", optional_text_json(next_cursor), fields)
+  fields = json_object_prepend("data", json_array(thread_json_array(summaries, experimental)), fields)
+  json_object(fields)
+}
+
+const materialize_thread_read: [ThreadSummary, ThreadJsonArray, Bool] -> ThreadJson = (summary: ThreadSummary, turns: ThreadJsonArray, experimental: Bool) => {
+  single_field_object("thread", materialize_app_server_thread(summary, turns, experimental))
+}
+
+return {
+  materialize_app_server_thread,
+  materialize_thread_list,
+  materialize_thread_read,
+}

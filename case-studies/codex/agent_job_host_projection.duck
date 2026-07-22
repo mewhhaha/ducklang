@@ -1,0 +1,106 @@
+module () where
+
+const {} = import "./agent_job_execution_types.duck" ()
+
+type AgentJobProjectionActive = AgentJobActiveWorkers
+type AgentJobProjectionCreateHeaderNode = AgentJobCreateHeaderNode
+type AgentJobProjectionCreateHeaders = AgentJobCreateHeaders
+type AgentJobProjectionCreateItem = AgentJobCreateItem
+type AgentJobProjectionCreateItemNode = AgentJobCreateItemNode
+type AgentJobProjectionCreateItems = AgentJobCreateItems
+type AgentJobProjectionCreateRequest = AgentJobCreateRequest
+type AgentJobProjectionHeaders = AgentJobTexts
+type AgentJobProjectionJob = AgentJobPreparedJob
+type AgentJobProjectionItems = AgentJobPreparedItems
+type AgentJobProjectionThreadNode = AgentJobActiveThreadNode
+type AgentJobProjectionThreads = AgentJobActiveThreads
+
+const agent_job_create_headers: AgentJobProjectionHeaders -> AgentJobProjectionCreateHeaders = headers => {
+  let current = headers
+  let reversed: AgentJobProjectionCreateHeaders = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [header, tail] = node
+      let projected_node: AgentJobProjectionCreateHeaderNode = [header, reversed]
+      reversed = `Cons projected_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  let projected: AgentJobProjectionCreateHeaders = `Nil ()
+  done = false
+  loop {
+    if let `Cons node = reversed {
+      let [header, tail] = node
+      let projected_node: AgentJobProjectionCreateHeaderNode = [header, projected]
+      projected = `Cons projected_node
+      reversed = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  projected
+}
+
+const agent_job_create_items: AgentJobProjectionItems -> AgentJobProjectionCreateItems = items => {
+  let current = items
+  let reversed: AgentJobProjectionCreateItems = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let projected: AgentJobProjectionCreateItem = [item.item_id, item.row_index, item.source_id, agent_job_create_headers(item.row_values), item.row_json, item.prompt]
+      let projected_node: AgentJobProjectionCreateItemNode = [projected, reversed]
+      reversed = `Cons projected_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  let projected: AgentJobProjectionCreateItems = `Nil ()
+  done = false
+  loop {
+    if let `Cons node = reversed {
+      let [item, tail] = node
+      let projected_node: AgentJobProjectionCreateItemNode = [item, projected]
+      projected = `Cons projected_node
+      reversed = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  projected
+}
+
+const agent_job_create_request: AgentJobProjectionJob -> AgentJobProjectionCreateRequest = job => {
+  [.job_id = job.job_id, .name = job.name, .instruction = job.instruction, .headers = agent_job_create_headers(job.headers), .input_path = job.input_path, .output_path = job.output_path, .output_schema_json = job.output_schema_json, .max_runtime_seconds = job.max_runtime_seconds, .items = agent_job_create_items(job.items)]
+}
+
+const agent_job_active_threads: AgentJobProjectionActive -> AgentJobProjectionThreads = active => {
+  let current = active
+  let threads: AgentJobProjectionThreads = `Nil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [worker, tail] = node
+      let thread_node: AgentJobProjectionThreadNode = [worker.thread_id, threads]
+      threads = `Cons thread_node
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  threads
+}
+
+return {
+  agent_job_active_threads,
+  agent_job_create_request,
+}

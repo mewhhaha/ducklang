@@ -1,0 +1,15 @@
+module () where
+
+declare effect AgentHost {
+  suspending spawn: (&AgentSpawnRequest) => AgentSpawnSnapshot
+  suspending send: (&AgentSendRequest) => AgentStatus
+  suspending interrupt: (&Text) => AgentStatus
+  suspending wait: (&AgentWaitRequest) => AgentWaitSnapshot
+  suspending close: (&Text) => AgentStatus
+}
+
+declare Init {
+  agent_host: AgentHost
+}
+
+return {}

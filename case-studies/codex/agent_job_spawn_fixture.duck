@@ -1,0 +1,39 @@
+module () where
+
+const {} = import "./agent_job_spawn_types.duck" ()
+const { plan_spawn_agents_on_csv } = import "./agent_job_spawn_call.duck" ()
+
+let score = 0
+let valid = plan_spawn_agents_on_csv(`Function "{\"csv_path\":\"input.csv\",\"instruction\":\"Review {path}\",\"max_concurrency\":100,\"max_workers\":2,\"max_runtime_seconds\":90,\"output_csv_path\":\"out/results.csv\",\"output_schema\":{\"type\":\"object\"}}", "/workspace", 1, false, 8, `None ())
+if let `ReadCsv args = valid {
+  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false }
+  let schema_valid = if let `Some value = args.output_schema_json { value == "{\"type\":\"object\"}" } else { false }
+  let output_valid = if let `Some value = args.output_path { value == "/workspace/out/results.csv" } else { false }
+  if args.input_path == "/workspace/input.csv" && args.instruction == "Review {path}" && args.max_concurrency == 8 && runtime_valid && schema_valid && output_valid { score = score + 1 }
+}
+
+let alias = plan_spawn_agents_on_csv(`Function "{\"csv_path\":\"/tmp/input.csv\",\"instruction\":\"run\",\"max_workers\":3}", "/workspace", 1, false, 32, `Some "1800")
+if let `ReadCsv args = alias {
+  if args.input_path == "/tmp/input.csv" && args.max_concurrency == 3 {
+    if let `Some runtime = args.max_runtime_seconds {
+      if runtime == "1800" { score = score + 10 }
+    }
+  }
+}
+
+let empty = plan_spawn_agents_on_csv(`Function "{\"csv_path\":\"input.csv\",\"instruction\":\"  \"}", "/workspace", 1, false, 32, `None ())
+if let `RejectSpawn message = empty {
+  if message == "instruction must be non-empty" { score = score + 100 }
+}
+
+let remote = plan_spawn_agents_on_csv(`Function "{}", "/workspace", 1, true, 32, `None ())
+if let `RejectSpawn message = remote {
+  if message == "spawn_agents_on_csv is not supported for remote environments" { score = score + 1000 }
+}
+
+let zero_runtime = plan_spawn_agents_on_csv(`Function "{\"csv_path\":\"input.csv\",\"instruction\":\"run\",\"max_runtime_seconds\":0}", "/workspace", 1, false, 32, `None ())
+if let `RejectSpawn message = zero_runtime {
+  if message == "max_runtime_seconds must be >= 1" { score = score + 10000 }
+}
+
+return { .score = score }

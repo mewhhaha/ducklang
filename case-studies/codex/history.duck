@@ -1,0 +1,700 @@
+module () where
+
+const { list, text_append, text_length } = import "duck:prelude/functional" ()
+const history_types_module = import "./history_types.duck"
+
+type NormalizedHistoryContent = HistoryContent
+type NormalizedHistoryContents = HistoryContents
+type NormalizedHistoryMessage = HistoryMessage
+type NormalizedHistoryOutput = HistoryOutput
+type NormalizedHistoryToolSearchOutput = HistoryToolSearchOutput
+type NormalizedHistoryItem = HistoryItem
+type NormalizedHistoryItems = HistoryItems
+type NormalizedHistoryItemOption = HistoryItemOption
+type NormalizedHistoryTextOption = HistoryTextOption
+type NormalizedInputModalities = InputModalities
+
+const history_item_list = comptime list(NormalizedHistoryItem)
+const history_content_list = comptime list(NormalizedHistoryContent)
+
+const function_output_call_id = (item: NormalizedHistoryItem) => if let `FunctionOutput output = item {
+  let [_, call_id, _] = output
+  `Some call_id
+} else {
+  `None ()
+}
+
+const function_call_call_id = (item: NormalizedHistoryItem) => if let `FunctionCall call = item {
+  let [_, call_id, _, _] = call
+  `Some call_id
+} else if let `LocalShellCall call = item {
+  let [_, call_id] = call
+  `Some call_id
+} else {
+  `None ()
+}
+
+const custom_output_call_id = (item: NormalizedHistoryItem) => if let `CustomOutput output = item {
+  let [_, call_id, _] = output
+  `Some call_id
+} else {
+  `None ()
+}
+
+const custom_call_call_id = (item: NormalizedHistoryItem) => if let `CustomCall call = item {
+  let [_, call_id, _, _] = call
+  `Some call_id
+} else {
+  `None ()
+}
+
+const tool_search_output_call_id = (item: NormalizedHistoryItem) => if let `ToolSearchOutput output = item {
+  let [call_id, _] = output
+  `Some call_id
+} else {
+  `None ()
+}
+
+const tool_search_call_call_id = (item: NormalizedHistoryItem) => if let `ToolSearchCall call = item {
+  let [_, call_id] = call
+  `Some call_id
+} else {
+  `None ()
+}
+
+const has_function_output = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = function_output_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const has_function_call = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = function_call_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const has_custom_output = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = custom_output_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const has_custom_call = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = custom_call_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const has_tool_search_output = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = tool_search_output_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const has_tool_search_call = (values: NormalizedHistoryItems, call_id: Text) => {
+  let current = values
+  let matched = false
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let candidate = tool_search_call_call_id item
+      let candidate_matches = if let `Some existing_call_id = candidate {
+        existing_call_id == call_id
+      } else {
+        false
+      }
+
+      if candidate_matches {
+        matched = true
+        done = true
+      } else {
+        current = tail
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  matched
+}
+
+const aborted_output = () => {
+  history_content_list.singleton(`InputText "aborted")
+}
+
+const missing_output_for = (item: NormalizedHistoryItem, values: NormalizedHistoryItems) => if let `FunctionCall call = item {
+    let [id, call_id, _, _] = call
+
+    if has_function_output(values, call_id) {
+      `None ()
+    } else {
+      let synthetic_id = if id == "" { "" } else { text_append(["fco:", id]) }
+      let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()]
+      `Some (`FunctionOutput output)
+    }
+  } else if let `CustomCall call = item {
+    let [id, call_id, _, _] = call
+
+    if has_custom_output(values, call_id) {
+      `None ()
+    } else {
+      let synthetic_id = if id == "" { "" } else { text_append(["ctco:", id]) }
+      let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()]
+      `Some (`CustomOutput output)
+    }
+  } else if let `LocalShellCall call = item {
+    let [id, call_id] = call
+
+    if call_id == "" || has_function_output(values, call_id) {
+      `None ()
+    } else {
+      let synthetic_id = if id == "" { "" } else { text_append(["fco:", id]) }
+      let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()]
+      `Some (`FunctionOutput output)
+    }
+  } else if let `ToolSearchCall call = item {
+    let [_, call_id] = call
+
+    if call_id == "" || has_tool_search_output(values, call_id) {
+      `None ()
+    } else {
+      let output: NormalizedHistoryToolSearchOutput = [call_id, "client"]
+      `Some (`ToolSearchOutput output)
+    }
+  } else {
+    `None ()
+}
+
+const ensure_call_outputs_present = (values: NormalizedHistoryItems) => {
+  let current = values
+  let normalized_reversed: NormalizedHistoryItems = history_item_list.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      normalized_reversed = history_item_list.prepend(item, normalized_reversed)
+      let missing = missing_output_for(item, values)
+
+      if let `Some output = missing {
+        normalized_reversed = history_item_list.prepend(output, normalized_reversed)
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_item_list.reverse normalized_reversed
+}
+
+const keep_history_item = (item: NormalizedHistoryItem, values: NormalizedHistoryItems) => if let `FunctionOutput output = item {
+      let [_, call_id, _] = output
+      has_function_call(values, call_id)
+    } else if let `CustomOutput output = item {
+      let [_, call_id, _] = output
+      has_custom_call(values, call_id)
+    } else if let `ToolSearchOutput output = item {
+      let [call_id, execution] = output
+
+      if execution == "server" || call_id == "" {
+        true
+      } else {
+        has_tool_search_call(values, call_id)
+      }
+    } else {
+      true
+    }
+
+const remove_orphan_outputs = (values: NormalizedHistoryItems) => {
+  let current = values
+  let kept_reversed: NormalizedHistoryItems = history_item_list.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+
+      if keep_history_item(item, values) {
+        kept_reversed = history_item_list.prepend(item, kept_reversed)
+      }
+
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_item_list.reverse kept_reversed
+}
+
+const normalize_message_content = (content: NormalizedHistoryContent, modalities: NormalizedInputModalities) => {
+  let [supports_images, supports_audio] = modalities
+
+  if let `InputImage _ = content {
+    if supports_images {
+      content
+    } else {
+      `InputText "image content omitted because you do not support image input"
+    }
+  } else if let `InputAudio _ = content {
+    if supports_audio {
+      content
+    } else {
+      `InputText "audio content omitted because you do not support audio input"
+    }
+  } else {
+    content
+  }
+}
+
+const normalize_message_contents = (values: NormalizedHistoryContents, modalities: NormalizedInputModalities) => {
+  let current = values
+  let normalized_reversed: NormalizedHistoryContents = history_content_list.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [content, tail] = node
+      let normalized = normalize_message_content(content, modalities)
+
+      normalized_reversed = history_content_list.prepend(normalized, normalized_reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_content_list.reverse normalized_reversed
+}
+
+const normalize_output_content = (content: NormalizedHistoryContent, modalities: NormalizedInputModalities) => {
+  let [supports_images, _] = modalities
+
+  if let `InputImage _ = content {
+    if supports_images {
+      content
+    } else {
+      `InputText "image content omitted because you do not support image input"
+    }
+  } else {
+    content
+  }
+}
+
+const normalize_output_contents = (values: NormalizedHistoryContents, modalities: NormalizedInputModalities) => {
+  let current = values
+  let normalized_reversed: NormalizedHistoryContents = history_content_list.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [content, tail] = node
+      let normalized = normalize_output_content(content, modalities)
+
+      normalized_reversed = history_content_list.prepend(normalized, normalized_reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_content_list.reverse normalized_reversed
+}
+
+const normalize_item_modalities = (item: NormalizedHistoryItem, modalities: NormalizedInputModalities) => if let `Message message = item {
+    let [role, contextual, contents] = message
+    let normalized_message: NormalizedHistoryMessage = [role, contextual, normalize_message_contents(contents, modalities)]
+    `Message normalized_message
+  } else if let `AgentMessage contents = item {
+    `AgentMessage (normalize_message_contents(contents, modalities))
+  } else if let `FunctionOutput output = item {
+    let [id, call_id, contents] = output
+    let normalized_output: NormalizedHistoryOutput = [id, call_id, normalize_output_contents(contents, modalities)]
+    `FunctionOutput normalized_output
+  } else if let `CustomOutput output = item {
+    let [id, call_id, contents] = output
+    let normalized_output: NormalizedHistoryOutput = [id, call_id, normalize_output_contents(contents, modalities)]
+    `CustomOutput normalized_output
+  } else {
+    item
+  }
+
+const strip_unsupported_modalities = (values: NormalizedHistoryItems, modalities: NormalizedInputModalities) => {
+  let current = values
+  let normalized_reversed: NormalizedHistoryItems = history_item_list.empty()
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+      let normalized = normalize_item_modalities(item, modalities)
+
+      normalized_reversed = history_item_list.prepend(normalized, normalized_reversed)
+      current = tail
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_item_list.reverse normalized_reversed
+}
+
+const normalize_history = (values: NormalizedHistoryItems, modalities: NormalizedInputModalities) => {
+  let paired = ensure_call_outputs_present values
+  let without_orphans = remove_orphan_outputs paired
+  strip_unsupported_modalities(without_orphans, modalities)
+}
+
+const is_instruction_turn = (item: NormalizedHistoryItem) => if let `AgentMessage _ = item {
+    true
+  } else if let `Message message = item {
+    let [role, contextual, _] = message
+
+    if role == "user" {
+      if contextual {
+        false
+      } else {
+        true
+      }
+    } else {
+      false
+    }
+  } else {
+    false
+  }
+
+const is_context_update = (item: NormalizedHistoryItem) => if let `Message message = item {
+    let [role, contextual, _] = message
+    contextual && (role == "user" || role == "developer")
+  } else {
+    false
+  }
+
+const trim_context_updates_from_end = (values: NormalizedHistoryItems) => {
+  let reversed = history_item_list.reverse values
+  let current = reversed
+  let done = false
+
+  loop {
+    if let `Cons node = current {
+      let [item, tail] = node
+
+      if is_context_update(item) {
+        current = tail
+      } else {
+        done = true
+      }
+    } else {
+      done = true
+    }
+
+    if done {
+      break
+    }
+  }
+
+  history_item_list.reverse current
+}
+
+const drop_last_user_turns = (values: NormalizedHistoryItems, count: I32) => {
+  if count <= 0 {
+    values
+  } else {
+    let turn_count = history_item_list.count(values, is_instruction_turn)
+
+    if turn_count == 0 {
+      values
+    } else {
+      let turns_to_keep = turn_count - count
+
+      if turns_to_keep < 0 {
+        turns_to_keep = 0
+      }
+
+      let current = values
+      let position = 0
+      let seen_turns = 0
+      let cut_position = history_item_list.length(values)
+      let found_cut = false
+      let done = false
+
+      loop {
+        if let `Cons node = current {
+          let [item, tail] = node
+
+          if is_instruction_turn(item) {
+            if seen_turns == turns_to_keep {
+              cut_position = position
+              found_cut = true
+              done = true
+            } else {
+              seen_turns = seen_turns + 1
+            }
+          }
+
+          if done {
+            ()
+          } else {
+            position = position + 1
+            current = tail
+          }
+        } else {
+          done = true
+        }
+
+        if done {
+          break
+        }
+      }
+
+      if found_cut {
+        trim_context_updates_from_end(history_item_list.take(cut_position, values))
+      } else {
+        values
+      }
+    }
+  }
+}
+
+const estimate_content_bytes = (content: NormalizedHistoryContent) => if let `InputText text = content {
+    text_length(text) + 24
+  } else if let `OutputText text = content {
+    text_length(text) + 25
+  } else if let `InputImage url = content {
+    text_length(url) + 32
+  } else if let `InputAudio url = content {
+    text_length(url) + 32
+  } else if let `Encrypted encrypted = content {
+    (text_length(encrypted) * 9 + 15) / 16
+  } else {
+    0
+  }
+
+const estimate_encrypted_reasoning_bytes = (encrypted: Text) => {
+  let bytes = (text_length(encrypted) * 3) / 4 - 650
+
+  if bytes < 0 {
+    0
+  } else {
+    bytes
+  }
+}
+
+const estimate_contents_bytes = (values: NormalizedHistoryContents) => {
+  history_content_list.fold_i32(values, 2, (total: I32, content: NormalizedHistoryContent) => total + estimate_content_bytes(content) + 1)
+}
+
+const estimate_item_bytes = (item: NormalizedHistoryItem) => if let `Message message = item {
+    let [role, _, contents] = message
+    text_length(role) + estimate_contents_bytes(contents) + 32
+  } else if let `AgentMessage contents = item {
+    estimate_contents_bytes(contents) + 32
+  } else if let `Reasoning encrypted = item {
+    estimate_encrypted_reasoning_bytes encrypted
+  } else if let `FunctionCall call = item {
+    let [id, call_id, name, arguments] = call
+    text_length(id) + text_length(call_id) + text_length(name) + text_length(arguments) + 72
+  } else if let `FunctionOutput output = item {
+    let [id, call_id, contents] = output
+    text_length(id) + text_length(call_id) + estimate_contents_bytes(contents) + 56
+  } else if let `CustomCall call = item {
+    let [id, call_id, name, input] = call
+    text_length(id) + text_length(call_id) + text_length(name) + text_length(input) + 72
+  } else if let `CustomOutput output = item {
+    let [id, call_id, contents] = output
+    text_length(id) + text_length(call_id) + estimate_contents_bytes(contents) + 56
+  } else if let `LocalShellCall call = item {
+    let [id, call_id] = call
+    text_length(id) + text_length(call_id) + 48
+  } else if let `ToolSearchCall call = item {
+    let [id, call_id] = call
+    text_length(id) + text_length(call_id) + 48
+  } else if let `ToolSearchOutput output = item {
+    let [call_id, execution] = output
+    text_length(call_id) + text_length(execution) + 48
+  } else if let `Compaction encrypted = item {
+    estimate_encrypted_reasoning_bytes encrypted
+  } else {
+    2
+  }
+
+const estimate_history_tokens: [Text, NormalizedHistoryItems] -> I32 = (base_instructions, values) => {
+  let bytes = text_length base_instructions
+  bytes = history_item_list.fold_i32(values, bytes, (total: I32, item: NormalizedHistoryItem) => total + estimate_item_bytes(item))
+
+  if bytes <= 0 {
+    0
+  } else {
+    (bytes + 3) / 4
+  }
+}
+
+return {
+  normalize_history,
+  drop_last_user_turns,
+  estimate_history_tokens,
+}

@@ -1,0 +1,20 @@
+module () where
+
+const { parse_request_permissions_args, parse_request_permissions_environment_id } = import "./request_permissions_json.duck" ()
+
+let score = 0
+
+if let `EnvironmentParseFailed message = parse_request_permissions_environment_id("[]") {
+  if message == "failed to parse function arguments: request_permissions arguments must be an object" { score = score + 1 }
+}
+
+if let `ParseFailed message = parse_request_permissions_args("{}", "/workspace") {
+  if message == "failed to parse function arguments: permissions is required" { score = score + 10 }
+}
+
+let invalid_path = "{\"permissions\":{\"file_system\":{\"read\":[1]}}}"
+if let `ParseFailed message = parse_request_permissions_args(invalid_path, "/workspace") {
+  if message == "failed to parse function arguments: permissions.file_system.read[0] must be a string" { score = score + 100 }
+}
+
+return { .score = score }

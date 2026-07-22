@@ -1,0 +1,34 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_apply_options, parse_doctor_options } = import "./cli_utility.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexUtilityCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let doctor_input: FixtureArgs = args.prepend("--json", args.prepend("--summary", args.prepend("--all", args.prepend("--no-color", args.singleton("--ascii")))))
+let doctor: FixtureResult = parse_doctor_options(doctor_input)
+if let `Ok command = doctor {
+  if let `RunDoctor options = command {
+    if options.json && options.summary && options.all && options.no_color && options.ascii { score = score + 1 }
+  }
+}
+
+let apply_input: FixtureArgs = args.prepend("task-7", args.prepend("-c", args.prepend("model=o3", args.prepend("--config", args.singleton("sandbox=workspace-write")))))
+let apply: FixtureResult = parse_apply_options(apply_input)
+if let `Ok command = apply {
+  if let `ApplyTask options = command {
+    let first = args.nth_or("", 0, options.config_overrides)
+    let second = args.nth_or("", 1, options.config_overrides)
+    if options.task_id == "task-7" && first == "model=o3" && second == "sandbox=workspace-write" { score = score + 10 }
+  }
+}
+
+let invalid: FixtureResult = parse_apply_options(args.empty())
+if let `Err _ = invalid { score = score + 100 }
+
+return { .score = score }

@@ -1,0 +1,11 @@
+module () where
+
+declare effect RequestPluginInstallHost {
+  request: (&RequestPluginInstallHostRequest) => RequestPluginInstallHostResponse
+}
+
+declare Init {
+  request_plugin_install_host: RequestPluginInstallHost
+}
+
+return {}

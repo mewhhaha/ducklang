@@ -1,0 +1,36 @@
+module () where
+
+const { list } = import "duck:prelude/functional" ()
+const { parse_marketplace_list, parse_marketplace_remove, parse_marketplace_upgrade } = import "./cli_plugin.duck" ()
+const {} = import "./cli_types.duck" ()
+
+type FixtureArgs = CodexCliArgs
+type FixtureResult = CodexPluginCommandResult
+
+const args = comptime list(Text)
+let score = 0
+
+let listed: FixtureResult = parse_marketplace_list(args.singleton("--json"))
+if let `Ok command = listed {
+  if let `MarketplaceList json = command {
+    if json { score = score + 1 }
+  }
+}
+
+let upgraded: FixtureResult = parse_marketplace_upgrade(args.prepend("debug", args.singleton("--json")))
+if let `Ok command = upgraded {
+  if let `MarketplaceUpgrade options = command {
+    if let `Some marketplace_name = options.marketplace_name {
+      if marketplace_name == "debug" && options.json { score = score + 10 }
+    }
+  }
+}
+
+let removed: FixtureResult = parse_marketplace_remove(args.prepend("debug", args.singleton("--json")))
+if let `Ok command = removed {
+  if let `MarketplaceRemove options = command {
+    if options.marketplace_name == "debug" && options.json { score = score + 100 }
+  }
+}
+
+return { .score = score }

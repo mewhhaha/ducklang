@@ -1,0 +1,41 @@
+module () where
+
+const { text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
+const {} = import "./agent_types.duck" ()
+
+type AgentInputTextOption = AgentTextOption
+type AgentInputI64Option = AgentI64Option
+
+const validate_collab_input = (message: AgentInputTextOption, item_count: I32) => {
+  if let `Some text = message {
+    if item_count >= 0 {
+      `InputRejected "Provide either message or items, but not both"
+    } else if text_trim_ascii_whitespace text == "" {
+      `InputRejected "Empty message can't be sent to an agent"
+    } else {
+      `InputAccepted text
+    }
+  } else if item_count < 0 {
+    `InputRejected "Provide one of: message or items"
+  } else if item_count == 0 {
+    `InputRejected "Items can't be empty"
+  } else {
+    `InputAccepted "items"
+  }
+}
+
+const normalize_wait_timeout = (configured: AgentInputI64Option) => {
+  let timeout = if let `Some value = configured { value } else { 30000i64 }
+
+  if timeout <= 0i64 {
+    `InvalidTimeout "timeout_ms must be greater than zero"
+  } else if timeout < 10000i64 {
+    `Timeout 10000i64
+  } else if timeout > 3600000i64 {
+    `Timeout 3600000i64
+  } else {
+    `Timeout timeout
+  }
+}
+
+return { normalize_wait_timeout, validate_collab_input }

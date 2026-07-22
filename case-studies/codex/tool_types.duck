@@ -1,0 +1,138 @@
+module () where
+
+type ToolTextOption = Option Text
+
+type ToolOutputSchema =
+  | `ToolOutputSchemaMissing Unit
+  | `ToolOutputSchemaPresent Text
+
+type ToolName = [Text, Text]
+
+type ToolExposure =
+  | `Direct Unit
+  | `Deferred Unit
+  | `DirectModelOnly Unit
+  | `Hidden Unit
+
+type ToolPayloadKind =
+  | `FunctionPayload Unit
+  | `ToolSearchPayload Unit
+  | `CustomPayload Unit
+
+type ToolSpecKind =
+  | `FunctionSpec Unit
+  | `NamespaceSpec Unit
+  | `ToolSearchSpec Unit
+  | `WebSearchSpec Unit
+  | `FreeformSpec Unit
+
+type ToolSpec = [ToolName, ToolSpecKind, Text, Text, ToolOutputSchema, Bool]
+type ToolSpecNode = ListNode ToolSpec
+type ToolSpecs = List ToolSpec
+
+type ToolMcpHandler = [Text, Text]
+type ToolHandler =
+  | `Shell Unit
+  | `UnifiedExec Unit
+  | `WriteStdin Unit
+  | `ApplyPatch Unit
+  | `ReadFile Unit
+  | `ViewImage Unit
+  | `ToolSearch Unit
+  | `RequestUserInput Unit
+  | `RequestPermissions Unit
+  | `WaitForEnvironment Unit
+  | `UpdatePlan Unit
+  | `ListAvailablePluginsToInstall Unit
+  | `RequestPluginInstall Unit
+  | `TestSync Unit
+  | `CurrentTime Unit
+  | `Sleep Unit
+  | `NewContextWindow Unit
+  | `GetContextRemaining Unit
+  | `Dynamic Text
+  | `Mcp ToolMcpHandler
+  | `ListMcpResources Unit
+  | `ListMcpResourceTemplates Unit
+  | `ReadMcpResource Unit
+  | `SpawnAgentsOnCsv Unit
+  | `ReportAgentJobResult Unit
+  | `SpawnAgent Unit
+  | `SendAgentInput Unit
+  | `ResumeAgent Unit
+  | `CloseAgent Unit
+  | `SendAgentMessage Unit
+  | `FollowupAgentTask Unit
+  | `WaitAgent Unit
+  | `InterruptAgent Unit
+  | `ListAgents Unit
+  | `Extension Text
+
+type ToolDefinition = [ToolName, ToolExposure, ToolHandler, ToolPayloadKind, Bool, Bool]
+type ToolDefinitionNode = ListNode ToolDefinition
+type ToolDefinitions = List ToolDefinition
+
+type ToolRegistrationResult =
+  | `Registered ToolDefinitions
+  | `Duplicate ToolName
+
+type ToolLookup =
+  | `Found ToolDefinition
+  | `Missing ToolName
+
+type ToolDispatch = [ToolHandler, ToolPayloadKind, Text]
+type ToolDispatchPlan =
+  | `Execute ToolDispatch
+  | `Unsupported Text
+  | `Incompatible Text
+
+type ToolGranularApprovals = [Bool, Bool, Bool, Bool, Bool]
+type ToolApprovalPolicy =
+  | `UnlessTrusted Unit
+  | `OnRequest Unit
+  | `Granular ToolGranularApprovals
+  | `Never Unit
+
+type ToolFileSystemSandboxKind =
+  | `Restricted Unit
+  | `Unrestricted Unit
+  | `ExternalSandbox Unit
+
+type ToolPaths = List Text
+type ToolFileSystemSandbox = [ToolFileSystemSandboxKind, ToolPaths, Bool, Bool]
+
+type ToolSandboxPermissions =
+  | `UseDefault Unit
+  | `WithAdditionalPermissions Unit
+  | `RequireEscalated Unit
+
+type ToolExecRequirementState = [Bool, ToolTextOption]
+type ToolNeedsApprovalState = [ToolTextOption, ToolTextOption]
+type ToolExecApprovalRequirement =
+  | `Skip ToolExecRequirementState
+  | `NeedsApproval ToolNeedsApprovalState
+  | `Forbidden Text
+
+type ToolSandboxOverride =
+  | `NoOverride Unit
+  | `BypassSandboxFirstAttempt Unit
+
+type ToolSandboxRetryPlan = [Bool, Bool, Text]
+type ToolSandboxRetryDecision =
+  | `PreserveDenial Text
+  | `RetrySandbox ToolSandboxRetryPlan
+
+type ToolRuntimeProfile =
+  | `Managed Unit
+  | `Disabled Unit
+  | `External Unit
+
+type ToolPatchTarget = [Text, ToolTextOption]
+type ToolPatchTargets = List ToolPatchTarget
+type ToolPatchSafetyState = [Bool, Bool]
+type ToolPatchSafety =
+  | `AutoApprove ToolPatchSafetyState
+  | `AskUser Unit
+  | `Reject Text
+
+return {}

@@ -1,0 +1,30 @@
+module () where
+
+const {} = import "./test_sync_types.duck" ()
+const { finish_test_sync_barrier, plan_test_sync } = import "./test_sync_policy.duck" ()
+
+type FixtureArgs = TestSyncArgs
+type FixtureBarrier = TestSyncBarrier
+
+let score = 0
+let zero_participants: FixtureBarrier = [.id = "a", .participants = "0", .timeout_ms = "1000"]
+let zero_participants_args: FixtureArgs = [.sleep_before_ms = `SyncDurationMissing (), .sleep_after_ms = `SyncDurationMissing (), .barrier = `SyncBarrierPresent zero_participants]
+if let `RejectRequest message = plan_test_sync zero_participants_args {
+  if message == "barrier participants must be greater than zero" { score = score + 1 }
+}
+
+let zero_timeout: FixtureBarrier = [.id = "b", .participants = "2", .timeout_ms = "0"]
+let zero_timeout_args: FixtureArgs = [.sleep_before_ms = `SyncDurationMissing (), .sleep_after_ms = `SyncDurationMissing (), .barrier = `SyncBarrierPresent zero_timeout]
+if let `RejectRequest message = plan_test_sync zero_timeout_args {
+  if message == "barrier timeout must be greater than zero" { score = score + 10 }
+}
+
+if let `Rejected message = finish_test_sync_barrier("shared", `ParticipantsMismatch "3") {
+  if message == "barrier shared already registered with 3 participants" { score = score + 100 }
+}
+
+if let `Rejected message = finish_test_sync_barrier("shared", `TimedOut ()) {
+  if message == "test_sync_tool barrier wait timed out" { score = score + 1000 }
+}
+
+return { .score = score }

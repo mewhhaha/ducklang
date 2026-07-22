@@ -1,0 +1,52 @@
+module () where
+
+const { text_contains } = import "duck:prelude/runtime" ()
+const {} = import "./agent_tool_types.duck" ()
+const { collaboration_tool_specs } = import "./agent_tool_registration.duck" ()
+const {} = import "./tool_types.duck" ()
+
+type FixtureConfig = AgentToolRegistrationConfig
+
+let config: FixtureConfig = [.enabled = true, .v2_enabled = true, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
+let specs = collaboration_tool_specs config
+let score = 0
+if let `Cons spawn_node = specs {
+  let [spawn, tail] = spawn_node
+  let [_, _, description, parameters, output, strict] = spawn
+  if text_contains(description, "concrete, bounded subtask") && text_contains(parameters, "\"required\":[\"task_name\",\"message\"]") && !(strict) {
+    if let `ToolOutputSchemaPresent schema = output {
+      if text_contains(schema, "\"task_name\"") { score = score + 1 }
+    }
+  }
+
+  let spec_count = 1
+  let current_specs = tail
+  let spec_done = false
+  loop {
+    if let `Cons node = current_specs {
+      let [_, rest] = node
+      spec_count = spec_count + 1
+      current_specs = rest
+    } else {
+      spec_done = true
+    }
+    if spec_done { break }
+  }
+  if spec_count == 6 { score = score + 10 }
+}
+
+let hidden_config: FixtureConfig = [.enabled = true, .v2_enabled = true, .direct_model_only = false, .hide_spawn_metadata = true, .namespace = ""]
+let hidden_specs = collaboration_tool_specs hidden_config
+if let `Cons hidden_spawn_node = hidden_specs {
+  let [hidden_spawn, _] = hidden_spawn_node
+  let [_, _, _, _, hidden_output, _] = hidden_spawn
+  if let `ToolOutputSchemaPresent schema = hidden_output {
+    if text_contains(schema, "\"required\":[\"task_name\"]") && !(text_contains(schema, "\"nickname\"")) { score = score + 100 }
+  }
+}
+
+let legacy_config: FixtureConfig = [.enabled = true, .v2_enabled = false, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
+let legacy = collaboration_tool_specs legacy_config
+if let `Nil () = legacy { score = score + 1000 }
+
+return { .score = score }

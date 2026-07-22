@@ -1,0 +1,32 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type ContextWindowTokenLimitScope =
+  | `Total Unit
+  | `BodyAfterPrefix Unit
+
+type ContextWindowI64Option = Option I64
+
+type ContextWindowTokenStatusInput = struct {
+  .active_context_tokens = I64,
+  .scope = ContextWindowTokenLimitScope,
+  .configured_auto_compact_scope_limit = ContextWindowI64Option,
+  .model_auto_compact_scope_limit = ContextWindowI64Option,
+  .full_context_window_limit = ContextWindowI64Option,
+  .prefill_input_tokens = ContextWindowI64Option,
+  .fallback_buffer_tokens = I64,
+}
+
+type ContextWindowTokenStatus = struct {
+  .active_context_tokens = I64,
+  .auto_compact_scope_tokens = I64,
+  .auto_compact_scope_limit = ContextWindowI64Option,
+  .full_context_window_limit = ContextWindowI64Option,
+  .base_window_tokens_remaining = ContextWindowI64Option,
+  .auto_compact_window_prefill_tokens = ContextWindowI64Option,
+  .full_context_window_limit_reached = Bool,
+  .token_limit_reached = Bool,
+}
+
+return {}

@@ -1,0 +1,52 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type CurrentTimeSource =
+  | `System Unit
+  | `External Unit
+
+type CurrentTimeDeliveryMode =
+  | `AnyInference Unit
+  | `AfterUserOrToolOutput Unit
+
+type CurrentTimeConfig = struct {
+  .reminder_interval_seconds = I64,
+  .clock_source = CurrentTimeSource,
+  .delivery_mode = CurrentTimeDeliveryMode,
+  .sleep_tool = Bool,
+}
+
+type CurrentTimeProviderResolution =
+  | `SystemProvider Unit
+  | `ExternalProvider Unit
+  | `MissingExternalProvider Text
+
+type CurrentTimeRecordedItem =
+  | `UserTurnBoundary Unit
+  | `FunctionCallOutput Unit
+  | `CustomToolCallOutput Unit
+  | `ToolSearchOutput Unit
+  | `Other Unit
+
+type CurrentTimeReminderState = struct {
+  .last_delivery_time = Option I64,
+  .last_window_id = Option Text,
+  .pending_user_or_tool_output_boundary = Bool,
+}
+
+type CurrentTimeReminderDecision = struct {
+  .state = CurrentTimeReminderState,
+  .due = Bool,
+}
+
+type CurrentTimeSleepRequest =
+  | `ValidSleep I64
+  | `InvalidSleep Text
+
+type CurrentTimeSleepHostResult = struct {
+  .interrupted = Bool,
+  .elapsed_microseconds = I64,
+}
+
+return {}

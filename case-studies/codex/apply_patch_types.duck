@@ -1,0 +1,77 @@
+module () where
+
+const { struct } = import "duck:prelude/types" ()
+
+type ApplyPatchTextOption = Option Text
+type ApplyPatchTexts = List Text
+type ApplyPatchLinesResult = Result Text ApplyPatchTexts
+
+type ApplyPatchChunk = struct {
+  .context = ApplyPatchTextOption,
+  .old_lines = ApplyPatchTexts,
+  .new_lines = ApplyPatchTexts,
+  .end_of_file = Bool,
+}
+
+type ApplyPatchChunks = List ApplyPatchChunk
+
+type ApplyPatchReplacement = struct {
+  .start = I32,
+  .old_count = I32,
+  .new_lines = ApplyPatchTexts,
+}
+
+type ApplyPatchReplacements = List ApplyPatchReplacement
+type ApplyPatchUpdateResult = Result Text Text
+
+type ApplyPatchAdd = struct {
+  .path = Text,
+  .content = Text,
+}
+
+type ApplyPatchUpdate = struct {
+  .path = Text,
+  .move_path = ApplyPatchTextOption,
+  .chunks = ApplyPatchChunks,
+}
+
+type ApplyPatchHunk =
+  | `AddFile ApplyPatchAdd
+  | `DeleteFile Text
+  | `UpdateFile ApplyPatchUpdate
+
+type ApplyPatchHunks = List ApplyPatchHunk
+
+type ApplyPatchDocument = struct {
+  .environment_id = ApplyPatchTextOption,
+  .hunks = ApplyPatchHunks,
+}
+
+type ApplyPatchParseResult = Result Text ApplyPatchDocument
+
+type ApplyPatchFileContent = struct {
+  .content = Text,
+}
+
+type ApplyPatchFailureReason = struct {
+  .reason = Text,
+}
+
+type ApplyPatchFileSnapshot =
+  | `PatchFile ApplyPatchFileContent
+  | `PatchReadFailed ApplyPatchFailureReason
+
+type ApplyPatchWriteRequest = struct {
+  .path = Text,
+  .content = Text,
+}
+
+type ApplyPatchMutationResult =
+  | `PatchChanged Unit
+  | `PatchChangeFailed ApplyPatchFailureReason
+
+type ApplyPatchExecutionResult =
+  | `PatchApplied Text
+  | `PatchRejected Text
+
+return {}

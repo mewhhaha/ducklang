@@ -1,0 +1,9 @@
+module () where
+
+const { text_starts_with } = import "duck:prelude/runtime" ()
+
+const agent_job_worker_source_enabled: Text -> Bool = label => {
+  text_starts_with [label, "agent_job:"]
+}
+
+return { agent_job_worker_source_enabled }

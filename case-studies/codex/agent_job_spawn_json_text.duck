@@ -1,0 +1,61 @@
+module () where
+
+const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
+const {} = import "./agent_job_spawn_types.duck" ()
+
+type AgentJobSpawnTextArgs = AgentJobSpawnDecodedArgs
+type AgentJobSpawnTextOptionalResult = AgentJobOptionalTextResult
+type AgentJobSpawnTextResult = AgentJobSpawnDecodeResult
+
+let decode_agent_job_spawn_text_options: [Text, AgentJobSpawnTextArgs] -> AgentJobSpawnTextResult = (document: Text, base: AgentJobSpawnTextArgs) => {
+  let parsed = parse_json_document document
+  if let `Ok value_and_position = parsed {
+    let [value, _] = value_and_position
+    if let `Object object = value {
+      let id_lookup = json_object_get("id_column", object)
+      let decoded_id: AgentJobSpawnTextOptionalResult = if let `Found field = id_lookup {
+        if let `String id = field {
+          `AgentJobTextDecoded (`Some id)
+        } else if let `Null () = field {
+          `AgentJobTextDecoded (`None ())
+        } else {
+          `AgentJobTextDecodeFailed "id_column"
+        }
+      } else {
+        `AgentJobTextDecoded (`None ())
+      }
+      if let `AgentJobTextDecodeFailed _ = decoded_id {
+        `SpawnDecodeFailed "id_column must be a string"
+      } else if let `AgentJobTextDecoded id_column = decoded_id {
+        let output_lookup = json_object_get("output_csv_path", object)
+        let decoded_output: AgentJobSpawnTextOptionalResult = if let `Found field = output_lookup {
+          if let `String output_path = field {
+            `AgentJobTextDecoded (`Some output_path)
+          } else if let `Null () = field {
+            `AgentJobTextDecoded (`None ())
+          } else {
+            `AgentJobTextDecodeFailed "output_csv_path"
+          }
+        } else {
+          `AgentJobTextDecoded (`None ())
+        }
+        if let `AgentJobTextDecodeFailed _ = decoded_output {
+          `SpawnDecodeFailed "output_csv_path must be a string"
+        } else if let `AgentJobTextDecoded output_path = decoded_output {
+          let args: AgentJobSpawnTextArgs = [.csv_path = base.csv_path, .instruction = base.instruction, .id_column = id_column, .output_path = output_path, .output_schema_json = base.output_schema_json, .max_concurrency = base.max_concurrency, .max_workers = base.max_workers, .max_runtime_seconds = base.max_runtime_seconds]
+          `SpawnDecoded args
+        } else {
+          `SpawnDecodeFailed "output_csv_path decoder returned no result"
+        }
+      } else {
+        `SpawnDecodeFailed "id_column decoder returned no result"
+      }
+    } else {
+      `SpawnDecodeFailed "failed to parse function arguments: expected an object"
+    }
+  } else {
+    `SpawnDecodeFailed "failed to parse function arguments: invalid JSON"
+  }
+}
+
+return { decode_agent_job_spawn_text_options }

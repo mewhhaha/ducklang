@@ -1,0 +1,87 @@
+module () where
+
+const { panic } = import "duck:prelude/runtime" ()
+const { parse_code_mode_exec_source } = import "./code_mode_exec_source.duck" ()
+const {} = import "./code_mode_execute_types.duck" ()
+
+type ExecuteInvocation = CodeModeExecuteInvocation
+type ExecuteRequest = CodeModeExecuteRequest
+type ExecuteCallPlan = CodeModeExecuteCallPlan
+type ExecuteStartedCell = CodeModeStartedCell
+type ExecuteStartedPlan = CodeModeExecuteStartedPlan
+type ExecuteTraceStart = CodeModeExecuteTraceStart
+type ExecuteInitialPlan = CodeModeExecuteInitialPlan
+type ExecuteInitialLifecycle = CodeModeExecuteInitialLifecycle
+type ExecuteRuntimeResponse = CodeModeRuntimeResponse
+type ExecuteRuntimeProgress = CodeModeRuntimeProgress
+type ExecuteRuntimeResult = CodeModeRuntimeResult
+
+const code_mode_execute_initial_response_is_terminal: ExecuteRuntimeResponse -> Bool = response => {
+  match response {
+    | `RuntimeYielded progress => {
+      let typed_progress: ExecuteRuntimeProgress = progress
+      false
+    }
+    | `RuntimeTerminated progress => {
+      let typed_progress: ExecuteRuntimeProgress = progress
+      true
+    }
+    | `RuntimeResult result => {
+      let typed_result: ExecuteRuntimeResult = result
+      true
+    }
+  }
+}
+
+const plan_code_mode_execute_call: ExecuteInvocation -> ExecuteCallPlan = invocation => {
+  let [namespace, local_name] = invocation.tool_name
+  if namespace != "" || local_name != "exec" {
+    return `RejectCodeModeExecute "exec expects raw JavaScript source text"
+  }
+
+  let `ExecuteCustomPayload input = invocation.payload else {
+    return `RejectCodeModeExecute "exec expects raw JavaScript source text"
+  }
+
+  let parsed = parse_code_mode_exec_source input
+  if let `CodeModeExecSourceError message = parsed {
+    return `RejectCodeModeExecute message
+  }
+  let `CodeModeExecSourceParsed source = parsed else {
+    let impossible: ExecuteCallPlan = panic "code-mode exec source parser returned no recognized result"
+    return impossible
+  }
+
+  let request: ExecuteRequest = [
+    .tool_call_id = invocation.call_id,
+    .enabled_tools = invocation.enabled_tools,
+    .source = source.code,
+    .yield_time_ms = source.yield_time_ms,
+    .max_output_tokens = source.max_output_tokens]
+  `StartCodeModeExecute request
+}
+
+const plan_code_mode_execute_started: [Text, ExecuteRequest, ExecuteStartedCell] -> ExecuteStartedPlan = (turn_sub_id, request, started) => {
+  let trace: ExecuteTraceStart = [
+    .turn_sub_id = turn_sub_id,
+    .cell_id = started.cell_id,
+    .tool_call_id = request.tool_call_id,
+    .source = request.source]
+  [.trace = trace, .mark_ready_cell_id = started.cell_id, .await_initial_response_cell_id = started.cell_id]
+}
+
+const plan_code_mode_execute_initial_response: [Text, ExecuteRuntimeResponse] -> ExecuteInitialPlan = (started_cell_id, response) => {
+  let lifecycle: ExecuteInitialLifecycle = `ExecuteInitialCellYielded started_cell_id
+  if code_mode_execute_initial_response_is_terminal response {
+    lifecycle = `ExecuteInitialCellEnded started_cell_id
+  }
+
+  [.lifecycle = lifecycle, .barrier = `WaitUntilCodeModeElicitationsClear ()]
+}
+
+return {
+  code_mode_execute_initial_response_is_terminal,
+  plan_code_mode_execute_call,
+  plan_code_mode_execute_initial_response,
+  plan_code_mode_execute_started,
+}

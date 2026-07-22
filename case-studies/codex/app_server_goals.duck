@@ -1,0 +1,74 @@
+module () where
+
+const { text_trim_whitespace, text_utf8_length } = import "duck:prelude/text" ()
+const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_goal_types.duck" ()
+
+type GoalTextOption = AppServerTextOption
+type GoalI64Option = AppServerI64Option
+type GoalStatus = AppServerThreadGoalStatus
+type GoalStatusOption = AppServerThreadGoalStatusOption
+type GoalOption = AppServerThreadGoalOption
+type GoalSetParams = AppServerThreadGoalSetParams
+type GoalCreatePlan = AppServerThreadGoalCreatePlan
+type GoalUpdatePlan = AppServerThreadGoalUpdatePlan
+type GoalSetPlan = AppServerThreadGoalSetPlan
+type GoalSetPlanResult = AppServerThreadGoalSetPlanResult
+type GoalAvailability = AppServerThreadGoalAvailability
+type GoalPersistence = AppServerThreadPersistence
+type GoalBudgetPatch = FieldPatch I64
+
+const thread_goal_availability: [Bool, GoalPersistence, Text] -> GoalAvailability = (enabled: Bool, persistence: GoalPersistence, thread_id: Text) => {
+  if enabled {
+    if let `EphemeralThread () = persistence {
+      `EphemeralThreadGoalsUnsupported thread_id
+    } else {
+      `ThreadGoalsAvailable ()
+    }
+  } else {
+    `ThreadGoalsDisabled ()
+  }
+}
+
+const plan_thread_goal_set: [GoalOption, GoalSetParams] -> GoalSetPlanResult = (current: GoalOption, params: GoalSetParams) => {
+  let objective: GoalTextOption = `None ()
+  let invalid = ""
+
+  if let `Some value = params.objective {
+    let normalized = text_trim_whitespace(value)
+    if normalized == "" {
+      invalid = "goal objective must not be empty"
+    } else if text_utf8_length(normalized) > 4000 {
+      invalid = "goal objective must be at most 4000 characters"
+    } else {
+      objective = `Some normalized
+    }
+  }
+
+  if invalid == "" {
+    if let `Set value = params.token_budget {
+      if value <= 0i64 { invalid = "goal budgets must be positive when provided" }
+    }
+  }
+
+  if invalid != "" {
+    `GoalSetInvalid invalid
+  } else if let `Some _ = current {
+    let update: GoalUpdatePlan = [params.thread_id, objective, params.status, params.token_budget]
+    let plan: GoalSetPlan = `UpdateThreadGoal update
+    `GoalSetPlanned plan
+  } else if let `Some value = objective {
+    let status: GoalStatus = if let `Some selected = params.status { selected } else { `GoalActive () }
+    let token_budget: GoalI64Option = if let `Set budget = params.token_budget { `Some budget } else { `None () }
+    let create: GoalCreatePlan = [params.thread_id, value, status, token_budget]
+    let plan: GoalSetPlan = `CreateThreadGoal create
+    `GoalSetPlanned plan
+  } else {
+    `GoalSetMissing params.thread_id
+  }
+}
+
+return {
+  thread_goal_availability,
+  plan_thread_goal_set,
+}

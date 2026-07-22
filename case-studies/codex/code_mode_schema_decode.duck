@@ -1,0 +1,380 @@
+module () where
+
+const { encode_json } = import "duck:prelude/json/encode" ()
+const { json_array_empty, json_object_empty, json_object_get } = import "duck:prelude/json/values" ()
+const { text_compare } = import "duck:prelude/runtime" ()
+
+type CodeModeSchemaKeyword = [JsonObject, Text]
+type CodeModeSchemaInput =
+  | `CodeModeInputSchema Json
+  | `CodeModeInputKeyword CodeModeSchemaKeyword
+  | `CodeModeInputRendered Text
+  | `CodeModeInputUnknown Unit
+
+type CodeModeSchemaInputNode = [CodeModeSchemaInput, CodeModeSchemaInputs]
+type CodeModeSchemaInputs =
+  | `CodeModeInputsNil Unit
+  | `CodeModeInputsCons CodeModeSchemaInputNode
+
+type CodeModeSchemaProperty = [Text, Text, Bool, CodeModeSchemaInput]
+type CodeModeSchemaPropertyNode = [CodeModeSchemaProperty, CodeModeSchemaProperties]
+type CodeModeSchemaProperties =
+  | `CodeModePropertiesNil Unit
+  | `CodeModePropertiesCons CodeModeSchemaPropertyNode
+
+type CodeModeSchemaAdditional =
+  | `CodeModeAdditionalMissing Unit
+  | `CodeModeAdditionalPresent CodeModeSchemaInput
+
+type CodeModeSchemaObject = [CodeModeSchemaProperties, CodeModeSchemaAdditional]
+type CodeModeSchemaPlan =
+  | `CodeModePlanRendered Text
+  | `CodeModePlanUnion CodeModeSchemaInputs
+  | `CodeModePlanIntersection CodeModeSchemaInputs
+  | `CodeModePlanArray CodeModeSchemaInput
+  | `CodeModePlanTuple CodeModeSchemaInputs
+  | `CodeModePlanObject CodeModeSchemaObject
+
+type CodeModeJsonProperty = [Text, Json]
+type CodeModeJsonPropertyNode = [CodeModeJsonProperty, CodeModeJsonProperties]
+type CodeModeJsonProperties =
+  | `CodeModeJsonPropertiesNil Unit
+  | `CodeModeJsonPropertiesCons CodeModeJsonPropertyNode
+
+let rec insert_json_property: [CodeModeJsonProperty, CodeModeJsonProperties] -> CodeModeJsonProperties = (property, properties) => {
+  let [name, _] = property
+  if let `CodeModeJsonPropertiesCons node = properties {
+    let [existing, tail] = node
+    let [existing_name, _] = existing
+    if text_compare [name, existing_name] < 0 {
+      `CodeModeJsonPropertiesCons ([property, properties])
+    } else {
+      `CodeModeJsonPropertiesCons ([existing, insert_json_property(property, tail)])
+    }
+  } else {
+    `CodeModeJsonPropertiesCons ([property, `CodeModeJsonPropertiesNil ()])
+  }
+}
+
+let sorted_json_properties: JsonObject -> CodeModeJsonProperties = object => {
+  let current = object
+  let properties: CodeModeJsonProperties = `CodeModeJsonPropertiesNil ()
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [member, tail] = node
+      let [name, value] = member
+      properties = insert_json_property([name, value], properties)
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  properties
+}
+
+const required_property: [Text, JsonArray] -> Bool = (name, required) => {
+  let current = required
+  let found = false
+  let done = false
+  loop {
+    if let `Cons node = current {
+      let [value, tail] = node
+      if let `String required_name = value {
+        if required_name == name {
+          found = true
+          done = true
+        }
+      }
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  found
+}
+
+let reverse_inputs: CodeModeSchemaInputs -> CodeModeSchemaInputs = inputs => {
+  let current = inputs
+  let reversed = `CodeModeInputsNil ()
+  let done = false
+  loop {
+    if let `CodeModeInputsCons node = current {
+      let [input, tail] = node
+      reversed = `CodeModeInputsCons ([input, reversed])
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+let reverse_properties: CodeModeSchemaProperties -> CodeModeSchemaProperties = properties => {
+  let current = properties
+  let reversed = `CodeModePropertiesNil ()
+  let done = false
+  loop {
+    if let `CodeModePropertiesCons node = current {
+      let [property, tail] = node
+      reversed = `CodeModePropertiesCons ([property, reversed])
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+  reversed
+}
+
+const schema_property: [Text, Text, Bool, CodeModeSchemaInput] -> CodeModeSchemaProperty = (name, description, required, input) => {
+  [name, description, required, input]
+}
+
+const schema_keyword: [JsonObject, Text] -> CodeModeSchemaKeyword = (object, name) => [object, name]
+
+const schema_object: [CodeModeSchemaProperties, CodeModeSchemaAdditional] -> CodeModeSchemaObject = (properties, additional) => {
+  [properties, additional]
+}
+
+const missing_additional: () -> CodeModeSchemaAdditional = () => `CodeModeAdditionalMissing ()
+
+const present_additional: CodeModeSchemaInput -> CodeModeSchemaAdditional = input => `CodeModeAdditionalPresent input
+
+let plan_array: JsonObject -> CodeModeSchemaPlan = object => {
+  if let `Found schema = json_object_get("items", object) {
+    `CodeModePlanArray (`CodeModeInputSchema schema)
+  } else if let `Found value = json_object_get("prefixItems", object) {
+    if let `Array schemas = value {
+      let current = schemas
+      let reversed = `CodeModeInputsNil ()
+      let done = false
+      loop {
+        if let `Cons node = current {
+          let [schema, tail] = node
+          reversed = `CodeModeInputsCons ([`CodeModeInputSchema schema, reversed])
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+      if let `CodeModeInputsCons _ = reversed {
+        `CodeModePlanTuple (reverse_inputs reversed)
+      } else {
+        `CodeModePlanRendered "unknown[]"
+      }
+    } else {
+      `CodeModePlanRendered "unknown[]"
+    }
+  } else {
+    `CodeModePlanRendered "unknown[]"
+  }
+}
+
+let plan_object: JsonObject -> CodeModeSchemaPlan = object => {
+  let required = json_array_empty()
+  if let `Found value = json_object_get("required", object) {
+    if let `Array names = value { required = names }
+  }
+  let property_object = json_object_empty()
+  if let `Found value = json_object_get("properties", object) {
+    if let `Object found = value { property_object = found }
+  }
+
+  let current = sorted_json_properties property_object
+  let reversed = `CodeModePropertiesNil ()
+  let done = false
+  loop {
+    if let `CodeModeJsonPropertiesCons node = current {
+      let [[name, schema], tail] = node
+      let description = ""
+      if let `Object property_object = schema {
+        if let `Found value = json_object_get("description", property_object) {
+          if let `String text = value { description = text }
+        }
+      }
+      let property = schema_property(name, description, required_property(name, required), `CodeModeInputSchema schema)
+      reversed = `CodeModePropertiesCons ([property, reversed])
+      current = tail
+    } else {
+      done = true
+    }
+    if done { break }
+  }
+
+  let additional = if let `Found value = json_object_get("additionalProperties", object) {
+    if let `Bool allowed = value {
+      if allowed {
+        present_additional(`CodeModeInputUnknown ())
+      } else {
+        missing_additional()
+      }
+    } else {
+      present_additional(`CodeModeInputSchema value)
+    }
+  } else if let `CodeModePropertiesNil () = reversed {
+    present_additional(`CodeModeInputUnknown ())
+  } else {
+    missing_additional()
+  }
+  `CodeModePlanObject (schema_object(reverse_properties reversed, additional))
+}
+
+let plan_keyword: CodeModeSchemaKeyword -> CodeModeSchemaPlan = keyword => {
+  let [object, name] = keyword
+  if name == "string" {
+    `CodeModePlanRendered "string"
+  } else if name == "number" || name == "integer" {
+    `CodeModePlanRendered "number"
+  } else if name == "boolean" {
+    `CodeModePlanRendered "boolean"
+  } else if name == "null" {
+    `CodeModePlanRendered "null"
+  } else if name == "array" {
+    plan_array object
+  } else if name == "object" {
+    plan_object object
+  } else {
+    `CodeModePlanRendered "unknown"
+  }
+}
+
+let plan_schema: Json -> CodeModeSchemaPlan = schema => {
+  if let `Bool value = schema {
+    if value { return `CodeModePlanRendered "unknown" } else { return `CodeModePlanRendered "never" }
+  }
+  let `Object object = schema else { return `CodeModePlanRendered "unknown" }
+
+  if let `Found constant = json_object_get("const", object) {
+    return `CodeModePlanRendered (encode_json constant)
+  }
+
+  if let `Found value = json_object_get("enum", object) {
+    if let `Array variants = value {
+      let current = variants
+      let reversed = `CodeModeInputsNil ()
+      let done = false
+      loop {
+        if let `Cons node = current {
+          let [variant, tail] = node
+          reversed = `CodeModeInputsCons ([`CodeModeInputRendered (encode_json variant), reversed])
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+      if let `CodeModeInputsCons _ = reversed { return `CodeModePlanUnion (reverse_inputs reversed) }
+    }
+  }
+
+  let union_keys: List Text = `Cons (["anyOf", `Cons (["oneOf", `Nil ()])])
+  let union_current = union_keys
+  let union_inputs = `CodeModeInputsNil ()
+  let union_done = false
+  loop {
+    if let `Cons key_node = union_current {
+      let [key, key_tail] = key_node
+      if let `Found value = json_object_get(key, object) {
+        if let `Array variants = value {
+          let current = variants
+          let reversed = `CodeModeInputsNil ()
+          let done = false
+          loop {
+            if let `Cons node = current {
+              let [variant, tail] = node
+              reversed = `CodeModeInputsCons ([`CodeModeInputSchema variant, reversed])
+              current = tail
+            } else {
+              done = true
+            }
+            if done { break }
+          }
+          if let `CodeModeInputsCons _ = reversed {
+            union_inputs = reverse_inputs reversed
+            union_done = true
+          }
+        }
+      }
+      union_current = key_tail
+    } else {
+      union_done = true
+    }
+    if union_done { break }
+  }
+  if let `CodeModeInputsCons _ = union_inputs { return `CodeModePlanUnion union_inputs }
+
+  if let `Found value = json_object_get("allOf", object) {
+    if let `Array variants = value {
+      let current = variants
+      let reversed = `CodeModeInputsNil ()
+      let done = false
+      loop {
+        if let `Cons node = current {
+          let [variant, tail] = node
+          reversed = `CodeModeInputsCons ([`CodeModeInputSchema variant, reversed])
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+      if let `CodeModeInputsCons _ = reversed { return `CodeModePlanIntersection (reverse_inputs reversed) }
+    }
+  }
+
+  if let `Found schema_type = json_object_get("type", object) {
+    if let `Array types = schema_type {
+      let current = types
+      let reversed = `CodeModeInputsNil ()
+      let done = false
+      loop {
+        if let `Cons node = current {
+          let [value, tail] = node
+          if let `String name = value {
+            reversed = `CodeModeInputsCons ([`CodeModeInputKeyword (schema_keyword(object, name)), reversed])
+          }
+          current = tail
+        } else {
+          done = true
+        }
+        if done { break }
+      }
+      if let `CodeModeInputsCons _ = reversed { return `CodeModePlanUnion (reverse_inputs reversed) }
+    } else if let `String name = schema_type {
+      return plan_keyword(schema_keyword(object, name))
+    }
+  }
+
+  if let `Found _ = json_object_get("properties", object) {
+    plan_object object
+  } else if let `Found _ = json_object_get("additionalProperties", object) {
+    plan_object object
+  } else if let `Found _ = json_object_get("required", object) {
+    plan_object object
+  } else if let `Found _ = json_object_get("items", object) {
+    plan_array object
+  } else if let `Found _ = json_object_get("prefixItems", object) {
+    plan_array object
+  } else {
+    `CodeModePlanRendered "unknown"
+  }
+}
+
+let plan_schema_input: CodeModeSchemaInput -> CodeModeSchemaPlan = input => {
+  if let `CodeModeInputSchema schema = input {
+    plan_schema schema
+  } else if let `CodeModeInputKeyword keyword = input {
+    plan_keyword keyword
+  } else if let `CodeModeInputRendered rendered = input {
+    `CodeModePlanRendered rendered
+  } else {
+    `CodeModePlanRendered "unknown"
+  }
+}
+
+return { plan_schema_input }
