@@ -15,7 +15,7 @@ Deno.test("editor source infers local types without diagnostics", () => {
   const host_url = new URL("./host.duck", import.meta.url);
   const analysis = Source.analyze_file(source_url.href, {
     host_interface: Source.load(host_url.href),
-    route: "managed",
+    route: "core",
     warnings: true,
   });
 
@@ -53,6 +53,7 @@ Deno.test("editor language service retains inferred local structure", async () =
       { needle: "piece_length = piece.length()", type: "I32" },
       { needle: "right_bytes = slice", type: "Piece" },
       { needle: "inserted_right = append_pieces", type: "Pieces" },
+      { needle: "mode = if let `Extend", type: "Mode" },
     ]
   ) {
     const offset = text.indexOf(expected.needle);
@@ -91,11 +92,25 @@ Deno.test("editor inserts saves and renders through the terminal effect", async 
 });
 
 Deno.test("editor movement and deletion respect UTF-8 code point boundaries", async () => {
-  const runner = mock_runner(encoder.encode("a老b"), [encoder.encode("ldwq")]);
+  const runner = mock_runner(encoder.encode("a老b"), [encoder.encode("vldwq")]);
 
   try {
     assert_equals(await main(runner), { code: 0 });
-    assert_equals(runner.saves.map((value) => decoder.decode(value)), ["ab"]);
+    assert_equals(runner.saves.map((value) => decoder.decode(value)), ["b"]);
+  } finally {
+    runner.dispose();
+  }
+});
+
+Deno.test("editor handles arrow keys and Ctrl-C as terminal controls", async () => {
+  const runner = mock_runner(encoder.encode("abc"), [
+    encoder.encode("\x1b[Cdw"),
+    Uint8Array.of(3),
+  ]);
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(runner.saves.map((value) => decoder.decode(value)), ["ac"]);
   } finally {
     runner.dispose();
   }

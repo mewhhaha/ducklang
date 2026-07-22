@@ -34,6 +34,45 @@ bytes.length() + Length.length(bytes) + @len(bytes)
   assert_equals(main(), 12);
 });
 
+Deno.test("base64 prelude validates canonical standard payloads", async () => {
+  const wat = Source.wat(`
+const { base64_decoded_length } = import "duck:prelude/base64" ()
+
+let score = 0
+if let \`Ok decoded_length = base64_decoded_length("YXVkaW8=") { if decoded_length == 5 { score = score + 1 } }
+if let \`Ok decoded_length = base64_decoded_length("AAEC/w==") { if decoded_length == 4 { score = score + 10 } }
+if let \`Ok decoded_length = base64_decoded_length("") { if decoded_length == 0 { score = score + 100 } }
+
+if let \`Err reason = base64_decoded_length("YQ") {
+  if let \`InvalidLength length = reason { if length == 2 { score = score + 1000 } }
+}
+
+if let \`Err reason = base64_decoded_length("Y%=j") {
+  if let \`InvalidByte evidence = reason {
+    if evidence.byte == 37 && evidence.index == 1 { score = score + 10000 }
+  }
+}
+
+if let \`Err reason = base64_decoded_length("Y=Jj") {
+  if let \`InvalidPadding index = reason { if index == 1 { score = score + 100000 } }
+}
+
+if let \`Err reason = base64_decoded_length("YR==") {
+  if let \`NonzeroTrailingBits index = reason { if index == 1 { score = score + 1000000 } }
+}
+
+score
+`);
+  const instance = await instantiate_wat(wat, "prelude_base64", {});
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("base64 prelude test omitted main");
+  }
+
+  assert_equals(main(), 1_111_111);
+});
+
 Deno.test("numeric prelude exposes focused scalar operations", async () => {
   const wat = Source.wat(`
 const { min_i32, max_i32, f64_from_i32, i32_from_f64, unsafe_i32_wrap_i64 } = import "duck:prelude/numeric" ()
@@ -51,7 +90,7 @@ min_i32(7, 3) + max_i32(7, 3) + unsafe_i32_wrap_i64(5i64) + i32_from_f64(f64_fro
 
 Deno.test("numeric prelude parses the complete U32 decimal range", async () => {
   const wat = Source.wat(`
-const { parse_u32_decimal } = import "duck:prelude/numeric" ()
+const { parse_u32_decimal } = import "duck:prelude/numeric/parse" ()
 let maximum = parse_u32_decimal("4294967295")
 let overflow = parse_u32_decimal("4294967296")
 let malformed = parse_u32_decimal("12.5")
@@ -72,7 +111,7 @@ score
 
 Deno.test("numeric prelude accepts complete I64 decimal parsing", async () => {
   const wat = Source.wat(`
-const { parse_i64_decimal } = import "duck:prelude/numeric" ()
+const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
 let minimum = parse_i64_decimal("-9223372036854775808")
 let maximum = parse_i64_decimal("9223372036854775807")
 let overflow = parse_i64_decimal("9223372036854775808")
@@ -165,6 +204,47 @@ if text_trim_whitespace("\u{3000}\u{a0} duck \u{202f}") == "duck" { 42 } else { 
     diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
     [],
   );
+});
+
+Deno.test("text prelude accepts leading Unicode whitespace trimming", () => {
+  const diagnostics = Source.analyze(`
+const { text_trim_start_whitespace } = import "duck:prelude/text" ()
+if text_trim_start_whitespace("\u{3000}\u{a0} duck \u{202f}") == "duck \u{202f}" { 42 } else { 0 }
+`).diagnostics;
+  assert_equals(
+    diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
+    [],
+  );
+});
+
+Deno.test("text prelude counts Rust-style lines", async () => {
+  const wat = Source.wat(`
+const { text_line_count } = import "duck:prelude/text" ()
+if text_line_count("") == 0 && text_line_count("duck") == 1 && text_line_count("duck\\n") == 1 && text_line_count("duck\\n\\n") == 2 && text_line_count("\\r\\n") == 1 { 42 } else { 0 }
+`);
+  const instance = await instantiate_wat(wat, "prelude_text_lines", {});
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("text line count prelude test omitted main");
+  }
+
+  assert_equals(main(), 42);
+});
+
+Deno.test("text prelude appends through a curried boundary", async () => {
+  const wat = Source.wat(`
+const { append_text } = import "duck:prelude/text" ()
+if append_text("duck ")("language") == "duck language" { 42 } else { 0 }
+`);
+  const instance = await instantiate_wat(wat, "prelude_append_text", {});
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("curried text append prelude test omitted main");
+  }
+
+  assert_equals(main(), 42);
 });
 
 Deno.test("text prelude accepts source-defined repetition", () => {
@@ -331,6 +411,25 @@ if encode_json_string("duck") == "\"duck\"" { 42 } else { 0 }
 
   if (typeof main !== "function") {
     throw new Error("JSON string encoder prelude test omitted main");
+  }
+
+  assert_equals(main(), 42);
+});
+
+Deno.test("JSON string prelude avoids recursive JSON values", async () => {
+  const wat = Source.wat(String.raw`
+const { encode_json_string } = import "duck:prelude/json/string" ()
+if encode_json_string("duck\n\"lang\"") == "\"duck\\n\\\"lang\\\"\"" { 42 } else { 0 }
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "prelude_focused_json_string",
+    {},
+  );
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("focused JSON string prelude test omitted main");
   }
 
   assert_equals(main(), 42);

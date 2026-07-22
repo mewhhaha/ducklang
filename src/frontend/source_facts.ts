@@ -1104,6 +1104,15 @@ class SourceFactRecorder {
         break_types,
       );
 
+      if (statement.else_branch !== undefined) {
+        this.record_expr(
+          statement.else_branch,
+          scope,
+          undefined,
+          break_types,
+        );
+      }
+
       if (
         declared === undefined && statement.kind === "const" &&
         (statement.value.tag === "lam" || statement.value.tag === "rec") &&
@@ -3144,7 +3153,8 @@ class SourceFactRecorder {
 
     if (pattern.tag === "union_case") {
       if (pattern.value !== undefined) {
-        this.record_pattern_bindings(pattern.value, undefined, scope);
+        const payload = source_cases(type)?.get(pattern.name);
+        this.record_pattern_bindings(pattern.value, payload, scope);
       }
       return;
     }

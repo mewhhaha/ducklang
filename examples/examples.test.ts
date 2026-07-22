@@ -14,6 +14,7 @@ import {
   test_example_paths,
   trap_examples,
 } from "./manifest.ts";
+import { corpus_feature_examples } from "./corpus_coverage.ts";
 
 const decoder = new TextDecoder();
 
@@ -131,10 +132,45 @@ Deno.test("example manifest accounts for every .duck file", () => {
 
   const actual = new Set(collect_duck_files("examples"));
   assert_equals([...actual].sort(), [...expected].sort());
-  assert_equals(success_examples.length, 78);
+  assert_equals(success_examples.length, 92);
   assert_equals(compile_failure_examples.length, 12);
   assert_equals(trap_examples.length, 4);
   assert_equals(test_example_paths.length, 1);
+});
+
+Deno.test("every tree-sitter corpus feature names runnable examples", () => {
+  const corpus_features = collect_corpus_features(
+    "tree-sitter-duck/test/corpus",
+  );
+  assert_equals(
+    Object.keys(corpus_feature_examples).sort(),
+    corpus_features.sort(),
+  );
+
+  const runnable_paths = new Set<string>();
+
+  for (const example of success_examples) {
+    runnable_paths.add(example.path);
+  }
+
+  for (const path of test_example_paths) {
+    runnable_paths.add(path);
+  }
+
+  for (const [feature, paths] of Object.entries(corpus_feature_examples)) {
+    if (paths.length === 0) {
+      throw new Error("Corpus feature has no example: " + feature);
+    }
+
+    for (const path of paths) {
+      if (!runnable_paths.has(path)) {
+        throw new Error(
+          "Corpus feature example is not runnable: " + feature + " -> " +
+            path,
+        );
+      }
+    }
+  }
 });
 
 function compile_example(example: SuccessExample): string {
@@ -277,6 +313,31 @@ function collect_duck_files(path: string): string[] {
   }
 
   return files;
+}
+
+function collect_corpus_features(path: string): string[] {
+  const features: string[] = [];
+  const heading = /^={3,}\r?\n([^\r\n]+)\r?\n={3,}$/gm;
+
+  for (const entry of Deno.readDirSync(path)) {
+    if (!entry.isFile || !entry.name.endsWith(".txt")) {
+      continue;
+    }
+
+    const corpus = Deno.readTextFileSync(path + "/" + entry.name);
+
+    for (const match of corpus.matchAll(heading)) {
+      const feature = match[1];
+
+      if (feature === undefined) {
+        throw new Error("Corpus heading is missing a name: " + entry.name);
+      }
+
+      features.push(entry.name + " / " + feature);
+    }
+  }
+
+  return features;
 }
 
 function error_message(error: unknown): string {

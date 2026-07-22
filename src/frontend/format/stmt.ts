@@ -52,6 +52,10 @@ function format_stmt_without_attributes(
     if (stmt.pattern) {
       text += format_pattern(stmt.pattern) + " = " + format_expr(stmt.value);
 
+      if (stmt.else_branch !== undefined) {
+        text += " else " + format_expr(stmt.else_branch);
+      }
+
       if (stmt.mutual !== undefined) {
         for (const member of stmt.mutual) {
           text += "\nand " + format_pattern(member.pattern) + " = " +
@@ -74,7 +78,13 @@ function format_stmt_without_attributes(
       text += ": " + stmt.annotation;
     }
 
-    return text + " = " + format_expr(stmt.value);
+    text += " = " + format_expr(stmt.value);
+
+    if (stmt.else_branch !== undefined) {
+      text += " else " + format_expr(stmt.else_branch);
+    }
+
+    return text;
   }
 
   if (stmt.tag === "state_bind") {

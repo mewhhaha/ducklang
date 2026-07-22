@@ -101,13 +101,12 @@ Deno.test("duck check accepts a semantically valid source file", async () => {
   assert_equals(new TextDecoder().decode(output.stderr), "");
 });
 
-Deno.test("duck test runs exported source tests", async () => {
+Deno.test("duck test runs exported source tests through gpufuck", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: [
       "run",
       "--no-check",
       "--allow-read",
-      "--allow-run=wat2wasm",
       entry,
       "test",
       "examples/testing/01_inline_tests.duck",
@@ -124,7 +123,15 @@ Deno.test("duck test runs exported source tests", async () => {
       "pass unequal_values_are_detected\n" +
       "2 tests, 2 passed, 0 failed\n",
   );
-  assert_equals(new TextDecoder().decode(output.stderr), "");
+  const stderr = new TextDecoder().decode(output.stderr);
+  if (
+    stderr !== "" &&
+    stderr !== "enumerate_adapters: Initialization of an object has failed\n"
+  ) {
+    throw new Error(
+      "duck test wrote unexpected stderr: " + JSON.stringify(stderr),
+    );
+  }
 });
 
 Deno.test("duck test reports a failing source assertion", async () => {
@@ -146,7 +153,6 @@ Deno.test("duck test reports a failing source assertion", async () => {
         "run",
         "--no-check",
         "--allow-read",
-        "--allow-run=wat2wasm",
         entry,
         "test",
         source_path,
@@ -163,7 +169,11 @@ Deno.test("duck test reports a failing source assertion", async () => {
     );
     assert_includes(
       new TextDecoder().decode(output.stderr),
-      "fail equality_holds: unreachable",
+      "fail equality_holds:",
+    );
+    assert_includes(
+      new TextDecoder().decode(output.stderr),
+      "Duck program called @panic",
     );
   } finally {
     await Deno.remove(directory, { recursive: true });
@@ -220,7 +230,7 @@ Deno.test("duck check resolves imports before reporting diagnostics", async () =
   );
 });
 
-Deno.test("duck build emits runnable Core WAT and Wasm", async () => {
+Deno.test("duck build emits runnable gpufuck Wasm", async () => {
   const output_directory = await Deno.makeTempDir({
     prefix: "ducklang-cli-build-",
   });
@@ -232,12 +242,9 @@ Deno.test("duck build emits runnable Core WAT and Wasm", async () => {
         "--no-check",
         "--allow-read",
         "--allow-write",
-        "--allow-run=wat2wasm",
         entry,
         "build",
         "examples/basics/01_arithmetic_and_shadowing.duck",
-        "--emit",
-        "all",
         "--out",
         output_directory,
       ],
@@ -247,11 +254,8 @@ Deno.test("duck build emits runnable Core WAT and Wasm", async () => {
     const output = await command.output();
 
     assert_equals(output.success, true);
-    const wat_path = output_directory +
-      "/01_arithmetic_and_shadowing.wat";
     const wasm_path = output_directory +
       "/01_arithmetic_and_shadowing.wasm";
-    assert_includes(await Deno.readTextFile(wat_path), '(export "main"');
     const wasm = await Deno.readFile(wasm_path);
     const module = await WebAssembly.compile(wasm);
     const instance = await WebAssembly.instantiate(module);
@@ -267,55 +271,36 @@ Deno.test("duck build emits runnable Core WAT and Wasm", async () => {
   }
 });
 
-Deno.test("duck build emits the managed ABI manifest", async () => {
-  const directory = await Deno.makeTempDir({
-    prefix: "ducklang-cli-managed-",
-  });
-  const source_path = directory + "/answer.duck";
-  const output_directory = directory + "/build";
-  await Deno.writeTextFile(
-    source_path,
-    "module () where\nreturn { .answer = 42 }\n",
-  );
-
-  try {
-    const command = new Deno.Command(Deno.execPath(), {
-      args: [
-        "run",
-        "--no-check",
-        "--allow-read",
-        "--allow-write",
-        "--allow-run=wat2wasm",
-        entry,
-        "build",
-        source_path,
-        "--managed",
-        "--out",
-        output_directory,
-      ],
-      stdout: "piped",
-      stderr: "piped",
-    });
-    const output = await command.output();
-
-    assert_equals(output.success, true);
-    const manifest = JSON.parse(
-      await Deno.readTextFile(output_directory + "/answer.abi.json"),
-    );
-    assert_equals(manifest.abi_version, "duck-js-1");
-    await Deno.stat(output_directory + "/answer.wasm");
-  } finally {
-    await Deno.remove(directory, { recursive: true });
-  }
-});
-
-Deno.test("duck run executes an import-free Core program", async () => {
+Deno.test("duck build rejects removed compiler route options", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: [
       "run",
       "--no-check",
       "--allow-read",
-      "--allow-run=wat2wasm",
+      entry,
+      "build",
+      "examples/basics/01_arithmetic_and_shadowing.duck",
+      "--route",
+      "core",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const output = await command.output();
+
+  assert_equals(output.success, false);
+  assert_includes(
+    new TextDecoder().decode(output.stderr),
+    "Unknown build option: --route",
+  );
+});
+
+Deno.test("duck run executes a program through gpufuck", async () => {
+  const command = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--no-check",
+      "--allow-read",
       entry,
       "run",
       "examples/basics/01_arithmetic_and_shadowing.duck",

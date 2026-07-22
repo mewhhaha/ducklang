@@ -5,6 +5,7 @@ import { Mod } from "./mod.ts";
 import { Data, Emit, Typed } from "./trait.ts";
 
 export const decoder = new TextDecoder();
+const encoder = new TextEncoder();
 
 export function log_error(label: string, bytes: Uint8Array): void {
   if (bytes.length > 0) {
@@ -45,6 +46,31 @@ export function wat_from_source(text: string): string {
 
 export function wat_from_core_source(text: string): string {
   return Source.wat(text);
+}
+
+export async function wasm_from_wat(
+  wat: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const command = new Deno.Command("wat2wasm", {
+    args: ["-o", "-", "-"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = command.stdin.getWriter();
+  await writer.write(encoder.encode(wat));
+  await writer.close();
+  const output = await command.output();
+
+  if (!output.success) {
+    throw new Error(
+      "wat2wasm failed:\n" + decoder.decode(output.stderr),
+    );
+  }
+
+  const wasm = new Uint8Array(new ArrayBuffer(output.stdout.byteLength));
+  wasm.set(output.stdout);
+  return wasm;
 }
 
 export async function instantiate_wat(

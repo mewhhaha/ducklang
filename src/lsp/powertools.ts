@@ -1,10 +1,7 @@
-import { Expr } from "../expr.ts";
 import type { FrontExpr, Source as SourceNode, Stmt } from "../frontend/ast.ts";
 import { Source } from "../frontend/source.ts";
 import { source_span } from "../frontend/syntax.ts";
 import { evaluate_frontend_expression } from "../frontend/lower_graph.ts";
-import { Ic } from "../ic.ts";
-import { Format } from "../trait.ts";
 import {
   capped_format_expr,
   type EditorValue,
@@ -37,14 +34,6 @@ export type PowertoolsResult<value> =
   | PowertoolsSuccess<value>
   | PowertoolsError;
 
-export type Stage = "ic" | "expr" | "mod" | "wat";
-
-export type StageView = {
-  stage: Stage;
-  route: ExampleRoute;
-  text: string;
-};
-
 export type ComptimeFact = {
   kind: "capture";
   name: string;
@@ -65,7 +54,7 @@ export type ComptimeTraceStep = {
 export type PowertoolsCodeLens = {
   range: LspRange;
   title: string;
-  command: "duck.viewStage" | "duck.expandComptime" | "duck.runExample";
+  command: "duck.expandComptime" | "duck.runExample";
   arguments: unknown[];
 };
 
@@ -79,12 +68,10 @@ export type ExecuteCommandRequest = {
   uri: string;
   text: string;
   position?: LspPosition;
-  stage?: Stage;
   encoding: PositionEncoding;
 };
 
 export type ExecuteCommandResult =
-  | PowertoolsResult<StageView>
   | PowertoolsResult<ComptimeExpansion>
   | PowertoolsResult<TerminalInvocation>;
 
@@ -166,84 +153,6 @@ export function expand_comptime(
   return { ok: true, value: { source, facts, trace } };
 }
 
-export function view_stage(
-  uri: string,
-  text: string,
-  stage: Stage,
-): PowertoolsResult<StageView> {
-  const parsed = Source.parse_with_diagnostics(text);
-
-  if (parsed.diagnostics.length > 0) {
-    return broken_source(parsed.diagnostics[0]?.message);
-  }
-
-  const route = route_for_uri(uri);
-
-  try {
-    if (route === "ic") {
-      const ic = Source.compile(text);
-
-      if (stage === "ic") {
-        return stage_success(stage, route, Format.fmt(Ic, Ic.reduce(ic)));
-      }
-
-      const expr = Ic.emit(ic);
-
-      if (stage === "expr") {
-        return stage_success(stage, route, Format.fmt(Expr, expr));
-      }
-
-      const mod = Source.ic_mod(parsed.source);
-
-      if (stage === "mod") {
-        return stage_success(
-          stage,
-          route,
-          Deno.inspect(mod, { depth: 100, sorted: true }),
-        );
-      }
-
-      return stage_success(stage, route, Source.ic_wat(parsed.source));
-    }
-
-    if (stage === "ic" || stage === "expr") {
-      return unsupported_route(route, stage);
-    }
-
-    if (route === "core") {
-      const mod = Source.mod(parsed.source);
-
-      if (stage === "mod") {
-        return stage_success(
-          stage,
-          route,
-          Deno.inspect(mod, { depth: 100, sorted: true }),
-        );
-      }
-
-      return stage_success(stage, route, Source.wat(parsed.source));
-    }
-
-    const artifact = Source.artifact(parsed.source);
-
-    if (stage === "mod") {
-      return stage_success(
-        stage,
-        route,
-        Deno.inspect(artifact.mod, { depth: 100, sorted: true }),
-      );
-    }
-
-    return stage_success(stage, route, artifact.wat);
-  } catch (error) {
-    return {
-      ok: false,
-      code: "broken_source",
-      message: error_message(error),
-    };
-  }
-}
-
 export function powertools_code_lenses(
   uri: string,
   text: string,
@@ -256,12 +165,7 @@ export function powertools_code_lenses(
   }
 
   const positions = new PositionIndex(text, encoding);
-  const lenses: PowertoolsCodeLens[] = [{
-    range: range_at(positions, 0, 0),
-    title: "▸ compile to WAT",
-    command: "duck.viewStage",
-    arguments: [uri, "wat"],
-  }];
+  const lenses: PowertoolsCodeLens[] = [];
 
   for_each_expr(parsed.source, (expr) => {
     if (expr.tag !== "comptime") {
@@ -294,18 +198,6 @@ export function powertools_code_lenses(
 export function route_execute_command(
   request: ExecuteCommandRequest,
 ): ExecuteCommandResult {
-  if (request.command === "duck.viewStage") {
-    if (request.stage === undefined) {
-      return {
-        ok: false,
-        code: "unsupported_route",
-        message: "duck.viewStage requires a stage",
-      };
-    }
-
-    return view_stage(request.uri, request.text, request.stage);
-  }
-
   if (request.command === "duck.expandComptime") {
     if (request.position === undefined) {
       return {
@@ -352,14 +244,6 @@ export function route_execute_command(
   };
 }
 
-function stage_success(
-  stage: Stage,
-  route: ExampleRoute,
-  text: string,
-): PowertoolsSuccess<StageView> {
-  return { ok: true, value: { stage, route, text } };
-}
-
 function broken_source(message: string | undefined): PowertoolsError {
   let detail = "Source could not be parsed";
 
@@ -368,14 +252,6 @@ function broken_source(message: string | undefined): PowertoolsError {
   }
 
   return { ok: false, code: "broken_source", message: detail };
-}
-
-function unsupported_route(route: ExampleRoute, stage: Stage): PowertoolsError {
-  return {
-    ok: false,
-    code: "unsupported_route",
-    message: "The " + route + " route does not expose an " + stage + " stage",
-  };
 }
 
 export function route_for_uri(uri: string): ExampleRoute {

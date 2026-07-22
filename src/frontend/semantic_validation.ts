@@ -391,6 +391,16 @@ function validate_statement(
         accepts_value_pack,
       );
     }
+
+    if (stmt.else_branch !== undefined) {
+      validate_expr(
+        stmt.else_branch,
+        env,
+        diagnostics,
+        stmt.kind !== "const",
+      );
+    }
+
     let type: FrontType = { tag: "unknown" };
 
     if (diagnostics.length === before) {

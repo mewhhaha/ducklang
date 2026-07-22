@@ -1,0 +1,25 @@
+==================
+Let-else binding
+==================
+
+let `Some value = result else {
+  return 0
+}
+value
+
+---
+
+(source_file
+  (binding_statement
+    (union_pattern
+      (constructor_identifier)
+      (identifier))
+    (postfix_expression
+      (identifier))
+    (block
+      (return_statement
+        (postfix_expression
+          (number)))))
+  (expression_statement
+    (postfix_expression
+      (identifier))))

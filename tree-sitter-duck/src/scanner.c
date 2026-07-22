@@ -6,6 +6,7 @@
 
 enum TokenType {
   APPLICATION_SPACE,
+  CONDITION_APPLICATION_SPACE,
   TYPE_APPLICATION_SPACE,
   BREAK_VALUE_SPACE,
   BREAK_TERMINATOR_SPACE,
@@ -129,6 +130,7 @@ bool tree_sitter_duck_external_scanner_scan(
 
   if (
     !valid_symbols[APPLICATION_SPACE] &&
+    !valid_symbols[CONDITION_APPLICATION_SPACE] &&
     !valid_symbols[TYPE_APPLICATION_SPACE] &&
     !valid_symbols[BREAK_VALUE_SPACE] &&
     !valid_symbols[BREAK_TERMINATOR_SPACE] &&
@@ -174,7 +176,10 @@ bool tree_sitter_duck_external_scanner_scan(
     return true;
   }
 
-  if (!valid_symbols[APPLICATION_SPACE]) {
+  if (
+    !valid_symbols[APPLICATION_SPACE] &&
+    !valid_symbols[CONDITION_APPLICATION_SPACE]
+  ) {
     return false;
   }
 
@@ -198,6 +203,18 @@ bool tree_sitter_duck_external_scanner_scan(
       (lexer->lookahead >= 'a' && lexer->lookahead <= 'z')) &&
     application_stop_keyword(lexer)
   ) {
+    return false;
+  }
+
+  if (
+    valid_symbols[CONDITION_APPLICATION_SPACE] &&
+    lexer->lookahead != '{'
+  ) {
+    lexer->result_symbol = CONDITION_APPLICATION_SPACE;
+    return true;
+  }
+
+  if (!valid_symbols[APPLICATION_SPACE]) {
     return false;
   }
 

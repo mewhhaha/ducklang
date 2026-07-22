@@ -1,8 +1,6 @@
-import { DuckHost, type DuckValue, Source } from "../../src/frontend.ts";
+import { DuckCompiler, type DuckHostValue } from "../../src/compiler.ts";
 import { type EditorRunner, live_runner } from "./host.ts";
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 const source_url = new URL("./editor.duck", import.meta.url);
 const host_interface_url = new URL("./host.duck", import.meta.url);
 
@@ -11,52 +9,38 @@ export type EditorResult = {
 };
 
 export async function main(runner: EditorRunner): Promise<EditorResult> {
-  const artifact = Source.artifact_file(source_url.href, {
-    host_interface: host_interface_url.href,
-  });
-  const wasm = await wasm_from_wat(artifact.wat);
-  const program = await DuckHost.instantiate(wasm, artifact.abi);
+  const compiler = await DuckCompiler.create();
 
   try {
-    return decode_result(runner.run(program));
+    const execution = await compiler.run_file(source_url.href, {
+      host_interface: host_interface_url.href,
+      init: runner.init,
+    });
+    return decode_result(execution.value);
   } finally {
-    program.dispose();
+    compiler.destroy();
   }
 }
 
-function decode_result(value: DuckValue): EditorResult {
-  if (!Array.isArray(value) || value.length !== 1) {
+function decode_result(value: DuckHostValue): EditorResult {
+  if (
+    value.kind !== "constructor" ||
+    value.name !== "duck::$DuckStruct:duck_entry_result_type" ||
+    value.fields.length !== 1
+  ) {
     throw new Error("editor module must return a one-slot product");
   }
 
-  const code = value[0];
+  const code = value.fields[0];
 
-  if (typeof code !== "number" || !Number.isInteger(code)) {
+  if (
+    code === undefined || code.kind !== "integer" ||
+    !Number.isInteger(code.value)
+  ) {
     throw new Error("editor module result code must be an integer");
   }
 
-  return { code };
-}
-
-async function wasm_from_wat(wat: string): Promise<Uint8Array> {
-  const command = new Deno.Command("wat2wasm", {
-    args: ["-o", "-", "-"],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "piped",
-  }).spawn();
-  const writer = command.stdin.getWriter();
-  await writer.write(encoder.encode(wat));
-  await writer.close();
-  const output = await command.output();
-
-  if (!output.success) {
-    throw new Error(
-      "wat2wasm failed:\n" + decoder.decode(output.stderr) + "\n" + wat,
-    );
-  }
-
-  return output.stdout;
+  return { code: code.value };
 }
 
 if (import.meta.main) {

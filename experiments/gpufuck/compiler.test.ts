@@ -5,11 +5,11 @@ import {
   type FunctionalWasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { success_examples } from "../../examples/manifest.ts";
-import { gpufuck_benchmark_cases } from "./benchmark_cases.ts";
-import { encode_gpufuck_module, ExperimentalDuckCompiler } from "./compiler.ts";
+import { compiler_compatibility_cases } from "./benchmark_cases.ts";
+import { DuckCompiler, encode_duck_module } from "./compiler.ts";
 
-Deno.test("gpufuck experiment lowers the supported scalar source shape", () => {
-  const module = encode_gpufuck_module("let value = 40\nvalue + 2");
+Deno.test("Duck compiler lowers the supported scalar source shape", () => {
+  const module = encode_duck_module("let value = 40\nvalue + 2");
 
   assert_equals(module.definitionCount, 1);
   assert_equals(module.entrySymbol, 0);
@@ -17,18 +17,30 @@ Deno.test("gpufuck experiment lowers the supported scalar source shape", () => {
   assert_equals(module.nodeCount, 5);
 });
 
-Deno.test("gpufuck experiment lowers Duck numeric types", () => {
-  const i64_module = encode_gpufuck_module("21i64 * 2i64");
-  const f32_module = encode_gpufuck_module("20.5f32 + 21.5f32");
-  const f64_module = encode_gpufuck_module("20.5f64 + 21.5f64");
+Deno.test("Duck compiler lowers Duck numeric types", () => {
+  const i64_module = encode_duck_module("21i64 * 2i64");
+  const f32_module = encode_duck_module("20.5f32 + 21.5f32");
+  const f64_module = encode_duck_module("20.5f64 + 21.5f64");
 
   assert_equals(i64_module.nodeCount, 3);
   assert_equals(f32_module.nodeCount, 3);
   assert_equals(f64_module.nodeCount, 3);
 });
 
-Deno.test("gpufuck experiment lowers empty generic union cases", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler reuses previously bound function dependencies", () => {
+  const module = encode_duck_module(`
+let first = value => value + 1
+let second = value => first(value) + 1
+let third = value => second(value) + 1
+third(39)
+`);
+
+  assert_equals(module.nodeCount, 22);
+  assert_equals(module.definitionCount, 1);
+});
+
+Deno.test("Duck compiler lowers empty generic union cases", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 type Option value = | \`None Unit | \`Some value
@@ -42,8 +54,51 @@ if let \`None () = value { 42 } else { 0 }
   }
 });
 
-Deno.test("gpufuck experiment runs common prelude comparisons", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler invalidates cached files when an imported module changes", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "binned-gpufuck-cache-" });
+  const dependency_path = directory + "/dependency.duck";
+  const entry_path = directory + "/entry.duck";
+  const compiler = await DuckCompiler.create();
+  try {
+    await Deno.writeTextFile(
+      dependency_path,
+      "module () where\nlet answer = 41\nreturn { answer }\n",
+    );
+    await Deno.writeTextFile(
+      entry_path,
+      'const { answer } = import "./dependency.duck" ()\nanswer\n',
+    );
+    const first = await compiler.run_file(entry_path);
+    assert_equals(first.value, { kind: "integer", value: 41 });
+
+    await Deno.writeTextFile(
+      dependency_path,
+      "module () where\nlet answer = 42\nreturn { answer }\n",
+    );
+    const changed = await compiler.run_file(entry_path);
+    assert_equals(changed.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("Duck compiler returns an isolated copy of cached Wasm bytes", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const first = await compiler.compile("40 + 2");
+    const expected = [...first];
+    first.fill(0);
+
+    const cached = await compiler.compile("40 + 2");
+    assert_equals([...cached], expected);
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler runs common prelude comparisons", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { max_i32, min_i32, text_equal_ascii_case_insensitive } = import "duck:prelude/functional" ()
@@ -58,8 +113,8 @@ equal_score + unequal_score + min_i32([7, 3]) * 100 + max_i32([7, 3]) * 1000 + c
   }
 });
 
-Deno.test("gpufuck experiment formats signed I64 values in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler formats signed I64 values in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { format_i64 } = import "duck:prelude/numeric" ()
@@ -71,8 +126,8 @@ if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1
   }
 });
 
-Deno.test("gpufuck experiment parses signed I64 values in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler parses signed I64 values in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { parse_i64_decimal } = import "duck:prelude/numeric" ()
@@ -92,8 +147,8 @@ score
   }
 });
 
-Deno.test("gpufuck experiment validates full-range U64 decimal text in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler validates full-range U64 decimal text in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { parse_u64_decimal_text } = import "duck:prelude/numeric" ()
@@ -111,14 +166,14 @@ score
   }
 });
 
-Deno.test("gpufuck experiment lowers Duck remainder primitives", () => {
-  const remainder_module = encode_gpufuck_module("84 % 30");
+Deno.test("Duck compiler lowers Duck remainder primitives", () => {
+  const remainder_module = encode_duck_module("84 % 30");
 
   assert_equals(remainder_module.nodeCount, 3);
 });
 
-Deno.test("gpufuck experiment preserves annotated function result types", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler preserves annotated function result types", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 type Decision = | \`Accepted Text | \`Rejected Text
@@ -134,8 +189,8 @@ if let \`Accepted message = decision { if message == "yes" { 42 } else { 0 } } e
   }
 });
 
-Deno.test("gpufuck experiment lowers F32x4 through portable aggregate lanes", () => {
-  const module = encode_gpufuck_module(
+Deno.test("Duck compiler lowers F32x4 through portable aggregate lanes", () => {
+  const module = encode_duck_module(
     "@i32_from_f32(@f32x4_extract_lane(" +
       "@f32x4_add(@f32x4(1f32, 2f32, 3f32, 4f32), " +
       "@f32x4_splat(1f32)), 2))",
@@ -144,8 +199,8 @@ Deno.test("gpufuck experiment lowers F32x4 through portable aggregate lanes", ()
   assert_equals(module.definitionCount, 1);
 });
 
-Deno.test("gpufuck experiment statically links Duck module records", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler statically links Duck module records", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "examples/showcases/06_modular_score_application.duck",
@@ -156,8 +211,8 @@ Deno.test("gpufuck experiment statically links Duck module records", async () =>
   }
 });
 
-Deno.test("gpufuck experiment reuses a prepared Duck program", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler reuses a prepared Duck program", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const program = await compiler.prepare_file(
       "examples/showcases/06_modular_score_application.duck",
@@ -177,7 +232,7 @@ Deno.test("gpufuck experiment reuses a prepared Duck program", async () => {
 
 Deno.test("gpufuck prepared program rejects execution after destruction", async () => {
   const path = "examples/showcases/06_modular_score_application.duck";
-  const compiler = await ExperimentalDuckCompiler.create();
+  const compiler = await DuckCompiler.create();
   try {
     const program = await compiler.prepare_file(path);
     program.destroy();
@@ -201,8 +256,8 @@ Deno.test("gpufuck prepared program rejects execution after destruction", async 
   }
 });
 
-Deno.test("gpufuck experiment executes the Codex-derived citation parser", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes the Codex-derived citation parser", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/citation_parser_stream_fixture.duck",
@@ -239,8 +294,8 @@ Deno.test("gpufuck experiment executes the Codex-derived citation parser", async
   }
 });
 
-Deno.test("gpufuck experiment executes the source JSON parser", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes the source JSON parser", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/json_fixture.duck",
@@ -260,7 +315,7 @@ Deno.test("gpufuck experiment executes the source JSON parser", async () => {
 });
 
 Deno.test("gpufuck JSON parser rejects truncated literals", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { parse_json } = import "duck:prelude/json" ()
@@ -278,8 +333,8 @@ if let \`Err error = parsed {
   }
 });
 
-Deno.test("gpufuck experiment executes the source JSON codec", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes the source JSON codec", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/json_codec_fixture.duck",
@@ -298,7 +353,7 @@ Deno.test("gpufuck experiment executes the source JSON codec", async () => {
 });
 
 Deno.test("gpufuck source JSON encoder emits ASCII-only strings", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 const { encode_json_string_ascii } = import "duck:prelude/json/encode" ()
@@ -311,8 +366,8 @@ if encode_json_string_ascii("東京😀") == "\\\"\\\\u6771\\\\u4eac\\\\ud83d\\\
   }
 });
 
-Deno.test("gpufuck experiment executes the source Codex protocol codec", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes the source Codex protocol codec", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/protocol_fixture.duck",
@@ -330,8 +385,8 @@ Deno.test("gpufuck experiment executes the source Codex protocol codec", async (
   }
 });
 
-Deno.test("gpufuck experiment gates Codex app-server initialization in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler gates Codex app-server initialization in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/app_server_fixture.duck",
@@ -349,8 +404,8 @@ Deno.test("gpufuck experiment gates Codex app-server initialization in source", 
   }
 });
 
-Deno.test("gpufuck experiment routes Codex CLI entrypoints in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler routes Codex CLI entrypoints in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/cli_fixture.duck",
@@ -366,8 +421,8 @@ Deno.test("gpufuck experiment routes Codex CLI entrypoints in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment parses Codex CLI leaf options in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler parses Codex CLI leaf options in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/cli_options_fixture.duck",
@@ -383,8 +438,8 @@ Deno.test("gpufuck experiment parses Codex CLI leaf options in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment builds typed Codex CLI plans in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler builds typed Codex CLI plans in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/cli_plan_fixture.duck",
@@ -400,8 +455,8 @@ Deno.test("gpufuck experiment builds typed Codex CLI plans in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment parses Codex CLI session commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler parses Codex CLI session commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_resume_fixture.duck", 511],
     ["cli_resume_last_fixture.duck", 1],
@@ -427,8 +482,8 @@ Deno.test("gpufuck experiment parses Codex CLI session commands in source", asyn
   }
 });
 
-Deno.test("gpufuck experiment plans Codex login and logout commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex login and logout commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_auth_fixture.duck", 1_111],
     ["cli_auth_device_fixture.duck", 1],
@@ -453,8 +508,8 @@ Deno.test("gpufuck experiment plans Codex login and logout commands in source", 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex MCP commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex MCP commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_mcp_query_fixture.duck", 11],
     ["cli_mcp_stdio_fixture.duck", 1],
@@ -480,8 +535,8 @@ Deno.test("gpufuck experiment plans Codex MCP commands in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment plans Codex plugin commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex plugin commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_plugin_mutation_fixture.duck", 11],
     ["cli_plugin_list_fixture.duck", 11],
@@ -507,8 +562,8 @@ Deno.test("gpufuck experiment plans Codex plugin commands in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment plans Codex cloud commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex cloud commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_cloud_exec_fixture.duck", 11],
     ["cli_cloud_list_fixture.duck", 11],
@@ -533,8 +588,8 @@ Deno.test("gpufuck experiment plans Codex cloud commands in source", async () =>
   }
 });
 
-Deno.test("gpufuck experiment plans Codex server commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex server commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_server_fixture.duck", 1_111],
     ["cli_server_route_fixture.duck", 1],
@@ -557,8 +612,8 @@ Deno.test("gpufuck experiment plans Codex server commands in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment plans Codex application commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex application commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_app_fixture.duck", 1_111],
     ["cli_app_route_fixture.duck", 1],
@@ -581,8 +636,8 @@ Deno.test("gpufuck experiment plans Codex application commands in source", async
   }
 });
 
-Deno.test("gpufuck experiment plans Codex app-server commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex app-server commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_app_server_transport_fixture.duck", 1_111],
     ["cli_app_server_auth_fixture.duck", 1_111],
@@ -608,8 +663,8 @@ Deno.test("gpufuck experiment plans Codex app-server commands in source", async 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex utility commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex utility commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_utility_fixture.duck", 111],
     ["cli_responses_proxy_fixture.duck", 111],
@@ -633,8 +688,8 @@ Deno.test("gpufuck experiment plans Codex utility commands in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex debug commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex debug commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_debug_fixture.duck", 111],
     ["cli_debug_input_fixture.duck", 11],
@@ -658,8 +713,8 @@ Deno.test("gpufuck experiment plans Codex debug commands in source", async () =>
   }
 });
 
-Deno.test("gpufuck experiment plans Codex execpolicy commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex execpolicy commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_execpolicy_fixture.duck", 11],
     ["cli_execpolicy_route_fixture.duck", 1],
@@ -682,8 +737,8 @@ Deno.test("gpufuck experiment plans Codex execpolicy commands in source", async 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex exec and review commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex exec and review commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_exec_fixture.duck", 1],
     ["cli_exec_removed_fixture.duck", 1],
@@ -715,8 +770,8 @@ Deno.test("gpufuck experiment plans Codex exec and review commands in source", a
   }
 });
 
-Deno.test("gpufuck experiment plans Codex sandbox commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex sandbox commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly [string, number][] = [
     ["cli_sandbox_fixture.duck", 1_111],
     ["cli_sandbox_route_fixture.duck", 1],
@@ -739,8 +794,8 @@ Deno.test("gpufuck experiment plans Codex sandbox commands in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment decodes Codex thread methods in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler decodes Codex thread methods in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/app_server_methods_fixture.duck",
@@ -758,8 +813,8 @@ Deno.test("gpufuck experiment decodes Codex thread methods in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment decodes Codex account methods in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler decodes Codex account methods in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["app_server_account_login_methods_fixture.duck", 6],
     ["app_server_account_api_login_fixture.duck", 11],
@@ -787,8 +842,8 @@ Deno.test("gpufuck experiment decodes Codex account methods in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment decodes Codex turn methods in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler decodes Codex turn methods in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/app_server_turn_methods_fixture.duck",
@@ -806,8 +861,8 @@ Deno.test("gpufuck experiment decodes Codex turn methods in source", async () =>
   }
 });
 
-Deno.test("gpufuck experiment decodes Codex turn steering in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler decodes Codex turn steering in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_steer_methods_fixture.duck",
@@ -823,8 +878,8 @@ Deno.test("gpufuck experiment decodes Codex turn steering in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment normalizes and rolls back Codex history in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler normalizes and rolls back Codex history in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/history_fixture.duck",
@@ -846,8 +901,8 @@ Deno.test("gpufuck experiment normalizes and rolls back Codex history in source"
   }
 });
 
-Deno.test("gpufuck experiment compacts Codex history within a source token budget", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler compacts Codex history within a source token budget", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const wasm = await compiler.compile_file(
       "case-studies/codex/compaction_fixture.duck",
@@ -869,8 +924,8 @@ Deno.test("gpufuck experiment compacts Codex history within a source token budge
   }
 });
 
-Deno.test("gpufuck experiment truncates Codex text at UTF-8 boundaries", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler truncates Codex text at UTF-8 boundaries", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/truncation_fixture.duck",
@@ -886,8 +941,8 @@ Deno.test("gpufuck experiment truncates Codex text at UTF-8 boundaries", async (
   }
 });
 
-Deno.test("gpufuck experiment discovers hierarchical Codex instructions in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler discovers hierarchical Codex instructions in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/instruction_discovery_fixture.duck",
@@ -903,8 +958,8 @@ Deno.test("gpufuck experiment discovers hierarchical Codex instructions in sourc
   }
 });
 
-Deno.test("gpufuck experiment merges layered Codex configuration in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler merges layered Codex configuration in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/config_fixture.duck",
@@ -920,8 +975,8 @@ Deno.test("gpufuck experiment merges layered Codex configuration in source", asy
   }
 });
 
-Deno.test("gpufuck experiment renders Codex model context in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler renders Codex model context in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/context_fixture.duck",
@@ -937,8 +992,8 @@ Deno.test("gpufuck experiment renders Codex model context in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment selects durable Codex rollout policy in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler selects durable Codex rollout policy in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/rollout_fixture.duck",
@@ -954,8 +1009,8 @@ Deno.test("gpufuck experiment selects durable Codex rollout policy in source", a
   }
 });
 
-Deno.test("gpufuck experiment reconstructs Codex model context from a rollout", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler reconstructs Codex model context from a rollout", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/rollout_scan_fixture.duck",
@@ -971,8 +1026,8 @@ Deno.test("gpufuck experiment reconstructs Codex model context from a rollout", 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex response stream retries", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex response stream retries", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/responses_retry_fixture.duck",
@@ -988,8 +1043,8 @@ Deno.test("gpufuck experiment plans Codex response stream retries", async () => 
   }
 });
 
-Deno.test("gpufuck experiment advances Codex auto-compaction windows", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler advances Codex auto-compaction windows", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/auto_compact_window_fixture.duck",
@@ -1005,8 +1060,8 @@ Deno.test("gpufuck experiment advances Codex auto-compaction windows", async () 
   }
 });
 
-Deno.test("gpufuck experiment runs Codex token-budget tools in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler runs Codex token-budget tools in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["context_window_status_fixture.duck", 1_111],
     ["context_window_body_status_fixture.duck", 111],
@@ -1032,8 +1087,8 @@ Deno.test("gpufuck experiment runs Codex token-budget tools in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment plans Codex user-input prompts in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex user-input prompts in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["request_user_input_normalization_fixture.duck", 11],
     ["request_user_input_options_fixture.duck", 11],
@@ -1061,8 +1116,8 @@ Deno.test("gpufuck experiment plans Codex user-input prompts in source", async (
   }
 });
 
-Deno.test("gpufuck experiment plans Codex permission requests in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex permission requests in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["request_permissions_registration_fixture.duck", 111],
     ["request_permissions_environment_fixture.duck", 111],
@@ -1088,8 +1143,8 @@ Deno.test("gpufuck experiment plans Codex permission requests in source", async 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex environment waiting in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex environment waiting in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["wait_for_environment_registration_fixture.duck", 111],
     ["wait_for_environment_policy_fixture.duck", 11_111],
@@ -1112,8 +1167,8 @@ Deno.test("gpufuck experiment plans Codex environment waiting in source", async 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex plan updates in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex plan updates in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["update_plan_registration_fixture.duck", 111],
     ["update_plan_policy_fixture.duck", 11_111],
@@ -1137,8 +1192,8 @@ Deno.test("gpufuck experiment plans Codex plan updates in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment lists Codex plugin install candidates in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler lists Codex plugin install candidates in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["list_plugin_install_registration_fixture.duck", 11],
     ["list_plugin_install_spec_fixture.duck", 100],
@@ -1162,8 +1217,8 @@ Deno.test("gpufuck experiment lists Codex plugin install candidates in source", 
   }
 });
 
-Deno.test("gpufuck experiment handles Codex plugin install requests in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler handles Codex plugin install requests in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["request_plugin_install_registration_fixture.duck", 11],
     ["request_plugin_install_list_spec_fixture.duck", 100],
@@ -1190,8 +1245,8 @@ Deno.test("gpufuck experiment handles Codex plugin install requests in source", 
   }
 });
 
-Deno.test("gpufuck experiment runs the Codex synchronization tool in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler runs the Codex synchronization tool in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["test_sync_registration_fixture.duck", 11],
     ["test_sync_spec_fixture.duck", 100],
@@ -1215,8 +1270,8 @@ Deno.test("gpufuck experiment runs the Codex synchronization tool in source", as
   }
 });
 
-Deno.test("gpufuck experiment plans the Codex image viewer in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans the Codex image viewer in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["view_image_registration_fixture.duck", 11],
     ["view_image_parameters_fixture.duck", 100],
@@ -1244,8 +1299,8 @@ Deno.test("gpufuck experiment plans the Codex image viewer in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment discovers deferred Codex tools in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler discovers deferred Codex tools in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["tool_search_registration_fixture.duck", 1_111],
     ["tool_search_value_fixture.duck", 111],
@@ -1270,8 +1325,8 @@ Deno.test("gpufuck experiment discovers deferred Codex tools in source", async (
   }
 });
 
-Deno.test("gpufuck experiment accesses Codex MCP resources in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler accesses Codex MCP resources in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["mcp_resource_definition_fixture.duck", 111],
     ["mcp_resource_spec_fixture.duck", 111],
@@ -1295,8 +1350,8 @@ Deno.test("gpufuck experiment accesses Codex MCP resources in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex agent jobs in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex agent jobs in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["agent_job_registration_fixture.duck", 1_111],
     ["agent_job_spawn_json_required_fixture.duck", 11],
@@ -1333,8 +1388,8 @@ Deno.test("gpufuck experiment plans Codex agent jobs in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment profiles Codex turn phases", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler profiles Codex turn phases", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/turn_profile_fixture.duck",
@@ -1350,8 +1405,8 @@ Deno.test("gpufuck experiment profiles Codex turn phases", async () => {
   }
 });
 
-Deno.test("gpufuck experiment records Codex turn timing milestones", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler records Codex turn timing milestones", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/turn_timing_fixture.duck",
@@ -1367,8 +1422,8 @@ Deno.test("gpufuck experiment records Codex turn timing milestones", async () =>
   }
 });
 
-Deno.test("gpufuck experiment tags Codex sandbox profiles", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler tags Codex sandbox profiles", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/sandbox_tags_fixture.duck",
@@ -1384,8 +1439,8 @@ Deno.test("gpufuck experiment tags Codex sandbox profiles", async () => {
   }
 });
 
-Deno.test("gpufuck experiment lists and searches Codex rollout storage", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler lists and searches Codex rollout storage", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/rollout_storage_fixture.duck",
@@ -1401,8 +1456,8 @@ Deno.test("gpufuck experiment lists and searches Codex rollout storage", async (
   }
 });
 
-Deno.test("gpufuck experiment plans Codex message history in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex message history in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: readonly string[] = [
     "message_history_storage_fixture.duck",
     "message_history_batch_fixture.duck",
@@ -1424,8 +1479,8 @@ Deno.test("gpufuck experiment plans Codex message history in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment materializes Codex app-server threads", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler materializes Codex app-server threads", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_threads_fixture.duck",
@@ -1441,8 +1496,8 @@ Deno.test("gpufuck experiment materializes Codex app-server threads", async () =
   }
 });
 
-Deno.test("gpufuck experiment materializes Codex thread/read", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler materializes Codex thread/read", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_thread_read_fixture.duck",
@@ -1458,8 +1513,8 @@ Deno.test("gpufuck experiment materializes Codex thread/read", async () => {
   }
 });
 
-Deno.test("gpufuck experiment decodes Codex thread lifecycle methods", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler decodes Codex thread lifecycle methods", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: Array<[string, number]> = [
     ["app_server_thread_start_methods_fixture.duck", 1],
     ["app_server_thread_config_conflict_fixture.duck", 1],
@@ -1497,8 +1552,8 @@ Deno.test("gpufuck experiment decodes Codex thread lifecycle methods", async () 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex thread lifecycle transitions", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex thread lifecycle transitions", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: Array<[string, number]> = [
     ["app_server_thread_start_lifecycle_fixture.duck", 1],
     ["app_server_thread_start_paginated_fixture.duck", 1],
@@ -1554,8 +1609,8 @@ Deno.test("gpufuck experiment plans Codex thread lifecycle transitions", async (
   }
 });
 
-Deno.test("gpufuck experiment materializes Codex thread lifecycle responses", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler materializes Codex thread lifecycle responses", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures: Array<[string, number]> = [
     ["app_server_thread_start_response_fixture.duck", 11_111],
     ["app_server_thread_resume_response_fixture.duck", 111],
@@ -1583,8 +1638,8 @@ Deno.test("gpufuck experiment materializes Codex thread lifecycle responses", as
   }
 });
 
-Deno.test("gpufuck experiment starts and interrupts Codex app-server turns", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler starts and interrupts Codex app-server turns", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_lifecycle_fixture.duck",
@@ -1599,8 +1654,8 @@ Deno.test("gpufuck experiment starts and interrupts Codex app-server turns", asy
   }
 });
 
-Deno.test("gpufuck experiment validates Codex turn steering", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler validates Codex turn steering", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_steer_lifecycle_fixture.duck",
@@ -1615,8 +1670,8 @@ Deno.test("gpufuck experiment validates Codex turn steering", async () => {
   }
 });
 
-Deno.test("gpufuck experiment completes Codex app-server turns", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler completes Codex app-server turns", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_terminal_fixture.duck",
@@ -1631,8 +1686,8 @@ Deno.test("gpufuck experiment completes Codex app-server turns", async () => {
   }
 });
 
-Deno.test("gpufuck experiment records Codex app-server turn failures", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler records Codex app-server turn failures", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_failure_fixture.duck",
@@ -1647,8 +1702,8 @@ Deno.test("gpufuck experiment records Codex app-server turn failures", async () 
   }
 });
 
-Deno.test("gpufuck experiment materializes Codex app-server turns", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler materializes Codex app-server turns", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/app_server_turn_materialization_fixture.duck",
@@ -1664,8 +1719,8 @@ Deno.test("gpufuck experiment materializes Codex app-server turns", async () => 
   }
 });
 
-Deno.test("gpufuck experiment discovers Codex rollout metadata and paths", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler discovers Codex rollout metadata and paths", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/rollout_storage_metadata_fixture.duck",
@@ -1681,8 +1736,8 @@ Deno.test("gpufuck experiment discovers Codex rollout metadata and paths", async
   }
 });
 
-Deno.test("gpufuck experiment routes Codex tools in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler routes Codex tools in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_registry_fixture.duck",
@@ -1698,8 +1753,8 @@ Deno.test("gpufuck experiment routes Codex tools in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment dispatches Codex tools in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler dispatches Codex tools in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_dispatch_fixture.duck",
@@ -1715,8 +1770,8 @@ Deno.test("gpufuck experiment dispatches Codex tools in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment exposes Codex tool metadata in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler exposes Codex tool metadata in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_metadata_fixture.duck",
@@ -1732,8 +1787,8 @@ Deno.test("gpufuck experiment exposes Codex tool metadata in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment selects Codex MCP exposure and approval", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler selects Codex MCP exposure and approval", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const exposure = await compiler.run_file(
       "case-studies/codex/mcp_exposure_fixture.duck",
@@ -1757,8 +1812,8 @@ Deno.test("gpufuck experiment selects Codex MCP exposure and approval", async ()
   }
 });
 
-Deno.test("gpufuck experiment discovers and selects Codex skills in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler discovers and selects Codex skills in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const metadata = await compiler.run_file(
       "case-studies/codex/skill_metadata_fixture.duck",
@@ -1804,8 +1859,8 @@ Deno.test("gpufuck experiment discovers and selects Codex skills in source", asy
   }
 });
 
-Deno.test("gpufuck experiment projects Codex plugin capabilities in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler projects Codex plugin capabilities in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/plugin_fixture.duck",
@@ -1821,8 +1876,8 @@ Deno.test("gpufuck experiment projects Codex plugin capabilities in source", asy
   }
 });
 
-Deno.test("gpufuck experiment dispatches Codex hooks in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler dispatches Codex hooks in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const matcher = await compiler.run_file(
       "case-studies/codex/hook_matcher_fixture.duck",
@@ -1878,8 +1933,8 @@ Deno.test("gpufuck experiment dispatches Codex hooks in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment interprets Codex hook outputs in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler interprets Codex hook outputs in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const stop = await compiler.run_file(
       "case-studies/codex/hook_stop_output_fixture.duck",
@@ -1985,8 +2040,8 @@ Deno.test("gpufuck experiment interprets Codex hook outputs in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment serializes Codex hook inputs in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler serializes Codex hook inputs in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/hook_input_fixture.duck",
@@ -2002,8 +2057,8 @@ Deno.test("gpufuck experiment serializes Codex hook inputs in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment applies Codex hook command policy in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler applies Codex hook command policy in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const fixtures = [
       ["hook_command_tool_fixture.duck", 3],
@@ -2033,8 +2088,8 @@ Deno.test("gpufuck experiment applies Codex hook command policy in source", asyn
   }
 });
 
-Deno.test("gpufuck experiment coordinates Codex agents in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler coordinates Codex agents in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const statusAndCapacity = await compiler.run_file(
       "case-studies/codex/agent_status_capacity_fixture.duck",
@@ -2044,7 +2099,6 @@ Deno.test("gpufuck experiment coordinates Codex agents in source", async () => {
       name: "duck::$DuckStruct:duck_entry_result_type",
       fields: [{ kind: "integer", value: 111_111 }],
     });
-
     const inputAndTimeout = await compiler.run_file(
       "case-studies/codex/agent_input_timeout_fixture.duck",
     );
@@ -2098,20 +2152,157 @@ Deno.test("gpufuck experiment coordinates Codex agents in source", async () => {
       name: "duck::$DuckStruct:duck_entry_result_type",
       fields: [{ kind: "integer", value: 111 }],
     });
-    assert_equals(statusAndCapacity.stats.thunkEvaluations, 0);
-    assert_equals(inputAndTimeout.stats.thunkEvaluations, 0);
-    assert_equals(path.stats.thunkEvaluations, 0);
-    assert_equals(wait.stats.thunkEvaluations, 0);
-    assert_equals(waitFailure.stats.thunkEvaluations, 0);
-    assert_equals(waitTimeout.stats.thunkEvaluations, 0);
-    assert_equals(residency.stats.thunkEvaluations, 0);
+
+    assert_equals(statusAndCapacity.stats.thunkEvaluations, 1);
+    assert_equals(inputAndTimeout.stats.thunkEvaluations, 1);
+    assert_equals(path.stats.thunkEvaluations, 1);
+    assert_equals(wait.stats.thunkEvaluations, 1);
+    assert_equals(waitFailure.stats.thunkEvaluations, 1);
+    assert_equals(waitTimeout.stats.thunkEvaluations, 1);
+    assert_equals(residency.stats.thunkEvaluations, 1);
   } finally {
     compiler.destroy();
   }
 });
 
-Deno.test("gpufuck experiment applies Codex sandbox policy in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler registers Codex collaboration tools in source", async () => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["agent_tool_definition_fixture.duck", 11],
+    ["agent_tool_spec_fixture.duck", 1_111],
+    ["agent_tool_spawn_json_fixture.duck", 1],
+    ["agent_tool_message_json_fixture.duck", 1],
+    ["agent_tool_target_json_fixture.duck", 1],
+    ["agent_tool_wait_json_fixture.duck", 1],
+    ["agent_tool_list_json_fixture.duck", 1],
+    ["agent_status_json_fixture.duck", 1_111_111],
+    ["agent_tool_spawn_output_fixture.duck", 11],
+    ["agent_tool_interrupt_output_fixture.duck", 1],
+    ["agent_tool_wait_output_fixture.duck", 1],
+    ["agent_tool_list_output_fixture.duck", 1],
+    ["agent_tool_spawn_call_fixture.duck", 1_111],
+    ["agent_tool_spawn_policy_fixture.duck", 111],
+    ["agent_tool_message_call_fixture.duck", 111_111],
+    ["agent_tool_wait_list_call_fixture.duck", 1_111],
+  ] as const;
+  try {
+    for (const [fixture, score] of fixtures) {
+      const execution = await compiler.run_file(
+        "case-studies/codex/" + fixture,
+      );
+      assert_equals(execution.value, {
+        kind: "constructor",
+        name: "duck::$DuckStruct:duck_entry_result_type",
+        fields: [{ kind: "integer", value: score }],
+      });
+      assert_equals(execution.stats.thunkEvaluations, 1);
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler selects Codex spawn overrides", async (test) => {
+  const fixtures = [
+    "agent_spawn_override_explicit_fixture.duck",
+    "agent_spawn_override_default_fixture.duck",
+    "agent_spawn_override_inherited_fixture.duck",
+    "agent_spawn_override_unknown_fixture.duck",
+    "agent_spawn_override_effort_fixture.duck",
+  ] as const;
+
+  for (const fixture of fixtures) {
+    await test.step(fixture, async () => {
+      const compiler = await DuckCompiler.create();
+      try {
+        const execution = await compiler.run_file(
+          "case-studies/codex/" + fixture,
+        );
+        assert_equals(execution.value, {
+          kind: "constructor",
+          name: "duck::$DuckStruct:duck_entry_result_type",
+          fields: [{ kind: "integer", value: 1 }],
+        });
+        assert_equals(execution.stats.thunkEvaluations, 1);
+      } finally {
+        compiler.destroy();
+      }
+    });
+  }
+});
+
+Deno.test("Duck compiler plans Codex runtime and model-visible tools", async (test) => {
+  const fixtures = [
+    ["tool_source_guardian_fixture.duck", 111],
+    ["tool_source_regular_fixture.duck", 1_111],
+    ["tool_source_v1_fixture.duck", 11],
+    ["tool_source_variants_fixture.duck", 111],
+    ["tool_source_finalization_fixture.duck", 1_111],
+    ["hosted_tool_availability_fixture.duck", 111_111],
+    ["hosted_web_search_mode_fixture.duck", 1_111],
+    ["hosted_web_search_access_fixture.duck", 1_111],
+    ["hosted_web_search_spec_fixture.duck", 1],
+    ["code_mode_name_fixture.duck", 1_111],
+    ["code_mode_executor_plan_fixture.duck", 1_111_111],
+    ["code_mode_exec_source_success_fixture.duck", 111],
+    ["code_mode_exec_source_error_fixture.duck", 1_111],
+    ["code_mode_exec_source_validation_fixture.duck", 111],
+    ["code_mode_exec_source_limit_fixture.duck", 111_111],
+    ["code_mode_execute_call_fixture.duck", 1_111],
+    ["code_mode_execute_lifecycle_fixture.duck", 1_111],
+    ["code_mode_wait_spec_fixture.duck", 111],
+    ["code_mode_wait_json_fixture.duck", 111],
+    ["code_mode_wait_json_error_fixture.duck", 1_111_111],
+    ["code_mode_wait_limit_error_fixture.duck", 11_111],
+    ["code_mode_wait_fixture.duck", 11],
+    ["code_mode_wait_call_error_fixture.duck", 11],
+    ["code_mode_wait_lifecycle_fixture.duck", 1_111],
+    ["code_mode_output_limit_fixture.duck", 11_111],
+    ["code_mode_text_output_truncation_fixture.duck", 11],
+    ["code_mode_mixed_output_truncation_fixture.duck", 11],
+    ["code_mode_runtime_status_fixture.duck", 111],
+    ["code_mode_runtime_error_fixture.duck", 1],
+    ["code_mode_runtime_image_fixture.duck", 11],
+    ["code_mode_nested_tool_success_fixture.duck", 1_111],
+    ["code_mode_nested_tool_error_fixture.duck", 111],
+    ["code_mode_content_result_fixture.duck", 1],
+    ["code_mode_result_fixture.duck", 111_111],
+    ["code_mode_dispatch_submission_fixture.duck", 111_111],
+    ["code_mode_dispatch_response_fixture.duck", 1_111_111],
+    ["code_mode_dispatch_gate_fixture.duck", 111_111],
+    ["code_mode_notification_fixture.duck", 1_111],
+    ["code_mode_schema_parse_fixture.duck", 111],
+    ["code_mode_identifier_fixture.duck", 1_111],
+    ["code_mode_schema_simple_fixture.duck", 1],
+    ["code_mode_schema_renderer_fixture.duck", 1_111_111],
+    ["code_mode_output_type_fixture.duck", 111],
+    ["code_mode_description_fixture.duck", 11_111],
+    ["model_visible_filter_fixture.duck", 111],
+    ["model_visible_namespace_fixture.duck", 111],
+  ] as const;
+
+  for (const [fixture, score] of fixtures) {
+    await test.step(fixture, async () => {
+      const compiler = await DuckCompiler.create();
+      try {
+        const execution = await compiler.run_file(
+          "case-studies/codex/" + fixture,
+        );
+        assert_equals(execution.value, {
+          kind: "constructor",
+          name: "duck::$DuckStruct:duck_entry_result_type",
+          fields: [{ kind: "integer", value: score }],
+        });
+        assert_equals(execution.stats.thunkEvaluations, 1);
+      } finally {
+        compiler.destroy();
+      }
+    });
+  }
+});
+
+Deno.test("Duck compiler applies Codex sandbox policy in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_policy_fixture.duck",
@@ -2127,8 +2318,8 @@ Deno.test("gpufuck experiment applies Codex sandbox policy in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment checks Codex patch policy in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler checks Codex patch policy in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_patch_policy_fixture.duck",
@@ -2144,8 +2335,8 @@ Deno.test("gpufuck experiment checks Codex patch policy in source", async () => 
   }
 });
 
-Deno.test("gpufuck experiment parses Codex patches in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler parses Codex patches in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["apply_patch_boundary_fixture.duck", 1_111],
     ["apply_patch_parser_fixture.duck", 111_111],
@@ -2170,8 +2361,8 @@ Deno.test("gpufuck experiment parses Codex patches in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment plans Codex sandbox retries in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex sandbox retries in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/tool_sandbox_retry_fixture.duck",
@@ -2187,8 +2378,8 @@ Deno.test("gpufuck experiment plans Codex sandbox retries in source", async () =
   }
 });
 
-Deno.test("gpufuck experiment plans Codex network approvals in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex network approvals in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/network_approval_fixture.duck",
@@ -2204,8 +2395,8 @@ Deno.test("gpufuck experiment plans Codex network approvals in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment finishes deferred Codex network approvals", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler finishes deferred Codex network approvals", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/network_outcome_fixture.duck",
@@ -2221,8 +2412,8 @@ Deno.test("gpufuck experiment finishes deferred Codex network approvals", async 
   }
 });
 
-Deno.test("gpufuck experiment resolves Codex shell commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler resolves Codex shell commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/exec_command_fixture.duck",
@@ -2238,8 +2429,8 @@ Deno.test("gpufuck experiment resolves Codex shell commands in source", async ()
   }
 });
 
-Deno.test("gpufuck experiment canonicalizes Codex approval commands in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler canonicalizes Codex approval commands in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const fixtures = [
       ["command_canonicalization_fixture.duck", 1, 1],
@@ -2266,8 +2457,8 @@ Deno.test("gpufuck experiment canonicalizes Codex approval commands in source", 
   }
 });
 
-Deno.test("gpufuck experiment formats Codex inter-agent session messages", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler formats Codex inter-agent session messages", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["session_prefix_notification_fixture.duck", 1],
     ["session_prefix_status_fixture.duck", 1_111_111],
@@ -2293,8 +2484,8 @@ Deno.test("gpufuck experiment formats Codex inter-agent session messages", async
   }
 });
 
-Deno.test("gpufuck experiment plans Codex compaction model fallback", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex compaction model fallback", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["compaction_tags_fixture.duck", 1],
     ["compact_model_fallback_fixture.duck", 11_111_111],
@@ -2318,8 +2509,8 @@ Deno.test("gpufuck experiment plans Codex compaction model fallback", async () =
   }
 });
 
-Deno.test("gpufuck experiment sanitizes Codex original image detail", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler sanitizes Codex original image detail", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["original_image_detail_normalization_fixture.duck", 11_111],
     ["original_image_detail_fixture.duck", 1_111],
@@ -2342,8 +2533,67 @@ Deno.test("gpufuck experiment sanitizes Codex original image detail", async () =
   }
 });
 
-Deno.test("gpufuck experiment accounts for shared Codex rollout budgets", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler prepares Codex audio request content", async (test) => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["audio_format_entry_fixture.duck", 211_324],
+    ["audio_payload_entry_fixture.duck", 111],
+    [
+      "audio_preparation_response_entry_fixture.duck",
+      111,
+    ],
+    ["audio_preparation_response_kinds_entry_fixture.duck", 111],
+    ["audio_preparation_mismatch_entry_fixture.duck", 1],
+    ["audio_preparation_extra_entry_fixture.duck", 1],
+    ["audio_preparation_invalid_status_entry_fixture.duck", 1],
+  ] as const;
+
+  try {
+    for (const [fixture, score] of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        const modules = await compiler.compile_files([
+          "case-studies/codex/" + fixture,
+        ]);
+        const wasm = modules[0];
+        if (wasm === undefined) {
+          throw new Error("Missing compiled Codex audio fixture " + fixture);
+        }
+        const instantiated = await WebAssembly.instantiate(wasm);
+        const main = instantiated.instance.exports.main;
+        const memory = instantiated.instance.exports.memory;
+        if (
+          typeof main !== "function" ||
+          !(memory instanceof WebAssembly.Memory)
+        ) {
+          throw new Error(
+            "Codex audio fixture omitted main or memory: " + fixture,
+          );
+        }
+        const result = main();
+        if (typeof result !== "bigint") {
+          throw new Error(
+            "Codex audio fixture returned " + typeof result + " " +
+              String(result) + ": " + fixture,
+          );
+        }
+        const encoded_score = new DataView(memory.buffer).getBigInt64(
+          Number(result) + 16,
+          true,
+        );
+        const actual_score = Number(encoded_score >> 3n);
+        assert_equals(actual_score, score, fixture);
+      });
+      if (!passed) {
+        break;
+      }
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler accounts for shared Codex rollout budgets", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["rollout_budget_usage_fixture.duck", 11_111],
     ["rollout_budget_reminder_fixture.duck", 111_111],
@@ -2366,8 +2616,8 @@ Deno.test("gpufuck experiment accounts for shared Codex rollout budgets", async 
   }
 });
 
-Deno.test("gpufuck experiment schedules Codex current-time reminders", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler schedules Codex current-time reminders", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["current_time_provider_fixture.duck", 111],
     ["current_time_schedule_fixture.duck", 1_111],
@@ -2392,8 +2642,8 @@ Deno.test("gpufuck experiment schedules Codex current-time reminders", async () 
   }
 });
 
-Deno.test("gpufuck experiment plans Codex clock tools in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex clock tools in source", async () => {
+  const compiler = await DuckCompiler.create();
   const fixtures = [
     ["current_time_tool_disabled_fixture.duck", 1],
     ["current_time_tool_current_fixture.duck", 1],
@@ -2418,8 +2668,8 @@ Deno.test("gpufuck experiment plans Codex clock tools in source", async () => {
   }
 });
 
-Deno.test("gpufuck experiment renders Codex clock tool output", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler renders Codex clock tool output", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/current_time_tool_output_fixture.duck",
@@ -2435,8 +2685,8 @@ Deno.test("gpufuck experiment renders Codex clock tool output", async () => {
   }
 });
 
-Deno.test("gpufuck experiment projects Codex current time for code mode", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler projects Codex current time for code mode", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/current_time_code_mode_fixture.duck",
@@ -2452,8 +2702,8 @@ Deno.test("gpufuck experiment projects Codex current time for code mode", async 
   }
 });
 
-Deno.test("gpufuck experiment manages Codex process output in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler manages Codex process output in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/exec_output_fixture.duck",
@@ -2469,8 +2719,8 @@ Deno.test("gpufuck experiment manages Codex process output in source", async () 
   }
 });
 
-Deno.test("gpufuck experiment manages Codex process sessions in source", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler manages Codex process sessions in source", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "case-studies/codex/exec_store_fixture.duck",
@@ -2486,8 +2736,8 @@ Deno.test("gpufuck experiment manages Codex process sessions in source", async (
   }
 });
 
-Deno.test("gpufuck experiment plans Codex terminal lifecycle events", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler plans Codex terminal lifecycle events", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const delta = await compiler.run_file(
       "case-studies/codex/exec_event_delta_fixture.duck",
@@ -2520,8 +2770,8 @@ Deno.test("gpufuck experiment plans Codex terminal lifecycle events", async () =
   }
 });
 
-Deno.test("gpufuck experiment executes native Text append and indexing", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes native Text append and indexing", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_file(
       "examples/data/10_text_append_and_bytes.duck",
@@ -2532,8 +2782,8 @@ Deno.test("gpufuck experiment executes native Text append and indexing", async (
   }
 });
 
-Deno.test("gpufuck experiment executes native Bytes conversion and slicing", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes native Bytes conversion and slicing", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
 scratch {
@@ -2549,21 +2799,66 @@ scratch {
   }
 });
 
-Deno.test("gpufuck experiment compiles the benchmark suite to runnable Wasm", async () => {
+Deno.test("Duck compiler preserves assignments from iterator loops", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+const { struct } = import "duck:prelude" ()
+let values: List I32 = \`Cons [42, \`Nil ()]
+let result = 0
+
+for value in values {
+  result = value
+}
+
+result
+`);
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler preserves conditional assignments from loops", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+let index = 0
+let result = 0
+
+loop {
+  if index >= 2 { break }
+
+  if index == 1 {
+    result = 42
+  }
+
+  index = index + 1
+}
+
+result
+`);
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler compiles the benchmark suite to runnable Wasm", async () => {
   const sources = await Promise.all(
-    gpufuck_benchmark_cases.map((benchmark_case) =>
+    compiler_compatibility_cases.map((benchmark_case) =>
       Deno.readTextFile(benchmark_case.path)
     ),
   );
-  const compiler = await ExperimentalDuckCompiler.create();
+  const compiler = await DuckCompiler.create();
 
   try {
     const modules = await compiler.compile_batch(sources);
-    assert_equals(modules.length, gpufuck_benchmark_cases.length);
+    assert_equals(modules.length, compiler_compatibility_cases.length);
 
     for (let index = 0; index < modules.length; index += 1) {
       const wasm = modules[index];
-      const benchmark_case = gpufuck_benchmark_cases[index];
+      const benchmark_case = compiler_compatibility_cases[index];
 
       if (wasm === undefined || benchmark_case === undefined) {
         throw new Error(
@@ -2629,8 +2924,8 @@ Deno.test("gpufuck experiment compiles the benchmark suite to runnable Wasm", as
   }
 });
 
-Deno.test("gpufuck experiment evaluates a pure Duck result at compile time", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler evaluates a pure Duck result at compile time", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const result = await compiler.evaluate_comptime(
       "let answer = 40 + 2\nanswer",
@@ -2650,8 +2945,8 @@ Deno.test("gpufuck experiment evaluates a pure Duck result at compile time", asy
   }
 });
 
-Deno.test("gpufuck experiment preserves comptime execution limits", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler preserves comptime execution limits", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     const result = await compiler.evaluate_comptime(
       "40 + 2",
@@ -2669,8 +2964,8 @@ Deno.test("gpufuck experiment preserves comptime execution limits", async () => 
   }
 });
 
-Deno.test("gpufuck experiment compiles every standalone success example", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler compiles every standalone success example", async () => {
+  const compiler = await DuckCompiler.create();
   try {
     for (const example of success_examples) {
       await compiler.compile_file(example.path);
@@ -2680,8 +2975,8 @@ Deno.test("gpufuck experiment compiles every standalone success example", async 
   }
 });
 
-Deno.test("gpufuck experiment executes structured Core, ownership, handlers, and loops", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes structured Core, ownership, handlers, and loops", async () => {
+  const compiler = await DuckCompiler.create();
   const cases = [
     ["examples/data/09_union_struct_payload.duck", 42],
     ["examples/ownership_modules/04_freeze_and_share.duck", 42],
@@ -2703,8 +2998,8 @@ Deno.test("gpufuck experiment executes structured Core, ownership, handlers, and
   }
 });
 
-Deno.test("gpufuck experiment executes aggregate effect capabilities", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
+  const compiler = await DuckCompiler.create();
   const written: FunctionalWasmHostValue[] = [];
 
   try {
@@ -2738,8 +3033,8 @@ Deno.test("gpufuck experiment executes aggregate effect capabilities", async () 
   }
 });
 
-Deno.test("gpufuck experiment emits managed callables as persistent exports", async () => {
-  const compiler = await ExperimentalDuckCompiler.create();
+Deno.test("Duck compiler emits managed callables as persistent exports", async () => {
+  const compiler = await DuckCompiler.create();
   const storage_source = `
 let add: (I32, I32) -> I32 = (left, right) => left + right
 const sum_to: I32 -> I32 = rec (value: I32) => {
@@ -2790,7 +3085,7 @@ return { .add = add, .sum_to = sum_to, .answer = 42 }
   }
 });
 
-Deno.test("gpufuck experiment resumes explicitly suspending effects", async () => {
+Deno.test("Duck compiler resumes explicitly suspending effects", async () => {
   const source = `
 module (!init: Init) where
 
@@ -2802,7 +3097,7 @@ declare Init { timer: Timer }
 result <- Timer.wait(41)
 return { .result = result + 1 }
 `;
-  const compiler = await ExperimentalDuckCompiler.create();
+  const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run_async(source, {
       init: {

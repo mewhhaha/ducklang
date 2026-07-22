@@ -388,6 +388,14 @@ function visit_statement(
       return;
 
     case "bind":
+      visit_expression(stmt.value, visit_expr);
+
+      if (stmt.else_branch !== undefined) {
+        visit_expression(stmt.else_branch, visit_expr);
+      }
+
+      return;
+
     case "state_bind":
     case "bind_pattern":
     case "resume_dup":

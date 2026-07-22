@@ -29,6 +29,7 @@ module.exports = grammar({
 
   externals: ($) => [
     $._application_space,
+    $._condition_application_space,
     $._type_application_space,
     $._break_value_space,
     $._break_terminator_space,
@@ -43,6 +44,7 @@ module.exports = grammar({
     [$._primary_expression, $.shorthand_field],
     [$.parameter],
     [$.parameter, $.linear_reference],
+    [$.parameter, $._single_binding_pattern],
     [$.parameter, $._primary_expression],
     [$.union_case],
     [$.field_block, $.block],
@@ -129,18 +131,7 @@ module.exports = grammar({
           ),
         ),
         optional(field("linear", "!")),
-        field(
-          "name",
-          choice(
-            $.identifier,
-            $._aggregate_constructor_identifier,
-            $.wildcard,
-            $.array_pattern,
-            $.positional_product_pattern,
-            $.named_product_pattern,
-            $.named_shape_pattern,
-          ),
-        ),
+        field("name", $._binding_pattern),
         optional(seq(":", field("type", $.type_reference))),
         "=",
         field("value", $._expression),
@@ -153,6 +144,7 @@ module.exports = grammar({
             field("mutual_value", $._expression),
           ),
         ),
+        optional(seq("else", field("alternative", $.block))),
       ),
 
     effect_row: ($) => $._effect_row_expression,
@@ -729,6 +721,7 @@ module.exports = grammar({
         $.condition_is_expression,
         $.condition_unary_expression,
         $.condition_call_expression,
+        $.condition_application_expression,
         $.condition_field_expression,
         $.condition_index_expression,
         $.condition_parenthesized_expression,
@@ -793,6 +786,42 @@ module.exports = grammar({
         seq(
           field("function", $.condition_expression),
           field("argument", $.parenthesized_or_product),
+        ),
+      ),
+
+    condition_application_expression: ($) =>
+      prec.left(
+        PREC.APPLICATION,
+        seq(
+          field(
+            "function",
+            choice(
+              $.condition_application_expression,
+              $.identifier,
+              alias($.effect_identifier, $.identifier),
+              $.intrinsic_identifier,
+              $.condition_field_expression,
+            ),
+          ),
+          $._condition_application_space,
+          field(
+            "argument",
+            choice(
+              $.identifier,
+              $._aggregate_constructor_identifier,
+              alias($.effect_identifier, $.identifier),
+              $.intrinsic_identifier,
+              $.number,
+              $.string,
+              $.character,
+              $.boolean,
+              $.atom_expression,
+              $.import_meta_expression,
+              $.linear_reference,
+              $.parenthesized_or_product,
+              $.array_expression,
+            ),
+          ),
         ),
       ),
 
@@ -915,6 +944,36 @@ module.exports = grammar({
       choice(
         $.alternative_pattern,
         $._single_match_pattern,
+      ),
+
+    _binding_pattern: ($) =>
+      choice(
+        $._binding_alternative_pattern,
+        $._single_binding_pattern,
+      ),
+
+    _binding_alternative_pattern: ($) =>
+      prec.left(
+        seq(
+          $._single_binding_pattern,
+          repeat1(seq($._pattern_pipe, $._single_binding_pattern)),
+        ),
+      ),
+
+    _single_binding_pattern: ($) =>
+      choice(
+        $.union_pattern,
+        $.number,
+        $.string,
+        $.character,
+        $.boolean,
+        $.identifier,
+        $._aggregate_constructor_identifier,
+        $.wildcard,
+        $.array_pattern,
+        $.positional_product_pattern,
+        $.named_product_pattern,
+        $.named_shape_pattern,
       ),
 
     alternative_pattern: ($) =>
@@ -1313,9 +1372,20 @@ module.exports = grammar({
         field("kind", choice("struct", "union")),
         "{",
         repeat(
-          seq(choice($.type_field, field("open", "..")), optional(",")),
+          seq(
+            choice($.type_pattern_field, field("open", "..")),
+            optional(","),
+          ),
         ),
         "}",
+      ),
+
+    type_pattern_field: ($) =>
+      seq(
+        ".",
+        field("name", $.identifier),
+        "=",
+        field("type", $.type_reference),
       ),
 
     block: ($) => seq("{", repeat($._statement), "}"),

@@ -1,6 +1,10 @@
 let attempts = 0
 
-for 0..2 {
+for _ in 0..1 {
+  attempts = attempts + 1
+}
+
+for 0..1 {
   attempts = attempts + 1
 }
 

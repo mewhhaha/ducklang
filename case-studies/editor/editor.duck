@@ -5,16 +5,14 @@ const { cast, not, slice, struct } = import "duck:prelude" ()
 type Piece = Bytes
 type Pieces = List Piece
 type PieceTable = struct { .pieces = Pieces, .length = I32 }
-type PieceSplit = [Pieces, Pieces]
 type Selection = struct { .anchor = I32, .head = I32 }
+type Mode = | `Normal Unit | `Extend Unit | `Insert Unit
+type Status = | `Ready Unit | `SaveFailed Unit
 type Editor = struct {
   .document = PieceTable,
   .selection = Selection,
-  .insert_mode = Bool,
-  .extend = Bool,
-  .save_failed = Bool,
-  .quit = Bool,
-  .save_requested = Bool,
+  .mode = Mode,
+  .status = Status,
 }
 
 const empty_pieces: () -> Pieces = () => {
@@ -41,7 +39,7 @@ let reverse_pieces: Pieces -> Pieces = (pieces: Pieces) => {
 let append_pieces: [Pieces, Pieces] -> Pieces = (left: Pieces, right: Pieces) => {
   let appended = right
 
-  for piece in reverse_pieces(left) {
+  for piece in reverse_pieces left {
     let next = [piece, appended]
     appended = `Cons next
   }
@@ -53,7 +51,7 @@ let piece_table = bytes => {
   if bytes.length() == 0 {
     PieceTable.new { .pieces = empty_pieces(), .length = 0 }
   } else {
-    PieceTable.new { .pieces = one_piece(bytes), .length = bytes.length() }
+    PieceTable.new { .pieces = one_piece bytes, .length = bytes.length() }
   }
 }
 
@@ -75,41 +73,38 @@ let byte_at = (table, wanted) => {
   found
 }
 
-let split_pieces: [Pieces, I32] -> PieceSplit = (pieces: Pieces, position: I32) => {
+let split_pieces = (pieces, position) => {
   let remaining = position
   let current = pieces
   let reversed_left = empty_pieces()
   let right = empty_pieces()
 
   loop {
-    if let `Cons payload = current {
-      let [piece, tail] = payload
-      let piece_length = piece.length()
+    let `Cons payload = current else { break }
+    let [piece, tail] = payload
+    let piece_length = piece.length()
 
-      if remaining == 0 {
-        let right_node = [piece, tail]
-        right = `Cons right_node
-        break
-      } else if remaining < piece_length {
-        let left_bytes = slice(&piece, 0, remaining)
-        let right_bytes = slice(&piece, remaining, piece_length)
-        let left_node = [left_bytes, reversed_left]
-        let right_node = [right_bytes, tail]
-        reversed_left = `Cons left_node
-        right = `Cons right_node
-        break
-      } else {
-        remaining = remaining - piece_length
-        let left_node = [piece, reversed_left]
-        reversed_left = `Cons left_node
-        current = tail
-      }
-    } else {
+    if remaining == 0 {
+      let right_node = [piece, tail]
+      right = `Cons right_node
       break
+    } else if remaining < piece_length {
+      let left_bytes = slice(&piece, 0, remaining)
+      let right_bytes = slice(&piece, remaining, piece_length)
+      let left_node = [left_bytes, reversed_left]
+      let right_node = [right_bytes, tail]
+      reversed_left = `Cons left_node
+      right = `Cons right_node
+      break
+    } else {
+      remaining = remaining - piece_length
+      let left_node = [piece, reversed_left]
+      reversed_left = `Cons left_node
+      current = tail
     }
   }
 
-  [reverse_pieces(reversed_left), right]
+  [reverse_pieces reversed_left, right]
 }
 
 let insert_bytes = (table, position, bytes) => {
@@ -117,7 +112,7 @@ let insert_bytes = (table, position, bytes) => {
     table
   } else {
     let [left, right] = split_pieces(table.pieces, position)
-    let inserted = one_piece(bytes)
+    let inserted = one_piece bytes
     let inserted_right = append_pieces(inserted, right)
     let pieces = append_pieces(left, inserted_right)
     PieceTable.new { .pieces = pieces, .length = table.length + bytes.length() }
@@ -129,8 +124,7 @@ let delete_bytes = (table, start, end) => {
     table
   } else {
     let [prefix, suffix] = split_pieces(table.pieces, end)
-    let [left, removed] = split_pieces(prefix, start)
-    let _ = removed
+    let [left, _] = split_pieces(prefix, start)
     let pieces = append_pieces(left, suffix)
     PieceTable.new { .pieces = pieces, .length = table.length - (end - start) }
   }
@@ -159,13 +153,11 @@ let is_utf8_continuation = byte => byte >= 0x80 && byte < 0xc0
 
 let next_character = (table, position) => {
   let next = position + 1
-  let table_length = table.length
 
-  loop {
-    if next >= table_length { break }
-    let byte = byte_at(table, next)
-    if not(is_utf8_continuation(byte)) { break }
-    next = next + 1
+  for candidate in next..table.length {
+    let byte = byte_at(table, candidate)
+    if not(is_utf8_continuation byte) { break }
+    next = candidate + 1
   }
 
   next
@@ -174,11 +166,10 @@ let next_character = (table, position) => {
 let previous_character = (table, position) => {
   let previous = position - 1
 
-  loop {
-    if previous <= 0 { break }
-    let byte = byte_at(table, previous)
-    if not(is_utf8_continuation(byte)) { break }
-    previous = previous - 1
+  for candidate in previous..0 by -1 {
+    let byte = byte_at(table, candidate)
+    if not(is_utf8_continuation byte) { break }
+    previous = candidate - 1
   }
 
   previous
@@ -207,15 +198,16 @@ let selection_head_end = (table, selection) => {
 
 let move_head = (editor, position) => {
   let head = clamp_character(&editor.document, position)
-  let anchor = if editor.extend { editor.selection.anchor } else { head }
+  let anchor = if let `Extend () = editor.mode { editor.selection.anchor } else { head }
   editor :+ { .selection = Selection.new { .anchor = anchor, .head = head } }
 }
 
 let collapse = (editor, position) => {
   let cursor = clamp_character(&editor.document, position)
+  let mode = if let `Extend () = editor.mode { `Normal () } else { editor.mode }
   editor :+ {
     .selection = Selection.new { .anchor = cursor, .head = cursor },
-    .extend = false,
+    .mode = mode,
   }
 }
 
@@ -235,55 +227,71 @@ let insert_byte = (editor, byte) => {
   collapse(updated, position + 1)
 }
 
+let continue_editing = editor => [editor, false, false]
+
 let apply_normal_byte = (editor, byte) => {
-  if byte == cast('h', I32) {
-    move_head(editor, previous_character(&editor.document, editor.selection.head))
-  } else if byte == cast('l', I32) {
-    move_head(editor, next_character(&editor.document, editor.selection.head))
-  } else if byte == cast('v', I32) {
-    editor :+ { .extend = not(editor.extend) }
-  } else if byte == cast('d', I32) {
-    delete_selection(editor)
-  } else if byte == cast('c', I32) {
-    let updated = delete_selection(editor)
-    updated :+ { .insert_mode = true }
-  } else if byte == cast('i', I32) {
+  let key: Char = cast(byte, Char)
+  let ctrl_c = byte == 3
+
+  if key == 'h' {
+    let updated = move_head(editor, previous_character(&editor.document, editor.selection.head))
+    continue_editing updated
+  } else if key == 'l' {
+    let updated = move_head(editor, next_character(&editor.document, editor.selection.head))
+    continue_editing updated
+  } else if key == 'v' {
+    let mode = if let `Extend () = editor.mode { `Normal () } else { `Extend () }
+    continue_editing(editor :+ { .mode = mode })
+  } else if key == 'd' {
+    continue_editing(delete_selection editor)
+  } else if key == 'c' {
+    let updated = delete_selection editor
+    continue_editing(updated :+ { .mode = `Insert () })
+  } else if key == 'i' {
     let updated = collapse(editor, selection_start(&editor.selection))
-    updated :+ { .insert_mode = true }
-  } else if byte == cast('a', I32) {
+    continue_editing(updated :+ { .mode = `Insert () })
+  } else if key == 'a' {
     let position = selection_head_end(&editor.document, &editor.selection)
     let updated = collapse(editor, position)
-    updated :+ { .insert_mode = true }
-  } else if byte == cast('w', I32) {
-    editor :+ { .save_requested = true }
-  } else if byte == cast('q', I32) || byte == 3 {
-    editor :+ { .quit = true }
+    continue_editing(updated :+ { .mode = `Insert () })
+  } else if key == 'w' {
+    [editor, true, false]
+  } else if key == 'q' || ctrl_c {
+    [editor, false, true]
   } else {
-    editor
+    continue_editing editor
   }
 }
 
 let apply_insert_byte = (editor, byte) => {
-  if byte == 27 {
-    editor :+ { .insert_mode = false }
-  } else if byte == 8 || byte == 127 {
+  let key: Char = cast(byte, Char)
+  let escape = byte == 27
+  let backspace = byte == 8 || byte == 127
+  let carriage_return = byte == 13
+  let printable_byte = byte >= 32
+
+  if escape {
+    continue_editing(editor :+ { .mode = `Normal () })
+  } else if backspace {
     if editor.selection.head == 0 {
-      editor
+      continue_editing editor
     } else {
       let start = previous_character(&editor.document, editor.selection.head)
       let document = delete_bytes(editor.document, start, editor.selection.head)
       let updated = editor :+ { .document = document }
-      collapse(updated, start)
+      continue_editing(collapse(updated, start))
     }
-  } else if byte == cast('\n', I32) || byte == 13 || byte == cast('\t', I32) || byte >= cast(' ', I32) {
-    insert_byte(editor, if byte == 13 { cast('\n', I32) } else { byte })
+  } else if key == '\n' || carriage_return || key == '\t' || printable_byte {
+    let inserted_byte = if carriage_return { cast('\n', I32) } else { byte }
+    let updated = insert_byte(editor, inserted_byte)
+    continue_editing updated
   } else {
-    editor
+    continue_editing editor
   }
 }
 
 let apply_key_byte = (editor, byte) => {
-  if editor.insert_mode {
+  if let `Insert () = editor.mode {
     apply_insert_byte(editor, byte)
   } else {
     apply_normal_byte(editor, byte)
@@ -292,27 +300,41 @@ let apply_key_byte = (editor, byte) => {
 
 let apply_keys = (editor, keys) => {
   let updated = editor
+  let save_requested = false
+  let quit_requested = false
   let index = 0
 
   loop {
     if index >= keys.length() { break }
-    if keys[index] == 27 && index + 2 < keys.length() && keys[index + 1] == cast('[', I32) {
-      let arrow = keys[index + 2]
+    let byte = keys[index]
+    let escape = byte == 27
+    let escape_sequence = false
 
-      if arrow == cast('D', I32) {
+    if escape && index + 2 < keys.length() {
+      let sequence_marker: Char = cast(keys[index + 1], Char)
+      escape_sequence = sequence_marker == '['
+    }
+
+    if escape_sequence {
+      let arrow: Char = cast(keys[index + 2], Char)
+
+      if arrow == 'D' {
         updated = move_head(updated, previous_character(&updated.document, updated.selection.head))
-      } else if arrow == cast('C', I32) {
+      } else if arrow == 'C' {
         updated = move_head(updated, next_character(&updated.document, updated.selection.head))
       }
 
       index = index + 3
     } else {
-      updated = apply_key_byte(updated, keys[index])
+      let [next_editor, request_save, request_quit] = apply_key_byte(updated, byte)
+      updated = next_editor
+      save_requested = save_requested || request_save
+      quit_requested = quit_requested || request_quit
       index = index + 1
     }
   }
 
-  updated
+  [updated, save_requested, quit_requested]
 }
 
 let append_escape = (output, used, code) => {
@@ -330,7 +352,7 @@ let render = (
   extend,
   save_failed,
   columns,
-    rows) => {
+  rows) => {
     let visible_rows = if rows > 2 { rows - 1 } else { 1 }
     let visible_columns = if columns > 8 { columns } else { 8 }
     let output = Bytes.generate(document.length() + visible_rows * 8 + visible_columns + 128, _ => 0)
@@ -372,7 +394,7 @@ let render = (
         output[used] = if byte == 9 { 32 } else { byte }
         used = used + 1
 
-        if not(is_utf8_continuation(byte)) {
+        if not(is_utf8_continuation byte) {
           column = column + 1
         }
       }
@@ -421,20 +443,15 @@ let render = (
   }
 
 document <- Terminal.load()
-let initial_document = piece_table(document)
+let initial_document = piece_table document
 let editor = Editor.new {
   .document = initial_document,
   .selection = Selection.new { .anchor = 0, .head = 0 },
-  .insert_mode = false,
-  .extend = false,
-  .save_failed = false,
-  .quit = false,
-  .save_requested = false,
+  .mode = `Normal (),
+  .status = `Ready (),
 }
-let running = true
 
 loop {
-  if not(running) { break }
   columns <- Terminal.columns()
   rows <- Terminal.rows()
   let rendered_document = materialize(&editor.document)
@@ -444,36 +461,30 @@ loop {
     rendered_document,
     rendered_start,
     rendered_end,
-    editor.insert_mode,
-    editor.extend,
-    editor.save_failed,
+    if let `Insert () = editor.mode { true } else { false },
+    if let `Extend () = editor.mode { true } else { false },
+    if let `SaveFailed () = editor.status { true } else { false },
     columns,
     rows
   )
   _ <- Terminal.write(&frame)
   read_result <- Terminal.read()
+  let `Keys keys = read_result else { break }
+  let [updated, save_requested, quit_requested] = apply_keys(editor, keys)
+  editor = updated
 
-  if let `Keys keys = read_result {
-    editor = apply_keys(editor, keys)
+  if save_requested {
+    let contents = materialize(&editor.document)
+    save_result <- Terminal.save(&contents)
 
-    if editor.save_requested {
-      let contents = materialize(&editor.document)
-      save_result <- Terminal.save(&contents)
-      editor = editor :+ { .save_requested = false }
-
-      if let `Ok () = save_result {
-        editor = editor :+ { .save_failed = false }
-      } else {
-        editor = editor :+ { .save_failed = true }
-      }
+    if let `Ok () = save_result {
+      editor = editor :+ { .status = `Ready () }
+    } else {
+      editor = editor :+ { .status = `SaveFailed () }
     }
-
-    if editor.quit {
-      running = false
-    }
-  } else {
-    running = false
   }
+
+  if quit_requested { break }
 }
 
 return { .code = 0 }

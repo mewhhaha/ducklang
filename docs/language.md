@@ -833,6 +833,22 @@ let value = if let `Ok found = result {
 }
 ```
 
+A refutable `let` pattern can keep its bindings in the following scope when its
+`else` branch cannot fall through:
+
+```txt
+let `Ok value = result else {
+  return fallback
+}
+
+use value
+```
+
+The fallback must end with `return`, `break`, `continue`, `@panic`, or branches
+that all terminate in one of those ways. The matched value is evaluated once.
+The frontend lowers the following scope into the successful match arm, so loop
+control and ownership retain their ordinary behavior.
+
 Runtime union matching where the case is not statically known requires a typed
 union target: a direct typed union annotation, a typed constructor, or a dynamic
 `if` whose branches construct cases of an inferable union. Dynamic `if let`
@@ -1049,12 +1065,12 @@ It exports:
 
 Applications that need a narrower surface can import `duck:prelude/text` or
 `duck:prelude/numeric`. The text module exposes text search, comparison,
-trimming, replacement, and UTF-8-aware truncation. The numeric module exposes
-I32 and I64 min/max, bit operations, conversions, formatting, and `F32x4`
-operations. `duck:prelude/time` parses RFC3339 timestamps, formats Unix seconds
-as UTC, and formats elapsed microseconds as seconds with four fractional digits.
-`duck:prelude/runtime` remains the lower-level combined module used to implement
-both focused modules.
+whole-text and leading-only Unicode trimming, replacement, and UTF-8-aware
+truncation. The numeric module exposes I32 and I64 min/max, bit operations,
+conversions, formatting, and `F32x4` operations. `duck:prelude/time` parses
+RFC3339 timestamps, formats Unix seconds as UTC, and formats elapsed
+microseconds as seconds with four fractional digits. `duck:prelude/runtime`
+remains the lower-level combined module used to implement both focused modules.
 
 `duck:prelude/abstractions` contains the domain-oriented layer. It defines
 distinct `ByteOffset`, `ExitCode`, `DurationMs`, `UnixTimeMs`, `Fuel`, and

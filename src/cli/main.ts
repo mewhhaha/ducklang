@@ -7,7 +7,7 @@ import { run_tests } from "./test.ts";
 const usage = `Usage: duck <command>
 
 Commands:
-  build <file> [options]    Compile a .duck file; defaults to Core Wasm
+  build <file> [options]    Compile a .duck file to Wasm through gpufuck
   run <file> [options]      Compile and run a .duck file
   test <file>               Compile and run @[test] functions
   fmt [paths...] [--check]  Format .duck files in place; --check only reports
@@ -16,11 +16,8 @@ Commands:
   lsp                       Run the language server over stdio
 
 Build options:
-  --emit wat|wasm|all       Select outputs; defaults to wasm
   --out <directory>         Write outputs under this directory
-  --route ic|core|managed   Select the compiler route; defaults to core
-  --managed                 Alias for --route managed
-  --host-interface <file>   Add managed host declarations
+  --host-interface <file>   Add host capability declarations
 `;
 
 export async function run_cli(args: string[]): Promise<number> {

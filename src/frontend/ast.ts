@@ -238,6 +238,7 @@ export type Stmt =
     mutual?: RecursiveBinding[];
     attribute_groups?: AttributeGroup[];
     value: FrontExpr;
+    else_branch?: FrontExpr;
   }
   | {
     tag: "state_bind";

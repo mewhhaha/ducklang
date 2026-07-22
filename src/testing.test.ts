@@ -1,7 +1,7 @@
 import { assert_equals, assert_includes } from "./assert.ts";
-import { wasm_from_wat } from "./cli/compile.ts";
 import { Source } from "./frontend/source.ts";
 import { run_duck_tests } from "./testing.ts";
+import { wasm_from_wat } from "./wasm_test_util.ts";
 
 Deno.test("source test runner reports traps and continues", async () => {
   const artifact = Source.artifact(`

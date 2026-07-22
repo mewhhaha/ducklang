@@ -1,12 +1,8 @@
 run:
-  deno run --allow-read --allow-write main.ts
+  deno run --allow-read main.ts
 
 duck *args:
-  deno run --allow-read --allow-write --allow-run=wat2wasm duck.ts {{args}}
-
-wasm wat_file="build/out.wat" wasm_file="build/out.wasm":
-  mkdir -p build
-  wat2wasm {{wat_file}} -o {{wasm_file}}
+  deno run --allow-read --allow-write duck.ts {{args}}
 
 fmt:
   deno fmt
@@ -59,10 +55,6 @@ grammar-check:
 
 quality: fmt-check lint typecheck architecture-check
 
-performance:
-  deno task compiler:perf
-  deno task lsp:perf
-
 helix-grammar: grammar-check
 
 helix-register: helix-grammar
@@ -70,4 +62,4 @@ helix-register: helix-grammar
 
 install: helix-register
 
-check: quality grammar-check source-test case-studies performance
+check: quality grammar-check source-test case-studies

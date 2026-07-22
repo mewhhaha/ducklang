@@ -4,6 +4,7 @@ import { expect_snake_case } from "../names.ts";
 import { module_value } from "../parser_support.ts";
 import { pattern_bindings } from "../pattern.ts";
 import { has_source_span, inherit_source_span } from "../syntax.ts";
+import { expression_does_not_fall_through } from "../termination.ts";
 import { format_type_expr } from "../type_expr.ts";
 import { ParserStmtControl } from "./control.ts";
 
@@ -92,6 +93,23 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       value = apply_function_result_context(value, pattern.type_annotation);
     }
 
+    let else_branch: FrontExpr | undefined;
+    const else_checkpoint = this.index;
+    this.skip_newlines();
+
+    if (this.match_name("else")) {
+      expect(kind === "let", "Only let bindings support else branches");
+      expect(!is_recursive, "Recursive bindings do not support else branches");
+      expect(!opens_import, "Open bindings do not support else branches");
+      else_branch = this.parse_block();
+      expect(
+        expression_does_not_fall_through(else_branch),
+        "Let-else branch must return, break, continue, or trap",
+      );
+    } else {
+      this.index = else_checkpoint;
+    }
+
     if (opens_import) {
       expect(
         value.tag === "app" && value.func.tag === "import",
@@ -159,6 +177,10 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       annotation,
       value,
     };
+
+    if (else_branch !== undefined) {
+      stmt.else_branch = else_branch;
+    }
 
     if (opens_import) {
       stmt.opens_import = true;

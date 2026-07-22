@@ -15,11 +15,7 @@ import {
   specialize_front_effects,
 } from "./effect_specialize.ts";
 import { elaborate_front_ducks } from "./duck_elaborate.ts";
-import {
-  apply_front_function_signatures,
-  infer_front_function_signatures,
-} from "./signature_inference.ts";
-import { erase_undemanded_front_bindings } from "./demand.ts";
+import { infer_front_function_signatures } from "./signature_inference.ts";
 import {
   type SourceImportResolver,
   validate_source_import_context,
@@ -27,6 +23,7 @@ import {
 } from "./import_diagnostic.ts";
 import { validate_ic_route } from "./ic_route.ts";
 import { validate_source_linear } from "./linear.ts";
+import { elaborate_front_let_else } from "./let_else.ts";
 import { resolve_bundled_source_imports } from "./load.ts";
 import { specialize_const_module_imports } from "./module_specialize.ts";
 import type { ParseSourceResult } from "./parser.ts";
@@ -42,15 +39,18 @@ import {
 } from "./source_facts.ts";
 import { derive_missing_source_spans } from "./syntax.ts";
 import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
-import { expand_source_attributes } from "./attribute.ts";
 import {
   infer_default_effect_handlers,
   source_has_implicit_try,
 } from "./default_handler.ts";
-import {
-  source_with_import_meta,
-  type SourceImportMeta,
-} from "./import_meta.ts";
+import type { SourceImportMeta } from "./import_meta.ts";
+import { source_with_expanded_attributes } from "./core_pipeline.ts";
+
+export {
+  expanded_source_for_core_route,
+  source_for_core_route,
+  source_with_expanded_attributes,
+} from "./core_pipeline.ts";
 
 export type FrontendAnalysisOptions = {
   import_meta?: SourceImportMeta;
@@ -164,48 +164,12 @@ export function source_for_ic_route(source: Source): Source {
   return elaborate_source(source);
 }
 
-export function source_for_core_route(source: Source): Source {
-  source = source_with_expanded_attributes(source);
-  derive_missing_source_spans(source, { start: 0, end: 0 });
-  source = specialize_front_effects(source);
-  source = infer_default_effect_handlers(source);
-  require_rank_n_types(source);
-  require_core_representation(source);
-  source = erase_undemanded_front_bindings(elaborate_source(source));
-  validate_atom_identities(source);
-  validate_source_linear(source);
-  return source;
-}
-
 export function source_effects(source: Source): FrontEffectAnalysis {
   source = source_with_expanded_attributes(source);
   source = specialize_front_effects(source);
   source = infer_default_effect_handlers(source);
+  source = elaborate_front_let_else(source);
   return analyze_front_effects(source);
-}
-
-export function source_with_expanded_attributes(
-  source: Source,
-  import_meta: SourceImportMeta = {},
-): Source {
-  source = source_with_import_meta(source, import_meta);
-  const imported_source = resolve_bundled_source_imports(source);
-  const inferred_source = infer_front_function_signatures(imported_source);
-  const contextual_source = apply_front_function_signatures(
-    source,
-    inferred_source,
-  );
-
-  if (contextual_source === source) {
-    source = imported_source;
-  } else {
-    source = resolve_bundled_source_imports(contextual_source);
-  }
-
-  source = infer_front_function_signatures(source);
-  source = specialize_const_module_imports(source);
-  derive_missing_source_spans(source, { start: 0, end: 0 });
-  return expand_source_attributes(source);
 }
 
 function syntax_diagnostics(parsed: ParseSourceResult): SourceDiagnostic[] {
@@ -251,6 +215,7 @@ function append_affine_diagnostics(
 }
 
 function elaborate_source(source: Source): Source {
+  source = elaborate_front_let_else(source);
   source = infer_front_function_signatures(source);
   source = elaborate_front_ducks(source);
   source = infer_front_function_signatures(source);
@@ -269,18 +234,6 @@ function require_rank_n_types(source: Source): void {
       diagnostic.severity === "error" &&
       diagnostic.code === diagnostic_codes.rank_n_type_mismatch
     ) {
-      throw new SourceDiagnosticError(diagnostic);
-    }
-  }
-}
-
-function require_core_representation(source: Source): void {
-  const diagnostics = validate_frontend_semantics(source, {
-    scope: "core-representation",
-  });
-
-  for (const diagnostic of diagnostics) {
-    if (diagnostic.severity === "error") {
       throw new SourceDiagnosticError(diagnostic);
     }
   }

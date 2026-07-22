@@ -82,6 +82,9 @@ type TypeSetScope = {
   evaluating_const_body: boolean;
   evaluating_const_call: boolean;
   fresh: { next: number };
+  owns_bindings: boolean;
+  owns_declared_union_types: boolean;
+  owns_type_values: boolean;
   type_values: Map<string, FrontExpr>;
 };
 
@@ -636,6 +639,9 @@ export function elaborate_front_type_sets(source: Source): Source {
     evaluating_const_body: false,
     evaluating_const_call: false,
     fresh: { next: 0 },
+    owns_bindings: true,
+    owns_declared_union_types: true,
+    owns_type_values: true,
     type_values: new Map(),
   };
 
@@ -648,7 +654,7 @@ export function elaborate_front_type_sets(source: Source): Source {
 
     if (declaration.body.tag === "product") {
       if (declaration.body.initializer === undefined) {
-        scope.type_values.set(declaration.name, {
+        set_scope_type_value(scope, declaration.name, {
           tag: "struct_type",
           fields: declaration.body.fields,
         });
@@ -658,14 +664,14 @@ export function elaborate_front_type_sets(source: Source): Source {
         tag: "union_type",
         cases: declaration.body.cases,
       };
-      scope.type_values.set(declaration.name, union_type);
-      scope.declared_union_types.set(declaration.name, union_type);
+      set_scope_type_value(scope, declaration.name, union_type);
+      set_scope_declared_union_type(scope, declaration.name, union_type);
     }
   }
 
   for (const stmt of statements) {
     if (stmt.tag === "bind" && stmt.kind === "const") {
-      scope.type_values.set(stmt.name, stmt.value);
+      set_scope_type_value(scope, stmt.name, stmt.value);
     }
   }
 
@@ -910,7 +916,7 @@ function rewrite_statements(
         binding_value = const_rec;
       }
 
-      scope.bindings.set(elaborated_candidate.name, {
+      set_scope_binding(scope, elaborated_candidate.name, {
         annotation: elaborated_candidate.annotation,
         compiletime_only,
         inferred_type: candidate_inferred_type,
@@ -921,13 +927,14 @@ function rewrite_statements(
       });
 
       if (elaborated_candidate.kind === "const") {
-        scope.type_values.set(elaborated_candidate.name, binding_value);
+        set_scope_type_value(scope, elaborated_candidate.name, binding_value);
 
         if (
           binding_value.tag === "union_type" &&
           /^[A-Z][A-Za-z0-9]*$/.test(elaborated_candidate.name)
         ) {
-          scope.declared_union_types.set(
+          set_scope_declared_union_type(
+            scope,
             elaborated_candidate.name,
             binding_value,
           );
@@ -2045,7 +2052,7 @@ function rewrite_statement(stmt: Stmt, scope: TypeSetScope): Stmt {
       const branch = clone_scope(scope);
 
       if (stmt.value_name) {
-        branch.bindings.set(stmt.value_name, {
+        set_scope_binding(branch, stmt.value_name, {
           annotation: union_case_payload_annotation(
             stmt.target,
             stmt.case_name,
@@ -2716,7 +2723,7 @@ function elaborate_match_arm(
       }
 
       value_name = arm.pattern.value.name;
-      branch.bindings.set(value_name, {
+      set_scope_binding(branch, value_name, {
         annotation: union_case_annotation(union_type, arm.pattern.name),
         value: undefined,
       });
@@ -2856,7 +2863,7 @@ function elaborate_text_capture_arm(
     ],
   };
   const branch = clone_scope(scope);
-  branch.bindings.set(pattern.name, {
+  set_scope_binding(branch, pattern.name, {
     annotation: "Text",
     value: undefined,
   });
@@ -4087,7 +4094,7 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       const branch = clone_scope(scope);
 
       if (expr.value_name) {
-        branch.bindings.set(expr.value_name, {
+        set_scope_binding(branch, expr.value_name, {
           annotation: union_case_payload_annotation(
             expr.target,
             expr.case_name,
@@ -5277,11 +5284,11 @@ function set_const_scope_binding(
   name: string,
   value: FrontExpr,
 ): void {
-  scope.bindings.set(name, {
+  set_scope_binding(scope, name, {
     annotation: undefined,
     value,
   });
-  scope.type_values.set(name, value);
+  set_scope_type_value(scope, name, value);
 }
 
 function const_collection_items(value: FrontExpr): FrontExpr[] | undefined {
@@ -5329,11 +5336,11 @@ function propagate_const_assignments(
 
     const binding = source.bindings.get(statement.name);
     expect(binding, "Missing assigned compile-time binding " + statement.name);
-    target.bindings.set(statement.name, binding);
+    set_scope_binding(target, statement.name, binding);
 
     const type_value = source.type_values.get(statement.name);
     expect(type_value, "Missing assigned compile-time value " + statement.name);
-    target.type_values.set(statement.name, type_value);
+    set_scope_type_value(target, statement.name, type_value);
   }
 }
 
@@ -6776,7 +6783,7 @@ function rewrite_if(
   expect(matched, "Missing matched type-set case");
   const then_name = fresh_is_payload_name(expr.cond.value.name, scope);
   const then_scope = clone_scope(scope);
-  then_scope.bindings.set(then_name, {
+  set_scope_binding(then_scope, then_name, {
     annotation: member_annotation(matched.set_member),
     value: undefined,
   });
@@ -6790,7 +6797,8 @@ function rewrite_if(
     const else_scope = clone_scope(scope);
 
     if (remaining.length > 0) {
-      else_scope.bindings.set(
+      set_scope_binding(
+        else_scope,
         expr.cond.value.name,
         binding_for_union_cases(remaining),
       );
@@ -6801,7 +6809,7 @@ function rewrite_if(
       expect(other, "Missing complementary type-set case");
       const else_name = fresh_is_payload_name(expr.cond.value.name, scope);
       const payload_scope = clone_scope(else_scope);
-      payload_scope.bindings.set(else_name, {
+      set_scope_binding(payload_scope, else_name, {
         annotation: member_annotation(other.set_member),
         value: undefined,
       });
@@ -7781,7 +7789,7 @@ function scope_for_params(params: Param[], parent: TypeSetScope): TypeSetScope {
   const scope = clone_scope(parent);
 
   for (const param of params) {
-    scope.bindings.set(param.name, {
+    set_scope_binding(scope, param.name, {
       annotation: param.annotation,
       compiletime_only: param.is_const,
       value: undefined,
@@ -8257,15 +8265,57 @@ function union_case_payload_annotation_text(
 
 function clone_scope(scope: TypeSetScope): TypeSetScope {
   return {
-    bindings: new Map(scope.bindings),
+    bindings: scope.bindings,
     const_evaluation: scope.const_evaluation,
     const_recursion: scope.const_recursion,
-    declared_union_types: new Map(scope.declared_union_types),
+    declared_union_types: scope.declared_union_types,
     evaluating_const_body: scope.evaluating_const_body,
     evaluating_const_call: scope.evaluating_const_call,
     fresh: scope.fresh,
-    type_values: new Map(scope.type_values),
+    owns_bindings: false,
+    owns_declared_union_types: false,
+    owns_type_values: false,
+    type_values: scope.type_values,
   };
+}
+
+function set_scope_binding(
+  scope: TypeSetScope,
+  name: string,
+  binding: TypeSetBinding,
+): void {
+  if (!scope.owns_bindings) {
+    scope.bindings = new Map(scope.bindings);
+    scope.owns_bindings = true;
+  }
+
+  scope.bindings.set(name, binding);
+}
+
+function set_scope_declared_union_type(
+  scope: TypeSetScope,
+  name: string,
+  union_type: Extract<FrontExpr, { tag: "union_type" }>,
+): void {
+  if (!scope.owns_declared_union_types) {
+    scope.declared_union_types = new Map(scope.declared_union_types);
+    scope.owns_declared_union_types = true;
+  }
+
+  scope.declared_union_types.set(name, union_type);
+}
+
+function set_scope_type_value(
+  scope: TypeSetScope,
+  name: string,
+  value: FrontExpr,
+): void {
+  if (!scope.owns_type_values) {
+    scope.type_values = new Map(scope.type_values);
+    scope.owns_type_values = true;
+  }
+
+  scope.type_values.set(name, value);
 }
 
 function fresh_is_payload_name(name: string, scope: TypeSetScope): string {

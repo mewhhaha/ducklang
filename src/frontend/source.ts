@@ -18,10 +18,8 @@ import {
 } from "../abi.ts";
 import type { Source as SourceNode } from "./ast.ts";
 import { format_source } from "./format.ts";
-import {
-  analyze_front_effects,
-  type FrontEffectAnalysis,
-} from "./effect_analysis.ts";
+import type { FrontEffectAnalysis } from "./effect_analysis.ts";
+import { source_with_host_interface } from "./host_interface.ts";
 import { diagnose_ic_route } from "./ic_route.ts";
 import {
   load_source,
@@ -48,6 +46,7 @@ import {
 import type { SyntaxDiagnostic } from "./syntax.ts";
 import {
   analyze_frontend,
+  expanded_source_for_core_route,
   source_effects,
   source_for_core_route,
   source_for_ic_route,
@@ -57,6 +56,10 @@ import {
   source_with_import_meta,
   type SourceImportMeta,
 } from "./import_meta.ts";
+import { source_with_managed_callable_exports } from "./managed_exports.ts";
+
+export { source_with_host_interface } from "./host_interface.ts";
+export { source_with_managed_callable_exports } from "./managed_exports.ts";
 
 export type Source = SourceNode;
 
@@ -249,7 +252,7 @@ function artifact_from_source(
 
   source = source_with_expanded_attributes(source, import_meta);
   source = source_with_managed_callable_exports(source);
-  const compiled_source = source_for_core_route(source);
+  const compiled_source = expanded_source_for_core_route(source);
   const abi = build_abi_manifest(source, compiled_source);
   const core = core_from_elaborated_source(compiled_source);
   const mod = managed_abi_mod(Core.mod(core, name), abi);
@@ -258,102 +261,6 @@ function artifact_from_source(
     wat: Mod.emit(mod),
     abi,
   };
-}
-
-export function source_with_managed_callable_exports(
-  source: SourceNode,
-): SourceNode {
-  const final_stmt = source.statements[source.statements.length - 1];
-
-  if (
-    !final_stmt || final_stmt.tag !== "return" ||
-    final_stmt.value.tag !== "struct_value"
-  ) {
-    return source;
-  }
-
-  const bindings = new Map<
-    string,
-    Extract<SourceNode["statements"][number], { tag: "bind" }>
-  >();
-
-  for (const stmt of source.statements) {
-    if (stmt.tag === "bind") {
-      bindings.set(stmt.name, stmt);
-    }
-  }
-
-  const managed_names = new Set<string>();
-  const result_fields: typeof final_stmt.value.fields = [];
-
-  for (const field of final_stmt.value.fields) {
-    if (field.value.tag !== "var") {
-      result_fields.push(field);
-      continue;
-    }
-
-    const binding = bindings.get(field.value.name);
-
-    if (
-      !binding || binding.type_annotation?.tag !== "arrow" ||
-      (binding.value.tag !== "lam" && binding.value.tag !== "rec")
-    ) {
-      result_fields.push(field);
-      continue;
-    }
-
-    if (field.name !== binding.name) {
-      throw new Error(
-        "Managed callable export field must match its binding name: " +
-          field.name + " refers to " + binding.name,
-      );
-    }
-
-    managed_names.add(binding.name);
-  }
-
-  if (managed_names.size === 0) {
-    return source;
-  }
-
-  const effects = analyze_front_effects(source);
-
-  for (const name of managed_names) {
-    const binding = bindings.get(name);
-
-    if (!binding || binding.type_annotation?.tag !== "arrow") {
-      throw new Error("Missing managed callable binding: " + name);
-    }
-
-    const function_effects = effects.functions[name];
-
-    if (
-      binding.type_annotation.effects !== undefined ||
-      (function_effects && function_effects.effects.length > 0)
-    ) {
-      throw new Error(
-        "Managed callable exports cannot use effects yet: " + name,
-      );
-    }
-  }
-
-  const managed_return: typeof final_stmt = {
-    ...final_stmt,
-    value: { ...final_stmt.value, fields: result_fields },
-  };
-  const statements: SourceNode["statements"] = source.statements.map((stmt) => {
-    if (stmt === final_stmt) {
-      return managed_return;
-    }
-
-    if (stmt.tag === "bind" && managed_names.has(stmt.name)) {
-      return { ...stmt, kind: "let", managed_export: true };
-    }
-
-    return stmt;
-  });
-
-  return { ...source, statements };
 }
 
 // These helpers are imported only by the backend fixture facade. They are not
@@ -444,32 +351,6 @@ Source.artifact_file = function artifact_file(
     name,
   });
 };
-
-export function source_with_host_interface(
-  source: SourceNode,
-  host_interface: SourceNode,
-): SourceNode {
-  const host_declarations = host_interface.declarations || [];
-  const source_declarations = source.declarations || [];
-  const declarations = [...host_declarations, ...source_declarations];
-  const names = new Set<string>();
-
-  for (const declaration of declarations) {
-    if (declaration.tag === "extend" || declaration.tag === "fixity") {
-      continue;
-    }
-
-    if (names.has(declaration.name)) {
-      throw new Error(
-        "Duplicate host interface declaration: " + declaration.name,
-      );
-    }
-
-    names.add(declaration.name);
-  }
-
-  return { ...source, declarations };
-}
 
 function core_from_source_with_internal_imports(source: SourceNode): CoreNode {
   return core_from_elaborated_source(source_for_core_route(source));

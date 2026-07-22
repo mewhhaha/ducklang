@@ -271,6 +271,11 @@ function resolve_import(
 
   const importer_url = new URL(importer, repository);
   const resolved_url = new URL(specifier, importer_url);
+
+  if (!resolved_url.href.startsWith(repository.href)) {
+    return undefined;
+  }
+
   const resolved = repository_relative_path(resolved_url);
 
   if (known.has(resolved)) {

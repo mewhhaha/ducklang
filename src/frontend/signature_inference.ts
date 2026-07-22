@@ -36,11 +36,15 @@ type InferredSignature = {
 
 export function infer_front_function_signatures(source: Source): Source {
   let inferred = source;
-  const maximum_rounds = function_bindings(source).length + 1;
+  const initial_bindings = function_bindings(source);
+  const maximum_rounds = initial_bindings.length + 1;
+  const components = function_components(
+    new Map(initial_bindings.map((binding) => [binding.name, binding])),
+  );
 
   for (let round = 0; round < maximum_rounds; round += 1) {
     const facts = source_facts(inferred);
-    const signatures = inferred_signatures(inferred, facts);
+    const signatures = inferred_signatures(inferred, facts, components);
 
     if (signatures.size === 0) {
       return inferred;
@@ -128,13 +132,14 @@ export function apply_front_function_signatures(
 function inferred_signatures(
   source: Source,
   facts: SourceFacts,
+  components: readonly (readonly string[])[],
 ): Map<string, InferredSignature> {
   const bindings = new Map(
     function_bindings(source).map((binding) => [binding.name, binding]),
   );
   const signatures = new Map<string, InferredSignature>();
 
-  for (const component of function_components(bindings)) {
+  for (const component of components) {
     for (const name of component) {
       const binding = bindings.get(name);
 

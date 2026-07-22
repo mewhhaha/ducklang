@@ -61,8 +61,6 @@ import {
   powertools_code_lenses,
   route_execute_command,
   route_for_uri,
-  type Stage,
-  view_stage,
 } from "./powertools.ts";
 import { document_symbols } from "./symbols.ts";
 import {
@@ -296,7 +294,6 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
         codeLensProvider: { resolveProvider: false },
         executeCommandProvider: {
           commands: [
-            "duck.viewStage",
             "duck.expandComptime",
             "duck.runExample",
           ],
@@ -313,7 +310,6 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
       experimental: {
         duck: {
           expandComptime: true,
-          viewStage: ["ic", "expr", "mod", "wat"],
         },
       },
       serverInfo: { name: "duck-lsp", version: "0.1.0" },
@@ -685,30 +681,6 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     )];
   }
 
-  if (message.method === "duck/viewStage") {
-    const uri = uri_from_text_document(message.params);
-    const params = as_record(message.params);
-
-    if (
-      uri === undefined || params === undefined ||
-      !is_stage(params.stage) || state.documents.get(uri) === undefined
-    ) {
-      return [respond(message, {
-        ok: false,
-        code: "unsupported_route",
-        message: "duck/viewStage requires an open document and valid stage",
-      })];
-    }
-
-    const document = state.documents.get(uri);
-
-    if (document === undefined) {
-      throw new Error("Missing open stage document");
-    }
-
-    return [respond(message, view_stage(uri, document.text, params.stage))];
-  }
-
   if (message.method === "textDocument/codeLens") {
     const uri = uri_from_text_document(message.params);
 
@@ -778,7 +750,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
           uri: action.data.uri,
           resolve_import: (dependency_uri) =>
             resolve_document_import(state, dependency_uri),
-          warnings: true,
+          warnings: false,
         }),
       uri: action.data.uri,
       version: document.version,
@@ -1876,14 +1848,6 @@ function execute_command_from_params(
     encoding: state.documents.position_encoding,
   };
 
-  if (request.command === "duck.viewStage") {
-    const stage = request.arguments[1];
-
-    if (is_stage(stage)) {
-      result.stage = stage;
-    }
-  }
-
   if (request.command === "duck.expandComptime") {
     const position = request.arguments[1];
 
@@ -1893,11 +1857,6 @@ function execute_command_from_params(
   }
 
   return result;
-}
-
-function is_stage(value: unknown): value is Stage {
-  return value === "ic" || value === "expr" || value === "mod" ||
-    value === "wat";
 }
 
 function is_code_action_kind(value: unknown): boolean {

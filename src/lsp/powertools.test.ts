@@ -1,10 +1,8 @@
 import { assert_equals, assert_includes } from "../assert.ts";
-import { Source } from "../frontend.ts";
 import {
   expand_comptime,
   powertools_code_lenses,
   route_execute_command,
-  view_stage,
 } from "./powertools.ts";
 
 const adder = "const make_adder = n => { x => x + n }\n" +
@@ -86,22 +84,11 @@ Deno.test("powertools trace records successful frontend fact checks", () => {
   assert_equals(result.value.source, "3");
 });
 
-Deno.test("powertools WAT view uses the scalar IC Source route", () => {
-  const text = "40 + 2\n";
-  const result = view_stage("file:///scratch/scalar.duck", text, "wat");
-
-  assert_equals(result, {
-    ok: true,
-    value: { stage: "wat", route: "ic", text: Source.ic_wat(text) },
-  });
-});
-
 Deno.test("powertools discovers compile expand and runnable code lenses", () => {
   const uri = "file:///workspace/examples/compile_time/01_comptime_adder.duck";
   const lenses = powertools_code_lenses(uri, adder, "utf-16");
 
   assert_equals(lenses.map((lens) => lens.title), [
-    "▸ compile to WAT",
     "▸ expand",
     "▸ run example",
   ]);
@@ -128,22 +115,18 @@ Deno.test("powertools discovers compile expand and runnable code lenses", () => 
   });
 });
 
-Deno.test("powertools returns structured errors for broken and unsupported buffers", () => {
-  const broken = view_stage("file:///scratch/broken.duck", "let =", "wat");
-  assert_equals(broken.ok, false);
-
-  if (!broken.ok) {
-    assert_equals(broken.code, "broken_source");
-  }
-
-  const unsupported = view_stage(
-    "file:///workspace/examples/basics/08_dynamic_condition.duck",
-    "0",
-    "expr",
+Deno.test("powertools rejects run commands outside the example manifest", () => {
+  assert_equals(
+    route_execute_command({
+      command: "duck.runExample",
+      uri: "file:///scratch/unknown.duck",
+      text: "0",
+      encoding: "utf-16",
+    }),
+    {
+      ok: false,
+      code: "unsupported_route",
+      message: "This file is not a runnable manifest example",
+    },
   );
-  assert_equals(unsupported, {
-    ok: false,
-    code: "unsupported_route",
-    message: "The managed route does not expose an expr stage",
-  });
 });

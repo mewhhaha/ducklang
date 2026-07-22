@@ -491,6 +491,11 @@ function visit_statements(
         }
       }
       visit_expr(statement.value, scope, state);
+
+      if (statement.else_branch !== undefined) {
+        visit_expr(statement.else_branch, scope, state);
+      }
+
       visit_name_slot(statement, "annotation", scope, state);
       visit_type(statement.type_annotation, scope, state);
       if (

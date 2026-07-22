@@ -59,6 +59,25 @@ Deno.test("source facts retain the distinct Char type", () => {
   assert_equals(expression_type_names("'c'", "num"), ["Char"]);
 });
 
+Deno.test("source facts expose let-else bindings only after the fallback", () => {
+  const source = parse_source(`
+type Maybe = | \`Some I32 | \`None Unit
+let option: Maybe = \`Some 42
+let \`Some value = option else { return 0 }
+value
+`);
+  const facts = source_facts(source);
+  const value = facts.expressions.findLast((expression) => {
+    return expression.tag === "var" && expression.name === "value";
+  });
+
+  if (value === undefined) {
+    throw new Error("Missing let-else value reference");
+  }
+
+  assert_equals(recorded_type(facts, value)?.name, "I32");
+});
+
 Deno.test("applied source types preserve function argument grouping", () => {
   const source = parse_source(`
 type Maybe value = | \`Just value | \`Nothing Unit

@@ -1,51 +1,36 @@
 # Ducklang
 
-Ducklang is an Interaction Calculus inspired compiler and source-language
-toolchain written in Deno. Source programs use one shared frontend and then
-select an explicit backend route:
+Ducklang is an Interaction Calculus inspired language and source toolchain
+written in Deno. Source programs have one compilation route:
 
 ```txt
-                         -> IC -> Expr --------->
-Source -> Frontend -----|                         Mod -> WAT -> Wasm
-                         -> structured Core ---->
-                                               |
-                                               -> managed JavaScript ABI
+Source -> Frontend -> semantic Core -> gpufuck Functional Core -> Wasm
 ```
 
 The language is a compact value-oriented playground for compile-time
 specialization, affine lowering, explicit sharing/erasure, ownership checks, and
-direct WebAssembly output.
+GPU-compiled WebAssembly output.
 
 ## Prerequisites
 
-Development uses Deno 2.9.2, Tree-sitter CLI 0.26.3, and `just`. WABT is a
-required external tool: its `wat2wasm` executable is used by Wasm integration
-tests and the build/run commands. On Debian and Ubuntu, install it with
-`apt-get install wabt`.
+Development uses Deno 2.9.2, Tree-sitter CLI 0.26.3, `just`, a WebGPU adapter,
+and the sibling `../gpufuck` checkout. The compiler emits binary Wasm directly;
+the build and run commands do not invoke WABT.
 
 ## Quick Start
 
-Run the demo compiler pipeline:
+Compile and run the demo through gpufuck:
 
 ```sh
 just run
 ```
 
-This writes `build/out.wat` from the example program in `main.ts`.
-
 Compile or run a source file directly:
 
 ```sh
 just duck build examples/basics/01_arithmetic_and_shadowing.duck
-just duck build examples/basics/01_arithmetic_and_shadowing.duck --emit all
 just duck run examples/basics/01_arithmetic_and_shadowing.duck
 just duck test examples/testing/01_inline_tests.duck
-```
-
-Compile the generated WAT to Wasm:
-
-```sh
-just wasm
 ```
 
 Run the test suite:
@@ -83,20 +68,16 @@ just duck fmt examples        # format .duck files in place
 just duck fmt --check src     # report unformatted files without writing
 just duck fmt --stdin         # format stdin to stdout
 just duck check examples      # report syntax and semantic diagnostics
-just duck build main.duck     # write build/main.wasm through Core
-just duck build main.duck --route ic --emit wat
-just duck build main.duck --managed --emit all
+just duck build main.duck     # write build/main.wasm through gpufuck
 just duck run main.duck
 just duck test tests.duck       # run zero-argument @[test] functions
 just duck lsp                 # run the language server over stdio
 ```
 
-`build` accepts `--route ic|core|managed`, `--emit wat|wasm|all`,
-`--out <directory>`, and `--host-interface <file>`. Managed builds always write
-`<name>.abi.json` beside their WAT or Wasm output. `run` supports import-free
-IC/Core programs and managed programs that require no host capabilities;
-applications with effects should instantiate the managed output through
-`DuckHost`.
+`build` accepts `--out <directory>` and `--host-interface <file>`. It always
+emits `<name>.wasm`. The removed `--route`, `--emit`, and `--managed` switches
+are rejected instead of silently selecting the old compiler. Applications with
+effects supply gpufuck host capabilities through the TypeScript compiler API.
 
 The formatter is deliberately biased: two-space indentation, fixed spacing,
 collapsed blank runs, canonical string escapes, and no configuration. It
@@ -429,11 +410,13 @@ length(first) + get [name, 1]
 The functional prelude also defines `<>` for append. UTF-8 conversion is
 explicit through `encode_utf8` and `decode_utf8`; `Text` and `Bytes` are not
 silently interchangeable. Runtime indexing and slicing emit bounds checks. The
-focused `duck:prelude/text` module also provides `text_trim_whitespace`, which
-recognizes Unicode whitespace rather than only ASCII separators, and
-`text_repeat` for source-defined repetition. `duck:prelude/csv` keeps field
-quoting, row construction, and decimal row-index formatting in a small focused
-module, so CSV-heavy programs do not link the complete runtime prelude.
+focused `duck:prelude/text` module also provides `text_trim_whitespace` and
+`text_trim_start_whitespace`, which recognize Unicode whitespace rather than
+only ASCII separators, `text_line_count` with Rust-style trailing-newline
+semantics, and `text_repeat` for source-defined repetition. `duck:prelude/csv`
+keeps field quoting, row construction, and decimal row-index formatting in a
+small focused module, so CSV-heavy programs do not link the complete runtime
+prelude.
 
 ### 10. Types are compile-time values
 
@@ -804,9 +787,9 @@ declare effect Host {
 }
 ```
 
-Core proves moves, borrows, allocation ownership, cleanup, and drops before WAT
-emission. The managed ABI preserves those contracts when values cross into
-JavaScript.
+Core proves moves, borrows, allocation ownership, cleanup, and drops before the
+program reaches the gpufuck target. Its typed host boundary preserves those
+contracts when values cross into JavaScript.
 
 ### 16. Modules, imports, capabilities, and exports
 
@@ -873,96 +856,47 @@ there is no user-written raw Wasm import form.
 
 ## Compiler Entry Points
 
-The source frontend is exposed through `Source`:
+`DuckCompiler` is the supported TypeScript compiler API:
 
 ```ts
-Source.parse(text); // Source AST
-Source.compile(text); // Source -> IC
-Source.ic_wat(text); // Source -> IC route -> WAT
-Source.core(text); // Source -> structured Core
-Source.mod(text, "main"); // Source -> Core -> Mod
-Source.wat(text, "main"); // Source -> Core -> WAT
-Source.artifact(text, "main"); // managed module, WAT, and ABI manifest
-Source.artifact_file("main.duck", {
-  host_interface: "host.duck",
-});
-```
+import { DuckCompiler } from "./src/compiler.ts";
 
-Use the IC route for small scalar examples and open terms like `input + 1`. Use
-the Core route for larger programs with structured statements, loops, runtime
-text, host effects, closures, and aggregate behavior.
+const compiler = await DuckCompiler.create();
 
-The Core route does not currently lower through IC. This is an intentional
-architectural boundary, not an undocumented intermediate stage. See
-[architecture.md](docs/architecture.md) for the route contracts and
-[roadmap.md](docs/roadmap.md) for the larger reserved features.
-
-### Managed JavaScript host ABI
-
-`Source.artifact` emits the `duck-js-1` manifest and a module with exported
-`memory`, `__duck_abi_alloc`, `__duck_abi_free`, and `__duck_abi_main`.
-Instantiate that artifact through `DuckHost` to receive JavaScript values
-instead of raw Wasm pointers:
-
-```ts
-import { DuckHost, DuckRunner, Source } from "./src/frontend.ts";
-
-const artifact = Source.artifact(`
-module (!init: Init) where
-
-declare effect Measure {
-  text: (&Text) => I32
-}
-
-declare Init {
-  measure: Measure
-}
-
-let run: () -> <Measure> I32 = () => {
-  length <- Measure.text(&"hello")
-  length
-}
-
-result <- run()
-return { .result = result }
-`);
-const wasm = compileWat(artifact.wat);
-const program = await DuckHost.instantiate(wasm, artifact.abi);
-
-const runner = DuckRunner({
-  measure: {
-    text(value) {
-      return value.length;
+try {
+  const wasm = await compiler.compile_file("main.duck");
+  const execution = await compiler.run_file("main.duck", {
+    host_interface: "host.duck",
+    init: {
+      Console: {
+        $resource: { kind: "resource", id: 1 },
+        print: (value) => {
+          console.log(value);
+          return { kind: "unit" };
+        },
+      },
     },
-  },
-});
-const result = runner.run(program);
-program.dispose();
+  });
+  console.log(wasm.byteLength, execution.value);
+} finally {
+  compiler.destroy();
+}
 ```
 
-For a separate host interface, compile the entry file with
-`Source.artifact_file(entry, { host_interface })`. The interface contributes
-only declarations; passing it does not instantiate or grant a resource. The JS
-objects captured by `DuckRunner(init)` are the actual authority. Constructing a
-different runner swaps the complete handler set without changing the compiled
-program.
-
-The adapter marshals entry context and export products while host effects remain
-opaque registry resources inside Wasm. It validates resource handles, required
-methods, UTF-8, bounds, union tags, handler availability, and ABI versions.
-Allocations grow Wasm memory when needed. `Source.wat` retains the lower-level
-scalar/pointer output for embedders that do not need the managed adapter.
+The frontend retains parsing, specialization, type and effect analysis,
+ownership checks, and semantic Core construction. The gpufuck adapter lowers
+that Core to its typed functional surface and emits binary Wasm. Host interfaces
+contribute declarations only; the `init` capability values are the authority
+granted to the running program.
 
 ## Repository Layout
 
 ```txt
-main.ts               demo pipeline that writes build/out.wat
-src/frontend.ts       source frontend public exports
-src/ic.ts             Interaction Calculus layer
-src/expr.ts           expression layer
-src/mod.ts            Wasm module layer
-src/core.ts           structured Core path
-src/wasm_*.test.ts    end-to-end Wasm integration tests by feature area
+main.ts               gpufuck compiler demo
+src/compiler.ts       supported compiler API
+src/frontend/         parser, analysis, and source elaboration
+src/core/             semantic Core construction and analysis
+experiments/gpufuck/  Duck-to-gpufuck adapter implementation
 docs/language.md      source-language specification
 docs/coverage.md      per-route implementation coverage
 docs/architecture.md  compiler route contracts and stage boundaries
@@ -986,14 +920,13 @@ just typecheck
 just grammar-check
 just test
 just check
-deno task compiler:perf
+deno task compiler:test
 ```
 
 `just check` is the complete local gate: formatting, lint, type-checking,
-Tree-sitter generation/corpus/query parity, and the runtime test suite. The Wasm
-integration tests require `wat2wasm`; grammar checks require `tree-sitter`
-0.26.3. CI also enforces latency, heap, and generated-WAT-size budgets for the
-LSP and the complete successful example manifest.
+Tree-sitter generation/corpus/query parity, and the runtime test suite. Grammar
+checks require `tree-sitter` 0.26.3. CI also enforces latency and heap budgets
+for the LSP and compiles the successful example manifest through gpufuck.
 
 Style notes that matter in this repository:
 

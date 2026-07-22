@@ -1218,6 +1218,91 @@ total
   assert_equals(main(), 31);
 });
 
+Deno.test("let-else exposes matched bindings after a terminating fallback", async () => {
+  const wat = Source.wat(`
+type Maybe = | \`Some I32 | \`None Unit
+let select = (input: Maybe) => {
+  let \`Some value = input else {
+    return 7
+  }
+
+  value + 1
+}
+let some: Maybe = \`Some 41
+let none: Maybe = \`None ()
+select some + select none
+`);
+  const instance = await instantiate_wat(wat, "duck_let_else", {});
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("Missing let-else main export");
+  }
+
+  assert_equals(main(), 49);
+});
+
+Deno.test("let-else continues the enclosing loop when a pattern misses", async () => {
+  const wat = Source.wat(`
+type Maybe = | \`Some I32 | \`None Unit
+let some: Maybe = \`Some 40
+let none: Maybe = \`None ()
+let values = [none, some]
+let total = 0
+for option in values {
+  let \`Some value = option else {
+    continue
+  }
+
+  total = total + value + 2
+}
+total
+`);
+  const instance = await instantiate_wat(wat, "duck_loop_let_else", {});
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("Missing loop let-else main export");
+  }
+
+  assert_equals(main(), 42);
+});
+
+Deno.test("let-else destructures managed list payloads inside loops", async () => {
+  const wat = Source.wat(`
+const {} = import "duck:prelude" ()
+type ByteList = List Bytes
+let first_length = (values: ByteList) => {
+  let current = values
+  let result = 0
+
+  loop {
+    let \`Cons node = current else { break }
+    let [bytes, _] = node
+    result = @len(bytes)
+    break
+  }
+
+  result
+}
+let bytes: Bytes = @Utf8.encode("duck")
+let values: ByteList = \`Cons [bytes, \`Nil ()]
+first_length values
+`);
+  const instance = await instantiate_wat(
+    wat,
+    "duck_managed_list_let_else",
+    {},
+  );
+  const main = instance.exports.main;
+
+  if (typeof main !== "function") {
+    throw new Error("Missing managed list let-else main export");
+  }
+
+  assert_equals(main(), 4);
+});
+
 Deno.test("explicit duck checks reject missing and incompatible members", () => {
   assert_throws(
     () =>

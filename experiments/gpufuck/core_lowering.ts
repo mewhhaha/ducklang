@@ -31,16 +31,19 @@ import {
   build_abi_manifest,
 } from "../../src/abi.ts";
 import {
-  Core,
   type Core as CoreProgram,
   type CoreExpr,
+  type CoreParam,
   type CoreStmt,
-} from "../../src/core/backend/core.ts";
-import type { CoreParam } from "../../src/core/ast.ts";
+} from "../../src/core/ast.ts";
 import { analyze_core_demand } from "../../src/core/demand.ts";
+import { core_from_source } from "../../src/core/from_source.ts";
 import type { Source } from "../../src/frontend/ast.ts";
-import { source_for_core_route } from "../../src/frontend/pipeline.ts";
-import { source_with_managed_callable_exports } from "../../src/frontend/source.ts";
+import {
+  expanded_source_for_core_route,
+  source_with_expanded_attributes,
+} from "../../src/frontend/core_pipeline.ts";
+import { source_with_managed_callable_exports } from "../../src/frontend/managed_exports.ts";
 import { tokenize } from "../../src/frontend/tokenize.ts";
 import {
   format_type_expr,
@@ -52,8 +55,10 @@ import type { Prim } from "../../src/op.ts";
 const duck_runtime_capability = "$DuckRuntime";
 const unit_type: FunctionalTypeSchema = { kind: "unit" };
 const integer_type: FunctionalTypeSchema = { kind: "integer" };
+const empty_referenced_names: ReadonlySet<string> = new Set();
 
 export type LoweredDuckGpufuckModule = {
+  abi: AbiManifest;
   artifact: FunctionalModuleArtifact;
   encoded: EncodedFunctionalModule;
   automatic_init: FunctionalWasmInit;
@@ -85,14 +90,30 @@ export function lower_duck_source_to_gpufuck(
   source: Source,
   source_byte_length: number,
 ): LoweredDuckGpufuckModule {
+  source = source_with_expanded_attributes(source);
   source = source_with_managed_callable_exports(source);
-  const compiled_source = source_for_core_route(source);
+  let compiled_source = expanded_source_for_core_route(source);
+  compiled_source = {
+    ...compiled_source,
+    statements: compiled_source.statements.map((statement) => {
+      if (
+        statement.tag !== "bind" || statement.annotation !== undefined ||
+        statement.type_annotation === undefined
+      ) {
+        return statement;
+      }
+      return {
+        ...statement,
+        annotation: format_type_expr(statement.type_annotation),
+      };
+    }),
+  };
   let core: CoreProgram;
   try {
-    core = Core.from_source(compiled_source);
+    core = core_from_source(compiled_source);
   } catch (error) {
     try {
-      core = Core.from_source(source);
+      core = core_from_source(source);
     } catch {
       throw error;
     }
@@ -150,6 +171,15 @@ class DuckCoreLowering {
   > = {};
   readonly #recursive_names: string[] = [];
   readonly #imported_recursive_dependencies = new Set<string>();
+  readonly #recursive_function_names: readonly string[];
+  readonly #referenced_names_by_value = new WeakMap<
+    object,
+    ReadonlySet<string>
+  >();
+  readonly #last_reference_index_by_statements = new WeakMap<
+    readonly CoreStmt[],
+    ReadonlyMap<string, number>
+  >();
   readonly #loop_controls: {
     break_result: FunctionalSurfaceExpression;
     continue_result: FunctionalSurfaceExpression;
@@ -165,6 +195,7 @@ class DuckCoreLowering {
     this.#core = core;
     this.#abi = abi;
     this.#source_byte_length = source_byte_length;
+    this.#recursive_function_names = Object.keys(this.#core.recFunctions || {});
     for (const [name, target] of type_aliases) {
       this.#type_aliases.set(name, target);
     }
@@ -247,7 +278,7 @@ class DuckCoreLowering {
       automatic_init[duck_runtime_capability] =
         this.#automatic_runtime_bindings;
     }
-    return { artifact, encoded, automatic_init };
+    return { abi: this.#abi, artifact, encoded, automatic_init };
   }
 
   private collect_types(): void {
@@ -318,6 +349,8 @@ class DuckCoreLowering {
       }
     }
 
+    this.canonicalize_generated_struct_types();
+
     if (this.#abi.init !== undefined) {
       this.#types.set(this.#abi.init.name, {
         name: this.#abi.init.name,
@@ -332,6 +365,41 @@ class DuckCoreLowering {
 
     for (const statement of this.#core.statements) {
       this.collect_anonymous_types(statement);
+    }
+  }
+
+  private canonicalize_generated_struct_types(): void {
+    const canonical: DuckTypeDefinition[] = [];
+    for (const definition of [...this.#types.values()]) {
+      if (
+        definition.shape !== "struct" ||
+        !definition.name.startsWith("_duck_result_type_")
+      ) {
+        continue;
+      }
+      const matching = canonical.find((candidate) => {
+        if (candidate.fields.length !== definition.fields.length) {
+          return false;
+        }
+        for (let index = 0; index < candidate.fields.length; index += 1) {
+          const candidate_field = candidate.fields[index];
+          const definition_field = definition.fields[index];
+          if (
+            candidate_field === undefined || definition_field === undefined ||
+            candidate_field.name !== definition_field.name ||
+            !this.same_type(candidate_field.type, definition_field.type)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+      if (matching === undefined) {
+        canonical.push(definition);
+        continue;
+      }
+      this.#type_aliases.set(definition.name, matching.name);
+      this.#types.delete(definition.name);
     }
   }
 
@@ -435,17 +503,60 @@ class DuckCoreLowering {
       inferred.set(name, Array.from({ length: arity }, () => undefined));
     }
     const environment = new Map<string, FunctionalTypeSchema>();
-    const scan = (value: unknown): void => {
+    const scan = (
+      value: unknown,
+      scope: Map<string, FunctionalTypeSchema>,
+    ): void => {
       if (value === null || typeof value !== "object") {
         return;
       }
       if (Array.isArray(value)) {
         for (const entry of value) {
-          scan(entry);
+          scan(entry, scope);
         }
         return;
       }
       const expression = value as Partial<CoreExpr>;
+      if (expression.tag === "lam" || expression.tag === "rec") {
+        const callable = expression as Extract<
+          CoreExpr,
+          { tag: "lam" | "rec" }
+        >;
+        const body_scope = new Map(scope);
+        for (const parameter of callable.params) {
+          const parameter_type = this.schema_from_optional_type_name(
+            parameter.annotation,
+          );
+          if (parameter_type !== undefined) {
+            body_scope.set(parameter.name, parameter_type);
+          }
+        }
+        scan(callable.body, body_scope);
+        return;
+      }
+      if (expression.tag === "block") {
+        const block = expression as Extract<CoreExpr, { tag: "block" }>;
+        const block_scope = new Map(scope);
+        for (const statement of block.statements) {
+          scan(statement, block_scope);
+          if (statement.tag !== "bind") {
+            continue;
+          }
+          let binding_type = this.schema_from_optional_type_name(
+            statement.annotation,
+          );
+          if (binding_type === undefined) {
+            binding_type = this.simple_expression_type(
+              statement.value,
+              block_scope,
+            );
+          }
+          if (binding_type !== undefined) {
+            block_scope.set(statement.name, binding_type);
+          }
+        }
+        return;
+      }
       if (expression.tag === "app") {
         const app = expression as Extract<CoreExpr, { tag: "app" }>;
         if (app.func.tag === "var") {
@@ -459,7 +570,7 @@ class DuckCoreLowering {
                     index.toString(),
                 );
               }
-              const type = this.simple_expression_type(arg, environment);
+              const type = this.simple_expression_type(arg, scope);
               if (type !== undefined && parameters[index] === undefined) {
                 parameters[index] = type;
               }
@@ -468,12 +579,12 @@ class DuckCoreLowering {
         }
       }
       for (const child of Object.values(value)) {
-        scan(child);
+        scan(child, scope);
       }
     };
 
     for (const statement of this.#core.statements) {
-      scan(statement);
+      scan(statement, environment);
       if (statement.tag !== "bind") {
         continue;
       }
@@ -490,6 +601,18 @@ class DuckCoreLowering {
       if (type !== undefined) {
         environment.set(statement.name, type);
       }
+    }
+    for (const definition of Object.values(this.#core.recFunctions || {})) {
+      const function_scope = new Map(environment);
+      for (const parameter of definition.params) {
+        const parameter_type = this.schema_from_optional_type_name(
+          parameter.annotation,
+        );
+        if (parameter_type !== undefined) {
+          function_scope.set(parameter.name, parameter_type);
+        }
+      }
+      scan(definition.body, function_scope);
     }
     for (const [name, parameters] of inferred) {
       this.#function_parameter_types.set(name, parameters);
@@ -617,6 +740,32 @@ class DuckCoreLowering {
       );
     }
     if (expression.tag === "app") {
+      if (expression.func.tag === "var") {
+        if (expression.func.name === "@Bytes.generate") {
+          return FunctionalHostTypes.bytes;
+        }
+        if (expression.func.name === "@Utf8.encode") {
+          return FunctionalHostTypes.bytes;
+        }
+        if (expression.func.name === "@Utf8.decode") {
+          return FunctionalHostTypes.text;
+        }
+        if (
+          expression.func.name === "@len" ||
+          expression.func.name === "@get"
+        ) {
+          return integer_type;
+        }
+        if (
+          expression.func.name === "@append" ||
+          expression.func.name === "@slice"
+        ) {
+          const first = expression.args[0];
+          if (first !== undefined) {
+            return this.simple_expression_type(first, environment);
+          }
+        }
+      }
       if (
         expression.func.tag === "var" && expression.args.length > 0 &&
         !this.#specializing_function_types.has(expression.func.name)
@@ -958,7 +1107,15 @@ class DuckCoreLowering {
     }
 
     const args: TypeExpr[] = [];
-    let constructor_expression = parse_type_expr(tokenize(name));
+    let constructor_expression: TypeExpr;
+    try {
+      constructor_expression = parse_type_expr(tokenize(name));
+    } catch (error) {
+      throw new Error(
+        "Duck gpufuck lowering cannot parse runtime type name " + name,
+        { cause: error },
+      );
+    }
     while (constructor_expression.tag === "apply") {
       args.unshift(constructor_expression.arg);
       constructor_expression = constructor_expression.func;
@@ -1147,11 +1304,13 @@ class DuckCoreLowering {
         (statement.value.tag === "lam" || statement.value.tag === "rec" ||
           statement.value.tag === "rec_ref") &&
         !this.statements_reference_name(
-          statements.slice(index + 1),
+          statements,
+          index + 1,
           statement.name,
         ) &&
         !this.reachable_recursive_functions_reference_name(
-          statements.slice(index + 1),
+          statements,
+          index + 1,
           statement.name,
         )
       ) {
@@ -1186,16 +1345,13 @@ class DuckCoreLowering {
                 pending_name,
             );
           }
-          for (const candidate of Object.keys(this.#core.recFunctions || {})) {
-            if (recursive_names.has(candidate)) {
+          for (const candidate of this.#recursive_function_names) {
+            if (
+              recursive_names.has(candidate) || environment.has(candidate)
+            ) {
               continue;
             }
-            if (
-              this.statements_reference_name(
-                [{ tag: "expr", expr: pending_function.body }],
-                candidate,
-              )
-            ) {
+            if (this.value_references_name(pending_function.body, candidate)) {
               recursive_names.add(candidate);
               pending_names.push(candidate);
             }
@@ -1515,29 +1671,12 @@ class DuckCoreLowering {
     }
 
     if (statement.tag === "expr") {
-      if (
-        statement.expr.tag === "loop" && index < statements.length - 1
-      ) {
-        const body = this.lower_statements(
-          statements,
-          index + 1,
+      if (index === statements.length - 1) {
+        return this.lower_expression(
+          statement.expr,
           environment,
           expected_result,
         );
-        return this.lower_loop_expression(
-          statement.expr.body,
-          environment,
-          undefined,
-          body,
-        );
-      }
-      const value = this.lower_expression(
-        statement.expr,
-        environment,
-        index === statements.length - 1 ? expected_result : undefined,
-      );
-      if (index === statements.length - 1) {
-        return value;
       }
       const body = this.lower_statements(
         statements,
@@ -1545,14 +1684,21 @@ class DuckCoreLowering {
         environment,
         expected_result,
       );
+      let break_result: FunctionalSurfaceExpression | undefined;
+      let continue_result: FunctionalSurfaceExpression | undefined;
+      const loop_control = this.#loop_controls.at(-1);
+      if (loop_control !== undefined) {
+        break_result = loop_control.break_result;
+        continue_result = loop_control.continue_result;
+      }
       return {
-        expression: {
-          kind: "let",
-          name: this.temporary("discarded"),
-          value: value.expression,
-          body: body.expression,
-          valueEvaluation: FunctionalEvaluationProfile.StrictEager,
-        },
+        expression: this.lower_control_expression(
+          statement.expr,
+          environment,
+          body.expression,
+          break_result,
+          continue_result,
+        ),
         type: body.type,
       };
     }
@@ -1714,6 +1860,12 @@ class DuckCoreLowering {
   ): LoweredExpression {
     if (expression.tag === "num") {
       if (expression.type === "i32" && typeof expression.value === "number") {
+        if (expected?.kind === "unit" && expression.value === 0) {
+          return {
+            expression: surface.name("$Unit"),
+            type: unit_type,
+          };
+        }
         if (expected?.kind === "boolean") {
           return {
             expression: surface.boolean(expression.value !== 0),
@@ -2607,6 +2759,14 @@ class DuckCoreLowering {
         continue_result,
       );
     }
+    if (expression.tag === "loop") {
+      return this.lower_loop_expression(
+        expression.body,
+        environment,
+        undefined,
+        { expression: terminal, type: undefined },
+      ).expression;
+    }
     if (expression.tag === "if") {
       const condition = this.lower_condition(expression.cond, environment);
       return {
@@ -2849,7 +3009,105 @@ class DuckCoreLowering {
     for (const callable of Object.values(callables)) {
       callable_types.set(callable.name, this.callable_type(callable));
     }
+    const dependency_names = new Set<string>();
+    const pending_dependencies: string[] = [];
+    for (const callable of Object.values(callables)) {
+      const recursive = this.#core.recFunctions?.[callable.name];
+      if (recursive === undefined) {
+        throw new Error(
+          "Duck gpufuck lowering cannot find managed callable " +
+            callable.name,
+        );
+      }
+      for (const candidate of this.#source_functions.keys()) {
+        if (this.value_references_name(recursive.body, candidate)) {
+          dependency_names.add(candidate);
+          pending_dependencies.push(candidate);
+        }
+      }
+    }
+    while (pending_dependencies.length > 0) {
+      const dependency_name = pending_dependencies.pop();
+      if (dependency_name === undefined) {
+        throw new Error("Duck managed callable dependency scan lost a name");
+      }
+      const dependency = this.#source_functions.get(dependency_name);
+      if (dependency === undefined) {
+        throw new Error(
+          "Duck managed callable dependency scan cannot find " +
+            dependency_name,
+        );
+      }
+      for (const candidate of this.#source_functions.keys()) {
+        if (
+          !dependency_names.has(candidate) &&
+          this.value_references_name(dependency.body, candidate)
+        ) {
+          dependency_names.add(candidate);
+          pending_dependencies.push(candidate);
+        }
+      }
+    }
     const definitions: FunctionalSurfaceDefinition[] = [];
+    const dependency_environment = new Map(callable_types);
+    for (const statement of this.#core.statements) {
+      if (
+        statement.tag !== "bind" || !dependency_names.has(statement.name) ||
+        (statement.value.tag !== "lam" && statement.value.tag !== "rec")
+      ) {
+        continue;
+      }
+      let expected_result = this.schema_from_optional_type_name(
+        statement.annotation,
+      );
+      for (const _parameter of statement.value.params) {
+        if (expected_result?.kind === "function") {
+          expected_result = expected_result.result;
+        } else {
+          expected_result = undefined;
+        }
+      }
+      const lowered = this.lower_function(
+        statement.value.params,
+        statement.value.body,
+        dependency_environment,
+        this.#function_parameter_types.get(statement.name),
+        expected_result,
+      );
+      let function_body = lowered.expression;
+      const parameters: string[] = [];
+      const parameter_count = Math.max(1, statement.value.params.length);
+      for (
+        let parameter_index = 0;
+        parameter_index < parameter_count;
+        parameter_index += 1
+      ) {
+        if (function_body.kind !== "lambda") {
+          throw new Error(
+            "Duck managed callable dependency is not a function: " +
+              statement.name,
+          );
+        }
+        parameters.push(function_body.parameter);
+        function_body = function_body.body;
+      }
+      definitions.push({
+        name: statement.name,
+        parameters,
+        annotation: this.require_type(
+          lowered.type,
+          "managed callable dependency " + statement.name,
+        ),
+        body: function_body,
+      });
+      dependency_environment.set(
+        statement.name,
+        this.require_type(
+          lowered.type,
+          "managed callable dependency " + statement.name,
+        ),
+      );
+    }
     for (const callable of Object.values(callables)) {
       const recursive = this.#core.recFunctions?.[callable.name];
       if (recursive === undefined) {
@@ -2865,10 +3123,7 @@ class DuckCoreLowering {
             callable.params.length.toString() + " ABI parameters",
         );
       }
-      const environment = new Map<string, FunctionalTypeSchema>();
-      for (const [name, type] of callable_types) {
-        environment.set(name, type);
-      }
+      const environment = new Map(dependency_environment);
       for (let index = 0; index < recursive.params.length; index += 1) {
         const parameter = recursive.params[index];
         const contract = callable.params[index];
@@ -2906,6 +3161,7 @@ class DuckCoreLowering {
 
   private reachable_recursive_functions_reference_name(
     statements: readonly CoreStmt[],
+    start_index: number,
     name: string,
   ): boolean {
     const recursive_functions = this.#core.recFunctions;
@@ -2915,8 +3171,8 @@ class DuckCoreLowering {
 
     const reached = new Set<string>();
     const pending: string[] = [];
-    for (const candidate of Object.keys(recursive_functions)) {
-      if (this.statements_reference_name(statements, candidate)) {
+    for (const candidate of this.#recursive_function_names) {
+      if (this.statements_reference_name(statements, start_index, candidate)) {
         reached.add(candidate);
         pending.push(candidate);
       }
@@ -2933,14 +3189,13 @@ class DuckCoreLowering {
           "Duck gpufuck dependency scan cannot find function " + current,
         );
       }
-      const body = [{ tag: "expr", expr: definition.body }] as const;
-      if (this.statements_reference_name(body, name)) {
+      if (this.value_references_name(definition.body, name)) {
         return true;
       }
-      for (const candidate of Object.keys(recursive_functions)) {
+      for (const candidate of this.#recursive_function_names) {
         if (
           !reached.has(candidate) &&
-          this.statements_reference_name(body, candidate)
+          this.value_references_name(definition.body, candidate)
         ) {
           reached.add(candidate);
           pending.push(candidate);
@@ -3051,32 +3306,85 @@ class DuckCoreLowering {
 
   private statements_reference_name(
     statements: readonly CoreStmt[],
+    start_index: number,
     name: string,
   ): boolean {
-    const references = (value: unknown): boolean => {
-      if (value === null || typeof value !== "object") {
-        return false;
+    let last_reference_index = this.#last_reference_index_by_statements.get(
+      statements,
+    );
+    if (last_reference_index === undefined) {
+      const collected = new Map<string, number>();
+      for (let index = 0; index < statements.length; index += 1) {
+        const statement = statements[index];
+        if (statement === undefined) {
+          throw new Error(
+            "Duck gpufuck reference index lost statement " +
+              index.toString(),
+          );
+        }
+        for (const referenced_name of this.referenced_names(statement)) {
+          collected.set(referenced_name, index);
+        }
       }
-      if (Array.isArray(value)) {
-        return value.some(references);
+      last_reference_index = collected;
+      this.#last_reference_index_by_statements.set(
+        statements,
+        last_reference_index,
+      );
+    }
+    const last_index = last_reference_index.get(name);
+    return last_index !== undefined && last_index >= start_index;
+  }
+
+  private value_references_name(value: unknown, name: string): boolean {
+    return this.referenced_names(value).has(name);
+  }
+
+  private referenced_names(value: unknown): ReadonlySet<string> {
+    if (value === null || typeof value !== "object") {
+      return empty_referenced_names;
+    }
+    let names = this.#referenced_names_by_value.get(value);
+    if (names === undefined) {
+      const collected = new Set<string>();
+      const pending: object[] = [value];
+      const visited = new WeakSet<object>();
+      while (pending.length > 0) {
+        const current = pending.pop();
+        if (current === undefined) {
+          throw new Error("Duck gpufuck reference index lost a pending value");
+        }
+        if (visited.has(current)) {
+          continue;
+        }
+        visited.add(current);
+        if (ArrayBuffer.isView(current)) {
+          continue;
+        }
+        const expression = current as Partial<CoreExpr>;
+        if (
+          (expression.tag === "var" || expression.tag === "linear" ||
+            expression.tag === "rec_ref") && expression.name !== undefined
+        ) {
+          collected.add(expression.name);
+        }
+        const statement = current as Partial<CoreStmt>;
+        if (
+          (statement.tag === "assign" || statement.tag === "index_assign") &&
+          statement.name !== undefined
+        ) {
+          collected.add(statement.name);
+        }
+        for (const child of Object.values(current)) {
+          if (child !== null && typeof child === "object") {
+            pending.push(child);
+          }
+        }
       }
-      const expression = value as Partial<CoreExpr>;
-      if (
-        (expression.tag === "var" || expression.tag === "linear" ||
-          expression.tag === "rec_ref") && expression.name === name
-      ) {
-        return true;
-      }
-      const statement = value as Partial<CoreStmt>;
-      if (
-        (statement.tag === "assign" || statement.tag === "index_assign") &&
-        statement.name === name
-      ) {
-        return true;
-      }
-      return Object.values(value).some(references);
-    };
-    return statements.some(references);
+      names = collected;
+      this.#referenced_names_by_value.set(value, names);
+    }
+    return names;
   }
 
   private lower_application(
@@ -3865,9 +4173,67 @@ class DuckCoreLowering {
       name = this.type_expression_name(expression.type_expr);
       this.materialize_type_definition(name);
     }
+    if (name === "object_type") {
+      name = undefined;
+    }
+    const anonymous_name = "$DuckObject:" +
+      expression.fields.map((field) => field.name).join(",");
+    if (name === undefined || name === anonymous_name) {
+      const anonymous_definition = this.#types.get(anonymous_name);
+      let structural_fields: DuckTypeDefinition["fields"] | undefined;
+      if (anonymous_definition !== undefined) {
+        structural_fields = anonymous_definition.fields;
+      } else {
+        const inferred_fields: {
+          name: string;
+          type: FunctionalTypeSchema;
+        }[] = [];
+        for (const field of expression.fields) {
+          let field_type = this.simple_expression_type(
+            field.value,
+            environment,
+          );
+          if (field_type === undefined) {
+            field_type = this.lower_expression(field.value, environment).type;
+          }
+          if (field_type === undefined) {
+            inferred_fields.length = 0;
+            break;
+          }
+          inferred_fields.push({ name: field.name, type: field_type });
+        }
+        if (inferred_fields.length === expression.fields.length) {
+          structural_fields = inferred_fields;
+        }
+      }
+      if (structural_fields !== undefined) {
+        const candidates = [...this.#types.values()].filter((candidate) => {
+          if (
+            candidate.name === anonymous_name || candidate.shape !== "struct" ||
+            candidate.fields.length !== structural_fields.length
+          ) {
+            return false;
+          }
+          for (let index = 0; index < candidate.fields.length; index += 1) {
+            const candidate_field = candidate.fields[index];
+            const anonymous_field = structural_fields[index];
+            if (
+              candidate_field === undefined || anonymous_field === undefined ||
+              candidate_field.name !== anonymous_field.name ||
+              !this.same_type(candidate_field.type, anonymous_field.type)
+            ) {
+              return false;
+            }
+          }
+          return true;
+        });
+        if (candidates.length === 1) {
+          name = candidates[0]?.name;
+        }
+      }
+    }
     if (name === undefined) {
-      name = "$DuckObject:" +
-        expression.fields.map((field) => field.name).join(",");
+      name = anonymous_name;
     }
     let definition = this.#types.get(name);
     if (definition === undefined) {
@@ -4200,6 +4566,79 @@ class DuckCoreLowering {
     value: CoreExpr,
     environment: ReadonlyMap<string, FunctionalTypeSchema>,
   ): LoweredExpression {
+    if (this.same_type(object_type, FunctionalHostTypes.bytes)) {
+      const lowered_index = this.lower_expression(
+        index,
+        environment,
+        integer_type,
+      );
+      const lowered_value = this.lower_expression(
+        value,
+        environment,
+        integer_type,
+      );
+      const index_and_value = this.tuple_type(integer_type, integer_type);
+      const parameter = this.tuple_type(
+        FunctionalHostTypes.bytes,
+        index_and_value,
+      );
+      const field = this.runtime_operation(
+        "set_byte:bytes",
+        parameter,
+        FunctionalHostTypes.bytes,
+        (argument) => {
+          const [buffer, update] = this.tuple_values(
+            argument,
+            "Bytes.set argument",
+          );
+          const [byte_index, byte_value] = this.tuple_values(
+            update,
+            "Bytes.set update",
+          );
+          if (buffer.kind !== "bytes") {
+            throw new TypeError(
+              "Duck Bytes.set expected Bytes, found " + buffer.kind,
+            );
+          }
+          if (byte_index.kind !== "integer") {
+            throw new TypeError(
+              "Duck Bytes.set index expected I32, found " + byte_index.kind,
+            );
+          }
+          if (byte_value.kind !== "integer") {
+            throw new TypeError(
+              "Duck Bytes.set value expected I32, found " + byte_value.kind,
+            );
+          }
+          if (
+            byte_index.value < 0 || byte_index.value >= buffer.value.length
+          ) {
+            throw new RangeError(
+              "Duck Bytes.set index " + byte_index.value.toString() +
+                " is outside length " + buffer.value.length.toString(),
+            );
+          }
+          const updated = buffer.value.slice();
+          updated[byte_index.value] = byte_value.value;
+          return { kind: "bytes", value: updated };
+        },
+        "bounded-borrow",
+        "unique",
+      );
+      return {
+        expression: surface.apply(
+          surface.name(field.binder),
+          this.tuple_expression(
+            object,
+            this.tuple_expression(
+              lowered_index.expression,
+              lowered_value.expression,
+            ),
+          ),
+        ),
+        type: FunctionalHostTypes.bytes,
+      };
+    }
     const name = this.named_type_name(object_type, "indexed assignment");
     const definition = this.require_definition(name);
     const lowered_index = this.lower_expression(

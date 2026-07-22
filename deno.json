@@ -1,15 +1,16 @@
 {
   "tasks": {
-    "duck": "deno run --allow-read --allow-write --allow-run=wat2wasm duck.ts",
-    "compiler:perf": "deno run --allow-read scripts/compiler-performance.ts",
-    "compiler:gpufuck": "deno run --allow-read --allow-write experiments/gpufuck/compile.ts",
-    "compiler:gpufuck:bench": "deno run --allow-read --allow-run=wat2wasm experiments/gpufuck/benchmark.ts",
-    "compiler:gpufuck:codex": "deno run --allow-read --allow-run=wat2wasm experiments/gpufuck/codex_benchmark.ts",
-    "compiler:gpufuck:runtime": "deno run --allow-read --allow-write --allow-run=wat2wasm experiments/gpufuck/runtime_benchmark.ts",
-    "compiler:gpufuck:test": "deno test --allow-read experiments/gpufuck/compiler.test.ts",
+    "duck": "deno run --allow-read --allow-write duck.ts",
+    "compiler": "deno run --allow-read --allow-write experiments/gpufuck/compile.ts",
+    "compiler:test": "deno test --allow-read --allow-write experiments/gpufuck/compiler.test.ts",
+    "baba:check": "deno run --allow-read @mewhhaha/baba/cli check experiments/baba/grammar.baba --name duck_contextual_lexer --root document --metadata experiments/baba/metadata.json",
+    "baba:generate": "deno run --allow-read --allow-write @mewhhaha/baba/cli generate experiments/baba/grammar.baba --name duck_contextual_lexer --root document --target all --metadata experiments/baba/metadata.json --out build/baba",
+    "baba:tree-sitter": "deno task baba:generate && cd build/baba && tree-sitter generate grammar.js",
+    "baba:test": "deno test --allow-read --allow-write experiments/baba/grammar.test.ts",
     "lsp:perf": "deno run --allow-read scripts/lsp-performance.ts"
   },
   "imports": {
+    "@mewhhaha/baba": "jsr:@mewhhaha/baba@6.1.0",
     "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.0"
   },
   "minimumDependencyAge": {

@@ -371,6 +371,27 @@ Deno.test("collection loop union patterns retain their surface form", () => {
   );
 });
 
+Deno.test("let-else retains a terminating fallback and following scope", () => {
+  const source = parse_source(
+    "let `Some value = result else { return 0 }\nvalue",
+  );
+  const statement = source.statements[0];
+
+  if (statement?.tag !== "bind" || statement.else_branch === undefined) {
+    throw new Error("Expected let-else binding");
+  }
+
+  assert_equals(
+    format_source(source),
+    "let `Some value = result else { return 0 }\nvalue",
+  );
+  assert_equals(parse_source(format_source(source)), source);
+  assert_throws(
+    () => parse_source("let `Some value = result else { 0 }\nvalue"),
+    "Let-else branch must return, break, continue, or trap",
+  );
+});
+
 Deno.test("import invocation does not permit redundant parentheses", () => {
   const source = parse_source(
     'let dependency = import "./dependency.duck" ()\n',

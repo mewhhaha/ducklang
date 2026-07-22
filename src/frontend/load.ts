@@ -12,9 +12,26 @@ import { expect } from "../expect.ts";
 import { parse_source } from "./parser.ts";
 import { pattern_bindings } from "./pattern.ts";
 import { bundled_source_text } from "./prelude.ts";
-import { has_source_span, inherit_source_span } from "./syntax.ts";
+import {
+  derive_source_span,
+  has_source_span,
+  inherit_source_span,
+  mark_source_span,
+  source_span,
+  source_span_origin,
+} from "./syntax.ts";
 
 export type SourceTextResolver = (uri: string) => string | undefined;
+
+export type SourceDependency = {
+  text: string;
+  uri: string;
+};
+
+export type LoadedSourceFragment = {
+  dependencies: readonly SourceDependency[];
+  source: SourceNode;
+};
 
 type ImportResolution = {
   declarations: NonNullable<SourceNode["declarations"]>;
@@ -29,6 +46,7 @@ type ImportResolution = {
 };
 
 const projected_const_module_imports = new WeakSet<FrontExpr>();
+const parsed_bundled_sources = new Map<string, SourceNode>();
 
 export function is_projected_const_module_import(value: FrontExpr): boolean {
   return projected_const_module_imports.has(value);
@@ -42,6 +60,18 @@ export function load_source(path: string): SourceNode {
 export function load_source_fragment_file(path: string): SourceNode {
   const url = source_file_url(path);
   return load_source_url(url, [], false, new Map());
+}
+
+export function load_source_fragment_file_with_dependencies(
+  path: string,
+): LoadedSourceFragment {
+  const url = source_file_url(path);
+  const dependencies = new Map<string, string>();
+  const source = load_source_url(url, [], false, new Map(), dependencies);
+  return {
+    dependencies: Array.from(dependencies, ([uri, text]) => ({ uri, text })),
+    source,
+  };
 }
 
 export function source_file_url(path: string): URL {
@@ -124,9 +154,11 @@ function load_source_url(
   stack: string[],
   require_module: boolean,
   cache: Map<string, SourceNode>,
+  dependencies?: Map<string, string>,
 ): SourceNode {
   const normalized = new URL(url.href);
   const text = Deno.readTextFileSync(normalized);
+  dependencies?.set(normalized.href, text);
   const source = parse_source(text);
 
   if (require_module) {
@@ -138,7 +170,11 @@ function load_source_url(
     declarations,
     merged_uris: new Set(),
     cache,
-    resolve_text: (uri) => Deno.readTextFileSync(new URL(uri)),
+    resolve_text: (uri) => {
+      const text = Deno.readTextFileSync(new URL(uri));
+      dependencies?.set(uri, text);
+      return text;
+    },
     require_module,
     bundled_only: false,
     visible_name_scopes: [],
@@ -1054,7 +1090,7 @@ function resolve_import_expression(
       throw new Error("Import dependency does not exist: " + path);
     }
 
-    const parsed = parse_source(text);
+    const parsed = parse_import_source(href, text);
 
     if (resolution.require_module) {
       validate_file_module(parsed, url);
@@ -1087,6 +1123,56 @@ function resolve_import_expression(
   }
 
   return module_value(imported.module, imported.statements);
+}
+
+function parse_import_source(href: string, text: string): SourceNode {
+  if (bundled_source_text(href) === undefined) {
+    return parse_source(text);
+  }
+
+  const cached = parsed_bundled_sources.get(href);
+  let parsed: SourceNode;
+  if (cached === undefined) {
+    parsed = parse_source(text);
+    parsed_bundled_sources.set(href, parsed);
+  } else {
+    parsed = cached;
+  }
+
+  const cloned: SourceNode = structuredClone(parsed);
+  const pending: [object, object][] = [[parsed, cloned]];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const pair = pending.pop();
+    if (pair === undefined) {
+      throw new Error("Bundled source clone lost a pending syntax node");
+    }
+    const source_node = pair[0];
+    const target_node = pair[1];
+    if (visited.has(source_node)) {
+      continue;
+    }
+    visited.add(source_node);
+    if (has_source_span(source_node)) {
+      const span = source_span(source_node);
+      if (source_span_origin(source_node) === "concrete") {
+        mark_source_span(target_node, span);
+      } else {
+        derive_source_span(target_node, span);
+      }
+    }
+    const target_fields = target_node as Record<string, unknown>;
+    for (const [name, source_field] of Object.entries(source_node)) {
+      const target_field = target_fields[name];
+      if (
+        source_field !== null && typeof source_field === "object" &&
+        target_field !== null && typeof target_field === "object"
+      ) {
+        pending.push([source_field as object, target_field as object]);
+      }
+    }
+  }
+  return cloned;
 }
 
 function carry_imported_type_initializers(

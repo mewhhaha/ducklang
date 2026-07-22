@@ -2,19 +2,18 @@
 
 ## Goal
 
-Build an Interaction Calculus inspired compiler and source-language toolchain in
-Deno with two explicit backend routes:
+Build an Interaction Calculus inspired source-language toolchain in Deno with
+one compiler target:
 
 ```txt
-Source -> IC -> Expr -> Mod -> WAT -> Wasm
-Source -> structured Core -> Mod -> WAT -> Wasm
+Source -> frontend -> semantic Core -> gpufuck Functional Core -> Wasm
 ```
 
-The IC route remains the theory-facing scalar and affine pipeline. Structured
-control flow, runtime memory, ownership, handlers, and the managed ABI use Core.
-Do not claim that Core lowers through IC unless that lowering actually exists.
-The project should stay inspectable while it grows. Prefer explicit compiler
-stages over clever abstractions.
+Duck owns parsing, source elaboration, semantic checks, and Core construction.
+Gpufuck owns semantic compilation and Wasm emission. Do not add another Duck
+Wasm backend or expose the retired IC/Core/WAT route switches. The project
+should stay inspectable while it grows. Prefer explicit compiler stages over
+clever abstractions.
 
 ## Theory background
 
@@ -44,7 +43,7 @@ Useful papers / historical anchors:
 - John Lamping, "An Algorithm for Optimal Lambda Calculus Reduction", POPL 1990.
 - Andrea Asperti and Stefano Guerrini, "The Optimal Implementation of Functional Programming Languages".
 
-Core HVM4 ideas we should preserve:
+HVM4 ideas that inform the source model:
 
 - Variables are affine: each variable is used at most once.
 - Variables are global: a variable can occur outside its binder's lexical scope.
@@ -71,18 +70,20 @@ Core HVM4 ideas we should preserve:
 Use Deno tests and keep them next to the implementation they cover:
 
 ```txt
-src/ic.test.ts
-src/expr.test.ts
-src/mod.test.ts
+src/frontend/parser.test.ts
+src/core/from_source.test.ts
+experiments/gpufuck/compiler.test.ts
 ```
 
-When changing `IC.reduce`, add tests for the exact reduced IC shape when possible. Also cover the lowered `Expr` or emitted WAT when the reduced IC intentionally still contains duplications over plain values.
+When changing source lowering, cover the exact semantic Core shape when
+possible and execute the behavior through `DuckCompiler` when it reaches the
+target boundary.
 
 Use the local helpers in `src/assert.ts` instead of adding external test dependencies.
 
 ## Numeric literals
 
-Numeric literals must carry their value type in IC. Do not silently default source numbers to `i32` during lowering.
+Numeric literals must carry their value type in semantic Core. Do not silently default source numbers to `i32` during lowering.
 
 Prefer this shape:
 
@@ -121,11 +122,16 @@ const expected = arity(expr.prim);
 expect(expr.args.length === expected, "error message");
 ```
 
-Primitive reductions belong in `IC.reduce`, not only in `Expr.emit`. Numeric primitive calls can fold in IC, and primitive calls over superpositions should propagate by creating duplications for the other arguments.
+Numeric primitive calls may fold during source evaluation, but runtime
+primitive behavior must remain explicit for the gpufuck target.
 
 Do not use an `isOp` style type guard to detect primitive names as tags.
 
-## IC reduction
+## Historical IC reduction model
+
+This section records the calculus that inspired Duck. It is not a supported
+compiler route; runtime source programs compile through semantic Core and
+gpufuck.
 
 Put Interaction Calculus rewrite rules in `IC.reduce` before lowering to `Expr`.
 
@@ -189,7 +195,11 @@ Use deterministic fresh names for generated binders.
 
 Do not lower unreduced `lam`, `app`, `sup`, or `era` nodes to `Expr`. If they remain after reduction, throw an error.
 
-## Module layer
+## Historical module layer
+
+`Expr`, `Mod`, and WAT emission describe the retired in-repository backend.
+Do not extend or expose this path; new compiler work belongs in the gpufuck
+adapter or upstream gpufuck.
 
 Keep `Expr` focused on computing one value. Do not put module, function, export, import, memory, or start-function structure into `Expr`.
 

@@ -386,7 +386,6 @@ Deno.test("server defaults to UTF-16 and advertises incremental sync", () => {
         codeLensProvider: { resolveProvider: false },
         executeCommandProvider: {
           commands: [
-            "duck.viewStage",
             "duck.expandComptime",
             "duck.runExample",
           ],
@@ -419,7 +418,6 @@ Deno.test("server defaults to UTF-16 and advertises incremental sync", () => {
       experimental: {
         duck: {
           expandComptime: true,
-          viewStage: ["ic", "expr", "mod", "wat"],
         },
       },
       serverInfo: { name: "duck-lsp", version: "0.1.0" },
@@ -482,7 +480,6 @@ Deno.test("server selects the first client-supported position encoding", () => {
         codeLensProvider: { resolveProvider: false },
         executeCommandProvider: {
           commands: [
-            "duck.viewStage",
             "duck.expandComptime",
             "duck.runExample",
           ],
@@ -515,7 +512,6 @@ Deno.test("server selects the first client-supported position encoding", () => {
       experimental: {
         duck: {
           expandComptime: true,
-          viewStage: ["ic", "expr", "mod", "wat"],
         },
       },
       serverInfo: { name: "duck-lsp", version: "0.1.0" },
@@ -1610,7 +1606,7 @@ Deno.test("server suppresses assists that fail workspace resolution", () => {
   assert_equals(action, undefined);
 });
 
-Deno.test("server exposes comptime and pipeline powertools", () => {
+Deno.test("server exposes comptime powertools", () => {
   const state = create_state();
   handle_message(state, { id: 1, method: "initialize" });
   const uri = "file:///scratch/comptime.duck";
@@ -1655,52 +1651,8 @@ Deno.test("server exposes comptime and pipeline powertools", () => {
     params: { textDocument: { uri } },
   }) as [{ result: Array<{ command: { title: string } }> }];
   assert_equals(lenses[0]?.result.map((lens) => lens.command.title), [
-    "▸ compile to WAT",
     "▸ expand",
   ]);
-
-  const scalar_uri = "file:///scratch/scalar.duck";
-  handle_message(state, {
-    method: "textDocument/didOpen",
-    params: {
-      textDocument: { uri: scalar_uri, version: 1, text: "40 + 2\n" },
-    },
-  });
-  const stage = handle_message(state, {
-    id: 4,
-    method: "duck/viewStage",
-    params: { textDocument: { uri: scalar_uri }, stage: "wat" },
-  }) as [{ result: { ok: boolean; value: { text: string } } }];
-  assert_equals(stage[0]?.result.ok, true);
-  assert_equals(stage[0]?.result.value.text.includes("i32.const 42"), true);
-
-  const command = handle_message(state, {
-    id: 5,
-    method: "workspace/executeCommand",
-    params: {
-      command: "duck.viewStage",
-      arguments: [scalar_uri, "wat"],
-    },
-  }) as [{ result: { ok: boolean } }];
-  assert_equals(command[0]?.result.ok, true);
-
-  const broken_uri = "file:///scratch/broken.duck";
-  handle_message(state, {
-    method: "textDocument/didOpen",
-    params: {
-      textDocument: { uri: broken_uri, version: 1, text: "let =" },
-    },
-  });
-  const broken = handle_message(state, {
-    id: 6,
-    method: "duck/viewStage",
-    params: { textDocument: { uri: broken_uri }, stage: "wat" },
-  }) as [{ result: { ok: boolean; code: string } }];
-  assert_equals(broken[0]?.result, {
-    ok: false,
-    code: "broken_source",
-    message: "Source could not be parsed: Expected pattern binding at 1:5",
-  });
 });
 
 Deno.test("server honors cancellation and shutdown lifecycle", () => {

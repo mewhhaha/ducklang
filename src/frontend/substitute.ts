@@ -764,7 +764,13 @@ export function substitute_front_stmt(
   replacements: Map<string, FrontExpr>,
 ): Stmt {
   switch (stmt.tag) {
-    case "bind":
+    case "bind": {
+      let else_branch: FrontExpr | undefined;
+
+      if (stmt.else_branch !== undefined) {
+        else_branch = substitute_front_expr(stmt.else_branch, replacements);
+      }
+
       return {
         ...stmt,
         attribute_groups: stmt.attribute_groups?.map((group) => ({
@@ -786,7 +792,9 @@ export function substitute_front_stmt(
           replacements,
         ),
         value: substitute_front_expr(stmt.value, replacements),
+        else_branch,
       };
+    }
 
     case "state_bind":
       return {

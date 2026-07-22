@@ -1,14 +1,20 @@
 # Terminal editor
 
 This case study keeps editor state, editing, selection movement, rendering, and
-terminal policy in Duck. Deno is a thin synchronous boundary for terminal and
-file I/O: it enters the alternate screen, enables raw input, forwards terminal
-effects to Wasm, and restores the terminal in `finally` blocks.
+terminal policy in Duck. The gpufuck target compiles the program to Wasm, while
+Deno is a thin synchronous boundary for terminal and file I/O: it enters the
+alternate screen, enables raw input, supplies typed terminal capabilities, and
+restores the terminal in `finally` blocks.
 
 The document is a linked piece sequence. Inserts and deletes split and join
 pieces instead of shifting one contiguous buffer. Selections follow the Helix
 model: every normal-mode cursor is an inclusive selection, `v` toggles an
 anchored extension, and edits operate on the selected range.
+
+Editing modes and save status are source-defined sum types. Key reduction
+returns the next editor together with transient save and quit requests, so
+one-shot commands do not become persistent editor state. List traversal uses
+refutable `let ... else` binding where an empty tail ends the loop.
 
 Run it with:
 

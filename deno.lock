@@ -1,15 +1,30 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@mewhhaha/typeclasses@0.5": "0.5.0"
+    "jsr:@mewhhaha/baba@6.1.0": "6.1.0",
+    "jsr:@mewhhaha/typeclasses@0.5": "0.5.0",
+    "npm:typescript@5.9.3": "5.9.3"
   },
   "jsr": {
+    "@mewhhaha/baba@6.1.0": {
+      "integrity": "b33c190bff560c41a20af553302c6b3745ddf06fbc263f40d2ab8aedcfc54f76"
+    },
     "@mewhhaha/typeclasses@0.5.0": {
-      "integrity": "d6457ea4421979a13896cb9dc03dc0c96a01c119bf34a93c35389bebe40e71c8"
+      "integrity": "d6457ea4421979a13896cb9dc03dc0c96a01c119bf34a93c35389bebe40e71c8",
+      "dependencies": [
+        "npm:typescript"
+      ]
+    }
+  },
+  "npm": {
+    "typescript@5.9.3": {
+      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+      "bin": true
     }
   },
   "workspace": {
     "dependencies": [
+      "jsr:@mewhhaha/baba@6.1.0",
       "jsr:@mewhhaha/typeclasses@0.5"
     ]
   }

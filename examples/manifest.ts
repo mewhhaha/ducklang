@@ -103,6 +103,11 @@ export const success_examples: SuccessExample[] = [
     route: "core",
     runs: run(42),
   },
+  {
+    path: "examples/basics/13_contextual_keyword_names.duck",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/compile_time/01_comptime_adder.duck",
@@ -174,6 +179,46 @@ export const success_examples: SuccessExample[] = [
     route: "core",
     runs: run(42),
   },
+  {
+    path: "examples/compile_time/15_open_imports.duck",
+    route: "ic",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/16_attributes_and_import_meta.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/17_newtypes_and_literal_types.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/18_ducks_and_operators.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/19_include_and_type_of.duck",
+    route: "core",
+    runs: run(18),
+  },
+  {
+    path: "examples/compile_time/20_variadic_value_packs.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/21_type_patterns.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/22_generic_extension.duck",
+    route: "core",
+    runs: run(42),
+  },
 
   {
     path: "examples/functions/01_closure_capture.duck",
@@ -229,6 +274,11 @@ export const success_examples: SuccessExample[] = [
     path: "examples/functions/11_mutual_recursion.duck",
     route: "core",
     runs: run(2),
+  },
+  {
+    path: "examples/functions/12_let_else_return.duck",
+    route: "core",
+    runs: run(49),
   },
 
   { path: "examples/data/01_struct_fields.duck", route: "core", runs: run(39) },
@@ -301,6 +351,16 @@ export const success_examples: SuccessExample[] = [
     route: "core",
     runs: run(2),
   },
+  {
+    path: "examples/data/16_struct_constructor_and_shape.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/data/17_match_patterns.duck",
+    route: "core",
+    runs: run(42),
+  },
 
   { path: "examples/loops/01_range_sum.duck", route: "core", runs: run(10) },
   {
@@ -348,6 +408,16 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/loops/10_fold_function.duck",
+    route: "core",
+    runs: run(42),
+  },
+  {
+    path: "examples/loops/11_refutable_collection_pattern.duck",
+    route: "core",
+    runs: run(6),
+  },
+  {
+    path: "examples/loops/12_let_else_continue.duck",
     route: "core",
     runs: run(42),
   },
@@ -529,6 +599,7 @@ export const test_example_paths = [
 ];
 
 export const dependency_paths = [
+  "examples/compile_time/open_module.duck",
   "examples/ownership_modules/multi_file/score_module.duck",
   "examples/failures/compile/missing_import_dependency.duck",
   "examples/effects/01_inferred_io.duck",

@@ -1,0 +1,28 @@
+grammar DuckContextualLexer
+
+token IDENT = /[A-Za-z][A-Za-z0-9_]*/ ;
+token NUMBER = /[0-9]+/ ;
+token STRING = /"([^"\\]|\\[ntr"\\])*"/ ;
+token CHARACTER = /'([^'\\\n\r]|\\[ntr'\\])'/ ;
+skip WHITESPACE = /[ \t\r\n]+/ ;
+
+contextual APPLICATION_SPACE = /[ \t]+/ ;
+contextual TYPE_APPLICATION_SPACE = /[ \t]+/ ;
+contextual BREAK_SPACE = /[ \t]+/ ;
+contextual EXTENSION_TERMINATOR = /[\r\n]/ ;
+
+document = application_case | stop_keyword_case | type_case | break_case | extension_case ;
+
+application_case = "app:" first:application "if" second:application ;
+stop_keyword_case = "stop:" first:application stop:stop_keyword second:IDENT ;
+stop_keyword = "as" | "by" | "else" | "if" | "in" | "is" | "where" | "with" ;
+application = head:IDENT (APPLICATION_SPACE arguments:application_argument)* APPLICATION_SPACE? ;
+application_argument = IDENT | NUMBER | STRING | CHARACTER | "_" | "(" IDENT ")" | "[" IDENT "]" | "{" IDENT "}" | "!" IDENT | "#" IDENT ;
+
+type_case = "type:" constructor:IDENT TYPE_APPLICATION_SPACE argument:type_argument ;
+type_argument = IDENT | "#" IDENT | "&" IDENT | "(" IDENT ")" | "[" IDENT "]" ;
+
+break_case = "break:" statement:break_statement ;
+break_statement = "break" (BREAK_SPACE value:NUMBER?)? ;
+
+extension_case = "extension:" first:IDENT EXTENSION_TERMINATOR second:IDENT ;
