@@ -38,7 +38,7 @@ if let `RewriteHistory contents = trimmed {
   if contents == "3333\n" { score = score + 1000 }
 }
 
-let unlimited_limit = fixture_byte_limit - 1;
+let unlimited_limit = fixture_byte_limit (-1);
 let unlimited = plan_message_history_trim("1111\n2222\n3333\n", unlimited_limit);
 if let `KeepHistory () = unlimited { score = score + 10000 }
 
