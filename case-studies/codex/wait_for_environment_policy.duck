@@ -1,6 +1,6 @@
 module () where
 
-const { .encode_json_string } = import "duck:prelude/json/encode" ();
+const { .encode_json_string } = import "duck:prelude/json/string" ();
 const { .text_append } = import "duck:prelude/text" ();
 const {} = import "./wait_for_environment_types.duck" ();
 
