@@ -204,6 +204,18 @@ export const success_examples: SuccessExample[] = [
     path: "examples/compile_time/23_derived_sequence.duck",
     runs: run(42),
   },
+  {
+    path: "examples/compile_time/24_comptime_stack_module.duck",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/25_source_derive_attribute.duck",
+    runs: run(42),
+  },
+  {
+    path: "examples/compile_time/26_comptime_pipeline.duck",
+    runs: run(42),
+  },
 
   {
     path: "examples/functions/01_closure_capture.duck",
@@ -335,6 +347,10 @@ export const success_examples: SuccessExample[] = [
     path: "examples/data/18_const_value_patterns.duck",
     runs: run(42),
   },
+  {
+    path: "examples/data/19_recursive_union_tree.duck",
+    runs: run(42),
+  },
 
   { path: "examples/loops/01_range_sum.duck", runs: run(10) },
   {
@@ -397,6 +413,10 @@ export const success_examples: SuccessExample[] = [
     runs: run(42),
   },
   {
+    path: "examples/loops/13_let_else_break.duck",
+    runs: run(42),
+  },
+  {
     path: "examples/ownership_modules/01_linear_scalar.duck",
     runs: run(42),
   },
@@ -446,6 +466,10 @@ export const success_examples: SuccessExample[] = [
     path: "examples/handlers/03_composed_default_handlers.duck",
     runs: run(42),
   },
+  {
+    path: "examples/handlers/04_output_builder.duck",
+    runs: run(42),
+  },
 
   {
     path: "examples/showcases/01_numeric_toolkit.duck",
@@ -481,6 +505,10 @@ export const success_examples: SuccessExample[] = [
   },
   {
     path: "examples/showcases/07_domain_abstractions.duck",
+    runs: run(42),
+  },
+  {
+    path: "examples/showcases/08_command_reducer.duck",
     runs: run(42),
   },
 ];
