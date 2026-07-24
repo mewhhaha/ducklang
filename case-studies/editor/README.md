@@ -6,16 +6,14 @@ Deno is a thin synchronous boundary for terminal and file I/O: it enters the
 alternate screen, enables raw input, supplies typed terminal capabilities, and
 restores the terminal in `finally` blocks.
 
-The document is a height-balanced piece tree with cached byte and line counts.
-Inserts and deletes split and join subtrees instead of shifting one contiguous
-buffer, while lookup descends by cached lengths. Materialization walks the
-leaves with an explicit stack without exposing the tree traversal to callers.
+The document is a height-balanced piece tree with cached byte counts. Inserts
+and deletes split and join subtrees instead of shifting one contiguous buffer,
+while lookup descends by cached lengths. Materialization walks the leaves with
+an explicit stack without exposing the tree traversal to callers.
 
 Selections follow the Helix model: every normal-mode cursor is an inclusive
 selection, `v` toggles an anchored extension, and edits operate on the selected
-range. The editor stores a nonempty selection collection with one primary
-selection and a list of secondary selections. This proof of concept edits the
-primary selection; the representation leaves multi-selection commands as a
+range. This proof of concept carries a single selection; multi-selection stays a
 source-level extension rather than another host concern.
 
 Editing modes and save status are source-defined sum types. Key reduction

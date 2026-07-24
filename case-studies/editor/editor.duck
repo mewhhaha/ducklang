@@ -1,7 +1,6 @@
 module (!init: Init) where
 
 const { .cast, .struct } = import "duck:prelude/types" ();
-const { .iterator_count } = import "duck:prelude/iterators" ();
 
 type Key =
   | `Character Char
@@ -35,17 +34,15 @@ type EditorCommands =
 type EditorCommandNode = [EditorCommand, EditorCommands]
 
 type PieceTree = | `Empty Unit | `Leaf PieceLeaf | `Branch PieceBranch
-type PieceLeaf = struct { .piece = Bytes, .lines = I32 }
+type PieceLeaf = struct { .piece = Bytes }
 type PieceBranch = struct {
   .left = PieceTree,
   .right = PieceTree,
   .length = I32,
-  .lines = I32,
   .height = I32,
 }
-type PieceTable = struct { .root = PieceTree, .length = I32, .lines = I32 }
+type PieceTable = struct { .root = PieceTree, .length = I32 }
 type Selection = struct { .anchor = I32, .head = I32 }
-type SelectionSet = struct { .primary = Selection, .secondary = List Selection }
 type Mode = | `Normal Unit | `Extend Unit | `Insert Unit
 type Status = | `Ready Unit | `SaveFailed Unit
 type Highlight = struct { .start = I32, .end = I32 }
@@ -73,7 +70,7 @@ type RenderView = struct {
 }
 type Editor = struct {
   .document = PieceTable,
-  .selections = SelectionSet,
+  .selection = Selection,
   .mode = Mode,
   .status = Status,
 }
@@ -108,26 +105,10 @@ const empty_piece_tree = () => {
   tree
 };
 
-let is_line_break = (byte: I32) => {
-  let character = cast(byte, Char);
-  character == '\n'
-};
-
-let piece_line_count = (piece: Bytes) => {
-  let bytes = IntoIterator.iterator(piece);
-  iterator_count(bytes, is_line_break)
-};
-
 let piece_tree_length = (tree: PieceTree) => match tree {
   | `Empty () => 0
   | `Leaf leaf => leaf.piece.length()
   | `Branch branch => branch.length
-};
-
-let piece_tree_lines = (tree: PieceTree) => match tree {
-  | `Empty () => 0
-  | `Leaf leaf => leaf.lines
-  | `Branch branch => branch.lines
 };
 
 let piece_tree_height = (tree: PieceTree) => match tree {
@@ -140,7 +121,7 @@ let piece_tree_leaf = (bytes: Bytes) => {
   if bytes.length() == 0 {
     empty_piece_tree()
   } else {
-    let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes, .lines = piece_line_count bytes });
+    let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes });
     leaf
   }
 };
@@ -158,7 +139,6 @@ let piece_tree_branch = (left: PieceTree, right: PieceTree) => {
       .left = left,
       .right = right,
       .length = piece_tree_length left + piece_tree_length right,
-      .lines = piece_tree_lines left + piece_tree_lines right,
       .height = height,
     });
     branch
@@ -182,11 +162,7 @@ let rec join_piece_trees = (left: PieceTree, right: PieceTree) => {
 
 let piece_table = (bytes: Bytes) => {
   let root = piece_tree_leaf bytes;
-  PieceTable.new {
-    .root = root,
-    .length = piece_tree_length root,
-    .lines = piece_tree_lines root,
-  }
+  PieceTable.new { .root = root, .length = piece_tree_length root }
 };
 
 let rec piece_tree_byte_at = (tree: PieceTree, wanted: I32) => match tree {
@@ -250,11 +226,7 @@ let insert_bytes = (table, position, bytes) => {
     let (left, right) = split_piece_tree(table.root, position);
     let inserted = piece_tree_leaf bytes;
     let root = join_piece_trees(join_piece_trees(left, inserted), right);
-    PieceTable.new {
-      .root = root,
-      .length = piece_tree_length root,
-      .lines = piece_tree_lines root,
-    }
+    PieceTable.new { .root = root, .length = piece_tree_length root }
   }
 };
 
@@ -265,11 +237,7 @@ let delete_bytes = (table, start, end) => {
     let (prefix, suffix) = split_piece_tree(table.root, end);
     let (left, _) = split_piece_tree(prefix, start);
     let root = join_piece_trees(left, suffix);
-    PieceTable.new {
-      .root = root,
-      .length = piece_tree_length root,
-      .lines = piece_tree_lines root,
-    }
+    PieceTable.new { .root = root, .length = piece_tree_length root }
   }
 };
 
@@ -308,14 +276,6 @@ let materialize = (table: PieceTable) => {
 
 let selection_start = selection => {
   if selection.anchor < selection.head { selection.anchor } else { selection.head }
-};
-
-let replace_primary_selection = (editor: Editor, selection: Selection) => {
-  let selections = SelectionSet.new {
-    .primary = selection,
-    .secondary = editor.selections.secondary,
-  };
-  editor <& { .selections = selections }
 };
 
 let is_utf8_continuation = byte => {
@@ -370,31 +330,28 @@ let selection_head_end = (table, selection) => {
 
 let move_head = (editor, position) => {
   let head = clamp_character(&editor.document, position);
-  let anchor = if let `Extend () = editor.mode { editor.selections.primary.anchor } else { head };
-  replace_primary_selection(editor, Selection.new { .anchor = anchor, .head = head })
+  let anchor = if let `Extend () = editor.mode { editor.selection.anchor } else { head };
+  editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
 };
 
 let move_left = editor => {
-  move_head(editor, previous_character(&editor.document, editor.selections.primary.head))
+  move_head(editor, previous_character(&editor.document, editor.selection.head))
 };
 
 let move_right = editor => {
-  move_head(editor, next_character(&editor.document, editor.selections.primary.head))
+  move_head(editor, next_character(&editor.document, editor.selection.head))
 };
 
 let collapse = (editor, position) => {
   let cursor = clamp_character(&editor.document, position);
   let mode = if let `Extend () = editor.mode { `Normal () } else { editor.mode };
-  let updated = replace_primary_selection(
-    editor,
-    Selection.new { .anchor = cursor, .head = cursor },
-  );
+  let updated = editor <& { .selection = Selection.new { .anchor = cursor, .head = cursor } };
   updated <& { .mode = mode }
 };
 
 let delete_selection = editor => {
-  let start = selection_start(&editor.selections.primary);
-  let end = selection_head_end(&editor.document, &editor.selections.primary);
+  let start = selection_start(&editor.selection);
+  let end = selection_head_end(&editor.document, &editor.selection);
   let document = delete_bytes(editor.document, start, end);
   let updated = editor <& { .document = document };
   collapse(updated, start)
@@ -402,7 +359,7 @@ let delete_selection = editor => {
 
 let insert_byte = (editor, byte) => {
   let bytes = Bytes.generate(1, _ => byte);
-  let position = editor.selections.primary.head;
+  let position = editor.selection.head;
   let document = insert_bytes(editor.document, position, bytes);
   let updated = editor <& { .document = document };
   collapse(updated, position + 1)
@@ -438,11 +395,11 @@ let apply_normal_character = (editor, character) => {
       continue_editing(updated <& { .mode = `Insert () })
     }
     | 'i' => {
-      let updated = collapse(editor, selection_start(&editor.selections.primary));
+      let updated = collapse(editor, selection_start(&editor.selection));
       continue_editing(updated <& { .mode = `Insert () })
     }
     | 'a' => {
-      let position = selection_head_end(&editor.document, &editor.selections.primary);
+      let position = selection_head_end(&editor.document, &editor.selection);
       let updated = collapse(editor, position);
       continue_editing(updated <& { .mode = `Insert () })
     }
@@ -453,11 +410,11 @@ let apply_normal_character = (editor, character) => {
 };
 
 let apply_backspace = editor => {
-  if editor.selections.primary.head == 0 {
+  if editor.selection.head == 0 {
     continue_editing editor
   } else {
-    let start = previous_character(&editor.document, editor.selections.primary.head);
-    let document = delete_bytes(editor.document, start, editor.selections.primary.head);
+    let start = previous_character(&editor.document, editor.selection.head);
+    let document = delete_bytes(editor.document, start, editor.selection.head);
     let updated = editor <& { .document = document };
     continue_editing(collapse(updated, start))
   }
@@ -758,10 +715,7 @@ document <- Terminal.load()
 let initial_document = piece_table document;
 let editor = Editor.new {
   .document = initial_document,
-  .selections = SelectionSet.new {
-    .primary = Selection.new { .anchor = 0, .head = 0 },
-    .secondary = `Nil (),
-  },
+  .selection = Selection.new { .anchor = 0, .head = 0 },
   .mode = `Normal (),
   .status = `Ready (),
 };
@@ -771,8 +725,8 @@ loop {
   columns <- Terminal.columns()
   rows <- Terminal.rows()
   let rendered_document = materialize(&editor.document);
-  let rendered_start = selection_start(&editor.selections.primary);
-  let rendered_end = selection_head_end(&editor.document, &editor.selections.primary);
+  let rendered_start = selection_start(&editor.selection);
+  let rendered_end = selection_head_end(&editor.document, &editor.selection);
   let view = RenderView.new {
     .document = rendered_document,
     .highlight = Highlight.new { .start = rendered_start, .end = rendered_end },
