@@ -100,7 +100,7 @@ modules use the explicit header and export record introduced in step 15.
 | Data and types                           | steps 7–10                                      |
 | Compile-time programming and the prelude | steps 11–13                                     |
 | Effects, ownership, and modules          | steps 14–16                                     |
-| Compiler routes and embedding            | [Compiler Entry Points](#compiler-entry-points) |
+| Compiler API and embedding               | [Compiler Entry Points](#compiler-entry-points) |
 
 The complete executable catalog is in [examples/README.md](examples/README.md),
 and [docs/language.md](docs/language.md) is the detailed language reference.
@@ -899,16 +899,14 @@ src/frontend/         parser, analysis, and source elaboration
 src/core/             semantic Core construction and analysis
 experiments/gpufuck/  Duck-to-gpufuck adapter implementation
 docs/language.md      source-language specification
-docs/coverage.md      per-route implementation coverage
-docs/architecture.md  compiler route contracts and stage boundaries
+docs/coverage.md      executable gpufuck coverage
+docs/architecture.md  compiler pipeline and stage boundaries
 docs/roadmap.md       prioritized reserved-feature work
 examples/             runnable .duck source programs and expected failures
 tree-sitter-duck/      Tree-sitter grammar and Helix queries for .duck files
 ```
 
-The supported TypeScript exports and diagnostic categories are documented in
-[TypeScript API and Diagnostic Migration](docs/typescript-api-migration.md). See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the repository workflow and complete
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository workflow and complete
 verification gate. Ducklang is available under the [MIT License](LICENSE).
 
 ## Development
