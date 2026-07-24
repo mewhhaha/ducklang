@@ -50,6 +50,12 @@ import { parameter_arguments } from "./call_args.ts";
 import { compiler_builtin_args } from "./compiler_builtin_args.ts";
 import { is_const_builtin_name } from "./constness.ts";
 import { struct_merge_operands } from "./struct_merge.ts";
+import { compiler_diagnostic, diagnostic_codes } from "../diagnostic.ts";
+import {
+  SourceDiagnosticError,
+  throw_source_diagnostic,
+} from "./semantic_diagnostic.ts";
+import { has_source_span } from "./syntax.ts";
 
 type TypeSetBinding = {
   annotation: string | undefined;
@@ -686,12 +692,14 @@ export function elaborate_front_type_sets(source: Source): Source {
         set_scope_type_value(scope, declaration.name, {
           tag: "struct_type",
           fields: declaration.body.fields,
+          nominal_name: declaration.name,
         });
       }
     } else if (declaration.body.tag === "sum") {
       const union_type: Extract<FrontExpr, { tag: "union_type" }> = {
         tag: "union_type",
         cases: declaration.body.cases,
+        nominal_name: declaration.name,
       };
       set_scope_type_value(scope, declaration.name, union_type);
       set_scope_declared_union_type(scope, declaration.name, union_type);
@@ -1825,6 +1833,45 @@ function contextualize_product_value(
     };
   }
 
+  if (value.tag === "struct_value") {
+    return {
+      ...value,
+      type_expr: type_value_from_type_expr(
+        parse_type_expr(tokenize(annotation)),
+      ),
+      fields: value.fields.map((field) => {
+        const declared_field = declared.fields.find((candidate) =>
+          candidate.name === field.name
+        );
+        expect(
+          declared_field,
+          "Contextual struct field is not declared: " + field.name,
+        );
+        const field_type = resolve_front_type_value(
+          type_value_from_type_expr(
+            parse_type_expr(tokenize(declared_field.type_name)),
+          ),
+          scope.type_values,
+          new Set(),
+        );
+
+        if (field_type?.tag !== "struct_type") {
+          return field;
+        }
+
+        return {
+          ...field,
+          value: contextualize_product_value(
+            field.value,
+            declared_field.type_name,
+            field_type,
+            scope,
+          ),
+        };
+      }),
+    };
+  }
+
   if (value.tag !== "product") {
     return value;
   }
@@ -2233,7 +2280,7 @@ function elaborate_match_expr(
     }
   }
 
-  validate_match_coverage(arms, union_type);
+  validate_match_coverage(expr, arms, union_type);
 
   if (
     scope.evaluating_const_call &&
@@ -3336,6 +3383,7 @@ function match_literal_condition(
 }
 
 function validate_match_coverage(
+  expr: Extract<FrontExpr, { tag: "match" }>,
   arms: MatchArm[],
   union_type: Extract<FrontExpr, { tag: "union_type" }> | undefined,
 ): void {
@@ -3353,7 +3401,10 @@ function validate_match_coverage(
       has_catch_all || (covers_false && covers_true) ||
       union_coverage_complete(union_type, covered_union_cases)
     ) {
-      throw new Error("Unreachable match arm " + index.toString());
+      throw_match_coverage_diagnostic(
+        "Unreachable match arm " + index.toString(),
+        arm,
+      );
     }
 
     const unguarded = arm.guard === undefined;
@@ -3376,8 +3427,9 @@ function validate_match_coverage(
 
     if (arm.pattern.tag === "unit") {
       if (covered_literals.has("unit")) {
-        throw new Error(
+        throw_match_coverage_diagnostic(
           "Unreachable duplicate unit match at arm " + index.toString(),
+          arm,
         );
       }
 
@@ -3391,9 +3443,10 @@ function validate_match_coverage(
       const key = match_literal_key(arm.pattern.value);
 
       if (covered_literals.has(key)) {
-        throw new Error(
+        throw_match_coverage_diagnostic(
           "Unreachable duplicate match literal at arm " + index.toString() +
             ": " + key,
+          arm,
         );
       }
 
@@ -3438,15 +3491,17 @@ function validate_match_coverage(
         union_type !== undefined &&
         !union_type.cases.some((item) => item.name === case_name)
       ) {
-        throw new Error(
+        throw_match_coverage_diagnostic(
           "Unknown match union case ." + case_name,
+          arm,
         );
       }
 
       if (covered_union_cases.has(case_name)) {
-        throw new Error(
+        throw_match_coverage_diagnostic(
           "Unreachable duplicate match case at arm " + index.toString() +
             ": `" + case_name,
+          arm,
         );
       }
 
@@ -3467,6 +3522,13 @@ function validate_match_coverage(
     return;
   }
 
+  let subject: object = expr;
+  const final_arm = arms[arms.length - 1];
+
+  if (final_arm !== undefined) {
+    subject = final_arm;
+  }
+
   if (union_type !== undefined) {
     const missing = union_type.cases.filter((item) =>
       !covered_union_cases.has(item.name)
@@ -3477,11 +3539,36 @@ function validate_match_coverage(
 
       return "`" + item.name + " _";
     });
-    throw new Error("Non-exhaustive match, missing " + missing.join(", "));
+    throw_match_coverage_diagnostic(
+      "Non-exhaustive match, missing " + missing.join(", "),
+      subject,
+    );
   }
 
-  throw new Error(
+  throw_match_coverage_diagnostic(
     "Non-exhaustive match requires a wildcard or binding arm",
+    subject,
+  );
+}
+
+function throw_match_coverage_diagnostic(
+  message: string,
+  subject: object,
+): never {
+  if (has_source_span(subject)) {
+    throw_source_diagnostic(
+      diagnostic_codes.match_coverage,
+      message,
+      subject,
+    );
+  }
+
+  throw new SourceDiagnosticError(
+    compiler_diagnostic(
+      diagnostic_codes.match_coverage,
+      message,
+      { start: 0, end: 0 },
+    ),
   );
 }
 
@@ -4372,15 +4459,30 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       return { tag: "with", base: resolved_base, fields };
     }
 
-    case "struct_value":
+    case "struct_value": {
+      let type_expr = rewrite_expr(expr.type_expr, scope);
+      const resolved = resolve_front_type_value(
+        type_expr,
+        scope.type_values,
+        new Set(),
+      );
+
+      if (
+        resolved?.tag === "struct_type" &&
+        resolved.nominal_name !== undefined
+      ) {
+        type_expr = { tag: "var", name: resolved.nominal_name };
+      }
+
       return {
         ...expr,
-        type_expr: rewrite_expr(expr.type_expr, scope),
+        type_expr,
         fields: expr.fields.map((field) => ({
           ...field,
           value: rewrite_expr(field.value, scope),
         })),
       };
+    }
 
     case "if":
       return rewrite_if(expr, scope);
@@ -4645,6 +4747,10 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
 
         if (resolved?.tag === "union_type") {
           union_type_value = resolved;
+
+          if (resolved.nominal_name !== undefined) {
+            type_expr = { tag: "var", name: resolved.nominal_name };
+          }
         }
       } else {
         let inferred: string | undefined;
@@ -7328,6 +7434,10 @@ function union_type_from_annotation(
     return resolved_named;
   }
 
+  if (resolved_named?.tag === "struct_type") {
+    return undefined;
+  }
+
   const type = parse_type_expr(tokenize(annotation));
   const type_value = scope_type_value_from_type_expr(type);
 
@@ -7806,7 +7916,17 @@ export function resolve_front_type_value(
 
     const next = new Set(resolving);
     next.add(value.name);
-    return resolve_front_type_value(target, type_values, next);
+    const resolved = resolve_front_type_value(target, type_values, next);
+
+    if (
+      (resolved?.tag === "struct_type" ||
+        resolved?.tag === "union_type") &&
+      resolved.nominal_name === undefined
+    ) {
+      return { ...resolved, nominal_name: value.name };
+    }
+
+    return resolved;
   }
 
   if (value.tag !== "app") {
@@ -8045,11 +8165,27 @@ function product_type_with_namespace(
   value: Extract<FrontExpr, { tag: "product" | "with" }>,
 ): Extract<FrontExpr, { tag: "struct_type" }> | undefined {
   const members: import("./ast.ts").Field[] = [];
+  let nominal_name: string | undefined;
+
+  if (value.tag === "with") {
+    nominal_name = value.nominal_name;
+  }
+
   let base: FrontExpr = value;
 
   while (base.tag === "with") {
+    if (nominal_name === undefined) {
+      nominal_name = base.nominal_name;
+    }
     members.push(...base.fields);
     base = base.base;
+  }
+
+  if (base.tag === "struct_type") {
+    return {
+      ...base,
+      nominal_name: nominal_name || base.nominal_name,
+    };
   }
 
   if (
@@ -8071,6 +8207,7 @@ function product_type_with_namespace(
 
   return {
     tag: "struct_type",
+    nominal_name,
     fields: base.entries.map((entry, index) => {
       const type_expr = prelude_type_expr(entry.value);
       let name = entry.label;
@@ -8166,6 +8303,7 @@ function specialize_front_type_constructor(
   }
 
   const replacements = new Map<string, FrontExpr>();
+  const argument_names: string[] = [];
 
   for (let index = 0; index < func.params.length; index += 1) {
     const param = func.params[index];
@@ -8181,10 +8319,37 @@ function specialize_front_type_constructor(
       return undefined;
     }
 
+    argument_names.push(type_name);
     replacements.set(param.name, { tag: "var", name: type_name });
   }
 
-  return substitute_front_expr(func.body, replacements);
+  const specialized = substitute_front_expr(func.body, replacements);
+
+  if (
+    (specialized.tag === "struct_type" ||
+      specialized.tag === "union_type" || specialized.tag === "with") &&
+    (value.func.tag === "var" || value.func.tag === "type_name")
+  ) {
+    let type_expr: TypeExpr = {
+      tag: "name",
+      name: value.func.name,
+    };
+
+    for (const argument_name of argument_names) {
+      type_expr = {
+        tag: "apply",
+        func: type_expr,
+        arg: parse_type_expr(tokenize(argument_name)),
+      };
+    }
+
+    return {
+      ...specialized,
+      nominal_name: format_type_expr(type_expr),
+    };
+  }
+
+  return specialized;
 }
 
 function scope_type_argument_name(
@@ -8293,6 +8458,21 @@ function inject_type_set_call_arguments(
 
     if (!param?.annotation) {
       return arg;
+    }
+
+    const declared = resolve_front_type_value(
+      { tag: "var", name: param.annotation },
+      scope.type_values,
+      new Set(),
+    );
+
+    if (declared?.tag === "struct_type") {
+      return contextualize_product_value(
+        arg,
+        param.annotation,
+        declared,
+        scope,
+      );
     }
 
     return inject_type_set_value(param.annotation, arg, scope, "parameter");
@@ -8781,7 +8961,66 @@ function set_scope_type_value(
     scope.owns_type_values = true;
   }
 
-  scope.type_values.set(name, value);
+  const declared = scope.type_values.get(name);
+  let declared_struct: Extract<FrontExpr, { tag: "struct_type" }> | undefined;
+
+  if (declared?.tag === "struct_type") {
+    declared_struct = declared;
+  } else if (declared?.tag === "with") {
+    let base = declared.base;
+
+    while (base.tag === "with") {
+      base = base.base;
+    }
+
+    if (base.tag === "struct_type") {
+      declared_struct = base;
+    }
+  }
+
+  if (
+    declared_struct !== undefined && value.tag === "with"
+  ) {
+    value = replace_type_namespace_base(value, declared_struct);
+  }
+
+  scope.type_values.set(name, nominal_type_value(value, name));
+}
+
+function replace_type_namespace_base(
+  value: Extract<FrontExpr, { tag: "with" }>,
+  base: Extract<FrontExpr, { tag: "struct_type" }>,
+): Extract<FrontExpr, { tag: "with" }> {
+  if (value.base.tag !== "with") {
+    return { ...value, base };
+  }
+
+  return {
+    ...value,
+    base: replace_type_namespace_base(value.base, base),
+  };
+}
+
+function nominal_type_value(value: FrontExpr, name: string): FrontExpr {
+  if (
+    value.tag === "struct_type" || value.tag === "union_type" ||
+    value.tag === "with"
+  ) {
+    if (value.nominal_name !== undefined) {
+      return value;
+    }
+
+    return { ...value, nominal_name: name };
+  }
+
+  if (value.tag === "captured" || value.tag === "comptime") {
+    return {
+      ...value,
+      expr: nominal_type_value(value.expr, name),
+    };
+  }
+
+  return value;
 }
 
 function fresh_is_payload_name(name: string, scope: TypeSetScope): string {

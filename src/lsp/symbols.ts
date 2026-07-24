@@ -22,7 +22,7 @@ export type LspDocumentSymbol = {
   children: LspDocumentSymbol[];
 };
 
-const symbol_kind = {
+export const symbol_kind = {
   module: 2,
   class: 5,
   method: 6,

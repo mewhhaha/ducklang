@@ -24,6 +24,11 @@ import {
 import { validate_ic_route } from "./ic_route.ts";
 import { validate_source_linear } from "./linear.ts";
 import { elaborate_front_let_else } from "./let_else.ts";
+import { apply_front_inferred_nominal_bindings } from "./nominal_elaborate.ts";
+import {
+  elaborate_front_loops,
+  elaborate_front_ranges,
+} from "./loop_elaborate.ts";
 import { resolve_bundled_source_imports } from "./load.ts";
 import { specialize_const_module_imports } from "./module_specialize.ts";
 import type { ParseSourceResult } from "./parser.ts";
@@ -220,6 +225,16 @@ function elaborate_source(source: Source): Source {
   source = elaborate_front_ducks(source);
   source = infer_front_function_signatures(source);
   source = elaborate_front_ducks(source);
+  const effects = analyze_front_effects(source);
+  const has_effects = effects.module_effects.length > 0 ||
+    Object.values(effects.functions).some((func) => func.effects.length > 0);
+
+  if (!has_effects) {
+    source = elaborate_front_ranges(source);
+    source = elaborate_front_loops(source);
+  }
+
+  source = apply_front_inferred_nominal_bindings(source);
   source = elaborate_front_effects(source);
   return elaborate_front_type_sets(source);
 }

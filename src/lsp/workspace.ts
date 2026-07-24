@@ -5,16 +5,20 @@ import {
 } from "../frontend/binding_index.ts";
 import type { Source as FrontSource } from "../frontend/ast.ts";
 import { Source } from "../frontend/source.ts";
+import { scan_source, source_tokens } from "../frontend/tokenize.ts";
 import { document_content_hash, type TextDocument } from "./documents.ts";
 import {
   definition_location,
+  fuzzy_score,
   type LspLocation,
   type LspWorkspaceEdit,
+  type LspWorkspaceSymbol,
   reference_locations,
   rename_symbol,
   type WorkspaceIndexEntry,
 } from "./navigation.ts";
 import { type PositionEncoding, PositionIndex } from "./position.ts";
+import { symbol_kind } from "./symbols.ts";
 
 export type WorkspaceLoadProgress = {
   uri: string;
@@ -27,8 +31,22 @@ export type WorkspaceAnalysisEntry = WorkspaceIndexEntry & {
   content_hash: string;
 };
 
-type CachedWorkspaceFile = WorkspaceAnalysisEntry & {
-  disk_text: string;
+type CachedWorkspaceFile = {
+  analysis: WorkspaceAnalysisEntry | undefined;
+  content_hash: string;
+  dependencies: Set<string>;
+  names: Set<string>;
+  symbol_sites: WorkspaceSymbolSite[];
+  text: string;
+  uri: string;
+};
+
+type WorkspaceSymbolSite = {
+  container_name: string | undefined;
+  end: number;
+  kind: number;
+  name: string;
+  start: number;
 };
 
 type WorkspaceTarget = {
@@ -82,7 +100,7 @@ export class WorkspaceModel {
         ) {
           next.set(uri, existing);
         } else {
-          next.set(uri, analyze_workspace_file(uri, text));
+          next.set(uri, workspace_file(uri, text));
         }
       }
 
@@ -95,7 +113,7 @@ export class WorkspaceModel {
       if (!next.has(overlay.uri)) {
         next.set(
           overlay.uri,
-          analyze_workspace_file(overlay.uri, overlay.text),
+          workspace_file(overlay.uri, overlay.text),
         );
       }
     }
@@ -123,7 +141,7 @@ export class WorkspaceModel {
         existing === undefined || existing.content_hash !== hash ||
         existing.text !== text
       ) {
-        this.#files.set(uri, analyze_workspace_file(uri, text));
+        this.#files.set(uri, workspace_file(uri, text));
       }
     }
 
@@ -141,16 +159,147 @@ export class WorkspaceModel {
   }
 
   entries(overlays: readonly TextDocument[]): WorkspaceAnalysisEntry[] {
+    return this.analysis_entries(this.#files.keys(), overlays);
+  }
+
+  entries_for_uri(
+    uri: string,
+    overlays: readonly TextDocument[],
+  ): WorkspaceAnalysisEntry[] {
+    const related = new Set<string>([uri]);
+    const dependencies = this.#dependencies.get(uri);
+
+    if (dependencies !== undefined) {
+      for (const dependency of dependencies) {
+        if (this.#files.has(dependency)) {
+          related.add(dependency);
+        }
+
+        const sibling_importers = this.#reverse_dependencies.get(dependency);
+
+        if (sibling_importers !== undefined) {
+          for (const importer of sibling_importers) {
+            related.add(importer);
+          }
+        }
+      }
+    }
+
+    const importers = this.#reverse_dependencies.get(uri);
+
+    if (importers !== undefined) {
+      for (const importer of importers) {
+        related.add(importer);
+      }
+    }
+
+    return this.analysis_entries(
+      related,
+      overlays.filter((document) => related.has(document.uri)),
+    );
+  }
+
+  symbols(
+    overlays: readonly TextDocument[],
+    query: string,
+    encoding: PositionEncoding,
+  ): LspWorkspaceSymbol[] {
+    const overlay_by_uri = new Map(
+      overlays.map((document) => [document.uri, document]),
+    );
+    const matches: {
+      score: number;
+      start: LspWorkspaceSymbol["location"]["range"]["start"];
+      symbol: LspWorkspaceSymbol;
+    }[] = [];
+
+    for (const file of this.#files.values()) {
+      if (!file_has_symbol_candidate(file, query)) {
+        continue;
+      }
+
+      const overlay = overlay_by_uri.get(file.uri);
+      let text = file.text;
+      let symbol_sites = file.symbol_sites;
+
+      if (overlay !== undefined && overlay.text !== file.text) {
+        text = overlay.text;
+        symbol_sites = source_metadata(overlay.text, overlay.uri).symbol_sites;
+      }
+
+      collect_workspace_symbols(
+        matches,
+        file.uri,
+        text,
+        symbol_sites,
+        query,
+        encoding,
+      );
+      overlay_by_uri.delete(file.uri);
+    }
+
+    for (const overlay of overlay_by_uri.values()) {
+      const symbol_sites = source_metadata(overlay.text, overlay.uri)
+        .symbol_sites;
+      collect_workspace_symbols(
+        matches,
+        overlay.uri,
+        overlay.text,
+        symbol_sites,
+        query,
+        encoding,
+      );
+    }
+
+    matches.sort((left, right) => {
+      if (left.score !== right.score) {
+        return right.score - left.score;
+      }
+
+      const by_name = left.symbol.name.localeCompare(right.symbol.name);
+
+      if (by_name !== 0) {
+        return by_name;
+      }
+
+      const by_uri = left.symbol.location.uri.localeCompare(
+        right.symbol.location.uri,
+      );
+
+      if (by_uri !== 0) {
+        return by_uri;
+      }
+
+      if (left.start.line !== right.start.line) {
+        return left.start.line - right.start.line;
+      }
+
+      return left.start.character - right.start.character;
+    });
+
+    return matches.map((match) => match.symbol);
+  }
+
+  private analysis_entries(
+    uris: Iterable<string>,
+    overlays: readonly TextDocument[],
+  ): WorkspaceAnalysisEntry[] {
     const overlay_by_uri = new Map(
       overlays.map((document) => [document.uri, document]),
     );
     const entries: WorkspaceAnalysisEntry[] = [];
 
-    for (const file of this.#files.values()) {
+    for (const uri of uris) {
+      const file = this.#files.get(uri);
+
+      if (file === undefined) {
+        continue;
+      }
+
       const overlay = overlay_by_uri.get(file.uri);
 
       if (overlay === undefined || overlay.text === file.text) {
-        entries.push(file);
+        entries.push(analyze_cached_workspace_file(file));
       } else {
         entries.push(analyze_workspace_file(file.uri, overlay.text));
       }
@@ -225,12 +374,24 @@ export class WorkspaceModel {
     return this.#files.size;
   }
 
+  analysis_count(): number {
+    let count = 0;
+
+    for (const file of this.#files.values()) {
+      if (file.analysis !== undefined) {
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
   private rebuild_graph(): void {
     this.#dependencies.clear();
     this.#reverse_dependencies.clear();
 
     for (const file of this.#files.values()) {
-      const dependencies = source_dependencies(file.source, file.uri);
+      const dependencies = file.dependencies;
       this.#dependencies.set(file.uri, dependencies);
 
       for (const dependency of dependencies) {
@@ -615,58 +776,451 @@ function read_workspace_file(uri: string): string | undefined {
 function analyze_workspace_file(
   uri: string,
   text: string,
-): CachedWorkspaceFile {
+): WorkspaceAnalysisEntry {
   const parsed = Source.parse_with_diagnostics(text);
   return {
     uri,
     text,
-    disk_text: text,
     source: parsed.source,
     index: build_binding_index(parsed, 0),
     content_hash: document_content_hash(text),
   };
 }
 
-function source_dependencies(source: FrontSource, uri: string): Set<string> {
-  const dependencies = new Set<string>();
-  const seen = new WeakSet<object>();
+function workspace_file(uri: string, text: string): CachedWorkspaceFile {
+  const metadata = source_metadata(text, uri);
 
-  const visit = (value: object): void => {
-    if (seen.has(value)) {
-      return;
-    }
-
-    seen.add(value);
-    const record = value as { tag?: string; path?: unknown };
-
-    if (record.tag === "import" && typeof record.path === "string") {
-      try {
-        dependencies.add(new URL(record.path, uri).href);
-      } catch (error) {
-        if (!(error instanceof TypeError)) {
-          throw error;
-        }
-      }
-    }
-
-    for (const child of Object.values(value)) {
-      if (child !== null && typeof child === "object") {
-        if (Array.isArray(child)) {
-          for (const entry of child) {
-            if (entry !== null && typeof entry === "object") {
-              visit(entry);
-            }
-          }
-        } else {
-          visit(child);
-        }
-      }
-    }
+  return {
+    analysis: undefined,
+    content_hash: document_content_hash(text),
+    dependencies: metadata.dependencies,
+    names: metadata.names,
+    symbol_sites: metadata.symbol_sites,
+    text,
+    uri,
   };
+}
 
-  visit(source);
+function analyze_cached_workspace_file(
+  file: CachedWorkspaceFile,
+): WorkspaceAnalysisEntry {
+  if (file.analysis === undefined) {
+    file.analysis = analyze_workspace_file(file.uri, file.text);
+  }
 
-  return dependencies;
+  return file.analysis;
+}
+
+function source_metadata(
+  text: string,
+  uri: string,
+): {
+  dependencies: Set<string>;
+  names: Set<string>;
+  symbol_sites: WorkspaceSymbolSite[];
+} {
+  const dependencies = new Set<string>();
+  const symbol_sites: WorkspaceSymbolSite[] = [];
+  const tokens = source_tokens(scan_source(text));
+  let brace_depth = 0;
+  let declaration_container: string | undefined;
+  let declaration_kind: number = symbol_kind.class;
+  let declaration_member_kind: number = symbol_kind.field;
+  let declaration_members = false;
+  let declaration_parameters = false;
+  let module_parameters = false;
+  let binding_kind: number = symbol_kind.variable;
+  let binding_pattern = false;
+  let positional_binding_pattern = false;
+  let shape_binding_pattern = false;
+  let shape_binding_site_index: number | undefined;
+  let type_binding_pattern = false;
+  let expects_top_level_name = false;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const previous = tokens[index - 1];
+    const path = tokens[index + 1];
+    let introduced_symbol = false;
+
+    if (token?.kind === "symbol" && token.text === "{") {
+      brace_depth += 1;
+
+      if (
+        binding_pattern && expects_top_level_name && !type_binding_pattern
+      ) {
+        shape_binding_pattern = true;
+      }
+    } else if (token?.kind === "symbol" && token.text === "}") {
+      brace_depth -= 1;
+
+      if (brace_depth === 0) {
+        declaration_members = false;
+        declaration_parameters = false;
+      }
+    }
+
+    if (brace_depth === 0 && token?.kind === "name") {
+      if (module_parameters) {
+        if (token.text === "where") {
+          module_parameters = false;
+        } else if (
+          previous?.kind === "symbol" &&
+          (previous.text === "!" || previous.text === "(" ||
+            previous.text === ",")
+        ) {
+          symbol_sites.push({
+            container_name: undefined,
+            end: token.span.end,
+            kind: symbol_kind.module,
+            name: token.text,
+            start: token.span.start,
+          });
+        }
+      } else if (
+        declaration_members && !declaration_parameters &&
+        token.text === "packed"
+      ) {
+        declaration_members = false;
+      } else if (
+        token.text === "declare" && path?.kind === "name" &&
+        path.text !== "effect"
+      ) {
+        declaration_kind = symbol_kind.class;
+        declaration_member_kind = symbol_kind.field;
+        declaration_members = true;
+        declaration_parameters = false;
+        module_parameters = false;
+        binding_pattern = false;
+        positional_binding_pattern = false;
+        shape_binding_pattern = false;
+        type_binding_pattern = false;
+        expects_top_level_name = true;
+      } else if (
+        token.text === "type" || token.text === "effect" ||
+        token.text === "duck" || token.text === "record"
+      ) {
+        declaration_kind = symbol_kind.class;
+        declaration_member_kind = symbol_kind.field;
+
+        if (token.text === "effect") {
+          declaration_kind = symbol_kind.interface;
+          declaration_member_kind = symbol_kind.method;
+        }
+
+        declaration_members = true;
+        declaration_parameters = false;
+        module_parameters = false;
+        binding_pattern = false;
+        positional_binding_pattern = false;
+        shape_binding_pattern = false;
+        type_binding_pattern = false;
+        expects_top_level_name = true;
+      } else if (
+        (token.text === "let" || token.text === "const") &&
+        (previous === undefined || previous.kind === "newline")
+      ) {
+        declaration_members = false;
+        declaration_parameters = false;
+        module_parameters = false;
+        binding_pattern = true;
+        positional_binding_pattern = false;
+        shape_binding_pattern = false;
+        type_binding_pattern = false;
+        expects_top_level_name = true;
+        binding_kind = symbol_kind.variable;
+
+        if (token.text === "const") {
+          binding_kind = symbol_kind.constant;
+        }
+      } else if (token.text === "module") {
+        declaration_members = false;
+        declaration_parameters = false;
+        module_parameters = path?.kind === "symbol" && path.text === "(";
+        binding_pattern = !module_parameters;
+        binding_kind = symbol_kind.constant;
+        positional_binding_pattern = false;
+        shape_binding_pattern = false;
+        type_binding_pattern = false;
+        expects_top_level_name = !module_parameters;
+      } else if (
+        binding_pattern && expects_top_level_name &&
+        (token.text === "struct" || token.text === "union")
+      ) {
+        type_binding_pattern = true;
+        expects_top_level_name = false;
+      } else if (
+        expects_top_level_name &&
+        token.text !== "rec" && token.text !== "open" &&
+        !(previous?.kind === "symbol" && previous.text === "`")
+      ) {
+        if (token.text !== "_") {
+          const kind = declaration_members ? declaration_kind : binding_kind;
+          symbol_sites.push({
+            container_name: undefined,
+            end: token.span.end,
+            kind,
+            name: token.text,
+            start: token.span.start,
+          });
+          introduced_symbol = true;
+        }
+
+        expects_top_level_name = false;
+        declaration_parameters = declaration_members;
+
+        if (declaration_members) {
+          declaration_container = token.text;
+        }
+      } else if (
+        token.text === "and" &&
+        (previous === undefined || previous.kind === "newline") &&
+        path?.kind === "name" && path.text !== "_"
+      ) {
+        let definition = path;
+
+        for (let prior_index = index - 1; prior_index >= 0; prior_index -= 1) {
+          const prior = tokens[prior_index];
+
+          if (prior?.kind === "name" && prior.text === path.text) {
+            definition = prior;
+            break;
+          }
+        }
+
+        symbol_sites.push({
+          container_name: undefined,
+          end: definition.span.end,
+          kind: binding_kind,
+          name: path.text,
+          start: definition.span.start,
+        });
+      } else if (
+        !declaration_members && !binding_pattern &&
+        token.text !== "_" && path?.kind === "symbol" && path.text === "<-"
+      ) {
+        symbol_sites.push({
+          container_name: undefined,
+          end: token.span.end,
+          kind: symbol_kind.variable,
+          name: token.text,
+          start: token.span.start,
+        });
+      } else if (
+        !declaration_members && !binding_pattern &&
+        token.text !== "_" && path?.kind === "symbol" &&
+        (path.text === "=" || path.text === ":=") &&
+        (previous === undefined || previous.kind === "newline")
+      ) {
+        symbol_sites.push({
+          container_name: undefined,
+          end: token.span.end,
+          kind: symbol_kind.variable,
+          name: token.text,
+          start: token.span.start,
+        });
+      }
+    }
+
+    if (
+      binding_pattern && expects_top_level_name &&
+      token?.kind === "symbol" &&
+      (token.text === "[" || token.text === "(")
+    ) {
+      positional_binding_pattern = true;
+    }
+
+    if (
+      brace_depth === 0 && binding_pattern && positional_binding_pattern &&
+      !introduced_symbol && token?.kind === "name" && token.text !== "_" &&
+      previous?.kind === "symbol" &&
+      (previous.text === "[" || previous.text === "(" ||
+        previous.text === ",")
+    ) {
+      symbol_sites.push({
+        container_name: undefined,
+        end: token.span.end,
+        kind: binding_kind,
+        name: token.text,
+        start: token.span.start,
+      });
+      expects_top_level_name = false;
+    }
+
+    if (
+      token?.kind === "name" &&
+      previous?.kind === "symbol" &&
+      ((previous.text === "`" && declaration_members) ||
+        (previous.text === "." &&
+          (declaration_members || shape_binding_pattern)))
+    ) {
+      let container_name: string | undefined;
+      let kind: number = binding_kind;
+
+      if (declaration_members) {
+        container_name = declaration_container;
+        kind = declaration_member_kind;
+
+        if (previous.text === "`") {
+          kind = symbol_kind.enum_member;
+        }
+      }
+
+      symbol_sites.push({
+        container_name,
+        end: token.span.end,
+        kind,
+        name: token.text,
+        start: token.span.start,
+      });
+
+      if (shape_binding_pattern && !declaration_members) {
+        shape_binding_site_index = symbol_sites.length - 1;
+      }
+    }
+
+    if (
+      binding_pattern && brace_depth > 0 &&
+      token?.kind === "name" && previous?.kind === "symbol" &&
+      previous.text === "=" && shape_binding_site_index !== undefined
+    ) {
+      const site = symbol_sites[shape_binding_site_index];
+
+      if (site === undefined) {
+        throw new Error("Missing workspace shape binding symbol site");
+      }
+
+      if (token.text === "_") {
+        symbol_sites.splice(shape_binding_site_index, 1);
+      } else {
+        site.end = token.span.end;
+        site.name = token.text;
+        site.start = token.span.start;
+      }
+
+      shape_binding_site_index = undefined;
+    }
+
+    if (
+      declaration_members && brace_depth > 0 &&
+      token?.kind === "name" && path?.kind === "symbol" &&
+      path.text === ":" &&
+      !(previous?.kind === "symbol" && previous.text === ".")
+    ) {
+      symbol_sites.push({
+        container_name: declaration_container,
+        end: token.span.end,
+        kind: declaration_member_kind,
+        name: token.text,
+        start: token.span.start,
+      });
+    }
+
+    if (
+      brace_depth === 0 && token?.kind === "symbol" && token.text === "="
+    ) {
+      binding_pattern = false;
+      positional_binding_pattern = false;
+      shape_binding_pattern = false;
+      shape_binding_site_index = undefined;
+      type_binding_pattern = false;
+      declaration_parameters = false;
+      expects_top_level_name = false;
+    }
+
+    if (
+      brace_depth === 0 && token?.kind === "newline" &&
+      declaration_members && !declaration_parameters
+    ) {
+      let next_index = index + 1;
+
+      while (tokens[next_index]?.kind === "newline") {
+        next_index += 1;
+      }
+
+      const next = tokens[next_index];
+
+      if (
+        next === undefined || next.kind !== "symbol" || next.text !== "|"
+      ) {
+        declaration_members = false;
+      }
+    }
+
+    if (
+      token?.kind !== "name" || token.text !== "import" ||
+      path?.kind !== "string"
+    ) {
+      continue;
+    }
+
+    try {
+      dependencies.add(new URL(path.text, uri).href);
+    } catch (error) {
+      if (!(error instanceof TypeError)) {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    dependencies,
+    names: new Set(symbol_sites.map((site) => site.name)),
+    symbol_sites,
+  };
+}
+
+function file_has_symbol_candidate(
+  file: CachedWorkspaceFile,
+  query: string,
+): boolean {
+  for (const name of file.names) {
+    if (fuzzy_score(name, query) !== undefined) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function collect_workspace_symbols(
+  matches: {
+    score: number;
+    start: LspWorkspaceSymbol["location"]["range"]["start"];
+    symbol: LspWorkspaceSymbol;
+  }[],
+  uri: string,
+  text: string,
+  symbol_sites: WorkspaceSymbolSite[],
+  query: string,
+  encoding: PositionEncoding,
+): void {
+  const positions = new PositionIndex(text, encoding);
+
+  for (const site of symbol_sites) {
+    const score = fuzzy_score(site.name, query);
+
+    if (score !== undefined) {
+      const symbol: LspWorkspaceSymbol = {
+        name: site.name,
+        kind: site.kind,
+        location: {
+          uri,
+          range: range_from_offsets(positions, site.start, site.end),
+        },
+      };
+
+      if (site.container_name !== undefined) {
+        symbol.containerName = site.container_name;
+      }
+
+      matches.push({
+        score,
+        start: symbol.location.range.start,
+        symbol,
+      });
+    }
+  }
 }
 
 function workspace_target(

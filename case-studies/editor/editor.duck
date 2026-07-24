@@ -278,35 +278,29 @@ let materialize = (table: PieceTable) => {
   let output_offset = 0;
   let empty_stack: List PieceTree = `Nil ();
   let pending: List PieceTree = `Cons [table.root, empty_stack];
-  let done = false;
 
   loop {
-    if let `Cons node = pending {
-      let [tree, tail] = node;
+    let `Cons node = pending else { break; };
+    let [tree, tail] = node;
 
-      match tree {
-        | `Empty () => {
-          pending = tail
-        }
-        | `Leaf leaf => {
-          pending = tail
-          let piece: Bytes = leaf.piece;
+    match tree {
+      | `Empty () => {
+        pending = tail
+      }
+      | `Leaf leaf => {
+        pending = tail
+        let piece: Bytes = leaf.piece;
 
-          for byte in piece {
-            output[output_offset] = byte
-            output_offset = output_offset + 1
-          }
-        }
-        | `Branch branch => {
-          let right_node: List PieceTree = `Cons [branch.right, tail];
-          pending = `Cons [branch.left, right_node]
+        for byte in piece {
+          output[output_offset] = byte
+          output_offset = output_offset + 1
         }
       }
-    } else {
-      done = true
+      | `Branch branch => {
+        let right_node: List PieceTree = `Cons [branch.right, tail];
+        pending = `Cons [branch.left, right_node]
+      }
     }
-
-    if done { break; }
   }
 
   output

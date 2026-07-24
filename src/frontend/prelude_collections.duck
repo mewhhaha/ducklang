@@ -105,9 +105,7 @@ const list_length = values => {
 const sequence_methods = (
   const item_type,
   const empty,
-  const is_empty,
-  const first,
-  const rest,
+  const uncons,
   const prepend,
 ) => (const target) => comptime {
   const _ = target;
@@ -123,12 +121,20 @@ const sequence_methods = (
   const reverse = (values: target) => {
     let current: target = values;
     let reversed: target = make_empty();
+    let done = false;
 
     loop {
-      if is_empty current { break; }
-      let value = first current;
-      reversed = add_first(value, reversed)
-      current = rest current
+      let step = uncons current;
+
+      if let `Some node = step {
+        let [value, rest] = node;
+        reversed = add_first(value, reversed)
+        current = rest
+      } else {
+        done = true
+      }
+
+      if done { break; }
     }
 
     reversed
@@ -144,17 +150,13 @@ const sequence_methods = (
 const derive_sequence = (
   const item_type,
   const empty,
-  const is_empty,
-  const first,
-  const rest,
+  const uncons,
   const prepend,
 ) => (const target) => `Replace (comptime {
   target :+ sequence_methods(
     item_type,
     empty,
-    is_empty,
-    first,
-    rest,
+    uncons,
     prepend,
   )(target)
 });

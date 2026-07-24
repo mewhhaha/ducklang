@@ -1,12 +1,5 @@
 import { assert_equals, assert_includes } from "../src/assert.ts";
 import {
-  DuckHost,
-  DuckRunner,
-  type DuckValue,
-  run_duck_tests,
-  Source,
-} from "../src/frontend.ts";
-import {
   compile_failure_examples,
   dependency_paths,
   success_examples,
@@ -17,101 +10,64 @@ import {
 import { corpus_feature_examples } from "./corpus_coverage.ts";
 import { DuckCompiler } from "../experiments/gpufuck/compiler.ts";
 
-const decoder = new TextDecoder();
+Deno.test("examples use the gpufuck target", async (test) => {
+  const compiler = await DuckCompiler.create();
 
-for (const example of success_examples) {
-  Deno.test("example runs: " + example.path, async () => {
-    if (example.route === "managed") {
-      await run_managed_example(example);
-      return;
+  try {
+    for (const example of success_examples) {
+      await test.step("runs: " + example.path, async () => {
+        await run_gpufuck_example(compiler, example);
+      });
     }
 
-    if (example.route === "gpufuck") {
-      await run_gpufuck_example(example);
-      return;
-    }
+    for (const example of compile_failure_examples) {
+      await test.step("rejects: " + example.path, async () => {
+        let message = "";
 
-    const wat = compile_example(example);
-
-    for (const example_run of example.runs) {
-      const imports = example_run.imports;
-      let import_object: WebAssembly.Imports = {};
-
-      if (imports !== undefined) {
-        import_object = imports();
-      }
-
-      const actual = await run_wat(wat, import_object);
-      assert_equals(actual, example_run.expected);
-    }
-  });
-}
-
-for (const example of compile_failure_examples) {
-  Deno.test("example rejects: " + example.path, () => {
-    let message = "";
-
-    try {
-      if (example.route === "ic") {
-        Source.ic_wat(Source.load_fragment_file(example.path));
-      } else {
-        Source.wat(Source.load_fragment_file(example.path));
-      }
-    } catch (error) {
-      message = error_message(error);
-    }
-
-    if (message.length === 0) {
-      throw new Error("Expected compilation to fail: " + example.path);
-    }
-
-    assert_includes(message, example.message);
-  });
-}
-
-for (const example of trap_examples) {
-  Deno.test("example traps: " + example.path, async () => {
-    let trapped = false;
-
-    try {
-      if (example.route === "managed") {
-        await run_managed_trap(example);
-      } else {
-        const wat = Source.wat(Source.load_fragment_file(example.path));
-        let imports: WebAssembly.Imports = {};
-
-        if (example.imports !== undefined) {
-          imports = example.imports();
+        try {
+          await compiler.compile_file(example.path);
+        } catch (error) {
+          message = error_message(error);
         }
 
-        await run_wat(wat, imports);
-      }
-    } catch (error) {
-      if (error instanceof WebAssembly.RuntimeError) {
-        trapped = true;
-      } else {
-        throw error;
-      }
+        if (message.length === 0) {
+          throw new Error("Expected compilation to fail: " + example.path);
+        }
+
+        assert_includes(message, example.message);
+      });
     }
 
-    assert_equals(trapped, true);
-  });
-}
+    for (const example of trap_examples) {
+      await test.step("traps: " + example.path, async () => {
+        let trapped = false;
 
-for (const path of test_example_paths) {
-  Deno.test("source tests pass: " + path, async () => {
-    const artifact = Source.artifact_file(path, {
-      import_meta: { mode: { atom: "test" } },
-    });
-    const wasm = await wasm_from_wat(artifact.wat);
-    const results = await run_duck_tests(wasm, artifact.abi);
+        try {
+          await compiler.run_file(example.path, {
+            init: example.init?.(),
+          });
+        } catch (error) {
+          trapped = runtime_trap(error);
+        }
 
-    assert_equals(results, [
-      { name: "addition_returns_the_sum", status: "passed" },
-      { name: "unequal_values_are_detected", status: "passed" },
-    ]);
-  });
-}
+        assert_equals(trapped, true);
+      });
+    }
+
+    for (const path of test_example_paths) {
+      await test.step("source tests pass: " + path, async () => {
+        const results = await compiler.test_file(path);
+
+        assert_equals(results, [
+          { name: "addition_returns_the_sum", status: "passed" },
+          { name: "unequal_values_are_detected", status: "passed" },
+        ]);
+      });
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
 
 Deno.test("example manifest accounts for every .duck file", () => {
   const expected = new Set<string>();
@@ -192,152 +148,75 @@ Deno.test("tree-sitter corpus covers every named syntax node", () => {
   assert_equals(missing, []);
 });
 
-function compile_example(example: SuccessExample): string {
-  if (example.route === "ic") {
-    return Source.ic_wat(Source.load_fragment_file(example.path));
-  }
-
-  if (example.route === "core") {
-    return Source.wat(Source.load_fragment_file(example.path));
-  }
-
-  if (example.route === "managed") {
-    throw new Error("Managed examples compile through Source.artifact_file");
-  }
-
-  if (example.route === "gpufuck") {
-    throw new Error("Gpufuck examples compile through DuckCompiler");
-  }
-
-  example.route satisfies never;
-  throw new Error("Unknown example route");
-}
-
-async function run_managed_example(example: SuccessExample): Promise<void> {
-  const artifact = Source.artifact_file(example.path);
-  const wasm = await wasm_from_wat(artifact.wat);
-  const program = await DuckHost.instantiate(wasm, artifact.abi);
-
-  try {
-    for (const example_run of example.runs) {
-      const init = example_run.init;
-
-      if (!init) {
-        throw new Error("Managed example is missing Init: " + example.path);
-      }
-
-      const value = DuckRunner(init()).run(program);
-      assert_equals(managed_result(value, example.path), example_run.expected);
-    }
-  } finally {
-    program.dispose();
-  }
-}
-
-async function run_gpufuck_example(example: SuccessExample): Promise<void> {
-  const compiler = await DuckCompiler.create();
-
-  try {
-    for (const example_run of example.runs) {
-      const execution = await compiler.run_file(example.path);
-
-      if (execution.value.kind !== "integer") {
-        throw new Error(
-          "Gpufuck example returned " + execution.value.kind + ": " +
-            example.path,
-        );
-      }
-
-      assert_equals(execution.value.value, example_run.expected);
-    }
-  } finally {
-    compiler.destroy();
-  }
-}
-
-async function run_managed_trap(
-  example: (typeof trap_examples)[number],
+async function run_gpufuck_example(
+  compiler: DuckCompiler,
+  example: SuccessExample,
 ): Promise<void> {
-  const init = example.init;
-
-  if (!init) {
-    throw new Error("Managed trap example is missing Init: " + example.path);
-  }
-
-  const artifact = Source.artifact_file(example.path);
-  const wasm = await wasm_from_wat(artifact.wat);
-  const program = await DuckHost.instantiate(wasm, artifact.abi);
-
-  try {
-    DuckRunner(init()).run(program);
-  } finally {
-    program.dispose();
-  }
-}
-
-function managed_result(value: DuckValue, path: string): number | bigint {
-  if (!Array.isArray(value) || value.length !== 1) {
-    throw new Error("Managed example must return [result]: " + path);
-  }
-
-  const result = value[0];
-
-  if (typeof result !== "number" && typeof result !== "bigint") {
-    throw new Error("Managed example result must be numeric: " + path);
-  }
-
-  return result;
-}
-
-async function run_wat(
-  wat: string,
-  imports: WebAssembly.Imports,
-): Promise<number | bigint> {
-  const bytes = await wasm_from_wat(wat);
-  const module = await WebAssembly.compile(bytes);
-  const instantiated = await WebAssembly.instantiate(module, imports);
-  const main = instantiated.exports.main;
-
-  if (typeof main !== "function") {
-    throw new Error("Example module does not export main");
-  }
-
-  const result = main();
-
-  if (typeof result !== "number" && typeof result !== "bigint") {
-    throw new Error("Example main returned a non-numeric result");
-  }
-
-  return result;
-}
-
-async function wasm_from_wat(wat: string): Promise<Uint8Array<ArrayBuffer>> {
-  const directory = await Deno.makeTempDir({ prefix: "ducklang-example-" });
-  const wat_path = directory + "/example.wat";
-  const wasm_path = directory + "/example.wasm";
-
-  try {
-    await Deno.writeTextFile(wat_path, wat);
-    const command = new Deno.Command("wat2wasm", {
-      args: [wat_path, "-o", wasm_path],
-      stdout: "piped",
-      stderr: "piped",
+  for (const example_run of example.runs) {
+    const execution = await compiler.run_file(example.path, {
+      init: example_run.init?.(),
     });
-    const output = await command.output();
 
-    if (!output.success) {
-      throw new Error(
-        "wat2wasm failed:\n" + decoder.decode(output.stderr) + "\n" + wat,
-      );
+    assert_equals(
+      numeric_example_value(execution.value, example.path),
+      example_run.expected,
+    );
+  }
+}
+
+function numeric_example_value(
+  value: Awaited<ReturnType<DuckCompiler["run_file"]>>["value"],
+  path: string,
+): number | bigint {
+  if (
+    value.kind === "integer" ||
+    value.kind === "signed-integer-64" ||
+    value.kind === "float-32" ||
+    value.kind === "float-64"
+  ) {
+    return value.value;
+  }
+
+  if (value.kind === "erased") {
+    return numeric_example_value(value.value, path);
+  }
+
+  if (
+    value.kind === "constructor" &&
+    value.name.endsWith("duck_entry_result_type") &&
+    value.fields.length === 1
+  ) {
+    const result = value.fields[0];
+
+    if (result === undefined) {
+      throw new Error("Gpufuck entry result has no value: " + path);
     }
 
-    const bytes = await Deno.readFile(wasm_path);
-    const copy = new Uint8Array(new ArrayBuffer(bytes.byteLength));
-    copy.set(bytes);
-    return copy;
-  } finally {
-    await Deno.remove(directory, { recursive: true });
+    return numeric_example_value(result, path);
   }
+
+  throw new Error(
+    "Gpufuck example returned " + value.kind + " instead of a number: " +
+      path,
+  );
+}
+
+function runtime_trap(error: unknown): boolean {
+  if (error instanceof WebAssembly.RuntimeError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (runtime_trap(error.cause)) {
+    return true;
+  }
+
+  return error.message.includes("trap") ||
+    error.message.includes("runtime fault") ||
+    error.message.includes("unreachable");
 }
 
 function collect_duck_files(path: string): string[] {

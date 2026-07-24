@@ -5,6 +5,7 @@ import { expand_source_attributes } from "./attribute.ts";
 import { infer_default_effect_handlers } from "./default_handler.ts";
 import { erase_undemanded_front_bindings } from "./demand.ts";
 import { elaborate_front_ducks } from "./duck_elaborate.ts";
+import { analyze_front_effects } from "./effect_analysis.ts";
 import { elaborate_front_effects } from "./effect_elaborate.ts";
 import { specialize_front_effects } from "./effect_specialize.ts";
 import {
@@ -12,6 +13,7 @@ import {
   type SourceImportMeta,
 } from "./import_meta.ts";
 import { elaborate_front_let_else } from "./let_else.ts";
+import { apply_front_inferred_nominal_bindings } from "./nominal_elaborate.ts";
 import { validate_source_linear } from "./linear.ts";
 import { resolve_bundled_source_imports } from "./load.ts";
 import { specialize_const_module_imports } from "./module_specialize.ts";
@@ -24,6 +26,10 @@ import {
 import { source_facts, source_inference_diagnostics } from "./source_facts.ts";
 import { derive_missing_source_spans } from "./syntax.ts";
 import { elaborate_front_type_sets } from "./type_set_elaborate.ts";
+import {
+  elaborate_front_loops,
+  elaborate_front_ranges,
+} from "./loop_elaborate.ts";
 
 export function source_for_core_route(source: Source): Source {
   source = source_with_expanded_attributes(source);
@@ -77,6 +83,16 @@ function elaborate_source(source: Source): Source {
     source = elaborate_front_ducks(source);
   }
 
+  const effects = analyze_front_effects(source);
+  const has_effects = effects.module_effects.length > 0 ||
+    Object.values(effects.functions).some((func) => func.effects.length > 0);
+
+  if (!has_effects) {
+    source = elaborate_front_ranges(source);
+    source = elaborate_front_loops(source);
+  }
+
+  source = apply_front_inferred_nominal_bindings(source);
   source = elaborate_front_effects(source);
   return elaborate_front_type_sets(source);
 }

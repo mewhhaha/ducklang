@@ -1,7 +1,10 @@
 module () where
 
-const compose = (first, second) => value => first(second value);
-const pipe = (value, transform) => transform value;
-const identity = value => value;
+const compose = (
+  first: I32 -> I32,
+  second: I32 -> I32,
+) => (value: I32) => first(second value);
+const pipe = (value: I32, transform: I32 -> I32) => transform value;
+const identity = (value: I32) => value;
 
 return { .compose, .pipe, .identity };

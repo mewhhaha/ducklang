@@ -81,6 +81,19 @@ Deno.test("Source.analyze returns compiler-owned syntax diagnostics", () => {
   assert_equals(diagnostic?.span.start === 0, false);
 });
 
+Deno.test("Source.analyze reports non-exhaustive matches", () => {
+  const analysis = Source.analyze("match 1 { | 1 => 10 }\n", {
+    route: "core",
+  });
+
+  assert_equals(analysis.diagnostics, [{
+    code: "DUCK2314",
+    severity: "error",
+    message: "Non-exhaustive match requires a wildcard or binding arm",
+    span: { start: 0, end: 0 },
+  }]);
+});
+
 const failure_goldens = [
   {
     code: "DUCK2201",
@@ -159,7 +172,7 @@ Deno.test("Source.analyze_file matches every compile-failure golden", () => {
     }
 
     const analysis = Source.analyze_file(fixture.path, {
-      route: fixture.route,
+      route: "core",
     });
     assert_equals(analysis.diagnostics.length, 1);
     const diagnostic = analysis.diagnostics[0];

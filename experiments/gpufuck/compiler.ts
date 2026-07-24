@@ -517,13 +517,21 @@ export class DuckCompiler {
   async #compile_module(
     lowered: LoweredDuckGpufuckModule,
   ): Promise<GpuFunctionalModule> {
-    const result = await this.#compiler.compileModule(lowered.encoded, {
-      maximumSteps: maximum_gpufuck_compilation_steps,
-    });
-    if (!result.ok) {
-      throw compilation_error(result, 0);
+    const results = await this.#compiler.compileBatch(
+      [lowered.encoded],
+      {
+        maximumSteps: maximum_gpufuck_compilation_steps,
+      },
+    );
+
+    const modules = successful_modules(results, 1);
+    const module = modules[0];
+
+    if (module === undefined) {
+      throw new Error("gpufuck compiler omitted the compiled Duck module");
     }
-    return result.module;
+
+    return module;
   }
 
   async #evaluate_comptime_module(

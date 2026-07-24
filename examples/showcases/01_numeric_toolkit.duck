@@ -1,10 +1,10 @@
-const { .compose, .pipe } = import "duck:prelude/functional" ();
+const { .pipe } = import "duck:prelude/functional" ();
 
-const double = value => value * 2;
-const increment = value => value + 1;
-const transform = comptime compose(increment, double);
+const double: I32 -> I32 = value => value * 2;
+const increment: I32 -> I32 = value => value + 1;
+const transform = (value: I32) => increment(double value);
 
-let gcd = rec (left, right) => {
+let gcd: [I32, I32] -> I32 = rec (left: I32, right: I32) => {
   if right == 0 {
     left
   } else {

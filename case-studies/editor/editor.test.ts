@@ -89,6 +89,20 @@ Deno.test("editor inserts saves and renders through the terminal effect", async 
   }
 });
 
+Deno.test("editor preserves repeated save commands in one input batch", async () => {
+  const runner = mock_runner(encoder.encode("abc"), [encoder.encode("wwq")]);
+
+  try {
+    assert_equals(await main(runner), { code: 0 });
+    assert_equals(runner.saves.map((value) => decoder.decode(value)), [
+      "abc",
+      "abc",
+    ]);
+  } finally {
+    runner.dispose();
+  }
+});
+
 Deno.test("editor movement and deletion respect UTF-8 code point boundaries", async () => {
   const runner = mock_runner(encoder.encode("a老b"), [encoder.encode("vldwq")]);
 

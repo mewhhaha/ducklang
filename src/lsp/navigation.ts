@@ -657,7 +657,7 @@ function range_from_occurrence(
   };
 }
 
-function fuzzy_score(name: string, query: string): number | undefined {
+export function fuzzy_score(name: string, query: string): number | undefined {
   const candidate = name.toLowerCase();
   const needle = query.toLowerCase();
 

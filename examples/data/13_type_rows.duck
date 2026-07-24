@@ -3,7 +3,7 @@ const { .struct } = import "duck:prelude" ();
 type Vec3 = struct { .x = Int, .y = Int, .z = Int }
 type Pair = [Int, Int]
 type Maybe a = | `Just a | `Nothing Unit
-type MaybeInt = Maybe Int
+type MaybeInt = Maybe I32
 
 let point: Vec3 = [40, 1, 1];
 let pair: Pair = [point.x, point.y];

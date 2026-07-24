@@ -164,6 +164,74 @@ Deno.test("headless client sends fragmented LSP frames and finishes orderly", as
   );
 });
 
+Deno.test("headless server reports a non-exhaustive match and stays alive", async () => {
+  const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
+    args: ["run", "--no-check", entry, "lsp"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn());
+  const uri = "file:///non-exhaustive.duck";
+
+  await client.send({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {},
+  });
+  await client.send({
+    jsonrpc: "2.0",
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri,
+        languageId: "duck",
+        version: 1,
+        text: "match 1 { | 1 => 10 }\n",
+      },
+    },
+  });
+  await client.send({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "workspace/symbol",
+    params: { query: "value" },
+  });
+  await client.send({ jsonrpc: "2.0", id: 3, method: "shutdown" });
+  await client.send({ jsonrpc: "2.0", method: "exit" });
+
+  const session = await client.finish();
+  assert_equals(session.success, true);
+  assert_equals(new TextDecoder().decode(session.stderr), "");
+  assert_equals(
+    session.messages.some((message) => {
+      if (typeof message !== "object" || message === null) {
+        return false;
+      }
+
+      const params = (message as {
+        method?: unknown;
+        params?: {
+          diagnostics?: Array<{ code?: unknown }>;
+        };
+      }).params;
+      return (message as { method?: unknown }).method ===
+          "textDocument/publishDiagnostics" &&
+        params?.diagnostics?.some((diagnostic) =>
+            diagnostic.code === "DUCK2314"
+          ) === true;
+    }),
+    true,
+  );
+  assert_equals(
+    session.messages.some((message) =>
+      typeof message === "object" && message !== null &&
+      (message as { id?: unknown }).id === 2
+    ),
+    true,
+  );
+});
+
 Deno.test("headless client can disconnect before LSP shutdown", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "lsp"],

@@ -86,6 +86,21 @@ if let \`None () = value { 42 } else { 0 }
   }
 });
 
+Deno.test("Duck compiler preserves direct generic union identity", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+type Option value = | \`None Unit | \`Some value
+let value: Option I32 = \`Some 42;
+if let \`Some item = value { item } else { 0 }
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler invalidates cached files when an imported module changes", async () => {
   const directory = await Deno.makeTempDir({ prefix: "binned-gpufuck-cache-" });
   const dependency_path = directory + "/dependency.duck";
@@ -3359,6 +3374,41 @@ let search_score = found_value + found_index * 1000 + matching_count * 10000;
 difference * 100 + mapped_sum * 10 + scanned_sum + windowed_length + search_score
 `);
     assert_equals(execution.value, { kind: "integer", value: 34_146 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("for loops resolve source-defined IntoIterator evidence", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/iterators" ();
+
+type Numbers = struct { .values = List I32 }
+
+extend Numbers {
+  type Cursor = List I32,
+  .iterator = numbers => numbers.values,
+}
+
+let tail: List I32 = \`Nil ();
+let second: ListNode I32 = [22, tail];
+tail = \`Cons second
+let first: ListNode I32 = [20, tail];
+let values: List I32 = \`Cons first;
+let numbers: Numbers = [.values = values];
+let total = 0;
+
+for value in numbers {
+  total = total + value
+}
+
+total
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
     compiler.destroy();
   }

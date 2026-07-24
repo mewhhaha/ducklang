@@ -11,8 +11,12 @@ type Measurement = {
   cold_init_ms: number;
   keystroke_diagnostics_ms: number;
   completion_ms: number;
+  workspace_symbol_ms: number;
   source_bytes: number;
   syntax_tokens: number;
+  workspace_files: number;
+  workspace_analyses: number;
+  workspace_symbol_analyses: number;
   analysis_computations: number;
   analysis_computed_bytes: number;
   heap_growth_bytes: number;
@@ -22,6 +26,7 @@ const budget = {
   cold_init_ms: 3_000,
   keystroke_diagnostics_ms: 1_500,
   completion_ms: 1_000,
+  workspace_symbol_ms: 1_000,
   heap_growth_bytes: 128 * 1024 * 1024,
 };
 
@@ -69,6 +74,14 @@ handle_message(state, {
   },
 });
 const completion_ms = performance.now() - completion_start;
+const workspace_analyses = state.workspace.analysis_count();
+const workspace_symbol_start = performance.now();
+handle_message(state, {
+  id: 3,
+  method: "workspace/symbol",
+  params: { query: "value" },
+});
+const workspace_symbol_ms = performance.now() - workspace_symbol_start;
 const parsed = Source.parse_with_diagnostics(edited);
 const metrics = state.documents.cache_metrics(uri, "source_analysis");
 const measurement: Measurement = {
@@ -76,9 +89,14 @@ const measurement: Measurement = {
   cold_init_ms,
   keystroke_diagnostics_ms,
   completion_ms,
+  workspace_symbol_ms,
   source_bytes: new TextEncoder().encode(edited).length,
   syntax_tokens: parsed.syntax.pieces.filter((piece) => piece.tag === "token")
     .length,
+  workspace_files: state.workspace.file_count(),
+  workspace_analyses,
+  workspace_symbol_analyses: state.workspace.analysis_count() -
+    workspace_analyses,
   analysis_computations: metrics.computations,
   analysis_computed_bytes: metrics.computed_bytes,
   heap_growth_bytes: Math.max(0, Deno.memoryUsage().heapUsed - before_heap),
@@ -143,8 +161,20 @@ function enforce_budget(measurement: Measurement): void {
     failures.push("completion");
   }
 
+  if (measurement.workspace_symbol_ms > budget.workspace_symbol_ms) {
+    failures.push("workspace symbols");
+  }
+
   if (measurement.heap_growth_bytes > budget.heap_growth_bytes) {
     failures.push("heap growth");
+  }
+
+  if (measurement.workspace_analyses > 0) {
+    failures.push("eager workspace analysis");
+  }
+
+  if (measurement.workspace_symbol_analyses > 0) {
+    failures.push("workspace symbol semantic analysis");
   }
 
   if (failures.length > 0) {
