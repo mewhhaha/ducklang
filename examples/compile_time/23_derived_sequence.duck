@@ -3,14 +3,12 @@ const { .derive_sequence } = import "duck:prelude/collections" ();
 @[derive_sequence(
   I32,
   () => `NoCommands (),
-  commands => if let `NoCommands () = commands { true } else { false },
   commands => match commands {
-    | `MoreCommands node => node[0]
-    | _ => 0
-  },
-  commands => match commands {
-    | `MoreCommands node => node[1]
-    | _ => commands
+    | `MoreCommands node => {
+      let [command, rest] = node;
+      `Some [command, rest]
+    }
+    | _ => `None ()
   },
   (value: I32, tail) => `MoreCommands [value, tail],
 )]

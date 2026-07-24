@@ -3,7 +3,7 @@ const { .get } = import "duck:prelude/runtime" ();
 let message = "answer";
 let answer = 0;
 
-if (let 'a' = get(message, 0)) {
+if (let 'a' = @cast(get(message, 0), Char)) {
   answer = 42
 }
 

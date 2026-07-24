@@ -39,12 +39,16 @@ import {
   type CoreStmt,
 } from "../../src/core/ast.ts";
 import { analyze_core_demand } from "../../src/core/demand.ts";
+import { core_proof } from "../../src/core/backend/graph.ts";
 import { core_from_source } from "../../src/core/from_source.ts";
+import { core_proof_diagnostic_error } from "../../src/core/proof/diagnostic.ts";
 import type { Source } from "../../src/frontend/ast.ts";
 import {
   expanded_source_for_core_route,
   source_with_expanded_attributes,
 } from "../../src/frontend/core_pipeline.ts";
+import { infer_default_effect_handlers } from "../../src/frontend/default_handler.ts";
+import { specialize_front_effects } from "../../src/frontend/effect_specialize.ts";
 import { source_with_managed_callable_exports } from "../../src/frontend/managed_exports.ts";
 import { tokenize } from "../../src/frontend/tokenize.ts";
 import {
@@ -93,8 +97,43 @@ export function lower_duck_source_to_gpufuck(
   source: Source,
   source_byte_length: number,
 ): LoweredDuckGpufuckModule {
+  if (source_needs_ownership_proof(source)) {
+    let source_core: CoreProgram | undefined;
+
+    try {
+      source_core = core_from_source(source);
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        (!error.message.startsWith("Unbound core value: ") &&
+          error.message !==
+            "Effect state binding must be elaborated before Core lowering" &&
+          error.message !==
+            "`is` expression must be elaborated before Core lowering" &&
+          error.message !==
+            "Cannot lower array spread to the fixed aggregate representation")
+      ) {
+        throw error;
+      }
+    }
+
+    if (source_core !== undefined) {
+      const source_proof = core_proof(source_core);
+      for (const issue of source_proof.issues) {
+        const diagnostic = core_proof_diagnostic_error(issue);
+
+        if (diagnostic !== undefined) {
+          throw diagnostic;
+        }
+      }
+    }
+  }
+
   source = source_with_expanded_attributes(source);
   source = source_with_managed_callable_exports(source);
+  const abi_source = infer_default_effect_handlers(
+    specialize_front_effects(source),
+  );
   let compiled_source = expanded_source_for_core_route(source);
   compiled_source = {
     ...compiled_source,
@@ -122,10 +161,14 @@ export function lower_duck_source_to_gpufuck(
     }
   }
   core = analyze_core_demand(core);
-  const abi = build_abi_manifest(source, compiled_source);
+  const abi = build_abi_manifest(abi_source, compiled_source);
   const type_aliases = new Map<string, string>();
+  const declared_types = new Set<string>();
   if (source.declarations !== undefined) {
     for (const declaration of source.declarations) {
+      if (declaration.tag === "type") {
+        declared_types.add(declaration.name);
+      }
       if (
         declaration.tag === "type" && declaration.params.length === 0 &&
         declaration.body.tag === "alias"
@@ -142,13 +185,45 @@ export function lower_duck_source_to_gpufuck(
     abi,
     source_byte_length,
     type_aliases,
+    declared_types,
   ).lower();
+}
+
+function source_needs_ownership_proof(value: unknown): boolean {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (source_needs_ownership_proof(entry)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if ("tag" in value) {
+    if (
+      value.tag === "borrow" || value.tag === "freeze" ||
+      value.tag === "scratch"
+    ) {
+      return true;
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    if (source_needs_ownership_proof(child)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 class DuckCoreLowering {
   readonly #core: CoreProgram;
   readonly #abi: AbiManifest;
   readonly #source_byte_length: number;
+  readonly #declared_types: ReadonlySet<string>;
   readonly #types = new Map<string, DuckTypeDefinition>();
   readonly #type_aliases = new Map<string, string>();
   readonly #type_constructors = new Map<string, DuckTypeConstructor>();
@@ -202,10 +277,12 @@ class DuckCoreLowering {
     abi: AbiManifest,
     source_byte_length: number,
     type_aliases: ReadonlyMap<string, string>,
+    declared_types: ReadonlySet<string>,
   ) {
     this.#core = core;
     this.#abi = abi;
     this.#source_byte_length = source_byte_length;
+    this.#declared_types = declared_types;
     this.#recursive_function_names = Object.keys(this.#core.recFunctions || {});
     for (const [name, target] of type_aliases) {
       this.#type_aliases.set(name, target);
@@ -315,14 +392,20 @@ class DuckCoreLowering {
         continue;
       }
       const parameters: string[] = [];
+      let has_const_parameter = false;
       let body: CoreExpr = statement.value;
       while (body.tag === "lam") {
         for (const parameter of body.params) {
           parameters.push(parameter.name);
+
+          if (parameter.is_const) {
+            has_const_parameter = true;
+          }
         }
         body = body.body;
       }
       if (
+        (!this.#declared_types.has(statement.name) && !has_const_parameter) ||
         !this.is_type_constructor_expression(body, new Set(parameters))
       ) {
         continue;
@@ -363,53 +446,6 @@ class DuckCoreLowering {
       }
     }
 
-    for (const [name, definition] of [...this.#types]) {
-      const match = /^_(.+)#shadow\d+$/.exec(name);
-      if (match === null) {
-        continue;
-      }
-      const source_name = match[1];
-      if (source_name === undefined) {
-        throw new Error("Duck gpufuck lowering lost shadow source type");
-      }
-      const source_definition = this.#types.get(source_name);
-      if (
-        source_definition === undefined ||
-        source_definition.shape !== definition.shape
-      ) {
-        continue;
-      }
-      let definition_entries = definition.cases;
-      let source_entries = source_definition.cases;
-      if (definition.shape === "struct") {
-        definition_entries = definition.fields;
-        source_entries = source_definition.fields;
-      }
-      if (definition_entries.length !== source_entries.length) {
-        continue;
-      }
-      let same_definition = true;
-      for (let index = 0; index < definition_entries.length; index += 1) {
-        const entry = definition_entries[index];
-        const source_entry = source_entries[index];
-        if (
-          entry === undefined || source_entry === undefined ||
-          entry.name !== source_entry.name ||
-          !this.same_type(entry.type, source_entry.type)
-        ) {
-          same_definition = false;
-          break;
-        }
-      }
-      if (!same_definition) {
-        continue;
-      }
-      this.#type_aliases.set(name, source_name);
-      this.#types.delete(name);
-    }
-
-    this.canonicalize_generated_struct_types();
-
     if (this.#abi.init !== undefined) {
       this.#types.set(this.#abi.init.name, {
         name: this.#abi.init.name,
@@ -424,41 +460,6 @@ class DuckCoreLowering {
 
     for (const statement of this.#core.statements) {
       this.collect_anonymous_types(statement);
-    }
-  }
-
-  private canonicalize_generated_struct_types(): void {
-    const canonical: DuckTypeDefinition[] = [];
-    for (const definition of [...this.#types.values()]) {
-      if (
-        definition.shape !== "struct" ||
-        !definition.name.startsWith("_duck_result_type_")
-      ) {
-        continue;
-      }
-      const matching = canonical.find((candidate) => {
-        if (candidate.fields.length !== definition.fields.length) {
-          return false;
-        }
-        for (let index = 0; index < candidate.fields.length; index += 1) {
-          const candidate_field = candidate.fields[index];
-          const definition_field = definition.fields[index];
-          if (
-            candidate_field === undefined || definition_field === undefined ||
-            candidate_field.name !== definition_field.name ||
-            !this.same_type(candidate_field.type, definition_field.type)
-          ) {
-            return false;
-          }
-        }
-        return true;
-      });
-      if (matching === undefined) {
-        canonical.push(definition);
-        continue;
-      }
-      this.#type_aliases.set(definition.name, matching.name);
-      this.#types.delete(definition.name);
     }
   }
 
@@ -1536,13 +1537,20 @@ class DuckCoreLowering {
         if (recursive_type !== undefined) {
           environment.set(statement.value.name, recursive_type);
         }
-        value = this.lower_function(
-          rec_function.params,
-          rec_function.body,
-          environment,
-          this.#function_parameter_types.get(statement.name),
-          this.schema_from_optional_type_name(rec_function.result_annotation),
-        );
+        this.#recursive_names.push(statement.value.name);
+        try {
+          value = this.lower_function(
+            rec_function.params,
+            rec_function.body,
+            environment,
+            this.#function_parameter_types.get(statement.name),
+            this.schema_from_optional_type_name(
+              rec_function.result_annotation,
+            ),
+          );
+        } finally {
+          this.#recursive_names.pop();
+        }
         recursive = true;
       } else if (statement.value.tag === "rec") {
         const recursive_type = this.function_type_from_signature(
@@ -1553,15 +1561,39 @@ class DuckCoreLowering {
           environment.set(statement.name, recursive_type);
         }
         this.#recursive_names.push(statement.name);
+        let recursive_expected = this.schema_from_optional_type_name(
+          statement.value.result_annotation,
+        );
+        if (recursive_expected === undefined) {
+          recursive_expected = this.schema_from_optional_type_name(
+            statement.annotation,
+          );
+          for (const _param of statement.value.params) {
+            if (recursive_expected?.kind === "function") {
+              recursive_expected = recursive_expected.result;
+            } else {
+              recursive_expected = undefined;
+            }
+          }
+        }
         try {
+          let known_parameter_types = this.#function_parameter_types.get(
+            statement.name,
+          );
+          if (
+            known_parameter_types === undefined &&
+            statement.name.startsWith("__duck_loop_")
+          ) {
+            known_parameter_types = statement.value.params.map((param) =>
+              environment.get(param.name)
+            );
+          }
           value = this.lower_function(
             statement.value.params,
             statement.value.body,
             environment,
-            this.#function_parameter_types.get(statement.name),
-            this.schema_from_optional_type_name(
-              statement.value.result_annotation,
-            ),
+            known_parameter_types,
+            recursive_expected,
           );
         } finally {
           this.#recursive_names.pop();
@@ -2645,6 +2677,143 @@ class DuckCoreLowering {
       return terminal;
     }
     if (statement.tag === "bind") {
+      let recursive_value:
+        | Extract<CoreExpr, { tag: "rec" }>
+        | undefined;
+      let capture_statements: Extract<CoreStmt, { tag: "bind" }>[] = [];
+
+      if (statement.value.tag === "rec") {
+        recursive_value = statement.value;
+      } else if (statement.value.tag === "block") {
+        const final_statement = statement.value.statements.at(-1);
+        const preceding_statements = statement.value.statements.slice(0, -1);
+
+        if (
+          final_statement?.tag === "expr" &&
+          final_statement.expr.tag === "rec" &&
+          preceding_statements.every((candidate) => candidate.tag === "bind")
+        ) {
+          recursive_value = final_statement.expr;
+          capture_statements = preceding_statements as Extract<
+            CoreStmt,
+            { tag: "bind" }
+          >[];
+        }
+      }
+
+      if (recursive_value !== undefined) {
+        const body_environment = new Map(environment);
+        const captures: {
+          name: string;
+          value: FunctionalSurfaceExpression;
+        }[] = [];
+
+        for (const capture_statement of capture_statements) {
+          const capture_expected = this.schema_from_optional_type_name(
+            capture_statement.annotation,
+          );
+          const capture = this.lower_expression(
+            capture_statement.value,
+            body_environment,
+            capture_expected,
+          );
+          const capture_type = capture_expected;
+
+          if (capture_type !== undefined) {
+            body_environment.set(capture_statement.name, capture_type);
+          } else if (capture.type !== undefined) {
+            body_environment.set(capture_statement.name, capture.type);
+          }
+
+          captures.push({
+            name: capture_statement.name,
+            value: capture.expression,
+          });
+        }
+
+        const recursive_type = this.function_type_from_signature(
+          recursive_value.params,
+          recursive_value.result_annotation,
+        );
+        if (recursive_type !== undefined) {
+          body_environment.set(statement.name, recursive_type);
+        }
+        this.#recursive_names.push(statement.name);
+        let value: LoweredExpression;
+        let recursive_expected = this.schema_from_optional_type_name(
+          recursive_value.result_annotation,
+        );
+        if (recursive_expected === undefined) {
+          recursive_expected = this.schema_from_optional_type_name(
+            statement.annotation,
+          );
+          for (const _param of recursive_value.params) {
+            if (recursive_expected?.kind === "function") {
+              recursive_expected = recursive_expected.result;
+            } else {
+              recursive_expected = undefined;
+            }
+          }
+        }
+        try {
+          let known_parameter_types = this.#function_parameter_types.get(
+            statement.name,
+          );
+          if (
+            known_parameter_types === undefined &&
+            statement.name.startsWith("__duck_loop_")
+          ) {
+            known_parameter_types = recursive_value.params.map((param) =>
+              body_environment.get(param.name)
+            );
+          }
+          value = this.lower_function(
+            recursive_value.params,
+            recursive_value.body,
+            body_environment,
+            known_parameter_types,
+            recursive_expected,
+          );
+        } finally {
+          this.#recursive_names.pop();
+        }
+        if (value.type !== undefined) {
+          body_environment.set(statement.name, value.type);
+        }
+        const body = this.lower_control_statements(
+          statements,
+          index + 1,
+          body_environment,
+          terminal,
+          break_result,
+          continue_result,
+        );
+        let result: FunctionalSurfaceExpression = {
+          kind: "let-rec",
+          name: statement.name,
+          value: value.expression,
+          body,
+        };
+
+        for (let index = captures.length - 1; index >= 0; index -= 1) {
+          const capture = captures[index];
+          if (capture === undefined) {
+            throw new Error(
+              "Duck gpufuck lowering lost recursive capture " +
+                index.toString(),
+            );
+          }
+          result = {
+            kind: "let",
+            name: capture.name,
+            value: capture.value,
+            body: result,
+          };
+        }
+
+        return result;
+      }
+
       const expected = this.schema_from_optional_type_name(
         statement.annotation,
       );
@@ -4508,40 +4677,7 @@ class DuckCoreLowering {
         }
       }
     }
-    if (name === undefined && expression.type_expr.tag === "struct_type") {
-      for (const candidate of this.#types.values()) {
-        if (
-          candidate.shape !== "struct" ||
-          candidate.fields.length !== expression.type_expr.fields.length
-        ) {
-          continue;
-        }
-        let matches = true;
-        for (
-          let index = 0;
-          index < expression.type_expr.fields.length;
-          index += 1
-        ) {
-          const source_field = expression.type_expr.fields[index];
-          const declared_field = candidate.fields[index];
-          if (
-            source_field === undefined || declared_field === undefined ||
-            source_field.name !== declared_field.name ||
-            !this.same_type(
-              this.schema_from_type_name(source_field.type_name),
-              declared_field.type,
-            )
-          ) {
-            matches = false;
-            break;
-          }
-        }
-        if (matches) {
-          name = candidate.name;
-          break;
-        }
-      }
-    } else if (name === undefined) {
+    if (name === undefined && expression.type_expr.tag !== "struct_type") {
       name = this.type_expression_name(expression.type_expr);
       this.materialize_type_definition(name);
     }
@@ -4550,60 +4686,6 @@ class DuckCoreLowering {
     }
     const anonymous_name = "$DuckObject:" +
       expression.fields.map((field) => field.name).join(",");
-    if (name === undefined || name === anonymous_name) {
-      const anonymous_definition = this.#types.get(anonymous_name);
-      let structural_fields: DuckTypeDefinition["fields"] | undefined;
-      if (anonymous_definition !== undefined) {
-        structural_fields = anonymous_definition.fields;
-      } else {
-        const inferred_fields: {
-          name: string;
-          type: FunctionalTypeSchema;
-        }[] = [];
-        for (const field of expression.fields) {
-          let field_type = this.simple_expression_type(
-            field.value,
-            environment,
-          );
-          if (field_type === undefined) {
-            field_type = this.lower_expression(field.value, environment).type;
-          }
-          if (field_type === undefined) {
-            inferred_fields.length = 0;
-            break;
-          }
-          inferred_fields.push({ name: field.name, type: field_type });
-        }
-        if (inferred_fields.length === expression.fields.length) {
-          structural_fields = inferred_fields;
-        }
-      }
-      if (structural_fields !== undefined) {
-        const candidates = [...this.#types.values()].filter((candidate) => {
-          if (
-            candidate.name === anonymous_name || candidate.shape !== "struct" ||
-            candidate.fields.length !== structural_fields.length
-          ) {
-            return false;
-          }
-          for (let index = 0; index < candidate.fields.length; index += 1) {
-            const candidate_field = candidate.fields[index];
-            const anonymous_field = structural_fields[index];
-            if (
-              candidate_field === undefined || anonymous_field === undefined ||
-              candidate_field.name !== anonymous_field.name ||
-              !this.same_type(candidate_field.type, anonymous_field.type)
-            ) {
-              return false;
-            }
-          }
-          return true;
-        });
-        if (candidates.length === 1) {
-          name = candidates[0]?.name;
-        }
-      }
-    }
     if (name === undefined) {
       name = anonymous_name;
     }
@@ -5648,6 +5730,24 @@ class DuckCoreLowering {
         ),
       };
     }
+    if (resolved_type.tag === "literal") {
+      if (resolved_type.value.tag === "bool") {
+        return integer_type;
+      }
+      if (resolved_type.value.tag === "text") {
+        return FunctionalHostTypes.text;
+      }
+      if (resolved_type.value.type === "i32") {
+        return integer_type;
+      }
+      if (resolved_type.value.type === "i64") {
+        return { kind: "signed-integer-64" };
+      }
+      if (resolved_type.value.type === "f32") {
+        return { kind: "float-32" };
+      }
+      return { kind: "float-64" };
+    }
     if (resolved_type.tag === "product") {
       if (resolved_type.entries.length === 0) {
         return unit_type;
@@ -5761,7 +5861,8 @@ class DuckCoreLowering {
       );
     }
     if (
-      type.tag === "atom" || type.tag === "top" || type.tag === "never"
+      type.tag === "atom" || type.tag === "literal" ||
+      type.tag === "top" || type.tag === "never"
     ) {
       return type;
     }

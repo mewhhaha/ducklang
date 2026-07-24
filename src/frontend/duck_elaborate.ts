@@ -1095,7 +1095,10 @@ function elaborate_collection_syntax(
     }
   }
 
-  if (!ducks.has("Iterator") && !ducks.has("Iterable")) {
+  if (
+    !ducks.has("IntoIterator") && !ducks.has("Iterator") &&
+    !ducks.has("Iterable")
+  ) {
     return changed;
   }
 
@@ -1112,17 +1115,43 @@ function elaborate_collection_syntax(
       continue;
     }
 
+    const normalized_owner = normalize_type_name(owner, types);
+
     if (collection_syntax_has_core_lowering(owner)) {
       continue;
     }
 
-    const normalized_owner = normalize_type_name(owner, types);
-
-    if (
-      ducks.has("Iterator") &&
+    const iterator_implementation = extension_member(
+      normalized_owner,
+      "iterator",
+      extensions,
+    );
+    const has_iterator_implementation = ducks.has("Iterator") &&
       extension_member(normalized_owner, "has_next", extensions) !==
         undefined &&
-      extension_member(normalized_owner, "next", extensions) !== undefined
+      extension_member(normalized_owner, "next", extensions) !== undefined;
+
+    if (
+      !has_iterator_implementation && ducks.has("IntoIterator") &&
+      iterator_implementation !== undefined
+    ) {
+      const replacement = into_iterator_collection_loop(
+        stmt,
+        next_collection,
+      );
+
+      if (has_source_span(stmt)) {
+        derive_missing_source_spans(replacement, source_span(stmt));
+      }
+
+      replace_node(stmt, replacement);
+      next_collection += 1;
+      changed = true;
+      continue;
+    }
+
+    if (
+      has_iterator_implementation
     ) {
       const next_implementation = extension_member(
         normalized_owner,
@@ -1220,6 +1249,30 @@ function elaborate_collection_syntax(
   }
 
   return changed;
+}
+
+function into_iterator_collection_loop(
+  stmt: Extract<Stmt, { tag: "for_collection" }>,
+  id: number,
+): Extract<Stmt, { tag: "expr" }> {
+  const cursor_name = "@duck_into_cursor#" + id.toString();
+  return {
+    tag: "expr",
+    expr: {
+      tag: "block",
+      statements: [{
+        tag: "bind",
+        kind: "let",
+        name: cursor_name,
+        is_linear: false,
+        annotation: undefined,
+        value: duck_call("IntoIterator", "iterator", [stmt.collection]),
+      }, {
+        ...stmt,
+        collection: { tag: "var", name: cursor_name },
+      }],
+    },
+  };
 }
 
 function union_cursor_collection_loop(

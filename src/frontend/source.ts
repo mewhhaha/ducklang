@@ -552,6 +552,15 @@ function source_for_route_analysis(
   source: SourceNode,
   options: SourceAnalyzeOptions,
 ): SourceNode | undefined {
+  const final_statement = source.statements[source.statements.length - 1];
+
+  if (
+    final_statement === undefined ||
+    (final_statement.tag !== "expr" && final_statement.tag !== "return")
+  ) {
+    return undefined;
+  }
+
   if (source.module !== undefined) {
     const const_functions = new Set<string>();
 

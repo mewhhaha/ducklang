@@ -69,6 +69,11 @@ extend IteratorValue State Element {
   },
 }
 
+extend List Element {
+  type Cursor = List Element,
+  .iterator = values => values,
+}
+
 extend Bytes {
   type Cursor = IteratorValue(IndexedIteratorState Bytes) I32,
   .iterator = bytes => {

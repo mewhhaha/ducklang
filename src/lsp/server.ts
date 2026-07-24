@@ -1,6 +1,5 @@
 import type { Source as SourceNode } from "../frontend/ast.ts";
 import { Source } from "../frontend/source.ts";
-import { source_import_expressions } from "../frontend/import_diagnostic.ts";
 import { format_syntax } from "../fmt/format.ts";
 import { analysis_diagnostics, type LspDiagnostic } from "./diagnostics.ts";
 import {
@@ -29,8 +28,6 @@ import {
   reference_locations,
   rename_symbol,
   type_definition_location,
-  workspace_symbols,
-  type WorkspaceIndexEntry,
 } from "./navigation.ts";
 import { hover as hover_at, signature_help } from "./hover.ts";
 import {
@@ -60,7 +57,6 @@ import {
   expand_comptime,
   powertools_code_lenses,
   route_execute_command,
-  route_for_uri,
 } from "./powertools.ts";
 import { document_symbols } from "./symbols.ts";
 import {
@@ -418,7 +414,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
 
     if (location === undefined) {
       const workspace_location = workspace_definition_location(
-        workspace_analysis_entries(state),
+        workspace_analysis_entries(state, request.uri),
         request.uri,
         request.offset,
         state.documents.position_encoding,
@@ -446,7 +442,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
 
     if (location === undefined) {
       const workspace_location = workspace_definition_location(
-        workspace_analysis_entries(state),
+        workspace_analysis_entries(state, request.uri),
         request.uri,
         request.offset,
         state.documents.position_encoding,
@@ -466,7 +462,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
 
     const include_declaration = references_include_declaration(message.params);
     const workspace_locations = workspace_reference_locations(
-      workspace_analysis_entries(state),
+      workspace_analysis_entries(state, request.uri),
       request.uri,
       request.offset,
       include_declaration,
@@ -524,7 +520,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
 
     if (preparation === undefined) {
       const location = workspace_definition_location(
-        workspace_analysis_entries(state),
+        workspace_analysis_entries(state, request.uri),
         request.uri,
         request.offset,
         state.documents.position_encoding,
@@ -568,7 +564,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
     }
 
     let edit = workspace_rename_symbol(
-      workspace_analysis_entries(state),
+      workspace_analysis_entries(state, request.uri),
       request.uri,
       request.offset,
       params.newName,
@@ -602,8 +598,8 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
 
     return [respond(
       message,
-      workspace_symbols(
-        workspace_index_entries(state),
+      state.workspace.symbols(
+        state.documents.open_documents(),
         params.query,
         state.documents.position_encoding,
       ),
@@ -743,10 +739,7 @@ function handle_request(state: ServerState, message: RpcMessage): unknown[] {
       analyze: (text) =>
         Source.analyze(text, {
           import_meta: lsp_source_import_meta,
-          route: analysis_route(
-            action.data.uri,
-            Source.parse_with_diagnostics(text).source,
-          ),
+          route: analysis_route(),
           uri: action.data.uri,
           resolve_import: (dependency_uri) =>
             resolve_document_import(state, dependency_uri),
@@ -1275,41 +1268,76 @@ export function next_diagnostic_deadline(
 function publish_diagnostics(state: ServerState, uri: string): unknown {
   const document = state.documents.get(uri);
 
-  if (document === undefined) {
-    const analysis = workspace_semantic_document(state, uri);
+  try {
+    if (document === undefined) {
+      const analysis = workspace_semantic_document(state, uri);
 
-    if (analysis !== undefined) {
+      if (analysis !== undefined) {
+        return {
+          jsonrpc: "2.0",
+          method: "textDocument/publishDiagnostics",
+          params: {
+            uri,
+            diagnostics: analysis_diagnostics(
+              analysis,
+              uri,
+              state.documents.position_encoding,
+            ),
+          },
+        };
+      }
+
       return {
         jsonrpc: "2.0",
         method: "textDocument/publishDiagnostics",
-        params: {
-          uri,
-          diagnostics: analysis_diagnostics(
-            analysis,
-            uri,
-            state.documents.position_encoding,
-          ),
-        },
+        params: { uri, diagnostics: [] },
       };
+    }
+
+    const diagnostics = analysis_diagnostics(
+      semantic_document(state, uri),
+      uri,
+      state.documents.position_encoding,
+    );
+    return {
+      jsonrpc: "2.0",
+      method: "textDocument/publishDiagnostics",
+      params: { uri, version: document.version, diagnostics },
+    };
+  } catch (error) {
+    let message = "Compiler analysis failed with a non-Error value";
+
+    if (error instanceof Error) {
+      message = "Compiler analysis failed: " + error.message;
+    }
+
+    const params: {
+      uri: string;
+      version?: number;
+      diagnostics: LspDiagnostic[];
+    } = {
+      uri,
+      diagnostics: [{
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 0 },
+        },
+        severity: 1,
+        source: "duck-lsp",
+        message,
+      }],
+    };
+
+    if (document !== undefined) {
+      params.version = document.version;
     }
 
     return {
       jsonrpc: "2.0",
       method: "textDocument/publishDiagnostics",
-      params: { uri, diagnostics: [] },
+      params,
     };
   }
-
-  const diagnostics = analysis_diagnostics(
-    semantic_document(state, uri),
-    uri,
-    state.documents.position_encoding,
-  );
-  return {
-    jsonrpc: "2.0",
-    method: "textDocument/publishDiagnostics",
-    params: { uri, version: document.version, diagnostics },
-  };
 }
 
 function parsed_document(
@@ -1345,7 +1373,7 @@ function semantic_document(
           },
         ),
         import_meta: lsp_source_import_meta,
-        route: analysis_route(uri, parsed.source),
+        route: analysis_route(),
         uri,
         resolve_import: (dependency_uri) => {
           dependencies.add(dependency_uri);
@@ -1391,7 +1419,7 @@ function workspace_semantic_document(
       (dependency_uri) => resolve_document_import(state, dependency_uri),
     ),
     import_meta: lsp_source_import_meta,
-    route: analysis_route(uri, parsed.source),
+    route: analysis_route(),
     uri,
     resolve_import: (dependency_uri) =>
       resolve_document_import(state, dependency_uri),
@@ -1457,22 +1485,8 @@ function sibling_host_interface(
   return parsed.source;
 }
 
-function analysis_route(
-  uri: string,
-  source: ReturnType<typeof Source.parse>,
-): "ic" | "core" | "managed" {
-  if (
-    source.module !== undefined || source_import_expressions(source).length > 0
-  ) {
-    return "core";
-  }
-
-  const route = route_for_uri(uri);
-  if (route === "gpufuck") {
-    return "core";
-  }
-
-  return route;
+function analysis_route(): "core" {
+  return "core";
 }
 
 function document_semantic_tokens(
@@ -1979,12 +1993,11 @@ function workspace_roots_from_params(params: unknown): string[] {
   return [...roots].sort();
 }
 
-function workspace_index_entries(state: ServerState): WorkspaceIndexEntry[] {
-  return workspace_analysis_entries(state);
-}
-
-function workspace_analysis_entries(state: ServerState) {
-  return state.workspace.entries(state.documents.open_documents());
+function workspace_analysis_entries(state: ServerState, uri: string) {
+  return state.workspace.entries_for_uri(
+    uri,
+    state.documents.open_documents(),
+  );
 }
 
 function is_file_uri(value: unknown): value is string {
@@ -2431,7 +2444,6 @@ export async function run_lsp(): Promise<number> {
   let pending_read = reader.read();
   let request_chain = Promise.resolve();
   let write_chain = Promise.resolve();
-  let background_error: unknown;
 
   const queue_writes = (messages: unknown[]): void => {
     write_chain = write_chain.then(async () => {
@@ -2446,15 +2458,21 @@ export async function run_lsp(): Promise<number> {
       const replies = await handle_deferred_request(state, message);
       queue_writes(replies);
     }).catch((error) => {
-      background_error = error;
+      let failure = "Request failed with a non-Error value";
+
+      if (error instanceof Error) {
+        failure = error.message;
+      }
+
+      queue_writes([{
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32603, message: failure },
+      }]);
     });
   };
 
   while (true) {
-    if (background_error !== undefined) {
-      throw background_error;
-    }
-
     const deadline = next_diagnostic_deadline(state);
     let outcome: ReadOutcome;
 
@@ -2482,10 +2500,6 @@ export async function run_lsp(): Promise<number> {
     if (outcome.result.done) {
       await request_chain;
       await write_chain;
-
-      if (background_error !== undefined) {
-        throw background_error;
-      }
 
       return 0;
     }

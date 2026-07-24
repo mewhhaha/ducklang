@@ -170,12 +170,20 @@ export function front_type_name(type: FrontType): string {
       return "Type";
 
     case "struct":
+      if (type.nominal_name !== undefined) {
+        return type.nominal_name;
+      }
+
       return "struct";
 
     case "union":
       return "union";
 
     case "union_value":
+      if (type.nominal_name !== undefined) {
+        return type.nominal_name;
+      }
+
       return "union";
 
     case "unknown":
@@ -332,6 +340,13 @@ export function same_type(left: FrontType, right: FrontType): boolean {
   }
 
   if (left.tag === "struct" && right.tag === "struct") {
+    if (
+      left.nominal_name !== undefined && right.nominal_name !== undefined &&
+      left.nominal_name !== right.nominal_name
+    ) {
+      return false;
+    }
+
     if (left.fields.length !== right.fields.length) {
       return false;
     }

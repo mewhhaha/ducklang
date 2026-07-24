@@ -354,10 +354,15 @@ export type FrontExpr =
     handler_output_type?: string;
     infer_default_handlers?: true;
   }
-  | { tag: "with"; base: FrontExpr; fields: Field[] }
+  | {
+    tag: "with";
+    base: FrontExpr;
+    fields: Field[];
+    nominal_name?: string;
+  }
   | { tag: "type_with"; base: FrontExpr; members: ComputedTypeMember[] }
   | { tag: "set_type"; type_expr: TypeExpr }
-  | { tag: "struct_type"; fields: TypeField[] }
+  | { tag: "struct_type"; fields: TypeField[]; nominal_name?: string }
   | {
     tag: "struct_value";
     type_expr: FrontExpr;
@@ -365,7 +370,7 @@ export type FrontExpr =
     bracketed?: "named" | "positional";
   }
   | { tag: "struct_update"; base: FrontExpr; fields: Field[] }
-  | { tag: "union_type"; cases: TypeField[] }
+  | { tag: "union_type"; cases: TypeField[]; nominal_name?: string }
   | {
     tag: "if";
     cond: FrontExpr;
@@ -484,9 +489,14 @@ export type FrontType =
   | { tag: "text"; encoding?: "bytes" }
   | { tag: "type" }
   | { tag: "set"; type_expr: TypeExpr }
-  | { tag: "struct"; fields: string[]; field_types: TypeField[] | undefined }
+  | {
+    tag: "struct";
+    fields: string[];
+    field_types: TypeField[] | undefined;
+    nominal_name?: string;
+  }
   | { tag: "union"; case_name: string }
-  | { tag: "union_value"; cases: TypeField[] }
+  | { tag: "union_value"; cases: TypeField[]; nominal_name?: string }
   | { tag: "unknown" }
   | { tag: "fn"; params: Param[] };
 

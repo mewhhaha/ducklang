@@ -36,7 +36,7 @@ export const corpus_feature_examples: Record<string, string[]> = {
   "else_if.txt / Else-if chains": [
     "examples/basics/10_else_if.duck",
   ],
-  "extension_members.txt / Newline-separated extension members": [
+  "extension_members.txt / Explicitly separated extension members": [
     "examples/compile_time/18_ducks_and_operators.duck",
   ],
   "extension_members.txt / Generic extension parameters": [
@@ -45,6 +45,9 @@ export const corpus_feature_examples: Record<string, string[]> = {
   "let_else.txt / Let-else binding": [
     "examples/functions/12_let_else_return.duck",
     "examples/loops/12_let_else_continue.duck",
+  ],
+  "let_else.txt / Return without a value": [
+    "examples/functions/12_let_else_return.duck",
   ],
   "literals.txt / Text, character, and boolean literals": [
     "examples/basics/09_literals.duck",
@@ -70,7 +73,10 @@ export const corpus_feature_examples: Record<string, string[]> = {
   "loop_expressions.txt / No-demand binding positions": [
     "examples/basics/11_no_demand_bindings.duck",
   ],
-  "loop_expressions.txt / Loop remains a contextual keyword": [
+  "loop_expressions.txt / Loop is a reserved keyword": [
+    "examples/basics/13_loop_keyword.duck",
+  ],
+  "loop_expressions.txt / Loop cannot be used as a binding name": [
     "examples/basics/13_loop_keyword.duck",
   ],
   "loop_expressions.txt / Continue in a loop expression": [

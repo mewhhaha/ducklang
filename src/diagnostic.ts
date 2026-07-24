@@ -136,6 +136,11 @@ export const diagnostic_registry = {
     "types_and_effects",
     "error",
   ),
+  match_coverage: diagnostic_definition(
+    "DUCK2314",
+    "types_and_effects",
+    "error",
+  ),
   borrow_proof_rejected: diagnostic_definition(
     "DUCK2401",
     "ownership_and_proof",

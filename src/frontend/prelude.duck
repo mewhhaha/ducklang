@@ -44,9 +44,9 @@ extend Bytes {
 }
 
 extend Text {
-  type Item = I32,
+  type Item = Char,
   .length = (value: &Text) => @len value,
-  .get = (value: &Text, index: I32) => @get(value, index),
+  .get = (value: &Text, index: I32) => @cast(@get(value, index), Char),
 }
 
 extend List Element {

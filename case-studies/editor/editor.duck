@@ -1,7 +1,6 @@
 module (!init: Init) where
 
 const { .cast, .struct } = import "duck:prelude/types" ();
-const { .derive_sequence } = import "duck:prelude/collections" ();
 const { .iterator_count } = import "duck:prelude/iterators" ();
 
 type Key =
@@ -13,49 +12,37 @@ type Key =
   | `Enter Unit
   | `Tab Unit
   | `ControlC Unit
+
 type KeyDecoder =
   | `Ground Unit
   | `EscapePrefix Unit
   | `ControlSequence Unit
-@[derive_sequence(
-  Key,
-  () => `NoKeys (),
-  keys => if let `NoKeys () = keys { true } else { false },
-  keys => match keys {
-    | `MoreKeys node => node[0]
-    | _ => `Escape ()
-  },
-  keys => match keys {
-    | `MoreKeys node => node[1]
-    | _ => keys
-  },
-  (key: Key, tail) => `MoreKeys [key, tail],
-)]
+
 type KeySequence =
   | `NoKeys Unit
   | `MoreKeys KeySequenceNode
+
 type KeySequenceNode = [Key, KeySequence]
+
 type EditorCommand =
   | `Save Unit
   | `Quit Unit
-@[derive_sequence(
-  EditorCommand,
-  () => `NoCommands (),
-  commands => if let `NoCommands () = commands { true } else { false },
-  commands => match commands {
-    | `MoreCommands node => node[0]
-    | _ => `Quit ()
-  },
-  commands => match commands {
-    | `MoreCommands node => node[1]
-    | _ => commands
-  },
-  (command: EditorCommand, tail) => `MoreCommands [command, tail],
-)]
+
 type EditorCommands =
   | `NoCommands Unit
   | `MoreCommands EditorCommandNode
+
 type EditorCommandNode = [EditorCommand, EditorCommands]
+
+let empty_key_sequence = () => {
+  let keys: KeySequence = `NoKeys ();
+  keys
+};
+
+let empty_editor_commands = () => {
+  let commands: EditorCommands = `NoCommands ();
+  commands
+};
 
 type PieceTree = | `Empty Unit | `Leaf PieceLeaf | `Branch PieceBranch
 type PieceLeaf = struct { .piece = Bytes, .lines = I32 }
@@ -91,6 +78,12 @@ type EditorInputStep = struct {
 type AppliedKeys = struct {
   .editor = Editor,
   .commands = EditorCommands,
+}
+type SaveRequests = | `NoSaveRequests Unit | `MoreSaveRequests SaveRequests
+type CommandRequestState = | `NotRequested Unit | `Requested Unit
+type CommandPlan = struct {
+  .saves = SaveRequests,
+  .quit = CommandRequestState,
 }
 type RenderView = struct {
   .document = Bytes,
@@ -394,7 +387,6 @@ extend PieceIteratorState {
             let right_node: List PieceTree = `Cons [branch.right, pending_tail];
             pending = `Cons [branch.left, right_node]
           }
-          | _ => @panic "Unknown piece tree node"
         }
       } else {
         next = pending
@@ -528,14 +520,14 @@ let insert_byte = (editor, byte) => {
 let continue_editing = editor => {
   EditorStep.new {
     .editor = editor,
-    .commands = EditorCommands.empty(),
+    .commands = empty_editor_commands(),
   }
 };
 
 let request_editor_command = (editor, command: EditorCommand) => {
   EditorStep.new {
     .editor = editor,
-    .commands = EditorCommands.prepend(command, EditorCommands.empty()),
+    .commands = `MoreCommands [command, empty_editor_commands()],
   }
 };
 
@@ -648,14 +640,14 @@ let apply_key = (editor, key) => match key {
 let decoded_without_key = decoder => {
   KeyDecodeStep.new {
     .decoder = decoder,
-    .keys = KeySequence.empty(),
+    .keys = empty_key_sequence(),
   }
 };
 
 let decoded_key = (decoder, key: Key) => {
   KeyDecodeStep.new {
     .decoder = decoder,
-    .keys = KeySequence.prepend(key, KeySequence.empty()),
+    .keys = `MoreKeys [key, empty_key_sequence()],
   }
 };
 
@@ -680,7 +672,7 @@ let decode_key_character = (decoder, character) => {
         let decoded = decode_ground_character character;
         KeyDecodeStep.new {
           .decoder = decoded.decoder,
-          .keys = KeySequence.prepend(`Escape (), decoded.keys),
+          .keys = `MoreKeys [`Escape (), decoded.keys],
         }
       }
     }
@@ -695,8 +687,8 @@ let decode_key_character = (decoder, character) => {
 };
 
 let rec prepend_commands = (
-  pending: EditorCommands,
-  reversed: EditorCommands,
+  pending,
+  reversed,
 ) => match pending {
   | `MoreCommands node => {
     prepend_commands(node[1], `MoreCommands [node[0], reversed])
@@ -723,7 +715,7 @@ let rec apply_decoded_keys = (
 let apply_keys = (editor, decoder, bytes) => {
   let updated = editor;
   let current_decoder = decoder;
-  let reversed_commands = EditorCommands.empty();
+  let reversed_commands = empty_editor_commands();
 
   for byte in bytes {
     let character = cast(byte, Char);
@@ -747,7 +739,42 @@ let apply_keys = (editor, decoder, bytes) => {
   EditorInputStep.new {
     .editor = updated,
     .decoder = current_decoder,
-    .commands = EditorCommands.reverse(reversed_commands),
+    .commands = prepend_commands(
+      reversed_commands,
+      empty_editor_commands(),
+    ),
+  }
+};
+
+let plan_commands = commands => {
+  let pending = commands;
+  let saves: SaveRequests = `NoSaveRequests ();
+  let quit: CommandRequestState = `NotRequested ();
+  let commands_done = false;
+
+  loop {
+    if let `MoreCommands node = pending {
+      let [command, remaining_commands] = node;
+      pending = remaining_commands
+
+      match command {
+        | `Save () => {
+          saves = `MoreSaveRequests saves
+        }
+        | `Quit () => {
+          quit = `Requested ()
+        }
+      }
+    } else {
+      commands_done = true
+    }
+
+    if commands_done { break; }
+  }
+
+  CommandPlan.new {
+    .saves = saves,
+    .quit = quit,
   }
 };
 
@@ -921,38 +948,20 @@ loop {
   let input_step: EditorInputStep = apply_keys(editor, key_decoder, keys);
   editor = input_step.editor
   key_decoder = input_step.decoder
-  let quit_requested = false;
-  let pending_commands = input_step.commands;
-  let commands_done = false;
+  let command_plan = plan_commands input_step.commands;
+
+  let pending_saves = command_plan.saves;
 
   loop {
-    if let `MoreCommands command_node = pending_commands {
-      let [command, remaining_commands] = command_node;
-      pending_commands = remaining_commands
-
-      match command {
-        | `Save () => {
-          let contents = materialize(&editor.document);
-          save_result <- Terminal.save(&contents)
-
-          if let `Ok () = save_result {
-            editor = editor <& { .status = `Ready () }
-          } else {
-            editor = editor <& { .status = `SaveFailed () }
-          }
-        }
-        | `Quit () => {
-          quit_requested = true
-        }
-      }
-    } else {
-      commands_done = true
-    }
-
-    if commands_done { break; }
+    let `MoreSaveRequests remaining_saves = pending_saves else { break; };
+    pending_saves = remaining_saves
+    let contents = materialize(&editor.document);
+    save_result <- Terminal.save(&contents)
+    let status = if let `Ok () = save_result { `Ready () } else { `SaveFailed () };
+    editor = editor <& { .status = status }
   }
 
-  if quit_requested { break; }
+  if let `Requested () = command_plan.quit { break; }
 }
 
 return { .code = 0 };

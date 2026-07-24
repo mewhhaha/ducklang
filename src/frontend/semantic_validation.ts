@@ -86,7 +86,8 @@ type SemanticEnv = {
   has_compiletime_locals: boolean;
   declarations: Map<string, TypeDeclaration>;
   effects: Map<string, EffectDeclaration>;
-  iterator_type_names: Set<string>;
+  into_iterator_owners: Set<string>;
+  iterator_owners: Set<string>;
   records: Map<string, RecordDeclaration>;
   active_specialized_calls: Set<FrontExpr>;
   warn_raw_intrinsics: boolean;
@@ -143,7 +144,8 @@ export function validate_frontend_semantics(
     has_compiletime_locals: false,
     declarations: declaration_index(declarations),
     effects: effect_index(declarations),
-    iterator_type_names: iterator_type_names(declarations),
+    into_iterator_owners: extension_owners(declarations, ["iterator"]),
+    iterator_owners: iterator_owners(declarations),
     records: record_index(declarations),
     active_specialized_calls: new Set(),
     warn_raw_intrinsics: options.warnings === true &&
@@ -247,7 +249,14 @@ function effect_index(
   return index;
 }
 
-function iterator_type_names(declarations: Declaration[]): Set<string> {
+function iterator_owners(declarations: Declaration[]): Set<string> {
+  return extension_owners(declarations, ["has_next", "next"]);
+}
+
+function extension_owners(
+  declarations: Declaration[],
+  required_members: string[],
+): Set<string> {
   const names = new Set<string>();
 
   for (const declaration of declarations) {
@@ -257,7 +266,7 @@ function iterator_type_names(declarations: Declaration[]): Set<string> {
 
     const members = new Set(declaration.fields.map((field) => field.name));
 
-    if (members.has("has_next") && members.has("next")) {
+    if (required_members.every((member) => members.has(member))) {
       names.add(declaration.type_name);
     }
   }
@@ -631,7 +640,11 @@ function validate_statement(
     } else if (
       collection_type.tag === "struct" && collection_type.field_types
     ) {
-      if (is_declared_iterator(collection_type.field_types, env)) {
+      if (
+        collection_type.nominal_name !== undefined &&
+        (env.iterator_owners.has(collection_type.nominal_name) ||
+          env.into_iterator_owners.has(collection_type.nominal_name))
+      ) {
         bind_collection_loop_names(stmt, body, item_type);
         validate_statements(stmt.body, body, diagnostics);
         return;
@@ -5298,34 +5311,6 @@ function bind_collection_loop_names(
   bind_local(env, stmt.item, item_type, undefined, false, false);
 }
 
-function is_declared_iterator(
-  fields: TypeField[],
-  env: SemanticEnv,
-): boolean {
-  for (const name of env.iterator_type_names) {
-    const declaration = env.declarations.get(name);
-
-    if (
-      declaration?.body.tag !== "product" ||
-      declaration.body.fields.length !== fields.length
-    ) {
-      continue;
-    }
-
-    const matches = declaration.body.fields.every((field, index) => {
-      const candidate = fields[index];
-      return candidate !== undefined && candidate.name === field.name &&
-        candidate.type_name === field.type_name;
-    });
-
-    if (matches) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function validate_pattern_values(
   pattern: Pattern,
   env: SemanticEnv,
@@ -5436,7 +5421,8 @@ function child_env(env: SemanticEnv): SemanticEnv {
     has_compiletime_locals: env.has_compiletime_locals,
     declarations: env.declarations,
     effects: env.effects,
-    iterator_type_names: env.iterator_type_names,
+    into_iterator_owners: env.into_iterator_owners,
+    iterator_owners: env.iterator_owners,
     records: env.records,
     active_specialized_calls: env.active_specialized_calls,
     warn_raw_intrinsics: env.warn_raw_intrinsics,
@@ -5935,6 +5921,7 @@ function resolve_type_name(
       if (generic.body.tag === "sum") {
         return {
           tag: "union_value",
+          nominal_name: name,
           cases: generic.body.cases.map((union_case) => ({
             ...union_case,
             type_name: arguments_by_param.get(union_case.type_name) ||
@@ -5951,6 +5938,7 @@ function resolve_type_name(
         }));
         return {
           tag: "struct",
+          nominal_name: name,
           fields: fields.map((field) => field.name),
           field_types: fields,
         };
@@ -5967,6 +5955,7 @@ function resolve_type_name(
     }));
     return {
       tag: "struct",
+      nominal_name: name,
       fields: fields.map((field) => field.name),
       field_types: fields,
     };
@@ -5985,6 +5974,7 @@ function resolve_type_name(
     }));
     return {
       tag: "struct",
+      nominal_name: name,
       fields: fields.map((field) => field.name),
       field_types: fields,
     };
@@ -5993,6 +5983,7 @@ function resolve_type_name(
   if (declaration.body.tag === "sum") {
     return {
       tag: "union_value",
+      nominal_name: name,
       cases: declaration.body.cases.map((union_case) => ({
         ...union_case,
         type_name: canonical_type_name(union_case.type_name, env),

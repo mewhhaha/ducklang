@@ -9,12 +9,7 @@ import {
 } from "./hover.ts";
 import type { LspPosition, LspRange, PositionEncoding } from "./position.ts";
 import { PositionIndex } from "./position.ts";
-import {
-  compile_failure_examples,
-  type ExampleRoute,
-  success_examples,
-  trap_examples,
-} from "../../examples/manifest.ts";
+import { success_examples } from "../../examples/manifest.ts";
 
 export type PowertoolsError = {
   ok: false;
@@ -253,30 +248,6 @@ function broken_source(message: string | undefined): PowertoolsError {
   }
 
   return { ok: false, code: "broken_source", message: detail };
-}
-
-export function route_for_uri(uri: string): ExampleRoute {
-  const example = example_for_uri(uri);
-
-  if (example !== undefined) {
-    return example.route;
-  }
-
-  const path = path_for_uri(uri);
-
-  for (const failure of compile_failure_examples) {
-    if (path === failure.path || path.endsWith("/" + failure.path)) {
-      return failure.route;
-    }
-  }
-
-  for (const trap of trap_examples) {
-    if (path === trap.path || path.endsWith("/" + trap.path)) {
-      return trap.route;
-    }
-  }
-
-  return "ic";
 }
 
 function example_for_uri(

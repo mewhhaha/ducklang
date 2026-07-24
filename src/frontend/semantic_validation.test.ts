@@ -387,6 +387,28 @@ total
   assert_equals(validate_frontend_semantics(source), []);
 });
 
+Deno.test("iterator evidence does not leak to a structural lookalike", () => {
+  const source = parse_source(`
+type Counter = struct { .next_value = I32, .done = Bool }
+type Lookalike = struct { .next_value = I32, .done = Bool }
+
+extend Counter {
+  type Item = I32,
+  .has_next = counter => true,
+  .next = counter => [0, counter],
+}
+
+let value: Lookalike = [.next_value = 0, .done = false];
+for member in value { member }
+0
+`);
+
+  assert_equals(
+    validate_frontend_semantics(source).map((diagnostic) => diagnostic.message),
+    ["Mixed Bool and numeric indexed values"],
+  );
+});
+
 Deno.test("semantic warning liveness traverses handlers and type tests", async () => {
   for (
     const path of [

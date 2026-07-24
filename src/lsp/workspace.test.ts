@@ -1,5 +1,6 @@
 import { assert_equals } from "../assert.ts";
 import type { TextDocument } from "./documents.ts";
+import { workspace_symbols } from "./navigation.ts";
 import {
   discover_workspace_roots,
   workspace_definition_location,
@@ -27,6 +28,10 @@ Deno.test("workspace discovers marker roots, imports, and overlay precedence", a
       'const b = import "./b.duck";\nlet value = b.value;\n',
     );
     await Deno.writeTextFile(
+      root_path + "/src/d.duck",
+      'const c = import "./c.duck";\nlet value = c.value;\n',
+    );
+    await Deno.writeTextFile(
       root_path + "/src/unrelated.duck",
       "let separate = 9;\n",
     );
@@ -37,16 +42,39 @@ Deno.test("workspace discovers marker roots, imports, and overlay precedence", a
     const model = new WorkspaceModel([nested_uri]);
     const progress: Array<[number, number]> = [];
     model.load([], (event) => progress.push([event.loaded, event.total]));
-    assert_equals(model.file_count(), 4);
-    assert_equals(model.dependency_count(), 2);
-    assert_equals(progress.at(-1), [4, 4]);
+    assert_equals(model.file_count(), 5);
+    assert_equals(model.analysis_count(), 0);
+    assert_equals(model.dependency_count(), 3);
+    assert_equals(progress.at(-1), [5, 5]);
 
     const a_uri = file_uri(root_path + "/src/a.duck");
     const b_uri = file_uri(root_path + "/src/b.duck");
     const c_uri = file_uri(root_path + "/src/c.duck");
-    assert_equals(model.affected_dependents(a_uri, 8, 8), [b_uri, c_uri]);
+    const d_uri = file_uri(root_path + "/src/d.duck");
+    const unrelated_uri = file_uri(root_path + "/src/unrelated.duck");
+    assert_equals(
+      model.symbols([], "separate", "utf-16").map((symbol) =>
+        symbol.location.uri
+      ),
+      [unrelated_uri],
+    );
+    assert_equals(model.analysis_count(), 0);
+    assert_equals(model.affected_dependents(a_uri, 8, 8), [
+      b_uri,
+      c_uri,
+      d_uri,
+    ]);
     assert_equals(model.affected_dependents(a_uri, 1, 8), [b_uri]);
     assert_equals(model.affected_dependents(a_uri, 8, 1), [b_uri]);
+    assert_equals(
+      model.entries_for_uri(b_uri, [{
+        uri: unrelated_uri,
+        version: 2,
+        text: "let separate = 10;\n",
+      }]).map((entry) => entry.uri),
+      [a_uri, b_uri, c_uri],
+    );
+    assert_equals(model.analysis_count(), 3);
 
     const overlay: TextDocument = {
       uri: b_uri,
@@ -54,9 +82,61 @@ Deno.test("workspace discovers marker roots, imports, and overlay precedence", a
       text: 'const a = import "./a.duck";\nlet value = a.exported + 1;\n',
     };
     assert_equals(model.text(b_uri, [overlay]), overlay.text);
+    const entries = model.entries([overlay]);
     assert_equals(
-      model.entries([overlay]).find((entry) => entry.uri === b_uri)?.text,
+      entries.find((entry) => entry.uri === b_uri)?.text,
       overlay.text,
+    );
+    assert_equals(model.analysis_count(), 5);
+  } finally {
+    await Deno.remove(root_path, { recursive: true });
+  }
+});
+
+Deno.test("workspace symbols use declaration metadata without semantic analysis", async () => {
+  const root_path = await Deno.makeTempDir({ prefix: "duck-symbols-" });
+
+  try {
+    await Deno.writeTextFile(root_path + "/AGENTS.md", "workspace\n");
+    await Deno.writeTextFile(
+      root_path + "/symbols.duck",
+      [
+        "module (!init: Init) where",
+        "type Pair value = struct { .left = value, .right = value }",
+        "type Choice = | `Some Pair | `None Unit",
+        "const choose = value => value;",
+        "let selected = `Some ();",
+        "if let `Some local = selected { local }",
+        "",
+      ].join("\n"),
+    );
+    const model = new WorkspaceModel([directory_uri(root_path)]);
+    model.load([]);
+
+    assert_equals(
+      model.symbols([], "lft", "utf-16").map((symbol) => ({
+        name: symbol.name,
+        containerName: symbol.containerName,
+      })),
+      [{ name: "left", containerName: "Pair" }],
+    );
+    assert_equals(
+      model.symbols([], "value", "utf-16"),
+      [],
+    );
+    assert_equals(model.symbols([], "local", "utf-16"), []);
+    assert_equals(
+      model.symbols([], "some", "utf-16").map((symbol) => symbol.name),
+      ["Some"],
+    );
+    assert_equals(
+      model.symbols([], "choose", "utf-16").map((symbol) => symbol.kind),
+      [14],
+    );
+    assert_equals(model.analysis_count(), 0);
+    assert_equals(
+      model.symbols([], "", "utf-16"),
+      workspace_symbols(model.entries([]), "", "utf-16"),
     );
   } finally {
     await Deno.remove(root_path, { recursive: true });
