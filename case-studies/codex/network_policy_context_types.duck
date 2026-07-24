@@ -1,0 +1,35 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./network_policy_types.duck" ();
+
+type NetworkPolicyContextTextOption =
+  | `NoContextText Unit
+  | `ContextText Text
+
+type NetworkPolicyContextProtocolOption =
+  | `NoContextProtocol Unit
+  | `ContextProtocol NetworkPolicyProtocol
+
+type NetworkProxyDecision =
+  | `ProxyDeny Unit
+  | `ProxyAsk Unit
+
+type NetworkDecisionSource =
+  | `BaselinePolicy Unit
+  | `ModeGuard Unit
+  | `ProxyState Unit
+  | `Decider Unit
+
+type NetworkDecisionPayload = struct {
+  .decision = NetworkProxyDecision,
+  .source = NetworkDecisionSource,
+  .protocol = NetworkPolicyContextProtocolOption,
+  .host = NetworkPolicyContextTextOption,
+}
+
+type NetworkPolicyApprovalContextOption =
+  | `NoApprovalContext Unit
+  | `ApprovalContext NetworkPolicyApprovalContext
+
+return {};

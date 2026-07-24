@@ -80,6 +80,7 @@ const keywords = new Set([
   "for",
   "freeze",
   "from",
+  "handler",
   "if",
   "import",
   "in",

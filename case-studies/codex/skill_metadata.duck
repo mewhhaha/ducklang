@@ -1,7 +1,18 @@
 module () where
 
-const { list, text_append, text_collapse_ascii_whitespace, text_contains_ascii_case_insensitive, text_find_from, text_get, text_length, text_slice, text_starts_with, text_trim_ascii_whitespace } = import "duck:prelude/functional" ()
-const skill_types_module = import "./skill_types.duck"
+const {
+  .list,
+  .text_append,
+  .text_collapse_ascii_whitespace,
+  .text_contains_ascii_case_insensitive,
+  .text_find_from,
+  .text_get,
+  .text_length,
+  .text_slice,
+  .text_starts_with,
+  .text_trim_ascii_whitespace,
+} = import "duck:prelude/functional" ();
+const skill_types_module = import "./skill_types.duck";
 
 type MetadataTextOption = SkillTextOption
 type MetadataBoolOption = SkillBoolOption
@@ -10,36 +21,40 @@ type MetadataProduct = SkillProduct
 type MetadataProductOption = SkillProductOption
 type MetadataPolicy = SkillPolicy
 
-const texts = comptime list(Text)
+const texts = comptime list Text;
 
-const append_text = (left: Text, right: Text) => text_append([left, right])
+const append_text = (left: Text, right: Text) => text_append [left, right];
 
 const unquote_yaml_scalar = (value: Text) => {
-  let trimmed = text_trim_ascii_whitespace value
+  let trimmed = text_trim_ascii_whitespace value;
 
-  if text_length(trimmed) >= 2 {
-    let first = text_get([trimmed, 0])
-    let last = text_get([trimmed, text_length(trimmed) - 1])
+  if text_length trimmed >= 2 {
+    let first = text_get [trimmed, 0];
+    let last = text_get [trimmed, text_length trimmed - 1];
 
     if first == last && (first == 34 || first == 39) {
-      trimmed = text_slice([trimmed, 1, text_length(trimmed) - 1])
+      trimmed = text_slice [trimmed, 1, text_length trimmed - 1]
     }
   }
 
   text_collapse_ascii_whitespace trimmed
-}
+};
 
-let rec yaml_scalar_from: [Text, Text, I32] -> MetadataTextOption = (yaml: Text, key: Text, start: I32) => {
-  if start >= text_length(yaml) {
+let rec yaml_scalar_from: [Text, Text, I32] -> MetadataTextOption = (
+  yaml: Text,
+  key: Text,
+  start: I32,
+) => {
+  if start >= text_length yaml {
     `None ()
   } else {
-    let newline = text_find_from([yaml, "\n", start])
-    let end = if newline < 0 { text_length(yaml) } else { newline }
-    let line = text_trim_ascii_whitespace(text_slice([yaml, start, end]))
-    let prefix = append_text(key, ":")
+    let newline = text_find_from [yaml, "\n", start];
+    let end = if newline < 0 { text_length yaml } else { newline };
+    let line = text_trim_ascii_whitespace(text_slice [yaml, start, end]);
+    let prefix = append_text(key, ":");
 
-    if text_starts_with([line, prefix]) {
-      let value = unquote_yaml_scalar(text_slice([line, text_length(prefix), text_length(line)]))
+    if text_starts_with [line, prefix] {
+      let value = unquote_yaml_scalar(text_slice [line, text_length prefix, text_length line]);
       if value == "" { `None () } else { `Some value }
     } else if newline < 0 {
       `None ()
@@ -47,18 +62,18 @@ let rec yaml_scalar_from: [Text, Text, I32] -> MetadataTextOption = (yaml: Text,
       yaml_scalar_from(yaml, key, newline + 1)
     }
   }
-}
+};
 
-const yaml_scalar = (yaml: Text, key: Text) => yaml_scalar_from(yaml, key, 0)
+const yaml_scalar = (yaml: Text, key: Text) => yaml_scalar_from(yaml, key, 0);
 
 const frontmatter = (contents: Text) => {
-  if text_starts_with([contents, "---\n"]) {
-    let closing = text_find_from([contents, "\n---", 4])
-    if closing >= 0 { `Some (text_slice([contents, 4, closing])) } else { `None () }
+  if text_starts_with [contents, "---\n"] {
+    let closing = text_find_from [contents, "\n---", 4];
+    if closing >= 0 { `Some (text_slice [contents, 4, closing]) } else { `None () }
   } else {
     `None ()
   }
-}
+};
 
 const product_name = (product: MetadataProduct) => {
   if let `Chatgpt () = product {
@@ -68,32 +83,40 @@ const product_name = (product: MetadataProduct) => {
   } else {
     "atlas"
   }
-}
+};
 
-let rec yaml_inline_list_contains_from: [Text, Text, I32] -> Bool = (value: Text, expected: Text, start: I32) => {
-  let comma = text_find_from([value, ",", start])
-  let end = if comma < 0 { text_length(value) } else { comma }
-  let candidate = unquote_yaml_scalar(text_slice([value, start, end]))
+let rec yaml_inline_list_contains_from: [Text, Text, I32] -> Bool = (
+  value: Text,
+  expected: Text,
+  start: I32,
+) => {
+  let comma = text_find_from [value, ",", start];
+  let end = if comma < 0 { text_length value } else { comma };
+  let candidate = unquote_yaml_scalar(text_slice [value, start, end]);
 
-  if text_contains_ascii_case_insensitive(candidate, expected) && text_length(candidate) == text_length(expected) {
-    true
-  } else if comma < 0 {
-    false
-  } else {
-    yaml_inline_list_contains_from(value, expected, comma + 1)
-  }
-}
+  if text_contains_ascii_case_insensitive(candidate,
+    expected) && text_length candidate == text_length expected {
+      true
+    } else if comma < 0 {
+      false
+    } else {
+      yaml_inline_list_contains_from(value, expected, comma + 1)
+    }
+};
 
 const yaml_inline_list_contains = (value: Text, expected: Text) => {
-  let trimmed = text_trim_ascii_whitespace value
-  let normalized = if text_length(trimmed) >= 2 && text_get([trimmed, 0]) == 91 && text_get([trimmed, text_length(trimmed) - 1]) == 93 {
-    text_slice([trimmed, 1, text_length(trimmed) - 1])
+  let trimmed = text_trim_ascii_whitespace value;
+  let normalized = if text_length trimmed >= 2 && text_get [trimmed, 0] == 91 && text_get [
+    trimmed,
+    text_length trimmed - 1,
+  ] == 93 {
+    text_slice [trimmed, 1, text_length trimmed - 1]
   } else {
     trimmed
-  }
+  };
 
   yaml_inline_list_contains_from(normalized, expected, 0)
-}
+};
 
 const parse_skill_policy = (metadata_yaml: MetadataTextOption) => {
   let implicit: MetadataBoolOption = if let `Some yaml = metadata_yaml {
@@ -110,11 +133,11 @@ const parse_skill_policy = (metadata_yaml: MetadataTextOption) => {
     }
   } else {
     `None ()
-  }
+  };
 
   let products: MetadataTexts = if let `Some yaml = metadata_yaml {
     if let `Some value = yaml_scalar(yaml, "products") {
-      let found: MetadataTexts = texts.empty()
+      let found: MetadataTexts = texts.empty();
 
       if yaml_inline_list_contains(value, "chatgpt") {
         found = texts.prepend("chatgpt", found)
@@ -134,25 +157,25 @@ const parse_skill_policy = (metadata_yaml: MetadataTextOption) => {
     }
   } else {
     texts.empty()
-  }
+  };
 
   [implicit, products] as MetadataPolicy
-}
+};
 
 const policy_allows_product = (policy: MetadataPolicy, product: MetadataProductOption) => {
-  let [_, restricted_products] = policy
+  let [_, restricted_products] = policy;
 
   if texts.length(restricted_products) == 0 {
     true
   } else if let `Some requested = product {
-    let current = restricted_products
-    let expected = product_name requested
-    let allowed = false
-    let done = false
+    let current = restricted_products;
+    let expected = product_name requested;
+    let allowed = false;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [candidate, tail] = node
+        let [candidate, tail] = node;
 
         if candidate == expected {
           allowed = true
@@ -164,24 +187,24 @@ const policy_allows_product = (policy: MetadataPolicy, product: MetadataProductO
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
     allowed
   } else {
     false
   }
-}
+};
 
 const policy_allows_implicit_invocation = (policy: MetadataPolicy) => {
-  let [allowed, _] = policy
+  let [allowed, _] = policy;
   if let `Some value = allowed { value } else { true }
-}
+};
 
 return {
-  frontmatter,
-  yaml_scalar,
-  parse_skill_policy,
-  policy_allows_product,
-  policy_allows_implicit_invocation,
-}
+  .frontmatter,
+  .yaml_scalar,
+  .parse_skill_policy,
+  .policy_allows_product,
+  .policy_allows_implicit_invocation,
+};

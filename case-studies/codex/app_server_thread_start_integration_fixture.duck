@@ -1,32 +1,34 @@
 module () where
 
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { plan_decoded_thread_start } = import "./app_server_thread_lifecycle.duck" ()
-const { decode_thread_start } = import "./app_server_thread_methods.duck" ()
-const {} = import "./app_server_thread_lifecycle_types.duck" ()
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .plan_decoded_thread_start } = import "./app_server_thread_lifecycle.duck" ();
+const { .decode_thread_start } = import "./app_server_thread_methods.duck" ();
+const {} = import "./app_server_thread_lifecycle_types.duck" ();
 
 type FixtureDecodeResult = AppServerMethodDecodeResult
 type FixturePlanInput = AppServerDecodedThreadStartPlanInput
 type FixturePlanResult = AppServerThreadStartPlanResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("experimentalRawEvents", json_bool(true), fields)
-fields = json_object_prepend("sessionStartSource", json_string("clear"), fields)
-fields = json_object_prepend("historyMode", json_string("paginated"), fields)
-fields = json_object_prepend("ephemeral", json_bool(true), fields)
-let decoded: FixtureDecodeResult = decode_thread_start(json_object(fields))
+let fields = json_object_empty();
+fields = json_object_prepend("experimentalRawEvents", json_bool true, fields)
+fields = json_object_prepend("sessionStartSource", json_string "clear", fields)
+fields = json_object_prepend("historyMode", json_string "paginated", fields)
+fields = json_object_prepend("ephemeral", json_bool true, fields)
+let decoded: FixtureDecodeResult = decode_thread_start(json_object fields);
 let score = if let `MethodOk method = decoded {
   if let `ThreadStart params = method {
-    let input: FixturePlanInput = [params, `PaginatedListsSupported ()]
-    let planned: FixturePlanResult = plan_decoded_thread_start(input)
+    let input: FixturePlanInput = [params, `PaginatedListsSupported ()];
+    let planned: FixturePlanResult = plan_decoded_thread_start input;
     if let `Ok plan = planned {
-      let history_valid = if let `PaginatedHistory () = plan.history_mode { true } else { false }
-      let initial_valid = if let `ClearedHistory () = plan.initial_history { true } else { false }
-      let persistence_valid = if let `EphemeralThread () = plan.persistence { true } else { false }
-      let events_valid = if let `RawEventsEnabled () = plan.experimental_raw_events { true } else { false }
+      let history_valid = if let `PaginatedHistory () = plan.history_mode { true } else { false };
+      let initial_valid = if let `ClearedHistory () = plan.initial_history { true } else { false };
+      let persistence_valid = if let `EphemeralThread () = plan.persistence { true } else { false };
+      let events_valid = if let `RawEventsEnabled () = plan.experimental_raw_events { true } else {
+        false };
       if history_valid && initial_valid && persistence_valid && events_valid { 1 } else { 0 }
     } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

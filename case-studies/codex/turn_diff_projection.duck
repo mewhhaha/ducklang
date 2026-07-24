@@ -1,0 +1,283 @@
+module () where
+
+const { .text_less_than } = import "duck:prelude/functional" ();
+const {} = import "./turn_diff_types.duck" ();
+const { .turn_diff_baseline_content, .turn_diff_current_content, .turn_diff_paths_equal } =
+  import "./turn_diff.duck" ();
+
+type DiffProjectionState = TurnDiffState
+type DiffProjectionTrackedPath = TurnDiffTrackedPath
+type DiffProjectionTrackedPathOption = TurnDiffTrackedPathOption
+type DiffProjectionTrackedPaths = TurnDiffTrackedPaths
+type DiffProjectionAdded = TurnDiffAdded
+type DiffProjectionDeleted = TurnDiffDeleted
+type DiffProjectionUpdated = TurnDiffUpdated
+type DiffProjectionMoved = TurnDiffMoved
+type DiffProjectionNetChange = TurnDiffNetChange
+type DiffProjectionNetChanges = TurnDiffNetChanges
+type DiffProjectionTrackedPathNode = ListNode DiffProjectionTrackedPath
+type DiffProjectionNetChangeNode = ListNode DiffProjectionNetChange
+
+const turn_diff_path_less_than: [DiffProjectionTrackedPath, DiffProjectionTrackedPath] -> Bool = (
+  left,
+  right,
+) => {
+  if left.environment_id == right.environment_id {
+    text_less_than [left.path, right.path]
+  } else {
+    text_less_than [left.environment_id, right.environment_id]
+  }
+};
+
+const turn_diff_insert_sorted_path: [DiffProjectionTrackedPaths, DiffProjectionTrackedPath] ->
+  DiffProjectionTrackedPaths = (
+    paths,
+    inserted_path,
+  ) => {
+    let current = paths;
+    let reversed: DiffProjectionTrackedPaths = `Nil ();
+    let inserted = false;
+    let duplicate = false;
+
+    loop {
+      if let `Cons node = current {
+        let [existing_path, tail] = node;
+        if existing_path.environment_id == inserted_path.environment_id && existing_path.path == inserted_path.path {
+          duplicate = true
+        } else if !(inserted) && turn_diff_path_less_than(inserted_path, existing_path) {
+          let inserted_node: DiffProjectionTrackedPathNode = [inserted_path, reversed];
+          reversed = `Cons inserted_node
+          inserted = true
+        }
+        let path_node: DiffProjectionTrackedPathNode = [existing_path, reversed];
+        reversed = `Cons path_node
+        current = tail
+      } else {
+        break;
+      }
+    }
+
+    if !(inserted) && !(duplicate) {
+      let inserted_node: DiffProjectionTrackedPathNode = [inserted_path, reversed];
+      reversed = `Cons inserted_node
+    }
+
+    let sorted: DiffProjectionTrackedPaths = `Nil ();
+    loop {
+      if let `Cons node = reversed {
+        let [sorted_path, tail] = node;
+        let path_node: DiffProjectionTrackedPathNode = [sorted_path, sorted];
+        sorted = `Cons path_node
+        reversed = tail
+      } else {
+        break;
+      }
+    }
+    sorted
+  };
+
+const turn_diff_all_paths: DiffProjectionState -> DiffProjectionTrackedPaths = state => {
+  let collected_paths: DiffProjectionTrackedPaths = `Nil ();
+  let baseline = state.baseline;
+  loop {
+    if let `Cons node = baseline {
+      let [entry, tail] = node;
+      let [baseline_path, _] = entry;
+      collected_paths = turn_diff_insert_sorted_path(collected_paths, baseline_path)
+      baseline = tail
+    } else {
+      break;
+    }
+  }
+
+  let current = state.current;
+  loop {
+    if let `Cons node = current {
+      let [entry, tail] = node;
+      let [current_path, _] = entry;
+      collected_paths = turn_diff_insert_sorted_path(collected_paths, current_path)
+      current = tail
+    } else {
+      break;
+    }
+  }
+  collected_paths
+};
+
+const turn_diff_destination_for_origin: [DiffProjectionState, DiffProjectionTrackedPath] ->
+  DiffProjectionTrackedPathOption = (
+    state,
+    requested_origin,
+  ) => {
+    let origins = state.origins;
+    let destination: DiffProjectionTrackedPathOption = `None ();
+
+    loop {
+      if let `Some _ = destination { break; }
+      if let `Cons node = origins {
+        let [entry, tail] = node;
+        let [candidate_destination, candidate_origin] = entry;
+        if turn_diff_paths_equal(candidate_origin, requested_origin) && !(
+          turn_diff_paths_equal(candidate_destination, candidate_origin)
+        ) {
+          let origin_current = turn_diff_current_content(state, candidate_origin);
+          let destination_current = turn_diff_current_content(state, candidate_destination);
+          let origin_baseline = turn_diff_baseline_content(state, candidate_origin);
+          let destination_baseline = turn_diff_baseline_content(state, candidate_destination);
+          if let `None () = origin_current {
+            if let `Some _ = destination_current {
+              if let `Some _ = origin_baseline {
+                if let `None () = destination_baseline {
+                  destination = `Some candidate_destination
+                }
+              }
+            }
+          }
+        }
+        origins = tail
+      } else {
+        break;
+      }
+    }
+    destination
+  };
+
+const turn_diff_is_paired_destination: [DiffProjectionState, DiffProjectionTrackedPath] -> Bool = (
+  state,
+  requested_destination,
+) => {
+  let origins = state.origins;
+  let paired = false;
+
+  loop {
+    if paired { break; }
+    if let `Cons node = origins {
+      let [entry, tail] = node;
+      let [_, origin] = entry;
+      if let `Some destination = turn_diff_destination_for_origin(state, origin) {
+        if turn_diff_paths_equal(destination, requested_destination) {
+          paired = true
+        }
+      }
+      origins = tail
+    } else {
+      break;
+    }
+  }
+  paired
+};
+
+const turn_diff_path_is_handled: [DiffProjectionTrackedPaths, DiffProjectionTrackedPath] -> Bool = (
+  paths,
+  requested_path,
+) => {
+  let current = paths;
+  let found = false;
+  loop {
+    if found { break; }
+    if let `Cons node = current {
+      let [path, tail] = node;
+      if turn_diff_paths_equal(path, requested_path) {
+        found = true
+      }
+      current = tail
+    } else {
+      break;
+    }
+  }
+  found
+};
+
+const turn_diff_net_changes: DiffProjectionState -> DiffProjectionNetChanges = state => {
+  let reversed: DiffProjectionNetChanges = `Nil ();
+  if !(state.valid) {
+    return reversed;
+  }
+
+  let paths = turn_diff_all_paths state;
+  let handled: DiffProjectionTrackedPaths = `Nil ();
+
+  loop {
+    if let `Cons node = paths {
+      let [projected_path, tail] = node;
+      paths = tail
+
+      if !(turn_diff_path_is_handled(handled, projected_path)) && !(
+        turn_diff_is_paired_destination(state, projected_path)
+      ) {
+        let left_path = projected_path;
+        let right_path = projected_path;
+        if let `Some destination = turn_diff_destination_for_origin(state, projected_path) {
+          right_path = destination
+          let handled_node: DiffProjectionTrackedPathNode = [destination, handled];
+          handled = `Cons handled_node
+        }
+
+        let left_content = turn_diff_baseline_content(state, left_path);
+        let right_content = turn_diff_current_content(state, right_path);
+
+        if let `None () = left_content {
+          if let `Some current_content = right_content {
+            let added: DiffProjectionAdded = [
+              .path = right_path,
+              .content = current_content.content,
+            ];
+            let change: DiffProjectionNetChange = `TurnDiffAdded added;
+            let change_node: DiffProjectionNetChangeNode = [change, reversed];
+            reversed = `Cons change_node
+          }
+        } else if let `Some baseline_content = left_content {
+          if let `None () = right_content {
+            let deleted: DiffProjectionDeleted = [
+              .path = left_path,
+              .content = baseline_content.content,
+            ];
+            let change: DiffProjectionNetChange = `TurnDiffDeleted deleted;
+            let change_node: DiffProjectionNetChangeNode = [change, reversed];
+            reversed = `Cons change_node
+          } else if let `Some current_content = right_content {
+            if baseline_content.content != current_content.content {
+              if turn_diff_paths_equal(left_path, right_path) {
+                let updated: DiffProjectionUpdated = [
+                  .path = left_path,
+                  .old_content = baseline_content.content,
+                  .new_content = current_content.content,
+                ];
+                let change: DiffProjectionNetChange = `TurnDiffUpdated updated;
+                let change_node: DiffProjectionNetChangeNode = [change, reversed];
+                reversed = `Cons change_node
+              } else {
+                let moved: DiffProjectionMoved = [
+                  .source = left_path,
+                  .destination = right_path,
+                  .old_content = baseline_content.content,
+                  .new_content = current_content.content,
+                ];
+                let change: DiffProjectionNetChange = `TurnDiffMoved moved;
+                let change_node: DiffProjectionNetChangeNode = [change, reversed];
+                reversed = `Cons change_node
+              }
+            }
+          }
+        }
+      }
+    } else {
+      break;
+    }
+  }
+
+  let changes: DiffProjectionNetChanges = `Nil ();
+  loop {
+    if let `Cons node = reversed {
+      let [change, tail] = node;
+      let change_node: DiffProjectionNetChangeNode = [change, changes];
+      changes = `Cons change_node
+      reversed = tail
+    } else {
+      break;
+    }
+  }
+  changes
+};
+
+return { .turn_diff_net_changes };

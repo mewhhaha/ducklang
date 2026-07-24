@@ -1,38 +1,38 @@
 module () where
 
-const { format_i32, text_append, text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const hook_types_module = import "./hook_types.duck"
+const { .format_i32, .text_append, .text_trim_ascii_whitespace } = import "duck:prelude/runtime" ();
+const hook_types_module = import "./hook_types.duck";
 
 type ProcessCommandResult = HookCommandResult
 type ProcessCommandOutcome = HookCommandOutcome
 type ProcessTextOption = HookTextOption
 
-const append_text = (left: Text, right: Text) => text_append([left, right])
+const append_text = (left: Text, right: Text) => text_append [left, right];
 
 const classify_hook_command = (result: ProcessCommandResult) => {
-  let [error, exit_code, _, stderr] = result
+  let [error, exit_code, _, stderr] = result;
 
   if let `Some message = error {
-    let outcome: ProcessCommandOutcome = [`ProcessFailed message, `Some message]
+    let outcome: ProcessCommandOutcome = [`ProcessFailed message, `Some message];
     outcome
   } else if let `Some code = exit_code {
     let message: ProcessTextOption = if code == 0 {
       `None ()
     } else {
-      let trimmed = text_trim_ascii_whitespace stderr
+      let trimmed = text_trim_ascii_whitespace stderr;
       if trimmed == "" {
-        `Some (append_text("hook exited with code ", format_i32(code)))
+        `Some (append_text("hook exited with code ", format_i32 code))
       } else {
         `Some trimmed
       }
-    }
-    let outcome: ProcessCommandOutcome = [`Exited code, message]
+    };
+    let outcome: ProcessCommandOutcome = [`Exited code, message];
     outcome
   } else {
-    let message = "hook process terminated without an exit code"
-    let outcome: ProcessCommandOutcome = [`MissingExit (), `Some message]
+    let message = "hook process terminated without an exit code";
+    let outcome: ProcessCommandOutcome = [`MissingExit (), `Some message];
     outcome
   }
-}
+};
 
-return { classify_hook_command }
+return { .classify_hook_command };

@@ -1,9 +1,9 @@
 module (!init: Init) where
 
-const { list_prepend, list_reverse } = import "duck:prelude/list" ()
-const { path_resolve } = import "duck:prelude/path" ()
-const {} = import "./apply_patch_types.duck" ()
-const { derive_apply_patch_update } = import "./apply_patch_update.duck" ()
+const { .list_prepend, .list_reverse } = import "duck:prelude/list" ();
+const { .path_resolve } = import "duck:prelude/path" ();
+const {} = import "./apply_patch_types.duck" ();
+const { .derive_apply_patch_update } = import "./apply_patch_update.duck" ();
 
 type PatchExecutionTexts = ApplyPatchTexts
 type PatchExecutionHunks = ApplyPatchHunks
@@ -12,50 +12,54 @@ type PatchExecutionSnapshot = ApplyPatchFileSnapshot
 type PatchExecutionWriteRequest = ApplyPatchWriteRequest
 type PatchExecutionMutation = ApplyPatchMutationResult
 
-const patch_text_prepend = list_prepend(Text)
-const patch_text_reverse = list_reverse(Text)
+const patch_text_prepend = list_prepend Text;
+const patch_text_reverse = list_reverse Text;
 
-let render_changed_paths: [Text, PatchExecutionTexts, Text] -> Text = (prefix: Text, paths: PatchExecutionTexts, initial: Text) => {
-  let output = initial
-  let current = paths
+let render_changed_paths: [Text, PatchExecutionTexts, Text] -> Text = (
+  prefix: Text,
+  paths: PatchExecutionTexts,
+  initial: Text,
+) => {
+  let output = initial;
+  let current = paths;
 
   loop {
     if let `Cons node = current {
-      let [path, tail] = node
+      let [path, tail] = node;
       output = output <> prefix <> path <> "\n"
       current = tail
     } else {
-      break
+      break;
     }
   }
 
   output
-}
+};
 
 let run_apply_patch = (document: PatchExecutionDocument, cwd: Text) => {
-  let additions_reversed: PatchExecutionTexts = `Nil ()
-  let modifications_reversed: PatchExecutionTexts = `Nil ()
-  let deletions_reversed: PatchExecutionTexts = `Nil ()
-  let remaining_hunks: PatchExecutionHunks = document.hunks
-  let execution_failed = false
-  let execution_failure: Text = ""
+  let additions_reversed: PatchExecutionTexts = `Nil ();
+  let modifications_reversed: PatchExecutionTexts = `Nil ();
+  let deletions_reversed: PatchExecutionTexts = `Nil ();
+  let remaining_hunks: PatchExecutionHunks = document.hunks;
+  let execution_failed = false;
+  let execution_failure: Text = "";
 
   loop {
-    if execution_failed { break }
+    if execution_failed { break; }
     if let `Cons node = remaining_hunks {
-      let [hunk, tail] = node
+      let [hunk, tail] = node;
       remaining_hunks = tail
 
       if let `AddFile addition = hunk {
-        let [addition_path, addition_content] = addition
-        let path = path_resolve(cwd, addition_path)
-        let request: PatchExecutionWriteRequest = [.path = path, .content = addition_content]
+        let [addition_path, addition_content] = addition;
+        let path = path_resolve(cwd, addition_path);
+        let request: PatchExecutionWriteRequest = [.path = path, .content = addition_content];
         written <- ApplyPatchHost.write(&request)
-        let outcome: PatchExecutionMutation = written
+        let outcome: PatchExecutionMutation = written;
         if let `PatchChanged () = outcome {
           additions_reversed = patch_text_prepend(addition_path, additions_reversed)
         } else if let `PatchChangeFailed reason = outcome {
-          let [failure_reason] = reason
+          let [failure_reason] = reason;
           execution_failed = true
           execution_failure = failure_reason
         } else {
@@ -63,13 +67,13 @@ let run_apply_patch = (document: PatchExecutionDocument, cwd: Text) => {
           execution_failure = "apply_patch host returned no write outcome for " <> path
         }
       } else if let `DeleteFile patch_path = hunk {
-        let path = path_resolve(cwd, patch_path)
+        let path = path_resolve(cwd, patch_path);
         removed <- ApplyPatchHost.remove(&path)
-        let outcome: PatchExecutionMutation = removed
+        let outcome: PatchExecutionMutation = removed;
         if let `PatchChanged () = outcome {
           deletions_reversed = patch_text_prepend(patch_path, deletions_reversed)
         } else if let `PatchChangeFailed reason = outcome {
-          let [failure_reason] = reason
+          let [failure_reason] = reason;
           execution_failed = true
           execution_failure = failure_reason
         } else {
@@ -77,59 +81,62 @@ let run_apply_patch = (document: PatchExecutionDocument, cwd: Text) => {
           execution_failure = "apply_patch host returned no remove outcome for " <> path
         }
       } else if let `UpdateFile update = hunk {
-        let [update_path, requested_move_path, update_chunks] = update
-        let destination = update_path
-        let moves_source = false
+        let [update_path, requested_move_path, update_chunks] = update;
+        let destination = update_path;
+        let moves_source = false;
         if let `Some move_path = requested_move_path {
           destination = move_path
           moves_source = true
         }
-        let source_path = path_resolve(cwd, update_path)
-        let destination_path = path_resolve(cwd, destination)
+        let source_path = path_resolve(cwd, update_path);
+        let destination_path = path_resolve(cwd, destination);
         snapshot <- ApplyPatchHost.read(&source_path)
-        let typed_snapshot: PatchExecutionSnapshot = snapshot
+        let typed_snapshot: PatchExecutionSnapshot = snapshot;
         if let `PatchReadFailed reason = typed_snapshot {
-          let [failure_reason] = reason
+          let [failure_reason] = reason;
           execution_failed = true
           execution_failure = failure_reason
         } else if let `PatchFile original = typed_snapshot {
-          let [original_content] = original
-          let derived = derive_apply_patch_update(update_path, original_content, update_chunks)
+          let [original_content] = original;
+          let derived = derive_apply_patch_update(update_path, original_content, update_chunks);
           if let `Err reason = derived {
             execution_failed = true
             execution_failure = reason
           } else if let `Ok content = derived {
-            let request: PatchExecutionWriteRequest = [.path = destination_path, .content = content]
+            let request: PatchExecutionWriteRequest = [.path = destination_path, .content = content];
             written <- ApplyPatchHost.write(&request)
-            let write_outcome: PatchExecutionMutation = written
+            let write_outcome: PatchExecutionMutation = written;
             if let `PatchChangeFailed reason = write_outcome {
-              let [failure_reason] = reason
+              let [failure_reason] = reason;
               execution_failed = true
               execution_failure = failure_reason
             } else if let `PatchChanged () = write_outcome {
               if moves_source {
                 removed <- ApplyPatchHost.remove(&source_path)
-                let remove_outcome: PatchExecutionMutation = removed
+                let remove_outcome: PatchExecutionMutation = removed;
                 if let `PatchChangeFailed reason = remove_outcome {
-                  let [failure_reason] = reason
+                  let [failure_reason] = reason;
                   execution_failed = true
                   execution_failure = failure_reason
                 } else if let `PatchChanged () = remove_outcome {
                   modifications_reversed = patch_text_prepend(destination, modifications_reversed)
                 } else {
                   execution_failed = true
-                  execution_failure = "apply_patch host returned no move outcome for " <> source_path
+                  execution_failure =
+                    "apply_patch host returned no move outcome for " <> source_path
                 }
               } else {
                 modifications_reversed = patch_text_prepend(destination, modifications_reversed)
               }
             } else {
               execution_failed = true
-              execution_failure = "apply_patch host returned no update outcome for " <> destination_path
+              execution_failure =
+                "apply_patch host returned no update outcome for " <> destination_path
             }
           } else {
             execution_failed = true
-            execution_failure = "apply_patch update derivation returned no result for " <> update_path
+            execution_failure =
+              "apply_patch update derivation returned no result for " <> update_path
           }
         } else {
           execution_failed = true
@@ -137,19 +144,19 @@ let run_apply_patch = (document: PatchExecutionDocument, cwd: Text) => {
         }
       }
     } else {
-      break
+      break;
     }
   }
 
   if execution_failed {
     `PatchRejected execution_failure
   } else {
-    let output = "Success. Updated the following files:\n"
-    output = render_changed_paths("A ", patch_text_reverse(additions_reversed), output)
-    output = render_changed_paths("M ", patch_text_reverse(modifications_reversed), output)
-    output = render_changed_paths("D ", patch_text_reverse(deletions_reversed), output)
+    let output = "Success. Updated the following files:\n";
+    output = render_changed_paths("A ", patch_text_reverse additions_reversed, output)
+    output = render_changed_paths("M ", patch_text_reverse modifications_reversed, output)
+    output = render_changed_paths("D ", patch_text_reverse deletions_reversed, output)
     `PatchApplied output
   }
-}
+};
 
-return { run_apply_patch }
+return { .run_apply_patch };

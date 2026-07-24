@@ -21,6 +21,7 @@ import {
   const_i32_value,
   expanded_type_product_entries,
 } from "./fixed_array_type.ts";
+import { struct_merge_operands } from "./struct_merge.ts";
 
 export type FrontEffectFunction = {
   name: string;
@@ -2682,6 +2683,21 @@ function infer_simple_type(
     }
 
     return infer_simple_type(expr.base, types, scalar_type_aliases);
+  }
+
+  if (expr.tag === "app") {
+    const runtime_merge = struct_merge_operands(
+      expr.operator_syntax,
+      expr.args,
+    );
+
+    if (runtime_merge !== undefined) {
+      return infer_simple_type(
+        runtime_merge.base,
+        types,
+        scalar_type_aliases,
+      );
+    }
   }
 
   if (expr.tag === "union_case") {

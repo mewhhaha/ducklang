@@ -1,17 +1,18 @@
-const { json_bool, json_number, json_object, json_object_empty, json_object_prepend } = import "duck:prelude/json/values" ()
-const { route_app_server_request } = import "./app_server_routes.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_bool, .json_number, .json_object, .json_object_empty, .json_object_prepend } =
+  import "duck:prelude/json/values" ();
+const { .route_app_server_request } = import "./app_server_routes.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureRoute = AppServerRoute
 type FixturePlan = AppServerPlan
 
-let fields = json_object_prepend("refreshToken", json_bool(true), json_object_empty())
-let route: FixtureRoute = [`Uninitialized (), json_number("7"), "account/read", json_object(fields)]
-let plan: FixturePlan = route_app_server_request(route)
-let score = 0
+let fields = json_object_prepend("refreshToken", json_bool true, json_object_empty());
+let route: FixtureRoute = [`Uninitialized (), json_number "7", "account/read", json_object fields];
+let plan: FixturePlan = route_app_server_request route;
+let score = 0;
 
 if let `Route deferred = plan {
-  let [session, id, method, params] = deferred
+  let [session, id, method, params] = deferred;
   if method == "account/read" {
     if let `Uninitialized () = session {
       if let `Number value = id {
@@ -23,4 +24,4 @@ if let `Route deferred = plan {
   }
 }
 
-return { .score = score }
+return { .score = score };

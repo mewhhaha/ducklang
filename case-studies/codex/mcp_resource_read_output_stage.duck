@@ -1,12 +1,12 @@
 module (!init: Init) where
 
-const {} = import "./mcp_resource_types.duck" ()
-const { read_payload_json } = import "./mcp_resource_read_output.duck" ()
+const {} = import "./mcp_resource_types.duck" ();
+const { .read_payload_json } = import "./mcp_resource_read_output.duck" ();
 
 type ResourceReadOutputStageInput = McpResourceReadOutputInput
 
 input <- StageInput.input()
-let typed_input: ResourceReadOutputStageInput = input
-let output = read_payload_json(typed_input.operation, typed_input.document)
+let typed_input: ResourceReadOutputStageInput = input;
+let output = read_payload_json(typed_input.operation, typed_input.document);
 
-return { .result = output }
+return { .result = output };

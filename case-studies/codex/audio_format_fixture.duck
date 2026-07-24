@@ -1,14 +1,14 @@
 module () where
 
-const { classify_audio_format } = import "./audio_format.duck" ()
+const { .classify_audio_format } = import "./audio_format.duck" ();
 
 type AudioFormatCase = [Text, I32, I32]
 type AudioFormatCases = List AudioFormatCase
 type AudioFormatCaseNode = ListNode AudioFormatCase
 
 const verify_audio_format_fixture: () -> I32 = () => {
-  let cases: AudioFormatCases = `Nil ()
-  let case_node: AudioFormatCaseNode = [["video/mp4", 5, 100000], cases]
+  let cases: AudioFormatCases = `Nil ();
+  let case_node: AudioFormatCaseNode = [["video/mp4", 5, 100000], cases];
   cases = `Cons case_node
   case_node = [["audio/flac", 5, 100000], cases]
   cases = `Cons case_node
@@ -35,19 +35,19 @@ const verify_audio_format_fixture: () -> I32 = () => {
   case_node = [["audio/wav", 0, 1], cases]
   cases = `Cons case_node
 
-  let score = 0
+  let score = 0;
   loop {
     if let `Cons node = cases {
-      let [format_case, tail] = node
-      let [mime, expected, weight] = format_case
-      let actual = classify_audio_format mime
+      let [format_case, tail] = node;
+      let [mime, expected, weight] = format_case;
+      let actual = classify_audio_format mime;
       if actual == expected { score = score + weight }
       cases = tail
     } else {
-      break
+      break;
     }
   }
   score
-}
+};
 
-return { verify_audio_format_fixture }
+return { .verify_audio_format_fixture };

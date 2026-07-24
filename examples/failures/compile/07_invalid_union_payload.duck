@@ -1,5 +1,5 @@
 type Result = | `Ok Int | `Err Text
-let result = `Ok ("wrong")
+let result = `Ok ("wrong");
 
 if let `Ok value = result {
   value

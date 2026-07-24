@@ -1,7 +1,7 @@
 module () where
 
-const { list, option } = import "duck:prelude/functional" ()
-const rollout_types_module = import "./rollout_types.duck"
+const { .list, .option } = import "duck:prelude/functional" ();
+const rollout_types_module = import "./rollout_types.duck";
 
 type PersistHistoryMode = RolloutHistoryMode
 type PersistResponse = RolloutResponse
@@ -10,7 +10,7 @@ type PersistEvent = RolloutEvent
 type PersistItem = RolloutItem
 type PersistItems = RolloutItems
 
-const rollout_items = comptime list(PersistItem)
+const rollout_items = comptime list PersistItem;
 
 const response_is_persisted = (response: PersistResponse) => {
   if let `AdditionalTools () = response {
@@ -22,11 +22,11 @@ const response_is_persisted = (response: PersistResponse) => {
   } else {
     true
   }
-}
+};
 
 const response_is_persisted_for_memories = (response: PersistResponse) => {
   if let `Message message = response {
-    let [role, _] = message
+    let [role, _] = message;
     role != "developer"
   } else if let `AgentMessage () = response {
     true
@@ -43,7 +43,7 @@ const response_is_persisted_for_memories = (response: PersistResponse) => {
   } else {
     false
   }
-}
+};
 
 const completed_item_is_persisted = (item: PersistCompletedItem, mode: PersistHistoryMode) => {
   if let `Paginated () = mode {
@@ -55,11 +55,11 @@ const completed_item_is_persisted = (item: PersistCompletedItem, mode: PersistHi
   } else {
     false
   }
-}
+};
 
 const event_is_persisted = (event: PersistEvent, mode: PersistHistoryMode) => {
   if let `ItemCompleted completed = event {
-    let [_, item] = completed
+    let [_, item] = completed;
     completed_item_is_persisted(item, mode)
   } else if let `Durable () = event {
     true
@@ -76,7 +76,7 @@ const event_is_persisted = (event: PersistEvent, mode: PersistHistoryMode) => {
   } else {
     false
   }
-}
+};
 
 const is_persisted_rollout_item = (item: PersistItem, mode: PersistHistoryMode) => {
   if let `Response response = item {
@@ -86,16 +86,16 @@ const is_persisted_rollout_item = (item: PersistItem, mode: PersistHistoryMode) 
   } else {
     true
   }
-}
+};
 
 const persisted_rollout_items = (values: PersistItems, mode: PersistHistoryMode) => {
   rollout_items.filter(values, (item: PersistItem) => is_persisted_rollout_item(item, mode))
-}
+};
 
 return {
-  response_is_persisted,
-  response_is_persisted_for_memories,
-  event_is_persisted,
-  is_persisted_rollout_item,
-  persisted_rollout_items,
-}
+  .response_is_persisted,
+  .response_is_persisted_for_memories,
+  .event_is_persisted,
+  .is_persisted_rollout_item,
+  .persisted_rollout_items,
+};

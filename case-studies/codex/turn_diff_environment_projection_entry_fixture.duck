@@ -1,0 +1,55 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+const { .turn_diff_net_changes } = import "./turn_diff_projection.duck" ();
+const { .turn_diff_fixture_exact_delta } = import "./turn_diff_fixture_common.duck" ();
+
+type FixtureTextOption = TurnDiffTextOption
+type FixtureAdd = TurnDiffAdd
+type FixtureFileMutation = TurnDiffFileMutation
+type FixtureMutation = TurnDiffMutation
+type FixtureEnvironments = List Text
+type FixtureEnvironmentNode = ListNode Text
+
+let none: FixtureTextOption = `None ();
+let addition: FixtureAdd = [.content = "content\n", .overwritten_content = none];
+let file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+let mutation: FixtureMutation = [.path = "/workspace/shared.txt", .mutation = file_mutation];
+let environments: FixtureEnvironments = `Nil ();
+let local_node: FixtureEnvironmentNode = ["local", environments];
+environments = `Cons local_node
+let remote_node: FixtureEnvironmentNode = ["remote", environments];
+environments = `Cons remote_node
+
+let state = empty_turn_diff();
+loop {
+  if let `Cons node = environments {
+    let [environment_id, tail] = node;
+    state = track_turn_diff_delta(state, environment_id, turn_diff_fixture_exact_delta mutation)
+    environments = tail
+  } else {
+    break;
+  }
+}
+
+let score: I32 = 0;
+let changes = turn_diff_net_changes state;
+if let `Cons first_node = changes {
+  let [first, after_first] = first_node;
+  if let `TurnDiffAdded added = first {
+    if added.path.environment_id == "local" && added.path.path == "/workspace/shared.txt" {
+      score = score + 1
+    }
+  }
+  if let `Cons second_node = after_first {
+    let [second, tail] = second_node;
+    if let `TurnDiffAdded added = second {
+      if added.path.environment_id == "remote" && added.path.path == "/workspace/shared.txt" {
+        if let `Nil () = tail { score = score + 10 }
+      }
+    }
+  }
+}
+
+return { .score = score };

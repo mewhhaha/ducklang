@@ -11,4 +11,4 @@ declare Init {
   message_history_store: MessageHistoryStore
 }
 
-return {}
+return {};

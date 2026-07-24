@@ -1,29 +1,37 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const tool_types_module = import "./tool_types.duck"
-const tool_policy_module = import "./tool_policy.duck"
-const { plan_sandbox_retry } = tool_policy_module()
+const { .list } = import "duck:prelude/functional" ();
+const tool_types_module = import "./tool_types.duck";
+const tool_policy_module = import "./tool_policy.duck";
+const { .plan_sandbox_retry } = tool_policy_module();
 
 type FixtureApproval = ToolApprovalPolicy
 type FixtureSandboxKind = ToolFileSystemSandboxKind
 type FixtureSandbox = ToolFileSystemSandbox
 type FixtureRetryDecision = ToolSandboxRetryDecision
 
-const paths = comptime list(Text)
+const paths = comptime list Text;
 
-let restricted_kind: FixtureSandboxKind = `Restricted ()
-let roots = paths.singleton "/repo"
-let restricted: FixtureSandbox = [restricted_kind, roots, false, false]
-let denied_reads: FixtureSandbox = [restricted_kind, roots, false, true]
-let unless_trusted: FixtureApproval = `UnlessTrusted ()
-let never: FixtureApproval = `Never ()
-let on_request: FixtureApproval = `OnRequest ()
-let score: I32 = 0
+let restricted_kind: FixtureSandboxKind = `Restricted ();
+let roots = paths.singleton "/repo";
+let restricted: FixtureSandbox = [restricted_kind, roots, false, false];
+let denied_reads: FixtureSandbox = [restricted_kind, roots, false, true];
+let unless_trusted: FixtureApproval = `UnlessTrusted ();
+let never: FixtureApproval = `Never ();
+let on_request: FixtureApproval = `OnRequest ();
+let score: I32 = 0;
 
-let decision: FixtureRetryDecision = plan_sandbox_retry(unless_trusted, restricted, true, true, false, false, "sandbox denied")
+let decision: FixtureRetryDecision = plan_sandbox_retry(
+  unless_trusted,
+  restricted,
+  true,
+  true,
+  false,
+  false,
+  "sandbox denied",
+);
 if let `RetrySandbox plan = decision {
-  let [sandbox_requested, needs_approval, reason] = plan
+  let [sandbox_requested, needs_approval, reason] = plan;
   if !(sandbox_requested) && !(needs_approval) && reason == "sandbox denied" {
     score = score + 1
   }
@@ -31,22 +39,30 @@ if let `RetrySandbox plan = decision {
 
 decision = plan_sandbox_retry(unless_trusted, restricted, true, true, true, false, "sandbox denied")
 if let `RetrySandbox plan = decision {
-  let [_, needs_approval, _] = plan
+  let [_, needs_approval, _] = plan;
   if needs_approval { score = score + 10 }
 }
 
 decision = plan_sandbox_retry(never, restricted, true, false, false, false, "sandbox denied")
 if let `PreserveDenial _ = decision { score = score + 100 }
 
-decision = plan_sandbox_retry(unless_trusted, denied_reads, true, true, false, false, "sandbox denied")
+decision = plan_sandbox_retry(
+  unless_trusted,
+  denied_reads,
+  true,
+  true,
+  false,
+  false,
+  "sandbox denied",
+)
 if let `PreserveDenial _ = decision { score = score + 1000 }
 
 decision = plan_sandbox_retry(on_request, denied_reads, true, false, false, true, "network denied")
 if let `RetrySandbox plan = decision {
-  let [sandbox_requested, needs_approval, reason] = plan
+  let [sandbox_requested, needs_approval, reason] = plan;
   if sandbox_requested && needs_approval && reason == "Network access is blocked by policy" {
     score = score + 10000
   }
 }
 
-return { .score = score }
+return { .score = score };

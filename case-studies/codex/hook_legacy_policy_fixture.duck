@@ -1,18 +1,21 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const hook_types_module = import "./hook_types.duck"
-const hook_policy_module = import "./hook_policy.duck"
-const { fold_legacy_hook_results } = hook_policy_module()
+const { .list } = import "duck:prelude/functional" ();
+const hook_types_module = import "./hook_types.duck";
+const hook_policy_module = import "./hook_policy.duck";
+const { .fold_legacy_hook_results } = hook_policy_module();
 
 type FixtureLegacyResult = HookLegacyResult
 type FixtureLegacyResults = HookLegacyResults
 
-const legacy_results = comptime list(FixtureLegacyResult)
+const legacy_results = comptime list FixtureLegacyResult;
 
-let legacy_values: FixtureLegacyResults = legacy_results.prepend(`FailedContinue "warn", legacy_results.prepend(`FailedAbort "stop", legacy_results.singleton(`Success ())))
-let [continued, messages, message_count] = fold_legacy_hook_results legacy_values
-let score: I32 = 0
+let legacy_values: FixtureLegacyResults = legacy_results.prepend(
+  `FailedContinue "warn",
+  legacy_results.prepend(`FailedAbort "stop", legacy_results.singleton(`Success ())),
+);
+let [continued, messages, message_count] = fold_legacy_hook_results legacy_values;
+let score: I32 = 0;
 
 if continued {
   ()
@@ -20,4 +23,4 @@ if continued {
   score = 1
 }
 
-return { .score = score }
+return { .score = score };

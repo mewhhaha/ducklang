@@ -1,7 +1,7 @@
 module () where
 
-const { list, text_append, text_starts_with } = import "duck:prelude/functional" ()
-const tool_types_module = import "./tool_types.duck"
+const { .list, .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const tool_types_module = import "./tool_types.duck";
 
 type PolicyApproval = ToolApprovalPolicy
 type PolicyGranular = ToolGranularApprovals
@@ -16,152 +16,176 @@ type PolicyPatchTarget = ToolPatchTarget
 type PolicyPatchTargets = ToolPatchTargets
 type PolicyPatchSafety = ToolPatchSafety
 
-const paths = comptime list(Text)
-const patch_targets = comptime list(PolicyPatchTarget)
+const paths = comptime list Text;
+const patch_targets = comptime list PolicyPatchTarget;
 
 const granular_allows_sandbox_approval = (granular: PolicyGranular) => {
-  let [sandbox_approval, _, _, _, _] = granular
+  let [sandbox_approval, _, _, _, _] = granular;
   sandbox_approval
-}
+};
 
-const default_exec_approval_requirement: [PolicyApproval, PolicySandbox] -> PolicyExecRequirement = (policy: PolicyApproval, sandbox: PolicySandbox) => {
-  let [raw_sandbox_kind, _, _, _] = sandbox
-  let sandbox_kind: PolicySandboxKind = raw_sandbox_kind
-  let restricted = if let `Restricted () = sandbox_kind { true } else { false }
+const default_exec_approval_requirement: [PolicyApproval, PolicySandbox] -> PolicyExecRequirement =
+  (
+    policy: PolicyApproval,
+    sandbox: PolicySandbox,
+  ) => {
+    let [raw_sandbox_kind, _, _, _] = sandbox;
+    let sandbox_kind: PolicySandboxKind = raw_sandbox_kind;
+    let restricted = if let `Restricted () = sandbox_kind { true } else { false };
 
-  if let `UnlessTrusted () = policy {
-    `NeedsApproval ([`None (), `None ()])
-  } else if let `OnRequest () = policy {
-    if restricted {
+    if let `UnlessTrusted () = policy {
       `NeedsApproval ([`None (), `None ()])
-    } else {
+    } else if let `OnRequest () = policy {
+      if restricted {
+        `NeedsApproval ([`None (), `None ()])
+      } else {
+        `Skip ([false, `None ()])
+      }
+    } else if let `Granular granular = policy {
+      if restricted && !(granular_allows_sandbox_approval granular) {
+        `Forbidden ("Approval policy disallowed sandbox approval prompt")
+      } else if restricted {
+        `NeedsApproval ([`None (), `None ()])
+      } else {
+        `Skip ([false, `None ()])
+      }
+    } else if let `Never () = policy {
       `Skip ([false, `None ()])
-    }
-  } else if let `Granular granular = policy {
-    if restricted && !(granular_allows_sandbox_approval granular) {
-      `Forbidden ("Approval policy disallowed sandbox approval prompt")
-    } else if restricted {
-      `NeedsApproval ([`None (), `None ()])
     } else {
-      `Skip ([false, `None ()])
+      `Forbidden ("Unknown approval policy")
     }
-  } else if let `Never () = policy {
-    `Skip ([false, `None ()])
-  } else {
-    `Forbidden ("Unknown approval policy")
-  }
-}
+  };
 
-const sandbox_override_for_first_attempt: [PolicyPermissions, PolicyExecRequirement, PolicySandbox] -> PolicySandboxOverride = (permissions: PolicyPermissions, requirement: PolicyExecRequirement, sandbox: PolicySandbox) => {
-  let [_, _, _, denied_reads] = sandbox
-  let bypass = false
+const sandbox_override_for_first_attempt: [PolicyPermissions, PolicyExecRequirement,
+  PolicySandbox] -> PolicySandboxOverride = (
+    permissions: PolicyPermissions,
+    requirement: PolicyExecRequirement,
+    sandbox: PolicySandbox,
+  ) => {
+    let [_, _, _, denied_reads] = sandbox;
+    let bypass = false;
 
-  if !(denied_reads) {
-    if let `Skip state = requirement {
-      let [bypass_sandbox, _] = state
-      bypass = bypass_sandbox
+    if !(denied_reads) {
+      if let `Skip state = requirement {
+        let [bypass_sandbox, _] = state;
+        bypass = bypass_sandbox
+      }
+
+      if let `RequireEscalated () = permissions {
+        bypass = true
+      }
     }
 
-    if let `RequireEscalated () = permissions {
-      bypass = true
+    if bypass {
+      `BypassSandboxFirstAttempt ()
+    } else {
+      `NoOverride ()
     }
-  }
+  };
 
-  if bypass {
-    `BypassSandboxFirstAttempt ()
-  } else {
-    `NoOverride ()
-  }
-}
+const sandbox_permissions_preserving_denied_reads: [PolicyPermissions, PolicySandbox] ->
+  PolicyPermissions = (
+    permissions: PolicyPermissions,
+    sandbox: PolicySandbox,
+  ) => {
+    let [_, _, _, denied_reads] = sandbox;
 
-const sandbox_permissions_preserving_denied_reads: [PolicyPermissions, PolicySandbox] -> PolicyPermissions = (permissions: PolicyPermissions, sandbox: PolicySandbox) => {
-  let [_, _, _, denied_reads] = sandbox
-
-  if denied_reads {
-    if let `RequireEscalated () = permissions {
-      `UseDefault ()
+    if denied_reads {
+      if let `RequireEscalated () = permissions {
+        `UseDefault ()
+      } else {
+        permissions
+      }
     } else {
       permissions
     }
-  } else {
-    permissions
-  }
-}
+  };
 
-const plan_sandbox_retry: [PolicyApproval, PolicySandbox, Bool, Bool, Bool, Bool, Text] -> PolicySandboxRetryDecision = (policy: PolicyApproval, sandbox: PolicySandbox, escalate_on_failure: Bool, already_approved: Bool, strict_auto_review: Bool, has_network_approval_context: Bool, denial_output: Text) => {
-  let [sandbox_kind, _, _, denied_reads] = sandbox
-  let restricted = if let `Restricted () = sandbox_kind { true } else { false }
-  let wants_no_sandbox_approval = if let `UnlessTrusted () = policy {
-    true
-  } else if let `Granular granular = policy {
-    granular_allows_sandbox_approval granular
-  } else {
-    false
-  }
-  let allow_on_request_network_prompt = if let `OnRequest () = policy {
-    has_network_approval_context && restricted
-  } else {
-    false
-  }
-  let unsandboxed_allowed = !(denied_reads)
-
-  if !(escalate_on_failure) {
-    `PreserveDenial denial_output
-  } else if !(wants_no_sandbox_approval) && !(allow_on_request_network_prompt) {
-    `PreserveDenial denial_output
-  } else if !(unsandboxed_allowed) && !(has_network_approval_context) {
-    `PreserveDenial denial_output
-  } else {
-    let reason = if has_network_approval_context {
-      "Network access is blocked by policy"
-    } else if denial_output == "" {
-      "command failed; retry without sandbox?"
+const plan_sandbox_retry: [PolicyApproval, PolicySandbox, Bool, Bool, Bool, Bool, Text] ->
+  PolicySandboxRetryDecision = (
+    policy: PolicyApproval,
+    sandbox: PolicySandbox,
+    escalate_on_failure: Bool,
+    already_approved: Bool,
+    strict_auto_review: Bool,
+    has_network_approval_context: Bool,
+    denial_output: Text,
+  ) => {
+    let [sandbox_kind, _, _, denied_reads] = sandbox;
+    let restricted = if let `Restricted () = sandbox_kind { true } else { false };
+    let wants_no_sandbox_approval = if let `UnlessTrusted () = policy {
+      true
+    } else if let `Granular granular = policy {
+      granular_allows_sandbox_approval granular
     } else {
-      denial_output
+      false
+    };
+    let allow_on_request_network_prompt = if let `OnRequest () = policy {
+      has_network_approval_context && restricted
+    } else {
+      false
+    };
+    let unsandboxed_allowed = !(denied_reads);
+
+    if !(escalate_on_failure) {
+      `PreserveDenial denial_output
+    } else if !(wants_no_sandbox_approval) && !(allow_on_request_network_prompt) {
+      `PreserveDenial denial_output
+    } else if !(unsandboxed_allowed) && !(has_network_approval_context) {
+      `PreserveDenial denial_output
+    } else {
+      let reason = if has_network_approval_context {
+        "Network access is blocked by policy"
+      } else if denial_output == "" {
+        "command failed; retry without sandbox?"
+      } else {
+        denial_output
+      };
+      let never_policy = if let `Never () = policy { true } else { false };
+      let bypass_approval = !(strict_auto_review) && (already_approved || never_policy) && !(
+        has_network_approval_context
+      );
+      let sandbox_requested = !(unsandboxed_allowed);
+      `RetrySandbox ([sandbox_requested, !(bypass_approval), reason])
     }
-    let never_policy = if let `Never () = policy { true } else { false }
-    let bypass_approval = !(strict_auto_review) && (already_approved || never_policy) && !(has_network_approval_context)
-    let sandbox_requested = !(unsandboxed_allowed)
-    `RetrySandbox ([sandbox_requested, !(bypass_approval), reason])
-  }
-}
+  };
 
 const path_is_within = (path: Text, root: Text) => {
   if path == root {
     true
   } else if root == "/" {
-    text_starts_with([path, "/"])
+    text_starts_with [path, "/"]
   } else {
-    text_starts_with([path, text_append([root, "/"])])
+    text_starts_with [path, text_append [root, "/"]]
   }
-}
+};
 
 const path_is_writable = (path: Text, sandbox: PolicySandbox) => {
-  let [_, writable_roots, full_disk_write, _] = sandbox
+  let [_, writable_roots, full_disk_write, _] = sandbox;
 
   if full_disk_write {
     true
   } else {
     paths.any(writable_roots, (root: Text) => path_is_within(path, root))
   }
-}
+};
 
 const patch_target_is_writable = (target: PolicyPatchTarget, sandbox: PolicySandbox) => {
-  let [path, move_path] = target
-  let writable = path_is_writable(path, sandbox)
+  let [path, move_path] = target;
+  let writable = path_is_writable(path, sandbox);
 
   if let `Some destination = move_path {
     writable && path_is_writable(destination, sandbox)
   } else {
     writable
   }
-}
+};
 
 const patch_is_constrained = (targets: PolicyPatchTargets, sandbox: PolicySandbox) => {
   !(patch_targets.any(targets, (target: PolicyPatchTarget) => {
     !(patch_target_is_writable(target, sandbox))
   }))
-}
+};
 
 const approval_rejects_sandbox_prompt = (policy: PolicyApproval) => {
   if let `Never () = policy {
@@ -171,11 +195,11 @@ const approval_rejects_sandbox_prompt = (policy: PolicyApproval) => {
   } else {
     false
   }
-}
+};
 
 const patch_rejection_reason = (profile: PolicyRuntimeProfile, sandbox: PolicySandbox) => {
-  let [_, writable_roots, full_disk_write, _] = sandbox
-  let read_only = false
+  let [_, writable_roots, full_disk_write, _] = sandbox;
+  let read_only = false;
 
   if let `Managed () = profile {
     read_only = !(full_disk_write) && paths.length(writable_roots) == 0
@@ -186,23 +210,35 @@ const patch_rejection_reason = (profile: PolicyRuntimeProfile, sandbox: PolicySa
   } else {
     "Writing outside of the project; rejected by user approval settings"
   }
-}
+};
 
-const assess_patch_safety: [PolicyPatchTargets, PolicyApproval, PolicyRuntimeProfile, PolicySandbox, Bool] -> PolicyPatchSafety = (targets: PolicyPatchTargets, policy: PolicyApproval, profile: PolicyRuntimeProfile, sandbox: PolicySandbox, platform_sandbox_available: Bool) => {
+const assess_patch_safety: [
+  PolicyPatchTargets,
+  PolicyApproval,
+  PolicyRuntimeProfile,
+  PolicySandbox,
+  Bool,
+] -> PolicyPatchSafety = (
+  targets: PolicyPatchTargets,
+  policy: PolicyApproval,
+  profile: PolicyRuntimeProfile,
+  sandbox: PolicySandbox,
+  platform_sandbox_available: Bool,
+) => {
   if patch_targets.length(targets) == 0 {
     `Reject ("Empty patch")
   } else if let `UnlessTrusted () = policy {
     `AskUser ()
   } else {
-    let rejects_prompt = approval_rejects_sandbox_prompt policy
-    let constrained = patch_is_constrained(targets, sandbox)
+    let rejects_prompt = approval_rejects_sandbox_prompt policy;
+    let constrained = patch_is_constrained(targets, sandbox);
     let outer_sandbox_disabled = if let `Disabled () = profile {
       true
     } else if let `External () = profile {
       true
     } else {
       false
-    }
+    };
 
     if constrained && outer_sandbox_disabled {
       `AutoApprove ([false, false])
@@ -214,15 +250,15 @@ const assess_patch_safety: [PolicyPatchTargets, PolicyApproval, PolicyRuntimePro
       `AskUser ()
     }
   }
-}
+};
 
 return {
-  default_exec_approval_requirement,
-  sandbox_override_for_first_attempt,
-  sandbox_permissions_preserving_denied_reads,
-  plan_sandbox_retry,
-  path_is_within,
-  path_is_writable,
-  patch_is_constrained,
-  assess_patch_safety,
-}
+  .default_exec_approval_requirement,
+  .sandbox_override_for_first_attempt,
+  .sandbox_permissions_preserving_denied_reads,
+  .plan_sandbox_retry,
+  .path_is_within,
+  .path_is_writable,
+  .patch_is_constrained,
+  .assess_patch_safety,
+};

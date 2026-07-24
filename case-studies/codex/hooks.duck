@@ -1,7 +1,8 @@
 module () where
 
-const { list, text_byte_is_ascii_alphanumeric, text_get, text_length, text_slice } = import "duck:prelude/functional" ()
-const hook_types_module = import "./hook_types.duck"
+const { .list, .text_byte_is_ascii_alphanumeric, .text_get, .text_length, .text_slice } =
+  import "duck:prelude/functional" ()
+const hook_types_module = import "./hook_types.duck";
 
 type HooksTextOption = HookTextOption
 type HooksTexts = HookTexts
@@ -10,8 +11,8 @@ type HooksMatcher = HookMatcher
 type HooksConfiguredHandler = HookConfiguredHandler
 type HooksConfiguredHandlers = HookConfiguredHandlers
 
-const texts = comptime list(Text)
-const handlers = comptime list(HooksConfiguredHandler)
+const texts = comptime list Text;
+const handlers = comptime list HooksConfiguredHandler;
 
 const hook_event_label = (event: HooksEvent) => {
   if let `PreToolUse () = event {
@@ -37,7 +38,7 @@ const hook_event_label = (event: HooksEvent) => {
   } else {
     "Stop"
   }
-}
+};
 
 const event_uses_matcher = (event: HooksEvent) => {
   if let `UserPromptSubmit () = event {
@@ -47,13 +48,13 @@ const event_uses_matcher = (event: HooksEvent) => {
   } else {
     true
   }
-}
+};
 
 const exact_matcher_pattern = (pattern: Text) => {
-  let exact = true
+  let exact = true;
 
   for byte in pattern {
-    if text_byte_is_ascii_alphanumeric(byte) || byte == 95 || byte == 124 {
+    if text_byte_is_ascii_alphanumeric byte || byte == 95 || byte == 124 {
       ()
     } else {
       exact = false
@@ -61,39 +62,47 @@ const exact_matcher_pattern = (pattern: Text) => {
   }
 
   exact
-}
+};
 
-let rec split_exact_matcher: [Text, I32, HooksTexts] -> HooksTexts = (pattern: Text, start: I32, reversed: HooksTexts) => {
-  let separator = -1
+let rec split_exact_matcher: [Text, I32, HooksTexts] -> HooksTexts = (
+  pattern: Text,
+  start: I32,
+  reversed: HooksTexts,
+) => {
+  let separator = -1;
 
-  if start < text_length(pattern) {
-    for index in start..text_length(pattern) {
-      if separator < 0 && text_get([pattern, index]) == 124 {
+  if start < text_length pattern {
+    for index in start..text_length pattern {
+      if separator < 0 && text_get [pattern, index] == 124 {
         separator = index
       }
     }
   }
 
   if separator < 0 {
-    texts.reverse(texts.prepend(text_slice([pattern, start, text_length(pattern)]), reversed))
+    texts.reverse(texts.prepend(text_slice [pattern, start, text_length pattern], reversed))
   } else {
-    split_exact_matcher(pattern, separator + 1, texts.prepend(text_slice([pattern, start, separator]), reversed))
+    split_exact_matcher(
+      pattern,
+      separator + 1,
+      texts.prepend(text_slice [pattern, start, separator], reversed),
+    )
   }
-}
+};
 
 const basic_regex_validation_error = (pattern: Text) => {
-  let index = 0
-  let in_class = false
-  let class_has_member = false
-  let atom_available = false
-  let error: HooksTextOption = `None ()
+  let index = 0;
+  let in_class = false;
+  let class_has_member = false;
+  let atom_available = false;
+  let error: HooksTextOption = `None ();
 
   loop {
-    if index >= text_length(pattern) {
-      break
+    if index >= text_length pattern {
+      break;
     }
 
-    let byte = text_get([pattern, index])
+    let byte = text_get [pattern, index];
 
     if in_class {
       if byte == 93 {
@@ -102,12 +111,12 @@ const basic_regex_validation_error = (pattern: Text) => {
           atom_available = true
         } else {
           error = `Some "empty character class in hook matcher"
-          break
+          break;
         }
       } else if byte == 92 {
-        if index + 1 >= text_length(pattern) {
+        if index + 1 >= text_length pattern {
           error = `Some "unterminated escape in hook matcher character class"
-          break
+          break;
         }
 
         index = index + 1
@@ -116,9 +125,9 @@ const basic_regex_validation_error = (pattern: Text) => {
         class_has_member = true
       }
     } else if byte == 92 {
-      if index + 1 >= text_length(pattern) {
+      if index + 1 >= text_length pattern {
         error = `Some "unterminated escape in hook matcher"
-        break
+        break;
       }
 
       index = index + 1
@@ -128,14 +137,15 @@ const basic_regex_validation_error = (pattern: Text) => {
       class_has_member = false
       atom_available = false
     } else if byte == 40 || byte == 41 || byte == 123 || byte == 125 {
-      error = `Some "hook matcher uses a regex construct that is not supported by the source runtime"
-      break
+      error =
+        `Some "hook matcher uses a regex construct that is not supported by the source runtime"
+      break;
     } else if byte == 42 || byte == 43 || byte == 63 {
       if atom_available {
         atom_available = false
       } else {
         error = `Some "hook matcher quantifier has no preceding atom"
-        break
+        break;
       }
     } else if byte == 124 {
       atom_available = false
@@ -155,7 +165,7 @@ const basic_regex_validation_error = (pattern: Text) => {
   } else {
     `None ()
   }
-}
+};
 
 let parse_hook_matcher = (event: HooksEvent, configured: HooksTextOption) => {
   if event_uses_matcher event {
@@ -175,39 +185,47 @@ let parse_hook_matcher = (event: HooksEvent, configured: HooksTextOption) => {
   } else {
     `Ok (`MatchAll ())
   }
-}
+};
 
 let rec class_end_from: [Text, I32] -> I32 = (pattern: Text, index: I32) => {
-  if index >= text_length(pattern) {
+  if index >= text_length pattern {
     -1
-  } else if text_get([pattern, index]) == 92 {
+  } else if text_get [pattern, index] == 92 {
     class_end_from(pattern, index + 2)
-  } else if text_get([pattern, index]) == 93 {
+  } else if text_get [pattern, index] == 93 {
     index
   } else {
     class_end_from(pattern, index + 1)
   }
-}
+};
 
-const class_end = (pattern: Text, start: I32) => class_end_from(pattern, start + 1)
+const class_end = (pattern: Text, start: I32) => class_end_from(pattern, start + 1);
 
 const class_atom_value = (pattern: Text, index: I32) => {
-  if text_get([pattern, index]) == 92 { text_get([pattern, index + 1]) } else { text_get([pattern, index]) }
-}
+  if text_get [pattern, index] == 92 { text_get [pattern, index + 1] } else { text_get [
+    pattern,
+    index,
+  ] }
+};
 
 const class_atom_next = (pattern: Text, index: I32) => {
-  if text_get([pattern, index]) == 92 { index + 2 } else { index + 1 }
-}
+  if text_get [pattern, index] == 92 { index + 2 } else { index + 1 }
+};
 
-let rec class_content_matches: [Text, I32, I32, I32] -> Bool = (pattern: Text, index: I32, end: I32, byte: I32) => {
+let rec class_content_matches: [Text, I32, I32, I32] -> Bool = (
+  pattern: Text,
+  index: I32,
+  end: I32,
+  byte: I32,
+) => {
   if index >= end {
     false
   } else {
-    let first = class_atom_value(pattern, index)
-    let next = class_atom_next(pattern, index)
+    let first = class_atom_value(pattern, index);
+    let next = class_atom_next(pattern, index);
 
-    if next + 1 < end && text_get([pattern, next]) == 45 {
-      let last = class_atom_value(pattern, next + 1)
+    if next + 1 < end && text_get [pattern, next] == 45 {
+      let last = class_atom_value(pattern, next + 1);
 
       if byte >= first && byte <= last {
         true
@@ -220,21 +238,21 @@ let rec class_content_matches: [Text, I32, I32, I32] -> Bool = (pattern: Text, i
       class_content_matches(pattern, next, end, byte)
     }
   }
-}
+};
 
 const class_matches = (pattern: Text, start: I32, byte: I32) => {
-  let end = class_end(pattern, start)
-  let content_start = start + 1
+  let end = class_end(pattern, start);
+  let content_start = start + 1;
 
-  if content_start < end && text_get([pattern, content_start]) == 94 {
+  if content_start < end && text_get [pattern, content_start] == 94 {
     if class_content_matches(pattern, content_start + 1, end, byte) { false } else { true }
   } else {
     class_content_matches(pattern, content_start, end, byte)
   }
-}
+};
 
 const regex_atom_end = (pattern: Text, start: I32) => {
-  let byte = text_get([pattern, start])
+  let byte = text_get [pattern, start];
 
   if byte == 92 {
     start + 2
@@ -243,33 +261,42 @@ const regex_atom_end = (pattern: Text, start: I32) => {
   } else {
     start + 1
   }
-}
+};
 
 const regex_atom_matches = (pattern: Text, start: I32, byte: I32) => {
-  let pattern_byte = text_get([pattern, start])
+  let pattern_byte = text_get [pattern, start];
 
   if pattern_byte == 46 {
     true
   } else if pattern_byte == 92 {
-    text_get([pattern, start + 1]) == byte
+    text_get [pattern, start + 1] == byte
   } else if pattern_byte == 91 {
     class_matches(pattern, start, byte)
   } else {
     pattern_byte == byte
   }
-}
+};
 
-let rec regex_match_here: [Text, I32, Text, I32] -> Bool = (pattern: Text, pattern_index: I32, input: Text, input_index: I32) => {
-  if pattern_index >= text_length(pattern) {
+let rec regex_match_here: [Text, I32, Text, I32] -> Bool = (
+  pattern: Text,
+  pattern_index: I32,
+  input: Text,
+  input_index: I32,
+) => {
+  if pattern_index >= text_length pattern {
     true
-  } else if text_get([pattern, pattern_index]) == 36 && pattern_index + 1 == text_length(pattern) {
-    input_index == text_length(input)
-  } else if text_get([pattern, pattern_index]) == 94 {
+  } else if text_get [pattern, pattern_index] == 36 && pattern_index + 1 == text_length pattern {
+    input_index == text_length input
+  } else if text_get [pattern, pattern_index] == 94 {
     regex_match_here(pattern, pattern_index + 1, input, input_index)
   } else {
-    let atom_end = regex_atom_end(pattern, pattern_index)
-    let quantifier = if atom_end < text_length(pattern) { text_get([pattern, atom_end]) } else { 0 }
-    let atom_matches = if input_index < text_length(input) { regex_atom_matches(pattern, pattern_index, text_get([input, input_index])) } else { false }
+    let atom_end = regex_atom_end(pattern, pattern_index);
+    let quantifier = if atom_end < text_length pattern { text_get [pattern, atom_end] } else { 0 };
+    let atom_matches = if input_index < text_length input { regex_atom_matches(
+      pattern,
+      pattern_index,
+      text_get [input, input_index],
+    ) } else { false };
 
     if quantifier == 42 {
       if regex_match_here(pattern, atom_end + 1, input, input_index) {
@@ -303,25 +330,32 @@ let rec regex_match_here: [Text, I32, Text, I32] -> Bool = (pattern: Text, patte
       false
     }
   }
-}
+};
 
-let rec regex_branch_matches: [Text, Text, I32] -> Bool = (pattern: Text, input: Text, start: I32) => {
-  if regex_match_here(pattern, 0, input, start) {
-    true
-  } else if text_length(pattern) > 0 && text_get([pattern, 0]) == 94 {
-    false
-  } else if start < text_length(input) {
-    regex_branch_matches(pattern, input, start + 1)
-  } else {
-    false
-  }
-}
+let rec regex_branch_matches: [Text, Text, I32] -> Bool = (pattern: Text, input: Text, start:
+  I32) => {
+    if regex_match_here(pattern, 0, input, start) {
+      true
+    } else if text_length pattern > 0 && text_get [pattern, 0] == 94 {
+      false
+    } else if start < text_length input {
+      regex_branch_matches(pattern, input, start + 1)
+    } else {
+      false
+    }
+  };
 
-let rec regex_alternatives_match: [Text, Text, I32, I32, Bool] -> Bool = (pattern: Text, input: Text, start: I32, index: I32, in_class: Bool) => {
-  if index >= text_length(pattern) {
-    regex_branch_matches(text_slice([pattern, start, text_length(pattern)]), input, 0)
+let rec regex_alternatives_match: [Text, Text, I32, I32, Bool] -> Bool = (
+  pattern: Text,
+  input: Text,
+  start: I32,
+  index: I32,
+  in_class: Bool,
+) => {
+  if index >= text_length pattern {
+    regex_branch_matches(text_slice [pattern, start, text_length pattern], input, 0)
   } else {
-    let byte = text_get([pattern, index])
+    let byte = text_get [pattern, index];
 
     if byte == 92 {
       regex_alternatives_match(pattern, input, start, index + 2, in_class)
@@ -332,7 +366,7 @@ let rec regex_alternatives_match: [Text, Text, I32, I32, Bool] -> Bool = (patter
     } else if byte == 124 {
       if in_class {
         regex_alternatives_match(pattern, input, start, index + 1, true)
-      } else if regex_branch_matches(text_slice([pattern, start, index]), input, 0) {
+      } else if regex_branch_matches(text_slice [pattern, start, index], input, 0) {
         true
       } else {
         regex_alternatives_match(pattern, input, index + 1, index + 1, false)
@@ -341,17 +375,20 @@ let rec regex_alternatives_match: [Text, Text, I32, I32, Bool] -> Bool = (patter
       regex_alternatives_match(pattern, input, start, index + 1, in_class)
     }
   }
-}
+};
 
-let rec exact_alternatives_match: [HooksTexts, Text] -> Bool = (alternatives: HooksTexts, input: Text) => {
+let rec exact_alternatives_match: [HooksTexts, Text] -> Bool = (
+  alternatives: HooksTexts,
+  input: Text,
+) => {
   if let `Cons node = alternatives {
-    let [candidate, tail] = node
+    let [candidate, tail] = node;
 
     if candidate == input { true } else { exact_alternatives_match(tail, input) }
   } else {
     false
   }
-}
+};
 
 let hook_matcher_matches = (matcher: HooksMatcher, input: Text) => {
   if let `MatchAll () = matcher {
@@ -363,13 +400,16 @@ let hook_matcher_matches = (matcher: HooksMatcher, input: Text) => {
   } else {
     false
   }
-}
+};
 
-let rec hook_matcher_matches_inputs: [HooksMatcher, HooksTexts] -> Bool = (matcher: HooksMatcher, inputs: HooksTexts) => {
+let rec hook_matcher_matches_inputs: [HooksMatcher, HooksTexts] -> Bool = (
+  matcher: HooksMatcher,
+  inputs: HooksTexts,
+) => {
   if let `MatchAll () = matcher {
     true
   } else if let `Cons node = inputs {
-    let [input, tail] = node
+    let [input, tail] = node;
 
     if hook_matcher_matches(matcher, input) {
       true
@@ -379,15 +419,26 @@ let rec hook_matcher_matches_inputs: [HooksMatcher, HooksTexts] -> Bool = (match
   } else {
     false
   }
-}
+};
 
-const hook_events_equal = (left: HooksEvent, right: HooksEvent) => hook_event_label(left) == hook_event_label(right)
+const hook_events_equal = (left: HooksEvent, right:
+  HooksEvent) => hook_event_label left == hook_event_label right;
 
-let rec select_hook_handlers_reversed: [HooksConfiguredHandlers, HooksEvent, HooksTexts, HooksConfiguredHandlers] -> HooksConfiguredHandlers = (available: HooksConfiguredHandlers, event: HooksEvent, matcher_inputs: HooksTexts, reversed: HooksConfiguredHandlers) => {
+let rec select_hook_handlers_reversed: [
+  HooksConfiguredHandlers,
+  HooksEvent,
+  HooksTexts,
+  HooksConfiguredHandlers,
+] -> HooksConfiguredHandlers = (
+  available: HooksConfiguredHandlers,
+  event: HooksEvent,
+  matcher_inputs: HooksTexts,
+  reversed: HooksConfiguredHandlers,
+) => {
   if let `Cons node = available {
-    let [configured_handler, tail] = node
-    let [handler_event, matcher, _, _, _, _, _, _] = configured_handler
-    let selected = false
+    let [configured_handler, tail] = node;
+    let [handler_event, matcher, _, _, _, _, _, _] = configured_handler;
+    let selected = false;
 
     if hook_events_equal(handler_event, event) {
       if event_uses_matcher event {
@@ -397,23 +448,27 @@ let rec select_hook_handlers_reversed: [HooksConfiguredHandlers, HooksEvent, Hoo
       }
     }
 
-    let next = if selected { handlers.prepend(configured_handler, reversed) } else { reversed }
+    let next = if selected { handlers.prepend(configured_handler, reversed) } else { reversed };
     select_hook_handlers_reversed(tail, event, matcher_inputs, next)
   } else {
     handlers.reverse reversed
   }
-}
+};
 
-let select_hook_handlers = (available: HooksConfiguredHandlers, event: HooksEvent, matcher_inputs: HooksTexts) => {
+let select_hook_handlers = (
+  available: HooksConfiguredHandlers,
+  event: HooksEvent,
+  matcher_inputs: HooksTexts,
+) => {
   select_hook_handlers_reversed(available, event, matcher_inputs, handlers.empty())
-}
+};
 
 return {
-  hook_event_label,
-  event_uses_matcher,
-  exact_matcher_pattern,
-  parse_hook_matcher,
-  hook_matcher_matches,
-  hook_matcher_matches_inputs,
-  select_hook_handlers,
-}
+  .hook_event_label,
+  .event_uses_matcher,
+  .exact_matcher_pattern,
+  .parse_hook_matcher,
+  .hook_matcher_matches,
+  .hook_matcher_matches_inputs,
+  .select_hook_handlers,
+};

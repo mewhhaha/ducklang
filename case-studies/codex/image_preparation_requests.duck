@@ -1,0 +1,75 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .plan_image_preparation } = import "./image_preparation_plan.duck" ();
+
+type CollectedImageRequest = ImagePreparationPlan
+type CollectedImageRequests = List CollectedImageRequest
+type CollectedImageRequestNode = ListNode CollectedImageRequest
+
+const collect_image_requests_from_contents: [HistoryContents, CollectedImageRequests] ->
+  CollectedImageRequests = (
+    contents,
+    reversed,
+  ) => {
+    let current = contents;
+    let collected = reversed;
+
+    loop {
+      if let `Cons node = current {
+        let [content, tail] = node;
+        if let `InputImage image = content {
+          let plan = plan_image_preparation image;
+          if plan.status_code == 1 {
+            let request_node: CollectedImageRequestNode = [plan, collected];
+            collected = `Cons request_node
+          }
+        }
+        current = tail
+      } else {
+        break;
+      }
+    }
+
+    collected
+  };
+
+const collect_image_processing_requests: HistoryItems -> CollectedImageRequests = responses => {
+  let current = responses;
+  let reversed: CollectedImageRequests = `Nil ();
+
+  loop {
+    if let `Cons node = current {
+      let [response, tail] = node;
+      if let `Message message = response {
+        let [_, _, contents] = message;
+        reversed = collect_image_requests_from_contents(contents, reversed)
+      } else if let `FunctionOutput output = response {
+        let [_, _, contents] = output;
+        reversed = collect_image_requests_from_contents(contents, reversed)
+      } else if let `CustomOutput output = response {
+        let [_, _, contents] = output;
+        reversed = collect_image_requests_from_contents(contents, reversed)
+      }
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  let requests: CollectedImageRequests = `Nil ();
+  loop {
+    if let `Cons node = reversed {
+      let [request, tail] = node;
+      let request_node: CollectedImageRequestNode = [request, requests];
+      requests = `Cons request_node
+      reversed = tail
+    } else {
+      break;
+    }
+  }
+
+  requests
+};
+
+return { .collect_image_processing_requests };

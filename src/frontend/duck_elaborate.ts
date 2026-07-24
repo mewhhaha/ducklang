@@ -80,6 +80,7 @@ export function elaborate_front_ducks(source: Source): Source {
   const extensions = new Map<string, ExtensionDeclaration[]>();
   const extension_bindings = new WeakMap<FrontExpr, string>();
   const used_extension_bindings = new Set<string>();
+  const extension_value_types = new Map<FrontExpr, TypeExpr>();
   const specialized_extension_bindings = new Map<
     string,
     SpecializedExtensionBinding
@@ -186,6 +187,7 @@ export function elaborate_front_ducks(source: Source): Source {
         source,
         extension_bindings,
         used_extension_bindings,
+        extension_value_types,
         specialized_extension_bindings,
       )
     ) {
@@ -206,6 +208,7 @@ export function elaborate_front_ducks(source: Source): Source {
   const elaborated = source_with_extension_values(
     source,
     used_extension_bindings,
+    extension_value_types,
   );
 
   if (specialized_extension_bindings.size === 0) {
@@ -343,6 +346,7 @@ function resolve_duck_member_call(
   source: Source,
   extension_bindings: WeakMap<FrontExpr, string>,
   used_extension_bindings: Set<string>,
+  extension_value_types: Map<FrontExpr, TypeExpr>,
   specialized_extension_bindings: Map<string, SpecializedExtensionBinding>,
 ): boolean {
   const target = duck_member_target(expr.func, ducks);
@@ -574,6 +578,16 @@ function resolve_duck_member_call(
       "." + target.member.name,
   );
   if (specialized_implementation === undefined) {
+    const implementation_type = instantiate_duck_type(
+      target.member.type_expr,
+      role_types,
+    );
+    expect(
+      implementation_type,
+      "Missing duck signature for " + target.declaration.name + "." +
+        target.member.name + " at " + owner.name,
+    );
+    extension_value_types.set(implementation.value, implementation_type);
     used_extension_bindings.add(extension_binding);
     expr.func = { tag: "var", name: extension_binding };
   } else {
@@ -1414,8 +1428,8 @@ function cursor_collection_loop(
         expr: {
           tag: "if",
           cond: duck_call("Iterator", "has_next", [{
-            tag: "borrow",
-            value: { tag: "var", name: cursor_name },
+            tag: "var",
+            name: cursor_name,
           }]),
           then_branch: { tag: "block", statements: iteration_body },
           else_branch: {
@@ -1433,8 +1447,16 @@ function cursor_collection_loop(
 function iterator_union_case(value: FrontExpr): string | undefined {
   if (
     (value.tag !== "lam" && value.tag !== "rec") ||
-    value.body.tag !== "if_let"
+    value.params.length !== 1 ||
+    value.body.tag !== "if_let" ||
+    value.body.target.tag !== "var"
   ) {
+    return undefined;
+  }
+
+  const parameter = value.params[0];
+  expect(parameter, "Missing iterator parameter");
+  if (value.body.target.name !== parameter.name) {
     return undefined;
   }
 
@@ -2700,6 +2722,12 @@ function concrete_fact_name(
     fact.resolved_name === "unknown" || fact.resolved_name === "Type"
   ) {
     return undefined;
+  }
+
+  for (const argument of fact.type_arguments || []) {
+    if (concrete_fact_name(argument) === undefined) {
+      return undefined;
+    }
   }
 
   return fact.resolved_name;

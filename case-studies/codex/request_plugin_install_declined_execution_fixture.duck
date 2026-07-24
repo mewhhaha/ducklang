@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./plugin_install_types.duck" ()
-const { finish_request_plugin_install } = import "./request_plugin_install_execution.duck" ()
+const {} = import "./plugin_install_types.duck" ();
+const { .finish_request_plugin_install } = import "./request_plugin_install_execution.duck" ();
 
 type FixtureCandidate = PluginInstallCandidate
 type FixtureHostRequest = RequestPluginInstallHostRequest
@@ -9,16 +9,37 @@ type FixtureHostResponse = RequestPluginInstallHostResponse
 type FixtureTextOption = InstallTextOption
 type FixtureTexts = InstallTexts
 
-let none: FixtureTextOption = `InstallTextMissing ()
-let empty_texts: FixtureTexts = `Nil ()
-let candidate: FixtureCandidate = [.id = "calendar", .name = "Calendar", .description = none, .tool_type = `Connector (), .has_skills = false, .mcp_server_names = empty_texts, .app_connector_ids = empty_texts, .install_url = `InstallTextPresent "https://example.com/calendar", .remote_plugin_id = none]
-let request: FixtureHostRequest = [.suggestion_id = "request_plugin_install_call-1", .suggest_reason = "Plan events", .candidate = candidate]
-let declined: FixtureHostResponse = [.sent = true, .action = `Decline (), .persist_always = true, .verified = true]
-let rejected = finish_request_plugin_install(request, declined)
-let score = 0
+let none: FixtureTextOption = `InstallTextMissing ();
+let empty_texts: FixtureTexts = `Nil ();
+let candidate: FixtureCandidate = [
+  .id = "calendar",
+  .name = "Calendar",
+  .description = none,
+  .tool_type = `Connector (),
+  .has_skills = false,
+  .mcp_server_names = empty_texts,
+  .app_connector_ids = empty_texts,
+  .install_url = `InstallTextPresent "https://example.com/calendar",
+  .remote_plugin_id = none,
+];
+let request: FixtureHostRequest = [
+  .suggestion_id = "request_plugin_install_call-1",
+  .suggest_reason = "Plan events",
+  .candidate = candidate,
+];
+let declined: FixtureHostResponse = [
+  .sent = true,
+  .action = `Decline (),
+  .persist_always = true,
+  .verified = true,
+];
+let rejected = finish_request_plugin_install(request, declined);
+let score = 0;
 
-if rejected.output == "{\"completed\":false,\"user_confirmed\":false,\"tool_type\":\"connector\",\"action_type\":\"install\",\"tool_id\":\"calendar\",\"tool_name\":\"Calendar\",\"suggest_reason\":\"Plan events\"}" && !(rejected.merge_connector) && rejected.persist_disabled && rejected.response_action == "decline" {
+if rejected.output == "{\"completed\":false,\"user_confirmed\":false,\"tool_type\":\"connector\",\"action_type\":\"install\",\"tool_id\":\"calendar\",\"tool_name\":\"Calendar\",\"suggest_reason\":\"Plan events\"}" && !(
+  rejected.merge_connector
+) && rejected.persist_disabled && rejected.response_action == "decline" {
   score = 10
 }
 
-return { .score = score }
+return { .score = score };

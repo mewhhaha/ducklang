@@ -1,5 +1,11 @@
 import { expect } from "../../expect.ts";
+import type { TypeExpr } from "../../type_syntax.ts";
 import type { CoreExpr } from "../ast.ts";
+import {
+  format_type_expr,
+  parse_type_expr,
+  tokenize,
+} from "../from_source/type_contract.ts";
 import { static_block_result } from "./block.ts";
 import { is_core_builtin_type_name } from "./names.ts";
 import { substitute_core_type_expr } from "./substitute.ts";
@@ -177,33 +183,38 @@ export function static_type_level_value(
 }
 
 function static_applied_type_expr(name: string): CoreExpr | undefined {
-  const names = name.split(" ");
+  let type: TypeExpr;
+  try {
+    type = parse_type_expr(tokenize(name));
+  } catch (error) {
+    if (error instanceof Error) {
+      return undefined;
+    }
+    throw error;
+  }
 
-  if (names.length < 2) {
+  if (type.tag !== "apply") {
     return undefined;
   }
 
-  for (const part of names) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(part)) {
-      return undefined;
-    }
+  return core_type_application(type);
+}
+
+function core_type_application(type: TypeExpr): CoreExpr | undefined {
+  if (type.tag === "name") {
+    return { tag: "var", name: type.name };
+  }
+  if (type.tag !== "apply") {
+    return undefined;
   }
 
-  const constructor = names[0];
-  expect(constructor, "Missing applied Core type constructor");
-  const args: CoreExpr[] = [];
-
-  for (let index = 1; index < names.length; index += 1) {
-    const arg = names[index];
-    expect(arg, "Missing applied Core type argument " + index.toString());
-    args.push({ tag: "var", name: arg });
+  const func = core_type_application(type.func);
+  const arg = core_type_application(type.arg);
+  if (func === undefined || arg === undefined) {
+    return undefined;
   }
 
-  return {
-    tag: "app",
-    func: { tag: "var", name: constructor },
-    args,
-  };
+  return { tag: "app", func, args: [arg] };
 }
 
 function static_type_extension_field_value(
@@ -331,6 +342,14 @@ function static_type_argument_name(
     return type_name.name;
   }
 
+  if (expr.tag === "app") {
+    const type_value = static_type_value(expr, ctx);
+    const type_expr = source_type_application(expr);
+    if (type_value !== undefined && type_expr !== undefined) {
+      return format_type_expr(type_expr);
+    }
+  }
+
   if (expr.tag !== "var") {
     return undefined;
   }
@@ -348,4 +367,25 @@ function static_type_argument_name(
   }
 
   return undefined;
+}
+
+function source_type_application(expr: CoreExpr): TypeExpr | undefined {
+  if (expr.tag === "var") {
+    return { tag: "name", name: expr.name };
+  }
+  if (expr.tag !== "app" || expr.args.length !== 1) {
+    return undefined;
+  }
+
+  const func = source_type_application(expr.func);
+  const arg = expr.args[0];
+  if (func === undefined || arg === undefined) {
+    return undefined;
+  }
+  const source_arg = source_type_application(arg);
+  if (source_arg === undefined) {
+    return undefined;
+  }
+
+  return { tag: "apply", func, arg: source_arg };
 }

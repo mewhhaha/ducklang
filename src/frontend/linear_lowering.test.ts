@@ -10,24 +10,24 @@ function compile(text: string) {
 
 Deno.test("Source lowers pure linear bindings to Ic", () => {
   assert_equals(
-    Format.fmt(Source, Source.parse("let !x = 41\n!x")),
-    "let !x = 41\n!x",
+    Format.fmt(Source, Source.parse("let !x = 41;\n!x")),
+    "let !x = 41;\n!x",
   );
 
   assert_equals(
-    Format.fmt(Source, Source.parse("const !x = 41\n!x")),
-    "const !x = 41\n!x",
+    Format.fmt(Source, Source.parse("const !x = 41;\n!x")),
+    "const !x = 41;\n!x",
   );
 
   const consumed = compile(`
-let !x = 41
+let !x = 41;
 !x + 1
 `);
 
   assert_equals(Ic.reduce(consumed), { tag: "num", type: "i32", value: 42 });
 
   const rebound = compile(`
-let !x = 41
+let !x = 41;
 x = !x + 1
 x
 `);
@@ -35,15 +35,15 @@ x
   assert_equals(Ic.reduce(rebound), { tag: "num", type: "i32", value: 42 });
 
   const moved = compile(`
-let !x = 41
-let !y = !x + 1
+let !x = 41;
+let !y = !x + 1;
 y
 `);
 
   assert_equals(Ic.reduce(moved), { tag: "num", type: "i32", value: 42 });
 
   const const_consumed = compile(`
-const !x = 41
+const !x = 41;
 !x + 1
 `);
 
@@ -56,7 +56,7 @@ const !x = 41
   assert_throws(
     () =>
       compile(`
-let !x = 41
+let !x = 41;
 x + 1
 `),
     "Linear value x used without explicit consumption",
@@ -65,25 +65,25 @@ x + 1
   assert_throws(
     () =>
       compile(`
-let !x = 41
+let !x = 41;
 0
 `),
     "Linear value x was not consumed",
   );
 
   assert_throws(
-    () => compile("const !x = 1\nx + 1"),
+    () => compile("const !x = 1;\nx + 1"),
     "Linear value x used without explicit consumption",
   );
 
-  assert_equals(Ic.reduce(compile("const !x = 41\nx")), {
+  assert_equals(Ic.reduce(compile("const !x = 41;\nx")), {
     tag: "num",
     type: "i32",
     value: 41,
   });
 
   assert_throws(
-    () => compile("const !x = 1\n0"),
+    () => compile("const !x = 1;\n0"),
     "Linear value x was not consumed",
   );
 
@@ -95,7 +95,7 @@ let !x = 41
   assert_throws(
     () =>
       compile(`
-let x = 1
+let x = 1;
 !missing
 `),
     "Unbound linear value: missing",
@@ -105,9 +105,9 @@ let x = 1
     () =>
       compile(`
 const bad = {
-  let !x = 41
+  let !x = 41;
   !x
-}
+};
 bad
 `),
     "Cannot evaluate linear binding at compile time: x",
@@ -118,7 +118,7 @@ Deno.test("Source lowers pure linear functions to Ic", () => {
   const inc = compile(`
 let inc_once = (!x) => {
   !x + 1
-}
+};
 
 inc_once(41)
 `);
@@ -128,7 +128,7 @@ inc_once(41)
   const id = compile(`
 let keep = (!x) => {
   x
-}
+};
 
 keep(42)
 `);
@@ -139,7 +139,7 @@ keep(42)
 let add_once = (!x) => {
   x = !x + 1
   x
-}
+};
 
 add_once(41)
 `);
@@ -153,7 +153,7 @@ let add_branch = (!x) => {
   }
 
   x
-}
+};
 
 add_branch(41)
 `);
@@ -163,11 +163,11 @@ add_branch(41)
   const branch_return = compile(`
 let add_branch = (!x) => {
   if true {
-    return !x + 1
+    return !x + 1;
   }
 
   x
-}
+};
 
 add_branch(41)
 `);
@@ -181,9 +181,9 @@ add_branch(41)
   const specialized = compile(`
 let apply_once = (!x, const f) => {
   f(!x)
-}
+};
 
-const inc = value => value + 1
+const inc = value => value + 1;
 
 apply_once(41, inc)
 `);
@@ -197,7 +197,7 @@ apply_once(41, inc)
   const annotated = compile(`
 let inc_once = (!x: Int) => {
   !x + 1
-}
+};
 
 inc_once(41)
 `);
@@ -215,7 +215,7 @@ let main = (!x: Int, flag) => {
   } else {
     !x
   }
-}
+};
 
 main(input, flag)
 `);
@@ -229,11 +229,11 @@ main(input, flag)
   const dynamic_linear_return = compile(`
 let main = (!x: Int, flag) => {
   if flag {
-    return !x
+    return !x;
   }
 
   x
-}
+};
 
 main(input, flag)
 `);
@@ -246,9 +246,9 @@ main(input, flag)
 
   const captured_once = compile(`
 let main = (!x) => {
-  let consume = () => !x
+  let consume = () => !x;
   consume()
-}
+};
 
 main(42)
 `);
@@ -261,9 +261,9 @@ main(42)
 
   const captured_expr = compile(`
 let main = (!x) => {
-  let inc = () => !x + 1
+  let inc = () => !x + 1;
   inc()
-}
+};
 
 main(41)
 `);
@@ -276,9 +276,9 @@ main(41)
 
   const captured_param = compile(`
 let main = (!x, y) => {
-  let add = z => !x + z
+  let add = z => !x + z;
   add(y)
-}
+};
 
 main(40, 2)
 `);
@@ -291,9 +291,9 @@ main(40, 2)
 
   const captured_params = compile(`
 let main = (!x) => {
-  let add = (a, b) => !x + a + b
+  let add = (a, b) => !x + a + b;
   add(1, 1)
-}
+};
 
 main(40)
 `);
@@ -306,9 +306,9 @@ main(40)
 
   const captured_linear_arg = compile(`
 let main = (!x, !y) => {
-  let add = z => !x + z
+  let add = z => !x + z;
   add(!y)
-}
+};
 
 main(40, 2)
 `);
@@ -321,10 +321,10 @@ main(40, 2)
 
   const captured_shadowed_param = compile(`
 let main = (!x) => {
-  let add = x => x + 1
+  let add = x => x + 1;
   add(1)
   !x
-}
+};
 
 main(40)
 `);
@@ -337,10 +337,10 @@ main(40)
 
   const captured_alias = compile(`
 let main = (!x) => {
-  let consume = () => !x
-  let f = consume
+  let consume = () => !x;
+  let f = consume;
   f()
-}
+};
 
 main(42)
 `);
@@ -353,10 +353,10 @@ main(42)
 
   const captured_param_alias = compile(`
 let main = (!x, y) => {
-  let add = z => !x + z
-  let f = add
+  let add = z => !x + z;
+  let f = add;
   f(y)
-}
+};
 
 main(40, 2)
 `);
@@ -369,11 +369,11 @@ main(40, 2)
 
   const captured_alias_chain = compile(`
 let main = (!x) => {
-  let consume = () => !x
-  let f = consume
-  let g = f
+  let consume = () => !x;
+  let f = consume;
+  let g = f;
   g()
-}
+};
 
 main(42)
 `);
@@ -387,12 +387,12 @@ main(42)
   const captured_block_alias = compile(`
 let main = (!x) => {
   let f = {
-    let consume = () => !x
+    let consume = () => !x;
     consume
-  }
+  };
 
   f()
-}
+};
 
 main(42)
 `);
@@ -406,12 +406,12 @@ main(42)
   const captured_block_param = compile(`
 let main = (!x, y) => {
   let f = {
-    let add = z => !x + z
+    let add = z => !x + z;
     add
-  }
+  };
 
   f(y)
-}
+};
 
 main(40, 2)
 `);
@@ -425,10 +425,10 @@ main(40, 2)
   const captured_direct_block_call = compile(`
 let main = (!x) => {
   {
-    let consume = () => !x
+    let consume = () => !x;
     consume
   }()
-}
+};
 
 main(42)
 `);
@@ -445,10 +445,10 @@ let main = (!x) => {
     () => !x
   } else {
     () => 0
-  }
+  };
 
   f()
-}
+};
 
 main(42)
 `);
@@ -465,10 +465,10 @@ let main = (!x) => {
     () => 0
   } else {
     () => !x + 1
-  }
+  };
 
   f()
-}
+};
 
 main(41)
 `);
@@ -483,9 +483,9 @@ main(41)
     () =>
       compile(`
 let main = (!x) => {
-  let consume = () => !x
+  let consume = () => !x;
   consume() + consume()
-}
+};
 
 main(41)
 `),
@@ -496,10 +496,10 @@ main(41)
     () =>
       compile(`
 let main = (!x) => {
-  let consume = () => !x
-  let f = consume
+  let consume = () => !x;
+  let f = consume;
   f() + consume()
-}
+};
 
 main(42)
 `),
@@ -510,9 +510,9 @@ main(42)
     () =>
       compile(`
 let main = (!x) => {
-  let add = z => !x + z
+  let add = z => !x + z;
   add(1) + add(2)
-}
+};
 
 main(40)
 `),
@@ -523,10 +523,10 @@ main(40)
     () =>
       compile(`
 let main = (!x) => {
-  let recurse = () => recurse()
+  let recurse = () => recurse();
   recurse()
   !x
-}
+};
 
 main(41)
 `),
@@ -537,9 +537,9 @@ main(41)
     () =>
       compile(`
 let main = (!x) => {
-  let consume = () => !x
+  let consume = () => !x;
   consume
-}
+};
 
 main(41)
 `),
@@ -552,10 +552,10 @@ let main = (!x, flag: Bool) => {
     () => !x
   } else {
     () => !x + 1
-  }
+  };
 
   f()
-}
+};
 
 main(42, true)
 `);
@@ -572,10 +572,10 @@ let main = (!x, flag) => {
     a => !x + a
   } else {
     b => !x + b
-  }
+  };
 
   f(2)
-}
+};
 
 main(40, false)
 `);
@@ -592,10 +592,10 @@ let main = (!x, flag) => {
     (a: Int) => !x + a
   } else {
     (b: I32) => !x + b
-  }
+  };
 
   f(2)
-}
+};
 
 main(40, false)
 `);
@@ -607,19 +607,19 @@ main(40, false)
   });
 
   const captured_dynamic_if_type_alias_param_annotations = compile(`
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
-const user_alias = user_type
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
+const user_alias = user_type;
 
 let main = (!x, flag) => {
   let f = if flag {
     (a: user_type) => !x + a.age
   } else {
     (b: user_alias) => !x + b.age
-  }
+  };
 
   f([.age = 2] as user_type)
-}
+};
 
 main(40, false)
 `);
@@ -633,20 +633,20 @@ main(40, false)
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
-const { struct } = import "duck:prelude" ()
-const other_type = struct { .score= Int }
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
+const { .struct } = import "duck:prelude" ();
+const other_type = struct { .score= Int };
 
 let main = (!x, flag) => {
   let f = if flag {
     (a: user_type) => !x + a.age
   } else {
     (b: other_type) => !x + b.score
-  }
+  };
 
   f([.age = 2] as user_type)
-}
+};
 
 main(40, false)
 `),
@@ -655,18 +655,18 @@ main(40, false)
 
   const captured_static_if_let = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let main = (!x) => {
-  const result = \`Ok (0)
+  const result = \`Ok (0);
   let f = if let \`Ok value = result {
     () => !x + value
   } else {
     () => !x + 1
-  }
+  };
 
   f()
-}
+};
 
 main(42)
 `);
@@ -679,17 +679,17 @@ main(42)
 
   const captured_dynamic_if_let = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let main = (!x: Int, result: result_type) => {
   let f = if let \`Ok value = result {
     () => !x + value
   } else {
     () => !x + 1
-  }
+  };
 
   f()
-}
+};
 
 main(input, result)
 `);
@@ -708,14 +708,14 @@ main(input, result)
 
   const captured_return_fallthrough = compile(`
 let main = (!x: Int, flag) => {
-  let consume = () => !x
+  let consume = () => !x;
 
   if flag {
-    return consume()
+    return consume();
   }
 
   consume()
-}
+};
 
 main(input, flag)
 `);
@@ -734,10 +734,10 @@ let main = (!x, flag) => {
     () => !x
   } else {
     () => 0
-  }
+  };
 
   f()
-}
+};
 
 main(42, true)
 `),
@@ -748,10 +748,10 @@ main(42, true)
     () =>
       compile(`
 let main = (!x) => {
-  let consume = () => !x
-  let f = consume
+  let consume = () => !x;
+  let f = consume;
   f
-}
+};
 
 main(42)
 `),
@@ -762,9 +762,9 @@ main(42)
     () =>
       compile(`
 let main = (!x) => {
-  let add = z => !x + z
+  let add = z => !x + z;
   add
-}
+};
 
 main(40)
 `),
@@ -776,13 +776,13 @@ main(40)
       compile(`
 let main = (!x) => {
   let outer = () => {
-    let inner = () => !x + 1
+    let inner = () => !x + 1;
     inner()
-  }
+  };
 
   x = outer()
   inner()
-}
+};
 
 main(41)
 `),
@@ -798,7 +798,7 @@ let bad = (!x) => {
   }
 
   x
-}
+};
 
 bad(41)
 `),
@@ -811,9 +811,9 @@ Deno.test("Source lowers explicit capability functions and reserves method effec
 let main = (!io, const caps) => {
   io = caps.bump(!io)
   io
-}
+};
 
-const caps = [.bump = value => value + 1]
+const caps = [.bump = value => value + 1];
 
 main(41, caps)
 `);
@@ -830,9 +830,9 @@ module logger = caps => {
     io = caps.bump(!io)
     io
   }]
-}
+};
 
-const app = logger([.bump = value => value + 1])
+const app = logger([.bump = value => value + 1]);
 
 app.log(41)
 `);
@@ -844,7 +844,7 @@ app.log(41)
   });
 
   const frontend_known_method = compile(`
-let !io = [.bump = self => 42]
+let !io = [.bump = self => 42];
 
 io = io.bump()
 io
@@ -860,9 +860,9 @@ io
 let main = (!io) => {
   io = io.bump()
   io
-}
+};
 
-let !io = [.bump = self => 42]
+let !io = [.bump = self => 42];
 
 main(!io)
 `);
@@ -879,7 +879,7 @@ main(!io)
 let main = (!io) => {
   io = io.print("hello")
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -890,7 +890,7 @@ main
 let main = (!io) => {
   io = io.print("hello")
   io
-}
+};
 main
 `),
     "use Source.core, Source.mod, or Source.wat",
@@ -902,7 +902,7 @@ main
 let main = (!io) => {
   io.print("hello")
   io.print("world")
-}
+};
 main
 `),
     "Linear value io is consumed but not rebound",
@@ -913,7 +913,7 @@ main
       compile(`
 let main = (!io) => {
   io = io.print("hello")
-}
+};
 main
 `),
     "Linear value io was not consumed",
@@ -929,7 +929,7 @@ let main = (!io, flag) => {
     io.print("world")
   }
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -939,10 +939,10 @@ main
     () =>
       compile(`
 let main = (!io) => {
-  let print_once = () => io.print("hello")
+  let print_once = () => io.print("hello");
   io = print_once()
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -957,7 +957,7 @@ let main = (!io, flag) => {
   } else {
     0
   }
-}
+};
 main
 `),
     "Linear branches must consume the same values",
@@ -972,7 +972,7 @@ let main = (!io) => {
   } else {
     io
   }
-}
+};
 main
 `),
     "Linear value io used without explicit consumption",
@@ -986,7 +986,7 @@ let main = (!io) => {
     io = io.print("tick")
   }
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -998,10 +998,10 @@ main
 let main = (!io) => {
   for i in 0..2 {
     io = io.print("tick")
-    continue
+    continue;
   }
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -1013,10 +1013,10 @@ main
 let main = (!io) => {
   for i in 0..2 {
     io = io.print("tick")
-    break
+    break;
   }
   io
-}
+};
 main
 `),
     "Cannot lower linear function to Ic frontend yet",
@@ -1030,7 +1030,7 @@ let main = (!io) => {
     io.print("tick")
   }
   io
-}
+};
 main
 `),
     "Linear value io is consumed but not rebound",
@@ -1039,7 +1039,7 @@ main
 
 Deno.test("Source lowers const-bounded range loops by expansion", () => {
   const ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + i
@@ -1051,8 +1051,8 @@ sum
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 6 });
 
   const runtime_bound = compile(`
-let n = 4
-let sum = 0
+let n = 4;
+let sum = 0;
 
 for i in 0..n {
   sum = sum + i
@@ -1068,7 +1068,7 @@ sum
   });
 
   const descending = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 3..0 by -1 {
   sum = sum + i
@@ -1082,7 +1082,7 @@ sum
 
 Deno.test("Source expands inclusive static ranges in both directions", () => {
   const ascending = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..=4 by 2 {
   sum = sum + i
@@ -1097,7 +1097,7 @@ sum
   });
 
   const descending = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 4..=0 by -2 {
   sum = sum + i
@@ -1114,11 +1114,11 @@ sum
 
 Deno.test("Source lowers static range break and continue", () => {
   const break_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
-  break
+  break;
   sum = sum + 100
 }
 
@@ -1128,11 +1128,11 @@ sum
   assert_equals(Ic.reduce(break_ic), { tag: "num", type: "i32", value: 1 });
 
   const continue_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
-  continue
+  continue;
   sum = sum + 100
 }
 
@@ -1146,12 +1146,12 @@ sum
   });
 
   const nested_break_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if true {
-    break
+    break;
   }
   sum = sum + 100
 }
@@ -1166,12 +1166,12 @@ sum
   });
 
   const nested_continue_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if true {
-    continue
+    continue;
   }
   sum = sum + 100
 }
@@ -1186,12 +1186,12 @@ sum
   });
 
   const index_break_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if i == 2 {
-    break
+    break;
   }
 }
 
@@ -1205,12 +1205,12 @@ sum
   });
 
   const if_let_continue_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if let \`Some value = \`Some (i) {
-    continue
+    continue;
   }
   sum = sum + 100
 }
@@ -1225,13 +1225,13 @@ sum
   });
 
   const if_let_payload_break_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if let \`Some value = \`Some (i) {
     if value == 2 {
-      break
+      break;
     }
   }
 }
@@ -1246,12 +1246,12 @@ sum
   });
 
   const if_let_non_match_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + 1
   if let \`None () = \`Some (i) {
-    break
+    break;
   }
   sum = sum + 100
 }
@@ -1266,11 +1266,11 @@ sum
   });
 
   const match_break_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   match i {
-    | 2 => { break }
+    | 2 => { break; }
     | _ => { sum = sum + 1 }
   }
 }
@@ -1285,13 +1285,13 @@ sum
   });
 
   const match_continue_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   match \`Some (i) {
     | \`Some value => {
       if value == 2 {
-        continue
+        continue;
       }
       sum = sum + 1
     }
@@ -1311,15 +1311,15 @@ sum
   const dynamic_match_break = (flag: number) =>
     compile(`
 let main = flag => {
-  let sum = 0
+  let sum = 0;
   for i in 0..2 {
     match flag {
-      | 1 => { break }
+      | 1 => { break; }
       | _ => { sum = sum + 1 }
     }
   }
   sum
-}
+};
 main(${flag.toString()})
 `);
 
@@ -1337,15 +1337,15 @@ main(${flag.toString()})
   const dynamic_match_continue = (flag: number) =>
     compile(`
 let main = flag => {
-  let sum = 0
+  let sum = 0;
   for i in 0..2 {
     match flag {
-      | 1 => { continue }
+      | 1 => { continue; }
       | _ => { sum = sum + 1 }
     }
   }
   sum
-}
+};
 main(${flag.toString()})
 `);
 
@@ -1361,13 +1361,13 @@ main(${flag.toString()})
   });
 
   const nested_match_break_scope_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..2 {
   for j in 0..3 {
     sum = sum + 1
     match j {
-      | 1 => { break }
+      | 1 => { break; }
       | _ => { sum = sum + 0 }
     }
   }
@@ -1386,14 +1386,14 @@ sum
   const return_ic = compile(`
 let main = flag => {
   for i in 0..4 {
-    return 1
+    return 1;
     if flag {
-      break
+      break;
     }
   }
 
   0
-}
+};
 
 main(flag)
 `);
@@ -1408,12 +1408,12 @@ main(flag)
 let main = () => {
   for i in 0..4 {
     if i == 2 {
-      return i
+      return i;
     }
   }
 
   99
-}
+};
 
 main()
 `);
@@ -1428,12 +1428,12 @@ main()
 let main = () => {
   for i in 0..4 {
     if let \`Some value = \`Some i {
-      return value
+      return value;
     }
   }
 
   99
-}
+};
 
 main()
 `);
@@ -1448,16 +1448,16 @@ main()
 let main = flag => {
   for i in 0..1 {
     for j in 0..1 {
-      return 1
+      return 1;
     }
 
     if flag {
-      break
+      break;
     }
   }
 
   0
-}
+};
 
 main(flag)
 `);
@@ -1469,12 +1469,12 @@ main(flag)
   });
 
   const nested_loop_break_scope_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..2 {
   for j in 0..4 {
     sum = sum + 1
-    break
+    break;
     sum = sum + 100
   }
 
@@ -1491,12 +1491,12 @@ sum
   });
 
   const nested_loop_continue_scope_ic = compile(`
-let sum = 0
+let sum = 0;
 
 for i in 0..2 {
   for j in 0..2 {
     sum = sum + 1
-    continue
+    continue;
     sum = sum + 100
   }
 
@@ -1516,11 +1516,11 @@ sum
 let main = (!x) => {
   for i in 0..4 {
     x = !x + 1
-    break
+    break;
   }
 
   x
-}
+};
 
 main(41)
 `);
@@ -1535,11 +1535,11 @@ main(41)
 let main = (!x) => {
   for i in 0..2 {
     x = !x + 1
-    continue
+    continue;
   }
 
   x
-}
+};
 
 main(40)
 `);
@@ -1556,11 +1556,11 @@ main(40)
 let main = (!x) => {
   for i in 0..2 {
     !x
-    continue
+    continue;
   }
 
   x
-}
+};
 
 main(40)
 `),
@@ -1569,18 +1569,18 @@ main(40)
 
   const dynamic_break_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
-      break
+      break;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1591,18 +1591,18 @@ main(flag)
 
   const dynamic_continue_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
-      continue
+      continue;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1613,18 +1613,18 @@ main(flag)
 
   const dynamic_break_after_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      let next = total + 1
+      let next = total + 1;
       total = next
-      break
+      break;
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1638,19 +1638,19 @@ main(flag)
 
   const dynamic_break_after_top_level_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
-    let next = total + 1
+    let next = total + 1;
     total = next
     if flag {
-      break
+      break;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1664,19 +1664,19 @@ main(flag)
 
   const dynamic_continue_after_top_level_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
-    let next = total + 1
+    let next = total + 1;
     total = next
     if flag {
-      continue
+      continue;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1696,18 +1696,18 @@ main(flag)
 
   const dynamic_i64_break_after_top_level_binding_ic = compile(`
 let main = flag => {
-  let total = 0i64
+  let total = 0i64;
 
   for i in 0..2 {
-    let next = total + 1i64
+    let next = total + 1i64;
     total = next
     if flag {
-      break
+      break;
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1727,19 +1727,19 @@ main(flag)
 
   const dynamic_text_break_after_top_level_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
-    let label: Text = "ok"
+    let label: Text = "ok";
     total = total + @len(label)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1759,23 +1759,23 @@ main(flag)
 
   const dynamic_deferred_numeric_binding_after_break_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let value = if choose {
       input
     } else {
       other
-    }
+    };
     total = value + 1
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1803,31 +1803,31 @@ main(flag)
 
   const dynamic_deferred_text_if_let_binding_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let total = 0
+  let total = 0;
   let maybe: option_type = if choose {
     \`Some (input)
   } else {
     \`None ()
-  }
+  };
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let value = if let \`Some message = maybe {
       message
     } else {
       other
-    }
+    };
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1851,29 +1851,29 @@ main(flag)
 
   const dynamic_deferred_no_else_text_binding_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let total = 0
+  let total = 0;
   let maybe: option_type = if choose {
     \`Some (input)
   } else {
     \`None ()
-  }
+  };
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let value = if let \`Some message = maybe {
       message
-    }
+    };
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1893,20 +1893,20 @@ main(flag)
 
   const dynamic_function_call_after_top_level_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
-    let id = x => x
-    let value = id(i)
+    let id = x => x;
+    let value = id(i);
     total = value
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1926,20 +1926,20 @@ main(flag)
 
   const dynamic_annotated_text_call_after_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
-    let id = (text: Text) => text
-    let value = id(input)
+    let id = (text: Text) => text;
+    let value = id(input);
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -1963,24 +1963,24 @@ main(flag)
 
   const dynamic_function_branch_text_after_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let id = if choose {
       (text: Text) => text
     } else {
       (other: Text) => other
-    }
-    let value = id(input)
+    };
+    let value = id(input);
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2004,27 +2004,27 @@ main(flag)
 
   const dynamic_function_branch_capture_after_binding_ic = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let id = if choose {
       {
-        let saved: Text = input
+        let saved: Text = input;
         (text: Text) => saved
       }
     } else {
       (other: Text) => other
-    }
-    let value = id(input)
+    };
+    let value = id(input);
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2047,31 +2047,31 @@ main(flag)
   );
 
   const dynamic_function_branch_struct_after_binding_ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let make = if choose {
       x => [.first = x + 1, .label = input] as pair_type
     } else {
       y => [.first = y, .label = input] as pair_type
-    }
-    let pair = make(i)
+    };
+    let pair = make(i);
     total = pair.first + @len(pair.label)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2095,32 +2095,32 @@ main(flag)
 
   const dynamic_if_let_function_branch_after_binding_ic = compile(`
 type MaybeType = | \`Some Text | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
 let main = flag => {
-  let total = 0
+  let total = 0;
   let maybe: maybe_type = if choose {
     \`Some (input)
   } else {
     \`None ()
-  }
+  };
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     let id = if let \`Some saved = maybe {
       (text: Text) => saved
     } else {
       (other: Text) => other
-    }
-    let value = id(input)
+    };
+    let value = id(input);
     total = @len(value)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2143,26 +2143,26 @@ main(flag)
   );
 
   const dynamic_struct_break_after_top_level_binding_ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
-    let pair = [.first = i + 1, .label = "ok"] as pair_type
+    let pair = [.first = i + 1, .label = "ok"] as pair_type;
     total = total + pair.first + @len(pair.label)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2182,24 +2182,24 @@ main(flag)
 
   const dynamic_union_break_after_top_level_binding_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
-    let option = \`Some (i + 1)
+    let option = \`Some (i + 1);
     if let \`Some value = option {
       total = total + value
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2219,14 +2219,14 @@ main(flag)
 
   const dynamic_union_assignment_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let option: option_type = \`None ()
+  let option: option_type = \`None ();
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     option = \`Some (input)
@@ -2235,7 +2235,7 @@ let main = flag => {
   if let \`Some value = option {
     @len(value)
   }
-}
+};
 
 main(flag)
 `);
@@ -2255,14 +2255,14 @@ main(flag)
 
   const dynamic_union_no_else_assignment_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let option: option_type = \`None ()
+  let option: option_type = \`None ();
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     option = if choose {
@@ -2273,7 +2273,7 @@ let main = flag => {
   if let \`Some value = option {
     @len(value)
   }
-}
+};
 
 main(flag)
 `);
@@ -2297,14 +2297,14 @@ main(flag)
 
   const dynamic_union_change_assignment_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let option: option_type = \`None ()
+  let option: option_type = \`None ();
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     option := \`Some (input)
@@ -2313,7 +2313,7 @@ let main = flag => {
   if let \`Some value = option {
     @len(value)
   }
-}
+};
 
 main(flag)
 `);
@@ -2333,14 +2333,14 @@ main(flag)
 
   const dynamic_union_no_else_change_assignment_after_break_ic = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = flag => {
-  let option: option_type = \`None ()
+  let option: option_type = \`None ();
 
   for i in 0..2 {
     if flag {
-      break
+      break;
     }
 
     option := if choose {
@@ -2351,7 +2351,7 @@ let main = flag => {
   if let \`Some value = option {
     @len(value)
   }
-}
+};
 
 main(flag)
 `);
@@ -2375,19 +2375,19 @@ main(flag)
 
   const dynamic_final_if_let_after_break_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (flag, option: option_type) => {
   for i in 0..1 {
     if flag {
-      break
+      break;
     }
   }
 
   if let \`Some value = option {
     value + 1
   }
-}
+};
 
 main(flag, option)
 `);
@@ -2402,20 +2402,20 @@ main(flag, option)
 
   const nested_dynamic_break_ic = compile(`
 let main = (flag, other) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
       if other {
-        break
+        break;
       }
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag, other)
 `);
@@ -2430,20 +2430,20 @@ main(flag, other)
 
   const nested_dynamic_continue_ic = compile(`
 let main = (flag, other) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
       if other {
-        continue
+        continue;
       }
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag, other)
 `);
@@ -2458,23 +2458,23 @@ main(flag, other)
 
   const nested_dynamic_if_let_break_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (flag, option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
       if let \`Some value = option {
-        break
+        break;
       }
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag, option)
 `);
@@ -2489,23 +2489,23 @@ main(flag, option)
 
   const nested_dynamic_if_let_continue_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (flag, option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if flag {
       if let \`Some value = option {
-        continue
+        continue;
       }
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(flag, option)
 `);
@@ -2520,12 +2520,12 @@ main(flag, option)
 
   const nested_dynamic_break_before_trailing_stmt_ic = compile(`
 let main = (flag, other) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if flag {
       if other {
-        break
+        break;
       }
 
       total = total + 1
@@ -2533,7 +2533,7 @@ let main = (flag, other) => {
   }
 
   total
-}
+};
 
 main(flag, other)
 `);
@@ -2547,15 +2547,15 @@ main(flag, other)
 
   const dynamic_if_let_nested_break_before_payload_use_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (flag, option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if let \`Some value = option {
       if flag {
-        break
+        break;
       }
 
       total = total + value
@@ -2563,7 +2563,7 @@ let main = (flag, option: option_type) => {
   }
 
   total
-}
+};
 
 main(flag, option)
 `);
@@ -2583,21 +2583,21 @@ main(flag, option)
 
   const dynamic_if_let_break_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if let \`Some value = option {
-      break
+      break;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(option)
 `);
@@ -2611,21 +2611,21 @@ main(option)
 
   const dynamic_if_let_continue_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..3 {
     total = total + 1
     if let \`Some value = option {
-      continue
+      continue;
     }
     total = total + 10
   }
 
   total
-}
+};
 
 main(option)
 `);
@@ -2639,21 +2639,21 @@ main(option)
 
   const dynamic_if_let_break_after_assignment_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let main = (option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..2 {
     if let \`Some value = option {
-      let next = total + value
+      let next = total + value;
       total = next
-      break
+      break;
     }
   }
 
   total
-}
+};
 
 main(option)
 `);
@@ -2669,9 +2669,9 @@ main(option)
     () =>
       compile(`
 let main = (!x) => {
-  break
+  break;
   x
-}
+};
 
 main(40)
 `),
@@ -2681,9 +2681,9 @@ main(40)
 
 Deno.test("Source lowers const-known collection loops by expansion", () => {
   const ic = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
-let sum = 0
+let sum = 0;
 
 for x in xs {
   sum = sum + x
@@ -2695,9 +2695,9 @@ sum
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 30 });
 
   const indexed = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
-let sum = 0
+let sum = 0;
 
 for i, x in xs {
   sum = sum + i + x
@@ -2710,14 +2710,14 @@ sum
 
   const visible_arg = compile(`
 let sum = xs => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + x
   }
 
   total
-}
+};
 
 sum([10, 32])
 `);
@@ -2730,14 +2730,14 @@ sum([10, 32])
 
   const indexed_visible_arg = compile(`
 let sum = xs => {
-  let total = 0
+  let total = 0;
 
   for i, x in xs {
     total = total + i + x
   }
 
   total
-}
+};
 
 sum([10, 31])
 `);
@@ -2749,21 +2749,21 @@ sum([10, 31])
   });
 
   const dynamic_break = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + 1
     if flag {
-      break
+      break;
     }
     total = total + x
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2773,21 +2773,21 @@ main(flag)
   assert_includes(dynamic_break_text, "else 63:i32");
 
   const dynamic_continue = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + 1
     if flag {
-      continue
+      continue;
     }
     total = total + x
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2798,23 +2798,23 @@ main(flag)
 
   const dynamic_if_let_break = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + 1
     if let \`Some value = option {
-      break
+      break;
     }
     total = total + x
   }
 
   total
-}
+};
 
 main(option)
 `);
@@ -2827,21 +2827,21 @@ main(option)
   assert_includes(dynamic_if_let_break_text, "63:i32");
 
   const dynamic_collection_break_after_assignment = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     if flag {
-      let next = total + x
+      let next = total + x;
       total = next
-      break
+      break;
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2857,21 +2857,21 @@ main(flag)
   assert_includes(dynamic_collection_break_after_assignment_text, "else 0:i32");
 
   const dynamic_collection_break_after_top_level_binding = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
-    let next = total + x
+    let next = total + x;
     total = next
     if flag {
-      break
+      break;
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2890,22 +2890,22 @@ main(flag)
   );
 
   const dynamic_collection_continue_after_top_level_binding = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
-    let next = total + x
+    let next = total + x;
     total = next
     if flag {
-      continue
+      continue;
     }
     total = total + 1
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2924,22 +2924,22 @@ main(flag)
   );
 
   const dynamic_collection_text_break_after_top_level_binding = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     if flag {
-      break
+      break;
     }
 
-    let label: Text = "item"
+    let label: Text = "item";
     total = total + x + @len(label)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -2958,28 +2958,28 @@ main(flag)
   );
 
   const dynamic_collection_struct_break_after_top_level_binding = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     if flag {
-      break
+      break;
     }
 
-    let pair = [.first = x, .label = "item"] as pair_type
+    let pair = [.first = x, .label = "item"] as pair_type;
     total = total + pair.first + @len(pair.label)
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -3000,26 +3000,26 @@ main(flag)
 
   const dynamic_collection_union_break_after_top_level_binding = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-const xs = [10, 20]
+const xs = [10, 20];
 
 let main = (flag: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     if flag {
-      break
+      break;
     }
 
-    let option = \`Some (x)
+    let option = \`Some (x);
     if let \`Some value = option {
       total = total + value
     }
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -3039,23 +3039,23 @@ main(flag)
   );
 
   const dynamic_collection_nested_break = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (flag: Bool, other: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + 1
     if flag {
       if other {
-        break
+        break;
       }
     }
     total = total + x
   }
 
   total
-}
+};
 
 main(flag, other)
 `);
@@ -3069,15 +3069,15 @@ main(flag, other)
   assert_includes(dynamic_collection_nested_break_text, "63:i32");
 
   const dynamic_collection_nested_break_before_trailing_stmt = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (flag: Bool, other: Bool) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     if flag {
       if other {
-        break
+        break;
       }
 
       total = total + x
@@ -3085,7 +3085,7 @@ let main = (flag: Bool, other: Bool) => {
   }
 
   total
-}
+};
 
 main(flag, other)
 `);
@@ -3105,25 +3105,25 @@ main(flag, other)
 
   const dynamic_collection_nested_if_let_break = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 let main = (flag: Bool, option: option_type) => {
-  let total = 0
+  let total = 0;
 
   for x in xs {
     total = total + 1
     if flag {
       if let \`Some value = option {
-        break
+        break;
       }
     }
     total = total + x
   }
 
   total
-}
+};
 
 main(flag, option)
 `);
@@ -3139,7 +3139,7 @@ main(flag, option)
 
 Deno.test("Source lowers const-known index access", () => {
   const direct = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 xs[0] + xs[1]
 `);
@@ -3147,9 +3147,9 @@ xs[0] + xs[1]
   assert_equals(Ic.reduce(direct), { tag: "num", type: "i32", value: 30 });
 
   const looped = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
-let sum = 0
+let sum = 0;
 
 for i, x in xs {
   sum = sum + xs[i]
@@ -3161,7 +3161,7 @@ sum
   assert_equals(Ic.reduce(looped), { tag: "num", type: "i32", value: 30 });
 
   const dynamic = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
 xs[i]
 `);
@@ -3173,7 +3173,7 @@ xs[i]
   assert_includes(dynamic_text, "else trap");
 
   const closure_static = compile(`
-let second = xs => xs[1]
+let second = xs => xs[1];
 
 second([.first = 10, .second = 32])
 `);
@@ -3187,7 +3187,7 @@ second([.first = 10, .second = 32])
   const closure_dynamic = compile(`
 let choose = (xs, i) => {
   xs[i]
-}
+};
 
 choose([.first = 10, .second = 32], input)
 `);
@@ -3214,9 +3214,9 @@ const make_xs = flag => {
   } else {
     [.first = 30, .second = 40]
   }
-}
+};
 
-let xs = make_xs(input)
+let xs = make_xs(input);
 
 xs[i]
 `);
@@ -3238,7 +3238,7 @@ xs[i]
   assert_includes(const_call_dynamic_text, "else trap");
 
   const wide = compile(`
-const xs = [3i64, 7i64]
+const xs = [3i64, 7i64];
 
 xs[i]
 `);
@@ -3256,7 +3256,7 @@ xs[i]
   assert_throws(
     () =>
       compile(`
-const xs = [10]
+const xs = [10];
 
 xs[1]
 `),
@@ -3266,7 +3266,7 @@ xs[1]
 
 Deno.test("Source lowers const-known collection len and get helpers", () => {
   const direct = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 @len(xs) + @get(xs, 1)
 `);
@@ -3274,7 +3274,7 @@ const xs = [10, 20, 30]
   assert_equals(Ic.reduce(direct), { tag: "num", type: "i32", value: 23 });
 
   const closure_len = compile(`
-let size = xs => @len(xs)
+let size = xs => @len(xs);
 
 size([10, 32])
 `);
@@ -3286,7 +3286,7 @@ size([10, 32])
   });
 
   const closure_get = compile(`
-let second = xs => @get(xs, 1)
+let second = xs => @get(xs, 1);
 
 second([10, 32])
 `);
@@ -3300,7 +3300,7 @@ second([10, 32])
   const closure_dynamic_get = compile(`
 let choose = (xs, i) => {
   @get(xs, i)
-}
+};
 
 choose([10, 32], input)
 `);
@@ -3325,10 +3325,10 @@ choose([10, 32], input)
 
   const dynamic_text_get = compile(`
 let rename = value => {
-  value :+ {
+  value <& {
     .second = "Grace"
   }
-}
+};
 
 @get(rename([.first = "Ada", .second = "Eve"])[input], 1)
 `);
@@ -3342,10 +3342,10 @@ let rename = value => {
 
   const dynamic_text_byte = compile(`
 let rename = value => {
-  value :+ {
+  value <& {
     .second = "Grace"
   }
-}
+};
 
 rename([.first = "Ada", .second = "Eve"])[input][1]
 `);
@@ -3361,10 +3361,10 @@ rename([.first = "Ada", .second = "Eve"])[input][1]
     () =>
       compile(`
 let rename = value => {
-  value :+ {
+  value <& {
     .second = "Grace"
   }
-}
+};
 
 @get(rename([.first = "Ada", .second = "Eve"])[input], 1i64)
 `),
@@ -3375,10 +3375,10 @@ let rename = value => {
     () =>
       compile(`
 let rename = value => {
-  value :+ {
+  value <& {
     .second = "Grace"
   }
-}
+};
 
 rename([.first = "Ada", .second = "Eve"])[input][1i64]
 `),
@@ -3386,9 +3386,9 @@ rename([.first = "Ada", .second = "Eve"])[input][1i64]
   );
 
   const looped = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
-let sum = 0
+let sum = 0;
 
 for i in 0..@len(xs) {
   sum = sum + @get(xs, i)
@@ -3400,7 +3400,7 @@ sum
   assert_equals(Ic.reduce(looped), { tag: "num", type: "i32", value: 60 });
 
   const dynamic = compile(`
-const xs = [10, 20, 30]
+const xs = [10, 20, 30];
 
 @get(xs, input)
 `);
@@ -3417,7 +3417,7 @@ const xs = [10, 20, 30]
   assert_includes(dynamic_text, "else trap");
 
   const dynamic_text_index = compile(`
-const messages = ["Ada", "Grace"]
+const messages = ["Ada", "Grace"];
 
 @get(messages, input)
 `);
@@ -3433,7 +3433,7 @@ const messages = ["Ada", "Grace"]
   assert_includes(dynamic_text_index_text, "else trap");
 
   const dynamic_text_len = compile(`
-const messages = [.first = "Ada", .second = "Grace"]
+const messages = [.first = "Ada", .second = "Grace"];
 
 @len(messages[input])
 `);
@@ -3453,18 +3453,18 @@ const messages = [.first = "Ada", .second = "Grace"]
 
 Deno.test("Source lowers typed runtime struct indexing to Ic", () => {
   const field_projection = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let first_plus_one = (pair: pair_type) => {
   pair.first + 1
-}
+};
 
-let input = 41
-let pair = [.first = input, .second = 0] as pair_type
+let input = 41;
+let pair = [.first = input, .second = 0] as pair_type;
 input = 0
 
 first_plus_one(pair)
@@ -3477,17 +3477,17 @@ first_plus_one(pair)
   });
 
   const static_index = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let second_plus_one = (pair: pair_type) => {
   @get(pair, 1) + 1
-}
+};
 
-let pair = [.first = 0, .second = 41] as pair_type
+let pair = [.first = 0, .second = 41] as pair_type;
 
 second_plus_one(pair)
 `);
@@ -3499,17 +3499,17 @@ second_plus_one(pair)
   });
 
   const dynamic_index = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let choose = (pair: pair_type, i) => {
   pair[i]
-}
+};
 
-let pair = [.first = 10, .second = 20] as pair_type
+let pair = [.first = 10, .second = 20] as pair_type;
 
 choose(pair, i)
 `);
@@ -3521,17 +3521,17 @@ choose(pair, i)
   assert_includes(dynamic_text, "else trap");
 
   const dynamic_runtime_fields = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let choose = (pair: pair_type, i) => {
   pair[i]
-}
+};
 
-let pair = [.first = left, .second = right] as pair_type
+let pair = [.first = left, .second = right] as pair_type;
 
 choose(pair, i)
 `);
@@ -3545,17 +3545,17 @@ choose(pair, i)
   assert_includes(dynamic_runtime_fields_text, "else trap");
 
   const dynamic_get = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let choose = (pair: pair_type, i) => {
   @get(pair, i)
-}
+};
 
-let pair = [.first = 10, .second = 20] as pair_type
+let pair = [.first = 10, .second = 20] as pair_type;
 
 choose(pair, i)
 `);
@@ -3566,17 +3566,17 @@ choose(pair, i)
   assert_includes(dynamic_get_text, "if i#0_share00 == 1:i32 then 20:i32");
 
   const wide = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const wide_type = struct {
   .first= I64,
   .second= I64
-}
+};
 
 let choose = (pair: wide_type, i) => {
   pair[i]
-}
+};
 
-let pair = [.first = 3i64, .second = 7i64] as wide_type
+let pair = [.first = 3i64, .second = 7i64] as wide_type;
 
 choose(pair, i)
 `);
@@ -3587,17 +3587,17 @@ choose(pair, i)
   assert_includes(wide_text, "if i#0_share00 == 1:i32 then 7:i64");
 
   const length = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let count = (pair: pair_type) => {
   @len(pair)
-}
+};
 
-let pair = [.first = 10, .second = 20] as pair_type
+let pair = [.first = 10, .second = 20] as pair_type;
 
 count(pair) + 40
 `);
@@ -3609,23 +3609,23 @@ count(pair) + 40
   });
 
   const collection_loop = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let sum = (pair: pair_type) => {
-  let total = 0
+  let total = 0;
 
   for x in pair {
     total = total + x
   }
 
   total
-}
+};
 
-let pair = [.first = 10, .second = 32] as pair_type
+let pair = [.first = 10, .second = 32] as pair_type;
 
 sum(pair)
 `);
@@ -3637,23 +3637,23 @@ sum(pair)
   });
 
   const indexed_loop = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let sum = (pair: pair_type) => {
-  let total = 0
+  let total = 0;
 
   for i, x in pair {
     total = total + i + x
   }
 
   total
-}
+};
 
-let pair = [.first = 10, .second = 31] as pair_type
+let pair = [.first = 10, .second = 31] as pair_type;
 
 sum(pair)
 `);
@@ -3665,26 +3665,26 @@ sum(pair)
   });
 
   const dynamic_runtime_struct_loop = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const triple_type = struct {
   .first= Int,
   .second= Int,
   .third= Int
-}
+};
 
 let sum = (value: triple_type, flag) => {
-  let total = 0
+  let total = 0;
 
   for x in value {
     total = total + 1
     if flag {
-      break
+      break;
     }
     total = total + x
   }
 
   total
-}
+};
 
 sum(value, flag)
 `);
@@ -3700,18 +3700,18 @@ sum(value, flag)
 
   const dynamic_text_loop = compile(`
 let main = flag => {
-  let total = 0
+  let total = 0;
 
   for byte in "ABC" {
     total = total + 1
     if flag {
-      continue
+      continue;
     }
     total = total + byte
   }
 
   total
-}
+};
 
 main(flag)
 `);
@@ -3721,7 +3721,7 @@ main(flag)
   assert_includes(dynamic_text_loop_text, "else 201:i32");
 
   const text_loop = compile(`
-let total = 0
+let total = 0;
 
 for byte in "Ada" {
   total = total + byte
@@ -3737,7 +3737,7 @@ total
   });
 
   const indexed_text_loop = compile(`
-let total = 0
+let total = 0;
 
 for i, byte in "Ada" {
   total = total + i + byte
@@ -3754,14 +3754,14 @@ total
 
   const runtime_text_argument_loop = compile(`
 let sum_text = (value: Text) => {
-  let total = 0
+  let total = 0;
 
   for byte in value {
     total = total + byte
   }
 
   total
-}
+};
 
 sum_text("Ada")
 `);
@@ -3774,14 +3774,14 @@ sum_text("Ada")
 
   const runtime_text_argument_indexed_loop = compile(`
 let sum_text = value => {
-  let total = 0
+  let total = 0;
 
   for i, byte in value {
     total = total + i + byte
   }
 
   total
-}
+};
 
 sum_text("Ada")
 `);
@@ -3795,7 +3795,7 @@ sum_text("Ada")
   const text_argument_byte = compile(`
 let byte_at = (value, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -3809,7 +3809,7 @@ byte_at("Ada", 2)
   const dynamic_text_argument_byte = compile(`
 let byte_at = (value, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", input)
 `);
@@ -3837,7 +3837,7 @@ byte_at("Ada", input)
   assert_includes(dynamic_text_argument_byte_text, "else trap");
 
   const text_argument_len = compile(`
-let byte_len = value => @len(value)
+let byte_len = value => @len(value);
 
 byte_len("Ada")
 `);
@@ -3849,7 +3849,7 @@ byte_len("Ada")
   });
 
   const text_argument_get = compile(`
-let byte_at = value => @get(value, 1)
+let byte_at = value => @get(value, 1);
 
 byte_at("Ada")
 `);
@@ -3861,23 +3861,23 @@ byte_at("Ada")
   });
 
   const range_len_loop = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let sum = (pair: pair_type) => {
-  let total = 0
+  let total = 0;
 
   for i in 0..@len(pair) {
     total = total + pair[i]
   }
 
   total
-}
+};
 
-let pair = [.first = 10, .second = 32] as pair_type
+let pair = [.first = 10, .second = 32] as pair_type;
 
 sum(pair)
 `);
@@ -3889,17 +3889,17 @@ sum(pair)
   });
 
   const text_index = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const messages_type = struct {
   .first= Text,
   .second= Text
-}
+};
 
 let choose = (messages: messages_type, i) => {
   messages[i]
-}
+};
 
-let messages = [.first = "Ada", .second = "Grace"] as messages_type
+let messages = [.first = "Ada", .second = "Grace"] as messages_type;
 
 choose(messages, i)
 `);
@@ -3912,13 +3912,13 @@ choose(messages, i)
   assert_includes(text_index_text, "else trap");
 
   const typed_text_index_len = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const messages_type = struct {
   .first= Text,
   .second= Text
-}
+};
 
-let messages = [.first = "Ada", .second = "Grace"] as messages_type
+let messages = [.first = "Ada", .second = "Grace"] as messages_type;
 
 @len(messages[i])
 `);
@@ -3934,17 +3934,17 @@ let messages = [.first = "Ada", .second = "Grace"] as messages_type
   assert_includes(typed_text_index_len_text, "else trap");
 
   const runtime_text_index_len = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const messages_type = struct {
   .first= Text,
   .second= Text
-}
+};
 
 let byte_len = (messages: messages_type, i) => {
   @len(messages[i])
-}
+};
 
-let messages = [.first = first_text, .second = second_text] as messages_type
+let messages = [.first = first_text, .second = second_text] as messages_type;
 
 byte_len(messages, i)
 `);
@@ -3961,16 +3961,16 @@ byte_len(messages, i)
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int
-}
+};
 
 let bad = (pair: pair_type) => {
   pair[1]
-}
+};
 
-let pair = [.first = 0] as pair_type
+let pair = [.first = 0] as pair_type;
 
 bad(pair)
 `),
@@ -3980,17 +3980,17 @@ bad(pair)
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
 let choose = (user: user_type, i) => {
   user[i]
-}
+};
 
-let user = [.name = "Ada", .age = 41] as user_type
+let user = [.name = "Ada", .age = 41] as user_type;
 
 choose(user, i)
 `),
@@ -4000,7 +4000,7 @@ choose(user, i)
 
 Deno.test("Source rejects unsupported loop forms and invalid ranges", () => {
   const dynamic_source = `
-let sum = 0
+let sum = 0;
 
 for i in 0..n {
   sum = sum + i
@@ -4026,17 +4026,17 @@ sum
   const dynamic_control_binding_source = `
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
-  let f = x => x
+  let f = x => x;
 }
 
 1
 `;
 
   const dynamic_control_binding_core = Source.core(
-    "let input = true\n" + dynamic_control_binding_source,
+    "let input = true;\n" + dynamic_control_binding_source,
   );
   assert_equals(dynamic_control_binding_core.statements[1]?.tag, "range_loop");
 
@@ -4060,14 +4060,14 @@ for x in xs {
   assert_equals(dynamic_control_binding_ic.includes("f#"), false);
 
   const dynamic_control_function_call_source = `
-let total = 41
+let total = 41;
 
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
-  let f = x => x
+  let f = x => x;
   total = f(total)
 }
 
@@ -4082,17 +4082,17 @@ total
   assert_equals(dynamic_control_function_call_ic.includes("f#"), false);
 
   const dynamic_control_block_function_call_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let f = {
-    let id = x => x
+    let id = x => x;
     id
-  }
+  };
 
   total = f(total + 1)
 }
@@ -4112,18 +4112,18 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 2:i32`,
   assert_equals(dynamic_control_block_function_call_ic.includes("f#"), false);
 
   const dynamic_control_block_captured_function_call_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let f = {
-    let offset = i + 1
-    let add = x => x + offset
+    let offset = i + 1;
+    let add = x => x + offset;
     add
-  }
+  };
 
   total = f(total)
 }
@@ -4150,17 +4150,17 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
   );
 
   const dynamic_control_block_returned_function_call_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let f = {
-    let offset = i + 1
-    return x => x + offset
-  }
+    let offset = i + 1;
+    return x => x + offset;
+  };
 
   total = f(total)
 }
@@ -4187,17 +4187,17 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
   );
 
   const dynamic_control_block_binding_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let amount = {
-    let inner = i + 1
+    let inner = i + 1;
     inner
-  }
+  };
   total = total + amount
 }
 
@@ -4215,14 +4215,14 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
   );
 
   const dynamic_control_annotated_text_binding_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let label: Text = text
+  let label: Text = text;
   total = total + @len(label)
 }
 
@@ -4240,14 +4240,14 @@ total
   );
 
   const dynamic_control_annotated_int_binding_source = `
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let amount: Int = value
+  let amount: Int = value;
   total = total + amount
 }
 
@@ -4265,14 +4265,14 @@ total
   );
 
   const dynamic_control_annotated_i64_binding_source = `
-let total: I64 = 0i64
+let total: I64 = 0i64;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let amount: I64 = value
+  let amount: I64 = value;
   total = total + amount
 }
 
@@ -4290,20 +4290,20 @@ total
   );
 
   const dynamic_control_annotated_struct_binding_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let pair: pair_type = source
+  let pair: pair_type = source;
   total = total + pair.first + @len(pair.label)
 }
 
@@ -4324,16 +4324,16 @@ total
 
   const dynamic_control_annotated_union_binding_source = `
 type ResultType = | \`Ok Int | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let result: result_type = source
+  let result: result_type = source;
   if let \`Ok value = result {
     total = total + value
   }
@@ -4354,25 +4354,25 @@ total
   );
 
   const dynamic_control_annotated_nested_struct_binding_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type,
   .age= Int
-}
+};
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let user: user_type = source
+  let user: user_type = source;
   total = total + user.age + @len(user.name.first)
 }
 
@@ -4402,29 +4402,29 @@ total
 
   const dynamic_control_annotated_struct_block_if_let_binding_source = `
 type MaybeType = | \`Some Int | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let maybe: maybe_type = source
-let total = 33
+let maybe: maybe_type = source;
+let total = 33;
 
 for i in 0..2 {
   if i == input {
-    break
+    break;
   }
 
   let user: user_type = {
     let selected = if let \`Some found = maybe {
       (&input_user)    } else {
       scratch { other_user }
-    }
+    };
 
-    return selected
-  }
+    return selected;
+  };
 
   total = user.age
 }
@@ -4453,27 +4453,27 @@ total
 
   const dynamic_control_annotated_union_block_if_let_binding_source = `
 type MaybeType = | \`Some Int | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
 type OptionType = | \`Ok Int | \`Err Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-let maybe: maybe_type = source
-let total = 33
+let maybe: maybe_type = source;
+let total = 33;
 
 for i in 0..2 {
   if i == input {
-    break
+    break;
   }
 
   let option: option_type = {
     let selected = if let \`Some found = maybe {
       (&input_option)    } else {
       scratch { other_option }
-    }
+    };
 
-    return selected
-  }
+    return selected;
+  };
 
   if let \`Ok value = option {
     total = value
@@ -4503,15 +4503,15 @@ total
   );
 
   const dynamic_control_const_call_binding_source = `
-const id = x => x
-let total = 0
+const id = x => x;
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let amount = id(i + 1)
+  let amount = id(i + 1);
   total = total + amount
 }
 
@@ -4529,24 +4529,24 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
   );
 
   const dynamic_control_struct_call_binding_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
 const make = x => {
   [.first = x + 1, .label = "ok"] as pair_type
-}
+};
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
-  let pair = make(i)
+  let pair = make(i);
   total = total + pair.first + @len(pair.label)
 }
 
@@ -4564,27 +4564,27 @@ if input_share01 then 0:i32 else if input_share00 then 3:i32 else 7:i32`,
   );
 
   const dynamic_control_struct_block_call_binding_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
 const make = x => {
   [.first = x + 1, .label = "ok"] as pair_type
-}
+};
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let pair = {
-    let made = make(i)
+    let made = make(i);
     made
-  }
+  };
   total = total + pair.first + @len(pair.label)
 }
 
@@ -4603,23 +4603,23 @@ if input_share01 then 0:i32 else if input_share00 then 3:i32 else 7:i32`,
 
   const dynamic_control_union_block_call_binding_source = `
 type ResultType = | \`Ok Int | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 const make = x => {
   \`Ok (x + 1)
-}
+};
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let result = {
-    let made = make(i)
+    let made = make(i);
     made
-  }
+  };
 
   if let \`Ok value = result {
     total = total + value
@@ -4641,18 +4641,18 @@ if input_share01 then 0:i32 else if input_share00 then 1:i32 else 3:i32`,
 
   const dynamic_control_no_else_union_binding_source = `
 type ResultType = | \`Ok Int | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
-let total = 0
+let total = 0;
 
 for i in 0..2 {
   if input {
-    break
+    break;
   }
 
   let result = if flag {
     \`Ok (i + 1)
-  }
+  };
 
   if let \`Ok value = result {
     total = total + value
@@ -4676,27 +4676,27 @@ if input_share00 then total#1_share00 else total#1_share01 + if flag_share01 the
 
   const dynamic_control_no_else_if_let_union_binding_source = `
 type ResultType = | \`Ok Int | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
 type MaybeType = | \`Some Int | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-let total = 0
+let total = 0;
 
 for i in 0..1 {
   if input {
-    break
+    break;
   }
 
   let maybe = if flag {
     \`Some (1)
   } else {
     \`None ()
-  }
+  };
 
   let result = if let \`Some value = maybe {
     \`Ok (value + 1)
-  }
+  };
 
   if let \`Ok amount = result {
     total = total + amount
@@ -4717,19 +4717,19 @@ total
 
   const dynamic_control_no_else_if_let_text_binding_source = `
 type MaybeType = | \`Some Text | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-let maybe: maybe_type = source
-let total = 0
+let maybe: maybe_type = source;
+let total = 0;
 
 for i in 0..1 {
   if input {
-    break
+    break;
   }
 
   let text = if let \`Some value = maybe {
     value
-  }
+  };
 
   total = total + @len(text)
 }
@@ -4747,25 +4747,25 @@ total
   );
 
   const dynamic_control_no_else_if_let_struct_binding_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 type MaybeType = | \`Some user_type | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-let maybe: maybe_type = source
-let total = 0
+let maybe: maybe_type = source;
+let total = 0;
 
 for i in 0..1 {
   if input {
-    break
+    break;
   }
 
   let user = if let \`Some value = maybe {
     value
-  }
+  };
 
   total = total + user.age
 }
@@ -4784,19 +4784,19 @@ total
 
   const dynamic_control_shorthand_if_let_union_binding_source = `
 type MaybeType = | \`Some Int | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-let maybe: maybe_type = source
-let total = 33
+let maybe: maybe_type = source;
+let total = 33;
 
 for i in 0..1 {
   if i == input {
-    break
+    break;
   }
 
   let result = if let \`Some value = maybe {
     \`Ok (value)
-  }
+  };
 
   if let \`Ok amount = result {
     total = amount
@@ -4824,14 +4824,14 @@ total
   );
 
   const dynamic_control_const_binding_source = `
-let total = 0
+let total = 0;
 
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
-  const amount = i + 1
+  const amount = i + 1;
   total = total + amount
 }
 
@@ -4850,14 +4850,14 @@ if input_share11 then 0:i32 else if input_share10 then 1:i32 else if input_share
   );
 
   const dynamic_control_const_function_source = `
-let total = 41
+let total = 41;
 
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
-  const f = x => x
+  const f = x => x;
   total = f(total)
 }
 
@@ -4874,7 +4874,7 @@ total
   const dynamic_control_nested_loop_source = `
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
   for j in 0..2 {
@@ -4886,7 +4886,7 @@ for i in 0..3 {
 `;
 
   const dynamic_control_nested_loop_core = Source.core(
-    "let input = 1\n" + dynamic_control_nested_loop_source,
+    "let input = 1;\n" + dynamic_control_nested_loop_source,
   );
   assert_equals(
     dynamic_control_nested_loop_core.statements[1]?.tag,
@@ -4900,11 +4900,11 @@ for i in 0..3 {
   assert_includes(dynamic_control_nested_loop_ic, "1:i32");
 
   const dynamic_control_nested_loop_guard_source = `
-let total = 0
+let total = 0;
 
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
   for j in 0..2 {
@@ -4927,13 +4927,13 @@ if input_share11 then 0:i32 else if input_share10 then 2:i32 else if input_share
   );
 
   const dynamic_control_nested_collection_source = `
-const xs = [.first = 10, .second = 20]
+const xs = [.first = 10, .second = 20];
 
-let total = 0
+let total = 0;
 
 for i in 0..3 {
   if input {
-    break
+    break;
   }
 
   for x in xs {
@@ -4956,8 +4956,8 @@ if input_share11 then 0:i32 else if input_share10 then 30:i32 else if input_shar
   );
 
   const structured_source = `
-let n = 5
-let sum = 0
+let n = 5;
+let sum = 0;
 
 for i in 0..n {
   sum = sum + i
@@ -5011,8 +5011,8 @@ for x in xs {
   );
 
   const unknown_collection_core = Source.core(Source.parse(`
-let xs = 1
-let total = 0
+let xs = 1;
+let total = 0;
 
 for x in xs {
   total = total + x
@@ -5023,13 +5023,13 @@ total
 
   assert_equals(
     Format.fmt(Core, unknown_collection_core),
-    "let xs = 1:i32\nlet total = 0:i32\ncollection_loop x in xs carry [total] {\n  total = total i32.add x\n}\ntotal",
+    "let xs = 1:i32;\nlet total = 0:i32;\ncollection_loop x in xs carry [total] {\n  total = total i32.add x\n}\ntotal",
   );
 
   assert_throws(
     () =>
       compile(`
-const xs = [.first = 1]
+const xs = [.first = 1];
 
 for x in xs {
   x = x + 1
@@ -5053,8 +5053,8 @@ for i, x in xs {
   );
 
   const indexed_unknown_collection_core = Source.core(Source.parse(`
-let xs = 1
-let total = 0
+let xs = 1;
+let total = 0;
 for i, x in xs {
   total = total + i + x
 }
@@ -5064,13 +5064,13 @@ total
 
   assert_equals(
     Format.fmt(Core, indexed_unknown_collection_core),
-    "let xs = 1:i32\nlet total = 0:i32\ncollection_loop i, x in xs carry [total] {\n  total = total i32.add i i32.add x\n}\ntotal",
+    "let xs = 1:i32;\nlet total = 0:i32;\ncollection_loop i, x in xs carry [total] {\n  total = total i32.add i i32.add x\n}\ntotal",
   );
 
   assert_throws(
     () =>
       compile(`
-const xs = [.first = 1]
+const xs = [.first = 1];
 
 for i, x in xs {
   i = i + 1

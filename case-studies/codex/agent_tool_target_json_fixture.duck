@@ -1,11 +1,11 @@
 module () where
 
-const { parse_interrupt_agent_args } = import "./agent_tool_target_json.duck" ()
+const { .parse_interrupt_agent_args } = import "./agent_tool_target_json.duck" ();
 
-let decoded = parse_interrupt_agent_args "{\"target\":\"reviewer\"}"
-let score = 0
+let decoded = parse_interrupt_agent_args "{\"target\":\"reviewer\"}";
+let score = 0;
 if let `AgentTargetDecoded target = decoded {
   if target == "reviewer" { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -2,9 +2,9 @@
 Operator prefixes do not become application arguments
 ==================
 
-let different = left != right
-let both = left && right
-let consumed = consume !linear
+let different = left != right;
+let both = left && right;
+let consumed = consume !linear;
 
 ---
 
@@ -37,8 +37,7 @@ let consumed = consume !linear
 ==================
 Prefix negation in values and conditions
 ==================
-
-let negated = !(ready)
+let negated = !(ready);
 if !(ready || done) { () }
 
 ---
@@ -70,17 +69,255 @@ if !(ready || done) { () }
             (unit_pattern)))))))
 
 ==================
-Unary applications and products
+Compile-time value match patterns
 ==================
 
-let applied = f x
-let delimited = f(x)
-let positional = (x, y)
-let named = [.x = x, .y = y]
+let result = match key {
+  | 'q' | #(ctrl_c) => 1
+  | _ => 0
+};
 
 ---
 
 (source_file
+  (binding_statement
+    (identifier)
+    (match_expression
+      (condition_expression
+        (identifier))
+      (match_case_block
+        (match_case
+          (alternative_pattern
+            (character)
+            (const_value_pattern
+              (postfix_expression
+                (identifier))))
+          (postfix_expression
+            (number)))
+        (match_case
+          (wildcard)
+          (postfix_expression
+            (number)))))))
+
+==================
+Bracket value after a binding
+==================
+let pair = () => {
+  let right = [
+    .value = 1,
+  ];
+  [right];
+};
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (block
+          (binding_statement
+            (identifier)
+            (postfix_expression
+              (named_product
+                (product_field
+                  (identifier)
+                  (postfix_expression
+                    (number))))))
+          (expression_statement
+            (postfix_expression
+              (array_expression
+                (postfix_expression
+                  (identifier))))))))))
+
+==================
+Condition forms and type tests
+==================
+let type_match = value is I32;
+if predicate value && record.ready && values[0] == 1 && value is I32 {
+  42
+} else {
+  0
+}
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (is_expression
+      (postfix_expression
+        (identifier))
+      (type_reference
+        (type_union
+          (type_intersection
+            (type_difference
+              (identifier)))))))
+  (expression_statement
+    (if_expression
+      (condition_expression
+        (condition_is_expression
+          (condition_expression
+            (condition_binary_expression
+              (condition_expression
+                (condition_binary_expression
+                  (condition_expression
+                    (condition_binary_expression
+                      (condition_expression
+                        (condition_binary_expression
+                          (condition_expression
+                            (condition_application_expression
+                              (identifier)
+                              (identifier)))
+                          (operator_symbol)
+                          (condition_expression
+                            (condition_field_expression
+                              (condition_expression
+                                (identifier))
+                              (identifier)))))
+                      (operator_symbol)
+                      (condition_expression
+                        (condition_index_expression
+                          (condition_expression
+                            (identifier))
+                          (postfix_expression
+                            (number))))))
+                  (operator_symbol)
+                  (condition_expression
+                    (number))))
+              (operator_symbol)
+              (condition_expression
+                (identifier))))
+          (type_reference
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier)))))))
+      (block
+        (expression_statement
+          (postfix_expression
+            (number))))
+      (block
+        (expression_statement
+          (postfix_expression
+            (number)))))))
+
+==================
+Positional, shape, and type-check patterns
+==================
+
+let (first, second) = pair;
+let { .x = x, .y = y } = point;
+let struct { .name = Text, .. } = Player;
+
+---
+
+(source_file
+  (binding_statement
+    (positional_product_pattern
+      (identifier)
+      (identifier))
+    (postfix_expression
+      (identifier)))
+  (binding_statement
+    (named_shape_pattern
+      (named_shape_pattern_field
+        (identifier)
+        (identifier))
+      (named_shape_pattern_field
+        (identifier)
+        (identifier)))
+    (postfix_expression
+      (identifier)))
+  (type_pattern_statement
+    (type_pattern
+      (type_pattern_field
+        (identifier)
+        (type_reference
+          (type_union
+            (type_intersection
+              (type_difference
+                (identifier)))))))
+    (postfix_expression
+      (identifier))))
+
+==================
+Scratch regions and aggregate rebuilding
+==================
+let temporary = scratch { value };
+values[index] = temporary
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (scratch_expression
+        (block
+          (expression_statement
+            (postfix_expression
+              (identifier)))))))
+  (index_assignment
+    (identifier)
+    (postfix_expression
+      (identifier))
+    (postfix_expression
+      (identifier))))
+
+==================
+Union case values
+==================
+
+let value = `Some 42;
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (union_case
+        (constructor_identifier)
+        (postfix_expression
+          (number))))))
+
+==================
+Line comments
+==================
+// The result is intentionally exact.
+let answer = 42;
+
+---
+
+(source_file
+  (comment)
+  (binding_statement
+    (identifier)
+    (postfix_expression
+      (number))))
+
+==================
+Unary applications and products
+==================
+let applied = f x;
+let upper_applied = List value_type;
+let delimited = f(x);
+let positional = (x, y);
+let named = [.x = x, .y = y];
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (application_expression
+      (postfix_expression
+        (identifier))
+      (postfix_expression
+        (identifier))))
   (binding_statement
     (identifier)
     (application_expression
@@ -121,24 +358,24 @@ let named = [.x = x, .y = y]
 ==================
 Arrays, imports, casts, updates, and matches
 ==================
-
-let values = [x, y]
-let rebuilt = [x, ...rec(index + 1, length)]
-let repeated = [x; 3]
-let source = import "./source.duck"
-let config = include "./config.json"
-let cast = x as Text
-let updated = x :+ { .field = y }
-let [first, ...rest] = values
+let values = [x, y];
+let rebuilt = [x, ...rec(index + 1, length)];
+let repeated = [x; 3];
+let source = import "./source.duck";
+let config = include "./config.json";
+let cast = x as Text;
+let updated = x <& { .field = y };
+let reverse_updated = { .field = y } &> x;
+let [first, ...rest] = values;
 let result = match target {
 | `Ok value if ready => value
 | _ => 0
-}
+};
 let selected = match value {
 | 1 | 2 => 3
 | "hello ${name} why" => name
 | _ => ""
-}
+};
 type Values = [I32; 3]
 
 ---
@@ -205,12 +442,25 @@ type Values = [I32; 3]
         (identifier))
       (operator_symbol)
       (postfix_expression
-        (object_literal
-          (field_block
+        (shape_value
+          (shape_field_block
             (shape_field
               (identifier)
               (postfix_expression
                 (identifier))))))))
+  (binding_statement
+    (identifier)
+    (binary_expression
+      (postfix_expression
+        (shape_value
+          (shape_field_block
+            (shape_field
+              (identifier)
+              (postfix_expression
+                (identifier))))))
+      (operator_symbol)
+      (postfix_expression
+        (identifier))))
   (binding_statement
     (array_pattern
       (identifier)
@@ -280,7 +530,7 @@ const fold = rec (values, index) => {
   } else {
     rec(values, index + 1)
   }
-}
+};
 
 ---
 
@@ -330,8 +580,7 @@ const fold = rec (values, index) => {
 ==================
 Const variadic parameter
 ==================
-
-const collect = (const ...values) => values
+const collect = (const ...values) => values;
 
 ---
 
@@ -348,11 +597,10 @@ const collect = (const ...values) => values
 ==================
 Value-pack rest pattern
 ==================
-
 let first = match values {
 | (value, ...remaining) => value
 | _ => 0
-}
+};
 
 ---
 
@@ -364,7 +612,7 @@ let first = match values {
         (identifier))
       (match_case_block
         (match_case
-          (value_pack_split_pattern
+          (positional_product_pattern
             (identifier)
             (product_rest_pattern
               (identifier)))

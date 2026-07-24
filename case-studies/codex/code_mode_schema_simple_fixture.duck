@@ -1,10 +1,11 @@
 module () where
 
-const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { render_json_schema_to_typescript } = import "./code_mode_schema_renderer.duck" ()
+const { .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .render_json_schema_to_typescript } = import "./code_mode_schema_renderer.duck" ();
 
-let schema = json_object(json_object_prepend("type", json_string "string", json_object_empty()))
-let score = 0
+let schema = json_object(json_object_prepend("type", json_string "string", json_object_empty()));
+let score = 0;
 if render_json_schema_to_typescript schema == "string" { score = 1 }
 
-return { .score = score }
+return { .score = score };

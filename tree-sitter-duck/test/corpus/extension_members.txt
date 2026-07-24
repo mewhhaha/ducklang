@@ -1,12 +1,12 @@
 ==================
-Newline-separated extension members
+Explicitly separated extension members
 ==================
 
 extend Option {
-  type Handled = Option
-  .make = _ => make()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = Option;
+  .make = _ => make(),
+  .output = _ => Identity;
+  .order = _ => 10,
 }
 
 ---
@@ -52,7 +52,7 @@ Generic extension parameters
 ==================
 
 extend List Element {
-  type Item = Element
+  type Item = Element,
 }
 
 ---

@@ -1,17 +1,17 @@
 module (!init: Init) where
 
-const {} = import "./agent_job_report_types.duck" ()
+const {} = import "./agent_job_report_types.duck" ();
 
 type AgentJobExecutionArgs = AgentJobReportArgs
 type AgentJobExecutionResult = AgentJobReportExecutionResult
 
 let run_report_agent_job_result = (args: AgentJobExecutionArgs) => {
   accepted <- AgentJobHost.record(&args)
-  let was_accepted: Bool = accepted
+  let was_accepted: Bool = accepted;
   if was_accepted && args.stop { _ <- AgentJobHost.cancel(&args.job_id) }
-  let output = if was_accepted { "{\"accepted\":true}" } else { "{\"accepted\":false}" }
-  let result: AgentJobExecutionResult = `Completed output
+  let output = if was_accepted { "{\"accepted\":true}" } else { "{\"accepted\":false}" };
+  let result: AgentJobExecutionResult = `Completed output;
   result
-}
+};
 
-return { run_report_agent_job_result }
+return { .run_report_agent_job_result };

@@ -9,7 +9,7 @@ Deno.test("handler clauses match operation signatures", () => {
     () =>
       Source.effects(`
 effect Counter { add: (I32) => Unit }
-Counter {
+handler Counter {
   add: (!resume) => !resume(()),
   return: value => value,
 }
@@ -21,7 +21,7 @@ Counter {
     () =>
       Source.effects(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (resume: I32) => resume(0),
   return: value => value,
 }
@@ -33,7 +33,7 @@ Counter {
     () =>
       Source.parse(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => !resume(0),
   return: () => 0,
 }
@@ -47,7 +47,7 @@ Deno.test("resumptions and effect operations enforce call arity", () => {
     () =>
       Source.effects(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => !resume(),
   return: value => value,
 }
@@ -61,11 +61,11 @@ Counter {
 effect Counter { add: (I32) => Unit }
 let run = () => {
   _ <- Counter.add()
-}
-let counter = Counter {
+};
+let counter = handler Counter {
   add: (amount, !resume) => !resume(()),
   return: value => value,
-}
+};
 try run() with counter
 `),
     "Effect operation argument count mismatch: Counter.add",
@@ -78,9 +78,9 @@ Deno.test("handler state bindings have distinct persistent slots", () => {
       Source.effects(`
 effect Counter { get: () => I32 }
 {
-  let state = 0
-  let state = 1
-  Counter {
+  let state = 0;
+  let state = 1;
+  handler Counter {
     get: (!resume) => !resume(state),
     return: value => value,
   }
@@ -95,9 +95,9 @@ Deno.test("managed ABI rejects Resume nested in an aggregate", () => {
     () =>
       build_abi_manifest(elaborate_front_type_sets(
         resolve_bundled_source_imports(Source.parse(`
-const { struct } = import "duck:prelude" ()
-const continuation_box = struct { .continuation= Resume }
-const duck_entry_result_type = continuation_box
+const { .struct } = import "duck:prelude" ();
+const continuation_box = struct { .continuation= Resume };
+const duck_entry_result_type = continuation_box;
 0
 `)),
       )),
@@ -110,7 +110,7 @@ Deno.test("handler annotations and rich result types are checked early", () => {
     () =>
       Source.effects(`
 effect Counter { add: (I32) => Unit }
-Counter {
+handler Counter {
   add: (amount: Text, !resume) => !resume(()),
   return: value => value,
 }
@@ -122,7 +122,7 @@ Counter {
     () =>
       Source.effects(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume: Text) => !resume(0),
   return: value => value,
 }
@@ -133,10 +133,10 @@ Counter {
   assert_throws(
     () =>
       Source.effects(`
-const { struct } = import "duck:prelude" ()
-const wanted = struct { .x= I32 }
+const { .struct } = import "duck:prelude" ();
+const wanted = struct { .x= I32 };
 effect Read { read: () => wanted }
-Read {
+handler Read {
   read: (!resume) => !resume("no"),
   return: value => value,
 }
@@ -148,9 +148,9 @@ Read {
     () =>
       Source.effects(`
 type Outcome = | \`Suspended Resume | \`Done I32
-const outcome = Outcome
+const outcome = Outcome;
 effect Suspend { pause: () => I32 }
-Suspend {
+handler Suspend {
   pause: (!resume) => outcome.suspended(!resume),
   return: (value: I32) => value,
 }
@@ -164,7 +164,7 @@ Deno.test("handler checks distinguish Bool is results from I32", () => {
     () =>
       Source.effects(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => !resume(1 is Int),
   return: value => value,
 }
@@ -176,7 +176,7 @@ Counter {
     () =>
       Source.effects(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => 1 is Int,
   return: (value: I32) => value,
 }
@@ -186,7 +186,7 @@ Counter {
 
   Source.effects(`
 effect Counter { get: () => Bool }
-Counter {
+handler Counter {
   get: (!resume) => !resume(1 is Int),
   return: (value: Bool) => value,
 }

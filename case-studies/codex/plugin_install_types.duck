@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type InstallTextOption =
   | `InstallTextMissing Unit
@@ -106,4 +106,4 @@ type RequestPluginInstallCompletion = struct {
   .response_action = Text,
 }
 
-return {}
+return {};

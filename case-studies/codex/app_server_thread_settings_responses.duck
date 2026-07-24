@@ -1,7 +1,8 @@
 module () where
 
-const { json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const {} = import "./app_server_thread_settings_types.duck" ()
+const { .json_null, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const {} = import "./app_server_thread_settings_types.duck" ();
 
 type SettingsSnapshot = AppServerThreadSettings
 type SettingsJson = AppServerJson
@@ -9,42 +10,64 @@ type SettingsJsonOption = AppServerJsonOption
 type SettingsTextOption = AppServerTextOption
 
 const optional_text_json: SettingsTextOption -> SettingsJson = (value: SettingsTextOption) => {
-  if let `Some text = value { json_string(text) } else { json_null() }
-}
+  if let `Some text = value { json_string text } else { json_null() }
+};
 
 const optional_json: SettingsJsonOption -> SettingsJson = (value: SettingsJsonOption) => {
   if let `Some json = value { json } else { json_null() }
-}
+};
 
-const materialize_thread_settings: [SettingsSnapshot, Bool] -> SettingsJson = (settings: SettingsSnapshot, experimental: Bool) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("personality", optional_text_json(settings.personality), fields)
-  if experimental { fields = json_object_prepend("multiAgentMode", settings.multi_agent_mode, fields) }
+const materialize_thread_settings: [SettingsSnapshot, Bool] -> SettingsJson = (
+  settings: SettingsSnapshot,
+  experimental: Bool,
+) => {
+  let fields = json_object_empty();
+  fields = json_object_prepend("personality", optional_text_json settings.personality, fields)
+  if experimental { fields = json_object_prepend(
+    "multiAgentMode",
+    settings.multi_agent_mode,
+    fields,
+  ) }
   fields = json_object_prepend("collaborationMode", settings.collaboration_mode, fields)
-  fields = json_object_prepend("summary", optional_text_json(settings.summary), fields)
-  fields = json_object_prepend("effort", optional_text_json(settings.effort), fields)
-  fields = json_object_prepend("serviceTier", optional_text_json(settings.service_tier), fields)
-  fields = json_object_prepend("modelProvider", json_string(settings.model_provider), fields)
-  fields = json_object_prepend("model", json_string(settings.model), fields)
-  fields = json_object_prepend("activePermissionProfile", optional_json(settings.active_permission_profile), fields)
+  fields = json_object_prepend("summary", optional_text_json settings.summary, fields)
+  fields = json_object_prepend("effort", optional_text_json settings.effort, fields)
+  fields = json_object_prepend("serviceTier", optional_text_json settings.service_tier, fields)
+  fields = json_object_prepend("modelProvider", json_string settings.model_provider, fields)
+  fields = json_object_prepend("model", json_string settings.model, fields)
+  fields = json_object_prepend(
+    "activePermissionProfile",
+    optional_json settings.active_permission_profile,
+    fields,
+  )
   fields = json_object_prepend("sandboxPolicy", settings.sandbox_policy, fields)
   fields = json_object_prepend("approvalsReviewer", settings.approvals_reviewer, fields)
   fields = json_object_prepend("approvalPolicy", settings.approval_policy, fields)
-  fields = json_object_prepend("cwd", json_string(settings.cwd), fields)
-  json_object(fields)
-}
+  fields = json_object_prepend("cwd", json_string settings.cwd, fields)
+  json_object fields
+};
 
-const materialize_thread_settings_update_response: () -> SettingsJson = () => json_object(json_object_empty())
+const materialize_thread_settings_update_response: () -> SettingsJson = () => json_object(
+  json_object_empty()
+);
 
-const materialize_thread_settings_updated_notification: [Text, SettingsSnapshot, Bool] -> SettingsJson = (thread_id: Text, settings: SettingsSnapshot, experimental: Bool) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("threadSettings", materialize_thread_settings(settings, experimental), fields)
-  fields = json_object_prepend("threadId", json_string(thread_id), fields)
-  json_object(fields)
-}
+const materialize_thread_settings_updated_notification: [Text, SettingsSnapshot, Bool] ->
+  SettingsJson = (
+    thread_id: Text,
+    settings: SettingsSnapshot,
+    experimental: Bool,
+  ) => {
+    let fields = json_object_empty();
+    fields = json_object_prepend(
+      "threadSettings",
+      materialize_thread_settings(settings, experimental),
+      fields,
+    )
+    fields = json_object_prepend("threadId", json_string thread_id, fields)
+    json_object fields
+  };
 
 return {
-  materialize_thread_settings,
-  materialize_thread_settings_update_response,
-  materialize_thread_settings_updated_notification,
-}
+  .materialize_thread_settings,
+  .materialize_thread_settings_update_response,
+  .materialize_thread_settings_updated_notification,
+};

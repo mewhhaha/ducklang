@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type CurrentTimeSource =
   | `System Unit
@@ -49,4 +49,4 @@ type CurrentTimeSleepHostResult = struct {
   .elapsed_microseconds = I64,
 }
 
-return {}
+return {};

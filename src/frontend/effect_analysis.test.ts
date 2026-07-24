@@ -14,15 +14,15 @@ declare Init { io: Io }
 let read_name = () => {
   name <- Io.read()
   name
-}
+};
 
 let greet = () => {
-  name <- read_name()
+  name <- read_name();
   _ <- Io.print(&name)
-}
+};
 
 _ <- greet()
-return {}
+return {};
 `);
 
   assert_equals(analyze_front_effects(source), {
@@ -55,7 +55,7 @@ Deno.test("effect analysis enforces rows and infers unannotated functions", () =
 declare effect Io { read: () => Text, print: (Text) => Unit }
 let bad: () -> <Io.read> Unit = () => {
   _ <- Io.print("hello")
-}
+};
 bad
 `)),
     "does not allow Io.print",
@@ -66,8 +66,8 @@ declare effect Io { read: () => Text }
 let read_name = () => {
   name <- Io.read()
   name
-}
-let pure = () => read_name()
+};
+let pure = () => read_name();
 pure
 `));
 
@@ -87,7 +87,7 @@ declare effect Io { read: () => Text }
 let read = () => {
   value <- Fx.read()
   value
-}
+};
 read
 `)),
     "Effect bind must call a declared effect operation",
@@ -99,7 +99,7 @@ declare effect Io { read: () => Text }
 let read = () => {
   value <- Io.read()
   value
-}
+};
 read
 `));
   assert_equals(qualified.functions.read?.effects, [
@@ -115,11 +115,11 @@ let run = () => {
   value <- Counter.get()
   _ <- Counter.add(1)
   value
-}
+};
 
 let counter = () => {
-  let count = 0
-  Counter {
+  let count = 0;
+  handler Counter {
     get: (!resume) => !resume(count),
     add: (amount, !resume) => {
       count = count + amount
@@ -127,7 +127,7 @@ let counter = () => {
     },
     return: (value) => value
   }
-}
+};
 
 try run() with counter()
 `));
@@ -146,20 +146,20 @@ effect Counter { get: () => I32, add: (I32) => Unit }
 let run = () => {
   value <- Counter.get()
   _ <- Counter.add(value)
-}
+};
 
-let inner = () => Counter {
+let inner = () => handler Counter {
     get: (!resume) => {
       _ <- Counter.add(1)
       !resume(0)
     },
     return: (value) => value
-}
+};
 
-let outer = () => Counter {
+let outer = () => handler Counter {
     add: (amount, !resume) => !resume(()),
     return: (value) => value
-}
+};
 
 try (try run() with inner()) with outer()
 `));
@@ -174,14 +174,14 @@ effect Counter { get: () => I32, add: (I32) => Unit }
 let run = () => {
   value <- Counter.get()
   _ <- Counter.add(value)
-}
-let inner = () => Counter {
+};
+let inner = () => handler Counter {
     get: (!resume) => {
       _ <- Counter.add(1)
       !resume(0)
     },
     return: (value) => value
-}
+};
 try run() with inner()
 `)),
     "Unresolved Duck effect at module boundary: Counter.add",
@@ -196,15 +196,15 @@ effect Counter { get: () => I32 }
 let run = () => {
   value <- Counter.get()
   value
-}
+};
 
-let counter = () => Counter {
+let counter = () => handler Counter {
     get: (!resume) => {
       _ <- Io.print("get")
       !resume(0)
     },
     return: (value) => value
-}
+};
 
 try run() with counter()
 `));
@@ -219,7 +219,7 @@ Deno.test("effect analysis rejects invalid handler declarations", () => {
     () =>
       analyze_front_effects(parse_source(`
 declare effect Io { read: () => I32 }
-Io {
+handler Io {
     read: (!resume) => !resume(0),
     return: (value) => value
 }
@@ -231,7 +231,7 @@ Io {
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
     missing: (!resume) => !resume(0),
     return: (value) => value
 }
@@ -243,7 +243,7 @@ Counter {
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
     get: (!resume) => !resume(0),
     get: (!again) => !again(1),
     return: (value) => value
@@ -262,14 +262,14 @@ effect Counter { get: () => I32 }
 let read = () => {
   value <- Io.read()
   value
-}
+};
 let counter = () => {
-  let count = read()
-  Counter {
+  let count = read();
+  handler Counter {
     get: (!resume) => !resume(count),
     return: (value) => value
   }
-}
+};
 counter
 `)),
     "Handler state initializer must be pure: count; calls Io.read",
@@ -280,8 +280,8 @@ counter
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
 {
-  let count = 0
-  Counter {
+  let count = 0;
+  handler Counter {
     get: (!resume) => {
       count := "one"
       !resume(0)
@@ -298,8 +298,8 @@ effect Counter { get: () => I32 }
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
 {
-  let count = 0
-  Counter {
+  let count = 0;
+  handler Counter {
     get: (!resume) => {
       count = "one"
       !resume(0)
@@ -317,7 +317,7 @@ Deno.test("effect analysis checks resumption input types", () => {
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => !resume("wrong"),
   return: value => value,
 }
@@ -329,7 +329,7 @@ Counter {
     () =>
       analyze_front_effects(parse_source(`
 effect Counter { get: () => I32 }
-Counter {
+handler Counter {
   get: (!resume) => "wrong output",
   return: value => 0,
 }
@@ -346,7 +346,7 @@ effect Counter { get: () => I32 }
 let run = () => {
   value <- Counter.get()
   value
-}
+};
 run()
 `)),
     "Unresolved Duck effect at module boundary: Counter.get",

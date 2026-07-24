@@ -3,7 +3,7 @@ import { Source } from "../frontend.ts";
 import { Ic } from "../ic.ts";
 
 Deno.test("character literals have the distinct Char source type", () => {
-  const source = "let letter: Char = 'c'\nletter";
+  const source = "let letter: Char = 'c';\nletter";
 
   assert_equals(Source.fmt(Source.parse("'c'")), "'c'");
   assert_equals(Source.analyze(source).diagnostics, []);
@@ -19,8 +19,8 @@ Deno.test("character literals have the distinct Char source type", () => {
 });
 
 Deno.test("Char and I32 annotations reject values of the other type", () => {
-  const char_as_i32 = Source.analyze("let value: I32 = 'c'\nvalue");
-  const i32_as_char = Source.analyze("let value: Char = 99\nvalue");
+  const char_as_i32 = Source.analyze("let value: I32 = 'c';\nvalue");
+  const i32_as_char = Source.analyze("let value: Char = 99;\nvalue");
 
   assert_equals(
     char_as_i32.diagnostics.map(({ code, message }) => ({ code, message })),
@@ -33,10 +33,19 @@ Deno.test("Char and I32 annotations reject values of the other type", () => {
 });
 
 Deno.test("checked casts expose a character's i32 representation", () => {
-  const source = "let code: I32 = @cast('老', I32)\ncode";
+  const source = "let code: I32 = @cast('老', I32);\ncode";
+  const runtime_character = `
+let as_character = (value: I32) => {
+  let character: Char = @cast(value, Char);
+  character
+};
+as_character(68) == 'D'
+`;
 
   assert_equals(Source.analyze(source).diagnostics, []);
   assert_includes(Source.wat(source), "i32.const 32769");
+  assert_equals(Source.analyze(runtime_character).diagnostics, []);
+  assert_includes(Source.wat(runtime_character), "i32.const 68");
 });
 
 Deno.test("Char equality is closed over Char and arithmetic rejects Char", () => {
@@ -59,11 +68,11 @@ Deno.test("Char equality is closed over Char and arithmetic rejects Char", () =>
 });
 
 Deno.test("character literals are exact types and type_of preserves them", () => {
-  const direct = "const letter: 'c' = 'c'\nletter";
-  const reflected = "const letter_type = @type_of('c')\n" +
-    "let letter: letter_type = 'c'\nletter";
-  const widened = "const char_type = @type_of(@cast('c', Char))\n" +
-    "let letter: char_type = 'C'\nletter";
+  const direct = "const letter: 'c' = 'c';\nletter";
+  const reflected = "const letter_type = @type_of('c');\n" +
+    "let letter: letter_type = 'c';\nletter";
+  const widened = "const char_type = @type_of(@cast('c', Char));\n" +
+    "let letter: char_type = 'C';\nletter";
 
   assert_equals(Source.analyze(direct).diagnostics, []);
   assert_includes(Source.wat(reflected), "i32.const 99");
@@ -73,7 +82,7 @@ Deno.test("character literals are exact types and type_of preserves them", () =>
     "type Letter = 'c' :| 'C'",
   );
 
-  const mismatch = Source.analyze("const letter: 'c' = 'C'\nletter");
+  const mismatch = Source.analyze("const letter: 'c' = 'C';\nletter");
   assert_equals(
     mismatch.diagnostics.map(({ code, message }) => ({ code, message })),
     [{ code: "DUCK2306", message: "Binding annotation expects 'c', got 'C'" }],
@@ -84,12 +93,12 @@ Deno.test("declared fields cases and parameters retain Char", () => {
   const aggregate = `
 type Box = struct {.letter = Char}
 type Option = | \`LetterValue Char | \`NoLetter Unit
-let box: Box = [.letter = 'c']
-let from_box: Char = box.letter
-let option: Option = \`LetterValue ('c')
+let box: Box = [.letter = 'c'];
+let from_box: Char = box.letter;
+let option: Option = \`LetterValue ('c');
 if let \`LetterValue letter = option { letter == 'c' } else { false }
 `;
-  const call = "let identity = (value: Char) => value\nidentity('c')";
+  const call = "let identity = (value: Char) => value;\nidentity('c')";
 
   assert_equals(Source.analyze(aggregate).diagnostics, []);
   assert_equals(Source.analyze(call).diagnostics, []);
@@ -97,7 +106,7 @@ if let \`LetterValue letter = option { letter == 'c' } else { false }
 
   const invalid_field = Source.analyze(`
 type Box = struct {.letter = Char}
-let box: Box = [.letter = 99]
+let box: Box = [.letter = 99];
 box.letter
 `);
   const invalid_case = Source.analyze(`
@@ -105,7 +114,7 @@ type Option = | \`LetterValue Char | \`NoLetter Unit
 \`LetterValue (99)
 `);
   const invalid_call = Source.analyze(
-    "let identity = (value: Char) => value\nidentity(99)",
+    "let identity = (value: Char) => value;\nidentity(99)",
   );
 
   assert_equals(
@@ -134,7 +143,7 @@ type Option = | \`LetterValue Char | \`NoLetter Unit
 
 Deno.test("dynamic homogeneous Char fields retain Char semantics", () => {
   const arithmetic = Source.analyze(`
-let pair = [.first = 'a', .second = 'b']
+let pair = [.first = 'a', .second = 'b'];
 pair[input] + 1
 `);
 

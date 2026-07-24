@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type MessageHistoryPersistence =
   | `SaveAll Unit
@@ -47,4 +47,4 @@ type MessageHistoryBatch = struct {
   .next_older_offset = MessageHistoryOffsetOption,
 }
 
-return {}
+return {};

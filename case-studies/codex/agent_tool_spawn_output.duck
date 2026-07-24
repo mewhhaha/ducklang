@@ -1,16 +1,26 @@
 module () where
 
-const { encode_json } = import "duck:prelude/json/encode" ()
-const { json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const {} = import "./agent_tool_types.duck" ()
+const { .encode_json } = import "duck:prelude/json/encode" ();
+const { .json_null, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const {} = import "./agent_tool_types.duck" ();
 
 const render_spawn_agent_output: AgentToolSpawnOutputInput -> Text = input => {
-  let fields = json_object_prepend("task_name", json_string input.snapshot.task_name, json_object_empty())
+  let fields = json_object_prepend(
+    "task_name",
+    json_string input.snapshot.task_name,
+    json_object_empty(),
+  );
   if !(input.hide_metadata) {
-    let nickname = if let `Some value = input.snapshot.nickname { json_string value } else { json_null() }
-    fields = json_object_prepend("task_name", json_string input.snapshot.task_name, json_object_prepend("nickname", nickname, json_object_empty()))
+    let nickname = if let `Some value = input.snapshot.nickname { json_string value } else {
+      json_null() };
+    fields = json_object_prepend(
+      "task_name",
+      json_string input.snapshot.task_name,
+      json_object_prepend("nickname", nickname, json_object_empty()),
+    )
   }
   encode_json(json_object fields)
-}
+};
 
-return { render_spawn_agent_output }
+return { .render_spawn_agent_output };

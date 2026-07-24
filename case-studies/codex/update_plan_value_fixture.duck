@@ -1,28 +1,52 @@
 module () where
 
-const { json_array, json_array_empty, json_array_prepend, json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const {} = import "./update_plan_types.duck" ()
-const { decode_update_plan_value } = import "./update_plan_value.duck" ()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_null,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const {} = import "./update_plan_types.duck" ();
+const { .decode_update_plan_value } = import "./update_plan_value.duck" ();
 
 type FixtureStepNode = UpdatePlanStepNode
 
-let completed_fields = json_object_prepend("step", json_string("test"), json_object_prepend("status", json_string("completed"), json_object_empty()))
-let pending_fields = json_object_prepend("status", json_string("pending"), json_object_prepend("step", json_string("compile"), json_object_empty()))
-let valid_steps = json_array_prepend(json_object(pending_fields), json_array_prepend(json_object(completed_fields), json_array_empty()))
-let valid_fields = json_object_prepend("plan", json_array(valid_steps), json_object_prepend("explanation", json_string("Keep this ordered"), json_object_empty()))
-let score = 0
+let completed_fields = json_object_prepend(
+  "step",
+  json_string "test",
+  json_object_prepend("status", json_string "completed", json_object_empty()),
+);
+let pending_fields = json_object_prepend(
+  "status",
+  json_string "pending",
+  json_object_prepend("step", json_string "compile", json_object_empty()),
+);
+let valid_steps = json_array_prepend(
+  json_object pending_fields,
+  json_array_prepend(json_object completed_fields, json_array_empty()),
+);
+let valid_fields = json_object_prepend(
+  "plan",
+  json_array valid_steps,
+  json_object_prepend("explanation", json_string "Keep this ordered", json_object_empty()),
+);
+let score = 0;
 
-if let `Parsed args = decode_update_plan_value(json_object(valid_fields)) {
+if let `Parsed args = decode_update_plan_value(json_object valid_fields) {
   if let `Some explanation = args.explanation {
     if explanation == "Keep this ordered" {
       if let `Cons first_node = args.plan {
-        let typed_first_node: FixtureStepNode = first_node
-        let [first, tail] = typed_first_node
+        let typed_first_node: FixtureStepNode = first_node;
+        let [first, tail] = typed_first_node;
         if first.step == "compile" {
           if let `Pending () = first.status {
             if let `Cons second_node = tail {
-              let typed_second_node: FixtureStepNode = second_node
-              let [second, end] = typed_second_node
+              let typed_second_node: FixtureStepNode = second_node;
+              let [second, end] = typed_second_node;
               if second.step == "test" {
                 if let `Completed () = second.status {
                   if let `Nil () = end { score = score + 1 }
@@ -36,26 +60,42 @@ if let `Parsed args = decode_update_plan_value(json_object(valid_fields)) {
   }
 }
 
-let unknown_fields = json_object_prepend("plan", json_array(json_array_empty()), json_object_prepend("extra", json_null(), json_object_empty()))
-if let `ParseFailed message = decode_update_plan_value(json_object(unknown_fields)) {
+let unknown_fields = json_object_prepend(
+  "plan",
+  json_array(json_array_empty()),
+  json_object_prepend("extra", json_null(), json_object_empty()),
+);
+if let `ParseFailed message = decode_update_plan_value(json_object unknown_fields) {
   if message == "failed to parse function arguments: update_plan arguments contain an unknown field" { score = score + 10 }
 }
 
-let duplicate_fields = json_object_prepend("plan", json_array(json_array_empty()), json_object_prepend("plan", json_array(json_array_empty()), json_object_empty()))
-if let `ParseFailed message = decode_update_plan_value(json_object(duplicate_fields)) {
+let duplicate_fields = json_object_prepend(
+  "plan",
+  json_array(json_array_empty()),
+  json_object_prepend("plan", json_array(json_array_empty()), json_object_empty()),
+);
+if let `ParseFailed message = decode_update_plan_value(json_object duplicate_fields) {
   if message == "failed to parse function arguments: update_plan arguments contain a duplicate field" { score = score + 100 }
 }
 
-let missing_fields = json_object_prepend("explanation", json_null(), json_object_empty())
-if let `ParseFailed message = decode_update_plan_value(json_object(missing_fields)) {
+let missing_fields = json_object_prepend("explanation", json_null(), json_object_empty());
+if let `ParseFailed message = decode_update_plan_value(json_object missing_fields) {
   if message == "failed to parse function arguments: plan is required" { score = score + 1000 }
 }
 
-let invalid_status_fields = json_object_prepend("step", json_string("compile"), json_object_prepend("status", json_string("active"), json_object_empty()))
-let invalid_status_steps = json_array_prepend(json_object(invalid_status_fields), json_array_empty())
-let invalid_status_root = json_object_prepend("plan", json_array(invalid_status_steps), json_object_empty())
-if let `ParseFailed message = decode_update_plan_value(json_object(invalid_status_root)) {
+let invalid_status_fields = json_object_prepend(
+  "step",
+  json_string "compile",
+  json_object_prepend("status", json_string "active", json_object_empty()),
+);
+let invalid_status_steps = json_array_prepend(json_object invalid_status_fields, json_array_empty());
+let invalid_status_root = json_object_prepend(
+  "plan",
+  json_array invalid_status_steps,
+  json_object_empty(),
+);
+if let `ParseFailed message = decode_update_plan_value(json_object invalid_status_root) {
   if message == "failed to parse function arguments: plan[0].status must be pending, in_progress, or completed" { score = score + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

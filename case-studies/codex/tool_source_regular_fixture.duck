@@ -1,18 +1,39 @@
-const { text_append } = import "duck:prelude/functional" ()
-const { tool_source_definitions } = import "./tool_source_plan.duck" ()
-const {} = import "./tool_source_types.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .tool_source_definitions } = import "./tool_source_plan.duck" ();
+const {} = import "./tool_source_types.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type FixtureDefinition = SourceDefinition
 type FixtureDefinitions = ToolSourceDefinitions
 type FixtureFacts = ToolSourceFacts
 
-let configured: FixtureDefinition = [["fixture", "configured"], `Deferred (), `Dynamic "configured", `FunctionPayload (), false, false]
-let extension: FixtureDefinition = [["fixture", "extension"], `Direct (), `Extension "extension", `FunctionPayload (), false, false]
-let dynamic: FixtureDefinition = [["fixture", "dynamic"], `Direct (), `Dynamic "dynamic", `FunctionPayload (), false, false]
-let configured_runtimes: FixtureDefinitions = `Cons ([configured, `Nil ()])
-let extension_runtimes: FixtureDefinitions = `Cons ([extension, `Nil ()])
-let dynamic_runtimes: FixtureDefinitions = `Cons ([dynamic, `Nil ()])
+let configured: FixtureDefinition = [
+  ["fixture", "configured"],
+  `Deferred (),
+  `Dynamic "configured",
+  `FunctionPayload (),
+  false,
+  false,
+];
+let extension: FixtureDefinition = [
+  ["fixture", "extension"],
+  `Direct (),
+  `Extension "extension",
+  `FunctionPayload (),
+  false,
+  false,
+];
+let dynamic: FixtureDefinition = [
+  ["fixture", "dynamic"],
+  `Direct (),
+  `Dynamic "dynamic",
+  `FunctionPayload (),
+  false,
+  false,
+];
+let configured_runtimes: FixtureDefinitions = `Cons ([configured, `Nil ()]);
+let extension_runtimes: FixtureDefinitions = `Cons ([extension, `Nil ()]);
+let dynamic_runtimes: FixtureDefinitions = `Cons ([dynamic, `Nil ()]);
 
 let facts: FixtureFacts = [
   .guardian_reviewer = false,
@@ -34,20 +55,28 @@ let facts: FixtureFacts = [
   .collaboration_namespace = "collaboration",
   .tool_search = true,
   .agent_jobs = true,
-  .agent_job_worker = true]
+  .agent_job_worker = true];
 
-let current = tool_source_definitions(facts, configured_runtimes, extension_runtimes, dynamic_runtimes)
-let trace = ""
-let count = 0
-let hidden_shell = false
-let direct_model_only_count = 0
-let done = false
+let current = tool_source_definitions(
+  facts,
+  configured_runtimes,
+  extension_runtimes,
+  dynamic_runtimes,
+);
+let trace = "";
+let count = 0;
+let hidden_shell = false;
+let direct_model_only_count = 0;
+let done = false;
 
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [[namespace, local_name], exposure, _, _, _, _] = definition
-    trace = text_append [text_append [text_append [text_append [trace, namespace], "."], local_name], "|"]
+    let [definition, tail] = node;
+    let [[namespace, local_name], exposure, _, _, _, _] = definition;
+    trace = text_append [
+      text_append [text_append [text_append [trace, namespace], "."], local_name],
+      "|",
+    ]
     if local_name == "shell_command" {
       if let `Hidden () = exposure { hidden_shell = true }
     }
@@ -60,13 +89,14 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
-let expected = ".exec_command|.write_stdin|.shell_command|.list_mcp_resources|.list_mcp_resource_templates|.read_mcp_resource|.update_plan|.wait_for_environment|.request_user_input|.request_permissions|.new_context_window|.get_context_remaining|clock.curr_time|clock.sleep|.list_available_plugins_to_install|.request_plugin_install|.apply_patch|.test_sync_tool|.view_image|collaboration.spawn_agent|collaboration.send_message|collaboration.followup_task|collaboration.wait_agent|collaboration.interrupt_agent|collaboration.list_agents|.spawn_agents_on_csv|.report_agent_job_result|fixture.configured|fixture.extension|fixture.dynamic|"
-let score = 0
+let expected =
+  ".exec_command|.write_stdin|.shell_command|.list_mcp_resources|.list_mcp_resource_templates|.read_mcp_resource|.update_plan|.wait_for_environment|.request_user_input|.request_permissions|.new_context_window|.get_context_remaining|clock.curr_time|clock.sleep|.list_available_plugins_to_install|.request_plugin_install|.apply_patch|.test_sync_tool|.view_image|collaboration.spawn_agent|collaboration.send_message|collaboration.followup_task|collaboration.wait_agent|collaboration.interrupt_agent|collaboration.list_agents|.spawn_agents_on_csv|.report_agent_job_result|fixture.configured|fixture.extension|fixture.dynamic|";
+let score = 0;
 if trace == expected { score = score + 1 }
 if count == 30 { score = score + 10 }
 if hidden_shell { score = score + 100 }
 if direct_model_only_count == 8 { score = score + 1000 }
-return { .score = score }
+return { .score = score };

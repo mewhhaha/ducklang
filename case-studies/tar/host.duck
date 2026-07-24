@@ -8,4 +8,4 @@ declare Init {
   archive: Archive
 }
 
-return {}
+return {};

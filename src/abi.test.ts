@@ -76,7 +76,7 @@ declare effect Io { read: () => Text }
 let read_name = () => {
   name <- Io.read()
   name
-}
+};
 read_name
 `);
   const manifest = build_abi_manifest(source);
@@ -97,7 +97,7 @@ declare effect Io { read: () => Text }
 let read_name: () -> <Io.read> Text = () => {
   name <- Io.read()
   name
-}
+};
 read_name
 `);
   const manifest = build_abi_manifest(source);
@@ -120,15 +120,15 @@ effect Counter { get: () => I32 }
 let run = () => {
   value <- Counter.get()
   value
-}
+};
 
-let counter = () => Counter {
+let counter = () => handler Counter {
     get: (!resume) => {
       _ <- Io.print(&"get")
       !resume(0)
     },
     return: (value) => value
-}
+};
 
 try run() with counter()
 `);
@@ -151,7 +151,7 @@ Deno.test("managed ABI rejects Duck effects in Init", () => {
       build_abi_manifest(Source.parse(`
 effect Counter { get: () => I32 }
 declare Init { counter: Counter }
-return {}
+return {};
 `)),
     "Init field must name a declared effect: counter: Counter",
   );
@@ -160,13 +160,13 @@ return {}
 Deno.test("managed ABI records the elaborated module result schema", () => {
   const original = Source.parse(`
 module () where
-return { .answer = 42 }
+return { .answer = 42 };
 `);
   const compiled = elaborate_front_type_sets(resolve_bundled_source_imports(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
-const duck_entry_result_type = struct { .answer= I32 }
-return [.answer = 42] as duck_entry_result_type
+const { .struct } = import "duck:prelude" ();
+const duck_entry_result_type = struct { .answer= I32 };
+return [.answer = 42] as duck_entry_result_type;
 `),
   ));
   const manifest = build_abi_manifest(original, compiled);
@@ -249,10 +249,10 @@ type List value =
 type ListNode value = [value, List value]
 type IntList = List I32
 
-let end: IntList = \`Nil ()
-let tail: IntList = \`Cons [2, end]
-let values: IntList = \`Cons [1, tail]
-return { .values = values }
+let end: IntList = \`Nil ();
+let tail: IntList = \`Cons [2, end];
+let values: IntList = \`Cons [1, tail];
+return { .values = values };
 `);
 
   assert_equals(artifact.abi.types["List I32"], {
@@ -301,7 +301,7 @@ return { .values = values }
 Deno.test("managed ABI records scalar float effect contracts", () => {
   const manifest = build_abi_manifest(Source.parse(`
 declare effect FloatMath { scale: (F32) => F32, widen: (F64) => F64 }
-return {}
+return {};
 `));
 
   assert_equals(manifest.effects.FloatMath?.operations.scale, {
@@ -691,9 +691,9 @@ Deno.test("source managed callables strip functions from main and move Bytes sta
   const artifact = Source.artifact(`
 module () where
 
-let step: Bytes -> Bytes = (state: Bytes) => state
-let finish: Bytes -> I32 = (state: Bytes) => @len(state)
-return { .step = step, .finish = finish, .answer = 42 }
+let step: Bytes -> Bytes = (state: Bytes) => state;
+let finish: Bytes -> I32 = (state: Bytes) => @len(state);
+return { .step = step, .finish = finish, .answer = 42 };
 `);
 
   assert_equals(artifact.abi.callables, {
@@ -728,8 +728,8 @@ Deno.test("source managed callable trap releases a bootstrapped Bytes value", as
   const artifact = Source.artifact(`
 module () where
 
-let fail: Bytes -> Bytes = (state: Bytes) => @panic("fail")
-return { .fail = fail }
+let fail: Bytes -> Bytes = (state: Bytes) => @panic("fail");
+return { .fail = fail };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -755,11 +755,11 @@ Deno.test("source managed product callables keep one source argument", async () 
   const artifact = Source.artifact(`
 module () where
 
-let add: [I32, I32] -> I32 = (left, right) => left + right
+let add: [I32, I32] -> I32 = (left, right) => left + right;
 const sum_to: I32 -> I32 = rec (value: I32) => {
   if value == 0 { 0 } else { value + rec(value - 1) }
-}
-return { .add = add, .sum_to = sum_to }
+};
+return { .add = add, .sum_to = sum_to };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -776,8 +776,8 @@ Deno.test("source managed callables expose F32 as a scalar", async () => {
   const artifact = Source.artifact(`
 module () where
 
-let add_half: F32 -> F32 = (value: F32) => value + 0.5f32
-return { .add_half = add_half }
+let add_half: F32 -> F32 = (value: F32) => value + 0.5f32;
+return { .add_half = add_half };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -793,12 +793,12 @@ Deno.test("source managed callables bootstrap named aggregate state", async () =
   const artifact = Source.artifact(`
 module () where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type State = struct {.count = I32}
-let step: State -> State = (state: State) => state
-let count: State -> I32 = (state: State) => state.count
-return { .step = step, .count = count }
+let step: State -> State = (state: State) => state;
+let count: State -> I32 = (state: State) => state.count;
+return { .step = step, .count = count };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -811,32 +811,32 @@ Deno.test("source managed callable diagnostics reject unsafe contracts", () => {
   assert_throws(
     () =>
       Source.artifact(`
-let step: &Bytes -> Bytes = (state: &Bytes) => state
-return { .step = step }
+let step: &Bytes -> Bytes = (state: &Bytes) => state;
+return { .step = step };
 `),
     "Managed callable cannot expose borrowed or frozen values",
   );
   assert_throws(
     () =>
       Source.artifact(`
-let step: F32x4 -> F32x4 = (state: F32x4) => state
-return { .step = step }
+let step: F32x4 -> F32x4 = (state: F32x4) => state;
+return { .step = step };
 `),
     "Managed callable cannot expose F32x4",
   );
   assert_throws(
     () =>
       Source.artifact(`
-let invoke: (I32 -> I32) -> I32 = callback => callback(0)
-return { .invoke = invoke }
+let invoke: (I32 -> I32) -> I32 = callback => callback(0);
+return { .invoke = invoke };
 `),
     "Managed callable cannot expose function values",
   );
   assert_throws(
     () =>
       Source.artifact(`
-let keep: Resume -> Resume = (value: Resume) => value
-return { .keep = keep }
+let keep: Resume -> Resume = (value: Resume) => value;
+return { .keep = keep };
 `),
     "Managed ABI cannot expose Resume values",
   );
@@ -847,8 +847,8 @@ declare effect Io { read: () => I32 }
 let read: () -> <Io.read> I32 = () => {
   value <- Io.read()
   value
-}
-return { .read = read }
+};
+return { .read = read };
 `),
     "Managed callable exports cannot use effects yet: read",
   );
@@ -1238,10 +1238,10 @@ let greet = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 
-result <- greet()
-return { .result = result }
+result <- greet();
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   let printed = "";
@@ -1288,22 +1288,22 @@ declare effect Io { read: () => I32 }
 declare Init { io: Io }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 let forward: [I32 -> <f> I32, I32] -> <f> I32 =
   (const callback, value) => {
-    result <- apply(callback, value)
+    result <- apply(callback, value);
     result
-  }
+  };
 
 value <- forward(item => {
   input <- Io.read()
   input + item
-}, 1)
-let result: I32 = value
-return { .result = result }
+}, 1);
+let result: I32 = value;
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -1330,18 +1330,18 @@ declare Init { io: Io }
 let run = () => {
   value <- Local.ask()
   value
-}
+};
 
-let make_local = () => Local {
+let make_local = () => handler Local {
   ask: (!resume) => {
     decorated <- Io.decorate(&"hello")
     !resume(decorated)
   },
   return: value => value,
-}
+};
 
-result <- try run() with make_local()
-return { .result = result }
+result <- try run() with make_local();
+return { .result = result };
 `);
   assert_equals(Object.keys(artifact.abi.effects), ["Io"]);
   assert_equals(
@@ -1372,7 +1372,7 @@ declare effect Measure { text: (&Text) => I32 }
 declare Init { measure: Measure }
 
 result <- Measure.text(&"hello")
-return { .result = result }
+return { .result = result };
 `);
 
   assert_equals(artifact.abi.abi_version, "duck-js-1");
@@ -1401,7 +1401,7 @@ declare effect Measure { text: (&Text) => I32 }
 declare Init { measure: Measure }
 
 result <- Measure.text(&"Zażółć 🦀")
-return { .result = result }
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   let received = "";
@@ -1429,14 +1429,14 @@ Deno.test("managed ABI encodes JS structs containing Text", async () => {
   const source = `
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .name= Text, .age= Int }
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .name= Text, .age= Int };
 declare effect Host { make_user: () => user_type }
 declare Init { host: Host }
 
 user <- Host.make_user()
-let result: I32 = @len(user.name) + user.age
-return { .result = result }
+let result: I32 = @len(user.name) + user.age;
+return { .result = result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1458,13 +1458,13 @@ Deno.test("managed ABI encodes tagged JS unions", async () => {
 module (!init: Init) where
 
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 declare effect Host { make_result: () => result_type }
 declare Init { host: Host }
 
 outcome <- Host.make_result()
-let result: I32 = if let \`Ok value = outcome { @len(value) } else { 0 }
-return { .result = result }
+let result: I32 = if let \`Ok value = outcome { @len(value) } else { 0 };
+return { .result = result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1485,12 +1485,12 @@ Deno.test("managed ABI drops discarded owned effect results", async () => {
 module (!init: Init) where
 
 type ResultType = | \`Chunk Bytes | \`Eof Unit
-const result_type = ResultType
+const result_type = ResultType;
 declare effect Host { read: () => result_type }
 declare Init { host: Host }
 
 _ <- Host.read()
-return { .result = 1 }
+return { .result = 1 };
 `;
   const artifact = Source.artifact(source);
   const proof = Core.proof(Source.core(source));
@@ -1532,10 +1532,10 @@ declare Init { host: Host }
 let read: () -> <Host.read> I32 = () => {
   value <- Host.read()
   value
-}
+};
 
 _ <- read()
-return { .result = 1 }
+return { .result = 1 };
 `;
   const artifact = Source.artifact(source);
   assert_includes(artifact.wat, "local.get $value\n    drop");
@@ -1565,7 +1565,7 @@ Deno.test("managed ABI encodes duck-js-1 named struct union payloads indirectly"
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type User = struct {.age = I32, .score = I32}
 type ReadResult = | \`Ok User | \`Err Unit
@@ -1581,8 +1581,8 @@ let total: I32 = if let \`Ok user = outcome {
   user.age + user.score
 } else {
   0
-}
-return { .total = total }
+};
+return { .total = total };
 `);
   const read_result = artifact.abi.types.ReadResult;
 
@@ -1625,7 +1625,7 @@ Deno.test("managed ABI round trips Bytes through a typed effect result", async (
 module (!init: Init) where
 
 type ReadResultType = | \`Chunk Bytes | \`Eof Unit | \`Err Text
-const read_result_type = ReadResultType
+const read_result_type = ReadResultType;
 
 declare effect Host {
   read: () => read_result_type
@@ -1640,9 +1640,9 @@ result <- if let \`Chunk bytes = outcome {
   @len(bytes) + @get(bytes, 0)
 } else {
   0
-}
-let final_result: I32 = result
-return { .result = final_result }
+};
+let final_result: I32 = result;
+return { .result = final_result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1698,7 +1698,7 @@ Deno.test("managed ABI handles Bytes unions in effectful dynamic loops", async (
 module (!init: Init) where
 
 type ResultType = | \`Chunk Bytes | \`Skip Unit
-const result_type = ResultType
+const result_type = ResultType;
 
 declare effect Host {
   count: () => I32
@@ -1712,15 +1712,15 @@ length <- Host.count()
 for index in 0..length {
   outcome <- Host.read()
   if let \`Chunk bytes = outcome {
-    let prefix = @slice(bytes, 0, 1)
-    let doubled = @append(prefix, prefix)
-    let marker: Text = @append("loop", "!")
+    let prefix = @slice(bytes, 0, 1);
+    let doubled = @append(prefix, prefix);
+    let marker: Text = @append("loop", "!");
     freeze marker
     _ <- Host.write(&doubled)
   }
 }
 
-return { .result = length }
+return { .result = length };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1766,11 +1766,11 @@ declare effect Input {
 declare Init { input: Input }
 
 value <- Input.read()
-let result = 0
+let result = 0;
 if (let "ready" = value) {
   result = 42
 }
-return { .result = result }
+return { .result = result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1812,8 +1812,8 @@ result <- if choice == 1 {
   value
 } else {
   0
-}
-return { .result = result }
+};
+return { .result = result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1854,8 +1854,8 @@ declare effect Host { make_text: () => Text }
 declare Init { host: Host }
 
 text <- Host.make_text()
-let result: I32 = @len(text)
-return { .result = result }
+let result: I32 = @len(text);
+return { .result = result };
 `;
   const artifact = Source.artifact(source);
   const wasm = await wasm_from_wat(artifact.wat);
@@ -1887,7 +1887,7 @@ declare effect Host { read: () => I32 }
 declare Init { host: Host }
 
 result <- Host.read()
-return { .result = result }
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -1950,15 +1950,15 @@ let check: () -> <Host.open :| Host.touch> I32 = () => {
   opened <- Host.open()
 
   if let \`Err code = opened {
-    return code
+    return code;
   }
 
   bump <- Host.touch()
   bump
-}
+};
 
-result <- check()
-return { .result = result }
+result <- check();
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
 
@@ -2015,20 +2015,20 @@ let with_file: [Text, () -> <e> I32] -> <FileReader.open :| FileReader.close :| 
 
     match open_result {
       | \`Ok () => {
-        code <- action()
+        code <- action();
         _ <- FileReader.close()
         code
       }
       | \`Err () => 2
     }
-  }
+  };
 
 raw_result <- with_file("input", () => {
   _ <- FileReader.read()
-  return 42
-})
-let result: I32 = raw_result
-return { .result = result }
+  return 42;
+});
+let result: I32 = raw_result;
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const events: string[] = [];
@@ -2083,9 +2083,9 @@ module (!init: Init) where
 declare effect Host { length: (&Bytes) => I32 }
 declare Init { host: Host }
 
-let bytes: Bytes = Bytes.empty
+let bytes: Bytes = Bytes.empty;
 result <- Host.length(&bytes)
-return { .result = result }
+return { .result = result };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);
@@ -2118,8 +2118,8 @@ declare effect Host {
 declare Init { host: Host }
 
 const has_bytes = (bytes: Bytes, limit: I32) => {
-  let total = 0
-  let byte_count = @len(bytes)
+  let total = 0;
+  let byte_count = @len(bytes);
 
   for index in 0..limit {
     if index < byte_count {
@@ -2128,23 +2128,23 @@ const has_bytes = (bytes: Bytes, limit: I32) => {
   }
 
   total
-}
+};
 
 fetched <- Host.fetch()
-let hits = 0
+let hits = 0;
 
 if let \`Chunk first_bytes = fetched {
-  let pending: Bytes = first_bytes
-  let flag = 1
+  let pending: Bytes = first_bytes;
+  let flag = 1;
   loop_total <- loop {
     if flag == 1 && has_bytes(pending, 2) > 0 {
-      let line: Bytes = @slice(pending, 0, 1)
+      let line: Bytes = @slice(pending, 0, 1);
       wrote <- Host.put(&line)
       hits = hits + wrote
     }
 
-    break hits
-  }
+    break hits;
+  };
 
   hits = loop_total
   ()
@@ -2153,7 +2153,7 @@ if let \`Chunk first_bytes = fetched {
   ()
 }
 
-return { .hits = hits }
+return { .hits = hits };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const host = await DuckHost.instantiate(wasm, artifact.abi);

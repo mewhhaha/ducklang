@@ -1,17 +1,25 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
-const command_canonicalization_module = import "./command_canonicalization.duck"
-const { canonicalize_command_for_approval } = command_canonicalization_module()
+const { .list } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
+const command_canonicalization_module = import "./command_canonicalization.duck";
+const { .canonicalize_command_for_approval } = command_canonicalization_module();
 
 type FixtureTexts = ExecTexts
 
-const texts = comptime list(Text)
-const command3 = (first: Text, second: Text, third: Text) => texts.prepend(first, texts.prepend(second, texts.singleton(third)))
+const texts = comptime list Text;
+const command3 = (first: Text, second: Text, third: Text) => texts.prepend(
+  first,
+  texts.prepend(second, texts.singleton(third)),
+);
 
-let script = "python3 <<'PY'\nprint('hello')\nPY"
-let command: FixtureTexts = canonicalize_command_for_approval(command3("/bin/zsh", "-lc", script))
-let matches = texts.length(command) == 3 && texts.nth_or("", 0, command) == "__codex_shell_script__" && texts.nth_or("", 1, command) == "-lc" && texts.nth_or("", 2, command) == script
+let script = "python3 <<'PY'\nprint('hello')\nPY";
+let command: FixtureTexts = canonicalize_command_for_approval(command3("/bin/zsh", "-lc", script));
+let matches = texts.length(command) == 3 && texts.nth_or("", 0,
+  command) == "__codex_shell_script__" && texts.nth_or(
+    "",
+    1,
+    command,
+  ) == "-lc" && texts.nth_or("", 2, command) == script;
 
-return { .score = if matches { 3 } else { 0 } }
+return { .score = if matches { 3 } else { 0 } };

@@ -1,9 +1,9 @@
 module () where
 
-const { json_array_empty } = import "duck:prelude/json" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./rollout_storage_types.duck" ()
-const { materialize_thread_read } = import "./app_server_threads.duck" ()
+const { .json_array_empty } = import "duck:prelude/json" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./rollout_storage_types.duck" ();
+const { .materialize_thread_read } = import "./app_server_threads.duck" ();
 
 type MetadataTextOption = RolloutStorageTextOption
 type MetadataGitInfo = RolloutGitInfo
@@ -13,7 +13,10 @@ type MetadataTextPatch = FieldPatch Text
 type MetadataGitInfoPatch = AppServerThreadMetadataGitInfoPatch
 type MetadataJson = AppServerJson
 
-const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextOption = (current: MetadataTextOption, patch: MetadataTextPatch) => {
+const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextOption = (
+  current: MetadataTextOption,
+  patch: MetadataTextPatch,
+) => {
   if let `Keep () = patch {
     current
   } else if let `Clear () = patch {
@@ -23,30 +26,59 @@ const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextO
   } else {
     current
   }
-}
+};
 
-let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] -> MetadataThreadSummary = (summary: MetadataThreadSummary, patch: MetadataGitInfoPatch) => {
-  let sha: MetadataTextOption = `None ()
-  let branch: MetadataTextOption = `None ()
-  let origin_url: MetadataTextOption = `None ()
+let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] ->
+  MetadataThreadSummary = (
+    summary: MetadataThreadSummary,
+    patch: MetadataGitInfoPatch,
+  ) => {
+    let sha: MetadataTextOption = `None ();
+    let branch: MetadataTextOption = `None ();
+    let origin_url: MetadataTextOption = `None ();
 
-  if let `Some current = summary.git_info {
-    sha = current.sha
-    branch = current.branch
-    origin_url = current.origin_url
-  }
+    if let `Some current = summary.git_info {
+      sha = current.sha
+      branch = current.branch
+      origin_url = current.origin_url
+    }
 
-  let updated_git_info: MetadataGitInfo = [apply_text_patch(sha, patch.sha), apply_text_patch(branch, patch.branch), apply_text_patch(origin_url, patch.origin_url)]
-  let updated_git_info_option: MetadataGitInfoOption = `Some updated_git_info
-  let updated: MetadataThreadSummary = [summary.path, summary.thread_id, summary.session_id, summary.forked_from_id, summary.parent_thread_id, summary.preview, summary.cwd, summary.source, summary.model_provider, summary.cli_version, summary.thread_source, summary.history_mode, summary.agent_nickname, summary.agent_role, summary.created_at, summary.updated_at, updated_git_info_option]
-  updated
-}
+    let updated_git_info: MetadataGitInfo = [
+      apply_text_patch(sha, patch.sha),
+      apply_text_patch(branch, patch.branch),
+      apply_text_patch(origin_url, patch.origin_url),
+    ];
+    let updated_git_info_option: MetadataGitInfoOption = `Some updated_git_info;
+    let updated: MetadataThreadSummary = [
+      summary.path,
+      summary.thread_id,
+      summary.session_id,
+      summary.forked_from_id,
+      summary.parent_thread_id,
+      summary.preview,
+      summary.cwd,
+      summary.source,
+      summary.model_provider,
+      summary.cli_version,
+      summary.thread_source,
+      summary.history_mode,
+      summary.agent_nickname,
+      summary.agent_role,
+      summary.created_at,
+      summary.updated_at,
+      updated_git_info_option,
+    ];
+    updated
+  };
 
-const materialize_thread_metadata_update: [MetadataThreadSummary, Bool] -> MetadataJson = (summary: MetadataThreadSummary, experimental: Bool) => {
+const materialize_thread_metadata_update: [MetadataThreadSummary, Bool] -> MetadataJson = (
+  summary: MetadataThreadSummary,
+  experimental: Bool,
+) => {
   materialize_thread_read(summary, json_array_empty(), experimental)
-}
+};
 
 return {
-  apply_thread_metadata_patch,
-  materialize_thread_metadata_update,
-}
+  .apply_thread_metadata_patch,
+  .materialize_thread_metadata_update,
+};

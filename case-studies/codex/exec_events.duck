@@ -1,7 +1,8 @@
 module () where
 
-const { min_i32, text_floor_utf8_boundary, text_length, text_slice } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
+const { .min_i32, .text_floor_utf8_boundary, .text_length, .text_slice } =
+  import "duck:prelude/functional" ()
+const exec_types_module = import "./exec_types.duck";
 
 type LifecycleI32Option = ExecEventI32Option
 type LifecycleTextOption = ExecEventTextOption
@@ -20,62 +21,137 @@ type LifecycleDeltaPlan = ExecDeltaPlan
 type LifecycleInteractionPlan = ExecInteractionPlan
 type LifecycleEndPlan = ExecEndPlan
 
-const initial_lifecycle_state: () -> LifecycleState = () => [false, false, 0]
+const initial_lifecycle_state: () -> LifecycleState = () => [false, false, 0];
 
-const split_output_chunk: [Text, I32] -> LifecycleOutputSplit = (chunk: Text, maximum_bytes: I32) => {
-  let requested = min_i32([maximum_bytes, text_length(chunk)])
-  let boundary = text_floor_utf8_boundary(chunk, requested)
-  [text_slice([chunk, 0, boundary]), text_slice([chunk, boundary, text_length(chunk)])]
-}
+const split_output_chunk: [Text, I32] -> LifecycleOutputSplit = (chunk: Text, maximum_bytes:
+  I32) => {
+    let requested = min_i32 [maximum_bytes, text_length chunk];
+    let boundary = text_floor_utf8_boundary(chunk, requested);
+    [text_slice [chunk, 0, boundary], text_slice [chunk, boundary, text_length chunk]];
+  };
 
-const plan_exec_begin: [LifecycleState, Text, LifecycleI32Option, Text, I64, LifecycleCommand, Text, LifecycleSource, LifecycleTextOption] -> LifecycleBeginPlan = (state: LifecycleState, call_id: Text, process_id: LifecycleI32Option, turn_id: Text, started_at_ms: I64, command: LifecycleCommand, cwd: Text, source: LifecycleSource, interaction_input: LifecycleTextOption) => {
-  let [began, ended, emitted_deltas] = state
+const plan_exec_begin: [
+  LifecycleState,
+  Text,
+  LifecycleI32Option,
+  Text,
+  I64,
+  LifecycleCommand,
+  Text,
+  LifecycleSource,
+  LifecycleTextOption,
+] -> LifecycleBeginPlan = (
+  state: LifecycleState,
+  call_id: Text,
+  process_id: LifecycleI32Option,
+  turn_id: Text,
+  started_at_ms: I64,
+  command: LifecycleCommand,
+  cwd: Text,
+  source: LifecycleSource,
+  interaction_input: LifecycleTextOption,
+) => {
+  let [began, ended, emitted_deltas] = state;
 
   if began {
     `SuppressBegin state
   } else {
-    let next: LifecycleState = [true, ended, emitted_deltas]
-    let event: LifecycleBeginEvent = [call_id, process_id, turn_id, started_at_ms, command, cwd, source, interaction_input]
-    `EmitBegin ([next, event])
+    let next: LifecycleState = [true, ended, emitted_deltas];
+    let event: LifecycleBeginEvent = [
+      call_id,
+      process_id,
+      turn_id,
+      started_at_ms,
+      command,
+      cwd,
+      source,
+      interaction_input,
+    ]
+    `EmitBegin ([next, event]);
   }
-}
+};
 
-const plan_output_delta: [LifecycleState, Text, LifecycleStream, Text] -> LifecycleDeltaPlan = (state: LifecycleState, call_id: Text, stream: LifecycleStream, chunk: Text) => {
-  let [began, ended, emitted_deltas] = state
+const plan_output_delta: [LifecycleState, Text, LifecycleStream, Text] -> LifecycleDeltaPlan = (
+  state: LifecycleState,
+  call_id: Text,
+  stream: LifecycleStream,
+  chunk: Text,
+) => {
+  let [began, ended, emitted_deltas] = state;
 
-  if !(began) || ended || emitted_deltas >= 10000 || text_length(chunk) == 0 {
+  if !(began) || ended || emitted_deltas >= 10000 || text_length chunk == 0 {
     `SuppressDelta state
   } else {
-    let split: LifecycleOutputSplit = split_output_chunk(chunk, 8192)
-    let [emitted, remaining] = split
+    let split: LifecycleOutputSplit = split_output_chunk(chunk, 8192);
+    let [emitted, remaining] = split;
 
-    if text_length(emitted) == 0 {
+    if text_length emitted == 0 {
       `SuppressDelta state
     } else {
-      let next: LifecycleState = [began, ended, emitted_deltas + 1]
+      let next: LifecycleState = [began, ended, emitted_deltas + 1];
       let event: LifecycleDeltaEvent = [call_id, stream, emitted]
-      `EmitDelta ([next, event, remaining])
+      `EmitDelta ([next, event, remaining]);
     }
   }
-}
+};
 
-const plan_terminal_interaction: [Text, I32, LifecycleI32Option, Text] -> LifecycleInteractionPlan = (call_id: Text, requested_process_id: I32, live_process_id: LifecycleI32Option, input: Text) => {
-  if input == "" {
-    if let `Some process_id = live_process_id {
-      let event: LifecycleInteractionEvent = [call_id, process_id, input]
-      `EmitInteraction event
+const plan_terminal_interaction: [Text, I32, LifecycleI32Option, Text] -> LifecycleInteractionPlan =
+  (
+    call_id: Text,
+    requested_process_id: I32,
+    live_process_id: LifecycleI32Option,
+    input: Text,
+  ) => {
+    if input == "" {
+      if let `Some process_id = live_process_id {
+        let event: LifecycleInteractionEvent = [call_id, process_id, input]
+        `EmitInteraction event;
+      } else {
+        `SuppressInteraction ()
+      }
     } else {
-      `SuppressInteraction ()
+      let process_id = if let `Some live = live_process_id { live } else { requested_process_id };
+      let event: LifecycleInteractionEvent = [call_id, process_id, input]
+      `EmitInteraction event;
     }
-  } else {
-    let process_id = if let `Some live = live_process_id { live } else { requested_process_id }
-    let event: LifecycleInteractionEvent = [call_id, process_id, input]
-    `EmitInteraction event
-  }
-}
+  };
 
-const plan_exec_end: [LifecycleState, Text, LifecycleI32Option, Text, I64, LifecycleCommand, Text, LifecycleSource, LifecycleTextOption, Text, Text, Text, I32, I32, Text, Bool] -> LifecycleEndPlan = (state: LifecycleState, call_id: Text, process_id: LifecycleI32Option, turn_id: Text, completed_at_ms: I64, command: LifecycleCommand, cwd: Text, source: LifecycleSource, interaction_input: LifecycleTextOption, stdout: Text, stderr: Text, aggregated_output: Text, exit_code: I32, duration_ms: I32, formatted_output: Text, declined: Bool) => {
-  let [began, ended, emitted_deltas] = state
+const plan_exec_end: [
+  LifecycleState,
+  Text,
+  LifecycleI32Option,
+  Text,
+  I64,
+  LifecycleCommand,
+  Text,
+  LifecycleSource,
+  LifecycleTextOption,
+  Text,
+  Text,
+  Text,
+  I32,
+  I32,
+  Text,
+  Bool,
+] -> LifecycleEndPlan = (
+  state: LifecycleState,
+  call_id: Text,
+  process_id: LifecycleI32Option,
+  turn_id: Text,
+  completed_at_ms: I64,
+  command: LifecycleCommand,
+  cwd: Text,
+  source: LifecycleSource,
+  interaction_input: LifecycleTextOption,
+  stdout: Text,
+  stderr: Text,
+  aggregated_output: Text,
+  exit_code: I32,
+  duration_ms: I32,
+  formatted_output: Text,
+  declined: Bool,
+) => {
+  let [began, ended, emitted_deltas] = state;
 
   if !(began) {
     `MissingBegin ()
@@ -88,18 +164,34 @@ const plan_exec_end: [LifecycleState, Text, LifecycleI32Option, Text, I64, Lifec
       `Completed ()
     } else {
       `Failed ()
-    }
-    let next: LifecycleState = [began, true, emitted_deltas]
-    let event: LifecycleEndEvent = [call_id, process_id, turn_id, completed_at_ms, command, cwd, source, interaction_input, stdout, stderr, aggregated_output, exit_code, duration_ms, formatted_output, status]
-    `EmitEnd ([next, event])
+    };
+    let next: LifecycleState = [began, true, emitted_deltas];
+    let event: LifecycleEndEvent = [
+      call_id,
+      process_id,
+      turn_id,
+      completed_at_ms,
+      command,
+      cwd,
+      source,
+      interaction_input,
+      stdout,
+      stderr,
+      aggregated_output,
+      exit_code,
+      duration_ms,
+      formatted_output,
+      status,
+    ]
+    `EmitEnd ([next, event]);
   }
-}
+};
 
 return {
-  initial_lifecycle_state,
-  split_output_chunk,
-  plan_exec_begin,
-  plan_output_delta,
-  plan_terminal_interaction,
-  plan_exec_end,
-}
+  .initial_lifecycle_state,
+  .split_output_chunk,
+  .plan_exec_begin,
+  .plan_output_delta,
+  .plan_terminal_interaction,
+  .plan_exec_end,
+};

@@ -1,11 +1,13 @@
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type Player = struct { .name = Text, .score = I32 }
 
-const classify = target => match target {
-  | struct { .name = Text, .. } => 40
-  | union { .. } => 0
-  | _ => 1
-}
+let struct { .name = Text, ..} = Player;
 
-classify(Player) + 2
+const classify = target => match target {
+  | struct { .name = Text, ..} => 40
+  | union { ..} => 0
+  | _ => 1
+};
+
+classify Player + 2

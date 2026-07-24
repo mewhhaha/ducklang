@@ -1,0 +1,16 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+
+type NetworkPolicyProtocol =
+  | `PolicyHttp Unit
+  | `PolicyHttps Unit
+  | `PolicySocks5Tcp Unit
+  | `PolicySocks5Udp Unit
+
+type NetworkPolicyApprovalContext = struct {
+  .host = Text,
+  .protocol = NetworkPolicyProtocol,
+}
+
+return {};

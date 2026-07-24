@@ -3,7 +3,7 @@ import { Source } from "../frontend.ts";
 import { analysis_diagnostics, parse_diagnostics } from "./diagnostics.ts";
 
 Deno.test("parse diagnostics use scanner offsets instead of error text positions", () => {
-  const diagnostics = parse_diagnostics("let = 1\n");
+  const diagnostics = parse_diagnostics("let = 1;\n");
 
   assert_equals(diagnostics, [{
     range: {
@@ -17,7 +17,7 @@ Deno.test("parse diagnostics use scanner offsets instead of error text positions
 });
 
 Deno.test("parse diagnostics report one range for an invalid Unicode scalar", () => {
-  const diagnostics = parse_diagnostics("😀\nlet value = 1\n");
+  const diagnostics = parse_diagnostics("😀\nlet value = 1;\n");
 
   assert_equals(diagnostics, [{
     range: {
@@ -31,7 +31,7 @@ Deno.test("parse diagnostics report one range for an invalid Unicode scalar", ()
 });
 
 Deno.test("semantic warnings retain code and map to LSP warning severity", () => {
-  const text = "let value = 1\n";
+  const text = "let value = 1;\n";
   const parsed = Source.parse_with_diagnostics(text);
   const diagnostics = analysis_diagnostics(
     {
@@ -92,7 +92,7 @@ Deno.test("LSP warns when user source calls a raw prelude intrinsic", () => {
 Deno.test("semantic diagnostics carry same-document related information", () => {
   const uri = "file:///linear.duck";
   const diagnostics = analysis_diagnostics(
-    Source.analyze("let !token = 41\n!token + !token\n", { uri }),
+    Source.analyze("let !token = 41;\n!token + !token\n", { uri }),
     uri,
     "utf-16",
   );
@@ -121,7 +121,7 @@ Deno.test("semantic diagnostics carry same-document related information", () => 
       uri,
       range: {
         start: { line: 0, character: 0 },
-        end: { line: 0, character: 15 },
+        end: { line: 0, character: 16 },
       },
     },
     message: "Linear value declared here",
@@ -129,7 +129,7 @@ Deno.test("semantic diagnostics carry same-document related information", () => 
 });
 
 Deno.test("LSP preserves the compiler diagnostic sequence and identities", () => {
-  const text = "let unused = 1\nlet !token = 2\n!token + !token\n";
+  const text = "let unused = 1;\nlet !token = 2;\n!token + !token\n";
   const analysis = Source.analyze(text, { warnings: true });
   const diagnostics = analysis_diagnostics(
     analysis,

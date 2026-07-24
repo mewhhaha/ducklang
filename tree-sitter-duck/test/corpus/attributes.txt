@@ -7,7 +7,7 @@ Stacked source attributes
   derive(I32, Text),
   #slow,
 ]
-const answer = 42
+const answer = 42;
 
 ---
 
@@ -36,8 +36,7 @@ const answer = 42
 ==================
 Import metadata expression
 ==================
-
-const mode = import.meta.mode
+const mode = import.meta.mode;
 
 ---
 

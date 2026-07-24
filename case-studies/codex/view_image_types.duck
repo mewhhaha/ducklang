@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type ViewImageTextOption =
   | `ImageEnvironmentMissing Unit
@@ -80,4 +80,4 @@ type ViewImageExecutionResult =
   | `Completed ViewImageOutput
   | `Rejected Text
 
-return {}
+return {};

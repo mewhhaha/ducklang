@@ -1,12 +1,12 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { view_image_tool_specs } = import "./view_image_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .view_image_tool_specs } = import "./view_image_registration.duck" ();
 
 type FixtureSpecs = ToolSpecs
 
-let score = 0
-let specs: FixtureSpecs = view_image_tool_specs(false, false, false)
+let score = 0;
+let specs: FixtureSpecs = view_image_tool_specs(false, false, false);
 if let `Nil () = specs { score = 10000 }
 
-return { .score = score }
+return { .score = score };

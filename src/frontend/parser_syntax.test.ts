@@ -4,7 +4,7 @@ import { source_span, source_span_origin, source_syntax } from "./syntax.ts";
 
 Deno.test("tolerant parser keeps later top-level statements after failures", () => {
   const parsed = parse_source_with_diagnostics(
-    "let = 1\nlet = 2\nlet = 3\nlet valid = 4\n",
+    "let = 1;\nlet = 2;\nlet = 3;\nlet valid = 4;\n",
   );
 
   assert_equals(parsed.diagnostics.length, 3);
@@ -24,12 +24,12 @@ Deno.test("tolerant parser keeps later top-level statements after failures", () 
     value: { tag: "num", type: "i32", value: 4 },
   }]);
   assert_equals(source_syntax(parsed.source), parsed.syntax);
-  assert_equals(source_span(parsed.source), { start: 0, end: 38 });
+  assert_equals(source_span(parsed.source), { start: 0, end: 42 });
 });
 
 Deno.test("tolerant parser recovers statements inside blocks", () => {
   const parsed = parse_source_with_diagnostics(
-    "let value = {\nlet = 1\nlet kept = 2\n}\nlet after = 3\n",
+    "let value = {\nlet = 1;\nlet kept = 2;\n};\nlet after = 3;\n",
   );
 
   assert_equals(parsed.diagnostics.length, 1);
@@ -43,7 +43,7 @@ Deno.test("tolerant parser recovers statements inside blocks", () => {
 
 Deno.test("tolerant parser recovers after an aggregate item failure", () => {
   const parsed = parse_source_with_diagnostics(
-    "let broken = [1,, 2]\nlet valid = 3\n",
+    "let broken = [1,, 2];\nlet valid = 3;\n",
   );
 
   assert_equals(parsed.diagnostics.length, 1);
@@ -57,7 +57,7 @@ Deno.test("tolerant parser recovers after an aggregate item failure", () => {
 
 Deno.test("recovery abandons a missing delimiter at a strong statement", () => {
   const parsed = parse_source_with_diagnostics(
-    "type Pair = [\ntype Pair = Int\nlet valid = 1\n",
+    "type Pair = [\ntype Pair = Int\nlet valid = 1;\n",
   );
 
   assert_equals(parsed.diagnostics.length, 1);
@@ -77,25 +77,25 @@ Deno.test("recovery abandons a missing delimiter at a strong statement", () => {
 
 Deno.test("scanner and parser diagnostics remain in source order", () => {
   const parsed = parse_source_with_diagnostics(
-    "let = 1\n§\nlet valid = 2\n",
+    "let = 1;\n§\nlet valid = 2;\n",
   );
 
   assert_equals(
     parsed.diagnostics.map((diagnostic) => diagnostic.span.start),
-    [4, 8],
+    [4, 9],
   );
   assert_equals(parsed.source.statements.length, 1);
 });
 
 Deno.test("recovery makes progress past an unmatched closing brace", () => {
-  const parsed = parse_source_with_diagnostics("}\nlet valid = 1\n");
+  const parsed = parse_source_with_diagnostics("}\nlet valid = 1;\n");
 
   assert_equals(parsed.diagnostics.length, 1);
   assert_equals(parsed.source.statements.length, 1);
 });
 
 Deno.test("parser supplies spans for every reachable AST object", () => {
-  const parsed = parse_source_with_diagnostics("let value = if true { 1 }\n");
+  const parsed = parse_source_with_diagnostics("let value = if true { 1 };\n");
   const seen = new WeakSet<object>();
 
   const visit = (value: object): void => {
@@ -124,7 +124,7 @@ Deno.test("parser supplies spans for every reachable AST object", () => {
 
 Deno.test("strict and tolerant parsing share syntax and concrete source spans", () => {
   const text =
-    "type Pair = struct {.left = Int, .right = Int}\nlet value = 1 + 2\n";
+    "type Pair = struct {.left = Int, .right = Int}\nlet value = 1 + 2;\n";
   const strict = parse_source(text);
   const tolerant = parse_source_with_diagnostics(text);
 
@@ -145,7 +145,7 @@ Deno.test("strict and tolerant parsing share syntax and concrete source spans", 
   );
   assert_equals(
     text.slice(source_span(statement).start, source_span(statement).end),
-    "let value = 1 + 2",
+    "let value = 1 + 2;",
   );
   assert_equals(
     text.slice(
@@ -158,7 +158,7 @@ Deno.test("strict and tolerant parsing share syntax and concrete source spans", 
 });
 
 Deno.test("synthetic conditional defaults retain derived spans", () => {
-  const parsed = parse_source_with_diagnostics("let value = if true { 1 }\n");
+  const parsed = parse_source_with_diagnostics("let value = if true { 1 };\n");
   const statement = parsed.source.statements[0];
   if (statement === undefined || statement.tag !== "bind") {
     throw new Error("Missing conditional binding");
@@ -168,7 +168,7 @@ Deno.test("synthetic conditional defaults retain derived spans", () => {
 });
 
 Deno.test("transparent parentheses preserve the inner expression span", () => {
-  const text = "let value = ((item))\n";
+  const text = "let value = ((item));\n";
   const source = parse_source(text);
   const statement = source.statements[0];
 
@@ -219,12 +219,12 @@ Deno.test("declaration members retain exact concrete spans", () => {
 Deno.test("source-written aggregate and handler children retain exact spans", () => {
   const text = [
     "effect Counter { get: () => I32 }",
-    "let make = value => [.result = value]",
-    "let counter = Counter {",
+    "let make = value => [.result = value];",
+    "let counter = handler Counter {;",
     "  get: (!resume) => !resume(0),",
     "  return: value => value,",
-    "}",
-    "return { .result = make(1) }",
+    "};",
+    "return { .result = make(1) };",
     "",
   ].join("\n");
   const source = parse_source(text);

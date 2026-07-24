@@ -22,6 +22,27 @@ export function format_stmt_with_expr(
   return attributes + format_stmt_without_attributes(stmt, format_expr);
 }
 
+export function format_statement_sequence(
+  statements: Stmt[],
+  format_stmt: (stmt: Stmt) => string,
+): string {
+  let formatted = "";
+
+  for (const statement of statements) {
+    if (formatted.length > 0) {
+      if (formatted.endsWith(";")) {
+        formatted += " ";
+      } else {
+        formatted += "; ";
+      }
+    }
+
+    formatted += format_stmt(statement);
+  }
+
+  return formatted;
+}
+
 function format_stmt_without_attributes(
   stmt: Stmt,
   format_expr: (expr: FrontExpr) => string,
@@ -50,7 +71,8 @@ function format_stmt_without_attributes(
     }
 
     if (stmt.pattern) {
-      text += format_pattern(stmt.pattern) + " = " + format_expr(stmt.value);
+      text += format_pattern(stmt.pattern, format_expr) + " = " +
+        format_expr(stmt.value);
 
       if (stmt.else_branch !== undefined) {
         text += " else " + format_expr(stmt.else_branch);
@@ -58,12 +80,13 @@ function format_stmt_without_attributes(
 
       if (stmt.mutual !== undefined) {
         for (const member of stmt.mutual) {
-          text += "\nand " + format_pattern(member.pattern) + " = " +
+          text += "\nand " + format_pattern(member.pattern, format_expr) +
+            " = " +
             format_expr(member.value);
         }
       }
 
-      return text;
+      return text + ";";
     }
 
     if (stmt.is_linear) {
@@ -84,7 +107,7 @@ function format_stmt_without_attributes(
       text += " else " + format_expr(stmt.else_branch);
     }
 
-    return text;
+    return text + ";";
   }
 
   if (stmt.tag === "state_bind") {
@@ -111,7 +134,7 @@ function format_stmt_without_attributes(
 
   if (stmt.tag === "resume_dup") {
     return "let (!" + stmt.left + ", !" + stmt.right + ") = dup " +
-      format_expr(stmt.value);
+      format_expr(stmt.value) + ";";
   }
 
   if (stmt.tag === "assign") {
@@ -128,6 +151,10 @@ function format_stmt_without_attributes(
   }
 
   if (stmt.tag === "return") {
+    if (stmt.value.tag === "unit") {
+      return "return;";
+    }
+
     if (
       stmt.value.tag === "struct_value" &&
       stmt.value.type_expr.tag === "var" &&
@@ -135,15 +162,15 @@ function format_stmt_without_attributes(
     ) {
       const fields = stmt.value.fields.map((field) => {
         if (field.value.tag === "var" && field.value.name === field.name) {
-          return field.name;
+          return "." + field.name;
         }
 
         return "." + field.name + " = " + format_expr(field.value);
       });
-      return "return { " + fields.join(", ") + " }";
+      return "return { " + fields.join(", ") + " };";
     }
 
-    return "return " + format_expr(stmt.value);
+    return "return " + format_expr(stmt.value) + ";";
   }
 
   if (stmt.tag === "for_range") {
@@ -161,8 +188,11 @@ function format_stmt_without_attributes(
 
     return head + format_expr(stmt.start) + range_operator +
       format_expr(stmt.end) + " by " + format_expr(stmt.step) + " " +
-      "{ " + stmt.body.map((item) => format_stmt_with_expr(item, format_expr))
-      .join("; ") + " }";
+      "{ " +
+      format_statement_sequence(
+        stmt.body,
+        (item) => format_stmt_with_expr(item, format_expr),
+      ) + " }";
   }
 
   if (stmt.tag === "for_collection") {
@@ -173,7 +203,7 @@ function format_stmt_without_attributes(
     }
 
     if (stmt.pattern !== undefined) {
-      head += format_pattern(stmt.pattern);
+      head += format_pattern(stmt.pattern, format_expr);
     } else {
       head += format_binding_name(stmt.item);
     }
@@ -197,16 +227,17 @@ function format_stmt_without_attributes(
       body = matching.body.statements.slice(0, -1);
     }
 
-    return head + "{ " +
-      body.map((item) => format_stmt_with_expr(item, format_expr)).join(
-        "; ",
-      ) + " }";
+    return head + "{ " + format_statement_sequence(
+      body,
+      (item) => format_stmt_with_expr(item, format_expr),
+    ) + " }";
   }
 
   if (stmt.tag === "if_stmt") {
     return "if " + format_expr(stmt.cond) + " { " +
-      stmt.body.map((item) => format_stmt_with_expr(item, format_expr)).join(
-        "; ",
+      format_statement_sequence(
+        stmt.body,
+        (item) => format_stmt_with_expr(item, format_expr),
       ) + " }";
   }
 
@@ -220,26 +251,27 @@ function format_stmt_without_attributes(
     }
 
     return "if let " + pattern + " = " + format_expr(stmt.target) + " { " +
-      stmt.body.map((item) => format_stmt_with_expr(item, format_expr)).join(
-        "; ",
+      format_statement_sequence(
+        stmt.body,
+        (item) => format_stmt_with_expr(item, format_expr),
       ) + " }";
   }
 
   if (stmt.tag === "type_check") {
     return "let " + format_type_pattern(stmt.pattern) + " = " +
-      format_expr(stmt.target);
+      format_expr(stmt.target) + ";";
   }
 
   if (stmt.tag === "break") {
     if (stmt.value) {
-      return "break " + format_expr(stmt.value);
+      return "break " + format_expr(stmt.value) + ";";
     }
 
-    return "break";
+    return "break;";
   }
 
   if (stmt.tag === "continue") {
-    return "continue";
+    return "continue;";
   }
 
   if (stmt.tag === "expr") {

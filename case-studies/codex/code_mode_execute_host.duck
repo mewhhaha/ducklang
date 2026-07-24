@@ -17,4 +17,4 @@ declare Init {
   code_mode_execute_host: CodeModeExecuteHost
 }
 
-return {}
+return {};

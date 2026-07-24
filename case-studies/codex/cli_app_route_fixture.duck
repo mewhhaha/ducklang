@@ -1,16 +1,19 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_cli } = import "./cli.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_cli } = import "./cli.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixturePlan = CodexCliPlan
 
-const args = comptime list(Text)
-let input: FixtureArgs = args.prepend("remote-control", args.prepend("stop", args.singleton("--json")))
-let plan: FixturePlan = parse_cli(input)
-let score = 0
+const args = comptime list Text;
+let input: FixtureArgs = args.prepend(
+  "remote-control",
+  args.prepend("stop", args.singleton("--json")),
+);
+let plan: FixturePlan = parse_cli input;
+let score = 0;
 
 if let `ManageApplication command = plan {
   if let `RunRemoteControl options = command {
@@ -20,4 +23,4 @@ if let `ManageApplication command = plan {
   }
 }
 
-return { .score = score }
+return { .score = score };

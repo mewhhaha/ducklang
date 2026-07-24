@@ -13,12 +13,19 @@ import {
   format_pattern,
   format_type_field,
 } from "./common.ts";
+import { format_statement_sequence } from "./stmt.ts";
 
 const type_extend_fixity = (() => {
   const fixity = [...create_fixity_table().infix.values()].find(
     (candidate) => candidate.target === "@type.extend",
   );
   expect(fixity, "Prelude has no infix declaration for @type.extend");
+  return fixity;
+})();
+
+const runtime_merge_fixity = (() => {
+  const fixity = create_fixity_table().infix.get("<&");
+  expect(fixity, "Prelude has no infix declaration for runtime merge");
   return fixity;
 })();
 
@@ -113,7 +120,8 @@ function format_expr(
       text += "rec ";
     }
 
-    text += format_callable_pattern(expr.pattern, expr.params) + " => " +
+    text += format_callable_pattern(expr.pattern, expr.params, nested) +
+      " => " +
       nested(expr.body);
     return parenthesize(text, 0, parent_precedence);
   }
@@ -191,7 +199,7 @@ function format_expr(
       }
 
       if (entry.value.tag === "var" && entry.value.name === entry.label) {
-        return entry.label;
+        return "." + entry.label;
       }
 
       return "." + entry.label + " = " + nested(entry.value);
@@ -224,7 +232,8 @@ function format_expr(
   }
 
   if (expr.tag === "block") {
-    return "{ " + expr.statements.map(format_stmt).join("; ") + " }";
+    return "{ " + format_statement_sequence(expr.statements, format_stmt) +
+      " }";
   }
 
   if (expr.tag === "comptime") {
@@ -248,7 +257,8 @@ function format_expr(
   }
 
   if (expr.tag === "loop") {
-    return "loop { " + expr.body.map(format_stmt).join("; ") + " }";
+    return "loop { " + format_statement_sequence(expr.body, format_stmt) +
+      " }";
   }
 
   if (expr.tag === "captured") {
@@ -273,7 +283,8 @@ function format_expr(
       "return: " + format_params([expr.return_clause.param]) + " => " +
         nested(expr.return_clause.body),
     );
-    const literal = expr.effect + " { " + clauses.join(", ") + " }";
+    const literal = "handler " + expr.effect + " { " +
+      clauses.join(", ") + " }";
 
     if (state.length === 0) {
       return literal;
@@ -297,7 +308,25 @@ function format_expr(
     return parenthesize(text, 0, parent_precedence);
   }
 
-  if (expr.tag === "with" || expr.tag === "struct_update") {
+  if (expr.tag === "struct_update") {
+    const text = nested(expr.base, runtime_merge_fixity.precedence) + " " +
+      runtime_merge_fixity.operator + " { " +
+      expr.fields.map((field) => {
+        if (field.value.tag === "var" && field.value.name === field.name) {
+          return field.name;
+        }
+
+        return "." + field.name + " = " + nested(field.value);
+      }).join(", ") +
+      " }";
+    return parenthesize(
+      text,
+      runtime_merge_fixity.precedence,
+      parent_precedence,
+    );
+  }
+
+  if (expr.tag === "with") {
     const text = nested(expr.base, type_extend_fixity.precedence) + " " +
       type_extend_fixity.operator + " { " +
       expr.fields.map((field) => {
@@ -343,10 +372,10 @@ function format_expr(
     if (expr.type_expr.tag === "var" && expr.type_expr.name === "object_type") {
       const fields = expr.fields.map((field) => {
         if (field.value.tag === "var" && field.value.name === field.name) {
-          return field.name;
+          return "." + field.name;
         }
 
-        return format_field(field, nested);
+        return "." + field.name + " = " + nested(field.value);
       });
       return "{ " + fields.join(", ") + " }";
     }
@@ -404,7 +433,7 @@ function format_expr(
 
   if (expr.tag === "match") {
     const arms = expr.arms.map((arm) => {
-      let text = "| " + format_pattern(arm.pattern);
+      let text = "| " + format_pattern(arm.pattern, nested);
 
       if (arm.guard) {
         text += " if " + nested(arm.guard);
@@ -456,9 +485,10 @@ function application_arg(expr: Extract<FrontExpr, { tag: "app" }>): FrontExpr {
 function format_callable_pattern(
   pattern: Extract<FrontExpr, { tag: "lam" | "rec" }>["pattern"],
   params: Param[],
+  format_expr: (expr: FrontExpr) => string,
 ): string {
   if (pattern) {
-    return format_pattern(pattern);
+    return format_pattern(pattern, format_expr);
   }
 
   if (params.length === 0) {

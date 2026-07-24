@@ -1,16 +1,26 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
-const command_canonicalization_module = import "./command_canonicalization.duck"
-const { canonicalize_command_for_approval } = command_canonicalization_module()
+const { .list } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
+const command_canonicalization_module = import "./command_canonicalization.duck";
+const { .canonicalize_command_for_approval } = command_canonicalization_module();
 
 type FixtureTexts = ExecTexts
 
-const texts = comptime list(Text)
-const command4 = (first: Text, second: Text, third: Text, fourth: Text) => texts.prepend(first, texts.prepend(second, texts.prepend(third, texts.singleton(fourth))))
+const texts = comptime list Text;
+const command4 = (first: Text, second: Text, third: Text, fourth: Text) => texts.prepend(
+  first,
+  texts.prepend(second, texts.prepend(third, texts.singleton(fourth))),
+);
 
-let command: FixtureTexts = canonicalize_command_for_approval(command4("pwsh", "-Unknown", "-Command", "Write-Host hi"))
-let matches = texts.length(command) == 4 && texts.nth_or("", 0, command) == "pwsh" && texts.nth_or("", 1, command) == "-Unknown" && texts.nth_or("", 2, command) == "-Command" && texts.nth_or("", 3, command) == "Write-Host hi"
+let command: FixtureTexts = canonicalize_command_for_approval(
+  command4("pwsh", "-Unknown", "-Command", "Write-Host hi")
+);
+let matches = texts.length(command) == 4 && texts.nth_or("", 0, command) == "pwsh" && texts.nth_or(
+  "",
+  1,
+  command,
+) == "-Unknown" && texts.nth_or("", 2, command) == "-Command" && texts.nth_or("", 3, command) ==
+  "Write-Host hi";
 
-return { .score = if matches { 6 } else { 0 } }
+return { .score = if matches { 6 } else { 0 } };

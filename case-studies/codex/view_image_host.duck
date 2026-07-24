@@ -9,4 +9,4 @@ declare Init {
   view_image_host: ViewImageHost
 }
 
-return {}
+return {};

@@ -1,10 +1,21 @@
 module () where
 
-const { parse_json_document } = import "duck:prelude/json" ()
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
-const { format_i32, text_append, text_find, text_get, text_length, text_less_than, text_slice, text_starts_with, text_trim_start_whitespace, text_trim_whitespace } = import "duck:prelude/runtime" ()
-const { struct } = import "duck:prelude/types" ()
+const { .parse_json_document } = import "duck:prelude/json" ();
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
+const {
+  .format_i32,
+  .text_append,
+  .text_find,
+  .text_get,
+  .text_length,
+  .text_less_than,
+  .text_slice,
+  .text_starts_with,
+  .text_trim_start_whitespace,
+  .text_trim_whitespace,
+} = import "duck:prelude/runtime" ();
+const { .struct } = import "duck:prelude/types" ();
 
 type CodeModeExecLimit =
   | `CodeModeExecLimitMissing Unit
@@ -26,29 +37,37 @@ type CodeModeExecLimitDecode =
   | `CodeModeExecLimitMalformed Text
   | `CodeModeExecLimitUnsafe Unit
 
-const pragma_prefix = "// @exec:"
-const maximum_safe_integer = "9007199254740991"
-const malformed_limits_prefix = "exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: "
+const pragma_prefix = "// @exec:";
+const maximum_safe_integer = "9007199254740991";
+const malformed_limits_prefix =
+  "exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: ";
 
-const missing_limit: () -> CodeModeExecLimit = () => `CodeModeExecLimitMissing ()
+const missing_limit: () -> CodeModeExecLimit = () => `CodeModeExecLimitMissing ();
 
-const present_limit: I64 -> CodeModeExecLimit = value => `CodeModeExecLimitPresent value
+const present_limit: I64 -> CodeModeExecLimit = value => `CodeModeExecLimitPresent value;
 
-const parsed_source: [Text, CodeModeExecLimit, CodeModeExecLimit] -> CodeModeExecSource = (code, yield_time_ms, max_output_tokens) => {
+const parsed_source: [Text, CodeModeExecLimit, CodeModeExecLimit] -> CodeModeExecSource = (
+  code,
+  yield_time_ms,
+  max_output_tokens,
+) => {
   [.code = code, .yield_time_ms = yield_time_ms, .max_output_tokens = max_output_tokens]
-}
+};
 
-const successful_source: CodeModeExecSource -> CodeModeExecSourceResult = source => `CodeModeExecSourceParsed source
+const successful_source: CodeModeExecSource -> CodeModeExecSourceResult =
+  source => `CodeModeExecSourceParsed source;
 
-const failed_source: Text -> CodeModeExecSourceResult = message => `CodeModeExecSourceError message
+const failed_source: Text -> CodeModeExecSourceResult = message => `CodeModeExecSourceError message;
 
 const malformed_limit: [Text, Text] -> CodeModeExecLimitDecode = (field, evidence) => {
-  `CodeModeExecLimitMalformed (text_append ["field `", text_append [field, text_append ["` ", evidence]]])
-}
+  `CodeModeExecLimitMalformed (
+    text_append ["field `", text_append [field, text_append ["` ", evidence]]]
+  )
+};
 
 const decode_limit: [Text, JsonObject] -> CodeModeExecLimitDecode = (field, object) => {
-  let `Found value = json_object_get(field, object) else { return `CodeModeExecLimitAbsent () }
-  if let `Null () = value { return `CodeModeExecLimitAbsent () }
+  let `Found value = json_object_get(field, object) else { return `CodeModeExecLimitAbsent (); };
+  if let `Null () = value { return `CodeModeExecLimitAbsent (); }
   let `Number number = value else {
     let kind = if let `Bool _ = value {
       "boolean"
@@ -58,92 +77,104 @@ const decode_limit: [Text, JsonObject] -> CodeModeExecLimitDecode = (field, obje
       "array"
     } else {
       "object"
-    }
-    return malformed_limit(field, text_append ["must be a number or null; got ", kind])
-  }
+    };
+    return malformed_limit(field, text_append ["must be a number or null; got ", kind]);
+  };
 
-  if number == "-0" { return `CodeModeExecLimitDecoded 0i64 }
-  let nonnegative = number != ""
-  let index = 0
+  if number == "-0" { return `CodeModeExecLimitDecoded 0i64; }
+  let nonnegative = number != "";
+  let index = 0;
   loop {
-    if index >= text_length number { break }
-    let byte = text_get [number, index]
+    if index >= text_length number { break; }
+    let byte = text_get [number, index];
     if byte < 48 || byte > 57 { nonnegative = false }
     index = index + 1
   }
   if !(nonnegative) {
-    return malformed_limit(field, text_append ["must be a non-negative integer; got ", number])
+    return malformed_limit(field, text_append ["must be a non-negative integer; got ", number]);
   }
 
-  let unsafe = false
+  let unsafe = false;
   if text_length number > text_length maximum_safe_integer {
     unsafe = true
   } else if text_length number == text_length maximum_safe_integer {
     unsafe = text_less_than [maximum_safe_integer, number]
   }
-  if unsafe { return `CodeModeExecLimitUnsafe () }
+  if unsafe { return `CodeModeExecLimitUnsafe (); }
 
-  let parsed = parse_i64_decimal number
+  let parsed = parse_i64_decimal number;
   if let `Ok result = parsed {
     `CodeModeExecLimitDecoded result
   } else {
     malformed_limit(field, text_append ["could not decode integer `", text_append [number, "`"]])
   }
-}
+};
 
 const decoded_limit: CodeModeExecLimitDecode -> CodeModeExecLimit = decoded => {
   if let `CodeModeExecLimitDecoded value = decoded { present_limit value } else { missing_limit() }
-}
+};
 
 let parse_code_mode_exec_source: Text -> CodeModeExecSourceResult = input => {
   if text_trim_whitespace input == "" {
-    return failed_source "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`."
+    return failed_source "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.";
   }
 
-  let newline = text_find [input, "\n"]
-  let first_line = input
-  let rest = ""
+  let newline = text_find [input, "\n"];
+  let first_line = input;
+  let rest = "";
   if newline >= 0 {
     first_line = text_slice [input, 0, newline]
     rest = text_slice [input, newline + 1, text_length input]
   }
 
-  let trimmed_first_line = text_trim_start_whitespace first_line
+  let trimmed_first_line = text_trim_start_whitespace first_line;
   if !(text_starts_with [trimmed_first_line, pragma_prefix]) {
-    return successful_source(parsed_source(input, missing_limit(), missing_limit()))
+    return successful_source(parsed_source(input, missing_limit(), missing_limit()));
   }
 
   if text_trim_whitespace rest == "" {
-    return failed_source "exec pragma must be followed by JavaScript source on subsequent lines"
+    return failed_source "exec pragma must be followed by JavaScript source on subsequent lines";
   }
 
-  let pragma = text_slice [trimmed_first_line, text_length pragma_prefix, text_length trimmed_first_line]
-  let directive = text_trim_whitespace pragma
+  let pragma = text_slice [
+    trimmed_first_line,
+    text_length pragma_prefix,
+    text_length trimmed_first_line,
+  ];
+  let directive = text_trim_whitespace pragma;
   if directive == "" {
-    return failed_source "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`"
+    return failed_source "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`";
   }
 
-  let parsed = parse_json_document directive
+  let parsed = parse_json_document directive;
   if let `Err error = parsed {
-    let [position, message] = error
-    let location = text_append [" at byte ", text_append [format_i32 position, text_append [": ", message]]]
-    return failed_source(text_append ["exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens`", location])
+    let [position, message] = error;
+    let location = text_append [
+      " at byte ",
+      text_append [format_i32 position, text_append [": ", message]],
+    ];
+    return failed_source(
+      text_append [
+        "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens`",
+        location,
+      ]
+    );
   }
   let `Ok success = parsed else {
-    return failed_source "exec pragma JSON parser returned no result"
-  }
-  let [value, _] = success
+    return failed_source "exec pragma JSON parser returned no result";
+  };
+  let [value, _] = success;
   let `Object object = value else {
-    return failed_source "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`"
-  }
+    return failed_source "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`";
+  };
 
-  let unknown_field = ""
-  let unknown_found = false
-  let current = object
-  let done = false
+  let unknown_field = "";
+  let unknown_found = false;
+  let current = object;
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [[key, _], tail] = node
+      let [[key, _], tail] = node;
       if key != "yield_time_ms" && key != "max_output_tokens" {
         if !(unknown_found) || text_less_than [key, unknown_field] {
           unknown_field = key
@@ -154,29 +185,34 @@ let parse_code_mode_exec_source: Text -> CodeModeExecSourceResult = input => {
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   if unknown_found {
-    return failed_source(text_append ["exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `", text_append [unknown_field, "`"]])
+    return failed_source(
+      text_append [
+        "exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `",
+        text_append [unknown_field, "`"],
+      ]
+    );
   }
 
-  let yield_limit = decode_limit("yield_time_ms", object)
+  let yield_limit = decode_limit("yield_time_ms", object);
   if let `CodeModeExecLimitMalformed reason = yield_limit {
-    return failed_source(text_append [malformed_limits_prefix, reason])
+    return failed_source(text_append [malformed_limits_prefix, reason]);
   }
   if let `CodeModeExecLimitUnsafe () = yield_limit {
-    return failed_source "exec pragma field `yield_time_ms` must be a non-negative safe integer"
+    return failed_source "exec pragma field `yield_time_ms` must be a non-negative safe integer";
   }
 
-  let max_limit = decode_limit("max_output_tokens", object)
+  let max_limit = decode_limit("max_output_tokens", object);
   if let `CodeModeExecLimitMalformed reason = max_limit {
-    return failed_source(text_append [malformed_limits_prefix, reason])
+    return failed_source(text_append [malformed_limits_prefix, reason]);
   }
   if let `CodeModeExecLimitUnsafe () = max_limit {
-    return failed_source "exec pragma field `max_output_tokens` must be a non-negative safe integer"
+    return failed_source "exec pragma field `max_output_tokens` must be a non-negative safe integer";
   }
 
   successful_source(parsed_source(rest, decoded_limit yield_limit, decoded_limit max_limit))
-}
+};
 
-return { parse_code_mode_exec_source }
+return { .parse_code_mode_exec_source };

@@ -1,24 +1,24 @@
 module (!init: Init) where
 
-const { list } = import "duck:prelude/functional" ()
-const rollout_storage_types_module = import "./rollout_storage_types.duck"
+const { .list } = import "duck:prelude/functional" ();
+const rollout_storage_types_module = import "./rollout_storage_types.duck";
 type FixtureFile = RolloutStoredFile
-const files = comptime list(FixtureFile)
+const files = comptime list FixtureFile;
 
-let score: I32 = 0
+let score: I32 = 0;
 length <- RolloutStore.snapshot_length()
 
 for index in 0..length {
   file <- RolloutStore.snapshot_file(index)
-  let stored_file: FixtureFile = file
-  let [path, _, _] = stored_file
+  let stored_file: FixtureFile = file;
+  let [path, _, _] = stored_file;
 
   if path == "/home/sessions/2025/01/03/rollout-live.jsonl" {
-    let line = "{\"type\":\"event_msg\"}"
+    let line = "{\"type\":\"event_msg\"}";
     _ <- RolloutStore.append(&path, &line)
     _ <- RolloutStore.flush()
     score = score + 1
   }
 }
 
-return { .score = score }
+return { .score = score };

@@ -1,9 +1,9 @@
 module () where
 
-const { request_user_input_tool_description } = import "./request_user_input_description.duck" ()
-const { request_user_input_availability } = import "./request_user_input_availability.duck" ()
+const { .request_user_input_tool_description } = import "./request_user_input_description.duck" ();
+const { .request_user_input_availability } = import "./request_user_input_availability.duck" ();
 
-let score = 0
+let score = 0;
 if let `Available () = request_user_input_availability(`Plan (), false) { score = score + 1 }
 if let `Unavailable message = request_user_input_availability(`Default (), false) {
   if message == "request_user_input is unavailable in Default mode" { score = score + 10 }
@@ -13,9 +13,10 @@ if let `Unavailable message = request_user_input_availability(`Execute (), true)
   if message == "request_user_input is unavailable in Execute mode" { score = score + 1000 }
 }
 if let `Unavailable message = request_user_input_availability(`PairProgramming (), true) {
-  if message == "request_user_input is unavailable in Pair Programming mode" { score = score + 10000 }
+  if message == "request_user_input is unavailable in Pair Programming mode" { score = score + 10000
+  }
 }
-if request_user_input_tool_description(false) == "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from 60000 to 240000 milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in Plan mode." { score = score + 100000 }
-if request_user_input_tool_description(true) == "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from 60000 to 240000 milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in Default or Plan mode." { score = score + 1000000 }
+if request_user_input_tool_description false == "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from 60000 to 240000 milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in Plan mode." { score = score + 100000 }
+if request_user_input_tool_description true == "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from 60000 to 240000 milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in Default or Plan mode." { score = score + 1000000 }
 
-return { .score = score }
+return { .score = score };

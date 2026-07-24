@@ -1,8 +1,8 @@
-const { compose, pipe } = import "duck:prelude/functional" ()
+const { .compose, .pipe } = import "duck:prelude/functional" ();
 
-const double = value => value * 2
-const increment = value => value + 1
-const transform = comptime compose(increment, double)
+const double = value => value * 2;
+const increment = value => value + 1;
+const transform = comptime compose(increment, double);
 
 let gcd = rec (left, right) => {
   if right == 0 {
@@ -10,6 +10,6 @@ let gcd = rec (left, right) => {
   } else {
     rec(right, left % right)
   }
-}
+};
 
 (gcd(84, 30) |> transform) + 29

@@ -1,20 +1,21 @@
 module () where
 
-const {} = import "./original_image_detail_types.duck" ()
-const original_image_detail_module = import "./original_image_detail.duck"
-const { can_request_original_image_detail, normalize_output_image_detail } = original_image_detail_module()
+const {} = import "./original_image_detail_types.duck" ();
+const original_image_detail_module = import "./original_image_detail.duck";
+const { .can_request_original_image_detail, .normalize_output_image_detail } =
+  original_image_detail_module();
 
 type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 
-let score = 0
-let original: FixtureDetail = `Original ()
-let original_detail: FixtureDetailOption = `Some original
-let low: FixtureDetail = `Low ()
-let low_detail: FixtureDetailOption = `Some low
-let absent: FixtureDetailOption = `None ()
+let score = 0;
+let original: FixtureDetail = `Original ();
+let original_detail: FixtureDetailOption = `Some original;
+let low: FixtureDetail = `Low ();
+let low_detail: FixtureDetailOption = `Some low;
+let absent: FixtureDetailOption = `None ();
 
-if can_request_original_image_detail(true) && !(can_request_original_image_detail(false)) {
+if can_request_original_image_detail true && !(can_request_original_image_detail false) {
   score = score + 1
 }
 
@@ -34,4 +35,4 @@ if let `None () = normalize_output_image_detail(true, absent) {
   score = score + 10000
 }
 
-return { .score = score }
+return { .score = score };

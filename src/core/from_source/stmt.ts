@@ -43,6 +43,14 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         return core_mutually_recursive_binding(stmt, ctx);
       }
 
+      let annotation = stmt.annotation;
+      if (
+        annotation === undefined && stmt.type_annotation !== undefined &&
+        (stmt.value.tag === "lam" || stmt.value.tag === "rec")
+      ) {
+        annotation = format_type_expr(stmt.type_annotation);
+      }
+      const resolved_annotation = resolve_core_annotation(ctx, annotation);
       let result_type = stmt.type_annotation;
       while (result_type?.tag === "forall") {
         result_type = result_type.body;
@@ -73,7 +81,7 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
           kind: stmt.kind,
           name,
           is_linear: stmt.is_linear,
-          annotation: resolve_core_annotation(ctx, stmt.annotation),
+          annotation: resolved_annotation,
           value: core_recursive_binding_value(stmt, ctx, name, named_function),
         };
       }
@@ -105,12 +113,8 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
 
       let integer: IntegerType | undefined;
 
-      if (stmt.annotation) {
-        const annotation = resolve_core_annotation(ctx, stmt.annotation);
-
-        if (annotation) {
-          integer = integer_type_from_name(annotation);
-        }
+      if (resolved_annotation !== undefined) {
+        integer = integer_type_from_name(resolved_annotation);
       }
 
       if (!integer) {
@@ -128,13 +132,10 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
       }
 
       let numeric = front_expr_numeric_type(source_value, ctx);
-      if (stmt.annotation) {
-        const annotation = resolve_core_annotation(ctx, stmt.annotation);
-        if (annotation) {
-          const annotated_numeric = val_type_from_type_name(annotation);
-          if (annotated_numeric) {
-            numeric = annotated_numeric;
-          }
+      if (resolved_annotation !== undefined) {
+        const annotated_numeric = val_type_from_type_name(resolved_annotation);
+        if (annotated_numeric) {
+          numeric = annotated_numeric;
         }
       }
       if (numeric) {
@@ -172,7 +173,7 @@ function core_stmt_untracked(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
         kind: stmt.kind,
         name,
         is_linear,
-        annotation: resolve_core_annotation(ctx, stmt.annotation),
+        annotation: resolved_annotation,
         value,
       };
 

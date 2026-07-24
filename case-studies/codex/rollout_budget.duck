@@ -1,7 +1,7 @@
 module () where
 
-const { f64_from_i32, i32_from_f64 } = import "duck:prelude/numeric" ()
-const {} = import "./rollout_budget_types.duck" ()
+const { .f64_from_i32, .i32_from_f64 } = import "duck:prelude/numeric" ();
+const {} = import "./rollout_budget_types.duck" ();
 
 type Budget = RolloutBudget
 type BudgetConfig = RolloutBudgetConfig
@@ -15,79 +15,102 @@ type BudgetThresholds = RolloutBudgetThresholds
 type BudgetUsage = RolloutBudgetTokenUsage
 type BudgetUsageResult = RolloutBudgetUsageResult
 
-const weighted_add: [F64, F64] -> F64 = (left: F64, right: F64) => left + right
-const weighted_subtract: [F64, F64] -> F64 = (left: F64, right: F64) => left - right
-const weighted_multiply: [F64, F64] -> F64 = (left: F64, right: F64) => left * right
-const weighted_at_least: [F64, F64] -> Bool = (left: F64, right: F64) => left >= right
+const weighted_add: [F64, F64] -> F64 = (left: F64, right: F64) => left + right;
+const weighted_subtract: [F64, F64] -> F64 = (left: F64, right: F64) => left - right;
+const weighted_multiply: [F64, F64] -> F64 = (left: F64, right: F64) => left * right;
+const weighted_at_least: [F64, F64] -> Bool = (left: F64, right: F64) => left >= right;
 
-const new_rollout_budget: () -> Budget = () => `None ()
+const new_rollout_budget: () -> Budget = () => `None ();
 
 const configure_rollout_budget: [Budget, BudgetConfig] -> Budget = (budget, config) => {
   if let `Some _ = budget {
     budget
   } else {
-    let deliveries: BudgetDeliveries = `Nil ()
-    let state: BudgetState = [.config = config, .weighted_tokens_used = 0.0f64, .deliveries = deliveries]
+    let deliveries: BudgetDeliveries = `Nil ();
+    let state: BudgetState = [
+      .config = config,
+      .weighted_tokens_used = 0.0f64,
+      .deliveries = deliveries,
+    ];
     `Some state
   }
-}
+};
 
 const record_rollout_budget_usage: [Budget, BudgetUsage] -> BudgetUsageResult = (budget, usage) => {
   if let `Some state = budget {
-    let output_tokens = if usage.output_tokens > 0 { usage.output_tokens } else { 0 }
-    let non_cached_input = usage.input_tokens - usage.cached_input_tokens
+    let output_tokens = if usage.output_tokens > 0 { usage.output_tokens } else { 0 };
+    let non_cached_input = usage.input_tokens - usage.cached_input_tokens;
     if non_cached_input < 0 { non_cached_input = 0 }
 
-    let weighted_output = weighted_multiply(f64_from_i32(output_tokens), state.config.sampling_token_weight)
-    let weighted_prefill = weighted_multiply(f64_from_i32(non_cached_input), state.config.prefill_token_weight)
-    let weighted_tokens_used = weighted_add(weighted_add(state.weighted_tokens_used, weighted_output), weighted_prefill)
-    let updated_state = state :+ { .weighted_tokens_used = weighted_tokens_used }
-    let updated: Budget = `Some updated_state
-    let exhausted = weighted_at_least(weighted_tokens_used, f64_from_i32(state.config.limit_tokens))
+    let weighted_output = weighted_multiply(
+      f64_from_i32 output_tokens,
+      state.config.sampling_token_weight,
+    );
+    let weighted_prefill = weighted_multiply(
+      f64_from_i32 non_cached_input,
+      state.config.prefill_token_weight,
+    );
+    let weighted_tokens_used = weighted_add(
+      weighted_add(state.weighted_tokens_used, weighted_output),
+      weighted_prefill,
+    );
+    let updated_state = state <& { .weighted_tokens_used = weighted_tokens_used };
+    let updated: Budget = `Some updated_state;
+    let exhausted = weighted_at_least(weighted_tokens_used, f64_from_i32 state.config.limit_tokens);
     [.budget = updated, .exhausted = exhausted]
   } else {
     [.budget = budget, .exhausted = false]
   }
-}
+};
 
 const remaining_rollout_budget_tokens: &BudgetState -> I32 = (state: &BudgetState) => {
-  let limit: F64 = f64_from_i32(state.config.limit_tokens)
-  let weighted_tokens_used: F64 = state.weighted_tokens_used
-  let remaining: F64 = weighted_subtract(limit, weighted_tokens_used)
-  if remaining <= 0.0f64 { 0 } else { i32_from_f64(remaining) }
-}
+  let limit: F64 = f64_from_i32 state.config.limit_tokens;
+  let weighted_tokens_used: F64 = state.weighted_tokens_used;
+  let remaining: F64 = weighted_subtract(limit, weighted_tokens_used);
+  if remaining <= 0.0f64 { 0 } else { i32_from_f64 remaining }
+};
 
-const crossed_reminder_count: [I32, &BudgetThresholds] -> I32 = (remaining_tokens, thresholds: &BudgetThresholds) => {
-  let current: &BudgetThresholds = thresholds
-  let count = 0
-  let done = false
+const crossed_reminder_count: [I32, &BudgetThresholds] -> I32 = (
+  remaining_tokens,
+  thresholds: &BudgetThresholds,
+) => {
+  let current: &BudgetThresholds = thresholds;
+  let count = 0;
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [threshold, tail] = node
+      let [threshold, tail] = node;
       if remaining_tokens <= threshold { count = count + 1 }
       current = &tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   count
-}
+};
 
-const pending_rollout_budget_reminder: [&Budget, &Text, &Text] -> BudgetReminderOption = (budget: &Budget, thread_id: &Text, window_id: &Text) => {
+const pending_rollout_budget_reminder: [&Budget, &Text, &Text] -> BudgetReminderOption = (
+  budget: &Budget,
+  thread_id: &Text,
+  window_id: &Text,
+) => {
   if let `Some state = budget {
-    let remaining_tokens = remaining_rollout_budget_tokens(&state)
-    let reminder_index = crossed_reminder_count(remaining_tokens, &state.config.reminder_at_remaining_tokens)
-    let current: &BudgetDeliveries = &state.deliveries
-    let delivered = false
-    let done = false
+    let remaining_tokens = remaining_rollout_budget_tokens(&state);
+    let reminder_index = crossed_reminder_count(
+      remaining_tokens,
+      &state.config.reminder_at_remaining_tokens,
+    );
+    let current: &BudgetDeliveries = &state.deliveries;
+    let delivered = false;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [delivery, tail] = node
+        let [delivery, tail] = node;
         if delivery.thread_id == thread_id {
           delivered = delivery.window_id == window_id && delivery.reminder_index >= reminder_index
           done = true
@@ -98,47 +121,59 @@ const pending_rollout_budget_reminder: [&Budget, &Text, &Text] -> BudgetReminder
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
     if delivered {
       `None ()
     } else {
-      let reminder: BudgetReminder = [.remaining_tokens = remaining_tokens, .reminder_index = reminder_index]
+      let reminder: BudgetReminder = [
+        .remaining_tokens = remaining_tokens,
+        .reminder_index = reminder_index,
+      ];
       `Some reminder
     }
   } else {
     `None ()
   }
-}
+};
 
-const mark_rollout_budget_reminder_delivered: [Budget, Text, Text, &BudgetReminder] -> Budget = (budget, thread_id, window_id, reminder: &BudgetReminder) => {
+const mark_rollout_budget_reminder_delivered: [Budget, Text, Text, &BudgetReminder] -> Budget = (
+  budget,
+  thread_id,
+  window_id,
+  reminder: &BudgetReminder,
+) => {
   if let `Some state = budget {
-    let delivery: BudgetDelivery = [.thread_id = thread_id, .window_id = window_id, .reminder_index = reminder.reminder_index]
-    let node: BudgetDeliveryNode = [delivery, state.deliveries]
-    let updated_state = state :+ { .deliveries = `Cons node }
+    let delivery: BudgetDelivery = [
+      .thread_id = thread_id,
+      .window_id = window_id,
+      .reminder_index = reminder.reminder_index,
+    ];
+    let node: BudgetDeliveryNode = [delivery, state.deliveries];
+    let updated_state = state <& { .deliveries = `Cons node };
     `Some updated_state
   } else {
     budget
   }
-}
+};
 
 const rearm_rollout_budget_reminder: [Budget, Text] -> Budget = (budget, thread_id) => {
   if let `Some state = budget {
-    let delivery: BudgetDelivery = [.thread_id = thread_id, .window_id = "", .reminder_index = -1]
-    let node: BudgetDeliveryNode = [delivery, state.deliveries]
-    let updated_state = state :+ { .deliveries = `Cons node }
+    let delivery: BudgetDelivery = [.thread_id = thread_id, .window_id = "", .reminder_index = -1];
+    let node: BudgetDeliveryNode = [delivery, state.deliveries];
+    let updated_state = state <& { .deliveries = `Cons node };
     `Some updated_state
   } else {
     budget
   }
-}
+};
 
 return {
-  new_rollout_budget,
-  configure_rollout_budget,
-  record_rollout_budget_usage,
-  pending_rollout_budget_reminder,
-  mark_rollout_budget_reminder_delivered,
-  rearm_rollout_budget_reminder,
-}
+  .new_rollout_budget,
+  .configure_rollout_budget,
+  .record_rollout_budget_usage,
+  .pending_rollout_budget_reminder,
+  .mark_rollout_budget_reminder_delivered,
+  .rearm_rollout_budget_reminder,
+};

@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "./history_types.duck" ()
-const {} = import "./audio_preparation_types.duck" ()
-const { apply_audio_preparation_results } = import "./audio_preparation.duck" ()
+const {} = import "./history_types.duck" ();
+const {} = import "./audio_preparation_types.duck" ();
+const { .apply_audio_preparation_results } = import "./audio_preparation.duck" ();
 
 type FixtureContentNode = ListNode HistoryContent
 type FixtureResponseNode = ListNode HistoryItem
@@ -13,66 +13,94 @@ type FixturePreparationResults = AudioPreparationResults
 type FixturePreparationResultNode = AudioPreparationResultNode
 
 const verify_audio_preparation_response_kinds_fixture: () -> I32 = () => {
-  let function_contents: FixtureContents = `Nil ()
-  let function_audio_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,YXVkaW8=", function_contents]
+  let function_contents: FixtureContents = `Nil ();
+  let function_audio_node: FixtureContentNode = [
+    `InputAudio "data:audio/wav;base64,YXVkaW8=",
+    function_contents,
+  ];
   function_contents = `Cons function_audio_node
-  let custom_contents: FixtureContents = `Nil ()
-  let custom_audio_node: FixtureContentNode = [`InputAudio "data:audio/flac;base64,YXVkaW8=", custom_contents]
+  let custom_contents: FixtureContents = `Nil ();
+  let custom_audio_node: FixtureContentNode = [
+    `InputAudio "data:audio/flac;base64,YXVkaW8=",
+    custom_contents,
+  ];
   custom_contents = `Cons custom_audio_node
 
-  let responses: FixtureResponses = `Nil ()
-  let other_node: FixtureResponseNode = [`Other (), responses]
+  let responses: FixtureResponses = `Nil ();
+  let other_node: FixtureResponseNode = [`Other (), responses];
   responses = `Cons other_node
-  let custom_node: FixtureResponseNode = [`CustomOutput (["custom-id", "custom-call", custom_contents]), responses]
+  let custom_node: FixtureResponseNode = [
+    `CustomOutput (["custom-id", "custom-call", custom_contents]),
+    responses,
+  ];
   responses = `Cons custom_node
-  let function_node: FixtureResponseNode = [`FunctionOutput (["function-id", "function-call", function_contents]), responses]
+  let function_node: FixtureResponseNode = [
+    `FunctionOutput (["function-id", "function-call", function_contents]),
+    responses,
+  ];
   responses = `Cons function_node
 
-  let results: FixturePreparationResults = `AudioResultsNil ()
-  let custom_result: FixturePreparationResult = [.status_code = 3, .url = "", .reason = "", .size = 0, .mime = "audio/flac", .format_code = 5]
-  let custom_result_node: FixturePreparationResultNode = [custom_result, results]
+  let results: FixturePreparationResults = `AudioResultsNil ();
+  let custom_result: FixturePreparationResult = [
+    .status_code = 3,
+    .url = "",
+    .reason = "",
+    .size = 0,
+    .mime = "audio/flac",
+    .format_code = 5,
+  ];
+  let custom_result_node: FixturePreparationResultNode = [custom_result, results];
   results = `AudioResultsCons custom_result_node
-  let function_result: FixturePreparationResult = [.status_code = 4, .url = "", .reason = "", .size = 52428801, .mime = "audio/wav", .format_code = 0]
-  let function_result_node: FixturePreparationResultNode = [function_result, results]
+  let function_result: FixturePreparationResult = [
+    .status_code = 4,
+    .url = "",
+    .reason = "",
+    .size = 52428801,
+    .mime = "audio/wav",
+    .format_code = 0,
+  ];
+  let function_result_node: FixturePreparationResultNode = [function_result, results];
   results = `AudioResultsCons function_result_node
 
-  let rewrite = apply_audio_preparation_results(responses, results)
-  let rewritten: FixtureResponses = `Nil ()
+  let rewrite = apply_audio_preparation_results(responses, results);
+  let rewritten: FixtureResponses = `Nil ();
   if let `PreparedAudioResponses values = rewrite { rewritten = values }
-  let score = 0
-  let after_function: FixtureResponses = `Nil ()
+  let score = 0;
+  let after_function: FixtureResponses = `Nil ();
   if let `Cons node = rewritten {
-    let [response, tail] = node
+    let [response, tail] = node;
     after_function = tail
     if let `FunctionOutput output = response {
-      let [identifier, call_id, contents] = output
+      let [identifier, call_id, contents] = output;
       if identifier == "function-id" && call_id == "function-call" {
         if let `Cons content_node = contents {
-          let [content, _] = content_node
-          if let `InputText placeholder = content { if placeholder == "audio content omitted because it exceeded the supported size limit; use a smaller audio file" { score = score + 1 } }
+          let [content, _] = content_node;
+          if let `InputText placeholder = content { if placeholder ==
+            "audio content omitted because it exceeded the supported size limit; use a smaller audio file" { score = score + 1 } }
         }
       }
     }
   }
-  let after_custom: FixtureResponses = `Nil ()
+  let after_custom: FixtureResponses = `Nil ();
   if let `Cons node = after_function {
-    let [response, tail] = node
+    let [response, tail] = node;
     after_custom = tail
     if let `CustomOutput output = response {
-      let [identifier, call_id, contents] = output
+      let [identifier, call_id, contents] = output;
       if identifier == "custom-id" && call_id == "custom-call" {
         if let `Cons content_node = contents {
-          let [content, _] = content_node
-          if let `InputText placeholder = content { if placeholder == "audio content omitted because its format is not supported; use wav, mp3, m4a, webm, or ogg" { score = score + 10 } }
+          let [content, _] = content_node;
+          if let `InputText placeholder = content { if placeholder ==
+            "audio content omitted because its format is not supported; use wav, mp3, m4a, webm, or ogg" { score = score + 10 } }
         }
       }
     }
   }
   if let `Cons node = after_custom {
-    let [response, tail] = node
+    let [response, tail] = node;
     if let `Other () = response { if let `Nil () = tail { score = score + 100 } }
   }
   score
-}
+};
 
-return { verify_audio_preparation_response_kinds_fixture }
+return { .verify_audio_preparation_response_kinds_fixture };

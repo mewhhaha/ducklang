@@ -1,7 +1,7 @@
 module () where
 
-const { parse_resume_options } = import "./cli_sessions.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_resume_options } = import "./cli_sessions.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexResumeOptionsResult
@@ -12,35 +12,38 @@ type FixtureSandboxOption = CodexCliSandboxModeOption
 type FixtureApprovalOption = CodexCliApprovalModeOption
 
 const empty_args = () => {
-  let values: FixtureArgs = `Nil ()
+  let values: FixtureArgs = `Nil ();
   values
-}
+};
 const prepend_arg = (value: Text, values: FixtureArgs) => {
-  let node: FixtureTextNode = [value, values]
-  let result: FixtureArgs = `Cons node
+  let node: FixtureTextNode = [value, values];
+  let result: FixtureArgs = `Cons node;
   result
-}
+};
 let input: FixtureArgs = prepend_arg("sid",
   prepend_arg("--oss",
-  prepend_arg("--search",
-  prepend_arg("--sandbox",
-  prepend_arg("workspace-write",
-  prepend_arg("--ask-for-approval",
-  prepend_arg("on-request",
-  prepend_arg("-m",
-  prepend_arg("gpt-5.1-test",
-  prepend_arg("-p",
-  prepend_arg("my-config",
-  prepend_arg("-C",
-  prepend_arg("/tmp",
-  prepend_arg("--strict-config",
-  prepend_arg("-i",
-  prepend_arg("/tmp/a.png,/tmp/b.png",
-  prepend_arg("continue here", empty_args())))))))))))))))))
+    prepend_arg("--search",
+      prepend_arg("--sandbox",
+        prepend_arg("workspace-write",
+          prepend_arg("--ask-for-approval",
+            prepend_arg("on-request",
+              prepend_arg("-m",
+                prepend_arg("gpt-5.1-test",
+                  prepend_arg("-p",
+                    prepend_arg("my-config",
+                      prepend_arg("-C",
+                        prepend_arg("/tmp",
+                          prepend_arg("--strict-config",
+                            prepend_arg("-i",
+                              prepend_arg("/tmp/a.png,/tmp/b.png",
+                                prepend_arg("continue here", empty_args())))))))))))))))));
 
-const text_option_equals: [FixtureTextOption, Text] -> Bool = (value: FixtureTextOption, expected: Text) => {
+const text_option_equals: [FixtureTextOption, Text] -> Bool = (
+  value: FixtureTextOption,
+  expected: Text,
+) => {
   if let `Some present = value { present == expected } else { false }
-}
+};
 
 const sandbox_is_workspace_write: FixtureSandboxOption -> Bool = (value: FixtureSandboxOption) => {
   if let `Some sandbox = value {
@@ -48,7 +51,7 @@ const sandbox_is_workspace_write: FixtureSandboxOption -> Bool = (value: Fixture
   } else {
     false
   }
-}
+};
 
 const approval_is_on_request: FixtureApprovalOption -> Bool = (value: FixtureApprovalOption) => {
   if let `Some approval = value {
@@ -56,15 +59,15 @@ const approval_is_on_request: FixtureApprovalOption -> Bool = (value: FixtureApp
   } else {
     false
   }
-}
+};
 
 const images_match: FixtureTexts -> Bool = (images: FixtureTexts) => {
   if let `Cons first_node = images {
-    let typed_first: FixtureTextNode = first_node
-    let [first, tail] = typed_first
+    let typed_first: FixtureTextNode = first_node;
+    let [first, tail] = typed_first;
     if let `Cons second_node = tail {
-      let typed_second: FixtureTextNode = second_node
-      let [second, done] = typed_second
+      let typed_second: FixtureTextNode = second_node;
+      let [second, done] = typed_second;
       if let `Nil () = done { first == "/tmp/a.png" && second == "/tmp/b.png" } else { false }
     } else {
       false
@@ -72,26 +75,26 @@ const images_match: FixtureTexts -> Bool = (images: FixtureTexts) => {
   } else {
     false
   }
-}
+};
 
-let parsed: FixtureResult = parse_resume_options(input)
+let parsed: FixtureResult = parse_resume_options input;
 let score = if let `Ok options = parsed {
-  let controls = options.shared.oss && options.shared.search && options.shared.strict_config
+  let controls = options.shared.oss && options.shared.search && options.shared.strict_config;
   if options.picker { controls = false }
   if options.last { controls = false }
   if options.all { controls = false }
-  let controls_score = if controls { 1 } else { 0 }
-  let session_score = if text_option_equals(options.session_id, "sid") { 2 } else { 0 }
-  let prompt_score = if text_option_equals(options.prompt, "continue here") { 4 } else { 0 }
-  let model_score = if text_option_equals(options.shared.model, "gpt-5.1-test") { 8 } else { 0 }
-  let profile_score = if text_option_equals(options.shared.profile, "my-config") { 16 } else { 0 }
-  let cwd_score = if text_option_equals(options.shared.cwd, "/tmp") { 32 } else { 0 }
-  let sandbox_score = if sandbox_is_workspace_write(options.shared.sandbox) { 64 } else { 0 }
-  let approval_score = if approval_is_on_request(options.shared.approval) { 128 } else { 0 }
-  let images_score = if images_match(options.shared.images) { 256 } else { 0 }
+  let controls_score = if controls { 1 } else { 0 };
+  let session_score = if text_option_equals(options.session_id, "sid") { 2 } else { 0 };
+  let prompt_score = if text_option_equals(options.prompt, "continue here") { 4 } else { 0 };
+  let model_score = if text_option_equals(options.shared.model, "gpt-5.1-test") { 8 } else { 0 };
+  let profile_score = if text_option_equals(options.shared.profile, "my-config") { 16 } else { 0 };
+  let cwd_score = if text_option_equals(options.shared.cwd, "/tmp") { 32 } else { 0 };
+  let sandbox_score = if sandbox_is_workspace_write options.shared.sandbox { 64 } else { 0 };
+  let approval_score = if approval_is_on_request options.shared.approval { 128 } else { 0 };
+  let images_score = if images_match options.shared.images { 256 } else { 0 };
   controls_score + session_score + prompt_score + model_score + profile_score + cwd_score + sandbox_score + approval_score + images_score
 } else {
   0
-}
+};
 
-return { .score = score }
+return { .score = score };

@@ -1,12 +1,12 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { current_time_tool_definitions } = import "./current_time_tool_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .current_time_tool_definitions } = import "./current_time_tool_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 
-let definitions: FixtureDefinitions = current_time_tool_definitions(false, true)
-let score = 0
+let definitions: FixtureDefinitions = current_time_tool_definitions(false, true);
+let score = 0;
 if let `Nil () = definitions { score = 1 }
 
-return { .score = score }
+return { .score = score };

@@ -1,9 +1,17 @@
 module (!init: Init) where
 
-const { list } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
-const exec_module = import "./exec.duck"
-const { clamp_initial_yield_time, clamp_write_stdin_yield_time, empty_output_buffer, process_succeeded, push_output, render_output, resolve_command } = exec_module()
+const { .list } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
+const exec_module = import "./exec.duck";
+const {
+  .clamp_initial_yield_time,
+  .clamp_write_stdin_yield_time,
+  .empty_output_buffer,
+  .process_succeeded,
+  .push_output,
+  .render_output,
+  .resolve_command,
+} = exec_module();
 
 type FixtureTextOption = ExecTextOption
 type FixtureBoolOption = ExecBoolOption
@@ -15,35 +23,52 @@ type FixtureSnapshot = ExecProcessSnapshot
 type FixtureOutputBuffer = ExecOutputBuffer
 type FixtureLaunch = ExecLaunch
 
-const texts = comptime list(Text)
+const texts = comptime list Text;
 
-let session_shell: FixtureShell = ["/bin/zsh", `Zsh ()]
-let shell_mode: FixtureShellMode = `Direct ()
-let no_shell: FixtureTextOption = `None ()
-let no_login: FixtureBoolOption = `Some false
-let resolution: FixtureResolution = resolve_command("printf abcdefghijklmnop", no_shell, no_login, shell_mode, session_shell, false)
-let score: I32 = 0
+let session_shell: FixtureShell = ["/bin/zsh", `Zsh ()];
+let shell_mode: FixtureShellMode = `Direct ();
+let no_shell: FixtureTextOption = `None ();
+let no_login: FixtureBoolOption = `Some false;
+let resolution: FixtureResolution = resolve_command(
+  "printf abcdefghijklmnop",
+  no_shell,
+  no_login,
+  shell_mode,
+  session_shell,
+  false,
+);
+let score: I32 = 0;
 
 if let `Ok resolved = resolution {
-  let [command, _] = resolved
-  let cwd = "/repo"
-  let initial_yield = clamp_initial_yield_time(10, false)
-  let launch: FixtureLaunch = [texts.nth_or("", 0, command), texts.nth_or("", 1, command), texts.nth_or("", 2, command), texts.nth_or("", 3, command), texts.length(command), cwd, true, initial_yield, false]
+  let [command, _] = resolved;
+  let cwd = "/repo";
+  let initial_yield = clamp_initial_yield_time(10, false);
+  let launch: FixtureLaunch = [
+    texts.nth_or("", 0, command),
+    texts.nth_or("", 1, command),
+    texts.nth_or("", 2, command),
+    texts.nth_or("", 3, command),
+    texts.length(command),
+    cwd,
+    true,
+    initial_yield,
+    false,
+  ];
   snapshot <- ProcessHost.start(&launch)
-  let typed_snapshot: FixtureSnapshot = snapshot
-  let [process_id, first_output, first_state] = typed_snapshot
-  let output: FixtureOutputBuffer = push_output(empty_output_buffer(10), first_output)
-  let [first_exited, _, _, _] = first_state
+  let typed_snapshot: FixtureSnapshot = snapshot;
+  let [process_id, first_output, first_state] = typed_snapshot;
+  let output: FixtureOutputBuffer = push_output(empty_output_buffer 10, first_output);
+  let [first_exited, _, _, _] = first_state;
 
   if !(first_exited) {
-    let input = ""
-    let poll_yield = clamp_write_stdin_yield_time(input, 1, 300000)
+    let input = "";
+    let poll_yield = clamp_write_stdin_yield_time(input, 1, 300000);
     next_snapshot <- ProcessHost.write(process_id, &input, poll_yield)
-    let typed_next: FixtureSnapshot = next_snapshot
-    let [next_process_id, next_output, next_state] = typed_next
+    let typed_next: FixtureSnapshot = next_snapshot;
+    let [next_process_id, next_output, next_state] = typed_next;
     output = push_output(output, next_output)
 
-    if next_process_id == process_id && process_succeeded(next_state) {
+    if next_process_id == process_id && process_succeeded next_state {
       score = score + 1
     }
   }
@@ -52,9 +77,9 @@ if let `Ok resolved = resolution {
     score = score + 1
   }
 
-  if render_output(output) == "abcde\n... 6 bytes omitted ...\nlmnop" {
+  if render_output output == "abcde\n... 6 bytes omitted ...\nlmnop" {
     score = score + 1
   }
 }
 
-return { .score = score }
+return { .score = score };

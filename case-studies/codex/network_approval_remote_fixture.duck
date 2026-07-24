@@ -1,0 +1,76 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const {
+  .empty_network_approval_state,
+  .plan_network_request,
+  .register_network_call,
+  .resolve_network_prompt,
+} = import "./network_approval.duck" ();
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureMode = NetworkApprovalMode
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureResult = NetworkPolicyResult
+
+let https: FixtureProtocol = `Https ();
+let state: FixtureState = empty_network_approval_state();
+let deferred: FixtureMode = `Deferred ();
+let no_outcome: FixtureOutcome = `NoOutcome ();
+let call: FixtureCall = [
+  "registration-1",
+  "local",
+  "curl https://example.com",
+  deferred,
+  no_outcome,
+  false,
+];
+state = register_network_call(state, call)
+
+let no_execution: FixtureTextOption = `None ();
+let local_environment: FixtureTextOption = `Some "local";
+let remote_environment: FixtureTextOption = `Some "remote";
+let policy: FixturePolicy = `OnRequest ();
+let profile: FixtureProfile = `Managed ();
+let local_request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment];
+let first: FixtureResult = plan_network_request(
+  state,
+  local_request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [pending_state, first_decision] = first;
+state = if let `Prompt prompt = first_decision {
+  resolve_network_prompt(pending_state, prompt, `AllowForSession ())
+} else {
+  pending_state
+}
+
+let remote_request: FixtureRequest = ["example.com", https, 443, no_execution, remote_environment];
+let planned: FixtureResult = plan_network_request(
+  state,
+  remote_request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [_, decision] = planned;
+
+let score = 0;
+if let `Prompt prompt = decision {
+  let [_, registration_option, _, _, is_owner] = prompt;
+  if let `None () = registration_option {
+    if is_owner { score = score + 1 }
+  }
+}
+
+return { .score = score };

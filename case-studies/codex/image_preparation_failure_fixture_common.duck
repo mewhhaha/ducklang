@@ -1,0 +1,45 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+
+type FailureFixtureContentNode = ListNode HistoryContent
+type FailureFixtureContents = HistoryContents
+type FailureFixtureResponseNode = ListNode HistoryItem
+type FailureFixtureResponses = HistoryItems
+type FailureFixtureResult = ImageProcessingResult
+type FailureFixtureResultNode = ImageProcessingResultNode
+type FailureFixtureResults = ImageProcessingResults
+type FailureFixtureDetailOption = OutputImageDetailOption
+
+const single_image_processing_fixture_response: () -> FailureFixtureResponses = () => {
+  let detail: FailureFixtureDetailOption = `None ();
+  let contents: FailureFixtureContents = `Nil ();
+  let content_node: FailureFixtureContentNode = [
+    `InputImage (["data:image/png;base64,AA==", detail]),
+    contents,
+  ];
+  contents = `Cons content_node
+  let responses: FailureFixtureResponses = `Nil ();
+  let response_node: FailureFixtureResponseNode = [`Message (["user", false, contents]), responses];
+  `Cons response_node
+};
+
+const single_image_processing_fixture_result: [I32, Text] -> FailureFixtureResults = (
+  status_code,
+  image_url,
+) => {
+  let results: FailureFixtureResults = `ImageResultsNil ();
+  let result: FailureFixtureResult = [
+    .status_code = status_code,
+    .image_url = image_url,
+    .reason = "fixture",
+    .size = 0,
+  ];
+  let result_node: FailureFixtureResultNode = [result, results];
+  `ImageResultsCons result_node
+};
+
+return {
+  .single_image_processing_fixture_response,
+  .single_image_processing_fixture_result,
+};

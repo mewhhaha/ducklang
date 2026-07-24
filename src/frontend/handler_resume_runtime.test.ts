@@ -4,7 +4,7 @@ import { Source } from "../frontend.ts";
 
 const suspended_source = `
 type SuspendedType = | \`Suspended Resume | \`Done I32
-const suspended_type = SuspendedType
+const suspended_type = SuspendedType;
 
 effect Suspend {
   pause: () => I32
@@ -13,16 +13,16 @@ effect Suspend {
 let run = () => {
   value <- Suspend.pause()
   value + 1
-}
+};
 
-let suspend = Suspend {
+let suspend = handler Suspend {
   pause: (!resume) => \`Suspended !resume,
   return: value => \`Done value,
-}
+};
 
-let suspended: suspended_type = try run() with suspend
+let suspended: suspended_type = try run() with suspend;
 if let \`Suspended resume = suspended {
-  let completed: suspended_type = !resume(41)
+  let completed: suspended_type = !resume(41);
   if let \`Done value = completed { value } else { 0 }
 } else {
   0
@@ -37,12 +37,12 @@ effect Ask {
 let run = () => {
   value <- Ask.ask()
   value + 1
-}
+};
 
-let ask = Ask {
+let ask = handler Ask {
   ask: (!resume) => !resume(41),
   return: value => value,
-}
+};
 
 try run() with ask
 `;
@@ -59,15 +59,15 @@ let run = () => {
   _ <- Counter.add(1)
   value <- Counter.get()
   value
-}
+};
 
 let counter = {
-  let state = 0
-  Counter {
+  let state = 0;
+  handler Counter {
     fork: (!resume) => {
-      let (!left, !right) = dup !resume
-      let first = !left(())
-      let second = !right(())
+      let (!left, !right) = dup !resume;
+      let first = !left(());
+      let second = !right(());
       first * 10 + second
     },
     add: (amount, !resume) => {
@@ -77,7 +77,7 @@ let counter = {
     get: (!resume) => !resume(state),
     return: value => value,
   }
-}
+};
 
 try run() with counter
 `;
@@ -90,12 +90,12 @@ effect Choose {
 let run = () => {
   value <- Choose.choose()
   value + 1
-}
+};
 
-let choose = Choose {
+let choose = handler Choose {
   choose: (resume) => resume(10) + resume(20),
   return: value => value,
-}
+};
 
 try run() with choose
 `;
@@ -146,14 +146,14 @@ effect Ask { ask: () => I32 }
 let run = () => {
   value <- Ask.ask()
   value
-}
-let ask = Ask {
+};
+let ask = handler Ask {
   ask: (!resume) => {
-    let first = !resume(1)
+    let first = !resume(1);
     !resume(first + 1)
   },
   return: value => value,
-}
+};
 try run() with ask
 `),
     "Resumption resume was already consumed",
@@ -168,17 +168,17 @@ effect Counter { get: () => I32 }
 let run = () => {
   value <- Counter.get()
   value
-}
+};
 let counter = {
-  let state = 41
-  Counter {
+  let state = 41;
+  handler Counter {
     get: (!resume) => {
-      let output = !resume(state)
+      let output = !resume(state);
       output + state
     },
     return: value => value,
   }
-}
+};
 try run() with counter
 `),
     "Handler state state is unavailable after consuming its resumption",
@@ -193,17 +193,17 @@ effect Fork { fork: () => Unit }
 let run = () => {
   _ <- Fork.fork()
   0
-}
+};
 let fork = {
-  let owner = (value: I32) => value
-  Fork {
+  let owner = (value: I32) => value;
+  handler Fork {
     fork: (!resume) => {
-      let (!left, !right) = dup !resume
-      !left(()) + !right(())
+      let (!left, !right) = dup !resume;
+      !left(()) + !right(());
     },
     return: value => value,
   }
-}
+};
 try run() with fork
 `),
     "Cannot duplicate resumption resume: capture owner is unique",
@@ -218,14 +218,14 @@ effect Fork { fork: () => Unit }
 let run = () => {
   _ <- Fork.fork()
   0
-}
+};
 let fork = {
-  let owner = (value: I32) => value
-  Fork {
+  let owner = (value: I32) => value;
+  handler Fork {
     fork: (resume) => resume(()),
     return: value => value,
   }
-}
+};
 try run() with fork
 `),
     "Cannot duplicate resumption resume: capture owner is unique",
@@ -264,17 +264,17 @@ Deno.test("an escaped resumption allocates and dispatches indirectly", () => {
 Deno.test("an abandoned resumption drops its closure", () => {
   const source = `
 type SuspendedType = | \`Suspended Resume | \`Done I32
-const suspended_type = SuspendedType
+const suspended_type = SuspendedType;
 effect Suspend { pause: () => I32 }
 let run = () => {
   value <- Suspend.pause()
   value
-}
-let suspend = Suspend {
+};
+let suspend = handler Suspend {
   pause: (!resume) => \`Suspended !resume,
   return: value => \`Done value,
-}
-let suspended: suspended_type = try run() with suspend
+};
+let suspended: suspended_type = try run() with suspend;
 0
 `;
   const proof = Core.proof(Source.core(source));

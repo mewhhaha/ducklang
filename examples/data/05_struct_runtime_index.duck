@@ -1,6 +1,6 @@
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 declare effect Input {
   index: () => I32
@@ -9,8 +9,8 @@ declare effect Input {
 declare Init { input: Input }
 
 type Pair = struct { .first = Int, .second = Int }
-let pair: Pair = [20, 22]
+let pair: Pair = [20, 22];
 
 index <- Input.index()
-let result: I32 = pair[index]
-return { .result = result }
+let result: I32 = pair[index];
+return { .result = result };

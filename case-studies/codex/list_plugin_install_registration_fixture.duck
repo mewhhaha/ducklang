@@ -1,25 +1,42 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { list_available_plugins_to_install_definitions } = import "./list_plugin_install_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .list_available_plugins_to_install_definitions } =
+  import "./list_plugin_install_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 
-let score = 0
-let disabled: FixtureDefinitions = list_available_plugins_to_install_definitions(false, true, `ListTool ())
-let empty: FixtureDefinitions = list_available_plugins_to_install_definitions(true, false, `ListTool ())
-let recommended: FixtureDefinitions = list_available_plugins_to_install_definitions(true, true, `RecommendationContext ())
+let score = 0;
+let disabled: FixtureDefinitions = list_available_plugins_to_install_definitions(
+  false,
+  true,
+  `ListTool (),
+);
+let empty: FixtureDefinitions = list_available_plugins_to_install_definitions(
+  true,
+  false,
+  `ListTool (),
+);
+let recommended: FixtureDefinitions = list_available_plugins_to_install_definitions(
+  true,
+  true,
+  `RecommendationContext (),
+);
 if let `Nil () = disabled {
   if let `Nil () = empty {
     if let `Nil () = recommended { score = score + 1 }
   }
 }
 
-let definitions: FixtureDefinitions = list_available_plugins_to_install_definitions(true, true, `ListTool ())
+let definitions: FixtureDefinitions = list_available_plugins_to_install_definitions(
+  true,
+  true,
+  `ListTool (),
+);
 if let `Cons node = definitions {
-  let [definition, tail] = node
-  let [name, exposure, tool_handler, payload, parallel, waits] = definition
-  let [namespace, local_name] = name
+  let [definition, tail] = node;
+  let [name, exposure, tool_handler, payload, parallel, waits] = definition;
+  let [namespace, local_name] = name;
   if namespace == "" && local_name == "list_available_plugins_to_install" && !(parallel) && !(waits) {
     if let `Direct () = exposure {
       if let `ListAvailablePluginsToInstall () = tool_handler {
@@ -31,4 +48,4 @@ if let `Cons node = definitions {
   }
 }
 
-return { .score = score }
+return { .score = score };

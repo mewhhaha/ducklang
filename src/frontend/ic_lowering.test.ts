@@ -55,10 +55,10 @@ Deno.test("Source lowers arithmetic expressions to Ic", () => {
   assert_equals(Ic.reduce(wide_cmp), { tag: "num", type: "i32", value: 1 });
 
   const annotated_wide = compile(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_factor = (x: I64) => {
   x + factor
-}
+};
 
 add_factor(40i64)
 `);
@@ -70,10 +70,10 @@ add_factor(40i64)
   });
 
   const annotated_chained_wide = compile(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_factor = (x: I64) => {
   x + factor + 1i64
-}
+};
 
 add_factor(40i64)
 `);
@@ -85,14 +85,14 @@ add_factor(40i64)
   });
 
   const annotated_dynamic_wide = compile(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let choose = (flag, x: I64) => {
   if flag {
     x + factor
   } else {
     x + factor + 1i64
   }
-}
+};
 
 choose(input, 40i64)
 `);
@@ -105,7 +105,7 @@ choose(input, 40i64)
   const implicit_wide_fallback = compile(`
 let value = if input {
   42i64
-}
+};
 
 value
 `);
@@ -122,7 +122,7 @@ let value = if input {
   42i64
 } else {
   0
-}
+};
 
 value
 `),
@@ -130,10 +130,10 @@ value
   );
 
   const annotated_wide_cmp = compile(`
-let limit: I64 = 5i64
+let limit: I64 = 5i64;
 let below = (x: I64) => {
   x < limit
-}
+};
 
 below(3i64)
 `);
@@ -152,10 +152,10 @@ below(3i64)
   assert_throws(
     () =>
       compile(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_one = (x: I64) => {
   x + 1
-}
+};
 
 add_one(40i64)
 `),
@@ -165,7 +165,7 @@ add_one(40i64)
   assert_throws(
     () =>
       compile(`
-let user = [.age = 1]
+let user = [.age = 1];
 user + 1
 `),
     "Primitive i32.add expects numeric operands, got struct",
@@ -174,7 +174,7 @@ user + 1
   assert_throws(
     () =>
       compile(`
-let f = x => x
+let f = x => x;
 f + 1
 `),
     "Primitive i32.add expects numeric operands, got function",
@@ -183,7 +183,7 @@ f + 1
   assert_throws(
     () =>
       compile(`
-let result = \`Ok (1)
+let result = \`Ok (1);
 result + 1
 `),
     "Primitive i32.add expects numeric operands, got union",
@@ -198,14 +198,14 @@ let rec fib = n => {
   } else {
     fib(n - 1) + fib(n - 2)
   }
-}
+};
 
 fib(6)
 `;
 
   assert_equals(
-    Format.fmt(Source, Source.parse("let rec fib = n => n\nfib(1)")),
-    "let rec fib = n => n\nfib 1",
+    Format.fmt(Source, Source.parse("let rec fib = n => n;\nfib(1)")),
+    "let rec fib = n => n;\nfib 1",
   );
 
   const ic = compile(source);
@@ -220,7 +220,7 @@ let rec sum_down = (n, total) => {
   } else {
     sum_down(n - 1, total + n)
   }
-}
+};
 
 sum_down(4, 0)
 `;
@@ -248,7 +248,7 @@ let rec fib = n => {
   } else {
     fib(n - 1) + fib(n - 2)
   }
-}
+};
 
 fib(input)
 `);
@@ -274,7 +274,7 @@ let value = if flag {
   a
 } else {
   b
-}
+};
 
 value + 1
 `);
@@ -289,7 +289,7 @@ let value = if flag {
   a
 } else {
   b
-}
+};
 
 value + 1i64
 `);
@@ -304,7 +304,7 @@ let choose = flag => if flag {
   a
 } else {
   b
-}
+};
 
 choose(flag) + 1
 `);
@@ -319,7 +319,7 @@ let choose = flag => if flag {
   a
 } else {
   b
-}
+};
 
 choose(flag) + 1i64
 `);
@@ -332,7 +332,7 @@ choose(flag) + 1i64
   const call_only_no_else_helper = compile(`
 let choose = flag => if flag {
   a
-}
+};
 
 choose(flag) + 1
 `);
@@ -349,7 +349,7 @@ let value = if flag {
   a
 } else {
   b
-}
+};
 
 value
 `),
@@ -359,7 +359,7 @@ value
 
 Deno.test("Source lowers let and same-type shadowing to fresh Ic names", () => {
   const ic = compile(`
-let x = 40
+let x = 40;
 x = x + 2
 x
 `);
@@ -371,7 +371,7 @@ x
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const function_shadow = compile(`
-let f = x => x + 1
+let f = x => x + 1;
 f = y => y + 2
 f(40)
 `);
@@ -383,7 +383,7 @@ f(40)
   });
 
   const aliased_annotation_shadow = compile(`
-let f = (x: Int) => x + 1
+let f = (x: Int) => x + 1;
 f = (y: I32) => y + 2
 f(40)
 `);
@@ -395,17 +395,17 @@ f(40)
   });
 
   const aliased_struct_shadow = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const other_user_type = struct {
   .age= I32
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = 41] as other_user_type
 user.age + 1
 `);
@@ -417,7 +417,7 @@ user.age + 1
   });
 
   const anonymous_struct_shadow = compile(`
-let user = [.age = 1]
+let user = [.age = 1];
 user = [.age = 41]
 user.age + 1
 `);
@@ -429,12 +429,12 @@ user.age + 1
   });
 
   const typed_to_anonymous_shadow = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = 41]
 user.age + 1
 `);
@@ -446,7 +446,7 @@ user.age + 1
   });
 
   const shorthand_union_shadow = compile(`
-let result = \`Ok (1)
+let result = \`Ok (1);
 result = \`Ok (41)
 
 if let \`Ok value = result {
@@ -465,7 +465,7 @@ if let \`Ok value = result {
 
 Deno.test("Source lowers unused runtime bindings to explicit erasure", () => {
   const unused = compile(`
-let x = 1
+let x = 1;
 2
 `);
 
@@ -473,7 +473,7 @@ let x = 1
   assert_equals(Ic.reduce(unused), { tag: "num", type: "i32", value: 2 });
 
   const shadowed = compile(`
-let x = 1
+let x = 1;
 x = 2
 3
 `);
@@ -484,7 +484,7 @@ x = 2
 
 Deno.test("Source lowers repeated runtime names to explicit sharing", () => {
   const binding = compile(`
-let x = 21
+let x = 21;
 x + x
 `);
 
@@ -496,7 +496,7 @@ x + x
   assert_equals(Ic.reduce(binding), { tag: "num", type: "i32", value: 42 });
 
   const triple = compile(`
-let x = 14
+let x = 14;
 x + x + x
 `);
 
@@ -509,7 +509,7 @@ x + x + x
   assert_equals(Ic.reduce(triple), { tag: "num", type: "i32", value: 42 });
 
   const param = compile(`
-let double = x => x + x
+let double = x => x + x;
 double(input)
 `);
   const param_text = Format.fmt(Ic, param);
@@ -524,7 +524,7 @@ double(input)
   );
 
   const constant_param = compile(`
-let double = x => x + x
+let double = x => x + x;
 double(21)
 `);
   assert_equals(Ic.reduce(constant_param), {
@@ -544,7 +544,7 @@ double(21)
 
 Deno.test("Source allows type-changing shadowing with :=", () => {
   const ic = compile(`
-let x = 40
+let x = 40;
 x := x + 2
 x
 `);
@@ -552,10 +552,10 @@ x
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const extended_type = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type User = struct { .age = I32 }
 extend User { .default_age = 41 }
-const default_age = 0
+const default_age = 0;
 User.default_age + 1
 `);
 
@@ -574,7 +574,7 @@ let option = if let \`Ok value = if input {
   \`Some (value)
 } else {
   \`None ()
-}
+};
 
 option := 1
 option
@@ -591,7 +591,7 @@ Deno.test("Source rejects type-changing assignment with =", () => {
   assert_throws(
     () =>
       compile(`
-let x = 1
+let x = 1;
 x = "hello"
 x
 `),
@@ -601,7 +601,7 @@ x
   assert_throws(
     () =>
       compile(`
-let x = 1i64
+let x = 1i64;
 x = 2
 x
 `),
@@ -619,7 +619,7 @@ let option = if let \`Ok value = if input {
   \`Some (value)
 } else {
   \`None ()
-}
+};
 
 option = 1
 option
@@ -638,7 +638,7 @@ let option = if let \`Ok value = if input {
   scratch { \`Some (value) }
 } else {
   freeze \`None ()
-}
+};
 
 option = 1
 option
@@ -649,7 +649,7 @@ option
   assert_throws(
     () =>
       compile(`
-let f = x => x + 1
+let f = x => x + 1;
 f = (x, y) => x + y
 f(1, 41)
 `),
@@ -663,7 +663,7 @@ let f = if input {
   x => x + 1
 } else {
   x => x + 2
-}
+};
 
 f = (x, y) => x + y
 f(1, 41)
@@ -674,7 +674,7 @@ f(1, 41)
   assert_throws(
     () =>
       compile(`
-let f = freeze (x => x + 1)
+let f = freeze (x => x + 1);
 f = (x, y) => x + y
 f(1, 41)
 `),
@@ -684,7 +684,7 @@ f(1, 41)
   assert_throws(
     () =>
       compile(`
-let f = (x: Text) => @len(x)
+let f = (x: Text) => @len(x);
 f = x => x + 1
 f(message)
 `),
@@ -694,7 +694,7 @@ f(message)
   assert_throws(
     () =>
       compile(`
-let f = (x: Int) => x + 1
+let f = (x: Int) => x + 1;
 f = (y: Text) => @len(y)
 f(1)
 `),
@@ -704,7 +704,7 @@ f(1)
   assert_throws(
     () =>
       compile(`
-let f = (x: Unit) => 0
+let f = (x: Unit) => 0;
 f = (y: Text) => @len(y)
 f(message)
 `),
@@ -714,17 +714,17 @@ f(message)
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const other_user_type = struct {
   .age= Text
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = "Ada"] as other_user_type
 user.age
 `),
@@ -734,17 +734,17 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const other_user_type = struct {
   .age= I64
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = 2i64] as other_user_type
 user.age
 `),
@@ -754,12 +754,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = "Ada"]
 user.age
 `),
@@ -769,12 +769,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user = [.age = 1] as user_type
+let user = [.age = 1] as user_type;
 user = [.age = 2i64]
 user.age
 `),
@@ -784,7 +784,7 @@ user.age
   assert_throws(
     () =>
       compile(`
-let user = [.age = 1]
+let user = [.age = 1];
 user = [.age = "Ada"]
 user.age
 `),
@@ -794,7 +794,7 @@ user.age
   assert_throws(
     () =>
       compile(`
-let result = \`Ok (1)
+let result = \`Ok (1);
 result = \`Ok ("Ada")
 result
 `),
@@ -804,7 +804,7 @@ result
   assert_throws(
     () =>
       compile(`
-let result = \`Ok (1)
+let result = \`Ok (1);
 result = \`Ok (2i64)
 result
 `),
@@ -830,7 +830,7 @@ Deno.test("Source lowers text literals to Ic", () => {
   assert_equals(Ic.reduce(literal), { tag: "text", value: "hello" });
 
   const rebound = compile(`
-let message: Text = "hello"
+let message: Text = "hello";
 message = "world"
 message
 `);
@@ -884,7 +884,7 @@ if true {
   assert_equals(Ic.reduce(concat), { tag: "text", value: "hello world" });
 
   const named_concat = compile(`
-let message = "hello"
+let message = "hello";
 message + " world"
 `);
 
@@ -894,7 +894,7 @@ message + " world"
   });
 
   const rebound_concat = compile(`
-let message: Text = "hello"
+let message: Text = "hello";
 message = message + " world"
 message
 `);
@@ -905,7 +905,7 @@ message
   });
 
   const comptime_concat = compile(`
-const message = comptime ("hello" + " world")
+const message = comptime ("hello" + " world");
 message
 `);
 
@@ -932,7 +932,7 @@ let message = if flag {
   "hi"
 } else {
   "hello"
-}
+};
 
 message + "!"
 `);
@@ -944,7 +944,7 @@ message + "!"
 
   const block_concat = compile(`
 {
-  let message = "Ada"
+  let message = "Ada";
   message
 } + "!"
 `);
@@ -960,7 +960,7 @@ message + "!"
     "hi"
   } else {
     "hello"
-  }
+  };
 
   message
 } + "!"
@@ -986,7 +986,7 @@ message + "!"
   assert_equals(
     Ic.reduce(compile(`
 @len({
-  let message = "Ada"
+  let message = "Ada";
   message
 })
 `)),
@@ -1012,7 +1012,7 @@ message + "!"
   assert_equals(
     Ic.reduce(compile(`
 {
-  let message = "Ada"
+  let message = "Ada";
   message
 }[1]
 `)),
@@ -1026,7 +1026,7 @@ message + "!"
   assert_equals(
     Ic.reduce(compile(`
 @get({
-  let message = "Ada"
+  let message = "Ada";
   message
 }, 2)
 `)),
@@ -1039,7 +1039,7 @@ message + "!"
 
   const block_runtime_byte = compile(`
 {
-  let message = "Ada"
+  let message = "Ada";
   message
 }[i]
 `);
@@ -1055,7 +1055,7 @@ let message = if flag {
   "Ada"
 } else {
   "Eve"
-}
+};
 
 message[2]
 `);
@@ -1070,7 +1070,7 @@ let message = if flag {
   "A"
 } else {
   "BC"
-}
+};
 
 message[1]
 `);
@@ -1090,7 +1090,7 @@ message[1]
     "Ada"
   } else {
     "Eve"
-  }
+  };
 
   message
 }[2]
@@ -1107,7 +1107,7 @@ message[1]
   );
 
   const named_len = compile(`
-let message = "hello"
+let message = "hello";
 @len(message)
 `);
 
@@ -1122,7 +1122,7 @@ let message = if flag {
   "hi"
 } else {
   "hello"
-}
+};
 
 @len(message)
 `);
@@ -1135,7 +1135,7 @@ let message = if flag {
   const runtime_len = compile(`
 let byte_len = (value: Text) => {
   @len(value)
-}
+};
 
 byte_len("hello")
 `);
@@ -1145,7 +1145,7 @@ byte_len("hello")
   const runtime_byte = compile(`
 let byte_at = (value: Text) => {
   value[1]
-}
+};
 
 byte_at("Ada")
 `);
@@ -1158,7 +1158,7 @@ byte_at("Ada")
   const runtime_dynamic_byte = compile(`
 let byte_at = (value: Text, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -1171,7 +1171,7 @@ byte_at("Ada", 2)
   const runtime_get_byte = compile(`
 let byte_at = (value: Text, i) => {
   @get(value, i)
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -1192,7 +1192,7 @@ byte_at("Ada", 2)
   const runtime_oob_byte = compile(`
 let byte_at = (value: Text, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", 3)
 `);
@@ -1207,7 +1207,7 @@ byte_at("Ada", 3)
       compile(`
 let byte_at = (value: Text, i: I64) => {
   value[i]
-}
+};
 
 byte_at("Ada", 1i64)
 `),
@@ -1224,7 +1224,7 @@ byte_at("Ada", 1i64)
       compile(`
 let append = (value: Text) => {
   value + 1
-}
+};
 
 append("Ada")
 `),
@@ -1255,7 +1255,7 @@ let name = if input {
   "Grace"
 } else {
   "Ada"
-}
+};
 
 @slice(name, 1, 3)
 `)),
@@ -1272,7 +1272,7 @@ let part = @slice(if input {
   "Grace"
 } else {
   "Ada"
-}, 1, 3)
+}, 1, 3);
 
 part == "ra"
 `)),
@@ -1289,7 +1289,7 @@ let part = @slice(if input {
   "Grace"
 } else {
   "Ada"
-}, 1, 3)
+}, 1, 3);
 
 @len(part)
 `)),
@@ -1306,7 +1306,7 @@ let part = @slice(if input {
   "Grace"
 } else {
   "Ada"
-}, 1, 3)
+}, 1, 3);
 
 part[0]
 `)),
@@ -1328,7 +1328,7 @@ let name = if input {
   "Ada"
 } else {
   "Grace"
-}
+};
 
 @append(name, "!")
 `)),
@@ -1345,12 +1345,12 @@ let left = if input {
   "Ada"
 } else {
   "Grace"
-}
+};
 let right = if input {
   "!"
 } else {
   "?"
-}
+};
 
 @append(left, right)
 `)),
@@ -1365,7 +1365,7 @@ let message = @append(if input {
   "Ada"
 } else {
   "Grace"
-}, "!")
+}, "!");
 
 message == "Ada!"
 `)),
@@ -1382,7 +1382,7 @@ let message = @append(if input {
   "a"
 } else {
   "bb"
-}, "!")
+}, "!");
 
 @len(message)
 `)),
@@ -1399,7 +1399,7 @@ let message = @append(if input {
   "a"
 } else {
   "bb"
-}, "!")
+}, "!");
 
 message[1]
 `)),
@@ -1416,7 +1416,7 @@ let name = if input {
   "Ada"
 } else {
   "Grace"
-}
+};
 
 name == "Ada"
 `)),
@@ -1433,12 +1433,12 @@ let left = if input {
   "Ada"
 } else {
   "Grace"
-}
+};
 let right = if input {
   "Grace"
 } else {
   "Ada"
-}
+};
 
 left != right
 `)),
@@ -1453,7 +1453,7 @@ let message = if let \`Ok value = \`Ok ("Ada") {
   value
 } else {
   "Grace"
-}
+};
 
 message == "Ada"
 `)),
@@ -1470,7 +1470,7 @@ let message = if let \`Ok value = \`Ok ("Ada") {
   value
 } else {
   "Grace"
-}
+};
 
 @len(message)
 `)),
@@ -1487,7 +1487,7 @@ let message = if let \`Ok value = \`Ok ("Ada") {
   value
 } else {
   "Grace"
-}
+};
 
 message[1]
 `)),
@@ -1509,7 +1509,7 @@ let message = if let \`Ok value = if input {
   value
 } else {
   "Grace"
-}
+};
 
 message == "Ada"
 `)),
@@ -1530,7 +1530,7 @@ let message = if let \`Ok value = if input {
   value
 } else {
   "Grace"
-}
+};
 
 @len(message)
 `)),
@@ -1551,7 +1551,7 @@ let message = if let \`Ok value = if input {
   value
 } else {
   "Grace"
-}
+};
 
 message[1]
 `)),
@@ -1564,12 +1564,12 @@ message[1]
   const helper_append_text_equality = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-let suffix = value => @append(value, "!")
+let suffix = value => @append(value, "!");
 let message = suffix(if input {
   "Ada"
 } else {
   "Grace"
-})
+});
 
 message == "Ada!"
 `)),
@@ -1582,12 +1582,12 @@ message == "Ada!"
   const helper_slice_text_equality = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-let take = value => @slice(value, 1, 3)
+let take = value => @slice(value, 1, 3);
 let part = take(if input {
   "Grace"
 } else {
   "Ada"
-})
+});
 
 part == "ra"
 `)),
@@ -1604,9 +1604,9 @@ let choose = flag => if flag {
   "Ada"
 } else {
   "Grace"
-}
+};
 
-let message = choose(input)
+let message = choose(input);
 message == "Ada"
 `)),
   );
@@ -1619,19 +1619,19 @@ message == "Ada"
     Ic,
     Ic.reduce(compile(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 let from_result = (result: result_type) => if let \`Ok value = result {
   value
 } else {
   "fallback"
-}
+};
 
 let message = from_result(if input {
   \`Ok ("Ada")
 } else {
   \`Err ("Grace")
-})
+});
 
 message == "Ada"
 `)),
@@ -1644,7 +1644,7 @@ message == "Ada"
   const runtime_text_identity = compile(`
 let same = (value: Text) => {
   value == value
-}
+};
 
 same(input)
 `);
@@ -1658,7 +1658,7 @@ same(input)
   const runtime_text_non_identity = compile(`
 let different = (value: Text) => {
   value != value
-}
+};
 
 different(input)
 `);
@@ -1672,7 +1672,7 @@ different(input)
   const runtime_text_borrow_identity = compile(`
 let same = (value: Text) => {
   &value == &value
-}
+};
 
 same(input)
 `);
@@ -1686,7 +1686,7 @@ same(input)
   const runtime_text_scratch_identity = compile(`
 let same = (value: Text) => {
   scratch { value } == scratch { value }
-}
+};
 
 same(input)
 `);
@@ -1698,7 +1698,7 @@ same(input)
   });
 
   const runtime_text_mixed_wrapper_identity = compile(`
-let value: Text = input
+let value: Text = input;
 &value == scratch { value }
 `);
 
@@ -1709,12 +1709,12 @@ let value: Text = input
   });
 
   const runtime_text_scratch_alias_identity = compile(`
-let value: Text = input
+let value: Text = input;
 scratch {
-  let alias = value
+  let alias = value;
   alias
 } == scratch {
-  let alias = value
+  let alias = value;
   alias
 }
 `);
@@ -1728,7 +1728,7 @@ scratch {
   const runtime_text_helper_identity = compile(`
 let identity = (value: Text) => {
   value
-}
+};
 
 identity(input) == identity(input)
 `);
@@ -1742,7 +1742,7 @@ identity(input) == identity(input)
   const runtime_text_helper_scratch_identity = compile(`
 let identity = (value: Text) => {
   scratch { value }
-}
+};
 
 identity(input) == identity(input)
 `);
@@ -1758,7 +1758,7 @@ identity(input) == identity(input)
       compile(`
 let same = (value: Text) => {
   value == "Ada"
-}
+};
 
 same(input)
 `),
@@ -1770,7 +1770,7 @@ same(input)
       compile(`
 let suffix = (value: Text) => {
   @append(value, "!")
-}
+};
 
 suffix(input) == suffix(input)
 `),
@@ -1781,7 +1781,7 @@ suffix(input) == suffix(input)
     Ic.reduce(compile(`
 let take = (value: Text, start) => {
   @slice(value, start, 4)
-}
+};
 
 take("Grace", 1)
 `)),
@@ -1793,9 +1793,9 @@ take("Grace", 1)
       compile(`
 let add_suffix = (value: Text) => {
   @append(value, "!")
-}
+};
 
-let message: Text = input
+let message: Text = input;
 add_suffix(message)
 `),
     "Text append with runtime text requires structured Core/Wasm lowering",
@@ -1850,7 +1850,7 @@ Deno.test("Source lowers Bool and character literals to typed i32", () => {
   });
 
   const parenthesized_character_pattern = compile(`
-let value = 'c'
+let value = 'c';
 if (let 'c' = value) {
   42
 } else {
@@ -1865,8 +1865,8 @@ if (let 'c' = value) {
   });
 
   const literal_patterns = compile(`
-let flag = false
-let value = 0
+let flag = false;
+let value = 0;
 if let false = flag {
   value = 1
 }
@@ -1887,7 +1887,7 @@ value
 
   assert_equals(
     Ic.reduce(compile(`
-let value = 42i64
+let value = 42i64;
 if let 42i64 = value {
   42
 } else {
@@ -1925,36 +1925,36 @@ if let 42i64 = value {
 
 Deno.test("Source checks binding annotations", () => {
   assert_equals(
-    Format.fmt(Source, Source.parse("let x: Int = 1\nx")),
-    "let x: Int = 1\nx",
+    Format.fmt(Source, Source.parse("let x: Int = 1;\nx")),
+    "let x: Int = 1;\nx",
   );
 
   const scalar = compile(`
-let x: Int = 41
+let x: Int = 41;
 x + 1
 `);
 
   assert_equals(Ic.reduce(scalar), { tag: "num", type: "i32", value: 42 });
 
   const wide = compile(`
-let x: I64 = 41i64
+let x: I64 = 41i64;
 x + 1i64
 `);
 
   assert_equals(Ic.reduce(wide), { tag: "num", type: "i64", value: 42n });
 
   assert_throws(
-    () => compile("let x: Text = 1\nx"),
+    () => compile("let x: Text = 1;\nx"),
     "Binding annotation expects Text, got I32",
   );
 
   assert_throws(
-    () => compile("let x: I64 = 1\nx"),
+    () => compile("let x: I64 = 1;\nx"),
     "Binding annotation expects I64, got I32",
   );
 
   const unknown_scalar = compile(`
-let x: Int = input
+let x: Int = input;
 x + 1
 `);
 
@@ -1964,7 +1964,7 @@ x + 1
   );
 
   const unknown_text = compile(`
-let value: Text = message
+let value: Text = message;
 @len(value)
 `);
 
@@ -1974,7 +1974,7 @@ let value: Text = message
   );
 
   const reassigned_text = compile(`
-let value: Text = message
+let value: Text = message;
 value = other
 @len(value)
 `);
@@ -1986,7 +1986,7 @@ value = other
 
   const block_reassigned_text = compile(`
 @len({
-  let value: Text = message
+  let value: Text = message;
   value = other
   value
 })
@@ -2001,11 +2001,11 @@ value = other
     () =>
       compile(`
 const has_age = t => {
-  let struct { .age= Int, .. } = t
+  let struct { .age= Int, .. } = t;
   t
-}
+};
 
-let user: has_age = input
+let user: has_age = input;
 user
 `),
     "Const parameter t requires compile-time argument: input",
@@ -2016,20 +2016,20 @@ Deno.test("Source evaluates pure comptime const functions before Ic lowering", (
   const ic = compile(`
 const make_adder = n => {
   x => x + n
-}
+};
 
-const add_three = comptime make_adder(3)
+const add_three = comptime make_adder(3);
 
-let y = add_three(39)
+let y = add_three(39);
 y
 `);
 
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const value_capture = compile(`
-const factor = 1
-const value = factor + 1
-const factor = 100
+const factor = 1;
+const value = factor + 1;
+const factor = 100;
 
 value
 `);
@@ -2041,9 +2041,9 @@ value
   });
 
   const closure_capture = compile(`
-const factor = 1
-const scale = x => x + factor
-const factor = 100
+const factor = 1;
+const scale = x => x + factor;
+const factor = 100;
 
 scale(41)
 `);
@@ -2055,13 +2055,13 @@ scale(41)
   });
 
   const static_branch_capture = compile(`
-const factor = 1
+const factor = 1;
 const scale = if true {
   x => x + factor
 } else {
   x => x + factor + 1
-}
-const factor = 100
+};
+const factor = 100;
 
 scale(41)
 `);
@@ -2075,7 +2075,7 @@ scale(41)
 
 Deno.test("Source lowers const-foldable if expressions", () => {
   const ic = compile(`
-const limit = 10
+const limit = 10;
 
 if 3 < limit {
   42
@@ -2088,10 +2088,10 @@ if 3 < limit {
 
   const block_value = compile(`
 {
-  const { struct } = import "duck:prelude" ()
-  const age_type = struct { .age = Int }
-  let age = 41
-  let box: age_type = [age]
+  const { .struct } = import "duck:prelude" ();
+  const age_type = struct { .age = Int };
+  let age = 41;
+  let box: age_type = [age];
   box
 }.age + 1
 `);
@@ -2105,7 +2105,7 @@ if 3 < limit {
 
 Deno.test("Source lowers pure runtime if expressions through select", () => {
   const ic = compile(`
-let input = true
+let input = true;
 
 if input {
   42
@@ -2119,7 +2119,7 @@ if input {
 
 Deno.test("Source lowers else-if chains as nested expressions", () => {
   const ordinary = compile(`
-let choice = 2
+let choice = 2;
 
 if choice == 1 {
   10
@@ -2137,7 +2137,7 @@ if choice == 1 {
   });
 
   const literal_pattern = compile(`
-let token = 'x'
+let token = 'x';
 
 if let 'a' = token {
   1
@@ -2155,7 +2155,7 @@ if let 'a' = token {
   });
 
   const union_pattern = compile(`
-let result = \`Err (42)
+let result = \`Err (42);
 
 if let \`Ok value = result {
   value
@@ -2189,8 +2189,8 @@ if let \`Ok value = result {
 
   const assigned_wat = Source.wat(`
 host_import choose from "env.choose" () => I32
-let choice = choose()
-let result = 0
+let choice = choose();
+let result = 0;
 
 if choice == 1 {
   result = 1
@@ -2212,8 +2212,8 @@ result
   );
 
   const implicit_final_else = compile(`
-let first = false
-let second = true
+let first = false;
+let second = true;
 
 if first {
   1
@@ -2247,10 +2247,10 @@ if first {
 
 Deno.test("Source lowers no-else if statements with fallthrough", () => {
   const selected = compile(`
-let flag = true
+let flag = true;
 
 if flag {
-  return 42
+  return 42;
 }
 
 0
@@ -2259,10 +2259,10 @@ if flag {
   assert_equals(Ic.reduce(selected), { tag: "num", type: "i32", value: 42 });
 
   const skipped = compile(`
-let flag = false
+let flag = false;
 
 if flag {
-  return 42
+  return 42;
 }
 
 7
@@ -2271,8 +2271,8 @@ if flag {
   assert_equals(Ic.reduce(skipped), { tag: "num", type: "i32", value: 7 });
 
   const fallthrough = compile(`
-let flag = true
-let value = 1
+let flag = true;
+let value = 1;
 
 if flag {
   value = value + 41
@@ -2286,7 +2286,7 @@ value
 
 Deno.test("Source lowers dynamic no-else if statements through select", () => {
   const assigned = compile(`
-let value = 1
+let value = 1;
 
 if flag {
   value = 42
@@ -2302,7 +2302,7 @@ value
 
   const returned = compile(`
 if flag {
-  return 42
+  return 42;
 }
 
 0
@@ -2318,11 +2318,11 @@ Deno.test("Source propagates returns through nested blocks", () => {
   const nested = compile(`
 let f = () => {
   {
-    return 41
+    return 41;
   }
 
   1
-}
+};
 
 f() + 1
 `);
@@ -2333,12 +2333,12 @@ f() + 1
 let f = flag => {
   {
     if flag {
-      return 41
+      return 41;
     }
   }
 
   1
-}
+};
 
 f(0) + 1
 `);
@@ -2353,12 +2353,12 @@ f(0) + 1
 let f = flag => {
   {
     if flag {
-      return 41
+      return 41;
     }
   }
 
   1
-}
+};
 
 f(input) + 1
 `);
@@ -2369,17 +2369,17 @@ f(input) + 1
 
   const if_let_match = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let f = (option: option_type) => {
   {
     if let \`Some value = option {
-      return value
+      return value;
     }
   }
 
   0
-}
+};
 
 f(\`Some (41)) + 1
 `);
@@ -2392,17 +2392,17 @@ f(\`Some (41)) + 1
 
   const if_let_fallthrough = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let f = (option: option_type) => {
   {
     if let \`Some value = option {
-      return value
+      return value;
     }
   }
 
   0
-}
+};
 
 f(\`None ()) + 1
 `);
@@ -2415,17 +2415,17 @@ f(\`None ()) + 1
 
   const dynamic_if_let = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let f = (option: option_type) => {
   {
     if let \`Some value = option {
-      return value
+      return value;
     }
   }
 
   0
-}
+};
 
 f(if input {
   \`Some (41)
@@ -2505,7 +2505,7 @@ if [.age = 1] {
   assert_throws(
     () =>
       compile(`
-let f = x => x
+let f = x => x;
 
 if f {
   1
@@ -2519,7 +2519,7 @@ if f {
   assert_throws(
     () =>
       compile(`
-let result = \`Ok (1)
+let result = \`Ok (1);
 
 if result {
   1
@@ -2533,10 +2533,10 @@ if result {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 if input {
   user_type
@@ -2556,7 +2556,7 @@ let check = (value: I64) => {
   } else {
     0
   }
-}
+};
 
 check(1i64)
 `),
@@ -2586,9 +2586,9 @@ Deno.test("Source lowers logical operators through boolean if expressions", () =
   assert_equals(Ic.reduce(or_short), { tag: "num", type: "i32", value: 1 });
 
   const bounds = compile(`
-const xs = [10, 20]
+const xs = [10, 20];
 
-const i = 0
+const i = 0;
 
 if i < 0 || i >= @len(xs) {
   @panic("index out of bounds")

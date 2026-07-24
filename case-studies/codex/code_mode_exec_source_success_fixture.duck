@@ -1,14 +1,14 @@
 module () where
 
-const { parse_code_mode_exec_source } = import "./code_mode_exec_source.duck" ()
+const { .parse_code_mode_exec_source } = import "./code_mode_exec_source.duck" ();
 
 type FixtureLimit = CodeModeExecLimit
 type FixtureSource = CodeModeExecSource
 type FixtureResult = CodeModeExecSourceResult
 
-let score = 0
+let score = 0;
 
-let plain: FixtureResult = parse_code_mode_exec_source "text('hi')\n"
+let plain: FixtureResult = parse_code_mode_exec_source "text('hi')\n";
 if let `CodeModeExecSourceParsed source = plain {
   if source.code == "text('hi')\n" {
     if let `CodeModeExecLimitMissing () = source.yield_time_ms {
@@ -17,8 +17,9 @@ if let `CodeModeExecSourceParsed source = plain {
   }
 }
 
-let pragma_input = "　// @exec: {\"yield_time_ms\": 10, \"max_output_tokens\": 9007199254740991}\n  text('hi')\n"
-let pragma: FixtureResult = parse_code_mode_exec_source pragma_input
+let pragma_input =
+  "　// @exec: {\"yield_time_ms\": 10, \"max_output_tokens\": 9007199254740991}\n  text('hi')\n";
+let pragma: FixtureResult = parse_code_mode_exec_source pragma_input;
 if let `CodeModeExecSourceParsed source = pragma {
   if source.code == "  text('hi')\n" {
     if let `CodeModeExecLimitPresent yield_time_ms = source.yield_time_ms {
@@ -29,7 +30,8 @@ if let `CodeModeExecSourceParsed source = pragma {
   }
 }
 
-let nullable: FixtureResult = parse_code_mode_exec_source "// @exec: {\"yield_time_ms\": null, \"max_output_tokens\": null}\ntext('x')"
+let nullable: FixtureResult =
+  parse_code_mode_exec_source "// @exec: {\"yield_time_ms\": null, \"max_output_tokens\": null}\ntext('x')";
 if let `CodeModeExecSourceParsed source = nullable {
   if source.code == "text('x')" {
     if let `CodeModeExecLimitMissing () = source.yield_time_ms {
@@ -38,4 +40,4 @@ if let `CodeModeExecSourceParsed source = nullable {
   }
 }
 
-return { .score = score }
+return { .score = score };

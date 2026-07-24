@@ -1,8 +1,8 @@
-let total = 26
+let total = 26;
 
 for value in 0..8 {
   if value % 2 == 0 {
-    continue
+    continue;
   }
 
   total = total + value

@@ -1,25 +1,31 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./agent_tool_types.duck" ()
-const { collaboration_tool_definitions } = import "./agent_tool_registration.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./agent_tool_types.duck" ();
+const { .collaboration_tool_definitions } = import "./agent_tool_registration.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type FixtureConfig = AgentToolRegistrationConfig
 
-let config: FixtureConfig = [.enabled = true, .v2_enabled = true, .direct_model_only = true, .hide_spawn_metadata = false, .namespace = "collaboration"]
-let definitions = collaboration_tool_definitions config
-let expected_names = "spawn_agent,send_message,followup_task,wait_agent,interrupt_agent,list_agents"
-let definition_names = ""
-let definition_count = 0
-let current_definitions = definitions
-let definition_done = false
-let definitions_valid = true
+let config: FixtureConfig = [
+  .enabled = true,
+  .v2_enabled = true,
+  .direct_model_only = true,
+  .hide_spawn_metadata = false,
+  .namespace = "collaboration",
+];
+let definitions = collaboration_tool_definitions config;
+let expected_names = "spawn_agent,send_message,followup_task,wait_agent,interrupt_agent,list_agents";
+let definition_names = "";
+let definition_count = 0;
+let current_definitions = definitions;
+let definition_done = false;
+let definitions_valid = true;
 loop {
   if let `Cons node = current_definitions {
-    let [definition, tail] = node
-    let [name, exposure, _, payload, _, _] = definition
-    let [namespace, local_name] = name
+    let [definition, tail] = node;
+    let [name, exposure, _, payload, _, _] = definition;
+    let [namespace, local_name] = name;
     if definition_count == 0 {
       definition_names = local_name
     } else {
@@ -33,14 +39,21 @@ loop {
   } else {
     definition_done = true
   }
-  if definition_done { break }
+  if definition_done { break; }
 }
 
-let score = 0
-if definitions_valid && definition_count == 6 && definition_names == expected_names { score = score + 1 }
+let score = 0;
+if definitions_valid && definition_count == 6 && definition_names == expected_names { score = score
+  + 1 }
 
-let disabled_config: FixtureConfig = [.enabled = false, .v2_enabled = true, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
-let disabled = collaboration_tool_definitions disabled_config
+let disabled_config: FixtureConfig = [
+  .enabled = false,
+  .v2_enabled = true,
+  .direct_model_only = false,
+  .hide_spawn_metadata = false,
+  .namespace = "",
+];
+let disabled = collaboration_tool_definitions disabled_config;
 if let `Nil () = disabled { score = score + 10 }
 
-return { .score = score }
+return { .score = score };

@@ -1,13 +1,21 @@
 module () where
 
-const {} = import "./audio_preparation_types.duck" ()
-const { empty_history_contents, prepend_history_content, empty_history_items, prepend_history_item } = import "./history_types.duck" ()
+const {} = import "./audio_preparation_types.duck" ();
+const {} = import "./history_types.duck" ();
+
+type AudioContentNode = ListNode HistoryContent
+type AudioResponseNode = ListNode HistoryItem
 
 type AudioContentRewriteStatus =
   | `AudioContentRewriteValid Unit
   | `AudioContentRewriteInvalid AudioRewriteFailure
 
-type AudioContentRewrite = [HistoryContents, AudioPreparationResults, AudioContentRewriteStatus, I32]
+type AudioContentRewrite = [
+  HistoryContents,
+  AudioPreparationResults,
+  AudioContentRewriteStatus,
+  I32,
+]
 
 const audio_failure_placeholder: I32 -> Text = status_code => {
   if status_code == 3 {
@@ -17,147 +25,162 @@ const audio_failure_placeholder: I32 -> Text = status_code => {
   } else {
     "audio content omitted because it could not be processed"
   }
-}
+};
 
-const rewrite_audio_contents: [HistoryContents, AudioPreparationResults, I32] -> AudioContentRewrite = (values, results, first_audio_index) => {
-  let current = values
-  let remaining_results = results
-  let reversed = empty_history_contents 0
-  let status: AudioContentRewriteStatus = `AudioContentRewriteValid ()
-  let audio_index = first_audio_index
+const rewrite_audio_contents: [HistoryContents, AudioPreparationResults, I32] ->
+  AudioContentRewrite = (
+    values,
+    results,
+    first_audio_index,
+  ) => {
+    let current = values;
+    let remaining_results = results;
+    let reversed: List HistoryContent = `Nil ();
+    let status: AudioContentRewriteStatus = `AudioContentRewriteValid ();
+    let audio_index = first_audio_index;
 
-  loop {
-    if let `AudioContentRewriteInvalid _ = status { break }
-    if let `Cons node = current {
-      let [content, tail] = node
-      let rewritten = content
+    loop {
+      if let `AudioContentRewriteInvalid _ = status { break; }
+      if let `Cons node = current {
+        let [content, tail] = node;
+        let rewritten = content;
 
-      if let `InputAudio _ = content {
-        if let `AudioResultsCons result_node = remaining_results {
-          let [result, remaining] = result_node
-          let [result_status_code, result_url, _, _, _, _] = result
-          remaining_results = remaining
-          if result_status_code == 0 {
-            rewritten = `InputAudio result_url
-            audio_index = audio_index + 1
-          } else if result_status_code >= 1 && result_status_code <= 4 {
-            rewritten = `InputText (audio_failure_placeholder result_status_code)
-            audio_index = audio_index + 1
+        if let `InputAudio _ = content {
+          if let `AudioResultsCons result_node = remaining_results {
+            let [result, remaining] = result_node;
+            let [result_status_code, result_url, _, _, _, _] = result;
+            remaining_results = remaining
+            if result_status_code == 0 {
+              rewritten = `InputAudio result_url
+              audio_index = audio_index + 1
+            } else if result_status_code >= 1 && result_status_code <= 4 {
+              rewritten = `InputText (audio_failure_placeholder result_status_code)
+              audio_index = audio_index + 1
+            } else {
+              status = `AudioContentRewriteInvalid (
+                `InvalidAudioPreparationStatus result_status_code
+              )
+            }
           } else {
-            status = `AudioContentRewriteInvalid (`InvalidAudioPreparationStatus result_status_code)
+            status = `AudioContentRewriteInvalid (`MissingAudioPreparation audio_index)
           }
+        }
+
+        if let `AudioContentRewriteValid () = status {
+          let rewritten_node: AudioContentNode = [rewritten, reversed];
+          reversed = `Cons rewritten_node
+          current = tail
+        }
+      } else {
+        break;
+      }
+    }
+
+    let rewritten_values: List HistoryContent = `Nil ();
+    if let `AudioContentRewriteValid () = status {
+      loop {
+        if let `Cons node = reversed {
+          let [content, tail] = node;
+          let rewritten_node: AudioContentNode = [content, rewritten_values];
+          rewritten_values = `Cons rewritten_node
+          reversed = tail
         } else {
-          status = `AudioContentRewriteInvalid (`MissingAudioPreparation audio_index)
+          break;
         }
       }
+    }
 
-      if let `AudioContentRewriteValid () = status {
-        reversed = prepend_history_content(rewritten, reversed)
-        current = tail
+    [rewritten_values, remaining_results, status, audio_index]
+  };
+
+const apply_audio_preparation_results: [HistoryItems, AudioPreparationResults] ->
+  AudioRewriteResult = (
+    responses,
+    results,
+  ) => {
+    let current = responses;
+    let remaining_results = results;
+    let reversed: List HistoryItem = `Nil ();
+    let status: AudioContentRewriteStatus = `AudioContentRewriteValid ();
+    let audio_index = 0;
+
+    loop {
+      if let `AudioContentRewriteInvalid _ = status { break; }
+      if let `Cons node = current {
+        let [response, tail] = node;
+        let rewritten = response;
+
+        if let `Message message = response {
+          let [role, developer, contents] = message;
+          let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index);
+          let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          audio_index = next_audio_index
+          if let `AudioContentRewriteValid () = status {
+            rewritten = `Message ([role, developer, rewritten_contents])
+          }
+        } else if let `FunctionOutput output = response {
+          let [identifier, call_id, contents] = output;
+          let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index);
+          let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          audio_index = next_audio_index
+          if let `AudioContentRewriteValid () = status {
+            rewritten = `FunctionOutput ([identifier, call_id, rewritten_contents])
+          }
+        } else if let `CustomOutput output = response {
+          let [identifier, call_id, contents] = output;
+          let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index);
+          let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          audio_index = next_audio_index
+          if let `AudioContentRewriteValid () = status {
+            rewritten = `CustomOutput ([identifier, call_id, rewritten_contents])
+          }
+        }
+
+        if let `AudioContentRewriteValid () = status {
+          let rewritten_node: AudioResponseNode = [rewritten, reversed];
+          reversed = `Cons rewritten_node
+          current = tail
+        }
+      } else {
+        break;
       }
+    }
+
+    if let `AudioContentRewriteInvalid failure = status {
+      `RejectedAudioRewrite failure
+    } else if let `AudioResultsCons _ = remaining_results {
+      let extra_count = 0;
+      let counting = remaining_results;
+      loop {
+        if let `AudioResultsCons node = counting {
+          let [_, tail] = node;
+          extra_count = extra_count + 1
+          counting = tail
+        } else {
+          break;
+        }
+      }
+      `RejectedAudioRewrite (`ExtraAudioPreparations extra_count)
     } else {
-      break
-    }
-  }
-
-  let rewritten_values = empty_history_contents 0
-  if let `AudioContentRewriteValid () = status {
-    loop {
-      if let `Cons node = reversed {
-        let [content, tail] = node
-        rewritten_values = prepend_history_content(content, rewritten_values)
-        reversed = tail
-      } else {
-        break
-      }
-    }
-  }
-
-  [rewritten_values, remaining_results, status, audio_index]
-}
-
-const apply_audio_preparation_results: [HistoryItems, AudioPreparationResults] -> AudioRewriteResult = (responses, results) => {
-  let current = responses
-  let remaining_results = results
-  let reversed = empty_history_items 0
-  let status: AudioContentRewriteStatus = `AudioContentRewriteValid ()
-  let audio_index = 0
-
-  loop {
-    if let `AudioContentRewriteInvalid _ = status { break }
-    if let `Cons node = current {
-      let [response, tail] = node
-      let rewritten = response
-
-      if let `Message message = response {
-        let [role, developer, contents] = message
-        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
-        let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
-        remaining_results = remaining
-        status = next_status
-        audio_index = next_audio_index
-        if let `AudioContentRewriteValid () = status {
-          rewritten = `Message ([role, developer, rewritten_contents])
-        }
-      } else if let `FunctionOutput output = response {
-        let [identifier, call_id, contents] = output
-        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
-        let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
-        remaining_results = remaining
-        status = next_status
-        audio_index = next_audio_index
-        if let `AudioContentRewriteValid () = status {
-          rewritten = `FunctionOutput ([identifier, call_id, rewritten_contents])
-        }
-      } else if let `CustomOutput output = response {
-        let [identifier, call_id, contents] = output
-        let rewrite = rewrite_audio_contents(contents, remaining_results, audio_index)
-        let [rewritten_contents, remaining, next_status, next_audio_index] = rewrite
-        remaining_results = remaining
-        status = next_status
-        audio_index = next_audio_index
-        if let `AudioContentRewriteValid () = status {
-          rewritten = `CustomOutput ([identifier, call_id, rewritten_contents])
+      let rewritten_responses: List HistoryItem = `Nil ();
+      loop {
+        if let `Cons node = reversed {
+          let [response, tail] = node;
+          let rewritten_node: AudioResponseNode = [response, rewritten_responses];
+          rewritten_responses = `Cons rewritten_node
+          reversed = tail
+        } else {
+          break;
         }
       }
-
-      if let `AudioContentRewriteValid () = status {
-        reversed = prepend_history_item(rewritten, reversed)
-        current = tail
-      }
-    } else {
-      break
+      `PreparedAudioResponses rewritten_responses
     }
-  }
+  };
 
-  if let `AudioContentRewriteInvalid failure = status {
-    `RejectedAudioRewrite failure
-  } else if let `AudioResultsCons _ = remaining_results {
-    let extra_count = 0
-    let counting = remaining_results
-    loop {
-      if let `AudioResultsCons node = counting {
-        let [_, tail] = node
-        extra_count = extra_count + 1
-        counting = tail
-      } else {
-        break
-      }
-    }
-    `RejectedAudioRewrite (`ExtraAudioPreparations extra_count)
-  } else {
-    let rewritten_responses = empty_history_items 0
-    loop {
-      if let `Cons node = reversed {
-        let [response, tail] = node
-        rewritten_responses = prepend_history_item(response, rewritten_responses)
-        reversed = tail
-      } else {
-        break
-      }
-    }
-    `PreparedAudioResponses rewritten_responses
-  }
-}
-
-return { apply_audio_preparation_results }
+return { .apply_audio_preparation_results };

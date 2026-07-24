@@ -11,11 +11,11 @@ let run: () -> <Counter> I32 = () => {
   _ <- Counter.add(2)
   value <- Counter.get()
   value
-}
+};
 
 let counter = {
-  let count = 0
-  Counter {
+  let count = 0;
+  handler Counter {
     get: (!resume) => !resume(count),
     add: (amount, !resume) => {
       count = count + amount
@@ -23,7 +23,7 @@ let counter = {
     },
     return: value => value,
   }
-}
+};
 
 try run() with counter
 `;
@@ -73,17 +73,17 @@ Deno.test("Duck handler elaboration lowers an inferred nested effect function", 
     await run_i32(`
 effect Counter { get: () => I32 }
 let run = () => {
-  let offset = 40
+  let offset = 40;
   let read = () => {
     value <- Counter.get()
     value + offset
-  }
+  };
   read()
-}
-let counter = Counter {
+};
+let counter = handler Counter {
   get: (!resume) => !resume(2),
   return: value => value,
-}
+};
 try run() with counter
 `),
     42,
@@ -98,13 +98,13 @@ let run = () => {
   let read: () -> <Counter> I32 = () => {
     value <- Counter.get()
     value + 1
-  }
+  };
   read()
-}
-let counter = Counter {
+};
+let counter = handler Counter {
   get: (!resume) => !resume(41),
   return: value => value,
-}
+};
 try run() with counter
 `),
     42,
@@ -118,16 +118,16 @@ effect Counter { get: () => I32 }
 let read = () => {
   value <- Counter.get()
   value
-}
+};
 let run = () => {
-  let read = () => 40
+  let read = () => 40;
   value <- Counter.get()
   read() + value
-}
-let counter = Counter {
+};
+let counter = handler Counter {
   get: (!resume) => !resume(2),
   return: value => value,
-}
+};
 try run() with counter
 `),
     42,
@@ -141,22 +141,22 @@ effect Counter { get: () => I32 }
 let read = () => {
   value <- Counter.get()
   value
-}
+};
 let helper = () => {
   value <- Counter.get()
   value
-}
+};
 let run = () => {
   let read = () => {
-    value <- helper()
+    value <- helper();
     value
-  }
+  };
   read()
-}
-let counter = Counter {
+};
+let counter = handler Counter {
   get: (!resume) => !resume(42),
   return: value => value,
-}
+};
 try run() with counter
 `),
     42,
@@ -170,11 +170,11 @@ effect Stop { stop: () => I32 }
 let run = () => {
   value <- Stop.stop()
   value + 100
-}
-let stop = Stop {
+};
+let stop = handler Stop {
     stop: (!resume) => 41,
     return: value => value,
-}
+};
 try run() with stop
 `),
     41,
@@ -188,11 +188,11 @@ effect Ask { ask: () => I32 }
 let run = () => {
   value <- Ask.ask()
   value + 1
-}
-let ask = Ask {
+};
+let ask = handler Ask {
     ask: (!resume) => !resume(4) + 10,
     return: value => value,
-}
+};
 try run() with ask
 `),
     15,
@@ -210,16 +210,16 @@ let run = () => {
   left <- Pair.left()
   right <- Pair.right()
   left + right
-}
-let outer = Pair {
+};
+let outer = handler Pair {
     left: (!resume) => !resume(10),
     right: (!resume) => !resume(20),
     return: value => value,
-}
-let inner = Pair {
+};
+let inner = handler Pair {
     left: (!resume) => !resume(1),
     return: value => value,
-}
+};
 try (try run() with inner) with outer
 `),
     21,
@@ -235,15 +235,15 @@ let run = () => {
   outer <- Outer.enter()
   inner <- Inner.read()
   outer + inner
-}
-let outer = Outer {
+};
+let outer = handler Outer {
     enter: (!resume) => !resume(7),
     return: value => value,
-}
-let inner = Inner {
+};
+let inner = handler Inner {
     read: (!resume) => !resume(5),
     return: value => value,
-}
+};
 try (try run() with inner) with outer
 `),
     12,
@@ -257,18 +257,18 @@ effect Ask { ask: () => I32 }
 let run = () => {
   value <- Ask.ask()
   value
-}
-let outer = Ask {
+};
+let outer = handler Ask {
   ask: (!resume) => !resume(10),
   return: value => value + 100,
-}
-let inner = () => Ask {
+};
+let inner = () => handler Ask {
   ask: (!resume) => {
     value <- Ask.ask()
     !resume(value + 1)
   },
   return: value => value + 10,
-}
+};
 try (try run() with inner()) with outer
 `),
     121,
@@ -283,13 +283,13 @@ effect Ask { ask: () => I32 }
 let ask = () => {
   value <- Ask.ask()
   value
-}
-let h = Ask {
+};
+let h = handler Ask {
     ask: (!resume) => !resume(1),
     return: value => value,
-}
-let first = try ask() with h
-let second = try ask() with h
+};
+let first = try ask() with h;
+let second = try ask() with h;
 first + second
 `),
     "Handler h was already consumed",

@@ -1,27 +1,27 @@
 module () where
 
-const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
-const {} = import "duck:prelude/json/values" ()
-const { format_i32 } = import "duck:prelude/numeric" ()
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./wait_for_environment_types.duck" ()
+const { .json_object_get, .parse_json_document } = import "duck:prelude/json" ();
+const {} = import "duck:prelude/json/values" ();
+const { .format_i32 } = import "duck:prelude/numeric" ();
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./wait_for_environment_types.duck" ();
 
 type WaitEnvironmentArgs = WaitForEnvironmentArgs
 type WaitEnvironmentParseResult = WaitForEnvironmentParseResult
 
 let wait_environment_parse_failure: Text -> WaitEnvironmentParseResult = reason => {
-  `ParseFailed (text_append(["failed to parse function arguments: ", reason]))
-}
+  `ParseFailed (text_append ["failed to parse function arguments: ", reason])
+};
 
 let parse_wait_for_environment_args: Text -> WaitEnvironmentParseResult = document => {
-  let parsed = parse_json_document document
+  let parsed = parse_json_document document;
   if let `Ok value_and_position = parsed {
-    let [value, _] = value_and_position
+    let [value, _] = value_and_position;
     if let `Object object = value {
-      let lookup = json_object_get("environment_id", object)
+      let lookup = json_object_get("environment_id", object);
       if let `Found environment_value = lookup {
         if let `String environment_id = environment_value {
-          let args: WaitEnvironmentArgs = [.environment_id = environment_id]
+          let args: WaitEnvironmentArgs = [.environment_id = environment_id];
           `Parsed args
         } else {
           wait_environment_parse_failure "environment_id must be a string"
@@ -33,11 +33,13 @@ let parse_wait_for_environment_args: Text -> WaitEnvironmentParseResult = docume
       wait_environment_parse_failure "wait_for_environment arguments must be an object"
     }
   } else if let `Err error = parsed {
-    let [position, message] = error
-    wait_environment_parse_failure(text_append([message, text_append([" at byte ", format_i32(position)])]))
+    let [position, message] = error;
+    wait_environment_parse_failure(
+      text_append [message, text_append [" at byte ", format_i32 position]]
+    )
   } else {
     wait_environment_parse_failure "invalid JSON parse result"
   }
-}
+};
 
-return { parse_wait_for_environment_args }
+return { .parse_wait_for_environment_args };

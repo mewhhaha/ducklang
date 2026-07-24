@@ -1,27 +1,27 @@
 module () where
 
-const { classify_cli_head } = import "./cli_head.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .classify_cli_head } = import "./cli_head.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureCommand = CodexCliCommand
 
-let exec_input: FixtureArgs = `Cons (["e", `Cons (["summarize", `Nil ()])])
-let exec_command: FixtureCommand = classify_cli_head exec_input
+let exec_input: FixtureArgs = `Cons (["e", `Cons (["summarize", `Nil ()])]);
+let exec_command: FixtureCommand = classify_cli_head exec_input;
 let exec_score = if let `Exec remaining = exec_command {
   if let `Cons node = remaining {
-    let [prompt, _] = node
+    let [prompt, _] = node;
     if prompt == "summarize" { 1 } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-let review_input: FixtureArgs = `Cons (["review", `Cons (["--uncommitted", `Nil ()])])
-let review_command: FixtureCommand = classify_cli_head review_input
+let review_input: FixtureArgs = `Cons (["review", `Cons (["--uncommitted", `Nil ()])]);
+let review_command: FixtureCommand = classify_cli_head review_input;
 let review_score = if let `Review remaining = review_command {
   if let `Cons node = remaining {
-    let [target, _] = node
+    let [target, _] = node;
     if target == "--uncommitted" { 10 } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = exec_score + review_score }
+return { .score = exec_score + review_score };

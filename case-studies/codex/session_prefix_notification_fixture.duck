@@ -1,15 +1,16 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const session_prefix_module = import "./session_prefix.duck"
-const { format_subagent_notification_message } = session_prefix_module()
+const agent_types_module = import "./agent_types.duck";
+const session_prefix_module = import "./session_prefix.duck";
+const { .format_subagent_notification_message } = session_prefix_module();
 
 type FixtureTextOption = AgentTextOption
 type FixtureStatus = AgentStatus
 
-let message: FixtureTextOption = `Some "東京\n"
-let status: FixtureStatus = `Completed message
-let rendered = format_subagent_notification_message("/root/worker", status)
-let expected = "<subagent_notification>\n{\"agent_path\":\"/root/worker\",\"status\":{\"completed\":\"東京\\n\"}}\n</subagent_notification>"
+let message: FixtureTextOption = `Some "東京\n";
+let status: FixtureStatus = `Completed message;
+let rendered = format_subagent_notification_message("/root/worker", status);
+let expected =
+  "<subagent_notification>\n{\"agent_path\":\"/root/worker\",\"status\":{\"completed\":\"東京\\n\"}}\n</subagent_notification>";
 
-return { .score = if rendered == expected { 1 } else { 0 } }
+return { .score = if rendered == expected { 1 } else { 0 } };

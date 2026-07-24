@@ -16,19 +16,19 @@ Deno.test("workspace discovers marker roots, imports, and overlay precedence", a
     await Deno.mkdir(root_path + "/src", { recursive: true });
     await Deno.writeTextFile(
       root_path + "/src/a.duck",
-      "let exported = 1\nexported\n",
+      "let exported = 1;\nexported\n",
     );
     await Deno.writeTextFile(
       root_path + "/src/b.duck",
-      'const a = import "./a.duck"\nlet value = a.exported\n',
+      'const a = import "./a.duck";\nlet value = a.exported;\n',
     );
     await Deno.writeTextFile(
       root_path + "/src/c.duck",
-      'const b = import "./b.duck"\nlet value = b.value\n',
+      'const b = import "./b.duck";\nlet value = b.value;\n',
     );
     await Deno.writeTextFile(
       root_path + "/src/unrelated.duck",
-      "let separate = 9\n",
+      "let separate = 9;\n",
     );
     const root_uri = directory_uri(root_path);
     const nested_uri = directory_uri(root_path + "/src");
@@ -51,7 +51,7 @@ Deno.test("workspace discovers marker roots, imports, and overlay precedence", a
     const overlay: TextDocument = {
       uri: b_uri,
       version: 2,
-      text: 'const a = import "./a.duck"\nlet value = a.exported + 1\n',
+      text: 'const a = import "./a.duck";\nlet value = a.exported + 1;\n',
     };
     assert_equals(model.text(b_uri, [overlay]), overlay.text);
     assert_equals(
@@ -68,8 +68,8 @@ Deno.test("workspace navigation follows and renames imported members", async () 
 
   try {
     await Deno.writeTextFile(root_path + "/AGENTS.md", "workspace\n");
-    const a_text = "let exported = 1\nexported\n";
-    const b_text = 'const a = import "./a.duck"\nlet value = a.exported\n';
+    const a_text = "let exported = 1;\nexported\n";
+    const b_text = 'const a = import "./a.duck";\nlet value = a.exported;\n';
     await Deno.writeTextFile(root_path + "/a.duck", a_text);
     await Deno.writeTextFile(root_path + "/b.duck", b_text);
     const a_uri = file_uri(root_path + "/a.duck");

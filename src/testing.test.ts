@@ -7,10 +7,10 @@ Deno.test("source test runner reports traps and continues", async () => {
   const artifact = Source.artifact(`
 module () where
 
-const failing: () -> Unit = () => @panic("failure")
-const passing: () -> Unit = () => ()
+const failing: () -> Unit = () => @panic("failure");
+const passing: () -> Unit = () => ();
 
-return { failing, passing }
+return { .failing, .passing };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const results = await run_duck_tests(wasm, artifact.abi);
@@ -30,9 +30,9 @@ Deno.test("source test runner rejects callable parameters", async () => {
   const artifact = Source.artifact(`
 module () where
 
-const invalid: I32 -> I32 = value => value
+const invalid: I32 -> I32 = value => value;
 
-return { invalid }
+return { .invalid };
 `);
   const wasm = await wasm_from_wat(artifact.wat);
   const results = await run_duck_tests(wasm, artifact.abi);

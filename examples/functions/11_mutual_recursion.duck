@@ -3,6 +3,6 @@ let rec even = value => {
 }
 and odd = value => {
   if value == 0 { 0 } else { even(value - 1) }
-}
+};
 
-even(10) + odd(9)
+even 10 + odd 9

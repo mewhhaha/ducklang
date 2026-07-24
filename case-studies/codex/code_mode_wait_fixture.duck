@@ -1,15 +1,17 @@
 module () where
 
-const { plan_code_mode_wait_call } = import "./code_mode_wait.duck" ()
-const {} = import "./code_mode_wait_types.duck" ()
+const { .plan_code_mode_wait_call } = import "./code_mode_wait.duck" ();
+const {} = import "./code_mode_wait_types.duck" ();
 
 type FixtureCallPlan = CodeModeWaitCallPlan
 
-let score = 0
+let score = 0;
 
-let wait_plan: FixtureCallPlan = plan_code_mode_wait_call(`Function "{\"cell_id\":\"cell-1\",\"yield_time_ms\":25,\"max_tokens\":9}")
+let wait_plan: FixtureCallPlan = plan_code_mode_wait_call(
+  `Function "{\"cell_id\":\"cell-1\",\"yield_time_ms\":25,\"max_tokens\":9}"
+);
 if let `Wait execution = wait_plan {
-  let [request, max_tokens] = execution
+  let [request, max_tokens] = execution;
   if let `U64Decimal yield_time_ms = request.yield_time_ms {
     if request.cell_id == "cell-1" && yield_time_ms == "25" {
       if let `WaitLimitPresent value = max_tokens {
@@ -21,12 +23,14 @@ if let `Wait execution = wait_plan {
   }
 }
 
-let terminate_plan: FixtureCallPlan = plan_code_mode_wait_call(`Function "{\"cell_id\":\"cell-2\",\"terminate\":true}")
+let terminate_plan: FixtureCallPlan = plan_code_mode_wait_call(
+  `Function "{\"cell_id\":\"cell-2\",\"terminate\":true}"
+);
 if let `Terminate termination = terminate_plan {
-  let [cell_id, max_tokens] = termination
+  let [cell_id, max_tokens] = termination;
   if cell_id == "cell-2" {
     if let `WaitLimitMissing () = max_tokens { score = score + 10 }
   }
 }
 
-return { .score = score }
+return { .score = score };

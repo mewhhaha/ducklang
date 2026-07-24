@@ -1,18 +1,18 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const { render_list_agents_output } = import "./agent_tool_list_output.duck" ()
+const agent_types_module = import "./agent_types.duck";
+const { .render_list_agents_output } = import "./agent_tool_list_output.duck" ();
 
 type FixtureEntry = AgentStatusEntry
 type FixtureEntryNode = AgentStatusEntryNode
 type FixtureEntries = AgentStatusEntries
 
-let tail_entry: FixtureEntry = ["/root/writer", `Errored "failed"]
-let tail_node: FixtureEntryNode = [tail_entry, `Nil ()]
-let first_entry: FixtureEntry = ["/root/reviewer", `Running ()]
-let first_node: FixtureEntryNode = [first_entry, `Cons tail_node]
-let entries: FixtureEntries = `Cons first_node
-let score = 0
+let tail_entry: FixtureEntry = ["/root/writer", `Errored "failed"];
+let tail_node: FixtureEntryNode = [tail_entry, `Nil ()];
+let first_entry: FixtureEntry = ["/root/reviewer", `Running ()];
+let first_node: FixtureEntryNode = [first_entry, `Cons tail_node];
+let entries: FixtureEntries = `Cons first_node;
+let score = 0;
 if render_list_agents_output entries == "{\"agents\":[{\"agent_name\":\"/root/reviewer\",\"agent_status\":\"running\"},{\"agent_name\":\"/root/writer\",\"agent_status\":{\"errored\":\"failed\"}}]}" { score = 1 }
 
-return { .score = score }
+return { .score = score };

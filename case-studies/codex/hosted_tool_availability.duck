@@ -1,26 +1,26 @@
 module () where
 
-const {} = import "./hosted_tool_types.duck" ()
+const {} = import "./hosted_tool_types.duck" ();
 
 type HostedAvailabilityFacts = HostedToolAvailabilityFacts
 
 const hosted_web_search_available: HostedAvailabilityFacts -> Bool = facts => {
   if facts.use_responses_lite {
-    return false
+    return false;
   }
 
-  let standalone_enabled = facts.namespace_tools && facts.standalone_web_search
+  let standalone_enabled = facts.namespace_tools && facts.standalone_web_search;
   if standalone_enabled && facts.has_web_run_executor {
-    return false
+    return false;
   }
   if !(facts.provider_web_search) {
-    return false
+    return false;
   }
   if let `Disabled () = facts.web_search_mode {
-    return false
+    return false;
   }
 
   true
-}
+};
 
-return { hosted_web_search_available }
+return { .hosted_web_search_available };

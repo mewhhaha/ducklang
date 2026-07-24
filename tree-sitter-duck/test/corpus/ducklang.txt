@@ -2,7 +2,7 @@
 Aggregate constructors and canonical products
 ==================
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type Point = struct {
   .x = I32,
@@ -12,16 +12,17 @@ type Point = struct {
 type MaybeI32 = | `Some I32 | `None Unit
 
 type Pixels = [Rgb; 640 * 480]
-let point: Point = [20, 22]
-let moved = point :+ { .x = 21 }
-let { .x = x } = moved
+let point: Point = [20, 22];
+let moved = point <& { .x = 21 };
+let restored = { .x = 20 } &> moved;
+let { .x = x } = moved;
 
 ---
 
 (source_file
   (binding_statement
     (named_shape_pattern
-      (shorthand_shape_pattern_field
+      (named_shape_pattern_field
         (identifier)))
     (application_expression
       (postfix_expression
@@ -97,12 +98,25 @@ let { .x = x } = moved
         (identifier))
       (operator_symbol)
       (postfix_expression
-        (object_literal
-          (field_block
+        (shape_value
+          (shape_field_block
             (shape_field
               (identifier)
               (postfix_expression
                 (number))))))))
+  (binding_statement
+    (identifier)
+    (binary_expression
+      (postfix_expression
+        (shape_value
+          (shape_field_block
+            (shape_field
+              (identifier)
+              (postfix_expression
+                (number))))))
+      (operator_symbol)
+      (postfix_expression
+        (identifier))))
   (binding_statement
     (named_shape_pattern
       (named_shape_pattern_field
@@ -114,9 +128,8 @@ let { .x = x } = moved
 ==================
 Open import overrides
 ==================
-
-const open { .compose = _, .pipe = pipe2 } = import "duck:prelude/functional" ()
-const open {} = import "duck:prelude/numeric" ()
+const open { .compose = _, .pipe = pipe2 } = import "duck:prelude/functional" ();
+const open {} = import "duck:prelude/numeric" ();
 
 ---
 
@@ -147,11 +160,10 @@ const open {} = import "duck:prelude/numeric" ()
 ==================
 Colon type algebra and newtypes
 ==================
-
 type Centimeter = newtype I32
 type Numeric = I32 :| I64
-const readable = Point :+ { .read = value => value.x }
-let distance = 42 :> Centimeter
+const readable = Point :+ { .read = value => value.x };
+let distance = 42 :> Centimeter;
 
 ---
 
@@ -182,8 +194,8 @@ let distance = 42 :> Centimeter
         (identifier))
       (operator_symbol)
       (postfix_expression
-        (object_literal
-          (field_block
+        (shape_value
+          (shape_field_block
             (shape_field
               (identifier)
               (arrow_function
@@ -206,7 +218,6 @@ let distance = 42 :> Centimeter
 ==================
 Ducks, extensions, intrinsics, and custom operators
 ==================
-
 duck Add Self Other Output {
   .add = [Self, Other] -> Output
 }
@@ -217,8 +228,8 @@ extend I32 {
 
 infixl 60 +++ = Add.add
 prefix 80 ^^ = Bool.not
-let sum = 20 +++ 22
-let inverted = ^^false
+let sum = 20 +++ 22;
+let inverted = ^^false;
 
 ---
 
@@ -304,9 +315,8 @@ let inverted = ^^false
 ==================
 Source-defined struct product namespaces
 ==================
-
-let product_type = [...product_type, field.value]
-let product_type = product_type :+ (field.name, value => value[index])
+let product_type = [...product_type, field.value];
+let product_type = product_type :+ (field.name, value => value[index]);
 
 ---
 
@@ -349,15 +359,14 @@ let product_type = product_type :+ (field.name, value => value[index])
 ==================
 Shape destructuring shorthand and explicit renaming
 ==================
-
-const { struct, .other = renamed } = module_value
+const { .struct, .other = renamed } = module_value;
 
 ---
 
 (source_file
   (binding_statement
     (named_shape_pattern
-      (shorthand_shape_pattern_field
+      (named_shape_pattern_field
         (identifier))
       (named_shape_pattern_field
         (identifier)
@@ -368,10 +377,9 @@ const { struct, .other = renamed } = module_value
 ==================
 Shape value shorthand and explicit fields
 ==================
-
 module () where
-const code = 42
-return { code, .status = code }
+const code = 42;
+return { .code, .status = code, .double = value => value * 2 };
 
 ---
 
@@ -383,14 +391,25 @@ return { code, .status = code }
     (postfix_expression
       (number)))
   (module_return_statement
-    (object_literal
-      (field_block
+    (shape_value
+      (shape_field_block
         (shorthand_field
           (identifier))
         (shape_field
           (identifier)
           (postfix_expression
-            (identifier)))))))
+            (identifier)))
+        (shape_field
+          (identifier)
+          (arrow_function
+            (parameter
+              (identifier))
+            (binary_expression
+              (postfix_expression
+                (identifier))
+              (operator_symbol)
+              (postfix_expression
+                (number)))))))))
 
 ==================
 Packed types and fixed-width integers
@@ -398,8 +417,8 @@ Packed types and fixed-width integers
 
 type Flags = packed [U1, U2, U5]
 type Header = packed struct { .kind = U3, .length = U13 }
-let flags: Flags = Flags.pack [1u1, 2u2, 17u5]
-let signed: I5 = -16i5
+let flags: Flags = Flags.pack [1u1, 2u2, 17u5];
+let signed: I5 = -16i5;
 
 ---
 
@@ -474,3 +493,33 @@ let signed: I5 = -16i5
       (operator_symbol)
       (postfix_expression
         (number)))))
+
+==================
+Duck associated types
+==================
+duck Read Self {
+  type Value
+  .read = Self -> Value
+}
+
+---
+
+(source_file
+  (duck_declaration_statement
+    (identifier)
+    (identifier)
+    (duck_member_block
+      (duck_type_member
+        (identifier))
+      (duck_member
+        (identifier)
+        (type_reference
+          (function_type
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier))))
+            (type_union
+              (type_intersection
+                (type_difference
+                  (identifier))))))))))

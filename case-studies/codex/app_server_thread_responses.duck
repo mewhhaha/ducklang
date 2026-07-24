@@ -1,7 +1,16 @@
 module () where
 
-const { json_array, json_array_empty, json_array_prepend, json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const {} = import "./app_server_thread_response_types.duck" ()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_null,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json" ();
+const {} = import "./app_server_thread_response_types.duck" ();
 
 type ThreadResponseJson = AppServerJson
 type ThreadResponseJsonArray = JsonArray
@@ -16,94 +25,120 @@ type ThreadUnsubscribeStatus = AppServerThreadUnsubscribeStatus
 
 const optional_json = (value: ThreadResponseJsonOption) => {
   if let `Some json = value { json } else { json_null() }
-}
+};
 
 const optional_text_json = (value: ThreadResponseTextOption) => {
-  if let `Some text = value { json_string(text) } else { json_null() }
-}
+  if let `Some text = value { json_string text } else { json_null() }
+};
 
 const text_array = (texts: ThreadResponseTexts) => {
-  let current = texts
-  let reversed: ThreadResponseJsonArray = json_array_empty()
-  let done = false
+  let current = texts;
+  let reversed: ThreadResponseJsonArray = json_array_empty();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
-      reversed = json_array_prepend(json_string(value), reversed)
+      let [value, tail] = node;
+      reversed = json_array_prepend(json_string value, reversed)
       current = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
-  let values: ThreadResponseJsonArray = json_array_empty()
+  let values: ThreadResponseJsonArray = json_array_empty();
   done = false
 
   loop {
     if let `Cons node = reversed {
-      let [value, tail] = node
+      let [value, tail] = node;
       values = json_array_prepend(value, values)
       reversed = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
-  json_array(values)
-}
+  json_array values
+};
 
-const lifecycle_response_fields: ThreadResponseMetadata -> ThreadResponseJsonObject = (metadata: ThreadResponseMetadata) => {
-  let fields = json_object_empty()
+const lifecycle_response_fields: ThreadResponseMetadata -> ThreadResponseJsonObject = (
+  metadata: ThreadResponseMetadata
+) => {
+  let fields = json_object_empty();
   if let `ExperimentalThreadResponse () = metadata.view {
-    fields = json_object_prepend("multiAgentMode", json_string("explicitRequestOnly"), fields)
-    fields = json_object_prepend("activePermissionProfile", optional_json(metadata.active_permission_profile), fields)
-    fields = json_object_prepend("runtimeWorkspaceRoots", text_array(metadata.runtime_workspace_roots), fields)
+    fields = json_object_prepend("multiAgentMode", json_string "explicitRequestOnly", fields)
+    fields = json_object_prepend(
+      "activePermissionProfile",
+      optional_json metadata.active_permission_profile,
+      fields,
+    )
+    fields = json_object_prepend(
+      "runtimeWorkspaceRoots",
+      text_array metadata.runtime_workspace_roots,
+      fields,
+    )
   }
-  fields = json_object_prepend("reasoningEffort", optional_json(metadata.reasoning_effort), fields)
+  fields = json_object_prepend("reasoningEffort", optional_json metadata.reasoning_effort, fields)
   fields = json_object_prepend("sandbox", metadata.sandbox, fields)
   fields = json_object_prepend("approvalsReviewer", metadata.approvals_reviewer, fields)
   fields = json_object_prepend("approvalPolicy", metadata.approval_policy, fields)
-  fields = json_object_prepend("instructionSources", text_array(metadata.instruction_sources), fields)
-  fields = json_object_prepend("cwd", json_string(metadata.cwd), fields)
-  fields = json_object_prepend("serviceTier", optional_json(metadata.service_tier), fields)
-  fields = json_object_prepend("modelProvider", json_string(metadata.model_provider), fields)
-  fields = json_object_prepend("model", json_string(metadata.model), fields)
+  fields = json_object_prepend(
+    "instructionSources",
+    text_array metadata.instruction_sources,
+    fields,
+  )
+  fields = json_object_prepend("cwd", json_string metadata.cwd, fields)
+  fields = json_object_prepend("serviceTier", optional_json metadata.service_tier, fields)
+  fields = json_object_prepend("modelProvider", json_string metadata.model_provider, fields)
+  fields = json_object_prepend("model", json_string metadata.model, fields)
   fields = json_object_prepend("thread", metadata.thread, fields)
   fields
-}
+};
 
 const materialize_thread_start_response = (metadata: ThreadResponseMetadata) => {
-  json_object(lifecycle_response_fields(metadata))
-}
+  json_object(lifecycle_response_fields metadata)
+};
 
 const materialize_thread_resume_response = (metadata: ThreadResumeResponseMetadata) => {
-  let fields = lifecycle_response_fields(metadata.common)
+  let fields = lifecycle_response_fields metadata.common;
   if let `ExperimentalThreadResponse () = metadata.common.view {
-    fields = json_object_prepend("itemsBackwardsCursor", optional_text_json(metadata.items_backwards_cursor), fields)
-    fields = json_object_prepend("turnsBackwardsCursor", optional_text_json(metadata.turns_backwards_cursor), fields)
-    fields = json_object_prepend("initialTurnsPage", optional_json(metadata.initial_turns_page), fields)
+    fields = json_object_prepend(
+      "itemsBackwardsCursor",
+      optional_text_json metadata.items_backwards_cursor,
+      fields,
+    )
+    fields = json_object_prepend(
+      "turnsBackwardsCursor",
+      optional_text_json metadata.turns_backwards_cursor,
+      fields,
+    )
+    fields = json_object_prepend(
+      "initialTurnsPage",
+      optional_json metadata.initial_turns_page,
+      fields,
+    )
   }
-  json_object(fields)
-}
+  json_object fields
+};
 
 const materialize_thread_fork_response = (metadata: ThreadResponseMetadata) => {
-  json_object(lifecycle_response_fields(metadata))
-}
+  json_object(lifecycle_response_fields metadata)
+};
 
 const materialize_thread_started_notification = (thread: ThreadResponseJson) => {
   json_object(json_object_prepend("thread", thread, json_object_empty()))
-}
+};
 
-const materialize_empty_thread_response = () => json_object(json_object_empty())
+const materialize_empty_thread_response = () => json_object(json_object_empty());
 
 const materialize_thread_unarchive_response = (thread: ThreadResponseJson) => {
   json_object(json_object_prepend("thread", thread, json_object_empty()))
-}
+};
 
 const materialize_thread_unsubscribe_response = (status: ThreadUnsubscribeStatus) => {
   let text = if let `UnsubscribeNotLoaded () = status {
@@ -112,21 +147,21 @@ const materialize_thread_unsubscribe_response = (status: ThreadUnsubscribeStatus
     "notSubscribed"
   } else {
     "unsubscribed"
-  }
-  json_object(json_object_prepend("status", json_string(text), json_object_empty()))
-}
+  };
+  json_object(json_object_prepend("status", json_string text, json_object_empty()))
+};
 
 const materialize_thread_id_notification = (thread_id: Text) => {
-  json_object(json_object_prepend("threadId", json_string(thread_id), json_object_empty()))
-}
+  json_object(json_object_prepend("threadId", json_string thread_id, json_object_empty()))
+};
 
 return {
-  materialize_thread_start_response,
-  materialize_thread_resume_response,
-  materialize_thread_fork_response,
-  materialize_thread_started_notification,
-  materialize_empty_thread_response,
-  materialize_thread_unarchive_response,
-  materialize_thread_unsubscribe_response,
-  materialize_thread_id_notification,
-}
+  .materialize_thread_start_response,
+  .materialize_thread_resume_response,
+  .materialize_thread_fork_response,
+  .materialize_thread_started_notification,
+  .materialize_empty_thread_response,
+  .materialize_thread_unarchive_response,
+  .materialize_thread_unsubscribe_response,
+  .materialize_thread_id_notification,
+};

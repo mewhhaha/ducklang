@@ -1,0 +1,47 @@
+module () where
+
+const { .text_append, .text_trim_whitespace } = import "duck:prelude/text" ();
+const {} = import "./network_policy_message_types.duck" ();
+
+type BlockedRequest = NetworkPolicyBlockedRequest
+type PolicyMessageOption = NetworkPolicyMessageOption
+
+const denied_network_policy_message: BlockedRequest -> PolicyMessageOption = blocked_request => {
+  let missing_message: PolicyMessageOption = `NoPolicyMessage ();
+  if let `MessageText decision = blocked_request.decision {
+    if decision != "deny" {
+      return missing_message;
+    }
+  } else {
+    return missing_message;
+  }
+
+  let host = text_trim_whitespace blocked_request.host;
+  if host == "" {
+    let blocked_message: PolicyMessageOption =
+      `PolicyMessage "Network access was blocked by policy.";
+    return blocked_message;
+  }
+
+  let detail = "request is blocked by network policy";
+  if blocked_request.reason == "denied" {
+    detail = "domain is explicitly denied by policy and cannot be approved from this prompt"
+  } else if blocked_request.reason == "not_allowed" {
+    detail = "domain is not on the allowlist for the current sandbox mode"
+  } else if blocked_request.reason == "not_allowed_local" {
+    detail = "local/private network addresses are blocked by the sandbox policy"
+  } else if blocked_request.reason == "method_not_allowed" {
+    detail = "request method is blocked by the current network mode"
+  } else if blocked_request.reason == "proxy_disabled" {
+    detail = "network proxy is disabled"
+  }
+
+  let message = text_append(
+    "Network access to \"",
+    text_append(host, text_append("\" was blocked: ", text_append(detail, "."))),
+  );
+  let blocked_message: PolicyMessageOption = `PolicyMessage message;
+  blocked_message
+};
+
+return { .denied_network_policy_message };

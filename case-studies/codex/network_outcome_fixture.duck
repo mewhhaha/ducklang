@@ -1,8 +1,13 @@
 module () where
 
-const network_types_module = import "./network_types.duck"
-const network_module = import "./network_approval.duck"
-const { empty_network_approval_state, finish_network_call, record_blocked_request, record_call_outcome, register_network_call } = network_module()
+const {} = import "./network_types.duck" ();
+const {
+  .empty_network_approval_state,
+  .finish_network_call,
+  .record_blocked_request,
+  .record_call_outcome,
+  .register_network_call,
+} = import "./network_approval.duck" ();
 
 type FixtureTextOption = NetworkTextOption
 type FixtureMode = NetworkApprovalMode
@@ -11,45 +16,59 @@ type FixtureCall = NetworkApprovalCall
 type FixtureState = NetworkApprovalState
 type FixtureFinish = NetworkFinishOutcome
 
-let score = 0
-let deferred: FixtureMode = `Deferred ()
-let no_outcome: FixtureOutcome = `NoOutcome ()
-let no_execution: FixtureTextOption = `None ()
+let score = 0;
+let deferred: FixtureMode = `Deferred ();
+let no_outcome: FixtureOutcome = `NoOutcome ();
+let no_execution: FixtureTextOption = `None ();
 
-let call: FixtureCall = ["registration-1", "local", "curl https://example.com", deferred, no_outcome, false]
-let state: FixtureState = register_network_call(empty_network_approval_state(), call)
-let blocked_state = record_blocked_request(state, `Some "registration-1", "network denied")
-let finished = finish_network_call(blocked_state, "registration-1")
-let [after_finish, raw_finish] = finished
-let typed_finish: FixtureFinish = raw_finish
+let call: FixtureCall = [
+  "registration-1",
+  "local",
+  "curl https://example.com",
+  deferred,
+  no_outcome,
+  false,
+];
+let state: FixtureState = register_network_call(empty_network_approval_state(), call);
+let blocked_state = record_blocked_request(state, `Some "registration-1", "network denied");
+let finished = finish_network_call(blocked_state, "registration-1");
+let [after_finish, raw_finish] = finished;
+let typed_finish: FixtureFinish = raw_finish;
 
 if let `Rejected message = typed_finish {
   if message == "network denied" { score = score + 1 }
 }
 
-let [remaining, _, _, _] = after_finish
+let [remaining, _, _, _] = after_finish;
 if let `Nil () = remaining {
   score = score + 1
 }
 
-let first: FixtureCall = ["registration-a", "local", "curl a", deferred, no_outcome, false]
-let second: FixtureCall = ["registration-b", "local", "curl b", deferred, no_outcome, false]
-let ambiguous_state = register_network_call(register_network_call(empty_network_approval_state(), first), second)
-let ignored = record_blocked_request(ambiguous_state, no_execution, "ambiguous denial")
-let first_finish = finish_network_call(ignored, "registration-a")
-let [_, first_finish_outcome] = first_finish
+let first: FixtureCall = ["registration-a", "local", "curl a", deferred, no_outcome, false];
+let second: FixtureCall = ["registration-b", "local", "curl b", deferred, no_outcome, false];
+let ambiguous_state = register_network_call(
+  register_network_call(empty_network_approval_state(), first),
+  second,
+);
+let ignored = record_blocked_request(ambiguous_state, no_execution, "ambiguous denial");
+let first_finish = finish_network_call(ignored, "registration-a");
+let [_, first_finish_outcome] = first_finish;
 
 if let `Finished () = first_finish_outcome {
   score = score + 1
 }
 
-let user_denied = record_call_outcome(state, "registration-1", `DeniedByUser (), false)
-let blocked_after_user_denial = record_blocked_request(user_denied, `Some "registration-1", "later policy denial")
-let user_finish = finish_network_call(blocked_after_user_denial, "registration-1")
-let [_, user_finish_outcome] = user_finish
+let user_denied = record_call_outcome(state, "registration-1", `DeniedByUser (), false);
+let blocked_after_user_denial = record_blocked_request(
+  user_denied,
+  `Some "registration-1",
+  "later policy denial",
+);
+let user_finish = finish_network_call(blocked_after_user_denial, "registration-1");
+let [_, user_finish_outcome] = user_finish;
 
 if let `Rejected message = user_finish_outcome {
   if message == "rejected by user" { score = score + 1 }
 }
 
-return { .score = score }
+return { .score = score };

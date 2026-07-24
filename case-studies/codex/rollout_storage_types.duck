@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type RolloutStoredFile = [Text, Text, Text]
 type RolloutStoredFiles = List RolloutStoredFile
@@ -50,7 +50,16 @@ type RolloutThreadSortKey =
 
 type RolloutStorageTexts = List Text
 
-type RolloutThreadQuery = [I32, RolloutStorageTextOption, RolloutThreadSortKey, RolloutStorageTexts, RolloutStorageTexts, RolloutStorageTexts, Text, I32]
+type RolloutThreadQuery = [
+  I32,
+  RolloutStorageTextOption,
+  RolloutThreadSortKey,
+  RolloutStorageTexts,
+  RolloutStorageTexts,
+  RolloutStorageTexts,
+  Text,
+  I32,
+]
 type RolloutThreadPage = [RolloutThreadSummaries, RolloutStorageTextOption, I32, Bool]
 
-return {}
+return {};

@@ -1,4 +1,4 @@
-import { assert_equals, assert_throws } from "../assert.ts";
+import { assert_equals, assert_includes, assert_throws } from "../assert.ts";
 import { Source } from "../frontend.ts";
 import { instantiate_wat } from "../wasm_test_util.ts";
 import { fixed_array_length } from "./fixed_array_type.ts";
@@ -57,7 +57,7 @@ Deno.test("fixed array lengths evaluate compile-time natural expressions", () =>
 
 Deno.test("semantic validation checks fixed array literal annotations", () => {
   const analysis = Source.analyze(`
-let values: [Int; 2] = [1, 2i64]
+let values: [Int; 2] = [1, 2i64];
 `);
 
   assert_equals(
@@ -68,8 +68,8 @@ let values: [Int; 2] = [1, 2i64]
 
 Deno.test("semantic validation resolves const fixed array lengths", () => {
   const analysis = Source.analyze(`
-const width = 1 + 1
-let values: [Int; width * 2] = [1, 2, 3, 4]
+const width = 1 + 1;
+let values: [Int; width * 2] = [1, 2, 3, 4];
 values
 `);
 
@@ -78,8 +78,8 @@ values
 
 Deno.test("fixed array lowering receives resolved const lengths", () => {
   const wat = Source.wat(`
-const width = 1 + 1
-let values: [Int; width + 1] = [20, 1, 21]
+const width = 1 + 1;
+let values: [Int; width + 1] = [20, 1, 21];
 values[0] + values[2]
 `);
 
@@ -90,8 +90,8 @@ values[0] + values[2]
 
 Deno.test("semantic validation rejects runtime fixed array lengths", () => {
   const analysis = Source.analyze(`
-let width = 2
-let values: [Int; width] = [1, 2]
+let width = 2;
+let values: [Int; width] = [1, 2];
 `);
 
   assert_equals(
@@ -102,8 +102,8 @@ let values: [Int; width] = [1, 2]
 
 Deno.test("repeated value packs resolve const lengths at function boundaries", async () => {
   const source = `
-const width = 1 + 2
-let sum: (I32; width) -> I32 = (a, b, c) => a + b + c
+const width = 1 + 2;
+let sum: (I32; width) -> I32 = (a, b, c) => a + b + c;
 sum(10, 20, 12)
 `;
 
@@ -125,8 +125,8 @@ sum(10, 20, 12)
 
 Deno.test("repeated value packs reject runtime lengths", () => {
   const analysis = Source.analyze(`
-let width = 2
-let sum: (I32; width) -> I32 = (a, b) => a + b
+let width = 2;
+let sum: (I32; width) -> I32 = (a, b) => a + b;
 sum(20, 22)
 `);
 
@@ -137,13 +137,15 @@ sum(20, 22)
 });
 
 Deno.test("repeated value packs cover empty, unary, and returned packs", () => {
-  const analysis = Source.analyze(`
-let answer: (I32; 0) -> I32 = () => 42
-let identity: (I32; 1) -> I32 = value => value
-let swap: (I32; 2) -> (I32; 2) = (left, right) => (right, left)
-let (first, second) = swap(identity(20), answer())
+  const source = `
+let answer: (I32; 0) -> I32 = () => 42;
+let identity: (I32; 1) -> I32 = value => value;
+let swap: (I32; 2) -> (I32; 2) = (left, right) => (right, left);
+let (first, second) = swap(identity(20), answer());
 first + second
-`);
+`;
+  const analysis = Source.analyze(source);
 
   assert_equals(analysis.diagnostics, []);
+  assert_includes(Source.wat(source), "i32.add");
 });

@@ -1,12 +1,13 @@
-const protocol_module = import "./protocol.duck"
-const { decode_model_event, encode_tool_result, encode_user_message } = protocol_module()
+const protocol_module = import "./protocol.duck";
+const { .decode_model_event, .encode_tool_result, .encode_user_message } = protocol_module();
 
 type FixtureEvent = ModelEvent
 type FixtureEventResult = ModelEventResult
 type FixtureToolCall = ModelToolCall
 
-let score = 0
-let delta: FixtureEventResult = decode_model_event("{\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}")
+let score = 0;
+let delta: FixtureEventResult =
+  decode_model_event "{\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}"
 
 if let `Ok event = delta {
   if let `Message text = event {
@@ -16,12 +17,13 @@ if let `Ok event = delta {
   }
 }
 
-let call: FixtureEventResult = decode_model_event("{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"call_id\":\"call-1\"}}")
+let call: FixtureEventResult =
+  decode_model_event "{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"call_id\":\"call-1\"}}"
 
 if let `Ok event = call {
   if let `ToolCall tool_call = event {
-    let typed_call: FixtureToolCall = tool_call
-    let [call_id, name, arguments] = typed_call
+    let typed_call: FixtureToolCall = tool_call;
+    let [call_id, name, arguments] = typed_call;
 
     if call_id == "call-1" && name == "read_file" && arguments == "{\"path\":\"README.md\"}" {
       score = score + 10
@@ -29,7 +31,8 @@ if let `Ok event = call {
   }
 }
 
-let message: FixtureEventResult = decode_model_event("{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello \"},{\"type\":\"output_text\",\"text\":\"world\"}]}}")
+let message: FixtureEventResult =
+  decode_model_event "{\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello \"},{\"type\":\"output_text\",\"text\":\"world\"}]}}"
 
 if let `Ok event = message {
   if let `Message text = event {
@@ -39,7 +42,8 @@ if let `Ok event = message {
   }
 }
 
-let completed: FixtureEventResult = decode_model_event("{\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}")
+let completed: FixtureEventResult =
+  decode_model_event "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}"
 
 if let `Ok event = completed {
   if let `Completed () = event {
@@ -47,12 +51,14 @@ if let `Ok event = completed {
   }
 }
 
-if encode_user_message("Read \"README\"") == "{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Read \\\"README\\\"\"}]}" {
+if encode_user_message "Read \"README\"" == "{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Read \\\"README\\\"\"}]}" {
   score = score + 10000
 }
 
-if encode_tool_result("call-1", "# Binned") == "{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"# Binned\"}" {
-  score = score + 100000
-}
+if encode_tool_result("call-1",
+  "# Binned") ==
+  "{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"# Binned\"}" {
+    score = score + 100000
+  }
 
 score

@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./code_mode_runtime_response_types.duck" ()
-const { handle_code_mode_runtime_response } = import "./code_mode_runtime_response.duck" ()
+const {} = import "./code_mode_runtime_response_types.duck" ();
+const { .handle_code_mode_runtime_response } = import "./code_mode_runtime_response.duck" ();
 
 type FixtureRuntimeItem = CodeModeRuntimeContentItem
 type FixtureRuntimeItemNode = CodeModeRuntimeContentItemNode
@@ -10,32 +10,37 @@ type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 type FixtureResponse = CodeModeRuntimeResponse
 
-let no_detail: FixtureDetailOption = `None ()
-let original: FixtureDetail = `Original ()
-let original_detail: FixtureDetailOption = `Some original
-let runtime_items: FixtureRuntimeItems = `RuntimeItemsNil ()
-let original_item: FixtureRuntimeItem = `RuntimeInputImage (["original", original_detail])
-let original_node: FixtureRuntimeItemNode = [original_item, runtime_items]
+let no_detail: FixtureDetailOption = `None ();
+let original: FixtureDetail = `Original ();
+let original_detail: FixtureDetailOption = `Some original;
+let runtime_items: FixtureRuntimeItems = `RuntimeItemsNil ();
+let original_item: FixtureRuntimeItem = `RuntimeInputImage (["original", original_detail]);
+let original_node: FixtureRuntimeItemNode = [original_item, runtime_items];
 runtime_items = `RuntimeItemsCons original_node
-let default_item: FixtureRuntimeItem = `RuntimeInputImage (["default", no_detail])
-let default_node: FixtureRuntimeItemNode = [default_item, runtime_items]
+let default_item: FixtureRuntimeItem = `RuntimeInputImage (["default", no_detail]);
+let default_node: FixtureRuntimeItemNode = [default_item, runtime_items];
 runtime_items = `RuntimeItemsCons default_node
-let response: FixtureResponse = `RuntimeResult (["cell-1", runtime_items, `RuntimeErrorMissing ()])
-let score = 0
+let response: FixtureResponse = `RuntimeResult (["cell-1", runtime_items, `RuntimeErrorMissing ()]);
+let score = 0;
 
-let supported = handle_code_mode_runtime_response(response, `OriginalDetailSupported (), `WaitLimitMissing (), `ElapsedMicroseconds 0i64)
+let supported = handle_code_mode_runtime_response(
+  response,
+  `OriginalDetailSupported (),
+  `WaitLimitMissing (),
+  `ElapsedMicroseconds 0i64,
+);
 if let `Cons header_node = supported.content_items {
-  let [_, header_tail] = header_node
+  let [_, header_tail] = header_node;
   if let `Cons default_output_node = header_tail {
-    let [default_output_item, default_output_tail] = default_output_node
+    let [default_output_item, default_output_tail] = default_output_node;
     if let `InputImage default_image = default_output_item {
-      let [_, default_output_detail] = default_image
+      let [_, default_output_detail] = default_image;
       if let `Some selected_default = default_output_detail {
         if let `High () = selected_default {
           if let `Cons original_output_node = default_output_tail {
-            let [original_output_item, original_output_tail] = original_output_node
+            let [original_output_item, original_output_tail] = original_output_node;
             if let `InputImage original_image = original_output_item {
-              let [_, original_output_detail] = original_image
+              let [_, original_output_detail] = original_image;
               if let `Some selected_original = original_output_detail {
                 if let `Original () = selected_original {
                   if let `Nil () = original_output_tail { score = score + 1 }
@@ -49,15 +54,20 @@ if let `Cons header_node = supported.content_items {
   }
 }
 
-let unsupported = handle_code_mode_runtime_response(response, `OriginalDetailUnsupported (), `WaitLimitMissing (), `ElapsedMicroseconds 0i64)
+let unsupported = handle_code_mode_runtime_response(
+  response,
+  `OriginalDetailUnsupported (),
+  `WaitLimitMissing (),
+  `ElapsedMicroseconds 0i64,
+);
 if let `Cons header_node = unsupported.content_items {
-  let [_, header_tail] = header_node
+  let [_, header_tail] = header_node;
   if let `Cons default_output_node = header_tail {
-    let [_, default_output_tail] = default_output_node
+    let [_, default_output_tail] = default_output_node;
     if let `Cons original_output_node = default_output_tail {
-      let [original_output_item, original_output_tail] = original_output_node
+      let [original_output_item, original_output_tail] = original_output_node;
       if let `InputImage original_image = original_output_item {
-        let [_, original_output_detail] = original_image
+        let [_, original_output_detail] = original_image;
         if let `Some selected = original_output_detail {
           if let `High () = selected {
             if let `Nil () = original_output_tail { score = score + 10 }
@@ -68,4 +78,4 @@ if let `Cons header_node = unsupported.content_items {
   }
 }
 
-return { .score = score }
+return { .score = score };

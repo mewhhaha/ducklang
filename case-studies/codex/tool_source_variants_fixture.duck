@@ -1,6 +1,6 @@
-const { text_append } = import "duck:prelude/functional" ()
-const { tool_source_definitions } = import "./tool_source_plan.duck" ()
-const {} = import "./tool_source_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .tool_source_definitions } = import "./tool_source_plan.duck" ();
+const {} = import "./tool_source_types.duck" ();
 
 type FixtureFacts = ToolSourceFacts
 type FixtureDefinitions = ToolSourceDefinitions
@@ -25,22 +25,30 @@ let facts: FixtureFacts = [
   .collaboration_namespace = "collaboration",
   .tool_search = false,
   .agent_jobs = false,
-  .agent_job_worker = false]
+  .agent_job_worker = false];
 
-let configured_runtimes: FixtureDefinitions = `Nil ()
-let extension_runtimes: FixtureDefinitions = `Nil ()
-let dynamic_runtimes: FixtureDefinitions = `Nil ()
-let current = tool_source_definitions(facts, configured_runtimes, extension_runtimes, dynamic_runtimes)
-let trace = ""
-let count = 0
-let direct_model_only_count = 0
-let done = false
+let configured_runtimes: FixtureDefinitions = `Nil ();
+let extension_runtimes: FixtureDefinitions = `Nil ();
+let dynamic_runtimes: FixtureDefinitions = `Nil ();
+let current = tool_source_definitions(
+  facts,
+  configured_runtimes,
+  extension_runtimes,
+  dynamic_runtimes,
+);
+let trace = "";
+let count = 0;
+let direct_model_only_count = 0;
+let done = false;
 
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [[namespace, local_name], exposure, _, _, _, _] = definition
-    trace = text_append [text_append [text_append [text_append [trace, namespace], "."], local_name], "|"]
+    let [definition, tail] = node;
+    let [[namespace, local_name], exposure, _, _, _, _] = definition;
+    trace = text_append [
+      text_append [text_append [text_append [trace, namespace], "."], local_name],
+      "|",
+    ]
     if let `DirectModelOnly () = exposure {
       direct_model_only_count = direct_model_only_count + 1
     }
@@ -50,12 +58,13 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
-let expected = ".update_plan|.request_plugin_install|.spawn_agent|.send_message|.followup_task|.wait_agent|.interrupt_agent|.list_agents|"
-let score = 0
+let expected =
+  ".update_plan|.request_plugin_install|.spawn_agent|.send_message|.followup_task|.wait_agent|.interrupt_agent|.list_agents|";
+let score = 0;
 if trace == expected { score = score + 1 }
 if count == 8 { score = score + 10 }
 if direct_model_only_count == 0 { score = score + 100 }
-return { .score = score }
+return { .score = score };

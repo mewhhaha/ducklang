@@ -1,20 +1,41 @@
 module () where
 
-const {} = import "./agent_job_spawn_types.duck" ()
-const { decode_agent_job_spawn_json } = import "./agent_job_spawn_json.duck" ()
-const { prepare_agent_job_spawn } = import "./agent_job_spawn_policy.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ();
+const { .decode_agent_job_spawn_json } = import "./agent_job_spawn_json.duck" ();
+const { .prepare_agent_job_spawn } = import "./agent_job_spawn_policy.duck" ();
 
 type AgentJobSpawnCallOption = AgentJobTextOption
 type AgentJobSpawnCallPayload = AgentJobPayload
 type AgentJobSpawnCallPlan = AgentJobSpawnPlan
 
-let plan_spawn_agents_on_csv: [AgentJobSpawnCallPayload, Text, I32, Bool, I32, AgentJobSpawnCallOption] -> AgentJobSpawnCallPlan = (payload: AgentJobSpawnCallPayload, cwd: Text, environment_count: I32, remote_environment: Bool, maximum_threads: I32, configured_runtime_seconds: AgentJobSpawnCallOption) => {
+let plan_spawn_agents_on_csv: [
+  AgentJobSpawnCallPayload,
+  Text,
+  I32,
+  Bool,
+  I32,
+  AgentJobSpawnCallOption,
+] -> AgentJobSpawnCallPlan = (
+  payload: AgentJobSpawnCallPayload,
+  cwd: Text,
+  environment_count: I32,
+  remote_environment: Bool,
+  maximum_threads: I32,
+  configured_runtime_seconds: AgentJobSpawnCallOption,
+) => {
   if let `Unsupported () = payload {
     `RejectSpawn "agent jobs handler received unsupported payload"
   } else if let `Function document = payload {
-    let decoded = decode_agent_job_spawn_json document
+    let decoded = decode_agent_job_spawn_json document;
     if let `SpawnDecoded args = decoded {
-      prepare_agent_job_spawn(args, cwd, environment_count, remote_environment, maximum_threads, configured_runtime_seconds)
+      prepare_agent_job_spawn(
+        args,
+        cwd,
+        environment_count,
+        remote_environment,
+        maximum_threads,
+        configured_runtime_seconds,
+      )
     } else if let `SpawnDecodeFailed reason = decoded {
       `RejectSpawn reason
     } else {
@@ -23,6 +44,6 @@ let plan_spawn_agents_on_csv: [AgentJobSpawnCallPayload, Text, I32, Bool, I32, A
   } else {
     `RejectSpawn "agent jobs handler received unsupported payload"
   }
-}
+};
 
-return { plan_spawn_agents_on_csv }
+return { .plan_spawn_agents_on_csv };

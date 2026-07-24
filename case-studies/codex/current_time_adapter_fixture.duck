@@ -1,16 +1,18 @@
 module (!init: Init) where
 
-const {} = import "./current_time_types.duck" ()
-const { plan_sleep_request } = import "./sleep_tool_policy.duck" ()
-const { render_current_time_tool_output, render_sleep_tool_output } = import "./current_time_tool_output.duck" ()
+const {} = import "./current_time_types.duck" ();
+const { .plan_sleep_request } = import "./sleep_tool_policy.duck" ();
+const { .render_current_time_tool_output, .render_sleep_tool_output } =
+  import "./current_time_tool_output.duck" ();
 
-let score = 0
+let score = 0;
 current_time <- CurrentTimeHost.current_time()
-if render_current_time_tool_output(current_time) == "It is 2026-06-17 17:34:15 UTC." { score = score + 1 }
+if render_current_time_tool_output current_time == "It is 2026-06-17 17:34:15 UTC." { score = score
+  + 1 }
 
-if let `ValidSleep duration_ms = plan_sleep_request(1000i64) {
+if let `ValidSleep duration_ms = plan_sleep_request 1000i64 {
   sleep_result <- CurrentTimeHost.sleep(duration_ms)
-  if render_sleep_tool_output(sleep_result) == "Wall time: 1.0000 seconds\nSleep interrupted by new input." { score = score + 10 }
+  if render_sleep_tool_output sleep_result == "Wall time: 1.0000 seconds\nSleep interrupted by new input." { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -1,13 +1,14 @@
 module () where
 
-const { parse_code_mode_wait_args } = import "./code_mode_wait_json.duck" ()
-const {} = import "./code_mode_wait_types.duck" ()
+const { .parse_code_mode_wait_args } = import "./code_mode_wait_json.duck" ();
+const {} = import "./code_mode_wait_types.duck" ();
 
 type FixtureParseResult = CodeModeWaitParseResult
 
-let score = 0
+let score = 0;
 
-let defaults: FixtureParseResult = parse_code_mode_wait_args "{\"cell_id\":\"cell-1\",\"ignored\":true,\"ignored\":false}"
+let defaults: FixtureParseResult =
+  parse_code_mode_wait_args "{\"cell_id\":\"cell-1\",\"ignored\":true,\"ignored\":false}";
 if let `Parsed args = defaults {
   if let `U64Decimal yield_time_ms = args.yield_time_ms {
     if args.cell_id == "cell-1" && yield_time_ms == "10000" && !(args.terminate) {
@@ -16,7 +17,8 @@ if let `Parsed args = defaults {
   }
 }
 
-let explicit: FixtureParseResult = parse_code_mode_wait_args "{\"cell_id\":\"cell-2\",\"yield_time_ms\":18446744073709551615,\"max_tokens\":42,\"terminate\":true}"
+let explicit: FixtureParseResult =
+  parse_code_mode_wait_args "{\"cell_id\":\"cell-2\",\"yield_time_ms\":18446744073709551615,\"max_tokens\":42,\"terminate\":true}";
 if let `Parsed args = explicit {
   if let `U64Decimal yield_time_ms = args.yield_time_ms {
     if args.cell_id == "cell-2" && yield_time_ms == "18446744073709551615" && args.terminate {
@@ -29,9 +31,10 @@ if let `Parsed args = explicit {
   }
 }
 
-let nullable: FixtureParseResult = parse_code_mode_wait_args "{\"cell_id\":\"cell-3\",\"max_tokens\":null}"
+let nullable: FixtureParseResult =
+  parse_code_mode_wait_args "{\"cell_id\":\"cell-3\",\"max_tokens\":null}";
 if let `Parsed args = nullable {
   if let `WaitLimitMissing () = args.max_tokens { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

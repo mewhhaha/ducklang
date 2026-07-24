@@ -1,8 +1,8 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./tool_types.duck" ()
-const {} = import "./tool_search_policy_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./tool_types.duck" ();
+const {} = import "./tool_search_policy_types.duck" ();
 
 type ToolSearchTextOption = Option Text
 
@@ -59,4 +59,4 @@ type ToolSearchRankedEntries =
   | `Nil Unit
   | `Cons ToolSearchRankedEntryNode
 
-return {}
+return {};

@@ -1,18 +1,19 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { update_plan_tool_definitions, update_plan_tool_specs } = import "./update_plan_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .update_plan_tool_definitions, .update_plan_tool_specs } =
+  import "./update_plan_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 type FixtureSpecs = ToolSpecs
 
 let definitions_score: I32 = scratch {
-  let score = 0
-  let definitions: FixtureDefinitions = update_plan_tool_definitions()
+  let score = 0;
+  let definitions: FixtureDefinitions = update_plan_tool_definitions();
   if let `Cons node = definitions {
-    let [definition, tail] = node
-    let [name, exposure, tool_handler, payload, parallel, waits] = definition
-    let [namespace, local_name] = name
+    let [definition, tail] = node;
+    let [name, exposure, tool_handler, payload, parallel, waits] = definition;
+    let [namespace, local_name] = name;
     if namespace == "" && local_name == "update_plan" && !(parallel) && !(waits) {
       if let `Direct () = exposure {
         if let `UpdatePlan () = tool_handler {
@@ -25,17 +26,19 @@ let definitions_score: I32 = scratch {
   }
 
   score
-}
+};
 
 let specs_score: I32 = scratch {
-  let score = 0
-  let specs: FixtureSpecs = update_plan_tool_specs()
+  let score = 0;
+  let specs: FixtureSpecs = update_plan_tool_specs();
   if let `Cons node = specs {
-    let [spec, tail] = node
-    let [_, kind, description, parameters, output, strict] = spec
-    let description_valid = description == "Updates the task plan.\nProvide an optional explanation and a list of plan items, each with a step and status.\nAt most one step can be in_progress at a time.\n"
-    let schema_valid = parameters == "{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}"
-    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
+    let [spec, tail] = node;
+    let [_, kind, description, parameters, output, strict] = spec;
+    let description_valid =
+      description == "Updates the task plan.\nProvide an optional explanation and a list of plan items, each with a step and status.\nAt most one step can be in_progress at a time.\n";
+    let schema_valid =
+      parameters == "{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}";
+    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
     if description_valid && schema_valid && output_valid && !(strict) {
       if let `FunctionSpec () = kind {
         if let `Nil () = tail { score = score + 100 }
@@ -44,6 +47,6 @@ let specs_score: I32 = scratch {
   }
 
   score
-}
+};
 
-return { .score = definitions_score + specs_score }
+return { .score = definitions_score + specs_score };

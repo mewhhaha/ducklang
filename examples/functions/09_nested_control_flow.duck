@@ -6,7 +6,7 @@ declare effect Input {
 
 declare Init { input: Input }
 
-let value = 0
+let value = 0;
 outer <- Input.flag()
 
 if outer {
@@ -18,5 +18,5 @@ if outer {
   value = 21
 }
 
-let result = value
-return { .result = result }
+let result = value;
+return { .result = result };

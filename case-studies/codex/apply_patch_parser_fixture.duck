@@ -1,44 +1,56 @@
 module () where
 
-const { list } = import "duck:prelude/list" ()
-const { text_split } = import "duck:prelude/text" ()
-const {} = import "./apply_patch_types.duck" ()
-const { parse_apply_patch_lines } = import "./apply_patch_parser.duck" ()
+const { .list } = import "duck:prelude/list" ();
+const { .text_split } = import "duck:prelude/text" ();
+const {} = import "./apply_patch_types.duck" ();
+const { .parse_apply_patch_lines } = import "./apply_patch_parser.duck" ();
 
 type FixtureChunk = ApplyPatchChunk
 type FixtureChunks = ApplyPatchChunks
 type FixtureHunk = ApplyPatchHunk
 type FixtureHunks = ApplyPatchHunks
 
-const chunks = comptime list(FixtureChunk)
-const hunks = comptime list(FixtureHunk)
+const chunks = comptime list FixtureChunk;
+const hunks = comptime list FixtureHunk;
 
-let score: I32 = 0
-let patch = "*** Begin Patch\n*** Environment ID: remote\n*** Add File: docs/new.txt\n+hello\n+world\n*** Delete File: old.txt\n*** Update File: src/old.ts\n*** Move to: src/new.ts\n@@ function run\n-old\n+new\n@@\n tail\n+last\n*** End of File\n*** End Patch"
-let parsed = parse_apply_patch_lines(text_split([patch, "\n"]))
+let score: I32 = 0;
+let patch =
+  "*** Begin Patch\n*** Environment ID: remote\n*** Add File: docs/new.txt\n+hello\n+world\n*** Delete File: old.txt\n*** Update File: src/old.ts\n*** Move to: src/new.ts\n@@ function run\n-old\n+new\n@@\n tail\n+last\n*** End of File\n*** End Patch"
+let parsed = parse_apply_patch_lines(text_split [patch, "\n"]);
 
 if let `Ok document = parsed {
   if let `Some environment_id = document.environment_id {
     if environment_id == "remote" && hunks.length(document.hunks) == 3 { score = score + 1 }
   }
 
-  let first = hunks.nth_or(`DeleteFile "", 0, document.hunks)
+  let first = hunks.nth_or(`DeleteFile "", 0, document.hunks);
   if let `AddFile addition = first {
-    if addition.path == "docs/new.txt" && addition.content == "hello\nworld\n" { score = score + 10 }
+    if addition.path == "docs/new.txt" && addition.content == "hello\nworld\n" { score = score + 10
+    }
   }
 
-  let second = hunks.nth_or(`DeleteFile "", 1, document.hunks)
+  let second = hunks.nth_or(`DeleteFile "", 1, document.hunks);
   if let `DeleteFile path = second {
     if path == "old.txt" { score = score + 100 }
   }
 
-  let third = hunks.nth_or(`DeleteFile "", 2, document.hunks)
+  let third = hunks.nth_or(`DeleteFile "", 2, document.hunks);
   if let `UpdateFile update = third {
-    let first_chunk = chunks.nth_or([.context = `None (), .old_lines = `Nil (), .new_lines = `Nil (), .end_of_file = false], 0, update.chunks)
-    let second_chunk = chunks.nth_or([.context = `None (), .old_lines = `Nil (), .new_lines = `Nil (), .end_of_file = false], 1, update.chunks)
+    let first_chunk = chunks.nth_or(
+      [.context = `None (), .old_lines = `Nil (), .new_lines = `Nil (), .end_of_file = false],
+      0,
+      update.chunks,
+    );
+    let second_chunk = chunks.nth_or(
+      [.context = `None (), .old_lines = `Nil (), .new_lines = `Nil (), .end_of_file = false],
+      1,
+      update.chunks,
+    );
     if let `Some move_path = update.move_path {
       if let `Some context = first_chunk.context {
-        if update.path == "src/old.ts" && move_path == "src/new.ts" && context == "function run" && chunks.length(update.chunks) == 2 && second_chunk.end_of_file {
+        if update.path == "src/old.ts" && move_path == "src/new.ts" && context == "function run" && chunks.length(
+          update.chunks
+        ) == 2 && second_chunk.end_of_file {
           score = score + 1000
         }
       }
@@ -46,12 +58,21 @@ if let `Ok document = parsed {
   }
 }
 
-if let `Err message = parse_apply_patch_lines(text_split(["*** Begin Patch\n*** Update File: empty.txt\n*** End Patch", "\n"])) {
-  if message == "invalid hunk at line 2, Update file hunk for path 'empty.txt' is empty" { score = score + 10000 }
+if let `Err message = parse_apply_patch_lines(
+  text_split ["*** Begin Patch\n*** Update File: empty.txt\n*** End Patch", "\n"]
+) {
+  if message == "invalid hunk at line 2, Update file hunk for path 'empty.txt' is empty" { score =
+      score + 10000 }
 }
 
-if let `Err message = parse_apply_patch_lines(text_split(["*** Begin Patch\n*** Environment ID: first\n*** Environment ID: second\n*** Add File: a.txt\n+a\n*** End Patch", "\n"])) {
-  if message == "invalid patch: apply_patch environment_id cannot be specified more than once" { score = score + 100000 }
+if let `Err message = parse_apply_patch_lines(
+  text_split [
+    "*** Begin Patch\n*** Environment ID: first\n*** Environment ID: second\n*** Add File: a.txt\n+a\n*** End Patch",
+    "\n",
+  ]
+) {
+  if message == "invalid patch: apply_patch environment_id cannot be specified more than once" {
+    score = score + 100000 }
 }
 
-return { .score = score }
+return { .score = score };

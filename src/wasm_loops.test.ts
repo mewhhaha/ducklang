@@ -7,8 +7,8 @@ import {
 
 Deno.test("frontend dynamic runtime i32 slice loop compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-let length = 2
-let sum = 0
+let length = 2;
+let sum = 0;
 for index, value in @runtime_i32_slice(length, 10, 20, 30) {
   sum = sum + index + value
 }
@@ -33,7 +33,7 @@ sum
 
 Deno.test("frontend static range loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let sum = 0
+let sum = 0;
 
 for i in 0..5 {
   sum = sum + i
@@ -66,7 +66,7 @@ let rec fib = n => {
   } else {
     fib(n - 1) + fib(n - 2)
   }
-}
+};
 
 fib(input)
 `);
@@ -98,7 +98,7 @@ let rec even = n => {
 }
 and odd = n => {
   if n == 0 { 0 } else { even(n - 1) }
-}
+};
 
 even(10) + odd(9)
 `);
@@ -118,7 +118,7 @@ even(10) + odd(9)
 
 Deno.test("frontend static text collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let total = 0
+let total = 0;
 
 for byte in "Ada" {
   total = total + byte
@@ -144,14 +144,14 @@ total
 
   const runtime_arg_wat = wat_from_source(`
 let sum_text = (value: Text) => {
-  let total = 0
+  let total = 0;
 
   for i, byte in value {
     total = total + i + byte
   }
 
   total
-}
+};
 
 sum_text("Ada")
 `);
@@ -180,8 +180,8 @@ sum_text("Ada")
 
 Deno.test("core dynamic range loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let n = 5
-let sum = 0
+let n = 5;
+let sum = 0;
 
 for i in 0..n {
   sum = sum + i
@@ -208,8 +208,8 @@ sum
 
 Deno.test("core dynamic inclusive range includes its runtime endpoint", async () => {
   const wat_text = wat_from_core_source(`
-let n = 4
-let sum = 0
+let n = 4;
+let sum = 0;
 
 for i in 0..=n {
   sum = sum + i
@@ -236,10 +236,10 @@ sum
 
 Deno.test("core descending inclusive range includes its runtime endpoint", async () => {
   const wat_text = wat_from_core_source(`
-let start = 4
-let stop = 0
-let step = -2
-let digits = 0
+let start = 4;
+let stop = 0;
+let step = -2;
+let digits = 0;
 
 for i in start..=stop by step {
   digits = digits * 10 + i
@@ -266,7 +266,7 @@ digits
 
 Deno.test("core inclusive range stops at the maximum i32 endpoint", async () => {
   const wat_text = wat_from_core_source(`
-let count = 0
+let count = 0;
 
 for i in 2147483647..=2147483647 {
   count = count + 1
@@ -293,9 +293,9 @@ count
 
 Deno.test("core dynamic range step compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let n = 6
-let step = 2
-let sum = 0
+let n = 6;
+let step = 2;
+let sum = 0;
 
 for i in 0..n by step {
   sum = sum + i
@@ -326,10 +326,10 @@ sum
 
 Deno.test("core negative dynamic range step compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let start = 5
-let stop = 0
-let step = -2
-let sum = 0
+let start = 5;
+let stop = 0;
+let step = -2;
+let sum = 0;
 
 for i in start..stop by step {
   sum = sum + i
@@ -360,9 +360,9 @@ sum
 
 Deno.test("core dynamic zero range step traps through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let n = 5
-let step = 0
-let sum = 0
+let n = 5;
+let step = 0;
+let sum = 0;
 
 for i in 0..n by step {
   sum = sum + i
@@ -399,16 +399,16 @@ sum
 
 Deno.test("core range loop break and continue compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let n = 5
-let sum = 0
+let n = 5;
+let sum = 0;
 
 for i in 0..n {
   if i == 3 {
-    break
+    break;
   }
 
   if i == 1 {
-    continue
+    continue;
   }
 
   sum = sum + i
@@ -439,13 +439,13 @@ sum
 
 Deno.test("core match arms preserve loop break and continue targets", async () => {
   const wat_text = wat_from_core_source(`
-let n = 5
-let sum = 0
+let n = 5;
+let sum = 0;
 
 for i in 0..n {
   match i {
-    | 1 => { continue }
-    | 3 => { break }
+    | 1 => { continue; }
+    | 3 => { break; }
     | _ => { sum = sum + i }
   }
 }
@@ -469,15 +469,15 @@ sum
   }
 
   const nested_wat = wat_from_core_source(`
-let n = 2
-let m = 3
-let total = 0
+let n = 2;
+let m = 3;
+let total = 0;
 
 for i in 0..n {
   for j in 0..m {
     total = total + 1
     match j {
-      | 1 => { break }
+      | 1 => { break; }
       | _ => { total = total + 0 }
     }
   }
@@ -504,19 +504,19 @@ total
 
   const union_wat = wat_from_core_source(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
-let n = 4
-let total = 0
+const option_type = OptionType;
+let n = 4;
+let total = 0;
 
 for i in 0..n {
   let option: option_type = if i == 2 {
     \`Some (i)
   } else {
     \`None ()
-  }
+  };
 
   match option {
-    | \`Some value => { break }
+    | \`Some value => { break; }
     | \`None () => { total = total + 1 }
   }
 }
@@ -548,9 +548,9 @@ let sum_down = rec (n, total) => {
   } else {
     rec(n - 1, total + n)
   }
-}
+};
 
-let input = 4
+let input = 4;
 sum_down(input, 0)
 `);
   const instance = await instantiate_wat(
@@ -582,7 +582,7 @@ let sum_down = rec (n: Int, total: Int) => {
   } else {
     rec(n - 1, total + n)
   }
-}
+};
 
 sum_down(5, 0)
 `);
@@ -615,7 +615,7 @@ let rec sum_down = (n, total) => {
   } else {
     sum_down(n - 1, total + n)
   }
-}
+};
 
 sum_down(5, 0)
 `);
@@ -642,15 +642,15 @@ sum_down(5, 0)
 
 Deno.test("core static collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let sum = 0
+let sum = 0;
 
 for i, x in [.first = 10, .second = 32, .third = 7] {
   if i == 1 {
-    continue
+    continue;
   }
 
   if x == 7 {
-    break
+    break;
   }
 
   sum = sum + i + x
@@ -681,15 +681,15 @@ sum
 
 Deno.test("core visible text collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let total = 0
+let total = 0;
 
 for i, byte in "Ada" {
   if i == 1 {
-    continue
+    continue;
   }
 
   if byte == 97 {
-    break
+    break;
   }
 
   total = total + byte
@@ -719,14 +719,14 @@ total
 
   const closure_wat = wat_from_core_source(`
 let sum_text = (value: Text) => {
-  let total = 0
+  let total = 0;
 
   for byte in value {
     total = total + byte
   }
 
   total
-}
+};
 
 sum_text("Ada")
 `);
@@ -751,10 +751,10 @@ sum_text("Ada")
   }
 
   const first_class_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let sum_text = if flag {
   (value: Text) => {
-    let total = 0
+    let total = 0;
 
     for i, byte in value {
       total = total + i + byte
@@ -764,7 +764,7 @@ let sum_text = if flag {
   }
 } else {
   (value: Text) => @len(value)
-}
+};
 
 sum_text("Ada")
 `);
@@ -789,8 +789,8 @@ sum_text("Ada")
   }
 
   const capture_wat = wat_from_core_source(`
-let factor = 2
-let scale = x => x + factor
+let factor = 2;
+let scale = x => x + factor;
 factor = 3
 scale(10)
 `);
@@ -818,7 +818,7 @@ scale(10)
 let inc = x => {
   x = x + 1
   x
-}
+};
 
 inc(41)
 `);
@@ -845,11 +845,11 @@ inc(41)
   }
 
   const local_shadow_wat = wat_from_core_source(`
-let factor = 2
+let factor = 2;
 let f = x => {
-  let factor = x
+  let factor = x;
   factor
-}
+};
 
 f(10) + factor
 `);
@@ -874,11 +874,11 @@ f(10) + factor
   }
 
   const assigned_capture_wat = wat_from_core_source(`
-let factor = 2
+let factor = 2;
 let f = x => {
   factor = factor + x
   factor
-}
+};
 
 factor = 100
 f(10) + f(20) + factor
@@ -908,21 +908,21 @@ f(10) + f(20) + factor
 
 Deno.test("core static-call block collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 const sum = (pair: pair_type) => {
-  let total = 0
+  let total = 0;
 
   for i, x in pair {
     total = total + i + x
   }
 
   total
-}
+};
 
 sum([.first = 10, .second = 31])
 `);
@@ -949,8 +949,8 @@ sum([.first = 10, .second = 31])
 
 Deno.test("core dynamic shaped collection loop compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let flag = true
-let sum = 0
+let flag = true;
+let sum = 0;
 
 for i, x in if flag {
   [.first = 10, .second = 20]
@@ -983,8 +983,8 @@ sum
   }
 
   const const_call_wat = wat_from_core_source(`
-let flag = true
-let sum = 0
+let flag = true;
+let sum = 0;
 
 const make_xs = active => {
   if active {
@@ -992,7 +992,7 @@ const make_xs = active => {
   } else {
     [.first = 1, .second = 2]
   }
-}
+};
 
 for i, x in make_xs(flag) {
   sum = sum + i + x

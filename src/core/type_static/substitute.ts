@@ -1,4 +1,9 @@
 import type { TypeExpr, TypePattern } from "../../type_syntax.ts";
+import {
+  format_type_expr,
+  parse_type_expr,
+  tokenize,
+} from "../from_source/type_contract.ts";
 import type {
   CoreExpr,
   CoreField,
@@ -388,11 +393,20 @@ function substitute_core_type_set_member(
       };
     }
 
-    case "name":
-      return {
-        tag: "name",
-        name: substitute_core_type_name(type.name, type_args),
-      };
+    case "name": {
+      const replacement = type_args.get(type.name);
+      if (replacement === undefined) {
+        return type;
+      }
+      try {
+        return parse_type_expr(tokenize(replacement));
+      } catch (error) {
+        if (error instanceof Error) {
+          return { tag: "name", name: replacement };
+        }
+        throw error;
+      }
+    }
 
     case "atom":
     case "literal":
@@ -482,18 +496,17 @@ function substitute_core_type_name(
     return type_name;
   }
 
-  const names = name.split(" ");
-
-  if (names.length > 1) {
-    return names.map((part) => {
-      const replacement = type_args.get(part);
-
-      if (replacement) {
-        return replacement;
-      }
-
-      return part;
-    }).join(" ");
+  try {
+    const parsed = parse_type_expr(tokenize(name));
+    if (parsed.tag !== "name") {
+      return format_type_expr(
+        substitute_core_type_set_member(parsed, type_args),
+      );
+    }
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
   }
 
   return name;

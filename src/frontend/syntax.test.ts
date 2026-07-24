@@ -84,25 +84,31 @@ Deno.test("strict tokenize retains its filtered stream and comment option", () =
 
 Deno.test("scanner keeps category operators as single symbols", () => {
   assert_equals(
-    tokenize("a &&& b ||| c :+ d :- e :& f :| g :> h").map((token) =>
-      token.text
-    ),
+    tokenize(
+      "a &&& b ||| c ++ d <& e &> f :+ g :- h :& i :| j :> k",
+    ).map((token) => token.text),
     [
       "a",
       "&&&",
       "b",
       "|||",
       "c",
-      ":+",
+      "++",
       "d",
-      ":-",
+      "<&",
       "e",
-      ":&",
+      "&>",
       "f",
-      ":|",
+      ":+",
       "g",
-      ":>",
+      ":-",
       "h",
+      ":&",
+      "i",
+      ":|",
+      "j",
+      ":>",
+      "k",
       "",
     ],
   );

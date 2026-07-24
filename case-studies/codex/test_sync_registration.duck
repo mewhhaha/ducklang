@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "duck:prelude/types" ()
-const {} = import "./tool_types.duck" ()
+const {} = import "duck:prelude/types" ();
+const {} = import "./tool_types.duck" ();
 
 type TestSyncDefinition = ToolDefinition
 type TestSyncDefinitions = ToolDefinitions
@@ -9,30 +9,45 @@ type TestSyncName = ToolName
 type TestSyncSpec = ToolSpec
 type TestSyncSpecs = ToolSpecs
 
-const test_sync_tool_name: () -> TestSyncName = () => ["", "test_sync_tool"]
+const test_sync_tool_name: () -> TestSyncName = () => ["", "test_sync_tool"];
 
 let test_sync_tool_definitions: Bool -> TestSyncDefinitions = supported => {
   if supported {
-    let definition: TestSyncDefinition = [test_sync_tool_name(), `Direct (), `TestSync (), `FunctionPayload (), true, false]
+    let definition: TestSyncDefinition = [
+      test_sync_tool_name(),
+      `Direct (),
+      `TestSync (),
+      `FunctionPayload (),
+      true,
+      false,
+    ];
     `Cons ([definition, `Nil ()])
   } else {
     `Nil ()
   }
-}
+};
 
 let test_sync_tool_specs: Bool -> TestSyncSpecs = supported => {
   if supported {
-    let description = "Internal synchronization helper used by Codex integration tests."
-    let parameters = "{\"type\":\"object\",\"properties\":{\"barrier\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"Identifier shared by concurrent calls that should rendezvous\"},\"participants\":{\"type\":\"number\",\"description\":\"Number of tool calls that must arrive before the barrier opens\"},\"timeout_ms\":{\"type\":\"number\",\"description\":\"Maximum barrier wait in milliseconds. Defaults to 1000.\"}},\"required\":[\"id\",\"participants\"],\"additionalProperties\":false},\"sleep_after_ms\":{\"type\":\"number\",\"description\":\"Delay after completing the barrier. Defaults to no delay.\"},\"sleep_before_ms\":{\"type\":\"number\",\"description\":\"Delay before any other action. Defaults to no delay.\"}},\"additionalProperties\":false}"
-    let spec: TestSyncSpec = [test_sync_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
+    let description = "Internal synchronization helper used by Codex integration tests.";
+    let parameters =
+      "{\"type\":\"object\",\"properties\":{\"barrier\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"Identifier shared by concurrent calls that should rendezvous\"},\"participants\":{\"type\":\"number\",\"description\":\"Number of tool calls that must arrive before the barrier opens\"},\"timeout_ms\":{\"type\":\"number\",\"description\":\"Maximum barrier wait in milliseconds. Defaults to 1000.\"}},\"required\":[\"id\",\"participants\"],\"additionalProperties\":false},\"sleep_after_ms\":{\"type\":\"number\",\"description\":\"Delay after completing the barrier. Defaults to no delay.\"},\"sleep_before_ms\":{\"type\":\"number\",\"description\":\"Delay before any other action. Defaults to no delay.\"}},\"additionalProperties\":false}";
+    let spec: TestSyncSpec = [
+      test_sync_tool_name(),
+      `FunctionSpec (),
+      description,
+      parameters,
+      `ToolOutputSchemaMissing (),
+      false,
+    ];
     `Cons ([spec, `Nil ()])
   } else {
     `Nil ()
   }
-}
+};
 
 return {
-  test_sync_tool_definitions,
-  test_sync_tool_name,
-  test_sync_tool_specs,
-}
+  .test_sync_tool_definitions,
+  .test_sync_tool_name,
+  .test_sync_tool_specs,
+};

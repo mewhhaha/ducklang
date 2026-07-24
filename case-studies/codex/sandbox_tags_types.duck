@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type SandboxTagNetworkPolicy =
   | `Enabled Unit
@@ -37,4 +37,4 @@ type SandboxTagPlatform = struct {
   .platform_sandbox_tag = Option Text,
 }
 
-return {}
+return {};

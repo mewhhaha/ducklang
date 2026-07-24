@@ -1,27 +1,28 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const agents_module = import "./agents.duck"
-const { agent_status_from_event, agent_status_is_final, execution_capacity, spawn_depth_allowed } = agents_module()
+const agent_types_module = import "./agent_types.duck";
+const agents_module = import "./agents.duck";
+const { .agent_status_from_event, .agent_status_is_final, .execution_capacity, .spawn_depth_allowed } =
+  agents_module();
 
 type FixtureEvent = AgentEvent
 type FixtureVersion = AgentMultiAgentVersion
 type FixtureSource = AgentSessionSource
 
-let score: I32 = 0
-let completed_event: FixtureEvent = `TurnComplete (`Some "done")
-let interrupted_event: FixtureEvent = `TurnInterrupted ()
+let score: I32 = 0;
+let completed_event: FixtureEvent = `TurnComplete (`Some "done");
+let interrupted_event: FixtureEvent = `TurnInterrupted ();
 
-if let `StatusChanged status = agent_status_from_event(completed_event) {
+if let `StatusChanged status = agent_status_from_event completed_event {
   if agent_status_is_final status { score = score + 1 }
 }
 
-if let `StatusChanged status = agent_status_from_event(interrupted_event) {
+if let `StatusChanged status = agent_status_from_event interrupted_event {
   if agent_status_is_final status { () } else { score = score + 10 }
 }
 
-let v2: FixtureVersion = `V2 ()
-let subagent: FixtureSource = `SubAgent ()
+let v2: FixtureVersion = `V2 ();
+let subagent: FixtureSource = `SubAgent ();
 
 if let `AgentLimitReached maximum = execution_capacity(v2, subagent, false, 4, 4) {
   if maximum == 4 { score = score + 100 }
@@ -41,4 +42,4 @@ if spawn_depth_allowed(2, 2) {
   score = score + 100000
 }
 
-return { .score = score }
+return { .score = score };

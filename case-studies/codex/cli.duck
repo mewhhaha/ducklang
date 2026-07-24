@@ -1,20 +1,23 @@
 module () where
 
-const {} = import "./cli_types.duck" ()
-const { classify_cli_head } = import "./cli_head.duck" ()
-const { parse_completion_options, parse_feature_command } = import "./cli_options.duck" ()
-const { parse_archive_options, parse_delete_options, parse_fork_options, parse_resume_options } = import "./cli_sessions.duck" ()
-const { parse_login_options, parse_logout_options } = import "./cli_auth.duck" ()
-const { parse_mcp_options } = import "./cli_mcp.duck" ()
-const { parse_plugin_options } = import "./cli_plugin.duck" ()
-const { parse_cloud_options } = import "./cli_cloud.duck" ()
-const { parse_exec_server_options, parse_mcp_server_options, parse_stdio_to_uds_options } = import "./cli_server.duck" ()
-const { parse_desktop_app_options, parse_remote_control_options } = import "./cli_app.duck" ()
-const { parse_app_server_options } = import "./cli_app_server.duck" ()
-const { parse_apply_options, parse_doctor_options, parse_responses_proxy_options } = import "./cli_utility.duck" ()
-const { parse_debug_options } = import "./cli_debug.duck" ()
-const { parse_execpolicy_options } = import "./cli_execpolicy.duck" ()
-const { parse_sandbox_options } = import "./cli_sandbox.duck" ()
+const {} = import "./cli_types.duck" ();
+const { .classify_cli_head } = import "./cli_head.duck" ();
+const { .parse_completion_options, .parse_feature_command } = import "./cli_options.duck" ();
+const { .parse_archive_options, .parse_delete_options, .parse_fork_options, .parse_resume_options } =
+  import "./cli_sessions.duck" ();
+const { .parse_login_options, .parse_logout_options } = import "./cli_auth.duck" ();
+const { .parse_mcp_options } = import "./cli_mcp.duck" ();
+const { .parse_plugin_options } = import "./cli_plugin.duck" ();
+const { .parse_cloud_options } = import "./cli_cloud.duck" ();
+const { .parse_exec_server_options, .parse_mcp_server_options, .parse_stdio_to_uds_options } =
+  import "./cli_server.duck" ();
+const { .parse_desktop_app_options, .parse_remote_control_options } = import "./cli_app.duck" ();
+const { .parse_app_server_options } = import "./cli_app_server.duck" ();
+const { .parse_apply_options, .parse_doctor_options, .parse_responses_proxy_options } =
+  import "./cli_utility.duck" ();
+const { .parse_debug_options } = import "./cli_debug.duck" ();
+const { .parse_execpolicy_options } = import "./cli_execpolicy.duck" ();
+const { .parse_sandbox_options } = import "./cli_sandbox.duck" ();
 
 type CliArgs = CodexCliArgs
 type CliPlan = CodexCliPlan
@@ -39,9 +42,9 @@ type CliSandboxResult = CodexSandboxOptionsResult
 
 const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
   if let `Cons node = args {
-    let [name, remaining] = node
+    let [name, remaining] = node;
     if name == "completion" {
-      let parsed: CliCompletionResult = parse_completion_options remaining
+      let parsed: CliCompletionResult = parse_completion_options remaining;
       if let `Ok options = parsed {
         `GenerateCompletion options
       } else if let `Err message = parsed {
@@ -50,7 +53,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "completion parser returned an unknown result"
       }
     } else if name == "features" {
-      let parsed: CliFeatureResult = parse_feature_command remaining
+      let parsed: CliFeatureResult = parse_feature_command remaining;
       if let `Ok feature = parsed {
         `ManageFeature feature
       } else if let `Err message = parsed {
@@ -65,7 +68,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "update does not accept arguments"
       }
     } else if name == "login" {
-      let parsed: CliLoginResult = parse_login_options remaining
+      let parsed: CliLoginResult = parse_login_options remaining;
       if let `Ok action = parsed {
         `Authenticate action
       } else if let `Err message = parsed {
@@ -74,7 +77,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "login parser returned an unknown result"
       }
     } else if name == "logout" {
-      let parsed: CliLogoutResult = parse_logout_options remaining
+      let parsed: CliLogoutResult = parse_logout_options remaining;
       if let `Ok () = parsed {
         `LogoutAuth ()
       } else if let `Err message = parsed {
@@ -83,7 +86,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "logout parser returned an unknown result"
       }
     } else if name == "mcp" {
-      let parsed: CliMcpResult = parse_mcp_options remaining
+      let parsed: CliMcpResult = parse_mcp_options remaining;
       if let `Ok command = parsed {
         `ManageMcp command
       } else if let `Err message = parsed {
@@ -92,7 +95,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "MCP parser returned an unknown result"
       }
     } else if name == "plugin" {
-      let parsed: CliPluginResult = parse_plugin_options remaining
+      let parsed: CliPluginResult = parse_plugin_options remaining;
       if let `Ok command = parsed {
         `ManagePlugin command
       } else if let `Err message = parsed {
@@ -101,7 +104,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "plugin parser returned an unknown result"
       }
     } else if name == "cloud" || name == "cloud-tasks" {
-      let parsed: CliCloudResult = parse_cloud_options remaining
+      let parsed: CliCloudResult = parse_cloud_options remaining;
       if let `Ok command = parsed {
         `ManageCloud command
       } else if let `Err message = parsed {
@@ -110,7 +113,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "cloud parser returned an unknown result"
       }
     } else if name == "mcp-server" {
-      let parsed: CliServerResult = parse_mcp_server_options remaining
+      let parsed: CliServerResult = parse_mcp_server_options remaining;
       if let `Ok command = parsed {
         `ManageServer command
       } else if let `Err message = parsed {
@@ -119,7 +122,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "MCP server parser returned an unknown result"
       }
     } else if name == "exec-server" {
-      let parsed: CliServerResult = parse_exec_server_options remaining
+      let parsed: CliServerResult = parse_exec_server_options remaining;
       if let `Ok command = parsed {
         `ManageServer command
       } else if let `Err message = parsed {
@@ -128,7 +131,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "exec server parser returned an unknown result"
       }
     } else if name == "stdio-to-uds" {
-      let parsed: CliServerResult = parse_stdio_to_uds_options remaining
+      let parsed: CliServerResult = parse_stdio_to_uds_options remaining;
       if let `Ok command = parsed {
         `ManageServer command
       } else if let `Err message = parsed {
@@ -137,7 +140,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "stdio relay parser returned an unknown result"
       }
     } else if name == "app" {
-      let parsed: CliApplicationResult = parse_desktop_app_options remaining
+      let parsed: CliApplicationResult = parse_desktop_app_options remaining;
       if let `Ok command = parsed {
         `ManageApplication command
       } else if let `Err message = parsed {
@@ -146,7 +149,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "desktop app parser returned an unknown result"
       }
     } else if name == "remote-control" {
-      let parsed: CliApplicationResult = parse_remote_control_options remaining
+      let parsed: CliApplicationResult = parse_remote_control_options remaining;
       if let `Ok command = parsed {
         `ManageApplication command
       } else if let `Err message = parsed {
@@ -155,7 +158,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "remote-control parser returned an unknown result"
       }
     } else if name == "app-server" {
-      let parsed: CliAppServerResult = parse_app_server_options remaining
+      let parsed: CliAppServerResult = parse_app_server_options remaining;
       if let `Ok command = parsed {
         `ManageAppServer command
       } else if let `Err message = parsed {
@@ -164,7 +167,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "app-server parser returned an unknown result"
       }
     } else if name == "doctor" {
-      let parsed: CliUtilityResult = parse_doctor_options remaining
+      let parsed: CliUtilityResult = parse_doctor_options remaining;
       if let `Ok command = parsed {
         `ManageUtility command
       } else if let `Err message = parsed {
@@ -173,7 +176,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "doctor parser returned an unknown result"
       }
     } else if name == "apply" || name == "a" {
-      let parsed: CliUtilityResult = parse_apply_options remaining
+      let parsed: CliUtilityResult = parse_apply_options remaining;
       if let `Ok command = parsed {
         `ManageUtility command
       } else if let `Err message = parsed {
@@ -182,7 +185,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "apply parser returned an unknown result"
       }
     } else if name == "responses-api-proxy" {
-      let parsed: CliUtilityResult = parse_responses_proxy_options remaining
+      let parsed: CliUtilityResult = parse_responses_proxy_options remaining;
       if let `Ok command = parsed {
         `ManageUtility command
       } else if let `Err message = parsed {
@@ -191,7 +194,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "responses-api-proxy parser returned an unknown result"
       }
     } else if name == "debug" {
-      let parsed: CliDebugResult = parse_debug_options remaining
+      let parsed: CliDebugResult = parse_debug_options remaining;
       if let `Ok command = parsed {
         `ManageDebug command
       } else if let `Err message = parsed {
@@ -200,7 +203,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "debug parser returned an unknown result"
       }
     } else if name == "execpolicy" {
-      let parsed: CliExecPolicyResult = parse_execpolicy_options remaining
+      let parsed: CliExecPolicyResult = parse_execpolicy_options remaining;
       if let `Ok command = parsed {
         `ManageExecPolicy command
       } else if let `Err message = parsed {
@@ -209,7 +212,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "execpolicy parser returned an unknown result"
       }
     } else if name == "sandbox" {
-      let parsed: CliSandboxResult = parse_sandbox_options remaining
+      let parsed: CliSandboxResult = parse_sandbox_options remaining;
       if let `Ok options = parsed {
         `RunSandbox options
       } else if let `Err message = parsed {
@@ -218,7 +221,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "sandbox parser returned an unknown result"
       }
     } else if name == "resume" {
-      let parsed: CliResumeResult = parse_resume_options remaining
+      let parsed: CliResumeResult = parse_resume_options remaining;
       if let `Ok options = parsed {
         `ResumeSession options
       } else if let `Err message = parsed {
@@ -227,7 +230,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "resume parser returned an unknown result"
       }
     } else if name == "fork" {
-      let parsed: CliForkResult = parse_fork_options remaining
+      let parsed: CliForkResult = parse_fork_options remaining;
       if let `Ok options = parsed {
         `ForkSession options
       } else if let `Err message = parsed {
@@ -236,7 +239,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "fork parser returned an unknown result"
       }
     } else if name == "archive" || name == "unarchive" {
-      let parsed: CliArchiveResult = parse_archive_options remaining
+      let parsed: CliArchiveResult = parse_archive_options remaining;
       if let `Ok options = parsed {
         if name == "archive" { `ArchiveSession options } else { `UnarchiveSession options }
       } else if let `Err message = parsed {
@@ -245,7 +248,7 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
         `Invalid "archive parser returned an unknown result"
       }
     } else if name == "delete" {
-      let parsed: CliDeleteResult = parse_delete_options remaining
+      let parsed: CliDeleteResult = parse_delete_options remaining;
       if let `Ok options = parsed {
         `DeleteSession options
       } else if let `Err message = parsed {
@@ -259,9 +262,9 @@ const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
   } else {
     `Command (classify_cli_head args)
   }
-}
+};
 
 return {
-  classify_cli_head,
-  parse_cli,
-}
+  .classify_cli_head,
+  .parse_cli,
+};

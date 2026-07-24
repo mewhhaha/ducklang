@@ -1,8 +1,8 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_common_types.duck" ()
-const {} = import "./agent_job_csv_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_common_types.duck" ();
+const {} = import "./agent_job_csv_types.duck" ();
 
 type AgentJobPreparedItem = struct {
   .item_id = Text,
@@ -18,4 +18,4 @@ type AgentJobPreparedItems =
   | `Nil Unit
   | `Cons AgentJobPreparedItemNode
 
-return {}
+return {};

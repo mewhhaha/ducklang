@@ -1,9 +1,9 @@
 import type { FrontExpr, Stmt } from "./ast.ts";
 
 // Effect elaboration inlines effectful helper calls by splicing the helper
-// body in as a block expression. A `return` inside that body must exit the
+// body in as a block expression. A `return;` inside that body must exit the
 // helper, not the function the block was inlined into, so early returns are
-// rewritten into structured branches before substitution: a bare `return`
+// rewritten into structured branches before substitution: a bare `return;`
 // truncates the statement list, and a branch statement containing a return
 // turns the remaining statements into the implicit other branch.
 export function scope_inlined_returns(body: FrontExpr): FrontExpr {

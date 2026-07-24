@@ -1,8 +1,8 @@
-const { encode_json, json_object_get } = import "duck:prelude/json" ()
-const metadata_module = import "./app_server_thread_metadata.duck"
-const {} = import "./app_server_types.duck" ()
-const {} = import "./rollout_storage_types.duck" ()
-const { apply_thread_metadata_patch, materialize_thread_metadata_update } = metadata_module()
+const { .encode_json, .json_object_get } = import "duck:prelude/json" ();
+const metadata_module = import "./app_server_thread_metadata.duck";
+const {} = import "./app_server_types.duck" ();
+const {} = import "./rollout_storage_types.duck" ();
+const { .apply_thread_metadata_patch, .materialize_thread_metadata_update } = metadata_module();
 
 type FixtureTextOption = RolloutStorageTextOption
 type FixtureGitInfo = RolloutGitInfo
@@ -11,38 +11,57 @@ type FixtureThread = RolloutThreadSummary
 type FixtureMetadataPatch = AppServerThreadMetadataGitInfoPatch
 type FixtureTextPatch = FieldPatch Text
 
-let sha_patch: FixtureTextPatch = `Set "abc123"
-let branch_patch: FixtureTextPatch = `Keep ()
-let origin_patch: FixtureTextPatch = `Clear ()
-let patch: FixtureMetadataPatch = [sha_patch, branch_patch, origin_patch]
-let current_sha: FixtureTextOption = `Some "old"
-let current_branch: FixtureTextOption = `Some "main"
-let current_origin: FixtureTextOption = `Some "https://example.test/repo"
-let current_git: FixtureGitInfo = [current_sha, current_branch, current_origin]
-let current_git_option: FixtureGitInfoOption = `Some current_git
-let no_text: FixtureTextOption = `None ()
-let thread: FixtureThread = ["/tmp/rollout.jsonl", "thread-1", "thread-1", no_text, no_text, "Prompt", "/workspace", `AppServer (), "openai", "1.0.0", no_text, "legacy", no_text, no_text, "2026-07-19T10:00:00Z", "2026-07-19T10:01:00Z", current_git_option]
-let updated = apply_thread_metadata_patch(thread, patch)
-let score = 0
+let sha_patch: FixtureTextPatch = `Set "abc123";
+let branch_patch: FixtureTextPatch = `Keep ();
+let origin_patch: FixtureTextPatch = `Clear ();
+let patch: FixtureMetadataPatch = [sha_patch, branch_patch, origin_patch];
+let current_sha: FixtureTextOption = `Some "old";
+let current_branch: FixtureTextOption = `Some "main";
+let current_origin: FixtureTextOption = `Some "https://example.test/repo";
+let current_git: FixtureGitInfo = [current_sha, current_branch, current_origin];
+let current_git_option: FixtureGitInfoOption = `Some current_git;
+let no_text: FixtureTextOption = `None ();
+let thread: FixtureThread = [
+  "/tmp/rollout.jsonl",
+  "thread-1",
+  "thread-1",
+  no_text,
+  no_text,
+  "Prompt",
+  "/workspace",
+  `AppServer (),
+  "openai",
+  "1.0.0",
+  no_text,
+  "legacy",
+  no_text,
+  no_text,
+  "2026-07-19T10:00:00Z",
+  "2026-07-19T10:01:00Z",
+  current_git_option,
+];
+let updated = apply_thread_metadata_patch(thread, patch);
+let score = 0;
 
 if let `Some git = updated.git_info {
-  let updated_sha = if let `Some value = git.sha { value == "abc123" } else { false }
-  let updated_branch = if let `Some value = git.branch { value == "main" } else { false }
-  let updated_origin = if let `None () = git.origin_url { true } else { false }
+  let updated_sha = if let `Some value = git.sha { value == "abc123" } else { false };
+  let updated_branch = if let `Some value = git.branch { value == "main" } else { false };
+  let updated_origin = if let `None () = git.origin_url { true } else { false };
   if updated_sha && updated_branch && updated_origin { score = score + 1 }
 }
 
-let response = materialize_thread_metadata_update(updated, true)
+let response = materialize_thread_metadata_update(updated, true);
 if let `Object response_fields = response {
-  let thread_lookup = json_object_get("thread", response_fields)
+  let thread_lookup = json_object_get("thread", response_fields);
   if let `Found thread_json = thread_lookup {
     if let `Object thread_fields = thread_json {
-      let git_lookup = json_object_get("gitInfo", thread_fields)
+      let git_lookup = json_object_get("gitInfo", thread_fields);
       if let `Found git_json = git_lookup {
-        if encode_json(git_json) == "{\"sha\":\"abc123\",\"branch\":\"main\",\"originUrl\":null}" { score = score + 10 }
+        if encode_json git_json == "{\"sha\":\"abc123\",\"branch\":\"main\",\"originUrl\":null}" {
+          score = score + 10 }
       }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

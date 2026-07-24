@@ -1,27 +1,29 @@
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { materialize_thread_elicitation_response, materialize_thread_name_updated_notification } = import "./app_server_thread_controls.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .materialize_thread_elicitation_response, .materialize_thread_name_updated_notification } =
+  import "./app_server_thread_controls.duck" ();
 
-let score = 0
-let resumed = materialize_thread_elicitation_response(0i64)
+let score = 0;
+let resumed = materialize_thread_elicitation_response 0i64;
 if let `Object fields = resumed {
-  let count_valid = false
-  let count_lookup = json_object_get("count", fields)
+  let count_valid = false;
+  let count_lookup = json_object_get("count", fields);
   if let `Found value = count_lookup { if let `Number count = value { count_valid = count == "0" } }
-  let paused_valid = false
-  let paused_lookup = json_object_get("paused", fields)
-  if let `Found value = paused_lookup { if let `Bool paused = value { if paused { () } else { paused_valid = true } } }
+  let paused_valid = false;
+  let paused_lookup = json_object_get("paused", fields);
+  if let `Found value = paused_lookup { if let `Bool paused = value { if paused { () } else {
+    paused_valid = true } } }
   if count_valid && paused_valid { score = score + 1 }
 }
 
-let notification = materialize_thread_name_updated_notification("thread-1", "Work")
+let notification = materialize_thread_name_updated_notification("thread-1", "Work");
 if let `Object fields = notification {
-  let id_valid = false
-  let id_lookup = json_object_get("threadId", fields)
+  let id_valid = false;
+  let id_lookup = json_object_get("threadId", fields);
   if let `Found value = id_lookup { if let `String id = value { id_valid = id == "thread-1" } }
-  let name_valid = false
-  let name_lookup = json_object_get("threadName", fields)
+  let name_valid = false;
+  let name_lookup = json_object_get("threadName", fields);
   if let `Found value = name_lookup { if let `String name = value { name_valid = name == "Work" } }
   if id_valid && name_valid { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

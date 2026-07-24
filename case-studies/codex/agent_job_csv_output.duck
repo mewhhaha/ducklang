@@ -1,39 +1,39 @@
 module () where
 
-const { csv_text_append } = import "duck:prelude/csv" ()
-const {} = import "./agent_job_export_types.duck" ()
-const { render_agent_job_csv_headers } = import "./agent_job_csv_header_output.duck" ()
-const { render_agent_job_csv_row } = import "./agent_job_csv_row_output.duck" ()
+const { .csv_text_append } = import "duck:prelude/csv" ();
+const {} = import "./agent_job_export_types.duck" ();
+const { .render_agent_job_csv_headers } = import "./agent_job_csv_header_output.duck" ();
+const { .render_agent_job_csv_row } = import "./agent_job_csv_row_output.duck" ();
 
 type AgentJobCsvOutputCompletion = AgentJobRunCompletion
 type AgentJobCsvOutputItems = AgentJobFinalItems
 type AgentJobCsvOutputResult = AgentJobCsvExportResult
 
 let render_agent_job_csv: AgentJobCsvOutputCompletion -> AgentJobCsvOutputResult = completed => {
-  let output = render_agent_job_csv_headers completed.headers
-  let current: AgentJobCsvOutputItems = completed.items
-  let failure = ""
-  let done = false
+  let output = render_agent_job_csv_headers completed.headers;
+  let current: AgentJobCsvOutputItems = completed.items;
+  let failure = "";
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [item, tail] = node
-      let rendered = render_agent_job_csv_row(completed.job_id, completed.headers, item)
+      let [item, tail] = node;
+      let rendered = render_agent_job_csv_row(completed.job_id, completed.headers, item);
       if let `CsvExported row = rendered {
-        output = csv_text_append([output, row])
+        output = csv_text_append [output, row]
         current = tail
       } else if let `CsvExportFailed reason = rendered {
         failure = reason
         done = true
       } else {
-        failure = csv_text_append(["failed to render csv row for item ", item.item_id])
+        failure = csv_text_append ["failed to render csv row for item ", item.item_id]
         done = true
       }
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   if failure == "" { `CsvExported output } else { `CsvExportFailed failure }
-}
+};
 
-return { render_agent_job_csv }
+return { .render_agent_job_csv };

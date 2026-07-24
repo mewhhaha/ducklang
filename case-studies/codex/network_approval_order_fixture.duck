@@ -1,0 +1,78 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const {
+  .empty_network_approval_state,
+  .finish_network_call,
+  .record_call_outcome,
+  .register_network_call,
+} = import "./network_approval.duck" ();
+
+type FixtureMode = NetworkApprovalMode
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureFinish = NetworkFinishOutcome
+
+let deferred: FixtureMode = `Deferred ();
+let no_outcome: FixtureOutcome = `NoOutcome ();
+let first: FixtureCall = ["registration-a", "local", "curl a", deferred, no_outcome, false];
+let second: FixtureCall = ["registration-b", "local", "curl b", deferred, no_outcome, false];
+let third: FixtureCall = ["registration-c", "local", "curl c", deferred, no_outcome, false];
+let state: FixtureState = empty_network_approval_state();
+state = register_network_call(state, first)
+state = register_network_call(state, second)
+state = register_network_call(state, third)
+
+let updated = record_call_outcome(state, "registration-b", `DeniedByPolicy "blocked", false);
+let [active, _, _, _] = updated;
+let update_ordered = false;
+if let `Cons first_node = active {
+  let [first_active, tail] = first_node;
+  let [first_id, _, _, _, _, _] = first_active;
+  if let `Cons second_node = tail {
+    let [second_active, tail] = second_node;
+    let [second_id, _, _, _, second_outcome, _] = second_active;
+    if let `Cons third_node = tail {
+      let [third_active, tail] = third_node;
+      let [third_id, _, _, _, _, _] = third_active;
+      if let `Nil () = tail {
+        if let `DeniedByPolicy message = second_outcome {
+          if first_id == "registration-c" && second_id == "registration-b" && third_id == "registration-a" && message == "blocked" {
+            update_ordered = true
+          }
+        }
+      }
+    }
+  }
+}
+
+let finished = finish_network_call(updated, "registration-b");
+let [finish_state, raw_finish] = finished;
+let finish: FixtureFinish = raw_finish;
+let [remaining, _, _, _] = finish_state;
+let finish_ordered = false;
+if let `Cons first_node = remaining {
+  let [first_active, tail] = first_node;
+  let [first_id, _, _, _, _, _] = first_active;
+  if let `Cons second_node = tail {
+    let [second_active, tail] = second_node;
+    let [second_id, _, _, _, _, _] = second_active;
+    if let `Nil () = tail {
+      if first_id == "registration-c" && second_id == "registration-a" {
+        finish_ordered = true
+      }
+    }
+  }
+}
+
+let score = 0;
+if update_ordered && finish_ordered {
+  if let `Rejected message = finish {
+    if message == "blocked" {
+      score = score + 1
+    }
+  }
+}
+
+return { .score = score };

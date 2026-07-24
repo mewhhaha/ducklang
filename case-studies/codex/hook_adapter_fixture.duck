@@ -1,10 +1,10 @@
 module (!init: Init) where
 
-const hook_types_module = import "./hook_types.duck"
-const hook_input_types_module = import "./hook_input_types.duck"
-const { encode_session_end_input } = import "./hook_input.duck" ()
-const { normalize_hook_handler } = import "./hook_policy.duck" ()
-const { classify_hook_command } = import "./hook_command_process.duck" ()
+const hook_types_module = import "./hook_types.duck";
+const hook_input_types_module = import "./hook_input_types.duck";
+const { .encode_session_end_input } = import "./hook_input.duck" ();
+const { .normalize_hook_handler } = import "./hook_policy.duck" ();
+const { .classify_hook_command } = import "./hook_command_process.duck" ();
 
 type FixtureCommandConfig = HookCommandConfig
 type FixtureHandlerConfig = HookHandlerConfig
@@ -16,27 +16,34 @@ type FixtureRequest = HookCommandRequest
 type FixtureResult = HookCommandResult
 type FixtureOutcome = HookCommandOutcome
 
-let score = 0
-let event: FixtureEvent = `SessionEnd ()
-let matcher: FixtureMatcher = `MatchAll ()
-let source: FixtureSource = `Project ()
-let command_config: FixtureCommandConfig = ["cleanup", `Some 99, true, `None ()]
-let config: FixtureHandlerConfig = `Command command_config
-let normalized = normalize_hook_handler(event, matcher, config, "/repo/.codex/hooks.json", source, 0)
+let score = 0;
+let event: FixtureEvent = `SessionEnd ();
+let matcher: FixtureMatcher = `MatchAll ();
+let source: FixtureSource = `Project ();
+let command_config: FixtureCommandConfig = ["cleanup", `Some 99, true, `None ()];
+let config: FixtureHandlerConfig = `Command command_config;
+let normalized = normalize_hook_handler(
+  event,
+  matcher,
+  config,
+  "/repo/.codex/hooks.json",
+  source,
+  0,
+);
 
 if let `Configured configured = normalized {
-  let [configured_handler, warnings] = configured
-  let [_, _, command, timeout, _, _, _, _] = configured_handler
-  let input: FixtureSessionEnd = ["session", `Some "/repo/rollout.jsonl", "/repo"]
-  let request: FixtureRequest = [command, encode_session_end_input(input), "/repo", timeout]
+  let [configured_handler, warnings] = configured;
+  let [_, _, command, timeout, _, _, _, _] = configured_handler;
+  let input: FixtureSessionEnd = ["session", `Some "/repo/rollout.jsonl", "/repo"];
+  let request: FixtureRequest = [command, encode_session_end_input input, "/repo", timeout];
   result <- HookCommandHost.run(&request)
-  let typed_result: FixtureResult = result
-  let outcome: FixtureOutcome = classify_hook_command typed_result
-  let [completion, message] = outcome
+  let typed_result: FixtureResult = result;
+  let outcome: FixtureOutcome = classify_hook_command typed_result;
+  let [completion, message] = outcome;
 
   if timeout == 3 { score = score + 1 }
   if let `Cons warning_node = warnings {
-    let [_, remaining_warnings] = warning_node
+    let [_, remaining_warnings] = warning_node;
     if let `Nil () = remaining_warnings { score = score + 1 }
   }
   if let `Exited code = completion {
@@ -46,4 +53,4 @@ if let `Configured configured = normalized {
   }
 }
 
-return { .score = score }
+return { .score = score };

@@ -1,23 +1,24 @@
-const { json_null, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_account_auth_tokens_login } = import "./app_server_account_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_account_types.duck" ()
+const { .json_null, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .decode_account_auth_tokens_login } = import "./app_server_account_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_account_types.duck" ();
 
 type FixtureResult = AppServerAccountLoginDecodeResult
 
-let fields = json_object_empty()
+let fields = json_object_empty();
 fields = json_object_prepend("chatgptPlanType", json_null(), fields)
-fields = json_object_prepend("chatgptAccountId", json_string("org-123"), fields)
-fields = json_object_prepend("accessToken", json_string("access-token"), fields)
-let decoded: FixtureResult = decode_account_auth_tokens_login(fields)
-let score = 0
+fields = json_object_prepend("chatgptAccountId", json_string "org-123", fields)
+fields = json_object_prepend("accessToken", json_string "access-token", fields)
+let decoded: FixtureResult = decode_account_auth_tokens_login fields;
+let score = 0;
 if let `AccountLoginOk login = decoded {
   if let `AccountAuthTokensLogin values = login {
-    let [access_token, account_id, plan_type] = values
+    let [access_token, account_id, plan_type] = values;
     if access_token == "access-token" && account_id == "org-123" {
       if let `None () = plan_type { score = 1 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

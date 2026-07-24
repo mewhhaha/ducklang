@@ -1,7 +1,7 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./agent_job_runner_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./agent_job_runner_types.duck" ();
 
 type AgentJobTransitionActive = AgentJobActiveWorkers
 type AgentJobTransitionActiveNode = AgentJobActiveWorkerNode
@@ -11,75 +11,128 @@ type AgentJobTransitionOutcome = AgentJobSpawnOutcome
 type AgentJobTransitionState = AgentJobRunnerState
 type AgentJobTransitionValue = AgentJobRunnerTransition
 
-const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome] -> AgentJobTransitionValue = (state: AgentJobTransitionState, outcome: AgentJobTransitionOutcome) => {
-  if let `Cons pending_node = state.pending {
-    let [item, remaining] = pending_node
-    if let `WorkerSpawned thread_id = outcome {
-      let worker: AgentJobTransitionActiveWorker = [.item_id = item.item_id, .thread_id = thread_id]
-      let active_node: AgentJobTransitionActiveNode = [worker, state.active]
-      let next: AgentJobTransitionState = [.pending = remaining, .active = `Cons active_node, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items, .spawn_blocked = false, .cancelled = state.cancelled]
-      `RunnerAdvanced next
-    } else if let `WorkerSpawnDeferred () = outcome {
-      let next: AgentJobTransitionState = [.pending = state.pending, .active = state.active, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items, .spawn_blocked = true, .cancelled = state.cancelled]
-      `RunnerAdvanced next
-    } else if let `WorkerSpawnFailed _ = outcome {
-      let next: AgentJobTransitionState = [.pending = remaining, .active = state.active, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items + 1, .spawn_blocked = false, .cancelled = state.cancelled]
-      `RunnerAdvanced next
-    } else {
-      `RunnerInvariantFailed "agent job spawn returned no outcome"
-    }
-  } else {
-    `RunnerInvariantFailed "agent job spawn completed without a pending item"
-  }
-}
-
-const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCompletion] -> AgentJobTransitionValue = (state: AgentJobTransitionState, completion: AgentJobTransitionCompletion) => {
-  let current = state.active
-  let remaining_reversed: AgentJobTransitionActive = `Nil ()
-  let found = false
-  let done = false
-  loop {
-    if let `Cons node = current {
-      let [worker, tail] = node
-      if worker.thread_id == completion.thread_id {
-        found = true
+const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome] ->
+  AgentJobTransitionValue = (
+    state: AgentJobTransitionState,
+    outcome: AgentJobTransitionOutcome,
+  ) => {
+    if let `Cons pending_node = state.pending {
+      let [item, remaining] = pending_node;
+      if let `WorkerSpawned thread_id = outcome {
+        let worker: AgentJobTransitionActiveWorker = [
+          .item_id = item.item_id,
+          .thread_id = thread_id,
+        ];
+        let active_node: AgentJobTransitionActiveNode = [worker, state.active];
+        let next: AgentJobTransitionState = [
+          .pending = remaining,
+          .active = `Cons active_node,
+          .total_items = state.total_items,
+          .completed_items = state.completed_items,
+          .failed_items = state.failed_items,
+          .spawn_blocked = false,
+          .cancelled = state.cancelled,
+        ];
+        `RunnerAdvanced next
+      } else if let `WorkerSpawnDeferred () = outcome {
+        let next: AgentJobTransitionState = [
+          .pending = state.pending,
+          .active = state.active,
+          .total_items = state.total_items,
+          .completed_items = state.completed_items,
+          .failed_items = state.failed_items,
+          .spawn_blocked = true,
+          .cancelled = state.cancelled,
+        ];
+        `RunnerAdvanced next
+      } else if let `WorkerSpawnFailed _ = outcome {
+        let next: AgentJobTransitionState = [
+          .pending = remaining,
+          .active = state.active,
+          .total_items = state.total_items,
+          .completed_items = state.completed_items,
+          .failed_items = state.failed_items + 1,
+          .spawn_blocked = false,
+          .cancelled = state.cancelled,
+        ];
+        `RunnerAdvanced next
       } else {
-        let kept_node: AgentJobTransitionActiveNode = [worker, remaining_reversed]
-        remaining_reversed = `Cons kept_node
+        `RunnerInvariantFailed "agent job spawn returned no outcome"
       }
-      current = tail
     } else {
-      done = true
+      `RunnerInvariantFailed "agent job spawn completed without a pending item"
     }
-    if done { break }
-  }
-  if !(found) {
-    `RunnerInvariantFailed (text_append(["agent job completion referenced inactive worker ", completion.thread_id]))
-  } else {
-    let remaining: AgentJobTransitionActive = `Nil ()
-    done = false
+  };
+
+const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCompletion] ->
+  AgentJobTransitionValue = (
+    state: AgentJobTransitionState,
+    completion: AgentJobTransitionCompletion,
+  ) => {
+    let current = state.active;
+    let remaining_reversed: AgentJobTransitionActive = `Nil ();
+    let found = false;
+    let done = false;
     loop {
-      if let `Cons node = remaining_reversed {
-        let [worker, tail] = node
-        let kept_node: AgentJobTransitionActiveNode = [worker, remaining]
-        remaining = `Cons kept_node
-        remaining_reversed = tail
+      if let `Cons node = current {
+        let [worker, tail] = node;
+        if worker.thread_id == completion.thread_id {
+          found = true
+        } else {
+          let kept_node: AgentJobTransitionActiveNode = [worker, remaining_reversed];
+          remaining_reversed = `Cons kept_node
+        }
+        current = tail
       } else {
         done = true
       }
-      if done { break }
+      if done { break; }
     }
-    if completion.reported {
-      let next: AgentJobTransitionState = [.pending = state.pending, .active = remaining, .total_items = state.total_items, .completed_items = state.completed_items + 1, .failed_items = state.failed_items, .spawn_blocked = false, .cancelled = state.cancelled || completion.cancel_requested]
-      `RunnerAdvanced next
+    if !(found) {
+      `RunnerInvariantFailed (
+        text_append ["agent job completion referenced inactive worker ", completion.thread_id]
+      )
     } else {
-      let next: AgentJobTransitionState = [.pending = state.pending, .active = remaining, .total_items = state.total_items, .completed_items = state.completed_items, .failed_items = state.failed_items + 1, .spawn_blocked = false, .cancelled = state.cancelled || completion.cancel_requested]
-      `RunnerAdvanced next
+      let remaining: AgentJobTransitionActive = `Nil ();
+      done = false
+      loop {
+        if let `Cons node = remaining_reversed {
+          let [worker, tail] = node;
+          let kept_node: AgentJobTransitionActiveNode = [worker, remaining];
+          remaining = `Cons kept_node
+          remaining_reversed = tail
+        } else {
+          done = true
+        }
+        if done { break; }
+      }
+      if completion.reported {
+        let next: AgentJobTransitionState = [
+          .pending = state.pending,
+          .active = remaining,
+          .total_items = state.total_items,
+          .completed_items = state.completed_items + 1,
+          .failed_items = state.failed_items,
+          .spawn_blocked = false,
+          .cancelled = state.cancelled || completion.cancel_requested,
+        ];
+        `RunnerAdvanced next
+      } else {
+        let next: AgentJobTransitionState = [
+          .pending = state.pending,
+          .active = remaining,
+          .total_items = state.total_items,
+          .completed_items = state.completed_items,
+          .failed_items = state.failed_items + 1,
+          .spawn_blocked = false,
+          .cancelled = state.cancelled || completion.cancel_requested,
+        ];
+        `RunnerAdvanced next
+      }
     }
-  }
-}
+  };
 
 return {
-  apply_agent_job_completion,
-  apply_agent_job_spawn,
-}
+  .apply_agent_job_completion,
+  .apply_agent_job_spawn,
+};

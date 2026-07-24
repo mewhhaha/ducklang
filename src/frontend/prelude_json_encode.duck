@@ -1,19 +1,20 @@
 module () where
 
-const { text_append, text_get, text_length, text_repeat, text_slice } = import "duck:prelude/runtime" ()
-const {} = import "duck:prelude/json/values" ()
+const { .text_append, .text_get, .text_length, .text_repeat, .text_slice } =
+  import "duck:prelude/runtime" ();
+const {} = import "duck:prelude/json/values" ();
 
 type JsonEncodeArray = JsonArray
 type JsonEncodeObject = JsonObject
 
 let encode_json_string: Text -> Text = text => {
-  let encoded: Text = "\""
-  let index = 0
-  let segment_start = 0
+  let encoded: Text = "\"";
+  let index = 0;
+  let segment_start = 0;
 
   loop {
-    if index >= text_length text { break }
-    let byte = text_get [text, index]
+    if index >= text_length text { break; }
+    let byte = text_get [text, index];
 
     if byte == 34 || byte == 92 || byte < 32 {
       encoded = text_append [encoded, text_slice [text, segment_start, index]]
@@ -33,8 +34,8 @@ let encode_json_string: Text -> Text = text => {
       } else if byte == 13 {
         encoded = text_append [encoded, "\\r"]
       } else {
-        let high = byte / 16
-        let low = byte % 16
+        let high = byte / 16;
+        let low = byte % 16;
         encoded = text_append [encoded, "\\u00"]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", high, high + 1]]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", low, low + 1]]
@@ -49,23 +50,23 @@ let encode_json_string: Text -> Text = text => {
 
   encoded = text_append [encoded, text_slice [text, segment_start, index]]
   text_append [encoded, "\""]
-}
+};
 
 const encode_json_string_ascii: Text -> Text = text => {
-  let encoded: Text = "\""
-  let index = 0
-  let segment_start = 0
+  let encoded: Text = "\"";
+  let index = 0;
+  let segment_start = 0;
 
   loop {
     if index >= text_length text {
-      break
+      break;
     }
 
-    let byte = text_get [text, index]
+    let byte = text_get [text, index];
 
     if byte == 34 || byte == 92 || byte < 32 || byte >= 128 {
       encoded = text_append [encoded, text_slice [text, segment_start, index]]
-      let width = 1
+      let width = 1;
 
       if byte == 34 {
         encoded = text_append [encoded, "\\\""]
@@ -82,49 +83,49 @@ const encode_json_string_ascii: Text -> Text = text => {
       } else if byte == 13 {
         encoded = text_append [encoded, "\\r"]
       } else if byte < 32 {
-        let high = byte / 16
-        let low = byte % 16
+        let high = byte / 16;
+        let low = byte % 16;
         encoded = text_append [encoded, "\\u00"]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", high, high + 1]]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", low, low + 1]]
       } else {
-        let code_point = 65533
+        let code_point = 65533;
 
         if byte >= 194 && byte <= 223 && index + 1 < text_length text {
-          let second = text_get [text, index + 1]
+          let second = text_get [text, index + 1];
           if second >= 128 && second <= 191 {
             code_point = (byte - 192) * 64 + second - 128
             width = 2
           }
         } else if byte >= 224 && byte <= 239 && index + 2 < text_length text {
-          let second = text_get [text, index + 1]
-          let third = text_get [text, index + 2]
+          let second = text_get [text, index + 1];
+          let third = text_get [text, index + 2];
           if second >= 128 && second <= 191 && third >= 128 && third <= 191 {
             code_point = (byte - 224) * 4096 + (second - 128) * 64 + third - 128
             width = 3
           }
         } else if byte >= 240 && byte <= 244 && index + 3 < text_length text {
-          let second = text_get [text, index + 1]
-          let third = text_get [text, index + 2]
-          let fourth = text_get [text, index + 3]
+          let second = text_get [text, index + 1];
+          let third = text_get [text, index + 2];
+          let fourth = text_get [text, index + 3];
           if second >= 128 && second <= 191 && third >= 128 && third <= 191 && fourth >= 128 && fourth <= 191 {
             code_point = (byte - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + fourth - 128
             width = 4
           }
         }
 
-        let first_unit = code_point
-        let second_unit = -1
+        let first_unit = code_point;
+        let second_unit = -1;
         if code_point > 65535 {
-          let supplementary = code_point - 65536
+          let supplementary = code_point - 65536;
           first_unit = 55296 + supplementary / 1024
           second_unit = 56320 + supplementary % 1024
         }
 
         encoded = text_append [encoded, "\\u"]
-        let divisor = 4096
+        let divisor = 4096;
         for _ in 0..4 {
-          let digit = first_unit / divisor % 16
+          let digit = first_unit / divisor % 16;
           encoded = text_append [encoded, text_slice ["0123456789abcdef", digit, digit + 1]]
           divisor = divisor / 16
         }
@@ -133,7 +134,7 @@ const encode_json_string_ascii: Text -> Text = text => {
           encoded = text_append [encoded, "\\u"]
           divisor = 4096
           for _ in 0..4 {
-            let digit = second_unit / divisor % 16
+            let digit = second_unit / divisor % 16;
             encoded = text_append [encoded, text_slice ["0123456789abcdef", digit, digit + 1]]
             divisor = divisor / 16
           }
@@ -149,7 +150,7 @@ const encode_json_string_ascii: Text -> Text = text => {
 
   encoded = text_append [encoded, text_slice [text, segment_start, index]]
   text_append [encoded, "\""]
-}
+};
 
 let rec encode_json: Json -> Text = value => {
   if let `Null () = value {
@@ -161,34 +162,34 @@ let rec encode_json: Json -> Text = value => {
   } else if let `String text = value {
     encode_json_string text
   } else if let `Array values = value {
-    let encoded: Text = "["
-    let current: JsonEncodeArray = values
-    let first = true
-    let done = false
+    let encoded: Text = "[";
+    let current: JsonEncodeArray = values;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [element, tail] = node
+        let [element, tail] = node;
         if first { first = false } else { encoded = text_append [encoded, ","] }
         encoded = text_append [encoded, encode_json element]
         current = tail
       } else {
         done = true
       }
-      if done { break }
+      if done { break; }
     }
 
     text_append [encoded, "]"]
   } else if let `Object members = value {
-    let encoded: Text = "{"
-    let current: JsonEncodeObject = members
-    let first = true
-    let done = false
+    let encoded: Text = "{";
+    let current: JsonEncodeObject = members;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [member, tail] = node
-        let [key, member_value] = member
+        let [member, tail] = node;
+        let [key, member_value] = member;
         if first { first = false } else { encoded = text_append [encoded, ","] }
         encoded = text_append [encoded, encode_json_string key]
         encoded = text_append [encoded, ":"]
@@ -197,27 +198,27 @@ let rec encode_json: Json -> Text = value => {
       } else {
         done = true
       }
-      if done { break }
+      if done { break; }
     }
 
     text_append [encoded, "}"]
   } else {
     "null"
   }
-}
+};
 
 let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => {
   if let `Array values = value {
     if let `Nil () = values {
       "[]"
     } else {
-      let encoded = "[\n"
-      let current: JsonEncodeArray = values
-      let first = true
-      let done = false
+      let encoded = "[\n";
+      let current: JsonEncodeArray = values;
+      let first = true;
+      let done = false;
       loop {
         if let `Cons node = current {
-          let [element, tail] = node
+          let [element, tail] = node;
           if first { first = false } else { encoded = text_append [encoded, ",\n"] }
           encoded = text_append [encoded, text_repeat("  ", depth + 1)]
           encoded = text_append [encoded, encode_json_pretty_at(element, depth + 1)]
@@ -225,7 +226,7 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => {
         } else {
           done = true
         }
-        if done { break }
+        if done { break; }
       }
       text_append [encoded, text_append ["\n", text_append [text_repeat("  ", depth), "]"]]]
     }
@@ -233,14 +234,14 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => {
     if let `Nil () = members {
       "{}"
     } else {
-      let encoded = "{\n"
-      let current: JsonEncodeObject = members
-      let first = true
-      let done = false
+      let encoded = "{\n";
+      let current: JsonEncodeObject = members;
+      let first = true;
+      let done = false;
       loop {
         if let `Cons node = current {
-          let [member, tail] = node
-          let [key, member_value] = member
+          let [member, tail] = node;
+          let [key, member_value] = member;
           if first { first = false } else { encoded = text_append [encoded, ",\n"] }
           encoded = text_append [encoded, text_repeat("  ", depth + 1)]
           encoded = text_append [encoded, encode_json_string key]
@@ -250,16 +251,16 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => {
         } else {
           done = true
         }
-        if done { break }
+        if done { break; }
       }
       text_append [encoded, text_append ["\n", text_append [text_repeat("  ", depth), "}"]]]
     }
   } else {
     encode_json value
   }
-}
+};
 
-let encode_json_pretty: Json -> Text = value => encode_json_pretty_at(value, 0)
+let encode_json_pretty: Json -> Text = value => encode_json_pretty_at(value, 0);
 
 let rec encode_json_ascii: Json -> Text = value => {
   if let `Null () = value {
@@ -271,14 +272,14 @@ let rec encode_json_ascii: Json -> Text = value => {
   } else if let `String text = value {
     encode_json_string_ascii text
   } else if let `Array values = value {
-    let encoded: Text = "["
-    let current: JsonEncodeArray = values
-    let first = true
-    let done = false
+    let encoded: Text = "[";
+    let current: JsonEncodeArray = values;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [element, tail] = node
+        let [element, tail] = node;
 
         if first {
           first = false
@@ -293,21 +294,21 @@ let rec encode_json_ascii: Json -> Text = value => {
       }
 
       if done {
-        break
+        break;
       }
     }
 
     text_append [encoded, "]"]
   } else if let `Object members = value {
-    let encoded: Text = "{"
-    let current: JsonEncodeObject = members
-    let first = true
-    let done = false
+    let encoded: Text = "{";
+    let current: JsonEncodeObject = members;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [member, tail] = node
-        let [key, member_value] = member
+        let [member, tail] = node;
+        let [key, member_value] = member;
 
         if first {
           first = false
@@ -324,7 +325,7 @@ let rec encode_json_ascii: Json -> Text = value => {
       }
 
       if done {
-        break
+        break;
       }
     }
 
@@ -332,12 +333,12 @@ let rec encode_json_ascii: Json -> Text = value => {
   } else {
     "null"
   }
-}
+};
 
 return {
-  encode_json,
-  encode_json_pretty,
-  encode_json_ascii,
-  encode_json_string,
-  encode_json_string_ascii,
-}
+  .encode_json,
+  .encode_json_pretty,
+  .encode_json_ascii,
+  .encode_json_string,
+  .encode_json_string_ascii,
+};

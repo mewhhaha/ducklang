@@ -6,13 +6,13 @@ import {
 
 Deno.test("frontend dynamic i64 closure branch compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let flag = false
-let factor: I64 = 2i64
+let flag = false;
+let factor: I64 = 2i64;
 let choose = if flag {
   (x: I64) => x + factor
 } else {
   (x: I64) => x + factor + 1i64
-}
+};
 
 choose(40i64)
 `);
@@ -39,12 +39,12 @@ choose(40i64)
 
 Deno.test("core first-class closures compile through WAT to Wasm", async () => {
   const dynamic_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let f = if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
+};
 
 f(40)
 `);
@@ -69,7 +69,7 @@ f(40)
   }
 
   const frozen_wat = wat_from_core_source(`
-let f = freeze ((x: Int) => x + 1)
+let f = freeze ((x: Int) => x + 1);
 f(41)
 `);
   const frozen_instance = await instantiate_wat(
@@ -93,7 +93,7 @@ f(41)
   }
 
   const scratch_frozen_wat = wat_from_core_source(`
-let f = scratch { freeze ((x: Int) => x + 1) }
+let f = scratch { freeze ((x: Int) => x + 1) };
 f(41)
 `);
   const scratch_frozen_instance = await instantiate_wat(
@@ -120,9 +120,9 @@ f(41)
 
   const block_scratch_frozen_wat = wat_from_core_source(`
 let f = scratch {
-  let inner = (x: Int) => x + 1
+  let inner = (x: Int) => x + 1;
   freeze inner
-}
+};
 f(41)
 `);
   const block_scratch_frozen_instance = await instantiate_wat(
@@ -150,14 +150,14 @@ f(41)
   }
 
   const branch_scratch_frozen_wat = wat_from_core_source(`
-let flag = false
+let flag = false;
 let f = scratch {
   if flag {
     freeze ((x: Int) => x + 1)
   } else {
     freeze ((x: Int) => x + 2)
   }
-}
+};
 f(41)
 `);
   const branch_scratch_frozen_instance = await instantiate_wat(
@@ -185,21 +185,21 @@ f(41)
   }
 
   const if_let_matching_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if flag {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 let f = if let \`Ok value = result {
   (x: Int) => x + value
 } else {
   x => x + 1
-}
+};
 
 f(2)
 `);
@@ -226,21 +226,21 @@ f(2)
   }
 
   const if_let_fallback_wat = wat_from_core_source(`
-let flag = false
+let flag = false;
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if flag {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 let f = if let \`Ok value = result {
   (x: Int) => x + value
 } else {
   x => x + 1
-}
+};
 
 f(2)
 `);
@@ -267,13 +267,13 @@ f(2)
   }
 
   const capture_wat = wat_from_core_source(`
-let flag = false
-let n = 2
+let flag = false;
+let n = 2;
 let f = if flag {
   (x: Int) => x + n
 } else {
   (x: Int) => x + n + 1
-}
+};
 
 n = 100
 f(40)
@@ -299,21 +299,21 @@ f(40)
   }
 
   const dynamic_text_capture_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let message: Text = if flag {
   "Ada"
 } else {
   "Grace"
-}
+};
 let make = (value: Text) => {
   if flag {
     (x: Int) => @len(value) + x
   } else {
     (x: Int) => x
   }
-}
+};
 
-let f = make(message)
+let f = make(message);
 f(1)
 `);
   const dynamic_text_capture_instance = await instantiate_wat(
@@ -348,10 +348,10 @@ let run = (text: Bytes, flag: Int) => {
     }
   } else {
     (byte: Int) => text[0]
-  }
+  };
 
   f(90)
-}
+};
 
 run(@Utf8.encode("Ada"), 1)
 `);
@@ -379,14 +379,14 @@ run(@Utf8.encode("Ada"), 1)
   }
 
   const captured_closure_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let add = if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
-let shared_add = freeze add
-let run = (y: Int) => shared_add(y) + 10
+};
+let shared_add = freeze add;
+let run = (y: Int) => shared_add(y) + 10;
 
 run(30)
 `);
@@ -413,8 +413,8 @@ run(30)
   }
 
   const assigned_capture_wat = wat_from_core_source(`
-let flag = true
-let factor = 2
+let flag = true;
+let factor = 2;
 let f = if flag {
   (x: Int) => {
     factor = factor + x
@@ -425,7 +425,7 @@ let f = if flag {
     factor = factor + x + 1
     factor
   }
-}
+};
 
 factor = 100
 f(10) + f(20) + factor
@@ -454,11 +454,11 @@ f(10) + f(20) + factor
 
   const returned_closure_wat = wat_from_core_source(`
 let make = n => {
-  let offset = n + 1
+  let offset = n + 1;
   (x: Int) => x + offset
-}
+};
 
-let f = make(1)
+let f = make(1);
 f(40)
 `);
   const returned_closure_instance = await instantiate_wat(
@@ -485,11 +485,11 @@ f(40)
 
   const returned_wide_closure_wat = wat_from_core_source(`
 let make = (n: I64) => {
-  let offset: I64 = n + 1i64
+  let offset: I64 = n + 1i64;
   (x: I64) => x + offset
-}
+};
 
-let f = make(1i64)
+let f = make(1i64);
 f(40i64)
 `);
   const returned_wide_closure_instance = await instantiate_wat(

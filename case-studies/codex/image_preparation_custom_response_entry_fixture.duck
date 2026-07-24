@@ -1,0 +1,6 @@
+module () where
+
+const { .verify_image_preparation_custom_response_fixture } =
+  import "./image_preparation_custom_response_fixture.duck" ();
+
+return { .score = verify_image_preparation_custom_response_fixture() };

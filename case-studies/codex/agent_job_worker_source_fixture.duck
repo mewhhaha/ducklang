@@ -1,9 +1,9 @@
 module () where
 
-const { agent_job_worker_source_enabled } = import "./agent_job_worker_source.duck" ()
+const { .agent_job_worker_source_enabled } = import "./agent_job_worker_source.duck" ();
 
-let score = 0
+let score = 0;
 if agent_job_worker_source_enabled "agent_job:42" { score = score + 1 }
 if !(agent_job_worker_source_enabled "agent:42") { score = score + 10 }
 
-return { .score = score }
+return { .score = score };

@@ -5,13 +5,13 @@ Deno.test("value loops type direct breaks through if expression branches", () =>
   const wat = Source.wat(`
 let value = loop {
   if true {
-    break 7
+    break 7;
   } else if false {
-    break 8
+    break 8;
   } else {
-    break 9
+    break 9;
   }
-}
+};
 value
 `);
 
@@ -25,13 +25,13 @@ Deno.test("value loops reject bare and valued breaks before Core erases Unit", (
       Source.wat(`
 let value = loop {
   if true {
-    break
+    break;
   } else if false {
-    break 1
+    break 1;
   } else {
-    break
+    break;
   }
-}
+};
 value
 `),
     "Loop breaks must return one source type, got Unit and value",
@@ -41,7 +41,7 @@ value
 Deno.test("bare loop breaks produce a discardable Unit value", () => {
   const wat = Source.wat(`
 loop {
-  break
+  break;
 }
 42
 `);

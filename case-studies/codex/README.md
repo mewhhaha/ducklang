@@ -6,24 +6,26 @@ is the official Codex repository at commit
 
 The current vertical slice runs a Responses API turn, handles any number of
 function calls, requests approval, returns function-call outputs, strips
-citations from assistant text, normalizes conversation history, rolls back user
-turns, compacts history within an approximate token budget, merges official
-configuration layers, renders model context, and selects durable rollout
-records. It also registers model-visible and deferred tools, validates dispatch
-payloads, selects sandbox approval requirements, preserves denied-read policy,
-and assesses apply-patch targets. It compiles through the latest local gpufuck
-backend. Model, tool, and approval operations are resumable suspending effects:
-Duck retains the continuation and agent loop while the host completes external
-I/O. Managed-network requests use source-owned per-environment caches,
-attribution, pending-request deduplication, and deferred denial outcomes.
-Terminal begin, output-delta, interaction, and end records are also selected in
-source, including UTF-8-safe payload bounds and exactly-once lifecycle guards.
-MCP visibility, connector allowlists, deferred exposure, and annotation-driven
-approval policy are source-defined as well. Skill frontmatter and optional
-`agents/openai.yaml` policy are parsed in Duck from immutable snapshots. Duck
-also owns product gating, hidden-path and traversal limits, explicit `$name`
-selection, scope ordering, context budgets, description truncation, omission
-reports, and the model-visible skill catalog.
+citations from assistant text, extracts streamed plan-mode output, normalizes
+conversation history, rolls back user turns, compacts history within an
+approximate token budget, merges official configuration layers, renders model
+context, and selects durable rollout records. It also registers model-visible
+and deferred tools, validates dispatch payloads, selects sandbox approval
+requirements, preserves denied-read policy, and assesses apply-patch targets. It
+compiles through the latest local gpufuck backend. Model, tool, and approval
+operations are resumable suspending effects: Duck retains the continuation and
+agent loop while the host completes external I/O. Managed-network requests use
+source-owned per-environment caches, attribution, pending-request deduplication,
+deferred denial outcomes, decider-only approval contexts, exact policy-denial
+messages, and typed execpolicy amendments. Terminal begin, output-delta,
+interaction, and end records are also selected in source, including UTF-8-safe
+payload bounds and exactly-once lifecycle guards. MCP visibility, connector
+allowlists, deferred exposure, and annotation-driven approval policy are
+source-defined as well. Skill frontmatter and optional `agents/openai.yaml`
+policy are parsed in Duck from immutable snapshots. Duck also owns product
+gating, hidden-path and traversal limits, explicit `$name` selection, scope
+ordering, context budgets, description truncation, omission reports, and the
+model-visible skill catalog.
 
 The wire protocol is source-defined. `duck:prelude/json` provides the recursive
 JSON parser, Unicode escape handling, and encoder, while the focused
@@ -393,6 +395,15 @@ in message, function-output, and custom-output content. Rejected inputs use the
 official processing, unsupported-format, and size placeholders while preserving
 all non-audio content and response order.
 
+Image preparation is source-defined around a narrow decoding boundary. Duck
+preserves non-data local URLs, rejects remote HTTP URLs and unsupported `low`
+detail without host work, and emits only processable data URLs with the official
+high/auto 2,048-dimension and 2,500-patch limits or original-detail 6,000 and
+10,000 limits. It applies host processing outcomes to message, function-output,
+and custom-output content with the four official placeholders while retaining
+detail, metadata, unrelated content, and response order. The host owns image
+decoding, resizing, and data-URL encoding.
+
 Sandbox CLI planning preserves permission and configuration profiles, explicit
 sandbox-state JSON, readable roots, network disablement, managed configuration,
 macOS Unix-socket and denial-log options, and the exact trailing command. Duck
@@ -416,6 +427,15 @@ optional environment selection, add/delete/update decoding, move targets,
 writable-root safety projection, line matching, and immutable file updates. The
 host only snapshots requested files and applies Duck-selected writes or deletes;
 filesystem I/O does not participate in patch interpretation.
+
+Turn diff accumulation is source-defined over the exact committed delta from
+that boundary. Duck retains the first observed content, current content,
+revision identity, move ancestry, invalidation state, and environment-qualified
+paths without rereading the workspace. It projects deterministic added, deleted,
+updated, and moved changes, including add/delete cycles, overwritten
+destinations, pure renames, and multiple environments. Git blob hashing,
+display-root rendering, unified-diff generation, caching, and timeout fallback
+remain host concerns.
 
 App-server account requests use an explicit staged decoder. The root source
 router identifies the `account/*` subsystem, Duck classifies all five login
@@ -520,7 +540,17 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   `apply_patch_execution.duck` own tool exposure, environment selection, patch
   syntax, target projection, pure content updates, and mutation sequencing.
   `apply_patch_host.duck` declares only file snapshots and mutations.
+- `turn_diff_types.duck`, `turn_diff.duck`, and `turn_diff_projection.duck` own
+  exact-delta accumulation, content revisions, move ancestry, invalidation, and
+  deterministic net-change projection. Host rendering can consume those typed
+  changes without reinterpreting file history.
 - `citation_parser.duck` owns incremental citation filtering.
+- `proposed_plan_types.duck` and `proposed_plan.duck` own line-delimited
+  `<proposed_plan>` recognition, incremental visible-text filtering, ordered
+  plan segments, end-of-stream closure, one-shot stripping, and last-block
+  extraction. `assistant_text_types.duck` and `assistant_text.duck` compose that
+  parser after citation removal in plan mode while leaving plan markup visible
+  in normal assistant text and expose the exact empty-chunk predicate.
 - `history_types.duck` defines the source conversation model.
 - `history.duck` owns call/output pairing, modality normalization, rollback, and
   token estimation.
@@ -786,6 +816,11 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   strict payload validation, canonical URL construction, and ordered response
   rewriting. Flat evidence structs keep managed text ownership explicit at
   backend boundaries.
+- `image_preparation_types.duck`, `image_preparation_plan.duck`,
+  `image_preparation_requests.duck`, and `image_preparation.duck` own image URL
+  policy, detail-dependent resize budgets, ordered host requests, exact failure
+  placeholders, and response rewriting. `HistoryContent` retains image detail so
+  request preparation does not discard model-visible policy.
 - `exec_types.duck` and `exec.duck` own shell recognition, argv derivation,
   login-shell restrictions, yield and output-token bounds, process state, and
   bounded head-tail output with omission accounting.
@@ -802,6 +837,13 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   session allow/deny caches, late blocked-request outcomes, cancellation, and
   deferred finish behavior. `network_approval_host.duck` is the narrow prompt
   boundary.
+- `network_policy_types.duck`, `network_policy_context_types.duck`,
+  `network_policy_context.duck`, `network_policy_message_types.duck`,
+  `network_policy_message.duck`, `network_policy_amendment_types.duck`, and
+  `network_policy_amendment.duck` own the shared approval-context vocabulary,
+  decider-payload projection, exact blocked request explanations, protocol
+  mapping, and allow/deny execpolicy amendment text. The three focused stages
+  stay below gpufuck's per-program bound.
 - `exec_events.duck` owns terminal lifecycle state, 8 KiB UTF-8-safe output
   chunks, the 10,000-delta bound, interaction visibility, completion status, and
   begin/end deduplication. `exec_events_host.duck` only delivers those typed
@@ -877,17 +919,22 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   running-thread consistency, unsubscribe classification, active-turn
   validation, steering preconditions, startup interruption, terminal outcomes,
   and V2 Turn materialization.
-- `citation_parser_stream_fixture.duck`, `history_fixture.duck`,
-  `compaction_fixture.duck`, `truncation_fixture.duck`,
+- `citation_parser_stream_fixture.duck`, `proposed_plan_fixture.duck`,
+  `proposed_plan_edge_fixture.duck`,
+  `proposed_plan_ascii_whitespace_fixture.duck`, `assistant_text_fixture.duck`,
+  `history_fixture.duck`, `compaction_fixture.duck`, `truncation_fixture.duck`,
   `instruction_discovery_fixture.duck`, `config_fixture.duck`,
   `context_fixture.duck`, `rollout_fixture.duck`, `rollout_scan_fixture.duck`,
   `rollout_storage_fixture.duck`, `rollout_storage_metadata_fixture.duck`, and
   `rollout_storage_adapter_fixture.duck` verify the larger source policies and
-  live storage boundary through gpufuck. The message-history fixtures verify
-  exact JSONL escaping, disabled persistence, soft-cap trimming, identity
-  mismatch, malformed rows, newest-first ordering, and continuation offsets. The
-  compaction-tag and model-fallback fixtures verify canonical telemetry
-  vocabulary, retry eligibility, and success/failure projections.
+  live storage boundary through gpufuck. The plan-stream fixtures verify split
+  tag prefixes, line-only recognition, malformed and unterminated blocks,
+  Unicode and CRLF whitespace, ordered segments, last-block extraction, normal
+  mode passthrough, and citation removal inside plan text. The message-history
+  fixtures verify exact JSONL escaping, disabled persistence, soft-cap trimming,
+  identity mismatch, malformed rows, newest-first ordering, and continuation
+  offsets. The compaction-tag and model-fallback fixtures verify canonical
+  telemetry vocabulary, retry eligibility, and success/failure projections.
   `tool_registry_fixture.duck`, `tool_dispatch_fixture.duck`,
   `tool_metadata_fixture.duck`, `tool_policy_fixture.duck`, and
   `tool_patch_policy_fixture.duck` verify the source-defined tool and safety
@@ -897,7 +944,13 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   sanitization. The audio fixtures verify every supported MIME alias, strict
   Base64 rejection, canonical URL output, all three omission messages, message,
   function-output, custom-output, and non-audio preservation, plus missing,
-  extra, and invalid preparation status failures. The rollout-budget fixtures
+  extra, and invalid preparation status failures. The image-preparation fixtures
+  verify URL classification, every detail budget, host-request ordering, all
+  four omission messages, metadata and non-image preservation, and missing,
+  extra, invalid-status, and empty-success failures. The turn-diff fixtures
+  verify accumulation, deletion, add and move overwrites, committed mutation
+  order, delete/re-add cycles, chained move pairing, pure rename suppression,
+  invalidation, and environment-qualified ordering. The rollout-budget fixtures
   verify weighted non-cached usage, one-shot configuration, persistent
   exhaustion, per-thread thresholds, context-window restatement, and explicit
   rearming. The context-window and token-budget-tool fixtures verify total and
@@ -950,29 +1003,34 @@ stay in Wasm; only explicit external capabilities cross the host boundary.
   `exec_output_fixture.duck`, `exec_store_fixture.duck`, the terminal-event
   fixtures, and `exec.test.ts` verify source process planning, buffering, state,
   session pruning, sandbox retry, lifecycle delivery, and the live host
-  adapters. The network approval fixtures and `network_approval.test.ts` verify
-  cache scoping, ambiguous attribution, deferred outcomes, and the live prompt
-  boundary. The session-prefix fixtures verify status JSON, final-answer
-  envelopes, inactive-status suppression, context labels, and the 1,000-token
-  manual-review threshold. The MCP fixtures verify exposure and approval policy.
-  The skill fixtures verify metadata parsing, document construction, discovery,
-  selection, ordering, budgeted rendering, and UTF-8-safe description bounds.
-  The plugin fixtures verify active-package projection, deduplication, mentions,
-  instructions, stable identifier validation, selector resolution, and typed
-  plugin and marketplace CLI plans. The cloud CLI fixtures verify bounded task
-  submission, pagination, lookup, diff, apply, and alias routing. The server CLI
-  fixtures verify startup constraints and root routing. The application CLI
-  fixtures verify desktop defaults, installer overrides, remote-control modes,
-  and root routing. The app-server CLI fixtures verify transport selection,
-  websocket auth, daemon operations, protocol generation, and root routing. The
-  utility CLI fixtures verify doctor modes, ordered config overrides, proxy
-  bounds/defaults, and the `a` alias. The debug CLI fixtures verify model mode,
-  prompt/image expansion, app-server messages, trace output, memory reset, and
-  root routing. The execpolicy CLI fixtures verify repeated rules, trailing
-  hyphenated command tokens, required inputs, and root routing. The sandbox CLI
-  fixtures verify profile and state constraints, repeated roots, exact trailing
-  command preservation, and root routing. The exec CLI fixtures verify fresh and
-  resumed sessions, review targets and conflicts, shared/output options, removed
+  adapters. The bounded network approval fixtures verify case-insensitive host
+  matching, protocol-, port-, and environment-scoped keys, pending ownership,
+  session allow/deny caches, active-call ordering, ambiguous attribution, and
+  deferred outcomes; `network_approval.test.ts` covers the live prompt boundary.
+  The network-policy fixtures verify decider/source precedence, protocol and
+  host requirements, every known denial reason plus fallback, and allow/deny
+  execpolicy projection. The session-prefix fixtures verify status JSON,
+  final-answer envelopes, inactive-status suppression, context labels, and the
+  1,000-token manual-review threshold. The MCP fixtures verify exposure and
+  approval policy. The skill fixtures verify metadata parsing, document
+  construction, discovery, selection, ordering, budgeted rendering, and
+  UTF-8-safe description bounds. The plugin fixtures verify active-package
+  projection, deduplication, mentions, instructions, stable identifier
+  validation, selector resolution, and typed plugin and marketplace CLI plans.
+  The cloud CLI fixtures verify bounded task submission, pagination, lookup,
+  diff, apply, and alias routing. The server CLI fixtures verify startup
+  constraints and root routing. The application CLI fixtures verify desktop
+  defaults, installer overrides, remote-control modes, and root routing. The
+  app-server CLI fixtures verify transport selection, websocket auth, daemon
+  operations, protocol generation, and root routing. The utility CLI fixtures
+  verify doctor modes, ordered config overrides, proxy bounds/defaults, and the
+  `a` alias. The debug CLI fixtures verify model mode, prompt/image expansion,
+  app-server messages, trace output, memory reset, and root routing. The
+  execpolicy CLI fixtures verify repeated rules, trailing hyphenated command
+  tokens, required inputs, and root routing. The sandbox CLI fixtures verify
+  profile and state constraints, repeated roots, exact trailing command
+  preservation, and root routing. The exec CLI fixtures verify fresh and resumed
+  sessions, review targets and conflicts, shared/output options, removed
   compatibility flags, aliases, and root routing. The hook fixtures verify
   matching, selection, trust, normalization, exact input, JSON output,
   command-result policy, and streaming result aggregation through the latest
@@ -1028,13 +1086,15 @@ and must remain useful without Codex.
 The gpufuck route supports the recursive source modules and resumable host
 effects used here. Audio MIME, payload, and response fixtures use gpufuck's full
 batch compiler because their managed aggregate results are not portable across
-the incremental definition extractor. The data-URL parser also runs through
-native Core with score `11111`; payload construction and response rewriting do
-not claim native coverage because native ownership proof does not yet retain
-their returned managed text. The five-call citation stream now also compiles and
-runs through native Core in `citation_parser_stream_native.test.ts`, returning
-the same score `474580703` as gpufuck. Native Core also runs all three
-clock-tool registration modes in
+the incremental definition extractor. Image preparation uses the same full batch
+route; decoding and resizing remain an explicit host boundary and no native
+image-processing coverage is claimed. The audio data-URL parser also runs
+through native Core with score `11111`; payload construction and response
+rewriting do not claim native coverage because native ownership proof does not
+yet retain their returned managed text. The five-call citation stream now also
+compiles and runs through native Core in
+`citation_parser_stream_native.test.ts`, returning the same score `474580703` as
+gpufuck. Native Core also runs all three clock-tool registration modes in
 `current_time_tool_registration_native.test.ts`, with the same scores as
 gpufuck. `current_time_provider_native.test.ts` covers system, external, and
 unavailable-external provider selection through the native route.

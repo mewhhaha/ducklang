@@ -1,22 +1,37 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_marketplace_add } = import "./cli_plugin.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_marketplace_add } = import "./cli_plugin.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexPluginCommandResult
 
-const args = comptime list(Text)
-let input: FixtureArgs = args.prepend("https://example.com/plugins.git", args.prepend("--ref", args.prepend("main", args.prepend("--sparse", args.prepend("first", args.prepend("--sparse", args.prepend("second", args.singleton("--json"))))))))
-let parsed: FixtureResult = parse_marketplace_add(input)
-let score = 0
+const args = comptime list Text;
+let input: FixtureArgs = args.prepend(
+  "https://example.com/plugins.git",
+  args.prepend(
+    "--ref",
+    args.prepend(
+      "main",
+      args.prepend(
+        "--sparse",
+        args.prepend(
+          "first",
+          args.prepend("--sparse", args.prepend("second", args.singleton("--json"))),
+        ),
+      ),
+    ),
+  ),
+);
+let parsed: FixtureResult = parse_marketplace_add input;
+let score = 0;
 
 if let `Ok command = parsed {
   if let `MarketplaceAdd options = command {
     if let `Some ref_name = options.ref_name {
-      let first = args.nth_or("", 0, options.sparse_paths)
-      let second = args.nth_or("", 1, options.sparse_paths)
+      let first = args.nth_or("", 0, options.sparse_paths);
+      let second = args.nth_or("", 1, options.sparse_paths);
       if options.source == "https://example.com/plugins.git" && ref_name == "main" && first == "first" && second == "second" && options.json {
         score = 1
       }
@@ -24,4 +39,4 @@ if let `Ok command = parsed {
   }
 }
 
-return { .score = score }
+return { .score = score };

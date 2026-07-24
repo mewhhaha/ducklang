@@ -1,7 +1,7 @@
 module () where
 
-const { text_append, text_starts_with } = import "duck:prelude/functional" ()
-const {} = import "./cli_types.duck" ()
+const { .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const {} = import "./cli_types.duck" ();
 
 type AuthArgs = CodexCliArgs
 type AuthTextOption = CodexCliTextOption
@@ -14,37 +14,40 @@ type AuthFacts = CodexLoginFacts
 
 type AuthFactsResult = Result Text AuthFacts
 
-let rec scan_login_options_from: [AuthArgs, AuthFacts] -> AuthFactsResult = (args: AuthArgs, facts: AuthFacts) => {
+let rec scan_login_options_from: [AuthArgs, AuthFacts] -> AuthFactsResult = (
+  args: AuthArgs,
+  facts: AuthFacts,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if argument == "--with-api-key" {
-      scan_login_options_from(tail, facts :+ { .with_api_key = true })
+      scan_login_options_from(tail, facts <& { .with_api_key = true })
     } else if argument == "--with-access-token" {
-      scan_login_options_from(tail, facts :+ { .with_access_token = true })
+      scan_login_options_from(tail, facts <& { .with_access_token = true })
     } else if argument == "--device-auth" {
-      scan_login_options_from(tail, facts :+ { .device_auth = true })
+      scan_login_options_from(tail, facts <& { .device_auth = true })
     } else if argument == "--api-key" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
+        let [value, remaining] = value_node;
         if text_starts_with(value, "-") {
-          scan_login_options_from(tail, facts :+ { .deprecated_api_key = true })
+          scan_login_options_from(tail, facts <& { .deprecated_api_key = true })
         } else {
-          scan_login_options_from(remaining, facts :+ { .deprecated_api_key = true })
+          scan_login_options_from(remaining, facts <& { .deprecated_api_key = true })
         }
       } else {
-        scan_login_options_from(tail, facts :+ { .deprecated_api_key = true })
+        scan_login_options_from(tail, facts <& { .deprecated_api_key = true })
       }
     } else if argument == "--experimental_issuer" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_login_options_from(remaining, facts :+ { .issuer_base_url = `Some value })
+        let [value, remaining] = value_node;
+        scan_login_options_from(remaining, facts <& { .issuer_base_url = `Some value })
       } else {
         `Err "missing value for --experimental_issuer"
       }
     } else if argument == "--experimental-client-id" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_login_options_from(remaining, facts :+ { .client_id = `Some value })
+        let [value, remaining] = value_node;
+        scan_login_options_from(remaining, facts <& { .client_id = `Some value })
       } else {
         `Err "missing value for --experimental-client-id"
       }
@@ -52,7 +55,7 @@ let rec scan_login_options_from: [AuthArgs, AuthFacts] -> AuthFactsResult = (arg
       if facts.status {
         `Err "login status was specified more than once"
       } else {
-        scan_login_options_from(tail, facts :+ { .status = true })
+        scan_login_options_from(tail, facts <& { .status = true })
       }
     } else {
       `Err (text_append("unknown login argument: ", argument))
@@ -60,11 +63,19 @@ let rec scan_login_options_from: [AuthArgs, AuthFacts] -> AuthFactsResult = (arg
   } else {
     `Ok facts
   }
-}
+};
 
 let parse_login_options: AuthArgs -> AuthActionResult = (args: AuthArgs) => {
-  let initial: AuthFacts = [.with_api_key = false, .with_access_token = false, .device_auth = false, .deprecated_api_key = false, .status = false, .issuer_base_url = `None (), .client_id = `None ()]
-  let parsed: AuthFactsResult = scan_login_options_from(args, initial)
+  let initial: AuthFacts = [
+    .with_api_key = false,
+    .with_access_token = false,
+    .device_auth = false,
+    .deprecated_api_key = false,
+    .status = false,
+    .issuer_base_url = `None (),
+    .client_id = `None (),
+  ];
+  let parsed: AuthFactsResult = scan_login_options_from(args, initial);
   if let `Err message = parsed {
     `Err message
   } else if let `Ok facts = parsed {
@@ -73,7 +84,10 @@ let parse_login_options: AuthArgs -> AuthActionResult = (args: AuthArgs) => {
     } else if facts.with_api_key && facts.with_access_token {
       `Err "Choose one login credential source: --with-api-key or --with-access-token."
     } else if facts.device_auth {
-      let options: AuthDeviceOptions = [.issuer_base_url = facts.issuer_base_url, .client_id = facts.client_id]
+      let options: AuthDeviceOptions = [
+        .issuer_base_url = facts.issuer_base_url,
+        .client_id = facts.client_id,
+      ];
       `Ok (`DeviceLogin options)
     } else if facts.deprecated_api_key {
       `Err "The --api-key flag is no longer supported. Pipe the key with --with-api-key."
@@ -87,7 +101,7 @@ let parse_login_options: AuthArgs -> AuthActionResult = (args: AuthArgs) => {
   } else {
     `Err "login option scanner returned an unknown result"
   }
-}
+};
 
 const parse_logout_options: AuthArgs -> AuthLogoutResult = (args: AuthArgs) => {
   if let `Nil () = args {
@@ -95,9 +109,9 @@ const parse_logout_options: AuthArgs -> AuthLogoutResult = (args: AuthArgs) => {
   } else {
     `Err "logout does not accept arguments"
   }
-}
+};
 
 return {
-  parse_login_options,
-  parse_logout_options,
-}
+  .parse_login_options,
+  .parse_logout_options,
+};

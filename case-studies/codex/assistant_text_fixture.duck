@@ -1,0 +1,137 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const { .text_append } = import "duck:prelude/text" ();
+const {
+  .assistant_text_chunk_is_empty,
+  .finish_assistant_text,
+  .new_normal_assistant_text_parser,
+  .new_plan_assistant_text_parser,
+  .push_assistant_text_chunk,
+} = import "./assistant_text.duck" ();
+
+type FixtureAssistantParser = AssistantTextParser
+type FixtureCitations = Citations
+type FixturePlanSegment = ProposedPlanSegment
+type FixturePlanSegments = ProposedPlanSegments
+
+const citation_values = comptime list Text;
+const plan_segments = comptime list FixturePlanSegment;
+
+const render_citations = (citations: FixtureCitations) => {
+  let current = citations;
+  let rendered = "";
+
+  loop {
+    if let `Cons node = current {
+      let typed_node: ListNode Text = node;
+      let [citation, tail] = typed_node;
+      rendered = text_append [rendered, text_append ["C(", text_append [citation, ")"]]]
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  rendered
+};
+
+const render_plan_segments = (segments: FixturePlanSegments) => {
+  let current = segments;
+  let rendered = "";
+
+  loop {
+    if let `Cons node = current {
+      let typed_node: ListNode FixturePlanSegment = node;
+      let [segment, tail] = typed_node;
+
+      match segment {
+        | `Normal text => { rendered = text_append [
+          rendered,
+          text_append ["N(", text_append [text, ")"]],
+        ] }
+        | `ProposedPlanStart () => { rendered = text_append [rendered, "S"] }
+        | `ProposedPlanDelta text => { rendered = text_append [
+          rendered,
+          text_append ["D(", text_append [text, ")"]],
+        ] }
+        | `ProposedPlanEnd () => { rendered = text_append [rendered, "E"] }
+      }
+
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  rendered
+};
+
+let score = 0;
+let parser: FixtureAssistantParser = new_plan_assistant_text_parser();
+let seeded = push_assistant_text_chunk(parser, "Intro\n<proposed");
+parser = seeded.parser
+let parsed = push_assistant_text_chunk(
+  parser,
+  "_plan>\n- step <oai-mem-citation>doc</oai-mem-citation>\n",
+);
+parser = parsed.parser
+let tail = push_assistant_text_chunk(parser, "</proposed_plan>\nOutro");
+parser = tail.parser
+let finished = finish_assistant_text parser;
+
+let seeded_valid =
+  seeded.visible_text == "Intro\n" && render_citations seeded.citations == "" && render_plan_segments seeded.plan_segments == "N(Intro\n)";
+let parsed_valid =
+  parsed.visible_text == "" && render_citations parsed.citations == "C(doc)" && render_plan_segments parsed.plan_segments == "SD(- step \n)" && !(
+    assistant_text_chunk_is_empty parsed
+  );
+let tail_valid =
+  tail.visible_text == "Outro" && render_citations tail.citations == "" && render_plan_segments tail.plan_segments == "EN(Outro)";
+let finish_valid = assistant_text_chunk_is_empty finished;
+if seeded_valid && parsed_valid && tail_valid && finish_valid {
+  score = score + 1
+}
+
+let citation_parser: FixtureAssistantParser = new_normal_assistant_text_parser();
+let citation_seed = push_assistant_text_chunk(citation_parser, "hello <oai-mem-citation>doc");
+citation_parser = citation_seed.parser
+let citation_delta = push_assistant_text_chunk(citation_parser, "1</oai-mem-citation> world");
+citation_parser = citation_delta.parser
+let citation_finish = finish_assistant_text citation_parser;
+let citation_seed_valid =
+  citation_seed.visible_text == "hello " && render_citations citation_seed.citations == "" && render_plan_segments citation_seed.plan_segments == "";
+let citation_delta_valid =
+  citation_delta.visible_text == " world" && render_citations citation_delta.citations == "C(doc1)" && render_plan_segments citation_delta.plan_segments == "";
+if citation_seed_valid && citation_delta_valid && assistant_text_chunk_is_empty citation_finish && !(
+  assistant_text_chunk_is_empty citation_seed
+) {
+  score = score + 1
+}
+
+let normal = push_assistant_text_chunk(
+  new_normal_assistant_text_parser(),
+  "<proposed_plan>\n- <oai-mem-citation>source</oai-mem-citation>\n</proposed_plan>",
+);
+let normal_finish = finish_assistant_text normal.parser;
+let normal_visible = text_append [normal.visible_text, normal_finish.visible_text];
+let normal_citations = citation_values.append(normal.citations, normal_finish.citations);
+let normal_segments = plan_segments.append(normal.plan_segments, normal_finish.plan_segments);
+if normal_visible == "<proposed_plan>\n- \n</proposed_plan>" && render_citations normal_citations == "C(source)" && render_plan_segments normal_segments == "" {
+  score = score + 1
+}
+
+let unfinished = push_assistant_text_chunk(
+  new_plan_assistant_text_parser(),
+  "<proposed_plan>\nstep <oai-mem-citation>source",
+);
+let unfinished_finish = finish_assistant_text unfinished.parser;
+if unfinished.visible_text == "" && render_citations unfinished.citations == "" && render_plan_segments unfinished.plan_segments == "SD(step )" && !(
+  assistant_text_chunk_is_empty unfinished
+) {
+  if unfinished_finish.visible_text == "" && render_citations unfinished_finish.citations == "C(source)" && render_plan_segments unfinished_finish.plan_segments == "E" {
+    score = score + 1
+  }
+}
+
+return { .score = score };

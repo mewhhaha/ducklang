@@ -1,8 +1,8 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const { struct } = import "duck:prelude/types" ()
-const { normalize_code_mode_identifier } = import "./code_mode_identifier.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const { .struct } = import "duck:prelude/types" ();
+const { .normalize_code_mode_identifier } = import "./code_mode_identifier.duck" ();
 
 type CodeModeDescriptionDefinition = struct {
   .name = Text,
@@ -12,28 +12,62 @@ type CodeModeDescriptionDefinition = struct {
   .output_type = Text,
 }
 
-const code_mode_function_definition: [Text, Text, Text, Text] -> CodeModeDescriptionDefinition = (name, description, input_type, output_type) => {
-  [.name = name, .description = description, .freeform = false, .input_type = input_type, .output_type = output_type]
-}
+const code_mode_function_definition: [Text, Text, Text, Text] -> CodeModeDescriptionDefinition = (
+  name,
+  description,
+  input_type,
+  output_type,
+) => {
+  [
+    .name = name,
+    .description = description,
+    .freeform = false,
+    .input_type = input_type,
+    .output_type = output_type,
+  ]
+};
 
-const code_mode_freeform_definition: [Text, Text, Text] -> CodeModeDescriptionDefinition = (name, description, output_type) => {
-  [.name = name, .description = description, .freeform = true, .input_type = "string", .output_type = output_type]
-}
+const code_mode_freeform_definition: [Text, Text, Text] -> CodeModeDescriptionDefinition = (
+  name,
+  description,
+  output_type,
+) => {
+  [
+    .name = name,
+    .description = description,
+    .freeform = true,
+    .input_type = "string",
+    .output_type = output_type,
+  ]
+};
 
 let materialize_code_mode_description: CodeModeDescriptionDefinition -> Text = definition => {
   if definition.name == "exec" {
-    return definition.description
+    return definition.description;
   }
 
-  let input_name = "args"
+  let input_name = "args";
   if definition.freeform { input_name = "input" }
 
-  let tool_name = normalize_code_mode_identifier definition.name
-  let declaration = text_append [tool_name, text_append ["(", text_append [input_name, text_append [": ", definition.input_type]]]]
-  declaration = text_append [declaration, text_append ["): Promise<", text_append [definition.output_type, ">;"]]]
-  let description = text_append [definition.description, "\n\nexec tool declaration:\n```ts\ndeclare const tools: { "]
+  let tool_name = normalize_code_mode_identifier definition.name;
+  let declaration = text_append [
+    tool_name,
+    text_append ["(", text_append [input_name, text_append [": ", definition.input_type]]],
+  ];
+  declaration = text_append [
+    declaration,
+    text_append ["): Promise<", text_append [definition.output_type, ">;"]],
+  ]
+  let description = text_append [
+    definition.description,
+    "\n\nexec tool declaration:\n```ts\ndeclare const tools: { ",
+  ];
   description = text_append [description, text_append [declaration, " };\n```"]]
   description
-}
+};
 
-return { code_mode_freeform_definition, code_mode_function_definition, materialize_code_mode_description }
+return {
+  .code_mode_freeform_definition,
+  .code_mode_function_definition,
+  .materialize_code_mode_description,
+};

@@ -1,29 +1,37 @@
 module () where
 
-const { encode_json, json_object, json_object_empty, json_object_prepend } = import "duck:prelude/json" ()
-const {} = import "./app_server_types.duck" ()
+const { .encode_json, .json_object, .json_object_empty, .json_object_prepend } =
+  import "duck:prelude/json" ();
+const {} = import "./app_server_types.duck" ();
 
 type WireResponseJson = AppServerJson
 type WireResponseRequestId = AppServerRequestId
 
-const encode_response: [WireResponseRequestId, WireResponseJson] -> Text = (id: WireResponseRequestId, result: WireResponseJson) => {
-  let fields = json_object_empty()
+const encode_response: [WireResponseRequestId, WireResponseJson] -> Text = (
+  id: WireResponseRequestId,
+  result: WireResponseJson,
+) => {
+  let fields = json_object_empty();
   fields = json_object_prepend("result", result, fields)
   fields = json_object_prepend("id", id, fields)
-  encode_json(json_object(fields))
-}
+  encode_json(json_object fields)
+};
 
-const encode_error: [WireResponseRequestId, Text, Text] -> Text = (id: WireResponseRequestId, code: Text, message: Text) => {
-  let error_fields = json_object_empty()
+const encode_error: [WireResponseRequestId, Text, Text] -> Text = (
+  id: WireResponseRequestId,
+  code: Text,
+  message: Text,
+) => {
+  let error_fields = json_object_empty();
   error_fields = json_object_prepend("message", `String message, error_fields)
   error_fields = json_object_prepend("code", `Number code, error_fields)
-  let fields = json_object_empty()
-  fields = json_object_prepend("error", json_object(error_fields), fields)
+  let fields = json_object_empty();
+  fields = json_object_prepend("error", json_object error_fields, fields)
   fields = json_object_prepend("id", id, fields)
-  encode_json(json_object(fields))
-}
+  encode_json(json_object fields)
+};
 
 return {
-  encode_response,
-  encode_error,
-}
+  .encode_response,
+  .encode_error,
+};

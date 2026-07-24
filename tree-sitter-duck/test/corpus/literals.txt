@@ -2,11 +2,11 @@
 Text, character, and boolean literals
 ==================
 
-let message = "hello\nworld"
-let newline = '\n'
-let quote = '\''
-let ready = true
-let precise = 42f64
+let message = "hello\nworld";
+let newline = '\n';
+let quote = '\'';
+let ready = true;
+let precise = 42f64;
 if ready { 'λ' } else { false }
 if (let 'c' = newline) { true } else { false }
 if let "ready" = message { 1 } else { 0 }

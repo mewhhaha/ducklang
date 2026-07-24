@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_common_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_common_types.duck" ();
 
 type AgentJobCreateHeaderNode = [Text, AgentJobCreateHeaders]
 type AgentJobCreateHeaders =
@@ -74,4 +74,4 @@ type AgentJobExportExecutionResult =
   | `Completed Text
   | `Rejected Text
 
-return {}
+return {};

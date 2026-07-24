@@ -1,27 +1,27 @@
 module () where
 
-const { parse_archive_options } = import "./cli_sessions.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_archive_options } = import "./cli_sessions.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexArchiveOptionsResult
 type FixtureNode = ListNode Text
 
 const empty_args = () => {
-  let values: FixtureArgs = `Nil ()
+  let values: FixtureArgs = `Nil ();
   values
-}
+};
 const prepend_arg = (value: Text, values: FixtureArgs) => {
-  let node: FixtureNode = [value, values]
-  let result: FixtureArgs = `Cons node
+  let node: FixtureNode = [value, values];
+  let result: FixtureArgs = `Cons node;
   result
-}
-let input: FixtureArgs = prepend_arg("--strict-config", prepend_arg("thread-name", empty_args()))
-let parsed: FixtureResult = parse_archive_options(input)
-let score = 0
+};
+let input: FixtureArgs = prepend_arg("--strict-config", prepend_arg("thread-name", empty_args()));
+let parsed: FixtureResult = parse_archive_options input;
+let score = 0;
 
 if let `Ok options = parsed {
   if options.target == "thread-name" && options.shared.strict_config { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

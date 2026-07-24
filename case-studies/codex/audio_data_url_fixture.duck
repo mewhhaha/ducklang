@@ -1,36 +1,36 @@
 module () where
 
-const { parse_audio_data_url } = import "./audio_data_url.duck" ()
+const { .parse_audio_data_url } = import "./audio_data_url.duck" ();
 
 const verify_audio_data_url_fixture: I32 -> I32 = _ => {
-  let score = 0
+  let score = 0;
 
-  let parsed = parse_audio_data_url "DATA:Audio/X-WaV;charset=binary;BASE64,YXVkaW8="
+  let parsed = parse_audio_data_url "DATA:Audio/X-WaV;charset=binary;BASE64,YXVkaW8=";
   if parsed.status_code == 0 && parsed.mime == "Audio/X-WaV" && parsed.payload == "YXVkaW8=" {
     score = score + 1
   }
 
-  let remote = parse_audio_data_url "https://example.com/audio.mp3"
+  let remote = parse_audio_data_url "https://example.com/audio.mp3";
   if remote.status_code == 1 && remote.reason == "audio input must be a data URL" {
     score = score + 10
   }
 
-  let missing_separator = parse_audio_data_url "data:audio/wav;base64"
+  let missing_separator = parse_audio_data_url "data:audio/wav;base64";
   if missing_separator.status_code == 1 && missing_separator.reason == "missing payload separator" {
     score = score + 100
   }
 
-  let missing_mime = parse_audio_data_url "data:;base64,YXVkaW8="
+  let missing_mime = parse_audio_data_url "data:;base64,YXVkaW8=";
   if missing_mime.status_code == 1 && missing_mime.reason == "missing media type" {
     score = score + 1000
   }
 
-  let not_base64 = parse_audio_data_url "data:audio/wav,not-base64"
+  let not_base64 = parse_audio_data_url "data:audio/wav,not-base64";
   if not_base64.status_code == 1 && not_base64.reason == "audio payload is not base64 encoded" {
     score = score + 10000
   }
 
   score
-}
+};
 
-return { verify_audio_data_url_fixture }
+return { .verify_audio_data_url_fixture };

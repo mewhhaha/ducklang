@@ -1,17 +1,18 @@
-const { decrement_thread_elicitation, increment_thread_elicitation } = import "./app_server_thread_controls.duck" ()
+const { .decrement_thread_elicitation, .increment_thread_elicitation } =
+  import "./app_server_thread_controls.duck" ();
 
-let score = 0
-if let `Ok count = increment_thread_elicitation(0i64) {
+let score = 0;
+if let `Ok count = increment_thread_elicitation 0i64 {
   if count == 1i64 { score = score + 1 }
 }
-if let `Err reason = increment_thread_elicitation(9223372036854775807i64) {
+if let `Err reason = increment_thread_elicitation 9223372036854775807i64 {
   if reason == "out-of-band elicitation count overflowed" { score = score + 10 }
 }
-if let `Ok count = decrement_thread_elicitation(1i64) {
+if let `Ok count = decrement_thread_elicitation 1i64 {
   if count == 0i64 { score = score + 100 }
 }
-if let `Err reason = decrement_thread_elicitation(0i64) {
+if let `Err reason = decrement_thread_elicitation 0i64 {
   if reason == "out-of-band elicitation count is already zero" { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

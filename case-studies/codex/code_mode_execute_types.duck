@@ -1,10 +1,10 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "duck:prelude/json/values" ()
-const {} = import "./code_mode_exec_source.duck" ()
-const {} = import "./code_mode_nested_tool_types.duck" ()
-const {} = import "./code_mode_runtime_response_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/json/values" ();
+const {} = import "./code_mode_exec_source.duck" ();
+const {} = import "./code_mode_nested_tool_types.duck" ();
+const {} = import "./code_mode_runtime_response_types.duck" ();
 
 type CodeModeExecuteToolDefinition = struct {
   .name = Text,
@@ -15,7 +15,10 @@ type CodeModeExecuteToolDefinition = struct {
   .output_schema = Option Json,
 }
 
-type CodeModeExecuteToolDefinitionNode = [CodeModeExecuteToolDefinition, CodeModeExecuteToolDefinitions]
+type CodeModeExecuteToolDefinitionNode = [
+  CodeModeExecuteToolDefinition,
+  CodeModeExecuteToolDefinitions,
+]
 type CodeModeExecuteToolDefinitions =
   | `ExecuteToolsNil Unit
   | `ExecuteToolsCons CodeModeExecuteToolDefinitionNode
@@ -105,4 +108,4 @@ type CodeModeExecuteResult =
   | `CodeModeExecuteCompleted CodeModeExecuteCompletion
   | `CodeModeExecuteRejected Text
 
-return {}
+return {};

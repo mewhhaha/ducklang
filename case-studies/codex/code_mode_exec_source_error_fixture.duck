@@ -1,30 +1,34 @@
 module () where
 
-const { text_starts_with } = import "duck:prelude/runtime" ()
-const { parse_code_mode_exec_source } = import "./code_mode_exec_source.duck" ()
+const { .text_starts_with } = import "duck:prelude/runtime" ();
+const { .parse_code_mode_exec_source } = import "./code_mode_exec_source.duck" ();
 
 type FixtureResult = CodeModeExecSourceResult
 
-let score = 0
+let score = 0;
 
-let blank: FixtureResult = parse_code_mode_exec_source " 　\n"
+let blank: FixtureResult = parse_code_mode_exec_source " 　\n";
 if let `CodeModeExecSourceError message = blank {
   if message == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." { score = score + 1 }
 }
 
-let no_body: FixtureResult = parse_code_mode_exec_source "// @exec: {}\n \t"
+let no_body: FixtureResult = parse_code_mode_exec_source "// @exec: {}\n \t";
 if let `CodeModeExecSourceError message = no_body {
-  if message == "exec pragma must be followed by JavaScript source on subsequent lines" { score = score + 10 }
+  if message == "exec pragma must be followed by JavaScript source on subsequent lines" { score =
+      score + 10 }
 }
 
-let empty_directive: FixtureResult = parse_code_mode_exec_source "// @exec: \ntext('hi')"
+let empty_directive: FixtureResult = parse_code_mode_exec_source "// @exec: \ntext('hi')";
 if let `CodeModeExecSourceError message = empty_directive {
   if message == "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`" { score = score + 100 }
 }
 
-let malformed_json: FixtureResult = parse_code_mode_exec_source "// @exec: {\ntext('hi')"
+let malformed_json: FixtureResult = parse_code_mode_exec_source "// @exec: {\ntext('hi')";
 if let `CodeModeExecSourceError message = malformed_json {
-  if text_starts_with [message, "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens` at byte "] { score = score + 1000 }
+  if text_starts_with [
+    message,
+    "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens` at byte ",
+  ] { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

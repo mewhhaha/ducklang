@@ -1,12 +1,27 @@
 module () where
 
-const { compaction_implementation_tag, compaction_phase_tag, compaction_reason_tag, compaction_trigger_tag } = import "./compaction_tags.duck" ()
+const {
+  .compaction_implementation_tag,
+  .compaction_phase_tag,
+  .compaction_reason_tag,
+  .compaction_trigger_tag,
+} = import "./compaction_tags.duck" ();
 
-let tags = compaction_trigger_tag(`Manual ()) <> "," <> compaction_trigger_tag(`Auto ())
-tags = tags <> "," <> compaction_reason_tag(`UserRequested ()) <> "," <> compaction_reason_tag(`ContextLimit ()) <> "," <> compaction_reason_tag(`ModelDownshift ()) <> "," <> compaction_reason_tag(`CompHashChanged ())
-tags = tags <> "," <> compaction_implementation_tag(`Responses ()) <> "," <> compaction_implementation_tag(`ResponsesCompactionV2 ()) <> "," <> compaction_implementation_tag(`ResponsesCompact ())
-tags = tags <> "," <> compaction_phase_tag(`StandaloneTurn ()) <> "," <> compaction_phase_tag(`PreTurn ()) <> "," <> compaction_phase_tag(`MidTurn ())
+let tags = compaction_trigger_tag(`Manual ()) <> "," <> compaction_trigger_tag(`Auto ());
+tags = tags <> "," <> compaction_reason_tag(`UserRequested ()) <> "," <> compaction_reason_tag(
+  `ContextLimit ()
+) <> "," <> compaction_reason_tag(`ModelDownshift ()) <> "," <> compaction_reason_tag(
+  `CompHashChanged ()
+)
+tags = tags <> "," <> compaction_implementation_tag(`Responses
+  ()) <> "," <> compaction_implementation_tag(
+    `ResponsesCompactionV2 ()
+  ) <> "," <> compaction_implementation_tag(`ResponsesCompact ())
+tags = tags <> "," <> compaction_phase_tag(`StandaloneTurn ()) <> "," <> compaction_phase_tag(
+  `PreTurn ()
+) <> "," <> compaction_phase_tag(`MidTurn ())
 
-let expected = "manual,auto,user_requested,context_limit,model_downshift,comp_hash_changed,responses,responses_compaction_v2,responses_compact,standalone_turn,pre_turn,mid_turn"
+let expected =
+  "manual,auto,user_requested,context_limit,model_downshift,comp_hash_changed,responses,responses_compaction_v2,responses_compact,standalone_turn,pre_turn,mid_turn"
 
-return { .score = if tags == expected { 1 } else { 0 } }
+return { .score = if tags == expected { 1 } else { 0 } };

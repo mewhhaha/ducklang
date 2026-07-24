@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type RolloutBudgetThresholdNode = [I32, RolloutBudgetThresholds]
 type RolloutBudgetThresholds =
@@ -51,4 +51,4 @@ type RolloutBudgetUsageResult = struct {
   .exhausted = Bool,
 }
 
-return {}
+return {};

@@ -12,9 +12,9 @@ let run: () -> <Io :| (Io :& Io.read) :- Io.print> Text = () => {
   value <- Io.read()
   _ <- Io.print(value)
   value
-}
+};
 
-result <- run()
+result <- run();
 result
 `);
   const binding = source.statements[0];
@@ -51,7 +51,7 @@ result
   );
   assert_includes(formatted, "value <- Io.read ()");
   assert_includes(formatted, "_ <- Io.print value");
-  assert_includes(formatted, "result <- run ()");
+  assert_includes(formatted, "result <- run ();");
   assert_equals(Source.parse(formatted), source);
 });
 
@@ -65,18 +65,18 @@ declare effect Io {
 let intersection: () -> <Io :& Io.read> I32 = () => {
   value <- Io.read()
   value
-}
+};
 
 let difference: () -> <Io :- Io.print> I32 = () => {
   value <- Io.read()
   value
-}
+};
 
 let combined: () -> <Io.read :| Io.print> I32 = () => {
   value <- Io.read()
   _ <- Io.print(value)
   value
-}
+};
 `);
 
   assert_equals(analysis.functions.intersection?.effects, [
@@ -96,7 +96,7 @@ Deno.test("effect rows reject braced list literals", () => {
     () =>
       Source.parse(`
 declare effect Io { read: () => I32 }
-let invalid: () -> <{ Io.read }> I32 = () => 0
+let invalid: () -> <{ Io.read }> I32 = () => 0;
 `),
     "Expected effect row member",
   );
@@ -128,7 +128,7 @@ declare effect Stdout { write: (I32) => Unit }
 let invalid: () -> <Stdin :& Stdout> I32 = () => {
   value <- Stdin.read()
   value
-}
+};
 `),
     "does not allow Stdin.read",
   );
@@ -139,7 +139,7 @@ Deno.test("effect rows validate every operand before applying set algebra", () =
     () =>
       Source.effects(`
 declare effect Io { read: () => I32 }
-let invalid: () -> <Io :| (Missing :- Missing)> I32 = () => 0
+let invalid: () -> <Io :| (Missing :- Missing)> I32 = () => 0;
 `),
     "Unknown declared effect: Missing",
   );
@@ -149,8 +149,8 @@ Deno.test("effect bind distinguishes effectful and pure computations", () => {
   assert_throws(
     () =>
       Source.effects(`
-let pure = () => 1
-value <- pure()
+let pure = () => 1;
+value <- pure();
 value
 `),
     "requires an effectful computation",
@@ -163,8 +163,8 @@ declare effect Io { read: () => I32 }
 let read = () => {
   value <- Io.read()
   value
-}
-let value = read()
+};
+let value = read();
 value
 `),
     "Effectful binding value must use `<-`",
@@ -175,8 +175,8 @@ declare effect Io { read: () => I32 }
 let read = () => {
   value <- Io.read()
   value
-}
-value <- read()
+};
+value <- read();
 value
 `);
   assert_equals(analysis.module_effects, [
@@ -198,7 +198,7 @@ declare effect Io { read: () => I32 }
 let read = () => {
   value <- Io.read()
   value
-}
+};
 _ <- read()
 `);
   assert_equals(function_analysis.module_effects, [
@@ -212,7 +212,7 @@ declare effect Io { read_resume: () => Resume }
 let read_resume: () -> <Io.read_resume> Resume = () => {
   value <- Io.read_resume()
   value
-}
+};
 _ <- read_resume()
 `),
     "Discarding an effectful function result requires an explicit cleanup path",
@@ -222,7 +222,7 @@ _ <- read_resume()
 declare effect Io { print: () => Unit }
 let write: () -> <Io.print> Unit = () => {
   _ <- Io.print()
-}
+};
 _ <- Io.print()
 _ <- write()
 `);
@@ -250,7 +250,7 @@ Deno.test("discarded callback calls use their typed Unit result", () => {
 declare effect Io { print: () => Unit }
 let apply: (() -> <e> Unit) -> <e> Unit = (const callback) => {
   _ <- callback()
-}
+};
 _ <- apply(() => {
   _ <- Io.print()
 })
@@ -276,13 +276,13 @@ let with_file: [Text, () -> <e> I32] -> <FileReader.open :| FileReader.close :| 
 
     match open_result {
       | \`Ok () => {
-        code <- action()
+        code <- action();
         _ <- FileReader.close()
         code
       }
       | \`Err () => 2
     }
-  }
+  };
 `);
 
   assert_equals(analysis.functions.with_file?.effects, [
@@ -296,7 +296,7 @@ Deno.test("inline callback annotations survive unannotated function calls", () =
 declare effect Io { print: () => Unit }
 let apply = (const callback: () -> <Io.print> Unit) => {
   _ <- callback()
-}
+};
 _ <- apply(() => {
   _ <- Io.print()
 })
@@ -318,9 +318,9 @@ let echo: () -> <Io> I32 = () => {
   value <- Io.read()
   _ <- Io.print(value)
   value
-}
+};
 
-result <- echo()
+result <- echo();
 result
 `);
 
@@ -340,7 +340,7 @@ declare effect Io { read: () => I32 }
 let bad: () -> I32 = () => {
   value <- Io.read()
   value
-}
+};
 bad
 `),
     "Function type on bad does not allow Io.read",
@@ -349,7 +349,7 @@ bad
   assert_throws(
     () =>
       Source.effects(`
-let bad: [I32, I32] -> I32 = value => value
+let bad: [I32, I32] -> I32 = value => value;
 bad
 `),
     "Function type on bad expects 2 parameters, got 1",
@@ -358,7 +358,7 @@ bad
   assert_throws(
     () =>
       Source.effects(`
-let bad: I32 -> Text = value => value + 1
+let bad: I32 -> Text = value => value + 1;
 bad
 `),
     "Function type on bad returns Text, got I32",
@@ -369,14 +369,14 @@ Deno.test("typed effect functions distinguish Bool is results from I32", () => {
   assert_throws(
     () =>
       Source.effects(`
-let bad: () -> I32 = () => 1 is Int
+let bad: () -> I32 = () => 1 is Int;
 bad
 `),
     "Function type on bad returns I32, got Bool",
   );
 
   Source.effects(`
-let valid: () -> Bool = () => 1 is Int
+let valid: () -> Bool = () => 1 is Int;
 valid
 `);
 });
@@ -391,15 +391,15 @@ declare Init { stdin: Stdin }
 let read: () -> <Stdin> I32 = () => {
   value <- Stdin.read()
   value
-}
+};
 
 let forward = () => {
-  value <- read()
+  value <- read();
   value
-}
+};
 
-result <- forward()
-return { .result = result }
+result <- forward();
+return { .result = result };
 `);
 });
 
@@ -408,14 +408,14 @@ Deno.test("higher-order row variables follow anonymous callback effects", () => 
 declare effect Io { read: () => I32 }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 result <- apply(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `);
 
@@ -430,25 +430,25 @@ declare effect Io { read: () => I32 }
 declare Init { io: Io }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 value <- apply(item => {
   input <- Io.read()
   input + item
-}, 1)
-let result: I32 = value
-return { .result = result }
+}, 1);
+let result: I32 = value;
+return { .result = result };
 `);
 
   const pure = Source.effects(`
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
-let result = apply(value => value + 1, 1)
+let result = apply(value => value + 1, 1);
 result
 `);
   assert_equals(pure.module_effects, []);
@@ -458,9 +458,9 @@ result
       Source.effects(`
 let bad: [I32 -> <e> I32, I32 -> <f> I32, I32] -> <e> I32 =
   (first, second, value) => {
-    result <- second(value)
+    result <- second(value);
     result
-  }
+  };
 bad
 `),
     "Function type on bad does not expose callback row variable f",
@@ -472,20 +472,20 @@ Deno.test("higher-order row variables forward through generic wrappers", () => {
 declare effect Io { read: () => I32 }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 let forward: [I32 -> <f> I32, I32] -> <f> I32 =
   (const callback, value) => {
-    result <- apply(callback, value)
+    result <- apply(callback, value);
     result
-  }
+  };
 
 result <- forward(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `);
 
@@ -500,14 +500,14 @@ declare effect Io { read: () => I32 }
 
 let apply: forall value. [value -> <e> value, value] -> <e> value =
   (const callback, value) => {
-    result <- callback(value)
+    result <- callback(value);
     result
-  }
+  };
 
 result <- apply(() => {
   value <- Io.read()
   value
-}, ())
+}, ());
 result
 `);
 
@@ -526,17 +526,17 @@ declare effect Io { read: () => I32 }
 declare Init { io: Io }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 let read: I32 -> <Io.read> I32 = value => {
   input <- Io.read()
   input + value
-}
+};
 
-result <- apply(read, 1)
-return { .result = result }
+result <- apply(read, 1);
+return { .result = result };
 `),
     "Effectful named function read cannot be used as a value yet",
   );
@@ -547,20 +547,20 @@ Deno.test("anonymous callback wrappers retain symbolic effect rows", () => {
 declare effect Io { read: () => I32 }
 
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (const callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 let wrapper: [I32 -> <f> I32, I32] -> <f> I32 =
   (const callback, value) => {
-    result <- apply(item => callback(item), value)
+    result <- apply(item => callback(item), value);
     result
-  }
+  };
 
 result <- wrapper(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `);
 
@@ -572,14 +572,14 @@ result
     () =>
       Source.effects(`
 let apply: [I32 -> <e> I32, I32] -> <e> I32 = (callback, value) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 let wrapper: [I32 -> <f> I32, I32] -> <f> I32 = (callback, value) => {
-  let result = apply(item => callback(item), value)
+  let result = apply(item => callback(item), value);
   result
-}
+};
 wrapper
 `),
     "Effectful binding result must use `<-`",
@@ -593,14 +593,14 @@ Deno.test("plain callback arrows reject latent effects", () => {
 declare effect Io { read: () => I32 }
 
 let apply: [I32 -> I32, I32] -> I32 = (callback, value) => {
-  let result = callback(value)
+  let result = callback(value);
   result
-}
+};
 
 let result = apply(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `),
     "exceeds its pure callback type",
@@ -611,12 +611,12 @@ Deno.test("unused callback rows do not make closure creation effectful", () => {
   const analysis = Source.effects(`
 declare effect Io { read: () => I32 }
 
-let ignore: [I32 -> <e> I32, I32] -> I32 = (callback, value) => value
+let ignore: [I32 -> <e> I32, I32] -> I32 = (callback, value) => value;
 
 let result = ignore(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `);
 
@@ -628,14 +628,14 @@ Deno.test("lambda parameter function types participate in effect inference", () 
 declare effect Io { read: () => I32 }
 
 let apply = (callback: I32 -> <Io.read> I32, value: I32) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 result <- apply(value => {
   input <- Io.read()
   input + value
-}, 1)
+}, 1);
 result
 `);
 
@@ -650,16 +650,16 @@ declare effect Io { read: () => I32 }
 declare Init { io: Io }
 
 let apply = (callback: I32 -> <Io.read> I32, value: I32) => {
-  result <- callback(value)
+  result <- callback(value);
   result
-}
+};
 
 value <- apply(item => {
   input <- Io.read()
   input + item
-}, 1)
-let result: I32 = value
-return { .result = result }
+}, 1);
+let result: I32 = value;
+return { .result = result };
 `);
 });
 
@@ -672,10 +672,10 @@ declare effect Io { read: () => I32 }
 let read: () -> <Io.read> I32 = () => {
   value <- Io.read()
   value
-}
+};
 
-let alias: () -> <Io.read> I32 = read
-result <- alias()
+let alias: () -> <Io.read> I32 = read;
+result <- alias();
 result
 `),
     "Typed function alias alias is not supported yet",

@@ -1,8 +1,15 @@
 module () where
 
-const { json_null, json_object, json_object_empty, json_object_get, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { materialize_thread_start_response } = import "./app_server_thread_responses.duck" ()
-const {} = import "./app_server_thread_response_types.duck" ()
+const {
+  .json_null,
+  .json_object,
+  .json_object_empty,
+  .json_object_get,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json" ();
+const { .materialize_thread_start_response } = import "./app_server_thread_responses.duck" ();
+const {} = import "./app_server_thread_response_types.duck" ();
 
 type FixtureMetadata = AppServerThreadResponseMetadata
 type FixtureTexts = AppServerTexts
@@ -11,48 +18,78 @@ const field_is_string = (fields, key: Text, expected: Text) => {
   if let `Found value = json_object_get(key, fields) {
     if let `String text = value { text == expected } else { false }
   } else { false }
-}
+};
 
 const field_is_null = (fields, key: Text) => {
   if let `Found value = json_object_get(key, fields) {
     if let `Null () = value { true } else { false }
   } else { false }
-}
+};
 
 const field_is_first_string = (fields, key: Text, expected: Text) => {
   if let `Found value = json_object_get(key, fields) {
     if let `Array values = value {
       if let `Cons node = values {
-        let [first, _] = node
+        let [first, _] = node;
         if let `String text = first { text == expected } else { false }
       } else { false }
     } else { false }
   } else { false }
-}
+};
 
-let thread_fields = json_object_prepend("id", json_string("thread-1"), json_object_empty())
-let roots: FixtureTexts = `Cons (["/repo", `Nil ()])
-let sources: FixtureTexts = `Cons (["/repo/AGENTS.md", `Nil ()])
-let metadata: FixtureMetadata = [json_object(thread_fields), "gpt-5.4", "openai", `None (), "/repo", roots, sources, json_string("on-request"), json_string("user"), json_string("workspace-write"), `Some (json_string("workspace-write")), `Some (json_string("high")), `ExperimentalThreadResponse ()]
-let start_value = materialize_thread_start_response(metadata)
-let score = 0
+let thread_fields = json_object_prepend("id", json_string "thread-1", json_object_empty());
+let roots: FixtureTexts = `Cons (["/repo", `Nil ()]);
+let sources: FixtureTexts = `Cons (["/repo/AGENTS.md", `Nil ()]);
+let metadata: FixtureMetadata = [
+  json_object thread_fields,
+  "gpt-5.4",
+  "openai",
+  `None (),
+  "/repo",
+  roots,
+  sources,
+  json_string "on-request",
+  json_string "user",
+  json_string "workspace-write",
+  `Some (json_string "workspace-write"),
+  `Some (json_string "high"),
+  `ExperimentalThreadResponse (),
+];
+let start_value = materialize_thread_start_response metadata;
+let score = 0;
 
 if let `Object fields = start_value {
-  if field_is_string(fields, "model", "gpt-5.4") && field_is_string(fields, "modelProvider", "openai") && field_is_string(fields, "cwd", "/repo") {
+  if field_is_string(fields, "model", "gpt-5.4") && field_is_string(
+    fields,
+    "modelProvider",
+    "openai",
+  ) && field_is_string(fields, "cwd", "/repo") {
     score = score + 1
   }
   if field_is_null(fields, "serviceTier") && field_is_string(fields, "reasoningEffort", "high") {
     score = score + 10
   }
-  if field_is_first_string(fields, "runtimeWorkspaceRoots", "/repo") && field_is_first_string(fields, "instructionSources", "/repo/AGENTS.md") {
+  if field_is_first_string(fields, "runtimeWorkspaceRoots", "/repo") && field_is_first_string(
+    fields,
+    "instructionSources",
+    "/repo/AGENTS.md",
+  ) {
     score = score + 100
   }
-  if field_is_string(fields, "approvalPolicy", "on-request") && field_is_string(fields, "approvalsReviewer", "user") && field_is_string(fields, "sandbox", "workspace-write") {
+  if field_is_string(fields, "approvalPolicy", "on-request") && field_is_string(
+    fields,
+    "approvalsReviewer",
+    "user",
+  ) && field_is_string(fields, "sandbox", "workspace-write") {
     score = score + 1000
   }
-  if field_is_string(fields, "activePermissionProfile", "workspace-write") && field_is_string(fields, "multiAgentMode", "explicitRequestOnly") {
+  if field_is_string(fields, "activePermissionProfile", "workspace-write") && field_is_string(
+    fields,
+    "multiAgentMode",
+    "explicitRequestOnly",
+  ) {
     score = score + 10000
   }
 }
 
-return { .score = score }
+return { .score = score };

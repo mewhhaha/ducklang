@@ -1,7 +1,17 @@
 module () where
 
-const { encode_json, json_array, json_array_empty, json_array_prepend, json_object, json_object_empty, json_object_prepend, json_string, parse_json_document } = import "duck:prelude/json" ()
-const { text_append } = import "duck:prelude/runtime" ()
+const {
+  .encode_json,
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+  .parse_json_document,
+} = import "duck:prelude/json" ();
+const { .text_append } = import "duck:prelude/runtime" ();
 
 type ProtocolJson = Json
 type ModelToolCall = [Text, Text, Text]
@@ -18,26 +28,26 @@ type ModelEventResult =
   | `Err Text
 
 const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => {
-  let text: Text = ""
+  let text: Text = "";
 
   if let `Array values = content {
-    let current = values
-    let done = false
+    let current = values;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [value, tail] = node
+        let [value, tail] = node;
 
         if let `Object fields = value {
-          let field_current = fields
-          let content_type: Text = ""
-          let content_text: Text = ""
-          let fields_done = false
+          let field_current = fields;
+          let content_type: Text = "";
+          let content_text: Text = "";
+          let fields_done = false;
 
           loop {
             if let `Cons field_node = field_current {
-              let [member, field_tail] = field_node
-              let [key, field_value] = member
+              let [member, field_tail] = field_node;
+              let [key, field_value] = member;
 
               if key == "type" {
                 if let `String value_text = field_value {
@@ -55,12 +65,12 @@ const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => 
             }
 
             if fields_done {
-              break
+              break;
             }
           }
 
           if content_type == "output_text" {
-            text = text_append([text, content_text])
+            text = text_append [text, content_text]
           }
         }
 
@@ -70,29 +80,29 @@ const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => 
       }
 
       if done {
-        break
+        break;
       }
     }
   }
 
   text
-}
+};
 
 const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson) => {
-  let item_type: Text = ""
-  let call_id: Text = ""
-  let name: Text = ""
-  let arguments: Text = ""
-  let message: Text = ""
+  let item_type: Text = "";
+  let call_id: Text = "";
+  let name: Text = "";
+  let arguments: Text = "";
+  let message: Text = "";
 
   if let `Object fields = item {
-    let current = fields
-    let done = false
+    let current = fields;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [member, tail] = node
-        let [key, value] = member
+        let [member, tail] = node;
+        let [key, value] = member;
 
         if key == "type" {
           if let `String text = value {
@@ -111,7 +121,7 @@ const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson
             arguments = text
           }
         } else if key == "content" {
-          message = decode_message_content(value)
+          message = decode_message_content value
         }
 
         current = tail
@@ -120,7 +130,7 @@ const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson
       }
 
       if done {
-        break
+        break;
       }
     }
   }
@@ -129,7 +139,7 @@ const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson
     if call_id == "" || name == "" || arguments == "" {
       `Err ("Function call is missing call_id, name, or arguments")
     } else {
-      let tool_call: ModelToolCall = [call_id, name, arguments]
+      let tool_call: ModelToolCall = [call_id, name, arguments];
       `Ok (`ToolCall tool_call)
     }
   } else if item_type == "message" {
@@ -137,29 +147,29 @@ const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson
   } else {
     `Ok (`Ignored ())
   }
-}
+};
 
 const decode_model_event: Text -> ModelEventResult = (document: Text) => {
-  let parsed = parse_json_document(document)
+  let parsed = parse_json_document document;
 
   if let `Err error = parsed {
-    let [_, message] = error
+    let [_, message] = error;
     `Err (message)
   } else if let `Ok value_and_index = parsed {
-    let [value, _] = value_and_index
-    let event_type: Text = ""
-    let delta: Text = ""
-    let error_message: Text = ""
-    let item = value
+    let [value, _] = value_and_index;
+    let event_type: Text = "";
+    let delta: Text = "";
+    let error_message: Text = "";
+    let item = value;
 
     if let `Object fields = value {
-      let current = fields
-      let done = false
+      let current = fields;
+      let done = false;
 
       loop {
         if let `Cons node = current {
-          let [member, tail] = node
-          let [key, field_value] = member
+          let [member, tail] = node;
+          let [key, field_value] = member;
 
           if key == "type" {
             if let `String text = field_value {
@@ -177,13 +187,13 @@ const decode_model_event: Text -> ModelEventResult = (document: Text) => {
             item = field_value
           } else if key == "error" {
             if let `Object error_fields = field_value {
-              let error_current = error_fields
-              let error_done = false
+              let error_current = error_fields;
+              let error_done = false;
 
               loop {
                 if let `Cons error_node = error_current {
-                  let [error_member, error_tail] = error_node
-                  let [error_key, error_value] = error_member
+                  let [error_member, error_tail] = error_node;
+                  let [error_key, error_value] = error_member;
 
                   if error_key == "message" {
                     if let `String text = error_value {
@@ -197,7 +207,7 @@ const decode_model_event: Text -> ModelEventResult = (document: Text) => {
                 }
 
                 if error_done {
-                  break
+                  break;
                 }
               }
             }
@@ -209,14 +219,14 @@ const decode_model_event: Text -> ModelEventResult = (document: Text) => {
         }
 
         if done {
-          break
+          break;
         }
       }
 
       if event_type == "response.output_text.delta" {
         `Ok (`Message delta)
       } else if event_type == "response.output_item.done" {
-        decode_output_item(item)
+        decode_output_item item
       } else if event_type == "response.completed" {
         `Ok (`Completed ())
       } else if event_type == "error" || event_type == "response.failed" {
@@ -234,30 +244,30 @@ const decode_model_event: Text -> ModelEventResult = (document: Text) => {
   } else {
     `Err ("Invalid JSON parse result")
   }
-}
+};
 
 const encode_user_message: Text -> Text = (prompt: Text) => {
-  let content_fields = json_object_empty()
-  content_fields = json_object_prepend("text", json_string(prompt), content_fields)
-  content_fields = json_object_prepend("type", json_string("input_text"), content_fields)
-  let content = json_array_prepend(json_object(content_fields), json_array_empty())
-  let fields = json_object_empty()
-  fields = json_object_prepend("content", json_array(content), fields)
-  fields = json_object_prepend("role", json_string("user"), fields)
-  fields = json_object_prepend("type", json_string("message"), fields)
-  encode_json(json_object(fields))
-}
+  let content_fields = json_object_empty();
+  content_fields = json_object_prepend("text", json_string prompt, content_fields)
+  content_fields = json_object_prepend("type", json_string "input_text", content_fields)
+  let content = json_array_prepend(json_object content_fields, json_array_empty());
+  let fields = json_object_empty();
+  fields = json_object_prepend("content", json_array content, fields)
+  fields = json_object_prepend("role", json_string "user", fields)
+  fields = json_object_prepend("type", json_string "message", fields)
+  encode_json(json_object fields)
+};
 
 const encode_tool_result: [Text, Text] -> Text = (call_id: Text, output: Text) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("output", json_string(output), fields)
-  fields = json_object_prepend("call_id", json_string(call_id), fields)
-  fields = json_object_prepend("type", json_string("function_call_output"), fields)
-  encode_json(json_object(fields))
-}
+  let fields = json_object_empty();
+  fields = json_object_prepend("output", json_string output, fields)
+  fields = json_object_prepend("call_id", json_string call_id, fields)
+  fields = json_object_prepend("type", json_string "function_call_output", fields)
+  encode_json(json_object fields)
+};
 
 return {
-  decode_model_event,
-  encode_user_message,
-  encode_tool_result,
-}
+  .decode_model_event,
+  .encode_user_message,
+  .encode_tool_result,
+};

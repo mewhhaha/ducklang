@@ -4,6 +4,7 @@
   "description": "Tree-sitter grammar for Duck source files.",
   "license": "MIT",
   "main": "grammar.js",
+  "type": "module",
   "keywords": [
     "parser",
     "tree-sitter",

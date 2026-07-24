@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./compaction_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./compaction_types.duck" ();
 
 type ResponsesMetadataTextOption = Option Text
 type ResponsesMetadataBoolOption = Option Bool
@@ -80,4 +80,4 @@ type ResponsesMetadata = struct {
   .extra = ResponsesMetadataPairs,
 }
 
-return {}
+return {};

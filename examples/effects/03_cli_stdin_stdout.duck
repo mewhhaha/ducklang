@@ -17,7 +17,7 @@ let echo: () -> <Stdin :| Stdout> Text = () => {
   input <- Stdin.read_line()
   _ <- Stdout.write_line(&input)
   input
-}
+};
 
-result <- echo()
-return { .result = result }
+result <- echo();
+return { .result = result };

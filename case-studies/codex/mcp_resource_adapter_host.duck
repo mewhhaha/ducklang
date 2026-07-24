@@ -15,4 +15,4 @@ declare Init {
   mcp_resource_stages: McpResourceStages
 }
 
-return {}
+return {};

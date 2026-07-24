@@ -1,28 +1,29 @@
 module () where
 
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { decode_thread_fork } = import "./app_server_thread_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .decode_thread_fork } = import "./app_server_thread_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerMethodDecodeResult
 
-let boundary_fields = json_object_empty()
-boundary_fields = json_object_prepend("beforeTurnId", json_string("turn-2"), boundary_fields)
-boundary_fields = json_object_prepend("lastTurnId", json_string("turn-1"), boundary_fields)
-boundary_fields = json_object_prepend("threadId", json_string("thread-1"), boundary_fields)
-let boundary: FixtureResult = decode_thread_fork(json_object(boundary_fields))
+let boundary_fields = json_object_empty();
+boundary_fields = json_object_prepend("beforeTurnId", json_string "turn-2", boundary_fields)
+boundary_fields = json_object_prepend("lastTurnId", json_string "turn-1", boundary_fields)
+boundary_fields = json_object_prepend("threadId", json_string "thread-1", boundary_fields)
+let boundary: FixtureResult = decode_thread_fork(json_object boundary_fields);
 let boundary_valid = if let `MethodError message = boundary {
   message == "`beforeTurnId` cannot be combined with `lastTurnId`"
-} else { false }
+} else { false };
 
-let goal_fields = json_object_empty()
-goal_fields = json_object_prepend("deferGoalContinuation", json_bool(true), goal_fields)
-goal_fields = json_object_prepend("ephemeral", json_bool(true), goal_fields)
-goal_fields = json_object_prepend("threadId", json_string("thread-1"), goal_fields)
-let goal: FixtureResult = decode_thread_fork(json_object(goal_fields))
+let goal_fields = json_object_empty();
+goal_fields = json_object_prepend("deferGoalContinuation", json_bool true, goal_fields)
+goal_fields = json_object_prepend("ephemeral", json_bool true, goal_fields)
+goal_fields = json_object_prepend("threadId", json_string "thread-1", goal_fields)
+let goal: FixtureResult = decode_thread_fork(json_object goal_fields);
 let goal_valid = if let `MethodError message = goal {
   message == "`deferGoalContinuation` cannot be combined with `ephemeral`"
-} else { false }
+} else { false };
 
-let score = if boundary_valid && goal_valid { 1 } else { 0 }
-return { .score = score }
+let score = if boundary_valid && goal_valid { 1 } else { 0 };
+return { .score = score };

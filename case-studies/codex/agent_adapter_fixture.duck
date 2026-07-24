@@ -1,10 +1,16 @@
 module (!init: Init) where
 
-const agent_types_module = import "./agent_types.duck"
-const agents_module = import "./agents.duck"
-const agent_wait_module = import "./agent_wait.duck"
-const { execution_capacity, normalize_wait_timeout, resolve_agent_path, spawn_depth_allowed, validate_collab_input } = agents_module()
-const { status_entries_empty, status_entries_length, select_wait_outcome } = agent_wait_module()
+const agent_types_module = import "./agent_types.duck";
+const agents_module = import "./agents.duck";
+const agent_wait_module = import "./agent_wait.duck";
+const {
+  .execution_capacity,
+  .normalize_wait_timeout,
+  .resolve_agent_path,
+  .spawn_depth_allowed,
+  .validate_collab_input,
+} = agents_module();
+const { .status_entries_empty, .status_entries_length, .select_wait_outcome } = agent_wait_module();
 
 type FixtureStatus = AgentStatus
 type FixtureTextOption = AgentTextOption
@@ -19,24 +25,24 @@ type FixtureSendRequest = AgentSendRequest
 type FixtureWaitRequest = AgentWaitRequest
 type FixtureWaitSnapshot = AgentWaitSnapshot
 
-let score = 0
-let version: FixtureVersion = `V2 ()
-let source: FixtureSource = `SubAgent ()
-let message: FixtureTextOption = `Some "inspect the compiler"
-let empty_ids: FixtureIds = AgentIds.Nil()
+let score = 0;
+let version: FixtureVersion = `V2 ();
+let source: FixtureSource = `SubAgent ();
+let message: FixtureTextOption = `Some "inspect the compiler";
+let empty_ids: FixtureIds = AgentIds.Nil();
 
 if spawn_depth_allowed(0, 2) {
-  let capacity = execution_capacity(version, source, false, 1, 4)
-  let input = validate_collab_input(message, -1)
-  let path = resolve_agent_path("/root", "reviewer")
+  let capacity = execution_capacity(version, source, false, 1, 4);
+  let input = validate_collab_input(message, -1);
+  let path = resolve_agent_path("/root", "reviewer");
 
   if let `CapacityAvailable () = capacity {
     if let `InputAccepted prompt = input {
       if let `Path expected_path = path {
-        let spawn_request: FixtureSpawnRequest = [expected_path, prompt]
+        let spawn_request: FixtureSpawnRequest = [expected_path, prompt];
         spawned <- AgentHost.spawn(&spawn_request)
-        let typed_spawn: FixtureSpawnSnapshot = spawned
-        let [agent_id, actual_path, status] = typed_spawn
+        let typed_spawn: FixtureSpawnSnapshot = spawned;
+        let [agent_id, actual_path, status] = typed_spawn;
 
         if actual_path == expected_path {
           if let `Running () = status {
@@ -44,41 +50,44 @@ if spawn_depth_allowed(0, 2) {
           }
         }
 
-        let send_request: FixtureSendRequest = [agent_id, "report status"]
+        let send_request: FixtureSendRequest = [agent_id, "report status"];
         sent <- AgentHost.send(&send_request)
-        let sent_status: FixtureStatus = sent
+        let sent_status: FixtureStatus = sent;
         if let `Running () = sent_status {
           score = score * 10 + 1
         }
 
         interrupted <- AgentHost.interrupt(&agent_id)
-        let interrupted_status: FixtureStatus = interrupted
+        let interrupted_status: FixtureStatus = interrupted;
         if let `Interrupted () = interrupted_status {
           score = score * 10 + 1
         }
 
-        let configured_timeout: FixtureI64Option = `Some 1000i64
-        let normalized = normalize_wait_timeout(configured_timeout)
+        let configured_timeout: FixtureI64Option = `Some 1000i64;
+        let normalized = normalize_wait_timeout configured_timeout;
         if let `Timeout timeout_ms = normalized {
-          let id_node: FixtureIdNode = [agent_id, empty_ids]
-          let ids: FixtureIds = AgentIds.Cons(id_node)
-          let wait_request: FixtureWaitRequest = [ids, timeout_ms]
+          let id_node: FixtureIdNode = [agent_id, empty_ids];
+          let ids: FixtureIds = AgentIds.Cons(id_node);
+          let wait_request: FixtureWaitRequest = [ids, timeout_ms];
           observed <- AgentHost.wait(&wait_request)
-          let typed_observed: FixtureWaitSnapshot = observed
-          let [newly_final, host_timed_out] = typed_observed
-          let [selected, source_timed_out] = select_wait_outcome(status_entries_empty(), newly_final)
+          let typed_observed: FixtureWaitSnapshot = observed;
+          let [newly_final, host_timed_out] = typed_observed;
+          let [selected, source_timed_out] = select_wait_outcome(
+            status_entries_empty(),
+            newly_final,
+          );
 
           if host_timed_out {
             ()
           } else if source_timed_out {
             ()
-          } else if status_entries_length(selected) == 1 {
+          } else if status_entries_length selected == 1 {
             score = score * 10 + 1
           }
         }
 
         closed <- AgentHost.close(&agent_id)
-        let closed_status: FixtureStatus = closed
+        let closed_status: FixtureStatus = closed;
         if let `Shutdown () = closed_status {
           score = score * 10 + 1
         }
@@ -87,4 +96,4 @@ if spawn_depth_allowed(0, 2) {
   }
 }
 
-return { .score = score }
+return { .score = score };

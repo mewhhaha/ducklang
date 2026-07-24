@@ -1,31 +1,53 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { plan_tool_dispatch } = import "./tool_registry.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .plan_tool_dispatch } = import "./tool_registry.duck" ();
 
 type FixtureName = ToolName
 type FixtureDefinition = ToolDefinition
 type FixtureDefinitions = ToolDefinitions
 type FixtureDispatchPlan = ToolDispatchPlan
 
-let shell_name: FixtureName = ["", "exec_command"]
-let shell: FixtureDefinition = [shell_name, `Direct (), `UnifiedExec (), `FunctionPayload (), true, false]
-let registry: FixtureDefinitions = `Cons ([shell, `Nil ()])
-let score: I32 = 0
+let shell_name: FixtureName = ["", "exec_command"];
+let shell: FixtureDefinition = [
+  shell_name,
+  `Direct (),
+  `UnifiedExec (),
+  `FunctionPayload (),
+  true,
+  false,
+];
+let registry: FixtureDefinitions = `Cons ([shell, `Nil ()]);
+let score: I32 = 0;
 
-let dispatch: FixtureDispatchPlan = plan_tool_dispatch(registry, shell_name, `FunctionPayload (), "{\"cmd\":\"pwd\"}")
+let dispatch: FixtureDispatchPlan = plan_tool_dispatch(
+  registry,
+  shell_name,
+  `FunctionPayload (),
+  "{\"cmd\":\"pwd\"}",
+);
 if let `Execute planned = dispatch {
-  let [runtime, _, input] = planned
+  let [runtime, _, input] = planned;
   if let `UnifiedExec () = runtime {
     if input == "{\"cmd\":\"pwd\"}" { score = score + 1 }
   }
 }
 
-let incompatible: FixtureDispatchPlan = plan_tool_dispatch(registry, shell_name, `CustomPayload (), "pwd")
+let incompatible: FixtureDispatchPlan = plan_tool_dispatch(
+  registry,
+  shell_name,
+  `CustomPayload (),
+  "pwd",
+);
 if let `Incompatible _ = incompatible { score = score + 1 }
 
-let missing_name: FixtureName = ["mcp__", "missing"]
-let unsupported: FixtureDispatchPlan = plan_tool_dispatch(registry, missing_name, `FunctionPayload (), "{}")
+let missing_name: FixtureName = ["mcp__", "missing"];
+let unsupported: FixtureDispatchPlan = plan_tool_dispatch(
+  registry,
+  missing_name,
+  `FunctionPayload (),
+  "{}",
+);
 if let `Unsupported _ = unsupported { score = score + 1 }
 
-return { .score = score }
+return { .score = score };

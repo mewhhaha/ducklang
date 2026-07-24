@@ -1,19 +1,37 @@
 module () where
 
-const { json_object, json_object_empty, json_object_get, json_string } = import "duck:prelude/json" ()
-const { materialize_thread_start_response } = import "./app_server_thread_responses.duck" ()
-const {} = import "./app_server_thread_response_types.duck" ()
+const { .json_object, .json_object_empty, .json_object_get, .json_string } =
+  import "duck:prelude/json" ();
+const { .materialize_thread_start_response } = import "./app_server_thread_responses.duck" ();
+const {} = import "./app_server_thread_response_types.duck" ();
 
 type FixtureMetadata = AppServerThreadResponseMetadata
 type FixtureTexts = AppServerTexts
 
-let empty_texts: FixtureTexts = `Nil ()
-let metadata: FixtureMetadata = [json_object(json_object_empty()), "gpt-5.4", "openai", `None (), "/repo", empty_texts, empty_texts, json_string("never"), json_string("user"), json_string("read-only"), `Some (json_string("read-only")), `None (), `StableThreadResponse ()]
-let score = if let `Object fields = materialize_thread_start_response(metadata) {
-  let roots_missing = if let `Missing () = json_object_get("runtimeWorkspaceRoots", fields) { true } else { false }
-  let profile_missing = if let `Missing () = json_object_get("activePermissionProfile", fields) { true } else { false }
-  let mode_missing = if let `Missing () = json_object_get("multiAgentMode", fields) { true } else { false }
+let empty_texts: FixtureTexts = `Nil ();
+let metadata: FixtureMetadata = [
+  json_object(json_object_empty()),
+  "gpt-5.4",
+  "openai",
+  `None (),
+  "/repo",
+  empty_texts,
+  empty_texts,
+  json_string "never",
+  json_string "user",
+  json_string "read-only",
+  `Some (json_string "read-only"),
+  `None (),
+  `StableThreadResponse (),
+];
+let score = if let `Object fields = materialize_thread_start_response metadata {
+  let roots_missing = if let `Missing () = json_object_get("runtimeWorkspaceRoots", fields) { true
+  } else { false };
+  let profile_missing = if let `Missing () = json_object_get("activePermissionProfile", fields) {
+    true } else { false };
+  let mode_missing = if let `Missing () = json_object_get("multiAgentMode", fields) { true } else {
+    false };
   if roots_missing && profile_missing && mode_missing { 1 } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

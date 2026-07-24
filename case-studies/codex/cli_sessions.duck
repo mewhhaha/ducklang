@@ -1,7 +1,15 @@
 module () where
 
-const { text_append, text_byte_is_ascii_hex_digit, text_get, text_length, text_slice, text_split, text_starts_with } = import "duck:prelude/functional" ()
-const {} = import "./cli_types.duck" ()
+const {
+  .text_append,
+  .text_byte_is_ascii_hex_digit,
+  .text_get,
+  .text_length,
+  .text_slice,
+  .text_split,
+  .text_starts_with,
+} = import "duck:prelude/functional" ();
+const {} = import "./cli_types.duck" ();
 
 type SessionArgs = CodexCliArgs
 type SessionTexts = CodexCliTexts
@@ -31,70 +39,88 @@ type SessionListFactsResult = Result Text SessionListFacts
 type SessionPositionalsResult = Result Text SessionTexts
 
 const empty_texts = () => {
-  let values: SessionTexts = `Nil ()
+  let values: SessionTexts = `Nil ();
   values
-}
+};
 
 const prepend_text = (value: Text, values: SessionTexts) => {
-  let node: SessionTextNode = [value, values]
-  let result: SessionTexts = `Cons node
+  let node: SessionTextNode = [value, values];
+  let result: SessionTexts = `Cons node;
   result
-}
+};
 
-let rec reverse_texts_from: [SessionTexts, SessionTexts] -> SessionTexts = (values: SessionTexts, reversed: SessionTexts) => {
+let rec reverse_texts_from: [SessionTexts, SessionTexts] -> SessionTexts = (
+  values: SessionTexts,
+  reversed: SessionTexts,
+) => {
   if let `Cons node = values {
-    let typed_node: SessionTextNode = node
-    let [value, tail] = typed_node
+    let typed_node: SessionTextNode = node;
+    let [value, tail] = typed_node;
     reverse_texts_from(tail, prepend_text(value, reversed))
   } else {
     reversed
   }
-}
+};
 
-let reverse_texts: SessionTexts -> SessionTexts = (values: SessionTexts) => reverse_texts_from(values, empty_texts())
+let reverse_texts: SessionTexts -> SessionTexts = (values: SessionTexts) => reverse_texts_from(
+  values,
+  empty_texts(),
+);
 
 let session_option_takes_value: Text -> Bool = (argument: Text) => {
   argument == "--image" || argument == "-i" || argument == "--model" || argument == "-m" || argument == "--local-provider" || argument == "--profile" || argument == "-p" || argument == "--sandbox" || argument == "-s" || argument == "--cd" || argument == "-C" || argument == "--add-dir" || argument == "--ask-for-approval" || argument == "-a" || argument == "--config" || argument == "-c" || argument == "--remote" || argument == "--remote-auth-token-env"
-}
+};
 
 let session_known_flag: Text -> Bool = (argument: Text) => {
   argument == "--last" || argument == "--all" || argument == "--include-non-interactive" || argument == "--force" || argument == "--oss" || argument == "--dangerously-bypass-approvals-and-sandbox" || argument == "--yolo" || argument == "--dangerously-bypass-hook-trust" || argument == "--search" || argument == "--no-alt-screen" || argument == "--strict-config"
-}
+};
 
-let rec scan_session_flags_from: [SessionArgs, SessionFlagFacts, Bool] -> SessionFlagFactsResult = (args: SessionArgs, facts, options_done: Bool) => {
+let rec scan_session_flags_from: [SessionArgs, SessionFlagFacts, Bool] -> SessionFlagFactsResult = (
+  args: SessionArgs,
+  facts,
+  options_done: Bool,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if options_done {
       scan_session_flags_from(tail, facts, true)
     } else if argument == "--" {
       scan_session_flags_from(tail, facts, true)
-    } else if session_option_takes_value(argument) {
+    } else if session_option_takes_value argument {
       if let `Cons value_node = tail {
-        let [_, value_tail] = value_node
+        let [_, value_tail] = value_node;
         scan_session_flags_from(value_tail, facts, false)
       } else {
         `Err (text_append("missing value for ", argument))
       }
     } else if argument == "--last" {
-      scan_session_flags_from(tail, facts :+ { .last = true }, false)
+      scan_session_flags_from(tail, facts <& { .last = true }, false)
     } else if argument == "--all" {
-      scan_session_flags_from(tail, facts :+ { .all = true }, false)
+      scan_session_flags_from(tail, facts <& { .all = true }, false)
     } else if argument == "--include-non-interactive" {
-      scan_session_flags_from(tail, facts :+ { .include_non_interactive = true }, false)
+      scan_session_flags_from(tail, facts <& { .include_non_interactive = true }, false)
     } else if argument == "--force" {
-      scan_session_flags_from(tail, facts :+ { .force = true }, false)
+      scan_session_flags_from(tail, facts <& { .force = true }, false)
     } else if argument == "--oss" {
-      scan_session_flags_from(tail, facts :+ { .oss = true }, false)
+      scan_session_flags_from(tail, facts <& { .oss = true }, false)
     } else if argument == "--dangerously-bypass-approvals-and-sandbox" || argument == "--yolo" {
-      scan_session_flags_from(tail, facts :+ { .bypass_approvals_and_sandbox = true }, false)
+      scan_session_flags_from(tail, facts <& { .bypass_approvals_and_sandbox = true }, false)
     } else if argument == "--dangerously-bypass-hook-trust" {
-      scan_session_flags_from(tail, facts :+ { .bypass_hook_trust = true }, false)
+      scan_session_flags_from(tail, facts <& { .bypass_hook_trust = true }, false)
     } else if argument == "--search" {
-      scan_session_flags_from(tail, facts :+ { .search = true, .used_tui_only_option = true }, false)
+      scan_session_flags_from(
+        tail,
+        facts <& { .search = true, .used_tui_only_option = true },
+        false,
+      )
     } else if argument == "--no-alt-screen" {
-      scan_session_flags_from(tail, facts :+ { .no_alt_screen = true, .used_tui_only_option = true }, false)
+      scan_session_flags_from(
+        tail,
+        facts <& { .no_alt_screen = true, .used_tui_only_option = true },
+        false,
+      )
     } else if argument == "--strict-config" {
-      scan_session_flags_from(tail, facts :+ { .strict_config = true }, false)
+      scan_session_flags_from(tail, facts <& { .strict_config = true }, false)
     } else if text_starts_with(argument, "-") {
       `Err (text_append("unknown session option: ", argument))
     } else {
@@ -103,100 +129,172 @@ let rec scan_session_flags_from: [SessionArgs, SessionFlagFacts, Bool] -> Sessio
   } else {
     `Ok facts
   }
-}
+};
 
 let scan_session_flags: SessionArgs -> SessionFlagFactsResult = (args: SessionArgs) => {
-  let facts: SessionFlagFacts = [.last = false, .all = false, .include_non_interactive = false, .force = false, .oss = false, .bypass_approvals_and_sandbox = false, .bypass_hook_trust = false, .search = false, .no_alt_screen = false, .strict_config = false, .used_tui_only_option = false]
+  let facts: SessionFlagFacts = [
+    .last = false,
+    .all = false,
+    .include_non_interactive = false,
+    .force = false,
+    .oss = false,
+    .bypass_approvals_and_sandbox = false,
+    .bypass_hook_trust = false,
+    .search = false,
+    .no_alt_screen = false,
+    .strict_config = false,
+    .used_tui_only_option = false,
+  ];
   scan_session_flags_from(args, facts, false)
-}
+};
 
-let rec scan_session_scalars_from: [SessionArgs, SessionScalarFacts, Bool] -> SessionScalarFactsResult = (args: SessionArgs, facts, options_done: Bool) => {
-  if let `Cons node = args {
-    let [argument, tail] = node
-    if options_done {
-      scan_session_scalars_from(tail, facts, true)
-    } else if argument == "--" {
-      scan_session_scalars_from(tail, facts, true)
-    } else if session_option_takes_value(argument) {
-      if let `Cons value_node = tail {
-        let [value, value_tail] = value_node
-        if argument == "--model" || argument == "-m" {
-          scan_session_scalars_from(value_tail, facts :+ { .model = `Some value }, false)
-        } else if argument == "--local-provider" {
-          scan_session_scalars_from(value_tail, facts :+ { .local_provider = `Some value }, false)
-        } else if argument == "--profile" || argument == "-p" {
-          scan_session_scalars_from(value_tail, facts :+ { .profile = `Some value }, false)
-        } else if argument == "--sandbox" || argument == "-s" {
-          if value == "read-only" {
-            scan_session_scalars_from(value_tail, facts :+ { .sandbox = `Some (`SandboxReadOnly ()) }, false)
-          } else if value == "workspace-write" {
-            scan_session_scalars_from(value_tail, facts :+ { .sandbox = `Some (`SandboxWorkspaceWrite ()) }, false)
-          } else if value == "danger-full-access" {
-            scan_session_scalars_from(value_tail, facts :+ { .sandbox = `Some (`SandboxDangerFullAccess ()) }, false)
+let rec scan_session_scalars_from: [SessionArgs, SessionScalarFacts, Bool] ->
+  SessionScalarFactsResult = (
+    args: SessionArgs,
+    facts,
+    options_done: Bool,
+  ) => {
+    if let `Cons node = args {
+      let [argument, tail] = node;
+      if options_done {
+        scan_session_scalars_from(tail, facts, true)
+      } else if argument == "--" {
+        scan_session_scalars_from(tail, facts, true)
+      } else if session_option_takes_value argument {
+        if let `Cons value_node = tail {
+          let [value, value_tail] = value_node;
+          if argument == "--model" || argument == "-m" {
+            scan_session_scalars_from(value_tail, facts <& { .model = `Some value }, false)
+          } else if argument == "--local-provider" {
+            scan_session_scalars_from(value_tail, facts <& { .local_provider = `Some value }, false)
+          } else if argument == "--profile" || argument == "-p" {
+            scan_session_scalars_from(value_tail, facts <& { .profile = `Some value }, false)
+          } else if argument == "--sandbox" || argument == "-s" {
+            if value == "read-only" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .sandbox = `Some (`SandboxReadOnly ()) },
+                false,
+              )
+            } else if value == "workspace-write" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .sandbox = `Some (`SandboxWorkspaceWrite ()) },
+                false,
+              )
+            } else if value == "danger-full-access" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .sandbox = `Some (`SandboxDangerFullAccess ()) },
+                false,
+              )
+            } else {
+              `Err (text_append("invalid sandbox mode: ", value))
+            }
+          } else if argument == "--cd" || argument == "-C" {
+            scan_session_scalars_from(value_tail, facts <& { .cwd = `Some value }, false)
+          } else if argument == "--ask-for-approval" || argument == "-a" {
+            if value == "untrusted" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .approval = `Some (`ApprovalUntrusted ()) },
+                false,
+              )
+            } else if value == "on-request" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .approval = `Some (`ApprovalOnRequest ()) },
+                false,
+              )
+            } else if value == "never" {
+              scan_session_scalars_from(
+                value_tail,
+                facts <& { .approval = `Some (`ApprovalNever ()) },
+                false,
+              )
+            } else {
+              `Err (text_append("invalid approval mode: ", value))
+            }
+          } else if argument == "--remote" {
+            scan_session_scalars_from(value_tail, facts <& { .remote = `Some value }, false)
+          } else if argument == "--remote-auth-token-env" {
+            scan_session_scalars_from(
+              value_tail,
+              facts <& { .remote_auth_token_env = `Some value },
+              false,
+            )
           } else {
-            `Err (text_append("invalid sandbox mode: ", value))
+            scan_session_scalars_from(value_tail, facts, false)
           }
-        } else if argument == "--cd" || argument == "-C" {
-          scan_session_scalars_from(value_tail, facts :+ { .cwd = `Some value }, false)
-        } else if argument == "--ask-for-approval" || argument == "-a" {
-          if value == "untrusted" {
-            scan_session_scalars_from(value_tail, facts :+ { .approval = `Some (`ApprovalUntrusted ()) }, false)
-          } else if value == "on-request" {
-            scan_session_scalars_from(value_tail, facts :+ { .approval = `Some (`ApprovalOnRequest ()) }, false)
-          } else if value == "never" {
-            scan_session_scalars_from(value_tail, facts :+ { .approval = `Some (`ApprovalNever ()) }, false)
-          } else {
-            `Err (text_append("invalid approval mode: ", value))
-          }
-        } else if argument == "--remote" {
-          scan_session_scalars_from(value_tail, facts :+ { .remote = `Some value }, false)
-        } else if argument == "--remote-auth-token-env" {
-          scan_session_scalars_from(value_tail, facts :+ { .remote_auth_token_env = `Some value }, false)
         } else {
-          scan_session_scalars_from(value_tail, facts, false)
+          `Err (text_append("missing value for ", argument))
         }
       } else {
-        `Err (text_append("missing value for ", argument))
+        scan_session_scalars_from(tail, facts, false)
       }
     } else {
-      scan_session_scalars_from(tail, facts, false)
+      `Ok facts
     }
-  } else {
-    `Ok facts
-  }
-}
+  };
 
 let scan_session_scalars: SessionArgs -> SessionScalarFactsResult = (args: SessionArgs) => {
-  let facts: SessionScalarFacts = [.model = `None (), .local_provider = `None (), .profile = `None (), .sandbox = `None (), .cwd = `None (), .approval = `None (), .remote = `None (), .remote_auth_token_env = `None ()]
+  let facts: SessionScalarFacts = [
+    .model = `None (),
+    .local_provider = `None (),
+    .profile = `None (),
+    .sandbox = `None (),
+    .cwd = `None (),
+    .approval = `None (),
+    .remote = `None (),
+    .remote_auth_token_env = `None (),
+  ];
   scan_session_scalars_from(args, facts, false)
-}
+};
 
-let rec prepend_texts_reversed: [SessionTexts, SessionTexts] -> SessionTexts = (values: SessionTexts, reversed: SessionTexts) => {
+let rec prepend_texts_reversed: [SessionTexts, SessionTexts] -> SessionTexts = (
+  values: SessionTexts,
+  reversed: SessionTexts,
+) => {
   if let `Cons node = values {
-    let [value, tail] = node
+    let [value, tail] = node;
     prepend_texts_reversed(tail, prepend_text(value, reversed))
   } else {
     reversed
   }
-}
+};
 
-let rec scan_session_lists_from: [SessionArgs, SessionListFacts, Bool] -> SessionListFactsResult = (args: SessionArgs, facts, options_done: Bool) => {
+let rec scan_session_lists_from: [SessionArgs, SessionListFacts, Bool] -> SessionListFactsResult = (
+  args: SessionArgs,
+  facts,
+  options_done: Bool,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if options_done {
       scan_session_lists_from(tail, facts, true)
     } else if argument == "--" {
       scan_session_lists_from(tail, facts, true)
-    } else if session_option_takes_value(argument) {
+    } else if session_option_takes_value argument {
       if let `Cons value_node = tail {
-        let [value, value_tail] = value_node
+        let [value, value_tail] = value_node;
         if argument == "--image" || argument == "-i" {
-          let images = prepend_texts_reversed(text_split(value, ","), facts.images)
-          scan_session_lists_from(value_tail, facts :+ { .images = images }, false)
+          let images = prepend_texts_reversed(text_split(value, ","), facts.images);
+          scan_session_lists_from(value_tail, facts <& { .images = images }, false)
         } else if argument == "--add-dir" {
-          scan_session_lists_from(value_tail, facts :+ { .additional_writable_roots = prepend_text(value, facts.additional_writable_roots) }, false)
+          scan_session_lists_from(
+            value_tail,
+            facts <& { .additional_writable_roots = prepend_text(
+              value,
+              facts.additional_writable_roots,
+            ) },
+            false,
+          )
         } else if argument == "--config" || argument == "-c" {
-          scan_session_lists_from(value_tail, facts :+ { .config_overrides = prepend_text(value, facts.config_overrides) }, false)
+          scan_session_lists_from(
+            value_tail,
+            facts <& { .config_overrides = prepend_text(value, facts.config_overrides) },
+            false,
+          )
         } else {
           scan_session_lists_from(value_tail, facts, false)
         }
@@ -209,70 +307,109 @@ let rec scan_session_lists_from: [SessionArgs, SessionListFacts, Bool] -> Sessio
   } else {
     `Ok facts
   }
-}
+};
 
 let scan_session_lists: SessionArgs -> SessionListFactsResult = (args: SessionArgs) => {
-  let facts: SessionListFacts = [.images = empty_texts(), .additional_writable_roots = empty_texts(), .config_overrides = empty_texts()]
-  let scanned: SessionListFactsResult = scan_session_lists_from(args, facts, false)
+  let facts: SessionListFacts = [
+    .images = empty_texts(),
+    .additional_writable_roots = empty_texts(),
+    .config_overrides = empty_texts(),
+  ];
+  let scanned: SessionListFactsResult = scan_session_lists_from(args, facts, false);
   if let `Err message = scanned {
     `Err message
   } else if let `Ok reversed = scanned {
-    let ordered: SessionListFacts = [.images = reverse_texts(reversed.images), .additional_writable_roots = reverse_texts(reversed.additional_writable_roots), .config_overrides = reverse_texts(reversed.config_overrides)]
+    let ordered: SessionListFacts = [
+      .images = reverse_texts reversed.images,
+      .additional_writable_roots = reverse_texts reversed.additional_writable_roots,
+      .config_overrides = reverse_texts reversed.config_overrides,
+    ];
     `Ok ordered
   } else {
     `Err "session repeated option scanner returned an unknown result"
   }
-}
+};
 
-let rec scan_session_positionals_from: [SessionArgs, SessionTexts, Bool] -> SessionPositionalsResult = (args: SessionArgs, reversed: SessionTexts, options_done: Bool) => {
-  if let `Cons node = args {
-    let [argument, tail] = node
-    if options_done {
-      scan_session_positionals_from(tail, prepend_text(argument, reversed), true)
-    } else if argument == "--" {
-      scan_session_positionals_from(tail, reversed, true)
-    } else if session_option_takes_value(argument) {
-      if let `Cons value_node = tail {
-        let [_, value_tail] = value_node
-        scan_session_positionals_from(value_tail, reversed, false)
+let rec scan_session_positionals_from: [SessionArgs, SessionTexts, Bool] ->
+  SessionPositionalsResult = (
+    args: SessionArgs,
+    reversed: SessionTexts,
+    options_done: Bool,
+  ) => {
+    if let `Cons node = args {
+      let [argument, tail] = node;
+      if options_done {
+        scan_session_positionals_from(tail, prepend_text(argument, reversed), true)
+      } else if argument == "--" {
+        scan_session_positionals_from(tail, reversed, true)
+      } else if session_option_takes_value argument {
+        if let `Cons value_node = tail {
+          let [_, value_tail] = value_node;
+          scan_session_positionals_from(value_tail, reversed, false)
+        } else {
+          `Err (text_append("missing value for ", argument))
+        }
+      } else if session_known_flag argument {
+        scan_session_positionals_from(tail, reversed, false)
       } else {
-        `Err (text_append("missing value for ", argument))
+        scan_session_positionals_from(tail, prepend_text(argument, reversed), false)
       }
-    } else if session_known_flag(argument) {
-      scan_session_positionals_from(tail, reversed, false)
     } else {
-      scan_session_positionals_from(tail, prepend_text(argument, reversed), false)
+      `Ok (reverse_texts reversed)
     }
-  } else {
-    `Ok (reverse_texts(reversed))
-  }
-}
+  };
 
 let scan_session_positionals: SessionArgs -> SessionPositionalsResult = (args: SessionArgs) => {
   scan_session_positionals_from(args, empty_texts(), false)
-}
+};
 
 let parse_session_arguments: SessionArgs -> SessionScanResult = (args: SessionArgs) => {
-  let flags_result: SessionFlagFactsResult = scan_session_flags args
+  let flags_result: SessionFlagFactsResult = scan_session_flags args;
   if let `Err message = flags_result {
     `Err message
   } else if let `Ok flags = flags_result {
-    let scalars_result: SessionScalarFactsResult = scan_session_scalars args
+    let scalars_result: SessionScalarFactsResult = scan_session_scalars args;
     if let `Err message = scalars_result {
       `Err message
     } else if let `Ok scalars = scalars_result {
-      let lists_result: SessionListFactsResult = scan_session_lists args
+      let lists_result: SessionListFactsResult = scan_session_lists args;
       if let `Err message = lists_result {
         `Err message
       } else if let `Ok lists = lists_result {
-        let positionals_result: SessionPositionalsResult = scan_session_positionals args
+        let positionals_result: SessionPositionalsResult = scan_session_positionals args;
         if let `Err message = positionals_result {
           `Err message
         } else if let `Ok positionals = positionals_result {
-          let approval_present = false
+          let approval_present = false;
           if let `Some _ = scalars.approval { approval_present = true }
-          let shared: SessionShared = [.images = lists.images, .model = scalars.model, .oss = flags.oss, .local_provider = scalars.local_provider, .profile = scalars.profile, .sandbox = scalars.sandbox, .bypass_approvals_and_sandbox = flags.bypass_approvals_and_sandbox, .bypass_hook_trust = flags.bypass_hook_trust, .cwd = scalars.cwd, .additional_writable_roots = lists.additional_writable_roots, .approval = scalars.approval, .search = flags.search, .no_alt_screen = flags.no_alt_screen, .strict_config = flags.strict_config, .config_overrides = lists.config_overrides, .remote = scalars.remote, .remote_auth_token_env = scalars.remote_auth_token_env]
-          let scan: SessionScan = [.shared = shared, .positionals = positionals, .last = flags.last, .all = flags.all, .include_non_interactive = flags.include_non_interactive, .force = flags.force, .used_tui_only_option = flags.used_tui_only_option || approval_present]
+          let shared: SessionShared = [
+            .images = lists.images,
+            .model = scalars.model,
+            .oss = flags.oss,
+            .local_provider = scalars.local_provider,
+            .profile = scalars.profile,
+            .sandbox = scalars.sandbox,
+            .bypass_approvals_and_sandbox = flags.bypass_approvals_and_sandbox,
+            .bypass_hook_trust = flags.bypass_hook_trust,
+            .cwd = scalars.cwd,
+            .additional_writable_roots = lists.additional_writable_roots,
+            .approval = scalars.approval,
+            .search = flags.search,
+            .no_alt_screen = flags.no_alt_screen,
+            .strict_config = flags.strict_config,
+            .config_overrides = lists.config_overrides,
+            .remote = scalars.remote,
+            .remote_auth_token_env = scalars.remote_auth_token_env,
+          ];
+          let scan: SessionScan = [
+            .shared = shared,
+            .positionals = positionals,
+            .last = flags.last,
+            .all = flags.all,
+            .include_non_interactive = flags.include_non_interactive,
+            .force = flags.force,
+            .used_tui_only_option = flags.used_tui_only_option || approval_present,
+          ];
           `Ok scan
         } else {
           `Err "session positional parser returned an unknown result"
@@ -286,29 +423,29 @@ let parse_session_arguments: SessionArgs -> SessionScanResult = (args: SessionAr
   } else {
     `Err "session flag parser returned an unknown result"
   }
-}
+};
 
 const two_positionals: SessionTexts -> SessionPositionals = (positionals: SessionTexts) => {
-  let first: SessionTextOption = `None ()
-  let second: SessionTextOption = `None ()
-  let extra = false
+  let first: SessionTextOption = `None ();
+  let second: SessionTextOption = `None ();
+  let extra = false;
 
   if let `Cons first_node = positionals {
-    let [first_value, first_tail] = first_node
+    let [first_value, first_tail] = first_node;
     first = `Some first_value
     if let `Cons second_node = first_tail {
-      let [second_value, second_tail] = second_node
+      let [second_value, second_tail] = second_node;
       second = `Some second_value
       if let `Cons _ = second_tail { extra = true }
     }
   }
 
-  let result: SessionPositionals = [.first = first, .second = second, .extra = extra]
+  let result: SessionPositionals = [.first = first, .second = second, .extra = extra];
   result
-}
+};
 
 let parse_resume_options: SessionArgs -> SessionResumeResult = (args: SessionArgs) => {
-  let parsed: SessionScanResult = parse_session_arguments args
+  let parsed: SessionScanResult = parse_session_arguments args;
 
   if let `Err message = parsed {
     `Err message
@@ -316,36 +453,44 @@ let parse_resume_options: SessionArgs -> SessionResumeResult = (args: SessionArg
     if scan.force {
       `Err "resume does not accept --force"
     } else {
-      let positionals: SessionPositionals = two_positionals(scan.positionals)
-      let second_present = false
+      let positionals: SessionPositionals = two_positionals scan.positionals;
+      let second_present = false;
       if let `Some _ = positionals.second { second_present = true }
-      let positional_conflict = positionals.extra
+      let positional_conflict = positionals.extra;
       if scan.last { if second_present { positional_conflict = true } }
 
       if positional_conflict {
         `Err "resume --last accepts one prompt; otherwise resume accepts a session and prompt"
       } else {
-        let session_id = positionals.first
-        let prompt = positionals.second
+        let session_id = positionals.first;
+        let prompt = positionals.second;
 
         if scan.last {
           session_id = `None ()
           prompt = positionals.first
         }
 
-        let picker = false
+        let picker = false;
         if let `None () = session_id { if !scan.last { picker = true } }
-        let options: SessionResume = [.shared = scan.shared, .session_id = session_id, .prompt = prompt, .picker = picker, .last = scan.last, .all = scan.all, .include_non_interactive = scan.include_non_interactive]
+        let options: SessionResume = [
+          .shared = scan.shared,
+          .session_id = session_id,
+          .prompt = prompt,
+          .picker = picker,
+          .last = scan.last,
+          .all = scan.all,
+          .include_non_interactive = scan.include_non_interactive,
+        ];
         `Ok options
       }
     }
   } else {
     `Err "resume argument parser returned an unknown result"
   }
-}
+};
 
 let parse_fork_options: SessionArgs -> SessionForkResult = (args: SessionArgs) => {
-  let parsed: SessionScanResult = parse_session_arguments args
+  let parsed: SessionScanResult = parse_session_arguments args;
 
   if let `Err message = parsed {
     `Err message
@@ -353,93 +498,100 @@ let parse_fork_options: SessionArgs -> SessionForkResult = (args: SessionArgs) =
     if scan.force || scan.include_non_interactive {
       `Err "fork does not accept --force or --include-non-interactive"
     } else {
-      let positionals: SessionPositionals = two_positionals(scan.positionals)
-      let second_present = false
+      let positionals: SessionPositionals = two_positionals scan.positionals;
+      let second_present = false;
       if let `Some _ = positionals.second { second_present = true }
-      let positional_conflict = positionals.extra
+      let positional_conflict = positionals.extra;
       if scan.last { if second_present { positional_conflict = true } }
 
       if positional_conflict {
         `Err "fork --last accepts one prompt; otherwise fork accepts a session and prompt"
       } else {
-        let session_id = positionals.first
-        let prompt = positionals.second
+        let session_id = positionals.first;
+        let prompt = positionals.second;
 
         if scan.last {
           session_id = `None ()
           prompt = positionals.first
         }
 
-        let picker = false
+        let picker = false;
         if let `None () = session_id { if !scan.last { picker = true } }
-        let options: SessionFork = [.shared = scan.shared, .session_id = session_id, .prompt = prompt, .picker = picker, .last = scan.last, .all = scan.all]
+        let options: SessionFork = [
+          .shared = scan.shared,
+          .session_id = session_id,
+          .prompt = prompt,
+          .picker = picker,
+          .last = scan.last,
+          .all = scan.all,
+        ];
         `Ok options
       }
     }
   } else {
     `Err "fork argument parser returned an unknown result"
   }
-}
+};
 
 const canonical_uuid: Text -> Bool = (value: Text) => {
-  if text_length(value) != 36 {
+  if text_length value != 36 {
     false
   } else {
-    let valid = true
+    let valid = true;
 
     for index in 0..36 {
-      let byte = text_get(value, index)
+      let byte = text_get(value, index);
       if index == 8 || index == 13 || index == 18 || index == 23 {
         if byte != 45 { valid = false }
-      } else if !text_byte_is_ascii_hex_digit(byte) {
+      } else if !text_byte_is_ascii_hex_digit byte {
         valid = false
       }
     }
 
     valid
   }
-}
+};
 
 const simple_uuid: Text -> Bool = (value: Text) => {
-  if text_length(value) != 32 {
+  if text_length value != 32 {
     false
   } else {
-    let valid = true
+    let valid = true;
     for index in 0..32 {
       if !text_byte_is_ascii_hex_digit(text_get(value, index)) { valid = false }
     }
     valid
   }
-}
+};
 
 const session_target_is_uuid: Text -> Bool = (value: Text) => {
-  if canonical_uuid(value) || simple_uuid(value) {
+  if canonical_uuid value || simple_uuid value {
     true
-  } else if text_length(value) == 38 && text_get(value, 0) == 123 && text_get(value, 37) == 125 {
+  } else if text_length value == 38 && text_get(value, 0) == 123 && text_get(value, 37) == 125 {
     canonical_uuid(text_slice(value, 1, 37))
-  } else if text_length(value) == 45 && text_starts_with(value, "urn:uuid:") {
+  } else if text_length value == 45 && text_starts_with(value, "urn:uuid:") {
     canonical_uuid(text_slice(value, 9, 45))
   } else {
     false
   }
-}
+};
 
 const single_archive_target: SessionTexts -> SessionTextResult = (positionals: SessionTexts) => {
   if let `Cons node = positionals {
-    let [target, tail] = node
+    let [target, tail] = node;
     if let `Nil () = tail { `Ok target } else { `Err "session command expects exactly one target" }
   } else {
     `Err "session command requires a target"
   }
-}
+};
 
 let parse_archive_options: SessionArgs -> SessionArchiveResult = (args: SessionArgs) => {
-  let parsed: SessionScanResult = parse_session_arguments args
+  let parsed: SessionScanResult = parse_session_arguments args;
 
   if let `Err message = parsed {
     `Err message
   } else if let `Ok scan = parsed {
-    let interactive_control = scan.last
+    let interactive_control = scan.last;
     if scan.all { interactive_control = true }
     if scan.include_non_interactive { interactive_control = true }
     if scan.force { interactive_control = true }
@@ -447,9 +599,9 @@ let parse_archive_options: SessionArgs -> SessionArchiveResult = (args: SessionA
     if interactive_control {
       `Err "archive does not accept interactive session controls"
     } else {
-      let target: SessionTextResult = single_archive_target scan.positionals
+      let target: SessionTextResult = single_archive_target scan.positionals;
       if let `Ok value = target {
-        let options: SessionArchive = [.shared = scan.shared, .target = value]
+        let options: SessionArchive = [.shared = scan.shared, .target = value];
         `Ok options
       } else if let `Err message = target {
         `Err message
@@ -460,27 +612,27 @@ let parse_archive_options: SessionArgs -> SessionArchiveResult = (args: SessionA
   } else {
     `Err "archive argument parser returned an unknown result"
   }
-}
+};
 
 let parse_delete_options: SessionArgs -> SessionDeleteResult = (args: SessionArgs) => {
-  let parsed: SessionScanResult = parse_session_arguments args
+  let parsed: SessionScanResult = parse_session_arguments args;
 
   if let `Err message = parsed {
     `Err message
   } else if let `Ok scan = parsed {
-    let interactive_control = scan.last
+    let interactive_control = scan.last;
     if scan.all { interactive_control = true }
     if scan.include_non_interactive { interactive_control = true }
     if scan.used_tui_only_option { interactive_control = true }
     if interactive_control {
       `Err "delete does not accept interactive session controls"
     } else {
-      let target: SessionTextResult = single_archive_target scan.positionals
+      let target: SessionTextResult = single_archive_target scan.positionals;
       if let `Ok value = target {
-        if scan.force && !session_target_is_uuid(value) {
+        if scan.force && !session_target_is_uuid value {
           `Err "--force requires a session UUID; names must be confirmed interactively"
         } else {
-          let options: SessionDelete = [.shared = scan.shared, .target = value, .force = scan.force]
+          let options: SessionDelete = [.shared = scan.shared, .target = value, .force = scan.force];
           `Ok options
         }
       } else if let `Err message = target {
@@ -492,13 +644,13 @@ let parse_delete_options: SessionArgs -> SessionDeleteResult = (args: SessionArg
   } else {
     `Err "delete argument parser returned an unknown result"
   }
-}
+};
 
 return {
-  parse_session_arguments,
-  parse_resume_options,
-  parse_fork_options,
-  parse_archive_options,
-  parse_delete_options,
-  session_target_is_uuid,
-}
+  .parse_session_arguments,
+  .parse_resume_options,
+  .parse_fork_options,
+  .parse_archive_options,
+  .parse_delete_options,
+  .session_target_is_uuid,
+};

@@ -8,4 +8,4 @@ declare Init {
   update_plan_host: UpdatePlanHost
 }
 
-return {}
+return {};

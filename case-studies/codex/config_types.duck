@@ -20,4 +20,4 @@ type ConfigValidation =
   | `Valid Unit
   | `Invalid Text
 
-return {}
+return {};

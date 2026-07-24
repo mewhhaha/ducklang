@@ -28,7 +28,7 @@ Deno.test("UTF-8 and numeric format builtins expose explicit source types", () =
 
 Deno.test("Text and Bytes require explicit UTF-8 conversion at semantic boundaries", () => {
   const implicit_bytes = validate_frontend_semantics(parse_source(`
-let bytes: Bytes = "text"
+let bytes: Bytes = "text";
 bytes
 `));
   assert_equals(
@@ -37,7 +37,7 @@ bytes
   );
 
   const text_write = validate_frontend_semantics(parse_source(`
-let text: Text = "text"
+let text: Text = "text";
 text[0] = 65
 text
 `));
@@ -65,9 +65,9 @@ text
   );
 
   const function_boundaries = validate_frontend_semantics(parse_source(`
-let consume = (bytes: Bytes) => @len(bytes)
+let consume = (bytes: Bytes) => @len(bytes);
 consume("text")
-let make: () -> Bytes = () => "text"
+let make: () -> Bytes = () => "text";
 make()
 `));
   assert_equals(
@@ -79,17 +79,17 @@ make()
   );
 
   assert_throws(
-    () => Source.wat('let bytes: Bytes = "text"\nbytes'),
+    () => Source.wat('let bytes: Bytes = "text";\nbytes'),
     "Binding annotation expects Bytes, got Text",
   );
   assert_throws(
-    () => Source.wat('let text: Text = "text"\ntext[0] = 65\ntext'),
+    () => Source.wat('let text: Text = "text";\ntext[0] = 65\ntext'),
     "Cannot index-assign Text",
   );
   assert_throws(
     () =>
       Source.wat(
-        'let consume = (bytes: Bytes) => @len(bytes)\nconsume("text")',
+        'let consume = (bytes: Bytes) => @len(bytes);\nconsume("text")',
       ),
     "Call to consume argument 1",
   );
@@ -104,7 +104,7 @@ Deno.test("Utf8.encode and Utf8.decode copy valid UTF-8 buffers", async () => {
   assert_equals(read_result_text(empty_instance), "");
 
   const wat = wat_from_core_source(`
-let bytes: Bytes = @Utf8.encode("Aλ🙂")
+let bytes: Bytes = @Utf8.encode("Aλ🙂");
 bytes[0] = 66
 @Utf8.decode(bytes)
 `);
@@ -260,9 +260,9 @@ Deno.test("format_f32 traps outside its precision and scaled-magnitude bounds", 
 
 Deno.test("UTF-8 conversion and integer formatting have allocation and drop proofs", () => {
   const core = Source.core(`
-let bytes: Bytes = @Utf8.encode("x")
-let text: Text = @Utf8.decode(bytes)
-let number: Text = @format_i64(-9223372036854775808i64)
+let bytes: Bytes = @Utf8.encode("x");
+let text: Text = @Utf8.decode(bytes);
+let number: Text = @format_i64(-9223372036854775808i64);
 @len(text) + @len(number)
 `);
   const proof = Core.proof(core);

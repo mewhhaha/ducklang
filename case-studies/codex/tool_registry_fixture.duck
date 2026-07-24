@@ -1,25 +1,47 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { deferred_tools, empty_registry, model_visible_tools, register_tool, registry_count } = import "./tool_registry.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .deferred_tools, .empty_registry, .model_visible_tools, .register_tool, .registry_count } =
+  import "./tool_registry.duck" ();
 
 type FixtureName = ToolName
 type FixtureDefinition = ToolDefinition
 type FixtureDefinitions = ToolDefinitions
 type FixtureRegistrationResult = ToolRegistrationResult
 
-let shell_name: FixtureName = ["", "exec_command"]
-let shell: FixtureDefinition = [shell_name, `Direct (), `UnifiedExec (), `FunctionPayload (), true, false]
+let shell_name: FixtureName = ["", "exec_command"];
+let shell: FixtureDefinition = [
+  shell_name,
+  `Direct (),
+  `UnifiedExec (),
+  `FunctionPayload (),
+  true,
+  false,
+];
 
-let search_name: FixtureName = ["", "tool_search"]
-let search: FixtureDefinition = [search_name, `Deferred (), `ToolSearch (), `ToolSearchPayload (), false, false]
+let search_name: FixtureName = ["", "tool_search"];
+let search: FixtureDefinition = [
+  search_name,
+  `Deferred (),
+  `ToolSearch (),
+  `ToolSearchPayload (),
+  false,
+  false,
+];
 
-let legacy_name: FixtureName = ["", "shell_command"]
-let legacy: FixtureDefinition = [legacy_name, `Hidden (), `Shell (), `FunctionPayload (), true, true]
+let legacy_name: FixtureName = ["", "shell_command"];
+let legacy: FixtureDefinition = [
+  legacy_name,
+  `Hidden (),
+  `Shell (),
+  `FunctionPayload (),
+  true,
+  true,
+];
 
-let registry: FixtureDefinitions = empty_registry()
-let score: I32 = 0
-let registered: FixtureRegistrationResult = register_tool(registry, shell)
+let registry: FixtureDefinitions = empty_registry();
+let score: I32 = 0;
+let registered: FixtureRegistrationResult = register_tool(registry, shell);
 
 if let `Registered next = registered {
   registry = next
@@ -31,13 +53,13 @@ if let `Registered next = registered { registry = next }
 registered = register_tool(registry, legacy)
 if let `Registered next = registered { registry = next }
 
-let duplicate: FixtureRegistrationResult = register_tool(registry, shell)
+let duplicate: FixtureRegistrationResult = register_tool(registry, shell);
 if let `Duplicate name = duplicate {
-  let [_, local_name] = name
+  let [_, local_name] = name;
   if local_name == "exec_command" { score = score + 10 }
 }
 
-if registry_count(model_visible_tools(registry)) == 1 { score = score + 100 }
-if registry_count(deferred_tools(registry)) == 1 { score = score + 1000 }
+if registry_count(model_visible_tools registry) == 1 { score = score + 100 }
+if registry_count(deferred_tools registry) == 1 { score = score + 1000 }
 
-return { .score = score }
+return { .score = score };

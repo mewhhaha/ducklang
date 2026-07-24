@@ -25,4 +25,4 @@ declare Init {
   agent_collaboration_stages: AgentCollaborationStages
 }
 
-return {}
+return {};

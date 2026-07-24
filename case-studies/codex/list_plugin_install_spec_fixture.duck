@@ -1,23 +1,27 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { list_available_plugins_to_install_specs } = import "./list_plugin_install_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .list_available_plugins_to_install_specs } =
+  import "./list_plugin_install_registration.duck" ();
 
 type FixtureSpecs = ToolSpecs
 
-let score = 0
-let specs: FixtureSpecs = list_available_plugins_to_install_specs(true, true, `ListTool ())
+let score = 0;
+let specs: FixtureSpecs = list_available_plugins_to_install_specs(true, true, `ListTool ());
 if let `Cons node = specs {
-  let [spec, tail] = node
-  let [name, kind, description, parameters, output, strict] = spec
-  let [namespace, local_name] = name
-  let description_valid = description == "# List plugin/connector install candidates\n\nUse this tool only when both are true:\n- The user explicitly asks to use a specific plugin or connector that is not already available in the current context or active `tools` list.\n- `tool_search` is not available, or it has already been called and did not find or make the requested tool callable.\n\nReturns known plugins and connectors that can be passed to `request_plugin_install`. When both a plugin and a connector match, prefer the plugin; use the connector only when its corresponding plugin is already installed.\n"
-  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
-  if namespace == "" && local_name == "list_available_plugins_to_install" && description_valid && parameters == "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}" && output_valid && !(strict) {
+  let [spec, tail] = node;
+  let [name, kind, description, parameters, output, strict] = spec;
+  let [namespace, local_name] = name;
+  let description_valid =
+    description == "# List plugin/connector install candidates\n\nUse this tool only when both are true:\n- The user explicitly asks to use a specific plugin or connector that is not already available in the current context or active `tools` list.\n- `tool_search` is not available, or it has already been called and did not find or make the requested tool callable.\n\nReturns known plugins and connectors that can be passed to `request_plugin_install`. When both a plugin and a connector match, prefer the plugin; use the connector only when its corresponding plugin is already installed.\n";
+  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
+  if namespace == "" && local_name == "list_available_plugins_to_install" && description_valid && parameters == "{\"type\":\"object\",\"properties\":{},\"required\":[],\"additionalProperties\":false}" && output_valid && !(
+    strict
+  ) {
     if let `FunctionSpec () = kind {
       if let `Nil () = tail { score = 100 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

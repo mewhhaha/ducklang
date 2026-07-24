@@ -15,7 +15,6 @@ Deno.test("editor source infers local types without diagnostics", () => {
   const host_url = new URL("./host.duck", import.meta.url);
   const analysis = Source.analyze_file(source_url.href, {
     host_interface: Source.load(host_url.href),
-    route: "core",
     warnings: true,
   });
 
@@ -49,10 +48,9 @@ Deno.test("editor language service retains inferred local structure", async () =
 
   for (
     const expected of [
-      { needle: "next = [piece, reversed]", type: "[Piece, Pieces]" },
-      { needle: "piece_length = piece.length()", type: "I32" },
-      { needle: "right_bytes = slice", type: "Piece" },
-      { needle: "inserted_right = append_pieces", type: "Pieces" },
+      { needle: "left_height = piece_tree_height left", type: "I32" },
+      { needle: "root = join_piece_trees", type: "PieceTree" },
+      { needle: "output = output_builder", type: "OutputBuilder" },
       { needle: "mode = if let `Extend", type: "Mode" },
     ]
   ) {
@@ -104,7 +102,8 @@ Deno.test("editor movement and deletion respect UTF-8 code point boundaries", as
 
 Deno.test("editor handles arrow keys and Ctrl-C as terminal controls", async () => {
   const runner = mock_runner(encoder.encode("abc"), [
-    encoder.encode("\x1b[Cdw"),
+    encoder.encode("\x1b["),
+    encoder.encode("Cdw"),
     Uint8Array.of(3),
   ]);
 

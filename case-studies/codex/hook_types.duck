@@ -49,7 +49,16 @@ type HookHandlerConfig =
   | `Prompt Unit
   | `Agent Unit
 
-type HookConfiguredHandler = [HookEvent, HookMatcher, Text, I32, HookTextOption, Text, HookSource, I32]
+type HookConfiguredHandler = [
+  HookEvent,
+  HookMatcher,
+  Text,
+  I32,
+  HookTextOption,
+  Text,
+  HookSource,
+  I32,
+]
 type HookConfiguredHandlers = List HookConfiguredHandler
 type HookConfiguredHandlerWithWarnings = [HookConfiguredHandler, HookTexts]
 
@@ -121,4 +130,4 @@ type HookCommandCompletion =
   | `MissingExit Unit
 type HookCommandOutcome = [HookCommandCompletion, HookTextOption]
 
-return {}
+return {};

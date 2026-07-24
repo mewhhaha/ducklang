@@ -1,4 +1,4 @@
-const { create_hosted_web_search_spec } = import "./hosted_web_search_spec.duck" ()
+const { .create_hosted_web_search_spec } = import "./hosted_web_search_spec.duck" ();
 
 type FixtureDomains = HostedSpecDomains
 type FixtureFilters = HostedSpecFilters
@@ -6,38 +6,39 @@ type FixtureLocation = HostedSpecUserLocation
 type FixtureConfig = HostedSpecConfig
 type FixtureTextOption = HostedSpecTextOption
 
-let domains: FixtureDomains = `DomainsCons (["example.com", `DomainsNil ()])
-let filters: FixtureFilters = [.allowed_domains = `DomainsPresent domains]
-let missing_text: FixtureTextOption = `SearchTextMissing ()
+let domains: FixtureDomains = `DomainsCons (["example.com", `DomainsNil ()]);
+let filters: FixtureFilters = [.allowed_domains = `DomainsPresent domains];
+let missing_text: FixtureTextOption = `SearchTextMissing ();
 let location: FixtureLocation = [
   .location_type = `Approximate (),
   .country = `SearchTextPresent "US",
   .region = missing_text,
   .city = missing_text,
-  .timezone = `SearchTextPresent "America/Los_Angeles"]
+  .timezone = `SearchTextPresent "America/Los_Angeles"];
 let config: FixtureConfig = [
   .filters = `FiltersPresent filters,
   .user_location = `UserLocationPresent location,
-  .search_context_size = `ContextSizePresent (`Low ())]
+  .search_context_size = `ContextSizePresent (`Low ())];
 
-let score = 0
-let live = create_hosted_web_search_spec(`Live (), `SearchConfigPresent config, `TextAndImage ())
+let score = 0;
+let live = create_hosted_web_search_spec(`Live (), `SearchConfigPresent config, `TextAndImage ());
 if let `LiveTextAndImage preserved = live {
-  let config_valid = false
+  let config_valid = false;
   if let `SearchConfigPresent preserved_config = preserved {
     if let `FiltersPresent preserved_filters = preserved_config.filters {
       if let `DomainsPresent preserved_domains = preserved_filters.allowed_domains {
         if let `DomainsCons domain_node = preserved_domains {
-          let [domain, tail] = domain_node
+          let [domain, tail] = domain_node;
           if domain == "example.com" {
             if let `DomainsNil () = tail {
               if let `UserLocationPresent preserved_location = preserved_config.user_location {
                 if let `SearchTextPresent country = preserved_location.country {
                   if let `SearchTextPresent timezone = preserved_location.timezone {
                     if country == "US" && timezone == "America/Los_Angeles" {
-                      if let `ContextSizePresent context_size = preserved_config.search_context_size {
-                        if let `Low () = context_size { config_valid = true }
-                      }
+                      if let `ContextSizePresent context_size =
+                        preserved_config.search_context_size {
+                          if let `Low () = context_size { config_valid = true }
+                        }
                     }
                   }
                 }
@@ -51,4 +52,4 @@ if let `LiveTextAndImage preserved = live {
   if config_valid { score = score + 1 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -10,7 +10,7 @@ function occurrences(text: string) {
 }
 
 Deno.test("binding index resolves an assignment rhs before its shadow", () => {
-  const indexed = occurrences("let x = 0\nx = x + 1\n");
+  const indexed = occurrences("let x = 0;\nx = x + 1\n");
   const xs = indexed.filter((occurrence) => occurrence.name === "x");
 
   assert_equals(xs.map((occurrence) => occurrence.role), [
@@ -26,7 +26,7 @@ Deno.test("binding index resolves an assignment rhs before its shadow", () => {
 });
 
 Deno.test("binding index keeps recursive self visible and linear repeats consumable", () => {
-  const indexed = occurrences("let rec f = f\nlet !x = 0\n!x\n!x\n");
+  const indexed = occurrences("let rec f = f;\nlet !x = 0;\n!x\n!x\n");
   const fs = indexed.filter((occurrence) => occurrence.name === "f");
   const xs = indexed.filter((occurrence) => occurrence.name === "x");
 
@@ -41,10 +41,11 @@ Deno.test("binding index keeps recursive self visible and linear repeats consuma
 
 Deno.test("binding index resolves value-pack rest bindings", () => {
   const indexed = occurrences(
-    "const first = (const ...values) => comptime match values {\n" +
-      "  | () => 0\n" +
-      "  | (value, ...remaining) => value + @len(remaining)\n" +
-      "}\n",
+    `const first = (const ...values) => comptime match values {
+  | () => 0
+  | (value, ...remaining) => value + @len(remaining)
+};
+`,
   );
   const remaining = indexed.filter((occurrence) =>
     occurrence.name === "remaining"
@@ -57,10 +58,26 @@ Deno.test("binding index resolves value-pack rest bindings", () => {
   assert_equals(remaining[0]?.entity, remaining[1]?.entity);
 });
 
+Deno.test("binding index resolves compile-time values in alternative patterns", () => {
+  const indexed = occurrences(
+    "const expected = 1;\n" +
+      "match value { | 0 | #(expected) => 1 | _ => 0 }\n",
+  );
+  const expected = indexed.filter((occurrence) => {
+    return occurrence.name === "expected";
+  });
+
+  assert_equals(expected.map((occurrence) => occurrence.role), [
+    "definition",
+    "reference",
+  ]);
+  assert_equals(expected[0]?.entity, expected[1]?.entity);
+});
+
 Deno.test("binding index records members and dynamic receivers explicitly", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
     "type Result = `Ok Unit\n" +
-      "let value = `Ok ()\nlet field = value.name\n",
+      "let value = `Ok ();\nlet field = value.name;\n",
   ));
   const result = [...indexed.entities.values()].find((entity) =>
     entity.name === "Result"
@@ -74,7 +91,9 @@ Deno.test("binding index records members and dynamic receivers explicitly", () =
 });
 
 Deno.test("binding index is deterministic and preserves recovered later names", () => {
-  const parsed = parse_source_with_diagnostics("let = bad\nlet kept = kept\n");
+  const parsed = parse_source_with_diagnostics(
+    "let = bad;\nlet kept = kept;\n",
+  );
   const first = build_binding_index(parsed, 2).dump();
   const second = build_binding_index(parsed, 2).dump();
   assert_equals(first, second);
@@ -124,7 +143,7 @@ Deno.test("binding index scopes effect parameters across operation signatures", 
 
 Deno.test("binding index uses nested annotation facts for statically known members", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Vec = struct {.x = Int}\nif true { let point: Vec = [.x = 1]\npoint.x }\n",
+    "type Vec = struct {.x = Int}\nif true { let point: Vec = [.x = 1];\npoint.x }\n",
   ));
   const member = [...indexed.occurrences.values()].find((occurrence) =>
     occurrence.name === "x" && occurrence.role === "member" &&
@@ -136,8 +155,8 @@ Deno.test("binding index uses nested annotation facts for statically known membe
 });
 
 Deno.test("binding index resolves cases and reports the current lexical generation", () => {
-  const text = "type Result = `Ok Int\nlet x = 0\n" +
-    "{ let x = 1\nx }\nx\nlet result = `Ok (1)\n" +
+  const text = "type Result = `Ok Int\nlet x = 0;\n" +
+    "{ let x = 1;\nx }\nx\nlet result = `Ok (1);\n" +
     "if let `Ok value = result { value }\n";
   const indexed = build_binding_index(parse_source_with_diagnostics(text));
   const occurrences = [...indexed.occurrences.values()];
@@ -173,7 +192,7 @@ Deno.test("binding index resolves cases and reports the current lexical generati
 
 Deno.test("binding index reference lists round-trip to their definition entities", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "let x = 1\nx + x\n",
+    "let x = 1;\nx + x\n",
   ));
 
   for (const [entity, references] of indexed.references) {
@@ -184,7 +203,7 @@ Deno.test("binding index reference lists round-trip to their definition entities
 });
 
 Deno.test("binding index visibility selects the generation active at the offset", () => {
-  const text = "let x = 0\nx\nx = x + 1\nx\n";
+  const text = "let x = 0;\nx\nx = x + 1\nx\n";
   const indexed = build_binding_index(parse_source_with_diagnostics(text));
   const references = [...indexed.occurrences.values()].filter((occurrence) =>
     occurrence.name === "x" && occurrence.role === "reference"
@@ -228,7 +247,7 @@ Deno.test("binding index keeps owner members out of lexical visibility", () => {
 
 Deno.test("binding index resolves component annotation sites", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Pair = struct {.left = Int}\nlet value: Pair = [.left = 1]\nvalue.left\n",
+    "type Pair = struct {.left = Int}\nlet value: Pair = [.left = 1];\nvalue.left\n",
   ));
   const pair = [...indexed.entities.values()].find((entity) =>
     entity.name === "Pair"

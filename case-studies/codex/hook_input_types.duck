@@ -1,9 +1,17 @@
 module () where
 
-const hook_types_module = import "./hook_types.duck"
+const hook_types_module = import "./hook_types.duck";
 
 type HookInputTextOption = HookTextOption
-type HookTurnInputContext = [Text, Text, HookInputTextOption, HookInputTextOption, HookInputTextOption, Text, Text]
+type HookTurnInputContext = [
+  Text,
+  Text,
+  HookInputTextOption,
+  HookInputTextOption,
+  HookInputTextOption,
+  Text,
+  Text,
+]
 
 type HookPreToolInput = [HookTurnInputContext, Text, Text, Json, Text]
 type HookPermissionRequestInput = [HookTurnInputContext, Text, Text, Json]
@@ -14,6 +22,18 @@ type HookSessionEndInput = [Text, HookInputTextOption, Text]
 type HookSubagentStartInput = [Text, Text, HookInputTextOption, Text, Text, Text, Text, Text]
 type HookUserPromptInput = [HookTurnInputContext, Text, Text]
 type HookStopInput = [Text, Text, HookInputTextOption, Text, Text, Text, Bool, HookInputTextOption]
-type HookSubagentStopInput = [Text, Text, HookInputTextOption, HookInputTextOption, Text, Text, Text, Bool, Text, Text, HookInputTextOption]
+type HookSubagentStopInput = [
+  Text,
+  Text,
+  HookInputTextOption,
+  HookInputTextOption,
+  Text,
+  Text,
+  Text,
+  Bool,
+  Text,
+  Text,
+  HookInputTextOption,
+]
 
-return {}
+return {};

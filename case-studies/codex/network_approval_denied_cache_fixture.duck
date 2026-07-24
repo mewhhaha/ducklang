@@ -1,0 +1,84 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const {
+  .empty_network_approval_state,
+  .finish_network_call,
+  .plan_network_request,
+  .register_network_call,
+  .resolve_network_prompt,
+} = import "./network_approval.duck" ();
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureMode = NetworkApprovalMode
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureResult = NetworkPolicyResult
+type FixtureFinish = NetworkFinishOutcome
+
+let https: FixtureProtocol = `Https ();
+let state: FixtureState = empty_network_approval_state();
+let deferred: FixtureMode = `Deferred ();
+let no_outcome: FixtureOutcome = `NoOutcome ();
+let call: FixtureCall = [
+  "registration-1",
+  "local",
+  "curl https://example.com",
+  deferred,
+  no_outcome,
+  false,
+];
+state = register_network_call(state, call)
+
+let no_execution: FixtureTextOption = `None ();
+let local_environment: FixtureTextOption = `Some "local";
+let request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment];
+let policy: FixturePolicy = `OnRequest ();
+let profile: FixtureProfile = `Managed ();
+let first: FixtureResult = plan_network_request(
+  state,
+  request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [pending_state, first_decision] = first;
+state = if let `Prompt prompt = first_decision {
+  resolve_network_prompt(pending_state, prompt, `Deny ())
+} else {
+  pending_state
+}
+
+let cached: FixtureResult = plan_network_request(
+  state,
+  request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [_, cached_decision] = cached;
+let finished = finish_network_call(state, "registration-1");
+let [_, raw_finish] = finished;
+let finish: FixtureFinish = raw_finish;
+let [_, _, _, pending] = state;
+let score = 0;
+if let `Nil () = pending {
+  if let `Reject message = cached_decision {
+    if message == "network target was denied for this session" {
+      if let `Rejected finish_message = finish {
+        if finish_message == "rejected by user" {
+          score = score + 1
+        }
+      }
+    }
+  }
+}
+
+return { .score = score };

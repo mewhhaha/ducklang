@@ -12,7 +12,9 @@ import { format_effect_row } from "./effect_row.ts";
 import { format_character_literal, front_literal_expr } from "./literal.ts";
 
 export function parse_type_expr(tokens: Token[]): TypeExpr {
-  const parser = new TypeExprParser(tokens);
+  const parser = new TypeExprParser(tokens.filter((token) => {
+    return token.kind !== "newline" || token.raw === ";";
+  }));
   const type = parser.parse_arrow();
   expect(parser.is_end(), "Unexpected token in type annotation");
   return type;
@@ -218,6 +220,10 @@ class TypeExprParser {
       this.expect_symbol(",");
 
       while (true) {
+        if (this.match_symbol("]")) {
+          break;
+        }
+
         entries.push(this.parse_product_entry());
 
         if (this.match_symbol("]")) {

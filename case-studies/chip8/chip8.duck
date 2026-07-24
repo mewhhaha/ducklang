@@ -1,6 +1,6 @@
 module () where
 
-const { panic } = import "duck:prelude/runtime" ()
+const { .panic } = import "duck:prelude/runtime" ();
 
 let initialize: [Bytes, I32] -> Bytes = (state: Bytes, key_mask: I32) => {
   state[6192] = 0x02
@@ -8,36 +8,36 @@ let initialize: [Bytes, I32] -> Bytes = (state: Bytes, key_mask: I32) => {
   state[6199] = (key_mask >> 8) &&& 0xff
   state[6200] = key_mask &&& 0xff
   state
-}
+};
 
 let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
-  let register_base = 4096
-  let framebuffer_base = 4112
-  let framebuffer_size = 2048
-  let stack_base = 6160
-  let pc_address = 6192
-  let index_address = 6194
-  let stack_pointer_address = 6196
-  let delay_timer_address = 6197
-  let sound_timer_address = 6198
-  let key_mask_address = 6199
-  let cycle_address = 6201
+  let register_base = 4096;
+  let framebuffer_base = 4112;
+  let framebuffer_size = 2048;
+  let stack_base = 6160;
+  let pc_address = 6192;
+  let index_address = 6194;
+  let stack_pointer_address = 6196;
+  let delay_timer_address = 6197;
+  let sound_timer_address = 6198;
+  let key_mask_address = 6199;
+  let cycle_address = 6201;
 
   for step_index in 0..1 {
-    let pc = state[pc_address] << 8 + state[pc_address + 1]
-    let opcode = state[pc] << 8 + state[pc + 1]
-    let family = (opcode >> 12) &&& 0xf
-    let x = (opcode >> 8) &&& 0xf
-    let y = (opcode >> 4) &&& 0xf
-    let nibble = opcode &&& 0xf
-    let byte = opcode &&& 0xff
-    let address = opcode &&& 0xfff
-    let vx = state[register_base + x]
-    let vy = state[register_base + y]
-    let index = state[index_address] << 8 + state[index_address + 1]
-    let stack_pointer = state[stack_pointer_address]
-    let key_mask = state[key_mask_address] << 8 + state[key_mask_address + 1]
-    let next_pc = pc + 2
+    let pc = state[pc_address] << 8 + state[pc_address + 1];
+    let opcode = state[pc] << 8 + state[pc + 1];
+    let family = (opcode >> 12) &&& 0xf;
+    let x = (opcode >> 8) &&& 0xf;
+    let y = (opcode >> 4) &&& 0xf;
+    let nibble = opcode &&& 0xf;
+    let byte = opcode &&& 0xff;
+    let address = opcode &&& 0xfff;
+    let vx = state[register_base + x];
+    let vy = state[register_base + y];
+    let index = state[index_address] << 8 + state[index_address + 1];
+    let stack_pointer = state[stack_pointer_address];
+    let key_mask = state[key_mask_address] << 8 + state[key_mask_address + 1];
+    let next_pc = pc + 2;
 
     if opcode == 0x00e0 {
       for offset in 0..framebuffer_size {
@@ -45,13 +45,13 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
       }
     } else if opcode == 0x00ee {
       stack_pointer = stack_pointer - 1
-      let return_address = stack_base + stack_pointer * 2
+      let return_address = stack_base + stack_pointer * 2;
       next_pc = state[return_address] << 8 + state[return_address + 1]
       state[stack_pointer_address] = stack_pointer
     } else if family == 0x1 {
       next_pc = address
     } else if family == 0x2 {
-      let return_address = stack_base + stack_pointer * 2
+      let return_address = stack_base + stack_pointer * 2;
       state[return_address] = (next_pc >> 8) &&& 0xff
       state[return_address + 1] = next_pc &&& 0xff
       state[stack_pointer_address] = stack_pointer + 1
@@ -88,7 +88,7 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
       } else if nibble == 0x3 {
         state[register_base + x] = (vx ^^^ vy) &&& 0xff
       } else if nibble == 0x4 {
-        let sum = vx + vy
+        let sum = vx + vy;
         state[register_base + x] = sum &&& 0xff
 
         if sum > 0xff {
@@ -137,19 +137,19 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
     } else if family == 0xb {
       next_pc = address + state[register_base]
     } else if family == 0xd {
-      let collision = 0
+      let collision = 0;
 
       for row in 0..nibble {
-        let sprite = state[index + row]
+        let sprite = state[index + row];
 
         for column in 0..8 {
-          let mask = 1 << (7 - column)
+          let mask = 1 << (7 - column);
 
           if sprite &&& mask != 0 {
-            let pixel_x = (vx + column) % 64
-            let pixel_y = (vy + row) % 32
-            let pixel_address = framebuffer_base + pixel_y * 64 + pixel_x
-            let previous = state[pixel_address]
+            let pixel_x = (vx + column) % 64;
+            let pixel_y = (vy + row) % 32;
+            let pixel_address = framebuffer_base + pixel_y * 64 + pixel_x;
+            let previous = state[pixel_address];
 
             if previous == 1 {
               collision = 1
@@ -162,7 +162,7 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
 
       state[register_base + 0xf] = collision
     } else if family == 0xe {
-      let pressed = false
+      let pressed = false;
 
       if vx < 16 {
         pressed = (key_mask &&& (1 << vx)) != 0
@@ -184,7 +184,7 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
       if byte == 0x07 {
         state[register_base + x] = state[delay_timer_address]
       } else if byte == 0x0a {
-        let selected_key = -1
+        let selected_key = -1;
 
         for key in 0..16 {
           if selected_key < 0 {
@@ -205,7 +205,7 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
       } else if byte == 0x18 {
         state[sound_timer_address] = vx
       } else if byte == 0x1e {
-        let next_index = index + vx &&& 0xfff
+        let next_index = index + vx &&& 0xfff;
         state[index_address] = (next_index >> 8) &&& 0xff
         state[index_address + 1] = next_index &&& 0xff
       } else if byte == 0x33 {
@@ -226,16 +226,18 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
 
     state[pc_address] = (next_pc >> 8) &&& 0xff
     state[pc_address + 1] = next_pc &&& 0xff
-    let cycles = (state[cycle_address] << 24) + (state[cycle_address + 1] << 16) + (state[cycle_address + 2] << 8) + state[cycle_address + 3]
-    let next_cycles = cycles + 1
+    let cycles = (state[cycle_address] << 24) + (state[cycle_address + 1] << 16) + (
+      state[cycle_address + 2] << 8
+    ) + state[cycle_address + 3];
+    let next_cycles = cycles + 1;
     state[cycle_address] = (next_cycles >> 24) &&& 0xff
     state[cycle_address + 1] = (next_cycles >> 16) &&& 0xff
     state[cycle_address + 2] = (next_cycles >> 8) &&& 0xff
     state[cycle_address + 3] = next_cycles &&& 0xff
     if timer_period > 0 {
       if next_cycles % timer_period == 0 {
-        let delay_timer = state[delay_timer_address]
-        let sound_timer = state[sound_timer_address]
+        let delay_timer = state[delay_timer_address];
+        let sound_timer = state[sound_timer_address];
 
         if delay_timer > 0 {
           state[delay_timer_address] = delay_timer - 1
@@ -253,40 +255,40 @@ let step: [Bytes, I32] -> Bytes = (state: Bytes, timer_period: I32) => {
   }
 
   state
-}
+};
 
 let run: [Bytes, I32, I32] -> Bytes =
   (machine: Bytes, max_steps: I32, timer_period: I32) => {
-    let final_state = machine
+    let final_state = machine;
 
     for step_index in 0..max_steps {
-      let _ = step_index
+      let _ = step_index;
       final_state = step(final_state, timer_period)
     }
 
     final_state
-  }
+  };
 
 let read: [Bytes, I32] -> I32 = (state: Bytes, field: I32) => {
-  let register_base = 4096
-  let framebuffer_base = 4112
-  let framebuffer_size = 2048
-  let pc_address = 6192
-  let index_address = 6194
-  let stack_pointer_address = 6196
-  let delay_timer_address = 6197
-  let sound_timer_address = 6198
-  let cycle_address = 6201
-  let register_checksum = 0
-  let framebuffer_checksum = 0
-  let lit_pixels = 0
+  let register_base = 4096;
+  let framebuffer_base = 4112;
+  let framebuffer_size = 2048;
+  let pc_address = 6192;
+  let index_address = 6194;
+  let stack_pointer_address = 6196;
+  let delay_timer_address = 6197;
+  let sound_timer_address = 6198;
+  let cycle_address = 6201;
+  let register_checksum = 0;
+  let framebuffer_checksum = 0;
+  let lit_pixels = 0;
 
   for register in 0..16 {
     register_checksum = register_checksum + (register + 1) * state[register_base + register]
   }
 
   for pixel in 0..framebuffer_size {
-    let value = state[framebuffer_base + pixel]
+    let value = state[framebuffer_base + pixel];
     framebuffer_checksum = framebuffer_checksum + (pixel + 1) * value
     lit_pixels = lit_pixels + value
   }
@@ -302,7 +304,9 @@ let read: [Bytes, I32] -> I32 = (state: Bytes, field: I32) => {
   } else if field == 4 {
     state[sound_timer_address]
   } else if field == 5 {
-    (state[cycle_address] << 24) + (state[cycle_address + 1] << 16) + (state[cycle_address + 2] << 8) + state[cycle_address + 3]
+    (state[cycle_address] << 24) + (state[cycle_address + 1] << 16) + (
+      state[cycle_address + 2] << 8
+    ) + state[cycle_address + 3]
   } else if field == 6 {
     register_checksum
   } else if field == 7 {
@@ -320,6 +324,6 @@ let read: [Bytes, I32] -> I32 = (state: Bytes, field: I32) => {
   } else {
     panic "Unknown CHIP-8 summary field"
   }
-}
+};
 
-return { .initialize = initialize, .step = step, .run = run, .read = read }
+return { .initialize = initialize, .step = step, .run = run, .read = read };

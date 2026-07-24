@@ -1,15 +1,16 @@
-const { plan_thread_goal_set } = import "./app_server_goals.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_goal_types.duck" ()
+const { .plan_thread_goal_set } = import "./app_server_goals.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_goal_types.duck" ();
 
 type FixtureGoalOption = AppServerThreadGoalOption
 type FixtureParams = AppServerThreadGoalSetParams
 type FixtureResult = AppServerThreadGoalSetPlanResult
 
-let no_goal: FixtureGoalOption = `None ()
-let params: FixtureParams = ["thread-5", `Some "　 ", `None (), `Keep ()]
-let result: FixtureResult = plan_thread_goal_set(no_goal, params)
-let score = 0
-if let `GoalSetInvalid reason = result { if reason == "goal objective must not be empty" { score = score + 1 } }
+let no_goal: FixtureGoalOption = `None ();
+let params: FixtureParams = ["thread-5", `Some "　 ", `None (), `Keep ()];
+let result: FixtureResult = plan_thread_goal_set(no_goal, params);
+let score = 0;
+if let `GoalSetInvalid reason = result { if reason == "goal objective must not be empty" { score =
+    score + 1 } }
 
-return { .score = score }
+return { .score = score };

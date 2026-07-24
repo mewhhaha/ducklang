@@ -1,8 +1,8 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "duck:prelude/abstractions" ()
-const {} = import "./context_window_status_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/abstractions" ();
+const {} = import "./context_window_status_types.duck" ();
 
 type AutoCompactWindowIdOption = Option Text
 
@@ -37,4 +37,4 @@ type AutoCompactWindowClaim = struct {
   .granted = Bool,
 }
 
-return {}
+return {};

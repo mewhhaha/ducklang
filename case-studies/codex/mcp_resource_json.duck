@@ -1,29 +1,37 @@
 module () where
 
-const { parse_json_document } = import "duck:prelude/json" ()
-const { format_i32 } = import "duck:prelude/numeric" ()
-const { text_append, text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./mcp_resource_types.duck" ()
-const { decode_list_mcp_resource_args, decode_read_mcp_resource_args, resource_parse_failure } = import "./mcp_resource_value.duck" ()
+const { .parse_json_document } = import "duck:prelude/json" ();
+const { .format_i32 } = import "duck:prelude/numeric" ();
+const { .text_append, .text_trim_ascii_whitespace } = import "duck:prelude/runtime" ();
+const {} = import "./mcp_resource_types.duck" ();
+const { .decode_list_mcp_resource_args, .decode_read_mcp_resource_args, .resource_parse_failure } =
+  import "./mcp_resource_value.duck" ();
 
 type ResourceJsonParsed = McpResourceParsedArgs
 
-const parse_resource_json: [Text, Bool] -> ResourceJsonParsed = (document: Text, read_resource: Bool) => {
-  let normalized = text_trim_ascii_whitespace document
+const parse_resource_json: [Text, Bool] -> ResourceJsonParsed = (
+  document: Text,
+  read_resource: Bool,
+) => {
+  let normalized = text_trim_ascii_whitespace document;
   if normalized == "" {
-    if read_resource { resource_parse_failure "expected value" } else { decode_list_mcp_resource_args(`Null ()) }
+    if read_resource { resource_parse_failure "expected value" } else {
+      decode_list_mcp_resource_args(
+        `Null ()
+      ) }
   } else {
-    let parsed = parse_json_document normalized
+    let parsed = parse_json_document normalized;
     if let `Ok value_and_position = parsed {
-      let [value, _] = value_and_position
-      if read_resource { decode_read_mcp_resource_args value } else { decode_list_mcp_resource_args value }
+      let [value, _] = value_and_position;
+      if read_resource { decode_read_mcp_resource_args value } else { decode_list_mcp_resource_args
+        value }
     } else if let `Err error = parsed {
-      let [position, message] = error
-      resource_parse_failure(text_append(message, text_append(" at byte ", format_i32(position))))
+      let [position, message] = error;
+      resource_parse_failure(text_append(message, text_append(" at byte ", format_i32 position)))
     } else {
       resource_parse_failure "invalid JSON parse result"
     }
   }
-}
+};
 
-return { parse_resource_json }
+return { .parse_resource_json };

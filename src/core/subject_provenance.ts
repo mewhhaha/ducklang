@@ -8,6 +8,13 @@ export function record_core_expr_provenance<expr extends CoreExpr>(
   derived: expr,
   source: CoreExpr,
 ): expr {
+  if (
+    derived.ascribed_type === undefined &&
+    source.ascribed_type !== undefined
+  ) {
+    derived.ascribed_type = source.ascribed_type;
+  }
+
   core_subject_sources.set(derived, source);
   return derived;
 }

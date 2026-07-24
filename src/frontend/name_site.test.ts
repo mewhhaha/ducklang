@@ -3,7 +3,7 @@ import { name_sites } from "./name_site.ts";
 import { parse_source, parse_source_with_diagnostics } from "./parser.ts";
 
 Deno.test("name sites retain distinct repeated binding and reference spellings", () => {
-  const text = "let x = 0\nx = x + 1\n";
+  const text = "let x = 0;\nx = x + 1\n";
   const source = parse_source(text);
   const assignment = source.statements[1];
 
@@ -18,13 +18,13 @@ Deno.test("name sites retain distinct repeated binding and reference spellings",
     slot: "name",
     index: undefined,
     name: "x",
-    span: { start: 10, end: 11 },
+    span: { start: 11, end: 12 },
   }]);
   assert_equals(name_sites(assignment.value.left), [{
     slot: "name",
     index: undefined,
     name: "x",
-    span: { start: 14, end: 15 },
+    span: { start: 15, end: 16 },
   }]);
   assert_equals(
     text.slice(
@@ -37,7 +37,7 @@ Deno.test("name sites retain distinct repeated binding and reference spellings",
 
 Deno.test("name sites cover declarations, members, parameters, and annotations", () => {
   const text =
-    "type Pair item = struct {.left = Item}\neffect Io result { read: (Item) => result }\nlet value: Pair Item = Io.read ()\n";
+    "type Pair item = struct {.left = Item}\neffect Io result { read: (Item) => result }\nlet value: Pair Item = Io.read ();\n";
   const source = parse_source(text);
   const declaration = source.declarations?.[0];
   const effect = source.declarations?.[1];
@@ -81,7 +81,9 @@ Deno.test("name sites cover declarations, members, parameters, and annotations",
 });
 
 Deno.test("recovery intervals exclude discarded sites and retain later syntax", () => {
-  const parsed = parse_source_with_diagnostics("let = bad\nlet kept = kept\n");
+  const parsed = parse_source_with_diagnostics(
+    "let = bad;\nlet kept = kept;\n",
+  );
   const binding = parsed.source.statements[0];
 
   if (
@@ -98,7 +100,7 @@ Deno.test("recovery intervals exclude discarded sites and retain later syntax", 
 });
 
 Deno.test("postfix member sites remain distinct across repeated member names", () => {
-  const text = "let output = object.value.value\n";
+  const text = "let output = object.value.value;\n";
   const source = parse_source(text);
   const binding = source.statements[0];
 
@@ -127,13 +129,13 @@ Deno.test("synthetic handler state and final conditional retain source sites", (
   const text = [
     "effect Counter { get: () => I32 }",
     "let counter = {",
-    "  let initial = 0",
-    "  Counter {",
+    "  let initial = 0;",
+    "  handler Counter {",
     "    get: (!resume) => !resume(initial),",
     "    return: value => value,",
     "  }",
-    "}",
-    "let result = { if condition { 1 } }",
+    "};",
+    "let result = { if condition { 1 } };",
     "",
   ].join("\n");
   const source = parse_source(text);
@@ -163,7 +165,7 @@ Deno.test("synthetic handler state and final conditional retain source sites", (
     slot: "name",
     index: undefined,
     name: "condition",
-    span: { start: 172, end: 181 },
+    span: { start: 182, end: 191 },
   }]);
 });
 
@@ -193,7 +195,7 @@ Deno.test("prefixed type field annotations retain their identifier site", () => 
 
 Deno.test("recovery diagnostics point at the discarded syntax before synchronization", () => {
   const parsed = parse_source_with_diagnostics(
-    "let broken = [1,, 2]\nlet valid = 3\n",
+    "let broken = [1,, 2];\nlet valid = 3;\n",
   );
 
   assert_equals(parsed.diagnostics[0]?.span, { start: 16, end: 17 });

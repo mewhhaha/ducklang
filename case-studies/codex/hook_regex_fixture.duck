@@ -1,14 +1,14 @@
 module () where
 
-const hook_types_module = import "./hook_types.duck"
-const hooks_module = import "./hooks.duck"
-const { hook_matcher_matches, parse_hook_matcher } = hooks_module()
+const hook_types_module = import "./hook_types.duck";
+const hooks_module = import "./hooks.duck";
+const { .hook_matcher_matches, .parse_hook_matcher } = hooks_module();
 
 type FixtureEvent = HookEvent
 
-let pre_tool: FixtureEvent = `PreToolUse ()
-let parsed = parse_hook_matcher(pre_tool, `Some "^mcp__.*__write[0-9]*$")
-let score: I32 = 0
+let pre_tool: FixtureEvent = `PreToolUse ();
+let parsed = parse_hook_matcher(pre_tool, `Some "^mcp__.*__write[0-9]*$");
+let score: I32 = 0;
 
 if let `Ok matcher = parsed {
   if hook_matcher_matches(matcher, "mcp__files__write42") {
@@ -16,4 +16,4 @@ if let `Ok matcher = parsed {
   }
 }
 
-return { .score = score }
+return { .score = score };

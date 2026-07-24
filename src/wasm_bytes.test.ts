@@ -50,14 +50,14 @@ Deno.test("Bytes.generate rejects non-I32 boundaries", () => {
 
 Deno.test("Bytes.generate fills a fresh buffer through a captured callback", async () => {
   const wat = wat_from_core_source(`
-let factor = 100
-let flag = true
+let factor = 100;
+let flag = true;
 let generator = if flag {
   (index: I32) => index * factor
 } else {
   (index: I32) => index + factor
-}
-let bytes = @Bytes.generate(4, generator)
+};
+let bytes = @Bytes.generate(4, generator);
 @get(bytes, 3)
 `);
   assert_includes(wat, "call_indirect");
@@ -78,7 +78,7 @@ let bytes = @Bytes.generate(4, generator)
 
 Deno.test("Bytes.generate does not call its callback for an empty buffer", async () => {
   const wat = wat_from_core_source(`
-let bytes = @Bytes.generate(0, index => @panic("unexpected callback"))
+let bytes = @Bytes.generate(0, index => @panic("unexpected callback"));
 @len(bytes)
 `);
   const instance = await instantiate_wat(
@@ -97,7 +97,7 @@ let bytes = @Bytes.generate(0, index => @panic("unexpected callback"))
 
 Deno.test("Bytes.generate traps before allocating a negative length", async () => {
   const wat = wat_from_core_source(`
-let bytes = @Bytes.generate(-1, index => index)
+let bytes = @Bytes.generate(-1, index => index);
 @len(bytes)
 `);
   const instance = await instantiate_wat(
@@ -116,7 +116,7 @@ let bytes = @Bytes.generate(-1, index => index)
 
 Deno.test("Bytes.generate owns one byte allocation that cleanup frees", () => {
   const core = Source.core(`
-let bytes = @Bytes.generate(4, index => index + 1)
+let bytes = @Bytes.generate(4, index => index + 1);
 @get(bytes, 3)
 `);
   const proof = Core.proof(core);

@@ -8,4 +8,4 @@ declare Init {
   request_plugin_install_host: RequestPluginInstallHost
 }
 
-return {}
+return {};

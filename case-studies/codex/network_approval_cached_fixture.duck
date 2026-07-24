@@ -1,0 +1,54 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const { .empty_network_approval_state, .plan_network_request, .resolve_network_prompt } =
+  import "./network_approval.duck" ();
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureResult = NetworkPolicyResult
+
+let https: FixtureProtocol = `Https ();
+let state: FixtureState = empty_network_approval_state();
+
+let no_execution: FixtureTextOption = `None ();
+let local_environment: FixtureTextOption = `Some "local";
+let request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment];
+let policy: FixturePolicy = `OnRequest ();
+let profile: FixtureProfile = `Managed ();
+let first: FixtureResult = plan_network_request(
+  state,
+  request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [pending_state, decision] = first;
+state = if let `Prompt prompt = decision {
+  resolve_network_prompt(pending_state, prompt, `AllowForSession ())
+} else {
+  pending_state
+}
+let planned: FixtureResult = plan_network_request(
+  state,
+  request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [_, cached_decision] = planned;
+let score = 0;
+let [_, _, _, pending] = state;
+if let `Nil () = pending {
+  if let `Allow () = cached_decision {
+    score = score + 1
+  }
+}
+
+return { .score = score };

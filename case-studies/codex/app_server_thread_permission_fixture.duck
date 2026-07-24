@@ -1,18 +1,26 @@
 module () where
 
-const { json_string } = import "duck:prelude/json/values" ()
-const { resolve_permission_settings } = import "./app_server_thread_settings.duck" ()
-const {} = import "./app_server_thread_settings_types.duck" ()
+const { .json_string } = import "duck:prelude/json/values" ();
+const { .resolve_permission_settings } = import "./app_server_thread_settings.duck" ();
+const {} = import "./app_server_thread_settings_types.duck" ();
 
 type FixturePermission = AppServerThreadPermissionSettings
 type FixtureResolution = AppServerThreadPermissionResolution
 type FixturePermissionOption = AppServerThreadPermissionSettingsOption
 type FixturePermissionResult = Result Text FixturePermissionOption
 
-let permission: FixturePermission = [json_string("never"), json_string("user"), json_string("workspace-write"), `Some (json_string("workspace"))]
-let resolution: FixtureResolution = `PermissionSelectionResolved permission
-let selected_result: FixturePermissionResult = resolve_permission_settings(resolution, `Some ":workspace")
-let score = 0
+let permission: FixturePermission = [
+  json_string "never",
+  json_string "user",
+  json_string "workspace-write",
+  `Some (json_string "workspace"),
+];
+let resolution: FixtureResolution = `PermissionSelectionResolved permission;
+let selected_result: FixturePermissionResult = resolve_permission_settings(
+  resolution,
+  `Some ":workspace",
+);
+let score = 0;
 
 if let `PermissionSelectionResolved selected = resolution {
   if let `String approval = selected.approval_policy {
@@ -30,4 +38,4 @@ if let `Ok selected_option = selected_result {
   }
 }
 
-return { .score = score }
+return { .score = score };

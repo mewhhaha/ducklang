@@ -1,43 +1,48 @@
 module () where
 
-const lifecycle_module = import "./app_server_turn_lifecycle.duck"
-const {} = import "./app_server_turn_types.duck" ()
-const { initial_turn_state, plan_turn_interrupt, record_turn_started, submitted_turn } = lifecycle_module()
+const lifecycle_module = import "./app_server_turn_lifecycle.duck";
+const {} = import "./app_server_turn_types.duck" ();
+const { .initial_turn_state, .plan_turn_interrupt, .record_turn_started, .submitted_turn } =
+  lifecycle_module();
 
 type FixtureState = AppServerTurnState
 type FixtureTransition = AppServerTurnTransition
 type FixtureTransitionResult = AppServerTurnTransitionResult
 type FixtureInterruptResult = AppServerTurnInterruptResult
 
-let score = 0
-let initial: FixtureState = initial_turn_state("thread-1")
-let submitted: FixtureTransition = submitted_turn(initial, "turn-1")
-let [submitted_state, submitted_value] = submitted
-let [submitted_id, _, _, _, _, _, _, _] = submitted_value
+let score = 0;
+let initial: FixtureState = initial_turn_state "thread-1";
+let submitted: FixtureTransition = submitted_turn(initial, "turn-1");
+let [submitted_state, submitted_value] = submitted;
+let [submitted_id, _, _, _, _, _, _, _] = submitted_value;
 if submitted_id == "turn-1" { score = score + 1 }
 
-let wrong_interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-other")
+let wrong_interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-other");
 if let `Err message = wrong_interrupt {
   if message == "expected active turn id turn-other but found turn-1" { score = score + 10 }
 }
 
-let interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-1")
-let interrupt_state = submitted_state
+let interrupt: FixtureInterruptResult = plan_turn_interrupt(submitted_state, "turn-1");
+let interrupt_state = submitted_state;
 if let `Ok decision = interrupt {
   if let `InterruptActive state = decision {
     interrupt_state = state
-    let [_, _, _, pending] = state
+    let [_, _, _, pending] = state;
     if pending { score = score + 100 }
   }
 }
 
-let started_result: FixtureTransitionResult = record_turn_started(interrupt_state, "turn-1", `Some 100i64)
+let started_result: FixtureTransitionResult = record_turn_started(
+  interrupt_state,
+  "turn-1",
+  `Some 100i64,
+);
 if let `Ok started = started_result {
-  let [_, turn] = started
-  let [_, _, _, _, _, started_at, _, _] = turn
+  let [_, turn] = started;
+  let [_, _, _, _, _, started_at, _, _] = turn;
   if let `Some value = started_at {
     if value == 100i64 { score = score + 1000 }
   }
 }
 
-return { .score = score }
+return { .score = score };

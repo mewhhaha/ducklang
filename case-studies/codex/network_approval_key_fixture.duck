@@ -1,0 +1,18 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const { .host_key_equal } = import "./network_approval.duck" ();
+
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureKey = NetworkHostKey
+
+let https: FixtureProtocol = `Https ();
+let local_key: FixtureKey = ["local", "EXAMPLE.com", https, 443];
+let same_key: FixtureKey = ["local", "example.COM", https, 443];
+let other_port: FixtureKey = ["local", "example.com", https, 8443];
+let score = 0;
+if host_key_equal(local_key, same_key) && !(host_key_equal(local_key, other_port)) {
+  score = score + 1
+}
+
+return { .score = score };

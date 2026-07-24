@@ -12,13 +12,13 @@ declare Init {
 let read_name: () -> <Io.read> Text = () => {
   name <- Io.read()
   name
-}
+};
 
 let greet: () -> <Io.read :| Io.print> Text = () => {
-  name <- read_name()
+  name <- read_name();
   _ <- Io.print(&name)
   name
-}
+};
 
-result <- greet()
-return { .result = result }
+result <- greet();
+return { .result = result };

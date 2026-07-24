@@ -84,4 +84,4 @@ type AgentPathResolution =
   | `Path Text
   | `InvalidPath Text
 
-return {}
+return {};

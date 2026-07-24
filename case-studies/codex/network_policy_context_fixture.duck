@@ -1,0 +1,65 @@
+module () where
+
+const {} = import "./network_policy_context_types.duck" ();
+const { .network_approval_context_from_payload } = import "./network_policy_context.duck" ();
+
+type FixturePayload = NetworkDecisionPayload
+type FixtureProtocol = NetworkPolicyProtocol
+type FixtureProtocolOption = NetworkPolicyContextProtocolOption
+type FixtureTextOption = NetworkPolicyContextTextOption
+type FixtureProtocolCase = [FixtureProtocol, I32]
+type FixtureProtocolCases = List FixtureProtocolCase
+type FixtureProtocolCaseNode = ListNode FixtureProtocolCase
+
+const verify_network_policy_context_fixture: () -> I32 = () => {
+  let cases: FixtureProtocolCases = `Nil ();
+  let udp_case: FixtureProtocolCase = [`PolicySocks5Udp (), 4];
+  let udp_node: FixtureProtocolCaseNode = [udp_case, cases];
+  cases = `Cons udp_node
+  let tcp_case: FixtureProtocolCase = [`PolicySocks5Tcp (), 3];
+  let tcp_node: FixtureProtocolCaseNode = [tcp_case, cases];
+  cases = `Cons tcp_node
+  let https_case: FixtureProtocolCase = [`PolicyHttps (), 2];
+  let https_node: FixtureProtocolCaseNode = [https_case, cases];
+  cases = `Cons https_node
+  let http_case: FixtureProtocolCase = [`PolicyHttp (), 1];
+  let http_node: FixtureProtocolCaseNode = [http_case, cases];
+  cases = `Cons http_node
+
+  let score = 0;
+  loop {
+    if let `Cons node = cases {
+      let [protocol_case, tail] = node;
+      let [selected_protocol, expected_protocol] = protocol_case;
+      let protocol: FixtureProtocolOption = `ContextProtocol selected_protocol;
+      let host: FixtureTextOption = `ContextText "  example.com  ";
+      let payload: FixturePayload = [
+        .decision = `ProxyAsk (),
+        .source = `Decider (),
+        .protocol = protocol,
+        .host = host,
+      ];
+      if let `ApprovalContext context = network_approval_context_from_payload payload {
+        let actual_protocol = 0;
+        if let `PolicyHttp () = context.protocol {
+          actual_protocol = 1
+        } else if let `PolicyHttps () = context.protocol {
+          actual_protocol = 2
+        } else if let `PolicySocks5Tcp () = context.protocol {
+          actual_protocol = 3
+        } else if let `PolicySocks5Udp () = context.protocol {
+          actual_protocol = 4
+        }
+        if context.host == "example.com" && actual_protocol == expected_protocol {
+          score = score + 1
+        }
+      }
+      cases = tail
+    } else {
+      break;
+    }
+  }
+  score
+};
+
+return { .verify_network_policy_context_fixture };

@@ -1,27 +1,28 @@
 module () where
 
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { decode_thread_start } = import "./app_server_thread_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .decode_thread_start } = import "./app_server_thread_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerMethodDecodeResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("sessionStartSource", json_string("clear"), fields)
-fields = json_object_prepend("historyMode", json_string("paginated"), fields)
-fields = json_object_prepend("ephemeral", json_bool(true), fields)
-let decoded: FixtureResult = decode_thread_start(json_object(fields))
+let fields = json_object_empty();
+fields = json_object_prepend("sessionStartSource", json_string "clear", fields)
+fields = json_object_prepend("historyMode", json_string "paginated", fields)
+fields = json_object_prepend("ephemeral", json_bool true, fields)
+let decoded: FixtureResult = decode_thread_start(json_object fields);
 let score = if let `MethodOk method = decoded {
   if let `ThreadStart params = method {
-    let ephemeral_valid = if let `Some value = params.ephemeral { value } else { false }
+    let ephemeral_valid = if let `Some value = params.ephemeral { value } else { false };
     let history_valid = if let `Some value = params.history_mode {
       if let `PaginatedHistory () = value { true } else { false }
-    } else { false }
+    } else { false };
     let source_valid = if let `Some value = params.session_start_source {
       if let `ClearSource () = value { true } else { false }
-    } else { false }
+    } else { false };
     if ephemeral_valid && history_valid && source_valid { 1 } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

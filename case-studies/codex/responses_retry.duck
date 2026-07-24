@@ -1,36 +1,58 @@
 module () where
 
-const { duration_ms, exponential_backoff, read_duration_ms } = import "duck:prelude/abstractions" ()
-const { format_i64 } = import "duck:prelude/numeric" ()
-const { text_append, text_copy } = import "duck:prelude/text" ()
-const {} = import "./responses_retry_types.duck" ()
+const { .duration_ms, .exponential_backoff, .read_duration_ms } = import "duck:prelude/abstractions" ();
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const { .text_append, .text_copy } = import "duck:prelude/text" ();
+const {} = import "./responses_retry_types.duck" ();
 
 type RetryError = ResponseStreamError
 type RetryDirective = ResponseRetryDirective
 type RetryPlan = ResponseRetryPlan
 
-const retry_delay: [&RetryError, I64, I32] -> DurationMs = (error: &RetryError, retry_count: I64, jitter_per_mille: I32) => {
+const retry_delay: [&RetryError, I64, I32] -> DurationMs = (
+  error: &RetryError,
+  retry_count: I64,
+  jitter_per_mille: I32,
+) => {
   if let `Some requested = error.requested_delay {
     duration_ms(read_duration_ms(&requested))
   } else {
-    exponential_backoff(duration_ms(200i64), retry_count, jitter_per_mille)
+    exponential_backoff(duration_ms 200i64, retry_count, jitter_per_mille)
   }
-}
+};
 
-const plan_response_retry: [I64, I64, Bool, &RetryError, Bool, Bool, I32] -> RetryPlan = (retries: I64, max_retries: I64, fallback_switched: Bool, error: &RetryError, debug_build: Bool, websocket_enabled: Bool, jitter_per_mille: I32) => {
+const plan_response_retry: [I64, I64, Bool, &RetryError, Bool, Bool, I32] -> RetryPlan = (
+  retries: I64,
+  max_retries: I64,
+  fallback_switched: Bool,
+  error: &RetryError,
+  debug_build: Bool,
+  websocket_enabled: Bool,
+  jitter_per_mille: I32,
+) => {
   if retries >= max_retries && fallback_switched {
-    `Fallback (text_append(["Falling back from WebSockets to HTTPS transport. ", text_copy(&error.message)]))
+    `Fallback (
+      text_append ["Falling back from WebSockets to HTTPS transport. ", text_copy(&error.message)]
+    )
   } else if retries < max_retries {
-    let retry_count = retries + 1i64
-    let report_error = retry_count > 1i64 || debug_build || !(websocket_enabled)
-    let notification: Text = text_append(["Reconnecting... ", text_append([format_i64(retry_count), text_append(["/", format_i64(max_retries)])])])
-    let directive: RetryDirective = [.retries = retry_count, .delay = retry_delay(error, retry_count, jitter_per_mille), .report_error = report_error, .notification = notification]
+    let retry_count = retries + 1i64;
+    let report_error = retry_count > 1i64 || debug_build || !(websocket_enabled);
+    let notification: Text = text_append [
+      "Reconnecting... ",
+      text_append [format_i64 retry_count, text_append ["/", format_i64 max_retries]],
+    ];
+    let directive: RetryDirective = [
+      .retries = retry_count,
+      .delay = retry_delay(error, retry_count, jitter_per_mille),
+      .report_error = report_error,
+      .notification = notification,
+    ];
     `Retry directive
   } else {
     `Fail (text_copy(&error.message))
   }
-}
+};
 
 return {
-  plan_response_retry,
-}
+  .plan_response_retry,
+};

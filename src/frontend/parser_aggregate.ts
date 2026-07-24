@@ -13,7 +13,7 @@ import { ParserParams } from "./parser_params.ts";
 import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 
 export abstract class ParserAggregate extends ParserParams {
-  protected abstract parse_expr(): FrontExpr;
+  protected abstract override parse_expr(): FrontExpr;
 
   protected parse_bracket_value(): FrontExpr {
     const start = this.index;
@@ -82,6 +82,10 @@ export abstract class ParserAggregate extends ParserParams {
     let rest: FrontExpr | undefined;
 
     while (true) {
+      if (this.match_symbol("]")) {
+        break;
+      }
+
       if (this.match_rest_prefix()) {
         rest = this.parse_expr();
         this.skip_newlines();
@@ -122,7 +126,7 @@ export abstract class ParserAggregate extends ParserParams {
 
     while (!this.match_symbol("}")) {
       const entry_start = this.index;
-      const explicit = this.match_symbol(".");
+      this.expect_symbol(".");
       const label_token = this.peek();
       const label = this.expect_name("Expected shape member name");
       expect_snake_case(label, "Shape member");
@@ -130,8 +134,7 @@ export abstract class ParserAggregate extends ParserParams {
       names.add(label);
       let value: FrontExpr;
 
-      if (explicit) {
-        this.expect_symbol("=");
+      if (this.match_symbol("=")) {
         value = this.parse_expr();
       } else {
         value = this.concrete_node(entry_start, { tag: "var", name: label });
@@ -198,6 +201,10 @@ export abstract class ParserAggregate extends ParserParams {
     const entries = [first];
 
     while (true) {
+      if (this.match_symbol(")")) {
+        break;
+      }
+
       const entry = this.parse_product_expr_entry();
       expect(
         entry.label === undefined,
@@ -247,6 +254,10 @@ export abstract class ParserAggregate extends ParserParams {
     const entries = [first];
 
     while (true) {
+      if (this.match_symbol(")")) {
+        break;
+      }
+
       const entry = this.parse_product_expr_entry();
       expect(
         entry.label === undefined,
@@ -309,7 +320,6 @@ export abstract class ParserAggregate extends ParserParams {
 
   protected is_shape_literal(
     offset = 0,
-    allow_single_shorthand = false,
   ): boolean {
     if (
       this.peek(offset).kind !== "symbol" || this.peek(offset).text !== "{"
@@ -331,30 +341,12 @@ export abstract class ParserAggregate extends ParserParams {
 
     if (
       this.peek(offset).kind === "symbol" &&
-      this.peek(offset).text === "." &&
-      this.peek(offset + 1).kind === "name" &&
-      this.peek(offset + 2).kind === "symbol" &&
-      this.peek(offset + 2).text === "="
+      this.peek(offset).text === "."
     ) {
       return true;
     }
 
-    if (this.peek(offset).kind !== "name") {
-      return false;
-    }
-
-    if (allow_single_shorthand) {
-      return true;
-    }
-
-    offset += 1;
-
-    while (this.peek(offset).kind === "newline") {
-      offset += 1;
-    }
-
-    return this.peek(offset).kind === "symbol" &&
-      this.peek(offset).text === ",";
+    return false;
   }
 
   protected is_computed_type_member_literal(offset = 0): boolean {
@@ -465,8 +457,7 @@ export abstract class ParserAggregate extends ParserParams {
       const token = this.peek();
 
       if (
-        (brackets === 0 && parens === 0 && token.kind === "newline" &&
-          token.raw !== ";") ||
+        (brackets === 0 && parens === 0 && token.kind === "newline") ||
         (brackets === 0 && parens === 0 && token.kind === "symbol" &&
           (token.text === "," || token.text === "}"))
       ) {

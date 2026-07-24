@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "duck:prelude/types" ()
-const { text_append } = import "duck:prelude/text" ()
-const {} = import "./tool_types.duck" ()
+const {} = import "duck:prelude/types" ();
+const { .text_append } = import "duck:prelude/text" ();
+const {} = import "./tool_types.duck" ();
 
 type PlanToolDefinition = ToolDefinition
 type PlanToolDefinitionNode = ToolDefinitionNode
@@ -12,25 +12,45 @@ type PlanToolSpec = ToolSpec
 type PlanToolSpecNode = ToolSpecNode
 type PlanToolSpecs = ToolSpecs
 
-const update_plan_tool_name: () -> PlanToolName = () => ["", "update_plan"]
+const update_plan_tool_name: () -> PlanToolName = () => ["", "update_plan"];
 
 const update_plan_tool_definitions: () -> PlanToolDefinitions = () => {
-  let definition: PlanToolDefinition = [update_plan_tool_name(), `Direct (), `UpdatePlan (), `FunctionPayload (), false, false]
-  let empty: PlanToolDefinitions = `Nil ()
+  let definition: PlanToolDefinition = [
+    update_plan_tool_name(),
+    `Direct (),
+    `UpdatePlan (),
+    `FunctionPayload (),
+    false,
+    false,
+  ];
+  let empty: PlanToolDefinitions = `Nil ();
   `Cons ([definition, empty] as PlanToolDefinitionNode)
-}
+};
 
 const update_plan_tool_specs: () -> PlanToolSpecs = () => {
-  let description_tail = text_append("Provide an optional explanation and a list of plan items, each with a step and status.\n", "At most one step can be in_progress at a time.\n")
-  let description: Text = text_append("Updates the task plan.\n", description_tail)
-  let parameters: Text = text_append("{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}", "")
-  let spec: PlanToolSpec = [update_plan_tool_name(), `FunctionSpec (), description, parameters, `ToolOutputSchemaMissing (), false]
-  let empty: PlanToolSpecs = `Nil ()
+  let description_tail = text_append(
+    "Provide an optional explanation and a list of plan items, each with a step and status.\n",
+    "At most one step can be in_progress at a time.\n",
+  );
+  let description: Text = text_append("Updates the task plan.\n", description_tail);
+  let parameters: Text = text_append(
+    "{\"type\":\"object\",\"properties\":{\"explanation\":{\"type\":\"string\",\"description\":\"Optional explanation for this plan update.\"},\"plan\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"status\":{\"type\":\"string\",\"enum\":[\"pending\",\"in_progress\",\"completed\"],\"description\":\"Step status.\"},\"step\":{\"type\":\"string\",\"description\":\"Task step text.\"}},\"required\":[\"step\",\"status\"],\"additionalProperties\":false},\"description\":\"The list of steps\"}},\"required\":[\"plan\"],\"additionalProperties\":false}",
+    "",
+  );
+  let spec: PlanToolSpec = [
+    update_plan_tool_name(),
+    `FunctionSpec (),
+    description,
+    parameters,
+    `ToolOutputSchemaMissing (),
+    false,
+  ];
+  let empty: PlanToolSpecs = `Nil ();
   `Cons ([spec, empty] as PlanToolSpecNode)
-}
+};
 
 return {
-  update_plan_tool_definitions,
-  update_plan_tool_name,
-  update_plan_tool_specs,
-}
+  .update_plan_tool_definitions,
+  .update_plan_tool_name,
+  .update_plan_tool_specs,
+};

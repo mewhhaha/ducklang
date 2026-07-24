@@ -1,33 +1,45 @@
 module () where
 
-const { text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./agent_tool_types.duck" ()
-const { normalize_wait_timeout, validate_collab_input } = import "./agent_input_policy.duck" ()
-const { resolve_agent_path } = import "./agent_path.duck" ()
+const { .text_trim_ascii_whitespace } = import "duck:prelude/runtime" ();
+const {} = import "./agent_tool_types.duck" ();
+const { .normalize_wait_timeout, .validate_collab_input } = import "./agent_input_policy.duck" ();
+const { .resolve_agent_path } = import "./agent_path.duck" ();
 
-const plan_agent_message: [AgentToolContext, AgentToolMessageArguments, Bool] -> AgentToolPlan = (context, arguments, followup) => {
-  let validated = validate_collab_input(`Some arguments.message, -1)
-  if let `InputRejected message = validated { return `AgentToolRejected message }
+const plan_agent_message: [AgentToolContext, AgentToolMessageArguments, Bool] -> AgentToolPlan = (
+  context,
+  arguments,
+  followup,
+) => {
+  let validated = validate_collab_input(`Some arguments.message, -1);
+  if let `InputRejected message = validated { return `AgentToolRejected message; }
 
-  let target = resolve_agent_path(context.current_path, arguments.target)
-  if let `InvalidPath message = target { return `AgentToolRejected message }
+  let target = resolve_agent_path(context.current_path, arguments.target);
+  if let `InvalidPath message = target { return `AgentToolRejected message; }
   if let `Path path = target {
-    if followup && path == "/root" { return `AgentToolRejected "Follow-up tasks can't target the root agent" }
-    if followup { `FollowupTaskPlanned [path, arguments.message] } else { `SendMessagePlanned [path, arguments.message] }
+    if followup && path == "/root" { return `AgentToolRejected
+      "Follow-up tasks can't target the root agent"; }
+    if followup { `FollowupTaskPlanned [path, arguments.message] } else { `SendMessagePlanned [
+      path,
+      arguments.message,
+    ] }
   } else {
     `AgentToolRejected "agent target resolution produced no path"
   }
-}
+};
 
-const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> AgentToolPlan = (context, operation) => {
-  if !(context.v2_enabled) { return `AgentToolRejected "collaboration tools require multi-agent V2" }
+const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> AgentToolPlan = (
+  context,
+  operation,
+) => {
+  if !(context.v2_enabled) { return `AgentToolRejected "collaboration tools require multi-agent V2";
+  }
 
   if let `SendMessageCall arguments = operation {
     plan_agent_message(context, arguments, false)
   } else if let `FollowupTaskCall arguments = operation {
     plan_agent_message(context, arguments, true)
   } else if let `InterruptAgentCall target = operation {
-    let resolved = resolve_agent_path(context.current_path, target)
+    let resolved = resolve_agent_path(context.current_path, target);
     if let `Path path = resolved {
       if path == "/root" {
         `AgentToolRejected "root is not a spawned agent"
@@ -42,7 +54,7 @@ const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> 
       `AgentToolRejected "agent interrupt target resolution produced no path"
     }
   } else if let `WaitAgentCall timeout = operation {
-    let normalized = normalize_wait_timeout timeout
+    let normalized = normalize_wait_timeout timeout;
     if let `Timeout timeout_ms = normalized {
       `WaitAgentPlanned timeout_ms
     } else if let `InvalidTimeout message = normalized {
@@ -55,7 +67,7 @@ const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> 
       if text_trim_ascii_whitespace requested_prefix == "" {
         `AgentToolRejected "path_prefix must not be empty"
       } else {
-        let resolved = resolve_agent_path(context.current_path, requested_prefix)
+        let resolved = resolve_agent_path(context.current_path, requested_prefix);
         if let `Path path = resolved {
           `ListAgentsPlanned (`Some path)
         } else if let `InvalidPath message = resolved {
@@ -70,6 +82,6 @@ const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> 
   } else {
     `AgentToolRejected "collaboration handler received unsupported payload"
   }
-}
+};
 
-return { plan_agent_control_call }
+return { .plan_agent_control_call };

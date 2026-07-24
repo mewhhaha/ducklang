@@ -1,4 +1,4 @@
-let choice = 3
+let choice = 3;
 
 let result = if choice == 1 {
   10
@@ -8,6 +8,6 @@ let result = if choice == 1 {
   42
 } else {
   0
-}
+};
 
 result

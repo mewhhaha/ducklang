@@ -213,7 +213,7 @@ function validate_file_module(source: SourceNode, url: URL): void {
 
   if (!last || last.tag !== "return" || !is_module_record(last.value)) {
     throw new Error(
-      "File module must end with `return { ... }`: " + url.pathname,
+      "File module must end with `return { ... };`: " + url.pathname,
     );
   }
 }

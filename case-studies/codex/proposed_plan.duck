@@ -1,0 +1,220 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const { .text_append, .text_find, .text_length, .text_slice, .text_starts_with, .text_trim_whitespace } =
+  import "duck:prelude/text" ()
+const {} = import "./proposed_plan_types.duck" ();
+
+type PlanParser = ProposedPlanParser
+type PlanSegment = ProposedPlanSegment
+type PlanSegments = ProposedPlanSegments
+type PlanChunk = ProposedPlanChunk
+type PlanTextOption = ProposedPlanTextOption
+
+const segments = comptime list PlanSegment;
+const proposed_plan_open = "<proposed_plan>";
+const proposed_plan_close = "</proposed_plan>";
+
+const new_proposed_plan_parser: () -> PlanParser = () => {
+  [.inside_plan = false, .detect_tag = true, .line_buffer = ""]
+};
+
+const append_stream_text_to_reversed: [Bool, Text, PlanSegments] -> PlanSegments = (
+  inside_plan: Bool,
+  text: Text,
+  reversed: PlanSegments,
+) => {
+  let updated = reversed;
+
+  if text != "" {
+    if let `Cons node = reversed {
+      let typed_node: ListNode PlanSegment = node;
+      let [latest, tail] = typed_node;
+
+      if inside_plan {
+        if let `ProposedPlanDelta existing = latest {
+          let merged: PlanSegment = `ProposedPlanDelta (text_append [existing, text]);
+          updated = segments.prepend(merged, tail)
+        } else {
+          updated = segments.prepend(`ProposedPlanDelta text, reversed)
+        }
+      } else {
+        if let `Normal existing = latest {
+          let merged: PlanSegment = `Normal (text_append [existing, text]);
+          updated = segments.prepend(merged, tail)
+        } else {
+          updated = segments.prepend(`Normal text, reversed)
+        }
+      }
+    } else {
+      if inside_plan {
+        updated = segments.prepend(`ProposedPlanDelta text, reversed)
+      } else {
+        updated = segments.prepend(`Normal text, reversed)
+      }
+    }
+  }
+
+  updated
+};
+
+const push_proposed_plan_chunk: [PlanParser, Text] -> PlanChunk = (parser: PlanParser, chunk:
+  Text) => {
+    let remaining = chunk;
+    let line_buffer = parser.line_buffer;
+    let inside_plan = parser.inside_plan;
+    let detect_tag = parser.detect_tag;
+    let visible_text = "";
+    let reversed: PlanSegments = segments.empty();
+
+    loop {
+      if text_length remaining == 0 {
+        break;
+      }
+
+      let newline_index = text_find [remaining, "\n"];
+
+      if detect_tag {
+        if newline_index >= 0 {
+          let line_end = newline_index + 1;
+          let line = text_append [line_buffer, text_slice [remaining, 0, line_end]];
+          remaining = text_slice [remaining, line_end, text_length remaining]
+          line_buffer = ""
+          let slug = text_trim_whitespace line;
+
+          if slug == proposed_plan_open && !(inside_plan) {
+            reversed = segments.prepend(`ProposedPlanStart (), reversed)
+            inside_plan = true
+          } else if slug == proposed_plan_close && inside_plan {
+            reversed = segments.prepend(`ProposedPlanEnd (), reversed)
+            inside_plan = false
+          } else {
+            reversed = append_stream_text_to_reversed(inside_plan, line, reversed)
+            if !(inside_plan) {
+              visible_text = text_append [visible_text, line]
+            }
+          }
+        } else {
+          let candidate = text_append [line_buffer, remaining];
+          remaining = ""
+          let slug = text_trim_whitespace candidate;
+          let may_be_tag = text_starts_with [proposed_plan_open, slug] || text_starts_with [
+            proposed_plan_close,
+            slug,
+          ];
+
+          if may_be_tag {
+            line_buffer = candidate
+          } else {
+            reversed = append_stream_text_to_reversed(inside_plan, candidate, reversed)
+            if !(inside_plan) {
+              visible_text = text_append [visible_text, candidate]
+            }
+            line_buffer = ""
+            detect_tag = false
+          }
+        }
+      } else {
+        if newline_index >= 0 {
+          let line_end = newline_index + 1;
+          let streamed = text_slice [remaining, 0, line_end];
+          remaining = text_slice [remaining, line_end, text_length remaining]
+          reversed = append_stream_text_to_reversed(inside_plan, streamed, reversed)
+          if !(inside_plan) {
+            visible_text = text_append [visible_text, streamed]
+          }
+          detect_tag = true
+        } else {
+          reversed = append_stream_text_to_reversed(inside_plan, remaining, reversed)
+          if !(inside_plan) {
+            visible_text = text_append [visible_text, remaining]
+          }
+          remaining = ""
+        }
+      }
+    }
+
+    let next_parser: PlanParser = [
+      .inside_plan = inside_plan,
+      .detect_tag = detect_tag,
+      .line_buffer = line_buffer,
+    ];
+    [next_parser, visible_text, segments.reverse(reversed)];
+  };
+
+const finish_proposed_plan: PlanParser -> PlanChunk = (parser: PlanParser) => {
+  let inside_plan = parser.inside_plan;
+  let visible_text = "";
+  let reversed: PlanSegments = segments.empty();
+
+  if parser.line_buffer != "" {
+    let slug = text_trim_whitespace parser.line_buffer;
+
+    if slug == proposed_plan_open && !(inside_plan) {
+      reversed = segments.prepend(`ProposedPlanStart (), reversed)
+      inside_plan = true
+    } else if slug == proposed_plan_close && inside_plan {
+      reversed = segments.prepend(`ProposedPlanEnd (), reversed)
+      inside_plan = false
+    } else {
+      reversed = append_stream_text_to_reversed(inside_plan, parser.line_buffer, reversed)
+      if !(inside_plan) {
+        visible_text = parser.line_buffer
+      }
+    }
+  }
+
+  if inside_plan {
+    reversed = segments.prepend(`ProposedPlanEnd (), reversed)
+  }
+
+  [new_proposed_plan_parser(), visible_text, segments.reverse(reversed)]
+};
+
+const strip_proposed_plan_blocks = (text: Text) => {
+  let pushed = push_proposed_plan_chunk(new_proposed_plan_parser(), text);
+  let [parser, visible_text, _] = pushed;
+  let finished = finish_proposed_plan parser;
+  let [_, tail, _] = finished;
+  text_append [visible_text, tail]
+};
+
+const extract_proposed_plan_text: Text -> PlanTextOption = text => {
+  let pushed = push_proposed_plan_chunk(new_proposed_plan_parser(), text);
+  let [parser, _, pushed_segments] = pushed;
+  let finished = finish_proposed_plan parser;
+  let [_, _, finished_segments] = finished;
+  let current = segments.append(pushed_segments, finished_segments);
+  let extracted = "";
+  let saw_plan = false;
+
+  loop {
+    if let `Cons node = current {
+      let typed_node: ListNode PlanSegment = node;
+      let [segment, tail] = typed_node;
+
+      match segment {
+        | `ProposedPlanStart () => {
+          saw_plan = true
+          extracted = ""
+        }
+        | `ProposedPlanDelta delta => { extracted = text_append [extracted, delta] }
+        | _ => ()
+      }
+
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  if saw_plan { `Some extracted } else { `None () }
+};
+
+return {
+  .new_proposed_plan_parser,
+  .push_proposed_plan_chunk,
+  .finish_proposed_plan,
+  .strip_proposed_plan_blocks,
+  .extract_proposed_plan_text,
+};

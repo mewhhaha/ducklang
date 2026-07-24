@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./audio_types.duck" ()
-const { prepare_audio_payload } = import "./audio_payload.duck" ()
+const {} = import "./audio_types.duck" ();
+const { .prepare_audio_payload } = import "./audio_payload.duck" ();
 
 type FixtureDataUrl = ParsedAudioDataUrl
 type AudioPayloadCase = [FixtureDataUrl, I32, I32]
@@ -9,37 +9,44 @@ type AudioPayloadCases = List AudioPayloadCase
 type AudioPayloadCaseNode = ListNode AudioPayloadCase
 
 const verify_audio_payload_fixture: () -> I32 = () => {
-  let valid: FixtureDataUrl = [.mime = "audio/x-wav", .payload = "YXVkaW8="]
-  let valid_for_invalid_code: FixtureDataUrl = [.mime = "audio/x-wav", .payload = "YXVkaW8="]
-  let malformed: FixtureDataUrl = [.mime = "audio/wav", .payload = "YR=="]
-  let cases: AudioPayloadCases = `Nil ()
-  let case_node: AudioPayloadCaseNode = [[valid_for_invalid_code, 9, 2], cases]
+  let valid: FixtureDataUrl = [.mime = "audio/x-wav", .payload = "YXVkaW8="];
+  let valid_for_invalid_code: FixtureDataUrl = [.mime = "audio/x-wav", .payload = "YXVkaW8="];
+  let unsupported: FixtureDataUrl = [.mime = "audio/flac", .payload = "YXVkaW8="];
+  let malformed: FixtureDataUrl = [.mime = "audio/wav", .payload = "YR=="];
+  let cases: AudioPayloadCases = `Nil ();
+  let case_node: AudioPayloadCaseNode = [[valid_for_invalid_code, 9, 2], cases];
+  cases = `Cons case_node
+  case_node = [[unsupported, 5, 3], cases]
   cases = `Cons case_node
   case_node = [[malformed, 0, 1], cases]
   cases = `Cons case_node
   case_node = [[valid, 0, 0], cases]
   cases = `Cons case_node
-  let score = 0
+  let score = 0;
 
   loop {
     if let `Cons node = cases {
-      let [payload_case, tail] = node
-      let [parsed, code, expected] = payload_case
-      let result = prepare_audio_payload(parsed, code)
+      let [payload_case, tail] = node;
+      let [parsed, code, expected] = payload_case;
+      let result = prepare_audio_payload(parsed, code);
       if expected == 0 {
-        if result.status_code == 0 && result.url == "data:audio/wav;base64,YXVkaW8=" { score = score + 1 }
+        if result.status_code == 0 && result.url == "data:audio/wav;base64,YXVkaW8=" { score = score
+          + 1 }
       } else if expected == 1 {
-        if result.status_code == 1 && result.reason == "invalid base64 payload" { score = score + 10 }
+        if result.status_code == 1 && result.reason == "invalid base64 payload" { score = score + 10
+        }
       } else if result.status_code == 2 && result.format_code == 9 {
         score = score + 100
+      } else if result.status_code == 3 && result.mime == "audio/flac" {
+        score = score + 1000
       }
       cases = tail
     } else {
-      break
+      break;
     }
   }
 
   score
-}
+};
 
-return { verify_audio_payload_fixture }
+return { .verify_audio_payload_fixture };

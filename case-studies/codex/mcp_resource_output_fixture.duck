@@ -1,8 +1,9 @@
 module () where
 
-const { text_length } = import "duck:prelude/runtime" ()
-const {} = import "./mcp_resource_types.duck" ()
-const { bound_resource_output, list_payload_json, read_payload_json } = import "./mcp_resource_output.duck" ()
+const { .text_length } = import "duck:prelude/runtime" ();
+const {} = import "./mcp_resource_types.duck" ();
+const { .bound_resource_output, .list_payload_json, .read_payload_json } =
+  import "./mcp_resource_output.duck" ();
 
 type FixtureOperation = McpResourceOperation
 type FixtureListArgs = McpResourceListArgs
@@ -14,36 +15,36 @@ type FixtureTextOption = McpResourceTextOption
 type FixtureTextNode = McpResourceTextNode
 type FixtureTexts = McpResourceTexts
 
-let beta_values: FixtureTexts = `Nil ()
-let beta_value_node: FixtureTextNode = ["{\"uri\":\"memo://b\",\"name\":\"b\"}", beta_values]
+let beta_values: FixtureTexts = `Nil ();
+let beta_value_node: FixtureTextNode = ["{\"uri\":\"memo://b\",\"name\":\"b\"}", beta_values];
 beta_values = `Cons beta_value_node
-let beta: FixturePage = [.server = "beta", .values = beta_values, .next_cursor = `None ()]
-let alpha_values: FixtureTexts = `Nil ()
-let alpha_second_node: FixtureTextNode = ["{\"uri\":\"memo://a-2\",\"name\":\"a-2\"}", alpha_values]
+let beta: FixturePage = [.server = "beta", .values = beta_values, .next_cursor = `None ()];
+let alpha_values: FixtureTexts = `Nil ();
+let alpha_second_node: FixtureTextNode = ["{\"uri\":\"memo://a-2\",\"name\":\"a-2\"}", alpha_values];
 alpha_values = `Cons alpha_second_node
-let alpha_first_node: FixtureTextNode = ["{\"uri\":\"memo://a-1\",\"name\":\"a-1\"}", alpha_values]
+let alpha_first_node: FixtureTextNode = ["{\"uri\":\"memo://a-1\",\"name\":\"a-1\"}", alpha_values];
 alpha_values = `Cons alpha_first_node
-let alpha: FixturePage = [.server = "alpha", .values = alpha_values, .next_cursor = `None ()]
-let beta_node: FixturePageNode = [beta, `Nil ()]
-let alpha_node: FixturePageNode = [alpha, `Cons beta_node]
-let values: FixturePages = `Cons alpha_node
+let alpha: FixturePage = [.server = "alpha", .values = alpha_values, .next_cursor = `None ()];
+let beta_node: FixturePageNode = [beta, `Nil ()];
+let alpha_node: FixturePageNode = [alpha, `Cons beta_node];
+let values: FixturePages = `Cons alpha_node;
 
-let score = 0
-let list_args: FixtureListArgs = [.server = `None (), .cursor = `None ()]
-let list_operation: FixtureOperation = `ListResources list_args
-let listed = list_payload_json(list_operation, values, false)
+let score = 0;
+let list_args: FixtureListArgs = [.server = `None (), .cursor = `None ()];
+let list_operation: FixtureOperation = `ListResources list_args;
+let listed = list_payload_json(list_operation, values, false);
 if let `ResourceText output = listed {
   if output == "{\"resources\":[{\"server\":\"alpha\",\"uri\":\"memo://a-1\",\"name\":\"a-1\"},{\"server\":\"alpha\",\"uri\":\"memo://a-2\",\"name\":\"a-2\"},{\"server\":\"beta\",\"uri\":\"memo://b\",\"name\":\"b\"}]}" { score = score + 1 }
 }
 
-let read_args: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"]
-let read_operation: FixtureOperation = `ReadResource read_args
-let read = read_payload_json(read_operation, "{\"contents\":[{\"text\":\"hello\"}]}")
+let read_args: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"];
+let read_operation: FixtureOperation = `ReadResource read_args;
+let read = read_payload_json(read_operation, "{\"contents\":[{\"text\":\"hello\"}]}");
 if let `ResourceText output = read {
   if output == "{\"server\":\"docs\",\"uri\":\"skill://alpha\",\"contents\":[{\"text\":\"hello\"}]}" { score = score + 10 }
 }
 
-let bounded = bound_resource_output("abcdefghijklmnopqrstuvwxyz", 10)
+let bounded = bound_resource_output("abcdefghijklmnopqrstuvwxyz", 10);
 if text_length bounded == 12 { score = score + 100 }
 
-return { .score = score }
+return { .score = score };

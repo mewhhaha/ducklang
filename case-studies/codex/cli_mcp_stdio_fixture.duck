@@ -1,27 +1,33 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_mcp_add } = import "./cli_mcp.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_mcp_add } = import "./cli_mcp.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexMcpCommandResult
 type FixtureEnvPair = CodexMcpEnvPair
 
-const args = comptime list(Text)
-const env = comptime list(FixtureEnvPair)
+const args = comptime list Text;
+const env = comptime list FixtureEnvPair;
 
-let input: FixtureArgs = args.prepend("server-a", args.prepend("--env", args.prepend("MODE=fast", args.prepend("--", args.prepend("deno", args.singleton("serve"))))))
-let parsed: FixtureResult = parse_mcp_add(input)
-let score = 0
+let input: FixtureArgs = args.prepend(
+  "server-a",
+  args.prepend(
+    "--env",
+    args.prepend("MODE=fast", args.prepend("--", args.prepend("deno", args.singleton("serve")))),
+  ),
+);
+let parsed: FixtureResult = parse_mcp_add input;
+let score = 0;
 
 if let `Ok command = parsed {
   if let `McpAddStdio options = command {
     if options.name == "server-a" && args.length(options.command) == 2 && env.length(options.env) == 1 {
-      let first_command = args.nth_or("", 0, options.command)
-      let second_command = args.nth_or("", 1, options.command)
-      let pair = env.nth_or(["", ""], 0, options.env)
-      let [key, value] = pair
+      let first_command = args.nth_or("", 0, options.command);
+      let second_command = args.nth_or("", 1, options.command);
+      let pair = env.nth_or(["", ""], 0, options.env);
+      let [key, value] = pair;
       if first_command == "deno" && second_command == "serve" && key == "MODE" && value == "fast" {
         score = 1
       }
@@ -29,4 +35,4 @@ if let `Ok command = parsed {
   }
 }
 
-return { .score = score }
+return { .score = score };

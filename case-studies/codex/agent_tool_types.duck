@@ -1,8 +1,8 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_types.duck" ()
-const {} = import "./agent_spawn_override_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_types.duck" ();
+const {} = import "./agent_spawn_override_types.duck" ();
 
 type AgentToolRegistrationConfig = struct {
   .enabled = Bool,
@@ -127,4 +127,4 @@ type AgentToolListDecodeResult =
   | `AgentListDecoded AgentTextOption
   | `AgentListDecodeFailed Text
 
-return {}
+return {};

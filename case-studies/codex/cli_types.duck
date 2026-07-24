@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type CodexCliArgs = List Text
 type CodexCliCommand =
@@ -731,4 +731,4 @@ type CodexCliPlan =
   | `RunSandbox CodexSandboxOptions
   | `Invalid Text
 
-return {}
+return {};

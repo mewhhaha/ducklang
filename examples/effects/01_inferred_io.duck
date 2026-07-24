@@ -13,7 +13,7 @@ let greet = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 
-result <- greet()
-return { .result = result }
+result <- greet();
+return { .result = result };

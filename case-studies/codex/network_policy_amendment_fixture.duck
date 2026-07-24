@@ -1,0 +1,117 @@
+module () where
+
+const {} = import "./network_policy_amendment_types.duck" ();
+const { .execpolicy_network_rule_amendment } = import "./network_policy_amendment.duck" ();
+
+type FixturePolicyAmendment = NetworkPolicyAmendment
+type FixtureApprovalContext = NetworkPolicyApprovalContext
+type FixtureAmendmentCase = [FixturePolicyAmendment, FixtureApprovalContext, Text, Text, I32, Bool]
+type FixtureAmendmentCases = List FixtureAmendmentCase
+type FixtureAmendmentCaseNode = ListNode FixtureAmendmentCase
+
+const verify_network_policy_amendment_fixture: () -> I32 = () => {
+  let cases: FixtureAmendmentCases = `Nil ();
+
+  let udp_amendment: FixturePolicyAmendment = [.host = "ignored.example", .action = `DenyRule ()];
+  let udp_context: FixtureApprovalContext = [
+    .host = "context.example",
+    .protocol = `PolicySocks5Udp (),
+  ];
+  let udp_case: FixtureAmendmentCase = [
+    udp_amendment,
+    udp_context,
+    "blocked.example",
+    "Deny socks5_udp access to blocked.example",
+    4,
+    true,
+  ];
+  let udp_node: FixtureAmendmentCaseNode = [udp_case, cases];
+  cases = `Cons udp_node
+
+  let tcp_amendment: FixturePolicyAmendment = [.host = "ignored.example", .action = `AllowRule ()];
+  let tcp_context: FixtureApprovalContext = [
+    .host = "context.example",
+    .protocol = `PolicySocks5Tcp (),
+  ];
+  let tcp_case: FixtureAmendmentCase = [
+    tcp_amendment,
+    tcp_context,
+    "proxy.example",
+    "Allow socks5_tcp access to proxy.example",
+    3,
+    false,
+  ];
+  let tcp_node: FixtureAmendmentCaseNode = [tcp_case, cases];
+  cases = `Cons tcp_node
+
+  let https_amendment: FixturePolicyAmendment = [.host = "ignored.example", .action = `DenyRule ()];
+  let https_context: FixtureApprovalContext = [
+    .host = "context.example",
+    .protocol = `PolicyHttps (),
+  ];
+  let https_case: FixtureAmendmentCase = [
+    https_amendment,
+    https_context,
+    "secure.example",
+    "Deny https_connect access to secure.example",
+    2,
+    true,
+  ];
+  let https_node: FixtureAmendmentCaseNode = [https_case, cases];
+  cases = `Cons https_node
+
+  let http_amendment: FixturePolicyAmendment = [
+    .host = "untrimmed.example",
+    .action = `AllowRule (),
+  ];
+  let http_context: FixtureApprovalContext = [.host = "context.example", .protocol = `PolicyHttp ()];
+  let http_case: FixtureAmendmentCase = [
+    http_amendment,
+    http_context,
+    "normalized.example",
+    "Allow http access to normalized.example",
+    1,
+    false,
+  ];
+  let http_node: FixtureAmendmentCaseNode = [http_case, cases];
+  cases = `Cons http_node
+
+  let score = 0;
+  loop {
+    if let `Cons node = cases {
+      let [amendment_case, tail] = node;
+      let [amendment, context, host, expected_justification, expected_protocol,
+        expected_forbidden] = amendment_case;
+      let projected = execpolicy_network_rule_amendment(amendment, context, host);
+      let protocol = 0;
+      if let `ExecHttp () = projected.protocol {
+        protocol = 1
+      } else if let `ExecHttps () = projected.protocol {
+        protocol = 2
+      } else if let `ExecSocks5Tcp () = projected.protocol {
+        protocol = 3
+      } else if let `ExecSocks5Udp () = projected.protocol {
+        protocol = 4
+      }
+      let forbidden = false;
+      if let `ExecForbidden () = projected.decision {
+        forbidden = true
+      }
+      let decision_matches = false;
+      if expected_forbidden {
+        decision_matches = forbidden
+      } else {
+        decision_matches = !(forbidden)
+      }
+      if protocol == expected_protocol && decision_matches && projected.justification == expected_justification {
+        score = score + 1
+      }
+      cases = tail
+    } else {
+      break;
+    }
+  }
+  score
+};
+
+return { .verify_network_policy_amendment_fixture };

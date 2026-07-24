@@ -11,4 +11,4 @@ declare Init {
   exec_events: ExecEvents
 }
 
-return {}
+return {};

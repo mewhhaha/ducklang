@@ -1,27 +1,39 @@
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { materialize_thread_goal_set_response } = import "./app_server_goal_responses.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .materialize_thread_goal_set_response } = import "./app_server_goal_responses.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureGoal = AppServerThreadGoal
 
-let goal: FixtureGoal = ["thread-1", "Ship Codex", `GoalBudgetLimited (), `Some 1000i64, 800i64, 60i64, 10i64, 20i64]
-let response = materialize_thread_goal_set_response(goal)
-let score = 0
+let goal: FixtureGoal = [
+  "thread-1",
+  "Ship Codex",
+  `GoalBudgetLimited (),
+  `Some 1000i64,
+  800i64,
+  60i64,
+  10i64,
+  20i64,
+];
+let response = materialize_thread_goal_set_response goal;
+let score = 0;
 if let `Object fields = response {
   if let `Found value = json_object_get("goal", fields) {
     if let `Object goal_fields = value {
-      let status_valid = false
-      let status_lookup = json_object_get("status", goal_fields)
-      if let `Found status_json = status_lookup { if let `String status = status_json { status_valid = status == "budgetLimited" } }
-      let budget_valid = false
-      let budget_lookup = json_object_get("tokenBudget", goal_fields)
-      if let `Found budget_json = budget_lookup { if let `Number budget = budget_json { budget_valid = budget == "1000" } }
-      let time_valid = false
-      let time_lookup = json_object_get("timeUsedSeconds", goal_fields)
-      if let `Found time_json = time_lookup { if let `Number time = time_json { time_valid = time == "60" } }
+      let status_valid = false;
+      let status_lookup = json_object_get("status", goal_fields);
+      if let `Found status_json = status_lookup { if let `String status = status_json { status_valid
+        = status == "budgetLimited" } }
+      let budget_valid = false;
+      let budget_lookup = json_object_get("tokenBudget", goal_fields);
+      if let `Found budget_json = budget_lookup { if let `Number budget = budget_json { budget_valid
+        = budget == "1000" } }
+      let time_valid = false;
+      let time_lookup = json_object_get("timeUsedSeconds", goal_fields);
+      if let `Found time_json = time_lookup { if let `Number time = time_json { time_valid = time ==
+        "60" } }
       if status_valid && budget_valid && time_valid { score = score + 1 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

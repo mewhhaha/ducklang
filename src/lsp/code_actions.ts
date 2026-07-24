@@ -250,7 +250,7 @@ export function code_actions(
         span.start,
         span.end,
         "let " + statement.name + " = @append(" + statement.name + ", " +
-          empty_value + ")\n" + mutation,
+          empty_value + ");\n" + mutation,
         diagnostics,
       );
     }
@@ -286,7 +286,7 @@ export function code_actions(
         span.start,
         span.end,
         "let " + statement.name + " = @Utf8.encode(" + statement.name +
-          ")\n" + mutation,
+          ");\n" + mutation,
         diagnostics,
       );
     }
@@ -811,7 +811,7 @@ export function code_actions(
       span.start,
       span.end,
       "let " + name + " = " + syntax.text.slice(span.start, span.end) +
-        "\n" + name,
+        ";\n" + name,
       [],
     );
   }

@@ -1,6 +1,6 @@
 module (!init: Init) where
 
-const _ = import "duck:prelude/runtime" ()
+const _ = import "duck:prelude/runtime" ();
 
 declare effect Host {
   print: (&Text) => I32
@@ -9,9 +9,9 @@ declare effect Host {
 declare Init { host: Host }
 
 let message = scratch {
-  let temporary: Text = "hel" <> "lo"
+  let temporary: Text = "hel" <> "lo";
   freeze temporary
-}
+};
 
 result <- Host.print(&message)
-return { .result = result }
+return { .result = result };

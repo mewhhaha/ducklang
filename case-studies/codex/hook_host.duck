@@ -8,4 +8,4 @@ declare Init {
   hook_command_host: HookCommandHost
 }
 
-return {}
+return {};

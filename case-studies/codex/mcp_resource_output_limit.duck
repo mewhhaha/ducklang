@@ -1,9 +1,9 @@
 module () where
 
-const { text_truncate_end_bytes } = import "duck:prelude/runtime" ()
+const { .text_truncate_end_bytes } = import "duck:prelude/runtime" ();
 
 const bound_resource_output: [Text, I32] -> Text = (output: Text, maximum_bytes: I32) => {
   if maximum_bytes <= 0 { output } else { text_truncate_end_bytes(output, (maximum_bytes * 6) / 5) }
-}
+};
 
-return { bound_resource_output }
+return { .bound_resource_output };

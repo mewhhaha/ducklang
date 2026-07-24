@@ -1,9 +1,10 @@
 module () where
 
-const { list, option } = import "duck:prelude/functional" ()
-const rollout_types_module = import "./rollout_types.duck"
-const rollout_module = import "./rollout.duck"
-const { is_persisted_rollout_item, persisted_rollout_items, response_is_persisted_for_memories } = rollout_module()
+const { .list, .option } = import "duck:prelude/functional" ();
+const rollout_types_module = import "./rollout_types.duck";
+const rollout_module = import "./rollout.duck";
+const { .is_persisted_rollout_item, .persisted_rollout_items, .response_is_persisted_for_memories } =
+  rollout_module()
 
 type FixtureHistoryMode = RolloutHistoryMode
 type FixtureResponse = RolloutResponse
@@ -12,26 +13,31 @@ type FixtureEvent = RolloutEvent
 type FixtureItem = RolloutItem
 type FixtureItems = RolloutItems
 
-const items = comptime list(FixtureItem)
+const items = comptime list FixtureItem;
 
-let score: I32 = 0
-let developer: FixtureResponse = `Message (["developer", false])
+let score: I32 = 0;
+let developer: FixtureResponse = `Message (["developer", false]);
 
-if is_persisted_rollout_item(`Response developer, `Paginated ()) && !(response_is_persisted_for_memories developer) {
+if is_persisted_rollout_item(`Response developer, `Paginated ()) && !(
+  response_is_persisted_for_memories developer
+) {
   score = score + 1
 }
 
-let agent_message: FixtureResponse = `AgentMessage ()
-if is_persisted_rollout_item(`Response agent_message, `Paginated ()) && response_is_persisted_for_memories agent_message {
-  score = score + 1000
-}
+let agent_message: FixtureResponse = `AgentMessage ();
+if is_persisted_rollout_item(`Response agent_message, `Paginated
+  ()) && response_is_persisted_for_memories agent_message {
+    score = score + 1000
+  }
 
-let completed_other: FixtureEvent = `ItemCompleted ["turn-2", `Other ()]
-if is_persisted_rollout_item(`Event completed_other, `Paginated ()) && !(is_persisted_rollout_item(`Event completed_other, `Legacy ())) {
+let completed_other: FixtureEvent = `ItemCompleted ["turn-2", `Other ()];
+if is_persisted_rollout_item(`Event completed_other, `Paginated ()) && !(
+  is_persisted_rollout_item(`Event completed_other, `Legacy ())
+) {
   score = score + 10
 }
 
-let raw: FixtureItems = items.empty()
+let raw: FixtureItems = items.empty();
 raw = items.prepend(`Response (`Other ()), raw)
 raw = items.prepend(`Event (`Transient ()), raw)
 raw = items.prepend(`Response (`FunctionCall ()), raw)
@@ -39,4 +45,4 @@ if items.length(persisted_rollout_items(raw, `Paginated ())) == 1 {
   score = score + 100
 }
 
-return { .score = score }
+return { .score = score };

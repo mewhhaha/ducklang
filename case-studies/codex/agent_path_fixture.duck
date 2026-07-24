@@ -1,16 +1,16 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const agents_module = import "./agents.duck"
-const { resolve_agent_path, validate_absolute_agent_path, valid_agent_name } = agents_module()
+const agent_types_module = import "./agent_types.duck";
+const agents_module = import "./agents.duck";
+const { .resolve_agent_path, .validate_absolute_agent_path, .valid_agent_name } = agents_module();
 
-let score: I32 = 0
+let score: I32 = 0;
 
-if valid_agent_name("researcher_2") {
+if valid_agent_name "researcher_2" {
   score = score + 1
 }
 
-if valid_agent_name("Bad") {
+if valid_agent_name "Bad" {
   ()
 } else {
   score = score + 10
@@ -20,8 +20,8 @@ if let `Path path = resolve_agent_path("/root/researcher", "worker") {
   if path == "/root/researcher/worker" { score = score + 100 }
 }
 
-if let `InvalidPath _ = validate_absolute_agent_path("/other") {
+if let `InvalidPath _ = validate_absolute_agent_path "/other" {
   score = score + 1000
 }
 
-return { .score = score }
+return { .score = score };

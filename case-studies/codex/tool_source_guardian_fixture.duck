@@ -1,7 +1,7 @@
-const { text_append } = import "duck:prelude/functional" ()
-const { tool_source_definitions } = import "./tool_source_plan.duck" ()
-const {} = import "./tool_source_types.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .tool_source_definitions } = import "./tool_source_plan.duck" ();
+const {} = import "./tool_source_types.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type FixtureEnvironment = ToolSourceEnvironment
 type FixtureFacts = ToolSourceFacts
@@ -30,22 +30,34 @@ const guardian_facts: FixtureEnvironment -> FixtureFacts = environment => {
     .tool_search = true,
     .agent_jobs = true,
     .agent_job_worker = true]
-}
+};
 
-let configured: FixtureDefinition = [["fixture", "configured"], `Deferred (), `Dynamic "configured", `FunctionPayload (), false, false]
-let configured_runtimes: FixtureDefinitions = `Cons ([configured, `Nil ()])
-let empty_extension_runtimes: FixtureDefinitions = `Nil ()
-let empty_dynamic_runtimes: FixtureDefinitions = `Nil ()
-let current = tool_source_definitions(guardian_facts(`MultipleEnvironments ()), configured_runtimes, empty_extension_runtimes, empty_dynamic_runtimes)
-let score = 0
-let trace = ""
-let handler_count = 0
-let done = false
+let configured: FixtureDefinition = [
+  ["fixture", "configured"],
+  `Deferred (),
+  `Dynamic "configured",
+  `FunctionPayload (),
+  false,
+  false,
+];
+let configured_runtimes: FixtureDefinitions = `Cons ([configured, `Nil ()]);
+let empty_extension_runtimes: FixtureDefinitions = `Nil ();
+let empty_dynamic_runtimes: FixtureDefinitions = `Nil ();
+let current = tool_source_definitions(
+  guardian_facts(`MultipleEnvironments ()),
+  configured_runtimes,
+  empty_extension_runtimes,
+  empty_dynamic_runtimes,
+);
+let score = 0;
+let trace = "";
+let handler_count = 0;
+let done = false;
 
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [[_, local_name], _, tool_handler, _, _, _] = definition
+    let [definition, tail] = node;
+    let [[_, local_name], _, tool_handler, _, _, _] = definition;
     trace = text_append [local_name, text_append ["|", trace]]
     if local_name == "exec_command" {
       if let `UnifiedExec () = tool_handler { handler_count = handler_count + 1 }
@@ -59,16 +71,21 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
 if trace == "view_image|write_stdin|exec_command|" { score = score + 1 }
 if handler_count == 3 { score = score + 10 }
-let empty_configured_runtimes: FixtureDefinitions = `Nil ()
+let empty_configured_runtimes: FixtureDefinitions = `Nil ();
 empty_extension_runtimes = `Nil ()
 empty_dynamic_runtimes = `Nil ()
-if let `Nil () = tool_source_definitions(guardian_facts(`NoEnvironment ()), empty_configured_runtimes, empty_extension_runtimes, empty_dynamic_runtimes) {
+if let `Nil () = tool_source_definitions(
+  guardian_facts(`NoEnvironment ()),
+  empty_configured_runtimes,
+  empty_extension_runtimes,
+  empty_dynamic_runtimes,
+) {
   score = score + 100
 }
 
-return { .score = score }
+return { .score = score };

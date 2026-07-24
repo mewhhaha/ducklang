@@ -1,6 +1,8 @@
 import {
   createFunctionalModuleArtifact,
   type EncodedFunctionalModule,
+  FUNCTIONAL_BYTES_TYPE_NAME,
+  FUNCTIONAL_TEXT_TYPE_NAME,
   FunctionalBinaryOperator,
   FunctionalEvaluationProfile,
   type FunctionalHostCapabilityDeclaration,
@@ -51,6 +53,7 @@ import {
 } from "../../src/frontend/type_expr.ts";
 import type { TypeExpr } from "../../src/type_syntax.ts";
 import type { Prim } from "../../src/op.ts";
+import { expect } from "../../src/expect.ts";
 
 const duck_runtime_capability = "$DuckRuntime";
 const unit_type: FunctionalTypeSchema = { kind: "unit" };
@@ -162,6 +165,14 @@ class DuckCoreLowering {
     }
   >();
   readonly #specializing_function_types = new Set<string>();
+  readonly #specializing_function_bodies = new Set<string>();
+  readonly #specialized_type_parameters: Map<
+    string,
+    FunctionalTypeSchema
+  >[] = [];
+  readonly #function_expected_results: (
+    FunctionalTypeSchema | undefined
+  )[] = [];
   readonly #host_import_binders = new Map<string, string>();
   readonly #host_capabilities: FunctionalHostCapabilityDeclaration[] = [];
   readonly #runtime_fields = new Map<string, RuntimeField>();
@@ -431,7 +442,10 @@ class DuckCoreLowering {
           const fields: { name: string; type: FunctionalTypeSchema }[] = [];
           for (const field of struct_value.fields) {
             const type = this.simple_expression_type(field.value, new Map());
-            if (type === undefined || contains_type_parameter(type)) {
+            if (
+              type === undefined || contains_type_parameter(type) ||
+              this.contains_unapplied_type_constructor(type)
+            ) {
               fields.length = 0;
               break;
             }
@@ -487,20 +501,26 @@ class DuckCoreLowering {
   }
 
   private collect_function_parameter_types(): void {
-    const arities = new Map<string, number>();
+    const inferred = new Map<string, (FunctionalTypeSchema | undefined)[]>();
     for (const statement of this.#core.statements) {
       if (statement.tag !== "bind") {
         continue;
       }
       if (statement.value.tag === "lam" || statement.value.tag === "rec") {
-        arities.set(statement.name, statement.value.params.length);
+        inferred.set(
+          statement.name,
+          statement.value.params.map((parameter) =>
+            this.schema_from_optional_type_name(parameter.annotation)
+          ),
+        );
       } else if (statement.value.tag === "rec_ref") {
-        arities.set(statement.name, statement.value.params.length);
+        inferred.set(
+          statement.name,
+          statement.value.params.map((parameter) =>
+            this.schema_from_optional_type_name(parameter.annotation)
+          ),
+        );
       }
-    }
-    const inferred = new Map<string, (FunctionalTypeSchema | undefined)[]>();
-    for (const [name, arity] of arities) {
-      inferred.set(name, Array.from({ length: arity }, () => undefined));
     }
     const environment = new Map<string, FunctionalTypeSchema>();
     const scan = (
@@ -980,7 +1000,10 @@ class DuckCoreLowering {
       [];
     for (const field of fields) {
       const type = this.simple_expression_type(field.value, environment);
-      if (type === undefined || contains_type_parameter(type)) {
+      if (
+        type === undefined || contains_type_parameter(type) ||
+        this.contains_unapplied_type_constructor(type)
+      ) {
         return this.named_type(name);
       }
       definition_fields.push({ name: field.name, type });
@@ -1497,14 +1520,30 @@ class DuckCoreLowering {
         }
         recursive = true;
       } else if (statement.value.tag === "lam") {
-        let expected_result = this.schema_from_optional_type_name(
+        if (
+          this.function_requires_specialization(statement.name) &&
+          references_are_saturated_calls(
+            statements.slice(index + 1),
+            statement.name,
+            statement.value.params.length,
+          )
+        ) {
+          return this.lower_statements(
+            statements,
+            index + 1,
+            environment,
+            expected_result,
+          );
+        }
+
+        let function_expected_result = this.schema_from_optional_type_name(
           statement.annotation,
         );
         for (const _param of statement.value.params) {
-          if (expected_result?.kind === "function") {
-            expected_result = expected_result.result;
+          if (function_expected_result?.kind === "function") {
+            function_expected_result = function_expected_result.result;
           } else {
-            expected_result = undefined;
+            function_expected_result = undefined;
           }
         }
         try {
@@ -1513,7 +1552,7 @@ class DuckCoreLowering {
             statement.value.body,
             environment,
             this.#function_parameter_types.get(statement.name),
-            expected_result,
+            function_expected_result,
           );
         } catch (error) {
           if (error instanceof Error) {
@@ -2470,16 +2509,6 @@ class DuckCoreLowering {
     let end: CoreExpr;
     let element: CoreExpr;
     if (
-      collection.type?.kind === "named" && this.#types.has(collection.type.name)
-    ) {
-      const definition = this.require_definition(collection.type.name);
-      end = { tag: "num", type: "i32", value: definition.fields.length };
-      element = {
-        tag: "index",
-        object: { tag: "var", name: collection_name },
-        index: { tag: "var", name: index_name },
-      };
-    } else if (
       this.same_type(collection.type, FunctionalHostTypes.text) ||
       this.same_type(collection.type, FunctionalHostTypes.bytes)
     ) {
@@ -2495,6 +2524,22 @@ class DuckCoreLowering {
           { tag: "var", name: collection_name },
           { tag: "var", name: index_name },
         ],
+      };
+    } else if (collection.type?.kind === "named") {
+      const name = source_type_name_from_schema(collection.type);
+      this.materialize_type_definition(name);
+      const definition = this.#types.get(name);
+
+      if (definition === undefined) {
+        throw new Error(
+          "Duck gpufuck lowering cannot iterate collection type " + name,
+        );
+      }
+      end = { tag: "num", type: "i32", value: definition.fields.length };
+      element = {
+        tag: "index",
+        object: { tag: "var", name: collection_name },
+        index: { tag: "var", name: index_name },
       };
     } else {
       throw new Error(
@@ -2731,7 +2776,12 @@ class DuckCoreLowering {
       return continue_result;
     }
     if (statement.tag === "return") {
-      return this.lower_expression(statement.value, environment).expression;
+      const expected = this.#function_expected_results.at(-1);
+      return this.lower_expression(
+        statement.value,
+        environment,
+        expected,
+      ).expression;
     }
     if (statement.tag === "type_check") {
       return remainder;
@@ -2792,8 +2842,15 @@ class DuckCoreLowering {
       const target = this.lower_expression(expression.target, environment);
       const name = this.named_type_name(
         target.type,
-        "control if let " + expression.case_name,
+        "control if let " + expression.case_name + " on " +
+          JSON.stringify(expression.target),
       );
+      if (!this.#types.has(name) && !this.#type_aliases.has(name)) {
+        throw new Error(
+          "Duck gpufuck cannot match " + expression.case_name + " against " +
+            name + " from " + JSON.stringify(expression.target),
+        );
+      }
       const definition = this.require_definition(name);
       let fallback_name: string | undefined;
       let fallback_parameter: string | undefined;
@@ -2864,7 +2921,14 @@ class DuckCoreLowering {
       }
       return matched;
     }
-    const value = this.lower_expression(expression, environment);
+    let expected: FunctionalTypeSchema | undefined;
+    if (
+      expression.tag === "app" && expression.func.tag === "var" &&
+      expression.func.name === "@panic"
+    ) {
+      expected = unit_type;
+    }
+    const value = this.lower_expression(expression, environment, expected);
     return {
       kind: "let",
       name: this.temporary("discarded"),
@@ -2882,11 +2946,17 @@ class DuckCoreLowering {
     expected_result?: FunctionalTypeSchema,
   ): LoweredExpression {
     if (params.length === 0) {
-      const lowered_body = this.lower_expression(
-        body,
-        environment,
-        expected_result,
-      );
+      this.#function_expected_results.push(expected_result);
+      let lowered_body: LoweredExpression;
+      try {
+        lowered_body = this.lower_expression(
+          body,
+          environment,
+          expected_result,
+        );
+      } finally {
+        this.#function_expected_results.pop();
+      }
       return {
         expression: surface.lambda(
           this.temporary("unit"),
@@ -2935,11 +3005,17 @@ class DuckCoreLowering {
       body_environment.set(param.name, param_type);
       param_types.push(param_type);
     }
-    const lowered_body = this.lower_expression(
-      body,
-      body_environment,
-      expected_result,
-    );
+    this.#function_expected_results.push(expected_result);
+    let lowered_body: LoweredExpression;
+    try {
+      lowered_body = this.lower_expression(
+        body,
+        body_environment,
+        expected_result,
+      );
+    } finally {
+      this.#function_expected_results.pop();
+    }
     let lowered = lowered_body.expression;
     let inferred_result = lowered_body.type;
     if (inferred_result === undefined) {
@@ -3410,6 +3486,17 @@ class DuckCoreLowering {
       if (imported !== undefined) {
         return this.lower_host_import(imported, expression.args, environment);
       }
+
+      const specialized = this.lower_specialized_function_application(
+        expression.func.name,
+        expression.args,
+        environment,
+        expected,
+      );
+
+      if (specialized !== undefined) {
+        return specialized;
+      }
     }
 
     if (
@@ -3467,6 +3554,201 @@ class DuckCoreLowering {
       result_type = specialized_type;
     }
     return { expression: result_expression, type: result_type };
+  }
+
+  private lower_specialized_function_application(
+    name: string,
+    args: readonly CoreExpr[],
+    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    expected: FunctionalTypeSchema | undefined,
+  ): LoweredExpression | undefined {
+    if (
+      !this.function_requires_specialization(name) ||
+      this.#specializing_function_bodies.has(name)
+    ) {
+      return undefined;
+    }
+
+    const definition = this.#source_functions.get(name);
+
+    if (
+      definition === undefined || definition.params.length !== args.length
+    ) {
+      return undefined;
+    }
+
+    const lowered_args = args.map((arg) =>
+      this.lower_expression(arg, environment)
+    );
+    const body_environment = new Map(environment);
+    const type_parameters = new Map<string, FunctionalTypeSchema>();
+    const parameter_types = this.#function_parameter_types.get(name);
+
+    for (let index = 0; index < definition.params.length; index += 1) {
+      const parameter = definition.params[index];
+      const argument = lowered_args[index];
+      expect(parameter, "Missing specialized function parameter " + index);
+      expect(argument, "Missing specialized function argument " + index);
+      body_environment.set(
+        parameter.name,
+        this.require_type(
+          argument.type,
+          "specialized function argument " + parameter.name,
+        ),
+      );
+      const parameter_type = parameter_types?.[index];
+      if (parameter_type !== undefined && argument.type !== undefined) {
+        this.collect_specialized_type_parameters(
+          parameter_type,
+          argument.type,
+          type_parameters,
+        );
+      }
+    }
+
+    this.#specializing_function_bodies.add(name);
+    this.#specialized_type_parameters.push(type_parameters);
+    let body: LoweredExpression;
+
+    try {
+      body = this.lower_expression(
+        definition.body,
+        body_environment,
+        expected,
+      );
+    } finally {
+      this.#specialized_type_parameters.pop();
+      this.#specializing_function_bodies.delete(name);
+    }
+
+    let expression = body.expression;
+
+    for (let index = definition.params.length - 1; index >= 0; index -= 1) {
+      const parameter = definition.params[index];
+      const argument = lowered_args[index];
+      expect(parameter, "Missing specialized function parameter " + index);
+      expect(argument, "Missing specialized function argument " + index);
+      expression = {
+        kind: "let",
+        name: parameter.name,
+        value: argument.expression,
+        body: expression,
+      };
+    }
+
+    return { expression, type: body.type };
+  }
+
+  private collect_specialized_type_parameters(
+    template: FunctionalTypeSchema,
+    actual: FunctionalTypeSchema,
+    parameters: Map<string, FunctionalTypeSchema>,
+  ): void {
+    if (template.kind === "parameter") {
+      const existing = parameters.get(template.name);
+      if (existing !== undefined && !this.same_type(existing, actual)) {
+        throw new Error(
+          "Duck generic parameter " + template.name +
+            " has incompatible specializations " + this.type_key(existing) +
+            " and " + this.type_key(actual),
+        );
+      }
+      parameters.set(template.name, actual);
+      return;
+    }
+    if (template.kind !== actual.kind) {
+      return;
+    }
+    if (template.kind === "function" && actual.kind === "function") {
+      this.collect_specialized_type_parameters(
+        template.parameter,
+        actual.parameter,
+        parameters,
+      );
+      this.collect_specialized_type_parameters(
+        template.result,
+        actual.result,
+        parameters,
+      );
+      return;
+    }
+    if (template.kind === "tuple" && actual.kind === "tuple") {
+      this.collect_specialized_type_parameters(
+        template.values[0],
+        actual.values[0],
+        parameters,
+      );
+      this.collect_specialized_type_parameters(
+        template.values[1],
+        actual.values[1],
+        parameters,
+      );
+      return;
+    }
+    if (template.kind === "named" && actual.kind === "named") {
+      const template_application = source_type_application(template.name);
+      const actual_application = source_type_application(actual.name);
+      if (
+        template_application !== undefined &&
+        actual_application !== undefined &&
+        template_application.name === actual_application.name &&
+        template_application.args.length === actual_application.args.length
+      ) {
+        for (
+          let index = 0;
+          index < template_application.args.length;
+          index += 1
+        ) {
+          const template_argument = template_application.args[index];
+          const actual_argument = actual_application.args[index];
+          expect(
+            template_argument,
+            "Missing generic template type argument " + index.toString(),
+          );
+          expect(
+            actual_argument,
+            "Missing generic actual type argument " + index.toString(),
+          );
+          this.collect_specialized_type_parameters(
+            this.schema_from_type_name(format_type_expr(template_argument)),
+            this.schema_from_type_name(format_type_expr(actual_argument)),
+            parameters,
+          );
+        }
+        return;
+      }
+      if (
+        template.name !== actual.name ||
+        template.arguments.length !== actual.arguments.length
+      ) {
+        return;
+      }
+      for (let index = 0; index < template.arguments.length; index += 1) {
+        const template_argument = template.arguments[index];
+        const actual_argument = actual.arguments[index];
+        expect(
+          template_argument,
+          "Missing generic template argument " + index.toString(),
+        );
+        expect(
+          actual_argument,
+          "Missing generic actual argument " + index.toString(),
+        );
+        this.collect_specialized_type_parameters(
+          template_argument,
+          actual_argument,
+          parameters,
+        );
+      }
+    }
+  }
+
+  private function_requires_specialization(name: string): boolean {
+    const parameter_types = this.#function_parameter_types.get(name);
+    return parameter_types !== undefined &&
+      parameter_types.some((type) =>
+        type !== undefined && contains_type_parameter(type)
+      );
   }
 
   private lower_builtin_application(
@@ -4126,17 +4408,55 @@ class DuckCoreLowering {
     environment: ReadonlyMap<string, FunctionalTypeSchema>,
     expected: FunctionalTypeSchema | undefined,
   ): LoweredExpression {
+    if (expected !== undefined) {
+      const resolved_expected = this.resolve_type_alias(expected);
+      const field_types: FunctionalTypeSchema[] = [];
+      let remaining_type = resolved_expected;
+
+      while (remaining_type.kind === "tuple") {
+        field_types.push(remaining_type.values[0]);
+        remaining_type = remaining_type.values[1];
+      }
+      field_types.push(remaining_type);
+
+      if (
+        resolved_expected.kind === "tuple" &&
+        field_types.length === expression.fields.length
+      ) {
+        const values = expression.fields.map((field, index) => {
+          const field_type = field_types[index];
+          expect(
+            field_type,
+            "Missing Duck tuple field type " + index.toString(),
+          );
+          return this.lower_expression(field.value, environment, field_type)
+            .expression;
+        });
+        let value = values.at(-1);
+        expect(value, "Duck tuple value requires at least two fields");
+
+        for (let index = values.length - 2; index >= 0; index -= 1) {
+          const field = values[index];
+          expect(field, "Missing Duck tuple field " + index.toString());
+          value = this.tuple_expression(field, value);
+        }
+
+        return { expression: value, type: resolved_expected };
+      }
+    }
+
     let name: string | undefined;
     if (expected !== undefined) {
       const resolved_expected = this.resolve_type_alias(expected);
       if (resolved_expected.kind === "named") {
-        this.materialize_type_definition(resolved_expected.name);
-        const expected_definition = this.#types.get(resolved_expected.name);
+        const expected_name = source_type_name_from_schema(resolved_expected);
+        this.materialize_type_definition(expected_name);
+        const expected_definition = this.#types.get(expected_name);
         if (
           expected_definition?.shape === "struct" &&
           expected_definition.fields.length === expression.fields.length
         ) {
-          name = resolved_expected.name;
+          name = expected_name;
         }
       }
     }
@@ -4488,7 +4808,62 @@ class DuckCoreLowering {
         type: integer_type,
       };
     }
-    const name = this.named_type_name(lowered_object.type, "indexed value");
+    if (lowered_object.type?.kind === "tuple") {
+      if (
+        index.tag !== "num" || index.type !== "i32" ||
+        typeof index.value !== "number" || !Number.isInteger(index.value) ||
+        index.value < 0
+      ) {
+        throw new Error("Duck gpufuck tuple index must be a nonnegative I32");
+      }
+
+      let selected = lowered_object.expression;
+      let selected_type: FunctionalTypeSchema = lowered_object.type;
+      let remaining_index = index.value;
+
+      while (selected_type.kind === "tuple") {
+        const first = this.temporary("tuple_first");
+        const rest = this.temporary("tuple_rest");
+        if (remaining_index === 0) {
+          return {
+            expression: {
+              kind: "case",
+              value: selected,
+              arms: [{
+                constructor: "$Tuple",
+                binders: [first, rest],
+                body: surface.name(first),
+              }],
+            },
+            type: selected_type.values[0],
+          };
+        }
+
+        selected = {
+          kind: "case",
+          value: selected,
+          arms: [{
+            constructor: "$Tuple",
+            binders: [first, rest],
+            body: surface.name(rest),
+          }],
+        };
+        selected_type = selected_type.values[1];
+        remaining_index -= 1;
+      }
+
+      if (remaining_index === 0) {
+        return { expression: selected, type: selected_type };
+      }
+      throw new Error(
+        "Duck gpufuck tuple index " + index.value.toString() +
+          " is outside its product",
+      );
+    }
+    const name = this.named_type_name(
+      lowered_object.type,
+      "indexed value " + JSON.stringify(object),
+    );
     const definition = this.require_definition(name);
     if (definition.fields.length === 0) {
       throw new Error("Duck gpufuck indexed type has no fields: " + name);
@@ -4736,8 +5111,15 @@ class DuckCoreLowering {
     let name: string;
     if (expression.type_expr !== undefined) {
       name = this.type_expression_name(expression.type_expr);
+      if (expected?.kind === "named") {
+        const expected_name = source_type_name_from_schema(expected);
+        const expected_application = source_type_application(expected_name);
+        if (expected_application?.name === name) {
+          name = expected_name;
+        }
+      }
     } else if (expected?.kind === "named") {
-      name = expected.name;
+      name = source_type_name_from_schema(expected);
     } else {
       let payload_type: FunctionalTypeSchema | undefined;
       if (expression.value !== undefined) {
@@ -4764,7 +5146,7 @@ class DuckCoreLowering {
             );
             let candidate_name = definition.name;
             if (resolved.kind === "named") {
-              candidate_name = resolved.name;
+              candidate_name = source_type_name_from_schema(resolved);
             }
             if (!candidates.includes(candidate_name)) {
               candidates.push(candidate_name);
@@ -5123,37 +5505,37 @@ class DuckCoreLowering {
   }
 
   private functional_type_declarations(): FunctionalSurfaceTypeDeclaration[] {
-    return [...this.#types.values()].filter((definition) => {
-      for (const field of definition.fields) {
-        if (contains_type_parameter(field.type)) {
-          return false;
-        }
+    return [...this.#types.values()].flatMap((definition) => {
+      const member_types = [
+        ...definition.fields.map((field) => field.type),
+        ...definition.cases.map((union_case) => union_case.type),
+      ];
+      if (
+        member_types.some((type) =>
+          contains_type_parameter(type) ||
+          this.contains_unapplied_type_constructor(type)
+        )
+      ) {
+        return [];
       }
-      for (const union_case of definition.cases) {
-        if (contains_type_parameter(union_case.type)) {
-          return false;
-        }
-      }
-      return true;
-    }).map((definition) => {
       if (definition.shape === "union") {
-        return {
+        return [{
           name: definition.name,
           parameters: [],
           constructors: definition.cases.map((union_case) => ({
             name: this.union_constructor(definition.name, union_case.name),
             fields: [{ name: "value", type: union_case.type }],
           })),
-        };
+        }];
       }
-      return {
+      return [{
         name: definition.name,
         parameters: [],
         constructors: [{
           name: this.struct_constructor(definition.name),
           fields: definition.fields,
         }],
-      };
+      }];
     });
   }
 
@@ -5180,7 +5562,7 @@ class DuckCoreLowering {
       case "resource":
         return FunctionalHostTypes.resource(type.effect);
       case "named":
-        return this.named_type(type.name);
+        return this.schema_from_type_name(type.name);
     }
   }
 
@@ -5218,7 +5600,58 @@ class DuckCoreLowering {
         ),
       };
     }
-    if (name === "Int" || name === "I32") {
+    if (resolved_type.tag === "product") {
+      if (resolved_type.entries.length === 0) {
+        return unit_type;
+      }
+
+      const final_entry = resolved_type.entries.at(-1);
+      expect(final_entry, "Missing final Duck product type entry");
+      let result = this.schema_from_type_name(
+        format_type_expr(final_entry.type_expr),
+      );
+
+      for (
+        let index = resolved_type.entries.length - 2;
+        index >= 0;
+        index -= 1
+      ) {
+        const entry = resolved_type.entries[index];
+        expect(entry, "Missing Duck product type entry " + index);
+        result = this.tuple_type(
+          this.schema_from_type_name(format_type_expr(entry.type_expr)),
+          result,
+        );
+      }
+
+      return result;
+    }
+    if (resolved_type.tag === "apply") {
+      const application = source_type_application(canonical_name);
+      expect(
+        application,
+        "Missing Duck applied type structure for " + canonical_name,
+      );
+      let specialized_type: TypeExpr = {
+        tag: "name",
+        name: application.name,
+      };
+
+      for (const argument of application.args) {
+        specialized_type = {
+          tag: "apply",
+          func: specialized_type,
+          arg: parse_type_expr(tokenize(source_type_name_from_schema(
+            this.schema_from_type_name(format_type_expr(argument)),
+          ))),
+        };
+      }
+
+      const specialized_name = format_type_expr(specialized_type);
+      this.materialize_type_definition(specialized_name);
+      return this.named_type(specialized_name);
+    }
+    if (name === "Char" || name === "Int" || name === "I32") {
       return integer_type;
     }
     if (name === "Bool") {
@@ -5241,6 +5674,20 @@ class DuckCoreLowering {
     }
     if (name === "Bytes") {
       return FunctionalHostTypes.bytes;
+    }
+    if (this.#types.has(name) || this.#type_aliases.has(name)) {
+      this.materialize_type_definition(name);
+      return this.named_type(name);
+    }
+    if (/^[a-z_][A-Za-z0-9_]*$/.test(name)) {
+      const substitutions = this.#specialized_type_parameters[
+        this.#specialized_type_parameters.length - 1
+      ];
+      const specialized = substitutions?.get(name);
+      if (specialized !== undefined) {
+        return specialized;
+      }
+      return { kind: "parameter", name };
     }
     this.materialize_type_definition(name);
     return this.named_type(name);
@@ -5601,11 +6048,42 @@ class DuckCoreLowering {
   }
 
   private is_duck_type_name(name: string): boolean {
-    return name === "Bool" || name === "Bytes" || name === "F32" ||
-      name === "F64" || name === "F32x4" || name === "I32" ||
-      name === "I64" || name === "Int" || name === "Resume" ||
-      name === "Text" || name === "Type" || name === "U32" ||
-      name === "Unit" || this.#types.has(name) || this.#type_aliases.has(name);
+    return name === "Bool" || name === "Bytes" || name === "Char" ||
+      name === "F32" || name === "F64" || name === "F32x4" ||
+      name === "I32" || name === "I64" || name === "Int" ||
+      name === "Resume" || name === "Text" || name === "Type" ||
+      name === "U32" || name === "Unit" || this.#types.has(name) ||
+      this.#type_aliases.has(name);
+  }
+
+  private contains_unapplied_type_constructor(
+    type: FunctionalTypeSchema,
+  ): boolean {
+    if (type.kind === "function") {
+      return this.contains_unapplied_type_constructor(type.parameter) ||
+        this.contains_unapplied_type_constructor(type.result);
+    }
+    if (type.kind === "tuple") {
+      return this.contains_unapplied_type_constructor(type.values[0]) ||
+        this.contains_unapplied_type_constructor(type.values[1]);
+    }
+    if (type.kind === "forall") {
+      return this.contains_unapplied_type_constructor(type.body);
+    }
+    if (type.kind !== "named") {
+      return false;
+    }
+
+    const constructor = this.#type_constructors.get(type.name);
+    if (
+      constructor !== undefined &&
+      type.arguments.length < constructor.parameters.length
+    ) {
+      return true;
+    }
+    return type.arguments.some((argument) =>
+      this.contains_unapplied_type_constructor(argument)
+    );
   }
 
   private is_protocol_expression(expression: CoreExpr): boolean {
@@ -5789,10 +6267,11 @@ class DuckCoreLowering {
   ): string {
     if (type?.kind !== "named") {
       throw new Error(
-        "Duck gpufuck lowering requires a named type for " + context,
+        "Duck gpufuck lowering requires a named type for " + context +
+          "; found " + this.type_key(type),
       );
     }
-    return type.name;
+    return source_type_name_from_schema(type);
   }
 
   private require_definition(name: string): DuckTypeDefinition {
@@ -5897,12 +6376,6 @@ class DuckCoreLowering {
   }
 
   private union_constructor(name: string, union_case: string): string {
-    if (contains_type_parameter(this.named_type(name))) {
-      throw new Error(
-        "Duck gpufuck lowering cannot emit generic union constructor " +
-          name + "." + union_case,
-      );
-    }
     return "$DuckUnion:" + name + ":" + union_case;
   }
 }
@@ -6090,4 +6563,143 @@ function contains_type_parameter(type: FunctionalTypeSchema): boolean {
     return type.arguments.some(contains_type_parameter);
   }
   return false;
+}
+
+function source_type_application(
+  name: string,
+): { name: string; args: TypeExpr[] } | undefined {
+  let expression: TypeExpr;
+  try {
+    expression = parse_type_expr(tokenize(name));
+  } catch {
+    return undefined;
+  }
+
+  const args: TypeExpr[] = [];
+  while (expression.tag === "apply") {
+    args.unshift(expression.arg);
+    expression = expression.func;
+  }
+
+  if (expression.tag !== "name" || args.length === 0) {
+    return undefined;
+  }
+  return { name: expression.name, args };
+}
+
+function source_type_name_from_schema(type: FunctionalTypeSchema): string {
+  return format_type_expr(source_type_expr_from_schema(type));
+}
+
+function source_type_expr_from_schema(type: FunctionalTypeSchema): TypeExpr {
+  if (type.kind === "integer") {
+    return { tag: "name", name: "I32" };
+  }
+  if (type.kind === "signed-integer-64") {
+    return { tag: "name", name: "I64" };
+  }
+  if (type.kind === "float-32") {
+    return { tag: "name", name: "F32" };
+  }
+  if (type.kind === "float-64") {
+    return { tag: "name", name: "F64" };
+  }
+  if (type.kind === "boolean") {
+    return { tag: "name", name: "Bool" };
+  }
+  if (type.kind === "unit") {
+    return { tag: "name", name: "Unit" };
+  }
+  if (type.kind === "parameter") {
+    return { tag: "name", name: type.name };
+  }
+  if (type.kind === "tuple") {
+    return {
+      tag: "product",
+      entries: type.values.map((value) => ({
+        type_expr: source_type_expr_from_schema(value),
+      })),
+    };
+  }
+  if (type.kind === "function") {
+    return {
+      tag: "arrow",
+      param: source_type_expr_from_schema(type.parameter),
+      effects: undefined,
+      result: source_type_expr_from_schema(type.result),
+    };
+  }
+  if (type.kind === "forall") {
+    return {
+      tag: "forall",
+      params: [...type.parameters],
+      body: source_type_expr_from_schema(type.body),
+    };
+  }
+
+  let name = type.name;
+  if (type.name === FUNCTIONAL_TEXT_TYPE_NAME) {
+    name = "Text";
+  } else if (type.name === FUNCTIONAL_BYTES_TYPE_NAME) {
+    name = "Bytes";
+  }
+
+  let expression: TypeExpr = { tag: "name", name };
+  for (const argument of type.arguments) {
+    expression = {
+      tag: "apply",
+      func: expression,
+      arg: source_type_expr_from_schema(argument),
+    };
+  }
+  return expression;
+}
+
+function references_are_saturated_calls(
+  value: object,
+  name: string,
+  arity: number,
+): boolean {
+  const pending: object[] = [value];
+  const visited = new WeakSet<object>();
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current, "Missing pending saturated-call reference");
+
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    const expression = current as Partial<CoreExpr>;
+    if (
+      expression.tag === "app" &&
+      expression.func?.tag === "var" &&
+      expression.func.name === name
+    ) {
+      if (expression.args?.length !== arity) {
+        return false;
+      }
+      for (const arg of expression.args) {
+        pending.push(arg);
+      }
+      continue;
+    }
+
+    if (
+      (expression.tag === "var" || expression.tag === "linear" ||
+        expression.tag === "rec_ref") && expression.name === name
+    ) {
+      return false;
+    }
+
+    for (const child of Object.values(current)) {
+      if (child !== null && typeof child === "object") {
+        pending.push(child);
+      }
+    }
+  }
+
+  return true;
 }

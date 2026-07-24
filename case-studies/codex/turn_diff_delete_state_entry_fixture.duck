@@ -1,0 +1,17 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+const { .turn_diff_fixture_exact_delta } = import "./turn_diff_fixture_common.duck" ();
+
+type FixtureDelete = TurnDiffDelete
+type FixtureFileMutation = TurnDiffFileMutation
+type FixtureMutation = TurnDiffMutation
+
+let deletion: FixtureDelete = [.content = "content\n"];
+let file_mutation: FixtureFileMutation = `TurnDiffDelete deletion;
+let mutation: FixtureMutation = [.path = "a.txt", .mutation = file_mutation];
+let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
+let score: I32 = state.next_revision;
+
+return { .score = score };

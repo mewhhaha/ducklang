@@ -1,10 +1,10 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_common_types.duck" ()
-const {} = import "./agent_job_spawn_types.duck" ()
-const {} = import "./agent_job_csv_types.duck" ()
-const {} = import "./agent_job_item_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_common_types.duck" ();
+const {} = import "./agent_job_spawn_types.duck" ();
+const {} = import "./agent_job_csv_types.duck" ();
+const {} = import "./agent_job_item_types.duck" ();
 
 type AgentJobPreparedJob = struct {
   .job_id = Text,
@@ -23,4 +23,4 @@ type AgentJobPreparationResult =
   | `JobPrepared AgentJobPreparedJob
   | `JobPreparationFailed Text
 
-return {}
+return {};

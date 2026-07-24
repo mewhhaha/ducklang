@@ -1,0 +1,5 @@
+let value = loop {
+  break 42;
+};
+
+value

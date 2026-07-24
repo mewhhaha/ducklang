@@ -110,7 +110,7 @@ and [docs/language.md](docs/language.md) is the detailed language reference.
 The result of the last expression is the program result:
 
 ```duck
-let answer = 40 + 2
+let answer = 40 + 2;
 answer
 ```
 
@@ -125,12 +125,12 @@ The main scalar types are `Bool`, `Char`, `I32`, `U32`, `I64`, `F32`, `F64`,
 the same runtime representation as `I32`. Literals retain their type:
 
 ```duck
-let count: I32 = 42i32
-let large: I64 = 42i64
-let ratio: F32 = 1.5f32
-let ready: Bool = true
-let letter: Char = 'A'
-let greeting: Text = "hello"
+let count: I32 = 42i32;
+let large: I64 = 42i64;
+let ratio: F32 = 1.5f32;
+let ready: Bool = true;
+let letter: Char = 'A';
+let greeting: Text = "hello";
 
 count
 ```
@@ -145,7 +145,7 @@ multi-limb Core representation.
 immutable; assignment syntax creates a new lexical generation:
 
 ```duck
-let value = 40
+let value = 40;
 value = value + 2  // same type
 value := "done"   // a new value with a different type
 
@@ -163,9 +163,9 @@ argument, which keeps application uniform:
 ```duck
 let add: [Int, Int] -> Int = (left: Int, right: Int) => {
   left + right
-}
+};
 
-let increment = value => value + 1
+let increment = value => value + 1;
 increment(add(20, 21))
 ```
 
@@ -178,8 +178,8 @@ lexical bindings and may return other functions:
 ```duck
 let make_adder = amount => {
   value => value + amount
-}
-let add_two = make_adder(2)
+};
+let add_two = make_adder(2);
 add_two(40)
 ```
 
@@ -192,7 +192,7 @@ let rec fib = n => {
   } else {
     fib(n - 1) + fib(n - 2)
   }
-}
+};
 
 fib(8)
 ```
@@ -201,7 +201,7 @@ Functions in one `let rec ... and ...` group are mutually visible:
 
 ```duck
 let rec even = n => if n == 0 { true } else { odd(n - 1) }
-and odd = n => if n == 0 { false } else { even(n - 1) }
+and odd = n => if n == 0 { false } else { even(n - 1) };
 
 even(8)
 ```
@@ -211,7 +211,7 @@ even(8)
 Conditions require `Bool`; integers are never implicitly truthy:
 
 ```duck
-let value = 40
+let value = 40;
 
 if value < 41 && value != 0 {
   value + 2
@@ -225,7 +225,7 @@ shares its carrier with `Int`, `I32`, and `U32`, so zero is false and nonzero is
 true after an explicit cast:
 
 ```duck
-let flag: I32 = 2
+let flag: I32 = 2;
 
 if @cast(flag, Bool) {
   42
@@ -247,11 +247,11 @@ Blocks and conditionals are expressions. `return` exits the current function:
 ```duck
 let classify = value => {
   if value < 0 {
-    return 0
+    return 0;
   }
 
   if value == 0 { 1 } else { 2 }
-}
+};
 
 classify(10) + 40
 ```
@@ -264,7 +264,7 @@ Ranges use `..` for an exclusive end or `..=` for an inclusive end. `for`
 supports a value, an optional index, and an explicit step:
 
 ```duck
-let total = 0
+let total = 0;
 
 for value in 1..=4 {
   total = total + value
@@ -280,12 +280,12 @@ total
 let answer = loop {
   for value in 0..10 {
     if value == 6 {
-      break 42
+      break 42;
     }
   }
 
-  break 0
-}
+  break 0;
+};
 
 answer
 ```
@@ -301,34 +301,35 @@ returned, or immediately destructured, but `let pair = (left, right)` is
 rejected. This keeps function arity separate from data representation:
 
 ```duck
-let swap = (left, right) => (right, left)
-let (first, second) = swap(20, 22)
-let stored = [first, second]
+let swap = (left, right) => (right, left);
+let (first, second) = swap(20, 22);
+let stored = [first, second];
 ```
 
 Labeled products are created with the source-defined `struct` type function:
 
 ```duck
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type Point = struct { .x = Int, .y = Int }
 
-let point = Point.new { .x = 20, .y = 21 }
-let moved: Point = point :+ { .x = point.x + 1 }
+let point = Point.new { .x = 20, .y = 21 };
+let moved: Point = point <& { .x = point.x + 1 };
 
 moved.x + moved.y
 ```
 
-Fields can be read by name or index. `:+` returns an updated product; it does
-not mutate the original value. Product patterns can destructure all fields or
-select labeled fields.
+Fields can be read by name or index. `point <& patch` and `patch &> point`
+return the same updated product without mutating the original value. The update
+shape wins when it names an existing field. Product patterns can destructure all
+fields or select labeled fields. `++` is reserved for concatenating collections.
 
 Fixed arrays use `[Element; Length]`, and their lengths are compile-time natural
 expressions:
 
 ```duck
-const width = 3
-let values: [Int; width] = [20, 21, 1]
+const width = 3;
+let values: [Int; width] = [20, 21, 1];
 values[0] + values[1] + values[2]
 ```
 
@@ -336,8 +337,8 @@ The same length syntax describes homogeneous transient function inputs and
 results without introducing stored data:
 
 ```duck
-const width = 3
-let sum: (I32; width) -> I32 = (a, b, c) => a + b + c
+const width = 3;
+let sum: (I32; width) -> I32 = (a, b, c) => a + b + c;
 sum(20, 21, 1)
 ```
 
@@ -349,11 +350,11 @@ may bind one typed value, destructure one structural value, or require an exact
 literal or compile-time value:
 
 ```duck
-let scalar = (value: I32) => value
-let field = { value: I32 } => value
-let exactly_42 = 42 => ()
-const only_i32 = I32 => ()
-const scalar_type = (I32 | Text) => ()
+let scalar = (value: I32) => value;
+let field = { .value: I32 } => value;
+let exactly_42 = 42 => ();
+const only_i32 = I32 => ();
+const scalar_type = (I32 | Text) => ();
 ```
 
 ### 8. Sum types, generics, and matching
@@ -367,7 +368,7 @@ type Option value =
   | `None Unit
 
 type IntOption = Option Int
-let value: IntOption = `Some 41
+let value: IntOption = `Some 41;
 
 if let `Some found = value {
   found + 1
@@ -398,11 +399,11 @@ The fixed portions are matched as UTF-8 bytes. The captured value is an owned
 wraps the compiler primitives with ordinary source functions:
 
 ```duck
-const { append, length, get, slice } =
+const { .append, .length, .get, .slice } =
   import "duck:prelude/runtime" ()
 
-let name = append ["Ada", " Lovelace"]
-let first = slice [name, 0, 3]
+let name = append ["Ada", " Lovelace"];
+let first = slice [name, 0, 3];
 
 length(first) + get [name, 1]
 ```
@@ -430,7 +431,7 @@ type Bit = 0 :| 1
 type Method = "GET" :| "POST"
 type Truth = true :| false
 
-let value: Value = 42
+let value: Value = 42;
 
 if value is I32 {
   value
@@ -461,10 +462,10 @@ product_type :+ (field.name, value => value[index])
 Newtypes are zero-cost but nominally distinct:
 
 ```duck
-const { newtype, seal, representation } = import "duck:prelude" ()
+const { .newtype, .seal, .representation } = import "duck:prelude" ();
 
 type Centimeter = newtype I32
-const distance = 42 :> Centimeter
+const distance = 42 :> Centimeter;
 
 distance :< I32
 ```
@@ -479,8 +480,8 @@ typed `pack`, access, and immutable `with_<field>` functions. See
 specialized runtime functions:
 
 ```duck
-const make_adder = amount => value => value + amount
-const add_two = comptime make_adder(2)
+const make_adder = amount => value => value + amount;
+const add_two = comptime make_adder(2);
 
 add_two(40)
 ```
@@ -500,7 +501,7 @@ const apply_identity: (forall value.value -> value) -> I32 =
     0
   }
 
-const identity = value => value
+const identity = value => value;
 comptime apply_identity(identity)
 ```
 
@@ -512,15 +513,15 @@ functional prelude adds pipelines, application, append, bit operations, and
 functional categories:
 
 ```duck
-const { pipe, apply, length, bit_or } =
+const { .pipe, .apply, .length, .bit_or } =
   import "duck:prelude/functional" ()
 
-const increment = value => value + 1
-const double = value => value * 2
+const increment = value => value + 1;
+const double = value => value * 2;
 
-let piped = 20 |> increment |> double
-let applied = double $ 10
-let shifted = 1 << 4
+let piped = 20 |> increment |> double;
+let applied = double $ 10;
+let shifted = 1 << 4;
 
 piped + applied + length("abc") + bit_or [shifted, 2]
 ```
@@ -531,12 +532,12 @@ The same module exports `identity`, `constant`, `compose`, `flip`, `curry`,
 union construction remains unambiguous:
 
 ```duck
-const { list_map, list_reverse, list_take } =
+const { .list_map, .list_reverse, .list_take } =
   import "duck:prelude/collections" ()
 
-let values: List I32 = `Cons ([1, `Cons ([2, `Nil ()])])
-let doubled: List I32 = list_map(I32, values, value => value * 2)
-let newest_first = list_reverse(I32, doubled)
+let values: List I32 = `Cons ([1, `Cons ([2, `Nil ()])]);
+let doubled: List I32 = list_map(I32, values, value => value * 2);
+let newest_first = list_reverse(I32, doubled);
 list_take(I32, 1, newest_first)
 ```
 
@@ -554,12 +555,12 @@ stable hashing. Higher-order predicate and patch composition is specialized at
 compile time:
 
 ```duck
-const { patch, patch_apply, patch_compose } =
+const { .patch, .patch_apply, .patch_compose } =
   import "duck:prelude/abstractions" ()
 
-const increment = comptime patch(value => value + 1)
-const double = comptime patch(value => value * 2)
-const update = comptime patch_compose(double, increment)
+const increment = comptime patch(value => value + 1);
+const double = comptime patch(value => value * 2);
+const update = comptime patch_compose(double, increment);
 patch_apply(update, 20)
 ```
 
@@ -584,8 +585,8 @@ duck Iterator Self {
 }
 
 extend Counter {
-  type Item = I32
-  .next = counter => [counter.value, counter]
+  type Item = I32,
+  .next = counter => [counter.value, counter],
 }
 ```
 
@@ -598,14 +599,14 @@ substituted.
 const readable = operations => {
   operations.read
   operations
-}
+};
 
-const scalar_operations = 0
+const scalar_operations = 0;
 const scalar_operations = scalar_operations :+ {
   .read = value => value + 1
-}
+};
 
-let read = (const operations: readable, value) => operations.read(value)
+let read = (const operations: readable, value) => operations.read(value);
 read(scalar_operations, 41)
 ```
 
@@ -637,7 +638,7 @@ let greet: () -> <Io.read :| Io.print> Text = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 ```
 
 `declare effect` is implemented by the host. Plain `effect` is implemented by a
@@ -653,10 +654,10 @@ let run: () -> <Counter> I32 = () => {
   _ <- Counter.add(40)
   value <- Counter.get()
   value + 2
-}
+};
 
 let counter = {
-  let count = 0
+  let count = 0;
   Counter {
     get: (!resume) => !resume(count),
     add: (amount, !resume) => {
@@ -665,7 +666,7 @@ let counter = {
     },
     return: value => value,
   }
-}
+};
 
 try run() with counter
 ```
@@ -680,8 +681,8 @@ The effects prelude declares `State`, `Reader`, `Writer`, `Raise`, `Do`,
 module provides source handlers and explicit adapter factories:
 
 ```duck
-const _ = import "duck:prelude/effects" ()
-const { default_state, default_reader } =
+const _ = import "duck:prelude/effects" ();
+const { .default_state, .default_reader } =
   import "duck:prelude/effects/defaults" ()
 
 let run = () => {
@@ -689,7 +690,7 @@ let run = () => {
   _ <- State.put(environment + 2)
   value <- State.get()
   value
-}
+};
 
 try (try run() with default_state(0)) with default_reader(40)
 ```
@@ -701,14 +702,14 @@ effect Do monad {
   unwrap: forall value. (monad value) => value
 }
 
-const {} = import "duck:prelude/effects/defaults" ()
+const {} = import "duck:prelude/effects/defaults" ();
 type IntOption = Option I32
 let run = () => {
-  let wrapped: IntOption = `Some 42
+  let wrapped: IntOption = `Some 42;
   value <- do wrapped
   value
-}
-let result: IntOption = try run()
+};
+let result: IntOption = try run();
 ```
 
 The defaults module defines the generic source `Do` rule in terms of `Monad` and
@@ -723,18 +724,18 @@ for each effect. The instance supplies its handled effect, handler factory, and
 composition order in source:
 
 ```duck
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
 const counter = () => Counter {
   get: (!resume) => !resume(42),
   return: value => value,
-}
+};
 
 extend Counter {
-  type Handled = Counter
-  .make = _ => counter()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = Counter,
+  .make = _ => counter(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 ```
 
@@ -748,10 +749,10 @@ the handler should be explicit.
 Use named const instances when one run has several effects from the same family:
 
 ```duck
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
-const counter = State I32
-const message = State Text
+const counter = State I32;
+const message = State Text;
 ```
 
 Those constants are nominal effect identities, not runtime state. Two
@@ -764,9 +765,9 @@ implementation supplies scheduling, transactions, time, or entropy.
 `!` marks a value that must be consumed exactly once:
 
 ```duck
-let consume = (!value) => value + 1
+let consume = (!value) => value + 1;
 
-let !token = 41
+let !token = 41;
 consume(!token)
 ```
 
@@ -800,17 +801,17 @@ module (capabilities) where
 
 return {
   .run = capabilities.base + capabilities.bonus
-}
+};
 ```
 
 The importer loads the module value, supplies its dependencies, and selects its
 exports:
 
 ```duck
-const score_module = import "./multi_file/score_module.duck"
-const capabilities = [.base = 40, .bonus = 2]
+const score_module = import "./multi_file/score_module.duck";
+const capabilities = [.base = 40, .bonus = 2];
 
-let application = score_module(capabilities)
+let application = score_module(capabilities);
 application.run
 ```
 
@@ -820,7 +821,7 @@ pattern to select exports, or `const open` to introduce all exports except
 explicit exclusions and renames:
 
 ```duck
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const open { .compose = _, .pipe = pipe2 } =
   import "duck:prelude/functional" ()
 ```
@@ -848,7 +849,7 @@ declare effect Console {
 declare Init { console: Console }
 
 _ <- Console.print(&"hello")
-return { .status = 0 }
+return { .status = 0 };
 ```
 
 The compiler turns declared host effects into typed Wasm imports internally;

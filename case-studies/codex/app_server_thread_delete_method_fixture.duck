@@ -1,15 +1,16 @@
 module () where
 
-const { json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_thread_delete } = import "./app_server_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .decode_thread_delete } = import "./app_server_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureMethodResult = AppServerMethodDecodeResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("threadId", json_string("thread-1"), fields)
-let decoded: FixtureMethodResult = decode_thread_delete(json_object(fields))
-let score = 0
+let fields = json_object_empty();
+fields = json_object_prepend("threadId", json_string "thread-1", fields)
+let decoded: FixtureMethodResult = decode_thread_delete(json_object fields);
+let score = 0;
 
 if let `MethodOk method = decoded {
   if let `ThreadDelete thread_id = method {
@@ -17,9 +18,9 @@ if let `MethodOk method = decoded {
   }
 }
 
-let invalid: FixtureMethodResult = decode_thread_delete(json_string("thread-1"))
+let invalid: FixtureMethodResult = decode_thread_delete(json_string "thread-1");
 if let `MethodError reason = invalid {
   if reason == "thread/delete.params must be an object" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

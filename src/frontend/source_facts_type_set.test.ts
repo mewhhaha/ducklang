@@ -54,8 +54,8 @@ function binding_types(source: Source, facts: SourceFacts): string[] {
 Deno.test("source facts preserve named finite type sets for members", () => {
   const { source, facts } = analyze(`
 type Scalar = Bool :| Text
-let value: Scalar = true
-let copied: Scalar = value
+let value: Scalar = true;
+let copied: Scalar = value;
 copied
 `);
 
@@ -65,7 +65,7 @@ copied
 
 Deno.test("source facts preserve inline finite type sets for members", () => {
   const { source, facts } = analyze(`
-let value: Bool :| Text = true
+let value: Bool :| Text = true;
 value
 `);
 
@@ -77,10 +77,10 @@ Deno.test("source facts distinguish Bool and I32 type-set membership", () => {
   const { source, facts } = analyze(`
 type Truth = Bool :| Text
 type Count = I32 :| Text
-let valid_truth: Truth = true
-let invalid_truth: Truth = 1
-let valid_count: Count = 1
-let invalid_count: Count = false
+let valid_truth: Truth = true;
+let invalid_truth: Truth = 1;
+let valid_count: Count = 1;
+let invalid_count: Count = false;
 valid_truth
 invalid_truth
 valid_count
@@ -100,8 +100,8 @@ invalid_count
 Deno.test("source facts specialize generic finite type-set applications", () => {
   const { source, facts } = analyze(`
 type Maybe a = a :| Unit
-let present: Maybe Bool = true
-let invalid: Maybe Bool = 1
+let present: Maybe Bool = true;
+let invalid: Maybe Bool = 1;
 present
 invalid
 `);
@@ -115,10 +115,10 @@ Deno.test("source facts evaluate finite intersections and differences", () => {
 type Scalar = Bool :| Text
 type Truth = Scalar :- Text
 type Textual = Scalar :& Text
-let truth: Truth = true
-let not_truth: Truth = "no"
-let textual: Textual = "yes"
-let not_textual: Textual = false
+let truth: Truth = true;
+let not_truth: Truth = "no";
+let textual: Textual = "yes";
+let not_textual: Textual = false;
 truth
 not_truth
 textual

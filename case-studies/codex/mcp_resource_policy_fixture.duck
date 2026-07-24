@@ -1,37 +1,41 @@
 module () where
 
-const {} = import "./mcp_resource_types.duck" ()
-const { validate_list_mcp_resource_args, validate_read_mcp_resource_args } = import "./mcp_resource_policy.duck" ()
+const {} = import "./mcp_resource_types.duck" ();
+const { .validate_list_mcp_resource_args, .validate_read_mcp_resource_args } =
+  import "./mcp_resource_policy.duck" ();
 
 type FixtureListArgs = McpResourceListArgs
 type FixtureReadArgs = McpResourceReadArgs
 
-let score = 0
-let cursor_without_server: FixtureListArgs = [.server = `None (), .cursor = `Some "next"]
-if let `ListValidationFailed message = validate_list_mcp_resource_args(cursor_without_server, false) {
-  if message == "cursor can only be used when a server is specified" { score = score + 1 }
-}
+let score = 0;
+let cursor_without_server: FixtureListArgs = [.server = `None (), .cursor = `Some "next"];
+if let `ListValidationFailed message = validate_list_mcp_resource_args(cursor_without_server,
+  false) {
+    if message == "cursor can only be used when a server is specified" { score = score + 1 }
+  }
 
-let disabled_list: FixtureListArgs = [.server = `Some "codex_apps", .cursor = `None ()]
+let disabled_list: FixtureListArgs = [.server = `Some "codex_apps", .cursor = `None ()];
 if let `ListValidationFailed message = validate_list_mcp_resource_args(disabled_list, false) {
-  if message == "MCP server 'codex_apps' is disabled by `orchestrator.mcp.enabled`" { score = score + 10 }
+  if message == "MCP server 'codex_apps' is disabled by `orchestrator.mcp.enabled`" { score = score
+    + 10 }
 }
 
-let enabled_list: FixtureListArgs = [.server = `Some "codex_apps", .cursor = `None ()]
+let enabled_list: FixtureListArgs = [.server = `Some "codex_apps", .cursor = `None ()];
 if let `ListValid args = validate_list_mcp_resource_args(enabled_list, true) {
   if let `Some server = args.server {
     if server == "codex_apps" { score = score + 100 }
   }
 }
 
-let valid_read: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"]
+let valid_read: FixtureReadArgs = [.server = "docs", .uri = "skill://alpha"];
 if let `ReadValid args = validate_read_mcp_resource_args(valid_read, false) {
   if args.server == "docs" && args.uri == "skill://alpha" { score = score + 1000 }
 }
 
-let disabled_read: FixtureReadArgs = [.server = "codex_apps", .uri = "resource://alpha"]
+let disabled_read: FixtureReadArgs = [.server = "codex_apps", .uri = "resource://alpha"];
 if let `ReadValidationFailed message = validate_read_mcp_resource_args(disabled_read, false) {
-  if message == "MCP server 'codex_apps' is disabled by `orchestrator.mcp.enabled`" { score = score + 10000 }
+  if message == "MCP server 'codex_apps' is disabled by `orchestrator.mcp.enabled`" { score = score
+    + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

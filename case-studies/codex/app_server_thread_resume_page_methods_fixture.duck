@@ -1,22 +1,24 @@
 module () where
 
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { decode_thread_resume } = import "./app_server_thread_methods.duck" ()
-const { turns_are_excluded } = import "./app_server_types.duck" ()
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .decode_thread_resume } = import "./app_server_thread_methods.duck" ();
+const { .turns_are_excluded } = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerMethodDecodeResult
 
-let fields = json_object_empty()
+let fields = json_object_empty();
 fields = json_object_prepend("initialTurnsPage", json_object(json_object_empty()), fields)
-fields = json_object_prepend("excludeTurns", json_bool(true), fields)
-fields = json_object_prepend("threadId", json_string("thread-1"), fields)
-let decoded: FixtureResult = decode_thread_resume(json_object(fields))
+fields = json_object_prepend("excludeTurns", json_bool true, fields)
+fields = json_object_prepend("threadId", json_string "thread-1", fields)
+let decoded: FixtureResult = decode_thread_resume(json_object fields);
 let score = if let `MethodOk method = decoded {
   if let `ThreadResume params = method {
-    let exclude_turns = turns_are_excluded(params.turns)
-    let page_valid = if let `Some value = params.initial_turns_page { if let `Object _ = value { true } else { false } } else { false }
+    let exclude_turns = turns_are_excluded params.turns;
+    let page_valid = if let `Some value = params.initial_turns_page { if let `Object _ = value {
+      true } else { false } } else { false };
     if exclude_turns && page_valid { 1 } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

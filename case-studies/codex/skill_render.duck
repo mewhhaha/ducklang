@@ -1,9 +1,18 @@
 module () where
 
-const { format_i32, list, text_append, text_approx_token_count, text_less_than, text_replace_all, text_take_utf8_characters, text_utf8_length } = import "duck:prelude/functional" ()
-const skill_types_module = import "./skill_types.duck"
-const skill_metadata_module = import "./skill_metadata.duck"
-const { policy_allows_implicit_invocation } = skill_metadata_module()
+const {
+  .format_i32,
+  .list,
+  .text_append,
+  .text_approx_token_count,
+  .text_less_than,
+  .text_replace_all,
+  .text_take_utf8_characters,
+  .text_utf8_length,
+} = import "duck:prelude/functional" ();
+const skill_types_module = import "./skill_types.duck";
+const skill_metadata_module = import "./skill_metadata.duck";
+const { .policy_allows_implicit_invocation } = skill_metadata_module();
 
 type RenderTextOption = SkillTextOption
 type RenderI32Option = SkillI32Option
@@ -20,12 +29,12 @@ type RenderAccum = SkillRenderAccum
 type RenderAvailable = AvailableSkills
 type RenderAvailableOption = AvailableSkillsOption
 
-const texts = comptime list(Text)
-const lines = comptime list(RenderLine)
+const texts = comptime list Text;
+const lines = comptime list RenderLine;
 
-const append_text = (left: Text, right: Text) => text_append([left, right])
-const prepend_text = (value: Text, values: RenderTexts) => texts.prepend(value, values)
-const prepend_line = (value: RenderLine, values: RenderLines) => lines.prepend(value, values)
+const append_text = (left: Text, right: Text) => text_append [left, right];
+const prepend_text = (value: Text, values: RenderTexts) => texts.prepend(value, values);
+const prepend_line = (value: RenderLine, values: RenderLines) => lines.prepend(value, values);
 
 const scope_rank = (scope: RenderScope) => {
   if let `System () = scope {
@@ -37,193 +46,269 @@ const scope_rank = (scope: RenderScope) => {
   } else {
     3
   }
-}
+};
 
 const line_before = (left: RenderLine, right: RenderLine) => {
-  let [left_name, _, left_path, left_scope] = left
-  let [right_name, _, right_path, right_scope] = right
-  let left_rank = scope_rank left_scope
-  let right_rank = scope_rank right_scope
+  let [left_name, _, left_path, left_scope] = left;
+  let [right_name, _, right_path, right_scope] = right;
+  let left_rank = scope_rank left_scope;
+  let right_rank = scope_rank right_scope;
 
   if left_rank < right_rank {
     true
   } else if left_rank > right_rank {
     false
   } else if left_name == right_name {
-    text_less_than([left_path, right_path])
+    text_less_than [left_path, right_path]
   } else {
-    text_less_than([left_name, right_name])
+    text_less_than [left_name, right_name]
   }
-}
+};
 
 const capped_description = (description: Text) => {
-  if text_utf8_length(description) <= 1024 {
+  if text_utf8_length description <= 1024 {
     description
   } else {
     append_text(text_take_utf8_characters(description, 1021), "...")
   }
-}
+};
 
-let rec render_lines_from_documents: [RenderDocuments, RenderLines] -> RenderLines = (documents: RenderDocuments, reversed: RenderLines) => {
+let rec render_lines_from_documents: [RenderDocuments, RenderLines] -> RenderLines = (
+  documents: RenderDocuments,
+  reversed: RenderLines,
+) => {
   if let `Cons node = documents {
-    let [document, tail] = node
-    let [metadata, _] = document
-    let [name, description, _, _, _, policy, path, scope, _] = metadata
+    let [document, tail] = node;
+    let [metadata, _] = document;
+    let [name, description, _, _, _, policy, path, scope, _] = metadata;
     let next = if policy_allows_implicit_invocation policy {
-      prepend_line([name, capped_description(description), text_replace_all([path, "\\", "/"]), scope], reversed)
+      prepend_line(
+        [name, capped_description description, text_replace_all [path, "\\", "/"], scope],
+        reversed,
+      )
     } else {
       reversed
-    }
+    };
     render_lines_from_documents(tail, next)
   } else {
     reversed
   }
-}
+};
 
 const budget_limit = (budget: RenderBudget) => {
-  if let `Characters limit = budget { limit } else if let `Tokens limit = budget { limit } else { 0 }
-}
+  if let `Characters limit = budget { limit } else if let `Tokens limit = budget { limit } else { 0
+  }
+};
 
 const text_cost = (budget: RenderBudget, text: Text) => {
-  if let `Characters _ = budget { text_utf8_length(text) } else { text_approx_token_count text }
-}
+  if let `Characters _ = budget { text_utf8_length text } else { text_approx_token_count text }
+};
 
 const render_line = (line: RenderLine, description: Text) => {
-  let [name, _, path, _] = line
+  let [name, _, path, _] = line;
 
   if description == "" {
     append_text("- ", append_text(name, append_text(": (file: ", append_text(path, ")"))))
   } else {
-    append_text("- ", append_text(name, append_text(": ", append_text(description, append_text(" (file: ", append_text(path, ")"))))))
+    append_text(
+      "- ",
+      append_text(
+        name,
+        append_text(": ", append_text(description, append_text(" (file: ", append_text(path,
+          ")")))),
+      ),
+    )
   }
-}
+};
 
 const line_full_text = (line: RenderLine) => {
-  let [_, description, _, _] = line
+  let [_, description, _, _] = line;
   render_line(line, description)
-}
+};
 
 const line_cost = (budget: RenderBudget, line: Text) => {
   text_cost(budget, append_text(line, "\n"))
-}
+};
 
 let rec append_skill_lines: [RenderTexts, Text] -> Text = (values: RenderTexts, output: Text) => {
   if let `Cons node = values {
-    let [line, tail] = node
+    let [line, tail] = node;
     append_skill_lines(tail, append_text(output, append_text(line, "\n")))
   } else {
     output
   }
-}
+};
 
 const render_available_skills_body = (skill_lines: RenderTexts) => {
-  let heading = "## Skills\nA skill is a set of instructions provided through a `SKILL.md` source. Below is the list of skills that can be used. Each entry includes a name, description, and source locator.\n### Available skills\n"
+  let heading =
+    "## Skills\nA skill is a set of instructions provided through a `SKILL.md` source. Below is the list of skills that can be used. Each entry includes a name, description, and source locator.\n### Available skills\n";
   append_text("\n", append_text(append_skill_lines(skill_lines, heading), "\n"))
-}
+};
 
-let rec total_line_cost: [RenderLines, RenderBudget, Bool] -> I32 = (values: RenderLines, budget: RenderBudget, include_descriptions: Bool) => {
+let rec total_line_cost: [RenderLines, RenderBudget, Bool] -> I32 = (
+  values: RenderLines,
+  budget: RenderBudget,
+  include_descriptions: Bool,
+) => {
   if let `Cons node = values {
-    let [line, tail] = node
-    let rendered = if include_descriptions { line_full_text line } else { render_line(line, "") }
+    let [line, tail] = node;
+    let rendered = if include_descriptions { line_full_text line } else { render_line(line, "") };
     line_cost(budget, rendered) + total_line_cost(tail, budget, include_descriptions)
   } else {
     0
   }
-}
+};
 
 let rec render_full_lines: RenderLines -> RenderTexts = (values: RenderLines) => {
   if let `Cons node = values {
-    let [line, tail] = node
-    prepend_text(line_full_text(line), render_full_lines(tail))
+    let [line, tail] = node;
+    prepend_text(line_full_text line, render_full_lines tail)
   } else {
     texts.empty()
   }
-}
+};
 
 let rec total_description_characters: RenderLines -> I32 = (values: RenderLines) => {
   if let `Cons node = values {
-    let [line, tail] = node
-    let [_, description, _, _] = line
-    text_utf8_length(description) + total_description_characters tail
+    let [line, tail] = node;
+    let [_, description, _, _] = line;
+    text_utf8_length description + total_description_characters tail
   } else {
     0
   }
-}
+};
 
-let rec render_truncated_lines: [RenderLines, I32, RenderTexts, I32, I32] -> RenderAccum = (values: RenderLines, allowance: I32, reversed: RenderTexts, truncated_characters: I32, truncated_count: I32) => {
+let rec render_truncated_lines: [RenderLines, I32, RenderTexts, I32, I32] -> RenderAccum = (
+  values: RenderLines,
+  allowance: I32,
+  reversed: RenderTexts,
+  truncated_characters: I32,
+  truncated_count: I32,
+) => {
   if let `Cons node = values {
-    let [line, tail] = node
-    let [_, description, _, _] = line
-    let description_length = text_utf8_length description
-    let kept = if description_length <= allowance { description } else { text_take_utf8_characters(description, allowance) }
-    let removed = description_length - text_utf8_length(kept)
-    let next_count = if removed > 0 { truncated_count + 1 } else { truncated_count }
-    render_truncated_lines(tail, allowance, prepend_text(render_line(line, kept), reversed), truncated_characters + removed, next_count)
+    let [line, tail] = node;
+    let [_, description, _, _] = line;
+    let description_length = text_utf8_length description;
+    let kept = if description_length <= allowance { description } else { text_take_utf8_characters(
+      description,
+      allowance,
+    ) };
+    let removed = description_length - text_utf8_length kept;
+    let next_count = if removed > 0 { truncated_count + 1 } else { truncated_count };
+    render_truncated_lines(
+      tail,
+      allowance,
+      prepend_text(render_line(line, kept), reversed),
+      truncated_characters + removed,
+      next_count,
+    )
   } else {
-    [texts.reverse(reversed), texts.length(reversed), 0, truncated_characters, truncated_count] as RenderAccum
+    [texts.reverse(reversed), texts.length(reversed), 0, truncated_characters,
+      truncated_count] as RenderAccum
   }
-}
+};
 
-let rec render_minimum_lines: [RenderLines, RenderBudget, I32, RenderTexts, I32, I32, I32] -> RenderAccum = (values: RenderLines, budget: RenderBudget, used: I32, reversed: RenderTexts, omitted: I32, truncated_characters: I32, truncated_descriptions: I32) => {
-  if let `Cons node = values {
-    let [line, tail] = node
-    let [_, description, _, _] = line
-    let rendered = render_line(line, "")
-    let cost = line_cost(budget, rendered)
+let rec render_minimum_lines: [RenderLines, RenderBudget, I32, RenderTexts, I32, I32, I32] ->
+  RenderAccum = (
+    values: RenderLines,
+    budget: RenderBudget,
+    used: I32,
+    reversed: RenderTexts,
+    omitted: I32,
+    truncated_characters: I32,
+    truncated_descriptions: I32,
+  ) => {
+    if let `Cons node = values {
+      let [line, tail] = node;
+      let [_, description, _, _] = line;
+      let rendered = render_line(line, "");
+      let cost = line_cost(budget, rendered);
 
-    if used + cost <= budget_limit(budget) {
-      let next_truncated = if description == "" { truncated_descriptions } else { truncated_descriptions + 1 }
-      render_minimum_lines(tail, budget, used + cost, prepend_text(rendered, reversed), omitted, truncated_characters + text_utf8_length(description), next_truncated)
+      if used + cost <= budget_limit budget {
+        let next_truncated = if description == "" { truncated_descriptions } else {
+          truncated_descriptions + 1 };
+        render_minimum_lines(
+          tail,
+          budget,
+          used + cost,
+          prepend_text(rendered, reversed),
+          omitted,
+          truncated_characters + text_utf8_length description,
+          next_truncated,
+        )
+      } else {
+        let next_truncated = if description == "" { truncated_descriptions } else {
+          truncated_descriptions + 1 };
+        render_minimum_lines(
+          tail,
+          budget,
+          used,
+          reversed,
+          omitted + 1,
+          truncated_characters + text_utf8_length description,
+          next_truncated,
+        )
+      }
     } else {
-      let next_truncated = if description == "" { truncated_descriptions } else { truncated_descriptions + 1 }
-      render_minimum_lines(tail, budget, used, reversed, omitted + 1, truncated_characters + text_utf8_length(description), next_truncated)
+      [
+        texts.reverse(reversed),
+        texts.length(reversed),
+        omitted,
+        truncated_characters,
+        truncated_descriptions,
+      ] as RenderAccum
     }
-  } else {
-    [texts.reverse(reversed), texts.length(reversed), omitted, truncated_characters, truncated_descriptions] as RenderAccum
-  }
-}
+  };
 
 const default_skill_metadata_budget = (context_window: RenderI32Option) => {
   if let `Some window = context_window {
-    let limit = window * 2 / 100
+    let limit = window * 2 / 100;
     if limit < 1 { `Tokens 1 } else { `Tokens limit }
   } else {
     `Characters 8000
   }
-}
+};
 
 const build_available_skills = (documents: RenderDocuments, budget: RenderBudget) => {
-  let raw = render_lines_from_documents(documents, lines.empty())
-  let ordered = lines.sort_by(lines.reverse(raw), line_before)
-  let total = lines.length ordered
+  let raw = render_lines_from_documents(documents, lines.empty());
+  let ordered = lines.sort_by(lines.reverse(raw), line_before);
+  let total = lines.length ordered;
 
   if total == 0 {
     `None ()
   } else {
-    let full_cost = total_line_cost(ordered, budget, true)
-    let minimum_cost = total_line_cost(ordered, budget, false)
-    let accumulated: RenderAccum = if full_cost <= budget_limit(budget) {
-      [render_full_lines(ordered), total, 0, 0, 0]
-    } else if minimum_cost <= budget_limit(budget) {
-      let remaining = budget_limit(budget) - minimum_cost
-      let allowance = remaining / total
+    let full_cost = total_line_cost(ordered, budget, true);
+    let minimum_cost = total_line_cost(ordered, budget, false);
+    let accumulated: RenderAccum = if full_cost <= budget_limit budget {
+      [render_full_lines ordered, total, 0, 0, 0]
+    } else if minimum_cost <= budget_limit budget {
+      let remaining = budget_limit budget - minimum_cost;
+      let allowance = remaining / total;
       render_truncated_lines(ordered, allowance, texts.empty(), 0, 0)
     } else {
       render_minimum_lines(ordered, budget, 0, texts.empty(), 0, 0, 0)
-    }
-    let [rendered, included, omitted, truncated_characters, truncated_count] = accumulated
-    let report: RenderReport = [total, included, omitted, truncated_characters, truncated_count]
+    };
+    let [rendered, included, omitted, truncated_characters, truncated_count] = accumulated;
+    let report: RenderReport = [total, included, omitted, truncated_characters, truncated_count];
     let warning: RenderTextOption = if omitted > 0 {
-      `Some (append_text("Exceeded skills context budget. All skill descriptions were removed and ", append_text(format_i32(omitted), " additional skills were not included in the model-visible skills list.")))
+      `Some (
+        append_text(
+          "Exceeded skills context budget. All skill descriptions were removed and ",
+          append_text(
+            format_i32 omitted,
+            " additional skills were not included in the model-visible skills list.",
+          ),
+        )
+      )
     } else {
       `None ()
-    }
+    };
     `Some ([rendered, report, warning] as RenderAvailable)
   }
-}
+};
 
 return {
-  default_skill_metadata_budget,
-  build_available_skills,
-  render_available_skills_body,
-}
+  .default_skill_metadata_budget,
+  .build_available_skills,
+  .render_available_skills_body,
+};

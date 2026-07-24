@@ -151,7 +151,11 @@ export type CoreStmt =
   | { tag: "expr"; expr: CoreExpr }
   | { tag: "unsupported"; feature: string; text: string };
 
-export type CoreExpr =
+export type CoreExpr = CoreExprNode & {
+  ascribed_type?: string;
+};
+
+type CoreExprNode =
   | {
     tag: "num";
     type: NumType;

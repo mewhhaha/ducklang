@@ -1,11 +1,12 @@
 module () where
 
-const { normalize_code_mode_identifier } = import "./code_mode_identifier.duck" ()
+const { .normalize_code_mode_identifier } = import "./code_mode_identifier.duck" ();
 
-let score = 0
-if normalize_code_mode_identifier "hidden-dynamic-tool" == "hidden_dynamic_tool" { score = score + 1 }
+let score = 0;
+if normalize_code_mode_identifier "hidden-dynamic-tool" == "hidden_dynamic_tool" { score = score + 1
+}
 if normalize_code_mode_identifier "9lives" == "_lives" { score = score + 10 }
 if normalize_code_mode_identifier "éx" == "_x" { score = score + 100 }
 if normalize_code_mode_identifier "" == "_" { score = score + 1000 }
 
-return { .score = score }
+return { .score = score };

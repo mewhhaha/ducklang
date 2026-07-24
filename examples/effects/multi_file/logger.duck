@@ -2,6 +2,6 @@ module (!init: Init) where
 
 let write: Text -> <Io.print> Unit = (message: Text) => {
   _ <- Io.print(&message)
-}
+};
 
-return { .write = write }
+return { .write = write };

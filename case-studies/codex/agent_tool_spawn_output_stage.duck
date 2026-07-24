@@ -1,12 +1,12 @@
 module (!init: Init) where
 
-const {} = import "./agent_tool_types.duck" ()
-const { render_spawn_agent_output } = import "./agent_tool_spawn_output.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .render_spawn_agent_output } = import "./agent_tool_spawn_output.duck" ();
 
 type AgentSpawnOutputStageInput = AgentToolSpawnOutputInput
 
 input <- StageInput.input()
-let typed_input: AgentSpawnOutputStageInput = input
-let output: Text = render_spawn_agent_output typed_input
+let typed_input: AgentSpawnOutputStageInput = input;
+let output: Text = render_spawn_agent_output typed_input;
 
-return { .result = output }
+return { .result = output };

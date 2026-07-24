@@ -1,0 +1,50 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+
+const ascii_lowercase = (byte: I32) => {
+  if byte >= 65 && byte <= 90 { byte + 32 } else { byte }
+};
+
+const has_ascii_case_insensitive_prefix: [Text, Text] -> Bool = (text, prefix) => {
+  let text_length = @len text;
+  let prefix_length = @len prefix;
+  if text_length < prefix_length {
+    false
+  } else {
+    let matches = true;
+    let index = 0;
+    loop {
+      if index >= prefix_length { break; }
+      if ascii_lowercase(@get(text, index)) != ascii_lowercase(@get(prefix, index)) {
+        matches = false
+      }
+      index = index + 1
+    }
+    matches
+  }
+};
+
+const plan_image_preparation: OutputImage -> ImagePreparationPlan = image => {
+  let [image_url, detail] = image;
+  let is_http = has_ascii_case_insensitive_prefix(image_url, "http:");
+  let is_https = has_ascii_case_insensitive_prefix(image_url, "https:");
+
+  if is_http || is_https {
+    [.status_code = 2, .image_url = image_url, .max_dimension = 0, .max_patches = 0]
+  } else if !(has_ascii_case_insensitive_prefix(image_url, "data:")) {
+    [.status_code = 0, .image_url = image_url, .max_dimension = 0, .max_patches = 0]
+  } else if let `Some selected = detail {
+    if let `Low () = selected {
+      [.status_code = 3, .image_url = image_url, .max_dimension = 0, .max_patches = 0]
+    } else if let `Original () = selected {
+      [.status_code = 1, .image_url = image_url, .max_dimension = 6000, .max_patches = 10000]
+    } else {
+      [.status_code = 1, .image_url = image_url, .max_dimension = 2048, .max_patches = 2500]
+    }
+  } else {
+    [.status_code = 1, .image_url = image_url, .max_dimension = 2048, .max_patches = 2500]
+  }
+};
+
+return { .plan_image_preparation };

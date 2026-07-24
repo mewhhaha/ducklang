@@ -1,20 +1,27 @@
 module () where
 
-const { plan_thread_resume } = import "./app_server_thread_lifecycle.duck" ()
-const {} = import "./app_server_thread_lifecycle_types.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .plan_thread_resume } = import "./app_server_thread_lifecycle.duck" ();
+const {} = import "./app_server_thread_lifecycle_types.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureThread = AppServerLoadedThread
 type FixtureThreads = AppServerLoadedThreads
 type FixtureResult = AppServerThreadResumePlanResult
 type FixtureInput = AppServerThreadResumePlanInput
 
-let running: FixtureThread = ["thread-1", `Some "/rollouts/active.jsonl", `LegacyHistory ()]
-let loaded: FixtureThreads = `Cons ([running, `Nil ()])
-let input: FixtureInput = [loaded, "thread-1", `None (), `Some "/rollouts/stale.jsonl", `TurnsIncluded (), `None ()]
-let planned: FixtureResult = plan_thread_resume(input)
+let running: FixtureThread = ["thread-1", `Some "/rollouts/active.jsonl", `LegacyHistory ()];
+let loaded: FixtureThreads = `Cons ([running, `Nil ()]);
+let input: FixtureInput = [
+  loaded,
+  "thread-1",
+  `None (),
+  `Some "/rollouts/stale.jsonl",
+  `TurnsIncluded (),
+  `None (),
+];
+let planned: FixtureResult = plan_thread_resume input;
 let score = if let `Err message = planned {
   if message == "cannot resume running thread thread-1 with stale path: requested `/rollouts/stale.jsonl`, active `/rollouts/active.jsonl`" { 1 } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

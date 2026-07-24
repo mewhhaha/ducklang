@@ -1,20 +1,20 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const { agent_status_json } = import "./agent_status_json.duck" ()
+const agent_types_module = import "./agent_types.duck";
+const { .agent_status_json } = import "./agent_status_json.duck" ();
 
 type FixtureStatus = AgentStatus
 type FixtureTextOption = AgentTextOption
 
-let score = 0
-let no_message: FixtureTextOption = `None ()
-let pending: FixtureStatus = `PendingInit ()
-let running: FixtureStatus = `Running ()
-let interrupted: FixtureStatus = `Interrupted ()
-let completed: FixtureStatus = `Completed no_message
-let errored: FixtureStatus = `Errored "bad \"input\""
-let shutdown: FixtureStatus = `Shutdown ()
-let missing: FixtureStatus = `NotFound ()
+let score = 0;
+let no_message: FixtureTextOption = `None ();
+let pending: FixtureStatus = `PendingInit ();
+let running: FixtureStatus = `Running ();
+let interrupted: FixtureStatus = `Interrupted ();
+let completed: FixtureStatus = `Completed no_message;
+let errored: FixtureStatus = `Errored "bad \"input\"";
+let shutdown: FixtureStatus = `Shutdown ();
+let missing: FixtureStatus = `NotFound ();
 
 if agent_status_json pending == "\"pending_init\"" { score = score + 1 }
 if agent_status_json running == "\"running\"" { score = score + 10 }
@@ -24,4 +24,4 @@ if agent_status_json errored == "{\"errored\":\"bad \\\"input\\\"\"}" { score = 
 if agent_status_json shutdown == "\"shutdown\"" { score = score + 100000 }
 if agent_status_json missing == "\"not_found\"" { score = score + 1000000 }
 
-return { .score = score }
+return { .score = score };

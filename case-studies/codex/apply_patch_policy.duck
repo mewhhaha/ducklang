@@ -1,8 +1,8 @@
 module () where
 
-const { list_prepend, list_reverse } = import "duck:prelude/list" ()
-const { path_resolve } = import "duck:prelude/path" ()
-const {} = import "./apply_patch_types.duck" ()
+const { .list_prepend, .list_reverse } = import "duck:prelude/list" ();
+const { .path_resolve } = import "duck:prelude/path" ();
+const {} = import "./apply_patch_types.duck" ();
 
 type ApplyPolicyDocument = ApplyPatchDocument
 type ApplyPolicyHunks = ApplyPatchHunks
@@ -10,43 +10,46 @@ type ApplyPolicyPatchTarget = ToolPatchTarget
 type ApplyPolicyPatchTargets = ToolPatchTargets
 type ApplyPolicyTextOption = ApplyPatchTextOption
 
-const prepend_patch_target = list_prepend(ApplyPolicyPatchTarget)
-const reverse_patch_targets = list_reverse(ApplyPolicyPatchTarget)
+const prepend_patch_target = list_prepend ApplyPolicyPatchTarget;
+const reverse_patch_targets = list_reverse ApplyPolicyPatchTarget;
 
-let apply_patch_targets: [ApplyPolicyDocument, Text] -> ApplyPolicyPatchTargets = (document: ApplyPolicyDocument, cwd: Text) => {
-  let remaining: ApplyPolicyHunks = document.hunks
-  let reversed: ApplyPolicyPatchTargets = `Nil ()
+let apply_patch_targets: [ApplyPolicyDocument, Text] -> ApplyPolicyPatchTargets = (
+  document: ApplyPolicyDocument,
+  cwd: Text,
+) => {
+  let remaining: ApplyPolicyHunks = document.hunks;
+  let reversed: ApplyPolicyPatchTargets = `Nil ();
 
   loop {
     if let `Cons node = remaining {
-      let [hunk, tail] = node
+      let [hunk, tail] = node;
       remaining = tail
-      let target_path: Text = ""
-      let move_path: ApplyPolicyTextOption = `None ()
+      let target_path: Text = "";
+      let move_path: ApplyPolicyTextOption = `None ();
 
       if let `AddFile addition = hunk {
-        let [addition_path, _] = addition
+        let [addition_path, _] = addition;
         target_path = path_resolve(cwd, addition_path)
       } else if let `DeleteFile path = hunk {
         target_path = path_resolve(cwd, path)
       } else if let `UpdateFile update = hunk {
-        let [update_path, requested_move, _] = update
+        let [update_path, requested_move, _] = update;
         target_path = path_resolve(cwd, update_path)
         if let `Some destination = requested_move {
           move_path = `Some (path_resolve(cwd, destination))
         }
       }
 
-      let target: ApplyPolicyPatchTarget = [target_path, move_path]
+      let target: ApplyPolicyPatchTarget = [target_path, move_path];
       reversed = prepend_patch_target(target, reversed)
     } else {
-      break
+      break;
     }
   }
 
-  reverse_patch_targets(reversed)
-}
+  reverse_patch_targets reversed
+};
 
 return {
-  apply_patch_targets,
-}
+  .apply_patch_targets,
+};

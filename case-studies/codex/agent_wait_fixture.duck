@@ -1,24 +1,31 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const agent_wait_module = import "./agent_wait.duck"
-const { select_wait_outcome, status_entries_empty, status_entries_length, status_entries_prepend } = agent_wait_module()
+const agent_types_module = import "./agent_types.duck";
+const agent_wait_module = import "./agent_wait.duck";
+const { .select_wait_outcome, .status_entries_empty, .status_entries_length, .status_entries_prepend } =
+  agent_wait_module();
 
 type FixtureStatus = AgentStatus
 type FixtureStatusEntry = AgentStatusEntry
 type FixtureStatusEntries = AgentStatusEntries
 
-let running: FixtureStatus = `Running ()
-let completed: FixtureStatus = `Completed (`Some "done")
-let errored: FixtureStatus = `Errored "boom"
-let initial: FixtureStatusEntries = status_entries_prepend(["a", running], status_entries_prepend(["b", completed], status_entries_prepend(["c", errored], status_entries_empty())))
-let [selected, timed_out] = select_wait_outcome(initial, status_entries_empty())
-let score: I32 = 0
+let running: FixtureStatus = `Running ();
+let completed: FixtureStatus = `Completed (`Some "done");
+let errored: FixtureStatus = `Errored "boom";
+let initial: FixtureStatusEntries = status_entries_prepend(
+  ["a", running],
+  status_entries_prepend(
+    ["b", completed],
+    status_entries_prepend(["c", errored], status_entries_empty()),
+  ),
+);
+let [selected, timed_out] = select_wait_outcome(initial, status_entries_empty());
+let score: I32 = 0;
 
 if timed_out {
   ()
-} else if status_entries_length(selected) == 2 {
+} else if status_entries_length selected == 2 {
   score = score + 1
 }
 
-return { .score = score }
+return { .score = score };

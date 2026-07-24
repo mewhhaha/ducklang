@@ -1,6 +1,6 @@
 module () where
 
-const {} = import "./sandbox_tags_types.duck" ()
+const {} = import "./sandbox_tags_types.duck" ();
 
 type TagNetworkPolicy = SandboxTagNetworkPolicy
 type TagFileSystemKind = SandboxTagFileSystemKind
@@ -11,31 +11,51 @@ type TagPlatform = SandboxTagPlatform
 
 let rec network_policy_is_enabled: &TagNetworkPolicy -> Bool = (policy: &TagNetworkPolicy) => {
   if let `Enabled () = policy { true } else { false }
-}
+};
 
 let rec file_system_is_external: &TagFileSystemKind -> Bool = (kind: &TagFileSystemKind) => {
   if let `ExternalFileSystem () = kind { true } else { false }
-}
+};
 
-let rec should_require_platform_sandbox: [&TagFileSystem, &TagNetworkPolicy, Bool] -> Bool = (file_system: &TagFileSystem, network: &TagNetworkPolicy, enforce_managed_network: Bool) => {
+let rec should_require_platform_sandbox: [&TagFileSystem, &TagNetworkPolicy, Bool] -> Bool = (
+  file_system: &TagFileSystem,
+  network: &TagNetworkPolicy,
+  enforce_managed_network: Bool,
+) => {
   if enforce_managed_network {
     true
-  } else if !(network_policy_is_enabled(network)) {
+  } else if !(network_policy_is_enabled network) {
     !(file_system_is_external(&file_system.kind))
   } else if let `RestrictedFileSystem () = file_system.kind {
     !(file_system.has_full_disk_write_access)
   } else {
     false
   }
-}
+};
 
-let rec permission_profile_sandbox_tag: [&TagPermissionProfile, &TagWindowsLevel, Bool, &TagPlatform] -> Text = (profile: &TagPermissionProfile, windows_level: &TagWindowsLevel, enforce_managed_network: Bool, platform: &TagPlatform) => {
+let rec permission_profile_sandbox_tag: [
+  &TagPermissionProfile,
+  &TagWindowsLevel,
+  Bool,
+  &TagPlatform,
+] -> Text = (
+  profile: &TagPermissionProfile,
+  windows_level: &TagWindowsLevel,
+  enforce_managed_network: Bool,
+  platform: &TagPlatform,
+) => {
   if let `DisabledProfile () = profile {
     @append("none", "")
   } else if let `ExternalProfile _ = profile {
     @append("external", "")
   } else if let `ManagedProfile managed = profile {
-    if !(should_require_platform_sandbox(&managed.file_system, &managed.network, enforce_managed_network)) {
+    if !(
+      should_require_platform_sandbox(
+        &managed.file_system,
+        &managed.network,
+        enforce_managed_network,
+      )
+    ) {
       @append("none", "")
     } else if platform.is_windows {
       if let `WindowsElevated () = windows_level {
@@ -53,9 +73,11 @@ let rec permission_profile_sandbox_tag: [&TagPermissionProfile, &TagWindowsLevel
   } else {
     @append("none", "")
   }
-}
+};
 
-let rec permission_profile_policy_tag: &TagPermissionProfile -> Text = (profile: &TagPermissionProfile) => {
+let rec permission_profile_policy_tag: &TagPermissionProfile -> Text = (
+  profile: &TagPermissionProfile
+) => {
   if let `DisabledProfile () = profile {
     @append("danger-full-access", "")
   } else if let `ExternalProfile _ = profile {
@@ -71,10 +93,10 @@ let rec permission_profile_policy_tag: &TagPermissionProfile -> Text = (profile:
   } else {
     @append("danger-full-access", "")
   }
-}
+};
 
 return {
-  should_require_platform_sandbox,
-  permission_profile_sandbox_tag,
-  permission_profile_policy_tag,
-}
+  .should_require_platform_sandbox,
+  .permission_profile_sandbox_tag,
+  .permission_profile_policy_tag,
+};

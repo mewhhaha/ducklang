@@ -1,32 +1,43 @@
 module () where
 
-const { json_array_empty, json_string } = import "duck:prelude/json" ()
-const lifecycle_module = import "./app_server_turn_lifecycle.duck"
-const {} = import "./app_server_turn_types.duck" ()
-const { initial_turn_state, record_turn_terminal, submitted_turn } = lifecycle_module()
+const { .json_array_empty, .json_string } = import "duck:prelude/json" ();
+const lifecycle_module = import "./app_server_turn_lifecycle.duck";
+const {} = import "./app_server_turn_types.duck" ();
+const { .initial_turn_state, .record_turn_terminal, .submitted_turn } = lifecycle_module();
 
 type FixtureState = AppServerTurnState
 type FixtureTransition = AppServerTurnTransition
 type FixtureTransitionResult = AppServerTurnTransitionResult
 type FixtureError = AppServerTurnError
 
-let initial: FixtureState = initial_turn_state("thread-1")
-let submitted: FixtureTransition = submitted_turn(initial, "turn-2")
-let [submitted_state, _] = submitted
-let failure: FixtureError = ["model unavailable", `Some (json_string("rateLimit")), `Some "retry later"]
-let failed_result: FixtureTransitionResult = record_turn_terminal(submitted_state, "turn-2", `TurnFailed failure, json_array_empty(), `Some 103i64, `None ())
-let score = 0
+let initial: FixtureState = initial_turn_state "thread-1";
+let submitted: FixtureTransition = submitted_turn(initial, "turn-2");
+let [submitted_state, _] = submitted;
+let failure: FixtureError = [
+  "model unavailable",
+  `Some (json_string "rateLimit"),
+  `Some "retry later",
+];
+let failed_result: FixtureTransitionResult = record_turn_terminal(
+  submitted_state,
+  "turn-2",
+  `TurnFailed failure,
+  json_array_empty(),
+  `Some 103i64,
+  `None (),
+);
+let score = 0;
 
 if let `Ok transition = failed_result {
-  let [_, turn] = transition
-  let [_, _, _, status, error, _, _, _] = turn
-  let status_valid = false
-  let error_valid = false
+  let [_, turn] = transition;
+  let [_, _, _, status, error, _, _, _] = turn;
+  let status_valid = false;
+  let error_valid = false;
   if let `Failed () = status { status_valid = true }
   if let `Some details = error {
-    let [message, codex_error_info, additional_details] = details
-    let info_valid = false
-    let details_valid = false
+    let [message, codex_error_info, additional_details] = details;
+    let info_valid = false;
+    let details_valid = false;
     if let `Some info = codex_error_info {
       if let `String value = info { info_valid = value == "rateLimit" }
     }
@@ -36,4 +47,4 @@ if let `Ok transition = failed_result {
   if status_valid && error_valid { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

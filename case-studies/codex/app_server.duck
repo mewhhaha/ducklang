@@ -1,9 +1,17 @@
 module () where
 
-const { encode_json, json_object, json_object_empty, json_object_get, json_object_prepend, json_string, parse_json_document } = import "duck:prelude/json" ()
-const { list } = import "duck:prelude/functional" ()
-const { text_append, text_get, text_length } = import "duck:prelude/runtime" ()
-const {} = import "./app_server_types.duck" ()
+const {
+  .encode_json,
+  .json_object,
+  .json_object_empty,
+  .json_object_get,
+  .json_object_prepend,
+  .json_string,
+  .parse_json_document,
+} = import "duck:prelude/json" ();
+const { .list } = import "duck:prelude/functional" ();
+const { .text_append, .text_get, .text_length } = import "duck:prelude/runtime" ();
+const {} = import "./app_server_types.duck" ();
 
 type ServerJson = AppServerJson
 type ServerJsonObject = JsonObject
@@ -32,20 +40,20 @@ type ServerDrop = AppServerDrop
 type ServerPlan = AppServerPlan
 type ServerInitializeResult = AppServerInitializeResult
 
-const texts = comptime list(Text)
+const texts = comptime list Text;
 
-const uninitialized_app_server_session: () -> ServerSession = () => `Uninitialized ()
+const uninitialized_app_server_session: () -> ServerSession = () => `Uninitialized ();
 
-const json_null_value: () -> ServerJson = () => `Null ()
+const json_null_value: () -> ServerJson = () => `Null ();
 
 const request_id_number_valid: Text -> Bool = (number: Text) => {
-  let length = text_length(number)
-  let index = 0
-  let valid = length > 0
-  let done = false
+  let length = text_length number;
+  let index = 0;
+  let valid = length > 0;
+  let done = false;
 
   if valid {
-    if text_get([number, 0]) == 45 {
+    if text_get [number, 0] == 45 {
       index = 1
       if index == length { valid = false }
     }
@@ -55,7 +63,7 @@ const request_id_number_valid: Text -> Bool = (number: Text) => {
     if index >= length {
       done = true
     } else {
-      let byte = text_get([number, index])
+      let byte = text_get [number, index];
 
       if byte < 48 || byte > 57 {
         valid = false
@@ -66,105 +74,114 @@ const request_id_number_valid: Text -> Bool = (number: Text) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
   valid
-}
+};
 
 const request_id_valid: ServerJson -> Bool = (value: ServerJson) => {
   if let `String _ = value {
     true
   } else if let `Number number = value {
-    request_id_number_valid(number)
+    request_id_number_valid number
   } else {
     false
   }
-}
+};
 
-const lookup_or_null: [ServerJsonObject, Text] -> ServerJson = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
+const lookup_or_null: [ServerJsonObject, Text] -> ServerJson = (object: ServerJsonObject, key:
+  Text) => {
+    let lookup: ServerJsonLookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    value
-  } else {
-    json_null_value()
-  }
-}
-
-const required_text: [ServerJsonObject, Text] -> ServerTextOption = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
-
-  if let `Found value = lookup {
-    if let `String text = value { `Some text } else { `None () }
-  } else {
-    `None ()
-  }
-}
-
-const optional_text: [ServerJsonObject, Text] -> ServerTextOption = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
-
-  if let `Found value = lookup {
-    if let `String text = value { `Some text } else { `None () }
-  } else {
-    `None ()
-  }
-}
-
-const optional_text_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
-
-  if let `Found value = lookup {
-    if let `Null () = value {
-      true
-    } else if let `String _ = value {
-      true
+    if let `Found value = lookup {
+      value
     } else {
-      false
+      json_null_value()
     }
+  };
+
+const required_text: [ServerJsonObject, Text] -> ServerTextOption = (
+  object: ServerJsonObject,
+  key: Text,
+) => {
+  let lookup: ServerJsonLookup = json_object_get(key, object);
+
+  if let `Found value = lookup {
+    if let `String text = value { `Some text } else { `None () }
   } else {
-    true
+    `None ()
   }
-}
+};
+
+const optional_text: [ServerJsonObject, Text] -> ServerTextOption = (
+  object: ServerJsonObject,
+  key: Text,
+) => {
+  let lookup: ServerJsonLookup = json_object_get(key, object);
+
+  if let `Found value = lookup {
+    if let `String text = value { `Some text } else { `None () }
+  } else {
+    `None ()
+  }
+};
+
+const optional_text_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key:
+  Text) => {
+    let lookup: ServerJsonLookup = json_object_get(key, object);
+
+    if let `Found value = lookup {
+      if let `Null () = value {
+        true
+      } else if let `String _ = value {
+        true
+      } else {
+        false
+      }
+    } else {
+      true
+    }
+  };
 
 const optional_bool: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
+  let lookup: ServerJsonLookup = json_object_get(key, object);
 
   if let `Found value = lookup {
     if let `Bool boolean = value { boolean } else { false }
   } else {
     false
   }
-}
+};
 
-const optional_bool_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
-  let lookup: ServerJsonLookup = json_object_get(key, object)
+const optional_bool_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key:
+  Text) => {
+    let lookup: ServerJsonLookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `Null () = value {
-      true
-    } else if let `Bool _ = value {
-      true
+    if let `Found value = lookup {
+      if let `Null () = value {
+        true
+      } else if let `Bool _ = value {
+        true
+      } else {
+        false
+      }
     } else {
-      false
+      true
     }
-  } else {
-    true
-  }
-}
+  };
 
 const decode_text_array: ServerJson -> ServerTextArrayResult = (value: ServerJson) => {
   if let `Array values = value {
-    let current = values
-    let reversed = texts.empty()
-    let valid = true
-    let done = false
+    let current = values;
+    let reversed = texts.empty();
+    let valid = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [entry, tail] = node
+        let [entry, tail] = node;
 
         if let `String text = entry {
           reversed = texts.prepend(text, reversed)
@@ -177,7 +194,7 @@ const decode_text_array: ServerJson -> ServerTextArrayResult = (value: ServerJso
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
     if valid {
@@ -188,19 +205,19 @@ const decode_text_array: ServerJson -> ServerTextArrayResult = (value: ServerJso
   } else {
     `TextArrayError "optOutNotificationMethods must be an array"
   }
-}
+};
 
 const client_name_valid: Text -> Bool = (name: Text) => {
-  let valid = true
-  let index = 0
-  let length = text_length(name)
-  let done = false
+  let valid = true;
+  let index = 0;
+  let length = text_length name;
+  let done = false;
 
   loop {
     if index >= length {
       done = true
     } else {
-      let byte = text_get([name, index])
+      let byte = text_get [name, index];
 
       if byte < 32 {
         if byte != 9 { valid = false }
@@ -212,107 +229,121 @@ const client_name_valid: Text -> Bool = (name: Text) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
   valid
-}
+};
 
-const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult = (params: ServerJsonObject) => {
-  let experimental_api = false
-  let request_attestation = false
-  let openai_form = false
-  let opt_out = texts.empty()
-  let error: Text = ""
-  let lookup: ServerJsonLookup = json_object_get("capabilities", params)
+const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult = (params:
+  ServerJsonObject) => {
+    let experimental_api = false;
+    let request_attestation = false;
+    let openai_form = false;
+    let opt_out = texts.empty();
+    let error: Text = "";
+    let lookup: ServerJsonLookup = json_object_get("capabilities", params);
 
-  if let `Found value = lookup {
-    if let `Null () = value {
-      ()
-    } else if let `Object object = value {
-      if optional_bool_valid(object, "experimentalApi") {
-        experimental_api = optional_bool(object, "experimentalApi")
-      } else {
-        error = "initialize.params.capabilities.experimentalApi must be a boolean or null"
-      }
-
-      if text_length(error) == 0 {
-        if optional_bool_valid(object, "requestAttestation") {
-          request_attestation = optional_bool(object, "requestAttestation")
+    if let `Found value = lookup {
+      if let `Null () = value {
+        ()
+      } else if let `Object object = value {
+        if optional_bool_valid(object, "experimentalApi") {
+          experimental_api = optional_bool(object, "experimentalApi")
         } else {
-          error = "initialize.params.capabilities.requestAttestation must be a boolean or null"
+          error = "initialize.params.capabilities.experimentalApi must be a boolean or null"
         }
-      }
 
-      if text_length(error) == 0 {
-        if optional_bool_valid(object, "mcpServerOpenaiFormElicitation") {
-          openai_form = optional_bool(object, "mcpServerOpenaiFormElicitation")
-        } else {
-          error = "initialize.params.capabilities.mcpServerOpenaiFormElicitation must be a boolean or null"
-        }
-      }
-
-      if text_length(error) == 0 {
-        let methods: ServerJsonLookup = json_object_get("optOutNotificationMethods", object)
-
-        if let `Found method_values = methods {
-          if let `Null () = method_values {
-            ()
+        if text_length error == 0 {
+          if optional_bool_valid(object, "requestAttestation") {
+            request_attestation = optional_bool(object, "requestAttestation")
           } else {
-            let decoded = decode_text_array(method_values)
+            error = "initialize.params.capabilities.requestAttestation must be a boolean or null"
+          }
+        }
 
-            if let `TextArrayOk values = decoded {
-              opt_out = values
-            } else if let `TextArrayError reason = decoded {
-              error = text_append(["initialize.params.capabilities.", reason])
+        if text_length error == 0 {
+          if optional_bool_valid(object, "mcpServerOpenaiFormElicitation") {
+            openai_form = optional_bool(object, "mcpServerOpenaiFormElicitation")
+          } else {
+            error =
+              "initialize.params.capabilities.mcpServerOpenaiFormElicitation must be a boolean or null"
+          }
+        }
+
+        if text_length error == 0 {
+          let methods: ServerJsonLookup = json_object_get("optOutNotificationMethods", object);
+
+          if let `Found method_values = methods {
+            if let `Null () = method_values {
+              ()
+            } else {
+              let decoded = decode_text_array method_values;
+
+              if let `TextArrayOk values = decoded {
+                opt_out = values
+              } else if let `TextArrayError reason = decoded {
+                error = text_append ["initialize.params.capabilities.", reason]
+              }
             }
           }
         }
+      } else {
+        error = "initialize.params.capabilities must be an object or null"
       }
-    } else {
-      error = "initialize.params.capabilities must be an object or null"
     }
-  }
 
-  let capabilities: ServerCapabilities = [experimental_api, request_attestation, openai_form, opt_out]
-  if text_length(error) == 0 {
-    `CapabilitiesOk capabilities
-  } else {
-    `CapabilitiesError error
-  }
-}
+    let capabilities: ServerCapabilities = [
+      experimental_api,
+      request_attestation,
+      openai_form,
+      opt_out,
+    ];
+    if text_length error == 0 {
+      `CapabilitiesOk capabilities
+    } else {
+      `CapabilitiesError error
+    }
+  };
 
 const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJson) => {
-  let result: ServerInitializeResult = `InitializeError "initialize.params must be an object"
+  let result: ServerInitializeResult = `InitializeError "initialize.params must be an object";
 
   if let `Object object = params {
-    let client_lookup: ServerJsonLookup = json_object_get("clientInfo", object)
+    let client_lookup: ServerJsonLookup = json_object_get("clientInfo", object);
 
     if let `Found client_value = client_lookup {
       if let `Object client = client_value {
-        let name = required_text(client, "name")
-        let version = required_text(client, "version")
+        let name = required_text(client, "name");
+        let version = required_text(client, "version");
 
         if let `Some client_name = name {
           if let `Some client_version = version {
             if optional_text_valid(client, "title") {
-              if client_name_valid(client_name) {
-                let capabilities_result = decode_capabilities(object)
+              if client_name_valid client_name {
+                let capabilities_result = decode_capabilities object;
 
                 if let `CapabilitiesOk capabilities = capabilities_result {
-                  let info: ServerClientInfo = [client_name, optional_text(client, "title"), client_version]
-                  let initialized: ServerInitializedSession = [info, capabilities]
+                  let info: ServerClientInfo = [
+                    client_name,
+                    optional_text(client, "title"),
+                    client_version,
+                  ];
+                  let initialized: ServerInitializedSession = [info, capabilities];
                   result = `InitializeOk initialized
                 } else if let `CapabilitiesError error = capabilities_result {
                   result = `InitializeError error
                 }
               } else {
-                let prefix = text_append(["Invalid clientInfo.name: '", client_name])
-                result = `InitializeError (text_append([prefix, "'. Must be a valid HTTP header value."]))
+                let prefix = text_append ["Invalid clientInfo.name: '", client_name];
+                result = `InitializeError (
+                  text_append [prefix, "'. Must be a valid HTTP header value."]
+                )
               }
             } else {
-              result = `InitializeError "initialize.params.clientInfo.title must be a string or null"
+              result =
+                `InitializeError "initialize.params.clientInfo.title must be a string or null"
             }
           } else {
             result = `InitializeError "initialize.params.clientInfo.version must be a string"
@@ -329,19 +360,27 @@ const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJ
   }
 
   result
-}
+};
 
-const decode_peer_error: [ServerRequestId, ServerJson] -> ServerDecodeResult = (id: ServerRequestId, value: ServerJson) => {
+const decode_peer_error: [ServerRequestId, ServerJson] -> ServerDecodeResult = (
+  id: ServerRequestId,
+  value: ServerJson,
+) => {
   if let `Object object = value {
-    let code_lookup: ServerJsonLookup = json_object_get("code", object)
-    let message = required_text(object, "message")
+    let code_lookup: ServerJsonLookup = json_object_get("code", object);
+    let message = required_text(object, "message");
 
     if let `Found code_value = code_lookup {
       if let `Number code = code_value {
-        if request_id_number_valid(code) {
+        if request_id_number_valid code {
           if let `Some error_message = message {
-            let peer_error: ServerPeerError = [id, code, error_message, lookup_or_null(object, "data")]
-            `Decoded (`PeerError peer_error)
+            let peer_error: ServerPeerError = [
+              id,
+              code,
+              error_message,
+              lookup_or_null(object, "data"),
+            ]
+            `Decoded (`PeerError peer_error);
           } else {
             `DecodeError "error response message must be a string"
           }
@@ -357,47 +396,47 @@ const decode_peer_error: [ServerRequestId, ServerJson] -> ServerDecodeResult = (
   } else {
     `DecodeError "error response must contain an error object"
   }
-}
+};
 
 const decode_app_server_message: Text -> ServerDecodeResult = (document: Text) => {
-  let parsed = parse_json_document(document)
+  let parsed = parse_json_document document;
 
   if let `Err error = parsed {
     let [_, message] = error
-    `DecodeError message
+    `DecodeError message;
   } else if let `Ok value_and_index = parsed {
-    let [value, _] = value_and_index
+    let [value, _] = value_and_index;
 
     if let `Object object = value {
-      let method_lookup: ServerJsonLookup = json_object_get("method", object)
-      let id_lookup: ServerJsonLookup = json_object_get("id", object)
+      let method_lookup: ServerJsonLookup = json_object_get("method", object);
+      let id_lookup: ServerJsonLookup = json_object_get("id", object);
 
       if let `Found method_value = method_lookup {
         if let `String method = method_value {
-          let params = lookup_or_null(object, "params")
+          let params = lookup_or_null(object, "params");
 
           if let `Found id = id_lookup {
-            if request_id_valid(id) {
+            if request_id_valid id {
               let request: ServerRequest = [id, method, params]
-              `Decoded (`Request request)
+              `Decoded (`Request request);
             } else {
               `DecodeError "request id must be a string or integer"
             }
           } else {
             let notification: ServerNotification = [method, params]
-            `Decoded (`Notification notification)
+            `Decoded (`Notification notification);
           }
         } else {
           `DecodeError "message method must be a string"
         }
       } else if let `Found id = id_lookup {
-        if request_id_valid(id) {
-          let response_lookup: ServerJsonLookup = json_object_get("result", object)
-          let error_lookup: ServerJsonLookup = json_object_get("error", object)
+        if request_id_valid id {
+          let response_lookup: ServerJsonLookup = json_object_get("result", object);
+          let error_lookup: ServerJsonLookup = json_object_get("error", object);
 
           if let `Found response_value = response_lookup {
             let response: ServerResponse = [id, response_value]
-            `Decoded (`Response response)
+            `Decoded (`Response response);
           } else if let `Found error_value = error_lookup {
             decode_peer_error(id, error_value)
           } else {
@@ -415,93 +454,108 @@ const decode_app_server_message: Text -> ServerDecodeResult = (document: Text) =
   } else {
     `DecodeError "invalid JSON parse result"
   }
-}
+};
 
-const encode_response: [ServerRequestId, ServerJson] -> Text = (id: ServerRequestId, result: ServerJson) => {
-  let fields = json_object_empty()
+const encode_response: [ServerRequestId, ServerJson] -> Text = (
+  id: ServerRequestId,
+  result: ServerJson,
+) => {
+  let fields = json_object_empty();
   fields = json_object_prepend("result", result, fields)
   fields = json_object_prepend("id", id, fields)
-  encode_json(json_object(fields))
-}
+  encode_json(json_object fields)
+};
 
-const encode_error: [ServerRequestId, Text, Text] -> Text = (id: ServerRequestId, code: Text, message: Text) => {
-  let error_fields = json_object_empty()
-  error_fields = json_object_prepend("message", json_string(message), error_fields)
+const encode_error: [ServerRequestId, Text, Text] -> Text = (
+  id: ServerRequestId,
+  code: Text,
+  message: Text,
+) => {
+  let error_fields = json_object_empty();
+  error_fields = json_object_prepend("message", json_string message, error_fields)
   error_fields = json_object_prepend("code", `Number code, error_fields)
-  let fields = json_object_empty()
-  fields = json_object_prepend("error", json_object(error_fields), fields)
+  let fields = json_object_empty();
+  fields = json_object_prepend("error", json_object error_fields, fields)
   fields = json_object_prepend("id", id, fields)
-  encode_json(json_object(fields))
-}
+  encode_json(json_object fields)
+};
 
 const initialize_response: ServerIdentity -> ServerJson = (identity: ServerIdentity) => {
-  let [user_agent, codex_home, platform_family, platform_os] = identity
-  let fields = json_object_empty()
-  fields = json_object_prepend("platformOs", json_string(platform_os), fields)
-  fields = json_object_prepend("platformFamily", json_string(platform_family), fields)
-  fields = json_object_prepend("codexHome", json_string(codex_home), fields)
-  fields = json_object_prepend("userAgent", json_string(user_agent), fields)
-  json_object(fields)
-}
+  let [user_agent, codex_home, platform_family, platform_os] = identity;
+  let fields = json_object_empty();
+  fields = json_object_prepend("platformOs", json_string platform_os, fields)
+  fields = json_object_prepend("platformFamily", json_string platform_family, fields)
+  fields = json_object_prepend("codexHome", json_string codex_home, fields)
+  fields = json_object_prepend("userAgent", json_string user_agent, fields)
+  json_object fields
+};
 
-const handle_request: [ServerSession, ServerIdentity, ServerRequest] -> ServerPlan = (session: ServerSession, identity: ServerIdentity, request: ServerRequest) => {
-  let [id, method, params] = request
-  let plan: ServerPlan = `Drop ([session, "request method could not be decoded"])
+const handle_request: [ServerSession, ServerIdentity, ServerRequest] -> ServerPlan = (
+  session: ServerSession,
+  identity: ServerIdentity,
+  request: ServerRequest,
+) => {
+  let [id, method, params] = request;
+  let plan: ServerPlan = `Drop ([session, "request method could not be decoded"]);
 
   if method == "initialize" {
     if let `Initialized _ = session {
-      let send: ServerSend = [session, encode_error(id, "-32600", "Already initialized")]
+      let send: ServerSend = [session, encode_error(id, "-32600", "Already initialized")];
       plan = `Send send
     } else {
-      let initialized = decode_initialize(params)
+      let initialized = decode_initialize params;
 
       if let `InitializeOk initialized_session = initialized {
-        let next: ServerSession = `Initialized initialized_session
-        let send: ServerSend = [next, encode_response(id, initialize_response(identity))]
+        let next: ServerSession = `Initialized initialized_session;
+        let send: ServerSend = [next, encode_response(id, initialize_response identity)];
         plan = `Send send
       } else if let `InitializeError message = initialized {
-        let send: ServerSend = [session, encode_error(id, "-32600", message)]
+        let send: ServerSend = [session, encode_error(id, "-32600", message)];
         plan = `Send send
       }
     }
   } else if let `Uninitialized () = session {
-    let send: ServerSend = [session, encode_error(id, "-32600", "Not initialized")]
+    let send: ServerSend = [session, encode_error(id, "-32600", "Not initialized")];
     plan = `Send send
   } else {
-    let route: ServerRoute = [session, id, method, params]
+    let route: ServerRoute = [session, id, method, params];
     plan = `Route route
   }
 
   plan
-}
+};
 
-const handle_app_server_line: [ServerSession, ServerIdentity, Text] -> ServerPlan = (session: ServerSession, identity: ServerIdentity, document: Text) => {
-  let decoded = decode_app_server_message(document)
+const handle_app_server_line: [ServerSession, ServerIdentity, Text] -> ServerPlan = (
+  session: ServerSession,
+  identity: ServerIdentity,
+  document: Text,
+) => {
+  let decoded = decode_app_server_message document;
 
   if let `Decoded message = decoded {
     if let `Request request = message {
       handle_request(session, identity, request)
     } else {
       let observed: ServerObserve = [session, message]
-      `Observe observed
+      `Observe observed;
     }
   } else if let `DecodeError message = decoded {
     let dropped: ServerDrop = [session, message]
-    `Drop dropped
+    `Drop dropped;
   } else {
     let dropped: ServerDrop = [session, "could not classify app-server message"]
-    `Drop dropped
+    `Drop dropped;
   }
-}
+};
 
 const notification_opted_out: [ServerTexts, Text] -> Bool = (values: ServerTexts, method: Text) => {
-  let current = values
-  let opted_out = false
-  let done = false
+  let current = values;
+  let opted_out = false;
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [candidate, tail] = node
+      let [candidate, tail] = node;
 
       if candidate == method {
         opted_out = true
@@ -514,39 +568,42 @@ const notification_opted_out: [ServerTexts, Text] -> Bool = (values: ServerTexts
     }
 
     if done {
-      break
+      break;
     }
   }
 
   opted_out
-}
+};
 
-const should_emit_notification: [ServerSession, Text] -> Bool = (session: ServerSession, method: Text) => {
+const should_emit_notification: [ServerSession, Text] -> Bool = (
+  session: ServerSession,
+  method: Text,
+) => {
   if let `Initialized initialized = session {
-    let [_, capabilities] = initialized
-    let [_, _, _, opt_out] = capabilities
+    let [_, capabilities] = initialized;
+    let [_, _, _, opt_out] = capabilities;
     if notification_opted_out(opt_out, method) { false } else { true }
   } else {
     false
   }
-}
+};
 
 const experimental_api_enabled: ServerSession -> Bool = (session: ServerSession) => {
   if let `Initialized initialized = session {
-    let [_, capabilities] = initialized
-    let [enabled, _, _, _] = capabilities
+    let [_, capabilities] = initialized;
+    let [enabled, _, _, _] = capabilities;
     enabled
   } else {
     false
   }
-}
+};
 
 return {
-  uninitialized_app_server_session,
-  decode_app_server_message,
-  encode_response,
-  encode_error,
-  handle_app_server_line,
-  should_emit_notification,
-  experimental_api_enabled,
-}
+  .uninitialized_app_server_session,
+  .decode_app_server_message,
+  .encode_response,
+  .encode_error,
+  .handle_app_server_line,
+  .should_emit_notification,
+  .experimental_api_enabled,
+};

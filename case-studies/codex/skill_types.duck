@@ -18,11 +18,35 @@ type SkillScope =
   | `Admin Unit
 
 type SkillPolicy = [SkillBoolOption, SkillTexts]
-type SkillInterface = [SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption]
-type SkillToolDependency = [Text, Text, SkillTextOption, SkillTextOption, SkillTextOption, SkillTextOption]
+type SkillInterface = [
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+]
+type SkillToolDependency = [
+  Text,
+  Text,
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+  SkillTextOption,
+]
 type SkillToolDependencies = List SkillToolDependency
 
-type SkillMetadata = [Text, Text, SkillTextOption, SkillInterface, SkillToolDependencies, SkillPolicy, Text, SkillScope, SkillTextOption]
+type SkillMetadata = [
+  Text,
+  Text,
+  SkillTextOption,
+  SkillInterface,
+  SkillToolDependencies,
+  SkillPolicy,
+  Text,
+  SkillScope,
+  SkillTextOption,
+]
 type SkillDocument = [SkillMetadata, Text]
 type SkillDocumentOption = Option SkillDocument
 type SkillDocumentParse = [SkillDocumentOption, SkillTextOption]
@@ -56,4 +80,4 @@ type SkillRenderAccum = [SkillTexts, I32, I32, I32, I32]
 type AvailableSkills = [SkillTexts, SkillRenderReport, SkillTextOption]
 type AvailableSkillsOption = Option AvailableSkills
 
-return {}
+return {};

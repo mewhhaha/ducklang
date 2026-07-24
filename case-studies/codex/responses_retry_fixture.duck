@@ -1,8 +1,8 @@
 module () where
 
-const { duration_ms, duration_ms_value } = import "duck:prelude/abstractions" ()
-const {} = import "./responses_retry_types.duck" ()
-const { plan_response_retry } = import "./responses_retry.duck" ()
+const { .duration_ms, .duration_ms_value } = import "duck:prelude/abstractions" ();
+const {} = import "./responses_retry_types.duck" ();
+const { .plan_response_retry } = import "./responses_retry.duck" ();
 
 type FixtureError = ResponseStreamError
 type FixturePlan = ResponseRetryPlan
@@ -10,11 +10,21 @@ type FixtureTerminalKind =
   | `FallbackKind Unit
   | `FailKind Unit
 
-let retry_matches: [FixturePlan, I64, I64, Bool, Text] -> Bool = (plan: FixturePlan, expected_retries: I64, expected_delay_ms: I64, expected_report_error: Bool, expected_notification: Text) => if let `Retry retry = plan {
-  if retry.retries == expected_retries && duration_ms_value(retry.delay) == expected_delay_ms && retry.report_error == expected_report_error && retry.notification == expected_notification { true } else { false }
-} else { false }
+let retry_matches: [FixturePlan, I64, I64, Bool, Text] -> Bool = (
+  plan: FixturePlan,
+  expected_retries: I64,
+  expected_delay_ms: I64,
+  expected_report_error: Bool,
+  expected_notification: Text,
+) => if let `Retry retry = plan {
+  if retry.retries == expected_retries && duration_ms_value retry.delay == expected_delay_ms && retry.report_error == expected_report_error && retry.notification == expected_notification { true } else { false }
+} else { false };
 
-let terminal_matches: [FixturePlan, FixtureTerminalKind, Text] -> Bool = (plan: FixturePlan, expected_kind: FixtureTerminalKind, expected_message: Text) => if let `Fallback message = plan {
+let terminal_matches: [FixturePlan, FixtureTerminalKind, Text] -> Bool = (
+  plan: FixturePlan,
+  expected_kind: FixtureTerminalKind,
+  expected_message: Text,
+) => if let `Fallback message = plan {
   if let `FallbackKind () = expected_kind {
     if message == expected_message { true } else { false }
   } else { false }
@@ -22,33 +32,56 @@ let terminal_matches: [FixturePlan, FixtureTerminalKind, Text] -> Bool = (plan: 
   if let `FailKind () = expected_kind {
     if message == expected_message { true } else { false }
   } else { false }
-} else { false }
+} else { false };
 
-let score: I32 = 0
-let stream_error: FixtureError = [.message = "stream disconnected", .requested_delay = `None ()]
-let first: FixturePlan = plan_response_retry(0i64, 2i64, false, &stream_error, false, true, 1000)
-let first_valid = retry_matches(first, 1i64, 200i64, false, "Reconnecting... 1/2")
+let score: I32 = 0;
+let stream_error: FixtureError = [.message = "stream disconnected", .requested_delay = `None ()];
+let first: FixturePlan = plan_response_retry(0i64, 2i64, false, &stream_error, false, true, 1000);
+let first_valid = retry_matches(first, 1i64, 200i64, false, "Reconnecting... 1/2");
 if first_valid { score = score + 1 }
 
-let requested_error: FixtureError = [.message = "server requested delay", .requested_delay = `Some (duration_ms(750i64))]
-let second: FixturePlan = plan_response_retry(1i64, 2i64, false, &requested_error, false, true, 900)
-let second_valid = retry_matches(second, 2i64, 750i64, true, "Reconnecting... 2/2")
+let requested_error: FixtureError = [
+  .message = "server requested delay",
+  .requested_delay = `Some (duration_ms 750i64),
+];
+let second: FixturePlan = plan_response_retry(1i64, 2i64, false, &requested_error, false, true, 900);
+let second_valid = retry_matches(second, 2i64, 750i64, true, "Reconnecting... 2/2");
 if second_valid { score = score + 10 }
 
-let fallback: FixturePlan = plan_response_retry(2i64, 2i64, true, &stream_error, false, true, 1000)
-let fallback_valid = terminal_matches(fallback, `FallbackKind (), "Falling back from WebSockets to HTTPS transport. stream disconnected")
+let fallback: FixturePlan = plan_response_retry(2i64, 2i64, true, &stream_error, false, true, 1000);
+let fallback_valid = terminal_matches(
+  fallback,
+  `FallbackKind (),
+  "Falling back from WebSockets to HTTPS transport. stream disconnected",
+);
 if fallback_valid { score = score + 100 }
 
-let failure: FixturePlan = plan_response_retry(2i64, 2i64, false, &stream_error, false, true, 1000)
-let failure_valid = terminal_matches(failure, `FailKind (), "stream disconnected")
+let failure: FixturePlan = plan_response_retry(2i64, 2i64, false, &stream_error, false, true, 1000);
+let failure_valid = terminal_matches(failure, `FailKind (), "stream disconnected");
 if failure_valid { score = score + 1000 }
 
-let debug_retry: FixturePlan = plan_response_retry(0i64, 2i64, false, &stream_error, true, true, 1000)
-let debug_valid = retry_matches(debug_retry, 1i64, 200i64, true, "Reconnecting... 1/2")
+let debug_retry: FixturePlan = plan_response_retry(
+  0i64,
+  2i64,
+  false,
+  &stream_error,
+  true,
+  true,
+  1000,
+);
+let debug_valid = retry_matches(debug_retry, 1i64, 200i64, true, "Reconnecting... 1/2");
 if debug_valid { score = score + 10000 }
 
-let http_retry: FixturePlan = plan_response_retry(0i64, 2i64, false, &stream_error, false, false, 1000)
-let http_valid = retry_matches(http_retry, 1i64, 200i64, true, "Reconnecting... 1/2")
+let http_retry: FixturePlan = plan_response_retry(
+  0i64,
+  2i64,
+  false,
+  &stream_error,
+  false,
+  false,
+  1000,
+);
+let http_valid = retry_matches(http_retry, 1i64, 200i64, true, "Reconnecting... 1/2");
 if http_valid { score = score + 100000 }
 
-return { .score = score }
+return { .score = score };

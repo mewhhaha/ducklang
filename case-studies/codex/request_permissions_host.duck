@@ -8,4 +8,4 @@ declare Init {
   request_permissions_host: RequestPermissionsHost
 }
 
-return {}
+return {};

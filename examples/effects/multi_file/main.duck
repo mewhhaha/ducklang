@@ -1,8 +1,8 @@
 module (!init: Init) where
 
-const logger = import "./logger.duck"
+const logger = import "./logger.duck";
 
-const { .write = write } = logger { .io = !init.io }
-_ <- write("hello from Duck")
+const { .write = write } = logger { .io = !init.io };
+_ <- write "hello from Duck"
 
-return {}
+return {};

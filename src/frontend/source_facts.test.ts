@@ -37,7 +37,7 @@ function definition_type_name(
 }
 
 Deno.test("source facts expose canonical types as semantic evidence", () => {
-  const source = parse_source("let value: Bool = true\nvalue");
+  const source = parse_source("let value: Bool = true;\nvalue");
   const facts = source_facts(source);
   const fact = facts.definition_type_of.get(source.statements[0]!)?.get("name");
 
@@ -47,8 +47,8 @@ Deno.test("source facts expose canonical types as semantic evidence", () => {
 Deno.test("source facts accept borrowed values for borrowed parameters", () => {
   const source = parse_source(`
 type Point = struct { .x = I32 }
-let read: &Point -> I32 = (point: &Point) => point.x
-let point = Point.new { .x = 42 }
+let read: &Point -> I32 = (point: &Point) => point.x;
+let point = Point.new { .x = 42 };
 read(&point)
 `);
   const facts = source_facts(source);
@@ -62,8 +62,8 @@ Deno.test("source facts retain the distinct Char type", () => {
 Deno.test("source facts expose let-else bindings only after the fallback", () => {
   const source = parse_source(`
 type Maybe = | \`Some I32 | \`None Unit
-let option: Maybe = \`Some 42
-let \`Some value = option else { return 0 }
+let option: Maybe = \`Some 42;
+let \`Some value = option else { return 0; };
 value
 `);
   const facts = source_facts(source);
@@ -81,7 +81,7 @@ value
 Deno.test("applied source types preserve function argument grouping", () => {
   const source = parse_source(`
 type Maybe value = | \`Just value | \`Nothing Unit
-let callback: Maybe (I32 -> I32) = \`Nothing ()
+let callback: Maybe (I32 -> I32) = \`Nothing ();
 callback
 `);
   const facts = source_facts(source);
@@ -100,7 +100,7 @@ callback
 });
 
 Deno.test("type_of records a type-value describing its operand", () => {
-  const source = parse_source('let value: Text = "duck"\n@type_of(value)');
+  const source = parse_source('let value: Text = "duck";\n@type_of(value)');
   const facts = source_facts(source);
   const call = facts.expressions.find((expression) => {
     return expression.tag === "app" && expression.func.tag === "var" &&
@@ -119,7 +119,7 @@ Deno.test("type_of records a type-value describing its operand", () => {
 Deno.test("@cast accepts only representation-identical target types", () => {
   const valid = parse_source(`
 type UserId = I32
-let value: UserId = 41
+let value: UserId = 41;
 @cast(value, I32)
 `);
   const valid_facts = source_facts(valid);
@@ -152,8 +152,8 @@ Deno.test("newtypes seal matching representations without becoming aliases", () 
   const source = parse_source(`
 type Centimeter = newtype I32
 type Seconds = newtype I32
-const distance = 42 :> Centimeter
-let time: Seconds = distance
+const distance = 42 :> Centimeter;
+let time: Seconds = distance;
 time
 `);
   const facts = source_facts(source);
@@ -189,7 +189,7 @@ Deno.test("source facts specialize generic product aliases recursively", () => {
 type Box a = struct {.value = a}
 type Alias a = Box a
 type Nested a = Alias a
-let box: Nested Bool = [.value = true]
+let box: Nested Bool = [.value = true];
 box.value
 `);
   const facts = source_facts(source);
@@ -202,7 +202,7 @@ box.value
   const cyclic = parse_source(`
 type Left a = Right a
 type Right a = Left a
-  let value: Left Bool = missing
+  let value: Left Bool = missing;
 value
 `);
   const cyclic_facts = source_facts(cyclic);
@@ -214,8 +214,8 @@ value
 
 Deno.test("source facts preserve names across the i32 runtime family", () => {
   const source = parse_source(
-    "let signed: Int = 1\nlet sum = signed + 1\n" +
-      "let unsigned: U32 = 2\nlet next = unsigned + 1\n",
+    "let signed: Int = 1;\nlet sum = signed + 1;\n" +
+      "let unsigned: U32 = 2;\nlet next = unsigned + 1;\n",
   );
   const facts = source_facts(source);
 
@@ -231,23 +231,23 @@ Deno.test("source facts expose Bytes.empty as Bytes", () => {
 
 Deno.test("source facts traverse unreachable expressions without changing returns", () => {
   assert_equals(
-    expression_type_names("let f = () => { return true; 1 }\nf()", "num"),
+    expression_type_names("let f = () => { return true; 1 };\nf()", "num"),
     ["I32"],
   );
   assert_equals(
-    expression_type_names("let f = () => { return true; 1 }\nf()", "app"),
+    expression_type_names("let f = () => { return true; 1 };\nf()", "app"),
     ["Bool"],
   );
   assert_equals(
     expression_type_names(
-      "let f = () => { { return true }; 1 }\nlet out = f()",
+      "let f = () => { { return true; }; 1 };\nlet out = f();",
       "app",
     ),
     ["Bool"],
   );
   assert_equals(
     expression_type_names(
-      "let f = () => { scratch { return true }; 1 }\nlet out = f()",
+      "let f = () => { scratch { return true; }; 1 };\nlet out = f();",
       "app",
     ),
     ["Bool"],
@@ -257,22 +257,22 @@ Deno.test("source facts traverse unreachable expressions without changing return
 Deno.test("source facts infer each untyped call independently", () => {
   assert_equals(
     expression_type_names(
-      "let identity = value => value\nidentity(true)\nidentity(1)",
+      "let identity = value => value;\nidentity(true)\nidentity(1)",
       "app",
     ),
     ["Bool", "I32"],
   );
   assert_equals(
     expression_type_names(
-      "let make = () => value => value\nmake()(true)\nmake()(1)",
+      "let make = () => value => value;\nmake()(true)\nmake()(1)",
       "app",
     ).filter((name) => name !== "function"),
     ["Bool", "I32"],
   );
   assert_equals(
     expression_type_names(
-      "let apply = (f, value) => f(value)\n" +
-        "let identity = value => value\napply(identity, true)",
+      "let apply = (f, value) => f(value);\n" +
+        "let identity = value => value;\napply(identity, true)",
       "app",
     ),
     ["unknown", "Bool"],
@@ -282,11 +282,11 @@ Deno.test("source facts infer each untyped call independently", () => {
 Deno.test("source facts apply consistent call types inside untyped functions", () => {
   const source = parse_source(`
 let suffix = (bytes, pattern) => {
-  let tail = @slice(bytes, 0, @len(bytes))
-  let width = @len(pattern)
+  let tail = @slice(bytes, 0, @len(bytes));
+  let width = @len(pattern);
   @slice(tail, 0, width)
-}
-let bytes: Bytes = Bytes.empty
+};
+let bytes: Bytes = Bytes.empty;
 suffix(bytes, "")
 `);
   const facts = source_facts(source);
@@ -313,7 +313,7 @@ suffix(bytes, "")
   );
 
   const conflicting = parse_source(
-    "let identity = value => value\nidentity(true)\nidentity(1)",
+    "let identity = value => value;\nidentity(true)\nidentity(1)",
   );
   const conflicting_facts = source_facts(conflicting);
   const identity = conflicting.statements[0];
@@ -331,9 +331,9 @@ suffix(bytes, "")
   );
 
   const aliases = parse_source(`
-let identity = value => value
-let int_value: Int = 1
-let i32_value: I32 = 2
+let identity = value => value;
+let int_value: Int = 1;
+let i32_value: I32 = 2;
 identity(int_value)
 identity(i32_value)
 `);
@@ -353,7 +353,7 @@ identity(i32_value)
   );
 
   const invalid_call = parse_source(
-    "let identity = value => value\nidentity(1, 2)",
+    "let identity = value => value;\nidentity(1, 2)",
   );
   const invalid_call_facts = source_facts(invalid_call);
   const invalid_identity = invalid_call.statements[0];
@@ -378,9 +378,9 @@ identity(i32_value)
 Deno.test("source facts reject invalid annotations and same assignments", () => {
   for (
     const text of [
-      'let f: (I32) -> Bool = value => "bad"\nf(1)',
-      "let f: (I32) -> Bool = (value: Bool) => true\nf(1)",
-      "let f: (I32) -> Bool = (left, right) => true\nf(1)",
+      'let f: (I32) -> Bool = value => "bad";\nf(1)',
+      "let f: (I32) -> Bool = (value: Bool) => true;\nf(1)",
+      "let f: (I32) -> Bool = (left, right) => true;\nf(1)",
     ]
   ) {
     const source = parse_source(text);
@@ -389,7 +389,7 @@ Deno.test("source facts reject invalid annotations and same assignments", () => 
     assert_equals(expression_type_names(text, "app"), ["unknown"]);
   }
 
-  const assigned = parse_source("let ready = true\nready = 1\nready");
+  const assigned = parse_source("let ready = true;\nready = 1\nready");
   const assigned_facts = source_facts(assigned);
   assert_equals(
     binding_type_name(assigned.statements[1]!, assigned_facts),
@@ -415,7 +415,7 @@ Deno.test("source facts require known indexes and valid loop binders", () => {
     ["unknown"],
   );
   assert_equals(
-    expression_type_names('let out = loop { break "x" }\nout', "loop"),
+    expression_type_names('let out = loop { break "x"; };\nout', "loop"),
     ["unknown"],
   );
 });
@@ -435,7 +435,7 @@ Deno.test("source facts validate text builtins and runtime type tests", () => {
 Deno.test("source facts invalidate malformed aggregates and handlers", () => {
   const duplicate = parse_source(`
 type Pair = struct {.ready = Bool, .wide = I64}
-let pair: Pair = [.ready = true, .ready = false]
+let pair: Pair = [.ready = true, .ready = false];
 pair.ready
 `);
   const duplicate_facts = source_facts(duplicate);
@@ -448,8 +448,8 @@ pair.ready
   assert_equals(
     expression_type_names(
       handler_prefix +
-        "let good = Check { test: (!resume) => !resume(true), " +
-        "return: value => true }\ntry true with good",
+        "let good = handler Check { test: (!resume) => !resume(true), " +
+        "return: value => true };\ntry true with good",
       "try_with",
     ),
     ["Bool"],
@@ -457,8 +457,8 @@ pair.ready
   assert_equals(
     expression_type_names(
       handler_prefix +
-        "let bad = Check { test: (!resume) => !resume(1), " +
-        "return: value => true }\ntry true with bad",
+        "let bad = handler Check { test: (!resume) => !resume(1), " +
+        "return: value => true };\ntry true with bad",
       "try_with",
     ),
     ["unknown"],
@@ -466,8 +466,8 @@ pair.ready
   assert_equals(
     expression_type_names(
       handler_prefix +
-        "let bad = Check { missing: (!resume) => !resume(true), " +
-        "return: value => true }\ntry true with bad",
+        "let bad = handler Check { missing: (!resume) => !resume(true), " +
+        "return: value => true };\ntry true with bad",
       "try_with",
     ),
     ["unknown"],
@@ -480,8 +480,8 @@ Deno.test("source facts validate handler inputs against handled values", () => {
   assert_equals(
     expression_type_names(
       prefix +
-        "let checker = Check { test: (!resume) => !resume(true), " +
-        "return: (value: Bool) => value }\n" +
+        "let checker = handler Check { test: (!resume) => !resume(true), " +
+        "return: (value: Bool) => value };\n" +
         "try 1 with checker",
       "try_with",
     ),
@@ -490,8 +490,8 @@ Deno.test("source facts validate handler inputs against handled values", () => {
   assert_equals(
     expression_type_names(
       prefix +
-        "let checker = Check { test: (!resume) => !resume(true), " +
-        "return: value => value }\n" +
+        "let checker = handler Check { test: (!resume) => !resume(true), " +
+        "return: value => value };\n" +
         "try true with checker",
       "try_with",
     ),
@@ -502,7 +502,7 @@ Deno.test("source facts validate handler inputs against handled values", () => {
 Deno.test("source facts do not infer annotated updates from unknown bases", () => {
   const source = parse_source(`
 type Pair = struct {.ready = Bool}
-let bad: Pair = missing :+ { .ready = false }
+let bad: Pair = missing <& { .ready = false };
 bad.ready
 `);
   const facts = source_facts(source);
@@ -518,7 +518,7 @@ bad.ready
 
 Deno.test("source facts distinguish labeled and positional destructuring", () => {
   const named = parse_source(`
-let { .missing = missing } = { .present = true }
+let { .missing = missing } = { .present = true };
 missing
 `);
   const named_facts = source_facts(named);
@@ -548,8 +548,8 @@ missing
 
   const positional = parse_source(`
 type Pair = [Bool, I32]
-let pair: Pair = (true, 1)
-let (left, right) = pair
+let pair: Pair = (true, 1);
+let (left, right) = pair;
 left
 right
 `);
@@ -609,7 +609,7 @@ Deno.test("source facts expose unresolved declared types only as unknown", () =>
 type Alias = missing_type
 type Broken = struct {.value = missing_type}
 effect Bad { run: (missing_type) => Bool }
-let identity = (value: Alias) => value
+let identity = (value: Alias) => value;
 Broken.value
 Bad.run
 `);
@@ -639,10 +639,10 @@ Bad.run
 Deno.test("source facts poison every parameter after handler arity errors", () => {
   const source = parse_source(`
 effect Check { test: (I32) => Bool }
-let checker = Check {
+let checker = handler Check {
   test: (value, !resume, extra) => true,
   return: value => value,
-}
+};
 try true with checker
 `);
   const facts = source_facts(source);
@@ -665,10 +665,10 @@ try true with checker
     expression_type_names(
       `
 effect Check { test: (I32) => Bool }
-let checker = Check {
+let checker = handler Check {
   test: (value, !resume, extra) => true,
   return: value => value,
-}
+};
 try true with checker
 `,
       "try_with",
@@ -679,7 +679,7 @@ try true with checker
 
 Deno.test("source facts poison contextual parameters after arity errors", () => {
   const source = parse_source(
-    "let f: (I32) -> Bool = (left, right) => true\nf",
+    "let f: (I32) -> Bool = (left, right) => true;\nf",
   );
   const facts = source_facts(source);
   const binding = source.statements[0];
@@ -702,9 +702,9 @@ Deno.test("source facts poison contextual parameters after arity errors", () => 
 
 Deno.test("source facts resolve canonical labeled product fields", () => {
   const valid = parse_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Flags = struct { .ready = Bool }
-let flags: Flags = [true]
+let flags: Flags = [true];
 flags.ready
 `);
   const valid_facts = source_facts(valid);
@@ -716,9 +716,9 @@ flags.ready
   assert_equals(
     expression_type_names(
       `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Flags = struct { .ready = Bool }
-let flags: Flags = [true]
+let flags: Flags = [true];
 flags.ready
 `,
       "field",
@@ -730,7 +730,7 @@ flags.ready
 Deno.test("source facts preserve declared sum constructors", () => {
   const text = `
 type ResultType = | \`Ok Int | \`Err Int
-let result: ResultType = \`Ok 41
+let result: ResultType = \`Ok 41;
 if let \`Ok value = result { value } else { 0 }
 `;
   const source = parse_source(text);
@@ -761,8 +761,8 @@ if let \`Ok value = result { value } else { 0 }
     assert_equals(
       expression_type_names(
         "type ResultType = | `Ok Int | `Err Int\n" +
-          "const result_type = ResultType\n" +
-          "let result: result_type = " + value,
+          "const result_type = ResultType;\n" +
+          "let result: result_type = " + value + ";",
         "union_case",
       ),
       ["unknown"],
@@ -771,16 +771,38 @@ if let \`Ok value = result { value } else { 0 }
 });
 
 Deno.test("source facts do not unify poisoned call arguments", () => {
-  const text = "let bad: Bool = 1\n" +
-    "let f: (I32) -> Bool = x => true\n" +
+  const text = "let bad: Bool = 1;\n" +
+    "let f: (I32) -> Bool = x => true;\n" +
     "f(bad)";
 
   assert_equals(expression_type_names(text, "app"), ["unknown"]);
   assert_equals(
     expression_type_names(
-      "let identity = value => value\nidentity(true)\nidentity(1)",
+      "let identity = value => value;\nidentity(true)\nidentity(1)",
       "app",
     ),
     ["Bool", "I32"],
+  );
+});
+
+Deno.test("quantified closures resolve local applied type annotations", () => {
+  const source = parse_source(`
+type Pair left right = [left, right]
+const pair: forall left right.[left, right] -> Pair left right =
+  (left, right) => {
+    let result: Pair left right = [left, right];
+    result
+  };
+let mixed = pair(1, true);
+let reversed = pair(false, 2);
+`);
+  const facts = source_facts(source);
+
+  assert_equals(source_inference_diagnostics(source, facts), []);
+  assert_equals(
+    source.statements.slice(-2).map((statement) =>
+      binding_type_name(statement, facts)
+    ),
+    ["Pair I32 Bool", "Pair Bool I32"],
   );
 });

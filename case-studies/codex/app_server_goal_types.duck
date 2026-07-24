@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./app_server_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./app_server_types.duck" ();
 
 type AppServerThreadGoalCreatePlan = struct {
   .thread_id = Text,
@@ -31,4 +31,4 @@ type AppServerThreadGoalAvailability =
   | `ThreadGoalsDisabled Unit
   | `EphemeralThreadGoalsUnsupported Text
 
-return {}
+return {};

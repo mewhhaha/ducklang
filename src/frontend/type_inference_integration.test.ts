@@ -4,7 +4,7 @@ import { source_facts } from "./source_facts.ts";
 
 Deno.test("source analysis applies exact inferred call constraints to facts", () => {
   const analysis = Source.analyze(`
-let choose = (value: [.x = I32]) => value
+let choose = (value: [.x = I32]) => value;
 choose [.y = 1]
 `);
   const facts = source_facts(analysis.source);
@@ -28,7 +28,7 @@ choose [.y = 1]
 });
 
 Deno.test("source analysis reports unresolved explicit annotation variables", () => {
-  const unresolved = Source.analyze("let value: missing = 1");
+  const unresolved = Source.analyze("let value: missing = 1;");
 
   assert_equals(
     unresolved.diagnostics.map((diagnostic) => {
@@ -42,7 +42,7 @@ Deno.test("source analysis reports unresolved explicit annotation variables", ()
   );
 
   const generic = Source.analyze(`
-let identity = value => value
+let identity = value => value;
 identity(true)
 identity(1)
 `);

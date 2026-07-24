@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type TestSyncDurationOption =
   | `SyncDurationMissing Unit
@@ -51,4 +51,4 @@ type TestSyncExecutionResult =
   | `Completed Text
   | `Rejected Text
 
-return {}
+return {};

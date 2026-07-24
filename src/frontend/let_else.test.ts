@@ -3,7 +3,7 @@ import { parse_source } from "./parser.ts";
 import { source_facts } from "./source_facts.ts";
 
 Deno.test("let-else elaboration preserves an unchanged source and its facts", () => {
-  const source = parse_source("let value = 40\nvalue + 2\n");
+  const source = parse_source("let value = 40;\nvalue + 2\n");
   const facts = source_facts(source);
   const elaborated = elaborate_front_let_else(source);
 

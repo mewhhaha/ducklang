@@ -1,26 +1,26 @@
 module () where
 
-const lifecycle_module = import "./app_server_turn_lifecycle.duck"
-const {} = import "./app_server_turn_types.duck" ()
-const { initial_turn_state, plan_turn_steer, submitted_turn } = lifecycle_module()
+const lifecycle_module = import "./app_server_turn_lifecycle.duck";
+const {} = import "./app_server_turn_types.duck" ();
+const { .initial_turn_state, .plan_turn_steer, .submitted_turn } = lifecycle_module();
 
 type FixtureState = AppServerTurnState
 type FixtureTransition = AppServerTurnTransition
 type FixtureSteerResult = AppServerTurnSteerResult
 
-let initial: FixtureState = initial_turn_state("thread-1")
-let submitted: FixtureTransition = submitted_turn(initial, "turn-1")
-let [state, _] = submitted
-let score = 0
+let initial: FixtureState = initial_turn_state "thread-1";
+let submitted: FixtureTransition = submitted_turn(initial, "turn-1");
+let [state, _] = submitted;
+let score = 0;
 
-let steer: FixtureSteerResult = plan_turn_steer(state, "turn-1")
+let steer: FixtureSteerResult = plan_turn_steer(state, "turn-1");
 if let `Ok turn_id = steer {
   if turn_id == "turn-1" { score = score + 1 }
 }
 
-let wrong_steer: FixtureSteerResult = plan_turn_steer(state, "turn-other")
+let wrong_steer: FixtureSteerResult = plan_turn_steer(state, "turn-other");
 if let `Err message = wrong_steer {
   if message == "expected active turn id `turn-other` but found `turn-1`" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

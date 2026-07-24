@@ -1,9 +1,9 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "duck:prelude/json/values" ()
-const {} = import "./original_image_detail_types.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/json/values" ();
+const {} = import "./original_image_detail_types.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type CodeModeNestedToolKind =
   | `NestedFunction Unit
@@ -47,4 +47,4 @@ type CodeModeResultInput =
   | `ResultMcpCall Json
   | `ResultJsonToolOutput Json
 
-return {}
+return {};

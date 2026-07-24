@@ -29,8 +29,15 @@ type ContextFileSystemProfile =
 type ContextFileSystem = [ContextTexts, ContextFileSystemProfile]
 type ContextFileSystemOption = Option ContextFileSystem
 
-type EnvironmentContext = [ContextEnvironments, ContextTextOption, ContextTextOption, ContextNetworkOption, ContextFileSystemOption, ContextTextOption]
+type EnvironmentContext = [
+  ContextEnvironments,
+  ContextTextOption,
+  ContextTextOption,
+  ContextNetworkOption,
+  ContextFileSystemOption,
+  ContextTextOption,
+]
 
 type ModelContextFragment = [Text, Bool, Text]
 
-return {}
+return {};

@@ -1,0 +1,74 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .apply_image_processing_results } = import "./image_preparation.duck" ();
+
+type FixtureContentNode = ListNode HistoryContent
+type FixtureContents = HistoryContents
+type FixtureResponseNode = ListNode HistoryItem
+type FixtureResponses = HistoryItems
+type FixtureResult = ImageProcessingResult
+type FixtureResultNode = ImageProcessingResultNode
+type FixtureResults = ImageProcessingResults
+type FixtureDetail = OutputImageDetail
+type FixtureDetailOption = OutputImageDetailOption
+
+const verify_image_preparation_custom_response_fixture: () -> I32 = () => {
+  let auto: FixtureDetail = `Auto ();
+  let auto_detail: FixtureDetailOption = `Some auto;
+
+  let contents: FixtureContents = `Nil ();
+  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,AA==", contents];
+  contents = `Cons content_node
+  content_node = [`InputImage (["data:image/png;base64,AUTO", auto_detail]), contents]
+  contents = `Cons content_node
+
+  let responses: FixtureResponses = `Nil ();
+  let response_node: FixtureResponseNode = [
+    `CustomOutput (["custom", "call-custom", contents]),
+    responses,
+  ];
+  responses = `Cons response_node
+
+  let results: FixtureResults = `ImageResultsNil ();
+  let result: FixtureResult = [
+    .status_code = 2,
+    .image_url = "",
+    .reason = "decoded image exceeded patch budget",
+    .size = 50000000,
+  ];
+  let result_node: FixtureResultNode = [result, results];
+  results = `ImageResultsCons result_node
+
+  let rewrite = apply_image_processing_results(responses, results);
+  let score = 0;
+  if let `PreparedImageResponses rewritten = rewrite {
+    if let `Cons response_node = rewritten {
+      let [response, response_tail] = response_node;
+      if let `CustomOutput output = response {
+        let [identifier, call_id, rewritten_contents] = output;
+        if identifier == "custom" && call_id == "call-custom" {
+          score = score + 1
+          if let `Cons first_node = rewritten_contents {
+            let [first, after_first] = first_node;
+            if let `InputText value = first { if value ==
+              "image content omitted because it exceeded the supported size limit; use a smaller image" { score = score + 10 } }
+            if let `Cons second_node = after_first {
+              let [second, content_tail] = second_node;
+              if let `InputAudio url = second {
+                if url == "data:audio/wav;base64,AA==" {
+                  if let `Nil () = content_tail { if let `Nil () = response_tail { score = score +
+                    100 } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  score
+};
+
+return { .verify_image_preparation_custom_response_fixture };

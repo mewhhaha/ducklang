@@ -1,33 +1,34 @@
 module () where
 
-const { text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./tool_search_policy_types.duck" ()
+const { .text_trim_ascii_whitespace } = import "duck:prelude/runtime" ();
+const {} = import "./tool_search_policy_types.duck" ();
 
 type SearchPolicyInvocation = ToolSearchInvocation
 type SearchPolicyValidatedQuery = ToolSearchValidatedQuery
 type SearchPolicyValidation = ToolSearchValidation
 
-const validate_tool_search_invocation: SearchPolicyInvocation -> SearchPolicyValidation = invocation => {
-  if let `UnsupportedToolSearchPayload () = invocation {
-    `SearchFatal "tool_search handler received unsupported payload"
-  } else if let `SearchToolRequest arguments = invocation {
-    let query = text_trim_ascii_whitespace arguments.query
-    if query == "" {
-      `SearchRejected "query must not be empty"
-    } else {
-      let limit = 8
-      if let `SearchLimitPresent requested_limit = arguments.limit { limit = requested_limit }
-
-      if limit <= 0 {
-        `SearchRejected "limit must be greater than zero"
+const validate_tool_search_invocation: SearchPolicyInvocation -> SearchPolicyValidation =
+  invocation => {
+    if let `UnsupportedToolSearchPayload () = invocation {
+      `SearchFatal "tool_search handler received unsupported payload"
+    } else if let `SearchToolRequest arguments = invocation {
+      let query = text_trim_ascii_whitespace arguments.query;
+      if query == "" {
+        `SearchRejected "query must not be empty"
       } else {
-        let validated: SearchPolicyValidatedQuery = [.query = query, .limit = limit]
-        `SearchValidated validated
-      }
-    }
-  } else {
-    `SearchFatal "tool_search handler received unsupported payload"
-  }
-}
+        let limit = 8;
+        if let `SearchLimitPresent requested_limit = arguments.limit { limit = requested_limit }
 
-return { validate_tool_search_invocation }
+        if limit <= 0 {
+          `SearchRejected "limit must be greater than zero"
+        } else {
+          let validated: SearchPolicyValidatedQuery = [.query = query, .limit = limit];
+          `SearchValidated validated
+        }
+      }
+    } else {
+      `SearchFatal "tool_search handler received unsupported payload"
+    }
+  };
+
+return { .validate_tool_search_invocation };

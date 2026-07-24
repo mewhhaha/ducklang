@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./compaction_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./compaction_types.duck" ();
 
 type CompactionModelError =
   | `InvalidRequest Text
@@ -27,4 +27,4 @@ type CompactionFallbackTelemetry = struct {
   .message = Text,
 }
 
-return {}
+return {};

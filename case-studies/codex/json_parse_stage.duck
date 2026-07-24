@@ -1,8 +1,8 @@
 module (!init: Init) where
 
-const { parse_json_document } = import "duck:prelude/json" ()
+const { .parse_json_document } = import "duck:prelude/json" ();
 
 document <- StageInput.document()
-let parsed = parse_json_document(document)
+let parsed = parse_json_document document;
 
-return { .result = parsed }
+return { .result = parsed };

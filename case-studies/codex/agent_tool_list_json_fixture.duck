@@ -1,13 +1,13 @@
 module () where
 
-const { parse_list_agents_args } = import "./agent_tool_list_json.duck" ()
+const { .parse_list_agents_args } = import "./agent_tool_list_json.duck" ();
 
-let decoded = parse_list_agents_args "{\"path_prefix\":\"reviewer\"}"
-let score = 0
+let decoded = parse_list_agents_args "{\"path_prefix\":\"reviewer\"}";
+let score = 0;
 if let `AgentListDecoded prefix = decoded {
   if let `Some path = prefix {
     if path == "reviewer" { score = 1 }
   }
 }
 
-return { .score = score }
+return { .score = score };

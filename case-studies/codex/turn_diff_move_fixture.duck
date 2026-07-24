@@ -1,0 +1,59 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+const { .turn_diff_net_changes } = import "./turn_diff_projection.duck" ();
+
+type FixtureDelta = TurnDiffDelta
+type FixtureMutations = TurnDiffMutations
+type FixtureMutation = TurnDiffMutation
+type FixtureMutationNode = ListNode FixtureMutation
+type FixtureFileMutation = TurnDiffFileMutation
+type FixtureTextOption = TurnDiffTextOption
+type FixtureUpdate = TurnDiffUpdate
+
+const verify_turn_diff_move_fixture: () -> I32 = () => {
+  let none: FixtureTextOption = `None ();
+  let middle: FixtureTextOption = `Some "middle.txt";
+
+  let first_update: FixtureUpdate = [
+    .move_path = middle,
+    .old_content = "line\n",
+    .overwritten_move_content = none,
+    .new_content = "line2\n",
+  ];
+  let first_file_mutation: FixtureFileMutation = `TurnDiffUpdate first_update;
+  let first_mutation: FixtureMutation = [.path = "src.txt", .mutation = first_file_mutation];
+
+  let destination: FixtureTextOption = `Some "dst.txt";
+  let second_update: FixtureUpdate = [
+    .move_path = destination,
+    .old_content = "line2\n",
+    .overwritten_move_content = none,
+    .new_content = "line3\n",
+  ];
+  let second_file_mutation: FixtureFileMutation = `TurnDiffUpdate second_update;
+  let second_mutation: FixtureMutation = [.path = "middle.txt", .mutation = second_file_mutation];
+  let mutations: FixtureMutations = `Nil ();
+  let second_node: FixtureMutationNode = [second_mutation, mutations];
+  mutations = `Cons second_node
+  let first_node: FixtureMutationNode = [first_mutation, mutations];
+  mutations = `Cons first_node
+  let delta: FixtureDelta = [.exact = true, .mutations = mutations];
+  let state = track_turn_diff_delta(empty_turn_diff(), "", delta);
+
+  let score = 0;
+  let changes = turn_diff_net_changes state;
+  if let `Cons node = changes {
+    let [change, tail] = node;
+    if let `TurnDiffMoved moved = change {
+      if moved.source.path == "src.txt" && moved.destination.path == "dst.txt" && moved.old_content == "line\n" && moved.new_content == "line3\n" {
+        if let `Nil () = tail { score = score + 1 }
+      }
+    }
+  }
+
+  score
+};
+
+return { .verify_turn_diff_move_fixture };

@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type WaitForEnvironmentStatus =
   | `Ready Unit
@@ -40,4 +40,4 @@ type WaitForEnvironmentExecutionResult =
   | `Completed Text
   | `Rejected Text
 
-return {}
+return {};

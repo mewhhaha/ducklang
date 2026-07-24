@@ -4,6 +4,6 @@ let factorial = rec (value, result) => {
   } else {
     rec(value - 1, result * value)
   }
-}
+};
 
 factorial(5, 1) - 78

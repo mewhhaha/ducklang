@@ -1,7 +1,7 @@
 module () where
 
-const { text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./agent_types.duck" ()
+const { .text_trim_ascii_whitespace } = import "duck:prelude/runtime" ();
+const {} = import "./agent_types.duck" ();
 
 type AgentInputTextOption = AgentTextOption
 type AgentInputI64Option = AgentI64Option
@@ -22,10 +22,10 @@ const validate_collab_input = (message: AgentInputTextOption, item_count: I32) =
   } else {
     `InputAccepted "items"
   }
-}
+};
 
 const normalize_wait_timeout = (configured: AgentInputI64Option) => {
-  let timeout = if let `Some value = configured { value } else { 30000i64 }
+  let timeout = if let `Some value = configured { value } else { 30000i64 };
 
   if timeout <= 0i64 {
     `InvalidTimeout "timeout_ms must be greater than zero"
@@ -36,6 +36,6 @@ const normalize_wait_timeout = (configured: AgentInputI64Option) => {
   } else {
     `Timeout timeout
   }
-}
+};
 
-return { normalize_wait_timeout, validate_collab_input }
+return { .normalize_wait_timeout, .validate_collab_input };

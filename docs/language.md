@@ -29,12 +29,12 @@ and `Init`. Lowercase names in an effect row, such as `e`, are inferred row
 variables. Effect operations are always qualified by their declared effect.
 
 ```txt
-let read_number = input
-const make_adder = n => x => x + n
-const layout_of = t => @layout(t)
-const align_to = (offset, alignment) => offset
-const greet_user = user => user.name
-const user_layout = @layout(user_type)
+let read_number = input;
+const make_adder = n => x => x + n;
+const layout_of = t => @layout(t);
+const align_to = (offset, alignment) => offset;
+const greet_user = user => user.name;
+const user_layout = @layout(user_type);
 ```
 
 Built-in type-value names such as `Int`, `I64`, `Text`, `Unit`, and `Type` keep
@@ -50,22 +50,31 @@ parsing and lowering, so an ordinary user function named `append` is distinct
 from `@append`. Excluded language-family keywords such as `class`, `trait`,
 `macro`, `instance`, `extends`, and `inherits` are reserved so they produce
 explicit unsupported-feature diagnostics instead of becoming ordinary names.
+`loop` is also reserved: it always starts a loop expression and cannot be used
+as a binding, parameter, or value name.
+
+Bindings end with `;`; a newline alone does not terminate one. This keeps the
+boundary explicit when the following line could also be an application argument.
+Extension members use `,` or `;` separators, with an optional trailing
+separator. Horizontal whitespace remains meaningful for unary application:
+`map values` applies `map`, while ordinary layout whitespace is ignored
+elsewhere.
 
 ```txt
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 const user_type = struct {
   .name = Text,
   .age = Int
-}
+};
 
 type OptionType t = | `Some t | `None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 const functor = f_type => {
   f_type.map
   f_type
-}
+};
 ```
 
 ## File Modules
@@ -76,8 +85,8 @@ export shape. A file without inputs uses an empty header:
 ```txt
 module () where
 
-let answer = 40 + 2
-return { answer }
+let answer = 40 + 2;
+return { .answer };
 ```
 
 Host-initialized entry modules declare their input schema and consume the input
@@ -86,22 +95,22 @@ linearly:
 ```txt
 module (!init: Init) where
 
-let result = 42
-return { result }
+let result = 42;
+return { .result };
 ```
 
 The module body is not indented and does not use braces. All top-level paths
-must reach a final `return { ... }`, and branch-produced export shapes must have
-compatible fields and types. `Source.parse` remains a fragment parser for tests
-and interactive compilation; file loading is what enforces the header and final
-export shape.
+must reach a final `return { ... };`, and branch-produced export shapes must
+have compatible fields and types. `Source.parse` remains a fragment parser for
+tests and interactive compilation; file loading is what enforces the header and
+final export shape.
 
 An import loads a file but does not instantiate it or grant it authority.
 Instantiation is a separate call with an explicit dependency shape:
 
 ```txt
-const logger = import "./logger.duck"
-const { .write = write } = logger { .io = !init.io }
+const logger = import "./logger.duck";
+const { .write = write } = logger { .io = !init.io };
 ```
 
 Module invocation is compiler-time wiring and specialization. Its result is the
@@ -121,7 +130,7 @@ binding with a different name renames it:
 const open {
   .compose = _
   .pipe = pipe2
-} = import "duck:prelude/functional" ()
+} = import "duck:prelude/functional" ();
 ```
 
 Here `compose` is unavailable, `pipe` is available as `pipe2`, and every other
@@ -134,9 +143,9 @@ literal. Its path is resolved relative to the source file containing the
 expression, and a missing file is a compilation error:
 
 ```txt
-const config_text = include "./config.json"
-const config = comptime parse_config(config_text)
-const config_type = @type_of(config)
+const config_text = include "./config.json";
+const config = comptime parse_config(config_text);
+const config_type = @type_of(config);
 ```
 
 Because the result is a literal, compile-time functions can inspect every byte
@@ -160,8 +169,8 @@ clearly:
 @[first, second(option)]
 const value = 42
 
-@[test]
-const checked: I32 -> I32 = value => value + 1
+@[test];
+const checked: I32 -> I32 = value => value + 1;
 ```
 
 Stacked groups concatenate in source order; they are not nested. A multiline
@@ -188,10 +197,10 @@ export, and `Drop` stops processing and removes the target. `Keep`, `Drop`, and
 The bundled attribute module defines `test` as ordinary Duck source:
 
 ```txt
-const { test } = import "duck:prelude/attributes" ()
+const { .test } = import "duck:prelude/attributes" ()
 
-@[test]
-const checked: I32 -> I32 = value => value + 1
+@[test];
+const checked: I32 -> I32 = value => value + 1;
 ```
 
 It reads `import.meta.mode`, returning `` `Export () `` in test builds and
@@ -205,13 +214,13 @@ boolean, integer, or text literals. For example, a host can compile with
 generators as a compile-time value pack and applies them in order:
 
 ```txt
-const { struct } = import "duck:prelude/types" ()
-const { derive } = import "duck:prelude/attributes" ()
+const { .struct } = import "duck:prelude/types" ();
+const { .derive } = import "duck:prelude/attributes" ();
 
-const answer = (const target) => comptime { .answer = value => 42 }
+const answer = (const target) => comptime { .answer = value => 42 };
 const identity = (const target) => comptime { .identity = value => value }
 
-@[derive(answer, identity)]
+@[derive(answer, identity)];
 type Derived = struct { .value = I32 }
 ```
 
@@ -227,17 +236,17 @@ zero-argument test:
 ```txt
 module () where
 
-const { test } = import "duck:prelude/attributes" ()
-const { assert } = import "duck:prelude/testing" ()
+const { .test } = import "duck:prelude/attributes" ();
+const { .assert } = import "duck:prelude/testing" ();
 
 const add: [I32, I32] -> I32 = (left, right) => left + right
 
-@[test]
+@[test];
 const addition_returns_the_sum: () -> Unit = () => {
   assert(add(20, 22) == 42)
-}
+};
 
-return {}
+return {};
 ```
 
 Run that file with `duck test path/to/file.duck`. Tests must have type
@@ -251,19 +260,19 @@ Ordinary builds still drop `@[test]` bindings.
 `let` creates a runtime binding.
 
 ```txt
-let x = 2
+let x = 2;
 ```
 
 `const` creates a compiler-known binding.
 
 ```txt
-const factor = 2
+const factor = 2;
 ```
 
 `=` shadows an existing name and requires the same type.
 
 ```txt
-let x = 2
+let x = 2;
 x = 3
 ```
 
@@ -283,15 +292,15 @@ facts when the payload has a simple known type, so `` `Ok Int `` and
 `:=` shadows an existing name and allows the type to change.
 
 ```txt
-let x = 2
+let x = 2;
 x := "hello"
 ```
 
 Internally, shadowing creates deterministic fresh names.
 
 ```txt
-let x#0 = 2
-let x#1 = 3
+let x#0 = 2;
+let x#1 = 3;
 ```
 
 Bindings may have annotations. Built-in scalar/type annotations are checked at
@@ -306,16 +315,16 @@ binding. Parameter annotations follow the same rules and are enforced at the
 call boundary.
 
 ```txt
-let x: Int = 41
-let wide: I64 = 41i64
+let x: Int = 41;
+let wide: I64 = 41i64;
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type: has_name = struct {
   .name = Int,
   .age = Int
-}
+};
 
-let user: user_type = [input, 0]
+let user: user_type = [input, 0];
 ```
 
 Numeric literals carry value types in Ic. Unsuffixed source integers are the
@@ -327,14 +336,14 @@ integer literals use `0x` or `0X` and may carry the same integer suffixes.
 Mixed-width operands are rejected instead of converted implicitly.
 
 ```txt
-let small = 42i32
-let wide = 42i64
-let flags = 17u5
-let signed_minimum = -16i5
-let identifier = 340282366920938463463374607431768211455u128
-let mask = 0xff
-let ratio = 1.5f32
-let precise_ratio = 1.5f64
+let small = 42i32;
+let wide = 42i64;
+let flags = 17u5;
+let signed_minimum = -16i5;
+let identifier = 340282366920938463463374607431768211455u128;
+let mask = 0xff;
+let ratio = 1.5f32;
+let precise_ratio = 1.5f64;
 ```
 
 Integer bitwise operations are named prelude functions: `bit_and`, `bit_or`,
@@ -397,10 +406,10 @@ based, so a non-ASCII character's scalar value is not the same as one indexed
 byte of its UTF-8 encoding.
 
 ```txt
-let message = "hello"
-let ready = true
-let newline = '\n'
-let lambda = 'λ'
+let message = "hello";
+let ready = true;
+let newline = '\n';
+let lambda = 'λ';
 ```
 
 String escapes support `\n`, `\t`, `\r`, `\"`, and `\\`. Character escapes
@@ -460,8 +469,10 @@ shortest-round-trip conversion.
 
 Text values are UTF-8. The contract for text operations:
 
-- `+` concatenates text values. `@append(left, right)` accepts two `Text` values
-  or two `Bytes` values, but never mixes them.
+- `++` concatenates collections. `@append(left, right)` currently accepts two
+  `Text` values or two `Bytes` values, but never mixes them.
+- `value <& updates` and `updates &> value` perform the same immutable struct
+  update. The labeled update shape wins when it names an existing field.
 - `@len(value)` is the UTF-8 byte length.
 - `value[index]` and `@get(value, index)` return the UTF-8 byte at `index` as
   `i32`, trapping on out-of-range indexes.
@@ -484,10 +495,10 @@ on the backend route; see [coverage.md](coverage.md).
 ```txt
 const make_adder = n => {
   x => x + n
-}
+};
 
-const add_three = comptime make_adder(3)
-let result = add_three(input)
+const add_three = comptime make_adder(3);
+let result = add_three(input);
 ```
 
 Const functions are statically known closures. They may capture const values but
@@ -501,10 +512,10 @@ the call site and specializes the call.
 ```txt
 let apply_const = (x, const f) => {
   f(x)
-}
+};
 
-const double = x => x * 2
-let y = apply_const(21, double)
+const double = x => x * 2;
+let y = apply_const(21, double);
 ```
 
 A sole const variadic parameter captures every call argument as a compile-time,
@@ -513,19 +524,19 @@ final rest pattern in a compile-time match:
 
 ```txt
 const sum = (const ...values) => comptime {
-  let total = 0
+  let total = 0;
 
   for value in values {
     total = total + value
   }
 
   total
-}
+};
 
 const first = (const ...values) => comptime match values {
   | () => 0
   | (value, ...remaining) => value
-}
+};
 ```
 
 `()` matches an empty value pack. `(value, ...remaining)` requires at least one
@@ -542,9 +553,9 @@ contains them is specialized before Core lowering:
 const derive_name = (const target) => match target {
   | struct { .name = Text, .. } => value => value.name
   | _ => @fail("derive_name requires a Text name field")
-}
+};
 
-const player_name = comptime derive_name(Player)
+const player_name = comptime derive_name(Player);
 ```
 
 Aliases are normalized before field types are compared. Type-match functions are
@@ -561,6 +572,22 @@ match result {
   | _ => "unknown"
 }
 ```
+
+`#(expression)` compares against a compile-time value without turning its name
+into a new pattern binding. It can participate in the same alternative arm as a
+literal:
+
+```txt
+const ctrl_c = cast(3, Char);
+
+match key {
+  | 'q' | #(ctrl_c) => quit()
+  | _ => continue()
+}
+```
+
+The expression inside `#(...)` must be compile-time and resolve to a scalar
+value. A runtime binding in this position is an error.
 
 A text pattern has one `${name}` capture. Its fixed prefix and suffix match
 UTF-8 bytes, and the capture receives the text between them.
@@ -583,9 +610,9 @@ Descriptors can direct fixed runtime operations without introducing runtime
 reflection:
 
 ```txt
-const score_field = @describe_fields(Player)[1]
-let player = @construct [Player, { .name = 20, .score = 40 }]
-let score = @project(player, score_field)
+const score_field = @describe_fields(Player)[1];
+let player = @construct [Player, { .name = 20, .score = 40 }];
+let score = @project(player, score_field);
 ```
 
 `@project` becomes a fixed field or index projection. `@construct` supports
@@ -595,8 +622,8 @@ compilation.
 Case descriptors use the same operations for unions:
 
 ```txt
-const ok_case = @describe_cases(Result)[0]
-let result = @construct(ok_case, 42)
+const ok_case = @describe_cases(Result)[0];
+let result = @construct(ok_case, 42);
 
 if @is_case(result, ok_case) {
   @project(result, ok_case)
@@ -622,18 +649,18 @@ const fold = rec (values, index, state, next) => {
   } else {
     rec(values, index + 1, next(state, values[index]), next)
   }
-}
+};
 
 const add_field = (sum, field) => {
   value => sum(value) + @project(value, field)
-}
+};
 
 const derive_sum = (const target) => {
-  const fields = @describe_fields(target)
+  const fields = @describe_fields(target);
   fold(fields, 0, value => 0, add_field)
-}
+};
 
-const sum_player = comptime derive_sum(Player)
+const sum_player = comptime derive_sum(Player);
 ```
 
 Here `fold`, its accumulator, and the descriptors are all ordinary const values.
@@ -652,18 +679,18 @@ const range = rec (index, end) => {
   } else {
     [index, ...rec(index + 1, end)]
   }
-}
+};
 
-const indexes = comptime range(0, 3)
+const indexes = comptime range(0, 3);
 ```
 
 Fixed-array lengths accept natural arithmetic over compile-time integer
 bindings. They are normalized to a literal before layout and lowering:
 
 ```txt
-const width = 2
+const width = 2;
 type Row = [Int; width + 1]
-let row: Row = [20, 1, 21]
+let row: Row = [20, 1, 21];
 ```
 
 An unresolved name, runtime binding, negative result, division by zero, or
@@ -676,12 +703,12 @@ configuration:
 ```txt
 // dependency.duck
 module (const release: Bool) where
-const value = if release { 42 } else { 0 }
-return { .value = value }
+const value = if release { 42 } else { 0 };
+return { .value = value };
 
 // main.duck
-const dependency = import "./dependency.duck"
-const { .value = value } = dependency true
+const dependency = import "./dependency.duck";
+const { .value = value } = dependency true;
 ```
 
 Build constants are ordinary explicit inputs. Compile-time evaluation does not
@@ -695,11 +722,11 @@ cases.
 Functions use closure syntax.
 
 ```duck
-let add = (x, y) => x + y
+let add = (x, y) => x + y;
 
 let add_block = (x, y) => {
   x + y
-}
+};
 ```
 
 Function types support explicit universal quantification. `forall` binds one or
@@ -707,7 +734,7 @@ more type variables through the following type expression, and it may occur at
 any rank. Parentheses delimit a nested quantified argument or result:
 
 ```duck
-const identity: forall value. value -> value = value => value
+const identity: forall value. value -> value = value => value;
 
 const apply_identity: (forall value. value -> value) -> I32 =
   (const identity) => identity(42)
@@ -726,7 +753,9 @@ not infer impredicative instantiations.
 
 Blocks return their final expression. `return` exits the nearest function,
 including through nested block expressions used before later fallthrough
-statements.
+statements. Control transfers are explicitly terminated: use `return;` for Unit,
+`return value;` for a value, `break;` or `break value;` in loops, and
+`continue;` for the next iteration.
 
 Closures capture their environment at binding time. Runtime scalar captures are
 snapshotted when the closure value is bound, so later shadowing does not change
@@ -759,7 +788,7 @@ then-branch gets `0`. Conditions must be `Bool`; numeric, text, struct, union,
 function, and type-value conditions are rejected.
 
 ```txt
-let value = 1
+let value = 1;
 
 if flag {
   value = 42
@@ -771,7 +800,7 @@ value
 ```txt
 let value = if flag {
   42
-}
+};
 ```
 
 Logical operators are short-circuiting `if` sugar that accepts and produces
@@ -798,7 +827,7 @@ let label = if score == 0 {
   "one"
 } else {
   "many"
-}
+};
 
 let value = if let 0 = byte {
   10
@@ -808,7 +837,7 @@ let value = if let 0 = byte {
   found
 } else {
   0
-}
+};
 ```
 
 `if let` matches union cases when the case is statically known. Runtime payloads
@@ -818,7 +847,7 @@ cases can also be matched after frontend-known field access or static aggregate
 indexing.
 
 ```txt
-let result = `Ok input
+let result = `Ok input;
 
 if let `Ok value = result {
   value + 1
@@ -830,7 +859,7 @@ if let `Ok value = result {
 ```txt
 let value = if let `Ok found = result {
   found + 1
-}
+};
 ```
 
 A refutable `let` pattern can keep its bindings in the following scope when its
@@ -838,8 +867,8 @@ A refutable `let` pattern can keep its bindings in the following scope when its
 
 ```txt
 let `Ok value = result else {
-  return fallback
-}
+  return fallback;
+};
 
 use value
 ```
@@ -864,14 +893,14 @@ The bundled source prelude is an ordinary module and is imported explicitly when
 `struct` is used:
 
 ```txt
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 ```
 
-Bare destructuring fields bind the same local name. Use the dotted form when
-renaming, such as `{ .struct = make_struct }`.
+Dotted destructuring fields bind the same local name. Rename by supplying a
+pattern, such as `{ .struct = make_struct }`.
 
-Module export shapes and `:+` updates use the same shorthand. `{ code }` means
-`{ .code = code }`; keep the dotted form when the label and local expression
+Module export shapes and `<&`/`&>` updates use the same shorthand. `{ .code }`
+means `{ .code = code }`; supply the expression when the label and local name
 differ, such as `{ .status = code }`.
 
 `struct` itself is defined in that source module without aggregate intrinsics.
@@ -880,7 +909,7 @@ one accessor to that scoped type value for each field:
 
 ```txt
 const struct = (const shape) => {
-  let product_type = []
+  let product_type = [];
 
   for field in shape {
     product_type = [...product_type, field.value]
@@ -891,7 +920,7 @@ const struct = (const shape) => {
   }
 
   let new = (const values) => {
-    let product = []
+    let product = [];
 
     for field in shape {
       for candidate in values {
@@ -907,15 +936,15 @@ const struct = (const shape) => {
       product
     } else {
       [...product, 0, 0]
-    }
+    };
 
     cast(checked_product, product_type)
-  }
+  };
 
-  product_type = product_type :+ { shape, new }
+  product_type = product_type :+ { .shape, .new }
 
   product_type
-}
+};
 ```
 
 Each shape iteration yields a compile-time entry with `.name` and `.value`.
@@ -931,16 +960,16 @@ const-parameter function rather than an immediate-call form, it may be retained
 under another const binding:
 
 ```txt
-const make_point = Point.new
-let point = make_point { .y = 20, .x = input }
+const make_point = Point.new;
+let point = make_point { .y = 20, .x = input };
 ```
 
 The same type value retains its declaration shape as `Point.shape`. Shape fields
 are compile-time type values, so generic code can inspect or reuse them:
 
 ```txt
-const point_shape = Point.shape
-const x_type = point_shape.x
+const point_shape = Point.shape;
+const x_type = point_shape.x;
 ```
 
 Stored fields named `new` or `shape` collide with the members added by the
@@ -961,14 +990,14 @@ const {
   type_union,
   type_intersection,
   type_difference,
-} = import "duck:prelude" ()
+} = import "duck:prelude" ();
 
 const readable_point = Point :+ {
   .read = value => value.x
-}
+};
 
-const numeric = I32 :| I64
-const signed = numeric :- I64
+const numeric = I32 :| I64;
+const signed = numeric :- I64;
 ```
 
 `:+` extends a compile-time type value with namespace members or methods and
@@ -987,8 +1016,8 @@ its argument:
 type Centimeter = newtype I32
 type Seconds = newtype I32
 
-const distance = 42 :> Centimeter
-const raw = distance :< I32
+const distance = 42 :> Centimeter;
+const raw = distance :< I32;
 ```
 
 `Centimeter` and `Seconds` are not interchangeable. Sealing and the generated
@@ -1005,7 +1034,7 @@ least-significant bit, with no padding. Positional declarations generate
 field also gets an immutable `with_<field>` replacement function.
 
 ```txt
-const { packed } = import "duck:prelude" ()
+const { .packed } = import "duck:prelude" ();
 
 type Flags = packed [U1, U2, U5]
 type Header = packed struct {
@@ -1014,9 +1043,9 @@ type Header = packed struct {
   .length = U12,
 }
 
-let header: Header = Header.pack [5u3, 1u1, 120u12]
-let changed = Header.with_kind [header, 2u3]
-let kind: U3 = Header.kind changed
+let header: Header = Header.pack [5u3, 1u1, 120u12];
+let changed = Header.with_kind [header, 2u3];
+let kind: U3 = Header.kind changed;
 ```
 
 Packed fields must be `I<N>` or `U<N>`. Layouts through 64 bits are a single
@@ -1036,20 +1065,20 @@ The same explicit import also provides common source-defined functional building
 blocks:
 
 ```txt
-const { identity, compose, curry } =
+const { .identity, .compose, .curry } =
   import "duck:prelude/functional" ()
 
-const add_two = value => value + 2
-const double = value => value * 2
-const combined = comptime compose [add_two, double]
+const add_two = value => value + 2;
+const double = value => value * 2;
+const combined = comptime compose [add_two, double];
 ```
 
 The lightweight runtime prelude is the batteries-included bridge to common
 compiler operations:
 
 ```txt
-const { length, slice } = import "duck:prelude/runtime" ()
-let joined = left <> right
+const { .length, .slice } = import "duck:prelude/runtime" ();
+let joined = left <> right;
 ```
 
 It exports:
@@ -1139,21 +1168,21 @@ using its corresponding operator.
 `Bind`, and `Alternative` members. A binding chain stops at the first `None`:
 
 ```txt
-const {} = import "duck:prelude/functional" ()
+const {} = import "duck:prelude/functional" ();
 type IntOption = Option I32
 
-const increment: I32 -> IntOption = value => `Some (value + 1)
-let start: IntOption = `Some 40
-let result: IntOption = start >>= increment >>= increment
+const increment: I32 -> IntOption = value => `Some (value + 1);
+let start: IntOption = `Some 40;
+let result: IntOption = start >>= increment >>= increment;
 ```
 
 ```txt
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 const user_type = struct {
   .name = Text,
   .age = Int
-}
+};
 ```
 
 Named generic declarations are const functions returning type-values.
@@ -1171,9 +1200,9 @@ declare positional products:
 type Vec3 = struct { .x = Int, .y = Int, .z = Int }
 type Pair = [Int, Int]
 
-let point: Vec3 = [40, 1, 1]
-let origin = Vec3.new { .x = 0, .y = 0, .z = 0 }
-let pair: Pair = [point.x, point.y]
+let point: Vec3 = [40, 1, 1];
+let origin = Vec3.new { .x = 0, .y = 0, .z = 0 };
+let pair: Pair = [point.x, point.y];
 ```
 
 Products are ordered even when their slots have names. A field name is an alias
@@ -1227,8 +1256,8 @@ type Value = Int :| Text :| I64
 type Number = Value :- Text
 type Answer = Number :& Int
 
-let value: Value = 42
-let answer: Answer = if value is Int { value } else { 0 }
+let value: Value = 42;
+let answer: Answer = if value is Int { value } else { 0 };
 ```
 
 `_` is the top type and accepts every value. `Never` is the bottom type and has
@@ -1245,7 +1274,7 @@ type Maybe a = a :| #nothing
 type MaybeInt = Maybe Int
 
 let unwrap = (value: MaybeInt) =>
-  if value is Int { value } else { 0 }
+  if value is Int { value } else { 0 };
 
 unwrap(42)
 ```
@@ -1263,7 +1292,7 @@ Atoms use `#snake_case` as both a value and its singleton type:
 
 ```txt
 type Marker = #ready :| #waiting
-let marker: Marker = #ready
+let marker: Marker = #ready;
 
 if marker is #ready { 1 } else { 0 }
 ```
@@ -1280,8 +1309,8 @@ type Method = "GET" :| "POST"
 type Truth = true :| false
 type Letter = 'A' :| 'a'
 
-const one: 1 = 1
-const letter: 'A' = 'A'
+const one: 1 = 1;
+const letter: 'A' = 'A';
 ```
 
 An exact literal type accepts only that value. It is still represented with the
@@ -1297,8 +1326,8 @@ explicit:
 type FrozenText = #Text
 type FrozenList a = #(List a)
 
-let text: FrozenText = "hello"
-let view: &Text = &text
+let text: FrozenText = "hello";
+let view: &Text = &text;
 ```
 
 For host effect contracts, `&T` means a bounded borrow, `#T` means a
@@ -1322,26 +1351,26 @@ unsound.
 Struct construction validates field names and field types.
 
 ```txt
-let user: user_type = ["Ada", 36]
+let user: user_type = ["Ada", 36];
 ```
 
 Union constructors validate case names and payload types.
 
 ```txt
-let result: parse_result_type = `Ok 42
+let result: parse_result_type = `Ok 42;
 ```
 
 Fact checkers are const functions over type-values.
 
 ```txt
 const has_name = t => {
-  let struct { .name = Text, .. } = t
+  let struct { .name = Text, .. } = t;
   t
-}
+};
 
 let greet = (const t: has_name, value) => {
   @size_of(t) + value
-}
+};
 ```
 
 Visible `struct { ... }` and `union { ... }` type-check patterns are validated
@@ -1359,11 +1388,11 @@ field reads can still lower to Ic.
 ```txt
 let inc = (x: Int) => {
   x + 1
-}
+};
 
 let get_name = (user: has_name) => {
   user.name
-}
+};
 ```
 
 Runtime union parameters can also use fact-checker annotations when the argument
@@ -1375,9 +1404,9 @@ union value.
 
 ```txt
 const result_like = t => {
-  let union { .ok = Int, .. } = t
+  let union { .ok = Int, .. } = t;
   t
-}
+};
 
 let unwrap = (result: result_like) => {
   if let `Ok value = result {
@@ -1385,9 +1414,9 @@ let unwrap = (result: result_like) => {
   } else {
     0
   }
-}
+};
 
-let result: result_type = `Ok input
+let result: result_type = `Ok input;
 unwrap(result)
 ```
 
@@ -1412,7 +1441,7 @@ Extension fields preserve their binding-time environment, including fields
 inherited through earlier extension layers.
 
 ```txt
-const box_type = t => t
+const box_type = t => t;
 
 const box_type = box_type :+ {
   map: (value, const f) => {
@@ -1424,7 +1453,7 @@ const box_type = box_type :+ {
   bind: (value, const f) => {
     f(value)
   }
-}
+};
 ```
 
 Protocols are ordinary const fact checkers over extended values.
@@ -1433,23 +1462,23 @@ Protocols are ordinary const fact checkers over extended values.
 const functor = f_type => {
   f_type.map
   f_type
-}
+};
 
 const applicative = f_type => {
   comptime functor(f_type)
   f_type.pure
   f_type
-}
+};
 
 const monad = m_type => {
   comptime applicative(m_type)
   m_type.bind
   m_type
-}
+};
 
 let bind_add = (const m_type: monad, value, const f) => {
   m_type.bind(value, f)
-}
+};
 ```
 
 Protocol-constrained calls specialize before Ic lowering. There is no runtime
@@ -1462,14 +1491,14 @@ specializes the family to an ordinary struct or union before Core emission:
 type NumberCalcType = | `Literal Int | `Add add_args_type
 type TextCalcType = `Literal Text
 
-const calc_types = 0
+const calc_types = 0;
 const calc_types = calc_types :+ {
   .number = NumberCalcType,
   .text = TextCalcType
-}
+};
 
-const number_calc_type = calc_types.number
-const text_calc_type = calc_types.text
+const number_calc_type = calc_types.number;
+const text_calc_type = calc_types.text;
 ```
 
 The selected union controls which constructors exist, so
@@ -1486,7 +1515,7 @@ Linear parameters are marked with `!`.
 ```txt
 let keep = (!x) => {
   x
-}
+};
 ```
 
 Pure linear `let` and `const` bindings are also supported when the value can
@@ -1494,10 +1523,10 @@ lower to Ic.
 
 ```txt
 let !token = 41
-!token
+!token;
 
 const !known_token = 41
-!known_token
+!known_token;
 ```
 
 A linear value must be consumed exactly once along every control-flow path. Host
@@ -1516,7 +1545,7 @@ declare Init {
   io: Io
 }
 
-return {}
+return {};
 ```
 
 `declare effect Io` creates a nominal effect family, the operations `Io.read`
@@ -1531,7 +1560,7 @@ An unannotated function receives its minimal inferred operation row:
 let read_name = () => {
   name <- Io.read()
   name
-}
+};
 ```
 
 Function types use whitespace application, right-associative `->`, and an
@@ -1544,9 +1573,9 @@ let greet: () -> <Io.read :| Io.print> Text = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 
-let increment: I32 -> I32 = value => value + 1
+let increment: I32 -> I32 = value => value + 1;
 ```
 
 `value <- computation` executes an effectful computation and binds its result.
@@ -1609,11 +1638,11 @@ context:
 ```txt
 module (!init: Init) where
 
-const logger = import "./logger.duck"
-const { .write = write } = logger { .io = !init.io }
+const logger = import "./logger.duck";
+const { .write = write } = logger { .io = !init.io };
 result <- write("hello")
 
-return { .result = result }
+return { .result = result };
 ```
 
 Loading `logger.duck` alone grants no authority. Module invocation consumes or
@@ -1637,8 +1666,8 @@ effects remain concrete because their declarations define the ABI contract.
 Use a named const instance when the same effect family is needed more than once:
 
 ```txt
-const counter = State I32
-const message = State Text
+const counter = State I32;
+const message = State Text;
 
 count <- counter.get()
 text <- message.get()
@@ -1651,12 +1680,12 @@ handlers use the lowercase instance name. A family without type parameters uses
 the unit application form, such as `const wall_clock = Clock ()`.
 
 ```txt
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
-const counter = State I32
+const counter = State I32;
 
 let state = {
-  let current = 0
+  let current = 0;
   counter {
     get: (!resume) => !resume(current),
     put: (value, !resume) => {
@@ -1665,7 +1694,7 @@ let state = {
     },
     return: value => value,
   }
-}
+};
 ```
 
 `Async`, `Channel`, `Mutex`, `Semaphore`, and `TaskGroup` describe structured
@@ -1679,7 +1708,7 @@ The `duck:prelude/effects/defaults` module supplies source-defined handler
 factories. Import only the factories an application installs:
 
 ```txt
-const { default_state, default_reader } =
+const { .default_state, .default_reader } =
   import "duck:prelude/effects/defaults" ()
 
 let run = () => {
@@ -1687,7 +1716,7 @@ let run = () => {
   _ <- State.put(environment + 2)
   value <- State.get()
   value
-}
+};
 
 try (try run() with default_state(0)) with default_reader(40)
 ```
@@ -1706,10 +1735,10 @@ Every remaining effect has a complete adapter factory: `handle_writer`,
 authority visible at the installation site:
 
 ```txt
-const { handle_environment } =
+const { .handle_environment } =
   import "duck:prelude/effects/defaults" ()
 
-const lookup = name => 40
+const lookup = name => 40;
 try run() with handle_environment(lookup)
 ```
 
@@ -1758,16 +1787,16 @@ rule wins over the generic family rule; its `Some` branch resumes once and its
 `None` branch returns without resuming:
 
 ```txt
-const {} = import "duck:prelude/effects/defaults" ()
+const {} = import "duck:prelude/effects/defaults" ();
 type IntOption = Option I32
 
 let run = () => {
-  let wrapped: IntOption = `Some 40
+  let wrapped: IntOption = `Some 40;
   value <- do wrapped
   value + 2
-}
+};
 
-let result: IntOption = try run()
+let result: IntOption = try run();
 ```
 
 The generic rule uses an ordinary resumption parameter. It may resume once for
@@ -1785,13 +1814,13 @@ The generic default itself is source-defined:
 
 ```txt
 extend Do {
-  type Handled = Do
-  .make = _ => Do {
+  type Handled = Do,
+  .make = _ => handler Do {
     unwrap: (wrapped, resume) => Monad.bind([wrapped, value => resume(value)]),
     return: value => Monad.pure(value),
-  }
-  .output = monad => monad
-  .order = _ => 100
+  },
+  .output = monad => monad,
+  .order = _ => 100,
 }
 ```
 
@@ -1807,18 +1836,18 @@ duck DefaultHandler Effect {
   .order = _ -> I32
 }
 
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
-const counter = () => Counter {
+const counter = () => handler Counter {
   get: (!resume) => !resume(42),
   return: value => value,
-}
+};
 
 extend Counter {
-  type Handled = Counter
-  .make = _ => counter()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = Counter,
+  .make = _ => counter(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 ```
 
@@ -1837,9 +1866,9 @@ state:
 
 ```txt
 let counter = {
-  let count = 0
+  let count = 0;
 
-  Counter {
+  handler Counter {
     get: (!resume) => {
       !resume(count)
     },
@@ -1850,18 +1879,18 @@ let counter = {
     },
 
     return: value => {
-      { value, count }
+      { .value, .count }
     },
   }
-}
+};
 
-let result = try run() with counter
+let result = try run() with counter;
 ```
 
-`Counter { ... }` is an affine handler value because `Counter` names an effect,
-not a data constructor. `try computation with handler` consumes that value. Use
-a function returning a fresh implementation when the same definition must be
-installed more than once.
+`handler Counter { ... }` is an affine handler value. The explicit keyword
+distinguishes handler construction from data construction.
+`try computation with handler` consumes that value. Use a function returning a
+fresh implementation when the same definition must be installed more than once.
 
 The mandatory `return` clause handles ordinary completion. Operation clauses
 receive the declared operation arguments followed by a resumption. Write
@@ -1882,7 +1911,7 @@ effects remain in the surrounding operation row and require ordinary
 An affine resumption can also be split explicitly:
 
 ```txt
-let (!left, !right) = dup !resume
+let (!left, !right) = dup !resume;
 ```
 
 Both reusable parameters and explicit duplication are accepted only when every
@@ -1921,7 +1950,7 @@ implicitly copied.
 stored view uses ordinary binding syntax.
 
 ```txt
-let view = &user
+let view = &user;
 ```
 
 The view cannot outlive its owner, cannot be returned or captured by an escaping
@@ -1943,8 +1972,8 @@ the scratch lifetime: fallthrough, `return`, `break`, and `continue`.
 ```txt
 let total = scratch {
   let message = "temporary"
-  @len(message)
-}
+  @len(message);
+};
 ```
 
 A scratch result may escape only when it is scalar, already `frozen_shareable`,
@@ -1970,14 +1999,14 @@ let gcd = rec (a, b) => {
   } else {
     rec(b, a % b)
   }
-}
+};
 ```
 
 Range loops use `..` for an exclusive end or `..=` for an inclusive end. Both
 forms accept runtime bounds and an optional step:
 
 ```txt
-let sum = 0
+let sum = 0;
 
 for i in 0..4 {
   sum = sum + i
@@ -1992,27 +2021,27 @@ sum
 
 A statically zero step is rejected; a dynamically zero step traps.
 
-`loop` is an expression form for an unbounded structured loop. `break value`
+`loop` is an expression form for an unbounded structured loop. `break value;`
 returns a scalar result from the nearest `loop`, and every direct break value
-must have the same source type. A loop whose direct exits all use a bare `break`
-has type `Unit`; bare and valued exits cannot be mixed. Owned `Text`, `Bytes`,
-aggregate, union, and closure loop results are not supported yet. `break` and
-`continue` are control-flow statements, not general values. Declared host
+must have the same source type. A loop whose direct exits all use `break;` has
+type `Unit`; bare and valued exits cannot be mixed. Owned `Text`, `Bytes`,
+aggregate, union, and closure loop results are not supported yet. `break;` and
+`continue;` are control-flow statements, not general values. Declared host
 operations and calls to ordinary effectful functions may occur in the body.
 
 `match` arm blocks preserve the same nearest-loop behavior. An arm may fall
-through, `break value`, or `continue`; control transfers are checked per arm,
+through, `break value;`, or `continue;`; control transfers are checked per arm,
 and nested loops retain their own control boundary.
 
 ```txt
 let first_even = loop {
   if candidate % 2 == 0 {
-    break candidate
+    break candidate;
   } else {
     candidate = candidate + 1
-    continue
+    continue;
   }
-}
+};
 ```
 
 `for` remains statement-only. Its binders may be `_` when an index or element is
@@ -2044,14 +2073,14 @@ simple statement form for repeated side effects or mutation.
 
 ```txt
 let fold_range = (start, end, initial, const step) => {
-  let state = initial
+  let state = initial;
 
   for index in start..end {
     state = step(state, index)
   }
 
   state
-}
+};
 ```
 
 Collection loops iterate aggregates and text:
@@ -2060,9 +2089,9 @@ Collection loops iterate aggregates and text:
 const xs = {
   first: 10,
   second: 20
-}
+};
 
-let sum = 0
+let sum = 0;
 
 for i, x in xs {
   sum = sum + xs[i]
@@ -2079,7 +2108,7 @@ of repeatedly computing a length and indexing from the head:
 ```txt
 duck Iterator Self {
   type Item
-  .has_next = &Self -> Bool
+  .has_next = Self -> Bool
   .next = Self -> [Item, Self]
 }
 
@@ -2087,6 +2116,32 @@ for value in values {
   total = total + value
 }
 ```
+
+`duck:prelude/iterators` provides lazy source-defined iterator values. `Bytes`
+and `Text` implement `IntoIterator`, while `iterator_map`, `iterator_zip`, and
+`iterator_scan` return another iterator without materializing an intermediate
+collection. `iterator_zip` stops when either input is exhausted. `iterator_fold`
+consumes an iterator. `iterator_windows(bytes, width)` yields overlapping byte
+windows one byte apart; trailing windows are shorter, and a nonpositive width
+produces an empty iterator:
+
+```txt
+const { .iterator_fold, .iterator_map } = import "duck:prelude/iterators" ();
+
+let decode: I32 -> I32 = byte => byte - 64;
+let add: I32 -> I32 -> I32 = sum => value => sum + value;
+let bytes = IntoIterator.iterator(@Utf8.encode("ABC"));
+let values = iterator_map(bytes, decode);
+let total = iterator_fold(values, 0, add);
+```
+
+The accumulator passed to `iterator_scan` and `iterator_fold` is curried:
+`State -> Item -> State`. This keeps each stored function value unary; call it
+as `combine(state)(item)`.
+
+Combinators are ordinary source functions and remain lazy until a loop or fold
+consumes them. Use `zip` when the inputs are genuinely separate streams; use a
+window when later elements are lookahead into the same stream.
 
 When the source `next` implementation exposes a union case directly, collection
 lowering uses that case as the cursor step. This preserves the list tail without
@@ -2124,7 +2179,7 @@ and runtime indexes.
 const xs = {
   first: 10,
   second: 20
-}
+};
 
 xs[0]
 xs[i]
@@ -2136,16 +2191,16 @@ selectable slot to have a compatible value type (the homogeneous runtime-index
 rule).
 
 ```txt
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 const pair_type = struct {
   .first = Int,
   .second = Int
-}
+};
 
 let choose = (pair: pair_type, i) => {
   @get(pair, i)
-}
+};
 ```
 
 Pure struct update expressions rebuild the value. Index assignment over
@@ -2156,7 +2211,7 @@ shadows the source name.
 let xs = {
   first: 10,
   second: 20
-}
+};
 
 xs[i] = 99
 ```
@@ -2176,7 +2231,7 @@ const has_len = t => {
   }
 
   t
-}
+};
 ```
 
 `@panic` is a runtime trap. It lowers to an Ic trap primitive in the scalar

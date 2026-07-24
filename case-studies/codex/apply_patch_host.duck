@@ -10,4 +10,4 @@ declare Init {
   apply_patch_host: ApplyPatchHost
 }
 
-return {}
+return {};

@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./request_user_input_types.duck" ()
-const { finish_request_user_input } = import "./request_user_input_execution.duck" ()
+const {} = import "./request_user_input_types.duck" ();
+const { .finish_request_user_input } = import "./request_user_input_execution.duck" ();
 
 type FixtureAnswer = RequestUserInputAnswer
 type FixtureAnswerNode = RequestUserInputAnswerNode
@@ -10,16 +10,23 @@ type FixtureResponse = RequestUserInputResponse
 type FixtureTextNode = RequestUserInputAnswerTextNode
 type FixtureTexts = RequestUserInputAnswerTexts
 
-let answers: FixtureAnswers = `Cons ([[.question_id = "pick_one", .answers = `Cons (["A", `Nil ()] as FixtureTextNode)] as FixtureAnswer, `Nil ()] as FixtureAnswerNode)
-let completed = finish_request_user_input(`Answered ([.answers = answers] as FixtureResponse))
-let rejected = finish_request_user_input(`Cancelled ())
-let score = 0
+let answers: FixtureAnswers = `Cons (
+  [
+    [.question_id = "pick_one", .answers = `Cons (["A", `Nil ()] as
+      FixtureTextNode)] as FixtureAnswer,
+    `Nil (),
+  ] as FixtureAnswerNode
+);
+let completed = finish_request_user_input(`Answered ([.answers = answers] as FixtureResponse));
+let rejected = finish_request_user_input(`Cancelled ());
+let score = 0;
 
 if let `Completed output = completed {
   if output == "{\"answers\":{\"pick_one\":{\"answers\":[\"A\"]}}}" { score = score + 1 }
 }
 if let `Rejected message = rejected {
-  if message == "request_user_input was cancelled before receiving a response" { score = score + 10 }
+  if message == "request_user_input was cancelled before receiving a response" { score = score + 10
+  }
 }
 
-return { .score = score }
+return { .score = score };

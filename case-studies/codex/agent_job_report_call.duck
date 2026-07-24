@@ -1,7 +1,7 @@
 module () where
 
-const { encode_json, json_object_get, parse_json_document } = import "duck:prelude/json" ()
-const {} = import "./agent_job_report_types.duck" ()
+const { .encode_json, .json_object_get, .parse_json_document } = import "duck:prelude/json" ();
+const {} = import "./agent_job_report_types.duck" ();
 
 type AgentJobCallArgs = AgentJobReportArgs
 type AgentJobCallPayload = AgentJobPayload
@@ -11,30 +11,40 @@ let plan_report_agent_job_result: AgentJobCallPayload -> AgentJobCallPlan = payl
   if let `Unsupported () = payload {
     `RejectRequest "report_agent_job_result handler received unsupported payload"
   } else if let `Function document = payload {
-    let parsed = parse_json_document document
+    let parsed = parse_json_document document;
     if let `Ok value_and_position = parsed {
-      let [value, _] = value_and_position
+      let [value, _] = value_and_position;
       if let `Object object = value {
-        let job_lookup = json_object_get("job_id", object)
+        let job_lookup = json_object_get("job_id", object);
         if let `Found job_field = job_lookup {
           if let `String job_id = job_field {
-            let item_lookup = json_object_get("item_id", object)
+            let item_lookup = json_object_get("item_id", object);
             if let `Found item_field = item_lookup {
               if let `String item_id = item_field {
-                let result_lookup = json_object_get("result", object)
+                let result_lookup = json_object_get("result", object);
                 if let `Found result_field = result_lookup {
                   if let `Object _ = result_field {
-                    let result_json = encode_json result_field
-                    let stop_lookup = json_object_get("stop", object)
+                    let result_json = encode_json result_field;
+                    let stop_lookup = json_object_get("stop", object);
                     if let `Found stop_field = stop_lookup {
                       if let `Bool stop = stop_field {
-                        let args: AgentJobCallArgs = [.job_id = job_id, .item_id = item_id, .result_json = result_json, .stop = stop]
+                        let args: AgentJobCallArgs = [
+                          .job_id = job_id,
+                          .item_id = item_id,
+                          .result_json = result_json,
+                          .stop = stop,
+                        ];
                         `RecordResult args
                       } else {
                         `RejectRequest "stop must be a boolean"
                       }
                     } else {
-                      let args: AgentJobCallArgs = [.job_id = job_id, .item_id = item_id, .result_json = result_json, .stop = false]
+                      let args: AgentJobCallArgs = [
+                        .job_id = job_id,
+                        .item_id = item_id,
+                        .result_json = result_json,
+                        .stop = false,
+                      ];
                       `RecordResult args
                     }
                   } else {
@@ -64,6 +74,6 @@ let plan_report_agent_job_result: AgentJobCallPayload -> AgentJobCallPlan = payl
   } else {
     `RejectRequest "report_agent_job_result handler received unsupported payload"
   }
-}
+};
 
-return { plan_report_agent_job_result }
+return { .plan_report_agent_job_result };

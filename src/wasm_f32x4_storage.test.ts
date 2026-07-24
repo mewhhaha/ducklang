@@ -13,19 +13,19 @@ function exported_main(instance: WebAssembly.Instance): CallableFunction {
 
 Deno.test("runtime aggregates store and load 16-byte F32x4 fields", async () => {
   const wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const packet_type = struct {
   .prefix= I32,
   .lanes= F32x4
-}
+};
 
 let choose = if true {
   (lanes: F32x4) => [.prefix = 7, .lanes = lanes] as packet_type
 } else {
   (lanes: F32x4) => [.prefix = 8, .lanes = lanes] as packet_type
-}
+};
 
-let packet: packet_type = choose(@f32x4(1f32, 2f32, 3f32, 4f32))
+let packet: packet_type = choose(@f32x4(1f32, 2f32, 3f32, 4f32));
 @f32x4_extract_lane(packet.lanes, 2) + @f32_from_i32(packet.prefix)
 `);
 
@@ -55,13 +55,13 @@ let packet: packet_type = choose(@f32x4(1f32, 2f32, 3f32, 4f32))
 
 Deno.test("closure environments preserve captured F32x4 values", async () => {
   const wat = wat_from_core_source(`
-let vector: F32x4 = @f32x4(1f32, 2f32, 3f32, 4f32)
-let flag = true
+let vector: F32x4 = @f32x4(1f32, 2f32, 3f32, 4f32);
+let flag = true;
 let lane = if flag {
   (add: F32) => @f32x4_extract_lane(vector, 2) + add
 } else {
   (add: F32) => @f32x4_extract_lane(vector, 3) + add
-}
+};
 
 lane(39f32)
 `);
@@ -77,14 +77,14 @@ lane(39f32)
 Deno.test("runtime unions align F32x4 payloads after their tags", async () => {
   const wat = wat_from_core_source(`
 type ResultType = | \`Ok F32x4 | \`Err F32x4
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let result: result_type = if flag {
   \`Ok (@f32x4(1f32, 2f32, 3f32, 4f32))
 } else {
   \`Err (@f32x4_splat(0f32))
-}
+};
 
 if let \`Ok vector = result {
   @f32x4_extract_lane(vector, 3)
@@ -109,7 +109,7 @@ let rec lane_sum = (vector: F32x4, n: Int) => {
   } else {
     @i32_from_f32(@f32x4_extract_lane(vector, 0)) + lane_sum(vector, n - 1)
   }
-}
+};
 
 lane_sum(@f32x4(1f32, 2f32, 3f32, 4f32), 2)
 `);

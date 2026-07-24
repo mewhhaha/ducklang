@@ -1,17 +1,20 @@
 module () where
 
-const {} = import "./wait_for_environment_types.duck" ()
-const { plan_wait_for_environment_call } = import "./wait_for_environment_call.duck" ()
+const {} = import "./wait_for_environment_types.duck" ();
+const { .plan_wait_for_environment_call } = import "./wait_for_environment_call.duck" ();
 
 type FixtureEnvironment = WaitForEnvironment
 type FixtureEnvironmentNode = WaitForEnvironmentNode
 type FixtureEnvironments = WaitForEnvironments
 type FixturePayload = WaitForEnvironmentPayload
 
-let environments: FixtureEnvironments = `Cons ([[.environment_id = "gpu", .status = `Starting ()] as FixtureEnvironment, `Nil ()] as FixtureEnvironmentNode)
-let unsupported: FixturePayload = `Unsupported ()
-let valid: FixturePayload = `Function "{\"environment_id\":\"gpu\"}"
-let score = 0
+let environments: FixtureEnvironments = `Cons (
+  [[.environment_id = "gpu", .status = `Starting ()] as FixtureEnvironment, `Nil
+    ()] as FixtureEnvironmentNode
+);
+let unsupported: FixturePayload = `Unsupported ();
+let valid: FixturePayload = `Function "{\"environment_id\":\"gpu\"}";
+let score = 0;
 
 if let `Fatal message = plan_wait_for_environment_call(unsupported, environments) {
   if message == "wait_for_environment handler received unsupported payload" { score = score + 1 }
@@ -20,4 +23,4 @@ if let `Wait environment_id = plan_wait_for_environment_call(valid, environments
   if environment_id == "gpu" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

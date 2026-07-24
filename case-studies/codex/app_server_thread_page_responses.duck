@@ -1,8 +1,17 @@
 module () where
 
-const { json_array, json_array_empty, json_array_prepend, json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { materialize_turn } = import "./app_server_turns.duck" ()
-const {} = import "./app_server_turn_types.duck" ()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_null,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json" ();
+const { .materialize_turn } = import "./app_server_turns.duck" ();
+const {} = import "./app_server_turn_types.duck" ();
 
 type ThreadPageJson = AppServerJson
 type ThreadPageJsonArray = JsonArray
@@ -12,103 +21,110 @@ type ThreadPageTurnsPage = AppServerThreadTurnsPage
 type ThreadPageItemEntries = AppServerThreadItemEntries
 type ThreadPageItemsPage = AppServerThreadItemsPage
 
-const optional_text_json: ThreadPageTextOption -> ThreadPageJson = (value: ThreadPageTextOption) => {
-  if let `Some text = value { json_string(text) } else { json_null() }
-}
+const optional_text_json: ThreadPageTextOption -> ThreadPageJson = (value:
+  ThreadPageTextOption) => {
+    if let `Some text = value { json_string text } else { json_null() }
+  };
 
 const materialize_turns: ThreadPageTurns -> ThreadPageJsonArray = (turns: ThreadPageTurns) => {
-  let current = turns
-  let reversed = json_array_empty()
-  let done = false
+  let current = turns;
+  let reversed = json_array_empty();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [turn, tail] = node
-      reversed = json_array_prepend(materialize_turn(turn), reversed)
+      let [turn, tail] = node;
+      reversed = json_array_prepend(materialize_turn turn, reversed)
       current = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
-  let result = json_array_empty()
+  let result = json_array_empty();
   done = false
 
   loop {
     if let `Cons node = reversed {
-      let [turn, tail] = node
+      let [turn, tail] = node;
       result = json_array_prepend(turn, result)
       reversed = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   result
-}
+};
 
-const materialize_item_entries: ThreadPageItemEntries -> ThreadPageJsonArray = (entries: ThreadPageItemEntries) => {
-  let current = entries
-  let reversed = json_array_empty()
-  let done = false
+const materialize_item_entries: ThreadPageItemEntries -> ThreadPageJsonArray = (
+  entries: ThreadPageItemEntries
+) => {
+  let current = entries;
+  let reversed = json_array_empty();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [entry, tail] = node
-      let [turn_id, item] = entry
-      let fields = json_object_empty()
+      let [entry, tail] = node;
+      let [turn_id, item] = entry;
+      let fields = json_object_empty();
       fields = json_object_prepend("item", item, fields)
-      fields = json_object_prepend("turnId", json_string(turn_id), fields)
-      reversed = json_array_prepend(json_object(fields), reversed)
+      fields = json_object_prepend("turnId", json_string turn_id, fields)
+      reversed = json_array_prepend(json_object fields, reversed)
       current = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
-  let result = json_array_empty()
+  let result = json_array_empty();
   done = false
 
   loop {
     if let `Cons node = reversed {
-      let [entry, tail] = node
+      let [entry, tail] = node;
       result = json_array_prepend(entry, result)
       reversed = tail
     } else {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   result
-}
+};
 
-const materialize_thread_turns_page: ThreadPageTurnsPage -> ThreadPageJson = (page: ThreadPageTurnsPage) => {
-  let [turns, next_cursor, backwards_cursor] = page
-  let fields = json_object_empty()
-  fields = json_object_prepend("backwardsCursor", optional_text_json(backwards_cursor), fields)
-  fields = json_object_prepend("nextCursor", optional_text_json(next_cursor), fields)
-  fields = json_object_prepend("data", json_array(materialize_turns(turns)), fields)
-  json_object(fields)
-}
+const materialize_thread_turns_page: ThreadPageTurnsPage -> ThreadPageJson = (
+  page: ThreadPageTurnsPage
+) => {
+  let [turns, next_cursor, backwards_cursor] = page;
+  let fields = json_object_empty();
+  fields = json_object_prepend("backwardsCursor", optional_text_json backwards_cursor, fields)
+  fields = json_object_prepend("nextCursor", optional_text_json next_cursor, fields)
+  fields = json_object_prepend("data", json_array(materialize_turns turns), fields)
+  json_object fields
+};
 
-const materialize_thread_items_page: ThreadPageItemsPage -> ThreadPageJson = (page: ThreadPageItemsPage) => {
-  let [entries, next_cursor, backwards_cursor] = page
-  let fields = json_object_empty()
-  fields = json_object_prepend("backwardsCursor", optional_text_json(backwards_cursor), fields)
-  fields = json_object_prepend("nextCursor", optional_text_json(next_cursor), fields)
-  fields = json_object_prepend("data", json_array(materialize_item_entries(entries)), fields)
-  json_object(fields)
-}
+const materialize_thread_items_page: ThreadPageItemsPage -> ThreadPageJson = (
+  page: ThreadPageItemsPage
+) => {
+  let [entries, next_cursor, backwards_cursor] = page;
+  let fields = json_object_empty();
+  fields = json_object_prepend("backwardsCursor", optional_text_json backwards_cursor, fields)
+  fields = json_object_prepend("nextCursor", optional_text_json next_cursor, fields)
+  fields = json_object_prepend("data", json_array(materialize_item_entries entries), fields)
+  json_object fields
+};
 
 return {
-  materialize_thread_turns_page,
-  materialize_thread_items_page,
-}
+  .materialize_thread_turns_page,
+  .materialize_thread_items_page,
+};

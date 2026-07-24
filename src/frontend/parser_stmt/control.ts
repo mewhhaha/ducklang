@@ -48,6 +48,7 @@ export abstract class ParserStmtControl extends ParserHostImport {
     if (this.for_header_has_index()) {
       index = this.expect_binding_name("Expected loop index");
       if (!is_no_demand_name(index)) {
+        this.expect_supported_name(index, "Loop index");
         expect_snake_case(index, "Loop index");
       }
 

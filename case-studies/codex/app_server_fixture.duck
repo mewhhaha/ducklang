@@ -1,19 +1,30 @@
-const app_server_types_module = import "./app_server_types.duck"
-const app_server_module = import "./app_server.duck"
-const { experimental_api_enabled, handle_app_server_line, should_emit_notification, uninitialized_app_server_session } = app_server_module()
+const app_server_types_module = import "./app_server_types.duck";
+const app_server_module = import "./app_server.duck";
+const {
+  .experimental_api_enabled,
+  .handle_app_server_line,
+  .should_emit_notification,
+  .uninitialized_app_server_session,
+} = app_server_module();
 
 type FixtureSession = AppServerSession
 type FixtureIdentity = AppServerIdentity
 type FixturePlan = AppServerPlan
 type FixtureOutcome = [FixtureSession, I32]
 
-let identity: FixtureIdentity = ["binned-codex/0.1", "/tmp/codex", "unix", "linux"]
-let initialize = "{\"method\":\"initialize\",\"id\":1,\"params\":{\"clientInfo\":{\"name\":\"codex_vscode\",\"title\":\"Codex VS Code Extension\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":true,\"requestAttestation\":true,\"mcpServerOpenaiFormElicitation\":true,\"optOutNotificationMethods\":[\"thread/started\"]}}}"
+let identity: FixtureIdentity = ["binned-codex/0.1", "/tmp/codex", "unix", "linux"];
+let initialize =
+  "{\"method\":\"initialize\",\"id\":1,\"params\":{\"clientInfo\":{\"name\":\"codex_vscode\",\"title\":\"Codex VS Code Extension\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":true,\"requestAttestation\":true,\"mcpServerOpenaiFormElicitation\":true,\"optOutNotificationMethods\":[\"thread/started\"]}}}"
 
-const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (state: FixtureSession, plan: FixturePlan, index: I32, score: I32) => {
+const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (
+  state: FixtureSession,
+  plan: FixturePlan,
+  index: I32,
+  score: I32,
+) => {
   if let `Send send = plan {
-    let [next, output] = send
-    let next_score = score
+    let [next, output] = send;
+    let next_score = score;
 
     if index == 0 {
       if output == "{\"id\":0,\"error\":{\"code\":-32600,\"message\":\"Not initialized\"}}" {
@@ -21,7 +32,7 @@ const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (s
       }
     } else if index == 1 {
       if output == "{\"id\":1,\"result\":{\"userAgent\":\"binned-codex/0.1\",\"codexHome\":\"/tmp/codex\",\"platformFamily\":\"unix\",\"platformOs\":\"linux\"}}" {
-        if experimental_api_enabled(next) && should_emit_notification(next, "turn/started") {
+        if experimental_api_enabled next && should_emit_notification(next, "turn/started") {
           if should_emit_notification(next, "thread/started") {
             ()
           } else {
@@ -43,24 +54,25 @@ const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (s
       }
     }
 
-    let outcome: FixtureOutcome = [next, next_score]
+    let outcome: FixtureOutcome = [next, next_score];
     outcome
   } else if let `Dispatch dispatch = plan {
-    let [next, _, _] = dispatch
-    let outcome: FixtureOutcome = [next, score]
+    let [next, _, _] = dispatch;
+    let outcome: FixtureOutcome = [next, score];
     outcome
   } else if let `Route route = plan {
-    let [next, id, method, params] = route
-    let next_score = score
+    let [next, id, method, params] = route;
+    let next_score = score;
 
     if index == 3 {
       if let `Number request_id = id {
         if request_id == "2" && method == "thread/list" {
           if let `Object fields = params {
             if let `Cons node = fields {
-              let [member, _] = node
-              let [key, value] = member
-              if key == "limit" { if let `Number limit = value { if limit == "20" { next_score = next_score + 1000 } } }
+              let [member, _] = node;
+              let [key, value] = member;
+              if key == "limit" { if let `Number limit = value { if limit == "20" { next_score =
+                  next_score + 1000 } } }
             }
           }
         }
@@ -69,55 +81,89 @@ const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (s
       if method == "thread/read" { next_score = next_score + 1000000 }
     }
 
-    let outcome: FixtureOutcome = [next, next_score]
+    let outcome: FixtureOutcome = [next, next_score];
     outcome
   } else if let `Observe observed = plan {
-    let [next, _] = observed
-    let outcome: FixtureOutcome = [next, score]
+    let [next, _] = observed;
+    let outcome: FixtureOutcome = [next, score];
     outcome
   } else if let `Drop dropped = plan {
-    let [next, _] = dropped
-    let next_score = score
+    let [next, _] = dropped;
+    let next_score = score;
 
     if index == 5 {
       next_score = next_score + 100000
     }
 
-    let outcome: FixtureOutcome = [next, next_score]
+    let outcome: FixtureOutcome = [next, next_score];
     outcome
   } else {
-    let outcome: FixtureOutcome = [state, score]
+    let outcome: FixtureOutcome = [state, score];
     outcome
   }
-}
+};
 
-let initial = uninitialized_app_server_session()
-let first_plan: FixturePlan = handle_app_server_line(initial, identity, "{\"id\":0,\"method\":\"thread/list\",\"params\":{}}")
-let first: FixtureOutcome = score_plan(initial, first_plan, 0, 0)
-let [first_state, first_score] = first
+let initial = uninitialized_app_server_session();
+let first_plan: FixturePlan = handle_app_server_line(
+  initial,
+  identity,
+  "{\"id\":0,\"method\":\"thread/list\",\"params\":{}}",
+);
+let first: FixtureOutcome = score_plan(initial, first_plan, 0, 0);
+let [first_state, first_score] = first;
 
-let initialize_plan: FixturePlan = handle_app_server_line(first_state, identity, initialize)
-let second: FixtureOutcome = score_plan(first_state, initialize_plan, 1, first_score)
-let [second_state, second_score] = second
+let initialize_plan: FixturePlan = handle_app_server_line(first_state, identity, initialize);
+let second: FixtureOutcome = score_plan(first_state, initialize_plan, 1, first_score);
+let [second_state, second_score] = second;
 
-let duplicate_plan: FixturePlan = handle_app_server_line(second_state, identity, "{\"id\":\"duplicate\",\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"other\",\"version\":\"1\"}}}")
-let third: FixtureOutcome = score_plan(second_state, duplicate_plan, 2, second_score)
-let [third_state, third_score] = third
+let duplicate_plan: FixturePlan = handle_app_server_line(
+  second_state,
+  identity,
+  "{\"id\":\"duplicate\",\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"other\",\"version\":\"1\"}}}",
+);
+let third: FixtureOutcome = score_plan(second_state, duplicate_plan, 2, second_score);
+let [third_state, third_score] = third;
 
-let dispatch_plan: FixturePlan = handle_app_server_line(third_state, identity, "{\"id\":2,\"method\":\"thread/list\",\"params\":{\"limit\":20}}")
-let fourth: FixtureOutcome = score_plan(third_state, dispatch_plan, 3, third_score)
-let [_, fourth_score] = fourth
+let dispatch_plan: FixturePlan = handle_app_server_line(
+  third_state,
+  identity,
+  "{\"id\":2,\"method\":\"thread/list\",\"params\":{\"limit\":20}}",
+);
+let fourth: FixtureOutcome = score_plan(third_state, dispatch_plan, 3, third_score);
+let [_, fourth_score] = fourth;
 
-let invalid_plan: FixturePlan = handle_app_server_line(uninitialized_app_server_session(), identity, "{\"id\":3,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex_cli\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":\"yes\"}}}")
-let invalid: FixtureOutcome = score_plan(uninitialized_app_server_session(), invalid_plan, 4, fourth_score)
-let [_, invalid_score] = invalid
+let invalid_plan: FixturePlan = handle_app_server_line(
+  uninitialized_app_server_session(),
+  identity,
+  "{\"id\":3,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex_cli\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":\"yes\"}}}",
+);
+let invalid: FixtureOutcome = score_plan(
+  uninitialized_app_server_session(),
+  invalid_plan,
+  4,
+  fourth_score,
+);
+let [_, invalid_score] = invalid;
 
-let decimal_id_plan: FixturePlan = handle_app_server_line(third_state, identity, "{\"id\":2.5,\"method\":\"thread/list\"}")
-let decimal_id: FixtureOutcome = score_plan(third_state, decimal_id_plan, 5, invalid_score)
-let [_, decimal_id_score] = decimal_id
+let decimal_id_plan: FixturePlan = handle_app_server_line(
+  third_state,
+  identity,
+  "{\"id\":2.5,\"method\":\"thread/list\"}",
+);
+let decimal_id: FixtureOutcome = score_plan(third_state, decimal_id_plan, 5, invalid_score);
+let [_, decimal_id_score] = decimal_id;
 
-let invalid_method_plan: FixturePlan = handle_app_server_line(third_state, identity, "{\"id\":4,\"method\":\"thread/read\",\"params\":{\"threadId\":\"thread-1\",\"includeTurns\":null}}")
-let invalid_method: FixtureOutcome = score_plan(third_state, invalid_method_plan, 6, decimal_id_score)
-let [_, score] = invalid_method
+let invalid_method_plan: FixturePlan = handle_app_server_line(
+  third_state,
+  identity,
+  "{\"id\":4,\"method\":\"thread/read\",\"params\":{\"threadId\":\"thread-1\",\"includeTurns\":null}}",
+);
+let invalid_method: FixtureOutcome = score_plan(
+  third_state,
+  invalid_method_plan,
+  6,
+  decimal_id_score,
+);
+let [_, score] = invalid_method;
 
 score

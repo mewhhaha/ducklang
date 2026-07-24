@@ -1,8 +1,17 @@
 module () where
 
-const { pipe: forall input output.[input, input -> output] -> output } = import "duck:prelude/functional" ()
-const { encode_json_object, json_bool_field, json_field, json_nullable_string_field, json_object_empty, json_optional_string_field, json_string_field } = import "duck:prelude/json" ()
-const hook_input_types_module = import "./hook_input_types.duck"
+const { .pipe: forall input output.[input, input -> output] -> output } =
+  import "duck:prelude/functional" ();
+const {
+  .encode_json_object,
+  .json_bool_field,
+  .json_field,
+  .json_nullable_string_field,
+  .json_object_empty,
+  .json_optional_string_field,
+  .json_string_field,
+} = import "duck:prelude/json" ();
+const hook_input_types_module = import "./hook_input_types.duck";
 
 type InputTurnContext = HookTurnInputContext
 type InputPreTool = HookPreToolInput
@@ -19,160 +28,186 @@ type InputTextOption = HookInputTextOption
 type InputOptionalText = [Bool, Text]
 
 const optional_text: InputTextOption -> InputOptionalText = (value: InputTextOption) => {
-  let result: InputOptionalText = if let `Some text = value { [true, text] } else { [false, ""] }
+  let result: InputOptionalText = if let `Some text = value { [true, text] } else { [false, ""] };
   result
-}
+};
 
 const turn_context_fields = (context: InputTurnContext, event_name: Text) => {
-  let [session_id, turn_id, agent_id, agent_type, transcript_path, cwd, model] = context
-  let [has_agent_id, agent_id_value] = optional_text agent_id
-  let [has_agent_type, agent_type_value] = optional_text agent_type
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
+  let [session_id, turn_id, agent_id, agent_type, transcript_path, cwd, model] = context;
+  let [has_agent_id, agent_id_value] = optional_text agent_id;
+  let [has_agent_type, agent_type_value] = optional_text agent_type;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_string_field("turn_id", turn_id)
-    |> json_optional_string_field("agent_id", has_agent_id, agent_id_value)
-    |> json_optional_string_field("agent_type", has_agent_type, agent_type_value)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", event_name)
-    |> json_string_field("model", model)
-}
+  |> json_string_field("session_id", session_id)
+  |> json_string_field("turn_id", turn_id)
+  |> json_optional_string_field("agent_id", has_agent_id, agent_id_value)
+  |> json_optional_string_field("agent_type", has_agent_type, agent_type_value)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", event_name)
+  |> json_string_field("model", model)
+};
 
 const encode_pre_tool_input = (input: InputPreTool) => {
-  let [context, permission_mode, tool_name, tool_input, tool_use_id] = input
+  let [context, permission_mode, tool_name, tool_input, tool_use_id] = input;
   turn_context_fields(context, "PreToolUse")
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("tool_name", tool_name)
-    |> json_field("tool_input", tool_input)
-    |> json_string_field("tool_use_id", tool_use_id)
-    |> encode_json_object
-}
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("tool_name", tool_name)
+  |> json_field("tool_input", tool_input)
+  |> json_string_field("tool_use_id", tool_use_id)
+  |> encode_json_object
+};
 
 const encode_permission_request_input = (input: InputPermissionRequest) => {
-  let [context, permission_mode, tool_name, tool_input] = input
+  let [context, permission_mode, tool_name, tool_input] = input;
   turn_context_fields(context, "PermissionRequest")
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("tool_name", tool_name)
-    |> json_field("tool_input", tool_input)
-    |> encode_json_object
-}
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("tool_name", tool_name)
+  |> json_field("tool_input", tool_input)
+  |> encode_json_object
+};
 
 const encode_post_tool_input = (input: InputPostTool) => {
-  let [context, permission_mode, tool_name, tool_input, tool_response, tool_use_id] = input
+  let [context, permission_mode, tool_name, tool_input, tool_response, tool_use_id] = input;
   turn_context_fields(context, "PostToolUse")
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("tool_name", tool_name)
-    |> json_field("tool_input", tool_input)
-    |> json_field("tool_response", tool_response)
-    |> json_string_field("tool_use_id", tool_use_id)
-    |> encode_json_object
-}
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("tool_name", tool_name)
+  |> json_field("tool_input", tool_input)
+  |> json_field("tool_response", tool_response)
+  |> json_string_field("tool_use_id", tool_use_id)
+  |> encode_json_object
+};
 
 const encode_compact_input = (event_name: Text, input: InputCompact) => {
-  let [context, trigger] = input
+  let [context, trigger] = input;
   turn_context_fields(context, event_name)
-    |> json_string_field("trigger", trigger)
-    |> encode_json_object
-}
+  |> json_string_field("trigger", trigger)
+  |> encode_json_object
+};
 
 const encode_session_start_input = (input: InputSessionStart) => {
-  let [session_id, transcript_path, cwd, model, permission_mode, source] = input
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
+  let [session_id, transcript_path, cwd, model, permission_mode, source] = input;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", "SessionStart")
-    |> json_string_field("model", model)
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("source", source)
-    |> encode_json_object
-}
+  |> json_string_field("session_id", session_id)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", "SessionStart")
+  |> json_string_field("model", model)
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("source", source)
+  |> encode_json_object
+};
 
 const encode_session_end_input = (input: InputSessionEnd) => {
-  let [session_id, transcript_path, cwd] = input
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
+  let [session_id, transcript_path, cwd] = input;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", "SessionEnd")
-    |> json_string_field("reason", "other")
-    |> encode_json_object
-}
+  |> json_string_field("session_id", session_id)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", "SessionEnd")
+  |> json_string_field("reason", "other")
+  |> encode_json_object
+};
 
 const encode_subagent_start_input = (input: InputSubagentStart) => {
-  let [session_id, turn_id, transcript_path, cwd, model, permission_mode, agent_id, agent_type] = input
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
+  let [session_id, turn_id, transcript_path, cwd, model, permission_mode, agent_id, agent_type] =
+    input;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_string_field("turn_id", turn_id)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", "SubagentStart")
-    |> json_string_field("model", model)
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("agent_id", agent_id)
-    |> json_string_field("agent_type", agent_type)
-    |> encode_json_object
-}
+  |> json_string_field("session_id", session_id)
+  |> json_string_field("turn_id", turn_id)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", "SubagentStart")
+  |> json_string_field("model", model)
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("agent_id", agent_id)
+  |> json_string_field("agent_type", agent_type)
+  |> encode_json_object
+};
 
 const encode_user_prompt_input = (input: InputUserPrompt) => {
-  let [context, permission_mode, prompt] = input
+  let [context, permission_mode, prompt] = input;
   turn_context_fields(context, "UserPromptSubmit")
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_string_field("prompt", prompt)
-    |> encode_json_object
-}
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_string_field("prompt", prompt)
+  |> encode_json_object
+};
 
 const encode_stop_input = (input: InputStop) => {
-  let [session_id, turn_id, transcript_path, cwd, model, permission_mode, stop_hook_active, last_assistant_message] = input
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
-  let [has_last_message, last_message_value] = optional_text last_assistant_message
+  let [
+    session_id,
+    turn_id,
+    transcript_path,
+    cwd,
+    model,
+    permission_mode,
+    stop_hook_active,
+    last_assistant_message,
+  ] = input;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
+  let [has_last_message, last_message_value] = optional_text last_assistant_message;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_string_field("turn_id", turn_id)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", "Stop")
-    |> json_string_field("model", model)
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_bool_field("stop_hook_active", stop_hook_active)
-    |> json_nullable_string_field("last_assistant_message", has_last_message, last_message_value)
-    |> encode_json_object
-}
+  |> json_string_field("session_id", session_id)
+  |> json_string_field("turn_id", turn_id)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", "Stop")
+  |> json_string_field("model", model)
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_bool_field("stop_hook_active", stop_hook_active)
+  |> json_nullable_string_field("last_assistant_message", has_last_message, last_message_value)
+  |> encode_json_object
+};
 
 const encode_subagent_stop_input = (input: InputSubagentStop) => {
-  let [session_id, turn_id, transcript_path, agent_transcript_path, cwd, model, permission_mode, stop_hook_active, agent_id, agent_type, last_assistant_message] = input
-  let [has_transcript_path, transcript_path_value] = optional_text transcript_path
-  let [has_agent_transcript_path, agent_transcript_path_value] = optional_text agent_transcript_path
-  let [has_last_message, last_message_value] = optional_text last_assistant_message
+  let [
+    session_id,
+    turn_id,
+    transcript_path,
+    agent_transcript_path,
+    cwd,
+    model,
+    permission_mode,
+    stop_hook_active,
+    agent_id,
+    agent_type,
+    last_assistant_message,
+  ] = input;
+  let [has_transcript_path, transcript_path_value] = optional_text transcript_path;
+  let [has_agent_transcript_path, agent_transcript_path_value] = optional_text agent_transcript_path;
+  let [has_last_message, last_message_value] = optional_text last_assistant_message;
   json_object_empty()
-    |> json_string_field("session_id", session_id)
-    |> json_string_field("turn_id", turn_id)
-    |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
-    |> json_nullable_string_field("agent_transcript_path", has_agent_transcript_path, agent_transcript_path_value)
-    |> json_string_field("cwd", cwd)
-    |> json_string_field("hook_event_name", "SubagentStop")
-    |> json_string_field("model", model)
-    |> json_string_field("permission_mode", permission_mode)
-    |> json_bool_field("stop_hook_active", stop_hook_active)
-    |> json_string_field("agent_id", agent_id)
-    |> json_string_field("agent_type", agent_type)
-    |> json_nullable_string_field("last_assistant_message", has_last_message, last_message_value)
-    |> encode_json_object
-}
+  |> json_string_field("session_id", session_id)
+  |> json_string_field("turn_id", turn_id)
+  |> json_nullable_string_field("transcript_path", has_transcript_path, transcript_path_value)
+  |> json_nullable_string_field(
+    "agent_transcript_path",
+    has_agent_transcript_path,
+    agent_transcript_path_value,
+  )
+  |> json_string_field("cwd", cwd)
+  |> json_string_field("hook_event_name", "SubagentStop")
+  |> json_string_field("model", model)
+  |> json_string_field("permission_mode", permission_mode)
+  |> json_bool_field("stop_hook_active", stop_hook_active)
+  |> json_string_field("agent_id", agent_id)
+  |> json_string_field("agent_type", agent_type)
+  |> json_nullable_string_field("last_assistant_message", has_last_message, last_message_value)
+  |> encode_json_object
+};
 
 return {
-  encode_pre_tool_input,
-  encode_permission_request_input,
-  encode_post_tool_input,
-  encode_compact_input,
-  encode_session_start_input,
-  encode_session_end_input,
-  encode_subagent_start_input,
-  encode_user_prompt_input,
-  encode_stop_input,
-  encode_subagent_stop_input,
-}
+  .encode_pre_tool_input,
+  .encode_permission_request_input,
+  .encode_post_tool_input,
+  .encode_compact_input,
+  .encode_session_start_input,
+  .encode_session_end_input,
+  .encode_subagent_start_input,
+  .encode_user_prompt_input,
+  .encode_stop_input,
+  .encode_subagent_stop_input,
+};

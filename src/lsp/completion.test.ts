@@ -31,8 +31,9 @@ function item_shape(item: LspCompletionItem) {
 
 Deno.test("completion lists exactly the known typed struct fields", () => {
   const result = complete(
-    "type User = struct {.name = Text, .age = Int}\n" +
-      'let user: User = [.name = "Ada", .age = 42]\nuser.',
+    `type User = struct {.name = Text, .age = Int}
+let user: User = [.name = "Ada", .age = 42];
+user.`,
   );
 
   assert_equals(result.items.map(item_shape), [{
@@ -70,7 +71,7 @@ Deno.test("completion lists declared effect operations with signatures", () => {
 });
 
 Deno.test("completion offers recovered scope names inside a broken statement", () => {
-  const result = complete("let outer = 1\nlet broken =\nout");
+  const result = complete("let outer = 1;\nlet broken =\nout");
   assert_equals(result.items.map(item_shape), [{
     label: "outer",
     kind: 6,
@@ -80,7 +81,7 @@ Deno.test("completion offers recovered scope names inside a broken statement", (
 });
 
 Deno.test("completion ranks local scope before outer scope and keywords", () => {
-  const text = "let outer = 1\nlet result = {\n  let inner = 2\n  \n}";
+  const text = "let outer = 1;\nlet result = {\n  let inner = 2;\n  \n};";
   const offset = text.indexOf("  \n}") + 2;
   const parsed = parse_source_with_diagnostics(text);
   const index = build_binding_index(parsed);
@@ -102,8 +103,8 @@ Deno.test("completion ranks local scope before outer scope and keywords", () => 
 
 Deno.test("completion lists union constructors with payload details", () => {
   const result = complete(
-    "type Result = | `Ok Int | `Error Text\n" +
-      "let value: Result = `",
+    `type Result = | \`Ok Int | \`Error Text
+let value: Result = \``,
   );
 
   assert_equals(result.items.map(item_shape), [{
@@ -203,16 +204,31 @@ Deno.test("completion resolve attaches doc comments and type layout", () => {
 });
 
 Deno.test("completion annotates linear bindings with consuming insertion", () => {
-  const result = complete("let !token = 1\n");
+  const result = complete("let !token = 1;\n");
   const token = result.items.find((item) => item.label === "!token");
   assert_equals(token?.detail, "linear !token: I32");
   assert_equals(token?.insertText, "!token");
 });
 
+Deno.test("completion offers explicit handler construction", () => {
+  const result = complete("let counter = han;");
+  const handler = result.items.find((item) => item.label === "handler");
+
+  assert_equals(
+    handler?.insertText,
+    "handler ${1:Effect} {\n\t${2:operation}: (!resume) => $0,\n\treturn: value => value,\n}",
+  );
+  assert_equals(handler?.insertTextFormat, 2);
+});
+
 Deno.test("completion offers operation and return snippets in handler bodies", () => {
   const result = complete(
-    "declare effect Io {\n  read: () => I32\n  write: (Text) => Unit\n}\n" +
-      "let handler = Io {\n  ",
+    `declare effect Io {
+  read: () => I32
+  write: (Text) => Unit
+}
+let handler = handler Io {
+  `,
   );
   assert_equals(result.items.map((item) => item.label), [
     "read",
@@ -225,7 +241,7 @@ Deno.test("completion offers operation and return snippets in handler bodies", (
 
 Deno.test("completion filters runtime values out of type positions", () => {
   const result = complete(
-    "type Pair = [Int, Int]\nlet runtime = 1\nlet value: ",
+    "type Pair = [Int, Int]\nlet runtime = 1;\nlet value: ",
   );
   assert_equals(result.items.some((item) => item.label === "Pair"), true);
   assert_equals(result.items.some((item) => item.label === "runtime"), false);

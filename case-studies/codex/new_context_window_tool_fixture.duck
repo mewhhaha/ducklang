@@ -1,19 +1,26 @@
 module () where
 
-const {} = import "./auto_compact_window_types.duck" ()
-const { new_auto_compact_window, take_new_context_window_request } = import "./auto_compact_window.duck" ()
-const { request_new_context_window_tool } = import "./token_budget_tools.duck" ()
+const {} = import "./auto_compact_window_types.duck" ();
+const { .new_auto_compact_window, .take_new_context_window_request } =
+  import "./auto_compact_window.duck" ();
+const { .request_new_context_window_tool } = import "./token_budget_tools.duck" ();
 
 type FixtureIds = AutoCompactWindowIds
 
-let ids: FixtureIds = [.first_window_id = "window-1", .previous_window_id = `None (), .window_id = "window-1"]
-let window = new_auto_compact_window(ids)
-let result = request_new_context_window_tool(window)
-let request = take_new_context_window_request(result.window)
-let consumed = take_new_context_window_request(request.window)
-let score = 0
-if result.output == "A new context window will start without summarizing conversation history." && request.granted && !(consumed.granted) {
+let ids: FixtureIds = [
+  .first_window_id = "window-1",
+  .previous_window_id = `None (),
+  .window_id = "window-1",
+];
+let window = new_auto_compact_window ids;
+let result = request_new_context_window_tool window;
+let request = take_new_context_window_request result.window;
+let consumed = take_new_context_window_request request.window;
+let score = 0;
+if result.output == "A new context window will start without summarizing conversation history." && request.granted && !(
+  consumed.granted
+) {
   score = 1
 }
 
-return { .score = score }
+return { .score = score };

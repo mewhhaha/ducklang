@@ -17,10 +17,10 @@ let greet: () -> <Io.read :| Io.print> Text = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 
-let result = greet()
-return { .result = result }
+let result = greet();
+return { .result = result };
 
 ---
 
@@ -124,12 +124,49 @@ return { .result = result }
       (parenthesized_or_product
         (unit_pattern))))
   (module_return_statement
-    (object_literal
-      (field_block
+    (shape_value
+      (shape_field_block
         (shape_field
           (identifier)
           (postfix_expression
             (identifier)))))))
+
+==================
+Local module binding
+==================
+
+module adder = capabilities => {
+  { .run = value => value + capabilities.base }
+}
+
+---
+
+(source_file
+  (module_binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (block
+          (expression_statement
+            (postfix_expression
+              (shape_value
+                (shape_field_block
+                  (shape_field
+                    (identifier)
+                    (arrow_function
+                      (parameter
+                        (identifier))
+                      (binary_expression
+                        (postfix_expression
+                          (identifier))
+                        (operator_symbol)
+                        (postfix_expression
+                          (field_expression
+                            (postfix_expression
+                              (identifier))
+                            (identifier)))))))))))))))
 
 ==================
 Effect row expressions and effectful bind
@@ -139,9 +176,9 @@ let run: () -> <Stdin :| Stdout :& (Trace :- Debug)> Text = () => {
   line <- Stdin.read_line()
   _ <- Stdout.write_line(&line)
   line
-}
+};
 
-let inspect: () -> <Stdin :| Stdout.write_line :| Trace :- Debug> Unit = () => ()
+let inspect: () -> <Stdin :| Stdout.write_line :| Trace :- Debug> Unit = () => ();
 
 ---
 
@@ -234,8 +271,7 @@ let inspect: () -> <Stdin :| Stdout.write_line :| Trace :- Debug> Unit = () => (
 ==================
 Source fragment
 ==================
-
-let answer = 40 + 2
+let answer = 40 + 2;
 answer
 
 ---
@@ -282,25 +318,25 @@ effect Counter state {
 }
 
 let counter = {
-  let count: I32 = 0
-  Counter {
+  let count: I32 = 0;
+  handler Counter {
     get: (!resume) => !resume(count),
     add: (amount, !resume) => {
       count = count + amount
       !resume(())
     },
-    return: value => { value, count },
+    return: value => { .value, .count },
   }
-}
+};
 
-let make = () => Counter {
+let make = () => handler Counter {
   get: (!resume) => !resume(0),
   return: value => value,
-}
+};
 
-let result = try run() with counter
-let (!left, !right) = dup !resume
-return { .result = result }
+let result = try run() with counter;
+let (!left, !right) = dup !resume;
+return { .result = result };
 
 ---
 
@@ -349,76 +385,10 @@ return { .result = result }
           (postfix_expression
             (number)))
         (expression_statement
-          (application_expression
-            (postfix_expression
-              (identifier))
-            (postfix_expression
-              (object_literal
-                (field_block
-                  (field_definition
-                    (identifier)
-                    (arrow_function
-                      (parameter_list
-                        (parameter
-                          (identifier)))
-                      (application_expression
-                        (postfix_expression
-                          (linear_reference
-                            (identifier)))
-                        (parenthesized_or_product
-                          (parenthesized_expression
-                            (postfix_expression
-                              (identifier)))))))
-                  (field_definition
-                    (identifier)
-                    (arrow_function
-                      (parameter_list
-                        (parameter
-                          (identifier))
-                        (parameter
-                          (identifier)))
-                      (postfix_expression
-                        (block
-                          (assignment
-                            (identifier)
-                            (binary_expression
-                              (postfix_expression
-                                (identifier))
-                              (operator_symbol)
-                              (postfix_expression
-                                (identifier))))
-                          (expression_statement
-                            (application_expression
-                              (postfix_expression
-                                (linear_reference
-                                  (identifier)))
-                              (parenthesized_or_product
-                                (parenthesized_expression
-                                  (postfix_expression
-                                    (unit_pattern))))))))))
-                  (field_definition
-                    (identifier)
-                    (arrow_function
-                      (parameter
-                        (identifier))
-                      (postfix_expression
-                        (object_literal
-                          (field_block
-                            (shorthand_field
-                              (identifier))
-                            (shorthand_field
-                              (identifier)))))))))))))))
-  (binding_statement
-    (identifier)
-    (arrow_function
-      (parameter_list)
-      (application_expression
-        (postfix_expression
-          (identifier))
-        (postfix_expression
-          (object_literal
-            (field_block
-              (field_definition
+          (effect_handler_expression
+            (effect_identifier)
+            (handler_clause_block
+              (handler_operation_clause
                 (identifier)
                 (arrow_function
                   (parameter_list
@@ -431,14 +401,72 @@ return { .result = result }
                     (parenthesized_or_product
                       (parenthesized_expression
                         (postfix_expression
-                          (number)))))))
-              (field_definition
+                          (identifier)))))))
+              (handler_operation_clause
                 (identifier)
+                (arrow_function
+                  (parameter_list
+                    (parameter
+                      (identifier))
+                    (parameter
+                      (identifier)))
+                  (postfix_expression
+                    (block
+                      (assignment
+                        (identifier)
+                        (binary_expression
+                          (postfix_expression
+                            (identifier))
+                          (operator_symbol)
+                          (postfix_expression
+                            (identifier))))
+                      (expression_statement
+                        (application_expression
+                          (postfix_expression
+                            (linear_reference
+                              (identifier)))
+                          (parenthesized_or_product
+                            (parenthesized_expression
+                              (postfix_expression
+                                (unit_pattern))))))))))
+              (handler_return_clause
                 (arrow_function
                   (parameter
                     (identifier))
                   (postfix_expression
-                    (identifier))))))))))
+                    (shape_value
+                      (shape_field_block
+                        (shorthand_field
+                          (identifier))
+                        (shorthand_field
+                          (identifier)))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (effect_handler_expression
+        (effect_identifier)
+        (handler_clause_block
+          (handler_operation_clause
+            (identifier)
+            (arrow_function
+              (parameter_list
+                (parameter
+                  (identifier)))
+              (application_expression
+                (postfix_expression
+                  (linear_reference
+                    (identifier)))
+                (parenthesized_or_product
+                  (parenthesized_expression
+                    (postfix_expression
+                      (number)))))))
+          (handler_return_clause
+            (arrow_function
+              (parameter
+                (identifier))
+              (postfix_expression
+                (identifier))))))))
   (binding_statement
     (identifier)
     (try_with_expression
@@ -455,8 +483,8 @@ return { .result = result }
     (linear_reference
       (identifier)))
   (module_return_statement
-    (object_literal
-      (field_block
+    (shape_value
+      (shape_field_block
         (shape_field
           (identifier)
           (postfix_expression
@@ -468,17 +496,17 @@ Annotated effect row and module instantiation
 
 module (!init: Init) where
 
-let console = import "./console.duck"
+let console = import "./console.duck";
 
 let greet: () -> <Io.read :| Io.print> Text = () => {
   name <- Io.read()
   _ <- Io.print(&name)
   name
-}
+};
 
-const { run, close } = console({ .io = !init.io })
-let result = run()
-return { .result = result, .close = close }
+const { .run, .close } = console({ .io = !init.io });
+let result = run();
+return { .result = result, .close = close };
 
 ---
 
@@ -548,9 +576,9 @@ return { .result = result, .close = close }
               (identifier)))))))
   (binding_statement
     (named_shape_pattern
-      (shorthand_shape_pattern_field
+      (named_shape_pattern_field
         (identifier))
-      (shorthand_shape_pattern_field
+      (named_shape_pattern_field
         (identifier)))
     (application_expression
       (postfix_expression
@@ -558,8 +586,8 @@ return { .result = result, .close = close }
       (parenthesized_or_product
         (parenthesized_expression
           (postfix_expression
-            (object_literal
-              (field_block
+            (shape_value
+              (shape_field_block
                 (shape_field
                   (identifier)
                   (postfix_expression
@@ -576,8 +604,8 @@ return { .result = result, .close = close }
       (parenthesized_or_product
         (unit_pattern))))
   (module_return_statement
-    (object_literal
-      (field_block
+    (shape_value
+      (shape_field_block
         (shape_field
           (identifier)
           (postfix_expression

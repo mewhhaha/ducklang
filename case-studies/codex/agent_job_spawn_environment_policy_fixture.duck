@@ -1,21 +1,41 @@
 module () where
 
-const {} = import "./agent_job_spawn_types.duck" ()
-const { prepare_agent_job_spawn_environment } = import "./agent_job_spawn_environment_policy.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ();
+const { .prepare_agent_job_spawn_environment } =
+  import "./agent_job_spawn_environment_policy.duck" ();
 
 type FixtureArgs = AgentJobSpawnDecodedArgs
 
-let score = 0
-let valid_decoded: FixtureArgs = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `None (), .max_concurrency = `Some "8", .max_workers = `None (), .max_runtime_seconds = `Some "90"]
-let valid = prepare_agent_job_spawn_environment(valid_decoded, "/workspace", 1, false, 8)
+let score = 0;
+let valid_decoded: FixtureArgs = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `None (),
+  .max_concurrency = `Some "8",
+  .max_workers = `None (),
+  .max_runtime_seconds = `Some "90",
+];
+let valid = prepare_agent_job_spawn_environment(valid_decoded, "/workspace", 1, false, 8);
 if let `SpawnDecoded args = valid {
-  let output_valid = if let `Some value = args.output_path { value == "/workspace/out/results.csv" } else { false }
+  let output_valid = if let `Some value = args.output_path { value == "/workspace/out/results.csv"
+  } else { false };
   if args.csv_path == "/workspace/input.csv" && output_valid { score = 1 }
 }
-let remote_decoded: FixtureArgs = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `None (), .max_concurrency = `Some "8", .max_workers = `None (), .max_runtime_seconds = `Some "90"]
-let remote = prepare_agent_job_spawn_environment(remote_decoded, "/workspace", 1, true, 8)
+let remote_decoded: FixtureArgs = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `None (),
+  .max_concurrency = `Some "8",
+  .max_workers = `None (),
+  .max_runtime_seconds = `Some "90",
+];
+let remote = prepare_agent_job_spawn_environment(remote_decoded, "/workspace", 1, true, 8);
 if let `SpawnDecodeFailed reason = remote {
   if reason == "spawn_agents_on_csv is not supported for remote environments" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

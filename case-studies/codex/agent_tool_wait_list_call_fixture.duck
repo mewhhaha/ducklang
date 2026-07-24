@@ -1,37 +1,61 @@
 module () where
 
-const {} = import "./agent_tool_types.duck" ()
-const { plan_agent_control_call } = import "./agent_tool_control_call.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .plan_agent_control_call } = import "./agent_tool_control_call.duck" ();
 
 type FixtureContext = AgentToolContext
 type FixturePlan = AgentToolPlan
 
 const root_context: () -> FixtureContext = () => {
-  [.v2_enabled = true, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
-}
+  [
+    .v2_enabled = true,
+    .current_path = "/root",
+    .current_depth = 0,
+    .maximum_depth = 2,
+    .source = `Root (),
+    .active_turn = true,
+    .active_agents = 1,
+    .maximum_threads = 4,
+  ]
+};
 
-let score = 0
-let waited: FixturePlan = plan_agent_control_call(root_context(), `WaitAgentCall (`Some 1000i64))
+let score = 0;
+let waited: FixturePlan = plan_agent_control_call(root_context(), `WaitAgentCall (`Some 1000i64));
 if let `WaitAgentPlanned timeout_ms = waited {
   if timeout_ms == 10000i64 { score = score + 1 }
 }
 
-let listed: FixturePlan = plan_agent_control_call(root_context(), `ListAgentsCall (`Some "reviewer"))
+let listed: FixturePlan = plan_agent_control_call(
+  root_context(),
+  `ListAgentsCall (`Some "reviewer"),
+);
 if let `ListAgentsPlanned prefix = listed {
   if let `Some path = prefix {
     if path == "/root/reviewer" { score = score + 10 }
   }
 }
 
-let all: FixturePlan = plan_agent_control_call(root_context(), `ListAgentsCall (`None ()))
+let all: FixturePlan = plan_agent_control_call(root_context(), `ListAgentsCall (`None ()));
 if let `ListAgentsPlanned prefix = all {
   if let `None () = prefix { score = score + 100 }
 }
 
-let disabled_context: FixtureContext = [.v2_enabled = false, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
-let disabled: FixturePlan = plan_agent_control_call(disabled_context, `InterruptAgentCall "reviewer")
+let disabled_context: FixtureContext = [
+  .v2_enabled = false,
+  .current_path = "/root",
+  .current_depth = 0,
+  .maximum_depth = 2,
+  .source = `Root (),
+  .active_turn = true,
+  .active_agents = 1,
+  .maximum_threads = 4,
+];
+let disabled: FixturePlan = plan_agent_control_call(
+  disabled_context,
+  `InterruptAgentCall "reviewer",
+);
 if let `AgentToolRejected message = disabled {
   if message == "collaboration tools require multi-agent V2" { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

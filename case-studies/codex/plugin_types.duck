@@ -3,7 +3,21 @@ module () where
 type PluginTextOption = Option Text
 type PluginTexts = List Text
 
-type LoadedPlugin = [Text, PluginTextOption, PluginTextOption, PluginTextOption, Text, Bool, PluginTextOption, Bool, PluginTexts, PluginTexts, PluginTexts, PluginTexts, PluginTexts]
+type LoadedPlugin = [
+  Text,
+  PluginTextOption,
+  PluginTextOption,
+  PluginTextOption,
+  Text,
+  Bool,
+  PluginTextOption,
+  Bool,
+  PluginTexts,
+  PluginTexts,
+  PluginTexts,
+  PluginTexts,
+  PluginTexts,
+]
 type LoadedPlugins = List LoadedPlugin
 
 type PluginCapabilitySummary = [Text, Text, PluginTextOption, Bool, PluginTexts, PluginTexts]
@@ -18,4 +32,4 @@ type PluginIdParse =
   | `Ok PluginId
   | `Err Text
 
-return {}
+return {};

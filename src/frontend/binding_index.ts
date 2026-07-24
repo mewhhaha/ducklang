@@ -1143,6 +1143,11 @@ function visit_pattern(
     return;
   }
 
+  if (pattern.tag === "const_value") {
+    visit_expr(pattern.value, scope, state);
+    return;
+  }
+
   if (pattern.tag === "text_capture") {
     define(
       pattern,
@@ -1161,6 +1166,10 @@ function visit_pattern(
     const first = pattern.alternatives[0];
     expect(first, "Alternation pattern requires an alternative");
     visit_pattern(first, default_kind, scope, state);
+
+    for (const alternative of pattern.alternatives.slice(1)) {
+      visit_pattern_value_references(alternative, scope, state);
+    }
     return;
   }
 
@@ -1201,6 +1210,63 @@ function visit_pattern(
 
   if (pattern.rest !== undefined) {
     visit_pattern(pattern.rest, default_kind, scope, state);
+  }
+}
+
+function visit_pattern_value_references(
+  pattern: Pattern,
+  scope: ScopeId,
+  state: State,
+): void {
+  if (pattern.tag === "const_value") {
+    visit_expr(pattern.value, scope, state);
+    return;
+  }
+
+  if (pattern.tag === "or") {
+    for (const alternative of pattern.alternatives) {
+      visit_pattern_value_references(alternative, scope, state);
+    }
+    return;
+  }
+
+  if (pattern.tag === "union_case") {
+    if (pattern.value !== undefined) {
+      visit_pattern_value_references(pattern.value, scope, state);
+    }
+    return;
+  }
+
+  if (pattern.tag === "product") {
+    for (const entry of pattern.entries) {
+      visit_pattern_value_references(entry.pattern, scope, state);
+    }
+
+    if (pattern.rest !== undefined) {
+      visit_pattern_value_references(pattern.rest, scope, state);
+    }
+    return;
+  }
+
+  if (pattern.tag === "record") {
+    for (const field of pattern.fields) {
+      visit_pattern_value_references(field.pattern, scope, state);
+    }
+
+    if (pattern.rest !== undefined) {
+      visit_pattern_value_references(pattern.rest, scope, state);
+    }
+    return;
+  }
+
+  if (pattern.tag === "array") {
+    for (const item of pattern.items) {
+      visit_pattern_value_references(item, scope, state);
+    }
+
+    if (pattern.rest !== undefined) {
+      visit_pattern_value_references(pattern.rest, scope, state);
+    }
   }
 }
 

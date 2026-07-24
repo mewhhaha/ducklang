@@ -53,13 +53,13 @@ type Maybe value =
   | \`None Unit
 type IntMaybe = Maybe I32
 type TextMaybe = Maybe Text
-let number: IntMaybe = \`Some 42
-let text: TextMaybe = \`Some "forty-two"
+let number: IntMaybe = \`Some 42;
+let text: TextMaybe = \`Some "forty-two";
 let run = () => {
   value <- do number
   label <- do text
   value
-}
+};
 0
 `));
   const run = source.statements.find((statement) => {
@@ -105,7 +105,7 @@ Deno.test("effect parameters specialize from operation arguments", () => {
 effect Writer output { tell: (output) => Unit }
 let write = () => {
   _ <- Writer.tell(42)
-}
+};
 0
 `);
 
@@ -123,7 +123,7 @@ effect Writer output { tell: (output) => Unit }
 let write = () => {
   _ <- Writer.tell(42)
   _ <- Writer.tell("forty-two")
-}
+};
 0
 `),
     "Effect Writer parameter output is used as both I32 and Text",
@@ -137,7 +137,7 @@ Deno.test("used effect parameters must resolve before effect analysis", () => {
 effect Reader environment { ask: () => environment }
 let read = () => {
   _ <- Reader.ask()
-}
+};
 0
 `),
     "Cannot infer effect Reader parameter environment",
@@ -170,10 +170,10 @@ let run = () => {
   _ <- State.put(before + 2)
   after <- State.get()
   after
-}
+};
 let state = {
-  let current = 40
-  State {
+  let current = 40;
+  handler State {
     get: (!resume) => !resume(current),
     put: (value, !resume) => {
       current = value
@@ -181,7 +181,7 @@ let state = {
     },
     return: value => value,
   }
-}
+};
 try run() with state
 `);
 
@@ -194,12 +194,12 @@ effect State value {
   get: () => value
   put: (value) => Unit
 }
-const left = State I32
-const right = State I32
+const left = State I32;
+const right = State I32;
 let run = () => {
   _ <- left.put(1)
   _ <- right.put(2)
-}
+};
 0
 `);
 
@@ -214,11 +214,11 @@ Deno.test("named effect instances require const bindings", () => {
     () =>
       Source.wat(`
 effect State value { get: () => value }
-let counter = State I32
+let counter = State I32;
 let run = () => {
-  value <- counter.get()
+  value <- counter.get();
   value
-}
+};
 run()
 `),
     "Effect instance counter must use a const binding",
@@ -228,11 +228,11 @@ run()
 Deno.test("parameterless effects support named instances", () => {
   const analysis = Source.effects(`
 effect Clock { now: () => I64 }
-const wall_clock = Clock ()
+const wall_clock = Clock ();
 let run = () => {
   time <- wall_clock.now()
   time
-}
+};
 0
 `);
 
@@ -243,13 +243,13 @@ let run = () => {
 
 Deno.test("named effects accept multiple concrete type arguments", () => {
   const analysis = Source.effects(`
-const _ = import "duck:prelude/effects" ()
-const jobs = Async [I32, I64]
+const _ = import "duck:prelude/effects" ();
+const jobs = Async [I32, I64];
 let run = () => {
   task <- jobs.spawn(42)
   result <- jobs.await(task)
   result
-}
+};
 0
 `);
 

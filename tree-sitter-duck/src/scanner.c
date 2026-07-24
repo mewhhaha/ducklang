@@ -8,9 +8,6 @@ enum TokenType {
   APPLICATION_SPACE,
   CONDITION_APPLICATION_SPACE,
   TYPE_APPLICATION_SPACE,
-  BREAK_VALUE_SPACE,
-  BREAK_TERMINATOR_SPACE,
-  EXTENSION_MEMBER_TERMINATOR,
 };
 
 void *tree_sitter_duck_external_scanner_create(void) {
@@ -109,32 +106,9 @@ bool tree_sitter_duck_external_scanner_scan(
   (void)payload;
 
   if (
-    valid_symbols[BREAK_TERMINATOR_SPACE] &&
-    (lexer->lookahead == '\n' || lexer->lookahead == '\r')
-  ) {
-    lexer->advance(lexer, true);
-    lexer->mark_end(lexer);
-    lexer->result_symbol = BREAK_TERMINATOR_SPACE;
-    return true;
-  }
-
-  if (
-    valid_symbols[EXTENSION_MEMBER_TERMINATOR] &&
-    (lexer->lookahead == '\n' || lexer->lookahead == '\r')
-  ) {
-    lexer->advance(lexer, true);
-    lexer->mark_end(lexer);
-    lexer->result_symbol = EXTENSION_MEMBER_TERMINATOR;
-    return true;
-  }
-
-  if (
     !valid_symbols[APPLICATION_SPACE] &&
     !valid_symbols[CONDITION_APPLICATION_SPACE] &&
-    !valid_symbols[TYPE_APPLICATION_SPACE] &&
-    !valid_symbols[BREAK_VALUE_SPACE] &&
-    !valid_symbols[BREAK_TERMINATOR_SPACE] &&
-    !valid_symbols[EXTENSION_MEMBER_TERMINATOR]
+    !valid_symbols[TYPE_APPLICATION_SPACE]
   ) {
     return false;
   }
@@ -148,25 +122,6 @@ bool tree_sitter_duck_external_scanner_scan(
   } while (lexer->lookahead == ' ' || lexer->lookahead == '\t');
 
   lexer->mark_end(lexer);
-
-  if (
-    valid_symbols[BREAK_TERMINATOR_SPACE] &&
-    (lexer->lookahead == 0 || lexer->lookahead == '\n' ||
-      lexer->lookahead == '\r' || lexer->lookahead == ';' ||
-      lexer->lookahead == '}')
-  ) {
-    lexer->result_symbol = BREAK_TERMINATOR_SPACE;
-    return true;
-  }
-
-  if (
-    valid_symbols[BREAK_VALUE_SPACE] && lexer->lookahead != 0 &&
-    lexer->lookahead != '\n' && lexer->lookahead != '\r' &&
-    lexer->lookahead != ';' && lexer->lookahead != '}'
-  ) {
-    lexer->result_symbol = BREAK_VALUE_SPACE;
-    return true;
-  }
 
   if (
     valid_symbols[TYPE_APPLICATION_SPACE] &&

@@ -1,15 +1,17 @@
 module () where
 
-const { parse_app_server_launch } = import "./cli_app_server_runtime.duck" ()
-const { parse_app_server_tools } = import "./cli_app_server_tools.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_app_server_launch } = import "./cli_app_server_runtime.duck" ();
+const { .parse_app_server_tools } = import "./cli_app_server_tools.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type AppServerOptionsArgs = CodexCliArgs
 type AppServerOptionsResult = CodexAppServerCommandResult
 
-let parse_app_server_options: AppServerOptionsArgs -> AppServerOptionsResult = (args: AppServerOptionsArgs) => {
+let parse_app_server_options: AppServerOptionsArgs -> AppServerOptionsResult = (
+  args: AppServerOptionsArgs
+) => {
   if let `Cons node = args {
-    let [head, tail] = node
+    let [head, tail] = node;
     if head == "daemon" || head == "proxy" || head == "generate-ts" || head == "generate-json-schema" || head == "generate-internal-json-schema" {
       parse_app_server_tools(head, tail)
     } else {
@@ -18,8 +20,8 @@ let parse_app_server_options: AppServerOptionsArgs -> AppServerOptionsResult = (
   } else {
     parse_app_server_launch args
   }
-}
+};
 
 return {
-  parse_app_server_options,
-}
+  .parse_app_server_options,
+};

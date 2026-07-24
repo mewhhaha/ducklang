@@ -1,0 +1,20 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+type FixtureMutations = TurnDiffMutations
+type FixtureDelta = TurnDiffDelta
+
+const verify_turn_diff_invalidation_fixture: () -> I32 = () => {
+  let mutations: FixtureMutations = `Nil ();
+  let inexact: FixtureDelta = [.exact = false, .mutations = mutations];
+  let state = track_turn_diff_delta(empty_turn_diff(), "", inexact);
+
+  let score = 0;
+  if !(state.valid) && state.next_revision == 0 {
+    score = score + 1
+  }
+  score
+};
+
+return { .verify_turn_diff_invalidation_fixture };

@@ -9,4 +9,4 @@ declare Init {
   stages: CodexStages
 }
 
-return {}
+return {};

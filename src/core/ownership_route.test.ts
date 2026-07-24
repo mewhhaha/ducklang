@@ -169,7 +169,7 @@ Deno.test("Core.emit preserves scalar ownership and scratchpad nodes", () => {
   const closure_scratch = Source.core(Source.parse(`
 let f = (value: Int) => {
   scratch { value + 1 }
-}
+};
 
 f(1)
 `));
@@ -242,7 +242,7 @@ f(1)
   assert_includes(Emit.emit(Core, frozen_text), "i32.const");
 
   const bound_frozen_text = Source.core(Source.parse(`
-let message = freeze "text"
+let message = freeze "text";
 @len(message)
 `));
   assert_equals(Typed.type(Core, bound_frozen_text), "i32");
@@ -505,7 +505,7 @@ let message = freeze "text"
 
   const scratch_local = Source.core(Source.parse(`
 scratch {
-  let x = 1
+  let x = 1;
   x + 2
 }
 `));
@@ -521,7 +521,7 @@ scratch {
   const scratch_return_edges = Source.core(Source.parse(`
 scratch {
   if true {
-    return 2
+    return 2;
   }
 
   3
@@ -561,7 +561,7 @@ scratch {
 for i in 0..3 {
   scratch {
     if i {
-      break
+      break;
     }
 
     1
@@ -569,7 +569,7 @@ for i in 0..3 {
 
   scratch {
     if i {
-      continue
+      continue;
     }
 
     1
@@ -577,7 +577,7 @@ for i in 0..3 {
 
   scratch {
     for j in 0..1 {
-      break
+      break;
     }
 
     1
@@ -686,8 +686,8 @@ for i in 0..3 {
   });
 
   const captured_borrow = Source.core(Source.parse(`
-let factor = 2
-let scale = x => &(x + factor)
+let factor = 2;
+let scale = x => &(x + factor);
 factor = 3
 scale(10)
 `));
@@ -847,7 +847,7 @@ scale(10)
 
   const mutate_aliased_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let alias = message
+  let alias = message;
   &alias
   message[0] = 65
   1
@@ -877,13 +877,13 @@ scale(10)
   );
 
   const borrow_struct_field_blocks_owner_assignment = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user: user_type = [.name = "A", .age = 1] as user_type
+let user: user_type = [.name = "A", .age = 1] as user_type;
 &user.name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -916,15 +916,15 @@ user = [.name = "B", .age = 2] as user_type
 
   const borrow_struct_field_alias_blocks_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name = user.name
-let other = name
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name = user.name;
+let other = name;
 &other
 user = [.name = "B", .age = 2] as user_type
 1
@@ -958,17 +958,17 @@ user = [.name = "B", .age = 2] as user_type
 
   const block_field_alias_result_blocks_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user: user_type = [.name = "A", .age = 1] as user_type
+let user: user_type = [.name = "A", .age = 1] as user_type;
 let name = {
-  let inner = user.name
+  let inner = user.name;
   inner
-}
+};
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1002,17 +1002,17 @@ user = [.name = "B", .age = 2] as user_type
 
   const block_borrow_view_result_blocks_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user: user_type = [.name = "A", .age = 1] as user_type
+let user: user_type = [.name = "A", .age = 1] as user_type;
 let view = {
-  let inner = &user.name
+  let inner = &user.name;
   inner
-}
+};
 user = [.name = "B", .age = 2] as user_type
 1
 `),
@@ -1045,21 +1045,21 @@ user = [.name = "B", .age = 2] as user_type
 
   const block_if_field_alias_result_blocks_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
 let name = {
-  let inner: Text = "fallback"
+  let inner: Text = "fallback";
   if flag {
     inner = user.name
   }
   inner
-}
+};
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1097,24 +1097,24 @@ user = [.name = "B", .age = 2] as user_type
   const block_if_else_field_alias_result_blocks_all_possible_owners = Source
     .core(
       Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let other: user_type = [.name = "C", .age = 3] as user_type
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let other: user_type = [.name = "C", .age = 3] as user_type;
 let name = {
-  let inner: Text = "fallback"
+  let inner: Text = "fallback";
   if flag {
     inner = user.name
   } else {
     inner = other.name
   }
   inner
-}
+};
 &name
 user = [.name = "B", .age = 2] as user_type
 other = [.name = "D", .age = 4] as user_type
@@ -1168,22 +1168,22 @@ other = [.name = "D", .age = 4] as user_type
   const block_if_let_field_alias_result_blocks_owner_assignment = Source.core(
     Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
 let name = {
-  let inner: Text = "fallback"
+  let inner: Text = "fallback";
   if let \`Some value = target {
     inner = user.name
   }
   inner
-}
+};
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1222,21 +1222,21 @@ user = [.name = "B", .age = 2] as user_type
 
   const block_loop_field_alias_result_blocks_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let n = 1
-let user: user_type = [.name = "A", .age = 1] as user_type
+let n = 1;
+let user: user_type = [.name = "A", .age = 1] as user_type;
 let name = {
-  let inner: Text = "fallback"
+  let inner: Text = "fallback";
   for i in 0..n {
     inner = user.name
   }
   inner
-}
+};
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1275,14 +1275,14 @@ user = [.name = "B", .age = 2] as user_type
 
   const borrow_struct_field_alias_blocks_alias_mutation = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Bytes,
   .age= Int
-}
+};
 
-let user: user_type = [.name = @Utf8.encode("A"), .age = 1] as user_type
-let name = user.name
+let user: user_type = [.name = @Utf8.encode("A"), .age = 1] as user_type;
+let name = user.name;
 &name
 name[0] = 65
 1
@@ -1315,15 +1315,15 @@ name[0] = 65
   );
 
   const branch_field_alias_blocks_owner_assignment = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name: Text = "fallback"
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name: Text = "fallback";
 if flag {
   name = user.name
 }
@@ -1358,15 +1358,15 @@ user = [.name = "B", .age = 2] as user_type
   );
 
   const loop_field_alias_blocks_owner_assignment = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let n = 1
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name: Text = "fallback"
+let n = 1;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name: Text = "fallback";
 for i in 0..n {
   name = user.name
 }
@@ -1402,16 +1402,16 @@ user = [.name = "B", .age = 2] as user_type
 
   const unreachable_loop_field_alias_allows_owner_assignment = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name: Text = "fallback"
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name: Text = "fallback";
 for i in 0..1 {
-  break
+  break;
   name = user.name
 }
 &name
@@ -1432,16 +1432,16 @@ user = [.name = "B", .age = 2] as user_type
 
   const merged_field_alias_blocks_all_possible_owners = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let other: user_type = [.name = "C", .age = 3] as user_type
-let name: Text = "fallback"
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let other: user_type = [.name = "C", .age = 3] as user_type;
+let name: Text = "fallback";
 if flag {
   name = user.name
 } else {
@@ -1494,16 +1494,16 @@ other = [.name = "D", .age = 4] as user_type
 
   const conditional_field_alias_blocks_all_possible_owners = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let other: user_type = [.name = "C", .age = 3] as user_type
-let name = if flag { user.name } else { other.name }
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let other: user_type = [.name = "C", .age = 3] as user_type;
+let name = if flag { user.name } else { other.name };
 &name
 user = [.name = "B", .age = 2] as user_type
 other = [.name = "D", .age = 4] as user_type
@@ -1554,15 +1554,15 @@ other = [.name = "D", .age = 4] as user_type
 
   const conditional_field_alias_blocks_possible_owner = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name = if flag { user.name } else { "fallback" }
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name = if flag { user.name } else { "fallback" };
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1597,16 +1597,16 @@ user = [.name = "B", .age = 2] as user_type
   const if_let_field_alias_result_blocks_possible_owner = Source.core(
     Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name = if let \`Some value = target { user.name } else { "fallback" }
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name = if let \`Some value = target { user.name } else { "fallback" };
 &name
 user = [.name = "B", .age = 2] as user_type
 1
@@ -1641,17 +1641,17 @@ user = [.name = "B", .age = 2] as user_type
   const if_let_field_alias_result_blocks_all_possible_owners = Source.core(
     Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
-let other: user_type = [.name = "C", .age = 3] as user_type
-let name = if let \`Some value = target { user.name } else { other.name }
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let other: user_type = [.name = "C", .age = 3] as user_type;
+let name = if let \`Some value = target { user.name } else { other.name };
 &name
 user = [.name = "B", .age = 2] as user_type
 other = [.name = "D", .age = 4] as user_type
@@ -1702,15 +1702,15 @@ other = [.name = "D", .age = 4] as user_type
 
   const conditional_borrow_view_blocks_possible_owner = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let view = if flag { &user.name } else { "fallback" }
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let view = if flag { &user.name } else { "fallback" };
 user = [.name = "B", .age = 2] as user_type
 1
 `),
@@ -1743,16 +1743,16 @@ user = [.name = "B", .age = 2] as user_type
 
   const conditional_borrow_view_blocks_all_possible_owners = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let user: user_type = [.name = "A", .age = 1] as user_type
-let other: user_type = [.name = "C", .age = 3] as user_type
-let view = if flag { &user.name } else { &other.name }
+let flag = true;
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let other: user_type = [.name = "C", .age = 3] as user_type;
+let view = if flag { &user.name } else { &other.name };
 user = [.name = "B", .age = 2] as user_type
 other = [.name = "D", .age = 4] as user_type
 1
@@ -1802,16 +1802,16 @@ other = [.name = "D", .age = 4] as user_type
 
   const if_let_borrow_view_blocks_possible_owner = Source.core(Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
-let view = if let \`Some value = target { &user.name } else { "fallback" }
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let view = if let \`Some value = target { &user.name } else { "fallback" };
 user = [.name = "B", .age = 2] as user_type
 1
 `));
@@ -1843,16 +1843,16 @@ user = [.name = "B", .age = 2] as user_type
 
   const if_let_field_alias_blocks_owner_assignment = Source.core(Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name: Text = "fallback"
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name: Text = "fallback";
 if let \`Some value = target {
   name = user.name
 }
@@ -1889,16 +1889,16 @@ user = [.name = "B", .age = 2] as user_type
   const if_let_stored_field_borrow_blocks_owner_assignment = Source.core(
     Source.parse(`
 type MaybeText = | \`Some Text | \`None Unit
-const maybe_text = MaybeText
-const { struct } = import "duck:prelude" ()
+const maybe_text = MaybeText;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let target: maybe_text = \`Some ("hit")
-let user: user_type = [.name = "A", .age = 1] as user_type
-let name: Text = "fallback"
+let target: maybe_text = \`Some ("hit");
+let user: user_type = [.name = "A", .age = 1] as user_type;
+let name: Text = "fallback";
 if let \`Some value = target {
   name = &user.name
 }
@@ -1936,10 +1936,10 @@ user = [.name = "B", .age = 2] as user_type
   const if_let_payload_borrow_blocks_union_owner_assignment = Source.core(
     Source.parse(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok ("Ada")
-let view: Text = "fallback"
+let result: result_type = \`Ok ("Ada");
+let view: Text = "fallback";
 if let \`Ok value = result {
   view = &value
 }
@@ -1995,22 +1995,22 @@ result = \`Ok ("Grace")
   const if_let_aggregate_payload_borrow_blocks_union_owner_assignment = Source
     .core(
       Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 1
-let user: user_type = [.age = 40, .score = start] as user_type
-let result: result_type = \`Ok (user)
+let start = 1;
+let user: user_type = [.age = 40, .score = start] as user_type;
+let result: result_type = \`Ok (user);
 let view = if let \`Ok value = result {
   &value
 } else {
   [.age = 0, .score = 0] as user_type
-}
+};
 result = \`Ok ([.age = 5, .score = start] as user_type)
 0
 `),
@@ -2066,18 +2066,18 @@ result = \`Ok ([.age = 5, .score = start] as user_type)
     Source.core(
       Source.parse(`
 type InnerType = | \`Some Int | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 type ResultType = | \`Ok inner_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 1
-let inner: inner_type = \`Some (start)
-let result: result_type = \`Ok (inner)
+let start = 1;
+let inner: inner_type = \`Some (start);
+let result: result_type = \`Ok (inner);
 let view = if let \`Ok value = result {
   &value
 } else {
   \`None ()
-}
+};
 result = \`Ok (\`Some (start + 1))
 0
 `),
@@ -2133,11 +2133,11 @@ result = \`Ok (\`Some (start + 1))
     .core(
       Source.parse(`
 type ResultType = | \`Ok Int | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
 (start: Int) => {
-  let result: result_type = \`Ok (start)
-  let view: Int = if let \`Ok value = result { &value } else { 0 }
+  let result: result_type = \`Ok (start);
+  let view: Int = if let \`Ok value = result { &value } else { 0 };
   result = \`Ok (start + 1)
   view
 }
@@ -2177,11 +2177,11 @@ const result_type = ResultType
     .core(
       Source.parse(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
 (start: Int) => {
-  let result: result_type = \`Ok (@slice("Ada", start, 3))
-  let view: Text = if let \`Ok value = result { &value } else { "fallback" }
+  let result: result_type = \`Ok (@slice("Ada", start, 3));
+  let view: Text = if let \`Ok value = result { &value } else { "fallback" };
   result = \`Ok (@slice("Grace", start, 5))
   @len(view)
 }
@@ -2243,7 +2243,7 @@ const result_type = ResultType
 
   const stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = &message
+  let view = &message;
   @len(view)
 }
 `));
@@ -2287,7 +2287,7 @@ const result_type = ResultType
 
   const mutate_stored_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let view = &message
+  let view = &message;
   @len(view)
   message[0] = 65
   1
@@ -2318,8 +2318,8 @@ const result_type = ResultType
 
   const freeze_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = &message
-  let frozen = freeze message
+  let view = &message;
+  let frozen = freeze message;
   @len(view)
 }
 `));
@@ -2362,7 +2362,7 @@ const result_type = ResultType
 host_import host_take from "env.take" (Text) => I32
 
 (message: Text) => {
-  let view = &message
+  let view = &message;
   host_take(message)
   @len(view)
 }
@@ -2403,23 +2403,23 @@ host_import host_take from "env.take" (Text) => I32
   );
 
   const mutate_collection_item_borrow_owner = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const names_type = struct {
   .first= Text,
   .second= Text
-}
+};
 
-let start = 0
-let first: Text = @slice("Ada", start, 3)
-let second: Text = @slice("Grace", start, 5)
-let flag = true
+let start = 0;
+let first: Text = @slice("Ada", start, 3);
+let second: Text = @slice("Grace", start, 5);
+let flag = true;
 let make_names = if flag {
   () => [.first = first, .second = second] as names_type
 } else {
   () => [.first = first, .second = second] as names_type
-}
-let names: names_type = make_names()
-let view: Text = ""
+};
+let names: names_type = make_names();
+let view: Text = "";
 
 for index, name in names {
   view = &name
@@ -2473,7 +2473,7 @@ names[0] = "Edsger"
 
   const returned_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = &message
+  let view = &message;
   view
 }
 `));
@@ -2512,7 +2512,7 @@ names[0] = "Edsger"
 
   const captured_stored_borrowed_text = Source.core(Source.parse(`
 (message: Text) => {
-  let view = &message
+  let view = &message;
   (x: Int) => @len(view)
 }
 `));
@@ -2551,7 +2551,7 @@ names[0] = "Edsger"
 
   const branch_stored_borrowed_text = Source.core(Source.parse(`
 (flag: Int, message: Text) => {
-  let view: Text = "fallback"
+  let view: Text = "fallback";
   if flag {
     view = &message
   }
@@ -2567,7 +2567,7 @@ names[0] = "Edsger"
 
   const mutate_branch_stored_borrowed_text = Source.core(Source.parse(`
 (flag: Int, message: Bytes) => {
-  let view: Bytes = Bytes.empty
+  let view: Bytes = Bytes.empty;
   if flag {
     view = &message
   }
@@ -2600,7 +2600,7 @@ names[0] = "Edsger"
 
   const returned_branch_stored_borrowed_text = Source.core(Source.parse(`
 (flag: Int, message: Text) => {
-  let view: Text = "fallback"
+  let view: Text = "fallback";
   if flag {
     view = &message
   }
@@ -2642,7 +2642,7 @@ names[0] = "Edsger"
 
   const mutate_loop_stored_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let view: Bytes = Bytes.empty
+  let view: Bytes = Bytes.empty;
   for i in 0..1 {
     view = &message
   }
@@ -2689,9 +2689,9 @@ names[0] = "Edsger"
 
   const unreachable_break_loop_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let view: Bytes = Bytes.empty
+  let view: Bytes = Bytes.empty;
   for i in 0..1 {
-    break
+    break;
     view = &message
   }
   message[0] = 65
@@ -2706,9 +2706,9 @@ names[0] = "Edsger"
 
   const unreachable_continue_loop_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let view: Bytes = Bytes.empty
+  let view: Bytes = Bytes.empty;
   for i in 0..1 {
-    continue
+    continue;
     view = &message
   }
   message[0] = 65
@@ -2726,10 +2726,10 @@ names[0] = "Edsger"
 
   const mutate_break_carried_borrowed_text = Source.core(Source.parse(`
 (message: Bytes) => {
-  let view: Bytes = Bytes.empty
+  let view: Bytes = Bytes.empty;
   for i in 0..1 {
     view = &message
-    break
+    break;
   }
   message[0] = 65
   1
@@ -2972,7 +2972,7 @@ names[0] = "Edsger"
   );
 
   const frozen_closure = Source.core(Source.parse(`
-let f = freeze ((x: Int) => x + 1)
+let f = freeze ((x: Int) => x + 1);
 f(41)
 `));
   const frozen_closure_proof = Core.proof(frozen_closure);
@@ -3005,9 +3005,9 @@ f(41)
 
   const frozen_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = freeze \`Ok (41)
+let result: result_type = freeze \`Ok (41);
 
 if let \`Ok value = result {
   value + 1
@@ -3046,7 +3046,7 @@ if let \`Ok value = result {
 
 Deno.test("Core.proof gates baseline no-GC ownership facts", () => {
   const scalar_scratch = Source.core(Source.parse(`
-let x = scratch { 1 + 2 }
+let x = scratch { 1 + 2 };
 x
 `));
   const proof = Core.proof(scalar_scratch);
@@ -3087,11 +3087,11 @@ x
   assert_equals(Typed.type(Core, scalar_scratch), "i32");
 
   const static_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .name = Text, .age = Int }
-let xs = [10, 20]
-let user: user_type = ["Ada", 41]
-let total = 0
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .name = Text, .age = Int };
+let xs = [10, 20];
+let user: user_type = ["Ada", 41];
+let total = 0;
 
 for i, x in xs {
   total = total + i + x
@@ -3114,7 +3114,7 @@ total + xs[1] + @len(user.name)
   Core.check_proof(static_aggregate);
 
   const frozen_static_aggregate = Source.core(Source.parse(`
-let user = freeze [.age = 41, .bonus = 1]
+let user = freeze [.age = 41, .bonus = 1];
 user.age + user.bonus
 `));
   const frozen_static_aggregate_proof = Core.proof(frozen_static_aggregate);
@@ -3156,8 +3156,8 @@ user.age + user.bonus
   Core.check_proof(frozen_static_aggregate);
 
   const scratch_static_aggregate = Source.core(Source.parse(`
-let x = 40
-let user = scratch { [.age = x + 1, .bonus = 1] }
+let x = 40;
+let user = scratch { [.age = x + 1, .bonus = 1] };
 user.age + user.bonus
 `));
   const scratch_static_aggregate_proof = Core.proof(scratch_static_aggregate);
@@ -3201,15 +3201,15 @@ user.age + user.bonus
   Core.check_proof(scratch_static_aggregate);
 
   const annotated_scratch_static_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
-let x = 40
+};
+let x = 40;
 let user: user_type = scratch {
   [.age = x + 1, .name = "Ada"] as user_type
-}
+};
 user.age + @len(user.name)
 `));
   const annotated_scratch_static_aggregate_proof = Core.proof(
@@ -3256,15 +3256,15 @@ user.age + @len(user.name)
   Core.check_proof(annotated_scratch_static_aggregate);
 
   const unsafe_annotated_scratch_static_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
-let x = 40
+};
+let x = 40;
 let user: user_type = scratch {
   [.age = x + 1, .name = @append("A", "da")] as user_type
-}
+};
 user.age + @len(user.name)
 `));
   const unsafe_annotated_scratch_static_aggregate_proof = Core.proof(
@@ -3321,15 +3321,15 @@ user.age + @len(user.name)
   );
 
   const scratch_static_aggregate_block_setup = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 let user: user_type = scratch {
-  let temp: Text = freeze @append("Ada", "!")
+  let temp: Text = freeze @append("Ada", "!");
   [.age = 40, .name = temp] as user_type
-}
+};
 user.age + @len(user.name)
 `));
   const scratch_static_aggregate_block_setup_proof = Core.proof(
@@ -3382,16 +3382,16 @@ user.age + @len(user.name)
   );
 
   const scratch_static_aggregate_block_alias = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 let user: user_type = scratch {
-  let name: Text = freeze @append("Ada", "!")
-  let temp: user_type = [.age = 41, .name = name] as user_type
+  let name: Text = freeze @append("Ada", "!");
+  let temp: user_type = [.age = 41, .name = name] as user_type;
   temp
-}
+};
 user.age + @len(user.name)
 `));
   const scratch_static_aggregate_block_alias_proof = Core.proof(
@@ -3446,22 +3446,22 @@ user.age + @len(user.name)
   );
 
   const scratch_static_nested_aggregate_block_alias = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
-const { struct } = import "duck:prelude" ()
+};
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= name_type
-}
+};
 let user: user_type = scratch {
-  let first: Text = freeze @append("A", "da")
-  let name: name_type = [.first = first, .last = "Lovelace"] as name_type
-  let temp: user_type = [.age = 40, .name = name] as user_type
+  let first: Text = freeze @append("A", "da");
+  let name: name_type = [.first = first, .last = "Lovelace"] as name_type;
+  let temp: user_type = [.age = 40, .name = name] as user_type;
   temp
-}
+};
 @len(user.name.first) + @len(user.name.last) + user.age
 `));
   const scratch_static_nested_aggregate_block_alias_proof = Core.proof(
@@ -3517,20 +3517,20 @@ let user: user_type = scratch {
 
   const raw_scratch_static_nested_aggregate_block_alias = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
-const { struct } = import "duck:prelude" ()
+};
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= name_type
-}
+};
 scratch {
-  let first: Text = @append("A", "da")
-  let name: name_type = [.first = first, .last = "Lovelace"] as name_type
-  let temp: user_type = [.age = 41, .name = name] as user_type
+  let first: Text = @append("A", "da");
+  let name: name_type = [.first = first, .last = "Lovelace"] as name_type;
+  let temp: user_type = [.age = 41, .name = name] as user_type;
   temp
 }
 `),
@@ -3555,8 +3555,8 @@ scratch {
 
   const scratch_static_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let value = scratch { \`Ok (41) }
+const result_type = ResultType;
+let value = scratch { \`Ok (41) };
 if let \`Ok x = value { x } else { 0 }
 `));
   const scratch_static_union_proof = Core.proof(scratch_static_union);
@@ -3599,11 +3599,11 @@ if let \`Ok x = value { x } else { 0 }
 
   const scratch_static_union_block_setup = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 let result: result_type = scratch {
-  let temp: Text = freeze @append("Ada", "!")
+  let temp: Text = freeze @append("Ada", "!");
   \`Ok (temp)
-}
+};
 if let \`Ok value = result { @len(value) } else { 0 }
 `));
   const scratch_static_union_block_setup_proof = Core.proof(
@@ -3657,12 +3657,12 @@ if let \`Ok value = result { @len(value) } else { 0 }
 
   const scratch_static_union_block_alias = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 let result: result_type = scratch {
-  let name: Text = freeze @append("Ada", "!")
-  let temp: result_type = \`Ok (name)
+  let name: Text = freeze @append("Ada", "!");
+  let temp: result_type = \`Ok (name);
   temp
-}
+};
 if let \`Ok value = result { @len(value) } else { 0 }
 `));
   const scratch_static_union_block_alias_proof = Core.proof(
@@ -3716,15 +3716,15 @@ if let \`Ok value = result { @len(value) } else { 0 }
 
   const scratch_dynamic_static_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let flag = true
+const result_type = ResultType;
+let flag = true;
 let value = scratch {
   if flag {
     \`Ok (41)
   } else {
     \`Err (9)
   }
-}
+};
 if let \`Ok x = value { x } else { 0 }
 `));
   const scratch_dynamic_static_union_proof = Core.proof(
@@ -3770,7 +3770,7 @@ if let \`Ok x = value { x } else { 0 }
   Core.check_proof(scratch_dynamic_static_union);
 
   const scratch_runtime_text_temporary = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let scratch_text = if flag {
   (message: Text) => scratch {
     message + "!"
@@ -3781,7 +3781,7 @@ let scratch_text = if flag {
     "!" + message
     8
   }
-}
+};
 
 scratch_text("hi")
 `));
@@ -3845,7 +3845,7 @@ scratch_text("hi")
   Core.check_proof(scratch_runtime_text_temporary);
 
   const runtime_text_slice = Source.core(Source.parse(`
-let part: Text = @slice("Grace", 1, 4)
+let part: Text = @slice("Grace", 1, 4);
 @len(part)
 `));
   const runtime_text_slice_proof = Core.proof(runtime_text_slice);
@@ -3882,8 +3882,8 @@ let part: Text = @slice("Grace", 1, 4)
   Core.check_proof(runtime_text_slice);
 
   const runtime_text_append = Source.core(Source.parse(`
-let prefix: Text = @slice("Grace", 0, 3)
-let part: Text = @append(prefix, "ce")
+let prefix: Text = @slice("Grace", 0, 3);
+let part: Text = @append(prefix, "ce");
 @len(part)
 `));
   const runtime_text_append_proof = Core.proof(runtime_text_append);
@@ -3960,8 +3960,8 @@ let part: Text = @append(prefix, "ce")
   Core.check_proof(runtime_text_append);
 
   const frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Grace", 0, 3)
-let part: Text = freeze @append(prefix, "ce")
+let prefix: Text = @slice("Grace", 0, 3);
+let part: Text = freeze @append(prefix, "ce");
 @len(part)
 `));
   const frozen_runtime_text_proof = Core.proof(frozen_runtime_text);
@@ -4023,8 +4023,8 @@ let part: Text = freeze @append(prefix, "ce")
   Core.check_proof(frozen_runtime_text);
 
   const mutating_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Bytes = @slice(@Utf8.encode("Ada"), 0, 3)
-let part: Bytes = freeze @append(prefix, @Utf8.encode("!"))
+let prefix: Bytes = @slice(@Utf8.encode("Ada"), 0, 3);
+let part: Bytes = freeze @append(prefix, @Utf8.encode("!"));
 part[0] = 65
 @len(part)
 `));
@@ -4034,7 +4034,7 @@ part[0] = 65
   );
 
   const scratch_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Ada", 0, 3)
+let prefix: Text = @slice("Ada", 0, 3);
 scratch { freeze @append(prefix, "!") }
 `));
   const scratch_frozen_runtime_text_proof = Core.proof(
@@ -4126,9 +4126,9 @@ scratch { freeze @append(prefix, "!") }
   Core.check_proof(scratch_frozen_runtime_text);
 
   const bound_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Ada", 0, 3)
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
-  let temp: Text = @append(prefix, "!")
+  let temp: Text = @append(prefix, "!");
   freeze temp
 }
 `));
@@ -4224,10 +4224,10 @@ scratch {
   Core.check_proof(bound_scratch_frozen_runtime_text);
 
   const alias_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Ada", 0, 3)
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
-  let temp: Text = @append(prefix, "!")
-  let alias: Text = temp
+  let temp: Text = @append(prefix, "!");
+  let alias: Text = temp;
   freeze alias
 }
 `));
@@ -4323,12 +4323,12 @@ scratch {
   Core.check_proof(alias_scratch_frozen_runtime_text);
 
   const block_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Ada", 0, 3)
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
   let temp: Text = {
-    let inner: Text = @append(prefix, "!")
+    let inner: Text = @append(prefix, "!");
     inner
-  }
+  };
   freeze temp
 }
 `));
@@ -4426,11 +4426,11 @@ scratch {
   const static_call_scratch_frozen_runtime_text = Source.core(Source.parse(`
 let freeze_suffix = (value: Text) => {
   scratch {
-    let temp: Text = @append(value, "!")
+    let temp: Text = @append(value, "!");
     temp = @append(temp, "?")
     freeze temp
   }
-}
+};
 
 freeze_suffix("hi")
 `));
@@ -4552,24 +4552,24 @@ freeze_suffix("hi")
   Core.check_proof(static_call_scratch_frozen_runtime_text);
 
   const branch_closure_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let freeze_suffix = if flag {
   (value: Text) => {
     scratch {
-      let temp: Text = @append(value, "!")
+      let temp: Text = @append(value, "!");
       freeze temp
     }
   }
 } else {
   (value: Text) => {
     scratch {
-      let temp: Text = @append(value, "?")
+      let temp: Text = @append(value, "?");
       freeze temp
     }
   }
-}
+};
 
-let result: Text = freeze_suffix("hi")
+let result: Text = freeze_suffix("hi");
 @len(result)
 `));
   const branch_closure_scratch_frozen_runtime_text_proof = Core.proof(
@@ -4649,17 +4649,17 @@ let result: Text = freeze_suffix("hi")
   );
 
   const direct_scratch_frozen_runtime_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let user: user_type = scratch {
   freeze ([.name = @append(prefix, "da"), .age = 40] as user_type)
-}
+};
 
 @len(user.name) + user.age
 `));
@@ -4757,13 +4757,13 @@ let user: user_type = scratch {
 
   const direct_scratch_frozen_runtime_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let result: result_type = scratch {
   freeze \`Ok (@append(prefix, "da"))
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -4865,13 +4865,13 @@ if let \`Ok value = result {
 
   const bound_scratch_frozen_runtime_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 
 scratch {
-  let temp = \`Ok (@append(prefix, "da"))
+  let temp = \`Ok (@append(prefix, "da"));
   freeze temp
 }
 `));
@@ -4994,19 +4994,19 @@ scratch {
 
   const bound_scratch_frozen_runtime_union_aggregate = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 
 scratch {
-  let temp = \`Ok ([.name = @append(prefix, "da"), .age = 40] as user_type)
+  let temp = \`Ok ([.name = @append(prefix, "da"), .age = 40] as user_type);
   freeze temp
 }
 `),
@@ -5157,15 +5157,15 @@ scratch {
   const bound_scratch_frozen_runtime_union_union_payload = Source.core(
     Source.parse(`
 type InnerType = | \`Some Text | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 type OuterType = | \`Ok inner_type | \`Err Unit
-const outer_type = OuterType
+const outer_type = OuterType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 
 scratch {
-  let temp = \`Ok (\`Some (@append(prefix, "da")))
+  let temp = \`Ok (\`Some (@append(prefix, "da")));
   freeze temp
 }
 `),
@@ -5319,18 +5319,18 @@ scratch {
   const bound_scratch_frozen_runtime_aggregate_union_field = Source.core(
     Source.parse(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
-const { struct } = import "duck:prelude" ()
+const result_type = ResultType;
+const { .struct } = import "duck:prelude" ();
 const box_type = struct {
   .result= result_type,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 
 scratch {
-  let temp = [.result = \`Ok (@append(prefix, "da")), .age = 40] as box_type
+  let temp = [.result = \`Ok (@append(prefix, "da")), .age = 40] as box_type;
   freeze temp
 }
 `),
@@ -5469,17 +5469,17 @@ scratch {
   );
 
   const bound_scratch_frozen_runtime_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 
 scratch {
-  let temp: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type
+  let temp: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type;
   freeze temp
 }
 `));
@@ -5590,18 +5590,18 @@ scratch {
 
   const existing_alias_scratch_frozen_runtime_aggregate = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type;
 
 scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
 }
 `),
@@ -5725,20 +5725,20 @@ scratch {
 
   const chained_alias_scratch_frozen_runtime_aggregate = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type;
 let user: user_type = scratch {
-  let first = existing
-  let second = first
+  let first = existing;
+  let second = first;
   freeze second
-}
+};
 
 @len(user.name) + user.age
 `),
@@ -5768,20 +5768,20 @@ let user: user_type = scratch {
   );
 
   const chained_alias_unfrozen_runtime_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type;
 let user: user_type = scratch {
-  let first = existing
-  let second = first
+  let first = existing;
+  let second = first;
   second
-}
+};
 
 @len(user.name) + user.age
 `));
@@ -5803,25 +5803,25 @@ let user: user_type = scratch {
 
   const branch_assignment_scratch_frozen_runtime_aggregate = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type
+let flag = true;
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: user_type = [.name = @append(prefix, "da"), .age = 40] as user_type;
 if flag {
   existing = [.name = @append(prefix, "!"), .age = 41] as user_type
 } else {
   existing = [.name = @append(prefix, "?"), .age = 42] as user_type
 }
 let user: user_type = scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
-}
+};
 
 @len(user.name) + user.age
 `),
@@ -5917,20 +5917,20 @@ let user: user_type = scratch {
 
   const branch_alias_scratch_frozen_runtime_union = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let flag = true;
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let existing: result_type = if flag {
   \`Ok (@append(prefix, "da"))
 } else {
   \`Err (5)
-}
+};
 let result: result_type = scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -6063,12 +6063,12 @@ if let \`Ok value = result {
   const branch_assignment_scratch_frozen_runtime_union = Source.core(
     Source.parse(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: result_type = \`Err (5)
+let flag = true;
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: result_type = \`Err (5);
 
 if flag {
   existing = \`Ok (@append(prefix, "da"))
@@ -6077,9 +6077,9 @@ if flag {
 }
 
 let result: result_type = scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -6224,10 +6224,10 @@ if let \`Ok value = result {
   );
 
   const helper_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let add_bang = (value: Text) => { @append(value, "!") }
+let add_bang = (value: Text) => { @append(value, "!") };
 
 scratch {
-  let temp: Text = add_bang("hi")
+  let temp: Text = add_bang("hi");
   freeze temp
 }
 `));
@@ -6314,8 +6314,8 @@ scratch {
   Core.check_proof(helper_scratch_frozen_runtime_text);
 
   const branch_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let flag = true
-let prefix: Text = @slice("Ada", 0, 3)
+let flag = true;
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
   if flag {
     freeze @append(prefix, "!")
@@ -6453,14 +6453,14 @@ scratch {
   Core.check_proof(branch_scratch_frozen_runtime_text);
 
   const branch_result_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let flag = true
-let prefix: Text = @slice("Ada", 0, 3)
+let flag = true;
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
   let temp: Text = if flag {
     @append(prefix, "!")
   } else {
     @append(prefix, "?")
-  }
+  };
   freeze temp
 }
 `));
@@ -6570,10 +6570,10 @@ scratch {
 
   const branch_assignment_scratch_frozen_runtime_text = Source.core(
     Source.parse(`
-let flag = true
-let prefix: Text = @slice("Ada", 0, 3)
+let flag = true;
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
-  let temp: Text = @append(prefix, ".")
+  let temp: Text = @append(prefix, ".");
   if flag {
     temp = @append(prefix, "!")
   } else {
@@ -6749,9 +6749,9 @@ scratch {
   Core.check_proof(branch_assignment_scratch_frozen_runtime_text);
 
   const loop_assignment_scratch_frozen_runtime_text = Source.core(Source.parse(`
-let prefix: Text = @slice("Ada", 0, 3)
+let prefix: Text = @slice("Ada", 0, 3);
 scratch {
-  let temp: Text = @append(prefix, ".")
+  let temp: Text = @append(prefix, ".");
   for i in 0..1 {
     temp = @append(prefix, "!")
   }
@@ -6898,15 +6898,15 @@ scratch {
 
   const collection_loop_assignment_scratch_frozen_runtime_text = Source.core(
     Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const xs_type = struct {
   .first= Int,
   .second= Int
-}
-let prefix: Text = @slice("Ada", 0, 3)
-let xs: xs_type = [.first = 1, .second = 2] as xs_type
+};
+let prefix: Text = @slice("Ada", 0, 3);
+let xs: xs_type = [.first = 1, .second = 2] as xs_type;
 scratch {
-  let temp: Text = @append(prefix, ".")
+  let temp: Text = @append(prefix, ".");
   for x in xs {
     temp = @append(prefix, "!")
   }
@@ -7073,15 +7073,15 @@ scratch {
   const if_let_assignment_scratch_frozen_runtime_text = Source.core(
     Source.parse(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
-let flag = true
+const result_type = ResultType;
+let flag = true;
 let result: result_type = if flag {
   \`Ok ("hi")
 } else {
   \`Err ("no")
-}
+};
 scratch {
-  let temp: Text = @append("no", ".")
+  let temp: Text = @append("no", ".");
   if let \`Ok value = result {
     temp = @append(value, "!")
   }
@@ -7267,13 +7267,13 @@ scratch {
 
   const if_let_scratch_frozen_runtime_text = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
-let flag = true
+const result_type = ResultType;
+let flag = true;
 let result: result_type = if flag {
   \`Ok ("hi")
 } else {
   \`Err ("no")
-}
+};
 scratch {
   if let \`Ok value = result {
     freeze @append(value, "!")
@@ -7422,13 +7422,13 @@ scratch {
 
   const if_let_unfrozen_scratch_runtime_text = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
-let flag = true
+const result_type = ResultType;
+let flag = true;
 let result: result_type = if flag {
   \`Ok ("hi")
 } else {
   \`Err ("no")
-}
+};
 scratch {
   if let \`Ok value = result {
     @append(value, "!")
@@ -7488,9 +7488,9 @@ scratch {
 
   const scratch_runtime_union_temporary = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 
 scratch {
   if flag {
@@ -7544,13 +7544,13 @@ scratch {
   Core.check_proof(scratch_runtime_union_temporary);
 
   const runtime_aggregate = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= I64
-}
+};
 
-let user: user_type = [.age = 41, .score = 9i64] as user_type
+let user: user_type = [.age = 41, .score = 9i64] as user_type;
 user
 `));
   const runtime_aggregate_proof = Core.proof(runtime_aggregate);
@@ -7591,10 +7591,10 @@ user
 
   const static_call_closure_shadow = Source.core(Source.parse(`
 let choose = flag => {
-  let value = 1
+  let value = 1;
   value := 2i64
   if flag { value } else { 3i64 }
-}
+};
 
 choose(1)
 `));
@@ -7615,10 +7615,10 @@ choose(1)
   Core.check_proof(static_call_closure_shadow);
 
   const static_call_i64_capture = Source.core(Source.parse(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_factor = (x: I64) => {
   x + factor
-}
+};
 
 add_factor(40i64)
 `));
@@ -7643,8 +7643,8 @@ let sum_down = rec (n, total) => {
   } else {
     rec(n - 1, total + n)
   }
-}
-let input = 4
+};
+let input = 4;
 
 sum_down(input, 0)
 `));
@@ -7669,7 +7669,7 @@ let sum_down = rec (n: Int, total: Int) => {
   } else {
     rec(n - 1, total + n)
   }
-}
+};
 
 sum_down(4, 0)
 `));
@@ -7688,10 +7688,10 @@ sum_down(4, 0)
   Core.check_proof(annotated_tail_rec);
 
   const selected_closure_text_loop = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let sum_text = if flag {
   (value: Text) => {
-    let total = 0
+    let total = 0;
 
     for i, byte in value {
       total = total + i + byte
@@ -7701,7 +7701,7 @@ let sum_text = if flag {
   }
 } else {
   (value: Text) => @len(value)
-}
+};
 
 sum_text("Ada")
 `));
@@ -7722,8 +7722,8 @@ sum_text("Ada")
   Core.check_proof(selected_closure_text_loop);
 
   const static_union_if_let = Source.core(Source.parse(`
-let payload = 41
-let result = \`Ok (payload)
+let payload = 41;
+let result = \`Ok (payload);
 payload = 1
 
 if let \`Ok x = result {
@@ -7748,14 +7748,14 @@ if let \`Ok x = result {
 
   const dynamic_union_if_let = Source.core(Source.parse(`
 type ResultType = | \`Ok I32 | \`Err I32
-const result_type = ResultType
-let flag = true
-let payload = 41
+const result_type = ResultType;
+let flag = true;
+let payload = 41;
 let result = if flag {
   \`Ok (payload)
 } else {
   \`Err (7)
-}
+};
 
 flag = false
 payload = 1
@@ -7781,12 +7781,12 @@ if let \`Ok value = result {
 
   const typed_union_if_let = Source.core(Source.parse(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Err (1i64)
+let result: result_type = \`Err (1i64);
 let value = if let \`Ok found = result {
   found + 1i64
-}
+};
 
 value
 `));
@@ -7805,7 +7805,7 @@ value
   Core.check_proof(typed_union_if_let);
 
   const frozen_closure = Source.core(Source.parse(`
-let f = freeze ((x: Int) => x)
+let f = freeze ((x: Int) => x);
 f(42)
 `));
   const frozen_closure_proof = Core.proof(frozen_closure);
@@ -7843,7 +7843,7 @@ f(42)
   assert_equals(Typed.type(Core, frozen_closure), "i32");
 
   const scratch_frozen_closure = Source.core(Source.parse(`
-let f = scratch { freeze ((x: Int) => x + 1) }
+let f = scratch { freeze ((x: Int) => x + 1) };
 f(41)
 `));
   const scratch_frozen_closure_proof = Core.proof(scratch_frozen_closure);
@@ -7910,9 +7910,9 @@ f(41)
 
   const block_scratch_frozen_closure = Source.core(Source.parse(`
 let f = scratch {
-  let inner = (x: Int) => x + 1
+  let inner = (x: Int) => x + 1;
   freeze inner
-}
+};
 f(41)
 `));
   const block_scratch_frozen_closure_proof = Core.proof(
@@ -7985,14 +7985,14 @@ f(41)
   assert_equals(Typed.type(Core, block_scratch_frozen_closure), "i32");
 
   const branch_scratch_frozen_closure = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let f = scratch {
   if flag {
     freeze ((x: Int) => x + 1)
   } else {
     freeze ((x: Int) => x + 2)
   }
-}
+};
 f(41)
 `));
   const branch_scratch_frozen_closure_proof = Core.proof(
@@ -8106,7 +8106,7 @@ f(41)
 
   const block_scratch_closure = Source.core(Source.parse(`
 scratch {
-  let inner = (x: Int) => x
+  let inner = (x: Int) => x;
   inner
 }
 `));
@@ -8116,7 +8116,7 @@ scratch {
   );
 
   const branch_scratch_closure = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 scratch {
   if flag {
     (x: Int) => x + 1
@@ -8143,13 +8143,13 @@ scratch {
 
 Deno.test("Core.proof records closure capture ownership slots", () => {
   const scalar_capture_core = Source.core(Source.parse(`
-let flag = true
-let n = 2
+let flag = true;
+let n = 2;
 let f = if flag {
   (x: Int) => x + n
 } else {
   (x: Int) => x + 1
-}
+};
 
 f(40)
 `));
@@ -8179,13 +8179,13 @@ f(40)
   assert_equals(Core.proof(scalar_capture_core).closure_ownership, scalar_plan);
 
   const frozen_capture_core = Source.core(Source.parse(`
-let flag = true
-let message: Text = freeze @append("he", "llo")
+let flag = true;
+let message: Text = freeze @append("he", "llo");
 let f = if flag {
   (x: Int) => @len(message) + x
 } else {
   (x: Int) => x
-}
+};
 
 f(1)
 `));
@@ -8216,10 +8216,10 @@ f(1)
 
   const frozen_union_capture_core = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
-let result: result_type = freeze \`Ok (41)
+let flag = true;
+let result: result_type = freeze \`Ok (41);
 let read_result = if flag {
   (x: Int) => if let \`Ok value = result {
     value + x
@@ -8228,7 +8228,7 @@ let read_result = if flag {
   }
 } else {
   (x: Int) => x
-}
+};
 
 read_result(1)
 `));
@@ -8261,21 +8261,21 @@ read_result(1)
   assert_includes(Emit.emit(Core, frozen_union_capture_core), "call_indirect");
 
   const frozen_aggregate_text_field_capture_core = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let flag = true
+let flag = true;
 let user: user_type = freeze (
   [.name = @append("Ad", "a"), .age = 41] as user_type
-)
+);
 let read_user = if flag {
   (x: Int) => @len(user.name) + x
 } else {
   (x: Int) => x
-}
+};
 
 read_user(1)
 `));
@@ -8333,13 +8333,13 @@ read_user(1)
   );
 
   const unique_capture_core = Source.core(Source.parse(`
-let flag = true
-let message: Text = @append("he", "llo")
+let flag = true;
+let message: Text = @append("he", "llo");
 let f = if flag {
   (x: Int) => @len(message) + x
 } else {
   (x: Int) => x
-}
+};
 
 f(1)
 `));
@@ -8379,9 +8379,9 @@ f(1)
   );
 
   const borrow_capture_core = Source.core(Source.parse(`
-let message: Text = @append("he", "llo")
-let view = &message
-let f = (x: Int) => @len(view) + x
+let message: Text = @append("he", "llo");
+let view = &message;
+let f = (x: Int) => @len(view) + x;
 
 f(1)
 `));
@@ -8428,7 +8428,7 @@ f(1)
 
   const direct_scratch_capture_core = Source.core(Source.parse(`
 scratch {
-  let message: Text = @append("he", "llo")
+  let message: Text = @append("he", "llo");
   ((x: Int) => @len(message) + x)(1)
 }
 `));
@@ -8471,7 +8471,7 @@ scratch {
 
   const scratch_capture_core = Source.core(Source.parse(`
 scratch {
-  let message: Text = @append("he", "llo")
+  let message: Text = @append("he", "llo");
   freeze ((x: Int) => @len(message) + x)
 }
 `));
@@ -8523,24 +8523,24 @@ scratch {
   );
 
   const aggregate_capture_core = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
-let flag = true
+let flag = true;
 let make_pair = if flag {
   (first: Int, second: Int) => [.first = first, .second = second] as pair_type
 } else {
   (first: Int, second: Int) => [.first = second, .second = first] as pair_type
-}
-let pair: pair_type = make_pair(1, 2)
+};
+let pair: pair_type = make_pair(1, 2);
 let read_pair = if flag {
   (x: Int) => pair.first + pair.second + x
 } else {
   (x: Int) => x
-}
+};
 
 read_pair(3)
 `));
@@ -8583,13 +8583,13 @@ read_pair(3)
   );
 
   const closure_pointer_capture_core = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let add = if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
-let run = (y: Int) => add(y) + 10
+};
+let run = (y: Int) => add(y) + 10;
 
 run(30)
 `));
@@ -8637,15 +8637,15 @@ run(30)
 
   const runtime_union_capture_core = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (x: Int) => \`Ok (x)
 } else {
   (x: Int) => \`Err (x)
-}
-let result: result_type = make(41)
+};
+let result: result_type = make(41);
 let read_result = if flag {
   (x: Int) => {
     if let \`Ok value = result {
@@ -8656,7 +8656,7 @@ let read_result = if flag {
   }
 } else {
   (x: Int) => x
-}
+};
 
 read_result(1)
 `));
@@ -8722,7 +8722,7 @@ Deno.test("Core.drops plans unique heap owner cleanup", () => {
   } as const;
 
   const unused_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 1
 `));
@@ -8765,8 +8765,8 @@ let f = (x: Int) => x
   assert_equals(Core.drops(unused_owner), { steps: [] });
 
   const captured_closure_owner = Source.core(Source.parse(`
-let n = 1
-let f = (x: Int) => x + n
+let n = 1;
+let f = (x: Int) => x + n;
 
 1
 `));
@@ -8837,7 +8837,7 @@ let f = (x: Int) => x + n
   assert_equals(Core.drops(final_closure), { steps: [] });
 
   const const_closure = Source.core(Source.parse(`
-const f = (x: Int) => x
+const f = (x: Int) => x;
 
 1
 `));
@@ -8845,11 +8845,11 @@ const f = (x: Int) => x
 
   const const_type_constructor = Source.core(Source.parse(`
 type OptionType t = | \`Some t | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-const option_int_type = option_type(Int)
+const option_int_type = option_type(Int);
 
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 1
 `));
@@ -8857,7 +8857,7 @@ let f = (x: Int) => x
 
   const closure_body_owner = Source.core(Source.parse(`
 (x: Int) => {
-  let f = (y: Int) => y
+  let f = (y: Int) => y;
   1
 }
 `));
@@ -8909,8 +8909,8 @@ let f = (x: Int) => x
 
   const closure_return_owner = Source.core(Source.parse(`
 (x: Int) => {
-  let f = (y: Int) => y
-  return 1
+  let f = (y: Int) => y;
+  return 1;
 }
 `));
   const closure_return_owner_proof = Core.proof(closure_return_owner);
@@ -8960,16 +8960,16 @@ let f = (x: Int) => x
   assert_equals(Core.drops(closure_return_owner), closure_return_owner_drops);
 
   const final_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 f
 `));
   assert_equals(Core.drops(final_owner), { steps: [] });
 
   const return_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
-return 1
+return 1;
 `));
   const return_owner_proof = Core.proof(return_owner);
   const _return_owner_drops = {
@@ -9010,14 +9010,14 @@ return 1
   assert_equals(Core.drops(return_owner), { steps: [] });
 
   const returned_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
-return f
+return f;
 `));
   assert_equals(Core.drops(returned_owner), { steps: [] });
 
   const replaced_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 f = (x: Int) => x + 1
 
 1
@@ -9266,10 +9266,10 @@ f = (x: Int) => x + 1
   );
 
   const discarded_runtime_aggregate_temporary = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 (value: Text) => {
   [.name = value] as user_type
@@ -9338,7 +9338,7 @@ const user_type = struct {
 
   const discarded_runtime_union_temporary = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 (value: Text) => {
   \`Ok (value)
@@ -9405,10 +9405,10 @@ const result_type = ResultType
 
   const bound_runtime_union_temporary = Source.core(Source.parse(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 (value: Text) => {
-  let result: result_type = \`Ok (value)
+  let result: result_type = \`Ok (value);
   1
 }
 `));
@@ -9446,7 +9446,7 @@ const result_type = ResultType
   );
 
   const discarded_static_aggregate_materialization = Source.core(Source.parse(`
-const user = [.name = "Ada", .age = 41]
+const user = [.name = "Ada", .age = 41];
 
 user
 1
@@ -9508,7 +9508,7 @@ user
 
   const bound_runtime_text_temporary = Source.core(Source.parse(`
 (value: Text) => {
-  let message: Text = @append(value, "!")
+  let message: Text = @append(value, "!");
   1
 }
 `));
@@ -9569,7 +9569,7 @@ user
 
   const bound_runtime_text_slice_temporary = Source.core(Source.parse(`
 (value: Text) => {
-  let part: Text = @slice(value, 0, 1)
+  let part: Text = @slice(value, 0, 1);
   1
 }
 `));
@@ -9632,7 +9632,7 @@ user
   );
 
   const discarded_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 f
 
 1
@@ -9684,8 +9684,8 @@ f
   assert_equals(Core.drops(discarded_named_owner), discarded_named_owner_drops);
 
   const moved_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = f
+let f = (x: Int) => x;
+let g = f;
 
 1
 `));
@@ -9728,7 +9728,7 @@ let g = f
   assert_equals(Core.drops(moved_named_owner), { steps: [] });
 
   const discarded_frozen_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 freeze f
 
 1
@@ -9736,32 +9736,32 @@ freeze f
   assert_equals(Core.drops(discarded_frozen_named_owner), { steps: [] });
 
   const bound_frozen_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let frozen = freeze f
+let f = (x: Int) => x;
+let frozen = freeze f;
 
 1
 `));
   assert_equals(Core.drops(bound_frozen_named_owner), { steps: [] });
 
   const block_frozen_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 let frozen = {
   freeze f
-}
+};
 
 1
 `));
   assert_equals(Core.drops(block_frozen_named_owner), { steps: [] });
 
   const returned_frozen_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
-return freeze f
+return freeze f;
 `));
   assert_equals(Core.drops(returned_frozen_named_owner), { steps: [] });
 
   const self_assigned_frozen_named_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 f := freeze f
 
 1
@@ -9769,9 +9769,9 @@ f := freeze f
   assert_equals(Core.drops(self_assigned_frozen_named_owner), { steps: [] });
 
   const branch_frozen_named_owners = Source.core(Source.parse(`
-let flag = true
-let f = (x: Int) => x
-let g = (x: Int) => x + 1
+let flag = true;
+let f = (x: Int) => x;
+let g = (x: Int) => x + 1;
 
 if flag {
   freeze f
@@ -9784,8 +9784,8 @@ if flag {
   assert_equals(Core.drops(branch_frozen_named_owners), { steps: [] });
 
   const optional_branch_frozen_named_owner = Source.core(Source.parse(`
-let flag = true
-let f = (x: Int) => x
+let flag = true;
+let f = (x: Int) => x;
 
 if flag {
   freeze f
@@ -9797,10 +9797,10 @@ if flag {
 
   const optional_if_let_frozen_named_owner = Source.core(Source.parse(`
 type MaybeType = | \`Some Int | \`None Unit
-const maybe_type = MaybeType
+const maybe_type = MaybeType;
 
-let target = \`Some (1)
-let f = (x: Int) => x
+let target = \`Some (1);
+let f = (x: Int) => x;
 
 if let \`Some value = target {
   freeze f
@@ -9813,14 +9813,14 @@ if let \`Some value = target {
   });
 
   const final_block_outer_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 { f }
 `));
   assert_equals(Core.drops(final_block_outer_owner), { steps: [] });
 
   const discarded_block_outer_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 { f }
 
@@ -9911,8 +9911,8 @@ let f = (x: Int) => x
   );
 
   const moved_block_outer_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = { f }
+let f = (x: Int) => x;
+let g = { .f };
 
 1
 `));
@@ -9967,7 +9967,7 @@ let g = { f }
 
   const discarded_block_local_owner = Source.core(Source.parse(`
 {
-  let g = (x: Int) => x
+  let g = (x: Int) => x;
   g
 }
 
@@ -10026,9 +10026,9 @@ let g = { f }
 
   const moved_block_local_owner = Source.core(Source.parse(`
 let h = {
-  let g = (x: Int) => x
+  let g = (x: Int) => x;
   g
-}
+};
 
 1
 `));
@@ -10082,10 +10082,10 @@ let h = {
   );
 
   const block_local_owner_dropped = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 
 {
-  let g = (x: Int) => x
+  let g = (x: Int) => x;
   1
 }
 
@@ -10177,16 +10177,16 @@ let f = (x: Int) => x
   );
 
   const final_branch_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = (x: Int) => x
+let f = (x: Int) => x;
+let g = (x: Int) => x;
 
 if true { f } else { g }
 `));
   assert_equals(Core.drops(final_branch_owner), { steps: [] });
 
   const discarded_branch_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = (x: Int) => x
+let f = (x: Int) => x;
+let g = (x: Int) => x;
 
 if true { f } else { g }
 
@@ -10222,9 +10222,9 @@ if true { f } else { g }
   });
 
   const moved_branch_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = (x: Int) => x
-let h = if true { f } else { g }
+let f = (x: Int) => x;
+let g = (x: Int) => x;
+let h = if true { f } else { g };
 
 1
 `));
@@ -10282,8 +10282,8 @@ let h = if true { f } else { g }
   assert_equals(Core.drops(moved_branch_owner), moved_branch_owner_drops);
 
   const moved_mixed_branch_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
-let h = if true { f } else { (x: Int) => x }
+let f = (x: Int) => x;
+let h = if true { f } else { (x: Int) => x };
 
 1
 `));
@@ -10347,10 +10347,10 @@ let h = if true { f } else { (x: Int) => x }
 
   const const_union_if_let_branch_owner = Source.core(Source.parse(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let f = (x: Int) => x
-let g = (x: Int) => x
+let f = (x: Int) => x;
+let g = (x: Int) => x;
 
 if let \`Ok value = \`Ok (1) { f } else { g }
 `));
@@ -10424,8 +10424,8 @@ if let \`Ok value = \`Ok (1) { f } else { g }
 
   const break_owner = Source.core(Source.parse(`
 for i in 0..1 {
-  let f = (x: Int) => x
-  break
+  let f = (x: Int) => x;
+  break;
 }
 
 0
@@ -10470,8 +10470,8 @@ for i in 0..1 {
 
   const continue_owner = Source.core(Source.parse(`
 for i in 0..1 {
-  let f = (x: Int) => x
-  continue
+  let f = (x: Int) => x;
+  continue;
 }
 
 0
@@ -10515,9 +10515,9 @@ for i in 0..1 {
   assert_equals(Core.drops(continue_owner), { steps: [] });
 
   const conditional_return_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 if true {
-  return 1
+  return 1;
 }
 
 0
@@ -10578,11 +10578,11 @@ if true {
   );
 
   const terminal_if_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 if true {
-  return 1
+  return 1;
 } else {
-  return 2
+  return 2;
 }
 
 0
@@ -10590,9 +10590,9 @@ if true {
   assert_equals(Core.drops(terminal_if_owner), { steps: [] });
 
   const mixed_if_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 if true {
-  return 1
+  return 1;
 } else {
   2
 }
@@ -10602,7 +10602,7 @@ if true {
   assert_equals(Core.drops(mixed_if_owner), { steps: [] });
 
   const branch_replaced_owner = Source.core(Source.parse(`
-let f = (x: Int) => x
+let f = (x: Int) => x;
 if true {
   f = (x: Int) => x + 1
 } else {
@@ -10654,9 +10654,9 @@ if true {
 
   const branch_local_owners = Source.core(Source.parse(`
 if true {
-  let f = (x: Int) => x
+  let f = (x: Int) => x;
 } else {
-  let f = (x: Int) => x + 1
+  let f = (x: Int) => x + 1;
 }
 
 1
@@ -10693,7 +10693,7 @@ if true {
 
 Deno.test("if-let function results retain aggregate ownership", () => {
   const core = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type Choice =
   | \`Some I32
@@ -10709,7 +10709,7 @@ let rec choose: Choice -> Selection = choice => {
   } else {
     [.score = 0]
   }
-}
+};
 
 choose(\`Some 42)
 `));
@@ -10742,9 +10742,9 @@ let rec score: &Choice -> I32 = (choice: &Choice) => {
   } else {
     0
   }
-}
+};
 
-let choice: Choice = \`Some 42
+let choice: Choice = \`Some 42;
 score(&choice)
 `));
   const definition = core.recFunctions?.score;

@@ -1,19 +1,20 @@
-const { json_bool, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_account_chatgpt_login } = import "./app_server_account_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_account_types.duck" ()
+const { .json_bool, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .decode_account_chatgpt_login } = import "./app_server_account_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_account_types.duck" ();
 
 type FixtureResult = AppServerAccountLoginDecodeResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("appBrand", json_string("chatgpt"), fields)
-fields = json_object_prepend("useHostedLoginSuccessPage", json_bool(true), fields)
-fields = json_object_prepend("codexStreamlinedLogin", json_bool(true), fields)
-let decoded: FixtureResult = decode_account_chatgpt_login(fields)
-let score = 0
+let fields = json_object_empty();
+fields = json_object_prepend("appBrand", json_string "chatgpt", fields)
+fields = json_object_prepend("useHostedLoginSuccessPage", json_bool true, fields)
+fields = json_object_prepend("codexStreamlinedLogin", json_bool true, fields)
+let decoded: FixtureResult = decode_account_chatgpt_login fields;
+let score = 0;
 if let `AccountLoginOk login = decoded {
   if let `AccountChatgptLogin state = login {
-    let [streamlined, hosted_page, brand] = state
+    let [streamlined, hosted_page, brand] = state;
     if streamlined && hosted_page {
       if let `Some value = brand {
         if let `ChatgptBrand () = value { score = 1 }
@@ -22,4 +23,4 @@ if let `AccountLoginOk login = decoded {
   }
 }
 
-return { .score = score }
+return { .score = score };

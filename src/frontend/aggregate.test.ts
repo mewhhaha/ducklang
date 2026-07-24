@@ -54,10 +54,10 @@ Deno.test("fixed arrays elaborate to positional object fields", () => {
 
 Deno.test("named products retain named update behavior", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Pair = struct {.left = I32, .right = I32}
-let pair: Pair = [.left = 1, .right = 2]
-let changed = pair :+ { .left = 3 }
+let pair: Pair = [.left = 1, .right = 2];
+let changed = pair <& { .left = 3 };
 changed.left
 `);
   assert_includes(wat, "i32.const 3");
@@ -203,7 +203,7 @@ Deno.test("match coverage rejects duplicate and missing arms", () => {
     () =>
       Source.core(`
 type Result = | \`Ok I32 | \`Err Unit
-let result: Result = \`Ok (7)
+let result: Result = \`Ok (7);
 match result { | \`Ok value => value }
 `),
     "Non-exhaustive match, missing `Err ()",
@@ -218,7 +218,7 @@ Deno.test("match alternatives share one arm body", () => {
 
   const union = `
 type Choice = | \`First I32 | \`Second I32
-let value: Choice = \`Second (42)
+let value: Choice = \`Second (42);
 match value { | \`First (x) | \`Second x => x }
 `;
   assert_includes(Source.wat(union), "i32.const 42");
@@ -232,16 +232,38 @@ match value { | \`First (x) | \`Second x => x }
   );
 });
 
+Deno.test("compile-time value patterns share match arms with literals", () => {
+  const source = `
+const ctrl_c = @cast(3, Char);
+let classify = (key: Char) => match key {
+  | 'q' | #(ctrl_c) => 42
+  | _ => 0
+};
+classify('q')
+`;
+
+  assert_equals(
+    Source.fmt(Source.parse("match key { | 'q' | #(ctrl_c) => 1 | _ => 0 }")),
+    "match key { | 'q' | #(ctrl_c) => 1 | _ => 0 }",
+  );
+  assert_includes(Source.wat(source), "i32.const 3");
+  assert_throws(
+    () =>
+      Source.wat("let runtime = 3;\nmatch 3 { | #(runtime) => 1 | _ => 0 }"),
+    "Value pattern requires a compile-time expression: runtime",
+  );
+});
+
 Deno.test("compile-time value alternatives constrain function inputs", () => {
   const source = `
-const classify = (I32 | Text) => 1
-const first = classify(I32)
-const second = classify(Text)
+const classify = (I32 | Text) => 1;
+const first = classify(I32);
+const second = classify(Text);
 first + second
 `;
   assert_includes(Source.wat(source), "i32.add");
   assert_throws(
-    () => Source.wat("const classify = (I32 | Text) => 1\nclassify(Bool)"),
+    () => Source.wat("const classify = (I32 | Text) => 1;\nclassify(Bool)"),
     "Function argument does not match I32 | Text: Bool",
   );
 });
@@ -305,7 +327,7 @@ Deno.test("substitution respects bindings in match guards and bodies", () => {
 
 Deno.test("product binding patterns project every ordered entry", () => {
   const wat = Source.wat(`
-let (left, right) = (20, 22)
+let (left, right) = (20, 22);
 left + right
 `);
   assert_includes(wat, "i32.add");
@@ -313,8 +335,8 @@ left + right
 
 Deno.test("inferred product function results destructure at runtime", () => {
   const wat = Source.wat(`
-let adjacent = value => [value, value + 1]
-let [first, second] = adjacent(20)
+let adjacent = value => [value, value + 1];
+let [first, second] = adjacent(20);
 first + second
 `);
   assert_includes(wat, "i32.add");
@@ -322,8 +344,8 @@ first + second
 
 Deno.test("array binding rests retain the unconsumed suffix", () => {
   const wat = Source.wat(`
-let values = [10, 20, 30]
-let [head, ...tail] = values
+let values = [10, 20, 30];
+let [head, ...tail] = values;
 head + tail[1]
 `);
   assert_includes(wat, "i32.const 30");
@@ -331,10 +353,10 @@ head + tail[1]
 
 Deno.test("labeled product patterns support selected fields", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Pair = struct {.left = I32, .right = I32}
-let pair: Pair = [.left = 20, .right = 22]
-let { .left = left } = pair
+let pair: Pair = [.left = 20, .right = 22];
+let { .left = left } = pair;
 left + pair.right
 `);
   assert_includes(wat, "i32.add");
@@ -342,10 +364,10 @@ left + pair.right
 
 Deno.test("labeled products bind through recursive patterns", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Exports = struct {.add = I32, .ignored = I32}
-let exports: Exports = [40, 2]
-const { .add = add } = exports
+let exports: Exports = [40, 2];
+const { .add = add } = exports;
 add
 `);
   assert_includes(wat, "i32.const 40");
@@ -353,8 +375,8 @@ add
 
 Deno.test("module initializer results remain available as one binding", () => {
   const wat = Source.wat(`
-const exports = () => { return [.run = 42] }
-let application = exports()
+const exports = () => { return [.run = 42]; };
+let application = exports();
 application.run
 `);
   assert_includes(wat, "i32.const 42");
@@ -362,7 +384,7 @@ application.run
 
 Deno.test("product function patterns keep a unary source call", () => {
   const wat = Source.wat(`
-let sum = (left, right) => left + right
+let sum = (left, right) => left + right;
 sum(20, 22)
 `);
   assert_includes(wat, "i32.add");
@@ -370,9 +392,9 @@ sum(20, 22)
 
 Deno.test("functions accept structural annotated patterns", () => {
   const source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Box = struct {.a = I32}
-let increment = { a: I32 } => a + 1
+let increment = { .a: I32 } => a + 1;
 increment([.a = 41] as Box)
 `;
 
@@ -382,14 +404,14 @@ increment([.a = 41] as Box)
 
 Deno.test("functions accept nested structural and array patterns", () => {
   const structural = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Inner = struct {.value = I32}
 type Outer = struct {.inner = Inner}
-let read = { .inner = { value: I32 } } => value
+let read = { .inner = { .value: I32 } } => value;
 read([.inner = [.value = 42]] as Outer)
 `;
   const array = `
-let first: [I32; 2] -> I32 = [head, ..._] => head
+let first: [I32; 2] -> I32 = [head, ..._] => head;
 first([42, 0])
 `;
 
@@ -402,26 +424,26 @@ first([42, 0])
 Deno.test("functions accept union and wildcard patterns", () => {
   const union = `
 type Option = | \`Some I32 | \`None Unit
-let unwrap = \`Some (value) => value
+let unwrap = \`Some (value) => value;
 unwrap(\`Some (42))
 `;
 
   assert_equals(Source.analyze(union).diagnostics, []);
   assert_includes(Source.wat(union), "i32.const 42");
   assert_includes(
-    Source.wat("let ignore = _ => 42\nignore(0)"),
+    Source.wat("let ignore = _ => 42;\nignore(0)"),
     "i32.const 42",
   );
 });
 
 Deno.test("functions accept literal and compile-time value patterns", () => {
-  assert_includes(Source.wat("let f = 42 => 1\nf(42)"), "i32.eq");
+  assert_includes(Source.wat("let f = 42 => 1;\nf(42)"), "i32.eq");
   assert_includes(
-    Source.wat("const f = I32 => ()\nconst out = f(I32)\n42"),
+    Source.wat("const f = I32 => ();\nconst out = f(I32);\n42"),
     "i32.const 42",
   );
   assert_throws(
-    () => Source.wat("const f = I32 => ()\nconst out = f(Bool)\n42"),
+    () => Source.wat("const f = I32 => ();\nconst out = f(Bool);\n42"),
     "Function argument does not match I32: Bool",
   );
 });
@@ -437,7 +459,7 @@ if let [head, ...tail] = [1, 2, 3] {
 
 Deno.test("plain bindings reject refutable patterns", () => {
   assert_throws(
-    () => Source.compile("let 1 = 1\n0"),
+    () => Source.compile("let 1 = 1;\n0"),
     "Refutable literal pattern is not allowed in a plain binding",
   );
 });

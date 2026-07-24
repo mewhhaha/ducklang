@@ -5,8 +5,8 @@ import { Source } from "./source.ts";
 
 Deno.test("include resolves relative text before compile-time evaluation", () => {
   const text = [
-    "const byte_length = text => @len(text)",
-    'const size = comptime byte_length(include "./config.json")',
+    "const byte_length = text => @len(text);",
+    'const size = comptime byte_length(include "./config.json");',
     "size",
   ].join("\n");
   const source = resolve_source_imports(
@@ -38,10 +38,10 @@ Deno.test("include resolves relative text before compile-time evaluation", () =>
 Deno.test("include feeds a typed compile-time parser result", () => {
   const source = resolve_source_imports(
     parse_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Config = struct {.length = I32}
-const parse_config: Text -> Config = text => [.length = @len(text)]
-const config = comptime parse_config(include "./config.json")
+const parse_config: Text -> Config = text => [.length = @len(text)];
+const config = comptime parse_config(include "./config.json");
 
 config.length + @describe_type(@type_of(config)).size
 `),
@@ -65,7 +65,7 @@ Deno.test("include reports the unresolved relative path", () => {
   assert_throws(
     () =>
       resolve_source_imports(
-        parse_source('const config = include "./missing.json"\nconfig'),
+        parse_source('const config = include "./missing.json";\nconfig'),
         "file:///project/main.duck",
         () => undefined,
       ),
@@ -77,14 +77,14 @@ Deno.test("include requires file context", () => {
   assert_throws(
     () =>
       Source.ic_wat(
-        'const size = comptime @len(include "./config.json")\nsize',
+        'const size = comptime @len(include "./config.json");\nsize',
       ),
     "include requires source file context; use a file-loading compiler API",
   );
 });
 
 Deno.test("source analysis reports a missing included file", () => {
-  const text = 'const config = include "./missing.json"\nconfig';
+  const text = 'const config = include "./missing.json";\nconfig';
   const analysis = Source.analyze(text, {
     uri: "file:///project/main.duck",
     resolve_import: () => undefined,
@@ -98,7 +98,7 @@ Deno.test("source analysis reports a missing included file", () => {
 
 Deno.test("source analysis requires include resolution context", () => {
   const analysis = Source.analyze(
-    'const config = include "./config.json"\nconfig',
+    'const config = include "./config.json";\nconfig',
   );
 
   assert_equals(

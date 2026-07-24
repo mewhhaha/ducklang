@@ -19,6 +19,7 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
 
     while (!this.match_symbol("=")) {
       const param = this.expect_name("Expected type parameter or `=`");
+      this.expect_supported_name(param, "Type parameter");
       expect_snake_case(param, "Type parameter");
       expect(!params.includes(param), "Duplicate type parameter: " + param);
       params.push(param);
@@ -428,7 +429,7 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
       const token = this.peek();
 
       if (brackets === 0 && parens === 0) {
-        if (token.kind === "newline" && token.raw !== ";") {
+        if (token.kind === "newline") {
           break;
         }
 

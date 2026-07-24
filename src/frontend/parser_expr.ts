@@ -298,7 +298,10 @@ export abstract class ParserExpr extends ParserPrimary {
     while (!this.is("eof")) {
       const token = this.peek();
 
-      if (token.kind === "newline" && token.raw !== ";") {
+      if (
+        token.kind === "newline" &&
+        (token.raw !== ";" || (parens === 0 && brackets === 0))
+      ) {
         break;
       }
 
@@ -662,13 +665,15 @@ export abstract class ParserExpr extends ParserPrimary {
             this.effect_instance_names.has(expr.name) ||
             /^[A-Z][A-Za-z0-9]*$/.test(expr.name))
         ) {
-          expr = this.parse_effect_handler_literal(expr.name);
-        } else {
           throw this.error(
-            "Runtime products use contextual `[...]` values; updates use " +
-              "the source-defined type extension operator",
+            "Effect handlers use `handler " + expr.name + " { ... }`",
           );
         }
+
+        throw this.error(
+          "Runtime products use contextual `[...]` values; updates use " +
+            "the source-defined type extension operator",
+        );
       } else if (
         this.#stop_try_with > 0 && this.peek().kind === "name" &&
         this.peek().text === "with"
@@ -821,7 +826,8 @@ function pattern_params(pattern: Pattern, source_offset: number): Param[] {
   }
 
   if (
-    pattern.tag === "literal" || pattern.tag === "value" ||
+    pattern.tag === "literal" || pattern.tag === "const_value" ||
+    pattern.tag === "value" ||
     pattern.tag === "wildcard" || pattern.tag === "type" ||
     pattern.tag === "text_capture" || pattern.tag === "or" ||
     pattern.tag === "union_case" || pattern.tag === "product" ||

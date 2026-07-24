@@ -1,41 +1,44 @@
 module () where
 
-const {} = import "./agent_job_common_types.duck" ()
-const { agent_job_tool_definitions, agent_job_tool_specs } = import "./agent_job_registration.duck" ()
+const {} = import "./agent_job_common_types.duck" ();
+const { .agent_job_tool_definitions, .agent_job_tool_specs } =
+  import "./agent_job_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 type FixtureSpecs = ToolSpecs
 
-let score = 0
-let main_definitions: FixtureDefinitions = agent_job_tool_definitions(true, true, `None ())
+let score = 0;
+let main_definitions: FixtureDefinitions = agent_job_tool_definitions(true, true, `None ());
 if let `Cons node = main_definitions {
-  let [spawn, tail] = node
-  let [name, _, actual_handler, _, _, _] = spawn
-  let [namespace, local_name] = name
-  let name_valid = namespace == "" && local_name == "spawn_agents_on_csv"
-  let handler_valid = if let `SpawnAgentsOnCsv () = actual_handler { true } else { false }
-  let tail_valid = if let `Nil () = tail { true } else { false }
+  let [spawn, tail] = node;
+  let [name, _, actual_handler, _, _, _] = spawn;
+  let [namespace, local_name] = name;
+  let name_valid = namespace == "" && local_name == "spawn_agents_on_csv";
+  let handler_valid = if let `SpawnAgentsOnCsv () = actual_handler { true } else { false };
+  let tail_valid = if let `Nil () = tail { true } else { false };
   if name_valid && handler_valid && tail_valid { score = score + 1 }
 }
 
-let worker_specs: FixtureSpecs = agent_job_tool_specs(true, true, `Some "agent_job:42")
+let worker_specs: FixtureSpecs = agent_job_tool_specs(true, true, `Some "agent_job:42");
 if let `Cons spawn_node = worker_specs {
-  let [spawn, tail] = spawn_node
-  let [_, _, description, parameters, _, strict] = spawn
-  if description == "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)." && parameters == "{\"type\":\"object\",\"properties\":{\"csv_path\":{\"type\":\"string\",\"description\":\"Path to the CSV file containing input rows.\"},\"id_column\":{\"type\":\"string\",\"description\":\"CSV column to use as stable item id. Omit to use row numbers.\"},\"instruction\":{\"type\":\"string\",\"description\":\"Instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row.\"},\"max_concurrency\":{\"type\":\"number\",\"description\":\"Maximum concurrent workers for this job. Defaults to 16 and is capped by config.\"},\"max_runtime_seconds\":{\"type\":\"number\",\"description\":\"Maximum runtime per worker before failure. Defaults to 1800 seconds; config may set a different default.\"},\"max_workers\":{\"type\":\"number\",\"description\":\"Alias for max_concurrency. Defaults to 16 and is capped by config.\"},\"output_csv_path\":{\"type\":\"string\",\"description\":\"Output CSV path for exported results. Omit to create one next to the input CSV.\"},\"output_schema\":{\"type\":\"object\",\"properties\":{},\"description\":\"JSON Schema for each worker result. Omit to accept any result object.\"}},\"required\":[\"csv_path\",\"instruction\"],\"additionalProperties\":false}" && !(strict) {
+  let [spawn, tail] = spawn_node;
+  let [_, _, description, parameters, _, strict] = spawn;
+  if description == "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)." && parameters == "{\"type\":\"object\",\"properties\":{\"csv_path\":{\"type\":\"string\",\"description\":\"Path to the CSV file containing input rows.\"},\"id_column\":{\"type\":\"string\",\"description\":\"CSV column to use as stable item id. Omit to use row numbers.\"},\"instruction\":{\"type\":\"string\",\"description\":\"Instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row.\"},\"max_concurrency\":{\"type\":\"number\",\"description\":\"Maximum concurrent workers for this job. Defaults to 16 and is capped by config.\"},\"max_runtime_seconds\":{\"type\":\"number\",\"description\":\"Maximum runtime per worker before failure. Defaults to 1800 seconds; config may set a different default.\"},\"max_workers\":{\"type\":\"number\",\"description\":\"Alias for max_concurrency. Defaults to 16 and is capped by config.\"},\"output_csv_path\":{\"type\":\"string\",\"description\":\"Output CSV path for exported results. Omit to create one next to the input CSV.\"},\"output_schema\":{\"type\":\"object\",\"properties\":{},\"description\":\"JSON Schema for each worker result. Omit to accept any result object.\"}},\"required\":[\"csv_path\",\"instruction\"],\"additionalProperties\":false}" && !(
+    strict
+  ) {
     score = score + 10
   }
   if let `Cons report_node = tail {
-    let [report, end] = report_node
-    let [name, _, _, _, _, _] = report
-    let [_, local_name] = name
+    let [report, end] = report_node;
+    let [name, _, _, _, _, _] = report;
+    let [_, local_name] = name;
     if local_name == "report_agent_job_result" {
       if let `Nil () = end { score = score + 100 }
     }
   }
 }
 
-let disabled: FixtureDefinitions = agent_job_tool_definitions(false, true, `Some "agent_job:42")
+let disabled: FixtureDefinitions = agent_job_tool_definitions(false, true, `Some "agent_job:42");
 if let `Nil () = disabled { score = score + 1000 }
 
-return { .score = score }
+return { .score = score };

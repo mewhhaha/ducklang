@@ -1,5 +1,5 @@
 module () where
 
-const { verify_audio_data_url_fixture } = import "./audio_data_url_fixture.duck" ()
+const { .verify_audio_data_url_fixture } = import "./audio_data_url_fixture.duck" ();
 
-return { .score = verify_audio_data_url_fixture 0 }
+return { .score = verify_audio_data_url_fixture 0 };

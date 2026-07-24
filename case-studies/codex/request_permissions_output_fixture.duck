@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./request_permissions_types.duck" ()
-const { encode_request_permissions_response } = import "./request_permissions_output.duck" ()
+const {} = import "./request_permissions_types.duck" ();
+const { .encode_request_permissions_response } = import "./request_permissions_output.duck" ();
 
 type FixtureFileSystem = RequestPermissionFileSystem
 type FixtureNetwork = RequestPermissionNetwork
@@ -11,12 +11,27 @@ type FixturePaths = RequestPermissionPaths
 type FixtureProfile = RequestPermissionProfile
 type FixtureResponse = RequestPermissionsResponse
 
-let paths: FixturePaths = `Cons ([[.path = "/workspace/\"docs\"", .access = `Read ()] as FixturePath, `Cons ([[.path = "/tmp/output", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode)] as FixturePathNode)
-let file_system: FixtureFileSystem = [.entries = paths]
-let network: FixtureNetwork = [.enabled = `Some true]
-let profile: FixtureProfile = [.network = `NetworkPresent network, .file_system = `FileSystemPresent file_system]
-let response: FixtureResponse = [.permissions = profile, .scope = `Session (), .strict_auto_review = false]
-let expected = "{\"permissions\":{\"network\":{\"enabled\":true},\"file_system\":{\"read\":[\"/workspace/\\\"docs\\\"\"],\"write\":[\"/tmp/output\"]}},\"scope\":\"session\"}"
-let score = if encode_request_permissions_response(response) == expected { 1 } else { 0 }
+let paths: FixturePaths = `Cons (
+  [
+    [.path = "/workspace/\"docs\"", .access = `Read ()] as FixturePath,
+    `Cons (
+      [[.path = "/tmp/output", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode
+    ),
+  ] as FixturePathNode
+);
+let file_system: FixtureFileSystem = [.entries = paths];
+let network: FixtureNetwork = [.enabled = `Some true];
+let profile: FixtureProfile = [
+  .network = `NetworkPresent network,
+  .file_system = `FileSystemPresent file_system,
+];
+let response: FixtureResponse = [
+  .permissions = profile,
+  .scope = `Session (),
+  .strict_auto_review = false,
+];
+let expected =
+  "{\"permissions\":{\"network\":{\"enabled\":true},\"file_system\":{\"read\":[\"/workspace/\\\"docs\\\"\"],\"write\":[\"/tmp/output\"]}},\"scope\":\"session\"}";
+let score = if encode_request_permissions_response response == expected { 1 } else { 0 };
 
-return { .score = score }
+return { .score = score };

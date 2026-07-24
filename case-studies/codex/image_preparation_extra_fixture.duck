@@ -1,0 +1,25 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .apply_image_processing_results } = import "./image_preparation.duck" ();
+const { .single_image_processing_fixture_result } =
+  import "./image_preparation_failure_fixture_common.duck" ();
+
+type ExtraFixtureResponses = HistoryItems
+
+const verify_image_preparation_extra_fixture: () -> I32 = () => {
+  let responses: ExtraFixtureResponses = `Nil ();
+  let results = single_image_processing_fixture_result(0, "data:image/png;base64,AA==");
+  let rewrite = apply_image_processing_results(responses, results);
+  if let `RejectedImageRewrite failure = rewrite {
+    if let `ExtraImageProcessingResults count = failure {
+      if count == 1 { 1 } else { 0 }
+    } else {
+      0
+    }
+  } else {
+    0
+  }
+};
+
+return { .verify_image_preparation_extra_fixture };

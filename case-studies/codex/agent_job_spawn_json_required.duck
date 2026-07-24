@@ -1,23 +1,32 @@
 module () where
 
-const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
-const {} = import "./agent_job_spawn_types.duck" ()
+const { .json_object_get, .parse_json_document } = import "duck:prelude/json" ();
+const {} = import "./agent_job_spawn_types.duck" ();
 
 type AgentJobSpawnRequiredArgs = AgentJobSpawnDecodedArgs
 type AgentJobSpawnRequiredResult = AgentJobSpawnDecodeResult
 
 let decode_agent_job_spawn_required: Text -> AgentJobSpawnRequiredResult = document => {
-  let parsed = parse_json_document document
+  let parsed = parse_json_document document;
   if let `Ok value_and_position = parsed {
-    let [value, _] = value_and_position
+    let [value, _] = value_and_position;
     if let `Object object = value {
-      let csv_lookup = json_object_get("csv_path", object)
+      let csv_lookup = json_object_get("csv_path", object);
       if let `Found csv_field = csv_lookup {
         if let `String csv_path = csv_field {
-          let instruction_lookup = json_object_get("instruction", object)
+          let instruction_lookup = json_object_get("instruction", object);
           if let `Found instruction_field = instruction_lookup {
             if let `String instruction = instruction_field {
-              let args: AgentJobSpawnRequiredArgs = [.csv_path = csv_path, .instruction = instruction, .id_column = `None (), .output_path = `None (), .output_schema_json = `None (), .max_concurrency = `None (), .max_workers = `None (), .max_runtime_seconds = `None ()]
+              let args: AgentJobSpawnRequiredArgs = [
+                .csv_path = csv_path,
+                .instruction = instruction,
+                .id_column = `None (),
+                .output_path = `None (),
+                .output_schema_json = `None (),
+                .max_concurrency = `None (),
+                .max_workers = `None (),
+                .max_runtime_seconds = `None (),
+              ];
               `SpawnDecoded args
             } else {
               `SpawnDecodeFailed "instruction must be a string"
@@ -37,6 +46,6 @@ let decode_agent_job_spawn_required: Text -> AgentJobSpawnRequiredResult = docum
   } else {
     `SpawnDecodeFailed "failed to parse function arguments: invalid JSON"
   }
-}
+};
 
-return { decode_agent_job_spawn_required }
+return { .decode_agent_job_spawn_required };

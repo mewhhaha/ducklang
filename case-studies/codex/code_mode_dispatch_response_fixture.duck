@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./code_mode_dispatch_types.duck" ()
-const { plan_code_mode_dispatch_response } = import "./code_mode_dispatch.duck" ()
+const {} = import "./code_mode_dispatch_types.duck" ();
+const { .plan_code_mode_dispatch_response } = import "./code_mode_dispatch.duck" ();
 
 type FixtureInvocation = CodeModeNestedToolInvocation
 type FixtureNotification = CodeModeNotification
@@ -12,36 +12,57 @@ let invocation: FixtureInvocation = [
   .runtime_tool_call_id = "runtime-tool",
   .tool_name = ["", "lookup"],
   .tool_kind = `NestedFunction (),
-  .input = `None ()]
-let nested_request: FixtureRequest = `DispatchNestedInvocation invocation
+  .input = `None ()];
+let nested_request: FixtureRequest = `DispatchNestedInvocation invocation;
 let notification: FixtureNotification = [
   .call_id = "call-notify",
   .cell_id = "cell-notify",
-  .text = "working"]
-let notification_request: FixtureRequest = `DispatchNotification notification
+  .text = "working"];
+let notification_request: FixtureRequest = `DispatchNotification notification;
 
-let score = 0
+let score = 0;
 
-if let `AcceptCodeModeDispatchResponse () = plan_code_mode_dispatch_response(nested_request, `DispatchResponseDelivered (`DispatchDeliveredSuccess ())) {
+if let `AcceptCodeModeDispatchResponse () = plan_code_mode_dispatch_response(
+  nested_request,
+  `DispatchResponseDelivered (`DispatchDeliveredSuccess ()),
+) {
   score = score + 1
 }
-if let `AcceptCodeModeDispatchResponse () = plan_code_mode_dispatch_response(notification_request, `DispatchResponseDelivered (`DispatchDeliveredSuccess ())) {
+if let `AcceptCodeModeDispatchResponse () = plan_code_mode_dispatch_response(
+  notification_request,
+  `DispatchResponseDelivered (`DispatchDeliveredSuccess ()),
+) {
   score = score + 10
 }
-if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(nested_request, `DispatchResponseStopped ()) {
+if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(
+  nested_request,
+  `DispatchResponseStopped (),
+) {
   if message == "code mode nested tool dispatcher stopped" { score = score + 100 }
 }
-if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(notification_request, `DispatchResponseStopped ()) {
+if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(
+  notification_request,
+  `DispatchResponseStopped (),
+) {
   if message == "code mode notification dispatcher stopped" { score = score + 1000 }
 }
-if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(nested_request, `DispatchResponseCancelled ()) {
+if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(
+  nested_request,
+  `DispatchResponseCancelled (),
+) {
   if message == "code mode nested tool call cancelled" { score = score + 10000 }
 }
-if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(notification_request, `DispatchResponseCancelled ()) {
+if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(
+  notification_request,
+  `DispatchResponseCancelled (),
+) {
   if message == "code mode notification cancelled" { score = score + 100000 }
 }
-if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(nested_request, `DispatchResponseDelivered (`DispatchDeliveredFailure "router rejected lookup")) {
+if let `RejectCodeModeDispatchResponse message = plan_code_mode_dispatch_response(
+  nested_request,
+  `DispatchResponseDelivered (`DispatchDeliveredFailure "router rejected lookup"),
+) {
   if message == "router rejected lookup" { score = score + 1000000 }
 }
 
-return { .score = score }
+return { .score = score };

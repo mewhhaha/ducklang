@@ -1,16 +1,18 @@
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { materialize_thread_goal_clear_response, materialize_thread_goal_get_response } = import "./app_server_goal_responses.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .materialize_thread_goal_clear_response, .materialize_thread_goal_get_response } =
+  import "./app_server_goal_responses.duck" ();
 
-let score = 0
-let get_response = materialize_thread_goal_get_response(`None ())
+let score = 0;
+let get_response = materialize_thread_goal_get_response(`None ());
 if let `Object fields = get_response {
-  let goal_lookup = json_object_get("goal", fields)
+  let goal_lookup = json_object_get("goal", fields);
   if let `Found goal_json = goal_lookup { if let `Null () = goal_json { score = score + 1 } }
 }
-let clear_response = materialize_thread_goal_clear_response(true)
+let clear_response = materialize_thread_goal_clear_response true;
 if let `Object fields = clear_response {
-  let cleared_lookup = json_object_get("cleared", fields)
-  if let `Found cleared_json = cleared_lookup { if let `Bool cleared = cleared_json { if cleared { score = score + 10 } } }
+  let cleared_lookup = json_object_get("cleared", fields);
+  if let `Found cleared_json = cleared_lookup { if let `Bool cleared = cleared_json { if cleared {
+    score = score + 10 } } }
 }
 
-return { .score = score }
+return { .score = score };

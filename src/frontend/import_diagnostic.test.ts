@@ -7,10 +7,10 @@ Deno.test("Source.analyze reports a nested import failure at the root expression
   const sources = new Map<string, string>([
     [
       "file:///dep.duck",
-      'module () where\nconst load = () => import "./missing.duck"\nreturn { .load = load }',
+      'module () where\nconst load = () => import "./missing.duck";\nreturn { .load = load };',
     ],
   ]);
-  const text = 'const dependency = import "./dep.duck"\ndependency';
+  const text = 'const dependency = import "./dep.duck";\ndependency';
   const analysis = Source.analyze(text, {
     uri: "file:///main.duck",
     resolve_import: (uri) => sources.get(uri),
@@ -34,7 +34,7 @@ Deno.test("Source.analyze reports a nested import failure at the root expression
 });
 
 Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () => {
-  const main = 'const dependency = import "./dep.duck"\ndependency';
+  const main = 'const dependency = import "./dep.duck";\ndependency';
   const sources = new Map<string, string>([
     [
       "file:///main.duck",
@@ -42,7 +42,7 @@ Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () =
     ],
     [
       "file:///dep.duck",
-      'module () where\nconst load = () => import "./main.duck"\nreturn { .load = load }',
+      'module () where\nconst load = () => import "./main.duck";\nreturn { .load = load };',
     ],
   ]);
   const analysis = Source.analyze(main, {
@@ -65,10 +65,10 @@ Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () =
 
 Deno.test("import validation skips a statically eliminated branch", () => {
   const source = parse_source(
-    'const dependency = if false { import "./missing.duck" } else { import "./dep.duck" }\ndependency',
+    'const dependency = if false { import "./missing.duck" } else { import "./dep.duck" };\ndependency',
   );
   const sources = new Map<string, string>([
-    ["file:///dep.duck", "module () where\nreturn {}"],
+    ["file:///dep.duck", "module () where\nreturn {};"],
   ]);
 
   assert_equals(
@@ -83,7 +83,7 @@ Deno.test("import validation skips a statically eliminated branch", () => {
 
 Deno.test("Source.analyze reports imports without URI resolution context", () => {
   const analysis = Source.analyze(
-    'const dependency = import "./dep.duck"\ndependency',
+    'const dependency = import "./dep.duck";\ndependency',
   );
   const diagnostic = analysis.diagnostics.find((entry) =>
     entry.code === "DUCK2500"

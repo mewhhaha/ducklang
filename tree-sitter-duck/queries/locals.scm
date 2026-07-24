@@ -9,8 +9,14 @@
 (binding_statement name: (identifier) @local.definition.var)
 (binding_statement
   name: (named_shape_pattern
-    (shorthand_shape_pattern_field
-      name: (identifier) @local.definition.var)))
+    (named_shape_pattern_field
+      name: (identifier) @local.definition.var
+      !pattern)))
+(arrow_function
+  parameters: (named_shape_pattern
+    (named_shape_pattern_field
+      name: (identifier) @local.definition.parameter
+      !pattern)))
 (effect_binding_statement name: (identifier) @local.definition.var)
 (resume_dup_statement left: (identifier) @local.definition.var)
 (resume_dup_statement right: (identifier) @local.definition.var)

@@ -1,38 +1,38 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_completion_options, parse_feature_command } = import "./cli_options.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_completion_options, .parse_feature_command } = import "./cli_options.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureCompletionResult = CodexCompletionOptionsResult
 type FixtureFeatureResult = CodexFeatureCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let empty: FixtureArgs = args.empty()
-let completion: FixtureCompletionResult = parse_completion_options(empty)
+let empty: FixtureArgs = args.empty();
+let completion: FixtureCompletionResult = parse_completion_options empty;
 if let `Ok options = completion {
   if let `Bash () = options.shell { score = score + 1 }
 }
 
-let zsh: FixtureCompletionResult = parse_completion_options(args.singleton("zsh"))
+let zsh: FixtureCompletionResult = parse_completion_options(args.singleton("zsh"));
 if let `Ok options = zsh {
   if let `Zsh () = options.shell { score = score + 10 }
 }
 
-let feature_args = args.prepend("enable", args.singleton("unified_exec"))
-let feature: FixtureFeatureResult = parse_feature_command(feature_args)
+let feature_args = args.prepend("enable", args.singleton("unified_exec"));
+let feature: FixtureFeatureResult = parse_feature_command feature_args;
 if let `Ok command = feature {
   if let `Enable name = command {
     if name == "unified_exec" { score = score + 100 }
   }
 }
 
-let invalid_feature: FixtureFeatureResult = parse_feature_command(args.singleton("enable"))
+let invalid_feature: FixtureFeatureResult = parse_feature_command(args.singleton("enable"));
 if let `Err message = invalid_feature {
   if message == "features enable requires a feature" { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -1,26 +1,30 @@
 module () where
 
-const {} = import "./agent_job_spawn_types.duck" ()
-const { decode_agent_job_spawn_json } = import "./agent_job_spawn_json.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ();
+const { .decode_agent_job_spawn_json } = import "./agent_job_spawn_json.duck" ();
 
-let score = 0
-let valid = decode_agent_job_spawn_json "{\"csv_path\":\"input.csv\",\"instruction\":\"Review {path}\",\"max_concurrency\":100,\"max_workers\":2,\"max_runtime_seconds\":90,\"output_csv_path\":\"out/results.csv\",\"output_schema\":{\"type\":\"object\"}}"
+let score = 0;
+let valid =
+  decode_agent_job_spawn_json "{\"csv_path\":\"input.csv\",\"instruction\":\"Review {path}\",\"max_concurrency\":100,\"max_workers\":2,\"max_runtime_seconds\":90,\"output_csv_path\":\"out/results.csv\",\"output_schema\":{\"type\":\"object\"}}";
 if let `SpawnDecoded args = valid {
-  let concurrency_valid = if let `Some value = args.max_concurrency { value == "100" } else { false }
-  let workers_valid = if let `Some value = args.max_workers { value == "2" } else { false }
-  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false }
-  let schema_valid = if let `Some value = args.output_schema_json { value == "{\"type\":\"object\"}" } else { false }
+  let concurrency_valid = if let `Some value = args.max_concurrency { value == "100" } else { false
+  };
+  let workers_valid = if let `Some value = args.max_workers { value == "2" } else { false };
+  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false };
+  let schema_valid = if let `Some value = args.output_schema_json { value == "{\"type\":\"object\"}"
+  } else { false };
   if args.csv_path == "input.csv" && args.instruction == "Review {path}" && concurrency_valid && workers_valid && runtime_valid && schema_valid { score = score + 1 }
 }
 
-let missing = decode_agent_job_spawn_json "{\"instruction\":\"run\"}"
+let missing = decode_agent_job_spawn_json "{\"instruction\":\"run\"}";
 if let `SpawnDecodeFailed message = missing {
   if message == "missing field `csv_path`" { score = score + 10 }
 }
 
-let scalar_schema = decode_agent_job_spawn_json "{\"csv_path\":\"input.csv\",\"instruction\":\"run\",\"output_schema\":42}"
+let scalar_schema =
+  decode_agent_job_spawn_json "{\"csv_path\":\"input.csv\",\"instruction\":\"run\",\"output_schema\":42}";
 if let `SpawnDecodeFailed message = scalar_schema {
   if message == "output_schema must be a JSON object" { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -16,13 +16,13 @@ Deno.test("Source.analyze reports reused fixture at its second consume", async (
     code: "DUCK2201",
     severity: "error",
     message: "Linear value token was already consumed",
-    span: { start: 25, end: 31 },
+    span: { start: 26, end: 32 },
     related: [{
       message: "First consumed here",
-      span: { start: 16, end: 22 },
+      span: { start: 17, end: 23 },
     }, {
       message: "Linear value declared here",
-      span: { start: 0, end: 15 },
+      span: { start: 0, end: 16 },
     }],
   }]);
 });
@@ -37,12 +37,12 @@ Deno.test("Source.analyze reports unused fixture at its declaration", async () =
     code: "DUCK2202",
     severity: "error",
     message: "Linear value token was not consumed",
-    span: { start: 0, end: 15 },
+    span: { start: 0, end: 16 },
   }]);
 });
 
 Deno.test("Source.analyze reports reused linear parameters with related spans", () => {
-  const text = "let main = (!x) => !x + !x\nmain(1)";
+  const text = "let main = (!x) => !x + !x;\nmain(1)";
   const analysis = Source.analyze(text);
 
   assert_equals(analysis.diagnostics, [{
@@ -62,10 +62,10 @@ Deno.test("Source.analyze reports reused linear parameters with related spans", 
 
 Deno.test("Source.analyze accepts linear branches and closures with exact use", () => {
   const branch = Source.analyze(
-    "let main = (!x, flag) => if flag { !x } else { !x }\nmain(1, true)",
+    "let main = (!x, flag) => if flag { !x } else { !x };\nmain(1, true)",
   );
   const closure = Source.analyze(
-    "let main = (!x) => {\n  let consume = () => !x\n  consume()\n}\nmain(1)",
+    "let main = (!x) => {\n  let consume = () => !x;\n  consume()\n};\nmain(1)",
   );
 
   assert_equals(branch.diagnostics, []);
@@ -85,17 +85,17 @@ const failure_goldens = [
   {
     code: "DUCK2201",
     message: "Linear value token was already consumed",
-    span: { start: 25, end: 31 },
+    span: { start: 26, end: 32 },
   },
   {
     code: "DUCK2202",
     message: "Linear value token was not consumed",
-    span: { start: 0, end: 15 },
+    span: { start: 0, end: 16 },
   },
   {
     code: "DUCK2301",
     message: "Assignment changes type for value",
-    span: { start: 15, end: 34 },
+    span: { start: 16, end: 35 },
   },
   {
     code: "DUCK2302",
@@ -110,7 +110,7 @@ const failure_goldens = [
   {
     code: "DUCK2304",
     message: "Missing struct field: age",
-    span: { start: 127, end: 135 },
+    span: { start: 121, end: 129 },
   },
   {
     code: "DUCK2305",
@@ -121,13 +121,13 @@ const failure_goldens = [
     code: "DUCK2401",
     message: "Rejected borrow borrow#0 in block#0: borrow over unique_heap " +
       "text needs lexical lifetime tracking before the owner can be protected",
-    span: { start: 79, end: 94 },
+    span: { start: 81, end: 95 },
   },
   {
     code: "DUCK2402",
     message: "Cannot freeze borrowed owner message in program#0 while " +
       "borrow#0 is active",
-    span: { start: 64, end: 78 },
+    span: { start: 66, end: 80 },
   },
   {
     code: "DUCK2403",
@@ -143,7 +143,7 @@ const failure_goldens = [
   {
     code: "DUCK2501",
     message: "Import ./missing_import_dependency.duck does not export missing",
-    span: { start: 80, end: 87 },
+    span: { start: 81, end: 88 },
   },
 ];
 
@@ -199,7 +199,7 @@ Deno.test("Source.analyze accepts compile-time-only source modules", () => {
 
 Deno.test("Source.analyze continues after a recovered parse statement", () => {
   const analysis = Source.analyze(
-    "let =\nlet !token = 41\n!token + !token\n",
+    "let =\nlet !token = 41;\n!token + !token;\n",
   );
 
   assert_equals(
@@ -229,13 +229,13 @@ Deno.test("Source.analyze keeps Core diagnostics enabled with imports", async ()
   const scratch = await Deno.readTextFile(
     "examples/failures/compile/10_scratch_heap_escape.duck",
   );
-  const text = 'const available = import "./dep.duck"\n' + scratch;
+  const text = 'const available = import "./dep.duck";\n' + scratch;
   const analysis = Source.analyze(text, {
     route: "core",
     uri: "file:///main.duck",
     resolve_import: (uri) => {
       if (uri === "file:///dep.duck") {
-        return "module () where\nreturn { .available = 1 }";
+        return "module () where\nreturn { .available = 1 };";
       }
 
       return undefined;
@@ -246,7 +246,7 @@ Deno.test("Source.analyze keeps Core diagnostics enabled with imports", async ()
   assert_equals(analysis.diagnostics[0]?.code, "DUCK2403");
   assert_equals(
     analysis.diagnostics[0]?.span,
-    { start: 38, end: 62 },
+    { start: 39, end: 63 },
   );
 });
 

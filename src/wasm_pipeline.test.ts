@@ -112,10 +112,10 @@ if input {
 
 Deno.test("typed numeric builtins execute with Wasm scalar semantics", async () => {
   const integer_wat = Source.wat(`
-let masked = @bit_and(0xff, 0x0f)
-let shifted = @shift_left(1, 5)
-let top_bit = @shift_right_u(-1, 31)
-let toggled = @bit_xor(shifted, top_bit)
+let masked = @bit_and(0xff, 0x0f);
+let shifted = @shift_left(1, 5);
+let top_bit = @shift_right_u(-1, 31);
+let toggled = @bit_xor(shifted, top_bit);
 @bit_or(masked, toggled)
 `);
   const integer_instance = await instantiate_wat(
@@ -247,10 +247,10 @@ Deno.test("F32x4 register operations return scalar values to JS", async () => {
   const float_wat = Source.wat(`
 let add_vectors = (left: F32x4, right: F32x4) => {
   @f32x4_add(left, right)
-}
-let base = @f32x4(1f32, 2f32, 3f32, 4f32)
-let added = add_vectors(base, @f32x4_splat(1f32))
-let multiplied = @f32x4_mul(added, @f32x4_splat(2f32))
+};
+let base = @f32x4(1f32, 2f32, 3f32, 4f32);
+let added = add_vectors(base, @f32x4_splat(1f32));
+let multiplied = @f32x4_mul(added, @f32x4_splat(2f32));
 @f32x4_extract_lane(multiplied, 2)
 `);
   const float_instance = await instantiate_wat(
@@ -270,7 +270,7 @@ let multiplied = @f32x4_mul(added, @f32x4_splat(2f32))
   }
 
   const integer_wat = Source.wat(`
-let vector = @f32x4_replace_lane(@f32x4_splat(2f32), 1, 21f32)
+let vector = @f32x4_replace_lane(@f32x4_splat(2f32), 1, 21f32);
 @i32_from_f32(@f32x4_extract_lane(vector, 1))
 `);
   const integer_instance = await instantiate_wat(
@@ -317,7 +317,7 @@ Deno.test("core panic traps through WAT to Wasm", async () => {
 
 Deno.test("core type-changing shadowing compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let x = 1
+let x = 1;
 x := 42i64
 x
 `);
@@ -343,14 +343,14 @@ x
 
   const closure_wat = wat_from_core_source(`
 let choose = flag => {
-  let value = 1
+  let value = 1;
   value := 42i64
   if flag {
     value
   } else {
     7i64
   }
-}
+};
 
 choose(1)
 `);
@@ -377,10 +377,10 @@ choose(1)
 
 Deno.test("core annotated i64 arithmetic compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_factor = (x: I64) => {
   x + factor
-}
+};
 
 add_factor(40i64)
 `);
@@ -405,10 +405,10 @@ add_factor(40i64)
   }
 
   const chained_wat = wat_from_core_source(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let add_factor = (x: I64) => {
   x + factor + 1i64
-}
+};
 
 add_factor(40i64)
 `);
@@ -433,15 +433,15 @@ add_factor(40i64)
   }
 
   const dynamic_branch_wat = wat_from_core_source(`
-let flag = false
-let factor: I64 = 2i64
+let flag = false;
+let factor: I64 = 2i64;
 let choose = (x: I64) => {
   if flag {
     x + factor
   } else {
     x + factor + 1i64
   }
-}
+};
 
 choose(40i64)
 `);
@@ -468,10 +468,10 @@ choose(40i64)
   }
 
   const implicit_wide_fallback_wat = wat_from_core_source(`
-let input = 0
+let input = 0;
 let value = if input {
   42i64
-}
+};
 
 value
 `);
@@ -499,10 +499,10 @@ value
   }
 
   const cmp_wat = wat_from_core_source(`
-let limit: I64 = 5i64
+let limit: I64 = 5i64;
 let below = (x: I64) => {
   x < limit
-}
+};
 
 below(3i64)
 `);
@@ -529,8 +529,8 @@ below(3i64)
 
 Deno.test("core if else statements compile through WAT to Wasm", async () => {
   const then_wat = wat_from_core_source(`
-let flag = true
-let value = 0
+let flag = true;
+let value = 0;
 
 if flag {
   value = 10
@@ -561,8 +561,8 @@ value
   }
 
   const else_wat = wat_from_core_source(`
-let flag = false
-let value = 0
+let flag = false;
+let value = 0;
 
 if flag {
   value = 10
@@ -593,8 +593,8 @@ value
   }
 
   const aggregate_wat = wat_from_core_source(`
-let flag = true
-let user = [.age = 0, .score = 0]
+let flag = true;
+let user = [.age = 0, .score = 0];
 
 if flag {
   user = [.age = 41, .score = 1]
@@ -626,8 +626,8 @@ user.age + user.score
   }
 
   const text_wat = wat_from_core_source(`
-let flag = true
-let message = ""
+let flag = true;
+let message = "";
 
 if flag {
   message = "hi"
@@ -661,13 +661,13 @@ flag = false
 
 Deno.test("core type checks compile away through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let struct { .age= Int, .. } = user_type
+let struct { .age= Int, .. } = user_type;
 
 41
 `);
@@ -690,8 +690,8 @@ let struct { .age= Int, .. } = user_type
 
 Deno.test("core binding annotations compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let x: Int = 40
-let label: Text = "ok"
+let x: Int = 40;
+let label: Text = "ok";
 
 x + @len(label)
 `);
@@ -718,14 +718,14 @@ x + @len(label)
 
 Deno.test("core direct type annotations compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-const int_type = Int
+const int_type = Int;
 
 type ResultType = | \`Ok int_type | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-const alias_type = result_type
+const alias_type = result_type;
 
-let result: alias_type = \`Ok (41)
+let result: alias_type = \`Ok (41);
 
 if let \`Ok value = result {
   value + 1
@@ -755,14 +755,14 @@ if let \`Ok value = result {
 
   const dynamic_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let input = 0
+let input = 0;
 let result: result_type = if input {
   \`Ok (40)
 } else {
   \`Err (7)
-}
+};
 
 if let \`Ok value = result {
   value + 1
@@ -792,16 +792,16 @@ if let \`Ok value = result {
 
   const dynamic_text_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
-let input = 1
-let left = "Ada"
-let right = "Grace"
+let input = 1;
+let left = "Ada";
+let right = "Grace";
 let result: result_type = if input {
   \`Ok (left)
 } else {
   \`Err (right)
-}
+};
 
 input = 0
 left = "Zoe"
@@ -811,7 +811,7 @@ let value = if let \`Ok text = result {
   text
 } else {
   ""
-}
+};
 
 @len(value)
 `);
@@ -840,15 +840,15 @@ let value = if let \`Ok text = result {
 
 Deno.test("core direct parameter annotations compile through WAT to Wasm", async () => {
   const struct_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 const sum_pair = (pair: pair_type) => {
   pair.first + pair.second
-}
+};
 
 sum_pair([.first = 40, .second = 2])
 `);
@@ -874,7 +874,7 @@ sum_pair([.first = 40, .second = 2])
 
   const union_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 const unwrap = (result: result_type) => {
   if let \`Ok value = result {
@@ -882,7 +882,7 @@ const unwrap = (result: result_type) => {
   } else {
     0
   }
-}
+};
 
 unwrap(\`Ok (41))
 `);

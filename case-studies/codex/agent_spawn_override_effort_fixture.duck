@@ -1,13 +1,15 @@
 module () where
 
-const {} = import "./agent_spawn_override_types.duck" ()
-const { select_spawn_overrides } = import "./agent_spawn_override.duck" ()
-const { fixture_override_input } = import "./agent_spawn_override_fixture_values.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ();
+const { .select_spawn_overrides } = import "./agent_spawn_override.duck" ();
+const { .fixture_override_input } = import "./agent_spawn_override_fixture_values.duck" ();
 
-let score = 0
-let result = select_spawn_overrides(fixture_override_input(`Some "alpha", `Some "ultra", `None (), `None ()))
+let score = 0;
+let result = select_spawn_overrides(
+  fixture_override_input(`Some "alpha", `Some "ultra", `None (), `None ())
+);
 if let `SpawnOverrideRejected message = result {
   if message == "Reasoning effort `ultra` is not supported for model `alpha`. Supported reasoning efforts: low, high" { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

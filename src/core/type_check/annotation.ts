@@ -44,12 +44,22 @@ export function core_binding_value<ctx extends CoreTypeCheckCtx>(
     return stmt.value;
   }
 
-  return apply_core_binding_annotation(
-    stmt.annotation,
-    stmt.value,
-    ctx,
-    hooks,
-  );
+  try {
+    return apply_core_binding_annotation(
+      stmt.annotation,
+      stmt.value,
+      ctx,
+      hooks,
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(
+        "Core binding " + stmt.name + ": " + error.message,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
 }
 
 export function core_assignment_value<ctx extends CoreTypeCheckCtx>(
@@ -261,15 +271,29 @@ export function apply_core_direct_type_annotation<
       const declared = find_core_type_field(type_value.fields, field.name);
       expect(declared, "Missing core struct field: " + field.name);
 
-      return {
-        ...field,
-        value: apply_core_value_annotation(
+      let field_value: CoreExpr;
+      try {
+        field_value = apply_core_value_annotation(
           "binding",
           declared.type_name,
           field.value,
           ctx,
           hooks,
-        ),
+        );
+      } catch (error) {
+        if (error instanceof Error) {
+          throw new Error(
+            "Core binding annotation " + annotation + " field " + field.name +
+              ": " + error.message,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+
+      return {
+        ...field,
+        value: field_value,
       };
     });
     const annotated_struct: CoreExpr = record_core_expr_provenance({

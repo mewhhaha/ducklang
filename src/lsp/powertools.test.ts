@@ -5,8 +5,8 @@ import {
   route_execute_command,
 } from "./powertools.ts";
 
-const adder = "const make_adder = n => { x => x + n }\n" +
-  "const add_three = comptime make_adder 3\n" +
+const adder = "const make_adder = n => { x => x + n };\n" +
+  "const add_three = comptime make_adder 3;\n" +
   "add_three 39\n";
 
 Deno.test("powertools expands comptime closures with captures", () => {
@@ -60,11 +60,12 @@ Deno.test("powertools reports frontend evaluation failures and invalid positions
 });
 
 Deno.test("powertools trace records successful frontend fact checks", () => {
-  const text = "const nonzero = value => {\n" +
-    '  if value == 0 { @fail("zero") } else { value }\n' +
-    "}\n" +
-    "let checked = (const value: nonzero) => value\n" +
-    "comptime checked(3)\n";
+  const text = `const nonzero = value => {
+  if value == 0 { @fail("zero") } else { value }
+};
+let checked = (const value: nonzero) => value;
+comptime checked(3)
+`;
   const result = expand_comptime(
     text,
     { line: 4, character: 12 },

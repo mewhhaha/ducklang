@@ -1,10 +1,10 @@
 module () where
 
-const { format_i64 } = import "duck:prelude/numeric" ()
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./auto_compact_window_types.duck" ()
-const { request_new_context_window } = import "./auto_compact_window.duck" ()
-const {} = import "./token_budget_tool_types.duck" ()
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./auto_compact_window_types.duck" ();
+const { .request_new_context_window } = import "./auto_compact_window.duck" ();
+const {} = import "./token_budget_tool_types.duck" ();
 
 type BudgetWindow = AutoCompactWindow
 type BudgetNewContextResult = NewContextWindowToolResult
@@ -12,32 +12,36 @@ type BudgetI64Option = TokenBudgetI64Option
 
 const new_context_window_tool_output: () -> Text = () => {
   "A new context window will start without summarizing conversation history."
-}
+};
 
 const request_new_context_window_tool: BudgetWindow -> BudgetNewContextResult = window => {
-  let requested_window: BudgetWindow = request_new_context_window(window)
-  [.window = requested_window, .output = new_context_window_tool_output()]
-}
+  let requested_window: BudgetWindow = request_new_context_window window;
+  [.window = requested_window, .output = new_context_window_tool_output()];
+};
 
-const render_context_remaining_tool_output: &BudgetI64Option -> Text = (tokens_left: &BudgetI64Option) => {
+const render_context_remaining_tool_output: &BudgetI64Option -> Text = (
+  tokens_left: &BudgetI64Option
+) => {
   if let `Some value = tokens_left {
-    text_append("You have ", text_append(format_i64(value), " tokens left in this context window."))
+    text_append("You have ", text_append(format_i64 value, " tokens left in this context window."))
   } else {
     "You have unknown tokens left in this context window."
   }
-}
+};
 
-const render_context_remaining_code_mode_output: &BudgetI64Option -> Text = (tokens_left: &BudgetI64Option) => {
+const render_context_remaining_code_mode_output: &BudgetI64Option -> Text = (
+  tokens_left: &BudgetI64Option
+) => {
   if let `Some value = tokens_left {
-    text_append("{\"tokens_left\":", text_append(format_i64(value), "}"))
+    text_append("{\"tokens_left\":", text_append(format_i64 value, "}"))
   } else {
     "{\"tokens_left\":null}"
   }
-}
+};
 
 return {
-  new_context_window_tool_output,
-  request_new_context_window_tool,
-  render_context_remaining_tool_output,
-  render_context_remaining_code_mode_output,
-}
+  .new_context_window_tool_output,
+  .request_new_context_window_tool,
+  .render_context_remaining_tool_output,
+  .render_context_remaining_code_mode_output,
+};

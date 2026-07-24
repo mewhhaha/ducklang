@@ -12,11 +12,11 @@ Deno.test("Source specializes calls with const parameters", () => {
   const ic = compile(`
 let apply_const = (x, const f) => {
   f(x)
-}
+};
 
-const double = x => x * 2
+const double = x => x * 2;
 
-let y = apply_const(21, double)
+let y = apply_const(21, double);
 y
 `);
 
@@ -25,11 +25,11 @@ y
   const captured_const_arg = compile(`
 let apply_const = (x, const f) => {
   f(x)
-}
+};
 
-const factor = 1
-const inc = x => x + factor
-const factor = 100
+const factor = 1;
+const inc = x => x + factor;
+const factor = 100;
 
 apply_const(41, inc)
 `);
@@ -47,9 +47,9 @@ Deno.test("Source rejects runtime values passed to const parameters", () => {
       compile(`
 let apply_const = (x, const f) => {
   f(x)
-}
+};
 
-let double = x => x * 2
+let double = x => x * 2;
 apply_const(21, double)
 `),
     "Const parameter f requires compile-time argument: double",
@@ -58,8 +58,8 @@ apply_const(21, double)
   assert_throws(
     () =>
       compile(`
-const count = (const ...values) => comptime @len(values)
-let runtime = 1
+const count = (const ...values) => comptime @len(values);
+let runtime = 1;
 count(runtime)
 `),
     "Const parameter values requires compile-time argument",
@@ -68,14 +68,14 @@ count(runtime)
 
 Deno.test("Source evaluates const variadic parameters as value packs", () => {
   const ic = compile(`
-const count = (const ...values) => comptime @len(values)
+const count = (const ...values) => comptime @len(values);
 count(10, 20, 12) + 39
 `);
 
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const empty = compile(`
-const count = (const ...values) => comptime @len(values)
+const count = (const ...values) => comptime @len(values);
 count()
 `);
 
@@ -85,14 +85,14 @@ count()
 Deno.test("Source iterates over const variadic value packs", () => {
   const ic = compile(`
 const sum = (const ...values) => comptime {
-  let total = 0
+  let total = 0;
 
   for value in values {
     total = total + value
   }
 
   total
-}
+};
 
 sum(20, 21, 1)
 `);
@@ -105,9 +105,9 @@ Deno.test("Source recursively splits const value packs with rest patterns", () =
 const sum_all = rec (const values, const total) => comptime match values {
   | () => total
   | (value, ...remaining) => rec(remaining, total + value)
-}
+};
 
-const sum = (const ...values) => comptime sum_all(values, 0)
+const sum = (const ...values) => comptime sum_all(values, 0);
 sum(20, 21, 1)
 `);
 
@@ -118,7 +118,7 @@ Deno.test("Source checks scalar runtime parameter annotations", () => {
   const ic = compile(`
 let inc = (x: Int) => {
   x + 1
-}
+};
 
 inc(41)
 `);
@@ -128,7 +128,7 @@ inc(41)
   const wide = compile(`
 let inc = (x: I64) => {
   x + 1i64
-}
+};
 
 inc(41i64)
 `);
@@ -138,9 +138,9 @@ inc(41i64)
   const alias = compile(`
 let inc = (x: Int) => {
   x + 1
-}
+};
 
-let f = inc
+let f = inc;
 f(41)
 `);
 
@@ -151,7 +151,7 @@ let inc = if true {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
+};
 
 inc(41)
 `);
@@ -167,7 +167,7 @@ inc(41)
       compile(`
 let inc = (x: Int) => {
   x + 1
-}
+};
 
 inc(41i64)
 `),
@@ -177,7 +177,7 @@ inc(41i64)
   const unknown_input = compile(`
 let inc = (x: Int) => {
   x + 1
-}
+};
 
 inc(input)
 `);
@@ -190,7 +190,7 @@ inc(input)
   const unknown_text = compile(`
 let byte_len = (value: Text) => {
   @len(value)
-}
+};
 
 byte_len(message)
 `);
@@ -203,11 +203,11 @@ byte_len(message)
   const helper_text = compile(`
 const byte_len = value => {
   @len(value)
-}
+};
 
 let byte_len_text = (value: Text) => {
   byte_len(value)
-}
+};
 
 byte_len_text(message)
 `);
@@ -224,7 +224,7 @@ let inc = if true {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
+};
 
 inc("Ada")
 `),
@@ -236,22 +236,22 @@ Deno.test("Source reifies const values for ordinary runtime parameters", () => {
   const ic = compile(`
 let apply = (x, f) => {
   f(x)
-}
+};
 
-const double = x => x * 2
+const double = x => x * 2;
 
-let y = apply(21, double)
+let y = apply(21, double);
 y
 `);
 
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const annotated = compile(`
-let factor = 1
+let factor = 1;
 
 let scale = (x: Int) => {
   x + factor
-}
+};
 
 factor = 100
 scale(41)
@@ -264,13 +264,13 @@ scale(41)
   });
 
   const static_branch = compile(`
-let factor = 1
+let factor = 1;
 
 let scale = if true {
   (x: Int) => x + factor
 } else {
   (x: Int) => x + factor + 1
-}
+};
 
 factor = 100
 scale(41)
@@ -285,11 +285,11 @@ scale(41)
 
 Deno.test("Source lowers runtime closures with captured values", () => {
   const ic = compile(`
-let factor = 2
+let factor = 2;
 
 let scale = x => {
   x * factor
-}
+};
 
 scale(21)
 `);
@@ -305,9 +305,9 @@ let choose = flag => {
   } else {
     x => x + 2
   }
-}
+};
 
-let f = choose(input)
+let f = choose(input);
 f(40)
 `);
 
@@ -321,7 +321,7 @@ let add = if input {
   (x, y) => x + y
 } else {
   (x, y) => x - y
-}
+};
 
 add(50, 8)
 `);
@@ -336,7 +336,7 @@ let choose = if input {
   x => 41i64
 } else {
   x => 42i64
-}
+};
 
 choose(0)
 `);
@@ -347,12 +347,12 @@ choose(0)
   );
 
   const annotated_wide = compile(`
-let factor: I64 = 2i64
+let factor: I64 = 2i64;
 let choose = if input {
   (x: I64) => x + factor
 } else {
   (x: I64) => x + factor + 1i64
-}
+};
 
 choose(40i64)
 `);
@@ -381,7 +381,7 @@ let choose = if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x - 1
-}
+};
 
 choose(&input)
 `);
@@ -397,7 +397,7 @@ let choose = if flag {
   (x: I64) => x + 1i64
 } else {
   (x: I64) => x - 1i64
-}
+};
 
 choose(freeze input)
 `);
@@ -413,7 +413,7 @@ let choose = if flag {
   (x: Text) => @len(x)
 } else {
   (x: Text) => @get(x, 0)
-}
+};
 
 choose(scratch { input })
 `);
@@ -426,17 +426,17 @@ choose(scratch { input })
   );
 
   const bound_wrapped_struct_arg = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 
 let choose = if flag {
   (user: user_type) => user.age
 } else {
   (user: user_type) => @len(user.name)
-}
+};
 
 choose(&input)
 `);
@@ -449,7 +449,7 @@ choose(&input)
 
   const bound_wrapped_union_arg = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = if flag {
   (option: option_type) => if let \`Some value = option {
@@ -459,7 +459,7 @@ let choose = if flag {
   }
 } else {
   (option: option_type) => 1
-}
+};
 
 choose(&input)
 `);
@@ -474,7 +474,7 @@ let choose = if flag {
   (x: Int) => x + 1
 } else {
   (x: Int) => x - 1
-}
+};
 
 choose(if pick {
   (&input)} else {
@@ -493,7 +493,7 @@ let choose = if flag {
   (x: Text) => @len(x)
 } else {
   (x: Text) => @get(x, 0)
-}
+};
 
 choose(if pick {
   scratch { input }
@@ -512,17 +512,17 @@ choose(if pick {
   const struct_branch_wrapped_arg = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 
 let choose = if flag {
   (user: user_type) => user.age
 } else {
   (user: user_type) => @len(user.name)
-}
+};
 
 choose(if pick {
   (&input)} else {
@@ -538,7 +538,7 @@ choose(if pick {
 
   const union_branch_wrapped_arg = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = if flag {
   (option: option_type) => if let \`Some value = option {
@@ -548,7 +548,7 @@ let choose = if flag {
   }
 } else {
   (option: option_type) => 1
-}
+};
 
 choose(if pick {
   scratch { input }
@@ -564,7 +564,7 @@ choose(if pick {
 
   const frozen_wrapped_union_arg = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = if flag {
   (option: option_type) => if let \`Some value = option {
@@ -574,7 +574,7 @@ let choose = if flag {
   }
 } else {
   (option: option_type) => 1
-}
+};
 
 choose(freeze input)
 `);
@@ -586,7 +586,7 @@ choose(freeze input)
 
   const scratch_wrapped_union_arg = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = if flag {
   (option: option_type) => if let \`Some value = option {
@@ -596,7 +596,7 @@ let choose = if flag {
   }
 } else {
   (option: option_type) => 1
-}
+};
 
 choose(scratch { input })
 `);
@@ -611,7 +611,7 @@ let choose = if input {
   x => "Ada"
 } else {
   x => "Grace"
-}
+};
 
 choose(0)
 `);
@@ -622,14 +622,14 @@ choose(0)
   );
 
   const aliases = compile(`
-let inc = x => x + 1
-let dec = x => x - 1
+let inc = x => x + 1;
+let dec = x => x - 1;
 
 let choose = if input {
   inc
 } else {
   dec
-}
+};
 
 choose(41)
 `);
@@ -644,7 +644,7 @@ let choose = if input {
   (x: Int) => x + 1
 } else {
   (x: Int) => x + 2
-}
+};
 
 choose(40)
 `);
@@ -659,7 +659,7 @@ let choose = if input {
   (x: Int) => x + 1
 } else {
   x => x + 2
-}
+};
 
 choose(40)
 `);
@@ -674,7 +674,7 @@ let choose = if input {
   (x: Int) => x + 1
 } else {
   (x: I32) => x + 2
-}
+};
 
 choose(40)
 `);
@@ -689,7 +689,7 @@ let choose = if input {
   (x: I64) => x + 1i64
 } else {
   x => x + 2i64
-}
+};
 
 choose(40i64)
 `);
@@ -700,14 +700,14 @@ choose(40i64)
   );
 
   const const_aliases = compile(`
-const inc = x => x + 1
-const dec = x => x - 1
+const inc = x => x + 1;
+const dec = x => x - 1;
 
 let choose = if input {
   inc
 } else {
   dec
-}
+};
 
 choose(41)
 `);
@@ -718,16 +718,16 @@ choose(41)
   );
 
   const captured_aliases = compile(`
-let factor = 1
-let inc = x => x + factor
+let factor = 1;
+let inc = x => x + factor;
 factor = 100
-let dec = x => x - factor
+let dec = x => x - factor;
 
 let choose = if input {
   inc
 } else {
   dec
-}
+};
 
 choose(41)
 `);
@@ -742,7 +742,7 @@ let choose = if input {
   (!x) => !x
 } else {
   (!x) => !x + 1
-}
+};
 
 choose(41)
 `);
@@ -757,7 +757,7 @@ let choose = if input {
   (!x: Int) => !x
 } else {
   (!x: Int) => !x + 1
-}
+};
 
 choose(41)
 `);
@@ -774,7 +774,7 @@ let choose = if input {
   (!x) => x
 } else {
   (!x) => x + 1
-}
+};
 
 choose(41)
 `),
@@ -788,7 +788,7 @@ let choose = if input {
   (!x) => !x
 } else {
   x => x + 1
-}
+};
 
 choose(41)
 `),
@@ -796,14 +796,14 @@ choose(41)
   );
 
   const annotated_aliases = compile(`
-let inc = (x: Int) => x + 1
-let dec = (x: Int) => x - 1
+let inc = (x: Int) => x + 1;
+let dec = (x: Int) => x - 1;
 
 let choose = if input {
   inc
 } else {
   dec
-}
+};
 
 choose(41)
 `);
@@ -818,7 +818,7 @@ let choose = if input {
   (value: Text) => @len(value)
 } else {
   (value: Text) => @len(value) + 1
-}
+};
 
 choose(message)
 `);
@@ -830,17 +830,17 @@ choose(message)
   );
 
   const annotated_struct_param = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 
 let choose = if input {
   (user: user_type) => user.age + 1
 } else {
   (user: user_type) => @len(user.name)
-}
+};
 
 choose(person)
 `);
@@ -863,7 +863,7 @@ let choose = if input {
   (value: Text) => @len(value)
 } else {
   value => @len(value) + 1
-}
+};
 
 choose(message)
 `);
@@ -875,17 +875,17 @@ choose(message)
   );
 
   const one_sided_struct_param = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 
 let choose = if input {
   (user: user_type) => user.age + 1
 } else {
   user => @len(user.name)
-}
+};
 
 choose(person)
 `);
@@ -905,7 +905,7 @@ choose(person)
 
   const annotated_union_param = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = if input {
   (option: option_type) => if let \`Some value = option {
@@ -915,7 +915,7 @@ let choose = if input {
   }
 } else {
   (option: option_type) => 1
-}
+};
 
 choose(result)
 `);
@@ -932,7 +932,7 @@ let choose = if input {
   (x: Int) => x + 1
 } else {
   x => x + 2
-}
+};
 
 choose("Ada")
 `),
@@ -946,7 +946,7 @@ let choose = if input {
   (value: Int) => value + 1
 } else {
   (value: Text) => @len(value)
-}
+};
 
 choose(message)
 `),
@@ -960,7 +960,7 @@ let choose = if input {
   x => x + 1
 } else {
   (x, y) => x + y
-}
+};
 
 choose(1)
 `),
@@ -972,9 +972,9 @@ let choose = if input {
   x => [.first = x, .second = x + 1]
 } else {
   x => [.first = x + 2, .second = x + 3]
-}
+};
 
-let pair = choose(40)
+let pair = choose(40);
 pair.first + pair.second
 `);
   const struct_result_text = Format.fmt(Ic, Ic.reduce(struct_result));
@@ -993,9 +993,9 @@ let choose = if input {
   x => \`Ok (x)
 } else {
   x => \`Err (x + 1)
-}
+};
 
-let result = choose(40)
+let result = choose(40);
 
 if let \`Ok value = result {
   value
@@ -1014,13 +1014,13 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let choose = if let \`Ok value = result {
   x => x + value
 } else {
   x => x + 1
-}
+};
 
 choose(2)
 `);
@@ -1035,13 +1035,13 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let choose = if let \`Ok value = result {
   (x: Text) => @len(x) + value
 } else {
   (x: Text) => @len(x) + 1
-}
+};
 
 choose(message)
 `);
@@ -1059,13 +1059,13 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let choose = if let \`Ok value = result {
   (x: Int) => x + value
 } else {
   (x: Text) => @len(x) + 1
-}
+};
 
 choose(message)
 `),
@@ -1079,13 +1079,13 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let choose = if let \`Ok value = result {
   (x: Int) => x + value
 } else {
   (x: Text) => @len(x) + 1
-}
+};
 
 choose(message)
 `),
@@ -1097,8 +1097,8 @@ Deno.test("Source rejects runtime captures in const bindings", () => {
   assert_throws(
     () =>
       compile(`
-let factor = 2
-const scale = x => x * factor
+let factor = 2;
+const scale = x => x * factor;
 scale
 `),
     "Const binding captures runtime value: factor",
@@ -1109,8 +1109,8 @@ Deno.test("Source rejects runtime values in comptime expressions", () => {
   assert_throws(
     () =>
       compile(`
-let input = 41
-let value = comptime input + 1
+let input = 41;
+let value = comptime input + 1;
 value
 `),
     "comptime expression requires compile-time values: input",
@@ -1121,7 +1121,7 @@ Deno.test("Source distinguishes fail, panic, and recoverable result_type values"
   assert_throws(
     () =>
       compile(`
-let value = comptime @fail("expected value with len")
+let value = comptime @fail("expected value with len");
 value
 `),
     "fail: expected value with len",
@@ -1137,7 +1137,7 @@ value
   assert_equals(Emit.emit(Expr, Emit.emit(Ic, panic)), "unreachable");
 
   const ic = compile(`
-let result = \`Err (42)
+let result = \`Err (42);
 
 if let \`Ok value = result {
   value
@@ -1151,13 +1151,13 @@ if let \`Ok value = result {
 
 Deno.test("Source lowers compile-time struct layout facts", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .big= I64
-}
+};
 
-const user_layout = @layout(user_type)
+const user_layout = @layout(user_type);
 
 @size_of(user_type) + @align_of(user_type) + user_layout.fields.big
 `);
@@ -1168,9 +1168,9 @@ const user_layout = @layout(user_type)
 Deno.test("Source lowers compile-time union layout facts", () => {
   const ic = compile(`
 type ResultType = | \`Ok Int | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
-const result_layout = @layout(result_type)
+const result_layout = @layout(result_type);
 
 @size_of(result_type) + @align_of(result_type) + result_layout.tag_offset + result_layout.payload_offset
 `);
@@ -1180,14 +1180,14 @@ const result_layout = @layout(result_type)
 
 Deno.test("Source lowers structural fact helper builtins", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
 type ResultType = | \`Ok Int | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 @size_of(Int) + @align_of(Text) + @has(user_type.name) + @has(user_type.missing) + @size_of(@fields_of(user_type).age) + @align_of(@fields_of(user_type).name) + @size_of(@cases_of(result_type).Ok) + @align_of(@cases_of(result_type).Err)
 `);
@@ -1199,20 +1199,20 @@ Deno.test("Source runs fail from structural fact checkers", () => {
   const ic = compile(`
 const has_name = t => {
   if !@has(t.name) {
-    return @fail("expected name")
+    return @fail("expected name");
   }
 
   t
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 let keep = (const t: has_name, value) => {
   value + @size_of(t)
-}
+};
 
 keep(user_type, 34)
 `);
@@ -1224,20 +1224,20 @@ keep(user_type, 34)
       compile(`
 const has_name = t => {
   if !@has(t.name) {
-    return @fail("expected name")
+    return @fail("expected name");
   }
 
   t
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const age_only_type = struct {
   .age= Int
-}
+};
 
 let keep = (const t: has_name, value) => {
   value
-}
+};
 
 keep(age_only_type, 1)
 `),
@@ -1248,14 +1248,14 @@ keep(age_only_type, 1)
 Deno.test("Source evaluates const functions with loops and assignments", () => {
   const range_ic = compile(`
 const sum_to = n => {
-  let total = 0
+  let total = 0;
 
   for i in 0..n {
     total = total + i
   }
 
   total
-}
+};
 
 sum_to(6)
 `);
@@ -1264,21 +1264,21 @@ sum_to(6)
 
   const fields_ic = compile(`
 const field_bytes = t => {
-  let total = 0
+  let total = 0;
 
   for index, field_type in @fields_of(t) {
     total = total + @size_of(field_type)
   }
 
   total
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int,
   .wide= I64
-}
+};
 
 field_bytes(user_type)
 `);
@@ -1290,10 +1290,10 @@ Deno.test("Source rejects missing layout information", () => {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const bad_type = struct {
   .nested= missing_type
-}
+};
 
 @size_of(bad_type)
 `),
@@ -1303,12 +1303,12 @@ const bad_type = struct {
 
 Deno.test("Source enforces semantic casing", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-const user_layout = @layout(user_type)
+const user_layout = @layout(user_type);
 
 user_layout.size
 `);
@@ -1316,38 +1316,38 @@ user_layout.size
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 4 });
 
   assert_throws(
-    () => Source.parse("let VALUE = 1\nVALUE"),
+    () => Source.parse("let VALUE = 1;\nVALUE"),
     "Parameter must use snake_case: VALUE",
   );
 
   assert_throws(
-    () => Source.parse("let _value = 1\n_value"),
+    () => Source.parse("let _value = 1;\n_value"),
     "Parameter must use snake_case: _value",
   );
 
   assert_throws(
-    () => Source.parse("const _Bad = 1\n_Bad"),
+    () => Source.parse("const _Bad = 1;\n_Bad"),
     "Parameter must use snake_case: _Bad",
   );
 
   assert_throws(
-    () => Source.parse("const _value = 1\n_value"),
+    () => Source.parse("const _value = 1;\n_value"),
     "Parameter must use snake_case: _value",
   );
 
   assert_throws(
-    () => Source.parse("const Id = t => t\nId"),
+    () => Source.parse("const Id = t => t;\nId"),
     "Parameter must use snake_case: Id",
   );
 
   assert_throws(
-    () => Source.parse("const !knownToken = 1\n!knownToken"),
+    () => Source.parse("const !knownToken = 1\n!knownToken;"),
     "Parameter must use snake_case: knownToken",
   );
 
   assert_equals(
-    Format.fmt(Source, Source.parse("const id = t => t\nid(Int)")),
-    "const id = t => t\nid Int",
+    Format.fmt(Source, Source.parse("const id = t => t;\nid(Int)")),
+    "const id = t => t;\nid Int",
   );
 
   assert_throws(
@@ -1356,22 +1356,22 @@ user_layout.size
   );
 
   assert_equals(
-    Format.fmt(Source, Source.parse("const only_i32 = I32 => ()\nonly_i32")),
-    "const only_i32 = I32 => ()\nonly_i32",
+    Format.fmt(Source, Source.parse("const only_i32 = I32 => ();\nonly_i32")),
+    "const only_i32 = I32 => ();\nonly_i32",
   );
 
   assert_throws(
-    () => Source.parse("let value = 1\nBadName = 2"),
+    () => Source.parse("let value = 1;\nBadName = 2"),
     "Runtime binding must use snake_case: BadName",
   );
 
   assert_throws(
-    () => Source.parse("let value = 1\nBadName := 2"),
+    () => Source.parse("let value = 1;\nBadName := 2"),
     "Runtime binding must use snake_case: BadName",
   );
 
   assert_throws(
-    () => Source.parse("let value = [.item = 1]\nBadName[0] = 2"),
+    () => Source.parse("let value = [.item = 1];\nBadName[0] = 2"),
     "Runtime binding must use snake_case: BadName",
   );
 
@@ -1386,28 +1386,29 @@ user_layout.size
   );
 
   assert_throws(
-    () => Source.parse("const user_type = struct { .BadName= Int }\nuser_type"),
+    () =>
+      Source.parse("const user_type = struct { .BadName= Int };\nuser_type"),
     "Shape member must use snake_case: BadName",
   );
 
   assert_throws(
-    () => Source.parse("let value: BadType = 1\nvalue"),
+    () => Source.parse("let value: BadType = 1;\nvalue"),
     "Type annotation must use snake_case: BadType",
   );
 
   assert_throws(
-    () => Source.parse("const value: badType = 1\nvalue"),
+    () => Source.parse("const value: badType = 1;\nvalue"),
     "Type annotation must use snake_case: badType",
   );
 
   assert_throws(
     () =>
-      Source.parse("const user_type = struct { .name= BadType }\nuser_type"),
+      Source.parse("const user_type = struct { .name= BadType };\nuser_type"),
     "Name must use snake_case: BadType",
   );
 
   assert_throws(
-    () => Source.parse("let struct { .name= BadType, .. } = user_type\n1"),
+    () => Source.parse("let struct { .name= BadType, .. } = user_type;\n1"),
     "Field type annotation must use snake_case: BadType",
   );
 
@@ -1427,17 +1428,17 @@ user_layout.size
   );
 
   assert_throws(
-    () => Source.parse('const BadName = import "./bad"'),
+    () => Source.parse('const BadName = import "./bad";'),
     "Parameter must use snake_case: BadName",
   );
 
   assert_throws(
-    () => Source.parse("let value = [.field = 1]\nvalue.badName"),
+    () => Source.parse("let value = [.field = 1];\nvalue.badName"),
     "Field must use snake_case: badName",
   );
 
   assert_throws(
-    () => Source.parse("let !Token = 1\n!Token"),
+    () => Source.parse("let !Token = 1\n!Token;"),
     "Parameter must use snake_case: Token",
   );
 
@@ -1447,17 +1448,17 @@ user_layout.size
   );
 
   assert_throws(
-    () => Source.parse("let keep = (!Token) => !Token\nkeep"),
+    () => Source.parse("let keep = (!Token) => !Token;\nkeep"),
     "Parameter must use snake_case: Token",
   );
 
   assert_throws(
-    () => Source.parse("let loop = rec currentValue => currentValue\nloop"),
+    () => Source.parse("let recur = rec currentValue => currentValue;\nrecur"),
     "Parameter must use snake_case: currentValue",
   );
 
   assert_throws(
-    () => Source.parse("let apply = (value, const Fn) => Fn(value)\napply"),
+    () => Source.parse("let apply = (value, const Fn) => Fn(value);\napply"),
     "Const binding must use snake_case: Fn",
   );
 
@@ -1472,7 +1473,7 @@ user_layout.size
   );
 
   assert_throws(
-    () => Source.parse("let struct { .BadName= Int, .. } = user_type\n1"),
+    () => Source.parse("let struct { .BadName= Int, .. } = user_type;\n1"),
     "Type pattern field must use snake_case: BadName",
   );
 
@@ -1482,7 +1483,7 @@ user_layout.size
   );
 
   assert_throws(
-    () => Source.parse("let value = if let `Ok badName = `Ok (1) { badName }"),
+    () => Source.parse("let value = if let `Ok badName = `Ok (1) { badName };"),
     "Union case value must use snake_case: badName",
   );
 });
@@ -1512,84 +1513,84 @@ Deno.test("Source rejects excluded grammar families explicitly", () => {
   }
 
   assert_includes(
-    Format.fmt(Source, Source.parse("let x = 1 where x")),
+    Format.fmt(Source, Source.parse("let x = 1; where x")),
     "<unsupported where clauses>",
   );
 
   assert_throws(
-    () => Source.parse("let class = 1"),
+    () => Source.parse("let class = 1;"),
     "Parameter is reserved for unsupported classes: class",
   );
 
   assert_throws(
-    () => Source.parse("const instance = 1"),
+    () => Source.parse("const instance = 1;"),
     "Parameter is reserved for unsupported runtime instance search: instance",
   );
 
   assert_throws(
-    () => Source.parse("let f = (macro) => macro\nf"),
+    () => Source.parse("let f = (macro) => macro;\nf"),
     "Parameter is reserved for unsupported macros: macro",
   );
 });
 
 Deno.test("Source parses every Task 11 MVP grammar include", () => {
   const cases = [
-    { feature: "let", text: "let value = 1\nvalue" },
-    { feature: "const", text: "const value = 1\nvalue" },
+    { feature: "let", text: "let value = 1;\nvalue" },
+    { feature: "const", text: "const value = 1;\nvalue" },
     { feature: "comptime", text: "comptime 1" },
     {
       feature: "shadowing with = and :=",
-      text: 'let value = 1\nvalue = 2\nvalue := "x"\nvalue',
+      text: 'let value = 1;\nvalue = 2\nvalue := "x"\nvalue',
     },
     { feature: "closures", text: "x => x" },
-    { feature: "return", text: "{ return 1 }" },
+    { feature: "return", text: "{ return 1; }" },
     { feature: "if", text: "if true { 2 } else { 3 }" },
     {
       feature: "if let",
       text: "if let `Ok value = `Ok (1) { value } else { 0 }",
     },
-    { feature: "rec", text: "let f = rec n => n\nf" },
+    { feature: "rec", text: "let f = rec n => n;\nf" },
     { feature: "for", text: "for i in 0..3 { i }\n0" },
-    { feature: "break", text: "for i in 0..3 { break }\n0" },
-    { feature: "continue", text: "for i in 0..3 { continue }\n0" },
+    { feature: "break", text: "for i in 0..3 { break; }\n0" },
+    { feature: "continue", text: "for i in 0..3 { continue; }\n0" },
     {
       feature: "linear parameters with !",
-      text: "let f = (!io) => !io\nf",
+      text: "let f = (!io) => !io;\nf",
     },
     { feature: "borrow views", text: "&value" },
     { feature: "freeze values", text: "freeze value" },
     { feature: "scratchpads with value results", text: "scratch { 1 }" },
     {
       feature: "struct",
-      text: "const user_type = struct { .age= Int }\nuser_type",
+      text: "const user_type = struct { .age= Int };\nuser_type",
     },
     {
       feature: "union",
       text: "type OptionType = | `None Unit | `Some Int\n" +
-        "const option_type = OptionType\noption_type",
+        "const option_type = OptionType;\noption_type",
     },
     { feature: "type-values", text: "Int" },
     {
       feature: "const parameters",
-      text: "let apply = (const f, x) => f(x)\napply",
+      text: "let apply = (const f, x) => f(x);\napply",
     },
     {
       feature: "extensions",
-      text: "const base = [.x = 1]\n" +
-        "const extended = base :+ { .y = 2 }\nextended",
+      text: "const base = [.x = 1];\n" +
+        "const extended = base :+ { .y = 2 };\nextended",
     },
     {
       feature: "fact checkers",
-      text: "let value: has_name = item\nvalue",
+      text: "let value: has_name = item;\nvalue",
     },
     {
       feature: "modules as functions",
-      text: "module app = caps => { { .main = 1 } }",
+      text: "module app = caps => { { .main = 1 } };",
     },
     { feature: "compile-time layout helpers", text: "@layout(user_type)" },
     {
       feature: "monomorphization",
-      text: "let id = (const t, x: t) => x\nid(Int, 1)",
+      text: "let id = (const t, x: t) => x;\nid(Int, 1)",
     },
     { feature: "Wasm codegen", text: "40 + 2" },
   ];
@@ -1646,7 +1647,7 @@ Deno.test("Source rejects every Task 11 MVP grammar exclude", () => {
     },
     {
       feature: "dependent runtime-sized types",
-      run: () => Source.core("let value: make_type n = 1\nvalue"),
+      run: () => Source.core("let value: make_type n = 1;\nvalue"),
       error: "Rich type annotation is not lowered yet on value",
     },
     {

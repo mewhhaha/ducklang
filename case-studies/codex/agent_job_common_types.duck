@@ -8,4 +8,4 @@ type AgentJobPayload =
   | `Function Text
   | `Unsupported Unit
 
-return {}
+return {};

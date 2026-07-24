@@ -1,32 +1,35 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_debug_app_server, parse_debug_models, parse_debug_options } = import "./cli_debug.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_debug_app_server, .parse_debug_models, .parse_debug_options } =
+  import "./cli_debug.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexDebugCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let models: FixtureResult = parse_debug_models(args.singleton("--bundled"))
+let models: FixtureResult = parse_debug_models(args.singleton("--bundled"));
 if let `Ok command = models {
   if let `DebugModels bundled = command {
     if bundled { score = score + 1 }
   }
 }
 
-let message: FixtureResult = parse_debug_app_server(args.prepend("send-message-v2", args.singleton("hello")))
+let message: FixtureResult = parse_debug_app_server(
+  args.prepend("send-message-v2", args.singleton("hello"))
+);
 if let `Ok command = message {
   if let `DebugAppServerMessage value = command {
     if value == "hello" { score = score + 10 }
   }
 }
 
-let cleared: FixtureResult = parse_debug_options(args.singleton("clear-memories"))
+let cleared: FixtureResult = parse_debug_options(args.singleton("clear-memories"));
 if let `Ok command = cleared {
   if let `DebugClearMemories () = command { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

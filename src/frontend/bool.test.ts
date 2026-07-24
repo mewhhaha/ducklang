@@ -16,7 +16,7 @@ Deno.test("Bool literals parse as Bool and preserve their spelling", () => {
 });
 
 Deno.test("Bool annotations lower to the i32 runtime representation", () => {
-  const source = "let ready: Bool = true\nready";
+  const source = "let ready: Bool = true;\nready";
 
   assert_equals(Source.analyze(source).diagnostics, []);
   assert_equals(Ic.reduce(Source.compile(source)), {
@@ -31,8 +31,8 @@ Deno.test("Bool annotations lower to the i32 runtime representation", () => {
 });
 
 Deno.test("Bool and I32 annotations reject values of the other type", () => {
-  const bool_as_i32 = Source.analyze("let value: I32 = true\nvalue");
-  const i32_as_bool = Source.analyze("let value: Bool = 1\nvalue");
+  const bool_as_i32 = Source.analyze("let value: I32 = true;\nvalue");
+  const i32_as_bool = Source.analyze("let value: Bool = 1;\nvalue");
 
   assert_equals(
     bool_as_i32.diagnostics.map(({ code, message }) => ({ code, message })),
@@ -88,9 +88,9 @@ Deno.test("Bool values cannot enter arithmetic or mixed equality", () => {
 
 Deno.test("comparisons, logical operators, and is expressions infer Bool", () => {
   const bool_annotations = `
-let comparison: Bool = 1 < 2
-let logical: Bool = true && false
-let checked: Bool = 1 is Int
+let comparison: Bool = 1 < 2;
+let logical: Bool = true && false;
+let checked: Bool = 1 is Int;
 checked
 `;
 
@@ -102,9 +102,9 @@ checked
   });
 
   const i32_annotations = Source.analyze(`
-let comparison: I32 = 1 < 2
-let logical: I32 = true && false
-let checked: I32 = 1 is Int
+let comparison: I32 = 1 < 2;
+let logical: I32 = true && false;
+let checked: I32 = 1 is Int;
 0
 `);
   assert_equals(
@@ -138,11 +138,11 @@ Deno.test("conditions require Bool", () => {
 
 Deno.test("dynamic Bool struct indexes retain Bool semantics over i32", () => {
   const dynamic_read = `
-let pair = [.first = true, .second = false]
+let pair = [.first = true, .second = false];
 pair[input]
 `;
   const dynamic_update = `
-let pair = [.first = true, .second = false]
+let pair = [.first = true, .second = false];
 pair[input] = true
 pair[input]
 `;
@@ -160,24 +160,24 @@ pair[input]
 
 Deno.test("dynamic Bool struct indexes reject numeric use and mixed fields", () => {
   const static_bool = `
-let pair = [.first = true, .second = 2]
+let pair = [.first = true, .second = 2];
 pair[0]
 `;
   const arithmetic = `
-let pair = [.first = true, .second = false]
+let pair = [.first = true, .second = false];
 pair[input] + 1
 `;
   const numeric_update = `
-let pair = [.first = true, .second = false]
+let pair = [.first = true, .second = false];
 pair[input] = 1
 pair[input]
 `;
   const mixed_read = `
-let pair = [.first = true, .second = 2]
+let pair = [.first = true, .second = 2];
 pair[input]
 `;
   const mixed_update = `
-let pair = [.first = true, .second = 2]
+let pair = [.first = true, .second = 2];
 pair[input] = true
 pair[input]
 `;

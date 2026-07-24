@@ -1,0 +1,146 @@
+module () where
+
+const {} = import "./network_policy_message_types.duck" ();
+const { .denied_network_policy_message } = import "./network_policy_message.duck" ();
+
+type FixtureBlockedRequest = NetworkPolicyBlockedRequest
+type FixtureTextOption = NetworkPolicyMessageTextOption
+type FixtureMessageCase = [FixtureBlockedRequest, Text, Bool]
+type FixtureMessageCases = List FixtureMessageCase
+type FixtureMessageCaseNode = ListNode FixtureMessageCase
+
+const verify_network_policy_message_fixture: () -> I32 = () => {
+  let deny: FixtureTextOption = `MessageText "deny";
+  let ask: FixtureTextOption = `MessageText "ask";
+  let missing_decision: FixtureTextOption = `NoMessageText ();
+
+  let cases: FixtureMessageCases = `Nil ();
+  let missing_request: FixtureBlockedRequest = [
+    .decision = missing_decision,
+    .host = "example.com",
+    .reason = "denied",
+  ];
+  let missing_case: FixtureMessageCase = [missing_request, "", false];
+  let missing_node: FixtureMessageCaseNode = [missing_case, cases];
+  cases = `Cons missing_node
+
+  let ask_request: FixtureBlockedRequest = [
+    .decision = ask,
+    .host = "example.com",
+    .reason = "denied",
+  ];
+  let ask_case: FixtureMessageCase = [ask_request, "", false];
+  let ask_node: FixtureMessageCaseNode = [ask_case, cases];
+  cases = `Cons ask_node
+
+  let fallback_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "future_reason",
+  ];
+  let fallback_case: FixtureMessageCase = [
+    fallback_request,
+    "Network access to \"example.com\" was blocked: request is blocked by network policy.",
+    true,
+  ];
+  let fallback_node: FixtureMessageCaseNode = [fallback_case, cases];
+  cases = `Cons fallback_node
+
+  let proxy_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "proxy_disabled",
+  ];
+  let proxy_case: FixtureMessageCase = [
+    proxy_request,
+    "Network access to \"example.com\" was blocked: network proxy is disabled.",
+    true,
+  ];
+  let proxy_node: FixtureMessageCaseNode = [proxy_case, cases];
+  cases = `Cons proxy_node
+
+  let method_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "method_not_allowed",
+  ];
+  let method_case: FixtureMessageCase = [
+    method_request,
+    "Network access to \"example.com\" was blocked: request method is blocked by the current network mode.",
+    true,
+  ];
+  let method_node: FixtureMessageCaseNode = [method_case, cases];
+  cases = `Cons method_node
+
+  let local_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "not_allowed_local",
+  ];
+  let local_case: FixtureMessageCase = [
+    local_request,
+    "Network access to \"example.com\" was blocked: local/private network addresses are blocked by the sandbox policy.",
+    true,
+  ];
+  let local_node: FixtureMessageCaseNode = [local_case, cases];
+  cases = `Cons local_node
+
+  let allowlist_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "not_allowed",
+  ];
+  let allowlist_case: FixtureMessageCase = [
+    allowlist_request,
+    "Network access to \"example.com\" was blocked: domain is not on the allowlist for the current sandbox mode.",
+    true,
+  ];
+  let allowlist_node: FixtureMessageCaseNode = [allowlist_case, cases];
+  cases = `Cons allowlist_node
+
+  let denied_request: FixtureBlockedRequest = [
+    .decision = deny,
+    .host = "example.com",
+    .reason = "denied",
+  ];
+  let denied_case: FixtureMessageCase = [
+    denied_request,
+    "Network access to \"example.com\" was blocked: domain is explicitly denied by policy and cannot be approved from this prompt.",
+    true,
+  ];
+  let denied_node: FixtureMessageCaseNode = [denied_case, cases];
+  cases = `Cons denied_node
+
+  let blank_request: FixtureBlockedRequest = [.decision = deny, .host = " \n", .reason = "denied"];
+  let blank_case: FixtureMessageCase = [
+    blank_request,
+    "Network access was blocked by policy.",
+    true,
+  ];
+  let blank_node: FixtureMessageCaseNode = [blank_case, cases];
+  cases = `Cons blank_node
+
+  let score = 0;
+  loop {
+    if let `Cons node = cases {
+      let [message_case, tail] = node;
+      let [blocked_request, expected_message, expects_message] = message_case;
+      let projected_message = denied_network_policy_message blocked_request;
+      if let `PolicyMessage message = projected_message {
+        if expects_message && message == expected_message {
+          score = score + 1
+        }
+      } else if let `NoPolicyMessage () = projected_message {
+        if !(expects_message) {
+          score = score + 1
+        }
+      }
+      cases = tail
+    } else {
+      break;
+    }
+  }
+  score
+};
+
+return { .verify_network_policy_message_fixture };

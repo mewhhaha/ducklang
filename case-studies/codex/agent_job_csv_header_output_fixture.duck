@@ -1,16 +1,17 @@
 module () where
 
-const {} = import "./agent_job_export_types.duck" ()
-const { render_agent_job_csv_headers } = import "./agent_job_csv_header_output.duck" ()
+const {} = import "./agent_job_export_types.duck" ();
+const { .render_agent_job_csv_headers } = import "./agent_job_csv_header_output.duck" ();
 
 type FixtureHeaderNode = AgentJobCreateHeaderNode
 type FixtureHeaders = AgentJobCreateHeaders
 
-let note_node: FixtureHeaderNode = ["note,detail", `Nil ()]
-let name_node: FixtureHeaderNode = ["name", `Cons note_node]
-let headers: FixtureHeaders = `Cons name_node
-let output = render_agent_job_csv_headers headers
-let expected = "name,\"note,detail\",job_id,item_id,row_index,source_id,status,attempt_count,last_error,result_json,reported_at,completed_at\n"
-let score = if output == expected { 1 } else { 0 }
+let note_node: FixtureHeaderNode = ["note,detail", `Nil ()];
+let name_node: FixtureHeaderNode = ["name", `Cons note_node];
+let headers: FixtureHeaders = `Cons name_node;
+let output = render_agent_job_csv_headers headers;
+let expected =
+  "name,\"note,detail\",job_id,item_id,row_index,source_id,status,attempt_count,last_error,result_json,reported_at,completed_at\n";
+let score = if output == expected { 1 } else { 0 };
 
-return { .score = score }
+return { .score = score };

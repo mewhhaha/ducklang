@@ -1,13 +1,13 @@
 module () where
 
-const {} = import "./cli_types.duck" ()
+const {} = import "./cli_types.duck" ();
 
 type CliHeadArgs = CodexCliArgs
 type CliHeadCommand = CodexCliCommand
 
 const classify_cli_head: CliHeadArgs -> CliHeadCommand = (args: CliHeadArgs) => {
   if let `Cons node = args {
-    let [name, tail] = node
+    let [name, tail] = node;
     if name == "exec" || name == "e" {
       `Exec tail
     } else if name == "review" {
@@ -68,8 +68,8 @@ const classify_cli_head: CliHeadArgs -> CliHeadCommand = (args: CliHeadArgs) => 
   } else {
     `Interactive args
   }
-}
+};
 
 return {
-  classify_cli_head,
-}
+  .classify_cli_head,
+};

@@ -1,0 +1,54 @@
+module () where
+
+const {} = import "./network_types.duck" ();
+const { .empty_network_approval_state, .plan_network_request, .register_network_call } =
+  import "./network_approval.duck" ();
+
+type FixtureTextOption = NetworkTextOption
+type FixtureProtocol = NetworkApprovalProtocol
+type FixtureMode = NetworkApprovalMode
+type FixtureProfile = NetworkPermissionProfile
+type FixturePolicy = NetworkApprovalPolicy
+type FixtureOutcome = NetworkApprovalOutcome
+type FixtureCall = NetworkApprovalCall
+type FixtureState = NetworkApprovalState
+type FixtureRequest = NetworkRequest
+type FixtureResult = NetworkPolicyResult
+
+let https: FixtureProtocol = `Https ();
+let state: FixtureState = empty_network_approval_state();
+let deferred: FixtureMode = `Deferred ();
+let no_outcome: FixtureOutcome = `NoOutcome ();
+let call: FixtureCall = [
+  "registration-1",
+  "local",
+  "curl https://example.com",
+  deferred,
+  no_outcome,
+  false,
+];
+state = register_network_call(state, call)
+
+let execution: FixtureTextOption = `Some "missing-registration";
+let no_environment: FixtureTextOption = `None ();
+let local_environment: FixtureTextOption = `Some "local";
+let request: FixtureRequest = ["example.com", https, 443, execution, no_environment];
+let policy: FixturePolicy = `OnRequest ();
+let profile: FixtureProfile = `Managed ();
+let planned: FixtureResult = plan_network_request(
+  state,
+  request,
+  local_environment,
+  policy,
+  profile,
+  true,
+);
+let [_, decision] = planned;
+let score = 0;
+if let `Reject message = decision {
+  if message == "network request does not match an active call" {
+    score = score + 1
+  }
+}
+
+return { .score = score };

@@ -9,11 +9,14 @@ import { scan_source, source_tokens } from "../frontend/tokenize.ts";
 
 // The formatter is deliberately biased: it re-emits the comment-preserving
 // token stream with fixed spacing, two-space bracket indentation, collapsed
-// blank runs, and canonical string escapes. It never reflows expressions
-// across lines, so the token order (and therefore the parsed program) is
-// unchanged apart from redundant atomic-call parentheses and statement `;`
-// separators becoming newlines in the tokenizer. Semicolons inside brackets
-// remain fixed-array separators.
+// blank runs, canonical string escapes, and a 100-column layout budget. Wide
+// delimited expressions use one entry per line; other expressions break only
+// at existing whitespace boundaries. The token order (and therefore the
+// parsed program) is unchanged apart from redundant atomic-call parentheses.
+// Statement semicolons are retained as line terminators, while semicolons
+// inside brackets remain fixed-array separators.
+
+const maximum_line_width = 100;
 
 const keywords = new Set([
   "borrow",
@@ -75,7 +78,11 @@ const spaced_symbols = new Set([
   "|",
 ]);
 
-type FormatToken = Token & { row_open?: boolean; row_close?: boolean };
+type FormatToken = Token & {
+  continuation?: boolean;
+  row_open?: boolean;
+  row_close?: boolean;
+};
 
 type Bracket = {
   open_indent: number;
@@ -99,12 +106,12 @@ export function format_syntax(syntax: SourceSyntax): string {
       return !omitted_parentheses.has(token.span.start);
     }),
   );
-  const lines = split_lines(tokens);
+  const lines = join_continuation_lines(split_lines(tokens));
   const parts: string[] = [];
   const brackets: Bracket[] = [];
   let previous_blank = true;
   let previous_opened = false;
-  let previous_assignment = false;
+  let previous_continuation = false;
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -145,7 +152,7 @@ export function format_syntax(syntax: SourceSyntax): string {
 
     const alternative = starts_with_alternative(line);
 
-    if (previous_assignment && !alternative) {
+    if (previous_continuation && !alternative) {
       indent += 1;
     }
 
@@ -153,7 +160,44 @@ export function format_syntax(syntax: SourceSyntax): string {
       indent += 1;
     }
 
-    parts.push("  ".repeat(indent) + render_line(line));
+    if (
+      line[0]?.continuation === true && enclosing === undefined &&
+      !previous_continuation &&
+      !line_starts_with_closer(line)
+    ) {
+      indent += 1;
+    }
+
+    const rendered = render_line(line);
+    const available_width = maximum_line_width - indent * 2;
+
+    if (rendered.length > available_width) {
+      const expanded = expand_delimited_entries(line, available_width);
+
+      if (expanded !== undefined) {
+        lines.splice(index, 1, ...expanded);
+        index -= 1;
+        continue;
+      }
+
+      const wrapped_definition = wrap_definition(line);
+
+      if (wrapped_definition !== undefined) {
+        lines.splice(index, 1, ...wrapped_definition);
+        index -= 1;
+        continue;
+      }
+
+      const wrapped = wrap_at_whitespace(line, available_width);
+
+      if (wrapped !== undefined) {
+        lines.splice(index, 1, ...wrapped);
+        index -= 1;
+        continue;
+      }
+    }
+
+    parts.push("  ".repeat(indent) + rendered);
 
     for (const token of line) {
       if (token.kind !== "symbol") {
@@ -170,7 +214,8 @@ export function format_syntax(syntax: SourceSyntax): string {
     previous_blank = false;
     const last = line[line.length - 1];
     previous_opened = last?.kind === "symbol" && openers.has(last.text);
-    previous_assignment = last?.kind === "symbol" && last.text === "=";
+    previous_continuation = last?.kind === "symbol" &&
+      (last.text === "=" || last.text === "->" || last.text === "=>");
   }
 
   return parts.join("\n") + "\n";
@@ -302,31 +347,66 @@ function previous_content(
 function split_lines(tokens: FormatToken[]): FormatToken[][] {
   const lines: FormatToken[][] = [];
   let current: FormatToken[] = [];
-  let bracket_depth = 0;
+  let current_curly_depth = 0;
+  let delimiter_depth = 0;
+  let statement_ended = false;
 
-  for (const token of tokens) {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token === undefined) {
+      continue;
+    }
+
     if (token.kind === "eof") {
       break;
     }
 
-    if (token.kind === "newline" && token.raw === ";" && bracket_depth > 0) {
+    if (token.kind === "newline" && token.raw === ";") {
+      if (statement_ended) {
+        lines.push(current);
+        current = [];
+        current_curly_depth = 0;
+      }
+
       current.push({ ...token, kind: "symbol", text: ";" });
+
+      if (delimiter_depth === 0) {
+        statement_ended = true;
+      }
+    } else if (
+      token.kind === "newline" &&
+      current.at(-1)?.text === ";" &&
+      current_curly_depth > 0 &&
+      tokens[index + 1]?.kind === "symbol" &&
+      tokens[index + 1]?.text === "}"
+    ) {
+      continue;
     } else if (token.kind === "newline") {
       lines.push(current);
       current = [];
+      current_curly_depth = 0;
+      statement_ended = false;
     } else {
+      if (statement_ended && token.kind !== "comment") {
+        lines.push(current);
+        current = [];
+        current_curly_depth = 0;
+        statement_ended = false;
+      }
+
       current.push(token);
 
-      if (
-        token.kind === "symbol" &&
-        (token.text === "[" || token.text === "(")
-      ) {
-        bracket_depth += 1;
-      } else if (
-        token.kind === "symbol" &&
-        (token.text === "]" || token.text === ")")
-      ) {
-        bracket_depth -= 1;
+      if (token.kind === "symbol" && openers.has(token.text)) {
+        delimiter_depth += 1;
+      } else if (token.kind === "symbol" && closers.has(token.text)) {
+        delimiter_depth -= 1;
+      }
+
+      if (token.kind === "symbol" && token.text === "{") {
+        current_curly_depth += 1;
+      } else if (token.kind === "symbol" && token.text === "}") {
+        current_curly_depth -= 1;
       }
     }
   }
@@ -336,6 +416,31 @@ function split_lines(tokens: FormatToken[]): FormatToken[][] {
   }
 
   return lines;
+}
+
+function join_continuation_lines(
+  lines: FormatToken[][],
+): FormatToken[][] {
+  const joined: FormatToken[][] = [];
+
+  for (const line of lines) {
+    const first = line[0];
+    const previous = joined.at(-1);
+    const starts_with_operator = first?.kind === "symbol" &&
+      first.row_close !== true &&
+      is_line_continuation_operator(first.text);
+
+    if (
+      starts_with_operator && previous !== undefined && previous.length > 0
+    ) {
+      previous.push(...line);
+      continue;
+    }
+
+    joined.push(line);
+  }
+
+  return joined;
 }
 
 function next_content_line(
@@ -362,6 +467,229 @@ function line_starts_with_closer(line: FormatToken[]): boolean {
 function starts_with_alternative(line: FormatToken[]): boolean {
   const first = line[0];
   return first !== undefined && first.kind === "symbol" && first.text === "|";
+}
+
+function expand_delimited_entries(
+  line: FormatToken[],
+  available_width: number,
+): FormatToken[][] | undefined {
+  const groups: {
+    close: number;
+    commas: number[];
+    depth: number;
+    open: number;
+  }[] = [];
+  const stack: {
+    commas: number[];
+    depth: number;
+    open: number;
+    symbol: string;
+  }[] = [];
+
+  for (let index = 0; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token?.kind !== "symbol") {
+      continue;
+    }
+
+    if (openers.has(token.text)) {
+      stack.push({
+        commas: [],
+        depth: stack.length,
+        open: index,
+        symbol: token.text,
+      });
+      continue;
+    }
+
+    if (token.text === ",") {
+      const group = stack.at(-1);
+
+      if (group !== undefined) {
+        group.commas.push(index);
+      }
+      continue;
+    }
+
+    if (!closers.has(token.text)) {
+      continue;
+    }
+
+    const group = stack.pop();
+
+    if (group === undefined) {
+      continue;
+    }
+
+    const matching_brackets = (group.symbol === "{" && token.text === "}") ||
+      (group.symbol === "(" && token.text === ")") ||
+      (group.symbol === "[" && token.text === "]");
+    if (!matching_brackets) {
+      continue;
+    }
+
+    if (
+      group.open + 1 < index &&
+      (group.commas.length > 0 || group.symbol === "(") &&
+      render_line(line.slice(0, index + 1)).length > available_width
+    ) {
+      groups.push({
+        close: index,
+        commas: group.commas,
+        depth: group.depth,
+        open: group.open,
+      });
+    }
+  }
+
+  groups.sort((left, right) => {
+    if (left.depth !== right.depth) {
+      return left.depth - right.depth;
+    }
+
+    return left.open - right.open;
+  });
+  const group = groups[0];
+
+  if (group === undefined) {
+    return undefined;
+  }
+
+  const expanded: FormatToken[][] = [line.slice(0, group.open + 1)];
+  let entry_start = group.open + 1;
+
+  for (const comma of group.commas) {
+    expanded.push(line.slice(entry_start, comma + 1));
+    entry_start = comma + 1;
+  }
+
+  const final_entry = line.slice(entry_start, group.close);
+  const last = final_entry.at(-1);
+
+  if (
+    group.commas.length > 0 && last !== undefined &&
+    !(last.kind === "symbol" && last.text === ",")
+  ) {
+    final_entry.push({
+      ...last,
+      kind: "symbol",
+      raw: ",",
+      text: ",",
+    });
+  }
+
+  expanded.push(final_entry);
+  expanded.push(line.slice(group.close));
+  return expanded.filter((part) => part.length > 0);
+}
+
+function wrap_at_whitespace(
+  line: FormatToken[],
+  available_width: number,
+): [FormatToken[], FormatToken[]] | undefined {
+  let split: number | undefined;
+  const annotation_end = line.findIndex((token) => {
+    return token.kind === "symbol" && token.text === "=";
+  });
+  const annotation_start = line.findIndex((token) => {
+    return token.kind === "symbol" && token.text === ":";
+  });
+
+  for (let index = 1; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (
+      token === undefined || token.kind !== "symbol" ||
+      !is_line_continuation_operator(token.text)
+    ) {
+      continue;
+    }
+
+    const in_annotation = annotation_start >= 0 && annotation_end >= 0 &&
+      index > annotation_start && index <= annotation_end;
+
+    if (in_annotation) {
+      continue;
+    }
+
+    if (render_line(line.slice(0, index)).length <= available_width) {
+      split = index;
+    }
+  }
+
+  if (split === undefined) {
+    return undefined;
+  }
+
+  const left = line.slice(0, split);
+  const right = line.slice(split);
+  const first = right[0];
+
+  if (first !== undefined) {
+    right[0] = { ...first, continuation: true };
+  }
+
+  return [left, right];
+}
+
+function wrap_definition(
+  line: FormatToken[],
+): [FormatToken[], FormatToken[]] | undefined {
+  const first = line[0];
+
+  if (
+    first?.kind !== "name" ||
+    (first.text !== "const" && first.text !== "let" && first.text !== "type")
+  ) {
+    return undefined;
+  }
+
+  let delimiter_depth = 0;
+
+  for (let index = 1; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token?.kind !== "symbol") {
+      continue;
+    }
+
+    if (openers.has(token.text)) {
+      delimiter_depth += 1;
+      continue;
+    }
+
+    if (closers.has(token.text)) {
+      delimiter_depth -= 1;
+      continue;
+    }
+
+    if (token.text !== "=" || delimiter_depth !== 0) {
+      continue;
+    }
+
+    const left = line.slice(0, index + 1);
+    const right = line.slice(index + 1);
+    const right_first = right[0];
+
+    if (right_first === undefined) {
+      return undefined;
+    }
+
+    right[0] = { ...right_first, continuation: true };
+    return [left, right];
+  }
+
+  return undefined;
+}
+
+function is_line_continuation_operator(symbol: string): boolean {
+  return !openers.has(symbol) && !closers.has(symbol) &&
+    symbol !== "." && symbol !== "," && symbol !== ":" && symbol !== ";" &&
+    symbol !== "=" && symbol !== ":=" && symbol !== "=>" && symbol !== "->" &&
+    symbol !== "<-" && symbol !== "!" && symbol !== "#" && symbol !== "@" &&
+    symbol !== "`" && symbol !== "..." && symbol !== "&" && symbol !== "\\" &&
+    symbol !== "|";
 }
 
 function render_line(line: FormatToken[]): string {

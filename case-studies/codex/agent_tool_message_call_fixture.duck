@@ -1,51 +1,87 @@
 module () where
 
-const {} = import "./agent_tool_types.duck" ()
-const { plan_agent_control_call } = import "./agent_tool_control_call.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .plan_agent_control_call } = import "./agent_tool_control_call.duck" ();
 
 type FixtureContext = AgentToolContext
 type FixtureMessageArguments = AgentToolMessageArguments
 type FixturePlan = AgentToolPlan
 
 const root_context: () -> FixtureContext = () => {
-  [.v2_enabled = true, .current_path = "/root", .current_depth = 0, .maximum_depth = 2, .source = `Root (), .active_turn = true, .active_agents = 1, .maximum_threads = 4]
-}
+  [
+    .v2_enabled = true,
+    .current_path = "/root",
+    .current_depth = 0,
+    .maximum_depth = 2,
+    .source = `Root (),
+    .active_turn = true,
+    .active_agents = 1,
+    .maximum_threads = 4,
+  ]
+};
 
-let score = 0
-let send_arguments: FixtureMessageArguments = [.target = "reviewer", .message = "report status"]
-let send: FixturePlan = plan_agent_control_call(root_context(), `SendMessageCall send_arguments)
+let score = 0;
+let send_arguments: FixtureMessageArguments = [.target = "reviewer", .message = "report status"];
+let send: FixturePlan = plan_agent_control_call(root_context(), `SendMessageCall send_arguments);
 if let `SendMessagePlanned request = send {
-  let [path, message] = request
+  let [path, message] = request;
   if path == "/root/reviewer" && message == "report status" { score = score + 1 }
 }
 
-let followup_arguments: FixtureMessageArguments = [.target = "/root/reviewer", .message = "check tests"]
-let followup: FixturePlan = plan_agent_control_call(root_context(), `FollowupTaskCall followup_arguments)
+let followup_arguments: FixtureMessageArguments = [
+  .target = "/root/reviewer",
+  .message = "check tests",
+];
+let followup: FixturePlan = plan_agent_control_call(
+  root_context(),
+  `FollowupTaskCall followup_arguments,
+);
 if let `FollowupTaskPlanned request = followup {
-  let [path, message] = request
+  let [path, message] = request;
   if path == "/root/reviewer" && message == "check tests" { score = score + 10 }
 }
 
-let interrupted: FixturePlan = plan_agent_control_call(root_context(), `InterruptAgentCall "reviewer")
+let interrupted: FixturePlan = plan_agent_control_call(
+  root_context(),
+  `InterruptAgentCall "reviewer",
+);
 if let `InterruptAgentPlanned path = interrupted {
   if path == "/root/reviewer" { score = score + 100 }
 }
 
-let root_followup_arguments: FixtureMessageArguments = [.target = "/root", .message = "wake root"]
-let root_followup: FixturePlan = plan_agent_control_call(root_context(), `FollowupTaskCall root_followup_arguments)
+let root_followup_arguments: FixtureMessageArguments = [.target = "/root", .message = "wake root"];
+let root_followup: FixturePlan = plan_agent_control_call(
+  root_context(),
+  `FollowupTaskCall root_followup_arguments,
+);
 if let `AgentToolRejected message = root_followup {
   if message == "Follow-up tasks can't target the root agent" { score = score + 1000 }
 }
 
-let root_interrupt: FixturePlan = plan_agent_control_call(root_context(), `InterruptAgentCall "/root")
+let root_interrupt: FixturePlan = plan_agent_control_call(
+  root_context(),
+  `InterruptAgentCall "/root",
+);
 if let `AgentToolRejected message = root_interrupt {
   if message == "root is not a spawned agent" { score = score + 10000 }
 }
 
-let subagent_context: FixtureContext = [.v2_enabled = true, .current_path = "/root/reviewer", .current_depth = 1, .maximum_depth = 2, .source = `SubAgent (), .active_turn = true, .active_agents = 2, .maximum_threads = 4]
-let self_interrupt: FixturePlan = plan_agent_control_call(subagent_context, `InterruptAgentCall "/root/reviewer")
+let subagent_context: FixtureContext = [
+  .v2_enabled = true,
+  .current_path = "/root/reviewer",
+  .current_depth = 1,
+  .maximum_depth = 2,
+  .source = `SubAgent (),
+  .active_turn = true,
+  .active_agents = 2,
+  .maximum_threads = 4,
+];
+let self_interrupt: FixturePlan = plan_agent_control_call(
+  subagent_context,
+  `InterruptAgentCall "/root/reviewer",
+);
 if let `AgentToolRejected message = self_interrupt {
   if message == "an agent cannot interrupt itself; return your result and let the parent interrupt you if needed" { score = score + 100000 }
 }
 
-return { .score = score }
+return { .score = score };

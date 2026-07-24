@@ -219,6 +219,7 @@ function elaborate_source(source: Source): Source {
   source = infer_front_function_signatures(source);
   source = elaborate_front_ducks(source);
   source = infer_front_function_signatures(source);
+  source = elaborate_front_ducks(source);
   source = elaborate_front_effects(source);
   return elaborate_front_type_sets(source);
 }

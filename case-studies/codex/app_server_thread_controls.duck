@@ -1,18 +1,19 @@
 module () where
 
-const { json_bool, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { format_i64 } = import "duck:prelude/numeric" ()
-const { text_trim_whitespace } = import "duck:prelude/text" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_bool, .json_number, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const { .text_trim_whitespace } = import "duck:prelude/text" ();
+const {} = import "./app_server_types.duck" ();
 
 type ThreadControlJson = AppServerJson
 type ThreadControlNameResult = Result Text Text
 type ThreadControlCountResult = Result Text I64
 
 const normalize_thread_name: Text -> ThreadControlNameResult = (name: Text) => {
-  let normalized = text_trim_whitespace(name)
+  let normalized = text_trim_whitespace name;
   if normalized == "" { `Err "thread name must not be empty" } else { `Ok normalized }
-}
+};
 
 const increment_thread_elicitation: I64 -> ThreadControlCountResult = (count: I64) => {
   if count == 9223372036854775807i64 {
@@ -20,7 +21,7 @@ const increment_thread_elicitation: I64 -> ThreadControlCountResult = (count: I6
   } else {
     `Ok (count + 1i64)
   }
-}
+};
 
 const decrement_thread_elicitation: I64 -> ThreadControlCountResult = (count: I64) => {
   if count == 0i64 {
@@ -28,31 +29,34 @@ const decrement_thread_elicitation: I64 -> ThreadControlCountResult = (count: I6
   } else {
     `Ok (count - 1i64)
   }
-}
+};
 
 const materialize_thread_set_name_response: [] -> ThreadControlJson = () => {
   json_object(json_object_empty())
-}
+};
 
-const materialize_thread_name_updated_notification: [Text, Text] -> ThreadControlJson = (thread_id: Text, name: Text) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("threadName", json_string(name), fields)
-  fields = json_object_prepend("threadId", json_string(thread_id), fields)
-  json_object(fields)
-}
+const materialize_thread_name_updated_notification: [Text, Text] -> ThreadControlJson = (
+  thread_id: Text,
+  name: Text,
+) => {
+  let fields = json_object_empty();
+  fields = json_object_prepend("threadName", json_string name, fields)
+  fields = json_object_prepend("threadId", json_string thread_id, fields)
+  json_object fields
+};
 
 const materialize_thread_elicitation_response: I64 -> ThreadControlJson = (count: I64) => {
-  let fields = json_object_empty()
+  let fields = json_object_empty();
   fields = json_object_prepend("paused", json_bool(count > 0i64), fields)
-  fields = json_object_prepend("count", json_number(format_i64(count)), fields)
-  json_object(fields)
-}
+  fields = json_object_prepend("count", json_number(format_i64 count), fields)
+  json_object fields
+};
 
 return {
-  normalize_thread_name,
-  increment_thread_elicitation,
-  decrement_thread_elicitation,
-  materialize_thread_set_name_response,
-  materialize_thread_name_updated_notification,
-  materialize_thread_elicitation_response,
-}
+  .normalize_thread_name,
+  .increment_thread_elicitation,
+  .decrement_thread_elicitation,
+  .materialize_thread_set_name_response,
+  .materialize_thread_name_updated_notification,
+  .materialize_thread_elicitation_response,
+};

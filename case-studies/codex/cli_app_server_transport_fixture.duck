@@ -1,24 +1,33 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_app_server_launch } = import "./cli_app_server_runtime.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_app_server_launch } = import "./cli_app_server_runtime.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexAppServerCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let defaults: FixtureResult = parse_app_server_launch(args.empty())
+let defaults: FixtureResult = parse_app_server_launch(args.empty());
 if let `Ok command = defaults {
   if let `LaunchAppServer options = command {
     if let `AppServerStdio () = options.transport { score = score + 1 }
   }
 }
 
-let unix_input: FixtureArgs = args.prepend("--listen", args.prepend("unix:///tmp/codex.sock", args.prepend("--strict-config", args.prepend("--remote-control", args.singleton("--analytics-default-enabled")))))
-let unix: FixtureResult = parse_app_server_launch(unix_input)
+let unix_input: FixtureArgs = args.prepend(
+  "--listen",
+  args.prepend(
+    "unix:///tmp/codex.sock",
+    args.prepend(
+      "--strict-config",
+      args.prepend("--remote-control", args.singleton("--analytics-default-enabled")),
+    ),
+  ),
+);
+let unix: FixtureResult = parse_app_server_launch unix_input;
 if let `Ok command = unix {
   if let `LaunchAppServer options = command {
     if let `AppServerUnixSocket socket_path = options.transport {
@@ -31,14 +40,18 @@ if let `Ok command = unix {
   }
 }
 
-let disabled: FixtureResult = parse_app_server_launch(args.prepend("--listen", args.singleton("off")))
+let disabled: FixtureResult = parse_app_server_launch(
+  args.prepend("--listen", args.singleton("off"))
+);
 if let `Ok command = disabled {
   if let `LaunchAppServer options = command {
     if let `AppServerOff () = options.transport { score = score + 100 }
   }
 }
 
-let invalid: FixtureResult = parse_app_server_launch(args.prepend("--listen", args.singleton("http://example.com")))
+let invalid: FixtureResult = parse_app_server_launch(
+  args.prepend("--listen", args.singleton("http://example.com"))
+);
 if let `Err _ = invalid { score = score + 1000 }
 
-return { .score = score }
+return { .score = score };

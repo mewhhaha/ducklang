@@ -1,9 +1,17 @@
 module () where
 
-const { json_array_empty, json_array_prepend, json_object, json_object_empty, json_object_get, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { paginate_thread_turns } = import "./app_server_thread_turn_pagination.duck" ()
-const {} = import "./app_server_turn_types.duck" ()
-const {} = import "./app_server_types.duck" ()
+const {
+  .json_array_empty,
+  .json_array_prepend,
+  .json_object,
+  .json_object_empty,
+  .json_object_get,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const { .paginate_thread_turns } = import "./app_server_thread_turn_pagination.duck" ();
+const {} = import "./app_server_turn_types.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureJson = AppServerJson
 type FixtureJsonArray = JsonArray
@@ -13,15 +21,15 @@ type FixturePageResult = AppServerThreadTurnsCursorPageResult
 type FixtureCursorOption = AppServerThreadTurnsCursorOption
 
 const message: [Text, Text] -> FixtureJson = (item_type: Text, id: Text) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("id", json_string(id), fields)
-  fields = json_object_prepend("type", json_string(item_type), fields)
-  json_object(fields)
-}
+  let fields = json_object_empty();
+  fields = json_object_prepend("id", json_string id, fields)
+  fields = json_object_prepend("type", json_string item_type, fields)
+  json_object fields
+};
 
 const turn: [Text, FixtureJsonArray] -> FixtureTurn = (id: Text, items: FixtureJsonArray) => {
   [id, items, `Full (), `Completed (), `None (), `None (), `None (), `None ()]
-}
+};
 
 const item_has_type: [FixtureJson, Text] -> Bool = (item: FixtureJson, expected: Text) => {
   if let `Object fields = item {
@@ -29,89 +37,113 @@ const item_has_type: [FixtureJson, Text] -> Bool = (item: FixtureJson, expected:
       if let `String item_type = value { item_type == expected } else { false }
     } else { false }
   } else { false }
-}
+};
 
-let first_items = json_array_empty()
+let first_items = json_array_empty();
 first_items = json_array_prepend(message("toolCall", "tool-1"), first_items)
 first_items = json_array_prepend(message("agentMessage", "agent-1"), first_items)
 first_items = json_array_prepend(message("userMessage", "user-1"), first_items)
-let second_items = json_array_prepend(message("agentMessage", "agent-2"), json_array_empty())
-let third_items = json_array_prepend(message("userMessage", "user-3"), json_array_empty())
-let first: FixtureTurn = turn("turn-1", first_items)
-let second: FixtureTurn = turn("turn-2", second_items)
-let third: FixtureTurn = turn("turn-3", third_items)
-let history: FixtureTurns = `Cons ([first, `Cons ([second, `Cons ([third, `Nil ()])])])
+let second_items = json_array_prepend(message("agentMessage", "agent-2"), json_array_empty());
+let third_items = json_array_prepend(message("userMessage", "user-3"), json_array_empty());
+let first: FixtureTurn = turn("turn-1", first_items);
+let second: FixtureTurn = turn("turn-2", second_items);
+let third: FixtureTurn = turn("turn-3", third_items);
+let history: FixtureTurns = `Cons ([first, `Cons ([second, `Cons ([third, `Nil ()])])]);
 
-let score = 0
-let ascending: FixturePageResult = paginate_thread_turns([history, `None (), 2, `Ascending (), `Summary ()])
-let next_cursor: FixtureCursorOption = `None ()
+let score = 0;
+let ascending: FixturePageResult = paginate_thread_turns [
+  history,
+  `None (),
+  2,
+  `Ascending (),
+  `Summary (),
+];
+let next_cursor: FixtureCursorOption = `None ();
 if let `Ok page = ascending {
-  let [page_turns, next, backwards] = page
+  let [page_turns, next, backwards] = page;
   next_cursor = next
   if let `Cons first_node = page_turns {
-    let [first_turn, tail] = first_node
+    let [first_turn, tail] = first_node;
     if let `Cons second_node = tail {
-      let [second_turn, end] = second_node
-      let [first_id, first_summary, first_view, _, _, _, _, _] = first_turn
-      let [second_id, second_summary, second_view, _, _, _, _, _] = second_turn
+      let [second_turn, end] = second_node;
+      let [first_id, first_summary, first_view, _, _, _, _, _] = first_turn;
+      let [second_id, second_summary, second_view, _, _, _, _, _] = second_turn;
       let first_summary_valid = if let `Cons user_node = first_summary {
-        let [user, after_user] = user_node
+        let [user, after_user] = user_node;
         if let `Cons agent_node = after_user {
-          let [agent, after_agent] = agent_node
-          if let `Nil () = after_agent { item_has_type(user, "userMessage") && item_has_type(agent, "agentMessage") } else { false }
+          let [agent, after_agent] = agent_node;
+          if let `Nil () = after_agent { item_has_type(user, "userMessage") && item_has_type(
+            agent,
+            "agentMessage",
+          ) } else { false }
         } else { false }
-      } else { false }
+      } else { false };
       let second_summary_valid = if let `Cons agent_node = second_summary {
-        let [agent, after_agent] = agent_node
+        let [agent, after_agent] = agent_node;
         if let `Nil () = after_agent { item_has_type(agent, "agentMessage") } else { false }
-      } else { false }
-      let views_valid = if let `Summary () = first_view { if let `Summary () = second_view { true } else { false } } else { false }
-      let end_valid = if let `Nil () = end { true } else { false }
+      } else { false };
+      let views_valid = if let `Summary () = first_view { if let `Summary () = second_view { true }
+        else { false } } else { false };
+      let end_valid = if let `Nil () = end { true } else { false };
       let next_valid = if let `Some value = next {
-        let [id, included] = value
+        let [id, included] = value;
         id == "turn-2" && included == false
-      } else { false }
+      } else { false };
       let backwards_valid = if let `Some value = backwards {
-        let [id, included] = value
+        let [id, included] = value;
         id == "turn-1" && included
-      } else { false }
+      } else { false };
       if first_id == "turn-1" && second_id == "turn-2" && first_summary_valid && second_summary_valid && views_valid && end_valid && next_valid && backwards_valid { score = score + 100 }
     }
   }
 }
 
-let second_page: FixturePageResult = paginate_thread_turns([history, next_cursor, 2, `Ascending (), `Full ()])
+let second_page: FixturePageResult = paginate_thread_turns [
+  history,
+  next_cursor,
+  2,
+  `Ascending (),
+  `Full (),
+];
 if let `Ok page = second_page {
-  let [page_turns, next, backwards] = page
+  let [page_turns, next, backwards] = page;
   if let `Cons node = page_turns {
-    let [only_turn, tail] = node
-    let [turn_id, _, view, _, _, _, _, _] = only_turn
-    let tail_valid = if let `Nil () = tail { true } else { false }
-    let view_valid = if let `Full () = view { true } else { false }
-    let next_valid = if let `None () = next { true } else { false }
+    let [only_turn, tail] = node;
+    let [turn_id, _, view, _, _, _, _, _] = only_turn;
+    let tail_valid = if let `Nil () = tail { true } else { false };
+    let view_valid = if let `Full () = view { true } else { false };
+    let next_valid = if let `None () = next { true } else { false };
     let backwards_valid = if let `Some value = backwards {
-      let [id, included] = value
+      let [id, included] = value;
       id == "turn-3" && included
-    } else { false }
-    if turn_id == "turn-3" && tail_valid && view_valid && next_valid && backwards_valid { score = score + 1000 }
+    } else { false };
+    if turn_id == "turn-3" && tail_valid && view_valid && next_valid && backwards_valid { score =
+        score + 1000 }
   }
 }
 
-let descending: FixturePageResult = paginate_thread_turns([history, `None (), 2, `Descending (), `NotLoaded ()])
+let descending: FixturePageResult = paginate_thread_turns [
+  history,
+  `None (),
+  2,
+  `Descending (),
+  `NotLoaded (),
+];
 if let `Ok page = descending {
-  let [page_turns, _, _] = page
+  let [page_turns, _, _] = page;
   if let `Cons first_node = page_turns {
-    let [first_turn, tail] = first_node
+    let [first_turn, tail] = first_node;
     if let `Cons second_node = tail {
-      let [second_turn, _] = second_node
-      let [first_id, first_items_view, first_view, _, _, _, _, _] = first_turn
-      let [second_id, second_items_view, second_view, _, _, _, _, _] = second_turn
-      let first_empty = if let `Nil () = first_items_view { true } else { false }
-      let second_empty = if let `Nil () = second_items_view { true } else { false }
-      let views_valid = if let `NotLoaded () = first_view { if let `NotLoaded () = second_view { true } else { false } } else { false }
+      let [second_turn, _] = second_node;
+      let [first_id, first_items_view, first_view, _, _, _, _, _] = first_turn;
+      let [second_id, second_items_view, second_view, _, _, _, _, _] = second_turn;
+      let first_empty = if let `Nil () = first_items_view { true } else { false };
+      let second_empty = if let `Nil () = second_items_view { true } else { false };
+      let views_valid = if let `NotLoaded () = first_view { if let `NotLoaded () = second_view {
+        true } else { false } } else { false };
       if first_id == "turn-3" && second_id == "turn-2" && first_empty && second_empty && views_valid { score = score + 10000 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

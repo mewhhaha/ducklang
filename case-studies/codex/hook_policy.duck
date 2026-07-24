@@ -1,7 +1,8 @@
 module () where
 
-const { format_i32, list, text_append, text_trim_ascii_whitespace } = import "duck:prelude/functional" ()
-const hook_types_module = import "./hook_types.duck"
+const { .format_i32, .list, .text_append, .text_trim_ascii_whitespace } =
+  import "duck:prelude/functional" ();
+const hook_types_module = import "./hook_types.duck";
 
 type PolicyI32Option = HookI32Option
 type PolicyTextOption = HookTextOption
@@ -19,8 +20,8 @@ type PolicyPermissionDecisionOption = HookPermissionDecisionOption
 type PolicyLegacyResults = HookLegacyResults
 type PolicyLegacyOutcome = HookLegacyOutcome
 
-const texts = comptime list(Text)
-const append_text = (left: Text, right: Text) => text_append([left, right])
+const texts = comptime list Text;
+const append_text = (left: Text, right: Text) => text_append [left, right];
 
 const hook_event_key_label = (event: PolicyEvent) => {
   if let `PreToolUse () = event {
@@ -46,11 +47,23 @@ const hook_event_key_label = (event: PolicyEvent) => {
   } else {
     "stop"
   }
-}
+};
 
 const hook_key = (key_source: Text, event: PolicyEvent, group_index: I32, handler_index: I32) => {
-  append_text(key_source, append_text(":", append_text(hook_event_key_label(event), append_text(":", append_text(format_i32(group_index), append_text(":", format_i32(handler_index)))))))
-}
+  append_text(
+    key_source,
+    append_text(
+      ":",
+      append_text(
+        hook_event_key_label event,
+        append_text(
+          ":",
+          append_text(format_i32 group_index, append_text(":", format_i32 handler_index)),
+        ),
+      ),
+    ),
+  )
+};
 
 const hook_scope = (event: PolicyEvent) => {
   if let `SessionStart () = event {
@@ -62,7 +75,7 @@ const hook_scope = (event: PolicyEvent) => {
   } else {
     `Turn ()
   }
-}
+};
 
 const event_uses_matcher = (event: PolicyEvent) => {
   if let `UserPromptSubmit () = event {
@@ -72,11 +85,11 @@ const event_uses_matcher = (event: PolicyEvent) => {
   } else {
     true
   }
-}
+};
 
 const normalize_timeout = (event: PolicyEvent, configured: PolicyI32Option) => {
   if let `SessionEnd () = event {
-    let timeout = if let `Some seconds = configured { seconds } else { 1 }
+    let timeout = if let `Some seconds = configured { seconds } else { 1 };
 
     if timeout < 1 {
       1
@@ -86,64 +99,113 @@ const normalize_timeout = (event: PolicyEvent, configured: PolicyI32Option) => {
       timeout
     }
   } else {
-    let timeout = if let `Some seconds = configured { seconds } else { 600 }
+    let timeout = if let `Some seconds = configured { seconds } else { 600 };
     if timeout < 1 { 1 } else { timeout }
   }
-}
+};
 
-const normalize_hook_handler = (event: PolicyEvent, matcher: PolicyMatcher, config: PolicyHandlerConfig, source_path: Text, source: PolicySource, display_order: I32) => {
+const normalize_hook_handler = (
+  event: PolicyEvent,
+  matcher: PolicyMatcher,
+  config: PolicyHandlerConfig,
+  source_path: Text,
+  source: PolicySource,
+  display_order: I32,
+) => {
   if let `Prompt () = config {
-    `Skipped (append_text("skipping prompt hook in ", append_text(source_path, ": prompt hooks are not supported yet")))
+    `Skipped (
+      append_text(
+        "skipping prompt hook in ",
+        append_text(source_path, ": prompt hooks are not supported yet"),
+      )
+    )
   } else if let `Agent () = config {
-    `Skipped (append_text("skipping agent hook in ", append_text(source_path, ": agent hooks are not supported yet")))
+    `Skipped (
+      append_text(
+        "skipping agent hook in ",
+        append_text(source_path, ": agent hooks are not supported yet"),
+      )
+    )
   } else if let `Command command_config = config {
-    let [command, timeout, asynchronous, status_message] = command_config
+    let [command, timeout, asynchronous, status_message] = command_config;
 
-    if text_trim_ascii_whitespace(command) == "" {
+    if text_trim_ascii_whitespace command == "" {
       `Skipped (append_text("skipping empty hook command in ", source_path))
     } else if asynchronous {
       if let `SessionEnd () = event {
-        let configured: PolicyConfiguredHandler = [event, matcher, command, normalize_timeout(event, timeout), status_message, source_path, source, display_order]
-        `Configured ([configured, texts.singleton(append_text("running async SessionEnd hook synchronously in ", source_path))])
+        let configured: PolicyConfiguredHandler = [
+          event,
+          matcher,
+          command,
+          normalize_timeout(event, timeout),
+          status_message,
+          source_path,
+          source,
+          display_order,
+        ];
+        `Configured (
+          [
+            configured,
+            texts.singleton(
+              append_text("running async SessionEnd hook synchronously in ", source_path)
+            ),
+          ]
+        )
       } else {
-        `Skipped (append_text("skipping async hook in ", append_text(source_path, ": async hooks are not supported yet")))
+        `Skipped (
+          append_text(
+            "skipping async hook in ",
+            append_text(source_path, ": async hooks are not supported yet"),
+          )
+        )
       }
     } else {
-      let warnings: PolicyTexts = texts.empty()
-      let normalized_timeout = normalize_timeout(event, timeout)
+      let warnings: PolicyTexts = texts.empty();
+      let normalized_timeout = normalize_timeout(event, timeout);
 
       if let `SessionEnd () = event {
         if let `Some configured_timeout = timeout {
           if configured_timeout > 3 {
-            warnings = texts.singleton(append_text("clamping SessionEnd hook timeout to 3s in ", source_path))
+            warnings = texts.singleton(
+              append_text("clamping SessionEnd hook timeout to 3s in ", source_path)
+            )
           }
         }
       }
 
-      let configured: PolicyConfiguredHandler = [event, matcher, command, normalized_timeout, status_message, source_path, source, display_order]
+      let configured: PolicyConfiguredHandler = [
+        event,
+        matcher,
+        command,
+        normalized_timeout,
+        status_message,
+        source_path,
+        source,
+        display_order,
+      ];
       `Configured ([configured, warnings])
     }
   } else {
     `Skipped "invalid hook handler configuration"
   }
-}
+};
 
 const hook_enabled = (managed: Bool, state: PolicyStateOption) => {
   if managed {
     true
   } else if let `PresentHookState configured_state = state {
-    let [enabled, _] = configured_state
+    let [enabled, _] = configured_state;
     if let `Disabled () = enabled { false } else { true }
   } else {
     true
   }
-}
+};
 
 const hook_trust_status = (managed: Bool, current_hash: Text, state: PolicyStateOption) => {
   if managed {
     `Managed ()
   } else if let `PresentHookState configured_state = state {
-    let [_, trusted_hash] = configured_state
+    let [_, trusted_hash] = configured_state;
 
     if let `TrustedHash hash = trusted_hash {
       if hash == current_hash { `Trusted () } else { `Modified () }
@@ -153,14 +215,19 @@ const hook_trust_status = (managed: Bool, current_hash: Text, state: PolicyState
   } else {
     `Untrusted ()
   }
-}
+};
 
-const hook_may_run = (managed: Bool, bypass_trust: Bool, current_hash: Text, state: PolicyStateOption) => {
+const hook_may_run = (
+  managed: Bool,
+  bypass_trust: Bool,
+  current_hash: Text,
+  state: PolicyStateOption,
+) => {
   if hook_enabled(managed, state) {
     if bypass_trust {
       true
     } else {
-      let status: PolicyTrustStatus = hook_trust_status(managed, current_hash, state)
+      let status: PolicyTrustStatus = hook_trust_status(managed, current_hash, state);
 
       if let `Managed () = status {
         true
@@ -173,48 +240,49 @@ const hook_may_run = (managed: Bool, bypass_trust: Bool, current_hash: Text, sta
   } else {
     false
   }
-}
+};
 
-const resolve_permission_decisions: PolicyPermissionDecisions -> PolicyPermissionDecisionOption = decisions => {
-  let current = decisions
-  let resolved: PolicyPermissionDecisionOption = `None ()
-  let saw_allow = false
+const resolve_permission_decisions: PolicyPermissionDecisions -> PolicyPermissionDecisionOption =
+  decisions => {
+    let current = decisions;
+    let resolved: PolicyPermissionDecisionOption = `None ();
+    let saw_allow = false;
 
-  loop {
-    if let `Cons node = current {
-      let [decision, tail] = node
+    loop {
+      if let `Cons node = current {
+        let [decision, tail] = node;
 
-      if let `Deny message = decision {
-        resolved = `Some (`Deny message)
-        break
+        if let `Deny message = decision {
+          resolved = `Some (`Deny message)
+          break;
+        } else {
+          saw_allow = true
+          current = tail
+        }
       } else {
-        saw_allow = true
-        current = tail
+        break;
       }
-    } else {
-      break
     }
-  }
 
-  if let `Some value = resolved {
-    `Some value
-  } else if saw_allow {
-    `Some (`Allow ())
-  } else {
-    `None ()
-  }
-}
+    if let `Some value = resolved {
+      `Some value
+    } else if saw_allow {
+      `Some (`Allow ())
+    } else {
+      `None ()
+    }
+  };
 
 const fold_legacy_hook_results: PolicyLegacyResults -> PolicyLegacyOutcome = results => {
-  let current = results
-  let continued = true
-  let messages: Text = ""
-  let message_count = 0
+  let current = results;
+  let continued = true;
+  let messages: Text = "";
+  let message_count = 0;
 
   loop {
     if let `Cons node = current {
-      let [result, tail] = node
-      let message: PolicyTextOption = `None ()
+      let [result, tail] = node;
+      let message: PolicyTextOption = `None ();
 
       if let `FailedAbort failure = result {
         message = `Some failure
@@ -235,26 +303,26 @@ const fold_legacy_hook_results: PolicyLegacyResults -> PolicyLegacyOutcome = res
       if continued {
         current = tail
       } else {
-        break
+        break;
       }
     } else {
-      break
+      break;
     }
   }
 
   [continued, messages, message_count]
-}
+};
 
 return {
-  hook_event_key_label,
-  hook_key,
-  hook_scope,
-  event_uses_matcher,
-  normalize_timeout,
-  normalize_hook_handler,
-  hook_enabled,
-  hook_trust_status,
-  hook_may_run,
-  resolve_permission_decisions,
-  fold_legacy_hook_results,
-}
+  .hook_event_key_label,
+  .hook_key,
+  .hook_scope,
+  .event_uses_matcher,
+  .normalize_timeout,
+  .normalize_hook_handler,
+  .hook_enabled,
+  .hook_trust_status,
+  .hook_may_run,
+  .resolve_permission_decisions,
+  .fold_legacy_hook_results,
+};

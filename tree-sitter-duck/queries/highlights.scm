@@ -5,6 +5,7 @@
 
 ; Keywords
 [
+  "handler"
   "module"
   "where"
 ] @keyword
@@ -154,16 +155,13 @@
 (borrow_type
   (identifier) @type)
 
-[
-  (top_type)
-  (never_type)
-] @type.builtin
+(top_type) @type.builtin
 
 (row_variable) @type.parameter
 
 ((identifier) @type.builtin
   (#any-of? @type.builtin
-    "Bool" "Int" "I32" "U32" "I64" "Text" "Bytes" "Unit" "Type" "Resume"))
+    "Bool" "Int" "I32" "U32" "I64" "Text" "Bytes" "Unit" "Type" "Resume" "Never"))
 
 (declare_effect_statement
   name: (effect_identifier) @type)
@@ -219,8 +217,15 @@
 
 (binding_statement
   name: (named_shape_pattern
-    (shorthand_shape_pattern_field
-      name: (identifier) @variable)))
+    (named_shape_pattern_field
+      name: (identifier) @variable
+      !pattern)))
+
+(arrow_function
+  parameters: (named_shape_pattern
+    (named_shape_pattern_field
+      name: (identifier) @variable.parameter
+      !pattern)))
 
 (named_shape_pattern_field
   name: (identifier) @variable.other.member)
@@ -320,9 +325,6 @@
 
 (condition_field_expression
   field: (identifier) @variable.other.member)
-
-(field_definition
-  name: (identifier) @variable.other.member)
 
 (shorthand_field
   name: (identifier) @variable.other.member)

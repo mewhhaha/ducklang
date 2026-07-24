@@ -9,4 +9,4 @@ declare Init {
   test_sync_host: TestSyncHost
 }
 
-return {}
+return {};

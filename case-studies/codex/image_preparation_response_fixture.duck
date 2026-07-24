@@ -1,0 +1,94 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .apply_image_processing_results } = import "./image_preparation.duck" ();
+
+type FixtureContentNode = ListNode HistoryContent
+type FixtureContents = HistoryContents
+type FixtureResponseNode = ListNode HistoryItem
+type FixtureResponses = HistoryItems
+type FixtureResult = ImageProcessingResult
+type FixtureResultNode = ImageProcessingResultNode
+type FixtureResults = ImageProcessingResults
+type FixtureDetail = OutputImageDetail
+type FixtureDetailOption = OutputImageDetailOption
+
+const verify_image_preparation_response_fixture: () -> I32 = () => {
+  let no_detail: FixtureDetailOption = `None ();
+  let high: FixtureDetail = `High ();
+  let high_detail: FixtureDetailOption = `Some high;
+
+  let contents: FixtureContents = `Nil ();
+  let content_node: FixtureContentNode = [
+    `InputImage (["/workspace/local.png", no_detail]),
+    contents,
+  ];
+  contents = `Cons content_node
+  content_node = [`InputImage (["data:image/png;base64,HIGH", high_detail]), contents]
+  contents = `Cons content_node
+  content_node = [`InputImage (["https://example.com/remote.png", no_detail]), contents]
+  contents = `Cons content_node
+  content_node = [`InputText "before", contents]
+  contents = `Cons content_node
+
+  let responses: FixtureResponses = `Nil ();
+  let response_node: FixtureResponseNode = [`Message (["user", true, contents]), responses];
+  responses = `Cons response_node
+
+  let results: FixtureResults = `ImageResultsNil ();
+  let result: FixtureResult = [
+    .status_code = 0,
+    .image_url = "data:image/png;base64,PROCESSED",
+    .reason = "",
+    .size = 32,
+  ];
+  let result_node: FixtureResultNode = [result, results];
+  results = `ImageResultsCons result_node
+
+  let rewrite = apply_image_processing_results(responses, results);
+  let score = 0;
+  if let `PreparedImageResponses rewritten = rewrite {
+    if let `Cons message_node = rewritten {
+      let [response, response_tail] = message_node;
+      if let `Message message = response {
+        let [role, developer, rewritten_contents] = message;
+        if role == "user" && developer {
+          if let `Cons first_node = rewritten_contents {
+            let [first, after_first] = first_node;
+            if let `InputText value = first { if value == "before" { score = score + 1 } }
+            if let `Cons second_node = after_first {
+              let [second, after_second] = second_node;
+              if let `InputText value = second { if value ==
+                "image content omitted because remote image URLs are not supported" { score = score
+                  + 10 } }
+              if let `Cons third_node = after_second {
+                let [third, after_third] = third_node;
+                if let `InputImage image = third {
+                  let [url, detail] = image;
+                  if url == "data:image/png;base64,PROCESSED" {
+                    if let `Some selected = detail { if let `High () = selected { score = score +
+                      100 } }
+                  }
+                }
+                if let `Cons fourth_node = after_third {
+                  let [fourth, content_tail] = fourth_node;
+                  if let `InputImage image = fourth {
+                    let [url, _] = image;
+                    if url == "/workspace/local.png" {
+                      if let `Nil () = content_tail { if let `Nil () = response_tail { score = score
+                        + 1000 } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  score
+};
+
+return { .verify_image_preparation_response_fixture };

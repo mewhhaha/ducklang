@@ -1,0 +1,190 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .plan_image_preparation } = import "./image_preparation_plan.duck" ();
+
+type ImageContentNode = ListNode HistoryContent
+type ImageResponseNode = ListNode HistoryItem
+
+type ImageContentRewriteStatus =
+  | `ImageContentRewriteValid Unit
+  | `ImageContentRewriteInvalid ImageRewriteFailure
+
+type ImageContentRewrite = [HistoryContents, ImageProcessingResults, ImageContentRewriteStatus, I32]
+
+const rewrite_image_contents: [HistoryContents, ImageProcessingResults, I32] ->
+  ImageContentRewrite = (
+    contents,
+    results,
+    first_request_index,
+  ) => {
+    let current = contents;
+    let remaining_results = results;
+    let reversed: List HistoryContent = `Nil ();
+    let status: ImageContentRewriteStatus = `ImageContentRewriteValid ();
+    let request_index = first_request_index;
+
+    loop {
+      if let `ImageContentRewriteInvalid _ = status { break; }
+      if let `Cons node = current {
+        let [content, tail] = node;
+        let rewritten = content;
+
+        if let `InputImage image = content {
+          let [_, detail] = image;
+          let plan = plan_image_preparation image;
+          if plan.status_code == 1 {
+            if let `ImageResultsCons result_node = remaining_results {
+              let [result, remaining] = result_node;
+              remaining_results = remaining
+              if result.status_code == 0 {
+                if result.image_url == "" {
+                  status = `ImageContentRewriteInvalid (`InvalidProcessedImageUrl request_index)
+                } else {
+                  rewritten = `InputImage ([result.image_url, detail])
+                  request_index = request_index + 1
+                }
+              } else if result.status_code == 1 {
+                rewritten = `InputText "image content omitted because it could not be processed"
+                request_index = request_index + 1
+              } else if result.status_code == 2 {
+                rewritten =
+                  `InputText "image content omitted because it exceeded the supported size limit; use a smaller image"
+                request_index = request_index + 1
+              } else {
+                status = `ImageContentRewriteInvalid (
+                  `InvalidImageProcessingStatus result.status_code
+                )
+              }
+            } else {
+              status = `ImageContentRewriteInvalid (`MissingImageProcessingResult request_index)
+            }
+          } else if plan.status_code == 2 {
+            rewritten =
+              `InputText "image content omitted because remote image URLs are not supported"
+          } else if plan.status_code == 3 {
+            rewritten =
+              `InputText "image content omitted because detail 'low' is not supported; use 'high', 'original', or 'auto'"
+          }
+        }
+
+        if let `ImageContentRewriteValid () = status {
+          let rewritten_node: ImageContentNode = [rewritten, reversed];
+          reversed = `Cons rewritten_node
+          current = tail
+        }
+      } else {
+        break;
+      }
+    }
+
+    let rewritten_contents: List HistoryContent = `Nil ();
+    if let `ImageContentRewriteValid () = status {
+      loop {
+        if let `Cons node = reversed {
+          let [content, tail] = node;
+          let rewritten_node: ImageContentNode = [content, rewritten_contents];
+          rewritten_contents = `Cons rewritten_node
+          reversed = tail
+        } else {
+          break;
+        }
+      }
+    }
+
+    [rewritten_contents, remaining_results, status, request_index]
+  };
+
+const apply_image_processing_results: [HistoryItems, ImageProcessingResults] -> ImageRewriteResult =
+  (
+    responses,
+    results,
+  ) => {
+    let current = responses;
+    let remaining_results = results;
+    let reversed: List HistoryItem = `Nil ();
+    let status: ImageContentRewriteStatus = `ImageContentRewriteValid ();
+    let request_index = 0;
+
+    loop {
+      if let `ImageContentRewriteInvalid _ = status { break; }
+      if let `Cons node = current {
+        let [response, tail] = node;
+        let rewritten = response;
+
+        if let `Message message = response {
+          let [role, developer, contents] = message;
+          let rewrite = rewrite_image_contents(contents, remaining_results, request_index);
+          let [rewritten_contents, remaining, next_status, next_request_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          request_index = next_request_index
+          if let `ImageContentRewriteValid () = status {
+            rewritten = `Message ([role, developer, rewritten_contents])
+          }
+        } else if let `FunctionOutput output = response {
+          let [identifier, call_id, contents] = output;
+          let rewrite = rewrite_image_contents(contents, remaining_results, request_index);
+          let [rewritten_contents, remaining, next_status, next_request_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          request_index = next_request_index
+          if let `ImageContentRewriteValid () = status {
+            rewritten = `FunctionOutput ([identifier, call_id, rewritten_contents])
+          }
+        } else if let `CustomOutput output = response {
+          let [identifier, call_id, contents] = output;
+          let rewrite = rewrite_image_contents(contents, remaining_results, request_index);
+          let [rewritten_contents, remaining, next_status, next_request_index] = rewrite;
+          remaining_results = remaining
+          status = next_status
+          request_index = next_request_index
+          if let `ImageContentRewriteValid () = status {
+            rewritten = `CustomOutput ([identifier, call_id, rewritten_contents])
+          }
+        }
+
+        if let `ImageContentRewriteValid () = status {
+          let rewritten_node: ImageResponseNode = [rewritten, reversed];
+          reversed = `Cons rewritten_node
+          current = tail
+        }
+      } else {
+        break;
+      }
+    }
+
+    if let `ImageContentRewriteInvalid failure = status {
+      `RejectedImageRewrite failure
+    } else if let `ImageResultsCons _ = remaining_results {
+      let extra_count = 0;
+      let counting = remaining_results;
+      loop {
+        if let `ImageResultsCons node = counting {
+          let [_, tail] = node;
+          extra_count = extra_count + 1
+          counting = tail
+        } else {
+          break;
+        }
+      }
+      `RejectedImageRewrite (`ExtraImageProcessingResults extra_count)
+    } else {
+      let rewritten_responses: List HistoryItem = `Nil ();
+      loop {
+        if let `Cons node = reversed {
+          let [response, tail] = node;
+          let rewritten_node: ImageResponseNode = [response, rewritten_responses];
+          rewritten_responses = `Cons rewritten_node
+          reversed = tail
+        } else {
+          break;
+        }
+      }
+      `PreparedImageResponses rewritten_responses
+    }
+  };
+
+return {
+  .apply_image_processing_results,
+};

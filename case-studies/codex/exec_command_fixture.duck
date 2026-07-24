@@ -1,9 +1,9 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
-const exec_module = import "./exec.duck"
-const { resolve_command } = exec_module()
+const { .list } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
+const exec_module = import "./exec.duck";
+const { .resolve_command } = exec_module();
 
 type FixtureTextOption = ExecTextOption
 type FixtureBoolOption = ExecBoolOption
@@ -13,45 +13,58 @@ type FixtureShell = ExecShell
 type FixtureShellMode = ExecShellMode
 type FixtureResolution = ExecCommandResolution
 
-const texts = comptime list(Text)
+const texts = comptime list Text;
 
-const command_score = (resolution: FixtureResolution, expected_path: Text, expected_flag: Text, expected_length: I32) => {
+const command_score = (
+  resolution: FixtureResolution,
+  expected_path: Text,
+  expected_flag: Text,
+  expected_length: I32,
+) => {
   if let `Ok resolved = resolution {
-    let [command, _] = resolved
-    let length_score = if texts.length(command) == expected_length { 1 } else { 0 }
-    let path_score = if texts.nth_or("", 0, command) == expected_path { 10 } else { 0 }
-    let flag_score = if texts.nth_or("", 1, command) == expected_flag { 100 } else { 0 }
+    let [command, _] = resolved;
+    let length_score = if texts.length(command) == expected_length { 1 } else { 0 };
+    let path_score = if texts.nth_or("", 0, command) == expected_path { 10 } else { 0 };
+    let flag_score = if texts.nth_or("", 1, command) == expected_flag { 100 } else { 0 };
     length_score + path_score + flag_score
   } else {
     0
   }
-}
+};
 
-let session_shell: FixtureShell = ["/bin/zsh", `Zsh ()]
-let direct: FixtureShellMode = `Direct ()
-let no_login: FixtureBoolOption = `Some false
-let no_shell: FixtureTextOption = `None ()
-let score: I32 = 0
+let session_shell: FixtureShell = ["/bin/zsh", `Zsh ()];
+let direct: FixtureShellMode = `Direct ();
+let no_login: FixtureBoolOption = `Some false;
+let no_shell: FixtureTextOption = `None ();
+let score: I32 = 0;
 
-let bash_shell: FixtureTextOption = `Some "/bin/bash"
-let resolution: FixtureResolution = resolve_command("echo hi", bash_shell, no_login, direct, session_shell, false)
+let bash_shell: FixtureTextOption = `Some "/bin/bash";
+let resolution: FixtureResolution = resolve_command(
+  "echo hi",
+  bash_shell,
+  no_login,
+  direct,
+  session_shell,
+  false,
+);
 score = score + command_score(resolution, "/bin/bash", "-c", 3)
 
-let login: FixtureBoolOption = `Some true
+let login: FixtureBoolOption = `Some true;
 resolution = resolve_command("pwd", no_shell, login, direct, session_shell, false)
 score = score + if let `Err _ = resolution { 1000 } else { 0 }
 
-let fork_shell: FixtureShell = ["/opt/homebrew/bin/zsh", `Zsh ()]
-let fork_mode: FixtureShellMode = `ZshFork fork_shell
+let fork_shell: FixtureShell = ["/opt/homebrew/bin/zsh", `Zsh ()];
+let fork_mode: FixtureShellMode = `ZshFork fork_shell;
 resolution = resolve_command("pwd", no_shell, login, fork_mode, session_shell, true)
 score = score + command_score(resolution, "/opt/homebrew/bin/zsh", "-lc", 3) * 10
 
-let powershell: FixtureTextOption = `Some "C:/Program Files/PowerShell/7/PWSH.EXE"
+let powershell: FixtureTextOption = `Some "C:/Program Files/PowerShell/7/PWSH.EXE";
 resolution = resolve_command("Get-Location", powershell, no_login, direct, session_shell, false)
-score = score + command_score(resolution, "C:/Program Files/PowerShell/7/PWSH.EXE", "-NoProfile", 4) * 100
+score = score + command_score(resolution, "C:/Program Files/PowerShell/7/PWSH.EXE", "-NoProfile",
+  4) * 100
 
-let unknown: FixtureTextOption = `Some "/bin/not-a-shell"
+let unknown: FixtureTextOption = `Some "/bin/not-a-shell";
 resolution = resolve_command("pwd", unknown, no_login, direct, session_shell, false)
 score = score + command_score(resolution, "/bin/zsh", "-c", 3) * 1000
 
-return { .score = score }
+return { .score = score };

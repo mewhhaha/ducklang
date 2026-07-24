@@ -1,15 +1,38 @@
-const { json_array, json_array_empty, json_array_prepend, json_bool, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const app_server_types_module = import "./app_server_types.duck"
-const app_server_methods_module = import "./app_server_methods.duck"
-const { decode_thread_list, decode_thread_read } = app_server_methods_module()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_bool,
+  .json_number,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json" ();
+const app_server_types_module = import "./app_server_types.duck";
+const app_server_methods_module = import "./app_server_methods.duck";
+const { .decode_thread_list, .decode_thread_read } = app_server_methods_module();
 
 type FixtureJson = AppServerJson
 type FixtureMethodResult = AppServerMethodDecodeResult
 type FixtureThreadListParams = AppServerThreadListParams
 
 const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThreadListParams) => {
-  let [cursor, limit, sort_key, direction, _, _, archived, cwd, state_db_only, search, parent, ancestor] = params
-  let valid = false
+  let [
+    cursor,
+    limit,
+    sort_key,
+    direction,
+    _,
+    _,
+    archived,
+    cwd,
+    state_db_only,
+    search,
+    parent,
+    ancestor,
+  ] = params;
+  let valid = false;
 
   if let `Some cursor_value = cursor {
     if let `Some limit_value = limit {
@@ -20,8 +43,9 @@ const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThrea
               if let `Some parent_value = parent {
                 if let `None () = ancestor {
                   if let `Cons cwd_node = cwd {
-                    let [first_cwd, _] = cwd_node
-                    valid = cursor_value == "cursor-1" && limit_value == 25 && archived_value && state_db_only && search_value == "needle" && parent_value == "parent-1" && first_cwd == "/repo"
+                    let [first_cwd, _] = cwd_node;
+                    valid =
+                      cursor_value == "cursor-1" && limit_value == 25 && archived_value && state_db_only && search_value == "needle" && parent_value == "parent-1" && first_cwd == "/repo"
                   }
                 }
               }
@@ -33,68 +57,73 @@ const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThrea
   }
 
   valid
-}
+};
 
-let score = 0
-let providers = json_array_prepend(json_string("openai"), json_array_empty())
-let kinds = json_array_empty()
-kinds = json_array_prepend(json_string("appServer"), kinds)
-kinds = json_array_prepend(json_string("cli"), kinds)
-let cwd = json_array_empty()
-cwd = json_array_prepend(json_string("/work"), cwd)
-cwd = json_array_prepend(json_string("/repo"), cwd)
-let list_fields = json_object_empty()
-list_fields = json_object_prepend("parentThreadId", json_string("parent-1"), list_fields)
-list_fields = json_object_prepend("searchTerm", json_string("needle"), list_fields)
-list_fields = json_object_prepend("useStateDbOnly", json_bool(true), list_fields)
-list_fields = json_object_prepend("cwd", json_array(cwd), list_fields)
-list_fields = json_object_prepend("archived", json_bool(true), list_fields)
-list_fields = json_object_prepend("sourceKinds", json_array(kinds), list_fields)
-list_fields = json_object_prepend("modelProviders", json_array(providers), list_fields)
-list_fields = json_object_prepend("sortDirection", json_string("asc"), list_fields)
-list_fields = json_object_prepend("sortKey", json_string("updated_at"), list_fields)
-list_fields = json_object_prepend("limit", json_number("25"), list_fields)
-list_fields = json_object_prepend("cursor", json_string("cursor-1"), list_fields)
-let list_params: FixtureJson = json_object(list_fields)
-let list_result: FixtureMethodResult = decode_thread_list(list_params)
+let score = 0;
+let providers = json_array_prepend(json_string "openai", json_array_empty());
+let kinds = json_array_empty();
+kinds = json_array_prepend(json_string "appServer", kinds)
+kinds = json_array_prepend(json_string "cli", kinds)
+let cwd = json_array_empty();
+cwd = json_array_prepend(json_string "/work", cwd)
+cwd = json_array_prepend(json_string "/repo", cwd)
+let list_fields = json_object_empty();
+list_fields = json_object_prepend("parentThreadId", json_string "parent-1", list_fields)
+list_fields = json_object_prepend("searchTerm", json_string "needle", list_fields)
+list_fields = json_object_prepend("useStateDbOnly", json_bool true, list_fields)
+list_fields = json_object_prepend("cwd", json_array cwd, list_fields)
+list_fields = json_object_prepend("archived", json_bool true, list_fields)
+list_fields = json_object_prepend("sourceKinds", json_array kinds, list_fields)
+list_fields = json_object_prepend("modelProviders", json_array providers, list_fields)
+list_fields = json_object_prepend("sortDirection", json_string "asc", list_fields)
+list_fields = json_object_prepend("sortKey", json_string "updated_at", list_fields)
+list_fields = json_object_prepend("limit", json_number "25", list_fields)
+list_fields = json_object_prepend("cursor", json_string "cursor-1", list_fields)
+let list_params: FixtureJson = json_object list_fields;
+let list_result: FixtureMethodResult = decode_thread_list list_params;
 if let `MethodOk method = list_result {
   if let `ThreadList params = method {
-    if thread_list_valid(params) { score = score + 1 }
+    if thread_list_valid params { score = score + 1 }
   }
 }
 
-let default_fields = json_object_prepend("limit", json_number("20"), json_object_empty())
-let default_result: FixtureMethodResult = decode_thread_list(json_object(default_fields))
+let default_fields = json_object_prepend("limit", json_number "20", json_object_empty());
+let default_result: FixtureMethodResult = decode_thread_list(json_object default_fields);
 if let `MethodOk method = default_result {
   if let `ThreadList _ = method { score = score + 10000 }
 }
 
-let read_fields = json_object_empty()
-read_fields = json_object_prepend("includeTurns", json_bool(true), read_fields)
-read_fields = json_object_prepend("threadId", json_string("thread-1"), read_fields)
-let read_params: FixtureJson = json_object(read_fields)
-let read_result: FixtureMethodResult = decode_thread_read(read_params)
+let read_fields = json_object_empty();
+read_fields = json_object_prepend("includeTurns", json_bool true, read_fields)
+read_fields = json_object_prepend("threadId", json_string "thread-1", read_fields)
+let read_params: FixtureJson = json_object read_fields;
+let read_result: FixtureMethodResult = decode_thread_read read_params;
 if let `MethodOk method = read_result {
   if let `ThreadRead params = method {
-    let [thread_id, include_turns] = params
+    let [thread_id, include_turns] = params;
     if thread_id == "thread-1" && include_turns { score = score + 10 }
   }
 }
 
-let invalid_fields = json_object_prepend("limit", json_number("-1"), json_object_empty())
-let invalid_params: FixtureJson = json_object(invalid_fields)
-let invalid_result: FixtureMethodResult = decode_thread_list(invalid_params)
+let invalid_fields = json_object_prepend("limit", json_number "-1", json_object_empty());
+let invalid_params: FixtureJson = json_object invalid_fields;
+let invalid_result: FixtureMethodResult = decode_thread_list invalid_params;
 if let `MethodError message = invalid_result {
   if message == "thread/list.params.limit must be a non-negative integer" { score = score + 100 }
 }
 
-let conflicting_fields = json_object_empty()
-conflicting_fields = json_object_prepend("ancestorThreadId", json_string("ancestor"), conflicting_fields)
-conflicting_fields = json_object_prepend("parentThreadId", json_string("parent"), conflicting_fields)
-let conflicting_params: FixtureJson = json_object(conflicting_fields)
-let conflicting_result: FixtureMethodResult = decode_thread_list(conflicting_params)
+let conflicting_fields = json_object_empty();
+conflicting_fields = json_object_prepend(
+  "ancestorThreadId",
+  json_string "ancestor",
+  conflicting_fields,
+)
+conflicting_fields = json_object_prepend("parentThreadId", json_string "parent", conflicting_fields)
+let conflicting_params: FixtureJson = json_object conflicting_fields;
+let conflicting_result: FixtureMethodResult = decode_thread_list conflicting_params;
 if let `MethodError message = conflicting_result {
-  if message == "thread/list.params.parentThreadId and ancestorThreadId are mutually exclusive" { score = score + 1000 }
+  if message == "thread/list.params.parentThreadId and ancestorThreadId are mutually exclusive" {
+    score = score + 1000 }
 }
 
 score

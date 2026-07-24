@@ -1,10 +1,11 @@
 module () where
 
-const {} = import "./agent_tool_types.duck" ()
-const { parse_spawn_agent_args } = import "./agent_tool_spawn_json.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .parse_spawn_agent_args } = import "./agent_tool_spawn_json.duck" ();
 
-let decoded = parse_spawn_agent_args "{\"task_name\":\"reviewer\",\"message\":\"inspect the compiler\",\"fork_turns\":\"3\",\"model\":\"gpt-5.6\",\"reasoning_effort\":\"high\"}"
-let score = 0
+let decoded =
+  parse_spawn_agent_args "{\"task_name\":\"reviewer\",\"message\":\"inspect the compiler\",\"fork_turns\":\"3\",\"model\":\"gpt-5.6\",\"reasoning_effort\":\"high\"}";
+let score = 0;
 if let `AgentSpawnDecoded arguments = decoded {
   if arguments.task_name == "reviewer" && arguments.message == "inspect the compiler" {
     if let `Some fork_turns = arguments.fork_turns {
@@ -21,4 +22,4 @@ if let `AgentSpawnDecoded arguments = decoded {
   }
 }
 
-return { .score = score }
+return { .score = score };

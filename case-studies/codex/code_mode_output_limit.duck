@@ -1,7 +1,8 @@
 module () where
 
-const { text_get, text_length, text_less_than, unsafe_i64_extend_i32_signed } = import "duck:prelude/runtime" ()
-const {} = import "./code_mode_wait_types.duck" ()
+const { .text_get, .text_length, .text_less_than, .unsafe_i64_extend_i32_signed } =
+  import "duck:prelude/runtime" ();
+const {} = import "./code_mode_wait_types.duck" ();
 
 type OutputLimit = CodeModeWaitU64Option
 
@@ -11,8 +12,8 @@ const resolve_code_mode_output_token_limit: OutputLimit -> I64 = token_limit => 
     | `WaitLimitPresent encoded => {
       let decimal = match encoded {
         | `U64Decimal value => value
-      }
-      let bounded = text_length decimal < 19
+      };
+      let bounded = text_length decimal < 19;
 
       if text_length decimal == 19 {
         bounded = !(text_less_than ["9223372036854775807", decimal])
@@ -21,12 +22,12 @@ const resolve_code_mode_output_token_limit: OutputLimit -> I64 = token_limit => 
       if !(bounded) {
         9223372036854775807i64
       } else {
-        let maximum_tokens = 0i64
-        let index = 0
+        let maximum_tokens = 0i64;
+        let index = 0;
 
         loop {
-          if index >= text_length decimal { break }
-          let digit = unsafe_i64_extend_i32_signed(text_get [decimal, index] - 48)
+          if index >= text_length decimal { break; }
+          let digit = unsafe_i64_extend_i32_signed(text_get [decimal, index] - 48);
           maximum_tokens = maximum_tokens * 10i64 + digit
           index = index + 1
         }
@@ -35,6 +36,6 @@ const resolve_code_mode_output_token_limit: OutputLimit -> I64 = token_limit => 
       }
     }
   }
-}
+};
 
-return { resolve_code_mode_output_token_limit }
+return { .resolve_code_mode_output_token_limit };

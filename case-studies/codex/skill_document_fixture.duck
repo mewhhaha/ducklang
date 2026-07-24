@@ -1,30 +1,39 @@
 module () where
 
-const skill_types_module = import "./skill_types.duck"
-const skills_module = import "./skills.duck"
-const { parse_skill_document } = skills_module()
+const skill_types_module = import "./skill_types.duck";
+const skills_module = import "./skills.duck";
+const { .parse_skill_document } = skills_module();
 
 type FixtureTextOption = SkillTextOption
 type FixtureProductOption = SkillProductOption
 type FixtureScope = SkillScope
 
-let no_text: FixtureTextOption = `None ()
-let metadata: FixtureTextOption = `Some "policy:\n  allow_implicit_invocation: true\n  products: [codex]"
-let scope: FixtureScope = `System ()
-let product: FixtureProductOption = `Some (`Codex ())
-let parsed = parse_skill_document("/system/alpha/SKILL.md", "---\nname: alpha\ndescription: Search source trees\n---\nUse rg.", metadata, scope, no_text, no_text, product)
-let [document, message] = parsed
-let score = 0
+let no_text: FixtureTextOption = `None ();
+let metadata: FixtureTextOption =
+  `Some "policy:\n  allow_implicit_invocation: true\n  products: [codex]";
+let scope: FixtureScope = `System ();
+let product: FixtureProductOption = `Some (`Codex ());
+let parsed = parse_skill_document(
+  "/system/alpha/SKILL.md",
+  "---\nname: alpha\ndescription: Search source trees\n---\nUse rg.",
+  metadata,
+  scope,
+  no_text,
+  no_text,
+  product,
+);
+let [document, message] = parsed;
+let score = 0;
 
 if let `Some loaded = document {
-  let [skill, _] = loaded
-  let [name, description, _, _, _, policy, _, _, _] = skill
+  let [skill, _] = loaded;
+  let [name, description, _, _, _, policy, _, _, _] = skill;
 
   if name == "alpha" && description == "Search source trees" {
     score = score + 1
   }
 
-  let [implicit, _] = policy
+  let [implicit, _] = policy;
 
   if let `Some allowed = implicit {
     if allowed { score = score + 10 }
@@ -35,4 +44,4 @@ if let `None () = message {
   score = score + 100
 }
 
-return { .score = score }
+return { .score = score };

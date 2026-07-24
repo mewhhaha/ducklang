@@ -1,7 +1,8 @@
 module () where
 
-const { path_join, text_get, text_length, text_starts_with, text_trim_ascii_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./agent_job_spawn_types.duck" ()
+const { .path_join, .text_get, .text_length, .text_starts_with, .text_trim_ascii_whitespace } =
+  import "duck:prelude/runtime" ();
+const {} = import "./agent_job_spawn_types.duck" ();
 
 type AgentJobSpawnEnvironmentArgs = AgentJobSpawnDecodedArgs
 type AgentJobSpawnEnvironmentOption = AgentJobTextOption
@@ -11,36 +12,56 @@ const agent_job_path_is_absolute: Text -> Bool = path => {
   if text_starts_with [path, "/"] || text_starts_with [path, "\\\\"] {
     true
   } else if text_length path >= 3 && text_get [path, 1] == 58 {
-    let first = text_get [path, 0]
-    let separator = text_get [path, 2]
-    let drive_letter = (first >= 65 && first <= 90) || (first >= 97 && first <= 122)
+    let first = text_get [path, 0];
+    let separator = text_get [path, 2];
+    let drive_letter = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
     drive_letter && (separator == 47 || separator == 92)
   } else {
     false
   }
-}
+};
 
-const prepare_agent_job_spawn_environment: [AgentJobSpawnEnvironmentArgs, Text, I32, Bool, I32] -> AgentJobSpawnEnvironmentResult = (decoded: AgentJobSpawnEnvironmentArgs, cwd: Text, environment_count: I32, remote_environment: Bool, maximum_threads: I32) => {
-  if environment_count != 1 {
-    `SpawnDecodeFailed "spawn_agents_on_csv requires exactly one local environment"
-  } else if remote_environment {
-    `SpawnDecodeFailed "spawn_agents_on_csv is not supported for remote environments"
-  } else if maximum_threads == 0 {
-    `SpawnDecodeFailed "agent thread limit reached; this session cannot spawn more subagents"
-  } else if text_trim_ascii_whitespace decoded.instruction == "" {
-    `SpawnDecodeFailed "instruction must be non-empty"
-  } else {
-    let input_path = if agent_job_path_is_absolute decoded.csv_path { decoded.csv_path } else { path_join [cwd, decoded.csv_path] }
-    let output_path: AgentJobSpawnEnvironmentOption = decoded.output_path
-    if let `Some path = output_path {
-      if !(agent_job_path_is_absolute path) { output_path = `Some (path_join [cwd, path]) }
+const prepare_agent_job_spawn_environment: [AgentJobSpawnEnvironmentArgs, Text, I32, Bool, I32] ->
+  AgentJobSpawnEnvironmentResult = (
+    decoded: AgentJobSpawnEnvironmentArgs,
+    cwd: Text,
+    environment_count: I32,
+    remote_environment: Bool,
+    maximum_threads: I32,
+  ) => {
+    if environment_count != 1 {
+      `SpawnDecodeFailed "spawn_agents_on_csv requires exactly one local environment"
+    } else if remote_environment {
+      `SpawnDecodeFailed "spawn_agents_on_csv is not supported for remote environments"
+    } else if maximum_threads == 0 {
+      `SpawnDecodeFailed "agent thread limit reached; this session cannot spawn more subagents"
+    } else if text_trim_ascii_whitespace decoded.instruction == "" {
+      `SpawnDecodeFailed "instruction must be non-empty"
+    } else {
+      let input_path = if agent_job_path_is_absolute decoded.csv_path { decoded.csv_path } else {
+        path_join [
+          cwd,
+          decoded.csv_path,
+        ] };
+      let output_path: AgentJobSpawnEnvironmentOption = decoded.output_path;
+      if let `Some path = output_path {
+        if !(agent_job_path_is_absolute path) { output_path = `Some (path_join [cwd, path]) }
+      }
+      let args: AgentJobSpawnEnvironmentArgs = [
+        .csv_path = input_path,
+        .instruction = decoded.instruction,
+        .id_column = decoded.id_column,
+        .output_path = output_path,
+        .output_schema_json = decoded.output_schema_json,
+        .max_concurrency = decoded.max_concurrency,
+        .max_workers = decoded.max_workers,
+        .max_runtime_seconds = decoded.max_runtime_seconds,
+      ];
+      `SpawnDecoded args
     }
-    let args: AgentJobSpawnEnvironmentArgs = [.csv_path = input_path, .instruction = decoded.instruction, .id_column = decoded.id_column, .output_path = output_path, .output_schema_json = decoded.output_schema_json, .max_concurrency = decoded.max_concurrency, .max_workers = decoded.max_workers, .max_runtime_seconds = decoded.max_runtime_seconds]
-    `SpawnDecoded args
-  }
-}
+  };
 
 return {
-  agent_job_path_is_absolute,
-  prepare_agent_job_spawn_environment,
-}
+  .agent_job_path_is_absolute,
+  .prepare_agent_job_spawn_environment,
+};

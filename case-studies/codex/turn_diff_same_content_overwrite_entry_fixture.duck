@@ -1,0 +1,6 @@
+module () where
+
+const { .verify_turn_diff_same_content_overwrite_fixture } =
+  import "./turn_diff_same_content_overwrite_fixture.duck" ();
+
+return { .score = verify_turn_diff_same_content_overwrite_fixture() };

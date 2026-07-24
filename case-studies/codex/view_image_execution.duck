@@ -1,7 +1,7 @@
 module (!init: Init) where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./view_image_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./view_image_types.duck" ();
 
 type ImageExecutionEvent = ViewImageViewEvent
 type ImageExecutionHostRequest = ViewImageHostRequest
@@ -11,31 +11,46 @@ type ImageExecutionPrepared = ViewImagePreparedCall
 type ImageExecutionResult = ViewImageExecutionResult
 
 const run_view_image = (prepared: ImageExecutionPrepared) => {
-  let request: ImageExecutionHostRequest = [.environment_id = prepared.environment_id, .path = prepared.path]
+  let request: ImageExecutionHostRequest = [
+    .environment_id = prepared.environment_id,
+    .path = prepared.path,
+  ];
   response <- ViewImageHost.read(&request)
-  let host_response: ImageExecutionHostResponse = response
+  let host_response: ImageExecutionHostResponse = response;
 
   if let `Loaded image_url = host_response {
-    let event: ImageExecutionEvent = [.call_id = prepared.call_id, .path = prepared.path]
+    let event: ImageExecutionEvent = [.call_id = prepared.call_id, .path = prepared.path];
     _ <- ViewImageHost.viewed(&event)
-    let output: ImageExecutionOutput = [.image_url = image_url, .detail = prepared.detail]
-    let result: ImageExecutionResult = `Completed output
+    let output: ImageExecutionOutput = [.image_url = image_url, .detail = prepared.detail];
+    let result: ImageExecutionResult = `Completed output;
     result
   } else if let `LocateFailed reason = host_response {
-    let result: ImageExecutionResult = `Rejected (text_append ["unable to locate image at `", text_append [prepared.path, text_append ["`: ", reason]]])
+    let result: ImageExecutionResult = `Rejected (
+      text_append [
+        "unable to locate image at `",
+        text_append [prepared.path, text_append ["`: ", reason]],
+      ]
+    );
     result
   } else if let `NotFile () = host_response {
-    let result: ImageExecutionResult = `Rejected (text_append ["image path `", text_append [prepared.path, "` is not a file"]])
+    let result: ImageExecutionResult = `Rejected (
+      text_append ["image path `", text_append [prepared.path, "` is not a file"]]
+    );
     result
   } else if let `ReadFailed reason = host_response {
-    let result: ImageExecutionResult = `Rejected (text_append ["unable to read image at `", text_append [prepared.path, text_append ["`: ", reason]]])
+    let result: ImageExecutionResult = `Rejected (
+      text_append [
+        "unable to read image at `",
+        text_append [prepared.path, text_append ["`: ", reason]],
+      ]
+    );
     result
   } else {
-    let result: ImageExecutionResult = `Rejected "view_image host returned no result"
+    let result: ImageExecutionResult = `Rejected "view_image host returned no result";
     result
   }
-}
+};
 
 return {
-  run_view_image,
-}
+  .run_view_image,
+};

@@ -1,14 +1,17 @@
 module () where
 
-const {} = import "./agent_tool_types.duck" ()
-const { plan_agent_control_call } = import "./agent_tool_control_call.duck" ()
-const { plan_spawn_agent_call } = import "./agent_tool_spawn_call.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .plan_agent_control_call } = import "./agent_tool_control_call.duck" ();
+const { .plan_spawn_agent_call } = import "./agent_tool_spawn_call.duck" ();
 
 type AgentCallContext = AgentToolContext
 type AgentCallOperation = AgentToolOperation
 type AgentCallPlan = AgentToolPlan
 
-const plan_agent_tool_call: [AgentCallContext, AgentCallOperation] -> AgentCallPlan = (context: AgentCallContext, operation: AgentCallOperation) => {
+const plan_agent_tool_call: [AgentCallContext, AgentCallOperation] -> AgentCallPlan = (
+  context: AgentCallContext,
+  operation: AgentCallOperation,
+) => {
   if let `SpawnAgentCall arguments = operation {
     plan_spawn_agent_call(context, arguments)
   } else if let `ControlAgentCall control = operation {
@@ -16,6 +19,6 @@ const plan_agent_tool_call: [AgentCallContext, AgentCallOperation] -> AgentCallP
   } else {
     `AgentToolRejected "collaboration handler received unsupported payload"
   }
-}
+};
 
-return { plan_agent_tool_call }
+return { .plan_agent_tool_call };

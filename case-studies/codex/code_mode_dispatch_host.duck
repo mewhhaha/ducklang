@@ -12,4 +12,4 @@ declare Init {
   code_mode_dispatch_host: CodeModeDispatchHost
 }
 
-return {}
+return {};

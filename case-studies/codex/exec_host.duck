@@ -10,4 +10,4 @@ declare Init {
   process_host: ProcessHost
 }
 
-return {}
+return {};

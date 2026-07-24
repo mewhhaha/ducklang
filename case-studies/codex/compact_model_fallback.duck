@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./compact_model_fallback_types.duck" ()
-const { compaction_implementation_tag, compaction_reason_tag } = import "./compaction_tags.duck" ()
+const {} = import "./compact_model_fallback_types.duck" ();
+const { .compaction_implementation_tag, .compaction_reason_tag } = import "./compaction_tags.duck" ();
 
 type ModelFallbackError = CompactionModelError
 type ModelFallbackTextOption = CompactionFallbackTextOption
@@ -27,15 +27,37 @@ const should_retry_with_current_model: ModelFallbackError -> Bool = error => {
   } else {
     false
   }
-}
+};
 
-const model_fallback_telemetry: [Text, Text, ModelFallbackReason, ModelFallbackImplementation, ModelFallbackTextOption] -> ModelFallbackTelemetry = (previous_model, current_model, reason, implementation, fallback_error) => {
-  let outcome = if let `None () = fallback_error { "succeeded" } else { "failed" }
+const model_fallback_telemetry: [
+  Text,
+  Text,
+  ModelFallbackReason,
+  ModelFallbackImplementation,
+  ModelFallbackTextOption,
+] -> ModelFallbackTelemetry = (
+  previous_model,
+  current_model,
+  reason,
+  implementation,
+  fallback_error,
+) => {
+  let outcome = if let `None () = fallback_error { "succeeded" } else { "failed" };
 
-  [.metric = "codex.compaction.model_fallback", .increment = 1, .previous_model = previous_model, .current_model = current_model, .reason = compaction_reason_tag(reason), .implementation = compaction_implementation_tag(implementation), .outcome = outcome, .fallback_error = fallback_error, .message = "previous-model compaction failed; retried with current model"]
-}
+  [
+    .metric = "codex.compaction.model_fallback",
+    .increment = 1,
+    .previous_model = previous_model,
+    .current_model = current_model,
+    .reason = compaction_reason_tag reason,
+    .implementation = compaction_implementation_tag implementation,
+    .outcome = outcome,
+    .fallback_error = fallback_error,
+    .message = "previous-model compaction failed; retried with current model",
+  ]
+};
 
 return {
-  should_retry_with_current_model,
-  model_fallback_telemetry,
-}
+  .should_retry_with_current_model,
+  .model_fallback_telemetry,
+};

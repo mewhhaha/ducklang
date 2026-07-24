@@ -2,4 +2,4 @@ module (capabilities) where
 
 return {
   .run = capabilities.base + capabilities.bonus
-}
+};

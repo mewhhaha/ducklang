@@ -1,19 +1,19 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { view_image_tool_definitions } = import "./view_image_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .view_image_tool_definitions } = import "./view_image_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 
-let score = 0
-let disabled: FixtureDefinitions = view_image_tool_definitions false
+let score = 0;
+let disabled: FixtureDefinitions = view_image_tool_definitions false;
 if let `Nil () = disabled { score = score + 1 }
 
-let definitions: FixtureDefinitions = view_image_tool_definitions true
+let definitions: FixtureDefinitions = view_image_tool_definitions true;
 if let `Cons node = definitions {
-  let [definition, tail] = node
-  let [name, exposure, tool_handler, payload, parallel, waits] = definition
-  let [namespace, local_name] = name
+  let [definition, tail] = node;
+  let [name, exposure, tool_handler, payload, parallel, waits] = definition;
+  let [namespace, local_name] = name;
   if namespace == "" && local_name == "view_image" && parallel && !(waits) {
     if let `Direct () = exposure {
       if let `ViewImage () = tool_handler {
@@ -25,4 +25,4 @@ if let `Cons node = definitions {
   }
 }
 
-return { .score = score }
+return { .score = score };

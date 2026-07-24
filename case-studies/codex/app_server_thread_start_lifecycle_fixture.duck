@@ -1,21 +1,27 @@
 module () where
 
-const { plan_thread_start } = import "./app_server_thread_lifecycle.duck" ()
-const {} = import "./app_server_thread_lifecycle_types.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .plan_thread_start } = import "./app_server_thread_lifecycle.duck" ();
+const {} = import "./app_server_thread_lifecycle_types.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerThreadStartPlanResult
 type FixtureInput = AppServerThreadStartPlanInput
 
-let input: FixtureInput = [`None (), `None (), `PersistentThread (), `RawEventsDisabled (), `PaginatedListsSupported ()]
-let planned: FixtureResult = plan_thread_start(input)
+let input: FixtureInput = [
+  `None (),
+  `None (),
+  `PersistentThread (),
+  `RawEventsDisabled (),
+  `PaginatedListsSupported (),
+];
+let planned: FixtureResult = plan_thread_start input;
 let score = if let `Ok plan = planned {
-  let [history_mode, initial_history, persistence, raw_events] = plan
-  let history_valid = if let `LegacyHistory () = history_mode { true } else { false }
-  let initial_valid = if let `NewHistory () = initial_history { true } else { false }
-  let persistence_valid = if let `PersistentThread () = persistence { true } else { false }
-  let raw_events_valid = if let `RawEventsDisabled () = raw_events { true } else { false }
+  let [history_mode, initial_history, persistence, raw_events] = plan;
+  let history_valid = if let `LegacyHistory () = history_mode { true } else { false };
+  let initial_valid = if let `NewHistory () = initial_history { true } else { false };
+  let persistence_valid = if let `PersistentThread () = persistence { true } else { false };
+  let raw_events_valid = if let `RawEventsDisabled () = raw_events { true } else { false };
   if history_valid && initial_valid && persistence_valid && raw_events_valid { 1 } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

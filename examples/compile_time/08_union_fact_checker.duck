@@ -6,6 +6,6 @@ let unwrap = (result: Result) => {
   } else {
     0
   }
-}
+};
 
 unwrap(`Ok (42))

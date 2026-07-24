@@ -18,7 +18,7 @@ const entry = new URL("../../duck.ts", import.meta.url).pathname;
 Deno.test("fixture parser removes marker lines and records spans and expectations", () => {
   const fixture = parse_fixture(
     [
-      "let answer = 41 + 1",
+      "let answer = 41 + 1;",
       "//    ^^^^^^ definition",
       "//    ^^^^^^ hover: `I32`",
       "answer",
@@ -26,7 +26,7 @@ Deno.test("fixture parser removes marker lines and records spans and expectation
     ].join("\n"),
   );
 
-  assert_equals(fixture.source, "let answer = 41 + 1\nanswer");
+  assert_equals(fixture.source, "let answer = 41 + 1;\nanswer");
   assert_equals(fixture.spans.get("definition"), {
     start: { line: 0, character: 4 },
     end: { line: 0, character: 10 },
@@ -76,7 +76,7 @@ Deno.test("golden snapshots are deterministic and compare exact output", () => {
 });
 
 Deno.test("fixture output matches the checked-in golden file", async () => {
-  const fixture = parse_fixture("let answer = 42\n//    ^^^^^^ definition");
+  const fixture = parse_fixture("let answer = 42;\n//    ^^^^^^ definition");
   await assert_golden_file(
     new URL("./fixtures/basic-definition.golden", import.meta.url),
     {
@@ -89,12 +89,12 @@ Deno.test("fixture output matches the checked-in golden file", async () => {
 Deno.test("multi-file fixtures drive workspace navigation", async () => {
   const fixture = parse_workspace_fixture([
     "//- /a.duck",
-    "let exported = 1",
+    "let exported = 1;",
     "//    ^^^^^^^^ definition",
     "exported",
     "//- /b.duck",
-    'const a = import "./a.duck"',
-    "let value = a.exported",
+    'const a = import "./a.duck";',
+    "let value = a.exported;",
     "//              ^^^^^^^^ reference",
   ].join("\n"));
   const root = await Deno.makeTempDir({ prefix: "duck-harness-workspace-" });

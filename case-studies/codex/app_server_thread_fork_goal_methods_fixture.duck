@@ -1,19 +1,20 @@
 module () where
 
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { decode_thread_fork } = import "./app_server_thread_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .decode_thread_fork } = import "./app_server_thread_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerMethodDecodeResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("deferGoalContinuation", json_bool(false), fields)
-fields = json_object_prepend("threadId", json_string("thread-1"), fields)
-let decoded: FixtureResult = decode_thread_fork(json_object(fields))
+let fields = json_object_empty();
+fields = json_object_prepend("deferGoalContinuation", json_bool false, fields)
+fields = json_object_prepend("threadId", json_string "thread-1", fields)
+let decoded: FixtureResult = decode_thread_fork(json_object fields);
 let score = if let `MethodOk method = decoded {
   if let `ThreadFork params = method {
     if let `GoalContinuationImmediate () = params.goal_continuation { 1 } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

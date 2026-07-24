@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type CodeModeWaitU64 = `U64Decimal Text
 type CodeModeWaitU64Option =
@@ -51,4 +51,4 @@ type CodeModeWaitLifecyclePlan =
   | `CloseCell Text
   | `NoCellToClose Unit
 
-return {}
+return {};

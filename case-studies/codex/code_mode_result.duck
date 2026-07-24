@@ -1,7 +1,7 @@
 module () where
 
-const { text_append, text_trim_whitespace } = import "duck:prelude/runtime" ()
-const {} = import "./code_mode_nested_tool_types.duck" ()
+const { .text_append, .text_trim_whitespace } = import "duck:prelude/runtime" ();
+const {} = import "./code_mode_nested_tool_types.duck" ();
 
 type ResultContentItems = FunctionOutputContentItems
 type ResultBody = CodeModeResultBody
@@ -10,22 +10,22 @@ type ResultJson = Json
 type ResultTextOption = Option Text
 
 const code_mode_content_result: ResultContentItems -> Text = content_items => {
-  let current = content_items
-  let output = ""
-  let done = false
+  let current = content_items;
+  let output = "";
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [content_item, tail] = node
+      let [content_item, tail] = node;
       let value: ResultTextOption = match content_item {
         | `InputText text => `Some text
         | `InputImage image => {
-          let [image_url, _] = image
+          let [image_url, _] = image;
           `Some image_url
         }
         | `InputAudio audio_url => `Some audio_url
         | `EncryptedContent _ => `None ()
-      }
+      };
 
       if let `Some text = value {
         if text_trim_whitespace text != "" {
@@ -41,11 +41,11 @@ const code_mode_content_result: ResultContentItems -> Text = content_items => {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   output
-}
+};
 
 const code_mode_result: ResultInput -> ResultJson = input => {
   match input {
@@ -60,9 +60,9 @@ const code_mode_result: ResultInput -> ResultJson = input => {
     | `ResultMcpCall result => result
     | `ResultJsonToolOutput value => value
   }
-}
+};
 
 return {
-  code_mode_content_result,
-  code_mode_result,
-}
+  .code_mode_content_result,
+  .code_mode_result,
+};

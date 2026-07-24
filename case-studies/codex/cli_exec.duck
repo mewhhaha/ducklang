@@ -1,7 +1,8 @@
 module () where
 
-const { text_append, text_split, text_starts_with, text_trim_whitespace } = import "duck:prelude/text" ()
-const {} = import "./cli_types.duck" ()
+const { .text_append, .text_split, .text_starts_with, .text_trim_whitespace } =
+  import "duck:prelude/text" ()
+const {} = import "./cli_types.duck" ();
 
 type ExecArgs = CodexCliArgs
 type ExecTexts = CodexCliTexts
@@ -20,170 +21,230 @@ type ReviewTarget = CodexReviewTarget
 type ReviewCommit = CodexReviewCommit
 
 const empty_texts = () => {
-  let values: ExecTexts = `Nil ()
+  let values: ExecTexts = `Nil ();
   values
-}
+};
 
 const singleton_text = (value: Text) => {
-  let node: ListNode Text = [value, empty_texts()]
-  let values: ExecTexts = `Cons node
+  let node: ListNode Text = [value, empty_texts()];
+  let values: ExecTexts = `Cons node;
   values
-}
+};
 
 let rec append_texts: [ExecTexts, ExecTexts] -> ExecTexts = (left: ExecTexts, right: ExecTexts) => {
   if let `Cons node = left {
-    let [value, tail] = node
-    let appended = append_texts(tail, right)
+    let [value, tail] = node;
+    let appended = append_texts(tail, right);
     let result_node: ListNode Text = [value, appended]
-    `Cons result_node
+    `Cons result_node;
   } else {
     right
   }
-}
+};
 
 const empty_shared = () => {
-  let shared: ExecShared = [.images = empty_texts(), .model = `None (), .oss = false, .local_provider = `None (), .profile = `None (), .sandbox = `None (), .bypass_approvals_and_sandbox = false, .bypass_hook_trust = false, .cwd = `None (), .additional_writable_roots = empty_texts(), .approval = `None (), .search = false, .no_alt_screen = false, .strict_config = false, .config_overrides = empty_texts(), .remote = `None (), .remote_auth_token_env = `None ()]
+  let shared: ExecShared = [
+    .images = empty_texts(),
+    .model = `None (),
+    .oss = false,
+    .local_provider = `None (),
+    .profile = `None (),
+    .sandbox = `None (),
+    .bypass_approvals_and_sandbox = false,
+    .bypass_hook_trust = false,
+    .cwd = `None (),
+    .additional_writable_roots = empty_texts(),
+    .approval = `None (),
+    .search = false,
+    .no_alt_screen = false,
+    .strict_config = false,
+    .config_overrides = empty_texts(),
+    .remote = `None (),
+    .remote_auth_token_env = `None (),
+  ];
   shared
-}
+};
 
-const initial_exec_facts: [ExecMode, Bool] -> ExecFacts = (mode: ExecMode, command_selected: Bool) => {
-  [.shared = empty_shared(), .mode = mode, .command_selected = command_selected, .options_done = false, .skip_git_repo_check = false, .ephemeral = false, .ignore_user_config = false, .ignore_rules = false, .output_schema = `None (), .color = `ExecColorAuto (), .json = false, .last_message_file = `None (), .positionals = empty_texts(), .resume_last = false, .resume_all = false, .resume_images = empty_texts(), .review_uncommitted = false, .review_base = `None (), .review_commit = `None (), .review_title = `None ()]
-}
+const initial_exec_facts: [ExecMode, Bool] -> ExecFacts = (mode: ExecMode, command_selected:
+  Bool) => {
+    [
+      .shared = empty_shared(),
+      .mode = mode,
+      .command_selected = command_selected,
+      .options_done = false,
+      .skip_git_repo_check = false,
+      .ephemeral = false,
+      .ignore_user_config = false,
+      .ignore_rules = false,
+      .output_schema = `None (),
+      .color = `ExecColorAuto (),
+      .json = false,
+      .last_message_file = `None (),
+      .positionals = empty_texts(),
+      .resume_last = false,
+      .resume_all = false,
+      .resume_images = empty_texts(),
+      .review_uncommitted = false,
+      .review_base = `None (),
+      .review_commit = `None (),
+      .review_title = `None (),
+    ]
+  };
 
-let rec scan_exec_from: [ExecArgs, ExecFacts] -> ExecFactsResult = (args: ExecArgs, facts: ExecFacts) => {
+let rec scan_exec_from: [ExecArgs, ExecFacts] -> ExecFactsResult = (
+  args: ExecArgs,
+  facts: ExecFacts,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if facts.options_done {
-      scan_exec_from(tail, facts :+ { .positionals = append_texts(facts.positionals, singleton_text(argument)) })
+      scan_exec_from(
+        tail,
+        facts <& { .positionals = append_texts(facts.positionals, singleton_text argument) },
+      )
     } else if argument == "--" {
-      scan_exec_from(tail, facts :+ { .options_done = true, .command_selected = true })
+      scan_exec_from(tail, facts <& { .options_done = true, .command_selected = true })
     } else if argument == "--strict-config" {
-      let current_shared: ExecShared = facts.shared
-      let shared: ExecShared = current_shared :+ { .strict_config = true }
-      scan_exec_from(tail, facts :+ { .shared = shared })
+      let current_shared: ExecShared = facts.shared;
+      let shared: ExecShared = current_shared <& { .strict_config = true };
+      scan_exec_from(tail, facts <& { .shared = shared })
     } else if argument == "--skip-git-repo-check" {
-      scan_exec_from(tail, facts :+ { .skip_git_repo_check = true })
+      scan_exec_from(tail, facts <& { .skip_git_repo_check = true })
     } else if argument == "--ephemeral" {
-      scan_exec_from(tail, facts :+ { .ephemeral = true })
+      scan_exec_from(tail, facts <& { .ephemeral = true })
     } else if argument == "--ignore-user-config" {
-      scan_exec_from(tail, facts :+ { .ignore_user_config = true })
+      scan_exec_from(tail, facts <& { .ignore_user_config = true })
     } else if argument == "--ignore-rules" {
-      scan_exec_from(tail, facts :+ { .ignore_rules = true })
+      scan_exec_from(tail, facts <& { .ignore_rules = true })
     } else if argument == "--json" {
-      scan_exec_from(tail, facts :+ { .json = true })
+      scan_exec_from(tail, facts <& { .json = true })
     } else if argument == "--oss" {
-      let current_shared: ExecShared = facts.shared
-      let shared: ExecShared = current_shared :+ { .oss = true }
-      scan_exec_from(tail, facts :+ { .shared = shared })
+      let current_shared: ExecShared = facts.shared;
+      let shared: ExecShared = current_shared <& { .oss = true };
+      scan_exec_from(tail, facts <& { .shared = shared })
     } else if argument == "--dangerously-bypass-approvals-and-sandbox" || argument == "--yolo" {
-      let current_shared: ExecShared = facts.shared
-      let shared: ExecShared = current_shared :+ { .bypass_approvals_and_sandbox = true }
-      scan_exec_from(tail, facts :+ { .shared = shared })
+      let current_shared: ExecShared = facts.shared;
+      let shared: ExecShared = current_shared <& { .bypass_approvals_and_sandbox = true };
+      scan_exec_from(tail, facts <& { .shared = shared })
     } else if argument == "--dangerously-bypass-hook-trust" {
-      let current_shared: ExecShared = facts.shared
-      let shared: ExecShared = current_shared :+ { .bypass_hook_trust = true }
-      scan_exec_from(tail, facts :+ { .shared = shared })
+      let current_shared: ExecShared = facts.shared;
+      let shared: ExecShared = current_shared <& { .bypass_hook_trust = true };
+      scan_exec_from(tail, facts <& { .shared = shared })
     } else if argument == "--last" {
       if let `ExecResumeMode () = facts.mode {
-        scan_exec_from(tail, facts :+ { .resume_last = true })
+        scan_exec_from(tail, facts <& { .resume_last = true })
       } else {
         `Err "--last is only valid for exec resume"
       }
     } else if argument == "--all" {
       if let `ExecResumeMode () = facts.mode {
-        scan_exec_from(tail, facts :+ { .resume_all = true })
+        scan_exec_from(tail, facts <& { .resume_all = true })
       } else {
         `Err "--all is only valid for exec resume"
       }
     } else if argument == "--uncommitted" {
       if let `ExecReviewMode () = facts.mode {
-        scan_exec_from(tail, facts :+ { .review_uncommitted = true })
+        scan_exec_from(tail, facts <& { .review_uncommitted = true })
       } else {
         `Err "--uncommitted is only valid for exec review"
       }
-    } else if argument == "--image" || argument == "-i" || argument == "--model" || argument == "-m" || argument == "--local-provider" || argument == "--profile" || argument == "-p" || argument == "--sandbox" || argument == "-s" || argument == "--cd" || argument == "-C" || argument == "--add-dir" || argument == "--config" || argument == "-c" || argument == "--output-schema" || argument == "--color" || argument == "--output-last-message" || argument == "-o" || argument == "--base" || argument == "--commit" || argument == "--title" {
+    } else if argument == "--image" || argument == "-i" || argument == "--model" || argument == "-m"
+    || argument == "--local-provider" || argument == "--profile" || argument == "-p" || argument == "--sandbox" || argument == "-s" || argument == "--cd" || argument == "-C" || argument == "--add-dir" || argument == "--config" || argument == "-c" || argument == "--output-schema" || argument == "--color" || argument == "--output-last-message" || argument == "-o" || argument == "--base" || argument == "--commit" || argument == "--title" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
+        let [value, remaining] = value_node;
         if argument == "--image" || argument == "-i" {
           if let `ExecReviewMode () = facts.mode {
             `Err "exec review does not accept images"
           } else if let `ExecResumeMode () = facts.mode {
-            let images = append_texts(facts.resume_images, text_split(value, ","))
-            scan_exec_from(remaining, facts :+ { .resume_images = images })
+            let images = append_texts(facts.resume_images, text_split(value, ","));
+            scan_exec_from(remaining, facts <& { .resume_images = images })
           } else {
-            let current_shared: ExecShared = facts.shared
-            let shared: ExecShared = current_shared :+ { .images = append_texts(current_shared.images, text_split(value, ",")) }
-            scan_exec_from(remaining, facts :+ { .shared = shared })
+            let current_shared: ExecShared = facts.shared;
+            let shared: ExecShared = current_shared <& { .images = append_texts(
+              current_shared.images,
+              text_split(value, ","),
+            ) };
+            scan_exec_from(remaining, facts <& { .shared = shared })
           }
         } else if argument == "--model" || argument == "-m" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .model = `Some value }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .model = `Some value };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--local-provider" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .local_provider = `Some value }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .local_provider = `Some value };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--profile" || argument == "-p" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .profile = `Some value }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .profile = `Some value };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--sandbox" || argument == "-s" {
           if value == "read-only" {
-            let current_shared: ExecShared = facts.shared
-            let shared: ExecShared = current_shared :+ { .sandbox = `Some (`SandboxReadOnly ()) }
-            scan_exec_from(remaining, facts :+ { .shared = shared })
+            let current_shared: ExecShared = facts.shared;
+            let shared: ExecShared = current_shared <& { .sandbox = `Some (`SandboxReadOnly ()) };
+            scan_exec_from(remaining, facts <& { .shared = shared })
           } else if value == "workspace-write" {
-            let current_shared: ExecShared = facts.shared
-            let shared: ExecShared = current_shared :+ { .sandbox = `Some (`SandboxWorkspaceWrite ()) }
-            scan_exec_from(remaining, facts :+ { .shared = shared })
+            let current_shared: ExecShared = facts.shared;
+            let shared: ExecShared = current_shared <& { .sandbox = `Some (
+              `SandboxWorkspaceWrite ()
+            ) };
+            scan_exec_from(remaining, facts <& { .shared = shared })
           } else if value == "danger-full-access" {
-            let current_shared: ExecShared = facts.shared
-            let shared: ExecShared = current_shared :+ { .sandbox = `Some (`SandboxDangerFullAccess ()) }
-            scan_exec_from(remaining, facts :+ { .shared = shared })
+            let current_shared: ExecShared = facts.shared;
+            let shared: ExecShared = current_shared <& { .sandbox = `Some (
+              `SandboxDangerFullAccess ()
+            ) };
+            scan_exec_from(remaining, facts <& { .shared = shared })
           } else {
             `Err (text_append("invalid sandbox mode: ", value))
           }
         } else if argument == "--cd" || argument == "-C" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .cwd = `Some value }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .cwd = `Some value };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--add-dir" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .additional_writable_roots = append_texts(current_shared.additional_writable_roots, singleton_text(value)) }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .additional_writable_roots = append_texts(
+            current_shared.additional_writable_roots,
+            singleton_text value,
+          ) };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--config" || argument == "-c" {
-          let current_shared: ExecShared = facts.shared
-          let shared: ExecShared = current_shared :+ { .config_overrides = append_texts(current_shared.config_overrides, singleton_text(value)) }
-          scan_exec_from(remaining, facts :+ { .shared = shared })
+          let current_shared: ExecShared = facts.shared;
+          let shared: ExecShared = current_shared <& { .config_overrides = append_texts(
+            current_shared.config_overrides,
+            singleton_text value,
+          ) };
+          scan_exec_from(remaining, facts <& { .shared = shared })
         } else if argument == "--output-schema" {
-          scan_exec_from(remaining, facts :+ { .output_schema = `Some value })
+          scan_exec_from(remaining, facts <& { .output_schema = `Some value })
         } else if argument == "--color" {
           if value == "always" {
-            scan_exec_from(remaining, facts :+ { .color = `ExecColorAlways () })
+            scan_exec_from(remaining, facts <& { .color = `ExecColorAlways () })
           } else if value == "never" {
-            scan_exec_from(remaining, facts :+ { .color = `ExecColorNever () })
+            scan_exec_from(remaining, facts <& { .color = `ExecColorNever () })
           } else if value == "auto" {
-            scan_exec_from(remaining, facts :+ { .color = `ExecColorAuto () })
+            scan_exec_from(remaining, facts <& { .color = `ExecColorAuto () })
           } else {
             `Err (text_append("invalid color mode: ", value))
           }
         } else if argument == "--output-last-message" || argument == "-o" {
-          scan_exec_from(remaining, facts :+ { .last_message_file = `Some value })
+          scan_exec_from(remaining, facts <& { .last_message_file = `Some value })
         } else if argument == "--base" {
           if let `ExecReviewMode () = facts.mode {
-            scan_exec_from(remaining, facts :+ { .review_base = `Some value })
+            scan_exec_from(remaining, facts <& { .review_base = `Some value })
           } else {
             `Err "--base is only valid for exec review"
           }
         } else if argument == "--commit" {
           if let `ExecReviewMode () = facts.mode {
-            scan_exec_from(remaining, facts :+ { .review_commit = `Some value })
+            scan_exec_from(remaining, facts <& { .review_commit = `Some value })
           } else {
             `Err "--commit is only valid for exec review"
           }
         } else if argument == "--title" {
           if let `ExecReviewMode () = facts.mode {
-            scan_exec_from(remaining, facts :+ { .review_title = `Some value })
+            scan_exec_from(remaining, facts <& { .review_title = `Some value })
           } else {
             `Err "--title is only valid for exec review"
           }
@@ -196,24 +257,36 @@ let rec scan_exec_from: [ExecArgs, ExecFacts] -> ExecFactsResult = (args: ExecAr
     } else if text_starts_with(argument, "-") {
       `Err (text_append("unknown exec option: ", argument))
     } else if facts.command_selected {
-      scan_exec_from(tail, facts :+ { .positionals = append_texts(facts.positionals, singleton_text(argument)), .command_selected = true })
+      scan_exec_from(
+        tail,
+        facts <& {
+          .positionals = append_texts(facts.positionals, singleton_text argument),
+          .command_selected = true,
+        },
+      )
     } else {
       if argument == "resume" {
-        scan_exec_from(tail, facts :+ { .mode = `ExecResumeMode (), .command_selected = true })
+        scan_exec_from(tail, facts <& { .mode = `ExecResumeMode (), .command_selected = true })
       } else if argument == "review" {
-        scan_exec_from(tail, facts :+ { .mode = `ExecReviewMode (), .command_selected = true })
+        scan_exec_from(tail, facts <& { .mode = `ExecReviewMode (), .command_selected = true })
       } else {
-        scan_exec_from(tail, facts :+ { .positionals = append_texts(facts.positionals, singleton_text(argument)), .command_selected = true })
+        scan_exec_from(
+          tail,
+          facts <& {
+            .positionals = append_texts(facts.positionals, singleton_text argument),
+            .command_selected = true,
+          },
+        )
       }
     }
   } else {
     `Ok facts
   }
-}
+};
 
 let start_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
   if let `Cons node = facts.positionals {
-    let [prompt, remaining] = node
+    let [prompt, remaining] = node;
     if let `Cons _ = remaining {
       `Err "exec accepts at most one prompt"
     } else {
@@ -222,52 +295,76 @@ let start_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
   } else {
     `Ok (`ExecStart [.prompt = `None ()])
   }
-}
+};
 
 let resume_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
   if facts.resume_last {
     if let `Cons node = facts.positionals {
-      let [prompt, remaining] = node
+      let [prompt, remaining] = node;
       if let `Cons _ = remaining {
         `Err "exec resume --last accepts at most one prompt"
       } else {
-        let options: ExecResume = [.session_id = `None (), .last = true, .all = facts.resume_all, .images = facts.resume_images, .prompt = `Some prompt]
-        `Ok (`ExecResume options)
+        let options: ExecResume = [
+          .session_id = `None (),
+          .last = true,
+          .all = facts.resume_all,
+          .images = facts.resume_images,
+          .prompt = `Some prompt,
+        ]
+        `Ok (`ExecResume options);
       }
     } else {
-      let options: ExecResume = [.session_id = `None (), .last = true, .all = facts.resume_all, .images = facts.resume_images, .prompt = `None ()]
-      `Ok (`ExecResume options)
+      let options: ExecResume = [
+        .session_id = `None (),
+        .last = true,
+        .all = facts.resume_all,
+        .images = facts.resume_images,
+        .prompt = `None (),
+      ]
+      `Ok (`ExecResume options);
     }
   } else if let `Cons session_node = facts.positionals {
-    let [session_id, tail] = session_node
+    let [session_id, tail] = session_node;
     if let `Cons prompt_node = tail {
-      let [prompt, extra] = prompt_node
+      let [prompt, extra] = prompt_node;
       if let `Cons _ = extra {
         `Err "exec resume accepts a session and optional prompt"
       } else {
-        let options: ExecResume = [.session_id = `Some session_id, .last = false, .all = facts.resume_all, .images = facts.resume_images, .prompt = `Some prompt]
-        `Ok (`ExecResume options)
+        let options: ExecResume = [
+          .session_id = `Some session_id,
+          .last = false,
+          .all = facts.resume_all,
+          .images = facts.resume_images,
+          .prompt = `Some prompt,
+        ]
+        `Ok (`ExecResume options);
       }
     } else {
-      let options: ExecResume = [.session_id = `Some session_id, .last = false, .all = facts.resume_all, .images = facts.resume_images, .prompt = `None ()]
-      `Ok (`ExecResume options)
+      let options: ExecResume = [
+        .session_id = `Some session_id,
+        .last = false,
+        .all = facts.resume_all,
+        .images = facts.resume_images,
+        .prompt = `None (),
+      ]
+      `Ok (`ExecResume options);
     }
   } else {
     `Err "exec resume requires a session id or --last"
   }
-}
+};
 
 let review_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
   let multiple_prompts = if let `Cons node = facts.positionals {
-    let [_, remaining] = node
+    let [_, remaining] = node;
     if let `Cons _ = remaining { true } else { false }
   } else {
     false
-  }
+  };
   if multiple_prompts {
     `Err "exec review accepts at most one custom prompt"
   } else {
-    let target_count = 0
+    let target_count = 0;
     if facts.review_uncommitted { target_count = target_count + 1 }
     if let `Some _ = facts.review_base { target_count = target_count + 1 }
     if let `Some _ = facts.review_commit { target_count = target_count + 1 }
@@ -282,7 +379,7 @@ let review_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
         `Err "--title requires --commit"
       } else if let `Some sha = facts.review_commit {
         let commit: ReviewCommit = [.sha = sha, .title = facts.review_title]
-        `Ok (`ExecReview (`ReviewCommit commit))
+        `Ok (`ExecReview (`ReviewCommit commit));
       } else {
         `Err "review commit parser returned an unknown result"
       }
@@ -292,10 +389,10 @@ let review_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
       `Ok (`ExecReview (`ReviewBase branch))
     } else if let `Some sha = facts.review_commit {
       let commit: ReviewCommit = [.sha = sha, .title = `None ()]
-      `Ok (`ExecReview (`ReviewCommit commit))
+      `Ok (`ExecReview (`ReviewCommit commit));
     } else if let `Cons node = facts.positionals {
-      let [prompt, _] = node
-      if prompt != "-" && text_trim_whitespace(prompt) == "" {
+      let [prompt, _] = node;
+      if prompt != "-" && text_trim_whitespace prompt == "" {
         `Err "review prompt cannot be empty"
       } else {
         `Ok (`ExecReview (`ReviewCustom prompt))
@@ -304,7 +401,7 @@ let review_command: ExecFacts -> ExecCommandResult = (facts: ExecFacts) => {
       `Err "review target parser returned an unknown result"
     }
   }
-}
+};
 
 let options_from_facts: ExecFacts -> ExecOptionsResult = (facts: ExecFacts) => {
   let command: ExecCommandResult = if let `ExecResumeMode () = facts.mode {
@@ -313,33 +410,48 @@ let options_from_facts: ExecFacts -> ExecOptionsResult = (facts: ExecFacts) => {
     review_command facts
   } else {
     start_command facts
-  }
+  };
 
   if let `Err message = command {
     `Err message
   } else if let `Ok planned = command {
-    let shared: ExecShared = facts.shared
-    let options: ExecOptions = [.shared = shared, .strict_config = shared.strict_config, .skip_git_repo_check = facts.skip_git_repo_check, .ephemeral = facts.ephemeral, .ignore_user_config = facts.ignore_user_config, .ignore_rules = facts.ignore_rules, .output_schema = facts.output_schema, .color = facts.color, .json = facts.json, .last_message_file = facts.last_message_file, .config_overrides = shared.config_overrides, .command = planned]
-    `Ok options
+    let shared: ExecShared = facts.shared;
+    let options: ExecOptions = [
+      .shared = shared,
+      .strict_config = shared.strict_config,
+      .skip_git_repo_check = facts.skip_git_repo_check,
+      .ephemeral = facts.ephemeral,
+      .ignore_user_config = facts.ignore_user_config,
+      .ignore_rules = facts.ignore_rules,
+      .output_schema = facts.output_schema,
+      .color = facts.color,
+      .json = facts.json,
+      .last_message_file = facts.last_message_file,
+      .config_overrides = shared.config_overrides,
+      .command = planned,
+    ]
+    `Ok options;
   } else {
     `Err "exec command parser returned an unknown result"
   }
-}
+};
 
 let parse_exec_options: ExecArgs -> ExecOptionsResult = (args: ExecArgs) => {
-  let facts = initial_exec_facts(`ExecStartMode (), false)
-  let scanned: ExecFactsResult = scan_exec_from(args, facts)
-  if let `Err message = scanned { `Err message } else if let `Ok complete = scanned { options_from_facts complete } else { `Err "exec scanner returned an unknown result" }
-}
+  let facts = initial_exec_facts(`ExecStartMode (), false);
+  let scanned: ExecFactsResult = scan_exec_from(args, facts);
+  if let `Err message = scanned { `Err message } else if let `Ok complete = scanned {
+    options_from_facts complete } else { `Err "exec scanner returned an unknown result" }
+};
 
 let parse_review_options: ExecArgs -> ExecOptionsResult = (args: ExecArgs) => {
-  let facts = initial_exec_facts(`ExecReviewMode (), true)
-  let scanned: ExecFactsResult = scan_exec_from(args, facts)
-  if let `Err message = scanned { `Err message } else if let `Ok complete = scanned { options_from_facts complete } else { `Err "review scanner returned an unknown result" }
-}
+  let facts = initial_exec_facts(`ExecReviewMode (), true);
+  let scanned: ExecFactsResult = scan_exec_from(args, facts);
+  if let `Err message = scanned { `Err message } else if let `Ok complete = scanned {
+    options_from_facts complete } else { `Err "review scanner returned an unknown result" }
+};
 
 let plan_exec_command: ExecArgs -> ExecPlan = (args: ExecArgs) => {
-  let parsed: ExecOptionsResult = parse_exec_options args
+  let parsed: ExecOptionsResult = parse_exec_options args;
   if let `Ok options = parsed {
     `RunExec options
   } else if let `Err message = parsed {
@@ -347,10 +459,10 @@ let plan_exec_command: ExecArgs -> ExecPlan = (args: ExecArgs) => {
   } else {
     `Invalid "exec parser returned an unknown result"
   }
-}
+};
 
 let plan_review_command: ExecArgs -> ExecPlan = (args: ExecArgs) => {
-  let parsed: ExecOptionsResult = parse_review_options args
+  let parsed: ExecOptionsResult = parse_review_options args;
   if let `Ok options = parsed {
     `RunExec options
   } else if let `Err message = parsed {
@@ -358,11 +470,11 @@ let plan_review_command: ExecArgs -> ExecPlan = (args: ExecArgs) => {
   } else {
     `Invalid "review parser returned an unknown result"
   }
-}
+};
 
 return {
-  parse_exec_options,
-  parse_review_options,
-  plan_exec_command,
-  plan_review_command,
-}
+  .parse_exec_options,
+  .parse_review_options,
+  .plan_exec_command,
+  .plan_review_command,
+};

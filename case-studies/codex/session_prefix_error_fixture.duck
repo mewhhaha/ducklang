@@ -1,29 +1,36 @@
 module () where
 
-const { text_approx_token_count, text_contains, text_repeat, text_starts_with } = import "duck:prelude/functional" ()
-const agent_types_module = import "./agent_types.duck"
-const session_prefix_module = import "./session_prefix.duck"
-const { format_inter_agent_completion_message } = session_prefix_module()
+const { .text_approx_token_count, .text_contains, .text_repeat, .text_starts_with } =
+  import "duck:prelude/functional" ();
+const agent_types_module = import "./agent_types.duck";
+const session_prefix_module = import "./session_prefix.duck";
+const { .format_inter_agent_completion_message } = session_prefix_module();
 
 type FixtureStatus = AgentStatus
 
-let error = text_repeat("stream disconnected ", 1000)
-let status: FixtureStatus = `Errored error
-let rendered = format_inter_agent_completion_message("/root", "/root/worker", status)
-let score = 0
+let error = text_repeat("stream disconnected ", 1000);
+let status: FixtureStatus = `Errored error;
+let rendered = format_inter_agent_completion_message("/root", "/root/worker", status);
+let score = 0;
 
 if let `Some message = rendered {
-  if text_approx_token_count(message) < 1000 {
+  if text_approx_token_count message < 1000 {
     score = score + 1
   }
 
-  if text_starts_with(message, "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nAgent errored: stream disconnected ") {
+  if text_starts_with(
+    message,
+    "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nAgent errored: stream disconnected ",
+  ) {
     score = score + 10
   }
 
-  if text_contains(message, "tokens truncated") && text_contains(message, "This agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task.") {
+  if text_contains(message, "tokens truncated") && text_contains(
+    message,
+    "This agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task.",
+  ) {
     score = score + 100
   }
 }
 
-return { .score = score }
+return { .score = score };

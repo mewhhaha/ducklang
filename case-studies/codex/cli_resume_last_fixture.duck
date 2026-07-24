@@ -1,30 +1,31 @@
 module () where
 
-const { parse_resume_options } = import "./cli_sessions.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_resume_options } = import "./cli_sessions.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexResumeOptionsResult
 type FixtureNode = ListNode Text
 
 const prepend_arg = (value: Text, values: FixtureArgs) => {
-  let node: FixtureNode = [value, values]
-  let result: FixtureArgs = `Cons node
+  let node: FixtureNode = [value, values];
+  let result: FixtureArgs = `Cons node;
   result
-}
+};
 const singleton_arg = (value: Text) => {
-  let empty: FixtureArgs = `Nil ()
+  let empty: FixtureArgs = `Nil ();
   prepend_arg(value, empty)
-}
-let input: FixtureArgs = prepend_arg("--last", singleton_arg("/compact focus on auth"))
-let parsed: FixtureResult = parse_resume_options(input)
-let score = 0
+};
+let input: FixtureArgs = prepend_arg("--last", singleton_arg "/compact focus on auth");
+let parsed: FixtureResult = parse_resume_options input;
+let score = 0;
 
 if let `Ok options = parsed {
-  let valid = options.last && !options.picker
+  let valid = options.last && !options.picker;
   if let `None () = options.session_id { () } else { valid = false }
-  if let `Some prompt = options.prompt { if prompt != "/compact focus on auth" { valid = false } } else { valid = false }
+  if let `Some prompt = options.prompt { if prompt != "/compact focus on auth" { valid = false }
+  } else { valid = false }
   if valid { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -15,4 +15,4 @@ declare effect Terminal {
 
 declare Init { terminal: Terminal }
 
-return {}
+return {};

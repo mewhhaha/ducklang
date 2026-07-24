@@ -1,48 +1,56 @@
-const { encode_json, encode_json_string, json_object, json_object_empty, json_object_prepend, json_string, parse_json_document } = import "duck:prelude/json" ()
-const { text_get, text_length } = import "duck:prelude/runtime" ()
+const {
+  .encode_json,
+  .encode_json_string,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+  .parse_json_document,
+} = import "duck:prelude/json" ();
+const { .text_get, .text_length } = import "duck:prelude/runtime" ();
 
-let source = "\"A\\b\\f\\n\\u00df\\u6771\\ud83e\\udd86\""
-let parsed = parse_json_document(source)
-let score = 0
+let source = "\"A\\b\\f\\n\\u00df\\u6771\\ud83e\\udd86\"";
+let parsed = parse_json_document source;
+let score = 0;
 
 if let `Ok value_and_index = parsed {
-  let [value, index] = value_and_index
+  let [value, index] = value_and_index;
 
   if let `String text = value {
-    let expected = [65, 8, 12, 10, 195, 159, 230, 157, 177, 240, 159, 166, 134]
-    let matches = 0
+    let expected = [65, 8, 12, 10, 195, 159, 230, 157, 177, 240, 159, 166, 134];
+    let matches = 0;
 
     for byte_index in 0..13 {
-      if text_get([text, byte_index]) == expected[byte_index] {
+      if text_get [text, byte_index] == expected[byte_index] {
         matches = matches + 1
       }
     }
 
-    if index == text_length(source) && text_length(text) == 13 && matches == 13 {
+    if index == text_length source && text_length text == 13 && matches == 13 {
       score = score + 1
     }
 
-    if encode_json_string(text) == "\"A\\b\\f\\nß東🦆\"" {
+    if encode_json_string text == "\"A\\b\\f\\nß東🦆\"" {
       score = score + 10
     }
 
-    let members = json_object_prepend("message", json_string(text), json_object_empty())
-    let document = encode_json(json_object(members))
+    let members = json_object_prepend("message", json_string text, json_object_empty());
+    let document = encode_json(json_object members);
 
     if document == "{\"message\":\"A\\b\\f\\nß東🦆\"}" {
       score = score + 100
     }
 
-    let round_trip = parse_json_document(document)
+    let round_trip = parse_json_document document;
 
     if let `Ok round_trip_value_and_index = round_trip {
-      let [round_trip_value, round_trip_index] = round_trip_value_and_index
+      let [round_trip_value, round_trip_index] = round_trip_value_and_index;
 
       if let `Object round_trip_members = round_trip_value {
-        if round_trip_index == text_length(document) {
+        if round_trip_index == text_length document {
           if let `Cons node = round_trip_members {
-            let [member, tail] = node
-            let [key, member_value] = member
+            let [member, tail] = node;
+            let [key, member_value] = member;
 
             if let `String round_trip_text = member_value {
               if key == "message" && round_trip_text == text {
@@ -58,7 +66,7 @@ if let `Ok value_and_index = parsed {
   }
 }
 
-let invalid = parse_json_document("\"\\ud83eX\"")
+let invalid = parse_json_document "\"\\ud83eX\"";
 
 if let `Err _ = invalid {
   score = score + 10000

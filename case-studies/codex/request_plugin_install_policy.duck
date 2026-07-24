@@ -1,8 +1,8 @@
 module () where
 
-const { text_append } = import "duck:prelude/functional" ()
-const { text_trim_whitespace } = import "duck:prelude/text" ()
-const {} = import "./plugin_install_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .text_trim_whitespace } = import "duck:prelude/text" ();
+const {} = import "./plugin_install_types.duck" ();
 
 type InstallPolicyCandidate = PluginInstallCandidate
 type InstallPolicyCandidateOption = PluginInstallCandidateOption
@@ -13,79 +13,131 @@ type InstallPolicyRecommendedArgs = RequestPluginInstallRecommendedArgs
 type InstallPolicyHostRequest = RequestPluginInstallHostRequest
 type InstallPolicyToolType = DiscoverableToolType
 
-const candidate_matches_type = (candidate: InstallPolicyCandidate, expected: InstallPolicyToolType) => {
-  if let `Connector () = expected {
-    if let `Connector () = candidate.tool_type { true } else { false }
-  } else {
-    if let `Plugin () = candidate.tool_type { true } else { false }
-  }
-}
-
-let rec find_list_candidate: [InstallPolicyCandidates, Text, InstallPolicyToolType] -> InstallPolicyCandidateOption = (values: InstallPolicyCandidates, id: Text, tool_type: InstallPolicyToolType) => {
-  if let `Cons node = values {
-    let [candidate, tail] = node
-    if candidate.id == id && candidate_matches_type(candidate, tool_type) {
-      `InstallCandidatePresent candidate
+const candidate_matches_type = (candidate: InstallPolicyCandidate, expected:
+  InstallPolicyToolType) => {
+    if let `Connector () = expected {
+      if let `Connector () = candidate.tool_type { true } else { false }
     } else {
-      find_list_candidate(tail, id, tool_type)
+      if let `Plugin () = candidate.tool_type { true } else { false }
     }
-  } else {
-    `InstallCandidateMissing ()
-  }
-}
+  };
 
-let rec find_recommended_plugin: [InstallPolicyCandidates, Text] -> InstallPolicyCandidateOption = (values: InstallPolicyCandidates, id: Text) => {
+let rec find_list_candidate: [InstallPolicyCandidates, Text, InstallPolicyToolType] ->
+  InstallPolicyCandidateOption = (
+    values: InstallPolicyCandidates,
+    id: Text,
+    tool_type: InstallPolicyToolType,
+  ) => {
+    if let `Cons node = values {
+      let [candidate, tail] = node;
+      if candidate.id == id && candidate_matches_type(candidate, tool_type) {
+        `InstallCandidatePresent candidate
+      } else {
+        find_list_candidate(tail, id, tool_type)
+      }
+    } else {
+      `InstallCandidateMissing ()
+    }
+  };
+
+let rec find_recommended_plugin: [InstallPolicyCandidates, Text] -> InstallPolicyCandidateOption = (
+  values: InstallPolicyCandidates,
+  id: Text,
+) => {
   if let `Cons node = values {
-    let [candidate, tail] = node
+    let [candidate, tail] = node;
     if candidate.id == id {
-      if let `Plugin () = candidate.tool_type { `InstallCandidatePresent candidate } else { find_recommended_plugin(tail, id) }
+      if let `Plugin () = candidate.tool_type { `InstallCandidatePresent candidate } else {
+        find_recommended_plugin(
+          tail,
+          id,
+        ) }
     } else {
       find_recommended_plugin(tail, id)
     }
   } else {
     `InstallCandidateMissing ()
   }
-}
+};
 
-let elicitation_plan: [Text, Text, InstallPolicyCandidate] -> InstallPolicyPlan = (call_id: Text, reason: Text, candidate: InstallPolicyCandidate) => {
-  let request: InstallPolicyHostRequest = [.suggestion_id = text_append(["request_plugin_install_", call_id]), .suggest_reason = reason, .candidate = candidate]
-  `Elicit request
-}
+let elicitation_plan: [Text, Text, InstallPolicyCandidate] -> InstallPolicyPlan = (
+  call_id: Text,
+  reason: Text,
+  candidate: InstallPolicyCandidate,
+) => {
+  let request: InstallPolicyHostRequest = [
+    .suggestion_id = text_append ["request_plugin_install_", call_id],
+    .suggest_reason = reason,
+    .candidate = candidate,
+  ]
+  `Elicit request;
+};
 
-let plan_list_plugin_install_request: [Text, Bool, InstallPolicyListArgs, InstallPolicyCandidates] -> InstallPolicyPlan = (call_id: Text, is_codex_tui: Bool, args: InstallPolicyListArgs, values: InstallPolicyCandidates) => {
-  if let `Enable () = args.action_type {
-    `RespondToModel "plugin install requests currently support only action_type=\"install\""
-  } else {
-    let reason = text_trim_whitespace args.suggest_reason
-    if reason == "" {
-      `RespondToModel "suggest_reason must not be empty"
-    } else if is_codex_tui {
-      if let `Plugin () = args.tool_type {
-        `RespondToModel "plugin install requests are not available in codex-tui yet"
-      } else {
-        let candidate = find_list_candidate(values, args.tool_id, args.tool_type)
-        if let `InstallCandidatePresent selected = candidate { elicitation_plan(call_id, reason, selected) } else { `RespondToModel "tool_id must match one of the discoverable tools returned by list_available_plugins_to_install" }
-      }
+let plan_list_plugin_install_request: [Text, Bool, InstallPolicyListArgs,
+  InstallPolicyCandidates] -> InstallPolicyPlan = (
+    call_id: Text,
+    is_codex_tui: Bool,
+    args: InstallPolicyListArgs,
+    values: InstallPolicyCandidates,
+  ) => {
+    if let `Enable () = args.action_type {
+      `RespondToModel "plugin install requests currently support only action_type=\"install\""
     } else {
-      let candidate = find_list_candidate(values, args.tool_id, args.tool_type)
-      if let `InstallCandidatePresent selected = candidate { elicitation_plan(call_id, reason, selected) } else { `RespondToModel "tool_id must match one of the discoverable tools returned by list_available_plugins_to_install" }
+      let reason = text_trim_whitespace args.suggest_reason;
+      if reason == "" {
+        `RespondToModel "suggest_reason must not be empty"
+      } else if is_codex_tui {
+        if let `Plugin () = args.tool_type {
+          `RespondToModel "plugin install requests are not available in codex-tui yet"
+        } else {
+          let candidate = find_list_candidate(values, args.tool_id, args.tool_type);
+          if let `InstallCandidatePresent selected = candidate { elicitation_plan(
+            call_id,
+            reason,
+            selected,
+          ) } else { `RespondToModel
+            "tool_id must match one of the discoverable tools returned by list_available_plugins_to_install" }
+        }
+      } else {
+        let candidate = find_list_candidate(values, args.tool_id, args.tool_type);
+        if let `InstallCandidatePresent selected = candidate { elicitation_plan(
+          call_id,
+          reason,
+          selected,
+        ) } else { `RespondToModel
+          "tool_id must match one of the discoverable tools returned by list_available_plugins_to_install" }
+      }
     }
-  }
-}
+  };
 
-let plan_recommended_plugin_install_request: [Text, Bool, InstallPolicyRecommendedArgs, InstallPolicyCandidates] -> InstallPolicyPlan = (call_id: Text, is_codex_tui: Bool, args: InstallPolicyRecommendedArgs, values: InstallPolicyCandidates) => {
-  let reason = text_trim_whitespace args.suggest_reason
+let plan_recommended_plugin_install_request: [
+  Text,
+  Bool,
+  InstallPolicyRecommendedArgs,
+  InstallPolicyCandidates,
+] -> InstallPolicyPlan = (
+  call_id: Text,
+  is_codex_tui: Bool,
+  args: InstallPolicyRecommendedArgs,
+  values: InstallPolicyCandidates,
+) => {
+  let reason = text_trim_whitespace args.suggest_reason;
   if reason == "" {
     `RespondToModel "suggest_reason must not be empty"
   } else if is_codex_tui {
     `RespondToModel "plugin install requests are not available in codex-tui yet"
   } else {
-    let candidate = find_recommended_plugin(values, args.plugin_id)
-    if let `InstallCandidatePresent selected = candidate { elicitation_plan(call_id, reason, selected) } else { `RespondToModel "plugin_id must match one of the entries in the <recommended_plugins> list" }
+    let candidate = find_recommended_plugin(values, args.plugin_id);
+    if let `InstallCandidatePresent selected = candidate { elicitation_plan(
+      call_id,
+      reason,
+      selected,
+    ) } else { `RespondToModel
+      "plugin_id must match one of the entries in the <recommended_plugins> list" }
   }
-}
+};
 
 return {
-  plan_list_plugin_install_request,
-  plan_recommended_plugin_install_request,
-}
+  .plan_list_plugin_install_request,
+  .plan_recommended_plugin_install_request,
+};

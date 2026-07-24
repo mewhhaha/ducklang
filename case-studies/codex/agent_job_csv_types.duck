@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type AgentJobTextNode = [Text, AgentJobTexts]
 type AgentJobTexts =
@@ -21,4 +21,4 @@ type AgentJobCsvParseResult =
   | `CsvParsed AgentJobCsvDocument
   | `CsvParseFailed Text
 
-return {}
+return {};

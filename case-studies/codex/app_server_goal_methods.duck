@@ -1,8 +1,8 @@
 module () where
 
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
+const {} = import "./app_server_types.duck" ();
 
 type GoalMethodJson = AppServerJson
 type GoalMethodJsonLookup = JsonLookupResult
@@ -29,118 +29,122 @@ const decode_goal_status: Text -> GoalMethodStatusOption = (value: Text) => {
   } else {
     `None ()
   }
-}
+};
 
-const decode_thread_goal_set: GoalMethodJson -> GoalMethodDecodeResult = (params: GoalMethodJson) => {
-  if let `Object object = params {
-    let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object)
-    if let `Found thread_id_json = thread_id_lookup {
-      if let `String thread_id = thread_id_json {
-        let objective: GoalMethodTextOption = `None ()
-        let status: GoalMethodStatusOption = `None ()
-        let token_budget: GoalMethodBudgetPatch = `Keep ()
-        let error = ""
+const decode_thread_goal_set: GoalMethodJson -> GoalMethodDecodeResult = (params:
+  GoalMethodJson) => {
+    if let `Object object = params {
+      let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object);
+      if let `Found thread_id_json = thread_id_lookup {
+        if let `String thread_id = thread_id_json {
+          let objective: GoalMethodTextOption = `None ();
+          let status: GoalMethodStatusOption = `None ();
+          let token_budget: GoalMethodBudgetPatch = `Keep ();
+          let error = "";
 
-        let objective_lookup: GoalMethodJsonLookup = json_object_get("objective", object)
-        if let `Found objective_json = objective_lookup {
-          if let `String value = objective_json {
-            objective = `Some value
-          } else if let `Null () = objective_json {
-            ()
-          } else {
-            error = "thread/goal/set.params.objective must be a string or null"
-          }
-        }
-
-        let status_lookup: GoalMethodJsonLookup = json_object_get("status", object)
-        if error == "" {
-          if let `Found status_json = status_lookup {
-            if let `String value = status_json {
-              status = decode_goal_status value
-              if let `None () = status { error = "thread/goal/set.params.status has an unknown value" }
-            } else if let `Null () = status_json {
+          let objective_lookup: GoalMethodJsonLookup = json_object_get("objective", object);
+          if let `Found objective_json = objective_lookup {
+            if let `String value = objective_json {
+              objective = `Some value
+            } else if let `Null () = objective_json {
               ()
             } else {
-              error = "thread/goal/set.params.status must be a string or null"
+              error = "thread/goal/set.params.objective must be a string or null"
             }
           }
-        }
 
-        let budget_lookup: GoalMethodJsonLookup = json_object_get("tokenBudget", object)
-        if error == "" {
-          if let `Found budget_json = budget_lookup {
-            if let `Null () = budget_json {
-              token_budget = `Clear ()
-            } else if let `Number value = budget_json {
-              let parsed = parse_i64_decimal value
-              if let `Ok budget = parsed {
-                token_budget = `Set budget
-              } else if let `Err reason = parsed {
-                if reason == "number exceeds I64" {
-                  error = "thread/goal/set.params.tokenBudget number exceeds I64"
-                } else {
-                  error = "thread/goal/set.params.tokenBudget must be an integer or null"
-                }
+          let status_lookup: GoalMethodJsonLookup = json_object_get("status", object);
+          if error == "" {
+            if let `Found status_json = status_lookup {
+              if let `String value = status_json {
+                status = decode_goal_status value
+                if let `None () = status { error =
+                    "thread/goal/set.params.status has an unknown value" }
+              } else if let `Null () = status_json {
+                ()
+              } else {
+                error = "thread/goal/set.params.status must be a string or null"
               }
-            } else {
-              error = "thread/goal/set.params.tokenBudget must be an integer or null"
             }
           }
-        }
 
-        if error == "" {
-          let decoded: GoalMethodSetParams = [thread_id, objective, status, token_budget]
-          `MethodOk (`ThreadGoal (`ThreadGoalSet decoded))
+          let budget_lookup: GoalMethodJsonLookup = json_object_get("tokenBudget", object);
+          if error == "" {
+            if let `Found budget_json = budget_lookup {
+              if let `Null () = budget_json {
+                token_budget = `Clear ()
+              } else if let `Number value = budget_json {
+                let parsed = parse_i64_decimal value;
+                if let `Ok budget = parsed {
+                  token_budget = `Set budget
+                } else if let `Err reason = parsed {
+                  if reason == "number exceeds I64" {
+                    error = "thread/goal/set.params.tokenBudget number exceeds I64"
+                  } else {
+                    error = "thread/goal/set.params.tokenBudget must be an integer or null"
+                  }
+                }
+              } else {
+                error = "thread/goal/set.params.tokenBudget must be an integer or null"
+              }
+            }
+          }
+
+          if error == "" {
+            let decoded: GoalMethodSetParams = [thread_id, objective, status, token_budget]
+            `MethodOk (`ThreadGoal (`ThreadGoalSet decoded));
+          } else {
+            `MethodError error
+          }
         } else {
-          `MethodError error
+          `MethodError "thread/goal/set.params.threadId must be a string"
         }
       } else {
-        `MethodError "thread/goal/set.params.threadId must be a string"
+        `MethodError "thread/goal/set.params.threadId is required"
       }
     } else {
-      `MethodError "thread/goal/set.params.threadId is required"
+      `MethodError "thread/goal/set.params must be an object"
     }
-  } else {
-    `MethodError "thread/goal/set.params must be an object"
-  }
-}
+  };
 
-const decode_thread_goal_get: GoalMethodJson -> GoalMethodDecodeResult = (params: GoalMethodJson) => {
-  if let `Object object = params {
-    let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object)
-    if let `Found thread_id_json = thread_id_lookup {
-      if let `String thread_id = thread_id_json {
-        `MethodOk (`ThreadGoal (`ThreadGoalGet thread_id))
+const decode_thread_goal_get: GoalMethodJson -> GoalMethodDecodeResult = (params:
+  GoalMethodJson) => {
+    if let `Object object = params {
+      let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object);
+      if let `Found thread_id_json = thread_id_lookup {
+        if let `String thread_id = thread_id_json {
+          `MethodOk (`ThreadGoal (`ThreadGoalGet thread_id))
+        } else {
+          `MethodError "thread/goal/get.params.threadId must be a string"
+        }
       } else {
-        `MethodError "thread/goal/get.params.threadId must be a string"
+        `MethodError "thread/goal/get.params.threadId is required"
       }
     } else {
-      `MethodError "thread/goal/get.params.threadId is required"
+      `MethodError "thread/goal/get.params must be an object"
     }
-  } else {
-    `MethodError "thread/goal/get.params must be an object"
-  }
-}
+  };
 
-const decode_thread_goal_clear: GoalMethodJson -> GoalMethodDecodeResult = (params: GoalMethodJson) => {
-  if let `Object object = params {
-    let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object)
-    if let `Found thread_id_json = thread_id_lookup {
-      if let `String thread_id = thread_id_json {
-        `MethodOk (`ThreadGoal (`ThreadGoalClear thread_id))
+const decode_thread_goal_clear: GoalMethodJson -> GoalMethodDecodeResult = (params:
+  GoalMethodJson) => {
+    if let `Object object = params {
+      let thread_id_lookup: GoalMethodJsonLookup = json_object_get("threadId", object);
+      if let `Found thread_id_json = thread_id_lookup {
+        if let `String thread_id = thread_id_json {
+          `MethodOk (`ThreadGoal (`ThreadGoalClear thread_id))
+        } else {
+          `MethodError "thread/goal/clear.params.threadId must be a string"
+        }
       } else {
-        `MethodError "thread/goal/clear.params.threadId must be a string"
+        `MethodError "thread/goal/clear.params.threadId is required"
       }
     } else {
-      `MethodError "thread/goal/clear.params.threadId is required"
+      `MethodError "thread/goal/clear.params must be an object"
     }
-  } else {
-    `MethodError "thread/goal/clear.params must be an object"
-  }
-}
+  };
 
 return {
-  decode_thread_goal_set,
-  decode_thread_goal_get,
-  decode_thread_goal_clear,
-}
+  .decode_thread_goal_set,
+  .decode_thread_goal_get,
+  .decode_thread_goal_clear,
+};

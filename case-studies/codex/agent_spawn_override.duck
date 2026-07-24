@@ -1,21 +1,25 @@
 module () where
 
-const {} = import "./agent_spawn_override_types.duck" ()
-const { select_spawn_override_model } = import "./agent_spawn_override_model.duck" ()
-const { select_spawn_override_effort } = import "./agent_spawn_override_effort.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ();
+const { .select_spawn_override_model } = import "./agent_spawn_override_model.duck" ();
+const { .select_spawn_override_effort } = import "./agent_spawn_override_effort.duck" ();
 
 type SpawnOverrideFacadeEffortInput = AgentSpawnOverrideEffortInput
 
 const select_spawn_overrides: AgentSpawnOverrideInput -> AgentSpawnOverrideResult = input => {
-  let model_result = select_spawn_override_model input
+  let model_result = select_spawn_override_model input;
   if let `SpawnOverrideModelRejected message = model_result {
     `SpawnOverrideRejected message
   } else if let `SpawnOverrideModelSelected model = model_result {
-    let effort_input: SpawnOverrideFacadeEffortInput = [.model = model, .default_reasoning_effort = input.default_reasoning_effort, .requested_reasoning_effort = input.requested_reasoning_effort]
+    let effort_input: SpawnOverrideFacadeEffortInput = [
+      .model = model,
+      .default_reasoning_effort = input.default_reasoning_effort,
+      .requested_reasoning_effort = input.requested_reasoning_effort,
+    ];
     select_spawn_override_effort effort_input
   } else {
     `SpawnOverrideRejected "spawn_agent override selection produced no result"
   }
-}
+};
 
-return { select_spawn_overrides }
+return { .select_spawn_overrides };

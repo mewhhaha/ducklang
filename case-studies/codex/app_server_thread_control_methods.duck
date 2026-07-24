@@ -1,7 +1,7 @@
 module () where
 
-const { json_object_get } = import "duck:prelude/json/values" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const {} = import "./app_server_types.duck" ();
 
 type ThreadControlMethodJson = AppServerJson
 type ThreadControlMethodJsonLookup = JsonLookupResult
@@ -9,58 +9,62 @@ type ThreadControlMethodKind = AppServerThreadControlKind
 type ThreadControlMethodDecodeResult = AppServerMethodDecodeResult
 type ThreadControlMethodSetNameParams = AppServerThreadSetNameParams
 
-const decode_thread_control_method: [ThreadControlMethodKind, ThreadControlMethodJson] -> ThreadControlMethodDecodeResult = (kind: ThreadControlMethodKind, params: ThreadControlMethodJson) => {
-  if let `Object object = params {
-    let thread_id_lookup: ThreadControlMethodJsonLookup = json_object_get("threadId", object)
+const decode_thread_control_method: [ThreadControlMethodKind, ThreadControlMethodJson] ->
+  ThreadControlMethodDecodeResult = (
+    kind: ThreadControlMethodKind,
+    params: ThreadControlMethodJson,
+  ) => {
+    if let `Object object = params {
+      let thread_id_lookup: ThreadControlMethodJsonLookup = json_object_get("threadId", object);
 
-    if let `Found thread_id_json = thread_id_lookup {
-      if let `String thread_id = thread_id_json {
-        if let `SetThreadName () = kind {
-          let name_lookup: ThreadControlMethodJsonLookup = json_object_get("name", object)
-          if let `Found name_json = name_lookup {
-            if let `String name = name_json {
-              let decoded: ThreadControlMethodSetNameParams = [thread_id, name]
-              `MethodOk (`ThreadControl (`ThreadSetName decoded))
+      if let `Found thread_id_json = thread_id_lookup {
+        if let `String thread_id = thread_id_json {
+          if let `SetThreadName () = kind {
+            let name_lookup: ThreadControlMethodJsonLookup = json_object_get("name", object);
+            if let `Found name_json = name_lookup {
+              if let `String name = name_json {
+                let decoded: ThreadControlMethodSetNameParams = [thread_id, name];
+                `MethodOk (`ThreadControl (`ThreadSetName decoded))
+              } else {
+                `MethodError "thread/name/set.params.name must be a string"
+              }
             } else {
-              `MethodError "thread/name/set.params.name must be a string"
+              `MethodError "thread/name/set.params.name is required"
             }
+          } else if let `IncrementThreadElicitation () = kind {
+            `MethodOk (`ThreadControl (`ThreadIncrementElicitation thread_id))
           } else {
-            `MethodError "thread/name/set.params.name is required"
+            `MethodOk (`ThreadControl (`ThreadDecrementElicitation thread_id))
           }
-        } else if let `IncrementThreadElicitation () = kind {
-          `MethodOk (`ThreadControl (`ThreadIncrementElicitation thread_id))
         } else {
-          `MethodOk (`ThreadControl (`ThreadDecrementElicitation thread_id))
+          if let `SetThreadName () = kind {
+            `MethodError "thread/name/set.params.threadId must be a string"
+          } else if let `IncrementThreadElicitation () = kind {
+            `MethodError "thread/increment_elicitation.params.threadId must be a string"
+          } else {
+            `MethodError "thread/decrement_elicitation.params.threadId must be a string"
+          }
         }
       } else {
         if let `SetThreadName () = kind {
-          `MethodError "thread/name/set.params.threadId must be a string"
+          `MethodError "thread/name/set.params.threadId is required"
         } else if let `IncrementThreadElicitation () = kind {
-          `MethodError "thread/increment_elicitation.params.threadId must be a string"
+          `MethodError "thread/increment_elicitation.params.threadId is required"
         } else {
-          `MethodError "thread/decrement_elicitation.params.threadId must be a string"
+          `MethodError "thread/decrement_elicitation.params.threadId is required"
         }
       }
     } else {
       if let `SetThreadName () = kind {
-        `MethodError "thread/name/set.params.threadId is required"
+        `MethodError "thread/name/set.params must be an object"
       } else if let `IncrementThreadElicitation () = kind {
-        `MethodError "thread/increment_elicitation.params.threadId is required"
+        `MethodError "thread/increment_elicitation.params must be an object"
       } else {
-        `MethodError "thread/decrement_elicitation.params.threadId is required"
+        `MethodError "thread/decrement_elicitation.params must be an object"
       }
     }
-  } else {
-    if let `SetThreadName () = kind {
-      `MethodError "thread/name/set.params must be an object"
-    } else if let `IncrementThreadElicitation () = kind {
-      `MethodError "thread/increment_elicitation.params must be an object"
-    } else {
-      `MethodError "thread/decrement_elicitation.params must be an object"
-    }
-  }
-}
+  };
 
 return {
-  decode_thread_control_method,
-}
+  .decode_thread_control_method,
+};

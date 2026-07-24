@@ -1,19 +1,22 @@
 module () where
 
-const {} = import "./update_plan_types.duck" ()
-const { parse_update_plan_args } = import "./update_plan_json.duck" ()
-const { plan_parsed_update_plan, plan_update_plan_payload } = import "./update_plan_policy.duck" ()
+const {} = import "./update_plan_types.duck" ();
+const { .parse_update_plan_args } = import "./update_plan_json.duck" ();
+const { .plan_parsed_update_plan, .plan_update_plan_payload } = import "./update_plan_policy.duck" ();
 
 type PlanCallPlan = UpdatePlanCallPlan
 type PlanCallMode = UpdatePlanMode
 type PlanCallPayload = UpdatePlanPayload
 
-let plan_update_plan_call: [PlanCallPayload, PlanCallMode] -> PlanCallPlan = (payload: PlanCallPayload, mode: PlanCallMode) => {
-  let payload_plan = plan_update_plan_payload(payload, mode)
+let plan_update_plan_call: [PlanCallPayload, PlanCallMode] -> PlanCallPlan = (
+  payload: PlanCallPayload,
+  mode: PlanCallMode,
+) => {
+  let payload_plan = plan_update_plan_payload(payload, mode);
   if let `RejectPayload message = payload_plan {
     `RejectRequest message
   } else if let `ParseArguments arguments = payload_plan {
-    let parsed = parse_update_plan_args arguments
+    let parsed = parse_update_plan_args arguments;
     if let `Parsed args = parsed {
       plan_parsed_update_plan args
     } else if let `ParseFailed message = parsed {
@@ -24,6 +27,6 @@ let plan_update_plan_call: [PlanCallPayload, PlanCallMode] -> PlanCallPlan = (pa
   } else {
     `RejectRequest "update_plan handler received unsupported payload"
   }
-}
+};
 
-return { plan_update_plan_call }
+return { .plan_update_plan_call };

@@ -1,60 +1,162 @@
 module () where
 
-const { json_array, json_array_empty, json_array_prepend, json_bool, json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { normalize_code_mode_identifier, render_json_schema_to_typescript } = import "./code_mode_schema_renderer.duck" ()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_bool,
+  .json_null,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const { .normalize_code_mode_identifier, .render_json_schema_to_typescript } =
+  import "./code_mode_schema_renderer.duck" ()
 
 const typed_schema: Text -> Json = name => {
   json_object(json_object_prepend("type", json_string name, json_object_empty()))
-}
+};
 
-let string_schema = typed_schema "string"
-let integer_schema = typed_schema "integer"
-let boolean_schema = typed_schema "boolean"
-let score = 0
+let string_schema = typed_schema "string";
+let integer_schema = typed_schema "integer";
+let boolean_schema = typed_schema "boolean";
+let score = 0;
 
 if normalize_code_mode_identifier "hidden-dynamic-tool" == "hidden_dynamic_tool" && normalize_code_mode_identifier "9lives" == "_lives" && normalize_code_mode_identifier "éx" == "_x" && normalize_code_mode_identifier "" == "_" {
   score = score + 1
 }
 
-let constant_schema = json_object(json_object_prepend("const", json_string "x", json_object_empty()))
-let type_variants = json_array_prepend(json_string "boolean", json_array_prepend(json_string "null", json_array_empty()))
-let nullable_schema = json_object(json_object_prepend("type", json_array type_variants, json_object_empty()))
-let union_variants = json_array_prepend(constant_schema, json_array_prepend(integer_schema, json_array_prepend(nullable_schema, json_array_empty())))
-let union_schema = json_object(json_object_prepend("anyOf", json_array union_variants, json_object_empty()))
-if render_json_schema_to_typescript union_schema == "\"x\" | number | boolean | null" { score = score + 10 }
+let constant_schema = json_object(
+  json_object_prepend("const", json_string "x", json_object_empty())
+);
+let type_variants = json_array_prepend(
+  json_string "boolean",
+  json_array_prepend(json_string "null", json_array_empty()),
+);
+let nullable_schema = json_object(
+  json_object_prepend("type", json_array type_variants, json_object_empty())
+);
+let union_variants = json_array_prepend(
+  constant_schema,
+  json_array_prepend(integer_schema, json_array_prepend(nullable_schema, json_array_empty())),
+);
+let union_schema = json_object(
+  json_object_prepend("anyOf", json_array union_variants, json_object_empty())
+);
+if render_json_schema_to_typescript union_schema == "\"x\" | number | boolean | null" { score =
+    score + 10 }
 
-let enum_values = json_array_prepend(json_string "b", json_array_prepend(json_string "a", json_array_prepend(json_null(), json_array_empty())))
-let enum_schema = json_object(json_object_prepend("enum", json_array enum_values, json_object_empty()))
+let enum_values = json_array_prepend(
+  json_string "b",
+  json_array_prepend(json_string "a", json_array_prepend(json_null(), json_array_empty())),
+);
+let enum_schema = json_object(
+  json_object_prepend("enum", json_array enum_values, json_object_empty())
+);
 if render_json_schema_to_typescript enum_schema == "\"b\" | \"a\" | null" { score = score + 100 }
 
-let tuple_values = json_array_prepend(string_schema, json_array_prepend(integer_schema, json_array_empty()))
-let tuple_members = json_object_prepend("type", json_string "array", json_object_prepend("prefixItems", json_array tuple_values, json_object_empty()))
-let repeated_members = json_object_prepend("type", json_string "array", json_object_prepend("items", boolean_schema, json_object_empty()))
-let unknown_array_members = json_object_prepend("type", json_string "array", json_object_empty())
-if render_json_schema_to_typescript(json_object tuple_members) == "[string, number]" && render_json_schema_to_typescript(json_object repeated_members) == "Array<boolean>" && render_json_schema_to_typescript(json_object unknown_array_members) == "unknown[]" {
-  score = score + 1000
-}
+let tuple_values = json_array_prepend(
+  string_schema,
+  json_array_prepend(integer_schema, json_array_empty()),
+);
+let tuple_members = json_object_prepend(
+  "type",
+  json_string "array",
+  json_object_prepend("prefixItems", json_array tuple_values, json_object_empty()),
+);
+let repeated_members = json_object_prepend(
+  "type",
+  json_string "array",
+  json_object_prepend("items", boolean_schema, json_object_empty()),
+);
+let unknown_array_members = json_object_prepend("type", json_string "array", json_object_empty());
+if render_json_schema_to_typescript(json_object
+  tuple_members) == "[string, number]" && render_json_schema_to_typescript(
+    json_object repeated_members
+  ) == "Array<boolean>" && render_json_schema_to_typescript(json_object unknown_array_members) ==
+  "unknown[]" {
+    score = score + 1000
+  }
 
-let sorted_property_members = json_object_prepend("z", string_schema, json_object_prepend("a-b", integer_schema, json_object_empty()))
-let required_names = json_array_prepend(json_string "z", json_array_empty())
-let sorted_object_members = json_object_prepend("type", json_string "object", json_object_prepend("properties", json_object sorted_property_members, json_object_prepend("required", json_array required_names, json_object_prepend("additionalProperties", json_bool false, json_object_empty()))))
-if render_json_schema_to_typescript(json_object sorted_object_members) == "{ \"a-b\"?: number; z: string; }" { score = score + 10000 }
+let sorted_property_members = json_object_prepend(
+  "z",
+  string_schema,
+  json_object_prepend("a-b", integer_schema, json_object_empty()),
+);
+let required_names = json_array_prepend(json_string "z", json_array_empty());
+let sorted_object_members = json_object_prepend(
+  "type",
+  json_string "object",
+  json_object_prepend(
+    "properties",
+    json_object sorted_property_members,
+    json_object_prepend(
+      "required",
+      json_array required_names,
+      json_object_prepend("additionalProperties", json_bool false, json_object_empty()),
+    ),
+  ),
+);
+if render_json_schema_to_typescript(json_object
+  sorted_object_members) == "{ \"a-b\"?: number; z: string; }" { score = score + 10000 }
 
-let location_property_members = json_object_prepend("location", string_schema, json_object_empty())
-let location_required = json_array_prepend(json_string "location", json_array_empty())
-let location_members = json_object_prepend("type", json_string "object", json_object_prepend("properties", json_object location_property_members, json_object_prepend("required", json_array location_required, json_object_empty())))
-let weather_members = json_object_prepend("type", json_string "array", json_object_prepend("description", json_string " look up weather \n\n for locations ", json_object_prepend("items", json_object location_members, json_object_empty())))
-let documented_properties = json_object_prepend("weather", json_object weather_members, json_object_empty())
-let weather_required = json_array_prepend(json_string "weather", json_array_empty())
-let documented_members = json_object_prepend("type", json_string "object", json_object_prepend("properties", json_object documented_properties, json_object_prepend("required", json_array weather_required, json_object_empty())))
-let documented_expected = "{\n  // look up weather\n  // for locations\n  weather: Array<{ location: string; }>;\n}"
-if render_json_schema_to_typescript(json_object documented_members) == documented_expected { score = score + 100000 }
+let location_property_members = json_object_prepend("location", string_schema, json_object_empty());
+let location_required = json_array_prepend(json_string "location", json_array_empty());
+let location_members = json_object_prepend(
+  "type",
+  json_string "object",
+  json_object_prepend(
+    "properties",
+    json_object location_property_members,
+    json_object_prepend("required", json_array location_required, json_object_empty()),
+  ),
+);
+let weather_members = json_object_prepend(
+  "type",
+  json_string "array",
+  json_object_prepend(
+    "description",
+    json_string " look up weather \n\n for locations ",
+    json_object_prepend("items", json_object location_members, json_object_empty()),
+  ),
+);
+let documented_properties = json_object_prepend(
+  "weather",
+  json_object weather_members,
+  json_object_empty(),
+);
+let weather_required = json_array_prepend(json_string "weather", json_array_empty());
+let documented_members = json_object_prepend(
+  "type",
+  json_string "object",
+  json_object_prepend(
+    "properties",
+    json_object documented_properties,
+    json_object_prepend("required", json_array weather_required, json_object_empty()),
+  ),
+);
+let documented_expected =
+  "{\n  // look up weather\n  // for locations\n  weather: Array<{ location: string; }>;\n}"
+if render_json_schema_to_typescript(json_object documented_members) == documented_expected { score =
+    score + 100000 }
 
-let additional_members = json_object_prepend("type", json_string "object", json_object_prepend("additionalProperties", typed_schema "number", json_object_empty()))
-let intersection_values = json_array_prepend(string_schema, json_array_prepend(json_object additional_members, json_array_empty()))
-let intersection_schema = json_object(json_object_prepend("allOf", json_array intersection_values, json_object_empty()))
-if render_json_schema_to_typescript intersection_schema == "string & { [key: string]: number; }" && render_json_schema_to_typescript(json_bool true) == "unknown" && render_json_schema_to_typescript(json_bool false) == "never" {
+let additional_members = json_object_prepend(
+  "type",
+  json_string "object",
+  json_object_prepend("additionalProperties", typed_schema "number", json_object_empty()),
+);
+let intersection_values = json_array_prepend(
+  string_schema,
+  json_array_prepend(json_object additional_members, json_array_empty()),
+);
+let intersection_schema = json_object(
+  json_object_prepend("allOf", json_array intersection_values, json_object_empty())
+);
+if render_json_schema_to_typescript intersection_schema == "string & { [key: string]: number; }" && render_json_schema_to_typescript(
+  json_bool true
+) == "unknown" && render_json_schema_to_typescript(json_bool false) == "never" {
   score = score + 1000000
 }
 
-return { .score = score }
+return { .score = score };

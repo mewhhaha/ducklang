@@ -1,0 +1,16 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+
+type TurnDiffFixtureMutation = TurnDiffMutation
+type TurnDiffFixtureMutations = TurnDiffMutations
+type TurnDiffFixtureDelta = TurnDiffDelta
+type TurnDiffFixtureMutationNode = ListNode TurnDiffFixtureMutation
+
+const turn_diff_fixture_exact_delta: TurnDiffFixtureMutation -> TurnDiffFixtureDelta = mutation => {
+  let mutations: TurnDiffFixtureMutations = `Nil ();
+  let node: TurnDiffFixtureMutationNode = [mutation, mutations];
+  [.exact = true, .mutations = `Cons node]
+};
+
+return { .turn_diff_fixture_exact_delta };

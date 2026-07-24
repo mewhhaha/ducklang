@@ -6,7 +6,7 @@ import {
 
 Deno.test("attached documentation accepts triple slash comments", () => {
   const text =
-    "/// Adds two values.\nconst add = (left, right) => left + right\n";
+    "/// Adds two values.\nconst add = (left, right) => left + right;\n";
 
   assert_equals(
     attached_documentation(text, text.indexOf("const")),

@@ -1,16 +1,19 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_cli } = import "./cli.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_cli } = import "./cli.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixturePlan = CodexCliPlan
 
-const args = comptime list(Text)
-let input: FixtureArgs = args.prepend("execpolicy", args.prepend("check", args.prepend("--rules", args.prepend("base.rules", args.singleton("git")))))
-let plan: FixturePlan = parse_cli(input)
-let score = 0
+const args = comptime list Text;
+let input: FixtureArgs = args.prepend(
+  "execpolicy",
+  args.prepend("check", args.prepend("--rules", args.prepend("base.rules", args.singleton("git")))),
+);
+let plan: FixturePlan = parse_cli input;
+let score = 0;
 
 if let `ManageExecPolicy command = plan {
   if let `CheckExecPolicy options = command {
@@ -18,4 +21,4 @@ if let `ManageExecPolicy command = plan {
   }
 }
 
-return { .score = score }
+return { .score = score };

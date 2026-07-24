@@ -1,21 +1,22 @@
-const { parse_json } = import "duck:prelude/json" ()
-const { text_length } = import "duck:prelude/runtime" ()
+const { .parse_json } = import "duck:prelude/json" ();
+const { .text_length } = import "duck:prelude/runtime" ();
 
-let document = "{\"type\":\"function_call\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"flags\":[true,false,null],\"number\":-12.5e+2}"
-let parsed = parse_json(document, 0)
+let document =
+  "{\"type\":\"function_call\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"flags\":[true,false,null],\"number\":-12.5e+2}";
+let parsed = parse_json(document, 0);
 
 if let `Ok value_and_index = parsed {
-  let [value, index] = value_and_index
-  let score = if index == text_length(document) { 10000 } else { 0 }
+  let [value, index] = value_and_index;
+  let score = if index == text_length document { 10000 } else { 0 };
 
   if let `Object members = value {
-    let current = members
-    let done = false
+    let current = members;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [member, tail] = node
-        let [key, member_value] = member
+        let [member, tail] = node;
+        let [key, member_value] = member;
 
         if key == "type" {
           if let `String text = member_value {
@@ -31,14 +32,14 @@ if let `Ok value_and_index = parsed {
           }
         } else if key == "flags" {
           if let `Array values = member_value {
-            let flags = values
-            let flag_score = 0
-            let flag_index = 0
-            let flags_done = false
+            let flags = values;
+            let flag_score = 0;
+            let flag_index = 0;
+            let flags_done = false;
 
             loop {
               if let `Cons flag_node = flags {
-                let [flag, tail_flags] = flag_node
+                let [flag, tail_flags] = flag_node;
 
                 if flag_index == 0 {
                   if let `Bool true = flag {
@@ -61,7 +62,7 @@ if let `Ok value_and_index = parsed {
               }
 
               if flags_done {
-                break
+                break;
               }
             }
 
@@ -83,7 +84,7 @@ if let `Ok value_and_index = parsed {
       }
 
       if done {
-        break
+        break;
       }
     }
 

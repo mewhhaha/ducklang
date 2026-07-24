@@ -43,11 +43,11 @@ function assert_resumption_input_diagnostic(
 
 Deno.test("resumption aliases retain Bool input types", () => {
   const source = `effect E { op: () => Bool }
-let run = () => { value <- E.op(); value }
-let h = E {
+let run = () => { value <- E.op(); value };
+let h = handler E {
   op: (!resume) => { let !later = !resume; !later(1) },
   return: value => value,
-}
+};
 try run() with h`;
 
   assert_resumption_input_diagnostic(
@@ -62,11 +62,11 @@ try run() with h`;
 
 Deno.test("resumption aliases retain I32 input types", () => {
   const source = `effect E { op: () => I32 }
-let run = () => { value <- E.op(); value }
-let h = E {
+let run = () => { value <- E.op(); value };
+let h = handler E {
   op: (!resume) => { let !later = !resume; !later(true) },
   return: value => value,
-}
+};
 try run() with h`;
 
   assert_resumption_input_diagnostic(
@@ -81,15 +81,15 @@ try run() with h`;
 
 Deno.test("duplicated resumptions retain Bool input types", () => {
   const source = `effect E { op: () => Bool }
-let run = () => { value <- E.op(); value }
-let h = E {
+let run = () => { value <- E.op(); value };
+let h = handler E {
   op: (!resume) => {
-    let (!left, !right) = dup !resume
+    let (!left, !right) = dup !resume;
     !left(1)
-    !right(true)
+    !right(true);
   },
   return: value => value,
-}
+};
 try run() with h`;
 
   assert_resumption_input_diagnostic(
@@ -104,15 +104,15 @@ try run() with h`;
 
 Deno.test("duplicated resumptions retain I32 input types", () => {
   const source = `effect E { op: () => I32 }
-let run = () => { value <- E.op(); value }
-let h = E {
+let run = () => { value <- E.op(); value };
+let h = handler E {
   op: (!resume) => {
-    let (!left, !right) = dup !resume
+    let (!left, !right) = dup !resume;
     !left(true)
-    !right(1)
+    !right(1);
   },
   return: value => value,
-}
+};
 try run() with h`;
 
   assert_resumption_input_diagnostic(

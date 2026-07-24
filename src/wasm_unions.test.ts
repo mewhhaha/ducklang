@@ -8,12 +8,12 @@ import { assert_throws } from "./assert.ts";
 
 Deno.test("frontend same-case shorthand union compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let input = true
+let input = true;
 let result = if input {
   \`Ok (40)
 } else {
   \`Ok (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -45,23 +45,23 @@ if let \`Ok value = result {
 Deno.test("core dynamic indexed runtime union facts compile through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-const { struct } = import "duck:prelude" ()
+const result_type = ResultType;
+const { .struct } = import "duck:prelude" ();
 const choices_type = struct {
   .first= result_type,
   .second= result_type
-}
+};
 
-let flag = true
+let flag = true;
 let make = if flag {
   (first: result_type, second: result_type) => [.first = first, .second = second] as choices_type
 } else {
   (first: result_type, second: result_type) => [.first = second, .second = first] as choices_type
-}
+};
 
-let choices: choices_type = make(\`Ok (40), \`Err (2))
-let index = 1
-let picked: result_type = @get(choices, index)
+let choices: choices_type = make(\`Ok (40), \`Err (2));
+let index = 1;
+let picked: result_type = @get(choices, index);
 if let \`Ok value = picked {
   value + 2
 } else {
@@ -92,24 +92,24 @@ if let \`Ok value = picked {
 Deno.test("core runtime aggregate union index assignment compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const slots_type = struct {
   .first= result_type,
   .second= result_type
-}
+};
 
-let keep = "x"
-let flag = true
+let keep = "x";
+let flag = true;
 let make_slots = if flag {
   (first: Int, second: Int) => [.first = \`Ok (first), .second = \`Err (second)] as slots_type
 } else {
   (first: Int, second: Int) => [.first = \`Err (first), .second = \`Ok (second)] as slots_type
-}
-let slots: slots_type = make_slots(1, 2)
+};
+let slots: slots_type = make_slots(1, 2);
 slots[0] = \`Err (40)
-let i = 1
+let i = 1;
 slots[i] = \`Ok (2)
 slots
 `);
@@ -167,22 +167,22 @@ Deno.test("core rejects first-class runtime aggregate union mutation capture", (
     () =>
       wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const slots_type = struct {
   .first= result_type,
   .second= result_type
-}
+};
 
-let keep = "x"
-let flag = true
+let keep = "x";
+let flag = true;
 let make_slots = if flag {
   (first: Int, second: Int) => [.first = \`Ok (first), .second = \`Err (second)] as slots_type
 } else {
   (first: Int, second: Int) => [.first = \`Err (first), .second = \`Ok (second)] as slots_type
-}
-let slots: slots_type = make_slots(1, 2)
+};
+let slots: slots_type = make_slots(1, 2);
 let write = if flag {
   (i: Int, value: Int) => {
     slots[i] = \`Ok (value)
@@ -193,7 +193,7 @@ let write = if flag {
     slots[i] = \`Err (value)
     0
   }
-}
+};
 
 write(1, 2)
 slots
@@ -206,9 +206,9 @@ slots
 Deno.test("core runtime scalar Text and struct union values compile through WAT to Wasm memory", async () => {
   const direct_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let keep = "x"
+let keep = "x";
 
 \`Ok (41)
 `);
@@ -252,9 +252,9 @@ let keep = "x"
 
   const frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = freeze \`Ok (41)
+let result: result_type = freeze \`Ok (41);
 
 if let \`Ok value = result {
   value + 1
@@ -284,13 +284,13 @@ if let \`Ok value = result {
 
   const scratch_frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let result: result_type = scratch {
   freeze \`Ok (@append(prefix, "da"))
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -322,14 +322,14 @@ if let \`Ok value = result {
 
   const bound_scratch_frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let result: result_type = scratch {
-  let temp = \`Ok (@append(prefix, "da"))
+  let temp = \`Ok (@append(prefix, "da"));
   freeze temp
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -363,20 +363,20 @@ if let \`Ok value = result {
 
   const branch_alias_scratch_frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let flag = true;
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let existing: result_type = if flag {
   \`Ok (@append(prefix, "da"))
 } else {
   \`Err (5)
-}
+};
 let result: result_type = scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -412,12 +412,12 @@ if let \`Ok value = result {
 
   const branch_assignment_scratch_frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
-let existing: result_type = \`Err (5)
+let flag = true;
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
+let existing: result_type = \`Err (5);
 
 if flag {
   existing = \`Ok (@append(prefix, "da"))
@@ -426,9 +426,9 @@ if flag {
 }
 
 let result: result_type = scratch {
-  let temp = existing
+  let temp = existing;
   freeze temp
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -463,20 +463,20 @@ if let \`Ok value = result {
   }
 
   const aggregate_bound_scratch_frozen_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let result: result_type = scratch {
-  let temp = \`Ok ([.name = @append(prefix, "da"), .age = 40] as user_type)
+  let temp = \`Ok ([.name = @append(prefix, "da"), .age = 40] as user_type);
   freeze temp
-}
+};
 
 if let \`Ok user = result {
   @len(user.name) + user.age
@@ -512,16 +512,16 @@ if let \`Ok user = result {
 
   const union_payload_bound_scratch_frozen_wat = wat_from_core_source(`
 type InnerType = | \`Some Text | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 type OuterType = | \`Ok inner_type | \`Err Unit
-const outer_type = OuterType
+const outer_type = OuterType;
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let result: outer_type = scratch {
-  let temp = \`Ok (\`Some (@append(prefix, "da")))
+  let temp = \`Ok (\`Some (@append(prefix, "da")));
   freeze temp
-}
+};
 
 if let \`Ok inner = result {
   if let \`Some value = inner {
@@ -562,19 +562,19 @@ if let \`Ok inner = result {
 
   const aggregate_union_field_bound_scratch_frozen_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
-const { struct } = import "duck:prelude" ()
+const result_type = ResultType;
+const { .struct } = import "duck:prelude" ();
 const box_type = struct {
   .result= result_type,
   .age= Int
-}
+};
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let box: box_type = scratch {
-  let temp = [.result = \`Ok (@append(prefix, "da")), .age = 40] as box_type
+  let temp = [.result = \`Ok (@append(prefix, "da")), .age = 40] as box_type;
   freeze temp
-}
+};
 
 if let \`Ok value = box.result {
   @len(value) + box.age
@@ -614,10 +614,10 @@ if let \`Ok value = box.result {
 
   const dynamic_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let keep = "x"
-let flag = false
+let keep = "x";
+let flag = false;
 
 if flag {
   \`Ok (41)
@@ -665,9 +665,9 @@ if flag {
 
   const wide_wat = wat_from_core_source(`
 type ResultType = | \`Ok I64 | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let keep = "x"
+let keep = "x";
 
 \`Ok (41i64)
 `);
@@ -711,9 +711,9 @@ let keep = "x"
 
   const text_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let keep = "x"
+let keep = "x";
 
 \`Ok ("Ada")
 `);
@@ -758,15 +758,15 @@ let keep = "x"
   }
 
   const struct_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let keep = "x"
+let keep = "x";
 
 \`Ok ([.age = 40, .score = 2] as user_type)
 `);
@@ -818,15 +818,15 @@ let keep = "x"
 Deno.test("core stored runtime union pointer if let compiles through WAT to Wasm", async () => {
   const matching_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (x: Int) => \`Ok (x)
 } else {
   (x: Int) => \`Err (x)
-}
-let result: result_type = make(41)
+};
+let result: result_type = make(41);
 
 if let \`Ok value = result {
   value + 1
@@ -856,15 +856,15 @@ if let \`Ok value = result {
 
   const fallback_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = false
+let flag = false;
 let make = if flag {
   (x: Int) => \`Ok (x)
 } else {
   (x: Int) => \`Err (x)
-}
-let result: result_type = make(7)
+};
+let result: result_type = make(7);
 
 if let \`Ok value = result {
   value + 1
@@ -894,15 +894,15 @@ if let \`Ok value = result {
 
   const captured_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (x: Int) => \`Ok (x)
 } else {
   (x: Int) => \`Err (x)
-}
-let result: result_type = freeze make(41)
+};
+let result: result_type = freeze make(41);
 let read_result = if flag {
   (x: Int) => {
     if let \`Ok value = result {
@@ -913,7 +913,7 @@ let read_result = if flag {
   }
 } else {
   (x: Int) => x
-}
+};
 
 read_result(1)
 `);
@@ -939,15 +939,15 @@ read_result(1)
 
   const text_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (x: Text) => \`Ok (x)
 } else {
   (x: Text) => \`Err ()
-}
-let result: result_type = make("Ada")
+};
+let result: result_type = make("Ada");
 
 if let \`Ok value = result {
   @len(value)
@@ -976,21 +976,21 @@ if let \`Ok value = result {
   }
 
   const struct_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (name: Text) => \`Ok ([.name = name, .age = 40] as user_type)
 } else {
   (name: Text) => \`Err ()
-}
-let result: result_type = make("Ada")
+};
+let result: result_type = make("Ada");
 
 if let \`Ok user = result {
   @len(user.name) + user.age
@@ -1019,26 +1019,26 @@ if let \`Ok user = result {
   }
 
   const nested_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
-const { struct } = import "duck:prelude" ()
+};
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type,
   .age= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (first: Text) => \`Ok ([.name = [.first = first, .last = "Lovelace"] as name_type, .age = 40] as user_type)
 } else {
   (first: Text) => \`Err ()
-}
-let result: result_type = make("Ada")
+};
+let result: result_type = make("Ada");
 
 if let \`Ok user = result {
   @len(user.name.first) + @len(user.name.last) + user.age
@@ -1067,16 +1067,16 @@ if let \`Ok user = result {
   }
 
   const aggregate_pointer_payload_wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let user: user_type = [.age = 40, .score = 2] as user_type
-let result: result_type = \`Ok (user)
+let user: user_type = [.age = 40, .score = 2] as user_type;
+let result: result_type = \`Ok (user);
 
 if let \`Ok found = result {
   found.age + found.score
@@ -1109,17 +1109,17 @@ if let \`Ok found = result {
 
   const union_payload_wat = wat_from_core_source(`
 type InnerType = | \`Some Int | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 type OuterType = | \`Ok inner_type | \`Err Unit
-const outer_type = OuterType
+const outer_type = OuterType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (value: Int) => \`Ok (\`Some (value))
 } else {
   (value: Int) => \`Err ()
-}
-let result: outer_type = make(41)
+};
+let result: outer_type = make(41);
 
 if let \`Ok inner = result {
   if let \`Some value = inner {
@@ -1155,22 +1155,22 @@ if let \`Ok inner = result {
 
   const nested_union_wat = wat_from_core_source(`
 type InnerType = | \`Some Int | \`None Unit
-const inner_type = InnerType
-const { struct } = import "duck:prelude" ()
+const inner_type = InnerType;
+const { .struct } = import "duck:prelude" ();
 const box_type = struct {
   .inner= inner_type,
   .bonus= Int
-}
+};
 type ResultType = | \`Ok box_type | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let make = if flag {
   (value: Int) => \`Ok ([.inner = \`Some (value), .bonus = 1] as box_type)
 } else {
   (value: Int) => \`Err ()
-}
-let result: result_type = make(41)
+};
+let result: result_type = make(41);
 
 if let \`Ok box = result {
   if let \`Some value = box.inner {
@@ -1207,13 +1207,13 @@ if let \`Ok box = result {
 
 Deno.test("core static if let compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let result = 0
+let result = 0;
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
-let typed_result = \`Ok (1)
-let none_result = \`None ()
+const option_type = OptionType;
+let typed_result = \`Ok (1);
+let none_result = \`None ();
 
 if let \`Ok x = \`Ok (41) {
   result = x + 1
@@ -1251,8 +1251,8 @@ result
 
   const scratch_union_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let value = scratch { \`Ok (41) }
+const result_type = ResultType;
+let value = scratch { \`Ok (41) };
 if let \`Ok x = value { x + 1 } else { 0 }
 `);
   const scratch_union_instance = await instantiate_wat(
@@ -1279,11 +1279,11 @@ if let \`Ok x = value { x + 1 } else { 0 }
 
   const scratch_union_block_setup_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 let result: result_type = scratch {
-  let temp: Text = freeze @append("Ada", "!")
+  let temp: Text = freeze @append("Ada", "!");
   \`Ok (temp)
-}
+};
 if let \`Ok value = result { @len(value) } else { 0 }
 `);
   const scratch_union_block_setup_instance = await instantiate_wat(
@@ -1312,12 +1312,12 @@ if let \`Ok value = result { @len(value) } else { 0 }
 
   const scratch_union_block_alias_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 let result: result_type = scratch {
-  let name: Text = freeze @append("Ada", "!")
-  let temp: result_type = \`Ok (name)
+  let name: Text = freeze @append("Ada", "!");
+  let temp: result_type = \`Ok (name);
   temp
-}
+};
 if let \`Ok value = result { @len(value) } else { 0 }
 `);
   const scratch_union_block_alias_instance = await instantiate_wat(
@@ -1346,15 +1346,15 @@ if let \`Ok value = result { @len(value) } else { 0 }
 
   const scratch_dynamic_union_wat = wat_from_core_source(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let flag = true
+const result_type = ResultType;
+let flag = true;
 let value = scratch {
   if flag {
     \`Ok (41)
   } else {
     \`Err (9)
   }
-}
+};
 if let \`Ok x = value { x + 1 } else { 0 }
 `);
   const scratch_dynamic_union_instance = await instantiate_wat(
@@ -1388,13 +1388,13 @@ let result = if let \`Ok x = \`Ok (41) {
   x + 1
 } else {
   0
-}
+};
 
 let fallback = if let \`Ok y = \`Err (9) {
   y
 } else {
   5
-}
+};
 
 result + fallback
 `);
@@ -1420,12 +1420,12 @@ result + fallback
 
   const wide_fallback_wat = wat_from_core_source(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Err (1i64)
+let result: result_type = \`Err (1i64);
 let value = if let \`Ok found = result {
   found + 1i64
-}
+};
 
 value
 `);
@@ -1450,10 +1450,10 @@ value
   }
 
   const text_if_fallback_wat = wat_from_core_source(`
-let flag = false
+let flag = false;
 let selected: Text = if flag {
   "Ada"
-}
+};
 
 @len(selected)
 `);
@@ -1481,12 +1481,12 @@ let selected: Text = if flag {
 
   const text_if_let_fallback_wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Err ("no")
+let result: result_type = \`Err ("no");
 let selected: Text = if let \`Ok value = result {
   value
-}
+};
 
 @len(selected)
 `);
@@ -1515,7 +1515,7 @@ let selected: Text = if let \`Ok value = result {
 
 Deno.test("core dynamic union-if if let compiles through WAT to Wasm", async () => {
   const matching_wat = wat_from_core_source(`
-let input = 1
+let input = 1;
 let value = if let \`Ok x = if input {
   \`Ok (41)
 } else {
@@ -1524,7 +1524,7 @@ let value = if let \`Ok x = if input {
   x + 1
 } else {
   5
-}
+};
 
 value
 `);
@@ -1549,7 +1549,7 @@ value
   }
 
   const fallback_wat = wat_from_core_source(`
-let input = 0
+let input = 0;
 let value = if let \`Ok x = if input {
   \`Ok (41)
 } else {
@@ -1558,7 +1558,7 @@ let value = if let \`Ok x = if input {
   x + 1
 } else {
   5
-}
+};
 
 value
 `);
@@ -1583,15 +1583,15 @@ value
   }
 
   const typed_wat = wat_from_core_source(`
-let input = 1
+let input = 1;
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -1620,21 +1620,21 @@ if let \`Ok value = result {
   }
 
   const typed_struct_payload_wat = wat_from_core_source(`
-let input = 1
-const { struct } = import "duck:prelude" ()
+let input = 1;
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if input {
   \`Ok ([.age = 40, .score = 2] as user_type)
 } else {
   \`Err ([.age = 5, .score = 1] as user_type)
-}
+};
 
 if let \`Ok user = result {
   user.age + user.score
@@ -1665,19 +1665,19 @@ if let \`Ok user = result {
   }
 
   const typed_wide_wat = wat_from_core_source(`
-let input = 0
+let input = 0;
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if input {
   \`Ok (40i64)
 } else {
   \`Err (1i64)
-}
+};
 
 let selected = if let \`Ok value = result {
   value + 2i64
-}
+};
 
 selected
 `);
@@ -1702,19 +1702,19 @@ selected
   }
 
   const typed_text_wat = wat_from_core_source(`
-let input = 0
+let input = 0;
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if input {
   \`Ok ("Ada")
 } else {
   \`Err ("Grace")
-}
+};
 
 let selected: Text = if let \`Ok value = result {
   value
-}
+};
 
 @len(selected)
 `);
@@ -1739,10 +1739,10 @@ let selected: Text = if let \`Ok value = result {
   }
 
   const const_call_wat = wat_from_core_source(`
-let input = 1
+let input = 1;
 
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 const make_result = flag => {
   if flag {
@@ -1750,9 +1750,9 @@ const make_result = flag => {
   } else {
     \`Err (1)
   }
-}
+};
 
-let result = make_result(input)
+let result = make_result(input);
 
 if let \`Ok value = result {
   value + 2
@@ -1783,15 +1783,15 @@ if let \`Ok value = result {
 
 Deno.test("frontend block-wrapped union payload compiles through WAT to Wasm", async () => {
   const wat = wat_from_core_source(`
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
 type ResultType = | \`Ok user_type | \`Err Unit
-let seed = 41
-let user: user_type = [.age = seed] as user_type
+let seed = 41;
+let user: user_type = [.age = seed] as user_type;
 let result: ResultType = \`Ok ({
-  let alias = user
+  let alias = user;
   alias
-})
+});
 if let \`Ok found = result { found.age } else { 0 }
 `);
   const instance = await instantiate_wat(
@@ -1815,23 +1815,23 @@ Deno.test(
   async () => {
     const wat = wat_from_core_source(`
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
+const result_type = ResultType;
 
 host_import print from "env.print" (I32, &Text) => I32
 
-let !io: I32 = 1
-let flag = true
+let !io: I32 = 1;
+let flag = true;
 let make = if flag {
   (x: Text) => \`Ok (x)
 } else {
   (x: Text) => \`Err ()
-}
-let result: result_type = make("world")
+};
+let result: result_type = make("world");
 let print_once = if let \`Ok value = result {
   () => io.print(&value)
 } else {
   () => io.print("fallback")
-}
+};
 io = print_once()
 io
 `);
@@ -1897,14 +1897,14 @@ io
 Deno.test("frontend dynamic union text payload len compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let result = if flag {
   \`Ok ("Ada")
 } else {
   \`Err ("Grace")
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -1935,21 +1935,21 @@ if let \`Ok value = result {
 
 Deno.test("frontend dynamic union struct payload compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let result: result_type = if flag {
   \`Ok ([.age = 40, .score = 2] as user_type)
 } else {
   \`Err ([.age = 5, .score = 1] as user_type)
-}
+};
 
 if let \`Ok user = result {
   user.age + user.score
@@ -1980,27 +1980,27 @@ if let \`Ok user = result {
 
 Deno.test("frontend dynamic union nested struct payload compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type,
   .age= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let result: result_type = if flag {
   \`Ok ([.name = [.first = "Ada", .last = "Lovelace"] as name_type, .age = 40] as user_type)
 } else {
   \`Err ([.name = [.first = "Grace", .last = "Hopper"] as name_type, .age = 5] as user_type)
-}
+};
 
 if let \`Ok user = result {
   @len(user.name.first) + @len(user.name.last) + user.age
@@ -2031,21 +2031,21 @@ if let \`Ok user = result {
 
 Deno.test("frontend dynamic union shorthand struct payload compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
-let flag = true
+let flag = true;
 let result: result_type = if flag {
   \`Ok ([.age = 40, .score = 2])
 } else {
   \`Err ([.age = 5, .score = 1])
-}
+};
 
 if let \`Ok user = result {
   user.age + user.score
@@ -2078,11 +2078,11 @@ Deno.test("collection loop union patterns skip nonmatching elements", async () =
   const wat_text = wat_from_core_source(`
 type Maybe = | \`Some I32 | \`None Unit
 
-let one: Maybe = \`Some (1)
-let none: Maybe = \`None ()
-let three: Maybe = \`Some (3)
-let values = [one, none, three]
-let total = 0
+let one: Maybe = \`Some (1);
+let none: Maybe = \`None ();
+let three: Maybe = \`Some (3);
+let values = [one, none, three];
+let total = 0;
 
 for index, \`Some value in values {
   total = total + index + value

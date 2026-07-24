@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./app_server_turn_types.duck" ()
-const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_turn_types.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type ThreadPagesHistoryMode = AppServerThreadHistoryMode
 type ThreadPagesTurnsListParams = AppServerThreadTurnsListParams
@@ -11,31 +11,39 @@ type ThreadPagesItemsListParams = AppServerThreadItemsListParams
 type ThreadPagesItemsListPlanResult = AppServerThreadItemsListPlanResult
 type ThreadPagesListSupport = AppServerPaginatedListSupport
 
-const plan_thread_turns_list: [ThreadPagesTurnsListParams, ThreadPagesHistoryMode] -> ThreadPagesTurnsListPlanResult = (params: ThreadPagesTurnsListParams, history_mode: ThreadPagesHistoryMode) => {
-  let [_, _, _, _, items_view] = params
+const plan_thread_turns_list: [ThreadPagesTurnsListParams, ThreadPagesHistoryMode] ->
+  ThreadPagesTurnsListPlanResult = (
+    params: ThreadPagesTurnsListParams,
+    history_mode: ThreadPagesHistoryMode,
+  ) => {
+    let [_, _, _, _, items_view] = params;
 
-  if let `PaginatedHistory () = history_mode {
-    if let `Full () = items_view {
-      `Err "thread/turns/list itemsView full is not supported for paginated threads; use thread/items/list"
+    if let `PaginatedHistory () = history_mode {
+      if let `Full () = items_view {
+        `Err "thread/turns/list itemsView full is not supported for paginated threads; use thread/items/list"
+      } else {
+        let plan: ThreadPagesTurnsListPlan = [params, `PaginatedTurnsStore ()];
+        `Ok plan
+      }
     } else {
-      let plan: ThreadPagesTurnsListPlan = [params, `PaginatedTurnsStore ()]
+      let plan: ThreadPagesTurnsListPlan = [params, `LegacyTurnsReplay ()];
       `Ok plan
     }
-  } else {
-    let plan: ThreadPagesTurnsListPlan = [params, `LegacyTurnsReplay ()]
-    `Ok plan
-  }
-}
+  };
 
-const plan_thread_items_list: [ThreadPagesItemsListParams, ThreadPagesListSupport] -> ThreadPagesItemsListPlanResult = (params: ThreadPagesItemsListParams, support: ThreadPagesListSupport) => {
-  if let `PaginatedListsSupported () = support {
-    `Ok params
-  } else {
-    `Err "thread/items/list is not supported yet"
-  }
-}
+const plan_thread_items_list: [ThreadPagesItemsListParams, ThreadPagesListSupport] ->
+  ThreadPagesItemsListPlanResult = (
+    params: ThreadPagesItemsListParams,
+    support: ThreadPagesListSupport,
+  ) => {
+    if let `PaginatedListsSupported () = support {
+      `Ok params
+    } else {
+      `Err "thread/items/list is not supported yet"
+    }
+  };
 
 return {
-  plan_thread_turns_list,
-  plan_thread_items_list,
-}
+  .plan_thread_turns_list,
+  .plan_thread_items_list,
+};

@@ -1,24 +1,28 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { request_plugin_install_specs } = import "./request_plugin_install_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .request_plugin_install_specs } = import "./request_plugin_install_registration.duck" ();
 
 type FixtureSpecs = ToolSpecs
 
-let score = 0
-let specs: FixtureSpecs = request_plugin_install_specs(true, true, `RecommendationContext ())
+let score = 0;
+let specs: FixtureSpecs = request_plugin_install_specs(true, true, `RecommendationContext ());
 if let `Cons node = specs {
-  let [spec, tail] = node
-  let [name, kind, description, parameters, output, strict] = spec
-  let [namespace, local_name] = name
-  let expected_description = "# Suggest a recommended plugin installation\n\nUse this tool only when all of the following are true:\n- The user explicitly asks to use a specific plugin that is not already available in the current context or active `tools` list.\n- Tool search has already been exhausted and did not find or make the requested tool callable.\n- The plugin is listed in `<recommended_plugins>`.\n\nDo not use it for adjacent capabilities, broad recommendations, or plugins that merely seem useful. Briefly explain why the plugin can help with the current request in `suggest_reason`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools."
-  let expected_parameters = "{\"type\":\"object\",\"properties\":{\"plugin_id\":{\"type\":\"string\",\"description\":\"The parenthesized plugin ID from the `<recommended_plugins>` list.\"},\"suggest_reason\":{\"type\":\"string\",\"description\":\"Concise one-line user-facing reason why this plugin can help with the current request.\"}},\"required\":[\"plugin_id\",\"suggest_reason\"],\"additionalProperties\":false}"
-  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
-  if namespace == "" && local_name == "request_plugin_install" && description == expected_description && parameters == expected_parameters && output_valid && !(strict) {
+  let [spec, tail] = node;
+  let [name, kind, description, parameters, output, strict] = spec;
+  let [namespace, local_name] = name;
+  let expected_description =
+    "# Suggest a recommended plugin installation\n\nUse this tool only when all of the following are true:\n- The user explicitly asks to use a specific plugin that is not already available in the current context or active `tools` list.\n- Tool search has already been exhausted and did not find or make the requested tool callable.\n- The plugin is listed in `<recommended_plugins>`.\n\nDo not use it for adjacent capabilities, broad recommendations, or plugins that merely seem useful. Briefly explain why the plugin can help with the current request in `suggest_reason`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools.";
+  let expected_parameters =
+    "{\"type\":\"object\",\"properties\":{\"plugin_id\":{\"type\":\"string\",\"description\":\"The parenthesized plugin ID from the `<recommended_plugins>` list.\"},\"suggest_reason\":{\"type\":\"string\",\"description\":\"Concise one-line user-facing reason why this plugin can help with the current request.\"}},\"required\":[\"plugin_id\",\"suggest_reason\"],\"additionalProperties\":false}";
+  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
+  if namespace == "" && local_name == "request_plugin_install" && description == expected_description && parameters == expected_parameters && output_valid && !(
+    strict
+  ) {
     if let `FunctionSpec () = kind {
       if let `Nil () = tail { score = 1000 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

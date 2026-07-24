@@ -1,19 +1,19 @@
 module () where
 
-const { encode_json_string } = import "duck:prelude/json/string" ()
-const { text_append } = import "duck:prelude/runtime" ()
-const agent_types_module = import "./agent_types.duck"
-const { agent_status_json } = import "./agent_status_json.duck" ()
+const { .encode_json_string } = import "duck:prelude/json/string" ();
+const { .text_append } = import "duck:prelude/runtime" ();
+const agent_types_module = import "./agent_types.duck";
+const { .agent_status_json } = import "./agent_status_json.duck" ();
 
 const render_list_agents_output: AgentStatusEntries -> Text = statuses => {
-  let current = statuses
-  let agents = ""
-  let first = true
-  let done = false
+  let current = statuses;
+  let agents = "";
+  let first = true;
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [entry, tail] = node
-      let [agent_name, status] = entry
+      let [entry, tail] = node;
+      let [agent_name, status] = entry;
       if !(first) { agents = text_append [agents, ","] }
       agents = text_append [agents, "{\"agent_name\":"]
       agents = text_append [agents, encode_json_string agent_name]
@@ -25,10 +25,10 @@ const render_list_agents_output: AgentStatusEntries -> Text = statuses => {
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
 
   text_append ["{\"agents\":[", text_append [agents, "]}"]]
-}
+};
 
-return { render_list_agents_output }
+return { .render_list_agents_output };

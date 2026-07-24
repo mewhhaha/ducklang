@@ -1,8 +1,8 @@
-const { length } = import "duck:prelude/runtime" ()
+const { .length } = import "duck:prelude/runtime" ();
 
 let total = scratch {
-  let message = "temporary"
-  length(message) + 33
-}
+  let message = "temporary";
+  length message + 33
+};
 
 total

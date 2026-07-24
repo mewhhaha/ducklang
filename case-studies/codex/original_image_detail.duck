@@ -1,6 +1,6 @@
 module () where
 
-const {} = import "./original_image_detail_types.duck" ()
+const {} = import "./original_image_detail_types.duck" ();
 
 type ImagePolicyDetail = OutputImageDetail
 type ImagePolicyDetailOption = OutputImageDetailOption
@@ -10,9 +10,12 @@ type ImagePolicyItems = FunctionOutputContentItems
 
 const can_request_original_image_detail: Bool -> Bool = supported => {
   if supported { true } else { false }
-}
+};
 
-const normalize_output_image_detail: [Bool, ImagePolicyDetailOption] -> ImagePolicyDetailOption = (supported, detail) => {
+const normalize_output_image_detail: [Bool, ImagePolicyDetailOption] -> ImagePolicyDetailOption = (
+  supported,
+  detail,
+) => {
   if let `Some selected = detail {
     if let `Original () = selected {
       if supported { detail } else { `None () }
@@ -22,19 +25,19 @@ const normalize_output_image_detail: [Bool, ImagePolicyDetailOption] -> ImagePol
   } else {
     `None ()
   }
-}
+};
 
 const sanitize_output_item: [Bool, ImagePolicyItem] -> ImagePolicyItem = (supported, item) => {
   if supported {
     item
   } else if let `InputImage image = item {
-    let [image_url, detail] = image
+    let [image_url, detail] = image;
 
     if let `Some selected = detail {
       if let `Original () = selected {
-        let fallback: ImagePolicyDetail = `High ()
-        let fallback_detail: ImagePolicyDetailOption = `Some fallback
-        let sanitized: ImagePolicyItem = `InputImage ([image_url, fallback_detail])
+        let fallback: ImagePolicyDetail = `High ();
+        let fallback_detail: ImagePolicyDetailOption = `Some fallback;
+        let sanitized: ImagePolicyItem = `InputImage ([image_url, fallback_detail]);
         sanitized
       } else {
         item
@@ -45,51 +48,54 @@ const sanitize_output_item: [Bool, ImagePolicyItem] -> ImagePolicyItem = (suppor
   } else {
     item
   }
-}
+};
 
-const sanitize_original_image_detail: [Bool, ImagePolicyItems] -> ImagePolicyItems = (supported, items) => {
+const sanitize_original_image_detail: [Bool, ImagePolicyItems] -> ImagePolicyItems = (
+  supported,
+  items,
+) => {
   if supported {
     items
   } else {
-    let current = items
-    let reversed: ImagePolicyItems = `Nil ()
-    let done = false
+    let current = items;
+    let reversed: ImagePolicyItems = `Nil ();
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [item, tail] = node
-        let sanitized_node: ImagePolicyItemNode = [sanitize_output_item(false, item), reversed]
+        let [item, tail] = node;
+        let sanitized_node: ImagePolicyItemNode = [sanitize_output_item(false, item), reversed];
         reversed = `Cons sanitized_node
         current = tail
       } else {
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
-    let sanitized: ImagePolicyItems = `Nil ()
+    let sanitized: ImagePolicyItems = `Nil ();
     done = false
 
     loop {
       if let `Cons node = reversed {
-        let [item, tail] = node
-        let sanitized_node: ImagePolicyItemNode = [item, sanitized]
+        let [item, tail] = node;
+        let sanitized_node: ImagePolicyItemNode = [item, sanitized];
         sanitized = `Cons sanitized_node
         reversed = tail
       } else {
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
     sanitized
   }
-}
+};
 
 return {
-  can_request_original_image_detail,
-  normalize_output_image_detail,
-  sanitize_original_image_detail,
-}
+  .can_request_original_image_detail,
+  .normalize_output_image_detail,
+  .sanitize_original_image_detail,
+};

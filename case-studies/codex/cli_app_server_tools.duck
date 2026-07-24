@@ -1,7 +1,7 @@
 module () where
 
-const { text_append, text_starts_with } = import "duck:prelude/functional" ()
-const {} = import "./cli_types.duck" ()
+const { .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const {} = import "./cli_types.duck" ();
 
 type AppServerToolArgs = CodexCliArgs
 type AppServerToolTextOption = CodexCliTextOption
@@ -16,14 +16,16 @@ type AppServerGenerateTarget =
   | `GenerateJsonSchema Unit
   | `GenerateInternalJsonSchema Unit
 
-const parse_app_server_daemon: AppServerToolArgs -> AppServerToolCommandResult = (args: AppServerToolArgs) => {
+const parse_app_server_daemon: AppServerToolArgs -> AppServerToolCommandResult = (
+  args: AppServerToolArgs
+) => {
   if let `Cons node = args {
-    let [operation, remaining] = node
+    let [operation, remaining] = node;
     if operation == "bootstrap" {
       if let `Nil () = remaining {
         `Ok (`ManageAppServerDaemon (`AppServerDaemonBootstrap false))
       } else if let `Cons option_node = remaining {
-        let [option, tail] = option_node
+        let [option, tail] = option_node;
         if option == "--remote-control" {
           if let `Nil () = tail {
             `Ok (`ManageAppServerDaemon (`AppServerDaemonBootstrap true))
@@ -60,45 +62,59 @@ const parse_app_server_daemon: AppServerToolArgs -> AppServerToolCommandResult =
   } else {
     `Err "app-server daemon requires an operation"
   }
-}
+};
 
-let rec scan_app_server_proxy_from: [AppServerToolArgs, AppServerToolTextOption] -> AppServerToolCommandResult = (args: AppServerToolArgs, socket_path: AppServerToolTextOption) => {
-  if let `Cons node = args {
-    let [argument, tail] = node
-    if argument == "--sock" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_proxy_from(remaining, `Some value)
+let rec scan_app_server_proxy_from: [AppServerToolArgs, AppServerToolTextOption] ->
+  AppServerToolCommandResult = (
+    args: AppServerToolArgs,
+    socket_path: AppServerToolTextOption,
+  ) => {
+    if let `Cons node = args {
+      let [argument, tail] = node;
+      if argument == "--sock" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_proxy_from(remaining, `Some value)
+        } else {
+          `Err "missing value for --sock"
+        }
       } else {
-        `Err "missing value for --sock"
+        `Err (text_append("unknown app-server proxy option: ", argument))
       }
     } else {
-      `Err (text_append("unknown app-server proxy option: ", argument))
+      `Ok (`ProxyAppServer socket_path)
     }
-  } else {
-    `Ok (`ProxyAppServer socket_path)
-  }
-}
+  };
 
-let parse_app_server_proxy: AppServerToolArgs -> AppServerToolCommandResult = (args: AppServerToolArgs) => {
+let parse_app_server_proxy: AppServerToolArgs -> AppServerToolCommandResult = (
+  args: AppServerToolArgs
+) => {
   scan_app_server_proxy_from(args, `None ())
-}
+};
 
-let rec scan_app_server_generate_from: [AppServerToolArgs, AppServerGenerateFacts, AppServerGenerateTarget] -> AppServerGenerateFactsResult = (args: AppServerToolArgs, facts: AppServerGenerateFacts, target: AppServerGenerateTarget) => {
+let rec scan_app_server_generate_from: [
+  AppServerToolArgs,
+  AppServerGenerateFacts,
+  AppServerGenerateTarget,
+] -> AppServerGenerateFactsResult = (
+  args: AppServerToolArgs,
+  facts: AppServerGenerateFacts,
+  target: AppServerGenerateTarget,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if argument == "--out" || argument == "-o" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_generate_from(remaining, facts :+ { .out_dir = `Some value }, target)
+        let [value, remaining] = value_node;
+        scan_app_server_generate_from(remaining, facts <& { .out_dir = `Some value }, target)
       } else {
         `Err (text_append("missing value for ", argument))
       }
     } else if argument == "--prettier" || argument == "-p" {
       if let `GenerateTypeScript () = target {
         if let `Cons value_node = tail {
-          let [value, remaining] = value_node
-          scan_app_server_generate_from(remaining, facts :+ { .prettier = `Some value }, target)
+          let [value, remaining] = value_node;
+          scan_app_server_generate_from(remaining, facts <& { .prettier = `Some value }, target)
         } else {
           `Err (text_append("missing value for ", argument))
         }
@@ -109,7 +125,7 @@ let rec scan_app_server_generate_from: [AppServerToolArgs, AppServerGenerateFact
       if let `GenerateInternalJsonSchema () = target {
         `Err "--experimental is not valid for app-server generate-internal-json-schema"
       } else {
-        scan_app_server_generate_from(tail, facts :+ { .experimental = true }, target)
+        scan_app_server_generate_from(tail, facts <& { .experimental = true }, target)
       }
     } else if text_starts_with(argument, "-") {
       `Err (text_append("unknown app-server generation option: ", argument))
@@ -119,35 +135,53 @@ let rec scan_app_server_generate_from: [AppServerToolArgs, AppServerGenerateFact
   } else {
     `Ok facts
   }
-}
+};
 
-let parse_app_server_generate: [AppServerGenerateTarget, AppServerToolArgs] -> AppServerToolCommandResult = (target: AppServerGenerateTarget, args: AppServerToolArgs) => {
-  let initial: AppServerGenerateFacts = [.out_dir = `None (), .prettier = `None (), .experimental = false]
-  let scanned: AppServerGenerateFactsResult = scan_app_server_generate_from(args, initial, target)
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    if let `Some out_dir = facts.out_dir {
-      if let `GenerateTypeScript () = target {
-        let options: AppServerGenerateTsOptions = [.out_dir = out_dir, .prettier = facts.prettier, .experimental = facts.experimental]
-        `Ok (`GenerateAppServerTs options)
-      } else if let `GenerateJsonSchema () = target {
-        let options: AppServerGenerateJsonOptions = [.out_dir = out_dir, .experimental = facts.experimental]
-        `Ok (`GenerateAppServerJsonSchema options)
-      } else if let `GenerateInternalJsonSchema () = target {
-        `Ok (`GenerateAppServerInternalJsonSchema out_dir)
+let parse_app_server_generate: [AppServerGenerateTarget, AppServerToolArgs] ->
+  AppServerToolCommandResult = (
+    target: AppServerGenerateTarget,
+    args: AppServerToolArgs,
+  ) => {
+    let initial: AppServerGenerateFacts = [
+      .out_dir = `None (),
+      .prettier = `None (),
+      .experimental = false,
+    ];
+    let scanned: AppServerGenerateFactsResult = scan_app_server_generate_from(args, initial, target);
+    if let `Err message = scanned {
+      `Err message
+    } else if let `Ok facts = scanned {
+      if let `Some out_dir = facts.out_dir {
+        if let `GenerateTypeScript () = target {
+          let options: AppServerGenerateTsOptions = [
+            .out_dir = out_dir,
+            .prettier = facts.prettier,
+            .experimental = facts.experimental,
+          ]
+          `Ok (`GenerateAppServerTs options);
+        } else if let `GenerateJsonSchema () = target {
+          let options: AppServerGenerateJsonOptions = [
+            .out_dir = out_dir,
+            .experimental = facts.experimental,
+          ]
+          `Ok (`GenerateAppServerJsonSchema options);
+        } else if let `GenerateInternalJsonSchema () = target {
+          `Ok (`GenerateAppServerInternalJsonSchema out_dir)
+        } else {
+          `Err "app-server generation target has an unknown shape"
+        }
       } else {
-        `Err "app-server generation target has an unknown shape"
+        `Err "app-server generation command requires --out"
       }
     } else {
-      `Err "app-server generation command requires --out"
+      `Err "app-server generation scanner returned an unknown result"
     }
-  } else {
-    `Err "app-server generation scanner returned an unknown result"
-  }
-}
+  };
 
-let parse_app_server_tools: [Text, AppServerToolArgs] -> AppServerToolCommandResult = (command: Text, args: AppServerToolArgs) => {
+let parse_app_server_tools: [Text, AppServerToolArgs] -> AppServerToolCommandResult = (
+  command: Text,
+  args: AppServerToolArgs,
+) => {
   if command == "daemon" {
     parse_app_server_daemon args
   } else if command == "proxy" {
@@ -161,11 +195,11 @@ let parse_app_server_tools: [Text, AppServerToolArgs] -> AppServerToolCommandRes
   } else {
     `Err (text_append("unknown app-server tool command: ", command))
   }
-}
+};
 
 return {
-  parse_app_server_daemon,
-  parse_app_server_generate,
-  parse_app_server_proxy,
-  parse_app_server_tools,
-}
+  .parse_app_server_daemon,
+  .parse_app_server_generate,
+  .parse_app_server_proxy,
+  .parse_app_server_tools,
+};

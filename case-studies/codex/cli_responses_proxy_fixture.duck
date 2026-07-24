@@ -1,24 +1,45 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_responses_proxy_options } = import "./cli_utility.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_responses_proxy_options } = import "./cli_utility.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexUtilityCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let defaults: FixtureResult = parse_responses_proxy_options(args.empty())
+let defaults: FixtureResult = parse_responses_proxy_options(args.empty());
 if let `Ok command = defaults {
   if let `RunResponsesProxy options = command {
     if options.upstream_url == "https://api.openai.com/v1/responses" { score = score + 1 }
   }
 }
 
-let input: FixtureArgs = args.prepend("--port", args.prepend("4500", args.prepend("--server-info", args.prepend("server.json", args.prepend("--http-shutdown", args.prepend("--upstream-url", args.prepend("https://example.com/responses", args.prepend("--dump-dir", args.singleton("dumps")))))))))
-let planned: FixtureResult = parse_responses_proxy_options(input)
+let input: FixtureArgs = args.prepend(
+  "--port",
+  args.prepend(
+    "4500",
+    args.prepend(
+      "--server-info",
+      args.prepend(
+        "server.json",
+        args.prepend(
+          "--http-shutdown",
+          args.prepend(
+            "--upstream-url",
+            args.prepend(
+              "https://example.com/responses",
+              args.prepend("--dump-dir", args.singleton("dumps")),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+let planned: FixtureResult = parse_responses_proxy_options input;
 if let `Ok command = planned {
   if let `RunResponsesProxy options = command {
     if let `Some port = options.port {
@@ -33,7 +54,9 @@ if let `Ok command = planned {
   }
 }
 
-let invalid: FixtureResult = parse_responses_proxy_options(args.prepend("--port", args.singleton("65536")))
+let invalid: FixtureResult = parse_responses_proxy_options(
+  args.prepend("--port", args.singleton("65536"))
+);
 if let `Err _ = invalid { score = score + 100 }
 
-return { .score = score }
+return { .score = score };

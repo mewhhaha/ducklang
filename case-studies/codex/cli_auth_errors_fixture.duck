@@ -1,7 +1,7 @@
 module () where
 
-const { parse_login_options, parse_logout_options } = import "./cli_auth.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_login_options, .parse_logout_options } = import "./cli_auth.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureNode = ListNode Text
@@ -9,23 +9,23 @@ type FixtureLoginResult = CodexLoginActionResult
 type FixtureLogoutResult = CodexLogoutResult
 
 const prepend = (value: Text, values: FixtureArgs) => {
-  let node: FixtureNode = [value, values]
-  let result: FixtureArgs = `Cons node
+  let node: FixtureNode = [value, values];
+  let result: FixtureArgs = `Cons node;
   result
-}
+};
 
-let empty: FixtureArgs = `Nil ()
-let score = 0
+let empty: FixtureArgs = `Nil ();
+let score = 0;
 
-let conflict_args = prepend("--with-api-key", prepend("--with-access-token", empty))
-let conflict: FixtureLoginResult = parse_login_options(conflict_args)
+let conflict_args = prepend("--with-api-key", prepend("--with-access-token", empty));
+let conflict: FixtureLoginResult = parse_login_options conflict_args;
 if let `Err _ = conflict { score = score + 1 }
 
-let deprecated_args = prepend("--api-key", prepend("secret", empty))
-let deprecated: FixtureLoginResult = parse_login_options(deprecated_args)
+let deprecated_args = prepend("--api-key", prepend("secret", empty));
+let deprecated: FixtureLoginResult = parse_login_options deprecated_args;
 if let `Err _ = deprecated { score = score + 10 }
 
-let logout: FixtureLogoutResult = parse_logout_options(empty)
+let logout: FixtureLogoutResult = parse_logout_options empty;
 if let `Ok () = logout { score = score + 100 }
 
-return { .score = score }
+return { .score = score };

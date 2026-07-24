@@ -1,39 +1,39 @@
 module () where
 
-const { parse_login_options } = import "./cli_auth.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_login_options } = import "./cli_auth.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureNode = ListNode Text
 type FixtureLoginResult = CodexLoginActionResult
 
 const prepend = (value: Text, values: FixtureArgs) => {
-  let node: FixtureNode = [value, values]
-  let result: FixtureArgs = `Cons node
+  let node: FixtureNode = [value, values];
+  let result: FixtureArgs = `Cons node;
   result
-}
+};
 
-let empty: FixtureArgs = `Nil ()
-let score = 0
+let empty: FixtureArgs = `Nil ();
+let score = 0;
 
-let browser: FixtureLoginResult = parse_login_options(empty)
+let browser: FixtureLoginResult = parse_login_options empty;
 if let `Ok action = browser {
   if let `BrowserLogin () = action { score = score + 1 }
 }
 
-let status: FixtureLoginResult = parse_login_options(prepend("status", empty))
+let status: FixtureLoginResult = parse_login_options(prepend("status", empty));
 if let `Ok action = status {
   if let `LoginStatus () = action { score = score + 10 }
 }
 
-let api_key: FixtureLoginResult = parse_login_options(prepend("--with-api-key", empty))
+let api_key: FixtureLoginResult = parse_login_options(prepend("--with-api-key", empty));
 if let `Ok action = api_key {
   if let `ApiKeyLogin () = action { score = score + 100 }
 }
 
-let access_token: FixtureLoginResult = parse_login_options(prepend("--with-access-token", empty))
+let access_token: FixtureLoginResult = parse_login_options(prepend("--with-access-token", empty));
 if let `Ok action = access_token {
   if let `AccessTokenLogin () = action { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

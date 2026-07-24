@@ -1,6 +1,6 @@
 module () where
 
-const {} = import "./tool_search_types.duck" ()
+const {} = import "./tool_search_types.duck" ();
 
 type SearchOutputLoadable = ToolSearchLoadableSpec
 type SearchOutputLoadableNode = ToolSearchLoadableSpecNode
@@ -10,92 +10,108 @@ type SearchOutputFunctions = ToolSearchFunctions
 type SearchOutputNamespace = ToolSearchNamespace
 type SearchOutputRankedEntries = ToolSearchRankedEntries
 
-const append_functions: [SearchOutputFunctions, SearchOutputFunctions] -> SearchOutputFunctions = (left: SearchOutputFunctions, right: SearchOutputFunctions) => {
-  let current = left
-  let reversed: SearchOutputFunctions = `Nil ()
-  let done = false
+const append_functions: [SearchOutputFunctions, SearchOutputFunctions] -> SearchOutputFunctions = (
+  left: SearchOutputFunctions,
+  right: SearchOutputFunctions,
+) => {
+  let current = left;
+  let reversed: SearchOutputFunctions = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       reversed = `Cons ([value, reversed] as SearchOutputFunctionNode)
       current = tail
     } else { done = true }
-    if done { break }
+    if done { break; }
   }
-  let appended = right
+  let appended = right;
   current = reversed
   done = false
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       appended = `Cons ([value, appended] as SearchOutputFunctionNode)
       current = tail
     } else { done = true }
-    if done { break }
+    if done { break; }
   }
   appended
-}
+};
 
-const append_loadables: [SearchOutputLoadables, SearchOutputLoadables] -> SearchOutputLoadables = (left: SearchOutputLoadables, right: SearchOutputLoadables) => {
-  let current = left
-  let reversed: SearchOutputLoadables = `Nil ()
-  let done = false
+const append_loadables: [SearchOutputLoadables, SearchOutputLoadables] -> SearchOutputLoadables = (
+  left: SearchOutputLoadables,
+  right: SearchOutputLoadables,
+) => {
+  let current = left;
+  let reversed: SearchOutputLoadables = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       reversed = `Cons ([value, reversed] as SearchOutputLoadableNode)
       current = tail
     } else { done = true }
-    if done { break }
+    if done { break; }
   }
 
   current = reversed
-  let appended = right
+  let appended = right;
   done = false
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       appended = `Cons ([value, appended] as SearchOutputLoadableNode)
       current = tail
     } else { done = true }
-    if done { break }
+    if done { break; }
   }
   appended
-}
+};
 
 const reverse_loadables: SearchOutputLoadables -> SearchOutputLoadables = values => {
-  let current = values
-  let reversed: SearchOutputLoadables = `Nil ()
-  let done = false
+  let current = values;
+  let reversed: SearchOutputLoadables = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       reversed = `Cons ([value, reversed] as SearchOutputLoadableNode)
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   reversed
-}
+};
 
-const append_coalesced: [SearchOutputLoadables, SearchOutputLoadable] -> SearchOutputLoadables = (values: SearchOutputLoadables, value: SearchOutputLoadable) => {
-  if let `Function _ = value { return append_loadables(values, `Cons ([value, `Nil ()] as SearchOutputLoadableNode)) }
+const append_coalesced: [SearchOutputLoadables, SearchOutputLoadable] -> SearchOutputLoadables = (
+  values: SearchOutputLoadables,
+  value: SearchOutputLoadable,
+) => {
+  if let `Function _ = value { return append_loadables(
+    values,
+    `Cons ([value, `Nil ()] as SearchOutputLoadableNode),
+  ); }
 
   if let `Namespace namespace = value {
-    let [namespace_name, _, namespace_tools] = namespace
-    let found = false
-    let current = values
-    let reversed: SearchOutputLoadables = `Nil ()
-    let done = false
+    let [namespace_name, _, namespace_tools] = namespace;
+    let found = false;
+    let current = values;
+    let reversed: SearchOutputLoadables = `Nil ();
+    let done = false;
     loop {
       if let `Cons node = current {
-        let [existing, tail] = node
+        let [existing, tail] = node;
         if let `Namespace existing_namespace = existing {
-          let [existing_name, existing_description, existing_tools] = existing_namespace
+          let [existing_name, existing_description, existing_tools] = existing_namespace;
           if existing_name == namespace_name {
-            let combined: SearchOutputNamespace = [existing_name, existing_description, append_functions(existing_tools, namespace_tools)]
+            let combined: SearchOutputNamespace = [
+              existing_name,
+              existing_description,
+              append_functions(existing_tools, namespace_tools),
+            ];
             reversed = `Cons ([`Namespace combined, reversed] as SearchOutputLoadableNode)
             found = true
           } else {
@@ -108,36 +124,39 @@ const append_coalesced: [SearchOutputLoadables, SearchOutputLoadable] -> SearchO
       } else {
         done = true
       }
-      if done { break }
+      if done { break; }
     }
 
-    let coalesced = reverse_loadables reversed
-    if found { coalesced } else { append_loadables(coalesced, `Cons ([value, `Nil ()] as SearchOutputLoadableNode)) }
+    let coalesced = reverse_loadables reversed;
+    if found { coalesced } else { append_loadables(
+      coalesced,
+      `Cons ([value, `Nil ()] as SearchOutputLoadableNode),
+    ) }
   } else {
     values
   }
-}
+};
 
 const coalesce_tool_search_results: SearchOutputRankedEntries -> SearchOutputLoadables = ranked => {
-  let current = ranked
-  let coalesced: SearchOutputLoadables = `Nil ()
-  let done = false
+  let current = ranked;
+  let coalesced: SearchOutputLoadables = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [result, tail] = node
-      let [_, _, entry] = result
-      let [_, output] = entry
+      let [result, tail] = node;
+      let [_, _, entry] = result;
+      let [_, output] = entry;
       coalesced = append_coalesced(coalesced, output)
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   coalesced
-}
+};
 
 return {
-  append_coalesced,
-  coalesce_tool_search_results,
-}
+  .append_coalesced,
+  .coalesce_tool_search_results,
+};

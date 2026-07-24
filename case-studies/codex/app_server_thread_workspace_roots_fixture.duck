@@ -1,24 +1,24 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { retarget_workspace_roots } = import "./app_server_thread_settings.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .retarget_workspace_roots } = import "./app_server_thread_settings.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureTexts = AppServerTexts
 
-const texts = comptime list(Text)
-let roots: FixtureTexts = texts.prepend("/old", texts.prepend("/extra", texts.singleton("/new")))
-let retargeted: FixtureTexts = retarget_workspace_roots("/old", "/new", roots)
-let score = 0
+const texts = comptime list Text;
+let roots: FixtureTexts = texts.prepend("/old", texts.prepend("/extra", texts.singleton("/new")));
+let retargeted: FixtureTexts = retarget_workspace_roots("/old", "/new", roots);
+let score = 0;
 
 if let `Cons first_node = retargeted {
-  let [first, after_first] = first_node
+  let [first, after_first] = first_node;
   if let `Cons second_node = after_first {
-    let [second, done] = second_node
+    let [second, done] = second_node;
     if let `Nil () = done {
       if first == "/new" && second == "/extra" { score = score + 1 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

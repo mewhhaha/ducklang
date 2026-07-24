@@ -1,21 +1,23 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { current_time_tool_definitions } = import "./current_time_tool_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .current_time_tool_definitions } = import "./current_time_tool_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 
-let definitions: FixtureDefinitions = current_time_tool_definitions(true, false)
-let score = 0
+let definitions: FixtureDefinitions = current_time_tool_definitions(true, false);
+let score = 0;
 if let `Cons node = definitions {
-  let [definition, tail] = node
-  let [name, _, tool_handler, _, supports_parallel, waits_for_cancellation] = definition
-  let [namespace, local_name] = name
-  if namespace == "clock" && local_name == "curr_time" && !(supports_parallel) && !(waits_for_cancellation) {
+  let [definition, tail] = node;
+  let [name, _, tool_handler, _, supports_parallel, waits_for_cancellation] = definition;
+  let [namespace, local_name] = name;
+  if namespace == "clock" && local_name == "curr_time" && !(supports_parallel) && !(
+    waits_for_cancellation
+  ) {
     if let `CurrentTime () = tool_handler {
       if let `Nil () = tail { score = 1 }
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

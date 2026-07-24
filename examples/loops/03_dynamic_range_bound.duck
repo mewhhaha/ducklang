@@ -6,12 +6,12 @@ declare effect Input {
 
 declare Init { input: Input }
 
-let total = 0
+let total = 0;
 bound <- Input.bound()
 
 for value in 0..bound {
   total = total + value
 }
 
-let result = total
-return { .result = result }
+let result = total;
+return { .result = result };

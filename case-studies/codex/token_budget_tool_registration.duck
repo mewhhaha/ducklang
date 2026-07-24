@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "duck:prelude/types" ()
-const {} = import "./tool_types.duck" ()
+const {} = import "duck:prelude/types" ();
+const {} = import "./tool_types.duck" ();
 
 type BudgetToolDefinition = ToolDefinition
 type BudgetToolDefinitionNode = ToolDefinitionNode
@@ -11,36 +11,67 @@ type BudgetToolSpec = ToolSpec
 type BudgetToolSpecNode = ToolSpecNode
 type BudgetToolSpecs = ToolSpecs
 
-const new_context_window_tool_name: () -> BudgetToolName = () => ["", "new_context"]
-const get_context_remaining_tool_name: () -> BudgetToolName = () => ["", "get_context_remaining"]
+const new_context_window_tool_name: () -> BudgetToolName = () => ["", "new_context"];
+const get_context_remaining_tool_name: () -> BudgetToolName = () => ["", "get_context_remaining"];
 
 const token_budget_tool_definitions: Bool -> BudgetToolDefinitions = enabled => {
   if enabled {
-    let remaining: BudgetToolDefinition = [get_context_remaining_tool_name(), `Direct (), `GetContextRemaining (), `FunctionPayload (), false, false]
-    let new_context: BudgetToolDefinition = [new_context_window_tool_name(), `DirectModelOnly (), `NewContextWindow (), `FunctionPayload (), false, false]
-    let remaining_definitions: BudgetToolDefinitions = `Cons ([remaining, `Nil ()] as BudgetToolDefinitionNode)
+    let remaining: BudgetToolDefinition = [
+      get_context_remaining_tool_name(),
+      `Direct (),
+      `GetContextRemaining (),
+      `FunctionPayload (),
+      false,
+      false,
+    ];
+    let new_context: BudgetToolDefinition = [
+      new_context_window_tool_name(),
+      `DirectModelOnly (),
+      `NewContextWindow (),
+      `FunctionPayload (),
+      false,
+      false,
+    ];
+    let remaining_definitions: BudgetToolDefinitions = `Cons (
+      [remaining, `Nil ()] as BudgetToolDefinitionNode
+    );
     `Cons ([new_context, remaining_definitions] as BudgetToolDefinitionNode)
   } else {
     `Nil ()
   }
-}
+};
 
 const token_budget_tool_specs: Bool -> BudgetToolSpecs = enabled => {
   if enabled {
-    let empty_parameters = "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"
-    let remaining_output = "{\"type\":\"object\",\"properties\":{\"tokens_left\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"description\":\"Remaining tokens in the current context window, or null when unavailable.\"}},\"required\":[\"tokens_left\"],\"additionalProperties\":false}"
-    let remaining: BudgetToolSpec = [get_context_remaining_tool_name(), `FunctionSpec (), "Get the remaining tokens in the current context window.", empty_parameters, `ToolOutputSchemaPresent remaining_output, false]
-    let new_context: BudgetToolSpec = [new_context_window_tool_name(), `FunctionSpec (), "Start a new context window. Does not clear, reset, or otherwise affect environment state.", empty_parameters, `ToolOutputSchemaMissing (), false]
-    let remaining_specs: BudgetToolSpecs = `Cons ([remaining, `Nil ()] as BudgetToolSpecNode)
+    let empty_parameters = "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}";
+    let remaining_output =
+      "{\"type\":\"object\",\"properties\":{\"tokens_left\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"description\":\"Remaining tokens in the current context window, or null when unavailable.\"}},\"required\":[\"tokens_left\"],\"additionalProperties\":false}";
+    let remaining: BudgetToolSpec = [
+      get_context_remaining_tool_name(),
+      `FunctionSpec (),
+      "Get the remaining tokens in the current context window.",
+      empty_parameters,
+      `ToolOutputSchemaPresent remaining_output,
+      false,
+    ];
+    let new_context: BudgetToolSpec = [
+      new_context_window_tool_name(),
+      `FunctionSpec (),
+      "Start a new context window. Does not clear, reset, or otherwise affect environment state.",
+      empty_parameters,
+      `ToolOutputSchemaMissing (),
+      false,
+    ];
+    let remaining_specs: BudgetToolSpecs = `Cons ([remaining, `Nil ()] as BudgetToolSpecNode);
     `Cons ([new_context, remaining_specs] as BudgetToolSpecNode)
   } else {
     `Nil ()
   }
-}
+};
 
 return {
-  new_context_window_tool_name,
-  get_context_remaining_tool_name,
-  token_budget_tool_definitions,
-  token_budget_tool_specs,
-}
+  .new_context_window_tool_name,
+  .get_context_remaining_tool_name,
+  .token_budget_tool_definitions,
+  .token_budget_tool_specs,
+};

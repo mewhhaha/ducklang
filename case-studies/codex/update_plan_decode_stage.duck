@@ -1,9 +1,9 @@
 module (!init: Init) where
 
-const {} = import "./update_plan_types.duck" ()
-const { decode_update_plan_value } = import "./update_plan_value.duck" ()
+const {} = import "./update_plan_types.duck" ();
+const { .decode_update_plan_value } = import "./update_plan_value.duck" ();
 
 value <- StageInput.value()
-let decoded = decode_update_plan_value(value)
+let decoded = decode_update_plan_value value;
 
-return { .result = decoded }
+return { .result = decoded };

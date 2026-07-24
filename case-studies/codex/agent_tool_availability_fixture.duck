@@ -1,18 +1,36 @@
 module () where
 
-const {} = import "./agent_tool_types.duck" ()
-const { collaboration_tools_enabled } = import "./agent_tool_registration.duck" ()
+const {} = import "./agent_tool_types.duck" ();
+const { .collaboration_tools_enabled } = import "./agent_tool_registration.duck" ();
 
 type FixtureConfig = AgentToolRegistrationConfig
 
-let score = 0
-let enabled: FixtureConfig = [.enabled = true, .v2_enabled = true, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
+let score = 0;
+let enabled: FixtureConfig = [
+  .enabled = true,
+  .v2_enabled = true,
+  .direct_model_only = false,
+  .hide_spawn_metadata = false,
+  .namespace = "",
+];
 if collaboration_tools_enabled enabled { score = score + 1 }
 
-let feature_disabled: FixtureConfig = [.enabled = false, .v2_enabled = true, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
+let feature_disabled: FixtureConfig = [
+  .enabled = false,
+  .v2_enabled = true,
+  .direct_model_only = false,
+  .hide_spawn_metadata = false,
+  .namespace = "",
+];
 if !(collaboration_tools_enabled feature_disabled) { score = score + 10 }
 
-let v2_disabled: FixtureConfig = [.enabled = true, .v2_enabled = false, .direct_model_only = false, .hide_spawn_metadata = false, .namespace = ""]
+let v2_disabled: FixtureConfig = [
+  .enabled = true,
+  .v2_enabled = false,
+  .direct_model_only = false,
+  .hide_spawn_metadata = false,
+  .namespace = "",
+];
 if !(collaboration_tools_enabled v2_disabled) { score = score + 100 }
 
-return { .score = score }
+return { .score = score };

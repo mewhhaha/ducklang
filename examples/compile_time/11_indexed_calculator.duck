@@ -11,8 +11,8 @@ let eval_number = expression => {
       0
     }
   }
-}
+};
 
-let expression: NumberCalc = `Add (20)
+let expression: NumberCalc = `Add (20);
 
-eval_number(expression)
+eval_number expression

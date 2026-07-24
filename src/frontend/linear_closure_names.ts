@@ -1,4 +1,4 @@
-import type { Field, FrontExpr, Stmt } from "./ast.ts";
+import type { Field, FrontExpr, Pattern, Stmt } from "./ast.ts";
 import { pattern_bindings } from "./pattern.ts";
 
 export function collect_linear_closure_names(
@@ -157,6 +157,8 @@ export function collect_linear_closure_names(
       collect_linear_closure_names(expr.target, names);
 
       for (const arm of expr.arms) {
+        collect_pattern_value_names(arm.pattern, names);
+
         for (const binding of pattern_bindings(arm.pattern)) {
           names.add(binding.name);
         }
@@ -193,6 +195,62 @@ export function collect_linear_closure_names(
       }
 
       return;
+  }
+}
+
+function collect_pattern_value_names(
+  pattern: Pattern,
+  names: Set<string>,
+): void {
+  if (pattern.tag === "const_value") {
+    collect_linear_closure_names(pattern.value, names);
+    return;
+  }
+
+  if (pattern.tag === "or") {
+    for (const alternative of pattern.alternatives) {
+      collect_pattern_value_names(alternative, names);
+    }
+    return;
+  }
+
+  if (pattern.tag === "union_case") {
+    if (pattern.value !== undefined) {
+      collect_pattern_value_names(pattern.value, names);
+    }
+    return;
+  }
+
+  if (pattern.tag === "product") {
+    for (const entry of pattern.entries) {
+      collect_pattern_value_names(entry.pattern, names);
+    }
+
+    if (pattern.rest !== undefined) {
+      collect_pattern_value_names(pattern.rest, names);
+    }
+    return;
+  }
+
+  if (pattern.tag === "record") {
+    for (const field of pattern.fields) {
+      collect_pattern_value_names(field.pattern, names);
+    }
+
+    if (pattern.rest !== undefined) {
+      collect_pattern_value_names(pattern.rest, names);
+    }
+    return;
+  }
+
+  if (pattern.tag === "array") {
+    for (const item of pattern.items) {
+      collect_pattern_value_names(item, names);
+    }
+
+    if (pattern.rest !== undefined) {
+      collect_pattern_value_names(pattern.rest, names);
+    }
   }
 }
 

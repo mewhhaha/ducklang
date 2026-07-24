@@ -1,8 +1,16 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./request_permissions_types.duck" ()
-const { denied_request_permissions_response, empty_request_permission_profile, intersect_request_permission_profiles, normalize_request_permissions_response, request_permission_profile_is_empty, request_permissions_approval_allowed, request_permissions_grant_application } = import "./request_permissions_policy.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./request_permissions_types.duck" ();
+const {
+  .denied_request_permissions_response,
+  .empty_request_permission_profile,
+  .intersect_request_permission_profiles,
+  .normalize_request_permissions_response,
+  .request_permission_profile_is_empty,
+  .request_permissions_approval_allowed,
+  .request_permissions_grant_application,
+} = import "./request_permissions_policy.duck" ();
 
 type FixtureApprovalPolicy = ToolApprovalPolicy
 type FixtureFileSystem = RequestPermissionFileSystem
@@ -19,22 +27,47 @@ type FixtureApprovalPolicies = struct {
 
 let requested_profile: FixtureProfile = [
   .network = `NetworkPresent ([.enabled = `Some true] as FixtureNetwork),
-  .file_system = `FileSystemPresent ([.entries = `Cons ([[.path = "/workspace", .access = `Read ()] as FixturePath, `Cons ([[.path = "/workspace/out", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode)] as FixturePathNode)] as FixtureFileSystem)]
+  .file_system = `FileSystemPresent (
+    [.entries = `Cons (
+      [
+        [.path = "/workspace", .access = `Read ()] as FixturePath,
+        `Cons (
+          [[.path = "/workspace/out", .access = `Write ()] as FixturePath, `Nil
+            ()] as FixturePathNode
+        ),
+      ] as FixturePathNode
+    )] as FixtureFileSystem
+  )];
 let granted_profile: FixtureProfile = [
   .network = `NetworkPresent ([.enabled = `Some true] as FixtureNetwork),
-  .file_system = `FileSystemPresent ([.entries = `Cons ([[.path = "/workspace/docs", .access = `Read ()] as FixturePath, `Cons ([[.path = "/workspace/out/build", .access = `Write ()] as FixturePath, `Cons ([[.path = "/workspace/private", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode)] as FixturePathNode)] as FixturePathNode)] as FixtureFileSystem)]
-let accepted = intersect_request_permission_profiles(&requested_profile, granted_profile)
-let score = 0
+  .file_system = `FileSystemPresent (
+    [.entries = `Cons (
+      [
+        [.path = "/workspace/docs", .access = `Read ()] as FixturePath,
+        `Cons (
+          [
+            [.path = "/workspace/out/build", .access = `Write ()] as FixturePath,
+            `Cons (
+              [[.path = "/workspace/private", .access = `Write ()] as FixturePath, `Nil
+                ()] as FixturePathNode
+            ),
+          ] as FixturePathNode
+        ),
+      ] as FixturePathNode
+    )] as FixtureFileSystem
+  )];
+let accepted = intersect_request_permission_profiles(&requested_profile, granted_profile);
+let score = 0;
 
 if let `NetworkPresent accepted_network = accepted.network {
   if let `Some enabled = accepted_network.enabled {
     if enabled {
       if let `FileSystemPresent accepted_file_system = accepted.file_system {
         if let `Cons first_node = accepted_file_system.entries {
-          let [first, tail] = first_node
+          let [first, tail] = first_node;
           if first.path == "/workspace/docs" {
             if let `Cons second_node = tail {
-              let [second, end] = second_node
+              let [second, end] = second_node;
               if second.path == "/workspace/out/build" {
                 if let `Nil () = end { score = score + 1 }
               }
@@ -48,28 +81,52 @@ if let `NetworkPresent accepted_network = accepted.network {
 
 let unsafe_permissions: FixtureProfile = [
   .network = `NetworkPresent ([.enabled = `Some true] as FixtureNetwork),
-  .file_system = `FileSystemPresent ([.entries = `Cons ([[.path = "/workspace/docs", .access = `Read ()] as FixturePath, `Cons ([[.path = "/workspace/out/build", .access = `Write ()] as FixturePath, `Cons ([[.path = "/workspace/private", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode)] as FixturePathNode)] as FixturePathNode)] as FixtureFileSystem)]
-let unsafe_response: FixtureResponse = [.permissions = unsafe_permissions, .scope = `Session (), .strict_auto_review = true]
-let normalized_response = normalize_request_permissions_response(&requested_profile, unsafe_response)
-if request_permission_profile_is_empty(&normalized_response.permissions) && !(normalized_response.strict_auto_review) {
+  .file_system = `FileSystemPresent (
+    [.entries = `Cons (
+      [
+        [.path = "/workspace/docs", .access = `Read ()] as FixturePath,
+        `Cons (
+          [
+            [.path = "/workspace/out/build", .access = `Write ()] as FixturePath,
+            `Cons (
+              [[.path = "/workspace/private", .access = `Write ()] as FixturePath, `Nil
+                ()] as FixturePathNode
+            ),
+          ] as FixturePathNode
+        ),
+      ] as FixturePathNode
+    )] as FixtureFileSystem
+  )];
+let unsafe_response: FixtureResponse = [
+  .permissions = unsafe_permissions,
+  .scope = `Session (),
+  .strict_auto_review = true,
+];
+let normalized_response = normalize_request_permissions_response(
+  &requested_profile,
+  unsafe_response,
+);
+if request_permission_profile_is_empty(&normalized_response.permissions) && !(
+  normalized_response.strict_auto_review
+) {
   if let `Turn () = normalized_response.scope { score = score + 10 }
 }
 
 let policies: FixtureApprovalPolicies = [
   .on_request = `OnRequest (),
   .never = `Never (),
-  .granular = `Granular ([true, true, true, false, true])]
-let on_request_allowed = request_permissions_approval_allowed(&policies.on_request)
-let never_allowed = request_permissions_approval_allowed(&policies.never)
-let granular_allowed = request_permissions_approval_allowed(&policies.granular)
+  .granular = `Granular ([true, true, true, false, true])];
+let on_request_allowed = request_permissions_approval_allowed(&policies.on_request);
+let never_allowed = request_permissions_approval_allowed(&policies.never);
+let granular_allowed = request_permissions_approval_allowed(&policies.granular);
 if on_request_allowed && !(never_allowed) && !(granular_allowed) {
   score = score + 100
 }
 
-let denied = denied_request_permissions_response()
-let empty_profile = empty_request_permission_profile()
+let denied = denied_request_permissions_response();
+let empty_profile = empty_request_permission_profile();
 if let `NoGrant () = request_permissions_grant_application("primary", denied) {
   if request_permission_profile_is_empty(&empty_profile) { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

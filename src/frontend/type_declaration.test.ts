@@ -62,21 +62,21 @@ type MaybeInt = Maybe Int
 
 Deno.test("type rows lower through existing struct and union layouts", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Vec3 = struct {.x = Int, .y = Int, .z = Int}
 type Pair = [Int, Int]
 type Maybe a = | \`Just a | \`Nothing Unit
 type MaybeInt = Maybe Int
 
-let point: Vec3 = [.x = 40, .y = 1, .z = 1]
-let pair: Pair = [point.x, point.y]
-let by_name: Int = point.x + point.y + point.z
-let by_index: Int = point[0] + point[1] + point[2]
+let point: Vec3 = [.x = 40, .y = 1, .z = 1];
+let pair: Pair = [point.x, point.y];
+let by_name: Int = point.x + point.y + point.z;
+let by_index: Int = point[0] + point[1] + point[2];
 let result: MaybeInt = \`Just (if by_name == by_index {
   pair[0] + pair[1] + point[2]
 } else {
   0
-})
+});
 
 if let \`Just value = result {
   value
@@ -91,9 +91,9 @@ if let \`Just value = result {
 
 Deno.test("declared product types construct values with their declared name", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct {.x = I32, .y = I32}
-let point: Point = [40, 2]
+let point: Point = [40, 2];
 point.x + point.y
 `);
 
@@ -104,11 +104,11 @@ point.x + point.y
 
 Deno.test("declared product fields preserve applied generic unions through scratch", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Metadata = struct {.branch = FieldPatch Text}
 type MetadataAlias = Metadata
 
-let metadata: MetadataAlias = scratch { [\`Set "main"] }
+let metadata: MetadataAlias = scratch { [\`Set "main"] };
 if let \`Set branch = metadata.branch { @len(branch) } else { 0 }
 `);
   const instance = await instantiate_wat(
@@ -127,13 +127,13 @@ if let \`Set branch = metadata.branch { @len(branch) } else { 0 }
 
 Deno.test("declared product fields materialize applied generic unions with dynamic payloads", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Metadata = struct {.branch = FieldPatch Text}
 
 let branch_length = (branch: Text) => {
-  let metadata: Metadata = [\`Set branch]
+  let metadata: Metadata = [\`Set branch];
   if let \`Set value = metadata.branch { @len(value) } else { 0 }
-}
+};
 
 branch_length("main")
 `);
@@ -153,7 +153,7 @@ branch_length("main")
 
 Deno.test("annotated aggregate functions preserve applied union field types", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type ReminderState = struct {
   .last_delivery = Option I64,
   .window = Option Text,
@@ -162,21 +162,21 @@ type ReminderState = struct {
 
 let new_state: () -> ReminderState = () => {
   [.last_delivery = \`None (), .window = \`None (), .active = false]
-}
+};
 let carry_state: ReminderState -> ReminderState = state => {
-  state :+ {.active = true}
-}
+  state <& {.active = true}
+};
 let deliver: [ReminderState, I64, Text] -> ReminderState =
   (state, timestamp, window) => {
-    state :+ {
+    state <& {
       .last_delivery = \`Some timestamp,
       .window = \`Some window,
     }
-  }
+  };
 
-let carried = carry_state(new_state())
-let delivered = deliver(carried, 42i64, "ok")
-let score = 0
+let carried = carry_state(new_state());
+let delivered = deliver(carried, 42i64, "ok");
+let score = 0;
 if let \`Some timestamp = delivered.last_delivery {
   if timestamp == 42i64 { score = score + 42 }
 }
@@ -201,27 +201,27 @@ score
 
 Deno.test("moved leading aggregates preserve nested owned fields", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type State = struct {.window = Option Text, .active = Bool}
 type Decision = struct {.state = State, .changed = Bool}
 
 let new_state: () -> State = () => {
   [.window = \`None (), .active = false]
-}
+};
 let decide: [State, Text] -> Decision = (state, window) => {
   let changed = if let \`Some previous = state.window {
     previous != window
   } else {
     true
-  }
-  let next = state :+ {.window = \`Some window}
+  };
+  let next = state <& {.window = \`Some window};
   [.state = next, .changed = changed]
-}
+};
 
-let state = new_state()
-let first = decide(state, "one")
+let state = new_state();
+let first = decide(state, "one");
 state = first.state
-let second = decide(state, "two")
+let second = decide(state, "two");
 if second.changed { 1 } else { 0 }
 `);
   const instance = await instantiate_wat(
@@ -240,13 +240,13 @@ if second.changed { 1 } else { 0 }
 
 Deno.test("nested aggregate construction moves owned fields", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Config = struct {.label = Text}
 type State = struct {.config = Config}
 
-let wrap: Config -> State = config => [.config = config]
-let config: Config = [.label = @append("d", "uck")]
-let state = wrap(config)
+let wrap: Config -> State = config => [.config = config];
+let config: Config = [.label = @append("d", "uck")];
+let state = wrap(config);
 @len(state.config.label)
 `);
   const instance = await instantiate_wat(
@@ -269,8 +269,8 @@ type Choice =
   | \`Some Text
   | \`None Unit
 
-let rec identity: Choice -> Choice = choice => choice
-let choice: Choice = \`Some @append("d", "uck")
+let rec identity: Choice -> Choice = choice => choice;
+let choice: Choice = \`Some @append("d", "uck");
 choice = identity(choice)
 
 if let \`Some text = choice {
@@ -295,21 +295,21 @@ if let \`Some text = choice {
 
 Deno.test("annotated functions preserve aggregate results assembled from locals", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type ParserState = struct {.pending = Text, .active = Bool}
 type ParserStep = [ParserState, Text]
 
 let push: [ParserState, Text] -> ParserStep =
   (parser: ParserState, chunk: Text) => {
-    let active = parser.active
-    let pending = @append(parser.pending, chunk)
-    let next: ParserState = [.pending = pending, .active = active]
-    let visible: Text = ""
+    let active = parser.active;
+    let pending = @append(parser.pending, chunk);
+    let next: ParserState = [.pending = pending, .active = active];
+    let visible: Text = "";
     [next, visible]
-  }
+  };
 
-let initial: ParserState = [.pending = "hel", .active = false]
-let [next, visible] = push(initial, "lo")
+let initial: ParserState = [.pending = "hel", .active = false];
+let [next, visible] = push(initial, "lo");
 @len(next.pending) * 10 + @len(visible)
 `);
   const instance = await instantiate_wat(
@@ -328,11 +328,11 @@ let [next, visible] = push(initial, "lo")
 
 Deno.test("named product fields alias declaration-order indexes", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Vec3 = struct {.x = Int, .y = Int, .z = Int}
-let point: Vec3 = [.x = 40, .y = 1, .z = 1]
-let by_name: Int = point.x + point.y + point.z
-let by_index: Int = point[0] + point[1] + point[2]
+let point: Vec3 = [.x = 40, .y = 1, .z = 1];
+let by_name: Int = point.x + point.y + point.z;
+let by_index: Int = point[0] + point[1] + point[2];
 if by_name == by_index { by_index } else { 0 }
 `);
 
@@ -342,7 +342,7 @@ if by_name == by_index { by_index } else { 0 }
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type Vec3 = struct {.x = Int, .y = Int, .z = Int}
 
@@ -352,10 +352,10 @@ declare effect Input {
 
 type Init = struct {.input = Input}
 
-let point: Vec3 = [.x = 40, .y = 1, .z = 1]
+let point: Vec3 = [.x = 40, .y = 1, .z = 1];
 index <- Input.index()
-let result: I32 = point[index]
-return { .result = result }
+let result: I32 = point[index];
+return { .result = result };
 `);
 
   assert_includes(
@@ -372,7 +372,7 @@ Deno.test("type row sums retain the managed ABI tagged-union layout", () => {
   const artifact = Source.artifact(`
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 type ReadResult = | \`Ok Int | \`Err Unit
 
@@ -383,8 +383,8 @@ declare effect Input {
 type Init = struct {.input = Input}
 
 result <- Input.read()
-let code: I32 = if let \`Ok value = result { value } else { 0 }
-return { .code = code }
+let code: I32 = if let \`Ok value = result { value } else { 0 };
+return { .code = code };
 `);
   const type = artifact.abi.types.ReadResult;
 
@@ -416,10 +416,10 @@ Deno.test("indirect recursive type rows specialize generic payloads", () => {
 type List value = | \`Nil Unit | \`Cons ListNode value
 type ListNode value = [value, List value]
 type IntList = List I32
-let empty: IntList = \`Nil ()
-let values: IntList = \`Cons [42, empty]
+let empty: IntList = \`Nil ();
+let values: IntList = \`Cons [42, empty];
 if let \`Cons node = values {
-  let [head, _] = node
+  let [head, _] = node;
   head
 } else {
   0
@@ -434,10 +434,10 @@ Deno.test("function results contextualize generic union constructor payloads", (
 type List value = | \`Nil Unit | \`Cons ListNode value
 type ListNode value = [value, List value]
 type IntList = List I32
-let singleton: I32 -> IntList = value => \`Cons [value, \`Nil ()]
-let values = singleton(42)
+let singleton: I32 -> IntList = value => \`Cons [value, \`Nil ()];
+let values = singleton(42);
 if let \`Cons node = values {
-  let [head, _] = node
+  let [head, _] = node;
   head
 } else {
   0
@@ -451,8 +451,8 @@ Deno.test("literal product indexes retain the selected recursive field type", ()
   const wat = Source.wat(`
 type Option = | \`None Unit | \`Some I32
 type Pair = [I32, Option]
-let none: Option = \`None ()
-let pair: Pair = [42, none]
+let none: Option = \`None ();
+let pair: Pair = [42, none];
 pair[0]
 `);
 
@@ -467,7 +467,7 @@ Deno.test("named bracket types are rejected in favor of struct", () => {
   assert_throws(
     () =>
       Source.wat(
-        'const { struct } = import "duck:prelude" ()\n' +
+        'const { .struct } = import "duck:prelude" ();\n' +
           "type Bad = struct { .new = Int }\n0",
       ),
     "Duplicate type namespace member: new",
@@ -475,7 +475,7 @@ Deno.test("named bracket types are rejected in favor of struct", () => {
   assert_throws(
     () =>
       Source.wat(
-        'const { struct } = import "duck:prelude" ()\n' +
+        'const { .struct } = import "duck:prelude" ();\n' +
           "type Bad = struct { .shape = Int }\n0",
       ),
     "Duplicate type namespace member: shape",
@@ -523,10 +523,10 @@ Deno.test("type declarations share one namespace", () => {
 
 Deno.test("type aliases are dependency ordered before lowering", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Alias = Value
 type Value = struct {.number = Int}
-let value: Alias = [.number = 42]
+let value: Alias = [.number = 42];
 value.number
 `);
 
@@ -535,9 +535,9 @@ value.number
 
 Deno.test("prelude structs attach a named shape constructor", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
-let point = Point.new { .y = 2, .x = 40 }
+let point = Point.new { .y = 2, .x = 40 };
 point.x + point.y
 `);
 
@@ -548,10 +548,10 @@ point.x + point.y
 
 Deno.test("prelude struct constructors reorder runtime fields", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
-let make_point = x => Point.new { .y = 2, .x = x }
-let point = make_point(40)
+let make_point = x => Point.new { .y = 2, .x = x };
+let point = make_point(40);
 point.x + point.y
 `);
 
@@ -562,9 +562,9 @@ point.x + point.y
 
 Deno.test("prelude struct constructors retain runtime-owned fields", () => {
   const core = Source.core(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Piece = struct { .bytes = Bytes, .start = I32 }
-let piece = Piece.new { .start = 1, .bytes = @Utf8.encode("abc") }
+let piece = Piece.new { .start = 1, .bytes = @Utf8.encode("abc") };
 @len(piece.bytes) + piece.start
 `);
 
@@ -574,22 +574,22 @@ let piece = Piece.new { .start = 1, .bytes = @Utf8.encode("abc") }
 
 Deno.test("struct declarations retain their const layout shape", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
-const point_type = struct { .x = I32, .y = I64 }
-const point_shape = point_type.shape
-const x_type = point_shape.x
-let value: x_type = 42
+const { .struct } = import "duck:prelude" ();
+const point_type = struct { .x = I32, .y = I64 };
+const point_shape = point_type.shape;
+const x_type = point_shape.x;
+let value: x_type = 42;
 value
 `);
 
   assert_includes(wat, "i32.const 42");
 
   const generic_wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Box value = struct { .value = value }
-const field_type = (const target) => target.shape.value
-const value_type = comptime field_type(Box I64)
-let value: value_type = 42i64
+const field_type = (const target) => target.shape.value;
+const value_type = comptime field_type(Box I64);
+let value: value_type = 42i64;
 value
 `);
 
@@ -598,8 +598,8 @@ value
   assert_throws(
     () =>
       Source.wat(`
-const { struct } = import "duck:prelude" ()
-const bad_type = struct { .shape = I32 }
+const { .struct } = import "duck:prelude" ();
+const bad_type = struct { .shape = I32 };
 0
 `),
     "Duplicate type namespace member: shape",
@@ -608,10 +608,10 @@ const bad_type = struct { .shape = I32 }
 
 Deno.test("prelude struct constructors are first-class const functions", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
-const make_point = Point.new
-let point = make_point { .y = 2, .x = 40 }
+const make_point = Point.new;
+let point = make_point { .y = 2, .x = 40 };
 point.x + point.y
 `);
 
@@ -622,10 +622,10 @@ point.x + point.y
   assert_throws(
     () =>
       Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
-const make_point = Point.new
-let point = make_point { .x = "wrong", .y = 20 }
+const make_point = Point.new;
+let point = make_point { .x = "wrong", .y = 20 };
 point.x
 `),
     "product entry 0 has source layout text and target layout i32",
@@ -634,31 +634,31 @@ point.x
 
 Deno.test("prelude struct constructors require the declared shape", () => {
   const prefix = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
 `;
 
   assert_throws(
-    () => Source.wat(prefix + "let point = Point.new { .x = 1 }\npoint.x"),
+    () => Source.wat(prefix + "let point = Point.new { .x = 1 };\npoint.x"),
     "product arity differs, source has 3 entries and target has 2",
   );
   assert_throws(
     () =>
       Source.wat(
-        prefix + "let point = Point.new { .x = 1, .y = 2, .z = 3 }\npoint.x",
+        prefix + "let point = Point.new { .x = 1, .y = 2, .z = 3 };\npoint.x",
       ),
     "product arity differs, source has 4 entries and target has 2",
   );
   assert_throws(
-    () => Source.wat(prefix + "let point = Point.new [1, 2]\npoint.x"),
+    () => Source.wat(prefix + "let point = Point.new [1, 2];\npoint.x"),
     "Compile-time product spread requires a fixed product value, got if",
   );
   assert_throws(
     () =>
       Source.wat(
         prefix +
-          "const make_point = Point.new\n" +
-          "let point = make_point { .x = 1 }\npoint.x",
+          "const make_point = Point.new;\n" +
+          "let point = make_point { .x = 1 };\npoint.x",
       ),
     "product arity differs, source has 3 entries and target has 2",
   );
@@ -666,10 +666,10 @@ type Point = struct { .x = I32, .y = I32 }
 
 Deno.test("generic prelude structs attach constructors after specialization", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Box value = struct { .value = value }
-const make_box = (Box I32).new
-let box = make_box { .value = 42 }
+const make_box = (Box I32).new;
+let box = make_box { .value = 42 };
 box.value
 `);
 
@@ -678,10 +678,10 @@ box.value
   assert_throws(
     () =>
       Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Box value = struct { .value = value }
-const make_box = (Box I32).new
-let box = make_box { .value = "wrong" }
+const make_box = (Box I32).new;
+let box = make_box { .value = "wrong" };
 box.value
 `),
     "product entry 0 has source layout text and target layout i32",
@@ -692,7 +692,7 @@ Deno.test("aggregate formatting survives frontend transforms", () => {
   const examples = ["[.value = 1]", "[1, 2]", "[]"];
 
   for (const example of examples) {
-    const parsed = Source.parse("let value = " + example);
+    const parsed = Source.parse("let value = " + example + ";");
     const stmt = parsed.statements[0];
 
     if (!stmt || stmt.tag !== "bind") {

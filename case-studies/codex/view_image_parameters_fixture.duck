@@ -1,15 +1,23 @@
 module () where
 
-const { view_image_parameters } = import "./view_image_registration.duck" ()
+const { .view_image_parameters } = import "./view_image_registration.duck" ();
 
-let path_only = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-let environment_and_path = "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-let detail_and_path = "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-let full_parameters = "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}"
-let score = 0
+let path_only =
+  "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}";
+let environment_and_path =
+  "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}";
+let detail_and_path =
+  "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}";
+let full_parameters =
+  "{\"type\":\"object\",\"properties\":{\"detail\":{\"type\":\"string\",\"enum\":[\"high\",\"original\"],\"description\":\"Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\"},\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"path\":{\"type\":\"string\",\"description\":\"Local filesystem path to an image file.\"}},\"required\":[\"path\"],\"additionalProperties\":false}";
+let score = 0;
 
-if view_image_parameters(false, false) == path_only && view_image_parameters(true, false) == environment_and_path && view_image_parameters(false, true) == detail_and_path && view_image_parameters(true, true) == full_parameters {
-  score = 100
-}
+if view_image_parameters(false, false) == path_only && view_image_parameters(true,
+  false) == environment_and_path && view_image_parameters(
+    false,
+    true,
+  ) == detail_and_path && view_image_parameters(true, true) == full_parameters {
+    score = 100
+  }
 
-return { .score = score }
+return { .score = score };

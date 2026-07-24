@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "./tool_search_types.duck" ()
-const { plan_tool_search_call, tool_search_sources } = import "./tool_search_call.duck" ()
-const { searchable_function } = import "./tool_search_value.duck" ()
+const {} = import "./tool_search_types.duck" ();
+const { .plan_tool_search_call, .tool_search_sources } = import "./tool_search_call.duck" ();
+const { .searchable_function } = import "./tool_search_value.duck" ();
 
 type FixtureInfo = ToolSearchInfo
 type FixtureInfos = ToolSearchInfos
@@ -10,37 +10,53 @@ type FixtureSource = ToolSearchSourceInfo
 type FixtureSources = ToolSearchSourceInfos
 type FixtureSpec = ToolSpec
 
-let source: FixtureSource = [.name = "calendar", .description = `Some "Calendar tools."]
-let spec: FixtureSpec = [["", "create_event"], `FunctionSpec (), "Create calendar events.", "{}", `ToolOutputSchemaMissing (), false]
-let values: FixtureInfos = searchable_function(spec, `SearchSourcePresent source)
+let source: FixtureSource = [.name = "calendar", .description = `Some "Calendar tools."];
+let spec: FixtureSpec = [
+  ["", "create_event"],
+  `FunctionSpec (),
+  "Create calendar events.",
+  "{}",
+  `ToolOutputSchemaMissing (),
+  false,
+];
+let values: FixtureInfos = searchable_function(spec, `SearchSourcePresent source);
 
-let score = 0
-let valid = plan_tool_search_call(`SearchToolRequest [.query = " calendar ", .limit = `SearchLimitMissing ()], values)
+let score = 0;
+let valid = plan_tool_search_call(
+  `SearchToolRequest [.query = " calendar ", .limit = `SearchLimitMissing ()],
+  values,
+);
 if let `ReturnTools output = valid {
   if output.status == "completed" && output.execution == "client" {
     if let `Cons _ = output.tools { score = score + 1 }
   }
 }
 
-let empty = plan_tool_search_call(`SearchToolRequest [.query = "  ", .limit = `SearchLimitMissing ()], values)
+let empty = plan_tool_search_call(
+  `SearchToolRequest [.query = "  ", .limit = `SearchLimitMissing ()],
+  values,
+);
 if let `RejectRequest message = empty {
   if message == "query must not be empty" { score = score + 10 }
 }
 
-let zero = plan_tool_search_call(`SearchToolRequest [.query = "calendar", .limit = `SearchLimitPresent 0], values)
+let zero = plan_tool_search_call(
+  `SearchToolRequest [.query = "calendar", .limit = `SearchLimitPresent 0],
+  values,
+);
 if let `RejectRequest message = zero {
   if message == "limit must be greater than zero" { score = score + 100 }
 }
 
-let unsupported = plan_tool_search_call(`UnsupportedToolSearchPayload (), values)
+let unsupported = plan_tool_search_call(`UnsupportedToolSearchPayload (), values);
 if let `Fatal message = unsupported {
   if message == "tool_search handler received unsupported payload" { score = score + 1000 }
 }
 
-let searchable_sources: FixtureSources = tool_search_sources values
+let searchable_sources: FixtureSources = tool_search_sources values;
 if let `Cons source_node = searchable_sources {
-  let [_, source_tail] = source_node
+  let [_, source_tail] = source_node;
   if let `Nil () = source_tail { score = score + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -17,7 +17,7 @@ const failures = [
       code: "DUCK2301",
       severity: "error",
       message: "Assignment changes type for value",
-      span: { start: 15, end: 34 },
+      span: { start: 16, end: 35 },
     },
   },
   {
@@ -44,7 +44,7 @@ const failures = [
       code: "DUCK2304",
       severity: "error",
       message: "Missing struct field: age",
-      span: { start: 127, end: 135 },
+      span: { start: 121, end: 129 },
     },
   },
   {
@@ -85,7 +85,7 @@ Deno.test("semantic validation maps fail calls to their call span", () => {
 Deno.test("semantic validation ignores valid route-independent expressions", () => {
   assert_equals(
     validate_frontend_semantics(
-      parse_source("let value = 40i64 + 2i64\nvalue"),
+      parse_source("let value = 40i64 + 2i64;\nvalue"),
     ),
     [],
   );
@@ -94,7 +94,7 @@ Deno.test("semantic validation ignores valid route-independent expressions", () 
 Deno.test("semantic validation keeps nested width errors structured and singular", () => {
   assert_equals(
     validate_frontend_semantics(
-      parse_source("let value = (1i32 + 2i64) + 3i64\nvalue"),
+      parse_source("let value = (1i32 + 2i64) + 3i64;\nvalue"),
     ),
     [{
       code: "DUCK2302",
@@ -107,37 +107,37 @@ Deno.test("semantic validation keeps nested width errors structured and singular
 
 Deno.test("semantic validation does not re-infer an invalid indexed branch", () => {
   const source = parse_source(
-    "let pair=[.a=true,.b=1]\nif true { pair[input] } else { 0 }",
+    "let pair=[.a=true,.b=1];\nif true { pair[input] } else { 0 }",
   );
 
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2304",
     severity: "error",
     message: "Mixed Bool and numeric indexed values",
-    span: { start: 34, end: 45 },
+    span: { start: 35, end: 46 },
   }]);
 });
 
 Deno.test("semantic validation reuses constness checks with source spans", () => {
   const source = parse_source(
-    "let runtime = 1\nconst invalid = runtime\ninvalid",
+    "let runtime = 1;\nconst invalid = runtime;\ninvalid",
   );
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2101",
     severity: "error",
     message: "Const binding captures runtime value: runtime",
-    span: { start: 32, end: 39 },
+    span: { start: 33, end: 40 },
   }]);
 });
 
 Deno.test("semantic validation preserves compile-time locals in generated functions", () => {
   const source = parse_source(`
-const cast = (value, const target) => @cast(value, target)
+const cast = (value, const target) => @cast(value, target);
 const build = (const target) => {
-  let captured = target
-  let generated = value => cast(value, captured)
+  let captured = target;
+  let generated = value => cast(value, captured);
   generated
-}
+};
 build(I32)
 `);
 
@@ -160,7 +160,7 @@ Deno.test("semantic validation accepts every bundled source prelude", () => {
 });
 
 Deno.test("semantic validation reports basic binding annotations", () => {
-  const source = parse_source("let value: Text = 1\nvalue");
+  const source = parse_source("let value: Text = 1;\nvalue");
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2306",
     severity: "error",
@@ -172,9 +172,9 @@ Deno.test("semantic validation reports basic binding annotations", () => {
 Deno.test("semantic validation reports mismatched literal singleton annotations", () => {
   const source = parse_source(`
 type One = 1
-const integer: One = 2
-const boolean: true = false
-const text: "GET" = "POST"
+const integer: One = 2;
+const boolean: true = false;
+const text: "GET" = "POST";
 integer
 `);
   const diagnostics = validate_frontend_semantics(source);
@@ -187,7 +187,7 @@ integer
 });
 
 Deno.test("semantic validation scopes the Core gate to Bool representation errors", () => {
-  const integer_source = parse_source("let value: Int = 1i64\nvalue");
+  const integer_source = parse_source("let value: Int = 1i64;\nvalue");
   assert_equals(
     validate_frontend_semantics(integer_source, {
       scope: "bool-representation",
@@ -195,7 +195,7 @@ Deno.test("semantic validation scopes the Core gate to Bool representation error
     [],
   );
 
-  const bool_source = parse_source("let value: Bool = 1\nvalue");
+  const bool_source = parse_source("let value: Bool = 1;\nvalue");
   assert_equals(
     validate_frontend_semantics(bool_source, {
       scope: "bool-representation",
@@ -210,14 +210,27 @@ Deno.test("semantic validation scopes the Core gate to Bool representation error
 });
 
 Deno.test("semantic validation optionally reports unused binding warnings", () => {
-  const source = parse_source("let value = 1\n42");
+  const source = parse_source("let value = 1;\n42");
   assert_equals(validate_frontend_semantics(source), []);
   assert_equals(validate_frontend_semantics(source, { warnings: true }), [{
     code: "DUCK2003",
     severity: "warning",
     message: "Unused runtime binding value",
-    span: { start: 0, end: 13 },
+    span: { start: 0, end: 14 },
   }]);
+});
+
+Deno.test("semantic warning liveness traverses compile-time value match patterns", () => {
+  const source = parse_source(`
+const expected = 1;
+let choose = value => match value {
+  | #(expected) => value
+  | _ => 0
+};
+choose(1)
+`);
+
+  assert_equals(validate_frontend_semantics(source, { warnings: true }), []);
 });
 
 Deno.test("semantic validation warns when prelude intrinsics escape", () => {
@@ -239,15 +252,15 @@ Deno.test("semantic validation warns when prelude intrinsics escape", () => {
 });
 
 Deno.test("semantic validation counts cast operands as binding uses", () => {
-  const source = parse_source("let value = 1\nvalue as I32");
+  const source = parse_source("let value = 1;\nvalue as I32");
   assert_equals(validate_frontend_semantics(source, { warnings: true }), []);
 });
 
 Deno.test("semantic validation counts shorthand shape members as binding uses", () => {
   const source = parse_source(
-    "let shape = 1\n" +
-      "let new = 2\n" +
-      "let namespace = { shape, new }\n" +
+    "let shape = 1;\n" +
+      "let new = 2;\n" +
+      "let namespace = { .shape, .new };\n" +
       "namespace",
   );
 
@@ -259,16 +272,16 @@ Deno.test("semantic validation counts shorthand shape members as binding uses", 
 
 Deno.test("semantic validation scopes lambda binders and const parameters", () => {
   const source = parse_source(
-    'let flag = "outer"\n' +
-      "let constant = (const x) => comptime x + 1\n" +
-      "let condition = flag => if flag { 1 } else { 0 }\n" +
+    'let flag = "outer";\n' +
+      "let constant = (const x) => comptime x + 1;\n" +
+      "let condition = flag => if flag { 1 } else { 0 };\n" +
       "constant(41) + condition(true)",
   );
   assert_equals(validate_frontend_semantics(source), []);
 });
 
 Deno.test("semantic validation requires explicit Text to Bytes conversion", () => {
-  const source = parse_source('let value: Bytes = "abc"\nlen(value)');
+  const source = parse_source('let value: Bytes = "abc";\nlen(value)');
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2306",
     severity: "error",
@@ -278,10 +291,10 @@ Deno.test("semantic validation requires explicit Text to Bytes conversion", () =
 });
 
 Deno.test("semantic validation distinguishes Bytes.empty from Text", () => {
-  const bytes = parse_source("let value: Bytes = Bytes.empty\nlen(value)");
+  const bytes = parse_source("let value: Bytes = Bytes.empty;\nlen(value)");
   assert_equals(validate_frontend_semantics(bytes), []);
 
-  const text = parse_source("let value: Text = Bytes.empty\nlen(value)");
+  const text = parse_source("let value: Text = Bytes.empty;\nlen(value)");
   const diagnostics = validate_frontend_semantics(text);
   assert_equals(diagnostics.length, 1);
   assert_equals(
@@ -292,7 +305,7 @@ Deno.test("semantic validation distinguishes Bytes.empty from Text", () => {
 
 Deno.test("semantic validation reports one const capture cause", () => {
   const source = parse_source(
-    "let runtime = 1\nconst invalid = comptime comptime runtime\ninvalid",
+    "let runtime = 1;\nconst invalid = comptime comptime runtime;\ninvalid",
   );
   const diagnostics = validate_frontend_semantics(source);
   assert_equals(diagnostics.length, 1);
@@ -301,13 +314,22 @@ Deno.test("semantic validation reports one const capture cause", () => {
 
 Deno.test("value packs pass and return without becoming stored tuples", () => {
   const accepted = parse_source(`
-let swap = (left, right) => (right, left)
-let (first, second) = swap(1, 2)
+let swap = (left, right) => (right, left);
+let (first, second) = swap(1, 2);
 [first, second]
 `);
   assert_equals(validate_frontend_semantics(accepted), []);
 
-  const stored = parse_source("let pair = (1, 2)\npair");
+  const block_return = parse_source(`
+let swap = (left, right) => {
+  (right, left)
+};
+let (first, second) = swap(1, 2);
+[first, second]
+`);
+  assert_equals(validate_frontend_semantics(block_return), []);
+
+  const stored = parse_source("let pair = (1, 2);\npair");
   assert_equals(
     validate_frontend_semantics(stored).map((diagnostic) => diagnostic.message),
     [
@@ -318,7 +340,7 @@ let (first, second) = swap(1, 2)
 
 Deno.test("calls distinguish argument packs from tuple values", () => {
   const pack_call = parse_source(
-    "let choose = (left, right) => left\nchoose([1, 2])",
+    "let choose = (left, right) => left;\nchoose([1, 2])",
   );
   assert_equals(
     validate_frontend_semantics(pack_call).map((diagnostic) =>
@@ -328,7 +350,7 @@ Deno.test("calls distinguish argument packs from tuple values", () => {
   );
 
   const tuple_call = parse_source(
-    "let choose = [left, right] => left\nchoose(1, 2)",
+    "let choose = [left, right] => left;\nchoose(1, 2)",
   );
   assert_equals(
     validate_frontend_semantics(tuple_call).map((diagnostic) =>

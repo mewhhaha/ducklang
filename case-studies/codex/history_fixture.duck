@@ -1,8 +1,9 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const history_module = import "./history.duck"
-const { drop_last_user_turns, estimate_history_tokens, normalize_history } = history_module()
+const { .list } = import "duck:prelude/functional" ();
+const {} = import "./history_types.duck" ();
+const history_module = import "./history.duck";
+const { .drop_last_user_turns, .estimate_history_tokens, .normalize_history } = history_module();
 
 type FixtureItem = HistoryItem
 type FixtureContent = HistoryContent
@@ -11,24 +12,29 @@ type FixtureCall = HistoryCall
 type FixtureOutput = HistoryOutput
 type FixturePairedCall = HistoryPairedCall
 type FixtureToolSearchOutput = HistoryToolSearchOutput
+type FixtureImageDetailOption = OutputImageDetailOption
 
-const items = comptime list(FixtureItem)
-const contents = comptime list(FixtureContent)
+const items = comptime list FixtureItem;
+const contents = comptime list FixtureContent;
 
-let message_contents = contents.empty()
+let message_contents = contents.empty();
 message_contents = contents.prepend(`InputAudio "data:audio/wav;base64,AA==", message_contents)
-message_contents = contents.prepend(`InputImage "data:image/png;base64,AA==", message_contents)
-let message: FixtureMessage = ["user", false, message_contents]
+let image_detail: FixtureImageDetailOption = `None ();
+message_contents = contents.prepend(
+  `InputImage (["data:image/png;base64,AA==", image_detail]),
+  message_contents,
+)
+let message: FixtureMessage = ["user", false, message_contents];
 
-let function_call: FixtureCall = ["fc_1", "call-1", "read_file", "{\"path\":\"README.md\"}"]
-let orphan_contents = contents.singleton(`InputText "orphan")
-let orphan_output: FixtureOutput = ["fco_orphan", "call-orphan", orphan_contents]
-let custom_call: FixtureCall = ["cc_1", "call-custom", "patch", "diff"]
-let custom_contents = contents.singleton(`InputImage "data:image/png;base64,AA==")
-let custom_output: FixtureOutput = ["cco_1", "call-custom", custom_contents]
-let server_search_output: FixtureToolSearchOutput = ["", "server"]
+let function_call: FixtureCall = ["fc_1", "call-1", "read_file", "{\"path\":\"README.md\"}"];
+let orphan_contents = contents.singleton(`InputText "orphan");
+let orphan_output: FixtureOutput = ["fco_orphan", "call-orphan", orphan_contents];
+let custom_call: FixtureCall = ["cc_1", "call-custom", "patch", "diff"];
+let custom_contents = contents.singleton(`InputImage (["data:image/png;base64,AA==", image_detail]));
+let custom_output: FixtureOutput = ["cco_1", "call-custom", custom_contents];
+let server_search_output: FixtureToolSearchOutput = ["", "server"];
 
-let history = items.empty()
+let history = items.empty();
 history = items.prepend(`ToolSearchOutput server_search_output, history)
 history = items.prepend(`CustomOutput custom_output, history)
 history = items.prepend(`CustomCall custom_call, history)
@@ -36,14 +42,14 @@ history = items.prepend(`FunctionOutput orphan_output, history)
 history = items.prepend(`FunctionCall function_call, history)
 history = items.prepend(`Message message, history)
 
-let normalized = normalize_history(history, [false, false])
-let score: I32 = items.length(normalized)
-let normalized_message = items.nth_or(`Other (), 0, normalized)
+let normalized = normalize_history(history, [false, false]);
+let score: I32 = items.length(normalized);
+let normalized_message = items.nth_or(`Other (), 0, normalized);
 
 if let `Message value = normalized_message {
-  let [_, _, normalized_contents] = value
-  let first_content = contents.nth_or(`OutputText "missing", 0, normalized_contents)
-  let second_content = contents.nth_or(`OutputText "missing", 1, normalized_contents)
+  let [_, _, normalized_contents] = value;
+  let first_content = contents.nth_or(`OutputText "missing", 0, normalized_contents);
+  let second_content = contents.nth_or(`OutputText "missing", 1, normalized_contents);
 
   if let `InputText text = first_content {
     if text == "image content omitted because you do not support image input" {
@@ -58,27 +64,27 @@ if let `Message value = normalized_message {
   }
 }
 
-let synthetic = items.nth_or(`Other (), 2, normalized)
+let synthetic = items.nth_or(`Other (), 2, normalized);
 if let `FunctionOutput output = synthetic {
-  let [id, call_id, output_contents] = output
+  let [id, call_id, output_contents] = output;
 
   if id == "fco:fc_1" && call_id == "call-1" && contents.length(output_contents) == 1 {
     score = score + 1000
   }
 }
 
-let prefix_contents = contents.singleton(`InputText "instructions")
-let first_user_contents = contents.singleton(`InputText "first")
-let assistant_contents = contents.singleton(`OutputText "answer")
-let context_contents = contents.singleton(`InputText "cwd")
-let second_user_contents = contents.singleton(`InputText "second")
-let prefix: FixtureMessage = ["developer", false, prefix_contents]
-let first_user: FixtureMessage = ["user", false, first_user_contents]
-let assistant: FixtureMessage = ["assistant", false, assistant_contents]
-let context: FixtureMessage = ["developer", true, context_contents]
-let second_user: FixtureMessage = ["user", false, second_user_contents]
+let prefix_contents = contents.singleton(`InputText "instructions");
+let first_user_contents = contents.singleton(`InputText "first");
+let assistant_contents = contents.singleton(`OutputText "answer");
+let context_contents = contents.singleton(`InputText "cwd");
+let second_user_contents = contents.singleton(`InputText "second");
+let prefix: FixtureMessage = ["developer", false, prefix_contents];
+let first_user: FixtureMessage = ["user", false, first_user_contents];
+let assistant: FixtureMessage = ["assistant", false, assistant_contents];
+let context: FixtureMessage = ["developer", true, context_contents];
+let second_user: FixtureMessage = ["user", false, second_user_contents];
 
-let rollback_history = items.empty()
+let rollback_history = items.empty();
 rollback_history = items.prepend(`Reasoning "encrypted", rollback_history)
 rollback_history = items.prepend(`Message second_user, rollback_history)
 rollback_history = items.prepend(`Message context, rollback_history)
@@ -86,8 +92,8 @@ rollback_history = items.prepend(`Message assistant, rollback_history)
 rollback_history = items.prepend(`Message first_user, rollback_history)
 rollback_history = items.prepend(`Message prefix, rollback_history)
 
-let one_turn_rollback = drop_last_user_turns(rollback_history, 1)
-let all_turns_rollback = drop_last_user_turns(rollback_history, 9)
+let one_turn_rollback = drop_last_user_turns(rollback_history, 1);
+let all_turns_rollback = drop_last_user_turns(rollback_history, 9);
 
 if items.length(one_turn_rollback) == 3 {
   score = score + 10000
@@ -97,9 +103,9 @@ if items.length(all_turns_rollback) == 1 {
   score = score + 100000
 }
 
-let tokens: I32 = estimate_history_tokens("base", normalized)
+let tokens: I32 = estimate_history_tokens("base", normalized);
 if tokens > 0 {
   score = score + 1000000
 }
 
-return { .score = score }
+return { .score = score };

@@ -8,4 +8,4 @@ declare Init {
   code_mode_nested_tool_host: CodeModeNestedToolHost
 }
 
-return {}
+return {};

@@ -68,6 +68,10 @@ const statement_keywords = [
 
 const expression_keywords = [
   snippet("if", "if ${1:condition} {\n\t${2:value}\n} else {\n\t$0\n}"),
+  snippet(
+    "handler",
+    "handler ${1:Effect} {\n\t${2:operation}: (!resume) => $0,\n\treturn: value => value,\n}",
+  ),
   keyword("comptime", "evaluate at compile time"),
   snippet("scratch", "scratch {\n\t$0\n}"),
   keyword("freeze", "make a value shareable"),

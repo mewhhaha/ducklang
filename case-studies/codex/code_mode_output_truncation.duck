@@ -1,19 +1,22 @@
 module () where
 
-const {} = import "./original_image_detail_types.duck" ()
-const { truncate_code_mode_text_output } = import "./code_mode_text_output_truncation.duck" ()
-const { truncate_code_mode_mixed_output } = import "./code_mode_mixed_output_truncation.duck" ()
+const {} = import "./original_image_detail_types.duck" ();
+const { .truncate_code_mode_text_output } = import "./code_mode_text_output_truncation.duck" ();
+const { .truncate_code_mode_mixed_output } = import "./code_mode_mixed_output_truncation.duck" ();
 
 type OutputTruncationItems = FunctionOutputContentItems
 
-const truncate_code_mode_output: [I64, OutputTruncationItems] -> OutputTruncationItems = (maximum_tokens, items) => {
-  let current = items
-  let all_text = true
-  let done = false
+const truncate_code_mode_output: [I64, OutputTruncationItems] -> OutputTruncationItems = (
+  maximum_tokens,
+  items,
+) => {
+  let current = items;
+  let all_text = true;
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [item, tail] = node
+      let [item, tail] = node;
       if let `InputText _ = item {
         ()
       } else {
@@ -24,7 +27,7 @@ const truncate_code_mode_output: [I64, OutputTruncationItems] -> OutputTruncatio
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   if all_text {
@@ -32,6 +35,6 @@ const truncate_code_mode_output: [I64, OutputTruncationItems] -> OutputTruncatio
   } else {
     truncate_code_mode_mixed_output(maximum_tokens, items)
   }
-}
+};
 
-return { truncate_code_mode_output }
+return { .truncate_code_mode_output };

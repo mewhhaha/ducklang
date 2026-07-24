@@ -29,6 +29,9 @@ import prelude_json_string_text from "./prelude_json_string.duck" with {
 import prelude_json_values_text from "./prelude_json_values.duck" with {
   type: "text",
 };
+import prelude_iterators_text from "./prelude_iterators.duck" with {
+  type: "text",
+};
 import prelude_list_text from "./prelude_list.duck" with { type: "text" };
 import prelude_numeric_text from "./prelude_numeric.duck" with {
   type: "text",
@@ -59,6 +62,7 @@ export const ducklang_json_prelude_text = prelude_json_text;
 export const ducklang_json_encode_prelude_text = prelude_json_encode_text;
 export const ducklang_json_string_prelude_text = prelude_json_string_text;
 export const ducklang_json_values_prelude_text = prelude_json_values_text;
+export const ducklang_iterators_prelude_text = prelude_iterators_text;
 export const ducklang_list_prelude_text = prelude_list_text;
 export const ducklang_numeric_prelude_text = prelude_numeric_text;
 export const ducklang_numeric_parse_prelude_text = prelude_numeric_parse_text;
@@ -120,6 +124,10 @@ export function bundled_source_text(uri: string): string | undefined {
 
   if (uri === "duck:prelude/json/values") {
     return ducklang_json_values_prelude_text;
+  }
+
+  if (uri === "duck:prelude/iterators") {
+    return ducklang_iterators_prelude_text;
   }
 
   if (uri === "duck:prelude/list") {

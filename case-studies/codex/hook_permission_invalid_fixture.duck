@@ -1,15 +1,16 @@
 module () where
 
-const hook_types_module = import "./hook_types.duck"
-const hook_output_types_module = import "./hook_output_types.duck"
-const hook_output_module = import "./hook_output.duck"
-const { parse_permission_output } = hook_output_module()
+const hook_types_module = import "./hook_types.duck";
+const hook_output_types_module = import "./hook_output_types.duck";
+const hook_output_module = import "./hook_output.duck";
+const { .parse_permission_output } = hook_output_module();
 
-let parsed = parse_permission_output("{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}")
-let score: I32 = 0
+let parsed =
+  parse_permission_output "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}";
+let score: I32 = 0;
 
 if let `PermissionOk output = parsed {
-  let [_, decision, invalid] = output
+  let [_, decision, invalid] = output;
 
   if let `None () = decision {
     if let `Some message = invalid {
@@ -20,4 +21,4 @@ if let `PermissionOk output = parsed {
   }
 }
 
-return { .score = score }
+return { .score = score };

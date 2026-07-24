@@ -1,24 +1,29 @@
-const { json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_thread_goal_set } = import "./app_server_goal_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
+const { .json_number, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .decode_thread_goal_set } = import "./app_server_goal_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
 
 type FixtureResult = AppServerMethodDecodeResult
 
-let status_fields = json_object_empty()
-status_fields = json_object_prepend("status", json_string("done"), status_fields)
-status_fields = json_object_prepend("threadId", json_string("thread-4"), status_fields)
-let invalid_status: FixtureResult = decode_thread_goal_set(json_object(status_fields))
-let score = 0
+let status_fields = json_object_empty();
+status_fields = json_object_prepend("status", json_string "done", status_fields)
+status_fields = json_object_prepend("threadId", json_string "thread-4", status_fields)
+let invalid_status: FixtureResult = decode_thread_goal_set(json_object status_fields);
+let score = 0;
 if let `MethodError reason = invalid_status {
   if reason == "thread/goal/set.params.status has an unknown value" { score = score + 1 }
 }
 
-let overflow_fields = json_object_empty()
-overflow_fields = json_object_prepend("tokenBudget", json_number("9223372036854775808"), overflow_fields)
-overflow_fields = json_object_prepend("threadId", json_string("thread-5"), overflow_fields)
-let overflow: FixtureResult = decode_thread_goal_set(json_object(overflow_fields))
+let overflow_fields = json_object_empty();
+overflow_fields = json_object_prepend(
+  "tokenBudget",
+  json_number "9223372036854775808",
+  overflow_fields,
+)
+overflow_fields = json_object_prepend("threadId", json_string "thread-5", overflow_fields)
+let overflow: FixtureResult = decode_thread_goal_set(json_object overflow_fields);
 if let `MethodError reason = overflow {
   if reason == "thread/goal/set.params.tokenBudget number exceeds I64" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

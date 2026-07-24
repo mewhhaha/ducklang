@@ -59,9 +59,9 @@ function dump(items: LspInlayHint[]): HintDump[] {
 }
 
 Deno.test("inlay type hints snapshot bindings and closure parameters", () => {
-  const text = "let identity = value => value\n" +
-    "let answer = identity(42)\n" +
-    'let message = "hello"\n';
+  const text = "let identity = value => value;\n" +
+    "let answer = identity(42);\n" +
+    'let message = "hello";\n';
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 0,
@@ -85,8 +85,8 @@ Deno.test("inlay type hints snapshot bindings and closure parameters", () => {
 });
 
 Deno.test("inlay type hints identify boolean values", () => {
-  const text = "let ready = true\n" +
-    "let compared = 1 < 2\n";
+  const text = "let ready = true;\n" +
+    "let compared = 1 < 2;\n";
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 0,
@@ -104,7 +104,7 @@ Deno.test("inlay type hints identify boolean values", () => {
 });
 
 Deno.test("inlay type hints identify character values", () => {
-  const text = "let letter = 'c'\n";
+  const text = "let letter = 'c';\n";
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 0,
@@ -116,7 +116,7 @@ Deno.test("inlay type hints identify character values", () => {
 });
 
 Deno.test("inlay type hints render positional product structure", () => {
-  const text = "let pair = [1, true]\n";
+  const text = "let pair = [1, true];\n";
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 0,
@@ -128,9 +128,9 @@ Deno.test("inlay type hints render positional product structure", () => {
 });
 
 Deno.test("inlay type hints resolve source-defined extension methods", () => {
-  const text = 'const { struct } = import "duck:prelude" ()\n' +
-    'let value: Text = "duck"\n' +
-    "let length = value.length()\n";
+  const text = 'const { .struct } = import "duck:prelude" ();\n' +
+    'let value: Text = "duck";\n' +
+    "let length = value.length();\n";
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 2,
@@ -142,11 +142,12 @@ Deno.test("inlay type hints resolve source-defined extension methods", () => {
 });
 
 Deno.test("inlay effect hints snapshot inferred row and result", () => {
-  const text = "declare effect Io { read: () => Text }\n" +
-    "let greet = () => {\n" +
-    "  value <- Io.read()\n" +
-    "  value\n" +
-    "}\n";
+  const text = `declare effect Io { read: () => Text }
+let greet = () => {
+  value <- Io.read()
+  value
+};
+`;
 
   assert_equals(dump(hints(text, category_config("effects"))), [{
     line: 1,
@@ -158,8 +159,8 @@ Deno.test("inlay effect hints snapshot inferred row and result", () => {
 });
 
 Deno.test("inlay labels cap at sixteen characters and retain full detail", () => {
-  const text = "const identity = (const specialization, value) => value\n" +
-    "let answer = identity(123456789, 42)\n";
+  const text = "const identity = (const specialization, value) => value;\n" +
+    "let answer = identity(123456789, 42);\n";
   const hint = hints(text, category_config("comptime")).find((candidate) => {
     return candidate.label.endsWith("...");
   });
@@ -177,11 +178,12 @@ Deno.test("inlay labels cap at sixteen characters and retain full detail", () =>
 });
 
 Deno.test("inlay type hints annotate state binding names", () => {
-  const text = "declare effect Io { read: () => Text }\n" +
-    "let greet = () => {\n" +
-    "  value <- Io.read()\n" +
-    "  value\n" +
-    "}\n";
+  const text = `declare effect Io { read: () => Text }
+let greet = () => {
+  value <- Io.read()
+  value
+};
+`;
 
   assert_equals(dump(hints(text, category_config("types"))), [{
     line: 2,
@@ -194,8 +196,8 @@ Deno.test("inlay type hints annotate state binding names", () => {
 
 Deno.test("inlay ownership hints snapshot call boundaries", () => {
   const text = "declare effect Host { send: (&Text, #Text, Text) => Unit }\n" +
-    'let value = "x"\n' +
-    "let frozen = freeze value\n" +
+    'let value = "x";\n' +
+    "let frozen = freeze value;\n" +
     "Host.send(&value, frozen, value)\n";
 
   assert_equals(dump(hints(text, category_config("ownership"))), [{
@@ -220,9 +222,9 @@ Deno.test("inlay ownership hints snapshot call boundaries", () => {
 });
 
 Deno.test("inlay comptime hints snapshot folds and specializations", () => {
-  const text = "const choose = (const n, value) => value\n" +
-    "const folded = comptime 40 + 2\n" +
-    "let result = choose(3, folded)\n";
+  const text = "const choose = (const n, value) => value;\n" +
+    "const folded = comptime 40 + 2;\n" +
+    "let result = choose(3, folded);\n";
 
   assert_equals(dump(hints(text, category_config("comptime"))), [{
     line: 1,
@@ -240,10 +242,10 @@ Deno.test("inlay comptime hints snapshot folds and specializations", () => {
 });
 
 Deno.test("inlay comptime hints use the environment before each binding", () => {
-  const text = "const n = 1\n" +
-    "const before = comptime n\n" +
+  const text = "const n = 1;\n" +
+    "const before = comptime n;\n" +
     "n = 2\n" +
-    "const after = comptime n\n";
+    "const after = comptime n;\n";
 
   assert_equals(dump(hints(text, category_config("comptime"))), [{
     line: 0,
@@ -290,9 +292,9 @@ Deno.test("inlay loop hints snapshot static expansion counts", () => {
 });
 
 Deno.test("inlay category configuration removes exactly that category", () => {
-  const text = "const choose = (const n, value) => value\n" +
-    "const folded = comptime 40 + 2\n" +
-    "let result = choose(3, folded)\n";
+  const text = "const choose = (const n, value) => value;\n" +
+    "const folded = comptime 40 + 2;\n" +
+    "let result = choose(3, folded);\n";
   const enabled = default_inlay_hint_config();
   const all = hints(text, enabled);
   const disabled = { ...enabled, comptime: false };
@@ -309,7 +311,7 @@ Deno.test("inlay category configuration removes exactly that category", () => {
 });
 
 Deno.test("inlay ranges and reparses preserve positions after earlier edits", () => {
-  const original = "let first = 1\nlet second = 2\n";
+  const original = "let first = 1;\nlet second = 2;\n";
   const shifted = "// inserted\n" + original;
   const range_start = original.indexOf("let second");
   const ranged = dump(
@@ -340,7 +342,7 @@ Deno.test("inlay ranges and reparses preserve positions after earlier edits", ()
 });
 
 Deno.test("inlay ranges exclude a hint exactly at the range end", () => {
-  const text = "let answer = 42\n";
+  const text = "let answer = 42;\n";
   const hint_offset = text.indexOf("answer") + "answer".length;
 
   assert_equals(
@@ -360,7 +362,7 @@ Deno.test("inlay ranges exclude a hint exactly at the range end", () => {
 });
 
 Deno.test("inlay resolve supplies deferred category detail", () => {
-  const text = "let answer = 42\n";
+  const text = "let answer = 42;\n";
   const hint = hints(text, category_config("types"))[0];
 
   if (hint === undefined) {

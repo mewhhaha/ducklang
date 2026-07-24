@@ -11,4 +11,4 @@ declare Init {
   rollout_store: RolloutStore
 }
 
-return {}
+return {};

@@ -1,79 +1,100 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./request_permissions_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./request_permissions_types.duck" ();
 
 type EnvironmentPermissionsEnvironment = RequestPermissionsEnvironment
 type EnvironmentPermissionsEnvironments = RequestPermissionsEnvironments
 type EnvironmentPermissionsSelection = RequestPermissionsEnvironmentSelection
 type EnvironmentPermissionsNativeCwd = RequestPermissionsNativeCwd
-const select_request_permissions_environment: [EnvironmentPermissionsEnvironments, Text] -> EnvironmentPermissionsSelection = (environments: EnvironmentPermissionsEnvironments, requested_environment_id: Text) => {
-  let current = environments
-  let selected: EnvironmentPermissionsSelection = `SelectionFailed "request_permissions environment was not found"
-  let done = false
+const select_request_permissions_environment: [EnvironmentPermissionsEnvironments, Text] ->
+  EnvironmentPermissionsSelection = (
+    environments: EnvironmentPermissionsEnvironments,
+    requested_environment_id: Text,
+  ) => {
+    let current = environments;
+    let selected: EnvironmentPermissionsSelection =
+      `SelectionFailed "request_permissions environment was not found";
+    let done = false;
 
-  loop {
-    if let `Cons node = current {
-      let environment = node.environment
-      let tail = node.tail
-      if environment.environment_id == requested_environment_id {
-        selected = `Selected environment
-        done = true
+    loop {
+      if let `Cons node = current {
+        let environment = node.environment;
+        let tail = node.tail;
+        if environment.environment_id == requested_environment_id {
+          selected = `Selected environment
+          done = true
+        } else {
+          current = tail
+        }
       } else {
-        current = tail
+        done = true
       }
-    } else {
-      done = true
+
+      if done { break; }
     }
 
-    if done { break }
-  }
+    if let `SelectionFailed _ = selected {
+      `SelectionFailed (
+        text_append ["unknown turn environment id `", text_append [requested_environment_id, "`"]]
+      )
+    } else {
+      selected
+    }
+  };
 
-  if let `SelectionFailed _ = selected {
-    `SelectionFailed (text_append(["unknown turn environment id `", text_append([requested_environment_id, "`"])]))
-  } else {
+const select_primary_request_permissions_environment: EnvironmentPermissionsEnvironments ->
+  EnvironmentPermissionsSelection = environments => {
+    let current = environments;
+    let selected: EnvironmentPermissionsSelection =
+      `SelectionFailed "request_permissions requires a primary environment";
+    let done = false;
+
+    loop {
+      if let `Cons node = current {
+        let environment = node.environment;
+        let tail = node.tail;
+        if environment.is_primary {
+          selected = `Selected environment
+          done = true
+        } else {
+          current = tail
+        }
+      } else {
+        done = true
+      }
+
+      if done { break; }
+    }
+
     selected
-  }
-}
+  };
 
-const select_primary_request_permissions_environment: EnvironmentPermissionsEnvironments -> EnvironmentPermissionsSelection = environments => {
-  let current = environments
-  let selected: EnvironmentPermissionsSelection = `SelectionFailed "request_permissions requires a primary environment"
-  let done = false
-
-  loop {
-    if let `Cons node = current {
-      let environment = node.environment
-      let tail = node.tail
-      if environment.is_primary {
-        selected = `Selected environment
-        done = true
-      } else {
-        current = tail
-      }
+const request_permissions_native_cwd: EnvironmentPermissionsEnvironment ->
+  EnvironmentPermissionsSelection = environment => {
+    let native_cwd: EnvironmentPermissionsNativeCwd = environment.native_cwd;
+    if let `Native _ = native_cwd {
+      `Selected environment
+    } else if let `Foreign reason = native_cwd {
+      `SelectionFailed (
+        text_append [
+          "request_permissions cwd `",
+          text_append [environment.cwd, text_append ["` is not native to the Codex host: ",
+            reason]],
+        ]
+      )
     } else {
-      done = true
+      `SelectionFailed (
+        text_append [
+          "request_permissions cwd `",
+          text_append [environment.cwd, "` is not native to the Codex host"],
+        ]
+      )
     }
-
-    if done { break }
-  }
-
-  selected
-}
-
-const request_permissions_native_cwd: EnvironmentPermissionsEnvironment -> EnvironmentPermissionsSelection = environment => {
-  let native_cwd: EnvironmentPermissionsNativeCwd = environment.native_cwd
-  if let `Native _ = native_cwd {
-    `Selected environment
-  } else if let `Foreign reason = native_cwd {
-    `SelectionFailed (text_append(["request_permissions cwd `", text_append([environment.cwd, text_append(["` is not native to the Codex host: ", reason])])]))
-  } else {
-    `SelectionFailed (text_append(["request_permissions cwd `", text_append([environment.cwd, "` is not native to the Codex host"])]))
-  }
-}
+  };
 
 return {
-  request_permissions_native_cwd,
-  select_primary_request_permissions_environment,
-  select_request_permissions_environment,
-}
+  .request_permissions_native_cwd,
+  .select_primary_request_permissions_environment,
+  .select_request_permissions_environment,
+};

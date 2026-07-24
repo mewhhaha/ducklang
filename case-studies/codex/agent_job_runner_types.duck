@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_item_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_item_types.duck" ();
 
 type AgentJobActiveWorker = struct {
   .item_id = Text,
@@ -43,4 +43,4 @@ type AgentJobRunnerTransition =
   | `RunnerAdvanced AgentJobRunnerState
   | `RunnerInvariantFailed Text
 
-return {}
+return {};

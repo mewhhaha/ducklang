@@ -1,9 +1,10 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const skill_types_module = import "./skill_types.duck"
-const skills_module = import "./skills.duck"
-const { discover_skills, policy_allows_implicit_invocation, select_explicit_skills } = skills_module()
+const { .list } = import "duck:prelude/functional" ();
+const skill_types_module = import "./skill_types.duck";
+const skills_module = import "./skills.duck";
+const { .discover_skills, .policy_allows_implicit_invocation, .select_explicit_skills } =
+  skills_module();
 
 type FixtureTextOption = SkillTextOption
 type FixtureProductOption = SkillProductOption
@@ -17,36 +18,80 @@ type FixtureError = SkillError
 type FixtureStructuredSelection = SkillStructuredSelection
 type FixtureStructuredSelections = SkillStructuredSelections
 
-const texts = comptime list(Text)
-const entries = comptime list(FixtureSnapshotEntry)
-const roots = comptime list(FixtureRoot)
-const structured_selections = comptime list(FixtureStructuredSelection)
-const documents = comptime list(FixtureDocument)
-const skill_errors = comptime list(FixtureError)
+const texts = comptime list Text;
+const entries = comptime list FixtureSnapshotEntry;
+const roots = comptime list FixtureRoot;
+const structured_selections = comptime list FixtureStructuredSelection;
+const documents = comptime list FixtureDocument;
+const skill_errors = comptime list FixtureError;
 
-let no_text: FixtureTextOption = `None ()
-let system_scope: FixtureScope = `System ()
-let repo_scope: FixtureScope = `Repo ()
-let codex: FixtureProductOption = `Some (`Codex ())
+let no_text: FixtureTextOption = `None ();
+let system_scope: FixtureScope = `System ();
+let repo_scope: FixtureScope = `Repo ();
+let codex: FixtureProductOption = `Some (`Codex ());
 
-let system_entries: FixtureSnapshotEntries = entries.empty()
-system_entries = entries.prepend(`File (["/system/alpha/agents/openai.yaml", "policy:\n  allow_implicit_invocation: true\n  products: [codex, chatgpt]"]), system_entries)
-system_entries = entries.prepend(`File (["/system/alpha/SKILL.md", "---\nname: alpha\ndescription:   Search   source trees quickly\nmetadata:\n  short-description: Fast search\n---\nUse rg."]), system_entries)
-system_entries = entries.prepend(`File (["/system/.hidden/secret/SKILL.md", "---\nname: secret\ndescription: Hidden skill\n---\nNope."]), system_entries)
-system_entries = entries.prepend(`File (["/system/broken/SKILL.md", "No frontmatter"]), system_entries)
+let system_entries: FixtureSnapshotEntries = entries.empty();
+system_entries = entries.prepend(
+  `File (
+    [
+      "/system/alpha/agents/openai.yaml",
+      "policy:\n  allow_implicit_invocation: true\n  products: [codex, chatgpt]",
+    ]
+  ),
+  system_entries,
+)
+system_entries = entries.prepend(
+  `File (
+    [
+      "/system/alpha/SKILL.md",
+      "---\nname: alpha\ndescription:   Search   source trees quickly\nmetadata:\n  short-description: Fast search\n---\nUse rg.",
+    ]
+  ),
+  system_entries,
+)
+system_entries = entries.prepend(
+  `File (
+    ["/system/.hidden/secret/SKILL.md", "---\nname: secret\ndescription: Hidden skill\n---\nNope."]
+  ),
+  system_entries,
+)
+system_entries = entries.prepend(
+  `File (["/system/broken/SKILL.md", "No frontmatter"]),
+  system_entries,
+)
 
-let repo_entries: FixtureSnapshotEntries = entries.empty()
-repo_entries = entries.prepend(`File (["/repo/review/agents/openai.yaml", "policy:\n  allow_implicit_invocation: false\n  products: [codex]"]), repo_entries)
-repo_entries = entries.prepend(`File (["/repo/review/SKILL.md", "---\nname: review\ndescription: Review a patch\n---\nRead the diff."]), repo_entries)
-repo_entries = entries.prepend(`File (["/repo/atlas/SKILL.md", "---\nname: atlas-only\ndescription: Atlas behavior\n---\nNope."]), repo_entries)
-repo_entries = entries.prepend(`File (["/repo/atlas/agents/openai.yaml", "policy:\n  products: [atlas]"]), repo_entries)
+let repo_entries: FixtureSnapshotEntries = entries.empty();
+repo_entries = entries.prepend(
+  `File (
+    [
+      "/repo/review/agents/openai.yaml",
+      "policy:\n  allow_implicit_invocation: false\n  products: [codex]",
+    ]
+  ),
+  repo_entries,
+)
+repo_entries = entries.prepend(
+  `File (
+    ["/repo/review/SKILL.md", "---\nname: review\ndescription: Review a patch\n---\nRead the diff."]
+  ),
+  repo_entries,
+)
+repo_entries = entries.prepend(
+  `File (["/repo/atlas/SKILL.md",
+    "---\nname: atlas-only\ndescription: Atlas behavior\n---\nNope."]),
+  repo_entries,
+)
+repo_entries = entries.prepend(
+  `File (["/repo/atlas/agents/openai.yaml", "policy:\n  products: [atlas]"]),
+  repo_entries,
+)
 
-let system_root: FixtureRoot = ["/system", system_scope, no_text, no_text, system_entries]
-let repo_root: FixtureRoot = ["/repo", repo_scope, no_text, no_text, repo_entries]
-let snapshots: FixtureRoots = roots.prepend(system_root, roots.singleton(repo_root))
-let loaded = discover_skills(snapshots, texts.empty(), codex, true, 6, 100)
-let [available, load_errors] = loaded
-let score = 0
+let system_root: FixtureRoot = ["/system", system_scope, no_text, no_text, system_entries];
+let repo_root: FixtureRoot = ["/repo", repo_scope, no_text, no_text, repo_entries];
+let snapshots: FixtureRoots = roots.prepend(system_root, roots.singleton(repo_root));
+let loaded = discover_skills(snapshots, texts.empty(), codex, true, 6, 100);
+let [available, load_errors] = loaded;
+let score = 0;
 
 if documents.length(available) == 2 {
   score = score + 1
@@ -57,9 +102,9 @@ if skill_errors.length(load_errors) == 1 {
 }
 
 if let `Cons first_node = available {
-  let [first, tail] = first_node
-  let [first_metadata, _] = first
-  let [first_name, first_description, first_short, _, _, first_policy, _, _, _] = first_metadata
+  let [first, tail] = first_node;
+  let [first_metadata, _] = first;
+  let [first_name, first_description, first_short, _, _, first_policy, _, _, _] = first_metadata;
 
   if first_name == "alpha" && first_description == "Search source trees quickly" {
     score = score + 100
@@ -72,23 +117,25 @@ if let `Cons first_node = available {
   }
 
   if let `Cons second_node = tail {
-    let [second, _] = second_node
-    let [second_metadata, _] = second
-    let [second_name, _, _, _, _, second_policy, _, _, _] = second_metadata
+    let [second, _] = second_node;
+    let [second_metadata, _] = second;
+    let [second_name, _, _, _, _, second_policy, _, _, _] = second_metadata;
 
-    if second_name == "review" && !policy_allows_implicit_invocation(second_policy) {
+    if second_name == "review" && !policy_allows_implicit_invocation second_policy {
       score = score + 10000
     }
   }
 }
 
-let structured: FixtureStructuredSelections = structured_selections.singleton(["review", "/repo/review/SKILL.md"])
-let inputs = texts.singleton("Please use $alpha and $review")
-let selected = select_explicit_skills(available, structured, inputs, texts.empty())
-let [selected_documents, _] = selected
+let structured: FixtureStructuredSelections = structured_selections.singleton(
+  ["review", "/repo/review/SKILL.md"]
+);
+let inputs = texts.singleton("Please use $alpha and $review");
+let selected = select_explicit_skills(available, structured, inputs, texts.empty());
+let [selected_documents, _] = selected;
 
 if documents.length(selected_documents) == 2 {
   score = score + 100000
 }
 
-return { .score = score }
+return { .score = score };

@@ -461,8 +461,24 @@ export class ParserStmt extends ParserTypeDeclaration {
           fields.push({ name, value: this.parse_expr() });
         }
 
-        this.match_symbol(",");
-        this.skip_newlines();
+        if (this.match_symbol(",")) {
+          this.skip_newlines();
+          continue;
+        }
+
+        if (this.peek().kind === "newline" && this.peek().raw === ";") {
+          this.advance();
+          this.skip_newlines();
+          continue;
+        }
+
+        if (
+          this.peek().kind === "symbol" && this.peek().text === "}"
+        ) {
+          continue;
+        }
+
+        throw this.error("Expected `,`, `;`, or `}` after extension member");
       }
     } finally {
       this.allow_pascal_type_names -= 1;
@@ -527,6 +543,7 @@ export class ParserStmt extends ParserTypeDeclaration {
 
     while (!(this.peek().kind === "symbol" && this.peek().text === "{")) {
       const param = this.expect_name("Expected effect type parameter or `{`");
+      this.expect_supported_name(param, "Effect type parameter");
       expect_snake_case(param, "Effect type parameter");
       expect(
         !params.includes(param),
@@ -554,6 +571,7 @@ export class ParserStmt extends ParserTypeDeclaration {
         execution = "suspending";
       }
       const operation = this.expect_name("Expected effect operation name");
+      this.expect_supported_name(operation, "Effect operation");
       expect_snake_case(operation, "Effect operation");
       this.expect_symbol(":");
       const type_params: string[] = [];
@@ -562,6 +580,10 @@ export class ParserStmt extends ParserTypeDeclaration {
         while (!this.match_symbol(".")) {
           const param = this.expect_name(
             "Expected effect operation type parameter or `.`",
+          );
+          this.expect_supported_name(
+            param,
+            "Effect operation type parameter",
           );
           expect_snake_case(param, "Effect operation type parameter");
           expect(
@@ -860,20 +882,35 @@ export class ParserStmt extends ParserTypeDeclaration {
     }
 
     if (this.match_name("return")) {
+      const terminator = this.peek();
+
+      if (terminator.kind === "newline" && terminator.raw === ";") {
+        this.advance();
+        return { tag: "return", value: { tag: "unit" } };
+      }
+
+      if (
+        terminator.kind === "newline" || terminator.kind === "eof" ||
+        (terminator.kind === "symbol" && terminator.text === "}")
+      ) {
+        this.expect_control_terminator("return");
+      }
+
       if (this.peek().kind === "symbol" && this.peek().text === "{") {
         const value_start = this.index;
         expect(
-          this.is_shape_literal(0, true),
-          "Module exports and runtime shapes use `{ name }` or " +
+          this.is_shape_literal(),
+          "Module exports and runtime shapes use `{ .name }` or " +
             "`{ .name = value }`",
         );
         const shape = this.parse_shape_value();
 
         if (this.block_depth > 0) {
+          this.expect_control_terminator("return");
           return { tag: "return", value: shape };
         }
 
-        return {
+        const statement: Stmt = {
           tag: "return",
           value: this.concrete_node(value_start, {
             tag: "struct_value",
@@ -884,9 +921,13 @@ export class ParserStmt extends ParserTypeDeclaration {
             }),
           }),
         };
+        this.expect_control_terminator("return");
+        return statement;
       }
 
-      return { tag: "return", value: this.parse_expr() };
+      const value = this.parse_expr();
+      this.expect_control_terminator("return");
+      return { tag: "return", value };
     }
 
     if (this.peek().kind === "name" && this.peek().text === "if") {
@@ -898,6 +939,7 @@ export class ParserStmt extends ParserTypeDeclaration {
       const next = this.peek(1);
 
       if (next.kind === "symbol" && (next.text === "=" || next.text === ":=")) {
+        this.expect_supported_name(name, "Runtime binding");
         expect_snake_case(name, "Runtime binding");
         this.advance();
         const op = this.advance();
@@ -927,6 +969,7 @@ export class ParserStmt extends ParserTypeDeclaration {
         const after = this.tokens[after_index];
 
         if (after && after.kind === "symbol" && after.text === "=") {
+          this.expect_supported_name(name, "Runtime binding");
           expect_snake_case(name, "Runtime binding");
           this.advance();
           this.expect_symbol("[");
@@ -953,29 +996,42 @@ export class ParserStmt extends ParserTypeDeclaration {
       const keyword = this.advance().text;
 
       if (keyword === "break") {
-        const next = this.peek();
+        const terminator = this.peek();
 
         if (
-          next.kind !== "newline" && next.kind !== "eof" &&
-          !(next.kind === "symbol" && next.text === "}")
+          terminator.kind === "newline" && terminator.raw === ";"
         ) {
-          return { tag: "break", value: this.parse_expr() };
+          this.advance();
+          return { tag: "break" };
         }
 
-        return { tag: "break" };
+        if (
+          terminator.kind === "newline" || terminator.kind === "eof" ||
+          (terminator.kind === "symbol" && terminator.text === "}")
+        ) {
+          this.expect_control_terminator("break");
+        }
+
+        const value = this.parse_expr();
+        this.expect_control_terminator("break");
+        return { tag: "break", value };
       }
 
-      const next = this.peek();
-      expect(
-        next.kind === "newline" || next.kind === "eof" ||
-          (next.kind === "symbol" && next.text === "}"),
-        "Continue does not accept a value",
-      );
-
+      this.expect_control_terminator("continue");
       return { tag: "continue" };
     }
 
     return { tag: "expr", expr: this.parse_expr() };
+  }
+
+  private expect_control_terminator(keyword: string): void {
+    const terminator = this.peek();
+
+    if (terminator.kind !== "newline" || terminator.raw !== ";") {
+      throw this.error("Expected `;` after `" + keyword + "`");
+    }
+
+    this.advance();
   }
 }
 

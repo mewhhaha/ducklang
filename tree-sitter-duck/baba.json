@@ -1,0 +1,476 @@
+{
+  "version": 2,
+  "word": "identifier",
+  "conflicts": [
+    [
+      "index_assignment",
+      "_primary_expression"
+    ],
+    [
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "parameter"
+    ],
+    [
+      "parameter",
+      "_single_binding_pattern"
+    ],
+    [
+      "parameter",
+      "_primary_expression"
+    ],
+    [
+      "parameter",
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "condition_expression",
+      "linear_reference"
+    ],
+    [
+      "shape_field_block",
+      "block"
+    ],
+    [
+      "named_shape_pattern_field",
+      "shorthand_field"
+    ],
+    [
+      "_single_match_pattern",
+      "_primary_expression"
+    ],
+    [
+      "parameter",
+      "_single_match_pattern",
+      "_primary_expression"
+    ],
+    [
+      "parameter",
+      "_single_match_pattern"
+    ],
+    [
+      "array_expression",
+      "array_pattern"
+    ],
+    [
+      "parameter",
+      "_primary_expression",
+      "_array_pattern_element"
+    ],
+    [
+      "parameter",
+      "_array_pattern_element"
+    ]
+  ],
+  "inline": [
+    "document"
+  ],
+  "rules": {
+    "effect_union_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 1
+      }
+    },
+    "effect_intersection_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 2
+      }
+    },
+    "effect_difference_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 3
+      }
+    },
+    "qualified_identifier": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 1
+      }
+    },
+    "try_with_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
+    "recursive_function": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
+    "recursive_call_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 9
+      }
+    },
+    "if_expression": {
+      "wrap": {
+        "kind": "prec.right"
+      }
+    },
+    "condition_binary_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 6
+      }
+    },
+    "condition_is_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 5
+      }
+    },
+    "condition_unary_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 8
+      }
+    },
+    "condition_call_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 9
+      }
+    },
+    "condition_application_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 9
+      }
+    },
+    "condition_field_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "condition_index_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      },
+      "paths": {
+        "open": {
+          "hidden_path": true
+        }
+      }
+    },
+    "binary_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 6
+      }
+    },
+    "is_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 5
+      }
+    },
+    "as_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 11
+      }
+    },
+    "unary_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 8
+      }
+    },
+    "loop_expression": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "match_expression": {
+      "wrap": {
+        "kind": "prec.right"
+      }
+    },
+    "_binding_alternative_pattern": {
+      "wrap": {
+        "kind": "prec.left"
+      }
+    },
+    "alternative_pattern": {
+      "wrap": {
+        "kind": "prec.left"
+      }
+    },
+    "application_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 9
+      }
+    },
+    "field_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "index_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      },
+      "paths": {
+        "open": {
+          "hidden_path": true
+        }
+      }
+    },
+    "index_assignment": {
+      "paths": {
+        "open": {
+          "hidden_path": true
+        }
+      }
+    },
+    "union_case": {
+      "wrap": {
+        "kind": "prec",
+        "value": -1
+      }
+    },
+    "named_product": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "named_shape_pattern": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "forall_type": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
+    "function_type": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    },
+    "type_union": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 2
+      }
+    },
+    "type_intersection": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 3
+      }
+    },
+    "type_difference": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 4
+      }
+    },
+    "type_application": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 5
+      }
+    },
+    "_type_atom": {
+      "wrap": {
+        "kind": "prec",
+        "value": -1
+      }
+    },
+    "unit_type": {
+      "wrap": {
+        "kind": "prec",
+        "value": -1
+      }
+    },
+    "_named_product_dot": {
+      "token": {
+        "kind": "token"
+      },
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "_pattern_pipe": {
+      "token": {
+        "kind": "token"
+      },
+      "wrap": {
+        "kind": "prec",
+        "value": 2
+      }
+    },
+    "as_keyword": {
+      "token": {
+        "kind": "token"
+      },
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "_intrinsic_fixity_target": {
+      "wrap": {
+        "kind": "prec",
+        "value": 2
+      }
+    },
+    "_qualified_fixity_target": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "_type_intersection_reference": {
+      "paths": {
+        "": {
+          "alias_ref": "type_reference"
+        }
+      }
+    },
+    "_collection_range_body": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "_numeric_range_body": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "_shape_arrow": {
+      "wrap": {
+        "kind": "prec",
+        "value": 100
+      }
+    },
+    "_effect_arrow": {
+      "wrap": {
+        "kind": "prec",
+        "value": 100
+      }
+    },
+    "_value_arrow": {
+      "wrap": {
+        "kind": "prec",
+        "value": 100
+      }
+    },
+    "_if_consequence": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "_else_block": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "_else_if": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "_effect_identifier_alias": {
+      "paths": {
+        "": {
+          "alias_ref": "identifier"
+        }
+      }
+    },
+    "_row_identifier_alias": {
+      "paths": {
+        "": {
+          "alias_ref": "identifier"
+        }
+      }
+    },
+    "_array_spread_with_tail": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "_ellipsis_token": {
+      "token": {
+        "kind": "token"
+      },
+      "wrap": {
+        "kind": "prec",
+        "value": 2
+      }
+    },
+    "_index_open": {
+      "token": {
+        "kind": "token.immediate"
+      },
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "_identifier_type_reference": {
+      "paths": {
+        "": {
+          "alias_ref": "type_reference"
+        }
+      }
+    },
+    "_struct_keyword": {},
+    "_struct_identifier_alias": {
+      "paths": {
+        "": {
+          "alias_ref": "identifier"
+        }
+      }
+    },
+    "_shape_arrow_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 11
+      }
+    },
+    "_effect_arrow_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 11
+      }
+    },
+    "_value_arrow_expression": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 1
+      }
+    }
+  },
+  "parser": {
+    "resolutions": []
+  }
+}

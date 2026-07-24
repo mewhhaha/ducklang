@@ -1,14 +1,22 @@
 module () where
 
-const hook_types_module = import "./hook_types.duck"
-const hook_command_module = import "./hook_command.duck"
-const { evaluate_hook_command } = hook_command_module()
+const hook_types_module = import "./hook_types.duck";
+const hook_command_module = import "./hook_command.duck";
+const { .evaluate_hook_command } = hook_command_module();
 
 type FixtureResult = HookCommandResult
 
-let permission_denied: FixtureResult = [`None (), `Some 0, "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"managed policy\"}}}", ""]
-let [status, _, _, _, _, _, permission_decision] = evaluate_hook_command(`PermissionRequest (), permission_denied)
-let score: I32 = 0
+let permission_denied: FixtureResult = [
+  `None (),
+  `Some 0,
+  "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"managed policy\"}}}",
+  "",
+];
+let [status, _, _, _, _, _, permission_decision] = evaluate_hook_command(
+  `PermissionRequest (),
+  permission_denied,
+);
+let score: I32 = 0;
 
 if let `Blocked () = status {
   if let `Some decision = permission_decision {
@@ -18,4 +26,4 @@ if let `Blocked () = status {
   }
 }
 
-return { .score = score }
+return { .score = score };

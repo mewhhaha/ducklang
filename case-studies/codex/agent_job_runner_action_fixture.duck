@@ -1,7 +1,8 @@
 module () where
 
-const {} = import "./agent_job_runner_types.duck" ()
-const { next_agent_job_runner_action, start_agent_job_runner } = import "./agent_job_runner_action.duck" ()
+const {} = import "./agent_job_runner_types.duck" ();
+const { .next_agent_job_runner_action, .start_agent_job_runner } =
+  import "./agent_job_runner_action.duck" ();
 
 type FixtureActive = AgentJobActiveWorkers
 type FixtureActiveNode = AgentJobActiveWorkerNode
@@ -11,26 +12,49 @@ type FixtureItems = AgentJobPreparedItems
 type FixtureState = AgentJobRunnerState
 type FixtureWorker = AgentJobActiveWorker
 
-let item: FixtureItem = [.item_id = "row-1", .row_index = 0, .source_id = `None (), .row_values = `Nil (), .row_json = "{}", .prompt = "run"]
-let item_node: FixtureItemNode = [item, `Nil ()]
-let items: FixtureItems = `Cons item_node
-let state: FixtureState = start_agent_job_runner items
-let score = 0
+let item: FixtureItem = [
+  .item_id = "row-1",
+  .row_index = 0,
+  .source_id = `None (),
+  .row_values = `Nil (),
+  .row_json = "{}",
+  .prompt = "run",
+];
+let item_node: FixtureItemNode = [item, `Nil ()];
+let items: FixtureItems = `Cons item_node;
+let state: FixtureState = start_agent_job_runner items;
+let score = 0;
 if state.total_items == 1 {
   if let `SpawnWorker selected = next_agent_job_runner_action(state, 2) {
     if selected.item_id == "row-1" { score = score + 1 }
   }
 }
 
-let worker: FixtureWorker = [.item_id = "row-1", .thread_id = "thread-1"]
-let active_node: FixtureActiveNode = [worker, `Nil ()]
-let active: FixtureActive = `Cons active_node
-let waiting: FixtureState = [.pending = items, .active = active, .total_items = 2, .completed_items = 0, .failed_items = 0, .spawn_blocked = true, .cancelled = false]
+let worker: FixtureWorker = [.item_id = "row-1", .thread_id = "thread-1"];
+let active_node: FixtureActiveNode = [worker, `Nil ()];
+let active: FixtureActive = `Cons active_node;
+let waiting: FixtureState = [
+  .pending = items,
+  .active = active,
+  .total_items = 2,
+  .completed_items = 0,
+  .failed_items = 0,
+  .spawn_blocked = true,
+  .cancelled = false,
+];
 if let `WaitForWorker _ = next_agent_job_runner_action(waiting, 2) { score = score + 10 }
 
-let finished: FixtureState = [.pending = `Nil (), .active = `Nil (), .total_items = 1, .completed_items = 1, .failed_items = 0, .spawn_blocked = false, .cancelled = true]
+let finished: FixtureState = [
+  .pending = `Nil (),
+  .active = `Nil (),
+  .total_items = 1,
+  .completed_items = 1,
+  .failed_items = 0,
+  .spawn_blocked = false,
+  .cancelled = true,
+];
 if let `FinalizeJob cancelled = next_agent_job_runner_action(finished, 1) {
   if cancelled { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

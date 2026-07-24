@@ -1,9 +1,13 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const tool_types_module = import "./tool_types.duck"
-const tool_policy_module = import "./tool_policy.duck"
-const { default_exec_approval_requirement, sandbox_override_for_first_attempt, sandbox_permissions_preserving_denied_reads } = tool_policy_module()
+const { .list } = import "duck:prelude/functional" ();
+const tool_types_module = import "./tool_types.duck";
+const tool_policy_module = import "./tool_policy.duck";
+const {
+  .default_exec_approval_requirement,
+  .sandbox_override_for_first_attempt,
+  .sandbox_permissions_preserving_denied_reads,
+} = tool_policy_module();
 
 type FixtureSandbox = ToolFileSystemSandbox
 type FixtureSandboxKind = ToolFileSystemSandboxKind
@@ -12,20 +16,20 @@ type FixtureExecRequirement = ToolExecApprovalRequirement
 type FixtureSandboxOverride = ToolSandboxOverride
 type FixturePermissions = ToolSandboxPermissions
 
-const paths = comptime list(Text)
+const paths = comptime list Text;
 
-let score: I32 = 0
-let writable_roots = paths.singleton "/repo"
-let restricted_kind: FixtureSandboxKind = `Restricted ()
-let unrestricted_kind: FixtureSandboxKind = `Unrestricted ()
-let restricted: FixtureSandbox = [restricted_kind, writable_roots, false, false]
-let unrestricted: FixtureSandbox = [unrestricted_kind, paths.empty(), true, false]
-let denied_reads: FixtureSandbox = [restricted_kind, writable_roots, false, true]
-let on_request: FixtureApproval = `OnRequest ()
-let never: FixtureApproval = `Never ()
-let granular: FixtureApproval = `Granular ([false, true, true, true, true])
+let score: I32 = 0;
+let writable_roots = paths.singleton "/repo";
+let restricted_kind: FixtureSandboxKind = `Restricted ();
+let unrestricted_kind: FixtureSandboxKind = `Unrestricted ();
+let restricted: FixtureSandbox = [restricted_kind, writable_roots, false, false];
+let unrestricted: FixtureSandbox = [unrestricted_kind, paths.empty(), true, false];
+let denied_reads: FixtureSandbox = [restricted_kind, writable_roots, false, true];
+let on_request: FixtureApproval = `OnRequest ();
+let never: FixtureApproval = `Never ();
+let granular: FixtureApproval = `Granular ([false, true, true, true, true]);
 
-let requirement: FixtureExecRequirement = default_exec_approval_requirement(on_request, restricted)
+let requirement: FixtureExecRequirement = default_exec_approval_requirement(on_request, restricted);
 if let `NeedsApproval _ = requirement { score = score + 1 }
 
 requirement = default_exec_approval_requirement(never, restricted)
@@ -37,13 +41,20 @@ if let `Forbidden _ = requirement { score = score + 100 }
 requirement = default_exec_approval_requirement(on_request, unrestricted)
 if let `Skip _ = requirement { score = score + 1000 }
 
-let first_attempt: FixtureSandboxOverride = sandbox_override_for_first_attempt(`RequireEscalated (), requirement, restricted)
+let first_attempt: FixtureSandboxOverride = sandbox_override_for_first_attempt(
+  `RequireEscalated (),
+  requirement,
+  restricted,
+);
 if let `BypassSandboxFirstAttempt () = first_attempt { score = score + 10000 }
 
 first_attempt = sandbox_override_for_first_attempt(`RequireEscalated (), requirement, denied_reads)
 if let `NoOverride () = first_attempt { score = score + 100000 }
 
-let permissions: FixturePermissions = sandbox_permissions_preserving_denied_reads(`RequireEscalated (), denied_reads)
+let permissions: FixturePermissions = sandbox_permissions_preserving_denied_reads(
+  `RequireEscalated (),
+  denied_reads,
+);
 if let `UseDefault () = permissions { score = score + 1000000 }
 
-return { .score = score }
+return { .score = score };

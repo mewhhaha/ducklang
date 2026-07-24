@@ -74,6 +74,7 @@ function elaborate_source(source: Source): Source {
 
   if (source !== inferred_source) {
     source = infer_front_function_signatures(source);
+    source = elaborate_front_ducks(source);
   }
 
   source = elaborate_front_effects(source);

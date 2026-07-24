@@ -1,25 +1,37 @@
 module () where
 
-const {} = import "./compact_model_fallback_types.duck" ()
-const compact_model_fallback_module = import "./compact_model_fallback.duck"
-const { model_fallback_telemetry } = compact_model_fallback_module()
+const {} = import "./compact_model_fallback_types.duck" ();
+const compact_model_fallback_module = import "./compact_model_fallback.duck";
+const { .model_fallback_telemetry } = compact_model_fallback_module();
 
 type FixtureTextOption = CompactionFallbackTextOption
 type FixtureTelemetry = CompactionFallbackTelemetry
 
-let score = 0
-let no_error: FixtureTextOption = `None ()
-let succeeded: FixtureTelemetry = model_fallback_telemetry("gpt-5.4", "gpt-5.5", `ContextLimit (), `ResponsesCompact (), no_error)
+let score = 0;
+let no_error: FixtureTextOption = `None ();
+let succeeded: FixtureTelemetry = model_fallback_telemetry(
+  "gpt-5.4",
+  "gpt-5.5",
+  `ContextLimit (),
+  `ResponsesCompact (),
+  no_error,
+);
 if succeeded.metric == "codex.compaction.model_fallback" && succeeded.increment == 1 && succeeded.previous_model == "gpt-5.4" && succeeded.current_model == "gpt-5.5" && succeeded.reason == "context_limit" && succeeded.implementation == "responses_compact" && succeeded.outcome == "succeeded" && succeeded.message == "previous-model compaction failed; retried with current model" {
   score = score + 1
 }
 
-let fallback_error: FixtureTextOption = `Some "request failed"
-let failed: FixtureTelemetry = model_fallback_telemetry("gpt-5.4", "gpt-5.5", `CompHashChanged (), `ResponsesCompactionV2 (), fallback_error)
+let fallback_error: FixtureTextOption = `Some "request failed";
+let failed: FixtureTelemetry = model_fallback_telemetry(
+  "gpt-5.4",
+  "gpt-5.5",
+  `CompHashChanged (),
+  `ResponsesCompactionV2 (),
+  fallback_error,
+);
 if failed.reason == "comp_hash_changed" && failed.implementation == "responses_compaction_v2" && failed.outcome == "failed" {
   if let `Some message = failed.fallback_error {
     if message == "request failed" { score = score + 10 }
   }
 }
 
-return { .score = score }
+return { .score = score };

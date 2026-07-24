@@ -1,2 +1,2 @@
-let !token = 41
+let !token = 41;
 !token + !token

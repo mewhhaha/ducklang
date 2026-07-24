@@ -135,4 +135,4 @@ type ToolPatchSafety =
   | `AskUser Unit
   | `Reject Text
 
-return {}
+return {};

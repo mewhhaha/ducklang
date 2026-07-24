@@ -1,20 +1,20 @@
-const { json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_account_bedrock_login } = import "./app_server_account_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_account_types.duck" ()
+const { .json_object_empty, .json_object_prepend, .json_string } = import "duck:prelude/json/values" ();
+const { .decode_account_bedrock_login } = import "./app_server_account_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_account_types.duck" ();
 
 type FixtureResult = AppServerAccountLoginDecodeResult
 
-let fields = json_object_empty()
-fields = json_object_prepend("region", json_string("us-west-2"), fields)
-fields = json_object_prepend("apiKey", json_string("bedrock-key"), fields)
-let decoded: FixtureResult = decode_account_bedrock_login(fields)
-let score = 0
+let fields = json_object_empty();
+fields = json_object_prepend("region", json_string "us-west-2", fields)
+fields = json_object_prepend("apiKey", json_string "bedrock-key", fields)
+let decoded: FixtureResult = decode_account_bedrock_login fields;
+let score = 0;
 if let `AccountLoginOk login = decoded {
   if let `AccountBedrockLogin values = login {
-    let [api_key, region] = values
+    let [api_key, region] = values;
     if api_key == "bedrock-key" && region == "us-west-2" { score = 1 }
   }
 }
 
-return { .score = score }
+return { .score = score };

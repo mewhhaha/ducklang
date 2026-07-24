@@ -1,9 +1,17 @@
 module () where
 
-const { list, text_contains } = import "duck:prelude/functional" ()
-const plugin_types_module = import "./plugin_types.duck"
-const plugins_module = import "./plugins.duck"
-const { collect_explicit_plugin_mentions, effective_apps, effective_mcp_servers, effective_skill_roots, parse_plugin_id, plugin_load_outcome, render_explicit_plugin_instructions } = plugins_module()
+const { .list, .text_contains } = import "duck:prelude/functional" ();
+const plugin_types_module = import "./plugin_types.duck";
+const plugins_module = import "./plugins.duck";
+const {
+  .collect_explicit_plugin_mentions,
+  .effective_apps,
+  .effective_mcp_servers,
+  .effective_skill_roots,
+  .parse_plugin_id,
+  .plugin_load_outcome,
+  .render_explicit_plugin_instructions,
+} = plugins_module();
 
 type FixtureTextOption = PluginTextOption
 type FixtureTexts = PluginTexts
@@ -12,71 +20,135 @@ type FixtureLoadedValues = LoadedPlugins
 type FixtureSummary = PluginCapabilitySummary
 type FixtureSummaries = PluginCapabilitySummaries
 
-const texts = comptime list(Text)
-const loaded_plugins = comptime list(FixtureLoaded)
-const summaries = comptime list(FixtureSummary)
+const texts = comptime list Text;
+const loaded_plugins = comptime list FixtureLoaded;
+const summaries = comptime list FixtureSummary;
 
-let no_text: FixtureTextOption = `None ()
-let alpha: FixtureLoaded = ["alpha@local", `Some "Alpha", `Some "alpha", `Some "  Search   and\nreview  ", "/plugins/alpha", true, no_text, true, texts.prepend("/skills/a", texts.singleton("/skills/shared")), texts.prepend("search", texts.singleton("review")), texts.singleton("calendar"), texts.singleton("/hooks/alpha.json"), texts.empty()]
-let beta: FixtureLoaded = ["beta@local", `Some "Beta", `Some "beta", no_text, "/plugins/beta", true, no_text, false, texts.prepend("/skills/shared", texts.singleton("/skills/b")), texts.prepend("review", texts.singleton("files")), texts.singleton("drive"), texts.empty(), texts.singleton("optional hook missing")]
-let disabled: FixtureLoaded = ["off@local", no_text, no_text, no_text, "/plugins/off", false, no_text, true, texts.singleton("/skills/off"), texts.singleton("off"), texts.empty(), texts.empty(), texts.empty()]
-let broken: FixtureLoaded = ["broken@local", no_text, no_text, no_text, "/plugins/broken", true, `Some "invalid manifest", true, texts.singleton("/skills/broken"), texts.singleton("broken"), texts.empty(), texts.empty(), texts.empty()]
-let plugins: FixtureLoadedValues = loaded_plugins.prepend(alpha, loaded_plugins.prepend(beta, loaded_plugins.prepend(disabled, loaded_plugins.singleton(broken))))
-let outcome = plugin_load_outcome plugins
-let [_, capability_summaries] = outcome
-let score = 0
+let no_text: FixtureTextOption = `None ();
+let alpha: FixtureLoaded = [
+  "alpha@local",
+  `Some "Alpha",
+  `Some "alpha",
+  `Some "  Search   and\nreview  ",
+  "/plugins/alpha",
+  true,
+  no_text,
+  true,
+  texts.prepend("/skills/a", texts.singleton("/skills/shared")),
+  texts.prepend("search", texts.singleton("review")),
+  texts.singleton("calendar"),
+  texts.singleton("/hooks/alpha.json"),
+  texts.empty(),
+];
+let beta: FixtureLoaded = [
+  "beta@local",
+  `Some "Beta",
+  `Some "beta",
+  no_text,
+  "/plugins/beta",
+  true,
+  no_text,
+  false,
+  texts.prepend("/skills/shared", texts.singleton("/skills/b")),
+  texts.prepend("review", texts.singleton("files")),
+  texts.singleton("drive"),
+  texts.empty(),
+  texts.singleton("optional hook missing"),
+];
+let disabled: FixtureLoaded = [
+  "off@local",
+  no_text,
+  no_text,
+  no_text,
+  "/plugins/off",
+  false,
+  no_text,
+  true,
+  texts.singleton("/skills/off"),
+  texts.singleton("off"),
+  texts.empty(),
+  texts.empty(),
+  texts.empty(),
+];
+let broken: FixtureLoaded = [
+  "broken@local",
+  no_text,
+  no_text,
+  no_text,
+  "/plugins/broken",
+  true,
+  `Some "invalid manifest",
+  true,
+  texts.singleton("/skills/broken"),
+  texts.singleton("broken"),
+  texts.empty(),
+  texts.empty(),
+  texts.empty(),
+];
+let plugins: FixtureLoadedValues = loaded_plugins.prepend(
+  alpha,
+  loaded_plugins.prepend(beta, loaded_plugins.prepend(disabled, loaded_plugins.singleton(broken))),
+);
+let outcome = plugin_load_outcome plugins;
+let [_, capability_summaries] = outcome;
+let score = 0;
 
 if summaries.length(capability_summaries) == 2 {
   score = score + 1
 }
 
 if let `Cons node = capability_summaries {
-  let [summary, _] = node
-  let [_, _, description, _, _, _] = summary
+  let [summary, _] = node;
+  let [_, _, description, _, _, _] = summary;
 
   if let `Some value = description {
     if value == "Search and review" { score = score + 10 }
   }
 }
 
-let roots = effective_skill_roots plugins
+let roots = effective_skill_roots plugins;
 
-if texts.length(roots) == 3 && texts.nth_or("", 0, roots) == "/skills/a" && texts.nth_or("", 2, roots) == "/skills/shared" {
+if texts.length(roots) == 3 && texts.nth_or("", 0, roots) == "/skills/a" && texts.nth_or(
+  "",
+  2,
+  roots,
+) == "/skills/shared" {
   score = score + 100
 }
 
-let mcp = effective_mcp_servers plugins
+let mcp = effective_mcp_servers plugins;
 
-if texts.length(mcp) == 3 && texts.nth_or("", 0, mcp) == "search" && texts.nth_or("", 2, mcp) == "files" {
-  score = score + 1000
-}
+if texts.length(mcp) == 3 && texts.nth_or("", 0, mcp) == "search" && texts.nth_or("", 2,
+  mcp) == "files" {
+    score = score + 1000
+  }
 
-let paths = texts.prepend("plugin://alpha@local", texts.singleton("app://calendar"))
-let mentioned = collect_explicit_plugin_mentions(paths, capability_summaries)
+let paths = texts.prepend("plugin://alpha@local", texts.singleton("app://calendar"));
+let mentioned = collect_explicit_plugin_mentions(paths, capability_summaries);
 
 if summaries.length(mentioned) == 1 {
   score = score + 10000
 }
 
 if let `Cons node = mentioned {
-  let [summary, _] = node
-  let apps = effective_apps plugins
+  let [summary, _] = node;
+  let apps = effective_apps plugins;
 
   if let `Some rendered = render_explicit_plugin_instructions(summary, mcp, apps) {
-    if text_contains([rendered, "`search`, `review`"]) && text_contains([rendered, "`calendar`"]) {
+    if text_contains [rendered, "`search`, `review`"] && text_contains [rendered, "`calendar`"] {
       score = score + 100000
     }
   }
 }
 
-if let `Ok plugin_id = parse_plugin_id("alpha@local") {
-  let [plugin_name, marketplace_name] = plugin_id
+if let `Ok plugin_id = parse_plugin_id "alpha@local" {
+  let [plugin_name, marketplace_name] = plugin_id;
 
   if plugin_name == "alpha" && marketplace_name == "local" {
-    if let `Err _ = parse_plugin_id("bad/name@local") {
+    if let `Err _ = parse_plugin_id "bad/name@local" {
       score = score + 1000000
     }
   }
 }
 
-return { .score = score }
+return { .score = score };

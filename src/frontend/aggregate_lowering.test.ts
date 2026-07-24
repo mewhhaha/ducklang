@@ -10,14 +10,14 @@ function compile(text: string) {
 
 Deno.test("Source lowers struct field projection to Ic", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .bonus= Int
-}
+};
 
-let age = 40
-let user = [.age = age + 1, .bonus = 5] as user_type
+let age = 40;
+let user = [.age = age + 1, .bonus = 5] as user_type;
 age = 0
 user.age + 1
 `);
@@ -25,20 +25,20 @@ user.age + 1
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const block_local_call = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .label= Text
-}
+};
 
 const make = x => {
   [.first = x + 1, .label = "ok"] as pair_type
-}
+};
 
 let pair = {
-  let made = make(input)
+  let made = make(input);
   made
-}
+};
 
 pair.first
 `);
@@ -51,19 +51,19 @@ pair.first
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int
-}
+};
 
 const make = x => {
   [.first = x + 1] as pair_type
-}
+};
 
 let pair = {
-  const made = make(input)
+  const made = make(input);
   made
-}
+};
 
 pair.first
 `),
@@ -73,12 +73,12 @@ pair.first
 
 Deno.test("Source lowers const struct field projection", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-const user = [.age = 41] as user_type
+const user = [.age = 41] as user_type;
 
 user.age + 1
 `);
@@ -88,17 +88,17 @@ user.age + 1
 
 Deno.test("Source lowers dynamic typed struct if by selecting fields", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = struct {
   .first= Int,
   .second= Int
-}
+};
 
 let pair = if input {
   [.first = 40, .second = 2] as pair_type
 } else {
   [.first = 1, .second = 3] as pair_type
-}
+};
 
 pair.first + pair.second
 `);
@@ -109,23 +109,23 @@ pair.first + pair.second
   assert_includes(text, "if input_share21 then 2:i32 else 3:i32");
 
   const nested = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type,
   .age= Int
-}
+};
 
 let selected = if flag {
   [.name = [.first = message, .last = other] as name_type, .age = 1] as user_type
 } else {
   [.name = [.first = other, .last = message] as name_type, .age = 2] as user_type
-}
+};
 
 @len(selected.name.first) + selected.age
 `);
@@ -136,18 +136,18 @@ let selected = if flag {
   assert_includes(nested_text, "then 1:i32 else 2:i32");
 
   const call_only_struct_helper = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 let choose = flag => if flag {
   input
 } else {
   other
-}
+};
 
-let user: user_type = choose(flag)
+let user: user_type = choose(flag);
 user.age
 `);
   const call_only_struct_helper_text = Format.fmt(
@@ -164,16 +164,16 @@ user.age
     Format.fmt(
       Ic,
       Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 let choose = flag => if flag {
   [.name = input] as user_type
 } else {
   [.name = other] as user_type
-}
+};
 
 @len(choose(flag).name)
 `)),
@@ -184,16 +184,16 @@ let choose = flag => if flag {
   const call_only_struct_text_get = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 let choose = flag => if flag {
   [.name = input] as user_type
 } else {
   [.name = other] as user_type
-}
+};
 
 @get(choose(flag).name, index)
 `)),
@@ -207,21 +207,21 @@ let choose = flag => if flag {
   const call_only_nested_struct_text = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type
-}
+};
 
 let choose = flag => if flag {
   [.name = [.first = input] as name_type] as user_type
 } else {
   [.name = [.first = other] as name_type] as user_type
-}
+};
 
 @len(choose(flag).name.first)
 `)),
@@ -234,16 +234,16 @@ let choose = flag => if flag {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 let choose = flag => if flag {
   [.name = input] as user_type
 } else {
   other
-}
+};
 
 @len(choose(flag).name)
 `),
@@ -253,19 +253,19 @@ let choose = flag => if flag {
   const union_payload_struct_age = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 type OptionType = | \`Some user_type | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   \`Some ([.age = a] as user_type)
 } else {
   \`None ()
-}
+};
 
 (if let \`Some user = choose(flag) {
   user
@@ -289,19 +289,19 @@ let choose = flag => if flag {
   const union_payload_struct_text_len = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 type OptionType = | \`Some user_type | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   \`Some ([.name = input] as user_type)
 } else {
   \`None ()
-}
+};
 
 @len((if let \`Some user = choose(flag) {
   user
@@ -319,19 +319,19 @@ let choose = flag => if flag {
   const union_payload_struct_text_get = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 type OptionType = | \`Some user_type | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   \`Some ([.name = input] as user_type)
 } else {
   \`None ()
-}
+};
 
 @get((if let \`Some user = choose(flag) {
   user
@@ -347,19 +347,19 @@ let choose = flag => if flag {
   const union_payload_struct_text_index = Format.fmt(
     Ic,
     Ic.reduce(compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 type OptionType = | \`Some user_type | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   \`Some ([.name = input] as user_type)
 } else {
   \`None ()
-}
+};
 
 (if let \`Some user = choose(flag) {
   user
@@ -375,19 +375,19 @@ let choose = flag => if flag {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text
-}
+};
 
 type OptionType = | \`Some user_type | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   \`Some ([.name = input] as user_type)
 } else {
   \`None ()
-}
+};
 
 @len((if let \`Some user = choose(flag) {
   1
@@ -399,28 +399,28 @@ let choose = flag => if flag {
   );
 
   const nested_if_let = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const name_type = struct {
   .first= Text,
   .last= Text
-}
+};
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= name_type,
   .age= Int
-}
+};
 
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = input
+let result: result_type = input;
 
 let selected = if let \`Ok payload = result {
   [.name = [.first = payload, .last = other] as name_type, .age = 1] as user_type
 } else {
   [.name = [.first = other, .last = message] as name_type, .age = 2] as user_type
-}
+};
 
 @len(selected.name.first) + selected.age
 `);
@@ -437,12 +437,12 @@ Deno.test("Source rejects missing struct fields", () => {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user: user_type = [.age = 41]
+let user: user_type = [.age = 41];
 
 user.name
 `),
@@ -452,11 +452,11 @@ user.name
 
 Deno.test("Source lowers struct and object values to Ic handlers", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
 [.name = "Ada", .age = 41] as user_type
 `);
@@ -467,13 +467,13 @@ const user_type = struct {
   assert_includes(text, "41:i32");
 
   const rebound = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .name= Text,
   .age= Int
-}
+};
 
-let user = [.name = "Ada", .age = 41] as user_type
+let user = [.name = "Ada", .age = 41] as user_type;
 
 user
 `);
@@ -489,7 +489,7 @@ user
   assert_includes(object_text, "41:i32");
 
   const object_function_field = compile(`
-let box = [.run = x => x + 1]
+let box = [.run = x => x + 1];
 
 box.run(41)
 `);
@@ -501,7 +501,7 @@ box.run(41)
   });
 
   const rebound_object = compile(`
-let user = [.name = "Ada", .age = 41]
+let user = [.name = "Ada", .age = 41];
 
 user
 `);
@@ -511,9 +511,9 @@ user
   assert_includes(rebound_object_text, "41:i32");
 
   const updated_object = compile(`
-let user = [.age = 40]
+let user = [.age = 40];
 
-user = user :+ {
+user = user <& {
   .age = user.age + 1
 }
 user
@@ -527,7 +527,7 @@ let user = if input {
   [.name = "Ada", .age = 41]
 } else {
   [.name = "Grace", .age = 32]
-}
+};
 
 user.age + @len(user.name)
 `);
@@ -551,7 +551,7 @@ let user = if input {
   [.name = "Ada", .age = 41]
 } else {
   [.name = "Grace", .age = 32]
-}
+};
 
 user.name
 `);
@@ -572,9 +572,9 @@ const make_user = flag => {
   } else {
     [.name = "Grace", .age = 32]
   }
-}
+};
 
-let user = make_user(input)
+let user = make_user(input);
 
 user.age + @len(user.name)
 `);
@@ -609,13 +609,13 @@ Deno.test("Source validates declared struct construction", () => {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .name= Text
-}
+};
 
-let user: user_type = [.age = 41]
+let user: user_type = [.age = 41];
 
 user.age
 `),
@@ -625,12 +625,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user: user_type = [.age = 41, .name = "Ada"]
+let user: user_type = [.age = 41, .name = "Ada"];
 
 user.age
 `),
@@ -640,12 +640,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user: user_type = [.age = 41, .age = 42]
+let user: user_type = [.age = 41, .age = 42];
 
 user.age
 `),
@@ -655,12 +655,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user: user_type = [.age = "old"]
+let user: user_type = [.age = "old"];
 
 user.age
 `),
@@ -670,12 +670,12 @@ user.age
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const wide_type = struct {
   .value= I64
-}
+};
 
-let wide: wide_type = [.value = 41]
+let wide: wide_type = [.value = 41];
 
 wide.value
 `),
@@ -685,17 +685,17 @@ wide.value
 
 Deno.test("Source lowers pure struct updates by rebuilding values", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .bonus= Int
-}
+};
 
-let user = [.age = 41, .bonus = 5] as user_type
+let user = [.age = 41, .bonus = 5] as user_type;
 
-let updated = user :+ {
+let updated = user <& {
   .age = user.age + 1
-}
+};
 
 user.age + updated.age
 `);
@@ -703,15 +703,15 @@ user.age + updated.age
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 83 });
 
   const direct = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .bonus= Int
-}
+};
 
-let user = [.age = 41, .bonus = 5] as user_type
+let user = [.age = 41, .bonus = 5] as user_type;
 
-user :+ {
+user <& {
   .age = user.age + 1
 }
 `);
@@ -721,13 +721,16 @@ user :+ {
   assert_includes(direct_text, "42:i32");
 
   const closure_update = compile(`
-let birthday = user => {
-  user :+ {
+const { .struct } = import "duck:prelude" ();
+type User = struct { .name = Text, .age = I32 }
+
+let birthday = (user: User) => {
+  user <& {
     .age = user.age + 1
   }
-}
+};
 
-birthday([.name = "Ada", .age = 41]).age
+birthday(User.new { .name = "Ada", .age = 41 }).age
 `);
 
   assert_equals(Ic.reduce(closure_update), {
@@ -737,13 +740,16 @@ birthday([.name = "Ada", .age = 41]).age
   });
 
   const closure_text_update = compile(`
-let rename = user => {
-  user :+ {
+const { .struct } = import "duck:prelude" ();
+type User = struct { .name = Text, .age = I32 }
+
+let rename = (user: User) => {
+  user <& {
     .name = "Grace"
   }
-}
+};
 
-@len(rename([.name = "Ada", .age = 41]).name)
+@len(rename(User.new { .name = "Ada", .age = 41 }).name)
 `);
 
   assert_equals(Ic.reduce(closure_text_update), {
@@ -755,16 +761,16 @@ let rename = user => {
 
 Deno.test("Source lowers assignment struct updates without mutating prior reads", () => {
   const ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .bonus= Int
-}
+};
 
-let user = [.age = 41, .bonus = 5] as user_type
+let user = [.age = 41, .bonus = 5] as user_type;
 
-let old_age = user.age
-user = user :+ {
+let old_age = user.age;
+user = user <& {
   .age = user.age + 1
 }
 
@@ -778,14 +784,14 @@ Deno.test("Source rejects invalid struct updates", () => {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
-let user = [.age = 41] as user_type
+let user = [.age = 41] as user_type;
 
-user = user :+ {
+user = user <& {
   .name = 1
 }
 
@@ -798,10 +804,10 @@ user.age
 Deno.test("Source lowers known union if let expressions", () => {
   const ic = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let input = 41
-let result = \`Ok (input)
+let input = 41;
+let result = \`Ok (input);
 input = 0
 
 if let \`Ok value = result {
@@ -814,9 +820,9 @@ if let \`Ok value = result {
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const const_payload = compile(`
-const payload = 41
-const result = \`Ok (payload)
-const payload = 0
+const payload = 41;
+const result = \`Ok (payload);
+const payload = 0;
 
 if let \`Ok value = result {
   value + 1
@@ -833,9 +839,9 @@ if let \`Ok value = result {
 
   const const_block_payload = compile(`
 const result = {
-  let payload = 41
+  let payload = 41;
   \`Ok (payload)
-}
+};
 
 if let \`Ok value = result {
   value + 1
@@ -851,7 +857,7 @@ if let \`Ok value = result {
   });
 
   const runtime_payload = compile(`
-let result = \`Ok (input)
+let result = \`Ok (input);
 
 if let \`Ok value = result {
   value + 1
@@ -866,8 +872,8 @@ if let \`Ok value = result {
   );
 
   const field_payload = compile(`
-let input = 41
-let box = [.result = \`Ok (input)]
+let input = 41;
+let box = [.result = \`Ok (input)];
 input = 0
 
 if let \`Ok value = box.result {
@@ -884,8 +890,8 @@ if let \`Ok value = box.result {
   });
 
   const indexed_payload = compile(`
-let input = 41
-let box = [.first = \`Ok (input), .second = \`Err (0)]
+let input = 41;
+let box = [.first = \`Ok (input), .second = \`Err (0)];
 input = 0
 
 if let \`Ok value = box[0] {
@@ -903,7 +909,7 @@ if let \`Ok value = box[0] {
 
   const block_payload = compile(`
 if let \`Ok value = {
-  let input = 41
+  let input = 41;
   \`Ok (input)
 } {
   value + 1
@@ -920,7 +926,7 @@ if let \`Ok value = {
 
   const block_shadowed_payload = compile(`
 if let \`Ok value = {
-  let input = 40
+  let input = 40;
   input = input + 1
   \`Ok (input)
 } {
@@ -940,9 +946,9 @@ if let \`Ok value = {
 Deno.test("Source validates typed union constructors", () => {
   const ic = compile(`
 type ResultType = | \`Ok Int | \`Err Text | \`None Unit
-const result_type = ResultType
+const result_type = ResultType;
 
-let result = \`Ok (41)
+let result = \`Ok (41);
 
 if let \`Ok value = result {
   value + 1
@@ -955,11 +961,11 @@ if let \`Ok value = result {
 
   const const_constructor_payload = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-const payload = 41
-const result = \`Ok (payload)
-const payload = 0
+const payload = 41;
+const result = \`Ok (payload);
+const payload = 0;
 
 if let \`Ok value = result {
   value + 1
@@ -976,9 +982,9 @@ if let \`Ok value = result {
 
   const unit_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-let option = \`None ()
+let option = \`None ();
 
 if let \`None () = option {
   42
@@ -991,13 +997,13 @@ if let \`None () = option {
 
   const dynamic_unit_field_ic = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let option = if input {
   \`Some (1)
 } else {
   \`None ()
-}
+};
 
 if let \`Some value = option {
   value
@@ -1015,18 +1021,18 @@ if let \`Some value = option {
     () =>
       compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-\`Some
+\`Some;
 `),
     "Union constructor `Some requires a value",
   );
 
   const annotated = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok (41)
+let result: result_type = \`Ok (41);
 result
 `);
   const annotated_text = Format.fmt(Ic, Ic.reduce(annotated));
@@ -1035,16 +1041,16 @@ result
   assert_includes(annotated_text, "41:i32");
 
   const annotated_struct_payload = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok ([.age = 40, .score = 2])
+let result: result_type = \`Ok ([.age = 40, .score = 2]);
 
 if let \`Ok user = result {
   user.age + user.score
@@ -1062,16 +1068,16 @@ if let \`Ok user = result {
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok ([.age = 40])
+let result: result_type = \`Ok ([.age = 40]);
 
 result
 `),
@@ -1080,11 +1086,11 @@ result
 
   const annotated_param = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let keep = (result: result_type) => {
   result
-}
+};
 
 keep(\`Ok (41))
 `);
@@ -1097,9 +1103,9 @@ keep(\`Ok (41))
     () =>
       compile(`
 type ResultType = \`Ok Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Err ("bad")
+let result: result_type = \`Err ("bad");
 result
 `),
     "Missing union case: Err",
@@ -1109,9 +1115,9 @@ result
     () =>
       compile(`
 type ResultType = \`Ok Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok ("bad")
+let result: result_type = \`Ok ("bad");
 result
 `),
     "Union case Ok expects Int, got Text",
@@ -1121,9 +1127,9 @@ result
     () =>
       compile(`
 type ResultType = \`Ok I64
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Ok (41)
+let result: result_type = \`Ok (41);
 result
 `),
     "Union case Ok expects I64, got I32",
@@ -1133,9 +1139,9 @@ result
     () =>
       compile(`
 type OptionType = \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-let option: option_type = \`None (1)
+let option: option_type = \`None (1);
 option
 `),
     "Union case None expects Unit",
@@ -1145,10 +1151,10 @@ option
 Deno.test("Source specializes generic struct and union type constructors", () => {
   const union_ic = compile(`
 type ResultType e t = | \`Ok t | \`Err e
-const result_type = ResultType
+const result_type = ResultType;
 
-const int_result = result_type(Text)(Int)
-let result: int_result = \`Ok 41
+const int_result = result_type(Text)(Int);
+let result: int_result = \`Ok 41;
 
 if let \`Ok value = result {
   value + @size_of(int_result)
@@ -1160,15 +1166,15 @@ if let \`Ok value = result {
   assert_equals(Ic.reduce(union_ic), { tag: "num", type: "i32", value: 53 });
 
   const struct_ic = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = a => b => struct {
   .first= a,
   .second= b
-}
+};
 
-const user_pair_type = pair_type(Text)(Int)
+const user_pair_type = pair_type(Text)(Int);
 
-let pair: user_pair_type = ["Ada", 30]
+let pair: user_pair_type = ["Ada", 30];
 
 pair.second + @size_of(user_pair_type)
 `);
@@ -1177,15 +1183,15 @@ pair.second + @size_of(user_pair_type)
 
   const const_block_struct_type = compile(`
 const user_type = {
-  const { struct } = import "duck:prelude" ()
+  const { .struct } = import "duck:prelude" ();
   const value = struct {
     .age= Int
-  }
+  };
 
   value
-}
+};
 
-let user: user_type = [41]
+let user: user_type = [41];
 
 user.age + 1
 `);
@@ -1199,12 +1205,12 @@ user.age + 1
   const const_block_union_type = compile(`
 type BlockResult = | \`Ok Int | \`Err Int
 const result_type = {
-  const value = BlockResult
+  const value = BlockResult;
 
   value
-}
+};
 
-let result = \`Ok (41)
+let result = \`Ok (41);
 
 if let \`Ok value = result {
   value + 1
@@ -1220,17 +1226,17 @@ if let \`Ok value = result {
   });
 
   const captured_type_alias = compile(`
-const my_int = Int
-const alias = my_int
-const my_int = I64
+const my_int = Int;
+const alias = my_int;
+const my_int = I64;
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= alias
-}
+};
 
 type OptionType = | \`Some alias | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 @size_of(user_type) + @size_of(option_type)
 `);
@@ -1245,10 +1251,10 @@ const option_type = OptionType
     () =>
       compile(`
 type ResultType e t = | \`Ok t | \`Err e
-const result_type = ResultType
+const result_type = ResultType;
 
-const int_result = result_type(Text)(Int)
-let result: int_result = \`Ok "bad"
+const int_result = result_type(Text)(Int);
+let result: int_result = \`Ok "bad";
 result
 `),
     "Union case Ok expects Int, got Text",
@@ -1257,15 +1263,15 @@ result
   assert_throws(
     () =>
       compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = a => b => struct {
   .first= a,
   .second= b
-}
+};
 
-const user_pair_type = pair_type(Text)(Int)
+const user_pair_type = pair_type(Text)(Int);
 
-let pair: user_pair_type = [1, 2]
+let pair: user_pair_type = [1, 2];
 
 pair.second
 `),
@@ -1275,7 +1281,7 @@ pair.second
 
 Deno.test("Source lowers non-matching union if let expressions", () => {
   const ic = compile(`
-let result = \`Err (5)
+let result = \`Err (5);
 
 if let \`Ok value = result {
   value
@@ -1289,14 +1295,14 @@ if let \`Ok value = result {
 
 Deno.test("Source lowers no-else if let statements with fallthrough", () => {
   const ic = compile(`
-let result = \`Err (42)
+let result = \`Err (42);
 
 if let \`Ok value = result {
-  return value
+  return value;
 }
 
 if let \`Err error = result {
-  return error
+  return error;
 }
 
 0
@@ -1305,8 +1311,8 @@ if let \`Err error = result {
   assert_equals(Ic.reduce(ic), { tag: "num", type: "i32", value: 42 });
 
   const fallthrough = compile(`
-let result = \`Ok (41)
-let output = 0
+let result = \`Ok (41);
+let output = 0;
 
 if let \`Ok value = result {
   output = value + 1
@@ -1325,17 +1331,17 @@ output
 Deno.test("Source lowers typed dynamic if let statements with fallthrough", () => {
   const some = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let value_or_zero = (option: option_type) => {
-  let output = 0
+  let output = 0;
 
   if let \`Some value = option {
     output = value + 1
   }
 
   output
-}
+};
 
 value_or_zero(\`Some (41))
 `);
@@ -1344,17 +1350,17 @@ value_or_zero(\`Some (41))
 
   const none = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let value_or_zero = (option: option_type) => {
-  let output = 0
+  let output = 0;
 
   if let \`Some value = option {
     output = value + 1
   }
 
   output
-}
+};
 
 value_or_zero(\`None ())
 `);
@@ -1366,7 +1372,7 @@ Deno.test("Source lowers no-else if and if let expressions with implicit fallbac
   const scalar_if = compile(`
 let x = if input {
   42
-}
+};
 
 x
 `);
@@ -1377,7 +1383,7 @@ x
   const text_if = compile(`
 let x = if input {
   "Ada"
-}
+};
 
 x
 `);
@@ -1390,7 +1396,7 @@ let x = {
   if input {
     42
   }
-}
+};
 
 x
 `);
@@ -1399,10 +1405,10 @@ x
   assert_includes(block_final_if_text, "if input then 42:i32 else 0:i32");
 
   const known_some = compile(`
-let result = \`Ok (41)
+let result = \`Ok (41);
 let value = if let \`Ok found = result {
   found + 1
-}
+};
 
 value
 `);
@@ -1414,10 +1420,10 @@ value
   });
 
   const known_miss = compile(`
-let result = \`Err (41)
+let result = \`Err (41);
 let value = if let \`Ok found = result {
   found + 1
-}
+};
 
 value
 `);
@@ -1430,12 +1436,12 @@ value
 
   const known_text_miss = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
-let result: option_type = \`None ()
+let result: option_type = \`None ();
 let value = if let \`Some found = result {
   found
-}
+};
 
 value
 `);
@@ -1447,17 +1453,17 @@ value
 
   const nested_text_if_let = compile(`
 type InnerType = | \`Some Text | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 
 type OuterType = | \`Ok inner_type | \`Err Unit
-const outer_type = OuterType
+const outer_type = OuterType;
 
-let outer: outer_type = source
+let outer: outer_type = source;
 let text = if let \`Ok inner = outer {
   if let \`Some value = inner {
     value
   }
-}
+};
 
 @len(text)
 `);
@@ -1471,23 +1477,23 @@ let text = if let \`Ok inner = outer {
   assert_includes(nested_text_if_let_text, 'λpayload_Err#0. ""');
 
   const nested_struct_if_let = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 type InnerType = | \`Some user_type | \`None Unit
-const inner_type = InnerType
+const inner_type = InnerType;
 
 type OuterType = | \`Ok inner_type | \`Err Unit
-const outer_type = OuterType
+const outer_type = OuterType;
 
-let outer: outer_type = source
+let outer: outer_type = source;
 let user = if let \`Ok inner = outer {
   if let \`Some value = inner {
     value
   }
-}
+};
 
 user.age
 `);
@@ -1502,12 +1508,12 @@ user.age
 
   const known_wide_miss = compile(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
-let result: result_type = \`Err (1i64)
+let result: result_type = \`Err (1i64);
 let value = if let \`Ok found = result {
   found + 1i64
-}
+};
 
 value
 `);
@@ -1520,13 +1526,13 @@ value
 
   const dynamic = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let value_or_zero = (result: result_type) => if let \`Ok found = result {
   found + 1
-}
+};
 
-let result = \`Ok (41)
+let result = \`Ok (41);
 value_or_zero(result)
 `);
 
@@ -1538,11 +1544,11 @@ value_or_zero(result)
 
   const dynamic_miss = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let value_or_zero = (result: result_type) => if let \`Ok found = result {
   found + 1
-}
+};
 
 value_or_zero(\`Err (99))
 `);
@@ -1555,17 +1561,17 @@ value_or_zero(\`Err (99))
 
   const dynamic_wide = compile(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (41i64)
 } else {
   \`Err (7i64)
-}
+};
 
 let value = if let \`Ok found = result {
   found + 1i64
-}
+};
 
 value
 `);
@@ -1577,17 +1583,17 @@ value
 
   const dynamic_text = compile(`
 type OptionType = | \`Some Text | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let result = if input {
   \`Some ("Ada")
 } else {
   \`None ()
-}
+};
 
 let value = if let \`Some found = result {
   found
-}
+};
 
 value
 `);
@@ -1600,7 +1606,7 @@ value
   const dynamic_struct = compile(`
 let value = if input {
   [.age = 1]
-}
+};
 
 value.age
 `);
@@ -1612,17 +1618,17 @@ value.age
 
   const dynamic_if_let_struct = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (41)
 } else {
   \`Err (0)
-}
+};
 
 let value = if let \`Ok found = result {
   [.age = found]
-}
+};
 
 value.age
 `);
@@ -1634,11 +1640,11 @@ value.age
 
   const dynamic_union = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let value = if input {
   \`Some (7)
-}
+};
 
 if let \`Some found = value {
   found
@@ -1656,7 +1662,7 @@ if let \`Some found = value {
 Deno.test("Source lowers typed union if let through Ic handlers", () => {
   const ok = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let unwrap = (result: result_type) => {
   if let \`Ok value = result {
@@ -1664,10 +1670,10 @@ let unwrap = (result: result_type) => {
   } else {
     0
   }
-}
+};
 
-let input = 41
-let result = \`Ok (input)
+let input = 41;
+let result = \`Ok (input);
 input = 0
 
 unwrap(result)
@@ -1677,7 +1683,7 @@ unwrap(result)
 
   const err = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let unwrap = (result: result_type) => {
   if let \`Ok value = result {
@@ -1685,7 +1691,7 @@ let unwrap = (result: result_type) => {
   } else {
     0
   }
-}
+};
 
 unwrap(\`Err (99))
 `);
@@ -1694,15 +1700,15 @@ unwrap(\`Err (99))
 
   const call_only_union_helper = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let choose = flag => if flag {
   input
 } else {
   other
-}
+};
 
-let option: option_type = choose(flag)
+let option: option_type = choose(flag);
 
 if let \`Some value = option {
   value
@@ -1729,17 +1735,17 @@ if let \`Some value = option {
 
   const typed_object_field = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let input = 41
-let result = \`Ok (input)
+let input = 41;
+let result = \`Ok (input);
 input = 0
 
 let user = if let \`Ok value = result {
   [.age = value]
 } else {
   [.age = 0]
-}
+};
 
 user.age
 `);
@@ -1752,13 +1758,13 @@ user.age
 
   const dynamic_union = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40)
 } else {
   \`Ok (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -1773,13 +1779,13 @@ if let \`Ok value = result {
 
   const dynamic_cases = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -1793,7 +1799,7 @@ if let \`Ok value = result {
 
   const direct_dynamic_cases = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 if let \`Ok value = if input {
   \`Ok (40)
@@ -1814,14 +1820,14 @@ if let \`Ok value = if input {
 
   const block_dynamic_cases = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 if let \`Ok value = {
   let result = if input {
     \`Ok (40)
   } else {
     \`Err (1)
-  }
+  };
 
   result
 } {
@@ -1839,16 +1845,16 @@ if let \`Ok value = {
 
   const block_local_union_call = compile(`
 type ResultType = | \`Ok Int | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 const make = x => {
   \`Ok (x + 1)
-}
+};
 
 let result = {
-  let made = make(input)
+  let made = make(input);
   made
-}
+};
 
 if let \`Ok value = result {
   value
@@ -1866,16 +1872,16 @@ if let \`Ok value = result {
     () =>
       compile(`
 type ResultType = \`Ok Int
-const result_type = ResultType
+const result_type = ResultType;
 
 const make = x => {
   \`Ok (x + 1)
-}
+};
 
 let result = {
-  const made = make(input)
+  const made = make(input);
   made
-}
+};
 
 if let \`Ok value = result {
   value
@@ -1895,7 +1901,7 @@ let user = if let \`Ok value = if input {
   [.age = value]
 } else {
   [.age = 0]
-}
+};
 
 user.age
 `);
@@ -1932,13 +1938,13 @@ if let \`Ok value = if input {
   );
 
   const direct_dynamic_struct_value = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 if let \`Ok value = if input {
   \`Ok (41)
@@ -1962,20 +1968,20 @@ if let \`Ok value = if input {
   );
 
   const dynamic_struct_payload = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if input {
   \`Ok ([.age = 40, .score = 2] as user_type)
 } else {
   \`Err ([.age = 5, .score = 1] as user_type)
-}
+};
 
 if let \`Ok user = result {
   user.age + user.score
@@ -1994,20 +2000,20 @@ if let \`Ok user = result {
   );
 
   const dynamic_shorthand_struct_payload = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
 let result: result_type = if input {
   \`Ok ([.age = 40, .score = 2])
 } else {
   \`Err ([.age = 5, .score = 1])
-}
+};
 
 if let \`Ok user = result {
   user.age + user.score
@@ -2026,14 +2032,14 @@ if let \`Ok user = result {
   );
 
   const parameter_shorthand_struct_payload = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int,
   .score= Int
-}
+};
 
 type ResultType = | \`Ok user_type | \`Err user_type
-const result_type = ResultType
+const result_type = ResultType;
 
 let unwrap = (result: result_type) => {
   if let \`Ok user = result {
@@ -2041,7 +2047,7 @@ let unwrap = (result: result_type) => {
   } else {
     0
   }
-}
+};
 
 unwrap(\`Ok ([.age = 40, .score = 2]))
 `);
@@ -2054,13 +2060,13 @@ unwrap(\`Ok ([.age = 40, .score = 2]))
 
   const dynamic_wide = compile(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40i64)
 } else {
   \`Err (1i64)
-}
+};
 
 if let \`Ok value = result {
   value + 2i64
@@ -2074,13 +2080,13 @@ if let \`Ok value = result {
 
   const dynamic_text_payload_len = compile(`
 type ResultType = | \`Ok Text | \`Err Text
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok ("Ada")
 } else {
   \`Err ("Grace")
-}
+};
 
 if let \`Ok value = result {
   @len(value)
@@ -2100,13 +2106,13 @@ if let \`Ok value = result {
 
   const direct_wide_payload = compile(`
 type ResultType = | \`Ok I64 | \`Err I64
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40i64)
 } else {
   \`Err (1i64)
-}
+};
 
 if let \`Ok value = result {
   value
@@ -2123,13 +2129,13 @@ if let \`Ok value = result {
 
   const dynamic_text_result = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 if let \`Ok value = result {
   "found"
@@ -2153,7 +2159,7 @@ if let \`Ok value = {
     \`Ok (40)
   } else {
     \`Err (1)
-  }
+  };
 
   result
 } {
@@ -2198,7 +2204,7 @@ let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -2218,7 +2224,7 @@ if let \`Ok value = result {
 
   const const_call_dynamic_cases = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 const make_result = flag => {
   if flag {
@@ -2226,9 +2232,9 @@ const make_result = flag => {
   } else {
     \`Err (1)
   }
-}
+};
 
-let result = make_result(input)
+let result = make_result(input);
 
 if let \`Ok value = result {
   value + 2
@@ -2248,7 +2254,7 @@ if let \`Ok value = result {
 
   const direct_const_call_dynamic_cases = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 const make_result = flag => {
   if flag {
@@ -2256,7 +2262,7 @@ const make_result = flag => {
   } else {
     \`Err (1)
   }
-}
+};
 
 if let \`Ok value = make_result(input) {
   value + 2
@@ -2281,9 +2287,9 @@ let choose = flag => {
   } else {
     \`Err (1)
   }
-}
+};
 
-let result = choose(input)
+let result = choose(input);
 
 if let \`Ok value = result {
   value + 2
@@ -2307,7 +2313,7 @@ let choose = flag => {
   } else {
     \`Err (1)
   }
-}
+};
 
 if let \`Ok value = choose(input) {
   value + 2
@@ -2348,10 +2354,10 @@ if let \`Ok value = if input {
 
   const dynamic_if_let_union_result = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 if let \`Ok value = if input {
   \`Ok (40)
@@ -2385,7 +2391,7 @@ let option = if let \`Ok value = if input {
   \`Some (value)
 } else {
   \`None ()
-}
+};
 
 option(value => value + 1, none_value => 0)
 `);
@@ -2402,13 +2408,13 @@ const make_result = (flag, ok_payload, err_payload) => {
   } else {
     \`Err (err_payload)
   }
-}
+};
 
 let option = if let \`Ok value = make_result(input, payload, other) {
   \`Some (value)
 } else {
   \`None ()
-}
+};
 
 option(value => value + 1, none_value => 0)
 `);
@@ -2425,13 +2431,13 @@ let make_result = flag => {
   } else {
     \`Err (other)
   }
-}
+};
 
 let option = if let \`Ok value = make_result(input) {
   \`Some (value)
 } else {
   \`None ()
-}
+};
 
 option(value => value + 1, none_value => 0)
 `);
@@ -2442,7 +2448,7 @@ option(value => value + 1, none_value => 0)
   );
 
   const dynamic_if_let_union_result_identity_branch_calls = compile(`
-let id = value => value
+let id = value => value;
 
 let option = if let \`Ok found = if flag {
   id(\`Ok (input))
@@ -2452,7 +2458,7 @@ let option = if let \`Ok found = if flag {
   \`Some (found)
 } else {
   \`None ()
-}
+};
 
 option(value => value + 1, none_value => 0)
 `);
@@ -2466,8 +2472,8 @@ option(value => value + 1, none_value => 0)
   );
 
   const dynamic_if_let_union_result_constructor_branch_calls = compile(`
-let ok = value => \`Ok (value)
-let err = value => \`Err (value)
+let ok = value => \`Ok (value);
+let err = value => \`Err (value);
 
 let option = if let \`Ok found = if flag {
   ok(input)
@@ -2477,7 +2483,7 @@ let option = if let \`Ok found = if flag {
   \`Some (found)
 } else {
   \`None ()
-}
+};
 
 option(value => value + 1, none_value => 0)
 `);
@@ -2495,7 +2501,7 @@ let result = if input {
   \`Ok (40)
 } else {
   \`Ok (1)
-}
+};
 
 result
 `);
@@ -2515,7 +2521,7 @@ let result = if input {
   \`Ok (40)
 } else {
   \`Ok (1)
-}
+};
 
 if let \`Ok value = result {
   value + 2
@@ -2560,7 +2566,7 @@ let result = if input {
   \`Ok (40i64)
 } else {
   \`Ok (1i64)
-}
+};
 
 if let \`Ok value = result {
   value + 2i64
@@ -2584,7 +2590,7 @@ let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 result
 `);
@@ -2626,7 +2632,7 @@ let result = if input {
   \`Ok (40i64)
 } else {
   \`Err (1i64)
-}
+};
 
 result(value => value, error_value => 7i64)
 `);
@@ -2662,9 +2668,9 @@ if let \`Ok value = if input {
     () =>
       compile(`
 type ResultType = | \`Ok Text | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
-let result = \`Ok ("bad")
+let result = \`Ok ("bad");
 
 if let \`Ok value = result {
   value + 1
@@ -2677,13 +2683,13 @@ if let \`Ok value = result {
 
   const typed_dynamic_case_value = compile(`
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
+const result_type = ResultType;
 
 let result = if input {
   \`Ok (40)
 } else {
   \`Err (1)
-}
+};
 
 result
 `);
@@ -2703,7 +2709,7 @@ result
 
   const unit = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let is_none = (option: option_type) => {
   if let \`None () = option {
@@ -2711,7 +2717,7 @@ let is_none = (option: option_type) => {
   } else {
     0
   }
-}
+};
 
 is_none(\`None ())
 `);
@@ -2720,7 +2726,7 @@ is_none(\`None ())
 
   const bound_unit = compile(`
 type OptionType = | \`Some Int | \`None Unit
-const option_type = OptionType
+const option_type = OptionType;
 
 let bad = (option: option_type) => {
   if let \`None value = option {
@@ -2728,7 +2734,7 @@ let bad = (option: option_type) => {
   } else {
     0
   }
-}
+};
 
 bad(\`None ())
 `);
@@ -2738,7 +2744,7 @@ bad(\`None ())
 
 Deno.test("Source rejects untyped dynamic if let expressions", () => {
   const source = `
-let result = 1
+let result = 1;
 if let \`Ok value = result {
   value
 } else {
@@ -2767,13 +2773,13 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let value: Text = if let \`Ok found = result {
   message
 } else {
   other_text
-}
+};
 
 @len(value)
 `);
@@ -2788,7 +2794,7 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 @len(if let \`Ok found = result {
   message
@@ -2807,7 +2813,7 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 @len(if let \`Ok found = result {
   message
@@ -2824,7 +2830,7 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 @get(if let \`Ok found = result {
   message
@@ -2841,7 +2847,7 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 (if let \`Ok found = result {
   message
@@ -2858,7 +2864,7 @@ let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 @get(if let \`Ok found = result {
   message
@@ -2869,22 +2875,22 @@ let result = if flag {
   assert_includes(no_else_get_text, 'else ""');
 
   const struct_field_result = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let user: user_type = if let \`Ok found = result {
   [.age = found] as user_type
 } else {
   [.age = 0] as user_type
-}
+};
 
 user.age + 1
 `);
@@ -2894,22 +2900,22 @@ user.age + 1
   assert_includes(struct_field_text, "+ 1:i32");
 
   const consumed_struct_field_result = compile(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const user_type = struct {
   .age= Int
-}
+};
 
 let result = if flag {
   \`Ok (input)
 } else {
   \`Err (other)
-}
+};
 
 let user = if let \`Ok found = result {
   [.age = found] as user_type
 } else {
   [.age = 0] as user_type
-}
+};
 
 user.age + 1
 `);

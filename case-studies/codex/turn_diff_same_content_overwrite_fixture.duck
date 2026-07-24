@@ -1,0 +1,39 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+const { .turn_diff_net_changes } = import "./turn_diff_projection.duck" ();
+const { .turn_diff_fixture_exact_delta } = import "./turn_diff_fixture_common.duck" ();
+
+type FixtureMutation = TurnDiffMutation
+type FixtureFileMutation = TurnDiffFileMutation
+type FixtureTextOption = TurnDiffTextOption
+type FixtureUpdate = TurnDiffUpdate
+
+const verify_turn_diff_same_content_overwrite_fixture: () -> I32 = () => {
+  let destination: FixtureTextOption = `Some "b.txt";
+  let overwritten: FixtureTextOption = `Some "same\n";
+  let update: FixtureUpdate = [
+    .move_path = destination,
+    .old_content = "same\n",
+    .overwritten_move_content = overwritten,
+    .new_content = "same\n",
+  ];
+  let file_mutation: FixtureFileMutation = `TurnDiffUpdate update;
+  let mutation: FixtureMutation = [.path = "a.txt", .mutation = file_mutation];
+  let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
+
+  let score = 0;
+  let changes = turn_diff_net_changes state;
+  if let `Cons node = changes {
+    let [change, tail] = node;
+    if let `TurnDiffDeleted deleted = change {
+      if deleted.path.path == "a.txt" && deleted.content == "same\n" {
+        if let `Nil () = tail { score = score + 1 }
+      }
+    }
+  }
+  score
+};
+
+return { .verify_turn_diff_same_content_overwrite_fixture };

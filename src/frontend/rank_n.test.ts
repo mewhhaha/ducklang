@@ -8,9 +8,9 @@ const apply_identity: (forall value. value -> value) -> I32 =
     identity(41) + 1
   } else {
     0
-  }
+  };
 
-const identity = value => value
+const identity = value => value;
 comptime apply_identity(identity)
 `;
 
@@ -42,9 +42,9 @@ Deno.test("Rank-N callback instantiates independently at each call", async () =>
 Deno.test("explicit forall annotations are alpha-equivalent", () => {
   const source = `
 const apply_identity: (forall value. value -> value) -> I32 =
-  identity => identity(42)
+  identity => identity(42);
 
-const identity: forall element. element -> element = value => value
+const identity: forall element. element -> element = value => value;
 comptime apply_identity(identity)
 `;
 
@@ -55,11 +55,11 @@ comptime apply_identity(identity)
 Deno.test("functions can return polymorphic functions", async () => {
   const source = `
 const make_identity: Bool -> (forall value. value -> value) =
-  flag => value => value
+  flag => value => value;
 
-const identity = comptime make_identity(true)
-const number = identity(41)
-const truth = identity(true)
+const identity = comptime make_identity(true);
+const number = identity(41);
+const truth = identity(true);
 
 if truth {
   number + 1
@@ -85,14 +85,14 @@ if truth {
 
 Deno.test("Rank-N annotations reject monomorphic implementations", () => {
   const constant = `
-const identity: forall value. value -> value = value => 0
+const identity: forall value. value -> value = value => 0;
 identity
 `;
   const specialized = `
 const apply_identity: (forall value. value -> value) -> I32 =
-  identity => identity(42)
+  identity => identity(42);
 
-const identity = (value: I32) => value
+const identity = (value: I32) => value;
 comptime apply_identity(identity)
 `;
   const constant_diagnostics = Source.analyze(constant).diagnostics;

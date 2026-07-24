@@ -1,13 +1,13 @@
 module () where
 
-const {} = import "./agent_job_common_types.duck" ()
-const {} = import "./agent_job_report_types.duck" ()
-const {} = import "./agent_job_spawn_types.duck" ()
-const {} = import "./agent_job_csv_types.duck" ()
-const {} = import "./agent_job_item_types.duck" ()
-const {} = import "./agent_job_prepare_types.duck" ()
-const {} = import "./agent_job_runner_types.duck" ()
-const {} = import "./agent_job_export_types.duck" ()
-const {} = import "./agent_job_execution_types.duck" ()
+const {} = import "./agent_job_common_types.duck" ();
+const {} = import "./agent_job_report_types.duck" ();
+const {} = import "./agent_job_spawn_types.duck" ();
+const {} = import "./agent_job_csv_types.duck" ();
+const {} = import "./agent_job_item_types.duck" ();
+const {} = import "./agent_job_prepare_types.duck" ();
+const {} = import "./agent_job_runner_types.duck" ();
+const {} = import "./agent_job_export_types.duck" ();
+const {} = import "./agent_job_execution_types.duck" ();
 
-return {}
+return {};

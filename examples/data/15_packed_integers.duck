@@ -1,4 +1,4 @@
-const { packed } = import "duck:prelude" ()
+const { .packed } = import "duck:prelude" ();
 
 type Header = packed struct {
   .kind = U3,
@@ -6,7 +6,7 @@ type Header = packed struct {
   .length = U12,
 }
 
-let header: Header = Header.pack [5u3, 1u1, 120u12]
-let changed: Header = Header.with_kind [header, 2u3]
+let header: Header = Header.pack [5u3, 1u1, 120u12];
+let changed: Header = Header.with_kind [header, 2u3];
 
 Header.kind changed

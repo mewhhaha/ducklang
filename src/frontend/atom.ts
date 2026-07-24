@@ -138,6 +138,11 @@ export function validate_atom_identities(source: Source): void {
       return;
     }
 
+    if (pattern.tag === "const_value") {
+      visit_expr(pattern.value);
+      return;
+    }
+
     if (pattern.tag === "text_capture") {
       return;
     }

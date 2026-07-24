@@ -1,11 +1,24 @@
 module () where
 
-const { list, text_less_than } = import "duck:prelude/functional" ()
-const { format_i64 } = import "duck:prelude/numeric" ()
-const { encode_json_ascii } = import "duck:prelude/json/encode" ()
-const { json_bool, json_number, json_object, json_object_empty, json_object_prepend, json_object_reverse, json_string } = import "duck:prelude/json/values" ()
-const {} = import "./responses_metadata_types.duck" ()
-const { compaction_implementation_tag, compaction_phase_tag, compaction_reason_tag, compaction_trigger_tag } = import "./compaction_tags.duck" ()
+const { .list, .text_less_than } = import "duck:prelude/functional" ();
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const { .encode_json_ascii } = import "duck:prelude/json/encode" ();
+const {
+  .json_bool,
+  .json_number,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_object_reverse,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const {} = import "./responses_metadata_types.duck" ();
+const {
+  .compaction_implementation_tag,
+  .compaction_phase_tag,
+  .compaction_reason_tag,
+  .compaction_trigger_tag,
+} = import "./compaction_tags.duck" ();
 
 type MetadataTextOption = ResponsesMetadataTextOption
 type MetadataPair = ResponsesMetadataPair
@@ -18,12 +31,33 @@ type MetadataWorkspace = ResponsesWorkspace
 type MetadataWorkspaces = ResponsesWorkspaces
 type Metadata = ResponsesMetadata
 
-const metadata_pairs = comptime list(MetadataPair)
-const metadata_workspaces = comptime list(MetadataWorkspace)
+const metadata_pairs = comptime list MetadataPair;
+const metadata_workspaces = comptime list MetadataWorkspace;
 
-const new_responses_metadata: [Text, Text, Text, Text] -> Metadata = (installation_id, session_id, thread_id, window_id) => {
-  [.installation_id = installation_id, .session_id = session_id, .thread_id = thread_id, .turn_id = `None (), .window_id = window_id, .request_kind = `None (), .forked_from_thread_id = `None (), .parent_thread_id = `None (), .subagent_header = `None (), .subagent_kind = `None (), .thread_source = `None (), .sandbox = `None (), .workspaces = `Nil (), .turn_started_at_unix_ms = `None (), .extra = `Nil ()]
-}
+const new_responses_metadata: [Text, Text, Text, Text] -> Metadata = (
+  installation_id,
+  session_id,
+  thread_id,
+  window_id,
+) => {
+  [
+    .installation_id = installation_id,
+    .session_id = session_id,
+    .thread_id = thread_id,
+    .turn_id = `None (),
+    .window_id = window_id,
+    .request_kind = `None (),
+    .forked_from_thread_id = `None (),
+    .parent_thread_id = `None (),
+    .subagent_header = `None (),
+    .subagent_kind = `None (),
+    .thread_source = `None (),
+    .sandbox = `None (),
+    .workspaces = `Nil (),
+    .turn_started_at_unix_ms = `None (),
+    .extra = `Nil (),
+  ]
+};
 
 const metadata_key_is_reserved: Text -> Bool = key => {
   if key == "installation_id" {
@@ -65,46 +99,54 @@ const metadata_key_is_reserved: Text -> Bool = key => {
   } else {
     key == "workspaces"
   }
-}
+};
 
 const sort_metadata_pairs: MetadataPairs -> MetadataPairs = values => {
   metadata_pairs.sort_by(values, (left: MetadataPair, right: MetadataPair) => {
-    let [left_key, _] = left
-    let [right_key, _] = right
-    text_less_than([left_key, right_key])
+    let [left_key, _] = left;
+    let [right_key, _] = right;
+    text_less_than [left_key, right_key]
   })
-}
+};
 
 const filter_extra_metadata: MetadataPairs -> MetadataPairs = values => {
-  let current = values
-  let filtered = metadata_pairs.empty()
+  let current = values;
+  let filtered = metadata_pairs.empty();
 
   loop {
     if let `Cons node = current {
-      let typed_node: ListNode MetadataPair = node
-      let [pair, tail] = typed_node
-      let [key, _] = pair
-      if !(metadata_key_is_reserved(key)) {
+      let typed_node: ListNode MetadataPair = node;
+      let [pair, tail] = typed_node;
+      let [key, _] = pair;
+      if !(metadata_key_is_reserved key) {
         filtered = metadata_pairs.prepend(pair, filtered)
       }
       current = tail
     } else {
-      break
+      break;
     }
   }
 
-  sort_metadata_pairs(filtered)
-}
+  sort_metadata_pairs filtered
+};
 
 const compaction_metadata_json: MetadataCompaction -> Json = metadata => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("strategy", json_string("memento"), fields)
-  fields = json_object_prepend("phase", json_string(compaction_phase_tag(metadata.phase)), fields)
-  fields = json_object_prepend("implementation", json_string(compaction_implementation_tag(metadata.implementation)), fields)
-  fields = json_object_prepend("reason", json_string(compaction_reason_tag(metadata.reason)), fields)
-  fields = json_object_prepend("trigger", json_string(compaction_trigger_tag(metadata.trigger)), fields)
-  json_object(fields)
-}
+  let fields = json_object_empty();
+  fields = json_object_prepend("strategy", json_string "memento", fields)
+  fields = json_object_prepend("phase", json_string(compaction_phase_tag metadata.phase), fields)
+  fields = json_object_prepend(
+    "implementation",
+    json_string(compaction_implementation_tag metadata.implementation),
+    fields,
+  )
+  fields = json_object_prepend("reason", json_string(compaction_reason_tag metadata.reason), fields)
+  fields = json_object_prepend(
+    "trigger",
+    json_string(compaction_trigger_tag metadata.trigger),
+    fields,
+  )
+  json_object fields
+};
 
 const request_kind_text: MetadataRequestKind -> Text = request_kind => {
   if let `Turn () = request_kind {
@@ -116,11 +158,11 @@ const request_kind_text: MetadataRequestKind -> Text = request_kind => {
   } else {
     "memory"
   }
-}
+};
 
 const request_kind_has_turn_identity: MetadataRequestKind -> Bool = request_kind => {
   if let `Memory () = request_kind { false } else { true }
-}
+};
 
 const thread_source_text: MetadataThreadSource -> Text = source => {
   if let `User () = source {
@@ -132,10 +174,10 @@ const thread_source_text: MetadataThreadSource -> Text = source => {
   } else {
     "memory_consolidation"
   }
-}
+};
 
 const subagent_header_value: MetadataSessionSource -> MetadataTextOption = source => {
-  let result: MetadataTextOption = `None ()
+  let result: MetadataTextOption = `None ();
 
   if let `SubAgent subagent = source {
     if let `Review () = subagent {
@@ -154,10 +196,10 @@ const subagent_header_value: MetadataSessionSource -> MetadataTextOption = sourc
   }
 
   result
-}
+};
 
 const subagent_metadata_kind: MetadataSessionSource -> MetadataTextOption = source => {
-  let result: MetadataTextOption = `None ()
+  let result: MetadataTextOption = `None ();
 
   if let `SubAgent subagent = source {
     if let `Review () = subagent {
@@ -174,126 +216,153 @@ const subagent_metadata_kind: MetadataSessionSource -> MetadataTextOption = sour
   }
 
   result
-}
+};
 
 const metadata_pairs_json_object: MetadataPairs -> JsonObject = values => {
-  let current = sort_metadata_pairs(values)
-  let reversed = json_object_empty()
+  let current = sort_metadata_pairs values;
+  let reversed = json_object_empty();
 
   loop {
     if let `Cons node = current {
-      let typed_node: ListNode MetadataPair = node
-      let [pair, tail] = typed_node
-      let [key, value] = pair
-      reversed = json_object_prepend(key, json_string(value), reversed)
+      let typed_node: ListNode MetadataPair = node;
+      let [pair, tail] = typed_node;
+      let [key, value] = pair;
+      reversed = json_object_prepend(key, json_string value, reversed)
       current = tail
     } else {
-      break
+      break;
     }
   }
 
-  json_object_reverse(reversed)
-}
+  json_object_reverse reversed
+};
 
 const workspace_json: MetadataWorkspace -> Json = workspace => {
-  let fields = json_object_empty()
+  let fields = json_object_empty();
 
   if let `Some has_changes = workspace.has_changes {
-    fields = json_object_prepend("has_changes", json_bool(has_changes), fields)
+    fields = json_object_prepend("has_changes", json_bool has_changes, fields)
   }
   if let `Some latest_git_commit_hash = workspace.latest_git_commit_hash {
-    fields = json_object_prepend("latest_git_commit_hash", json_string(latest_git_commit_hash), fields)
+    fields = json_object_prepend(
+      "latest_git_commit_hash",
+      json_string latest_git_commit_hash,
+      fields,
+    )
   }
   if let `Some associated_remote_urls = workspace.associated_remote_urls {
-    fields = json_object_prepend("associated_remote_urls", json_object(metadata_pairs_json_object(associated_remote_urls)), fields)
+    fields = json_object_prepend(
+      "associated_remote_urls",
+      json_object(metadata_pairs_json_object associated_remote_urls),
+      fields,
+    )
   }
 
-  json_object(fields)
-}
+  json_object fields
+};
 
 const workspaces_json_object: MetadataWorkspaces -> JsonObject = values => {
-  let current = metadata_workspaces.sort_by(values, (left: MetadataWorkspace, right: MetadataWorkspace) => text_less_than([left.path, right.path]))
-  let reversed = json_object_empty()
+  let current = metadata_workspaces.sort_by(
+    values,
+    (left: MetadataWorkspace, right: MetadataWorkspace) => text_less_than [left.path, right.path],
+  );
+  let reversed = json_object_empty();
 
   loop {
     if let `Cons node = current {
-      let typed_node: ListNode MetadataWorkspace = node
-      let [workspace, tail] = typed_node
-      reversed = json_object_prepend(workspace.path, workspace_json(workspace), reversed)
+      let typed_node: ListNode MetadataWorkspace = node;
+      let [workspace, tail] = typed_node;
+      reversed = json_object_prepend(workspace.path, workspace_json workspace, reversed)
       current = tail
     } else {
-      break
+      break;
     }
   }
 
-  json_object_reverse(reversed)
-}
+  json_object_reverse reversed
+};
 
 const responses_metadata_payload: Metadata -> Json = metadata => {
-  let fields = metadata_pairs_json_object(filter_extra_metadata(metadata.extra))
-  let has_turn_identity = true
-  let has_request_identity = false
+  let fields = metadata_pairs_json_object(filter_extra_metadata metadata.extra);
+  let has_turn_identity = true;
+  let has_request_identity = false;
 
   if let `Some request_kind = metadata.request_kind {
-    has_turn_identity = request_kind_has_turn_identity(request_kind)
+    has_turn_identity = request_kind_has_turn_identity request_kind
     has_request_identity = has_turn_identity
 
     if let `Compaction compaction = request_kind {
-      fields = json_object_prepend("compaction", compaction_metadata_json(compaction), fields)
+      fields = json_object_prepend("compaction", compaction_metadata_json compaction, fields)
     }
   }
 
   if let `Some started_at = metadata.turn_started_at_unix_ms {
-    fields = json_object_prepend("turn_started_at_unix_ms", json_number(format_i64(started_at)), fields)
+    fields = json_object_prepend(
+      "turn_started_at_unix_ms",
+      json_number(format_i64 started_at),
+      fields,
+    )
   }
   if let `Cons _ = metadata.workspaces {
-    fields = json_object_prepend("workspaces", json_object(workspaces_json_object(metadata.workspaces)), fields)
+    fields = json_object_prepend(
+      "workspaces",
+      json_object(workspaces_json_object metadata.workspaces),
+      fields,
+    )
   }
   if let `Some sandbox = metadata.sandbox {
-    fields = json_object_prepend("sandbox", json_string(sandbox), fields)
+    fields = json_object_prepend("sandbox", json_string sandbox, fields)
   }
   if let `Some thread_source = metadata.thread_source {
-    fields = json_object_prepend("thread_source", json_string(thread_source_text(thread_source)), fields)
+    fields = json_object_prepend(
+      "thread_source",
+      json_string(thread_source_text thread_source),
+      fields,
+    )
   }
   if let `Some subagent_kind = metadata.subagent_kind {
-    fields = json_object_prepend("subagent_kind", json_string(subagent_kind), fields)
+    fields = json_object_prepend("subagent_kind", json_string subagent_kind, fields)
   }
   if let `Some parent_thread_id = metadata.parent_thread_id {
-    fields = json_object_prepend("parent_thread_id", json_string(parent_thread_id), fields)
+    fields = json_object_prepend("parent_thread_id", json_string parent_thread_id, fields)
   }
   if let `Some forked_from_thread_id = metadata.forked_from_thread_id {
-    fields = json_object_prepend("forked_from_thread_id", json_string(forked_from_thread_id), fields)
+    fields = json_object_prepend("forked_from_thread_id", json_string forked_from_thread_id, fields)
   }
   if let `Some request_kind = metadata.request_kind {
-    fields = json_object_prepend("request_kind", json_string(request_kind_text(request_kind)), fields)
+    fields = json_object_prepend(
+      "request_kind",
+      json_string(request_kind_text request_kind),
+      fields,
+    )
   }
   if has_request_identity {
-    fields = json_object_prepend("window_id", json_string(metadata.window_id), fields)
+    fields = json_object_prepend("window_id", json_string metadata.window_id, fields)
   }
   if has_turn_identity {
     if let `Some turn_id = metadata.turn_id {
-      fields = json_object_prepend("turn_id", json_string(turn_id), fields)
+      fields = json_object_prepend("turn_id", json_string turn_id, fields)
     }
-    fields = json_object_prepend("thread_id", json_string(metadata.thread_id), fields)
-    fields = json_object_prepend("session_id", json_string(metadata.session_id), fields)
+    fields = json_object_prepend("thread_id", json_string metadata.thread_id, fields)
+    fields = json_object_prepend("session_id", json_string metadata.session_id, fields)
   }
   if has_request_identity {
-    fields = json_object_prepend("installation_id", json_string(metadata.installation_id), fields)
+    fields = json_object_prepend("installation_id", json_string metadata.installation_id, fields)
   }
 
-  json_object(fields)
-}
+  json_object fields
+};
 
 const responses_metadata_json: Metadata -> Text = metadata => {
-  encode_json_ascii(responses_metadata_payload(metadata))
-}
+  encode_json_ascii(responses_metadata_payload metadata)
+};
 
 const has_turn_metadata: Metadata -> Bool = metadata => {
   if let `Some _ = metadata.request_kind { true } else { false }
-}
+};
 
 const responses_client_metadata: Metadata -> MetadataPairs = metadata => {
-  let values = metadata_pairs.empty()
+  let values = metadata_pairs.empty();
   values = metadata_pairs.prepend(["x-codex-installation-id", metadata.installation_id], values)
   values = metadata_pairs.prepend(["session_id", metadata.session_id], values)
   values = metadata_pairs.prepend(["thread_id", metadata.thread_id], values)
@@ -308,18 +377,24 @@ const responses_client_metadata: Metadata -> MetadataPairs = metadata => {
   if let `Some parent_thread_id = metadata.parent_thread_id {
     values = metadata_pairs.prepend(["x-codex-parent-thread-id", parent_thread_id], values)
   }
-  if has_turn_metadata(metadata) {
-    values = metadata_pairs.prepend(["x-codex-turn-metadata", responses_metadata_json(metadata)], values)
+  if has_turn_metadata metadata {
+    values = metadata_pairs.prepend(
+      ["x-codex-turn-metadata", responses_metadata_json metadata],
+      values,
+    )
   }
 
-  sort_metadata_pairs(values)
-}
+  sort_metadata_pairs values
+};
 
 const responses_compatibility_headers: Metadata -> MetadataPairs = metadata => {
-  let values = metadata_pairs.singleton(["x-codex-window-id", metadata.window_id])
+  let values = metadata_pairs.singleton(["x-codex-window-id", metadata.window_id]);
 
-  if has_turn_metadata(metadata) {
-    values = metadata_pairs.prepend(["x-codex-turn-metadata", responses_metadata_json(metadata)], values)
+  if has_turn_metadata metadata {
+    values = metadata_pairs.prepend(
+      ["x-codex-turn-metadata", responses_metadata_json metadata],
+      values,
+    )
   }
   if let `Some parent_thread_id = metadata.parent_thread_id {
     values = metadata_pairs.prepend(["x-codex-parent-thread-id", parent_thread_id], values)
@@ -328,21 +403,21 @@ const responses_compatibility_headers: Metadata -> MetadataPairs = metadata => {
     values = metadata_pairs.prepend(["x-openai-subagent", subagent_header], values)
   }
 
-  sort_metadata_pairs(values)
-}
+  sort_metadata_pairs values
+};
 
 return {
-  new_responses_metadata,
-  metadata_key_is_reserved,
-  filter_extra_metadata,
-  request_kind_text,
-  request_kind_has_turn_identity,
-  thread_source_text,
-  subagent_header_value,
-  subagent_metadata_kind,
-  responses_metadata_payload,
-  responses_metadata_json,
-  has_turn_metadata,
-  responses_client_metadata,
-  responses_compatibility_headers,
-}
+  .new_responses_metadata,
+  .metadata_key_is_reserved,
+  .filter_extra_metadata,
+  .request_kind_text,
+  .request_kind_has_turn_identity,
+  .thread_source_text,
+  .subagent_header_value,
+  .subagent_metadata_kind,
+  .responses_metadata_payload,
+  .responses_metadata_json,
+  .has_turn_metadata,
+  .responses_client_metadata,
+  .responses_compatibility_headers,
+};

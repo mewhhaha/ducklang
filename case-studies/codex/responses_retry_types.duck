@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "duck:prelude/abstractions" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/abstractions" ();
 
 type ResponseRetryDurationOption = Option DurationMs
 
@@ -26,4 +26,4 @@ type ResponseRetryPlan =
   | `Fallback Text
   | `Fail Text
 
-return {}
+return {};

@@ -43,6 +43,7 @@ import { f32x4_builtin_prim, numeric_builtin_prim } from "../op.ts";
 import { diagnostic_codes, type DiagnosticCode } from "../diagnostic.ts";
 import { compiler_builtin_args } from "./compiler_builtin_args.ts";
 import { expect } from "../expect.ts";
+import { struct_merge_operands } from "./struct_merge.ts";
 
 function array_length_is_known(
   length: ArrayLengthExpr,
@@ -206,6 +207,7 @@ export type SourceTypeFact = {
   name: string;
   resolved_name: string;
   nominal: string | undefined;
+  type_arguments?: SourceTypeFact[];
   call_params: (SourceTypeFact | undefined)[] | undefined;
   call_result: SourceTypeFact | undefined;
   fields: SourceFieldTypeFact[] | undefined;
@@ -668,6 +670,8 @@ class SourceFactRecorder {
   readonly builtin_aliases = new Map<string, string>();
   readonly const_values = new Map<string, FrontExpr>();
   readonly deferred_cast_type_targets = new WeakSet<object>();
+  readonly type_substitution_stack: Map<string, SourceTypeFact>[] = [];
+  next_quantified_type = 0;
   replaying_closure = false;
 
   constructor(readonly source: Source) {
@@ -1766,6 +1770,10 @@ class SourceFactRecorder {
       const func = this.record_expr(expr.func, scope, undefined, break_types);
       const args: (SourceTypeFact | undefined)[] = [];
       const builtin = this.builtin_call_name(expr, scope);
+      const runtime_merge = struct_merge_operands(
+        expr.operator_syntax,
+        expr.args,
+      );
 
       for (let index = 0; index < expr.args.length; index += 1) {
         const arg = expr.args[index];
@@ -1809,6 +1817,11 @@ class SourceFactRecorder {
             expected_arg = named_type("Shape");
           }
         } else if (
+          runtime_merge !== undefined &&
+          index === runtime_merge.updates_index
+        ) {
+          expected_arg = named_type("Shape");
+        } else if (
           builtin === "@type.union" || builtin === "@type.intersection" ||
           builtin === "@type.difference"
         ) {
@@ -1836,7 +1849,9 @@ class SourceFactRecorder {
         }
       }
 
-      if (builtin !== undefined) {
+      if (runtime_merge !== undefined) {
+        type = args[runtime_merge.base_index];
+      } else if (builtin !== undefined) {
         type = builtin_call_result(builtin, args);
       } else if (
         expr.func.tag === "field" && expr.func.object.tag === "var"
@@ -2531,15 +2546,49 @@ class SourceFactRecorder {
     inferred_params?: SourceTypeFact[],
   ): SourceTypeFact | undefined {
     const declared_expected = expected;
+    const quantified_scope = new Map<string, SourceTypeFact>();
 
     if (
       expected !== undefined &&
       expected.quantified_variables !== undefined
     ) {
-      expected = skolemize_quantified_source_type(expected);
+      const annotation = parse_type_expr(tokenize(expected.name));
+      expect(
+        annotation.tag === "forall",
+        "Quantified source type must preserve its forall annotation",
+      );
+      const skolemized = skolemize_quantified_source_type(expected);
+      expected = skolemized.type;
+      expect(
+        annotation.params.length === skolemized.variables.length,
+        "Quantified source type parameter count changed during skolemization",
+      );
+
+      for (let index = 0; index < annotation.params.length; index += 1) {
+        const name = annotation.params[index];
+        const type = skolemized.variables[index];
+        expect(name, "Missing quantified source type parameter " + index);
+        expect(type, "Missing skolemized source type parameter " + index);
+        const type_name = "_forall_" +
+          this.next_quantified_type.toString();
+        this.next_quantified_type += 1;
+        type.name = type_name;
+        type.resolved_name = type_name;
+        quantified_scope.set(name, type);
+      }
     }
 
     const body_scope = new Map(scope);
+    const inherited_type_substitutions =
+      this.type_substitution_stack[this.type_substitution_stack.length - 1];
+    const body_type_substitutions = new Map(inherited_type_substitutions);
+
+    for (const [name, type] of quantified_scope) {
+      body_type_substitutions.set(name, type);
+    }
+
+    this.type_substitution_stack.push(body_type_substitutions);
+
     const params: (SourceTypeFact | undefined)[] = [];
     let context_matches = true;
     let contextual_arity_matches = true;
@@ -2654,6 +2703,7 @@ class SourceFactRecorder {
       break_types,
     );
     this.return_type_stack.pop();
+    this.type_substitution_stack.pop();
 
     if (return_types.length > 0) {
       result = common_type_facts([...return_types, result]);
@@ -3137,6 +3187,11 @@ class SourceFactRecorder {
       return;
     }
 
+    if (pattern.tag === "const_value") {
+      this.record_expr(pattern.value, scope, type, undefined);
+      return;
+    }
+
     if (pattern.tag === "text_capture") {
       const binding_type = named_type("Text");
       this.record_definition(pattern, "name", binding_type);
@@ -3148,6 +3203,10 @@ class SourceFactRecorder {
       const first = pattern.alternatives[0];
       expect(first, "Alternation pattern requires an alternative");
       this.record_pattern_bindings(first, type, scope);
+
+      for (const alternative of pattern.alternatives.slice(1)) {
+        this.record_pattern_value_references(alternative, scope);
+      }
       return;
     }
 
@@ -3210,6 +3269,59 @@ class SourceFactRecorder {
 
     if (pattern.rest !== undefined) {
       this.record_pattern_bindings(pattern.rest, undefined, scope);
+    }
+  }
+
+  record_pattern_value_references(pattern: Pattern, scope: Scope): void {
+    if (pattern.tag === "const_value") {
+      this.record_expr(pattern.value, scope, undefined, undefined);
+      return;
+    }
+
+    if (pattern.tag === "or") {
+      for (const alternative of pattern.alternatives) {
+        this.record_pattern_value_references(alternative, scope);
+      }
+      return;
+    }
+
+    if (pattern.tag === "union_case") {
+      if (pattern.value !== undefined) {
+        this.record_pattern_value_references(pattern.value, scope);
+      }
+      return;
+    }
+
+    if (pattern.tag === "product") {
+      for (const entry of pattern.entries) {
+        this.record_pattern_value_references(entry.pattern, scope);
+      }
+
+      if (pattern.rest !== undefined) {
+        this.record_pattern_value_references(pattern.rest, scope);
+      }
+      return;
+    }
+
+    if (pattern.tag === "record") {
+      for (const field of pattern.fields) {
+        this.record_pattern_value_references(field.pattern, scope);
+      }
+
+      if (pattern.rest !== undefined) {
+        this.record_pattern_value_references(pattern.rest, scope);
+      }
+      return;
+    }
+
+    if (pattern.tag === "array") {
+      for (const item of pattern.items) {
+        this.record_pattern_value_references(item, scope);
+      }
+
+      if (pattern.rest !== undefined) {
+        this.record_pattern_value_references(pattern.rest, scope);
+      }
     }
   }
 
@@ -3950,11 +4062,30 @@ class SourceFactRecorder {
     annotation: string | undefined,
     type_expr: TypeExpr | undefined,
   ): SourceTypeFact | undefined {
+    const substitutions =
+      this.type_substitution_stack[this.type_substitution_stack.length - 1];
+
     if (type_expr !== undefined) {
+      if (substitutions !== undefined) {
+        return this.resolve_type_expr(
+          type_expr,
+          new Map(substitutions),
+          new Set(),
+        );
+      }
+
       return this.type_from_type_expr(type_expr);
     }
 
     if (annotation !== undefined) {
+      if (substitutions !== undefined) {
+        return this.resolve_declared_type(
+          annotation,
+          new Map(substitutions),
+          new Set(),
+        );
+      }
+
       return this.type_from_name(annotation);
     }
 
@@ -4293,14 +4424,23 @@ class SourceFactRecorder {
     }
 
     const specialized_name = format_type_expr(specialized_type);
-    const cached = this.applied_declaration_types.get(specialized_name);
+    const cacheable = args.every((arg) =>
+      !arg.inference_variable && arg.resolved_name !== "unknown"
+    );
+    const cached = cacheable
+      ? this.applied_declaration_types.get(specialized_name)
+      : undefined;
 
     if (cached !== undefined) {
       return cached;
     }
 
     const type = named_type(specialized_name, declaration.name);
-    this.applied_declaration_types.set(specialized_name, type);
+    type.type_arguments = args;
+
+    if (cacheable) {
+      this.applied_declaration_types.set(specialized_name, type);
+    }
 
     if (resolving.has(declaration.name)) {
       return type;
@@ -5655,7 +5795,26 @@ function canonical_type_from_source_fact(
   }
 
   if (source.nominal !== undefined) {
-    return { tag: "named", name: source.nominal, args: [] };
+    const args: Type[] = [];
+
+    for (const argument of source.type_arguments || []) {
+      const type = canonical_type_from_source_fact(
+        argument,
+        engine,
+        variables,
+        visiting,
+        unwrapped_quantifiers,
+        variable_kind,
+      );
+
+      if (type === undefined) {
+        return undefined;
+      }
+
+      args.push(type);
+    }
+
+    return { tag: "named", name: source.nominal, args };
   }
 
   const fields = source_fields(source);
@@ -5843,11 +6002,11 @@ function specialize_call_result(
 
 function skolemize_quantified_source_type(
   type: SourceTypeFact,
-): SourceTypeFact {
+): { type: SourceTypeFact; variables: SourceTypeFact[] } {
   const quantified = type.quantified_variables;
 
   if (quantified === undefined) {
-    return type;
+    return { type, variables: [] };
   }
 
   const engine = new TypeEngine();
@@ -5891,7 +6050,14 @@ function skolemize_quantified_source_type(
 
   const instantiated = clone_source_type(type, replacements, new Map());
   instantiated.quantified_variables = undefined;
-  return instantiated;
+  return {
+    type: instantiated,
+    variables: quantified.map((variable) => {
+      const replacement = replacements.get(variable);
+      expect(replacement, "Missing skolemized quantified source type");
+      return replacement;
+    }),
+  };
 }
 
 function clone_source_type(
@@ -5918,6 +6084,12 @@ function clone_source_type(
   result.recursive_inference = source.recursive_inference;
   result.positional_fields = source.positional_fields;
   copied.set(source, result);
+
+  if (source.type_arguments !== undefined) {
+    result.type_arguments = source.type_arguments.map((argument) =>
+      clone_source_type(argument, replacements, copied)
+    );
+  }
 
   if (source.quantified_variables !== undefined) {
     result.quantified_variables = source.quantified_variables.map((variable) =>
@@ -6069,6 +6241,22 @@ function materialize_source_type_from_engine(
   result.inference_variable = source.inference_variable;
   result.positional_fields = source.positional_fields;
   copied.set(source, result);
+
+  if (source.type_arguments !== undefined) {
+    result.type_arguments = source.type_arguments.map((argument) =>
+      materialize_source_type_from_engine(
+        argument,
+        engine,
+        variables,
+        copied,
+      )
+    );
+    result.name = applied_source_type_name(
+      source.nominal || source.resolved_name,
+      result.type_arguments,
+    );
+    result.resolved_name = result.name;
+  }
 
   if (source.quantified_variables !== undefined) {
     result.quantified_variables = source.quantified_variables.map((variable) =>
@@ -6255,8 +6443,17 @@ function source_type_from_canonical(
     case "integer":
       return named_type(integer_type_name(type));
 
-    case "named":
-      return named_type(type.name, type.name);
+    case "named": {
+      const args = type.args.map((argument) =>
+        source_type_from_canonical(argument, variables)
+      );
+      const result = named_type(
+        applied_source_type_name(type.name, args),
+        type.name,
+      );
+      result.type_arguments = args;
+      return result;
+    }
 
     case "product":
       return struct_type(
@@ -6443,6 +6640,38 @@ function source_types_compatible(
   }
 
   return engine.subtype(actual_type, expected_type);
+}
+
+function applied_source_type_name(
+  name: string,
+  args: SourceTypeFact[],
+): string {
+  let type: TypeExpr = { tag: "name", name };
+
+  for (const arg of args) {
+    let argument: TypeExpr;
+
+    try {
+      argument = parse_type_expr(tokenize(arg.name));
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+
+      throw new Error(
+        "Cannot format applied source type " + name +
+          " with argument " + arg.name + ": " + error.message,
+      );
+    }
+
+    type = {
+      tag: "apply",
+      func: type,
+      arg: argument,
+    };
+  }
+
+  return format_type_expr(type);
 }
 
 function resume_type(

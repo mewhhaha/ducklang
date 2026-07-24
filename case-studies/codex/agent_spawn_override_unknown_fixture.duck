@@ -1,13 +1,15 @@
 module () where
 
-const {} = import "./agent_spawn_override_types.duck" ()
-const { select_spawn_overrides } = import "./agent_spawn_override.duck" ()
-const { fixture_override_input } = import "./agent_spawn_override_fixture_values.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ();
+const { .select_spawn_overrides } = import "./agent_spawn_override.duck" ();
+const { .fixture_override_input } = import "./agent_spawn_override_fixture_values.duck" ();
 
-let score = 0
-let result = select_spawn_overrides(fixture_override_input(`Some "missing", `None (), `None (), `None ()))
+let score = 0;
+let result = select_spawn_overrides(
+  fixture_override_input(`Some "missing", `None (), `None (), `None ())
+);
 if let `SpawnOverrideRejected message = result {
   if message == "Unknown model `missing` for spawn_agent. Available models: alpha" { score = 1 }
 }
 
-return { .score = score }
+return { .score = score };

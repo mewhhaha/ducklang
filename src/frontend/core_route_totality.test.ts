@@ -3,7 +3,7 @@ import { Source } from "../frontend.ts";
 
 Deno.test("Core analysis diagnoses an invalid generic Bool type-set binding", () => {
   const analysis = Source.analyze(
-    "type Choice a = a :| Text\nlet value: Choice Bool = 1",
+    "type Choice a = a :| Text\nlet value: Choice Bool = 1;",
     { route: "core" },
   );
 
@@ -17,7 +17,7 @@ Deno.test("Core analysis diagnoses an invalid generic Bool type-set binding", ()
 
 Deno.test("Core analysis diagnoses an unspecialized generic closure annotation", () => {
   const analysis = Source.analyze(
-    "type Flag a = a\nlet choose = (value: Flag) => value\nchoose(true)",
+    "type Flag a = a\nlet choose = (value: Flag) => value;\nchoose(true)",
     { route: "core" },
   );
 
@@ -31,7 +31,7 @@ Deno.test("Core analysis diagnoses an unspecialized generic closure annotation",
 
 Deno.test("Core analysis diagnoses a type alias with an unresolved target", () => {
   const analysis = Source.analyze(
-    "type Alias = Missing\nlet value: Alias = 1\nvalue\n",
+    "type Alias = Missing\nlet value: Alias = 1;\nvalue\n",
     { route: "core" },
   );
 

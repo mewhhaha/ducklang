@@ -20,7 +20,7 @@ function tokens(text: string, version = 1) {
 }
 
 Deno.test("semantic tokens preserve const and runtime shadow generations", () => {
-  const text = "const value = 1\nvalue\nvalue = 2\nvalue\n";
+  const text = "const value = 1;\nvalue\nvalue = 2\nvalue\n";
   assert_equals(dump_semantic_tokens(tokens(text)), [{
     line: 0,
     character: 6,
@@ -49,10 +49,13 @@ Deno.test("semantic tokens preserve const and runtime shadow generations", () =>
 });
 
 Deno.test("semantic tokens classify types, members, effects, and linear uses", () => {
-  const text = "type Box item = struct {.value = item}\n" +
-    "effect Counter { get: () => I32 }\n" +
-    "let !token = 1\n!token\n" +
-    "let box: Box = [.value = 1]\nbox.value\n";
+  const text = `type Box item = struct {.value = item}
+effect Counter { get: () => I32 }
+let !token = 1;
+!token
+let box: Box = [.value = 1];
+box.value
+`;
   const dump = dump_semantic_tokens(tokens(text));
 
   assert_equals(
@@ -130,9 +133,9 @@ Deno.test("semantic tokens classify types, members, effects, and linear uses", (
 });
 
 Deno.test("semantic tokens mark const calls and comptime regions", () => {
-  const text = "const identity = x => x\n" +
-    "const first = identity(1)\n" +
-    "const second = comptime identity(2)\n";
+  const text = "const identity = x => x;\n" +
+    "const first = identity(1);\n" +
+    "const second = comptime identity(2);\n";
   const dump = dump_semantic_tokens(tokens(text));
   const identities = dump.filter((token) => token.type === "function");
 
@@ -158,8 +161,8 @@ Deno.test("semantic tokens mark const calls and comptime regions", () => {
 });
 
 Deno.test("semantic tokens mark whitespace const calls as comptime", () => {
-  const text = "const identity = x => x\n" +
-    "const answer = identity 21\n";
+  const text = "const identity = x => x;\n" +
+    "const answer = identity 21;\n";
   const dump = dump_semantic_tokens(tokens(text));
   const identity = dump.find((token) =>
     token.line === 1 && token.character === 15
@@ -169,9 +172,9 @@ Deno.test("semantic tokens mark whitespace const calls as comptime", () => {
 });
 
 Deno.test("semantic tokens distinguish calls from passed functions", () => {
-  const text = "const identity = value => value\n" +
-    "const apply = operation => value => operation value\n" +
-    "const answer = apply identity 1\n";
+  const text = "const identity = value => value;\n" +
+    "const apply = operation => value => operation value;\n" +
+    "const answer = apply identity 1;\n";
   const references = dump_semantic_tokens(tokens(text)).filter((token) => {
     return token.line === 2 && token.character >= 15;
   });
@@ -192,7 +195,7 @@ Deno.test("semantic tokens distinguish calls from passed functions", () => {
 });
 
 Deno.test("semantic tokens range and recovery retain unaffected tokens", () => {
-  const text = "let before = 1\nlet = broken\nlet after = before\nafter\n";
+  const text = "let before = 1;\nlet = broken;\nlet after = before;\nafter\n";
   const parsed = parse_source_with_diagnostics(text);
   const index = build_binding_index(parsed);
   const ranged = semantic_tokens(
@@ -211,8 +214,8 @@ Deno.test("semantic tokens range and recovery retain unaffected tokens", () => {
 });
 
 Deno.test("semantic token results are stable and delta is minimal", () => {
-  const before_text = "let first = 1\nlet second = first\nsecond\n";
-  const after_text = "let first = 1\nlet renamed = first\nrenamed\n";
+  const before_text = "let first = 1;\nlet second = first;\nsecond\n";
+  const after_text = "let first = 1;\nlet renamed = first;\nrenamed\n";
   const first = tokens(before_text, 1);
   const repeated = tokens(before_text, 1);
   const changed = tokens(after_text, 2);

@@ -1,7 +1,7 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./cli_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./cli_types.duck" ();
 
 type CliOptionsArgs = CodexCliArgs
 type CliOptionsCompletion = CodexCompletionOptions
@@ -24,19 +24,21 @@ const parse_completion_shell: Text -> CliOptionsShellResult = (name: Text) => {
   } else {
     `Err (text_append("unsupported completion shell: ", name))
   }
-}
+};
 
-const parse_completion_options: CliOptionsArgs -> CliOptionsCompletionResult = (args: CliOptionsArgs) => {
+const parse_completion_options: CliOptionsArgs -> CliOptionsCompletionResult = (
+  args: CliOptionsArgs
+) => {
   if let `Nil () = args {
     let options: CliOptionsCompletion = [.shell = `Bash ()]
-    `Ok options
+    `Ok options;
   } else if let `Cons node = args {
-    let [name, tail] = node
+    let [name, tail] = node;
     if let `Nil () = tail {
-      let parsed: CliOptionsShellResult = parse_completion_shell name
+      let parsed: CliOptionsShellResult = parse_completion_shell name;
       if let `Ok shell = parsed {
         let options: CliOptionsCompletion = [.shell = shell]
-        `Ok options
+        `Ok options;
       } else if let `Err message = parsed {
         `Err message
       } else {
@@ -48,11 +50,11 @@ const parse_completion_options: CliOptionsArgs -> CliOptionsCompletionResult = (
   } else {
     `Err "completion arguments have an unknown shape"
   }
-}
+};
 
 const parse_feature_command: CliOptionsArgs -> CliOptionsFeatureResult = (args: CliOptionsArgs) => {
   if let `Cons command_node = args {
-    let [command, command_tail] = command_node
+    let [command, command_tail] = command_node;
     if command == "list" {
       if let `Nil () = command_tail {
         `Ok (`List ())
@@ -61,7 +63,7 @@ const parse_feature_command: CliOptionsArgs -> CliOptionsFeatureResult = (args: 
       }
     } else if command == "enable" || command == "disable" {
       if let `Cons feature_node = command_tail {
-        let [feature, feature_tail] = feature_node
+        let [feature, feature_tail] = feature_node;
         if let `Nil () = feature_tail {
           if command == "enable" {
             `Ok (`Enable feature)
@@ -80,9 +82,9 @@ const parse_feature_command: CliOptionsArgs -> CliOptionsFeatureResult = (args: 
   } else {
     `Err "features requires list, enable, or disable"
   }
-}
+};
 
 return {
-  parse_completion_options,
-  parse_feature_command,
-}
+  .parse_completion_options,
+  .parse_feature_command,
+};

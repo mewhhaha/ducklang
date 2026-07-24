@@ -166,6 +166,7 @@ export type Pattern =
   | { tag: "unit" }
   | { tag: "literal"; value: PatternLiteral }
   | { tag: "text_capture"; prefix: string; name: string; suffix: string }
+  | { tag: "const_value"; value: FrontExpr }
   | { tag: "value"; name: string }
   | { tag: "type"; pattern: TypePattern }
   | { tag: "or"; alternatives: Pattern[] }

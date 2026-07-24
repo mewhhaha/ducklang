@@ -1,24 +1,27 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_desktop_app_options, parse_remote_control_options } = import "./cli_app.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_desktop_app_options, .parse_remote_control_options } = import "./cli_app.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexApplicationCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let default_app: FixtureResult = parse_desktop_app_options(args.empty())
+let default_app: FixtureResult = parse_desktop_app_options(args.empty());
 if let `Ok command = default_app {
   if let `OpenDesktopApp options = command {
     if options.path == "." { score = score + 1 }
   }
 }
 
-let app_input: FixtureArgs = args.prepend("workspace", args.prepend("--download-url", args.singleton("https://example.com/codex.zip")))
-let selected_app: FixtureResult = parse_desktop_app_options(app_input)
+let app_input: FixtureArgs = args.prepend(
+  "workspace",
+  args.prepend("--download-url", args.singleton("https://example.com/codex.zip")),
+);
+let selected_app: FixtureResult = parse_desktop_app_options app_input;
 if let `Ok command = selected_app {
   if let `OpenDesktopApp options = command {
     if let `Some download_url = options.download_url {
@@ -29,15 +32,15 @@ if let `Ok command = selected_app {
   }
 }
 
-let foreground: FixtureResult = parse_remote_control_options(args.empty())
+let foreground: FixtureResult = parse_remote_control_options(args.empty());
 if let `Ok command = foreground {
   if let `RunRemoteControl options = command {
     if let `RemoteControlForeground () = options.operation { score = score + 100 }
   }
 }
 
-let remote_input: FixtureArgs = args.prepend("--json", args.singleton("pair"))
-let remote: FixtureResult = parse_remote_control_options(remote_input)
+let remote_input: FixtureArgs = args.prepend("--json", args.singleton("pair"));
+let remote: FixtureResult = parse_remote_control_options remote_input;
 if let `Ok command = remote {
   if let `RunRemoteControl options = command {
     if let `RemoteControlPair () = options.operation {
@@ -46,4 +49,4 @@ if let `Ok command = remote {
   }
 }
 
-return { .score = score }
+return { .score = score };

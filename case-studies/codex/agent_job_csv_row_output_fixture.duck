@@ -1,33 +1,58 @@
 module () where
 
-const {} = import "./agent_job_export_types.duck" ()
-const { render_agent_job_csv_row } = import "./agent_job_csv_row_output.duck" ()
+const {} = import "./agent_job_export_types.duck" ();
+const { .render_agent_job_csv_row } = import "./agent_job_csv_row_output.duck" ();
 
 type FixtureHeaderNode = AgentJobCreateHeaderNode
 type FixtureHeaders = AgentJobCreateHeaders
 type FixtureItem = AgentJobFinalItem
 
-let note_header_node: FixtureHeaderNode = ["note", `Nil ()]
-let name_header_node: FixtureHeaderNode = ["name", `Cons note_header_node]
-let headers: FixtureHeaders = `Cons name_header_node
-let note_value_node: FixtureHeaderNode = ["hello, \"world\"", `Nil ()]
-let name_value_node: FixtureHeaderNode = ["Alice", `Cons note_value_node]
-let values: FixtureHeaders = `Cons name_value_node
-let item: FixtureItem = [.row_values = values, .row_json = "{\"name\":\"Alice\"}", .item_id = "row-1", .row_index = 0, .source_id = `Some "alpha", .status = `Completed (), .attempt_count = 1, .last_error = `None (), .result_json = `Some "{\"answer\":1}", .reported_at = `Some "2026-07-20T10:00:00Z", .completed_at = `Some "2026-07-20T10:00:01Z"]
+let note_header_node: FixtureHeaderNode = ["note", `Nil ()];
+let name_header_node: FixtureHeaderNode = ["name", `Cons note_header_node];
+let headers: FixtureHeaders = `Cons name_header_node;
+let note_value_node: FixtureHeaderNode = ["hello, \"world\"", `Nil ()];
+let name_value_node: FixtureHeaderNode = ["Alice", `Cons note_value_node];
+let values: FixtureHeaders = `Cons name_value_node;
+let item: FixtureItem = [
+  .row_values = values,
+  .row_json = "{\"name\":\"Alice\"}",
+  .item_id = "row-1",
+  .row_index = 0,
+  .source_id = `Some "alpha",
+  .status = `Completed (),
+  .attempt_count = 1,
+  .last_error = `None (),
+  .result_json = `Some "{\"answer\":1}",
+  .reported_at = `Some "2026-07-20T10:00:00Z",
+  .completed_at = `Some "2026-07-20T10:00:01Z",
+];
 
-let score = 0
-let rendered = render_agent_job_csv_row("job-1", headers, item)
+let score = 0;
+let rendered = render_agent_job_csv_row("job-1", headers, item);
 if let `CsvExported output = rendered {
-  let expected = "Alice,\"hello, \"\"world\"\"\",job-1,row-1,0,alpha,completed,1,,\"{\"\"answer\"\":1}\",2026-07-20T10:00:00Z,2026-07-20T10:00:01Z\n"
+  let expected =
+    "Alice,\"hello, \"\"world\"\"\",job-1,row-1,0,alpha,completed,1,,\"{\"\"answer\"\":1}\",2026-07-20T10:00:00Z,2026-07-20T10:00:01Z\n";
   if output == expected { score = 1 }
 }
 
-let invalid_value_node: FixtureHeaderNode = ["only one", `Nil ()]
-let invalid_values: FixtureHeaders = `Cons invalid_value_node
-let invalid: FixtureItem = [.row_values = invalid_values, .row_json = "{}", .item_id = "bad", .row_index = 0, .source_id = `None (), .status = `Pending (), .attempt_count = 0, .last_error = `None (), .result_json = `None (), .reported_at = `None (), .completed_at = `None ()]
-let invalid_rendered = render_agent_job_csv_row("job-2", headers, invalid)
+let invalid_value_node: FixtureHeaderNode = ["only one", `Nil ()];
+let invalid_values: FixtureHeaders = `Cons invalid_value_node;
+let invalid: FixtureItem = [
+  .row_values = invalid_values,
+  .row_json = "{}",
+  .item_id = "bad",
+  .row_index = 0,
+  .source_id = `None (),
+  .status = `Pending (),
+  .attempt_count = 0,
+  .last_error = `None (),
+  .result_json = `None (),
+  .reported_at = `None (),
+  .completed_at = `None (),
+];
+let invalid_rendered = render_agent_job_csv_row("job-2", headers, invalid);
 if let `CsvExportFailed reason = invalid_rendered {
   if reason == "row values for item bad do not match csv headers" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

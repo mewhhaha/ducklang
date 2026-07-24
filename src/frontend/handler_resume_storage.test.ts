@@ -10,24 +10,24 @@ effect Suspend {
 let run = () => {
   value <- Suspend.pause()
   value + 1
-}
+};
 `;
 
 const stored_resume_source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const resume_box_type = struct {
   .resume= Resume
-}
+};
 
 ${prelude}
-let suspend = Suspend {
+let suspend = handler Suspend {
   pause: (!resume) => {
-    let !box: resume_box_type = [.resume = !resume]
-    let !later: Resume = !box.resume
+    let !box: resume_box_type = [.resume = !resume];
+    let !later: Resume = !box.resume;
     !later(41)
   },
   return: (value: I32) => value,
-}
+};
 
 try run() with suspend
 `;
@@ -61,13 +61,13 @@ async function run_i32(source: string): Promise<number> {
 Deno.test("a resumption supports a direct affine local alias", async () => {
   assert_equals(
     await run_i32(`${prelude}
-let suspend = Suspend {
+let suspend = handler Suspend {
   pause: (!resume) => {
-    let !later = !resume
+    let !later = !resume;
     !later(41)
   },
   return: (value: I32) => value,
-}
+};
 
 try run() with suspend
 `),
@@ -126,12 +126,12 @@ Deno.test("extracting a stored resumption detaches its closure allocation", () =
 Deno.test("a resumption can pass through an affine Duck function", async () => {
   assert_equals(
     await run_i32(`${prelude}
-let invoke = (!later: Resume, value: I32) => !later(value)
+let invoke = (!later: Resume, value: I32) => !later(value);
 
-let suspend = Suspend {
+let suspend = handler Suspend {
   pause: (!resume) => invoke(!resume, 41),
   return: (value: I32) => value,
-}
+};
 
 try run() with suspend
 `),

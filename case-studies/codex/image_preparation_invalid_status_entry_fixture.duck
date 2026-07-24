@@ -1,0 +1,6 @@
+module () where
+
+const { .verify_image_preparation_invalid_status_fixture } =
+  import "./image_preparation_invalid_status_fixture.duck" ();
+
+return { .score = verify_image_preparation_invalid_status_fixture() };

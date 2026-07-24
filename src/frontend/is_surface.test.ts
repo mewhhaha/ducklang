@@ -4,7 +4,7 @@ import { parse_source } from "./parser.ts";
 
 Deno.test("is parses type operands at comparison precedence", () => {
   const source = parse_source(
-    "let matches = value is #atom && other is &(Left :| Right)",
+    "let matches = value is #atom && other is &(Left :| Right);",
   );
   const statement = source.statements[0];
 

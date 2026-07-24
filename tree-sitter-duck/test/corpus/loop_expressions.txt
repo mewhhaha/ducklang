@@ -2,28 +2,25 @@
 Loop expression with a value break
 ==================
 let result = loop {
-  break 42
-}
+  break 42;
+};
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (postfix_expression
-        (block
-          (break_statement
-            (postfix_expression
-              (number))))))))
+    (loop_expression
+      (block
+        (break_statement
+          (postfix_expression
+            (number)))))))
 
 ==================
 Wildcard and binderless ranges
 ==================
 for _ in 0..2 {
   ()
-}
+};
 for 0..2 {
   ()
 }
@@ -100,67 +97,58 @@ for index, `Some value in values {
 Break without a value
 ==================
 loop {
-  break
+  break;
 }
 ---
 
 (source_file
   (expression_statement
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (postfix_expression
-        (block
-          (break_statement))))))
+    (loop_expression
+      (block
+        (break_statement)))))
 
 ==================
 Inline break without a value
 ==================
-loop { if done { break } }
+loop { if done { break; } }
 ---
 
 (source_file
   (expression_statement
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (postfix_expression
-        (block
-          (expression_statement
-            (if_expression
-              (condition_expression
-                (identifier))
-              (block
-                (break_statement)))))))))
+    (loop_expression
+      (block
+        (expression_statement
+          (if_expression
+            (condition_expression
+              (identifier))
+            (block
+              (break_statement))))))))
 
 ==================
 Bare break does not consume the next line
 ==================
 loop {
-  break
+  break;
   42
 }
 ---
 
 (source_file
   (expression_statement
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (postfix_expression
-        (block
-          (break_statement)
-          (expression_statement
-            (postfix_expression
-              (number))))))))
+    (loop_expression
+      (block
+        (break_statement)
+        (expression_statement
+          (postfix_expression
+            (number)))))))
 
 ==================
 No-demand binding positions
 ==================
-let _ = 1
-let ignore = (_, const _) => 2
-const { .ignored = _, value } = pair
-let selected = if let `Ok _ = result { 1 } else { 0 }
+let _ = 1;
+let ignore = (_, const _) => 2;
+const { .ignored = _, .value } = pair;
+let selected = if let `Ok _ = result { 1 } else { 0 };
 ---
 
 (source_file
@@ -183,7 +171,7 @@ let selected = if let `Ok _ = result { 1 } else { 0 }
       (named_shape_pattern_field
         (identifier)
         (wildcard))
-      (shorthand_shape_pattern_field
+      (named_shape_pattern_field
         (identifier)))
     (postfix_expression
       (identifier)))
@@ -205,25 +193,43 @@ let selected = if let `Ok _ = result { 1 } else { 0 }
             (number)))))))
 
 ==================
-Loop remains a contextual keyword
+Continue in a loop expression
 ==================
-let loop = value => value
-loop(42)
+let result = loop {
+  continue;
+};
+
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (arrow_function
-      (parameter
-        (identifier))
-      (postfix_expression
-        (identifier))))
+    (loop_expression
+      (block
+        (continue_statement)))))
+
+==================
+Loop is a reserved keyword
+==================
+loop 42
+---
+
+(source_file
+  (ERROR)
   (expression_statement
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (parenthesized_expression
-          (postfix_expression
-            (number)))))))
+    (postfix_expression
+      (number))))
+
+==================
+Loop cannot be used as a binding name
+==================
+let loop = 1;
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (ERROR
+      (identifier))
+    (postfix_expression
+      (number))))

@@ -316,8 +316,16 @@ function core_expr_untracked(
           cast_name + " expects 2 arguments, got " + args.length.toString(),
         );
         const value = args[0];
+        const target = args[1];
         expect(value, "Missing " + cast_name + " value argument");
-        return core_expr(value, ctx);
+        expect(target, "Missing " + cast_name + " target argument");
+        const lowered = core_expr(value, ctx);
+
+        if (target.tag === "var" || target.tag === "type_name") {
+          return { ...lowered, ascribed_type: target.name };
+        }
+
+        return lowered;
       }
 
       const f32x4_call = f32x4_builtin_call(expr);

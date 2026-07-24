@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "./history_types.duck" ()
-const {} = import "./audio_preparation_types.duck" ()
-const { apply_audio_preparation_results } = import "./audio_preparation.duck" ()
+const {} = import "./history_types.duck" ();
+const {} = import "./audio_preparation_types.duck" ();
+const { .apply_audio_preparation_results } = import "./audio_preparation.duck" ();
 
 type FixtureContentNode = ListNode HistoryContent
 type FixtureResponseNode = ListNode HistoryItem
@@ -10,18 +10,18 @@ type FixtureContents = HistoryContents
 type FixtureResponses = HistoryItems
 
 const verify_audio_preparation_mismatch_fixture: () -> I32 = () => {
-  let contents: FixtureContents = `Nil ()
-  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,YQ==", contents]
+  let contents: FixtureContents = `Nil ();
+  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,YQ==", contents];
   contents = `Cons content_node
-  let responses: FixtureResponses = `Nil ()
-  let response_node: FixtureResponseNode = [`Message (["user", false, contents]), responses]
+  let responses: FixtureResponses = `Nil ();
+  let response_node: FixtureResponseNode = [`Message (["user", false, contents]), responses];
   responses = `Cons response_node
-  let rewrite = apply_audio_preparation_results(responses, `AudioResultsNil ())
+  let rewrite = apply_audio_preparation_results(responses, `AudioResultsNil ());
   if let `RejectedAudioRewrite failure = rewrite {
     if let `MissingAudioPreparation index = failure {
       if index == 0 { 1 } else { 0 }
     } else { 0 }
   } else { 0 }
-}
+};
 
-return { verify_audio_preparation_mismatch_fixture }
+return { .verify_audio_preparation_mismatch_fixture };

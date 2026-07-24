@@ -1,4 +1,4 @@
-let attempts = 0
+let attempts = 0;
 
 for _ in 0..1 {
   attempts = attempts + 1
@@ -10,10 +10,10 @@ for 0..1 {
 
 let result = loop {
   if attempts == 2 {
-    break 42
+    break 42;
   }
 
-  break 0
-}
+  break 0;
+};
 
 result

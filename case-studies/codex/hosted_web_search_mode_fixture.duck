@@ -1,20 +1,20 @@
-const { create_hosted_web_search_spec } = import "./hosted_web_search_spec.duck" ()
+const { .create_hosted_web_search_spec } = import "./hosted_web_search_spec.duck" ();
 
 type FixtureConfigOption = HostedSpecConfigOption
 
-let missing_config: FixtureConfigOption = `SearchConfigMissing ()
-let score = 0
+let missing_config: FixtureConfigOption = `SearchConfigMissing ();
+let score = 0;
 
-let live = create_hosted_web_search_spec(`Live (), missing_config, `TextAndImage ())
+let live = create_hosted_web_search_spec(`Live (), missing_config, `TextAndImage ());
 if let `LiveTextAndImage _ = live { score = score + 1 }
 
-let cached = create_hosted_web_search_spec(`Cached (), missing_config, `TextOnly ())
+let cached = create_hosted_web_search_spec(`Cached (), missing_config, `TextOnly ());
 if let `CachedText _ = cached { score = score + 10 }
 
-let indexed = create_hosted_web_search_spec(`Indexed (), missing_config, `TextOnly ())
+let indexed = create_hosted_web_search_spec(`Indexed (), missing_config, `TextOnly ());
 if let `IndexedText _ = indexed { score = score + 100 }
 
-let disabled = create_hosted_web_search_spec(`Disabled (), missing_config, `TextAndImage ())
+let disabled = create_hosted_web_search_spec(`Disabled (), missing_config, `TextAndImage ());
 if let `HostedSpecMissing () = disabled { score = score + 1000 }
 
-return { .score = score }
+return { .score = score };

@@ -90,7 +90,7 @@ Deno.test("type expression arrows associate right and keep lambda arrows distinc
 
   assert_equals(format_type_expr(type), "a -> b -> c");
   assert_equals(format_type_expr(no_args), "[] -> <Stdin> Text");
-  assert_equals(parse_source("let id: a -> b = value").statements[0], {
+  assert_equals(parse_source("let id: a -> b = value;").statements[0], {
     tag: "bind",
     kind: "let",
     name: "id",
@@ -121,8 +121,8 @@ Deno.test("type expression arrows associate right and keep lambda arrows distinc
 
 Deno.test("surface annotations retain simple strings and format rich types canonically", () => {
   const source = parse_source(`
-let map: [ List a , a -> <e> b ] -> <e> List b = value
-let count: I32 = 0
+let map: [ List a , a -> <e> b ] -> <e> List b = value;
+let count: I32 = 0;
 `);
   const map = source.statements[0];
   const count = source.statements[1];
@@ -140,8 +140,8 @@ let count: I32 = 0
   assert_equals(count.type_annotation, undefined);
   assert_equals(
     format_source(source),
-    "let map: [List a, a -> <e> b] -> <e> List b = value\n" +
-      "let count: I32 = 0",
+    "let map: [List a, a -> <e> b] -> <e> List b = value;\n" +
+      "let count: I32 = 0;",
   );
 });
 

@@ -1,21 +1,30 @@
 module () where
 
-const {} = import "./agent_job_spawn_types.duck" ()
-const { decode_agent_job_spawn_schema } = import "./agent_job_spawn_json_schema.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ();
+const { .decode_agent_job_spawn_schema } = import "./agent_job_spawn_json_schema.duck" ();
 
 type FixtureArgs = AgentJobSpawnDecodedArgs
 
-let base: FixtureArgs = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `None (), .output_schema_json = `None (), .max_concurrency = `None (), .max_workers = `None (), .max_runtime_seconds = `None ()]
-let score = 0
-let valid = decode_agent_job_spawn_schema("{\"output_schema\":{\"type\":\"object\"}}", base)
+let base: FixtureArgs = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `None (),
+  .output_schema_json = `None (),
+  .max_concurrency = `None (),
+  .max_workers = `None (),
+  .max_runtime_seconds = `None (),
+];
+let score = 0;
+let valid = decode_agent_job_spawn_schema("{\"output_schema\":{\"type\":\"object\"}}", base);
 if let `SpawnDecoded args = valid {
   if let `Some schema = args.output_schema_json {
     if schema == "{\"type\":\"object\"}" { score = 1 }
   }
 }
-let invalid = decode_agent_job_spawn_schema("{\"output_schema\":42}", base)
+let invalid = decode_agent_job_spawn_schema("{\"output_schema\":42}", base);
 if let `SpawnDecodeFailed reason = invalid {
   if reason == "output_schema must be a JSON object" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

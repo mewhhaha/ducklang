@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "./history_types.duck" ()
-const {} = import "./audio_preparation_types.duck" ()
-const { apply_audio_preparation_results } = import "./audio_preparation.duck" ()
+const {} = import "./history_types.duck" ();
+const {} = import "./audio_preparation_types.duck" ();
+const { .apply_audio_preparation_results } = import "./audio_preparation.duck" ();
 
 type FixtureContentNode = ListNode HistoryContent
 type FixtureResponseNode = ListNode HistoryItem
@@ -13,45 +13,68 @@ type FixturePreparationResults = AudioPreparationResults
 type FixturePreparationResultNode = AudioPreparationResultNode
 
 const verify_audio_preparation_response_fixture: () -> I32 = () => {
-  let contents: FixtureContents = `Nil ()
-  let invalid_audio_node: FixtureContentNode = [`InputAudio "https://example.com/remote.mp3", contents]
+  let contents: FixtureContents = `Nil ();
+  let invalid_audio_node: FixtureContentNode = [
+    `InputAudio "https://example.com/remote.mp3",
+    contents,
+  ];
   contents = `Cons invalid_audio_node
-  let valid_audio_node: FixtureContentNode = [`InputAudio "data:audio/x-wav;base64,YXVkaW8=", contents]
+  let valid_audio_node: FixtureContentNode = [
+    `InputAudio "data:audio/x-wav;base64,YXVkaW8=",
+    contents,
+  ];
   contents = `Cons valid_audio_node
-  let text_node: FixtureContentNode = [`InputText "before", contents]
+  let text_node: FixtureContentNode = [`InputText "before", contents];
   contents = `Cons text_node
 
-  let responses: FixtureResponses = `Nil ()
-  let message_node: FixtureResponseNode = [`Message (["user", true, contents]), responses]
+  let responses: FixtureResponses = `Nil ();
+  let message_node: FixtureResponseNode = [`Message (["user", true, contents]), responses];
   responses = `Cons message_node
 
-  let results: FixturePreparationResults = `AudioResultsNil ()
-  let invalid_result: FixturePreparationResult = [.status_code = 1, .url = "", .reason = "audio input must be a data URL", .size = 0, .mime = "", .format_code = -1]
-  let invalid_result_node: FixturePreparationResultNode = [invalid_result, results]
+  let results: FixturePreparationResults = `AudioResultsNil ();
+  let invalid_result: FixturePreparationResult = [
+    .status_code = 1,
+    .url = "",
+    .reason = "audio input must be a data URL",
+    .size = 0,
+    .mime = "",
+    .format_code = -1,
+  ];
+  let invalid_result_node: FixturePreparationResultNode = [invalid_result, results];
   results = `AudioResultsCons invalid_result_node
-  let valid_result: FixturePreparationResult = [.status_code = 0, .url = "data:audio/wav;base64,YXVkaW8=", .reason = "", .size = 5, .mime = "audio/x-wav", .format_code = 0]
-  let valid_result_node: FixturePreparationResultNode = [valid_result, results]
+  let valid_result: FixturePreparationResult = [
+    .status_code = 0,
+    .url = "data:audio/wav;base64,YXVkaW8=",
+    .reason = "",
+    .size = 5,
+    .mime = "audio/x-wav",
+    .format_code = 0,
+  ];
+  let valid_result_node: FixturePreparationResultNode = [valid_result, results];
   results = `AudioResultsCons valid_result_node
 
-  let rewrite = apply_audio_preparation_results(responses, results)
-  let score = 0
+  let rewrite = apply_audio_preparation_results(responses, results);
+  let score = 0;
   if let `PreparedAudioResponses rewritten = rewrite {
     if let `Cons rewritten_node = rewritten {
-      let [response, response_tail] = rewritten_node
+      let [response, response_tail] = rewritten_node;
       if let `Nil () = response_tail {
         if let `Message message = response {
-          let [role, developer, rewritten_contents] = message
+          let [role, developer, rewritten_contents] = message;
           if role == "user" && developer {
             if let `Cons first_node = rewritten_contents {
-              let [first, after_first] = first_node
+              let [first, after_first] = first_node;
               if let `InputText value = first { if value == "before" { score = score + 1 } }
               if let `Cons second_node = after_first {
-                let [second, after_second] = second_node
-                if let `InputAudio url = second { if url == "data:audio/wav;base64,YXVkaW8=" { score = score + 10 } }
+                let [second, after_second] = second_node;
+                if let `InputAudio url = second { if url == "data:audio/wav;base64,YXVkaW8=" { score
+                  = score + 10 } }
                 if let `Cons third_node = after_second {
-                  let [third, content_tail] = third_node
+                  let [third, content_tail] = third_node;
                   if let `Nil () = content_tail {
-                    if let `InputText placeholder = third { if placeholder == "audio content omitted because it could not be processed" { score = score + 100 } }
+                    if let `InputText placeholder = third { if placeholder ==
+                      "audio content omitted because it could not be processed" { score = score +
+                        100 } }
                   }
                 }
               }
@@ -63,6 +86,6 @@ const verify_audio_preparation_response_fixture: () -> I32 = () => {
   }
 
   score
-}
+};
 
-return { verify_audio_preparation_response_fixture }
+return { .verify_audio_preparation_response_fixture };

@@ -1,8 +1,9 @@
 module () where
 
-const { list } = import "duck:prelude/list" ()
-const {} = import "./plugin_install_types.duck" ()
-const { plan_list_plugin_install_request, plan_recommended_plugin_install_request } = import "./request_plugin_install_policy.duck" ()
+const { .list } = import "duck:prelude/list" ();
+const {} = import "./plugin_install_types.duck" ();
+const { .plan_list_plugin_install_request, .plan_recommended_plugin_install_request } =
+  import "./request_plugin_install_policy.duck" ()
 
 type FixtureCandidate = PluginInstallCandidate
 type FixtureCandidates = PluginInstallCandidates
@@ -12,37 +13,99 @@ type FixtureTextOption = InstallTextOption
 type FixtureTextNode = InstallTextNode
 type FixtureTexts = InstallTexts
 
-const candidate_values = comptime list(FixtureCandidate)
-let none: FixtureTextOption = `InstallTextMissing ()
-let empty_texts: FixtureTexts = `Nil ()
-let connector: FixtureCandidate = [.id = "calendar", .name = "Calendar", .description = none, .tool_type = `Connector (), .has_skills = false, .mcp_server_names = empty_texts, .app_connector_ids = empty_texts, .install_url = `InstallTextPresent "https://example.com/calendar", .remote_plugin_id = none]
-let plugin: FixtureCandidate = [.id = "sample@remote", .name = "Sample", .description = none, .tool_type = `Plugin (), .has_skills = true, .mcp_server_names = `Cons (["sample-mcp", `Nil ()] as FixtureTextNode), .app_connector_ids = `Cons (["calendar", `Nil ()] as FixtureTextNode), .install_url = none, .remote_plugin_id = `InstallTextPresent "plugins~sample"]
-let values: FixtureCandidates = candidate_values.prepend(connector, candidate_values.singleton(plugin))
-let score = 0
+const candidate_values = comptime list FixtureCandidate;
+let none: FixtureTextOption = `InstallTextMissing ();
+let empty_texts: FixtureTexts = `Nil ();
+let connector: FixtureCandidate = [
+  .id = "calendar",
+  .name = "Calendar",
+  .description = none,
+  .tool_type = `Connector (),
+  .has_skills = false,
+  .mcp_server_names = empty_texts,
+  .app_connector_ids = empty_texts,
+  .install_url = `InstallTextPresent "https://example.com/calendar",
+  .remote_plugin_id = none,
+];
+let plugin: FixtureCandidate = [
+  .id = "sample@remote",
+  .name = "Sample",
+  .description = none,
+  .tool_type = `Plugin (),
+  .has_skills = true,
+  .mcp_server_names = `Cons (["sample-mcp", `Nil ()] as FixtureTextNode),
+  .app_connector_ids = `Cons (["calendar", `Nil ()] as FixtureTextNode),
+  .install_url = none,
+  .remote_plugin_id = `InstallTextPresent "plugins~sample",
+];
+let values: FixtureCandidates = candidate_values.prepend(
+  connector,
+  candidate_values.singleton(plugin),
+);
+let score = 0;
 
-let enable_args: FixtureListArgs = [.tool_type = `Connector (), .action_type = `Enable (), .tool_id = "calendar", .suggest_reason = "reason"]
+let enable_args: FixtureListArgs = [
+  .tool_type = `Connector (),
+  .action_type = `Enable (),
+  .tool_id = "calendar",
+  .suggest_reason = "reason",
+];
 if let `RespondToModel message = plan_list_plugin_install_request("1", false, enable_args, values) {
-  if message == "plugin install requests currently support only action_type=\"install\"" { score = score + 1 }
+  if message == "plugin install requests currently support only action_type=\"install\"" { score =
+      score + 1 }
 }
 
-let empty_reason_args: FixtureListArgs = [.tool_type = `Connector (), .action_type = `Install (), .tool_id = "calendar", .suggest_reason = " \n "]
-if let `RespondToModel message = plan_list_plugin_install_request("2", false, empty_reason_args, values) {
+let empty_reason_args: FixtureListArgs = [
+  .tool_type = `Connector (),
+  .action_type = `Install (),
+  .tool_id = "calendar",
+  .suggest_reason = " \n ",
+];
+if let `RespondToModel message = plan_list_plugin_install_request(
+  "2",
+  false,
+  empty_reason_args,
+  values,
+) {
   if message == "suggest_reason must not be empty" { score = score + 10 }
 }
 
-let tui_plugin_args: FixtureListArgs = [.tool_type = `Plugin (), .action_type = `Install (), .tool_id = "sample@remote", .suggest_reason = "Use sample"]
-if let `RespondToModel message = plan_list_plugin_install_request("3", true, tui_plugin_args, values) {
+let tui_plugin_args: FixtureListArgs = [
+  .tool_type = `Plugin (),
+  .action_type = `Install (),
+  .tool_id = "sample@remote",
+  .suggest_reason = "Use sample",
+];
+if let `RespondToModel message = plan_list_plugin_install_request(
+  "3",
+  true,
+  tui_plugin_args,
+  values,
+) {
   if message == "plugin install requests are not available in codex-tui yet" { score = score + 100 }
 }
 
-let connector_args: FixtureListArgs = [.tool_type = `Connector (), .action_type = `Install (), .tool_id = "calendar", .suggest_reason = "  Plan events  "]
+let connector_args: FixtureListArgs = [
+  .tool_type = `Connector (),
+  .action_type = `Install (),
+  .tool_id = "calendar",
+  .suggest_reason = "  Plan events  ",
+];
 if let `Elicit request = plan_list_plugin_install_request("call-4", true, connector_args, values) {
   if request.suggestion_id == "request_plugin_install_call-4" && request.suggest_reason == "Plan events" && request.candidate.id == "calendar" { score = score + 1000 }
 }
 
-let recommended_args: FixtureRecommendedArgs = [.plugin_id = "sample@remote", .suggest_reason = "Use sample"]
-if let `Elicit request = plan_recommended_plugin_install_request("call-5", false, recommended_args, values) {
+let recommended_args: FixtureRecommendedArgs = [
+  .plugin_id = "sample@remote",
+  .suggest_reason = "Use sample",
+];
+if let `Elicit request = plan_recommended_plugin_install_request(
+  "call-5",
+  false,
+  recommended_args,
+  values,
+) {
   if request.candidate.id == "sample@remote" { score = score + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

@@ -9,17 +9,17 @@ import {
 Deno.test("frontend dynamic visible text get compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
 let rename = value => {
-  value :+ {
+  value <& {
     .second = "Grace"
   }
-}
+};
 
-let flag = true
+let flag = true;
 let input = if flag {
   1
 } else {
   0
-}
+};
 
 @get(rename([.first = "Ada", .second = "Eve"])[input], 1)
 `);
@@ -132,12 +132,12 @@ Deno.test("core text concatenation compiles through WAT to Wasm memory", async (
   }
 
   const runtime_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let append = if flag {
   (left: Text, right: Text) => left + right
 } else {
   (left: Text, right: Text) => right + left
-}
+};
 
 append("hi", "!")
 `);
@@ -203,12 +203,12 @@ append("hi", "!")
 
 Deno.test("core visible text len compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let flag = true
+let flag = true;
 let message = if flag {
   "hi"
 } else {
   "world"
-}
+};
 
 flag = false
 @len(message)
@@ -230,12 +230,12 @@ flag = false
   }
 
   const first_class_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let byte_len = if flag {
   (value: Text) => @len(value)
 } else {
   (value: Text) => @len(value) + 1
-}
+};
 
 byte_len("Ada")
 `);
@@ -262,13 +262,13 @@ byte_len("Ada")
 
 Deno.test("core dynamic text index compiles through WAT to Wasm memory", async () => {
   const wat_text = wat_from_core_source(`
-let messages = [.first = "Ada", .second = "Grace"]
+let messages = [.first = "Ada", .second = "Grace"];
 
 let i = if true {
   1
 } else {
   0
-}
+};
 
 messages[i]
 `);
@@ -316,13 +316,13 @@ messages[i]
 
 Deno.test("core dynamic text index concatenation compiles through WAT to Wasm memory", async () => {
   const wat_text = wat_from_core_source(`
-let messages = [.first = "Ada", .second = "Grace"]
+let messages = [.first = "Ada", .second = "Grace"];
 
 let i = if true {
   1
 } else {
   0
-}
+};
 
 messages[i] + "!"
 `);
@@ -379,13 +379,13 @@ messages[i] + "!"
 
 Deno.test("core dynamic text index len compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let messages = [.first = "Ada", .second = "Grace"]
+let messages = [.first = "Ada", .second = "Grace"];
 
 let i = if true {
   1
 } else {
   0
-}
+};
 
 @len(messages[i])
 `);
@@ -412,12 +412,12 @@ let i = if true {
 
 Deno.test("core dynamic text byte index compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let message = "Ada"
+let message = "Ada";
 let i = if true {
   2
 } else {
   0
-}
+};
 
 message[i]
 `);
@@ -442,12 +442,12 @@ message[i]
   }
 
   const first_class_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let byte_at = if flag {
   (value: Text, i: Int) => value[i]
 } else {
   (value: Text, i: Int) => @get(value, i)
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -477,7 +477,7 @@ Deno.test("core runtime Bytes assignment compiles through WAT to Wasm", async ()
 let write_byte = (message: Bytes, i: Int, value: Int) => {
   message[i] = value
   message[i]
-}
+};
 
 write_byte(@Utf8.encode("Ada"), 1, 111)
 `);
@@ -502,7 +502,7 @@ write_byte(@Utf8.encode("Ada"), 1, 111)
   }
 
   const first_class_wat = wat_from_core_source(`
-let flag = true
+let flag = true;
 let write_byte = if flag {
   (message: Bytes, i: Int, value: Int) => {
     message[i] = value
@@ -513,7 +513,7 @@ let write_byte = if flag {
     message[i] = value + 1
     message[i]
   }
-}
+};
 
 write_byte(@Utf8.encode("Ada"), 1, 111)
 `);
@@ -543,7 +543,7 @@ write_byte(@Utf8.encode("Ada"), 1, 111)
 let write_byte = (message: Bytes, i: Int, value: Int) => {
   message[i] = value
   message[i]
-}
+};
 
 write_byte(@Utf8.encode("Ada"), 3, 111)
 `);
@@ -576,12 +576,12 @@ write_byte(@Utf8.encode("Ada"), 3, 111)
 
 Deno.test("core dynamic text get compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let message = "Ada"
+let message = "Ada";
 let i = if true {
   1
 } else {
   0
-}
+};
 
 @get(message, i)
 `);
@@ -608,8 +608,8 @@ let i = if true {
 
 Deno.test("core dynamic text get traps out of bounds", async () => {
   const wat_text = wat_from_core_source(`
-let message = "Ada"
-let i = 3
+let message = "Ada";
+let i = 3;
 
 @get(message, i)
 `);
@@ -742,7 +742,7 @@ Deno.test("frontend text concatenation compiles through WAT to Wasm memory", asy
 
 Deno.test("frontend text len compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let message = "hello"
+let message = "hello";
 @len(message)
 `);
   const instance = await instantiate_wat(wat_text, "text_len", {});
@@ -764,10 +764,10 @@ let message = "hello"
 
 Deno.test("frontend no-else text fallback compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_source(`
-let flag = false
+let flag = false;
 let message = if flag {
   "hello"
-}
+};
 
 @len(message)
 `);
@@ -796,7 +796,7 @@ Deno.test("frontend runtime text len compiles through WAT to Wasm", async () => 
   const wat_text = wat_from_source(`
 let byte_len = (value: Text) => {
   @len(value)
-}
+};
 
 byte_len("hello")
 `);
@@ -821,7 +821,7 @@ Deno.test("frontend runtime text append compiles through WAT to Wasm", async () 
   const wat_text = wat_from_core_source(`
 let add_suffix = (value: Text) => {
   @append(value, "!")
-}
+};
 
 add_suffix("hi")
 `);
@@ -883,22 +883,22 @@ add_suffix("hi")
 
 Deno.test("frontend runtime text equality compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let flag = true
+let flag = true;
 let same = if flag {
   (left: Text, right: Text) => left == right
 } else {
   (left: Text, right: Text) => left != right
-}
+};
 let different = if flag {
   (left: Text, right: Text) => left != right
 } else {
   (left: Text, right: Text) => left == right
-}
+};
 
-let same_result = if same("Ada", "Ada") { 1 } else { 0 }
-let byte_mismatch = if same("Ada", "Adb") { 10 } else { 0 }
-let length_mismatch = if different("Ada", "Grace") { 100 } else { 0 }
-let not_same_result = if different("Ada", "Ada") { 1000 } else { 0 }
+let same_result = if same("Ada", "Ada") { 1 } else { 0 };
+let byte_mismatch = if same("Ada", "Adb") { 10 } else { 0 };
+let length_mismatch = if different("Ada", "Grace") { 100 } else { 0 };
+let not_same_result = if different("Ada", "Ada") { 1000 } else { 0 };
 
 same_result + byte_mismatch + length_mismatch + not_same_result
 `);
@@ -928,7 +928,7 @@ Deno.test("text patterns capture the segment between fixed UTF-8 text", async ()
 let extract = (value: Text) => match value {
   | "hello \${id} why" => @len(id)
   | _ => 0
-}
+};
 
 extract("hello żółw why") * 10 + extract("goodbye")
 `);
@@ -951,14 +951,14 @@ extract("hello żółw why") * 10 + extract("goodbye")
 
 Deno.test("frontend runtime text slice compiles through WAT to Wasm", async () => {
   const wat_text = wat_from_core_source(`
-let flag = true
+let flag = true;
 let slicer = if flag {
   (value: Text, start: Int, end: Int) => @slice(value, start, end)
 } else {
   (value: Text, start: Int, end: Int) => @slice(value, start, end)
-}
+};
 
-let part: Text = slicer("Grace", 1, 4)
+let part: Text = slicer("Grace", 1, 4);
 @len(part) * 1000 + @get(part, 0)
 `);
   const instance = await instantiate_wat(
@@ -984,7 +984,7 @@ let part: Text = slicer("Grace", 1, 4)
 
 Deno.test("frontend runtime text slice traps out of bounds", async () => {
   const wat_text = wat_from_core_source(`
-let part: Text = @slice("Ada", 1, 4)
+let part: Text = @slice("Ada", 1, 4);
 @len(part)
 `);
   const instance = await instantiate_wat(
@@ -1018,7 +1018,7 @@ Deno.test("frontend runtime text byte index compiles through WAT to Wasm", async
   const wat_text = wat_from_source(`
 let byte_at = (value: Text, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -1047,9 +1047,9 @@ Deno.test("frontend visible text argument byte index compiles through WAT to Was
   const wat_text = wat_from_source(`
 let byte_at = (value, i) => {
   value[i]
-}
+};
 
-let i = 1
+let i = 1;
 
 byte_at("Ada", i)
 `);
@@ -1076,12 +1076,12 @@ byte_at("Ada", i)
 
 Deno.test("frontend text branch byte index traps only selected branch", async () => {
   const ok_wat_text = wat_from_source(`
-let flag = false
+let flag = false;
 let message = if flag {
   "A"
 } else {
   "BC"
-}
+};
 
 message[1]
 `);
@@ -1106,12 +1106,12 @@ message[1]
   }
 
   const trap_wat_text = wat_from_source(`
-let flag = true
+let flag = true;
 let message = if flag {
   "A"
 } else {
   "BC"
-}
+};
 
 message[1]
 `);
@@ -1146,7 +1146,7 @@ Deno.test("frontend runtime text byte index traps out of bounds", async () => {
   const wat_text = wat_from_source(`
 let byte_at = (value: Text, i) => {
   value[i]
-}
+};
 
 byte_at("Ada", 3)
 `);
@@ -1181,7 +1181,7 @@ Deno.test("frontend runtime text get compiles through WAT to Wasm", async () => 
   const wat_text = wat_from_source(`
 let byte_at = (value: Text, i) => {
   @get(value, i)
-}
+};
 
 byte_at("Ada", 2)
 `);
@@ -1210,7 +1210,7 @@ Deno.test("frontend runtime text get traps out of bounds", async () => {
   const wat_text = wat_from_source(`
 let byte_at = (value: Text, i) => {
   @get(value, i)
-}
+};
 
 byte_at("Ada", 3)
 `);

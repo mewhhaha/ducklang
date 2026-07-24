@@ -1,0 +1,21 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+
+type ProposedPlanParser = struct {
+  .inside_plan = Bool,
+  .detect_tag = Bool,
+  .line_buffer = Text,
+}
+
+type ProposedPlanSegment =
+  | `Normal Text
+  | `ProposedPlanStart Unit
+  | `ProposedPlanDelta Text
+  | `ProposedPlanEnd Unit
+
+type ProposedPlanSegments = List ProposedPlanSegment
+type ProposedPlanChunk = [ProposedPlanParser, Text, ProposedPlanSegments]
+type ProposedPlanTextOption = Option Text
+
+return {};

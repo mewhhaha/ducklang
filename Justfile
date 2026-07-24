@@ -41,8 +41,11 @@ test: source-test case-studies
 examples:
   deno test --allow-read --allow-write --allow-run examples/examples.test.ts
 
+grammar-generate:
+  deno run --allow-read --allow-write --allow-run=tree-sitter scripts/generate-grammar.ts
+
 grammar-check:
-  deno run --allow-read --allow-write --allow-run=tree-sitter scripts/check-generated-grammar.ts
+  deno run --allow-read --allow-write --allow-run=tree-sitter scripts/generate-grammar.ts --check
   cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter test
   cd tree-sitter-duck && rg --files ../examples -g '*.duck' -0 | xargs -0 env XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter parse --quiet --stat
   cd tree-sitter-duck && XDG_CACHE_HOME=/tmp/ducklang-tree-sitter-cache tree-sitter parse --quiet --stat ../src/frontend/prelude*.duck

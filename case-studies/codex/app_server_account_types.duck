@@ -1,6 +1,6 @@
 module () where
 
-const {} = import "./app_server_types.duck" ()
+const {} = import "./app_server_types.duck" ();
 
 type AppServerAccountLoginBrand =
   | `CodexBrand Unit
@@ -49,4 +49,4 @@ type AppServerAccountMethodDecodeResult =
   | `AccountMethodOk AppServerAccountMethod
   | `AccountMethodError Text
 
-return {}
+return {};

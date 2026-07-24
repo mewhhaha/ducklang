@@ -8,4 +8,4 @@ declare Init {
   stage_input: StageInput
 }
 
-return {}
+return {};

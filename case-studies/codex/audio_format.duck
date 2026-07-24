@@ -1,26 +1,30 @@
 module () where
 
-const {} = import "./audio_types.duck" ()
+const {} = import "./audio_types.duck" ();
 
 const ascii_lowercase = (byte: I32) => {
   if byte >= 65 && byte <= 90 { byte + 32 } else { byte }
-}
+};
 
 const classify_audio_format: Text -> I32 = mime => {
-  let inspected_mime = @append(mime, "")
-  let mime_length = @len inspected_mime
-  let has_audio_prefix = mime_length >= 6
+  let inspected_mime = @append(mime, "");
+  let mime_length = @len inspected_mime;
+  let has_audio_prefix = mime_length >= 6;
 
   if has_audio_prefix {
-    has_audio_prefix = ascii_lowercase(@get(inspected_mime, 0)) == 97 && ascii_lowercase(@get(inspected_mime, 1)) == 117 && ascii_lowercase(@get(inspected_mime, 2)) == 100 && ascii_lowercase(@get(inspected_mime, 3)) == 105 && ascii_lowercase(@get(inspected_mime, 4)) == 111 && @get(inspected_mime, 5) == 47
+    has_audio_prefix = ascii_lowercase(@get(inspected_mime, 0)) == 97 && ascii_lowercase(
+      @get(inspected_mime, 1)
+    ) == 117 && ascii_lowercase(@get(inspected_mime, 2)) == 100 && ascii_lowercase(
+      @get(inspected_mime, 3)
+    ) == 105 && ascii_lowercase(@get(inspected_mime, 4)) == 111 && @get(inspected_mime, 5) == 47
   }
 
   let code = if !(has_audio_prefix) {
     5
   } else if mime_length == 9 {
-    let first = ascii_lowercase(@get(inspected_mime, 6))
-    let second = ascii_lowercase(@get(inspected_mime, 7))
-    let third = ascii_lowercase(@get(inspected_mime, 8))
+    let first = ascii_lowercase(@get(inspected_mime, 6));
+    let second = ascii_lowercase(@get(inspected_mime, 7));
+    let third = ascii_lowercase(@get(inspected_mime, 8));
     if first == 119 && second == 97 && third == 118 {
       0
     } else if first == 109 && second == 112 && third == 51 {
@@ -35,10 +39,10 @@ const classify_audio_format: Text -> I32 = mime => {
       5
     }
   } else if mime_length == 10 {
-    let first = ascii_lowercase(@get(inspected_mime, 6))
-    let second = ascii_lowercase(@get(inspected_mime, 7))
-    let third = ascii_lowercase(@get(inspected_mime, 8))
-    let fourth = ascii_lowercase(@get(inspected_mime, 9))
+    let first = ascii_lowercase(@get(inspected_mime, 6));
+    let second = ascii_lowercase(@get(inspected_mime, 7));
+    let third = ascii_lowercase(@get(inspected_mime, 8));
+    let fourth = ascii_lowercase(@get(inspected_mime, 9));
     if first == 119 && second == 97 && third == 118 && fourth == 101 {
       0
     } else if first == 109 && second == 112 && third == 101 && fourth == 103 {
@@ -49,11 +53,11 @@ const classify_audio_format: Text -> I32 = mime => {
       5
     }
   } else if mime_length == 11 {
-    let first = ascii_lowercase(@get(inspected_mime, 6))
-    let second = ascii_lowercase(@get(inspected_mime, 7))
-    let third = ascii_lowercase(@get(inspected_mime, 8))
-    let fourth = ascii_lowercase(@get(inspected_mime, 9))
-    let fifth = ascii_lowercase(@get(inspected_mime, 10))
+    let first = ascii_lowercase(@get(inspected_mime, 6));
+    let second = ascii_lowercase(@get(inspected_mime, 7));
+    let third = ascii_lowercase(@get(inspected_mime, 8));
+    let fourth = ascii_lowercase(@get(inspected_mime, 9));
+    let fifth = ascii_lowercase(@get(inspected_mime, 10));
     if first == 120 && second == 45 && third == 119 && fourth == 97 && fifth == 118 {
       0
     } else if first == 120 && second == 45 && third == 109 && fourth == 52 && fifth == 97 {
@@ -62,7 +66,14 @@ const classify_audio_format: Text -> I32 = mime => {
       5
     }
   } else if mime_length == 14 {
-    let suffix_matches = ascii_lowercase(@get(inspected_mime, 6)) == 118 && ascii_lowercase(@get(inspected_mime, 7)) == 110 && ascii_lowercase(@get(inspected_mime, 8)) == 100 && @get(inspected_mime, 9) == 46 && ascii_lowercase(@get(inspected_mime, 10)) == 119 && ascii_lowercase(@get(inspected_mime, 11)) == 97 && ascii_lowercase(@get(inspected_mime, 12)) == 118 && ascii_lowercase(@get(inspected_mime, 13)) == 101
+    let suffix_matches = ascii_lowercase(@get(inspected_mime, 6)) == 118 && ascii_lowercase(
+      @get(inspected_mime, 7)
+    ) == 110 && ascii_lowercase(@get(inspected_mime, 8)) == 100 && @get(inspected_mime, 9) == 46 &&
+    ascii_lowercase(
+      @get(inspected_mime, 10)
+    ) == 119 && ascii_lowercase(@get(inspected_mime, 11)) == 97 && ascii_lowercase(
+      @get(inspected_mime, 12)
+    ) == 118 && ascii_lowercase(@get(inspected_mime, 13)) == 101;
     if suffix_matches {
       0
     } else {
@@ -70,9 +81,9 @@ const classify_audio_format: Text -> I32 = mime => {
     }
   } else {
     5
-  }
+  };
 
   code
-}
+};
 
-return { classify_audio_format }
+return { .classify_audio_format };

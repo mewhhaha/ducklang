@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./audio_types.duck" ()
-const {} = import "./history_types.duck" ()
+const {} = import "./audio_types.duck" ();
+const {} = import "./history_types.duck" ();
 
 type AudioPreparationResultNode = [AudioPreparationResult, AudioPreparationResults]
 type AudioPreparationResults =
@@ -17,4 +17,4 @@ type AudioRewriteResult =
   | `PreparedAudioResponses HistoryItems
   | `RejectedAudioRewrite AudioRewriteFailure
 
-return {}
+return {};

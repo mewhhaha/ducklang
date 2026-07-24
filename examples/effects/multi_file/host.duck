@@ -8,4 +8,4 @@ declare Init {
   io: Io
 }
 
-return {}
+return {};

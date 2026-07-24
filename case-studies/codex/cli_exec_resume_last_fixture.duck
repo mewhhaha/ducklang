@@ -1,23 +1,23 @@
 module () where
 
-const { parse_exec_options } = import "./cli_exec.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_exec_options } = import "./cli_exec.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
 const empty_args = () => {
-  let values: FixtureArgs = `Nil ()
+  let values: FixtureArgs = `Nil ();
   values
-}
+};
 
 const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => {
-  let node: ListNode Text = [value, tail]
-  let values: FixtureArgs = `Cons node
+  let node: ListNode Text = [value, tail];
+  let values: FixtureArgs = `Cons node;
   values
-}
+};
 
-let input: FixtureArgs = prepend_arg("continue", empty_args())
+let input: FixtureArgs = prepend_arg("continue", empty_args());
 input = prepend_arg("gpt-test", input)
 input = prepend_arg("--model", input)
 input = prepend_arg("one.png,two.png", input)
@@ -25,22 +25,22 @@ input = prepend_arg("--image", input)
 input = prepend_arg("--last", input)
 input = prepend_arg("resume", input)
 input = prepend_arg("--json", input)
-let parsed: FixtureResult = parse_exec_options input
+let parsed: FixtureResult = parse_exec_options input;
 let score = if let `Ok options = parsed {
   if let `ExecResume resume = options.command {
     if let `Some prompt = resume.prompt {
       if let `None () = resume.session_id {
         let two_images = if let `Cons first_image_node = resume.images {
-          let [_, remaining_images] = first_image_node
+          let [_, remaining_images] = first_image_node;
           if let `Cons second_image_node = remaining_images {
-            let [_, extra_images] = second_image_node
+            let [_, extra_images] = second_image_node;
             if let `Nil () = extra_images { true } else { false }
           } else { false }
-        } else { false }
+        } else { false };
         if resume.last && prompt == "continue" && two_images && options.json { 1 } else { 0 }
       } else { 0 }
     } else { 0 }
   } else { 0 }
-} else { 0 }
+} else { 0 };
 
-return { .score = score }
+return { .score = score };

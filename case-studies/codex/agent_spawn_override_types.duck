@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_types.duck" ();
 
 type AgentSpawnOverrideEffortNode = [Text, AgentSpawnOverrideEfforts]
 type AgentSpawnOverrideEfforts =
@@ -69,4 +69,4 @@ type AgentSpawnOverrideResult =
   | `SpawnOverrideSelected AgentSpawnOverrideSelection
   | `SpawnOverrideRejected Text
 
-return {}
+return {};

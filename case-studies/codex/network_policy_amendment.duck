@@ -1,0 +1,45 @@
+module () where
+
+const { .text_append } = import "duck:prelude/text" ();
+const {} = import "./network_policy_amendment_types.duck" ();
+
+type PolicyAmendment = NetworkPolicyAmendment
+type AmendmentContext = NetworkPolicyApprovalContext
+type ExecPolicyAmendment = NetworkExecPolicyAmendment
+type ExecPolicyProtocol = NetworkExecPolicyProtocol
+type ExecPolicyDecision = NetworkExecPolicyDecision
+
+const execpolicy_network_rule_amendment: [PolicyAmendment, AmendmentContext, Text] ->
+  ExecPolicyAmendment = (
+    amendment,
+    approval_context,
+    host,
+  ) => {
+    let protocol: ExecPolicyProtocol = `ExecHttp ();
+    let protocol_label = "http";
+    if let `PolicyHttps () = approval_context.protocol {
+      protocol = `ExecHttps ()
+      protocol_label = "https_connect"
+    } else if let `PolicySocks5Tcp () = approval_context.protocol {
+      protocol = `ExecSocks5Tcp ()
+      protocol_label = "socks5_tcp"
+    } else if let `PolicySocks5Udp () = approval_context.protocol {
+      protocol = `ExecSocks5Udp ()
+      protocol_label = "socks5_udp"
+    }
+
+    let decision: ExecPolicyDecision = `ExecAllow ();
+    let action_verb = "Allow";
+    if let `DenyRule () = amendment.action {
+      decision = `ExecForbidden ()
+      action_verb = "Deny"
+    }
+
+    let justification = text_append(
+      action_verb,
+      text_append(" ", text_append(protocol_label, text_append(" access to ", host))),
+    );
+    [.protocol = protocol, .decision = decision, .justification = justification]
+  };
+
+return { .execpolicy_network_rule_amendment };

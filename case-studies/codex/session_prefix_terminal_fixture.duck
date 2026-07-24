@@ -1,21 +1,22 @@
 module () where
 
-const agent_types_module = import "./agent_types.duck"
-const session_prefix_module = import "./session_prefix.duck"
-const { format_inter_agent_completion_message } = session_prefix_module()
+const agent_types_module = import "./agent_types.duck";
+const session_prefix_module = import "./session_prefix.duck";
+const { .format_inter_agent_completion_message } = session_prefix_module();
 
 type FixtureTextOption = AgentTextOption
 type FixtureStatus = AgentStatus
 
-let score = 0
-let no_message: FixtureTextOption = `None ()
-let completed: FixtureStatus = `Completed no_message
-let shutdown: FixtureStatus = `Shutdown ()
-let missing: FixtureStatus = `NotFound ()
-let interrupted: FixtureStatus = `Interrupted ()
+let score = 0;
+let no_message: FixtureTextOption = `None ();
+let completed: FixtureStatus = `Completed no_message;
+let shutdown: FixtureStatus = `Shutdown ();
+let missing: FixtureStatus = `NotFound ();
+let interrupted: FixtureStatus = `Interrupted ();
 
 if let `Some message = format_inter_agent_completion_message("/root", "/root/worker", completed) {
-  if message == "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\n" { score = score + 1 }
+  if message == "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\n" {
+    score = score + 1 }
 }
 
 if let `Some message = format_inter_agent_completion_message("/root", "/root/worker", shutdown) {
@@ -30,4 +31,4 @@ if let `None () = format_inter_agent_completion_message("/root", "/root/worker",
   score = score + 1000
 }
 
-return { .score = score }
+return { .score = score };

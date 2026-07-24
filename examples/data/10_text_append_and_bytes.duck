@@ -1,7 +1,7 @@
-const { length } = import "duck:prelude/runtime" ()
+const { .length } = import "duck:prelude/runtime" ();
 
-let first = "Ada"
-let last = " Lovelace"
-let full = first <> last
+let first = "Ada";
+let last = " Lovelace";
+let full = first ++ last;
 
-length(full) + full[1]
+length full + full[1]

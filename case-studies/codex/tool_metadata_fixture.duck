@@ -1,21 +1,35 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { tool_supports_parallel, tool_waits_for_cancellation } = import "./tool_registry.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .tool_supports_parallel, .tool_waits_for_cancellation } = import "./tool_registry.duck" ();
 
 type FixtureName = ToolName
 type FixtureDefinition = ToolDefinition
 type FixtureDefinitions = ToolDefinitions
 
-let shell_name: FixtureName = ["", "exec_command"]
-let shell: FixtureDefinition = [shell_name, `Direct (), `UnifiedExec (), `FunctionPayload (), true, false]
-let legacy_name: FixtureName = ["", "shell_command"]
-let legacy: FixtureDefinition = [legacy_name, `Hidden (), `Shell (), `FunctionPayload (), true, true]
-let registry: FixtureDefinitions = `Cons ([legacy, `Cons ([shell, `Nil ()])])
-let score: I32 = 0
+let shell_name: FixtureName = ["", "exec_command"];
+let shell: FixtureDefinition = [
+  shell_name,
+  `Direct (),
+  `UnifiedExec (),
+  `FunctionPayload (),
+  true,
+  false,
+];
+let legacy_name: FixtureName = ["", "shell_command"];
+let legacy: FixtureDefinition = [
+  legacy_name,
+  `Hidden (),
+  `Shell (),
+  `FunctionPayload (),
+  true,
+  true,
+];
+let registry: FixtureDefinitions = `Cons ([legacy, `Cons ([shell, `Nil ()])]);
+let score: I32 = 0;
 
 if tool_supports_parallel(registry, shell_name) { score = score + 1 }
 if !(tool_supports_parallel(registry, legacy_name)) { score = score + 1 }
 if tool_waits_for_cancellation(registry, legacy_name) { score = score + 1 }
 
-return { .score = score }
+return { .score = score };

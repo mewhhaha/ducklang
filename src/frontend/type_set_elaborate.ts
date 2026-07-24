@@ -48,6 +48,8 @@ import { prim_returns_bool } from "./numeric.ts";
 import { text_byte_length } from "./text.ts";
 import { parameter_arguments } from "./call_args.ts";
 import { compiler_builtin_args } from "./compiler_builtin_args.ts";
+import { is_const_builtin_name } from "./constness.ts";
+import { struct_merge_operands } from "./struct_merge.ts";
 
 type TypeSetBinding = {
   annotation: string | undefined;
@@ -203,17 +205,20 @@ function elaborate_comptime_type_intrinsic(
       additions_arg.tag === "shape"
     ) {
       const base_binding = scope.bindings.get(base.name);
+      const resolved_base = resolve_front_type_value(
+        base,
+        scope.type_values,
+        new Set(),
+      );
       if (
-        base_binding !== undefined && base_binding.compiletime_only !== true
+        base_binding !== undefined &&
+        base_binding.compiletime_only !== true &&
+        base_binding.is_const !== true &&
+        (resolved_base === undefined || resolved_base.tag === "var")
       ) {
-        return {
-          tag: "struct_update",
-          base,
-          fields: additions_arg.entries.map((entry) => {
-            expect(entry.label !== undefined, "Struct update requires a field");
-            return { name: entry.label, value: entry.value };
-          }),
-        };
+        throw new Error(
+          "Runtime structural merge uses `<&` or `&>`; `:+` only extends compile-time values",
+        );
       }
     }
 
@@ -308,7 +313,33 @@ function elaborate_comptime_type_intrinsic(
       return { tag: "with", base: extended_base, fields };
     }
 
-    return { tag: "struct_update", base, fields };
+    if (scope_const_expr_known(base, scope)) {
+      let extended_base = base;
+
+      if (scope.evaluating_const_call) {
+        extended_base = unwrap_const_result(
+          resolve_scope_const_value(base, scope),
+        );
+      }
+
+      for (const field of fields) {
+        expect(
+          resolve_extension_field(
+            extended_base,
+            field.name,
+            scope,
+            new Set(),
+          ) === undefined,
+          "Duplicate compile-time namespace member: " + field.name,
+        );
+      }
+
+      return { tag: "with", base: extended_base, fields };
+    }
+
+    throw new Error(
+      "Runtime structural merge uses `<&` or `&>`; `:+` only extends compile-time values",
+    );
   }
 
   let arg = unary_arg;
@@ -628,9 +659,7 @@ function capture_const_bindings(
 }
 
 export function elaborate_front_type_sets(source: Source): Source {
-  const statements = materialize_structural_function_result_types(
-    source.statements,
-  );
+  let statements = source.statements;
   const scope: TypeSetScope = {
     bindings: new Map(),
     const_evaluation: undefined,
@@ -675,6 +704,17 @@ export function elaborate_front_type_sets(source: Source): Source {
     }
   }
 
+  statements = materialize_structural_function_result_types(
+    statements,
+    (name) => scope_const_i32_name(name, scope, new Set()),
+  );
+
+  for (const stmt of statements) {
+    if (stmt.tag === "bind" && stmt.kind === "const") {
+      set_scope_type_value(scope, stmt.name, stmt.value);
+    }
+  }
+
   let module = source.module;
 
   if (module !== undefined) {
@@ -693,6 +733,7 @@ export function elaborate_front_type_sets(source: Source): Source {
 
 function materialize_structural_function_result_types(
   statements: Stmt[],
+  resolve_length: (name: string) => number | undefined,
 ): Stmt[] {
   const reserved_names = new Set<string>();
 
@@ -718,8 +759,7 @@ function materialize_structural_function_result_types(
     const function_type = function_type_expr(stmt.type_annotation);
 
     if (
-      function_type === undefined || function_type.result.tag !== "product" ||
-      function_type.result.value_pack === true
+      function_type === undefined || function_type.result.tag !== "product"
     ) {
       materialized.push(stmt);
       continue;
@@ -734,7 +774,14 @@ function materialize_structural_function_result_types(
     }
 
     reserved_names.add(type_name);
-    const result_type = function_type.result;
+    const result_type = normalize_fixed_array_type_lengths(
+      function_type.result,
+      resolve_length,
+    );
+    expect(
+      result_type.tag === "product",
+      "Normalized structural function result must remain a product",
+    );
     const type_value: Extract<FrontExpr, { tag: "struct_type" }> = {
       tag: "struct_type",
       fields: result_type.entries.map((entry, index) => {
@@ -1177,7 +1224,8 @@ function elaborate_pattern_bindings(
   }
 
   if (
-    pattern.tag === "literal" || pattern.tag === "value" ||
+    pattern.tag === "literal" || pattern.tag === "const_value" ||
+    pattern.tag === "value" ||
     pattern.tag === "union_case" || pattern.tag === "type" ||
     pattern.tag === "or" || pattern.tag === "text_capture"
   ) {
@@ -2102,7 +2150,16 @@ function elaborate_match_expr(
   scope: TypeSetScope,
 ): FrontExpr {
   const target = rewrite_expr(expr.target, scope);
-  const arms = expand_match_alternatives(expr.arms);
+  const arms = expand_match_alternatives(expr.arms).map((arm) => {
+    if (arm.pattern.tag !== "const_value") {
+      return arm;
+    }
+
+    return {
+      ...arm,
+      pattern: resolve_const_value_pattern(arm.pattern, scope),
+    };
+  });
 
   if (arms.some((arm) => arm.pattern.tag === "type")) {
     return elaborate_type_match_expr({ ...expr, arms }, target, scope);
@@ -2192,6 +2249,12 @@ function elaborate_match_expr(
         } else if (value.tag === "atom" && target.tag === "atom") {
           matches = value.name === target.name;
         }
+      } else if (arm.pattern.tag === "const_value") {
+        const condition = rewrite_expr(
+          const_value_pattern_condition(target, arm.pattern, scope),
+          const_evaluation_scope(scope),
+        );
+        matches = static_i32_source_value(condition) === 1;
       } else if (
         arm.pattern.tag === "text_capture" && target.tag === "text"
       ) {
@@ -2295,6 +2358,161 @@ function expand_match_alternatives(arms: MatchArm[]): MatchArm[] {
   }
 
   return expanded;
+}
+
+function resolve_const_value_pattern(
+  pattern: Extract<Pattern, { tag: "const_value" }>,
+  scope: TypeSetScope,
+): Extract<Pattern, { tag: "const_value" }> {
+  if (!const_pattern_expr_known(pattern.value, scope)) {
+    throw new Error(
+      "Value pattern requires a compile-time expression: " +
+        format_expr(pattern.value),
+    );
+  }
+
+  const evaluation_scope = const_evaluation_scope(scope);
+  const value = unwrap_const_result(
+    resolve_scope_const_value(pattern.value, evaluation_scope),
+  );
+  const_value_pattern_equality_prim(value, scope);
+  return { ...pattern, value };
+}
+
+function const_pattern_expr_known(
+  expr: FrontExpr,
+  scope: TypeSetScope,
+): boolean {
+  if (
+    expr.tag === "bool" || expr.tag === "num" || expr.tag === "atom" ||
+    expr.tag === "unit" || expr.tag === "text" || expr.tag === "type_name" ||
+    expr.tag === "set_type" || expr.tag === "struct_type" ||
+    expr.tag === "union_type"
+  ) {
+    return true;
+  }
+
+  if (expr.tag === "var") {
+    const binding = scope.bindings.get(expr.name);
+    return binding?.is_const === true || is_const_builtin_name(expr.name) ||
+      expr.name === "@cast";
+  }
+
+  if (expr.tag === "prim") {
+    return const_pattern_expr_known(expr.left, scope) &&
+      const_pattern_expr_known(expr.right, scope);
+  }
+
+  if (expr.tag === "app") {
+    return const_pattern_expr_known(expr.func, scope) &&
+      expr.args.every((arg) => const_pattern_expr_known(arg, scope));
+  }
+
+  if (expr.tag === "comptime" || expr.tag === "captured") {
+    return const_pattern_expr_known(expr.expr, scope);
+  }
+
+  if (expr.tag === "as" || expr.tag === "is") {
+    return const_pattern_expr_known(expr.value, scope);
+  }
+
+  return false;
+}
+
+function const_evaluation_scope(scope: TypeSetScope): TypeSetScope {
+  const evaluation_scope = clone_scope(scope);
+  evaluation_scope.evaluating_const_body = true;
+  evaluation_scope.evaluating_const_call = true;
+
+  if (evaluation_scope.const_evaluation === undefined) {
+    evaluation_scope.const_evaluation = {
+      recursions: new Map(),
+      steps: 0,
+    };
+  }
+
+  return evaluation_scope;
+}
+
+function const_value_pattern_condition(
+  target: FrontExpr,
+  pattern: Extract<Pattern, { tag: "const_value" }>,
+  scope: TypeSetScope,
+): FrontExpr {
+  return {
+    tag: "prim",
+    prim: const_value_pattern_equality_prim(pattern.value, scope),
+    left: target,
+    right: pattern.value,
+  };
+}
+
+function const_value_pattern_equality_prim(
+  value: FrontExpr,
+  scope: TypeSetScope,
+): "i32.eq" | "i64.eq" {
+  if (
+    value.tag === "app" && value.func.tag === "var" &&
+    value.func.name === "@cast"
+  ) {
+    const target = compiler_builtin_args(value)[1];
+    expect(target, "Value pattern cast is missing its target type");
+    const resolved_target = resolve_front_type_value(
+      target,
+      scope.type_values,
+      new Set(),
+    );
+
+    if (
+      resolved_target?.tag === "type_name" &&
+      (resolved_target.name === "I64" || resolved_target.name === "U64")
+    ) {
+      return "i64.eq";
+    }
+
+    if (
+      resolved_target?.tag === "type_name" ||
+      (resolved_target?.tag === "var" &&
+        is_builtin_type_name(resolved_target.name))
+    ) {
+      return "i32.eq";
+    }
+  }
+
+  const type = type_of_static_type_value(value, scope, new Set());
+
+  if (type === undefined) {
+    throw new Error(
+      "Value pattern must resolve to a scalar value: " + format_expr(value),
+    );
+  }
+
+  const resolved = resolve_front_type_value(type, scope.type_values, new Set());
+
+  if (
+    resolved?.tag === "set_type" && resolved.type_expr.tag === "literal" &&
+    resolved.type_expr.value.tag === "num" &&
+    resolved.type_expr.value.type === "i64"
+  ) {
+    return "i64.eq";
+  }
+
+  if (
+    resolved?.tag === "type_name" &&
+    (resolved.name === "I64" || resolved.name === "U64")
+  ) {
+    return "i64.eq";
+  }
+
+  if (
+    resolved?.tag === "type_name" || resolved?.tag === "set_type"
+  ) {
+    return "i32.eq";
+  }
+
+  throw new Error(
+    "Value pattern must resolve to a scalar value: " + format_expr(value),
+  );
 }
 
 function elaborate_type_match_expr(
@@ -2675,6 +2893,20 @@ function elaborate_match_arm(
     return {
       tag: "if",
       cond: match_literal_condition(target, arm.pattern),
+      then_branch: guarded_match_body(
+        arm.guard,
+        arm.body,
+        fallback,
+        scope,
+      ),
+      else_branch: fallback,
+    };
+  }
+
+  if (arm.pattern.tag === "const_value") {
+    return {
+      tag: "if",
+      cond: const_value_pattern_condition(target, arm.pattern, scope),
       then_branch: guarded_match_body(
         arm.guard,
         arm.body,
@@ -3150,6 +3382,10 @@ function validate_match_coverage(
       continue;
     }
 
+    if (arm.pattern.tag === "const_value") {
+      continue;
+    }
+
     if (arm.pattern.tag === "value") {
       continue;
     }
@@ -3386,7 +3622,7 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
           const message: FrontExpr = {
             tag: "text",
             value: "Function argument does not match " +
-              format_pattern(pattern),
+              format_pattern(pattern, format_expr),
           };
           const panic: FrontExpr = {
             tag: "app",
@@ -3684,6 +3920,22 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
           ),
           scope,
         );
+      }
+
+      const runtime_merge = struct_merge_operands(
+        expr.operator_syntax,
+        args,
+      );
+
+      if (runtime_merge !== undefined) {
+        return rewrite_expr({
+          tag: "struct_update",
+          base: runtime_merge.base,
+          fields: runtime_merge.updates.entries.map((entry) => {
+            expect(entry.label !== undefined, "Struct merge requires a field");
+            return { name: entry.label, value: entry.value };
+          }),
+        }, scope);
       }
 
       const aggregate_type = elaborate_comptime_type_intrinsic(

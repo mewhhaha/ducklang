@@ -1,8 +1,8 @@
 module () where
 
-const {} = import "./history_types.duck" ()
-const {} = import "./audio_preparation_types.duck" ()
-const { apply_audio_preparation_results } = import "./audio_preparation.duck" ()
+const {} = import "./history_types.duck" ();
+const {} = import "./audio_preparation_types.duck" ();
+const { .apply_audio_preparation_results } = import "./audio_preparation.duck" ();
 
 type FixtureContentNode = ListNode HistoryContent
 type FixtureResponseNode = ListNode HistoryItem
@@ -13,22 +13,29 @@ type FixturePreparationResults = AudioPreparationResults
 type FixturePreparationResultNode = AudioPreparationResultNode
 
 const verify_audio_preparation_invalid_status_fixture: () -> I32 = () => {
-  let contents: FixtureContents = `Nil ()
-  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,YQ==", contents]
+  let contents: FixtureContents = `Nil ();
+  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,YQ==", contents];
   contents = `Cons content_node
-  let responses: FixtureResponses = `Nil ()
-  let response_node: FixtureResponseNode = [`Message (["user", false, contents]), responses]
+  let responses: FixtureResponses = `Nil ();
+  let response_node: FixtureResponseNode = [`Message (["user", false, contents]), responses];
   responses = `Cons response_node
-  let result: FixturePreparationResult = [.status_code = 9, .url = "", .reason = "", .size = 0, .mime = "audio/wav", .format_code = 0]
-  let results: FixturePreparationResults = `AudioResultsNil ()
-  let result_node: FixturePreparationResultNode = [result, results]
+  let result: FixturePreparationResult = [
+    .status_code = 9,
+    .url = "",
+    .reason = "",
+    .size = 0,
+    .mime = "audio/wav",
+    .format_code = 0,
+  ];
+  let results: FixturePreparationResults = `AudioResultsNil ();
+  let result_node: FixturePreparationResultNode = [result, results];
   results = `AudioResultsCons result_node
-  let rewrite = apply_audio_preparation_results(responses, results)
+  let rewrite = apply_audio_preparation_results(responses, results);
   if let `RejectedAudioRewrite failure = rewrite {
     if let `InvalidAudioPreparationStatus status_code = failure {
       if status_code == 9 { 1 } else { 0 }
     } else { 0 }
   } else { 0 }
-}
+};
 
-return { verify_audio_preparation_invalid_status_fixture }
+return { .verify_audio_preparation_invalid_status_fixture };

@@ -1,9 +1,41 @@
 module () where
 
-const { decode_utf8, generate_bytes, text_append, text_byte_is_ascii_digit, text_byte_is_ascii_whitespace, text_get, text_length, text_slice } = import "duck:prelude/runtime" ()
-const { text_copy } = import "duck:prelude/text" ()
-const { json_array, json_array_empty, json_array_prepend, json_bool, json_bool_field, json_field, json_null, json_nullable_string_field, json_number, json_object, json_object_append, json_object_contains, json_object_empty, json_object_get, json_object_key_count, json_object_length, json_object_prepend, json_object_reverse, json_optional_string_field, json_string, json_string_field, merge_json } = import "duck:prelude/json/values" ()
-const { encode_json_ascii, encode_json_string_ascii } = import "duck:prelude/json/encode" ()
+const {
+  .decode_utf8,
+  .generate_bytes,
+  .text_append,
+  .text_byte_is_ascii_digit,
+  .text_byte_is_ascii_whitespace,
+  .text_get,
+  .text_length,
+  .text_slice,
+} = import "duck:prelude/runtime" ();
+const { .text_copy } = import "duck:prelude/text" ();
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_bool,
+  .json_bool_field,
+  .json_field,
+  .json_null,
+  .json_nullable_string_field,
+  .json_number,
+  .json_object,
+  .json_object_append,
+  .json_object_contains,
+  .json_object_empty,
+  .json_object_get,
+  .json_object_key_count,
+  .json_object_length,
+  .json_object_prepend,
+  .json_object_reverse,
+  .json_optional_string_field,
+  .json_string,
+  .json_string_field,
+  .merge_json,
+} = import "duck:prelude/json/values" ();
+const { .encode_json_ascii, .encode_json_string_ascii } = import "duck:prelude/json/encode" ();
 
 type JsonModuleArray = JsonArray
 type JsonModuleObject = JsonObject
@@ -11,31 +43,31 @@ type JsonFailure = Option JsonError
 
 const json_error: [I32, Text] -> (JsonError) = (position, message) => {
   [position, message]
-}
+};
 
 const json_parsed: [Json, I32] -> (JsonParsed) = (value, next) => {
   [value, next]
-}
+};
 
 const json_string_parsed: [Text, I32] -> (JsonStringParsed) = (value, next) => {
   [value, next]
-}
+};
 
 let skip_json_whitespace: [Text, I32] -> I32 = (text: Text, start: I32) => {
-  let index = start
+  let index = start;
 
   loop {
     if index >= text_length text {
-      break
+      break;
     } else if text_byte_is_ascii_whitespace(text_get [text, index]) {
       index = index + 1
     } else {
-      break
+      break;
     }
   }
 
   index
-}
+};
 
 const json_hex_digit_value = byte => {
   if byte >= 48 && byte <= 57 {
@@ -47,7 +79,7 @@ const json_hex_digit_value = byte => {
   } else {
     -1
   }
-}
+};
 
 let json_code_point_text: I32 -> Text = (code_point: I32) => {
   if code_point <= 127 {
@@ -79,42 +111,42 @@ let json_code_point_text: I32 -> Text = (code_point: I32) => {
       }
     }))
   }
-}
+};
 
 const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start: I32) => {
-  let length = text_length text
+  let length = text_length text;
 
   if start >= length || text_get [text, start] != 34 {
     `Err (json_error(start, "Expected JSON string"))
   } else {
-    let index = start + 1
-    let segment_start = index
-    let decoded: Text = ""
-    let closed = false
-    let failed = false
-    let failure_index = start
-    let failure_message: Text = ""
+    let index = start + 1;
+    let segment_start = index;
+    let decoded: Text = "";
+    let closed = false;
+    let failed = false;
+    let failure_index = start;
+    let failure_message: Text = "";
 
     loop {
       if index >= length {
         failed = true
         failure_index = index
         failure_message = "Unterminated JSON string"
-        break
+        break;
       }
 
-      let byte = text_get [text, index]
+      let byte = text_get [text, index];
 
       if byte == 34 {
         decoded = text_append [decoded, text_slice [text, segment_start, index]]
         index = index + 1
         closed = true
-        break
+        break;
       } else if byte < 32 {
         failed = true
         failure_index = index
         failure_message = "Unescaped control byte in JSON string"
-        break
+        break;
       } else if byte == 92 {
         decoded = text_append [decoded, text_slice [text, segment_start, index]]
         index = index + 1
@@ -123,10 +155,10 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
           failed = true
           failure_index = index
           failure_message = "Unterminated JSON escape"
-          break
+          break;
         }
 
-        let escape = text_get [text, index]
+        let escape = text_get [text, index];
 
         if escape == 34 || escape == 47 || escape == 92 {
           decoded = text_append [decoded, text_slice [text, index, index + 1]]
@@ -151,31 +183,31 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
             failed = true
             failure_index = index
             failure_message = "Incomplete JSON unicode escape"
-            break
+            break;
           }
 
-          let first = json_hex_digit_value(text_get [text, index + 1])
-          let second = json_hex_digit_value(text_get [text, index + 2])
-          let third = json_hex_digit_value(text_get [text, index + 3])
-          let fourth = json_hex_digit_value(text_get [text, index + 4])
+          let first = json_hex_digit_value(text_get [text, index + 1]);
+          let second = json_hex_digit_value(text_get [text, index + 2]);
+          let third = json_hex_digit_value(text_get [text, index + 3]);
+          let fourth = json_hex_digit_value(text_get [text, index + 4]);
 
           if first < 0 || second < 0 || third < 0 || fourth < 0 {
             failed = true
             failure_index = index
             failure_message = "Invalid JSON unicode escape"
-            break
+            break;
           }
 
-          let code_point = first * 4096 + second * 256 + third * 16 + fourth
+          let code_point = first * 4096 + second * 256 + third * 16 + fourth;
           index = index + 5
 
           if code_point >= 55296 && code_point <= 56319 {
             if index + 6 > length || text_get [text, index] != 92 || text_get [text, index + 1] != 117 {
-              failed = true
-              failure_index = index
-              failure_message = "JSON high surrogate requires a low surrogate"
-              break
-            }
+                failed = true
+                failure_index = index
+                failure_message = "JSON high surrogate requires a low surrogate"
+                break;
+              }
 
             first = json_hex_digit_value(text_get [text, index + 2])
             second = json_hex_digit_value(text_get [text, index + 3])
@@ -186,16 +218,16 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
               failed = true
               failure_index = index
               failure_message = "Invalid JSON low surrogate escape"
-              break
+              break;
             }
 
-            let low = first * 4096 + second * 256 + third * 16 + fourth
+            let low = first * 4096 + second * 256 + third * 16 + fourth;
 
             if low < 56320 || low > 57343 {
               failed = true
               failure_index = index
               failure_message = "JSON high surrogate requires a low surrogate"
-              break
+              break;
             }
 
             code_point = 65536 + (code_point - 55296) * 1024 + low - 56320
@@ -204,7 +236,7 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
             failed = true
             failure_index = index - 5
             failure_message = "JSON low surrogate has no high surrogate"
-            break
+            break;
           }
 
           decoded = text_append [decoded, json_code_point_text code_point]
@@ -212,7 +244,7 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
           failed = true
           failure_index = index
           failure_message = "Invalid JSON escape"
-          break
+          break;
         }
 
         segment_start = index
@@ -229,12 +261,12 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
       `Err (json_error(index, "Unterminated JSON string"))
     }
   }
-}
+};
 
 let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
-  let length = text_length text
-  let index = start
-  let valid = true
+  let length = text_length text;
+  let index = start;
+  let valid = true;
 
   if index < length && text_get [text, index] == 45 {
     index = index + 1
@@ -251,7 +283,7 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
       if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
         index = index + 1
       } else {
-        break
+        break;
       }
     }
   } else {
@@ -268,7 +300,7 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
         if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
           index = index + 1
         } else {
-          break
+          break;
         }
       }
     } else {
@@ -290,7 +322,7 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
         if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
           index = index + 1
         } else {
-          break
+          break;
         }
       }
     } else {
@@ -299,21 +331,21 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
   }
 
   if valid { index } else { -1 }
-}
+};
 
 let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) => {
-  let index = skip_json_whitespace(text_copy(&text), start)
+  let index = skip_json_whitespace(text_copy(&text), start);
 
   if index >= text_length text {
     `Err (json_error(index, "Expected JSON value"))
   } else {
-    let byte = text_get [text, index]
+    let byte = text_get [text, index];
 
     if byte == 34 {
-      let parsed = parse_json_string(text_copy(&text), index)
+      let parsed = parse_json_string(text_copy(&text), index);
 
       if let `Ok string_value = parsed {
-        let [value, next] = string_value
+        let [value, next] = string_value;
         `Ok (json_parsed(`String (value), next))
       } else if let `Err string_error = parsed {
         `Err string_error
@@ -322,9 +354,9 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       }
     } else if byte == 91 {
       index = skip_json_whitespace(text_copy(&text), index + 1)
-      let values = json_array_empty()
-      let done = false
-      let failure: JsonFailure = `None ()
+      let values = json_array_empty();
+      let done = false;
+      let failure: JsonFailure = `None ();
 
       if index < text_length text && text_get [text, index] == 93 {
         done = true
@@ -332,15 +364,15 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       }
 
       loop {
-        let failed = if let `Some _ = failure { true } else { false }
+        let failed = if let `Some _ = failure { true } else { false };
         if done || failed {
-          break
+          break;
         }
 
-        let parsed = parse_json(text_copy(&text), index)
+        let parsed = parse_json(text_copy(&text), index);
 
         if let `Ok parsed_value = parsed {
-          let [value, next] = parsed_value
+          let [value, next] = parsed_value;
           values = json_array_prepend(value, values)
           index = skip_json_whitespace(text_copy(&text), next)
 
@@ -362,13 +394,13 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if let `Some error = failure {
         `Err error
       } else {
-        let current: JsonModuleArray = values
-        let ordered: JsonModuleArray = json_array_empty()
-        let reversed = false
+        let current: JsonModuleArray = values;
+        let ordered: JsonModuleArray = json_array_empty();
+        let reversed = false;
 
         loop {
           if let `Cons node = current {
-            let [value, tail] = node
+            let [value, tail] = node;
             ordered = json_array_prepend(value, ordered)
             current = tail
           } else {
@@ -376,7 +408,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
           }
 
           if reversed {
-            break
+            break;
           }
         }
 
@@ -384,9 +416,9 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       }
     } else if byte == 123 {
       index = skip_json_whitespace(text_copy(&text), index + 1)
-      let members = json_object_empty()
-      let done = false
-      let failure: JsonFailure = `None ()
+      let members = json_object_empty();
+      let done = false;
+      let failure: JsonFailure = `None ();
 
       if index < text_length text && text_get [text, index] == 125 {
         done = true
@@ -394,24 +426,24 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       }
 
       loop {
-        let failed = if let `Some _ = failure { true } else { false }
+        let failed = if let `Some _ = failure { true } else { false };
         if done || failed {
-          break
+          break;
         }
 
-        let parsed_key = parse_json_string(text_copy(&text), index)
+        let parsed_key = parse_json_string(text_copy(&text), index);
 
         if let `Ok parsed_string = parsed_key {
-          let [key, after_key] = parsed_string
+          let [key, after_key] = parsed_string;
           index = skip_json_whitespace(text_copy(&text), after_key)
 
           if index >= text_length text || text_get [text, index] != 58 {
             failure = `Some (json_error(index, "Expected colon after JSON object key"))
           } else {
-            let parsed_value = parse_json(text_copy(&text), index + 1)
+            let parsed_value = parse_json(text_copy(&text), index + 1);
 
             if let `Ok value_and_index = parsed_value {
-              let [value, next] = value_and_index
+              let [value, next] = value_and_index;
               members = json_object_prepend(text_copy(&key), value, members)
               index = skip_json_whitespace(text_copy(&text), next)
 
@@ -437,14 +469,14 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if let `Some error = failure {
         `Err error
       } else {
-        let current: JsonModuleObject = members
-        let ordered: JsonModuleObject = json_object_empty()
-        let reversed = false
+        let current: JsonModuleObject = members;
+        let ordered: JsonModuleObject = json_object_empty();
+        let reversed = false;
 
         loop {
           if let `Cons node = current {
-            let [member, tail] = node
-            let [key, value] = member
+            let [member, tail] = node;
+            let [key, value] = member;
             ordered = json_object_prepend(text_copy(&key), value, ordered)
             current = tail
           } else {
@@ -452,7 +484,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
           }
 
           if reversed {
-            break
+            break;
           }
         }
 
@@ -462,7 +494,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 4 > text_length text {
         `Err (json_error(index, "Invalid JSON literal"))
       } else {
-        let true_literal = text_slice [text, index, index + 4]
+        let true_literal = text_slice [text, index, index + 4];
 
         if true_literal == "true" {
           `Ok (json_parsed(`Bool (true), index + 4))
@@ -474,7 +506,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 5 > text_length text {
         `Err (json_error(index, "Invalid JSON literal"))
       } else {
-        let false_literal = text_slice [text, index, index + 5]
+        let false_literal = text_slice [text, index, index + 5];
 
         if false_literal == "false" {
           `Ok (json_parsed(`Bool (false), index + 5))
@@ -486,7 +518,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 4 > text_length text {
         `Err (json_error(index, "Invalid JSON literal"))
       } else {
-        let null_literal = text_slice [text, index, index + 4]
+        let null_literal = text_slice [text, index, index + 4];
 
         if null_literal == "null" {
           `Ok (json_parsed(`Null (), index + 4))
@@ -495,7 +527,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
         }
       }
     } else if byte == 45 || text_byte_is_ascii_digit byte {
-      let next = number_end(text_copy(&text), index)
+      let next = number_end(text_copy(&text), index);
 
       if next < 0 {
         `Err (json_error(index, "Invalid JSON number"))
@@ -506,14 +538,14 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       `Err (json_error(index, "Unexpected byte in JSON value"))
     }
   }
-}
+};
 
 let parse_json_document: Text -> (JsonParseResult) = text => {
-  let parsed = parse_json(text_copy(&text), 0)
+  let parsed = parse_json(text_copy(&text), 0);
 
   if let `Ok value_and_index = parsed {
-    let [value, index] = value_and_index
-    let next = skip_json_whitespace(text_copy(&text), index)
+    let [value, index] = value_and_index;
+    let next = skip_json_whitespace(text_copy(&text), index);
 
     if next == text_length text {
       `Ok (json_parsed(value, next))
@@ -525,19 +557,19 @@ let parse_json_document: Text -> (JsonParseResult) = text => {
   } else {
     `Err (json_error(0, "Invalid JSON parse result"))
   }
-}
+};
 
 let encode_json_string: Text -> Text = text => {
-  let encoded: Text = "\""
-  let index = 0
-  let segment_start = 0
+  let encoded: Text = "\"";
+  let index = 0;
+  let segment_start = 0;
 
   loop {
     if index >= text_length text {
-      break
+      break;
     }
 
-    let byte = text_get [text, index]
+    let byte = text_get [text, index];
 
     if byte == 34 || byte == 92 || byte < 32 {
       encoded = text_append [encoded, text_slice [text, segment_start, index]]
@@ -557,10 +589,10 @@ let encode_json_string: Text -> Text = text => {
       } else if byte == 13 {
         encoded = text_append [encoded, "\\r"]
       } else {
-        let high = byte / 16
-        let low = byte % 16
-        let high_ascii = if high < 10 { high + 48 } else { high + 87 }
-        let low_ascii = if low < 10 { low + 48 } else { low + 87 }
+        let high = byte / 16;
+        let low = byte % 16;
+        let high_ascii = if high < 10 { high + 48 } else { high + 87 };
+        let low_ascii = if low < 10 { low + 48 } else { low + 87 };
         encoded = text_append [encoded, "\\u00"]
         encoded = text_append [encoded, json_code_point_text high_ascii]
         encoded = text_append [encoded, json_code_point_text low_ascii]
@@ -575,7 +607,7 @@ let encode_json_string: Text -> Text = text => {
 
   encoded = text_append [encoded, text_slice [text, segment_start, index]]
   text_append [encoded, "\""]
-}
+};
 
 let rec encode_json: Json -> Text = value => {
   if let `Null () = value {
@@ -587,14 +619,14 @@ let rec encode_json: Json -> Text = value => {
   } else if let `String text = value {
     encode_json_string text
   } else if let `Array values = value {
-    let encoded: Text = "["
-    let current: JsonModuleArray = values
-    let first = true
-    let done = false
+    let encoded: Text = "[";
+    let current: JsonModuleArray = values;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [element, tail] = node
+        let [element, tail] = node;
 
         if first {
           first = false
@@ -609,21 +641,21 @@ let rec encode_json: Json -> Text = value => {
       }
 
       if done {
-        break
+        break;
       }
     }
 
     text_append [encoded, "]"]
   } else if let `Object members = value {
-    let encoded: Text = "{"
-    let current: JsonModuleObject = members
-    let first = true
-    let done = false
+    let encoded: Text = "{";
+    let current: JsonModuleObject = members;
+    let first = true;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [member, tail] = node
-        let [key, member_value] = member
+        let [member, tail] = node;
+        let [key, member_value] = member;
 
         if first {
           first = false
@@ -640,7 +672,7 @@ let rec encode_json: Json -> Text = value => {
       }
 
       if done {
-        break
+        break;
       }
     }
 
@@ -648,39 +680,39 @@ let rec encode_json: Json -> Text = value => {
   } else {
     "null"
   }
-}
+};
 
-let encode_json_object: JsonEncoderObject -> Text = fields => encode_json(json_object fields)
+let encode_json_object: JsonEncoderObject -> Text = fields => encode_json(json_object fields);
 
 return {
-  parse_json,
-  parse_json_document,
-  parse_json_string,
-  encode_json,
-  encode_json_ascii,
-  encode_json_string,
-  encode_json_string_ascii,
-  json_object_get,
-  json_object_contains,
-  json_object_key_count,
-  json_object_length,
-  json_object_reverse,
-  json_object_append,
-  merge_json,
-  json_null,
-  json_bool,
-  json_number,
-  json_string,
-  json_array,
-  json_object,
-  json_array_empty,
-  json_array_prepend,
-  json_object_empty,
-  json_object_prepend,
-  json_field,
-  json_string_field,
-  json_bool_field,
-  json_optional_string_field,
-  json_nullable_string_field,
-  encode_json_object,
-}
+  .parse_json,
+  .parse_json_document,
+  .parse_json_string,
+  .encode_json,
+  .encode_json_ascii,
+  .encode_json_string,
+  .encode_json_string_ascii,
+  .json_object_get,
+  .json_object_contains,
+  .json_object_key_count,
+  .json_object_length,
+  .json_object_reverse,
+  .json_object_append,
+  .merge_json,
+  .json_null,
+  .json_bool,
+  .json_number,
+  .json_string,
+  .json_array,
+  .json_object,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_field,
+  .json_string_field,
+  .json_bool_field,
+  .json_optional_string_field,
+  .json_nullable_string_field,
+  .encode_json_object,
+};

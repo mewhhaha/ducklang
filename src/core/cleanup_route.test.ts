@@ -7,8 +7,8 @@ import { Emit, Typed } from "../trait.ts";
 
 Deno.test("Core links drops to alternative persistent allocations", () => {
   const branch = Source.core(Source.parse(`
-let flag = true
-let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
+let flag = true;
+let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
 1
 `));
   const branch_proof = Core.proof(branch);
@@ -25,8 +25,8 @@ let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
   ]);
 
   const replaced = Source.core(Source.parse(`
-let flag = true
-let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
+let flag = true;
+let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
 f = (x: Int) => x + 2
 1
 `));
@@ -45,8 +45,8 @@ f = (x: Int) => x + 2
   );
 
   const returned = Source.core(Source.parse(`
-let flag = true
-let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
+let flag = true;
+let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
 f
 `));
   const returned_proof = Core.proof(returned);
@@ -54,9 +54,9 @@ f
   assert_equals(returned_proof.issues, []);
 
   const aliased_alternatives = Source.core(Source.parse(`
-let f = (x: Int) => x
-let g = (x: Int) => x + 1
-let h = if true { f } else { g }
+let f = (x: Int) => x;
+let g = (x: Int) => x + 1;
+let h = if true { f } else { g };
 1
 `));
   const aliased_proof = Core.proof(aliased_alternatives);
@@ -73,15 +73,15 @@ let h = if true { f } else { g }
 Deno.test("Core links loop replacement drops across alternative exits", () => {
   const core = Source.core(Source.parse(`
 host_import bound from "env.bound" () => I32
-let end = bound()
-let pending: Text = @slice("Ada", 0, end)
+let end = bound();
+let pending: Text = @slice("Ada", 0, end);
 
 for i in 0..end {
   pending = @append(pending, "!")
   pending = @slice(pending, 0, @len(pending))
 
   if end {
-    break
+    break;
   }
 }
 
@@ -167,12 +167,12 @@ Deno.test("Core emits scalar value-producing loops with nested labels", () => {
 Deno.test("Core preserves Bytes facts through runtime union loop bodies", () => {
   const wat = Source.wat(Source.parse(`
 type ResultType = | \`Chunk Bytes | \`Eof Unit
-const result_type = ResultType
+const result_type = ResultType;
 host_import read from "env.read" () => result_type
 
-let result: result_type = read()
+let result: result_type = read();
 if let \`Chunk first_bytes = result {
-  let pending: Bytes = @slice(first_bytes, 0, @len(first_bytes))
+  let pending: Bytes = @slice(first_bytes, 0, @len(first_bytes));
 
   loop {
     for index, byte in pending {
@@ -181,9 +181,9 @@ if let \`Chunk first_bytes = result {
       }
     }
 
-    let appended: Bytes = @append(pending, first_bytes)
+    let appended: Bytes = @append(pending, first_bytes);
     pending = @slice(appended, 0, @len(appended))
-    break @len(pending)
+    break @len(pending);
   }
 } else {
   0
@@ -276,14 +276,14 @@ Deno.test("Core finds loop breaks nested in expression control flow", () => {
 
 Deno.test("Core types match branches with terminal and fallthrough values", () => {
   const core = Source.core(Source.parse(`
-let flag = false
+let flag = false;
 let value = loop {
   let chosen = match flag {
-    | 1 => { break 7 }
+    | 1 => { break 7; }
     | _ => 42
-  }
-  break chosen
-}
+  };
+  break chosen;
+};
 value
 `));
 
@@ -296,22 +296,22 @@ value
 Deno.test("Core types runtime match payloads in value-producing loops", () => {
   const core = Source.core(Source.parse(`
 type ReadResultType = | \`Chunk Bytes | \`Eof Unit | \`Err I32
-const read_result_type = ReadResultType
+const read_result_type = ReadResultType;
 host_import read from "env.read" () => read_result_type
 host_import write from "env.write" (&Bytes) => I32
-let prefix: Bytes = @Utf8.encode("prefix")
+let prefix: Bytes = @Utf8.encode("prefix");
 let value = loop {
-  let read_result: read_result_type = read()
+  let read_result: read_result_type = read();
   match read_result {
     | \`Chunk bytes => {
-      let pending: Bytes = @append(prefix, bytes)
+      let pending: Bytes = @append(prefix, bytes);
       write(&pending)
       @len(pending)
     }
-    | \`Eof () => { break 0 }
-    | \`Err code => { break code }
+    | \`Eof () => { break 0; }
+    | \`Err code => { break code; }
   }
-}
+};
 value
 `));
 
@@ -320,12 +320,12 @@ value
 
 Deno.test("Core moves a linear runtime aggregate into one-shot closure slots", () => {
   const source = `
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
-let make = (age: Int) => [.age = age] as user_type
-let !user: user_type = make(41)
-let flag = true
-let take_once = if flag { () => !user } else { () => !user }
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
+let make = (age: Int) => [.age = age] as user_type;
+let !user: user_type = make(41);
+let flag = true;
+let take_once = if flag { () => !user } else { () => !user };
 user = take_once()
 !user
 `;
@@ -377,7 +377,7 @@ user = take_once()
     () =>
       Source.core(Source.parse(source.replace(
         "!user\n",
-        "let alias = take_once\nuser = alias()\n!user\n",
+        "let alias = take_once;\nuser = alias()\n!user\n",
       ))),
     "Linear closure alias was already consumed",
   );
@@ -386,10 +386,10 @@ user = take_once()
 Deno.test("Core moves a linear runtime union into one-shot closure slots", () => {
   const source = `
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let !result: result_type = \`Ok (41)
-let flag = true
-let take_once = if flag { () => !result } else { () => !result }
+const result_type = ResultType;
+let !result: result_type = \`Ok (41);
+let flag = true;
+let take_once = if flag { () => !result } else { () => !result };
 result = take_once()
 !result
 `;
@@ -452,7 +452,7 @@ result = take_once()
     () =>
       Source.core(Source.parse(source.replace(
         "!result\n",
-        "let alias = take_once\nresult = alias()\n!result\n",
+        "let alias = take_once;\nresult = alias()\n!result\n",
       ))),
     "Linear closure alias was already consumed",
   );
@@ -461,10 +461,10 @@ result = take_once()
 Deno.test("Core proves promoted scratch Text closure capture slots", () => {
   const promoted = Source.core(Source.parse(`
 let f = scratch {
-  let message: Text = @append("he", "llo")
-  let persistent: Text = freeze message
+  let message: Text = @append("he", "llo");
+  let persistent: Text = freeze message;
   freeze ((x: Int) => @len(persistent) + x)
-}
+};
 f(1)
 `));
   const proof = Core.proof(promoted);
@@ -496,7 +496,7 @@ f(1)
 
   const raw = Source.core(Source.parse(`
 scratch {
-  let message: Text = @append("he", "llo")
+  let message: Text = @append("he", "llo");
   freeze ((x: Int) => @len(message) + x)
 }
 `));
@@ -519,8 +519,8 @@ Deno.test("Core promotes helper-returned frozen scratch Text", () => {
   const frozen = Source.core(Source.parse(`
 let freeze_suffix = (value: Text) => {
   freeze @append(value, "!")
-}
-let prefix: Text = @slice("Ada", 0, 3)
+};
+let prefix: Text = @slice("Ada", 0, 3);
 scratch { freeze_suffix(prefix) }
 `));
   const proof = Core.proof(frozen);
@@ -557,8 +557,8 @@ scratch { freeze_suffix(prefix) }
   const raw = Source.core(Source.parse(`
 let suffix = (value: Text) => {
   @append(value, "!")
-}
-let prefix: Text = @slice("Ada", 0, 3)
+};
+let prefix: Text = @slice("Ada", 0, 3);
 scratch { suffix(prefix) }
 `));
   const raw_proof = Core.proof(raw);
@@ -575,18 +575,18 @@ scratch { suffix(prefix) }
 Deno.test("Core promotes nested aggregate union Text out of scratch", () => {
   const source = `
 type ResultType = | \`Ok Text | \`Err Unit
-const result_type = ResultType
-const { struct } = import "duck:prelude" ()
-const inner_type = struct { .result= result_type }
-const { struct } = import "duck:prelude" ()
-const outer_type = struct { .inner= inner_type, .age= Int }
+const result_type = ResultType;
+const { .struct } = import "duck:prelude" ();
+const inner_type = struct { .result= result_type };
+const { .struct } = import "duck:prelude" ();
+const outer_type = struct { .inner= inner_type, .age= Int };
 
-let start = 0
-let prefix: Text = @slice("Ada", start, 1)
+let start = 0;
+let prefix: Text = @slice("Ada", start, 1);
 let frozen = scratch {
-  let temp = [.inner = [.result = \`Ok (@append(prefix, "da"))] as inner_type, .age = 2] as outer_type
+  let temp = [.inner = [.result = \`Ok (@append(prefix, "da"))] as inner_type, .age = 2] as outer_type;
   freeze temp
-}
+};
 
 if let \`Ok text = frozen.inner.result { @len(text) } else { 0 }
 `;
@@ -655,15 +655,15 @@ if let \`Ok text = frozen.inner.result { @len(text) } else { 0 }
 
 Deno.test("Core links aggregate Text child destructors before outer cleanup", () => {
   const source = `
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .name= Text, .age= Int }
-let flag = true
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .name= Text, .age= Int };
+let flag = true;
 let make = if flag {
   (suffix: Text) => [.name = @append("A", suffix), .age = 40] as user_type
 } else {
   (suffix: Text) => [.name = @append("B", suffix), .age = 5] as user_type
-}
-let user: user_type = make("da")
+};
+let user: user_type = make("da");
 @len(user.name) + user.age
 `;
   const core = Source.core(Source.parse(source));
@@ -720,8 +720,8 @@ let user: user_type = make("da")
   );
 
   const frozen = Source.core(Source.parse(source.replace(
-    'let user: user_type = make("da")',
-    'let user: user_type = freeze make("da")',
+    'let user: user_type = make("da");',
+    'let user: user_type = freeze make("da");',
   )));
   assert_equals(
     Core.proof(frozen).drops.steps.some((step) => step.owner === "user"),
@@ -731,8 +731,8 @@ let user: user_type = make("da")
 
 Deno.test("Core.emit emits i32 range loops with carried locals", () => {
   const core = Source.core(Source.parse(`
-let n = 5
-let sum = 0
+let n = 5;
+let sum = 0;
 
 for i in 0..n {
   sum = sum + i
@@ -756,8 +756,8 @@ sum
 
 Deno.test("Core emits dynamic runtime i32 slice loops with proof facts", () => {
   const core = Source.core(Source.parse(`
-let length = 2
-let sum = 0
+let length = 2;
+let sum = 0;
 
 for index, value in @runtime_i32_slice(length, 10, 20, 30) {
   sum = sum + index + value
@@ -778,8 +778,8 @@ sum
   ]);
   assert_equals(proof.issues, []);
   const wat = Source.wat(`
-let length = 2
-let sum = 0
+let length = 2;
+let sum = 0;
 for index, value in @runtime_i32_slice(length, 10, 20, 30) {
   sum = sum + index + value
 }
@@ -792,8 +792,8 @@ sum
   assert_throws(
     () =>
       Source.wat(`
-let length = 1
-let sum = 0
+let length = 1;
+let sum = 0;
 for value in @runtime_i32_slice(length) {
   sum = sum + value
 }
@@ -805,8 +805,8 @@ sum
 
 Deno.test("Core emits runtime frozen Text slice loops with ownership facts", () => {
   const source = `
-let length = 2
-let sum = 0
+let length = 2;
+let sum = 0;
 for value in @runtime_text_slice(length, "Ada", "B") {
   sum = sum + @len(value)
 }
@@ -861,7 +861,7 @@ sum
   assert_throws(
     () =>
       Source.wat(`
-let dynamic: Text = @append("A", "da")
+let dynamic: Text = @append("A", "da");
 for value in @runtime_text_slice(1, dynamic) {
   @len(value)
 }
@@ -873,20 +873,20 @@ for value in @runtime_text_slice(1, dynamic) {
 
 Deno.test("Core persistent allocation facts carry reusable-layout metadata", () => {
   const core = Source.core(Source.parse(`
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .name= Text, .age= Int }
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .name= Text, .age= Int };
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let text: Text = @append("A", "da")
-let user: user_type = [.name = text, .age = 40] as user_type
-let flag = true
+const result_type = ResultType;
+let text: Text = @append("A", "da");
+let user: user_type = [.name = text, .age = 40] as user_type;
+let flag = true;
 let make = if flag {
   (value: Int) => \`Ok (value)
 } else {
   (value: Int) => \`Err (value)
-}
-let result: result_type = make(user.age)
-let sum = 0
+};
+let result: result_type = make(user.age);
+let sum = 0;
 for value in @runtime_i32_slice(2, 10, 20) {
   sum = sum + value
 }
@@ -959,7 +959,7 @@ sum
 
 Deno.test("Core elaborates linked cleanup rows onto WAT anchors", () => {
   const scope_core = Source.core(Source.parse(`
-let text: Text = @append("A", "da")
+let text: Text = @append("A", "da");
 1
 `));
   const scope_wat = Emit.emit(Mod, Core.mod(scope_core));
@@ -971,7 +971,7 @@ let text: Text = @append("A", "da")
   ]);
 
   const replace_core = Source.core(Source.parse(`
-let text: Text = @append("A", "da")
+let text: Text = @append("A", "da");
 text = @append("G", "race")
 @len(text)
 `));
@@ -988,7 +988,7 @@ text = @append("G", "race")
   );
 
   const returned_core = Source.core(Source.parse(`
-let text: Text = @append("A", "da")
+let text: Text = @append("A", "da");
 text
 `));
   const returned_wat = Emit.emit(Mod, Core.mod(returned_core));
@@ -996,16 +996,16 @@ text
   assert_includes(returned_wat, "call $__alloc");
 
   const frozen_wat = Source.wat(`
-let text: Text = @append("A", "da")
+let text: Text = @append("A", "da");
 freeze text
 `);
   assert_includes(frozen_wat, "call $__alloc");
   assert_equals(frozen_wat.includes("call $__free"), false);
 
   const return_wat = Source.wat(`
-let flag = true
-let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
-return 1
+let flag = true;
+let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
+return 1;
 `);
   const return_free = return_wat.indexOf("call $__free");
   const return_transfer = return_wat.indexOf("return", return_free);
@@ -1013,10 +1013,10 @@ return 1
   assert_equals(return_free < return_transfer, true);
 
   const conditional_return_wat = Source.wat(`
-let flag = true
-let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
+let flag = true;
+let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
 if flag {
-  return 1
+  return 1;
 }
 0
 `);
@@ -1046,7 +1046,7 @@ for i in 0..1 {
 
   const loop_scope_wat = Source.wat(`
 for i in 0..1 {
-  let f = (x: Int) => x
+  let f = (x: Int) => x;
   i
 }
 0
@@ -1059,9 +1059,9 @@ for i in 0..1 {
   assert_equals(loop_scope_free < loop_back_edge, true);
 
   const branch_scope_wat = Source.wat(`
-let flag = true
+let flag = true;
 if flag {
-  let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 }
+  let f = if flag { (x: Int) => x } else { (x: Int) => x + 1 };
   2
 }
 0
@@ -1076,23 +1076,23 @@ Deno.test("Core anchors no-else conditional transfer cleanup on fallthrough", ()
   const prefix = `
 host_import branch_flag from "env.flag" () => I32
 type GateType = | \`Go Int | \`Stop Int
-const gate_type = GateType
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
+const gate_type = GateType;
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
 type ResultType = | \`Ok user_type | \`Err Unit
-const result_type = ResultType
-let flag = branch_flag()
+const result_type = ResultType;
+let flag = branch_flag();
 let gate: gate_type = if flag {
   \`Go (1)
 } else {
   \`Stop (0)
-}
+};
 let make = if flag {
   (age: Int) => [.age = age] as user_type
 } else {
   (age: Int) => [.age = age + 1] as user_type
-}
-let user: user_type = make(40)
+};
+let user: user_type = make(40);
 `;
   const fixtures = [
     {
@@ -1158,7 +1158,7 @@ Deno.test("Core captures ownerless discarded pointers for cleanup", () => {
     {
       reason: "text",
       source: `
-let flag = true
+let flag = true;
 @append(if flag { "A" } else { "B" }, "!")
 @append(if flag { "C" } else { "D" }, "?")
 `,
@@ -1166,9 +1166,9 @@ let flag = true
     {
       reason: "runtime_aggregate",
       source: `
-const { struct } = import "duck:prelude" ()
-const user_type = struct { .age= Int }
-let age = 1
+const { .struct } = import "duck:prelude" ();
+const user_type = struct { .age= Int };
+let age = 1;
 [.age = age] as user_type
 [.age = age + 1] as user_type
 `,
@@ -1177,8 +1177,8 @@ let age = 1
       reason: "runtime_union",
       source: `
 type ResultType = | \`Ok Int | \`Err Int
-const result_type = ResultType
-let value = 1
+const result_type = ResultType;
+let value = 1;
 \`Ok (value)
 \`Err (value)
 `,
@@ -1186,7 +1186,7 @@ let value = 1
     {
       reason: "closure",
       source: `
-let offset = 1
+let offset = 1;
 ((x: Int) => x + offset)
 ((x: Int) => x + offset + 1)
 `,
@@ -1222,7 +1222,7 @@ let offset = 1
 
 Deno.test("Core releases an owned temporary after a primitive reads it", () => {
   const core = Source.core(Source.parse(`
-let choose_left = true
+let choose_left = true;
 if @append(if choose_left { "a" } else { "b" }, "!") == "a!" { 1 } else { 0 }
 `));
   const proof = Core.proof(core);
@@ -1240,7 +1240,7 @@ if @append(if choose_left { "a" } else { "b" }, "!") == "a!" { 1 } else { 0 }
 
 Deno.test("Core cleanup emission keeps repeated assignment anchors isolated", () => {
   const core = Source.core(Source.parse(`
-let text: Text = @append("a", "b")
+let text: Text = @append("a", "b");
 text = @append("c", "d")
 text = @append("e", "f")
 @len(text)
@@ -1291,8 +1291,8 @@ text = @append("e", "f")
   assert_equals(core.cleanup_emission?.length, 3);
 
   const frozen = Source.core(Source.parse(`
-let text: Text = @append("a", "b")
-let shared: Text = freeze text
+let text: Text = @append("a", "b");
+let shared: Text = freeze text;
 @len(shared)
 `));
   const frozen_wat = Emit.emit(Mod, Core.mod(frozen));
@@ -1309,10 +1309,10 @@ let shared: Text = freeze text
 Deno.test("Core cleanup emission respects nested loop targets and alternatives", () => {
   const nested_source = `
 for i in 0..1 {
-  let outer: Text = @append("a", "b")
+  let outer: Text = @append("a", "b");
   for j in 0..1 {
-    let inner: Text = @append("c", "d")
-    break
+    let inner: Text = @append("c", "d");
+    break;
   }
   @len(outer)
 }
@@ -1353,12 +1353,12 @@ for i in 0..1 {
   assert_equals(inner_break < outer_free, true);
 
   const alternatives = Source.core(Source.parse(`
-let flag = true
+let flag = true;
 let text: Text = if flag {
   @append("a", "b")
 } else {
   @append("c", "d")
-}
+};
 1
 `));
   Emit.emit(Mod, Core.mod(alternatives));

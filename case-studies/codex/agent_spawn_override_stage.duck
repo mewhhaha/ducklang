@@ -1,12 +1,12 @@
 module (!init: Init) where
 
-const {} = import "./agent_spawn_override_types.duck" ()
-const { select_spawn_overrides } = import "./agent_spawn_override.duck" ()
+const {} = import "./agent_spawn_override_types.duck" ();
+const { .select_spawn_overrides } = import "./agent_spawn_override.duck" ();
 
 type AgentSpawnOverrideStageInput = AgentSpawnOverrideInput
 
 input <- StageInput.input()
-let typed_input: AgentSpawnOverrideStageInput = input
-let result = select_spawn_overrides typed_input
+let typed_input: AgentSpawnOverrideStageInput = input;
+let result = select_spawn_overrides typed_input;
 
-return { .result = result }
+return { .result = result };

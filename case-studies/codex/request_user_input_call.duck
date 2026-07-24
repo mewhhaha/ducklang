@@ -1,22 +1,27 @@
 module () where
 
-const {} = import "./request_user_input_types.duck" ()
-const { request_user_input_availability } = import "./request_user_input_availability.duck" ()
-const { parse_request_user_input_args } = import "./request_user_input_json.duck" ()
-const { normalize_request_user_input_args } = import "./request_user_input_policy.duck" ()
+const {} = import "./request_user_input_types.duck" ();
+const { .request_user_input_availability } = import "./request_user_input_availability.duck" ();
+const { .parse_request_user_input_args } = import "./request_user_input_json.duck" ();
+const { .normalize_request_user_input_args } = import "./request_user_input_policy.duck" ();
 
 type RequestCallMode = RequestUserInputMode
 type RequestCallPlan = RequestUserInputPlan
 
-let plan_request_user_input_call: [Bool, RequestCallMode, Bool, Text] -> RequestCallPlan = (is_root_thread: Bool, mode: RequestCallMode, default_mode_enabled: Bool, arguments: Text) => {
+let plan_request_user_input_call: [Bool, RequestCallMode, Bool, Text] -> RequestCallPlan = (
+  is_root_thread: Bool,
+  mode: RequestCallMode,
+  default_mode_enabled: Bool,
+  arguments: Text,
+) => {
   if !(is_root_thread) {
     `RejectRequest "request_user_input can only be used by the root thread"
   } else if let `Unavailable message = request_user_input_availability(mode, default_mode_enabled) {
     `RejectRequest message
   } else {
-    let parsed = parse_request_user_input_args(arguments)
+    let parsed = parse_request_user_input_args arguments;
     if let `Parsed args = parsed {
-      let normalization = normalize_request_user_input_args(args)
+      let normalization = normalize_request_user_input_args args;
       if let `Normalized normalized = normalization {
         `PromptUser normalized
       } else if let `Invalid message = normalization {
@@ -30,6 +35,6 @@ let plan_request_user_input_call: [Bool, RequestCallMode, Bool, Text] -> Request
       `RejectRequest "request_user_input argument parsing produced no result"
     }
   }
-}
+};
 
-return { plan_request_user_input_call }
+return { .plan_request_user_input_call };

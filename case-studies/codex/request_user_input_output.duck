@@ -1,46 +1,46 @@
 module () where
 
-const { encode_json_string } = import "duck:prelude/json/encode" ()
-const { text_append } = import "duck:prelude/text" ()
-const {} = import "./request_user_input_types.duck" ()
+const { .encode_json_string } = import "duck:prelude/json/encode" ();
+const { .text_append } = import "duck:prelude/text" ();
+const {} = import "./request_user_input_types.duck" ();
 
 type UserInputAnswerTexts = RequestUserInputAnswerTexts
 type UserInputAnswers = RequestUserInputAnswers
 type UserInputResponse = RequestUserInputResponse
 
 const encode_answer_texts: UserInputAnswerTexts -> Text = answers => {
-  let current = answers
-  let encoded = "["
-  let first = true
-  let done = false
+  let current = answers;
+  let encoded = "[";
+  let first = true;
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [answer, tail] = node
+      let [answer, tail] = node;
       if !(first) { encoded = text_append(encoded, ",") }
-      let encoded_answer: Text = encode_json_string(answer)
+      let encoded_answer: Text = encode_json_string answer;
       encoded = text_append(encoded, encoded_answer)
       first = false
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   text_append(encoded, "]")
-}
+};
 
 const encode_request_user_input_response: UserInputResponse -> Text = response => {
-  let current = response.answers
-  let encoded = "{\"answers\":{"
-  let first = true
-  let done = false
+  let current = response.answers;
+  let encoded = "{\"answers\":{";
+  let first = true;
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [answer, tail] = node
+      let [answer, tail] = node;
       if !(first) { encoded = text_append(encoded, ",") }
-      let encoded_question_id: Text = encode_json_string(answer.question_id)
-      let encoded_answers: Text = encode_answer_texts(answer.answers)
-      let encoded_question: Text = text_append(encoded_question_id, ":{\"answers\":")
+      let encoded_question_id: Text = encode_json_string answer.question_id;
+      let encoded_answers: Text = encode_answer_texts answer.answers;
+      let encoded_question: Text = text_append(encoded_question_id, ":{\"answers\":");
       encoded_question = text_append(encoded_question, encoded_answers)
       encoded_question = text_append(encoded_question, "}")
       encoded = text_append(encoded, encoded_question)
@@ -49,9 +49,9 @@ const encode_request_user_input_response: UserInputResponse -> Text = response =
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   text_append(encoded, "}}")
-}
+};
 
-return { encode_request_user_input_response }
+return { .encode_request_user_input_response };

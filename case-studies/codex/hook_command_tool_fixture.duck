@@ -1,25 +1,28 @@
 module () where
 
-const hook_types_module = import "./hook_types.duck"
-const hook_command_module = import "./hook_command.duck"
-const { action_is_block, evaluate_hook_command } = hook_command_module()
+const hook_types_module = import "./hook_types.duck";
+const hook_command_module = import "./hook_command.duck";
+const { .action_is_block, .evaluate_hook_command } = hook_command_module();
 
 type FixtureResult = HookCommandResult
 
-let score: I32 = 0
+let score: I32 = 0;
 
-let pre_plain: FixtureResult = [`None (), `Some 0, "ignored", ""]
-let [pre_plain_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_plain)
+let pre_plain: FixtureResult = [`None (), `Some 0, "ignored", ""];
+let [pre_plain_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_plain);
 if let `Completed () = pre_plain_status { score = score + 1 }
 
-let pre_invalid: FixtureResult = [`None (), `Some 0, "{bad", ""]
-let [pre_invalid_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_invalid)
+let pre_invalid: FixtureResult = [`None (), `Some 0, "{bad", ""];
+let [pre_invalid_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_invalid);
 if let `Failed () = pre_invalid_status { score = score + 1 }
 
-let pre_blocked: FixtureResult = [`None (), `Some 2, "", " policy says no "]
-let [pre_blocked_status, _, pre_blocked_action, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_blocked)
+let pre_blocked: FixtureResult = [`None (), `Some 2, "", " policy says no "];
+let [pre_blocked_status, _, pre_blocked_action, _, _, _, _] = evaluate_hook_command(
+  `PreToolUse (),
+  pre_blocked,
+);
 if let `Blocked () = pre_blocked_status {
-  let [_, reason] = pre_blocked_action
+  let [_, reason] = pre_blocked_action;
   if action_is_block pre_blocked_action {
     if let `Some value = reason {
       if value == "policy says no" { score = score + 1 }
@@ -27,4 +30,4 @@ if let `Blocked () = pre_blocked_status {
   }
 }
 
-return { .score = score }
+return { .score = score };

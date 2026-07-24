@@ -1,6 +1,6 @@
-const { text_append } = import "duck:prelude/functional" ()
-const { finalize_tool_sources } = import "./tool_source_finalization.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .finalize_tool_sources } = import "./tool_source_finalization.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type FixtureDefinition = FinalizationDefinition
 type FixtureDefinitions = FinalizationDefinitions
@@ -10,34 +10,69 @@ type FixtureTexts = ToolSourceTexts
 type FixtureFacts = ToolSourceFinalizationFacts
 
 const fixture_definitions: () -> FixtureDefinitions = () => {
-  let direct: FixtureDefinition = [["app", "direct"], `Direct (), `Dynamic "direct", `FunctionPayload (), false, false]
-  let deferred: FixtureDefinition = [["app", "deferred"], `Deferred (), `Dynamic "deferred", `FunctionPayload (), false, false]
-  let hidden: FixtureDefinition = [["app", "hidden"], `Hidden (), `Dynamic "hidden", `FunctionPayload (), false, false]
-  let other: FixtureDefinition = [["other", "search"], `Deferred (), `Dynamic "search", `FunctionPayload (), false, false]
+  let direct: FixtureDefinition = [
+    ["app", "direct"],
+    `Direct (),
+    `Dynamic "direct",
+    `FunctionPayload (),
+    false,
+    false,
+  ];
+  let deferred: FixtureDefinition = [
+    ["app", "deferred"],
+    `Deferred (),
+    `Dynamic "deferred",
+    `FunctionPayload (),
+    false,
+    false,
+  ];
+  let hidden: FixtureDefinition = [
+    ["app", "hidden"],
+    `Hidden (),
+    `Dynamic "hidden",
+    `FunctionPayload (),
+    false,
+    false,
+  ];
+  let other: FixtureDefinition = [
+    ["other", "search"],
+    `Deferred (),
+    `Dynamic "search",
+    `FunctionPayload (),
+    false,
+    false,
+  ];
   `Cons ([direct, `Cons ([deferred, `Cons ([hidden, `Cons ([other, `Nil ()])])])])
-}
+};
 
 const fixture_searchable_names: () -> FixtureSearchNames = () => {
-  let app: FixtureSearchName = ["app", "deferred"]
-  let other: FixtureSearchName = ["other", "search"]
+  let app: FixtureSearchName = ["app", "deferred"];
+  let other: FixtureSearchName = ["other", "search"];
   `Cons ([app, `Cons ([other, `Nil ()])])
-}
+};
 
-let namespaces: FixtureTexts = `Cons (["app", `Nil ()])
-let enabled_facts: FixtureFacts = [.search_tool_enabled = true, .searchable_names = fixture_searchable_names(), .direct_model_only_namespaces = namespaces]
-let current = finalize_tool_sources(fixture_definitions(), enabled_facts)
-let trace = ""
-let direct_model_only_count = 0
-let deferred_count = 0
-let hidden_count = 0
-let tool_search_valid = false
-let done = false
+let namespaces: FixtureTexts = `Cons (["app", `Nil ()]);
+let enabled_facts: FixtureFacts = [
+  .search_tool_enabled = true,
+  .searchable_names = fixture_searchable_names(),
+  .direct_model_only_namespaces = namespaces,
+];
+let current = finalize_tool_sources(fixture_definitions(), enabled_facts);
+let trace = "";
+let direct_model_only_count = 0;
+let deferred_count = 0;
+let hidden_count = 0;
+let tool_search_valid = false;
+let done = false;
 
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [[namespace, local_name], exposure, tool_handler, payload, _, _] = definition
-    trace = text_append [text_append [text_append [text_append [trace, namespace], "."], local_name], "|"]
+    let [definition, tail] = node;
+    let [[namespace, local_name], exposure, tool_handler, payload, _, _] = definition;
+    trace = text_append [
+      text_append [text_append [text_append [trace, namespace], "."], local_name],
+      "|",
+    ]
     if let `DirectModelOnly () = exposure { direct_model_only_count = direct_model_only_count + 1 }
     if let `Deferred () = exposure { deferred_count = deferred_count + 1 }
     if let `Hidden () = exposure { hidden_count = hidden_count + 1 }
@@ -51,25 +86,29 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
-let score = 0
-let expected = "app.direct|app.deferred|app.hidden|other.search|.tool_search|"
+let score = 0;
+let expected = "app.direct|app.deferred|app.hidden|other.search|.tool_search|";
 if trace == expected { score = score + 1 }
 if direct_model_only_count == 2 && deferred_count == 1 && hidden_count == 1 { score = score + 10 }
 if tool_search_valid { score = score + 100 }
 
-let empty_namespaces: FixtureTexts = `Nil ()
-let disabled_facts: FixtureFacts = [.search_tool_enabled = false, .searchable_names = fixture_searchable_names(), .direct_model_only_namespaces = empty_namespaces]
+let empty_namespaces: FixtureTexts = `Nil ();
+let disabled_facts: FixtureFacts = [
+  .search_tool_enabled = false,
+  .searchable_names = fixture_searchable_names(),
+  .direct_model_only_namespaces = empty_namespaces,
+];
 current = finalize_tool_sources(fixture_definitions(), disabled_facts)
-let disabled_count = 0
-let disabled_deferred_count = 0
+let disabled_count = 0;
+let disabled_deferred_count = 0;
 done = false
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [_, exposure, _, _, _, _] = definition
+    let [definition, tail] = node;
+    let [_, exposure, _, _, _, _] = definition;
     if let `Deferred () = exposure { disabled_deferred_count = disabled_deferred_count + 1 }
     disabled_count = disabled_count + 1
     current = tail
@@ -77,8 +116,8 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
 if disabled_count == 4 && disabled_deferred_count == 2 { score = score + 1000 }
-return { .score = score }
+return { .score = score };

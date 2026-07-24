@@ -37,6 +37,13 @@ export function scoped_static_core_call_expr(
         }, expr);
       }
 
+      if (expr.ascribed_type !== undefined) {
+        return record_core_expr_provenance({
+          ...replacement,
+          ascribed_type: expr.ascribed_type,
+        }, expr);
+      }
+
       return replacement;
     }
 
@@ -44,6 +51,13 @@ export function scoped_static_core_call_expr(
       const replacement = replacements.get(expr.name);
 
       if (replacement) {
+        if (expr.ascribed_type !== undefined) {
+          return record_core_expr_provenance({
+            ...replacement,
+            ascribed_type: expr.ascribed_type,
+          }, expr);
+        }
+
         return replacement;
       }
 

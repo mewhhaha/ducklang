@@ -1,9 +1,11 @@
 module () where
 
-const { parse_request_permissions_args, parse_request_permissions_environment_id } = import "./request_permissions_json.duck" ()
+const { .parse_request_permissions_args, .parse_request_permissions_environment_id } =
+  import "./request_permissions_json.duck" ();
 
-let document = "{\"environmentId\":\"remote\",\"reason\":\"read inputs\",\"permissions\":{\"network\":{\"enabled\":false},\"file_system\":{\"read\":[\"docs\"],\"write\":[\"/tmp/output\"]}}}"
-let score = 0
+let document =
+  "{\"environmentId\":\"remote\",\"reason\":\"read inputs\",\"permissions\":{\"network\":{\"enabled\":false},\"file_system\":{\"read\":[\"docs\"],\"write\":[\"/tmp/output\"]}}}";
+let score = 0;
 
 if let `ParsedEnvironmentId environment_id = parse_request_permissions_environment_id document {
   if let `Some value = environment_id {
@@ -21,11 +23,11 @@ if let `Parsed args = parse_request_permissions_args(document, "/workspace") {
               if !(enabled) {
                 if let `FileSystemPresent file_system = args.permissions.file_system {
                   if let `Cons read_node = file_system.entries {
-                    let [read, tail] = read_node
+                    let [read, tail] = read_node;
                     if read.path == "/workspace/docs" {
                       if let `Read () = read.access {
                         if let `Cons write_node = tail {
-                          let [write, end] = write_node
+                          let [write, end] = write_node;
                           if write.path == "/tmp/output" {
                             if let `Write () = write.access {
                               if let `Nil () = end { score = score + 10 }
@@ -45,4 +47,4 @@ if let `Parsed args = parse_request_permissions_args(document, "/workspace") {
   }
 }
 
-return { .score = score }
+return { .score = score };

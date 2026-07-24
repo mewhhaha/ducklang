@@ -8,4 +8,4 @@ declare Init {
   request_user_input_host: RequestUserInputHost
 }
 
-return {}
+return {};

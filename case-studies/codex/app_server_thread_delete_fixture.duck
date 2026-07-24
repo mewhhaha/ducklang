@@ -1,26 +1,30 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { plan_thread_delete } = import "./app_server_thread_delete.duck" ()
-const {} = import "./app_server_thread_delete_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .plan_thread_delete } = import "./app_server_thread_delete.duck" ();
+const {} = import "./app_server_thread_delete_types.duck" ();
 
 type FixturePlanResult = AppServerThreadDeletePlanResult
 type FixtureSubtree = AppServerThreadDeleteSubtree
 type FixtureTexts = AppServerTexts
 
-const texts = comptime list(Text)
-let descendants: FixtureTexts = texts.prepend("child", texts.singleton("grandchild"))
-let subtree: FixtureSubtree = ["root", descendants]
-let score = 0
+const texts = comptime list Text;
+let descendants: FixtureTexts = texts.prepend("child", texts.singleton("grandchild"));
+let subtree: FixtureSubtree = ["root", descendants];
+let score = 0;
 
-let persistent: FixturePlanResult = plan_thread_delete("root", `LoadedThreadRoot (`PersistentThread ()), subtree)
+let persistent: FixturePlanResult = plan_thread_delete(
+  "root",
+  `LoadedThreadRoot (`PersistentThread ()),
+  subtree,
+);
 if let `Ok plan = persistent {
   if let `Cons grandchild_node = plan.delete_order {
-    let [grandchild, after_grandchild] = grandchild_node
+    let [grandchild, after_grandchild] = grandchild_node;
     if let `Cons child_node = after_grandchild {
-      let [child, after_child] = child_node
+      let [child, after_child] = child_node;
       if let `Cons root_node = after_child {
-        let [root, done] = root_node
+        let [root, done] = root_node;
         if let `Nil () = done {
           if grandchild == "grandchild" && child == "child" && root == "root" { score = score + 1 }
         }
@@ -29,26 +33,30 @@ if let `Ok plan = persistent {
   }
 }
 
-let ephemeral: FixturePlanResult = plan_thread_delete("root", `LoadedThreadRoot (`EphemeralThread ()), subtree)
+let ephemeral: FixturePlanResult = plan_thread_delete(
+  "root",
+  `LoadedThreadRoot (`EphemeralThread ()),
+  subtree,
+);
 if let `Err reason = ephemeral {
   if reason == "thread is not persisted and cannot be deleted: root" { score = score + 10 }
 }
 
-let root_only: FixtureSubtree = ["root", texts.empty()]
-let missing: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), root_only)
+let root_only: FixtureSubtree = ["root", texts.empty()];
+let missing: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), root_only);
 if let `Err reason = missing {
   if reason == "thread not found: root" { score = score + 100 }
 }
 
-let missing_parent: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), subtree)
+let missing_parent: FixturePlanResult = plan_thread_delete("root", `MissingThreadRoot (), subtree);
 if let `Ok _ = missing_parent { score = score + 1000 }
 
-let state_only: FixturePlanResult = plan_thread_delete("root", `StateOnlyThreadRoot (), root_only)
+let state_only: FixturePlanResult = plan_thread_delete("root", `StateOnlyThreadRoot (), root_only);
 if let `Ok _ = state_only { score = score + 10000 }
 
-let wrong_root: FixturePlanResult = plan_thread_delete("other", `StoredThreadRoot (), root_only)
+let wrong_root: FixturePlanResult = plan_thread_delete("other", `StoredThreadRoot (), root_only);
 if let `Err reason = wrong_root {
   if reason == "thread delete subtree does not begin with root: other" { score = score + 100000 }
 }
 
-return { .score = score }
+return { .score = score };

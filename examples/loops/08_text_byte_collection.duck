@@ -1,4 +1,4 @@
-let total = 0
+let total = 0;
 
 for byte in "ABC" {
   total = total + byte

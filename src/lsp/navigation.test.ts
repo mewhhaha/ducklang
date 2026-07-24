@@ -19,7 +19,7 @@ function indexed(text: string) {
 }
 
 Deno.test("navigation keeps shadow generations separate", () => {
-  const text = "let x = 0\nx\nx = x + 1\nx\n";
+  const text = "let x = 0;\nx\nx = x + 1\nx\n";
   const { index } = indexed(text);
   const first_reference = text.indexOf("x\nx =");
   const last_reference = text.lastIndexOf("x\n");
@@ -71,7 +71,7 @@ Deno.test("navigation keeps shadow generations separate", () => {
 });
 
 Deno.test("document highlights distinguish linear consumption", () => {
-  const text = "let !token = 1\n!token\n";
+  const text = "let !token = 1;\n!token\n";
   const { index } = indexed(text);
   assert_equals(
     document_highlights(index, text, text.lastIndexOf("token"), "utf-16")
@@ -81,8 +81,10 @@ Deno.test("document highlights distinguish linear consumption", () => {
 });
 
 Deno.test("type definition follows nominal binding facts", () => {
-  const text = "type Pair = struct {.left = Int}\n" +
-    "let value: Pair = [.left = 1]\nvalue.left\n";
+  const text = `type Pair = struct {.left = Int}
+let value: Pair = [.left = 1];
+value.left
+`;
   const { index } = indexed(text);
   assert_equals(
     type_definition_location(
@@ -103,7 +105,7 @@ Deno.test("type definition follows nominal binding facts", () => {
 });
 
 Deno.test("import definitions jump to the imported file from alias references", () => {
-  const text = 'const value = import "./dep.duck"\nvalue\n';
+  const text = 'const value = import "./dep.duck";\nvalue\n';
   const { parsed, index } = indexed(text);
   assert_equals(
     import_definition_location(
@@ -123,7 +125,7 @@ Deno.test("import definitions jump to the imported file from alias references", 
 });
 
 Deno.test("import definitions jump to the imported file from expressions", () => {
-  const text = 'let module = import "./dep.duck"\n';
+  const text = 'let module = import "./dep.duck";\n';
   const { parsed, index } = indexed(text);
 
   assert_equals(
@@ -144,7 +146,7 @@ Deno.test("import definitions jump to the imported file from expressions", () =>
 });
 
 Deno.test("rename edits exactly one shadow generation and preserves index shape", () => {
-  const text = "let x = 0\nx\nx = x + 1\nx\n";
+  const text = "let x = 0;\nx\nx = x + 1\nx\n";
   const { index } = indexed(text);
   const edit = rename_symbol(
     index,
@@ -170,13 +172,13 @@ Deno.test("rename edits exactly one shadow generation and preserves index shape"
   }
 
   const renamed = apply_edits(text, edits);
-  assert_equals(renamed, "let base = 0\nbase\nx = base + 1\nx\n");
+  assert_equals(renamed, "let base = 0;\nbase\nx = base + 1\nx\n");
   const renamed_index = indexed(renamed).index;
   assert_equals(index_shape(renamed_index), index_shape(index));
 });
 
 Deno.test("rename respects const capture snapshots", () => {
-  const text = "let value = 1\nconst captured = () => value\n" +
+  const text = "let value = 1;\nconst captured = () => value;\n" +
     "value = 2\ncaptured() + value\n";
   const { index } = indexed(text);
   const edit = rename_symbol(
@@ -202,9 +204,11 @@ for (
   const fixture of [
     {
       label: "field",
-      text: "type User = struct {.name = Text}\n" +
-        "let struct { .name= Text } = User\n" +
-        'let value: User = [.name = "Ada"]\nvalue.name\n',
+      text: `type User = struct {.name = Text}
+let struct { .name= Text } = User;
+let value: User = [.name = "Ada"];
+value.name
+`,
       selected: ".name",
       replacement: "label",
       count: 4,
@@ -212,7 +216,7 @@ for (
     {
       label: "union case",
       text: "type Result = `Ok Int\n" +
-        "let value = `Ok (1)\n" +
+        "let value = `Ok (1);\n" +
         "if let `Ok payload = value { payload }\n",
       selected: "`Ok",
       replacement: "Success",
@@ -220,10 +224,10 @@ for (
     },
     {
       label: "effect operation",
-      text: "effect Counter { get: () => I32 }\n" +
-        "let run = () => Counter.get()\n" +
-        "let handler = Counter { get: (!resume) => !resume(1), " +
-        "return: value => value }\n",
+      text: `effect Counter { get: () => I32 }
+let run = () => Counter.get();
+let handler = handler Counter { get: (!resume) => !resume(1), return: value => value };
+`,
       selected: "get:",
       replacement: "read",
       count: 3,
@@ -260,7 +264,7 @@ for (
 }
 
 Deno.test("rename rejects builtins, unresolved names, and capture", () => {
-  const text = "let left = 1\nlet right = left\nunknown + @len(right)\n";
+  const text = "let left = 1;\nlet right = left;\nunknown + @len(right)\n";
   const { index } = indexed(text);
   assert_equals(
     prepare_rename(index, text, text.indexOf("len"), "utf-16"),
@@ -296,7 +300,7 @@ Deno.test("rename rejects builtins, unresolved names, and capture", () => {
 
 Deno.test("workspace symbols fuzzy-match declarations and members", () => {
   const first = "type Account = struct {.display_name = Text}\n";
-  const second = "let calculate_total = 42\n";
+  const second = "let calculate_total = 42;\n";
   const first_index = indexed(first).index;
   const second_index = indexed(second).index;
   const symbols = workspace_symbols(

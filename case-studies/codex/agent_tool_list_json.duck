@@ -1,35 +1,35 @@
 module () where
 
-const { parse_json_document } = import "duck:prelude/json" ()
-const {} = import "duck:prelude/json/values" ()
-const { format_i32, text_append } = import "duck:prelude/runtime" ()
-const {} = import "./agent_tool_types.duck" ()
+const { .parse_json_document } = import "duck:prelude/json" ();
+const {} = import "duck:prelude/json/values" ();
+const { .format_i32, .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./agent_tool_types.duck" ();
 
 type AgentListJsonOption = AgentTextOption
 
 const list_decode_failure: Text -> AgentToolListDecodeResult = reason => {
   `AgentListDecodeFailed (text_append("failed to parse list_agents arguments: ", reason))
-}
+};
 
 const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => {
-  let parsed = parse_json_document document
+  let parsed = parse_json_document document;
   if let `Err error = parsed {
-    let [position, message] = error
-    return list_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)))
+    let [position, message] = error;
+    return list_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)));
   }
   if let `Ok value_and_position = parsed {
-    let [value, _] = value_and_position
+    let [value, _] = value_and_position;
     if let `Object object = value {
-      let path_prefix: AgentListJsonOption = `None ()
-      let seen_prefix = false
-      let failure = ""
-      let current = object
-      let done = false
+      let path_prefix: AgentListJsonOption = `None ();
+      let seen_prefix = false;
+      let failure = "";
+      let current = object;
+      let done = false;
       loop {
-        if failure != "" { break }
+        if failure != "" { break; }
         if let `Cons node = current {
-          let [member, tail] = node
-          let [key, field] = member
+          let [member, tail] = node;
+          let [key, field] = member;
           if key != "path_prefix" {
             failure = text_append("unknown list_agents field: ", key)
           } else if seen_prefix {
@@ -44,7 +44,7 @@ const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => {
         } else {
           done = true
         }
-        if done { break }
+        if done { break; }
       }
       if failure == "" { `AgentListDecoded path_prefix } else { list_decode_failure failure }
     } else {
@@ -53,6 +53,6 @@ const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => {
   } else {
     list_decode_failure "JSON parsing produced no result"
   }
-}
+};
 
-return { parse_list_agents_args }
+return { .parse_list_agents_args };

@@ -1,0 +1,19 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+
+type NetworkPolicyMessageTextOption =
+  | `NoMessageText Unit
+  | `MessageText Text
+
+type NetworkPolicyBlockedRequest = struct {
+  .decision = NetworkPolicyMessageTextOption,
+  .host = Text,
+  .reason = Text,
+}
+
+type NetworkPolicyMessageOption =
+  | `NoPolicyMessage Unit
+  | `PolicyMessage Text
+
+return {};

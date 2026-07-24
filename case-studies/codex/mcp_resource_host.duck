@@ -9,4 +9,4 @@ declare Init {
   mcp_resource_host: McpResourceHost
 }
 
-return {}
+return {};

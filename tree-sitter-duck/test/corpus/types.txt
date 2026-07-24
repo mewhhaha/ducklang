@@ -2,10 +2,10 @@
 Function value patterns
 ==================
 
-let structural = { a: I32 } => ()
-let exact = I32 => ()
-let literal = 42 => ()
-let alternative = (I32 | Text) => ()
+let structural = { .a: I32 } => ();
+let exact = I32 => ();
+let literal = 42 => ();
+let alternative = (I32 | Text) => ();
 
 ---
 
@@ -13,8 +13,8 @@ let alternative = (I32 | Text) => ()
   (binding_statement
     name: (identifier)
     value: (arrow_function
-      parameters: (function_shape_pattern
-        (function_shape_pattern_field
+      parameters: (named_shape_pattern
+        (named_shape_pattern_field
           name: (identifier)
           type: (type_reference
             (type_union
@@ -45,8 +45,7 @@ let alternative = (I32 | Text) => ()
 ==================
 Repeated value-pack types
 ==================
-
-let sum: (I32; 3) -> I32 = (a, b, c) => a + b + c
+let sum: (I32; 3) -> I32 = (a, b, c) => a + b + c;
 
 ---
 
@@ -93,10 +92,9 @@ let sum: (I32; 3) -> I32 = (a, b, c) => a + b + c
 ==================
 Rank-N function types
 ==================
-
-const identity: forall value. value -> value = value => value
+const identity: forall value. value -> value = value => value;
 const apply: (forall value. value -> value) -> I32 =
-  (const identity) => identity(42)
+  (const identity) => identity(42);
 
 ---
 
@@ -158,10 +156,9 @@ const apply: (forall value. value -> value) -> I32 =
 ==================
 Surface function types
 ==================
-
-let map: (List a, a -> <Stdin :| e> b) -> <e> List b = () => ()
-let nested: a -> b -> c = () => ()
-let unit: () -> Text = () => ()
+let map: (List a, a -> <Stdin :| e> b) -> <e> List b = () => ();
+let nested: a -> b -> c = () => ();
+let unit: () -> Text = () => ();
 
 ---
 
@@ -254,7 +251,6 @@ let unit: () -> Text = () => ()
 ==================
 Inline and multiline type sums
 ==================
-
 type Maybe a = | `Just a | `Nothing Unit
 type Maybe2 a =
   | `Just a
@@ -306,7 +302,10 @@ Struct and positional products
 ==================
 
 type Vec3 = struct {.x = Int, .y = Int, .z = Int}
-type Pair a = (a, List a)
+type Pair a = (
+  a,
+  List a,
+)
 type Nested a = (Maybe a, List a)
 
 ---
@@ -378,9 +377,15 @@ type Nested a = (Maybe a, List a)
 Bracket product values
 ==================
 
-let point = [.x = 40, .y = 1]
-let pair = [point.x, point.y]
-let empty = []
+let point = [
+  .x = 40,
+  .y = 1,
+];
+let pair = [
+  point.x,
+  point.y,
+];
+let empty = [];
 
 ---
 
@@ -419,12 +424,11 @@ let empty = []
 ==================
 Type sets, atoms, and modalities
 ==================
-
 type Choice = #ready :| Int :- Never
 type Any = _
 type Frozen = #(List a)
-let marker: #ready :| #waiting = #ready
-let view: &Text = &text
+let marker: #ready :| #waiting = #ready;
+let view: &Text = &text;
 if marker is #ready { 1 } else { 0 }
 
 ---

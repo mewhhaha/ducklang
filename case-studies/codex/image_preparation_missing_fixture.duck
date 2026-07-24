@@ -1,0 +1,24 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .apply_image_processing_results } = import "./image_preparation.duck" ();
+const { .single_image_processing_fixture_response } =
+  import "./image_preparation_failure_fixture_common.duck" ();
+
+type MissingFixtureResults = ImageProcessingResults
+
+const verify_image_preparation_missing_fixture: () -> I32 = () => {
+  let results: MissingFixtureResults = `ImageResultsNil ();
+  let rewrite = apply_image_processing_results(single_image_processing_fixture_response(), results);
+  if let `RejectedImageRewrite failure = rewrite {
+    if let `MissingImageProcessingResult index = failure {
+      if index == 0 { 1 } else { 0 }
+    } else {
+      0
+    }
+  } else {
+    0
+  }
+};
+
+return { .verify_image_preparation_missing_fixture };

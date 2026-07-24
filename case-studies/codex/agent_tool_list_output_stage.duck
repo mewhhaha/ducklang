@@ -1,12 +1,12 @@
 module (!init: Init) where
 
-const agent_types_module = import "./agent_types.duck"
-const { render_list_agents_output } = import "./agent_tool_list_output.duck" ()
+const agent_types_module = import "./agent_types.duck";
+const { .render_list_agents_output } = import "./agent_tool_list_output.duck" ();
 
 type AgentListOutputStageStatuses = AgentStatusEntries
 
 input <- StageInput.input()
-let statuses: AgentListOutputStageStatuses = input
-let output: Text = render_list_agents_output statuses
+let statuses: AgentListOutputStageStatuses = input;
+let output: Text = render_list_agents_output statuses;
 
-return { .result = output }
+return { .result = output };

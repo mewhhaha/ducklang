@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "./request_permissions_types.duck" ()
-const { plan_request_permissions_call } = import "./request_permissions_call.duck" ()
+const {} = import "./request_permissions_types.duck" ();
+const { .plan_request_permissions_call } = import "./request_permissions_call.duck" ();
 
 type FixtureEnvironment = RequestPermissionsEnvironment
 type FixtureEnvironmentNode = RequestPermissionsEnvironmentNode
@@ -9,33 +9,43 @@ type FixtureEnvironments = RequestPermissionsEnvironments
 type FixturePayload = RequestPermissionsPayload
 
 let environments: FixtureEnvironments = `Cons ([
-  .environment = [.environment_id = "primary", .cwd = "/workspace", .is_primary = true, .native_cwd = `Native "/workspace"] as FixtureEnvironment,
+  .environment = [
+    .environment_id = "primary",
+    .cwd = "/workspace",
+    .is_primary = true,
+    .native_cwd = `Native "/workspace",
+  ] as FixtureEnvironment,
   .tail = `Cons ([
-    .environment = [.environment_id = "remote", .cwd = "file://remote/work", .is_primary = false, .native_cwd = `Foreign "unsupported URI scheme"] as FixtureEnvironment,
-    .tail = `Nil ()] as FixtureEnvironmentNode)] as FixtureEnvironmentNode)
-let unsupported: FixturePayload = `Unsupported ()
-let score = 0
+    .environment = [
+      .environment_id = "remote",
+      .cwd = "file://remote/work",
+      .is_primary = false,
+      .native_cwd = `Foreign "unsupported URI scheme",
+    ] as FixtureEnvironment,
+    .tail = `Nil ()] as FixtureEnvironmentNode)] as FixtureEnvironmentNode);
+let unsupported: FixturePayload = `Unsupported ();
+let score = 0;
 
 if let `RejectRequest message = plan_request_permissions_call(unsupported, environments) {
   if message == "request_permissions handler received unsupported payload" { score = score + 1 }
 }
 
-let unknown: FixturePayload = `Function "{\"environment_id\":\"missing\"}"
+let unknown: FixturePayload = `Function "{\"environment_id\":\"missing\"}";
 if let `RejectRequest message = plan_request_permissions_call(unknown, environments) {
   if message == "unknown turn environment id `missing`" { score = score + 10 }
 }
 
-let foreign: FixturePayload = `Function "{\"environment_id\":\"remote\"}"
+let foreign: FixturePayload = `Function "{\"environment_id\":\"remote\"}";
 if let `RejectRequest message = plan_request_permissions_call(foreign, environments) {
   if message == "request_permissions cwd `file://remote/work` is not native to the Codex host: unsupported URI scheme" { score = score + 100 }
 }
 
-let valid: FixturePayload = `Function "{\"permissions\":{\"file_system\":{\"read\":[\"docs\"]}}}"
+let valid: FixturePayload = `Function "{\"permissions\":{\"file_system\":{\"read\":[\"docs\"]}}}";
 if let `Prompt prepared = plan_request_permissions_call(valid, environments) {
   if prepared.environment.environment_id == "primary" {
     if let `FileSystemPresent file_system = prepared.args.permissions.file_system {
       if let `Cons node = file_system.entries {
-        let [entry, end] = node
+        let [entry, end] = node;
         if entry.path == "/workspace/docs" {
           if let `Nil () = end { score = score + 1000 }
         }
@@ -44,4 +54,4 @@ if let `Prompt prepared = plan_request_permissions_call(valid, environments) {
   }
 }
 
-return { .score = score }
+return { .score = score };

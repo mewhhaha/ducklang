@@ -97,7 +97,7 @@ Deno.test("IC file route rejects Duck-defined effects", () => {
       path,
       `module () where
 effect Counter { get: () => I32 }
-return {}
+return {};
 `,
     );
     assert_throws(

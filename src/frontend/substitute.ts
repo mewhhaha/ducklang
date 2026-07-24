@@ -462,6 +462,12 @@ function substitute_front_pattern(
         }),
       };
 
+    case "const_value":
+      return {
+        ...pattern,
+        value: substitute_front_expr(pattern.value, replacements),
+      };
+
     case "union_case":
       return {
         ...pattern,

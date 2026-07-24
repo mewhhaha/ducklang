@@ -1,0 +1,45 @@
+module () where
+
+const { .text_trim_whitespace } = import "duck:prelude/text" ();
+const {} = import "./network_policy_context_types.duck" ();
+
+type DecisionPayload = NetworkDecisionPayload
+type ApprovalContext = NetworkPolicyApprovalContext
+type ApprovalContextOption = NetworkPolicyApprovalContextOption
+
+const network_approval_context_from_payload: DecisionPayload -> ApprovalContextOption = payload => {
+  let missing_context: ApprovalContextOption = `NoApprovalContext ();
+  let asks_for_approval = false;
+  if let `ProxyAsk () = payload.decision {
+    asks_for_approval = true
+  }
+  if !(asks_for_approval) {
+    return missing_context;
+  }
+
+  let came_from_decider = false;
+  if let `Decider () = payload.source {
+    came_from_decider = true
+  }
+  if !(came_from_decider) {
+    return missing_context;
+  }
+
+  if let `ContextProtocol selected_protocol = payload.protocol {
+    if let `ContextText selected_host = payload.host {
+      let normalized_host = text_trim_whitespace selected_host;
+      if normalized_host == "" {
+        return missing_context;
+      }
+      let context: ApprovalContext = [.host = normalized_host, .protocol = selected_protocol];
+      let selected_context: ApprovalContextOption = `ApprovalContext context;
+      selected_context
+    } else {
+      missing_context
+    }
+  } else {
+    missing_context
+  }
+};
+
+return { .network_approval_context_from_payload };

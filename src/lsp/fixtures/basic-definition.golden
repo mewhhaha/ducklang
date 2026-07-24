@@ -1,5 +1,5 @@
 {
-  source: "let answer = 42",
+  source: "let answer = 42;",
   spans: [
     [
       "definition",

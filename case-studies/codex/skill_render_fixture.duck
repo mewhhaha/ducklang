@@ -1,9 +1,10 @@
 module () where
 
-const { list, text_starts_with } = import "duck:prelude/functional" ()
-const skill_types_module = import "./skill_types.duck"
-const render_module = import "./skill_render.duck"
-const { build_available_skills, default_skill_metadata_budget, render_available_skills_body } = render_module()
+const { .list, .text_starts_with } = import "duck:prelude/functional" ();
+const skill_types_module = import "./skill_types.duck";
+const render_module = import "./skill_render.duck";
+const { .build_available_skills, .default_skill_metadata_budget, .render_available_skills_body } =
+  render_module();
 
 type FixtureTextOption = SkillTextOption
 type FixtureBoolOption = SkillBoolOption
@@ -19,46 +20,82 @@ type FixtureDocument = SkillDocument
 type FixtureDocuments = SkillDocuments
 type FixtureBudget = SkillMetadataBudget
 
-const texts = comptime list(Text)
-const dependencies = comptime list(FixtureDependency)
-const documents = comptime list(FixtureDocument)
+const texts = comptime list Text;
+const dependencies = comptime list FixtureDependency;
+const documents = comptime list FixtureDocument;
 
-let no_text: FixtureTextOption = `None ()
-let no_bool: FixtureBoolOption = `None ()
-let interface: FixtureInterface = [no_text, no_text, no_text, no_text, no_text, no_text]
-let tools: FixtureDependencies = dependencies.empty()
-let implicit: FixturePolicy = [no_bool, texts.empty()]
-let explicit: FixturePolicy = [`Some false, texts.empty()]
-let system: FixtureScope = `System ()
-let repo: FixtureScope = `Repo ()
-let user: FixtureScope = `User ()
-let alpha_metadata: FixtureMetadata = ["alpha", "abcdefghij", no_text, interface, tools, implicit, "/system/a/SKILL.md", system, no_text]
-let hidden_metadata: FixtureMetadata = ["hidden", "not rendered", no_text, interface, tools, explicit, "/repo/h/SKILL.md", repo, no_text]
-let beta_metadata: FixtureMetadata = ["beta", "uvwxyz", no_text, interface, tools, implicit, "/user/b/SKILL.md", user, no_text]
-let available: FixtureDocuments = documents.prepend([beta_metadata, "beta body"], documents.prepend([hidden_metadata, "hidden body"], documents.singleton([alpha_metadata, "alpha body"])))
-let full_budget: FixtureBudget = `Characters 1000
-let truncated_budget: FixtureBudget = `Characters 81
-let omitted_budget: FixtureBudget = `Characters 40
-let score = 0
+let no_text: FixtureTextOption = `None ();
+let no_bool: FixtureBoolOption = `None ();
+let interface: FixtureInterface = [no_text, no_text, no_text, no_text, no_text, no_text];
+let tools: FixtureDependencies = dependencies.empty();
+let implicit: FixturePolicy = [no_bool, texts.empty()];
+let explicit: FixturePolicy = [`Some false, texts.empty()];
+let system: FixtureScope = `System ();
+let repo: FixtureScope = `Repo ();
+let user: FixtureScope = `User ();
+let alpha_metadata: FixtureMetadata = [
+  "alpha",
+  "abcdefghij",
+  no_text,
+  interface,
+  tools,
+  implicit,
+  "/system/a/SKILL.md",
+  system,
+  no_text,
+];
+let hidden_metadata: FixtureMetadata = [
+  "hidden",
+  "not rendered",
+  no_text,
+  interface,
+  tools,
+  explicit,
+  "/repo/h/SKILL.md",
+  repo,
+  no_text,
+];
+let beta_metadata: FixtureMetadata = [
+  "beta",
+  "uvwxyz",
+  no_text,
+  interface,
+  tools,
+  implicit,
+  "/user/b/SKILL.md",
+  user,
+  no_text,
+];
+let available: FixtureDocuments = documents.prepend(
+  [beta_metadata, "beta body"],
+  documents.prepend(
+    [hidden_metadata, "hidden body"],
+    documents.singleton([alpha_metadata, "alpha body"]),
+  ),
+);
+let full_budget: FixtureBudget = `Characters 1000;
+let truncated_budget: FixtureBudget = `Characters 81;
+let omitted_budget: FixtureBudget = `Characters 40;
+let score = 0;
 
 if let `Some full = build_available_skills(available, full_budget) {
-  let [rendered, report, _] = full
-  let [total, included, omitted, _, _] = report
+  let [rendered, report, _] = full;
+  let [total, included, omitted, _, _] = report;
 
   if total == 2 && included == 2 && omitted == 0 {
     score = score + 1
   }
 
-  if text_starts_with([texts.nth_or("", 0, rendered), "- alpha: abcdefghij"]) {
-    if text_starts_with([render_available_skills_body(rendered), "\n## Skills\n"]) {
+  if text_starts_with [texts.nth_or("", 0, rendered), "- alpha: abcdefghij"] {
+    if text_starts_with [render_available_skills_body rendered, "\n## Skills\n"] {
       score = score + 10
     }
   }
 }
 
 if let `Some truncated = build_available_skills(available, truncated_budget) {
-  let [_, report, _] = truncated
-  let [_, included, omitted, truncated_characters, truncated_count] = report
+  let [_, report, _] = truncated;
+  let [_, included, omitted, truncated_characters, truncated_count] = report;
 
   if included == 2 && omitted == 0 && truncated_characters > 0 && truncated_count > 0 {
     score = score + 100
@@ -66,16 +103,16 @@ if let `Some truncated = build_available_skills(available, truncated_budget) {
 }
 
 if let `Some omitted = build_available_skills(available, omitted_budget) {
-  let [_, report, warning] = omitted
-  let [_, included, omitted_count, _, _] = report
+  let [_, report, warning] = omitted;
+  let [_, included, omitted_count, _, _] = report;
 
   if included == 1 && omitted_count == 1 {
     if let `Some _ = warning { score = score + 1000 }
   }
 }
 
-let no_window: FixtureI32Option = `None ()
-let window: FixtureI32Option = `Some 1000
+let no_window: FixtureI32Option = `None ();
+let window: FixtureI32Option = `Some 1000;
 
 if let `Characters limit = default_skill_metadata_budget no_window {
   if limit == 8000 { score = score + 10000 }
@@ -85,4 +122,4 @@ if let `Tokens limit = default_skill_metadata_budget window {
   if limit == 20 { score = score + 100000 }
 }
 
-return { .score = score }
+return { .score = score };

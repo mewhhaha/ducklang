@@ -1,73 +1,75 @@
 module () where
 
-const { list, max_i32 } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
+const { .list, .max_i32 } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
 
 type StoreI32Option = ExecI32Option
 type StoreRecord = ExecProcessRecord
 type StoreRecords = ExecProcessRecords
 type StoreIds = List I32
 
-const records = comptime list(StoreRecord)
-const ids = comptime list(I32)
+const records = comptime list StoreRecord;
+const ids = comptime list I32;
 
-const record_count = (values: StoreRecords) => records.length(values)
+const record_count = (values: StoreRecords) => records.length(values);
 
 const contains_process = (values: StoreRecords, process_id: I32) => {
   records.any(values, (record: StoreRecord) => {
-    let [candidate_id, _, _, _, _, _] = record
+    let [candidate_id, _, _, _, _, _] = record;
     candidate_id == process_id
   })
-}
+};
 
 const allocate_process_id = (values: StoreRecords) => {
   records.fold_i32(values, 999, (highest: I32, record: StoreRecord) => {
-    let [process_id, _, _, _, _, _] = record
-    max_i32([highest, process_id])
+    let [process_id, _, _, _, _, _] = record;
+    max_i32 [highest, process_id]
   }) + 1
-}
+};
 
 const select_process_to_prune = (values: StoreRecords) => {
   if records.length(values) < 64 {
     `None ()
   } else {
     let newest_first = records.sort_by(values, (left: StoreRecord, right: StoreRecord) => {
-      let [_, _, _, left_used, _, _] = left
-      let [_, _, _, right_used, _, _] = right
+      let [_, _, _, left_used, _, _] = left;
+      let [_, _, _, right_used, _, _] = right;
       left_used > right_used
-    })
-    let protected: StoreIds = ids.empty()
-    let protected_source = records.take(8, newest_first)
-    let protected_done = false
+    });
+    let protected: StoreIds = ids.empty();
+    let protected_source = records.take(8, newest_first);
+    let protected_done = false;
 
     loop {
       if let `Cons node = protected_source {
-        let [record, tail] = node
-        let [process_id, _, _, _, _, _] = record
+        let [record, tail] = node;
+        let [process_id, _, _, _, _, _] = record;
         protected = ids.prepend(process_id, protected)
         protected_source = tail
       } else {
         protected_done = true
       }
 
-      if protected_done { break }
+      if protected_done { break; }
     }
 
     let oldest_first = records.sort_by(values, (left: StoreRecord, right: StoreRecord) => {
-      let [_, _, _, left_used, _, _] = left
-      let [_, _, _, right_used, _, _] = right
+      let [_, _, _, left_used, _, _] = left;
+      let [_, _, _, right_used, _, _] = right;
       left_used < right_used
-    })
-    let exited_candidate: StoreI32Option = `None ()
-    let fallback_candidate: StoreI32Option = `None ()
-    let current = oldest_first
-    let done = false
+    });
+    let exited_candidate: StoreI32Option = `None ();
+    let fallback_candidate: StoreI32Option = `None ();
+    let current = oldest_first;
+    let done = false;
 
     loop {
       if let `Cons node = current {
-        let [record, tail] = node
-        let [process_id, _, _, _, exited, locked] = record
-        let eligible = !(locked) && !(ids.any(protected, (protected_id: I32) => protected_id == process_id))
+        let [record, tail] = node;
+        let [process_id, _, _, _, exited, locked] = record;
+        let eligible = !(locked) && !(
+          ids.any(protected, (protected_id: I32) => protected_id == process_id)
+        );
 
         if eligible {
           if let `None () = fallback_candidate {
@@ -86,7 +88,7 @@ const select_process_to_prune = (values: StoreRecords) => {
         done = true
       }
 
-      if done { break }
+      if done { break; }
     }
 
     if let `Some process_id = exited_candidate {
@@ -95,32 +97,32 @@ const select_process_to_prune = (values: StoreRecords) => {
       fallback_candidate
     }
   }
-}
+};
 
 const remove_process = (values: StoreRecords, process_id: I32) => {
   records.filter(values, (record: StoreRecord) => {
-    let [candidate_id, _, _, _, _, _] = record
+    let [candidate_id, _, _, _, _, _] = record;
     candidate_id != process_id
   })
-}
+};
 
 const active_processes = (values: StoreRecords) => {
   let active = records.filter(values, (record: StoreRecord) => {
-    let [_, _, _, _, exited, _] = record
+    let [_, _, _, _, exited, _] = record;
     !(exited)
-  })
+  });
   records.sort_by(active, (left: StoreRecord, right: StoreRecord) => {
-    let [left_id, _, _, _, _, _] = left
-    let [right_id, _, _, _, _, _] = right
+    let [left_id, _, _, _, _, _] = left;
+    let [right_id, _, _, _, _, _] = right;
     left_id < right_id
   })
-}
+};
 
 return {
-  record_count,
-  contains_process,
-  allocate_process_id,
-  select_process_to_prune,
-  remove_process,
-  active_processes,
-}
+  .record_count,
+  .contains_process,
+  .allocate_process_id,
+  .select_process_to_prune,
+  .remove_process,
+  .active_processes,
+};

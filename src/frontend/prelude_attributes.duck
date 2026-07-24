@@ -1,19 +1,19 @@
 module () where
 
-const test = (const target) => if import.meta.mode == #test {
+const test = (const target) => if import .meta.mode == #test {
   `Export ()
 } else {
   `Drop ()
-}
+};
 
 const derive = (const ...generators) => (const target) => `Replace (comptime {
-  let derived = target
+  let derived = target;
 
   for generator in generators {
-    derived = @type.extend(derived, generator(derived))
+    derived = @type .extend(derived, generator derived)
   }
 
   derived
-})
+});
 
-return { test, derive }
+return { .test, .derive };

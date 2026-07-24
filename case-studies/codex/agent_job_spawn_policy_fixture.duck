@@ -1,21 +1,40 @@
 module () where
 
-const {} = import "./agent_job_spawn_types.duck" ()
-const { prepare_agent_job_spawn } = import "./agent_job_spawn_policy.duck" ()
+const {} = import "./agent_job_spawn_types.duck" ();
+const { .prepare_agent_job_spawn } = import "./agent_job_spawn_policy.duck" ();
 
 type FixtureDecoded = AgentJobSpawnDecodedArgs
 
-let score = 0
-let valid_decoded: FixtureDecoded = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `Some "{\"type\":\"object\"}", .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "90"]
-let valid = prepare_agent_job_spawn(valid_decoded, "/workspace", 1, false, 8, `None ())
+let score = 0;
+let valid_decoded: FixtureDecoded = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `Some "{\"type\":\"object\"}",
+  .max_concurrency = `Some "100",
+  .max_workers = `Some "2",
+  .max_runtime_seconds = `Some "90",
+];
+let valid = prepare_agent_job_spawn(valid_decoded, "/workspace", 1, false, 8, `None ());
 if let `ReadCsv args = valid {
-  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false }
-  let output_valid = if let `Some value = args.output_path { value == "/workspace/out/results.csv" } else { false }
+  let runtime_valid = if let `Some value = args.max_runtime_seconds { value == "90" } else { false };
+  let output_valid = if let `Some value = args.output_path { value == "/workspace/out/results.csv"
+  } else { false };
   if args.input_path == "/workspace/input.csv" && args.max_concurrency == 8 && runtime_valid && output_valid { score = score + 1 }
 }
 
-let alias_decoded: FixtureDecoded = [.csv_path = "/tmp/input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `None (), .output_schema_json = `Some "{\"type\":\"object\"}", .max_concurrency = `None (), .max_workers = `Some "3", .max_runtime_seconds = `None ()]
-let alias_plan = prepare_agent_job_spawn(alias_decoded, "/workspace", 1, false, 32, `Some "1800")
+let alias_decoded: FixtureDecoded = [
+  .csv_path = "/tmp/input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `None (),
+  .output_schema_json = `Some "{\"type\":\"object\"}",
+  .max_concurrency = `None (),
+  .max_workers = `Some "3",
+  .max_runtime_seconds = `None (),
+];
+let alias_plan = prepare_agent_job_spawn(alias_decoded, "/workspace", 1, false, 32, `Some "1800");
 if let `ReadCsv args = alias_plan {
   if args.input_path == "/tmp/input.csv" && args.max_concurrency == 3 {
     if let `Some runtime = args.max_runtime_seconds {
@@ -24,19 +43,68 @@ if let `ReadCsv args = alias_plan {
   }
 }
 
-let empty_instruction_decoded: FixtureDecoded = [.csv_path = "input.csv", .instruction = "  ", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `Some "{\"type\":\"object\"}", .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "90"]
-if let `RejectSpawn message = prepare_agent_job_spawn(empty_instruction_decoded, "/workspace", 1, false, 32, `None ()) {
+let empty_instruction_decoded: FixtureDecoded = [
+  .csv_path = "input.csv",
+  .instruction = "  ",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `Some "{\"type\":\"object\"}",
+  .max_concurrency = `Some "100",
+  .max_workers = `Some "2",
+  .max_runtime_seconds = `Some "90",
+];
+if let `RejectSpawn message = prepare_agent_job_spawn(
+  empty_instruction_decoded,
+  "/workspace",
+  1,
+  false,
+  32,
+  `None (),
+) {
   if message == "instruction must be non-empty" { score = score + 100 }
 }
 
-let remote_decoded: FixtureDecoded = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `Some "{\"type\":\"object\"}", .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "90"]
-if let `RejectSpawn message = prepare_agent_job_spawn(remote_decoded, "/workspace", 1, true, 32, `None ()) {
-  if message == "spawn_agents_on_csv is not supported for remote environments" { score = score + 1000 }
+let remote_decoded: FixtureDecoded = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `Some "{\"type\":\"object\"}",
+  .max_concurrency = `Some "100",
+  .max_workers = `Some "2",
+  .max_runtime_seconds = `Some "90",
+];
+if let `RejectSpawn message = prepare_agent_job_spawn(
+  remote_decoded,
+  "/workspace",
+  1,
+  true,
+  32,
+  `None (),
+) {
+  if message == "spawn_agents_on_csv is not supported for remote environments" { score = score +
+    1000 }
 }
 
-let zero_runtime_decoded: FixtureDecoded = [.csv_path = "input.csv", .instruction = "Review {path}", .id_column = `None (), .output_path = `Some "out/results.csv", .output_schema_json = `Some "{\"type\":\"object\"}", .max_concurrency = `Some "100", .max_workers = `Some "2", .max_runtime_seconds = `Some "0"]
-if let `RejectSpawn message = prepare_agent_job_spawn(zero_runtime_decoded, "/workspace", 1, false, 32, `None ()) {
+let zero_runtime_decoded: FixtureDecoded = [
+  .csv_path = "input.csv",
+  .instruction = "Review {path}",
+  .id_column = `None (),
+  .output_path = `Some "out/results.csv",
+  .output_schema_json = `Some "{\"type\":\"object\"}",
+  .max_concurrency = `Some "100",
+  .max_workers = `Some "2",
+  .max_runtime_seconds = `Some "0",
+];
+if let `RejectSpawn message = prepare_agent_job_spawn(
+  zero_runtime_decoded,
+  "/workspace",
+  1,
+  false,
+  32,
+  `None (),
+) {
   if message == "max_runtime_seconds must be >= 1" { score = score + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

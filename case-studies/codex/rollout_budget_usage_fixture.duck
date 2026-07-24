@@ -1,8 +1,13 @@
 module () where
 
-const {} = import "./rollout_budget_types.duck" ()
-const budget_module = import "./rollout_budget.duck"
-const { new_rollout_budget, configure_rollout_budget, record_rollout_budget_usage, pending_rollout_budget_reminder } = budget_module()
+const {} = import "./rollout_budget_types.duck" ();
+const budget_module = import "./rollout_budget.duck";
+const {
+  .new_rollout_budget,
+  .configure_rollout_budget,
+  .record_rollout_budget_usage,
+  .pending_rollout_budget_reminder,
+} = budget_module();
 
 type FixtureBudget = RolloutBudget
 type FixtureConfig = RolloutBudgetConfig
@@ -10,26 +15,41 @@ type FixtureThresholdNode = RolloutBudgetThresholdNode
 type FixtureThresholds = RolloutBudgetThresholds
 type FixtureUsage = RolloutBudgetTokenUsage
 
-let thresholds: FixtureThresholds = `Nil ()
-let threshold_node: FixtureThresholdNode = [50, thresholds]
+let thresholds: FixtureThresholds = `Nil ();
+let threshold_node: FixtureThresholdNode = [50, thresholds];
 thresholds = `Cons threshold_node
-let config: FixtureConfig = [.limit_tokens = 100, .reminder_at_remaining_tokens = thresholds, .sampling_token_weight = 2.0f64, .prefill_token_weight = 0.5f64]
+let config: FixtureConfig = [
+  .limit_tokens = 100,
+  .reminder_at_remaining_tokens = thresholds,
+  .sampling_token_weight = 2.0f64,
+  .prefill_token_weight = 0.5f64,
+];
 
-let score = 0
-let budget: FixtureBudget = new_rollout_budget()
-let ignored_usage: FixtureUsage = [.input_tokens = 100, .cached_input_tokens = 0, .output_tokens = 100]
-let ignored = record_rollout_budget_usage(budget, ignored_usage)
+let score = 0;
+let budget: FixtureBudget = new_rollout_budget();
+let ignored_usage: FixtureUsage = [
+  .input_tokens = 100,
+  .cached_input_tokens = 0,
+  .output_tokens = 100,
+];
+let ignored = record_rollout_budget_usage(budget, ignored_usage);
 budget = ignored.budget
 if !(ignored.exhausted) { score = score + 1 }
-if let `None () = pending_rollout_budget_reminder(&budget, &"root", &"window-1") { score = score + 10 }
+if let `None () = pending_rollout_budget_reminder(&budget, &"root", &"window-1") { score = score +
+  10 }
 
 budget = configure_rollout_budget(budget, config)
-let replacement_thresholds: FixtureThresholds = `Nil ()
-let replacement: FixtureConfig = [.limit_tokens = 10, .reminder_at_remaining_tokens = replacement_thresholds, .sampling_token_weight = 1.0f64, .prefill_token_weight = 1.0f64]
+let replacement_thresholds: FixtureThresholds = `Nil ();
+let replacement: FixtureConfig = [
+  .limit_tokens = 10,
+  .reminder_at_remaining_tokens = replacement_thresholds,
+  .sampling_token_weight = 1.0f64,
+  .prefill_token_weight = 1.0f64,
+];
 budget = configure_rollout_budget(budget, replacement)
 
-let first_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 40, .output_tokens = 15]
-let first = record_rollout_budget_usage(budget, first_usage)
+let first_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 40, .output_tokens = 15];
+let first = record_rollout_budget_usage(budget, first_usage);
 budget = first.budget
 if !(first.exhausted) {
   if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-1") {
@@ -37,17 +57,17 @@ if !(first.exhausted) {
   }
 }
 
-let final_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 80, .output_tokens = 30]
-let final = record_rollout_budget_usage(budget, final_usage)
+let final_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 80, .output_tokens = 30];
+let final = record_rollout_budget_usage(budget, final_usage);
 budget = final.budget
 if final.exhausted { score = score + 1000 }
 
-let later_usage: FixtureUsage = [.input_tokens = 0, .cached_input_tokens = 0, .output_tokens = -5]
-let later = record_rollout_budget_usage(budget, later_usage)
+let later_usage: FixtureUsage = [.input_tokens = 0, .cached_input_tokens = 0, .output_tokens = -5];
+let later = record_rollout_budget_usage(budget, later_usage);
 if later.exhausted {
   if let `Some reminder = pending_rollout_budget_reminder(&later.budget, &"root", &"window-1") {
     if reminder.remaining_tokens == 0 { score = score + 10000 }
   }
 }
 
-return { .score = score }
+return { .score = score };

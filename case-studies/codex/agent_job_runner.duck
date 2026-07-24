@@ -1,12 +1,14 @@
 module () where
 
-const { agent_job_active_count, next_agent_job_runner_action, start_agent_job_runner } = import "./agent_job_runner_action.duck" ()
-const { apply_agent_job_completion, apply_agent_job_spawn } = import "./agent_job_runner_transition.duck" ()
+const { .agent_job_active_count, .next_agent_job_runner_action, .start_agent_job_runner } =
+  import "./agent_job_runner_action.duck" ();
+const { .apply_agent_job_completion, .apply_agent_job_spawn } =
+  import "./agent_job_runner_transition.duck" ();
 
 return {
-  agent_job_active_count,
-  apply_agent_job_completion,
-  apply_agent_job_spawn,
-  next_agent_job_runner_action,
-  start_agent_job_runner,
-}
+  .agent_job_active_count,
+  .apply_agent_job_completion,
+  .apply_agent_job_spawn,
+  .next_agent_job_runner_action,
+  .start_agent_job_runner,
+};

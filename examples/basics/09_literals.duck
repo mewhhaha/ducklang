@@ -1,7 +1,7 @@
-const { get } = import "duck:prelude/runtime" ()
+const { .get } = import "duck:prelude/runtime" ();
 
-let message = "answer"
-let answer = 0
+let message = "answer";
+let answer = 0;
 
 if (let 'a' = get(message, 0)) {
   answer = 42

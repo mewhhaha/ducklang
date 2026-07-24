@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./code_mode_nested_tool_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./code_mode_nested_tool_types.duck" ();
 
 type CodeModeNotification = struct {
   .call_id = Text,
@@ -84,4 +84,4 @@ type CodeModeNotificationCompletion =
   | `NotificationComplete Unit
   | `NotificationRejected Text
 
-return {}
+return {};

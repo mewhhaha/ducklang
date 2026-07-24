@@ -7,6 +7,7 @@ import {
   ducklang_prelude_text,
   ducklang_runtime_prelude_text,
 } from "./prelude.ts";
+import { source_for_core_route } from "./core_pipeline.ts";
 import { Source } from "./source.ts";
 
 const add_duck = `
@@ -15,7 +16,7 @@ duck Add Self Other Output {
 }
 
 extend I32 {
-  .add = [left, right] => @wasm.add_i32 [left, right]
+  .add = [left, right] => @wasm.add_i32 [left, right],
 }
 `;
 
@@ -38,8 +39,8 @@ duck Predicate Self {
 }
 
 extend I32 {
-  type Output = I32
-  .test = value => value + 1
+  type Output = I32,
+  .test = value => value + 1,
 }
 
 Predicate.test 41
@@ -73,7 +74,7 @@ Deno.test("exact aliases share structural extensions", () => {
   const wat = Source.wat(`
 type Scalar = I32
 ${add_duck}
-let left: Scalar = 20
+let left: Scalar = 20;
 Add.add [left, 22]
 `);
 
@@ -82,13 +83,13 @@ Add.add [left, 22]
 
 Deno.test("type namespaces expose ordered labeled product projections", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Vec3 = struct {
   .x = I32,
   .y = I32,
   .z = I32,
 }
-let value: Vec3 = [1, 2, 3]
+let value: Vec3 = [1, 2, 3];
 Vec3.x value + Vec3.y value * 10 + Vec3.z value * 100
 `);
   const instance = await instantiate_wat(wat, "ducklang_struct_accessors", {});
@@ -103,13 +104,13 @@ Vec3.x value + Vec3.y value * 10 + Vec3.z value * 100
 
 Deno.test("generic structs retain their source-built namespace", async () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 const pair_type = left => right => struct {
   .first = left,
   .second = right,
-}
-const int_pair = pair_type(I32)(I32)
-let value: int_pair = [20, 22]
+};
+const int_pair = pair_type(I32)(I32);
+let value: int_pair = [20, 22];
 int_pair.first value + int_pair.second value
 `);
   const instance = await instantiate_wat(wat, "ducklang_generic_struct", {});
@@ -127,7 +128,7 @@ Deno.test("struct is an explicitly imported source const function", () => {
     () =>
       Source.wat(`
 type Point = struct { .x = I32 }
-let point: Point = [20]
+let point: Point = [20];
 point.x
 `),
     "Unbound core value: struct",
@@ -136,9 +137,9 @@ point.x
   assert_throws(
     () =>
       Source.wat(`
-const struct = (const fields) => comptime fields
+const struct = (const fields) => comptime fields;
 type Point = struct { .x = I32 }
-let point: Point = [20]
+let point: Point = [20];
 Point.x point
 `),
     "Compile-time shape cannot be emitted as a Core result",
@@ -149,9 +150,9 @@ Point.x point
   assert_equals(ducklang_prelude_text.includes("@type.namespace"), false);
 
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32 }
-let point: Point = [20]
+let point: Point = [20];
 Point.x point
 `);
   assert_includes(wat, "i32.const 20");
@@ -159,9 +160,9 @@ Point.x point
 
 Deno.test("newtype seals and unwraps a zero-cost nominal value", () => {
   const wat = Source.wat(`
-const { cast, newtype, seal, representation } = import "duck:prelude" ()
+const { .cast, .newtype, .seal, .representation } = import "duck:prelude" ();
 type Centimeter = newtype I32
-const distance = 42 :> Centimeter
+const distance = 42 :> Centimeter;
 cast(distance :< I32, I32)
 `);
 
@@ -176,9 +177,9 @@ cast(distance :< I32, I32)
 
 Deno.test("fixed-width integers wrap and preserve unsigned comparisons", async () => {
   const wat = Source.wat(`
-let maximum: U5 = 31u5
-let one: U5 = 1u5
-let wrapped = maximum + one
+let maximum: U5 = 31u5;
+let one: U5 = 1u5;
+let wrapped = maximum + one;
 if maximum > one { wrapped } else { 7u5 }
 `);
   const instance = await instantiate_wat(wat, "ducklang_fixed_integer", {});
@@ -196,7 +197,7 @@ if maximum > one { wrapped } else { 7u5 }
 
 Deno.test("fixed-width shifts use the declared width", async () => {
   const wat = Source.wat(`
-let shift = (value: U5, amount: U5) => value << amount
+let shift = (value: U5, amount: U5) => value << amount;
 shift [31u5, 5u5]
 `);
   const instance = await instantiate_wat(wat, "ducklang_fixed_shift", {});
@@ -213,8 +214,8 @@ shift [31u5, 5u5]
 
 Deno.test("wide integers use little-endian Core limbs", async () => {
   const wat = Source.wat(`
-let maximum: U128 = 340282366920938463463374607431768211455u128
-let one: U128 = 1u128
+let maximum: U128 = 340282366920938463463374607431768211455u128;
+let one: U128 = 1u128;
 maximum + one
 `);
   const instance = await instantiate_wat(wat, "ducklang_wide_integer", {});
@@ -263,14 +264,14 @@ Deno.test("signed wide integer division truncates toward zero", async () => {
 
 Deno.test("packed source types use one scalar and typed accessors", async () => {
   const wat = Source.wat(`
-const { packed } = import "duck:prelude" ()
+const { .packed } = import "duck:prelude" ();
 type Header = packed struct {
   .kind = U3,
   .urgent = U1,
   .length = U12,
 }
-let header: Header = Header.pack [5u3, 1u1, 120u12]
-let changed: Header = Header.with_kind [header, 2u3]
+let header: Header = Header.pack [5u3, 1u1, 120u12];
+let changed: Header = Header.with_kind [header, 2u3];
 Header.kind changed
 `);
   const instance = await instantiate_wat(wat, "ducklang_packed", {});
@@ -288,9 +289,9 @@ Header.kind changed
 
 Deno.test("packed source types cross the scalar boundary with Core limbs", async () => {
   const wat = Source.wat(`
-const { packed } = import "duck:prelude" ()
+const { .packed } = import "duck:prelude" ();
 type Packet = packed [U64, U64]
-let packet: Packet = Packet.pack [1u64, 2u64]
+let packet: Packet = Packet.pack [1u64, 2u64];
 Packet.item_1 packet
 `);
   const instance = await instantiate_wat(wat, "ducklang_wide_packed", {});
@@ -307,17 +308,17 @@ Packet.item_1 packet
 
 Deno.test("type operators compose source type values", () => {
   const wat = Source.wat(`
-const { struct, type_extend, type_union, type_difference } =
-  import "duck:prelude" ()
+const { .struct, .type_extend, .type_union, .type_difference } =
+  import "duck:prelude" ();
 
 type Point = struct { .x = I32 }
-const point_with_triple = Point :+ ("triple", value => value.x * 3)
-const point_with_double = Point :+ { .double = value => value.x * 2 }
-const numeric = I32 :| I64
-const narrowed = numeric :- I64
-let point: Point = [21]
+const point_with_triple = Point :+ ("triple", value => value.x * 3);
+const point_with_double = Point :+ { .double = value => value.x * 2 };
+const numeric = I32 :| I64;
+const narrowed = numeric :- I64;
+let point: Point = [21];
 
-const _ = narrowed
+const _ = narrowed;
 point_with_triple.triple point + point_with_double.double point
 `);
 
@@ -330,10 +331,10 @@ point_with_triple.triple point + point_with_double.double point
 
 Deno.test("prelude exports compose into a specialized runtime function", async () => {
   const wat = Source.wat(`
-const { identity, compose } = import "duck:prelude/functional" ()
-const add_two = value => value + 2
-const double = value => value * 2
-const combined = comptime compose [add_two, double]
+const { .identity, .compose } = import "duck:prelude/functional" ();
+const add_two = value => value + 2;
+const double = value => value * 2;
+const combined = comptime compose [add_two, double];
 identity (combined 20)
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_compose", {});
@@ -348,13 +349,13 @@ identity (combined 20)
 
 Deno.test("prelude option combinators eliminate and inspect options", async () => {
   const wat = Source.wat(`
-const { option, option_unwrap_or, option_is_some, option_is_none } = import "duck:prelude/functional" ()
+const { .option, .option_unwrap_or, .option_is_some, .option_is_none } = import "duck:prelude/functional" ();
 type IntOption = Option I32
-let present: IntOption = \`Some 41
-let absent: IntOption = \`None ()
-const increment = value => value + 1
-const resolve_option = comptime option [0, increment]
-let flags = if option_is_some present { 1 } else { 0 }
+let present: IntOption = \`Some 41;
+let absent: IntOption = \`None ();
+const increment = value => value + 1;
+const resolve_option = comptime option [0, increment];
+let flags = if option_is_some present { 1 } else { 0 };
 flags = flags + if option_is_none absent { 1 } else { 0 }
 resolve_option present + option_unwrap_or [2, absent] + flags
 `);
@@ -374,11 +375,11 @@ resolve_option present + option_unwrap_or [2, absent] + flags
 
 Deno.test("prelude result combinators eliminate and inspect results", async () => {
   const wat = Source.wat(`
-const { result_unwrap_or, result_is_ok, result_is_err } = import "duck:prelude/functional" ()
+const { .result_unwrap_or, .result_is_ok, .result_is_err } = import "duck:prelude/functional" ();
 type IntResult = Result I32 I32
-let succeeded: IntResult = \`Ok 41
-let failed: IntResult = \`Err 7
-let flags = if result_is_ok succeeded { 1 } else { 0 }
+let succeeded: IntResult = \`Ok 41;
+let failed: IntResult = \`Err 7;
+let flags = if result_is_ok succeeded { 1 } else { 0 };
 flags = flags + if result_is_err failed { 1 } else { 0 }
 result_unwrap_or [3, failed] + flags
 `);
@@ -398,11 +399,11 @@ result_unwrap_or [3, failed] + flags
 
 Deno.test("prelude either combinators distinguish both cases", async () => {
   const wat = Source.wat(`
-const { either_is_left, either_is_right } = import "duck:prelude/functional" ()
+const { .either_is_left, .either_is_right } = import "duck:prelude/functional" ();
 type IntEither = Either I32 I32
-let left: IntEither = \`Left 9
-let right: IntEither = \`Right 10
-let flags = if either_is_left left { 1 } else { 0 }
+let left: IntEither = \`Left 9;
+let right: IntEither = \`Right 10;
+let flags = if either_is_left left { 1 } else { 0 };
 flags + if either_is_right right { 1 } else { 0 }
 `);
   const instance = await instantiate_wat(
@@ -421,11 +422,11 @@ flags + if either_is_right right { 1 } else { 0 }
 
 Deno.test("prelude converge combines two projections", async () => {
   const wat = Source.wat(`
-const { converge } = import "duck:prelude/functional" ()
-const add_pair = [first, second] => first + second
-const increment = value => value + 1
-const double = value => value * 2
-const combined = comptime converge [add_pair, increment, double]
+const { .converge } = import "duck:prelude/functional" ();
+const add_pair = [first, second] => first + second;
+const increment = value => value + 1;
+const double = value => value * 2;
+const combined = comptime converge [add_pair, increment, double];
 combined 10
 `);
   const instance = await instantiate_wat(
@@ -444,14 +445,14 @@ combined 10
 
 Deno.test("prelude operators cover pipelines collections and integer bits", async () => {
   const wat = Source.wat(`
-const { pipe, apply, length, bit_or } = import "duck:prelude/functional" ()
-const increment = value => value + 1
-const double = value => value * 2
-const decorate = value => value <> "c"
-let piped = 20 |> increment |> double
-let applied = double $ 10
-let text_length = length (decorate "ab")
-let shifted = 1 << 4
+const { .pipe, .apply, .length, .bit_or } = import "duck:prelude/functional" ();
+const increment = value => value + 1;
+const double = value => value * 2;
+const decorate = value => value <> "c";
+let piped = 20 |> increment |> double;
+let applied = double $ 10;
+let text_length = length (decorate "ab");
+let shifted = 1 << 4;
 piped + applied + text_length + bit_or [shifted, 2]
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_operators", {});
@@ -468,8 +469,8 @@ Deno.test("pipe rejects a value outside its generic input type", () => {
   assert_throws(
     () =>
       Source.wat(`
-const { pipe } = import "duck:prelude/functional" ()
-const text_length = (value: Text) => @len(value)
+const { .pipe } = import "duck:prelude/functional" ();
+const text_length = (value: Text) => @len(value);
 20 |> text_length
 `),
     "Core parameter annotation expects Text, got I32",
@@ -478,20 +479,20 @@ const text_length = (value: Text) => @len(value)
 
 Deno.test("prelude functor and monad operators dispatch through ducks", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
-const { struct } = import "duck:prelude/types" ()
+const { .identity } = import "duck:prelude/functional" ();
+const { .struct } = import "duck:prelude/types" ();
 type Box value = struct {.value = value}
 extend Box {
-  .map = [transform, wrapped] => [.value = transform(wrapped.value)]
-  .bind = [wrapped, transform] => transform wrapped.value
+  .map = [transform, wrapped] => [.value = transform(wrapped.value)],
+  .bind = [wrapped, transform] => transform wrapped.value,
 }
 type IntBox = Box I32
-let wrapped_map: IntBox = [.value = 40]
-let wrapped_bind: IntBox = [.value = 40]
-let increment = (value: I32) => value + 1
-let wrap_increment: I32 -> IntBox = value => [.value = value + 1]
-let mapped: IntBox = increment <$> wrapped_map
-let bound: IntBox = wrapped_bind >>= wrap_increment
+let wrapped_map: IntBox = [.value = 40];
+let wrapped_bind: IntBox = [.value = 40];
+let increment = (value: I32) => value + 1;
+let wrap_increment: I32 -> IntBox = value => [.value = value + 1];
+let mapped: IntBox = increment <$> wrapped_map;
+let bound: IntBox = wrapped_bind >>= wrap_increment;
 identity (mapped.value + bound.value)
 `);
   const instance = await instantiate_wat(
@@ -510,7 +511,7 @@ identity (mapped.value + bound.value)
 
 Deno.test("generic union extensions infer monadic result constructors", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
+const { .identity } = import "duck:prelude/functional" ();
 duck Chain M A B {
   .chain = [M A, A -> M B] -> M B
 }
@@ -520,12 +521,12 @@ extend Maybe {
     transform value
   } else {
     \`Nothing ()
-  }
+  },
 }
 type MaybeI32 = Maybe I32
-let start: MaybeI32 = \`Just 40
-let increment: I32 -> MaybeI32 = value => \`Just (value + 2)
-let result: MaybeI32 = Chain.chain(start, increment)
+let start: MaybeI32 = \`Just 40;
+let increment: I32 -> MaybeI32 = value => \`Just (value + 2);
+let result: MaybeI32 = Chain.chain(start, increment);
 if let \`Just value = result { identity value } else { 0 }
 `);
   const instance = await instantiate_wat(
@@ -544,15 +545,15 @@ if let \`Just value = result { identity value } else { 0 }
 
 Deno.test("prelude From dispatches conversion through the source type", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
-const { struct } = import "duck:prelude/types" ()
+const { .identity } = import "duck:prelude/functional" ();
+const { .struct } = import "duck:prelude/types" ();
 type Celsius = struct {.value = I32}
 type Fahrenheit = struct {.value = I32}
 extend Fahrenheit {
-  .from = (value: Fahrenheit) => [.value = (value.value - 32) * 5 / 9]
+  .from = (value: Fahrenheit) => [.value = (value.value - 32) * 5 / 9],
 }
-let source: Fahrenheit = [.value = 212]
-let converted: Celsius = From.from source
+let source: Fahrenheit = [.value = 212];
+let converted: Celsius = From.from source;
 identity converted.value
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_from", {});
@@ -567,9 +568,9 @@ identity converted.value
 
 Deno.test("prelude exports generic option types", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
+const { .identity } = import "duck:prelude/functional" ();
 type IntOption = Option I32
-let value: IntOption = \`Some 42
+let value: IntOption = \`Some 42;
 identity (if let \`Some found = value { found } else { 0 })
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_option", {});
@@ -684,6 +685,9 @@ Deno.test("prelude declares functional contracts and standard effects", () => {
     [">=", "@syntax.ge"],
     ["+", "@syntax.add"],
     ["-", "@syntax.sub"],
+    ["++", "@append"],
+    ["<&", "@merge"],
+    ["&>", "@merge_into"],
     ["*", "@syntax.mul"],
     ["/", "@syntax.div"],
     ["%", "@syntax.rem"],
@@ -775,24 +779,24 @@ Deno.test("effect defaults export a complete source handler set", () => {
 
 Deno.test("default affine Do handler sequences and short-circuits Option", async () => {
   const wat = Source.wat(`
-const { option_unwrap_or } = import "duck:prelude/functional" ()
-const {} = import "duck:prelude/effects/defaults" ()
+const { .option_unwrap_or } = import "duck:prelude/functional" ();
+const {} = import "duck:prelude/effects/defaults" ();
 type IntOption = Option I32
 
 let present = () => {
-  let wrapped: IntOption = \`Some 40
+  let wrapped: IntOption = \`Some 40;
   value <- do wrapped
   value + 2
-}
+};
 
 let missing = () => {
-  let wrapped: IntOption = \`None ()
+  let wrapped: IntOption = \`None ();
   _ <- do wrapped
   100
-}
+};
 
-let present_result: IntOption = try present()
-let missing_result: IntOption = try missing()
+let present_result: IntOption = try present();
+let missing_result: IntOption = try missing();
 option_unwrap_or(0, present_result) + option_unwrap_or(7, missing_result)
 `);
   const instance = await instantiate_wat(wat, "effect_defaults_do_option", {});
@@ -807,13 +811,13 @@ option_unwrap_or(0, present_result) + option_unwrap_or(7, missing_result)
 
 Deno.test("source default State and Reader handlers compose", async () => {
   const wat = Source.wat(`
-const { default_state, default_reader } = import "duck:prelude/effects/defaults" ()
+const { .default_state, .default_reader } = import "duck:prelude/effects/defaults" ();
 let run = () => {
   environment <- Reader.ask()
   _ <- State.put(environment + 2)
   value <- State.get()
   value
-}
+};
 try (try run() with default_state(0)) with default_reader(40)
 `);
   const instance = await instantiate_wat(
@@ -832,14 +836,14 @@ try (try run() with default_state(0)) with default_reader(40)
 
 Deno.test("deterministic effect defaults retain local state", async () => {
   const wat = Source.wat(`
-const { deterministic_clock, single_slot_channel } = import "duck:prelude/effects/defaults" ()
+const { .deterministic_clock, .single_slot_channel } = import "duck:prelude/effects/defaults" ();
 let run = () => {
   first <- Clock.wall_time_ms()
   _ <- Channel.send(20)
   value <- Channel.receive()
   second <- Clock.wall_time_ms()
   @unsafe_i32_wrap_i64(first + second) + value
-}
+};
 try (try run() with deterministic_clock(10i64, 2i64)) with single_slot_channel(0)
 `);
   const instance = await instantiate_wat(
@@ -858,12 +862,12 @@ try (try run() with deterministic_clock(10i64, 2i64)) with single_slot_channel(0
 
 Deno.test("effect adapters receive explicit authority functions", async () => {
   const wat = Source.wat(`
-const { handle_environment } = import "duck:prelude/effects/defaults" ()
-const lookup = name => 40
+const { .handle_environment } = import "duck:prelude/effects/defaults" ();
+const lookup = name => 40;
 let run = () => {
   value <- Environment.lookup("answer")
   value + 2
-}
+};
 try run() with handle_environment(lookup)
 `);
   const instance = await instantiate_wat(wat, "effect_defaults_authority", {});
@@ -883,7 +887,7 @@ duck Functor F A B {
   .map = [A -> B, F A] -> F B
 }
 extend Identity {
-  .map = [transform, value] => transform value
+  .map = [transform, value] => transform value,
 }
 comptime Functor [Identity, I32, I32]
 0
@@ -896,12 +900,12 @@ Deno.test("functional ducks report a missing custom constructor instance", () =>
   assert_throws(
     () =>
       Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
+const { .identity } = import "duck:prelude/functional" ();
 type Maybe value = | \`Just value | \`Nothing Unit
 type IntMaybe = Maybe I32
-let value: IntMaybe = \`Just 41
-let increment = (value: I32) => value + 1
-let mapped: IntMaybe = Functor.map [increment, value]
+let value: IntMaybe = \`Just 41;
+let increment = (value: I32) => value + 1;
+let mapped: IntMaybe = Functor.map [increment, value];
 identity mapped
 `),
     "Missing duck satisfaction for Functor.map at Maybe",
@@ -910,17 +914,17 @@ identity mapped
 
 Deno.test("prelude State effect infers its value type from a source handler", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
-const _ = import "duck:prelude/effects" ()
+const { .identity } = import "duck:prelude/functional" ();
+const _ = import "duck:prelude/effects" ();
 let run = () => {
   before <- State.get()
   _ <- State.put(before + 2)
   after <- State.get()
   after
-}
+};
 let state = {
-  let current = 40
-  State {
+  let current = 40;
+  handler State {
     get: (!resume) => !resume(current),
     put: (value, !resume) => {
       current = value
@@ -928,7 +932,7 @@ let state = {
     },
     return: value => value,
   }
-}
+};
 identity (try run() with state)
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_state", {});
@@ -943,9 +947,9 @@ identity (try run() with state)
 
 Deno.test("named State instances keep independent identities and value types", async () => {
   const wat = Source.wat(`
-const _ = import "duck:prelude/effects" ()
-const counter = State I32
-const message = State Text
+const _ = import "duck:prelude/effects" ();
+const counter = State I32;
+const message = State Text;
 let run = () => {
   before <- counter.get()
   text <- message.get()
@@ -953,9 +957,9 @@ let run = () => {
   _ <- message.put(@append(text, "!"))
   after <- message.get()
   before + @len(after)
-}
+};
 let counter_handler = {
-  let counter_value = 40
+  let counter_value = 40;
   counter {
     get: (!resume) => !resume(counter_value),
     put: (value, !resume) => {
@@ -964,9 +968,9 @@ let counter_handler = {
     },
     return: value => value,
   }
-}
+};
 let message_handler = {
-  let message_value = "a"
+  let message_value = "a";
   message {
     get: (!resume) => !resume(message_value),
     put: (value, !resume) => {
@@ -975,7 +979,7 @@ let message_handler = {
     },
     return: value => value,
   }
-}
+};
 try (try run() with counter_handler) with message_handler
 `);
   const instance = await instantiate_wat(wat, "named_state_instances", {});
@@ -990,23 +994,23 @@ try (try run() with counter_handler) with message_handler
 
 Deno.test("prelude Writer effect infers its output type from calls", async () => {
   const wat = Source.wat(`
-const { identity } = import "duck:prelude/functional" ()
-const _ = import "duck:prelude/effects" ()
+const { .identity } = import "duck:prelude/functional" ();
+const _ = import "duck:prelude/effects" ();
 let run = () => {
   _ <- Writer.tell("twenty")
   _ <- Writer.tell("two")
   33
-}
+};
 let writer = {
-  let written = 0
-  Writer {
+  let written = 0;
+  handler Writer {
     tell: (message, !resume) => {
       written = written + @len(message)
       !resume(())
     },
     return: value => value + written,
   }
-}
+};
 identity (try run() with writer)
 `);
   const instance = await instantiate_wat(wat, "ducklang_prelude_writer", {});
@@ -1021,11 +1025,11 @@ identity (try run() with writer)
 
 Deno.test("source-built struct namespaces stay scoped to their type value", () => {
   const source = `
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Cartesian = struct { .x = I32 }
 type Polar = struct { .radius = I32 }
-let cartesian: Cartesian = [20]
-let polar: Polar = [22]
+let cartesian: Cartesian = [20];
+let polar: Polar = [22];
 Cartesian.x cartesian + Polar.radius polar
 `;
 
@@ -1045,10 +1049,10 @@ Deno.test("computed type members require compile-time Text names", () => {
 
 Deno.test("labeled product patterns project selected struct slots", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
-let point: Point = [20, 22]
-let { .x = x } = point
+let point: Point = [20, 22];
+let { .x = x } = point;
 x
 `);
 
@@ -1057,14 +1061,14 @@ x
 
 Deno.test("source struct construction composes with repeat types", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
-const point_type = struct { .x = I32, .y = I32 }
+const { .struct } = import "duck:prelude" ();
+const point_type = struct { .x = I32, .y = I32 };
 type MaybeType = | \`Some point_type | \`None Unit
 type RowType = [I32; 2 * 3]
-const maybe_type = MaybeType
-let point: point_type = [20, 22]
-let row: RowType = [1, 2, 3, 4, 5, 6]
-let value: maybe_type = \`Some point
+const maybe_type = MaybeType;
+let point: point_type = [20, 22];
+let row: RowType = [1, 2, 3, 4, 5, 6];
+let value: maybe_type = \`Some point;
 if let \`Some selected = value {
   selected.x + row[5]
 } else {
@@ -1085,10 +1089,10 @@ Deno.test("repeat types reject array constructor syntax", () => {
 
 Deno.test("union namespaces contextualize labeled product payloads", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Point = struct { .x = I32, .y = I32 }
 type Shape = | \`Point Point | \`None Unit
-let shape: Shape = \`Point [.x = 20, .y = 22]
+let shape: Shape = \`Point [.x = 20, .y = 22];
 if let \`Point point = shape {
   point.x
 } else {
@@ -1101,7 +1105,7 @@ if let \`Point point = shape {
 
 Deno.test("module bindings shadow the prelude struct constructor", () => {
   const wat = Source.wat(`
-let struct = value => value
+let struct = value => value;
 struct 42
 `);
 
@@ -1111,7 +1115,7 @@ struct 42
 Deno.test("receiver calls use extensions when no runtime field shadows them", () => {
   const wat = Source.wat(`
 extend I32 {
-  .twice = value => @wasm.add_i32 [value, value]
+  .twice = value => @wasm.add_i32 [value, value],
 }
 20.twice []
 `);
@@ -1125,26 +1129,26 @@ duck Length Self {
   .length = &Self -> I32
 }
 extend Bytes {
-  .length = (value: &Bytes) => @len(value)
+  .length = (value: &Bytes) => @len(value),
 }
 comptime Length Bytes
-let bytes: Bytes = @Utf8.encode("duck")
+let bytes: Bytes = @Utf8.encode("duck");
 bytes.length() + @len(bytes)
 `);
 });
 
 Deno.test("index syntax dispatches through source-defined collection ducks", async () => {
   const text = `
-const {} = import "duck:prelude" ()
+const {} = import "duck:prelude" ();
 type Counter = I32
 extend Counter {
-  type Item = I32
-  .get = (counter: &Counter, index: I32) => counter + index
-  .set = (counter: Counter, index: I32, value: I32) => value + index
-  .length = (counter: &Counter) => 3
+  type Item = I32,
+  .get = (counter: &Counter, index: I32) => counter + index,
+  .set = (counter: Counter, index: I32, value: I32) => value + index,
+  .length = (counter: &Counter) => 3,
 }
-let counter: Counter = 5
-let read = counter[2]
+let counter: Counter = 5;
+let read = counter[2];
 counter[2] = 40
 read + counter
 `;
@@ -1164,16 +1168,16 @@ read + counter
 
 Deno.test("collection loops dispatch through source-defined iterable ducks", async () => {
   const text = `
-const {} = import "duck:prelude" ()
+const {} = import "duck:prelude" ();
 type Counter = I32
 extend Counter {
-  type Item = I32
-  .get = (counter: &Counter, index: I32) => counter + index
-  .set = (counter: Counter, index: I32, value: I32) => value + index
-  .length = (counter: &Counter) => 3
+  type Item = I32,
+  .get = (counter: &Counter, index: I32) => counter + index,
+  .set = (counter: Counter, index: I32, value: I32) => value + index,
+  .length = (counter: &Counter) => 3,
 }
-let counter: Counter = 5
-let total = 0
+let counter: Counter = 5;
+let total = 0;
 for value in counter {
   total = total + value
 }
@@ -1195,10 +1199,10 @@ total
 
 Deno.test("collection loops traverse recursive lists through source-defined iterators", async () => {
   const text = `
-const {} = import "duck:prelude" ()
+const {} = import "duck:prelude" ();
 type IntList = List I32
-let values: IntList = \`Cons [10, \`Cons [20, \`Nil ()]]
-let total = 0
+let values: IntList = \`Cons [10, \`Cons [20, \`Nil ()]];
+let total = 0;
 for index, value in values {
   total = total + value + index
 }
@@ -1218,18 +1222,54 @@ total
   assert_equals(main(), 31);
 });
 
+Deno.test("collection loops do not treat iterator-internal unions as cursor steps", () => {
+  const text = `
+type Cursor = struct { .remaining = List I32 }
+extend Cursor {
+  type Item = I32,
+  .has_next = cursor => if let \`Cons _ = cursor.remaining { true } else { false },
+  .next = cursor => {
+    let \`Cons node = cursor.remaining else {
+      return @panic "Cannot advance an exhausted cursor";
+    };
+    let [value, remaining] = node;
+    let next: Cursor = [.remaining = remaining];
+    [value, next]
+  },
+}
+let cursor: Cursor = [.remaining = \`Cons [20, \`Cons [22, \`Nil ()]]];
+let total = 0;
+for value in cursor {
+  total = total + value
+}
+total
+`;
+  const elaborated = source_for_core_route(
+    Source.parse(ducklang_prelude_text + "\n" + text),
+  );
+  const serialized = JSON.stringify(elaborated);
+
+  assert_includes(serialized, '"name":"@duck_cursor#0"');
+  assert_equals(
+    serialized.includes(
+      '"case_name":"Cons","value_name":"@duck_payload#0","target":{"tag":"var","name":"@duck_cursor#0"}',
+    ),
+    false,
+  );
+});
+
 Deno.test("let-else exposes matched bindings after a terminating fallback", async () => {
   const wat = Source.wat(`
 type Maybe = | \`Some I32 | \`None Unit
 let select = (input: Maybe) => {
   let \`Some value = input else {
-    return 7
-  }
+    return 7;
+  };
 
   value + 1
-}
-let some: Maybe = \`Some 41
-let none: Maybe = \`None ()
+};
+let some: Maybe = \`Some 41;
+let none: Maybe = \`None ();
 select some + select none
 `);
   const instance = await instantiate_wat(wat, "duck_let_else", {});
@@ -1245,14 +1285,14 @@ select some + select none
 Deno.test("let-else continues the enclosing loop when a pattern misses", async () => {
   const wat = Source.wat(`
 type Maybe = | \`Some I32 | \`None Unit
-let some: Maybe = \`Some 40
-let none: Maybe = \`None ()
-let values = [none, some]
-let total = 0
+let some: Maybe = \`Some 40;
+let none: Maybe = \`None ();
+let values = [none, some];
+let total = 0;
 for option in values {
   let \`Some value = option else {
-    continue
-  }
+    continue;
+  };
 
   total = total + value + 2
 }
@@ -1270,23 +1310,23 @@ total
 
 Deno.test("let-else destructures managed list payloads inside loops", async () => {
   const wat = Source.wat(`
-const {} = import "duck:prelude" ()
+const {} = import "duck:prelude" ();
 type ByteList = List Bytes
 let first_length = (values: ByteList) => {
-  let current = values
-  let result = 0
+  let current = values;
+  let result = 0;
 
   loop {
-    let \`Cons node = current else { break }
-    let [bytes, _] = node
+    let \`Cons node = current else { break; };
+    let [bytes, _] = node;
     result = @len(bytes)
-    break
+    break;
   }
 
   result
-}
-let bytes: Bytes = @Utf8.encode("duck")
-let values: ByteList = \`Cons [bytes, \`Nil ()]
+};
+let bytes: Bytes = @Utf8.encode("duck");
+let values: ByteList = \`Cons [bytes, \`Nil ()];
 first_length values
 `);
   const instance = await instantiate_wat(
@@ -1323,7 +1363,7 @@ duck Add Self Other Output {
   .add = [Self, Other] -> Output
 }
 extend I32 {
-  .add = [left, right] => @wasm.eq_i32 [left, right]
+  .add = [left, right] => @wasm.eq_i32 [left, right],
 }
 comptime Add [I32, I32, I32]
 0
@@ -1339,7 +1379,7 @@ duck Predicate Self {
   .test = Self -> Output
 }
 extend I32 {
-  .test = value => value
+  .test = value => value,
 }
 comptime Predicate I32
 0
@@ -1354,10 +1394,10 @@ Deno.test("normalized aliases reject duplicate extension members", () => {
       Source.wat(`
 type Scalar = I32
 extend I32 {
-  .read = value => value
+  .read = value => value,
 }
 extend Scalar {
-  .read = value => value
+  .read = value => value,
 }
 0
 `),

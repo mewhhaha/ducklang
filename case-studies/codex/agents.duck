@@ -1,9 +1,15 @@
 module () where
 
-const {} = import "./agent_types.duck" ()
-const { execution_capacity, next_spawn_depth, spawn_depth_allowed } = import "./agent_capacity.duck" ()
-const { normalize_wait_timeout, validate_collab_input } = import "./agent_input_policy.duck" ()
-const { resolve_agent_path, valid_agent_name, validate_absolute_agent_path, validate_relative_agent_path } = import "./agent_path.duck" ()
+const {} = import "./agent_types.duck" ();
+const { .execution_capacity, .next_spawn_depth, .spawn_depth_allowed } =
+  import "./agent_capacity.duck" ();
+const { .normalize_wait_timeout, .validate_collab_input } = import "./agent_input_policy.duck" ();
+const {
+  .resolve_agent_path,
+  .valid_agent_name,
+  .validate_absolute_agent_path,
+  .validate_relative_agent_path,
+} = import "./agent_path.duck" ();
 
 type AgentsStatus = AgentStatus
 type AgentsEvent = AgentEvent
@@ -18,7 +24,7 @@ const agent_status_is_final = (status: AgentsStatus) => {
   } else {
     true
   }
-}
+};
 
 const agent_status_from_event = (event: AgentsEvent) => {
   if let `TurnStarted () = event {
@@ -38,7 +44,7 @@ const agent_status_from_event = (event: AgentsEvent) => {
   } else {
     `StatusUnchanged ()
   }
-}
+};
 
 const collab_tool_call_failed = (status: AgentsStatus, has_receiver: Bool) => {
   if let `Errored _ = status {
@@ -50,19 +56,19 @@ const collab_tool_call_failed = (status: AgentsStatus, has_receiver: Bool) => {
   } else {
     true
   }
-}
+};
 
 return {
-  agent_status_is_final,
-  agent_status_from_event,
-  collab_tool_call_failed,
-  next_spawn_depth,
-  spawn_depth_allowed,
-  execution_capacity,
-  validate_collab_input,
-  normalize_wait_timeout,
-  valid_agent_name,
-  validate_relative_agent_path,
-  validate_absolute_agent_path,
-  resolve_agent_path,
-}
+  .agent_status_is_final,
+  .agent_status_from_event,
+  .collab_tool_call_failed,
+  .next_spawn_depth,
+  .spawn_depth_allowed,
+  .execution_capacity,
+  .validate_collab_input,
+  .normalize_wait_timeout,
+  .valid_agent_name,
+  .validate_relative_agent_path,
+  .validate_absolute_agent_path,
+  .resolve_agent_path,
+};

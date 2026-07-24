@@ -1,8 +1,9 @@
 module () where
 
-const { encode_json } = import "duck:prelude/json/encode" ()
-const { json_bool, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const {} = import "./plugin_install_types.duck" ()
+const { .encode_json } = import "duck:prelude/json/encode" ();
+const { .json_bool, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const {} = import "./plugin_install_types.duck" ();
 
 type InstallExecutionCompletion = RequestPluginInstallCompletion
 type InstallExecutionHostRequest = RequestPluginInstallHostRequest
@@ -18,32 +19,47 @@ const elicitation_action_text = (response: InstallExecutionHostResponse) => {
   } else {
     "unavailable"
   }
-}
+};
 
 const install_tool_type_text = (request: InstallExecutionHostRequest) => {
   if let `Connector () = request.candidate.tool_type { "connector" } else { "plugin" }
-}
+};
 
-let finish_request_plugin_install: [InstallExecutionHostRequest, InstallExecutionHostResponse] -> InstallExecutionCompletion = (request: InstallExecutionHostRequest, response: InstallExecutionHostResponse) => {
-  let user_confirmed = if let `Accept () = response.action { true } else { false }
-  let completed = user_confirmed && response.verified
-  let persist_disabled = if let `Decline () = response.action { response.persist_always } else { false }
-  let merge_connector = false
-  if completed {
-    if let `Connector () = request.candidate.tool_type { merge_connector = true }
-  }
+let finish_request_plugin_install: [InstallExecutionHostRequest, InstallExecutionHostResponse] ->
+  InstallExecutionCompletion = (
+    request: InstallExecutionHostRequest,
+    response: InstallExecutionHostResponse,
+  ) => {
+    let user_confirmed = if let `Accept () = response.action { true } else { false };
+    let completed = user_confirmed && response.verified;
+    let persist_disabled = if let `Decline () = response.action { response.persist_always } else {
+      false };
+    let merge_connector = false;
+    if completed {
+      if let `Connector () = request.candidate.tool_type { merge_connector = true }
+    }
 
-  let output: Text = encode_json(json_object(
-    json_object_prepend("completed", json_bool(completed),
-      json_object_prepend("user_confirmed", json_bool(user_confirmed),
-        json_object_prepend("tool_type", json_string(install_tool_type_text(request)),
-          json_object_prepend("action_type", json_string("install"),
-            json_object_prepend("tool_id", json_string(request.candidate.id),
-              json_object_prepend("tool_name", json_string(request.candidate.name),
-                json_object_prepend("suggest_reason", json_string(request.suggest_reason), json_object_empty())))))))
-  ))
-  let completion: InstallExecutionCompletion = [.output = output, .persist_disabled = persist_disabled, .merge_connector = merge_connector, .record_telemetry = response.sent, .response_action = elicitation_action_text(response)]
-  completion
-}
+    let output: Text = encode_json(json_object(
+      json_object_prepend("completed", json_bool completed,
+        json_object_prepend("user_confirmed", json_bool user_confirmed,
+          json_object_prepend("tool_type", json_string(install_tool_type_text request),
+            json_object_prepend("action_type", json_string "install",
+              json_object_prepend("tool_id", json_string request.candidate.id,
+                json_object_prepend("tool_name", json_string request.candidate.name,
+                  json_object_prepend(
+                    "suggest_reason",
+                    json_string request.suggest_reason,
+                    json_object_empty(),
+                  )))))))
+    ));
+    let completion: InstallExecutionCompletion = [
+      .output = output,
+      .persist_disabled = persist_disabled,
+      .merge_connector = merge_connector,
+      .record_telemetry = response.sent,
+      .response_action = elicitation_action_text response,
+    ];
+    completion
+  };
 
-return { finish_request_plugin_install }
+return { .finish_request_plugin_install };

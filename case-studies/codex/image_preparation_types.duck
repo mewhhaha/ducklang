@@ -1,0 +1,43 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./history_types.duck" ();
+
+// Plans preserve non-data URLs (0), request host processing (1), reject remote
+// HTTP URLs (2), or reject low-detail data URLs (3).
+type ImagePreparationPlan = struct {
+  .status_code = I32,
+  .image_url = Text,
+  .max_dimension = I32,
+  .max_patches = I32,
+}
+
+type ImageProcessingRequest = ImagePreparationPlan
+type ImageProcessingRequests = List ImageProcessingRequest
+type ImageProcessingRequestNode = ListNode ImageProcessingRequest
+
+// Host results contain a processed data URL (0), a processing failure (1), or
+// an image that exceeded the selected resize budget (2).
+type ImageProcessingResult = struct {
+  .status_code = I32,
+  .image_url = Text,
+  .reason = Text,
+  .size = I32,
+}
+
+type ImageProcessingResultNode = [ImageProcessingResult, ImageProcessingResults]
+type ImageProcessingResults =
+  | `ImageResultsNil Unit
+  | `ImageResultsCons ImageProcessingResultNode
+
+type ImageRewriteFailure =
+  | `MissingImageProcessingResult I32
+  | `ExtraImageProcessingResults I32
+  | `InvalidImageProcessingStatus I32
+  | `InvalidProcessedImageUrl I32
+
+type ImageRewriteResult =
+  | `PreparedImageResponses HistoryItems
+  | `RejectedImageRewrite ImageRewriteFailure
+
+return {};

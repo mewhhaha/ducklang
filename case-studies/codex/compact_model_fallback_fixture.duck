@@ -1,27 +1,27 @@
 module () where
 
-const {} = import "./compact_model_fallback_types.duck" ()
-const compact_model_fallback_module = import "./compact_model_fallback.duck"
-const { should_retry_with_current_model } = compact_model_fallback_module()
+const {} = import "./compact_model_fallback_types.duck" ();
+const compact_model_fallback_module = import "./compact_model_fallback.duck";
+const { .should_retry_with_current_model } = compact_model_fallback_module();
 
 type FixtureError = CompactionModelError
-let score = 0
-let invalid: FixtureError = `InvalidRequest "invalid"
-let status: FixtureError = `UnexpectedStatus "503"
-let context: FixtureError = `ContextWindowExceeded ()
-let usage: FixtureError = `UsageLimitReached "limited"
-let overloaded: FixtureError = `ServerOverloaded ()
-let internal: FixtureError = `InternalServerError ()
-let retry_limit: FixtureError = `RetryLimit "too many attempts"
-let stream: FixtureError = `Other "stream disconnected"
+let score = 0;
+let invalid: FixtureError = `InvalidRequest "invalid";
+let status: FixtureError = `UnexpectedStatus "503";
+let context: FixtureError = `ContextWindowExceeded ();
+let usage: FixtureError = `UsageLimitReached "limited";
+let overloaded: FixtureError = `ServerOverloaded ();
+let internal: FixtureError = `InternalServerError ();
+let retry_limit: FixtureError = `RetryLimit "too many attempts";
+let stream: FixtureError = `Other "stream disconnected";
 
-if should_retry_with_current_model(invalid) { score = score + 1 }
-if should_retry_with_current_model(status) { score = score + 10 }
-if should_retry_with_current_model(context) { score = score + 100 }
-if should_retry_with_current_model(usage) { score = score + 1000 }
-if should_retry_with_current_model(overloaded) { score = score + 10000 }
-if should_retry_with_current_model(internal) { score = score + 100000 }
-if should_retry_with_current_model(retry_limit) { score = score + 1000000 }
-if !(should_retry_with_current_model(stream)) { score = score + 10000000 }
+if should_retry_with_current_model invalid { score = score + 1 }
+if should_retry_with_current_model status { score = score + 10 }
+if should_retry_with_current_model context { score = score + 100 }
+if should_retry_with_current_model usage { score = score + 1000 }
+if should_retry_with_current_model overloaded { score = score + 10000 }
+if should_retry_with_current_model internal { score = score + 100000 }
+if should_retry_with_current_model retry_limit { score = score + 1000000 }
+if !(should_retry_with_current_model stream) { score = score + 10000000 }
 
-return { .score = score }
+return { .score = score };

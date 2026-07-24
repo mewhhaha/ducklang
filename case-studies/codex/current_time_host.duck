@@ -9,4 +9,4 @@ declare Init {
   current_time_host: CurrentTimeHost
 }
 
-return {}
+return {};

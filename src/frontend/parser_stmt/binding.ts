@@ -33,7 +33,15 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
     ) {
       const pattern = this.parse_type_pattern();
       this.expect_symbol("=");
-      return { tag: "type_check", pattern, target: this.parse_expr() };
+      const target = this.parse_expr();
+      const terminator = this.peek();
+
+      if (terminator.kind !== "newline" || terminator.raw !== ";") {
+        throw this.error("Expected `;` after binding");
+      }
+
+      this.advance();
+      return { tag: "type_check", pattern, target };
     }
 
     if (kind === "let" && this.is_resume_dup()) {
@@ -159,6 +167,14 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       this.index = checkpoint;
     }
 
+    const terminator = this.peek();
+
+    if (terminator.kind !== "newline" || terminator.raw !== ";") {
+      throw this.error("Expected `;` after binding");
+    }
+
+    this.advance();
+
     for (const binding of bindings) {
       if (binding.mode === "linear") {
         this.affine_call_names.add(binding.name);
@@ -223,17 +239,27 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
     this.expect_symbol("(");
     this.expect_symbol("!");
     const left = this.expect_name("Expected left duplicated resumption");
+    this.expect_supported_name(left, "Duplicated resumption");
     expect_snake_case(left, "Duplicated resumption");
     this.expect_symbol(",");
     this.expect_symbol("!");
     const right = this.expect_name("Expected right duplicated resumption");
+    this.expect_supported_name(right, "Duplicated resumption");
     expect_snake_case(right, "Duplicated resumption");
     this.expect_symbol(")");
     this.expect_symbol("=");
     expect(this.match_name("dup"), "Expected dup");
     this.affine_call_names.add(left);
     this.affine_call_names.add(right);
-    return { tag: "resume_dup", left, right, value: this.parse_expr() };
+    const value = this.parse_expr();
+    const terminator = this.peek();
+
+    if (terminator.kind !== "newline" || terminator.raw !== ";") {
+      throw this.error("Expected `;` after binding");
+    }
+
+    this.advance();
+    return { tag: "resume_dup", left, right, value };
   }
 
   private is_effect_bind(): boolean {
@@ -258,6 +284,7 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
       const name = this.expect_name("Expected effect result binding");
 
       if (name !== "_") {
+        this.expect_supported_name(name, "Effect result binding");
         expect_snake_case(name, "Effect result binding");
         value_name = name;
       }
@@ -329,8 +356,33 @@ export function apply_function_result_context(
     return value;
   }
 
+  let parameter_types = [callable.param];
+  if (
+    callable.param.tag === "product" &&
+    callable.param.entries.length === value.params.length
+  ) {
+    parameter_types = callable.param.entries.map((entry) => entry.type_expr);
+  }
+
+  let params = value.params;
+  if (parameter_types.length === value.params.length) {
+    params = value.params.map((param, index) => {
+      if (param.type_annotation !== undefined) {
+        return param;
+      }
+      const parameter_type = parameter_types[index];
+      expect(parameter_type, "Missing function parameter type " + index);
+      return {
+        ...param,
+        annotation: format_type_expr(parameter_type),
+        type_annotation: parameter_type,
+      };
+    });
+  }
+
   return preserve_source_span({
     ...value,
+    params,
     body: apply_result_context(value.body, callable.result),
   }, value);
 }

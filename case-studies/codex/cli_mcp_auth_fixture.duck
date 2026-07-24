@@ -1,39 +1,43 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_mcp_login, parse_mcp_logout, parse_mcp_remove } = import "./cli_mcp.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_mcp_login, .parse_mcp_logout, .parse_mcp_remove } = import "./cli_mcp.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexMcpCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let login_args: FixtureArgs = args.prepend("server-c", args.prepend("--scopes", args.singleton("read,write")))
-let login: FixtureResult = parse_mcp_login(login_args)
+let login_args: FixtureArgs = args.prepend(
+  "server-c",
+  args.prepend("--scopes", args.singleton("read,write")),
+);
+let login: FixtureResult = parse_mcp_login login_args;
 if let `Ok command = login {
   if let `McpLogin options = command {
     if options.name == "server-c" && args.length(options.scopes) == 2 {
-      if args.nth_or("", 0, options.scopes) == "read" && args.nth_or("", 1, options.scopes) == "write" {
-        score = score + 1
-      }
+      if args.nth_or("", 0, options.scopes) == "read" && args.nth_or("", 1,
+        options.scopes) == "write" {
+          score = score + 1
+        }
     }
   }
 }
 
-let removed: FixtureResult = parse_mcp_remove(args.singleton("server-c"))
+let removed: FixtureResult = parse_mcp_remove(args.singleton("server-c"));
 if let `Ok command = removed {
   if let `McpRemove name = command {
     if name == "server-c" { score = score + 10 }
   }
 }
 
-let logout: FixtureResult = parse_mcp_logout(args.singleton("server-c"))
+let logout: FixtureResult = parse_mcp_logout(args.singleton("server-c"));
 if let `Ok command = logout {
   if let `McpLogout name = command {
     if name == "server-c" { score = score + 100 }
   }
 }
 
-return { .score = score }
+return { .score = score };

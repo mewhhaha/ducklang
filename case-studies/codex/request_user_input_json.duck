@@ -1,11 +1,11 @@
 module () where
 
-const { json_object_get, parse_json_document } = import "duck:prelude/json" ()
-const {} = import "duck:prelude/json/values" ()
-const { format_i32 } = import "duck:prelude/numeric" ()
-const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
-const { text_get, text_length } = import "duck:prelude/runtime" ()
-const {} = import "./request_user_input_types.duck" ()
+const { .json_object_get, .parse_json_document } = import "duck:prelude/json" ();
+const {} = import "duck:prelude/json/values" ();
+const { .format_i32 } = import "duck:prelude/numeric" ();
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
+const { .text_get, .text_length } = import "duck:prelude/runtime" ();
+const {} = import "./request_user_input_types.duck" ();
 
 type RequestUserInputParseResult =
   | `Parsed RequestUserInputArgs
@@ -20,64 +20,66 @@ type InputOptionsField = RequestUserInputQuestionOptionsField
 type InputQuestion = RequestUserInputQuestion
 type InputQuestionNode = RequestUserInputQuestionNode
 type InputQuestions = RequestUserInputQuestions
-let parse_failure: Text -> RequestUserInputParseResult = reason => `ParseFailed ("failed to parse function arguments: " <> reason)
+let parse_failure: Text -> RequestUserInputParseResult = reason => `ParseFailed (
+  "failed to parse function arguments: " <> reason
+);
 
 let reverse_options: InputOptions -> InputOptions = options => {
-  let current = options
-  let reversed: InputOptions = `Nil ()
-  let done = false
+  let current = options;
+  let reversed: InputOptions = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [option, tail] = node
-      let reversed_node: InputOptionNode = [option, reversed]
+      let [option, tail] = node;
+      let reversed_node: InputOptionNode = [option, reversed];
       reversed = `Cons reversed_node
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   reversed
-}
+};
 
 let reverse_questions: InputQuestions -> InputQuestions = questions => {
-  let current = questions
-  let reversed: InputQuestions = `Nil ()
-  let done = false
+  let current = questions;
+  let reversed: InputQuestions = `Nil ();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [question, tail] = node
-      let reversed_node: InputQuestionNode = [question, reversed]
+      let [question, tail] = node;
+      let reversed_node: InputQuestionNode = [question, reversed];
       reversed = `Cons reversed_node
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   reversed
-}
+};
 
 let valid_u64_decimal: Text -> Bool = number => {
-  let valid = text_length number > 0
-  let index = 0
+  let valid = text_length number > 0;
+  let index = 0;
   loop {
-    if index >= text_length number { break }
-    let byte = text_get [number, index]
+    if index >= text_length number { break; }
+    let byte = text_get [number, index];
     if byte < 48 || byte > 57 { valid = false }
     index = index + 1
   }
   if valid && text_length number > 20 {
     false
   } else if valid && text_length number == 20 {
-    let maximum = "18446744073709551615"
+    let maximum = "18446744073709551615";
     index = 0
-    let decided = false
-    let within = true
+    let decided = false;
+    let within = true;
     loop {
-      if index >= 20 || decided { break }
-      let digit = text_get [number, index]
-      let maximum_digit = text_get [maximum, index]
+      if index >= 20 || decided { break; }
+      let digit = text_get [number, index];
+      let maximum_digit = text_get [maximum, index];
       if digit < maximum_digit {
         decided = true
       } else if digit > maximum_digit {
@@ -90,111 +92,120 @@ let valid_u64_decimal: Text -> Bool = number => {
   } else {
     valid
   }
-}
+};
 
 let parse_request_user_input_args: Text -> RequestUserInputParseResult = document => {
-  let parsed = parse_json_document document
+  let parsed = parse_json_document document;
   let result: RequestUserInputParseResult = if let `Ok value_and_position = parsed {
-    let [value, _] = value_and_position
+    let [value, _] = value_and_position;
     if let `Object object = value {
-      let questions: InputQuestions = `Nil ()
-      let questions_failure: Text = ""
-      let questions_lookup = json_object_get("questions", object)
+      let questions: InputQuestions = `Nil ();
+      let questions_failure: Text = "";
+      let questions_lookup = json_object_get("questions", object);
 
       if let `Found questions_value = questions_lookup {
         if let `Array question_values = questions_value {
-          let current = question_values
-          let reversed: InputQuestions = `Nil ()
-          let question_index = 0
-          let done = false
+          let current = question_values;
+          let reversed: InputQuestions = `Nil ();
+          let question_index = 0;
+          let done = false;
 
           loop {
             if let `Cons question_node = current {
-              let [question_value, question_tail] = question_node
+              let [question_value, question_tail] = question_node;
               if let `Object fields = question_value {
-                let context = "questions[" <> format_i32 question_index <> "]"
-                let id = ""
-                let header = ""
-                let question_text = ""
-                let is_other = false
-                let is_secret = false
-                let options: InputOptionsField = `Missing ()
+                let context = "questions[" <> format_i32 question_index <> "]";
+                let id = "";
+                let header = "";
+                let question_text = "";
+                let is_other = false;
+                let is_secret = false;
+                let options: InputOptionsField = `Missing ();
 
-                let id_lookup = json_object_get("id", fields)
+                let id_lookup = json_object_get("id", fields);
                 if let `Found id_value = id_lookup {
-                  if let `String text = id_value { id = text } else { questions_failure = context <> ".id must be a string" }
+                  if let `String text = id_value { id = text } else { questions_failure = context <>
+                    ".id must be a string" }
                 } else {
                   questions_failure = context <> ".id is required"
                 }
 
                 if questions_failure == "" {
-                  let header_lookup = json_object_get("header", fields)
+                  let header_lookup = json_object_get("header", fields);
                   if let `Found header_value = header_lookup {
-                    if let `String text = header_value { header = text } else { questions_failure = context <> ".header must be a string" }
+                    if let `String text = header_value { header = text } else { questions_failure =
+                        context <> ".header must be a string" }
                   } else {
                     questions_failure = context <> ".header is required"
                   }
                 }
 
                 if questions_failure == "" {
-                  let question_lookup = json_object_get("question", fields)
+                  let question_lookup = json_object_get("question", fields);
                   if let `Found prompt_value = question_lookup {
-                    if let `String text = prompt_value { question_text = text } else { questions_failure = context <> ".question must be a string" }
+                    if let `String text = prompt_value { question_text = text } else {
+                      questions_failure = context <> ".question must be a string" }
                   } else {
                     questions_failure = context <> ".question is required"
                   }
                 }
 
                 if questions_failure == "" {
-                  let other_lookup = json_object_get("isOther", fields)
+                  let other_lookup = json_object_get("isOther", fields);
                   if let `Found other_value = other_lookup {
-                    if let `Bool boolean = other_value { is_other = boolean } else { questions_failure = context <> ".isOther must be a boolean" }
+                    if let `Bool boolean = other_value { is_other = boolean } else {
+                      questions_failure = context <> ".isOther must be a boolean" }
                   }
                 }
 
                 if questions_failure == "" {
-                  let secret_lookup = json_object_get("isSecret", fields)
+                  let secret_lookup = json_object_get("isSecret", fields);
                   if let `Found secret_value = secret_lookup {
-                    if let `Bool boolean = secret_value { is_secret = boolean } else { questions_failure = context <> ".isSecret must be a boolean" }
+                    if let `Bool boolean = secret_value { is_secret = boolean } else {
+                      questions_failure = context <> ".isSecret must be a boolean" }
                   }
                 }
 
                 if questions_failure == "" {
-                  let options_lookup = json_object_get("options", fields)
+                  let options_lookup = json_object_get("options", fields);
                   if let `Found options_value = options_lookup {
                     if let `Null () = options_value {
                       options = `Missing ()
                     } else if let `Array option_values = options_value {
-                      let option_current = option_values
-                      let options_reversed: InputOptions = `Nil ()
-                      let option_index = 0
-                      let options_done = false
+                      let option_current = option_values;
+                      let options_reversed: InputOptions = `Nil ();
+                      let option_index = 0;
+                      let options_done = false;
 
                       loop {
                         if let `Cons option_node = option_current {
-                          let [option_value, option_tail] = option_node
+                          let [option_value, option_tail] = option_node;
                           if let `Object option_fields = option_value {
-                            let option_context = context <> ".options[" <> format_i32 option_index <> "]"
-                            let label = ""
-                            let description = ""
-                            let option_failure: Text = ""
-                            let label_lookup = json_object_get("label", option_fields)
+                            let option_context =
+                              context <> ".options[" <> format_i32 option_index <> "]"
+                            let label = "";
+                            let description = "";
+                            let option_failure: Text = "";
+                            let label_lookup = json_object_get("label", option_fields);
                             if let `Found label_value = label_lookup {
-                              if let `String text = label_value { label = text } else { option_failure = option_context <> ".label must be a string" }
+                              if let `String text = label_value { label = text } else {
+                                option_failure = option_context <> ".label must be a string" }
                             } else {
                               option_failure = option_context <> ".label is required"
                             }
                             if option_failure == "" {
-                              let description_lookup = json_object_get("description", option_fields)
+                              let description_lookup = json_object_get("description", option_fields);
                               if let `Found description_value = description_lookup {
-                                if let `String text = description_value { description = text } else { option_failure = option_context <> ".description must be a string" }
+                                if let `String text = description_value { description = text
+                                } else { option_failure =
+                                    option_context <> ".description must be a string" }
                               } else {
                                 option_failure = option_context <> ".description is required"
                               }
                             }
                             if option_failure == "" {
-                              let option: InputOption = [.label = label, .description = description]
-                              let reversed_node: InputOptionNode = [option, options_reversed]
+                              let option: InputOption = [.label = label, .description = description];
+                              let reversed_node: InputOptionNode = [option, options_reversed];
                               options_reversed = `Cons reversed_node
                               option_current = option_tail
                               option_index = option_index + 1
@@ -209,10 +220,12 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
                         } else {
                           options_done = true
                         }
-                        if options_done { break }
+                        if options_done { break; }
                       }
 
-                      if questions_failure == "" { options = `Present (reverse_options options_reversed) }
+                      if questions_failure == "" { options = `Present (
+                        reverse_options options_reversed
+                      ) }
                     } else {
                       questions_failure = context <> ".options must be an array or null"
                     }
@@ -220,8 +233,15 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
                 }
 
                 if questions_failure == "" {
-                  let question: InputQuestion = [.id = id, .header = header, .question = question_text, .is_other = is_other, .is_secret = is_secret, .options = options]
-                  let reversed_node: InputQuestionNode = [question, reversed]
+                  let question: InputQuestion = [
+                    .id = id,
+                    .header = header,
+                    .question = question_text,
+                    .is_other = is_other,
+                    .is_secret = is_secret,
+                    .options = options,
+                  ];
+                  let reversed_node: InputQuestionNode = [question, reversed];
                   reversed = `Cons reversed_node
                   current = question_tail
                   question_index = question_index + 1
@@ -235,7 +255,7 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
             } else {
               done = true
             }
-            if done { break }
+            if done { break; }
           }
 
           if questions_failure == "" { questions = reverse_questions reversed }
@@ -249,9 +269,9 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
       if questions_failure != "" {
         parse_failure questions_failure
       } else {
-        let auto_resolution: InputAutoResolution = `NoAutoResolution ()
-        let auto_resolution_failure: Text = ""
-        let auto_resolution_lookup = json_object_get("autoResolutionMs", object)
+        let auto_resolution: InputAutoResolution = `NoAutoResolution ();
+        let auto_resolution_failure: Text = "";
+        let auto_resolution_lookup = json_object_get("autoResolutionMs", object);
         if let `Found auto_resolution_value = auto_resolution_lookup {
           if let `Null () = auto_resolution_value {
             auto_resolution = `NoAutoResolution ()
@@ -260,9 +280,10 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
               if text_length number > 6 {
                 auto_resolution = `AutoResolutionAboveMaximum ()
               } else {
-                let milliseconds = parse_i64_decimal number
+                let milliseconds = parse_i64_decimal number;
                 if let `Ok value = milliseconds {
-                  if value > 240000i64 { auto_resolution = `AutoResolutionAboveMaximum () } else { auto_resolution = `AutoResolutionMs value }
+                  if value > 240000i64 { auto_resolution = `AutoResolutionAboveMaximum () } else {
+                    auto_resolution = `AutoResolutionMs value }
                 } else {
                   auto_resolution_failure = "autoResolutionMs must be an unsigned integer"
                 }
@@ -277,7 +298,7 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
 
         if auto_resolution_failure == "" {
           let args: InputArgs = [.questions = questions, .auto_resolution = auto_resolution]
-          `Parsed args
+          `Parsed args;
         } else {
           parse_failure auto_resolution_failure
         }
@@ -286,12 +307,12 @@ let parse_request_user_input_args: Text -> RequestUserInputParseResult = documen
       parse_failure "request_user_input arguments must be an object"
     }
   } else if let `Err error = parsed {
-    let [position, message] = error
+    let [position, message] = error;
     parse_failure(message <> " at byte " <> format_i32 position)
   } else {
     parse_failure "invalid JSON parse result"
-  }
+  };
   result
-}
+};
 
-return { parse_request_user_input_args }
+return { .parse_request_user_input_args };

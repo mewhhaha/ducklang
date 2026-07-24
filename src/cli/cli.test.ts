@@ -12,11 +12,11 @@ Deno.test("duck fmt --stdin formats a program", async () => {
   });
   const child = command.spawn();
   const writer = child.stdin.getWriter();
-  await writer.write(new TextEncoder().encode("let  a=1\na\n"));
+  await writer.write(new TextEncoder().encode("let  a=1;\na\n"));
   await writer.close();
   const output = await child.output();
   assert_equals(output.success, true);
-  assert_equals(new TextDecoder().decode(output.stdout), "let a = 1\na\n");
+  assert_equals(new TextDecoder().decode(output.stdout), "let a = 1;\na\n");
 });
 
 Deno.test("duck lsp answers an initialize and formatting round trip", async () => {
@@ -43,7 +43,7 @@ Deno.test("duck lsp answers an initialize and formatting round trip", async () =
         uri: "file:///demo.duck",
         languageId: "duck",
         version: 1,
-        text: "let  answer=41+1\nanswer\n",
+        text: "let  answer=41+1;\nanswer\n",
       },
     },
   });
@@ -78,7 +78,7 @@ Deno.test("duck lsp answers an initialize and formatting round trip", async () =
   const formatting = messages.find((message) => message.id === 2);
   assert_equals(
     formatting?.result?.[0]?.newText,
-    "let answer = 41 + 1\nanswer\n",
+    "let answer = 41 + 1;\nanswer\n",
   );
 });
 
@@ -140,11 +140,11 @@ Deno.test("duck test reports a failing source assertion", async () => {
   await Deno.writeTextFile(
     source_path,
     "module () where\n" +
-      'const { test } = import "duck:prelude/attributes" ()\n' +
-      'const { assert } = import "duck:prelude/testing" ()\n' +
+      'const { .test } = import "duck:prelude/attributes" ();\n' +
+      'const { .assert } = import "duck:prelude/testing" ();\n' +
       "@[test]\n" +
-      "const equality_holds: () -> Unit = () => assert(1 == 2)\n" +
-      "return {}\n",
+      "const equality_holds: () -> Unit = () => assert(1 == 2);\n" +
+      "return {};\n",
   );
 
   try {

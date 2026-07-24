@@ -18,7 +18,7 @@ Deno.test("try without with formats as an inferred handler boundary", () => {
 
 Deno.test("try infers and orders several source default handlers", async () => {
   const source = `
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
 effect First {
   get: () => I32
@@ -28,35 +28,35 @@ effect Second {
   get: () => I32
 }
 
-const first = () => First {
+const first = () => handler First {
   get: (!resume) => !resume(20),
   return: value => value,
-}
+};
 
 extend First {
-  type Handled = First
-  .make = _ => first()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = First,
+  .make = _ => first(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 
-const second = () => Second {
+const second = () => handler Second {
   get: (!resume) => !resume(22),
   return: value => value,
-}
+};
 
 extend Second {
-  type Handled = Second
-  .make = _ => second()
-  .output = _ => Identity
-  .order = _ => 20
+  type Handled = Second,
+  .make = _ => second(),
+  .output = _ => Identity,
+  .order = _ => 20,
 }
 
 let run: () -> <First :| Second> I32 = () => {
   left <- First.get()
   right <- Second.get()
   left + right
-}
+};
 
 try run()
 `;
@@ -84,7 +84,7 @@ effect Counter {
 let run: () -> <Counter> I32 = () => {
   value <- Counter.get()
   value
-}
+};
 
 try run()
 `),
@@ -94,34 +94,34 @@ try run()
 
 Deno.test("generic Do default resolves List through Monad", () => {
   Source.core(`
-const {} = import "duck:prelude/effects/defaults" ()
+const {} = import "duck:prelude/effects/defaults" ();
 type IntList = List I32
 
 let run = (wrapped: IntList) => {
   _ <- do wrapped
   42
-}
+};
 
-let empty: IntList = \`Nil ()
-let result: IntList = try run(empty)
+let empty: IntList = \`Nil ();
+let result: IntList = try run(empty);
 0
 `);
 });
 
 Deno.test("exact affine Option default overrides generic Do", async () => {
   const wat = Source.wat(`
-const { option_unwrap_or } = import "duck:prelude/functional" ()
-const {} = import "duck:prelude/effects/defaults" ()
+const { .option_unwrap_or } = import "duck:prelude/functional" ();
+const {} = import "duck:prelude/effects/defaults" ();
 
 type IntOption = Option I32
 
 let run = () => {
-  let wrapped: IntOption = \`Some 42
+  let wrapped: IntOption = \`Some 42;
   value <- do wrapped
   value
-}
+};
 
-let result: IntOption = try run()
+let result: IntOption = try run();
 option_unwrap_or(7, result)
 `);
   const instance = await instantiate_wat(wat, "exact_do_default", {});
@@ -138,17 +138,17 @@ Deno.test("generic Do reports a missing Monad instance", () => {
   assert_throws(
     () =>
       Source.core(`
-const {} = import "duck:prelude/effects/defaults" ()
+const {} = import "duck:prelude/effects/defaults" ();
 type Box value = \`Box value
 type IntBox = Box I32
 
 let run = (wrapped: IntBox) => {
   value <- do wrapped
   value
-}
+};
 
-let input: IntBox = \`Box 42
-let result: IntBox = try run(input)
+let input: IntBox = \`Box 42;
+let result: IntBox = try run(input);
 0
 `),
     "Missing duck satisfaction for Monad.bind at Box",
@@ -159,7 +159,7 @@ Deno.test("try rejects ambiguous defaults for one effect", () => {
   assert_throws(
     () =>
       Source.wat(`
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
 effect Counter {
   get: () => I32
@@ -167,34 +167,34 @@ effect Counter {
 
 type OtherCounterDefault = newtype Unit
 
-const first = () => Counter {
+const first = () => handler Counter {
   get: (!resume) => !resume(20),
   return: value => value,
-}
+};
 
 extend Counter {
-  type Handled = Counter
-  .make = _ => first()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = Counter,
+  .make = _ => first(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 
-const second = () => Counter {
+const second = () => handler Counter {
   get: (!resume) => !resume(22),
   return: value => value,
-}
+};
 
 extend OtherCounterDefault {
-  type Handled = Counter
-  .make = _ => second()
-  .output = _ => Identity
-  .order = _ => 20
+  type Handled = Counter,
+  .make = _ => second(),
+  .output = _ => Identity,
+  .order = _ => 20,
 }
 
 let run: () -> <Counter> I32 = () => {
   value <- Counter.get()
   value
-}
+};
 
 try run()
 `),
@@ -206,7 +206,7 @@ Deno.test("try rejects equal ordering for different defaults", () => {
   assert_throws(
     () =>
       Source.wat(`
-const _ = import "duck:prelude/effects" ()
+const _ = import "duck:prelude/effects" ();
 
 effect First {
   get: () => I32
@@ -216,35 +216,35 @@ effect Second {
   get: () => I32
 }
 
-const first = () => First {
+const first = () => handler First {
   get: (!resume) => !resume(20),
   return: value => value,
-}
+};
 
 extend First {
-  type Handled = First
-  .make = _ => first()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = First,
+  .make = _ => first(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 
-const second = () => Second {
+const second = () => handler Second {
   get: (!resume) => !resume(22),
   return: value => value,
-}
+};
 
 extend Second {
-  type Handled = Second
-  .make = _ => second()
-  .output = _ => Identity
-  .order = _ => 10
+  type Handled = Second,
+  .make = _ => second(),
+  .output = _ => Identity,
+  .order = _ => 10,
 }
 
 let run: () -> <First :| Second> I32 = () => {
   left <- First.get()
   right <- Second.get()
   left + right
-}
+};
 
 try run()
 `),

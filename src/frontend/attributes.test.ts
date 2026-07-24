@@ -12,7 +12,7 @@ Deno.test("attributes preserve stacked groups and multiline layout", () => {
       "  derive(I32, Text),\n" +
       "  #slow,\n" +
       "]\n" +
-      "const answer = 42\n",
+      "const answer = 42;\n",
   );
   const binding = source.statements[0];
 
@@ -30,7 +30,7 @@ Deno.test("attributes preserve stacked groups and multiline layout", () => {
       "  derive (I32, Text),\n" +
       "  #slow,\n" +
       "]\n" +
-      "const answer = 42",
+      "const answer = 42;",
   );
 });
 
@@ -51,7 +51,7 @@ Deno.test("attributes annotate declarations", () => {
 
 Deno.test("attribute groups cannot be empty", () => {
   assert_throws(
-    () => parse_source("@[]\nconst answer = 42\n"),
+    () => parse_source("@[]\nconst answer = 42;\n"),
     "Attribute groups cannot be empty",
   );
 });
@@ -65,9 +65,9 @@ Deno.test("attributes only annotate bindings and declarations", () => {
 
 Deno.test("attributes accept source const expressions and count their references", () => {
   const source = parse_source(
-    "const test = #test\n" +
+    "const test = #test;\n" +
       "@[test]\n" +
-      "const answer = 42\n" +
+      "const answer = 42;\n" +
       "answer\n",
   );
 
@@ -76,9 +76,9 @@ Deno.test("attributes accept source const expressions and count their references
 
 Deno.test("attributes reject runtime captures", () => {
   const source = parse_source(
-    "let runtime_tag = #tag\n" +
+    "let runtime_tag = #tag;\n" +
       "@[runtime_tag]\n" +
-      "const answer = 42\n" +
+      "const answer = 42;\n" +
       "answer\n",
   );
 
@@ -90,9 +90,9 @@ Deno.test("attributes reject runtime captures", () => {
 
 Deno.test("binding index resolves names used by attributes", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "const test = #test\n" +
+    "const test = #test;\n" +
       "@[test]\n" +
-      "const answer = 42\n" +
+      "const answer = 42;\n" +
       "answer\n",
   ));
   const test_occurrences = [...indexed.occurrences.values()].filter(
@@ -108,9 +108,9 @@ Deno.test("binding index resolves names used by attributes", () => {
 
 Deno.test("attributes execute const handlers during lowering", () => {
   const wat = Source.wat(
-    "const keep = (const target) => `Keep ()\n" +
+    "const keep = (const target) => `Keep ();\n" +
       "@[keep]\n" +
-      "const answer = 42\n" +
+      "const answer = 42;\n" +
       "answer\n",
   );
 
@@ -119,9 +119,9 @@ Deno.test("attributes execute const handlers during lowering", () => {
 
 Deno.test("attribute handlers run sequentially", () => {
   const wat = Source.wat(
-    "const increment = (const target) => `Replace (target + 1)\n" +
+    "const increment = (const target) => `Replace (target + 1);\n" +
       "@[increment, increment]\n" +
-      "const answer = 40\n" +
+      "const answer = 40;\n" +
       "answer\n",
   );
 
@@ -129,30 +129,30 @@ Deno.test("attribute handlers run sequentially", () => {
 });
 
 Deno.test("import.meta exposes deterministic and supplied host constants", () => {
-  const source =
-    "const configured = (const target) => if import.meta.enabled {\n" +
-    "  `Replace 42\n" +
-    "} else {\n" +
-    "  `Replace target\n" +
-    "}\n" +
-    "@[configured]\n" +
-    "const answer = 0\n" +
-    "answer\n";
+  const source = `const configured = (const target) => if import.meta.enabled {
+  \`Replace 42
+} else {
+  \`Replace target
+};
+@[configured];
+const answer = 0;
+answer
+`;
   const artifact = Source.artifact(source, {
     import_meta: { enabled: true },
   });
 
   assert_includes(artifact.wat, "i32.const 42");
   assert_equals(
-    format_source(parse_source("const mode = import.meta.mode")),
-    "const mode = import.meta.mode",
+    format_source(parse_source("const mode = import.meta.mode;")),
+    "const mode = import.meta.mode;",
   );
 });
 
 Deno.test("the source test attribute drops builds and exports tests", () => {
-  const source = 'const { test } = import "duck:prelude/attributes" ()\n' +
+  const source = 'const { .test } = import "duck:prelude/attributes" ();\n' +
     "@[test]\n" +
-    "const checked: I32 -> I32 = value => value + 1\n" +
+    "const checked: I32 -> I32 = value => value + 1;\n" +
     "0\n";
   const build = Source.artifact(source);
   const test = Source.artifact(source, {
@@ -178,10 +178,10 @@ Deno.test("the source test attribute drops builds and exports tests", () => {
 
 Deno.test("the source derive attribute extends a declared type", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude/types" ()
-const { derive } = import "duck:prelude/attributes" ()
-const answer = (const target) => comptime { .answer = value => 42 }
-const identity = (const target) => comptime { .identity = value => value }
+const { .struct } = import "duck:prelude/types" ();
+const { .derive } = import "duck:prelude/attributes" ();
+const answer = (const target) => comptime { .answer = value => 42 };
+const identity = (const target) => comptime { .identity = value => value };
 
 @[derive(answer, identity)]
 type Derived = struct { .value = I32 }
@@ -194,9 +194,9 @@ Derived.answer(0)
 
 Deno.test("attributes reject unknown actions", () => {
   const analysis = Source.analyze(
-    "const invalid = (const target) => `Unknown ()\n" +
+    "const invalid = (const target) => `Unknown ();\n" +
       "@[invalid]\n" +
-      "const answer = 42\n" +
+      "const answer = 42;\n" +
       "answer\n",
   );
 

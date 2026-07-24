@@ -32,6 +32,7 @@ import { elaborate_product_expr } from "./aggregate.ts";
 import { call_message } from "./call_message.ts";
 import { lookup_type_field } from "./fields.ts";
 import { validate_const_expr } from "./constness.ts";
+import { collect_linear_closure_names } from "./linear_closure_names.ts";
 import { parameter_arguments } from "./call_args.ts";
 import { clone_env, create_env, push_binding } from "./env.ts";
 import { is_no_demand_name } from "./names.ts";
@@ -271,9 +272,14 @@ function validate_statements(
   statements: Stmt[],
   env: SemanticEnv,
   diagnostics: SourceDiagnostic[],
+  accepts_final_value_pack = false,
 ): void {
-  for (const stmt of statements) {
-    validate_statement(stmt, env, diagnostics);
+  for (let index = 0; index < statements.length; index += 1) {
+    const stmt = statements[index];
+    expect(stmt, "Missing statement during semantic validation");
+    const accepts_value_pack = accepts_final_value_pack &&
+      index === statements.length - 1;
+    validate_statement(stmt, env, diagnostics, accepts_value_pack);
   }
 }
 
@@ -281,6 +287,7 @@ function validate_statement(
   stmt: Stmt,
   env: SemanticEnv,
   diagnostics: SourceDiagnostic[],
+  accepts_value_pack = false,
 ): void {
   if (stmt.tag === "bind" && stmt.mutual !== undefined) {
     const group = [
@@ -541,7 +548,7 @@ function validate_statement(
   }
 
   if (stmt.tag === "expr") {
-    validate_expr(stmt.expr, env, diagnostics);
+    validate_expr(stmt.expr, env, diagnostics, true, accepts_value_pack);
     return;
   }
 
@@ -1112,6 +1119,42 @@ function validate_expr(
     return;
   }
 
+  if (expr.tag === "match") {
+    validate_expr(expr.target, env, diagnostics, check_comptime);
+    const target_type = infer_type(expr.target, env);
+
+    for (const arm of expr.arms) {
+      const arm_env = child_env(env);
+      validate_pattern_values(
+        arm.pattern,
+        env,
+        diagnostics,
+        check_comptime,
+      );
+      bind_pattern_types(arm.pattern, target_type, arm_env, false);
+      const used_names = new Set<string>();
+
+      if (arm.guard !== undefined) {
+        collect_linear_closure_names(arm.guard, used_names);
+      }
+
+      collect_linear_closure_names(arm.body, used_names);
+
+      for (const name of used_names) {
+        const outer_binding = env.bindings.get(name);
+
+        if (
+          outer_binding !== undefined &&
+          arm_env.bindings.get(name) === outer_binding
+        ) {
+          outer_binding.used = true;
+        }
+      }
+    }
+
+    return;
+  }
+
   if (expr.tag === "field") {
     const before = diagnostics.length;
     validate_expr(expr.object, env, diagnostics, check_comptime);
@@ -1180,7 +1223,14 @@ function validate_expr(
     }
 
     const before = diagnostics.length;
-    validate_expr(expr.func, env, diagnostics, check_comptime);
+    const declared_intrinsic_operator = expr.operator_syntax !== undefined &&
+      expr.func.tag === "var" &&
+      expr.func.name === expr.operator_syntax.target &&
+      expr.func.name.startsWith("@");
+
+    if (!declared_intrinsic_operator) {
+      validate_expr(expr.func, env, diagnostics, check_comptime);
+    }
 
     for (const arg of expr.args) {
       validate_expr(
@@ -1233,7 +1283,12 @@ function validate_expr(
   }
 
   if (expr.tag === "block") {
-    validate_statements(expr.statements, child_env(env), diagnostics);
+    validate_statements(
+      expr.statements,
+      child_env(env),
+      diagnostics,
+      accepts_value_pack,
+    );
     return;
   }
 
@@ -1885,11 +1940,28 @@ function validate_append_buffer_call(
   const right = expr.args[1];
   expect(left, "Missing append left argument");
   expect(right, "Missing append right argument");
+
+  if (
+    expr.operator_syntax !== undefined &&
+    (left.tag === "shape" || right.tag === "shape")
+  ) {
+    diagnostics.push(core_route_diagnostic(
+      "DUCK2307",
+      "Concatenation operators do not update structs; use `<&` or `&>`",
+      expr,
+    ));
+    return;
+  }
+
   const left_type = infer_type(left, env);
   const right_type = infer_type(right, env);
 
+  if (left_type.tag === "unknown" || right_type.tag === "unknown") {
+    return;
+  }
+
   if (
-    left_type.tag !== "text" || right_type.tag !== "text" ||
+    left_type.tag === "text" && right_type.tag === "text" &&
     left_type.encoding === right_type.encoding
   ) {
     return;
@@ -4883,7 +4955,7 @@ function bind_pattern_types(
   if (
     pattern.tag === "wildcard" || pattern.tag === "unit" ||
     pattern.tag === "literal" || pattern.tag === "value" ||
-    pattern.tag === "type"
+    pattern.tag === "type" || pattern.tag === "const_value"
   ) {
     return;
   }
@@ -5004,6 +5076,98 @@ function bind_pattern_types(
       env,
       binding_is_const,
     );
+  }
+}
+
+function validate_pattern_values(
+  pattern: Pattern,
+  env: SemanticEnv,
+  diagnostics: SourceDiagnostic[],
+  check_comptime: boolean,
+): void {
+  if (pattern.tag === "const_value") {
+    if (check_comptime) {
+      try {
+        validate_const_expr(
+          pattern.value,
+          env.const_env,
+          new Set(),
+          "Value pattern requires a compile-time expression",
+        );
+      } catch (error) {
+        if (error instanceof Error) {
+          diagnostics.push(
+            source_diagnostic("DUCK2101", error.message, pattern),
+          );
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    validate_expr(pattern.value, env, diagnostics, false);
+    return;
+  }
+
+  if (pattern.tag === "or") {
+    for (const alternative of pattern.alternatives) {
+      validate_pattern_values(
+        alternative,
+        env,
+        diagnostics,
+        check_comptime,
+      );
+    }
+    return;
+  }
+
+  if (pattern.tag === "union_case") {
+    if (pattern.value !== undefined) {
+      validate_pattern_values(pattern.value, env, diagnostics, check_comptime);
+    }
+    return;
+  }
+
+  if (pattern.tag === "product") {
+    for (const entry of pattern.entries) {
+      validate_pattern_values(
+        entry.pattern,
+        env,
+        diagnostics,
+        check_comptime,
+      );
+    }
+
+    if (pattern.rest !== undefined) {
+      validate_pattern_values(pattern.rest, env, diagnostics, check_comptime);
+    }
+    return;
+  }
+
+  if (pattern.tag === "record") {
+    for (const field of pattern.fields) {
+      validate_pattern_values(
+        field.pattern,
+        env,
+        diagnostics,
+        check_comptime,
+      );
+    }
+
+    if (pattern.rest !== undefined) {
+      validate_pattern_values(pattern.rest, env, diagnostics, check_comptime);
+    }
+    return;
+  }
+
+  if (pattern.tag === "array") {
+    for (const item of pattern.items) {
+      validate_pattern_values(item, env, diagnostics, check_comptime);
+    }
+
+    if (pattern.rest !== undefined) {
+      validate_pattern_values(pattern.rest, env, diagnostics, check_comptime);
+    }
   }
 }
 

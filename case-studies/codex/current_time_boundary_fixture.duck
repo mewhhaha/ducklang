@@ -1,37 +1,77 @@
 module () where
 
-const {} = import "./current_time_types.duck" ()
-const current_time_module = import "./current_time.duck"
-const { new_current_time_reminder_state, note_current_time_recorded_item, take_current_time_reminder } = current_time_module()
+const {} = import "./current_time_types.duck" ();
+const current_time_module = import "./current_time.duck";
+const {
+  .new_current_time_reminder_state,
+  .note_current_time_recorded_item,
+  .take_current_time_reminder,
+} = current_time_module();
 
 type FixtureState = CurrentTimeReminderState
 
-let score = 0
-let state: FixtureState = new_current_time_reminder_state()
-let initial = take_current_time_reminder(state, "window-1", 1000i64, 120i64, `AfterUserOrToolOutput ())
+let score = 0;
+let state: FixtureState = new_current_time_reminder_state();
+let initial = take_current_time_reminder(
+  state,
+  "window-1",
+  1000i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 state = initial.state
 if initial.due { score = score + 1 }
 
 state = note_current_time_recorded_item(state, `Other ())
-let no_boundary = take_current_time_reminder(state, "window-1", 1120i64, 120i64, `AfterUserOrToolOutput ())
+let no_boundary = take_current_time_reminder(
+  state,
+  "window-1",
+  1120i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 state = no_boundary.state
 if !(no_boundary.due) { score = score + 10 }
 
 state = note_current_time_recorded_item(state, `UserTurnBoundary ())
-let user_boundary = take_current_time_reminder(state, "window-1", 1120i64, 120i64, `AfterUserOrToolOutput ())
+let user_boundary = take_current_time_reminder(
+  state,
+  "window-1",
+  1120i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 state = user_boundary.state
 if user_boundary.due { score = score + 100 }
 
 state = note_current_time_recorded_item(state, `FunctionCallOutput ())
-let interval_suppressed = take_current_time_reminder(state, "window-1", 1180i64, 120i64, `AfterUserOrToolOutput ())
+let interval_suppressed = take_current_time_reminder(
+  state,
+  "window-1",
+  1180i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 state = interval_suppressed.state
 if !(interval_suppressed.due) { score = score + 1000 }
 
-let consumed_boundary = take_current_time_reminder(state, "window-1", 1240i64, 120i64, `AfterUserOrToolOutput ())
+let consumed_boundary = take_current_time_reminder(
+  state,
+  "window-1",
+  1240i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 state = consumed_boundary.state
 if !(consumed_boundary.due) { score = score + 10000 }
 
-let new_window = take_current_time_reminder(state, "window-2", 1240i64, 120i64, `AfterUserOrToolOutput ())
+let new_window = take_current_time_reminder(
+  state,
+  "window-2",
+  1240i64,
+  120i64,
+  `AfterUserOrToolOutput (),
+);
 if new_window.due { score = score + 100000 }
 
-return { .score = score }
+return { .score = score };

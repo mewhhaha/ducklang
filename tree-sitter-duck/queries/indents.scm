@@ -1,6 +1,6 @@
 [
   (block)
-  (field_block)
+  (shape_field_block)
   (type_field_block)
   (type_pattern)
   (parameter_list)

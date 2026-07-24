@@ -1,0 +1,113 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const { .text_append } = import "duck:prelude/text" ();
+const citation_module = import "./citation_parser.duck";
+const { .finish_citations, .new_citation_parser, .push_citation_chunk } = citation_module();
+const proposed_plan_module = import "./proposed_plan.duck";
+const { .finish_proposed_plan, .new_proposed_plan_parser, .push_proposed_plan_chunk } =
+  proposed_plan_module()
+const {} = import "./assistant_text_types.duck" ();
+
+type StreamAssistantTextParser = AssistantTextParser
+type StreamAssistantTextChunk = AssistantTextChunk
+type StreamPlanParser = ProposedPlanParser
+type StreamPlanSegments = ProposedPlanSegments
+type StreamPlanSegment = ProposedPlanSegment
+
+const plan_segments = comptime list StreamPlanSegment;
+
+const new_normal_assistant_text_parser: () -> StreamAssistantTextParser = () => {
+  [
+    .mode = `NormalAssistantText (),
+    .citation_parser = new_citation_parser(),
+    .proposed_plan_parser = new_proposed_plan_parser(),
+  ]
+};
+
+const new_plan_assistant_text_parser: () -> StreamAssistantTextParser = () => {
+  [
+    .mode = `PlanAssistantText (),
+    .citation_parser = new_citation_parser(),
+    .proposed_plan_parser = new_proposed_plan_parser(),
+  ]
+};
+
+const push_assistant_text_chunk: [StreamAssistantTextParser, Text] -> StreamAssistantTextChunk = (
+  parser: StreamAssistantTextParser,
+  chunk: Text,
+) => {
+  let citation_chunk = push_citation_chunk(parser.citation_parser, chunk);
+  let [citation_parser, citation_visible_text, citations] = citation_chunk;
+  let proposed_plan_parser: StreamPlanParser = parser.proposed_plan_parser;
+  let visible_text = citation_visible_text;
+  let extracted_plan_segments: StreamPlanSegments = plan_segments.empty();
+
+  if let `PlanAssistantText () = parser.mode {
+    let proposed_plan_chunk = push_proposed_plan_chunk(proposed_plan_parser, citation_visible_text);
+    let [next_proposed_plan_parser, plan_visible_text, segments] = proposed_plan_chunk;
+    proposed_plan_parser = next_proposed_plan_parser
+    visible_text = plan_visible_text
+    extracted_plan_segments = segments
+  }
+
+  let next_parser: StreamAssistantTextParser = [
+    .mode = parser.mode,
+    .citation_parser = citation_parser,
+    .proposed_plan_parser = proposed_plan_parser];
+  [
+    .parser = next_parser,
+    .visible_text = visible_text,
+    .citations = citations,
+    .plan_segments = extracted_plan_segments];
+};
+
+const finish_assistant_text: StreamAssistantTextParser -> StreamAssistantTextChunk = (
+  parser: StreamAssistantTextParser
+) => {
+  let citation_chunk = finish_citations parser.citation_parser;
+  let [citation_parser, citation_visible_text, citations] = citation_chunk;
+  let proposed_plan_parser: StreamPlanParser = parser.proposed_plan_parser;
+  let visible_text = citation_visible_text;
+  let extracted_plan_segments: StreamPlanSegments = plan_segments.empty();
+
+  if let `PlanAssistantText () = parser.mode {
+    let pushed_plan_chunk = push_proposed_plan_chunk(proposed_plan_parser, citation_visible_text);
+    let [pushed_plan_parser, plan_visible_text, pushed_plan_segments] = pushed_plan_chunk;
+    let finished_plan_chunk = finish_proposed_plan pushed_plan_parser;
+    let [finished_plan_parser, plan_tail, finished_plan_segments] = finished_plan_chunk;
+    proposed_plan_parser = finished_plan_parser
+    visible_text = text_append [plan_visible_text, plan_tail]
+    extracted_plan_segments = plan_segments.append(pushed_plan_segments, finished_plan_segments)
+  }
+
+  let next_parser: StreamAssistantTextParser = [
+    .mode = parser.mode,
+    .citation_parser = citation_parser,
+    .proposed_plan_parser = proposed_plan_parser];
+  [
+    .parser = next_parser,
+    .visible_text = visible_text,
+    .citations = citations,
+    .plan_segments = extracted_plan_segments];
+};
+
+const assistant_text_chunk_is_empty: StreamAssistantTextChunk -> Bool = chunk => {
+  if chunk.visible_text != "" {
+    false
+  } else if let `Cons _ = chunk.citations {
+    false
+  } else if let `Cons _ = chunk.plan_segments {
+    false
+  } else {
+    true
+  }
+};
+
+return {
+  .new_normal_assistant_text_parser,
+  .new_plan_assistant_text_parser,
+  .push_assistant_text_chunk,
+  .finish_assistant_text,
+  .assistant_text_chunk_is_empty,
+};

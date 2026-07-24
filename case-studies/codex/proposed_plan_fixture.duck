@@ -1,0 +1,148 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const { .text_append } = import "duck:prelude/text" ();
+const {
+  .extract_proposed_plan_text,
+  .finish_proposed_plan,
+  .new_proposed_plan_parser,
+  .push_proposed_plan_chunk,
+  .strip_proposed_plan_blocks,
+} = import "./proposed_plan.duck" ();
+
+type FixtureParser = ProposedPlanParser
+type FixtureSegment = ProposedPlanSegment
+type FixtureSegments = ProposedPlanSegments
+type FixtureTextOption = ProposedPlanTextOption
+
+const fixture_segments = comptime list FixtureSegment;
+
+const render_plan_segments = (values: FixtureSegments) => {
+  let current = values;
+  let rendered = "";
+
+  loop {
+    if let `Cons node = current {
+      let typed_node: ListNode FixtureSegment = node;
+      let [segment, tail] = typed_node;
+
+      match segment {
+        | `Normal text => { rendered = text_append [
+          rendered,
+          text_append ["N(", text_append [text, ")"]],
+        ] }
+        | `ProposedPlanStart () => { rendered = text_append [rendered, "S"] }
+        | `ProposedPlanDelta text => { rendered = text_append [
+          rendered,
+          text_append ["D(", text_append [text, ")"]],
+        ] }
+        | `ProposedPlanEnd () => { rendered = text_append [rendered, "E"] }
+      }
+
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  rendered
+};
+
+let score = 0;
+
+let parser: FixtureParser = new_proposed_plan_parser();
+let streamed_visible = "";
+let streamed_segments: FixtureSegments = fixture_segments.empty();
+let first = push_proposed_plan_chunk(parser, "Intro text\n<prop");
+let [first_parser, first_visible, first_segments] = first;
+parser = first_parser
+streamed_visible = text_append [streamed_visible, first_visible]
+streamed_segments = fixture_segments.append(streamed_segments, first_segments)
+let second = push_proposed_plan_chunk(parser, "osed_plan>\n- step 1\n");
+let [second_parser, second_visible, second_segments] = second;
+parser = second_parser
+streamed_visible = text_append [streamed_visible, second_visible]
+streamed_segments = fixture_segments.append(streamed_segments, second_segments)
+let third = push_proposed_plan_chunk(parser, "</proposed_plan>\nOutro");
+let [third_parser, third_visible, third_segments] = third;
+parser = third_parser
+streamed_visible = text_append [streamed_visible, third_visible]
+streamed_segments = fixture_segments.append(streamed_segments, third_segments)
+let streamed_finish = finish_proposed_plan parser;
+let [_, streamed_tail, streamed_finish_segments] = streamed_finish;
+streamed_visible = text_append [streamed_visible, streamed_tail]
+streamed_segments = fixture_segments.append(streamed_segments, streamed_finish_segments)
+
+if streamed_visible == "Intro text\nOutro" && render_plan_segments streamed_segments == "N(Intro text\n)SD(- step 1\n)EN(Outro)" {
+  score = score + 1
+}
+
+let malformed = push_proposed_plan_chunk(new_proposed_plan_parser(), "  <proposed_plan> extra\n");
+let [malformed_parser, malformed_prefix, malformed_prefix_segments] = malformed;
+let malformed_finish = finish_proposed_plan malformed_parser;
+let [_, malformed_tail, malformed_tail_segments] = malformed_finish;
+let malformed_visible = text_append [malformed_prefix, malformed_tail];
+let malformed_segments = fixture_segments.append(malformed_prefix_segments, malformed_tail_segments);
+if malformed_visible == "  <proposed_plan> extra\n" && render_plan_segments malformed_segments == "N(  <proposed_plan> extra\n)" {
+  score = score + 1
+}
+
+let unterminated = push_proposed_plan_chunk(
+  new_proposed_plan_parser(),
+  "<proposed_plan>\n- step 1\n",
+);
+let [unterminated_parser, unterminated_prefix, unterminated_prefix_segments] = unterminated;
+let unterminated_finish = finish_proposed_plan unterminated_parser;
+let [_, unterminated_tail, unterminated_tail_segments] = unterminated_finish;
+let unterminated_segments = fixture_segments.append(
+  unterminated_prefix_segments,
+  unterminated_tail_segments,
+);
+if unterminated_prefix == "" && unterminated_tail == "" && render_plan_segments unterminated_segments == "SD(- step 1\n)E" {
+  score = score + 1
+}
+
+let whitespace = push_proposed_plan_chunk(
+  new_proposed_plan_parser(),
+  " <proposed_plan> \r\nstep\r\n </proposed_plan> \r\n",
+);
+let [whitespace_parser, whitespace_prefix, whitespace_prefix_segments] = whitespace;
+let whitespace_finish = finish_proposed_plan whitespace_parser;
+let [_, whitespace_tail, whitespace_tail_segments] = whitespace_finish;
+let whitespace_segments = fixture_segments.append(
+  whitespace_prefix_segments,
+  whitespace_tail_segments,
+);
+if whitespace_prefix == "" && whitespace_tail == "" && render_plan_segments whitespace_segments == "SD(step\r\n)E" {
+  score = score + 1
+}
+
+let state_mismatch = push_proposed_plan_chunk(
+  new_proposed_plan_parser(),
+  "</proposed_plan>\n<proposed_plan>\n<proposed_plan>\nx\n</proposed_plan>\n",
+);
+let [state_mismatch_parser, state_mismatch_prefix, state_mismatch_prefix_segments] = state_mismatch;
+let state_mismatch_finish = finish_proposed_plan state_mismatch_parser;
+let [_, state_mismatch_tail, state_mismatch_tail_segments] = state_mismatch_finish;
+let state_mismatch_visible = text_append [state_mismatch_prefix, state_mismatch_tail];
+let state_mismatch_segments = fixture_segments.append(
+  state_mismatch_prefix_segments,
+  state_mismatch_tail_segments,
+);
+if state_mismatch_visible == "</proposed_plan>\n" && render_plan_segments state_mismatch_segments == "N(</proposed_plan>\n)SD(<proposed_plan>\nx\n)E" {
+  score = score + 1
+}
+
+let extracted_last: FixtureTextOption =
+  extract_proposed_plan_text "<proposed_plan>\nfirst\n</proposed_plan>\n<proposed_plan>\nsecond\n</proposed_plan>";
+let extracted_empty: FixtureTextOption =
+  extract_proposed_plan_text "<proposed_plan>\n</proposed_plan>";
+let extracted_missing: FixtureTextOption = extract_proposed_plan_text "ordinary";
+let extracted_last_valid = if let `Some text = extracted_last { text == "second\n" } else { false };
+let extracted_empty_valid = if let `Some text = extracted_empty { text == "" } else { false };
+let extracted_missing_valid = if let `None () = extracted_missing { true } else { false };
+if strip_proposed_plan_blocks "before\n<proposed_plan>\n- step\n</proposed_plan>\nafter" == "before\nafter" && extracted_last_valid && extracted_empty_valid && extracted_missing_valid {
+  score = score + 1
+}
+
+return { .score = score };

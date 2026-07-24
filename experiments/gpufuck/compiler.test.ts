@@ -5,11 +5,13 @@ import {
   type FunctionalWasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { success_examples } from "../../examples/manifest.ts";
+import { parse_source } from "../../src/frontend/parser.ts";
 import { compiler_compatibility_cases } from "./benchmark_cases.ts";
 import { DuckCompiler, encode_duck_module } from "./compiler.ts";
+import { lower_duck_source_to_gpufuck } from "./core_lowering.ts";
 
 Deno.test("Duck compiler lowers the supported scalar source shape", () => {
-  const module = encode_duck_module("let value = 40\nvalue + 2");
+  const module = encode_duck_module("let value = 40;\nvalue + 2");
 
   assert_equals(module.definitionCount, 1);
   assert_equals(module.entrySymbol, 0);
@@ -27,11 +29,41 @@ Deno.test("Duck compiler lowers Duck numeric types", () => {
   assert_equals(f64_module.nodeCount, 3);
 });
 
+Deno.test("Duck gpufuck lowering represents Char payloads as integers", () => {
+  const source_text = `
+type Key = | \`Character Char | \`Escape Unit
+let key: Key = \`Character 'q';
+key
+`;
+  const lowered = lower_duck_source_to_gpufuck(
+    parse_source(source_text),
+    new TextEncoder().encode(source_text).byteLength,
+  );
+  const key_type = lowered.artifact.typeDeclarations.find((declaration) =>
+    declaration.name === "Key"
+  );
+
+  assert_equals(key_type, {
+    name: "Key",
+    parameters: [],
+    constructors: [
+      {
+        name: "$DuckUnion:Key:Character",
+        fields: [{ name: "value", type: { kind: "integer" } }],
+      },
+      {
+        name: "$DuckUnion:Key:Escape",
+        fields: [{ name: "value", type: { kind: "unit" } }],
+      },
+    ],
+  });
+});
+
 Deno.test("Duck compiler reuses previously bound function dependencies", () => {
   const module = encode_duck_module(`
-let first = value => value + 1
-let second = value => first(value) + 1
-let third = value => second(value) + 1
+let first = value => value + 1;
+let second = value => first(value) + 1;
+let third = value => second(value) + 1;
 third(39)
 `);
 
@@ -45,7 +77,7 @@ Deno.test("Duck compiler lowers empty generic union cases", async () => {
     const execution = await compiler.run(`
 type Option value = | \`None Unit | \`Some value
 type IntOption = Option I32
-let value: IntOption = \`None ()
+let value: IntOption = \`None ();
 if let \`None () = value { 42 } else { 0 }
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
@@ -62,18 +94,18 @@ Deno.test("Duck compiler invalidates cached files when an imported module change
   try {
     await Deno.writeTextFile(
       dependency_path,
-      "module () where\nlet answer = 41\nreturn { answer }\n",
+      "module () where\nlet answer = 41;\nreturn { .answer };\n",
     );
     await Deno.writeTextFile(
       entry_path,
-      'const { answer } = import "./dependency.duck" ()\nanswer\n',
+      'const { .answer } = import "./dependency.duck" ();\nanswer\n',
     );
     const first = await compiler.run_file(entry_path);
     assert_equals(first.value, { kind: "integer", value: 41 });
 
     await Deno.writeTextFile(
       dependency_path,
-      "module () where\nlet answer = 42\nreturn { answer }\n",
+      "module () where\nlet answer = 42;\nreturn { .answer };\n",
     );
     const changed = await compiler.run_file(entry_path);
     assert_equals(changed.value, { kind: "integer", value: 42 });
@@ -101,13 +133,26 @@ Deno.test("Duck compiler runs common prelude comparisons", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { max_i32, min_i32, text_equal_ascii_case_insensitive } = import "duck:prelude/functional" ()
-let equal_score = if text_equal_ascii_case_insensitive(["PowerShell.EXE", "powershell.exe"]) { 1 } else { 0 }
-let unequal_score = if text_equal_ascii_case_insensitive(["bash", "zsh"]) { 0 } else { 10 }
-let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" { 10000 } else { 0 }
+const { .max_i32, .min_i32, .text_equal_ascii_case_insensitive } = import "duck:prelude/functional" ();
+let equal_score = if text_equal_ascii_case_insensitive(["PowerShell.EXE", "powershell.exe"]) { 1 } else { 0 };
+let unequal_score = if text_equal_ascii_case_insensitive(["bash", "zsh"]) { 0 } else { 10 };
+let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" { 10000 } else { 0 };
 equal_score + unequal_score + min_i32([7, 3]) * 100 + max_i32([7, 3]) * 1000 + concat_score
 `);
     assert_equals(execution.value, { kind: "integer", value: 17_311 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler formats signed I32 values in source", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+const { .format_i32 } = import "duck:prelude/numeric" ();
+if format_i32(-2147483648) == "-2147483648" && format_i32(443) == "443" { 42 } else { 0 }
+`);
+    assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
     compiler.destroy();
   }
@@ -117,7 +162,7 @@ Deno.test("Duck compiler formats signed I64 values in source", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { format_i64 } = import "duck:prelude/numeric" ()
+const { .format_i64 } = import "duck:prelude/numeric" ();
 if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1735894800i64) == "1735894800" { 42 } else { 0 }
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
@@ -130,12 +175,12 @@ Deno.test("Duck compiler parses signed I64 values in source", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { parse_i64_decimal } = import "duck:prelude/numeric" ()
-let minimum = parse_i64_decimal("-9223372036854775808")
-let maximum = parse_i64_decimal("9223372036854775807")
-let overflow = parse_i64_decimal("9223372036854775808")
-let malformed = parse_i64_decimal("--1")
-let score = if let \`Ok value = minimum { if value == -9223372036854775808i64 { 1 } else { 0 } } else { 0 }
+const { .parse_i64_decimal } = import "duck:prelude/numeric" ();
+let minimum = parse_i64_decimal("-9223372036854775808");
+let maximum = parse_i64_decimal("9223372036854775807");
+let overflow = parse_i64_decimal("9223372036854775808");
+let malformed = parse_i64_decimal("--1");
+let score = if let \`Ok value = minimum { if value == -9223372036854775808i64 { 1 } else { 0 } } else { 0 };
 if let \`Ok value = maximum { if value == 9223372036854775807i64 { score = score + 10 } }
 if let \`Err reason = overflow { if reason == "number exceeds I64" { score = score + 100 } }
 if let \`Err reason = malformed { if reason == "must be an integer" { score = score + 1000 } }
@@ -151,11 +196,11 @@ Deno.test("Duck compiler validates full-range U64 decimal text in source", async
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { parse_u64_decimal_text } = import "duck:prelude/numeric" ()
-let maximum = parse_u64_decimal_text("18446744073709551615")
-let leading_zero = parse_u64_decimal_text("00042")
-let overflow = parse_u64_decimal_text("18446744073709551616")
-let score = if let \`Ok value = maximum { if value == "18446744073709551615" { 1 } else { 0 } } else { 0 }
+const { .parse_u64_decimal_text } = import "duck:prelude/numeric" ();
+let maximum = parse_u64_decimal_text("18446744073709551615");
+let leading_zero = parse_u64_decimal_text("00042");
+let overflow = parse_u64_decimal_text("18446744073709551616");
+let score = if let \`Ok value = maximum { if value == "18446744073709551615" { 1 } else { 0 } } else { 0 };
 if let \`Ok value = leading_zero { if value == "42" { score = score + 10 } }
 if let \`Err message = overflow { if message == "number exceeds U64" { score = score + 100 } }
 score
@@ -179,8 +224,8 @@ Deno.test("Duck compiler preserves annotated function result types", async () =>
 type Decision = | \`Accepted Text | \`Rejected Text
 let decide: Bool -> Decision = accepted => {
   if accepted { \`Accepted "yes" } else { \`Rejected "no" }
-}
-let decision = decide(true)
+};
+let decision = decide(true);
 if let \`Accepted message = decision { if message == "yes" { 42 } else { 0 } } else { 0 }
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
@@ -318,10 +363,10 @@ Deno.test("gpufuck JSON parser rejects truncated literals", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { parse_json } = import "duck:prelude/json" ()
-let parsed = parse_json("t", 0)
+const { .parse_json } = import "duck:prelude/json" ();
+let parsed = parse_json("t", 0);
 if let \`Err error = parsed {
-  let [position, _] = error
+  let [position, _] = error;
   position + 42
 } else {
   0
@@ -356,8 +401,8 @@ Deno.test("gpufuck source JSON encoder emits ASCII-only strings", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { encode_json_string_ascii } = import "duck:prelude/json/encode" ()
-if encode_json_string_ascii("東京😀") == "\\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\\"" { 42 } else { 0 }
+const { .encode_json_string_ascii } = import "duck:prelude/json/encode" ();
+if encode_json_string_ascii("東京😀") == "\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\"" { 42 } else { 0 }
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
     assert_equals(execution.stats.thunkEvaluations, 1);
@@ -2378,18 +2423,52 @@ Deno.test("Duck compiler plans Codex sandbox retries in source", async () => {
   }
 });
 
-Deno.test("Duck compiler plans Codex network approvals in source", async () => {
+Deno.test("Duck compiler parses Codex plan-mode assistant text", async (test) => {
   const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["proposed_plan_fixture.duck", 6],
+    ["proposed_plan_edge_fixture.duck", 3],
+    ["proposed_plan_ascii_whitespace_fixture.duck", 1],
+    ["assistant_text_fixture.duck", 4],
+  ] as const;
+
   try {
-    const execution = await compiler.run_file(
-      "case-studies/codex/network_approval_fixture.duck",
-    );
-    assert_equals(execution.value, {
-      kind: "constructor",
-      name: "duck::$DuckStruct:duck_entry_result_type",
-      fields: [{ kind: "integer", value: 7 }],
-    });
-    assert_equals(execution.stats.thunkEvaluations, 0);
+    for (const [fixture, score] of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        await assert_compiled_codex_fixture_score(compiler, fixture, score);
+      });
+      if (!passed) {
+        break;
+      }
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler plans Codex network approvals in source", async (test) => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    "network_approval_key_fixture.duck",
+    "network_approval_fixture.duck",
+    "network_approval_pending_fixture.duck",
+    "network_approval_cached_fixture.duck",
+    "network_approval_remote_fixture.duck",
+    "network_approval_denied_cache_fixture.duck",
+    "network_approval_order_fixture.duck",
+    "network_approval_denied_fixture.duck",
+    "network_approval_invalid_fixture.duck",
+  ] as const;
+
+  try {
+    for (const fixture of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        await assert_compiled_codex_fixture_score(compiler, fixture, 1);
+      });
+      if (!passed) {
+        break;
+      }
+    }
   } finally {
     compiler.destroy();
   }
@@ -2398,15 +2477,34 @@ Deno.test("Duck compiler plans Codex network approvals in source", async () => {
 Deno.test("Duck compiler finishes deferred Codex network approvals", async () => {
   const compiler = await DuckCompiler.create();
   try {
-    const execution = await compiler.run_file(
-      "case-studies/codex/network_outcome_fixture.duck",
+    await assert_compiled_codex_fixture_score(
+      compiler,
+      "network_outcome_fixture.duck",
+      4,
     );
-    assert_equals(execution.value, {
-      kind: "constructor",
-      name: "duck::$DuckStruct:duck_entry_result_type",
-      fields: [{ kind: "integer", value: 4 }],
-    });
-    assert_equals(execution.stats.thunkEvaluations, 0);
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler projects Codex network policy decisions", async (test) => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["network_policy_context_entry_fixture.duck", 4],
+    ["network_policy_context_rejection_entry_fixture.duck", 7],
+    ["network_policy_message_entry_fixture.duck", 9],
+    ["network_policy_amendment_entry_fixture.duck", 4],
+  ] as const;
+
+  try {
+    for (const [fixture, score] of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        await assert_compiled_codex_fixture_score(compiler, fixture, score);
+      });
+      if (!passed) {
+        break;
+      }
+    }
   } finally {
     compiler.destroy();
   }
@@ -2518,15 +2616,7 @@ Deno.test("Duck compiler sanitizes Codex original image detail", async () => {
 
   try {
     for (const [fixture, score] of fixtures) {
-      const execution = await compiler.run_file(
-        "case-studies/codex/" + fixture,
-      );
-      assert_equals(execution.value, {
-        kind: "constructor",
-        name: "duck::$DuckStruct:duck_entry_result_type",
-        fields: [{ kind: "integer", value: score }],
-      });
-      assert_equals(execution.stats.thunkEvaluations, 1);
+      await assert_compiled_codex_fixture_score(compiler, fixture, score);
     }
   } finally {
     compiler.destroy();
@@ -2537,7 +2627,7 @@ Deno.test("Duck compiler prepares Codex audio request content", async (test) => 
   const compiler = await DuckCompiler.create();
   const fixtures = [
     ["audio_format_entry_fixture.duck", 211_324],
-    ["audio_payload_entry_fixture.duck", 111],
+    ["audio_payload_entry_fixture.duck", 1_111],
     [
       "audio_preparation_response_entry_fixture.duck",
       111,
@@ -2551,37 +2641,7 @@ Deno.test("Duck compiler prepares Codex audio request content", async (test) => 
   try {
     for (const [fixture, score] of fixtures) {
       const passed = await test.step(fixture, async () => {
-        const modules = await compiler.compile_files([
-          "case-studies/codex/" + fixture,
-        ]);
-        const wasm = modules[0];
-        if (wasm === undefined) {
-          throw new Error("Missing compiled Codex audio fixture " + fixture);
-        }
-        const instantiated = await WebAssembly.instantiate(wasm);
-        const main = instantiated.instance.exports.main;
-        const memory = instantiated.instance.exports.memory;
-        if (
-          typeof main !== "function" ||
-          !(memory instanceof WebAssembly.Memory)
-        ) {
-          throw new Error(
-            "Codex audio fixture omitted main or memory: " + fixture,
-          );
-        }
-        const result = main();
-        if (typeof result !== "bigint") {
-          throw new Error(
-            "Codex audio fixture returned " + typeof result + " " +
-              String(result) + ": " + fixture,
-          );
-        }
-        const encoded_score = new DataView(memory.buffer).getBigInt64(
-          Number(result) + 16,
-          true,
-        );
-        const actual_score = Number(encoded_score >> 3n);
-        assert_equals(actual_score, score, fixture);
+        await assert_compiled_codex_fixture_score(compiler, fixture, score);
       });
       if (!passed) {
         break;
@@ -2591,6 +2651,113 @@ Deno.test("Duck compiler prepares Codex audio request content", async (test) => 
     compiler.destroy();
   }
 });
+
+Deno.test("Duck compiler prepares Codex image request content", async (test) => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["image_preparation_plan_entry_fixture.duck", 211_111],
+    ["image_preparation_requests_entry_fixture.duck", 111],
+    ["image_preparation_response_entry_fixture.duck", 1_111],
+    ["image_preparation_function_response_entry_fixture.duck", 111],
+    ["image_preparation_custom_response_entry_fixture.duck", 111],
+    ["image_preparation_missing_entry_fixture.duck", 1],
+    ["image_preparation_extra_entry_fixture.duck", 1],
+    ["image_preparation_invalid_status_entry_fixture.duck", 1],
+    ["image_preparation_empty_url_entry_fixture.duck", 1],
+  ] as const;
+
+  try {
+    for (const [fixture, score] of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        await assert_compiled_codex_fixture_score(compiler, fixture, score);
+      });
+      if (!passed) {
+        break;
+      }
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler tracks Codex turn file changes", async (test) => {
+  const compiler = await DuckCompiler.create();
+  const fixtures = [
+    ["turn_diff_state_entry_fixture.duck", 1],
+    ["turn_diff_delete_state_entry_fixture.duck", 1],
+    ["turn_diff_distinct_paths_entry_fixture.duck", 2],
+    ["turn_diff_accumulation_entry_fixture.duck", 111],
+    ["turn_diff_cycle_entry_fixture.duck", 11],
+    ["turn_diff_add_overwrite_entry_fixture.duck", 11],
+    ["turn_diff_move_entry_fixture.duck", 1],
+    ["turn_diff_pure_rename_entry_fixture.duck", 1],
+    ["turn_diff_overwrite_entry_fixture.duck", 11],
+    ["turn_diff_ordered_overwrite_entry_fixture.duck", 111],
+    ["turn_diff_same_content_overwrite_entry_fixture.duck", 1],
+    ["turn_diff_invalidation_entry_fixture.duck", 1],
+    ["turn_diff_invalid_state_absorbing_entry_fixture.duck", 1],
+    ["turn_diff_invalid_projection_entry_fixture.duck", 1],
+    ["turn_diff_environment_entry_fixture.duck", 1],
+    ["turn_diff_environment_projection_entry_fixture.duck", 11],
+  ] as const;
+
+  try {
+    for (const [fixture, score] of fixtures) {
+      const passed = await test.step(fixture, async () => {
+        await assert_compiled_codex_fixture_score(compiler, fixture, score);
+      });
+      if (!passed) {
+        break;
+      }
+    }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+async function assert_compiled_codex_fixture_score(
+  compiler: DuckCompiler,
+  fixture: string,
+  expected_score: number,
+): Promise<void> {
+  const modules = await compiler.compile_files([
+    "case-studies/codex/" + fixture,
+  ]);
+  const wasm = modules[0];
+  if (wasm === undefined) {
+    throw new Error("Missing compiled Codex fixture " + fixture);
+  }
+  const compiled_module = new WebAssembly.Module(wasm);
+  const required_imports = WebAssembly.Module.imports(compiled_module);
+  if (required_imports.length > 0) {
+    throw new Error(
+      "Codex fixture requires imports " + JSON.stringify(required_imports) +
+        ": " + fixture,
+    );
+  }
+  const instantiated = await WebAssembly.instantiate(wasm);
+  const main = instantiated.instance.exports.main;
+  const memory = instantiated.instance.exports.memory;
+  if (
+    typeof main !== "function" ||
+    !(memory instanceof WebAssembly.Memory)
+  ) {
+    throw new Error("Codex fixture omitted main or memory: " + fixture);
+  }
+  const result = main();
+  if (typeof result !== "bigint") {
+    throw new Error(
+      "Codex fixture returned " + typeof result + " " + String(result) +
+        ": " + fixture,
+    );
+  }
+  const encoded_score = new DataView(memory.buffer).getBigInt64(
+    Number(result) + 16,
+    true,
+  );
+  const actual_score = Number(encoded_score >> 3n);
+  assert_equals(actual_score, expected_score, fixture);
+}
 
 Deno.test("Duck compiler accounts for shared Codex rollout budgets", async () => {
   const compiler = await DuckCompiler.create();
@@ -2787,9 +2954,9 @@ Deno.test("Duck compiler executes native Bytes conversion and slicing", async ()
   try {
     const execution = await compiler.run(`
 scratch {
-  let bytes: Bytes = @Utf8.encode("AB")
-  let part: Bytes = @slice(bytes, 0, 2)
-  let joined: Bytes = @append(part, @Utf8.encode("C"))
+  let bytes: Bytes = @Utf8.encode("AB");
+  let part: Bytes = @slice(bytes, 0, 2);
+  let joined: Bytes = @append(part, @Utf8.encode("C"));
   @len(joined) * 100 + @get(joined, 2)
 }
 `);
@@ -2803,9 +2970,9 @@ Deno.test("Duck compiler preserves assignments from iterator loops", async () =>
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { struct } = import "duck:prelude" ()
-let values: List I32 = \`Cons [42, \`Nil ()]
-let result = 0
+const { .struct } = import "duck:prelude" ();
+let values: List I32 = \`Cons [42, \`Nil ()];
+let result = 0;
 
 for value in values {
   result = value
@@ -2823,11 +2990,11 @@ Deno.test("Duck compiler preserves conditional assignments from loops", async ()
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-let index = 0
-let result = 0
+let index = 0;
+let result = 0;
 
 loop {
-  if index >= 2 { break }
+  if index >= 2 { break; }
 
   if index == 1 {
     result = 42
@@ -2928,7 +3095,7 @@ Deno.test("Duck compiler evaluates a pure Duck result at compile time", async ()
   const compiler = await DuckCompiler.create();
   try {
     const result = await compiler.evaluate_comptime(
-      "let answer = 40 + 2\nanswer",
+      "let answer = 40 + 2;\nanswer",
     );
     if (!result.ok) {
       throw new Error(
@@ -3036,20 +3203,20 @@ Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
 Deno.test("Duck compiler emits managed callables as persistent exports", async () => {
   const compiler = await DuckCompiler.create();
   const storage_source = `
-let add: (I32, I32) -> I32 = (left, right) => left + right
+let add: (I32, I32) -> I32 = (left, right) => left + right;
 const sum_to: I32 -> I32 = rec (value: I32) => {
   if value == 0 { 0 } else { value + rec(value - 1) }
-}
+};
 add(sum_to(6), 21)
 `;
   const callable_source = `
 module () where
 
-let add: (I32, I32) -> I32 = (left, right) => left + right
+let add: (I32, I32) -> I32 = (left, right) => left + right;
 const sum_to: I32 -> I32 = rec (value: I32) => {
   if value == 0 { 0 } else { value + rec(value - 1) }
-}
-return { .add = add, .sum_to = sum_to, .answer = 42 }
+};
+return { .add = add, .sum_to = sum_to, .answer = 42 };
 `;
   try {
     const storage_plan = await compiler.plan_storage(storage_source);
@@ -3095,7 +3262,7 @@ declare effect Timer {
 declare Init { timer: Timer }
 
 result <- Timer.wait(41)
-return { .result = result + 1 }
+return { .result = result + 1 };
 `;
   const compiler = await DuckCompiler.create();
   try {
@@ -3132,6 +3299,66 @@ return { .result = result + 1 }
         throw error;
       }
     }
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("source iterators compose collection transformations", async () => {
+  const compiler = await DuckCompiler.create();
+  try {
+    const execution = await compiler.run(`
+const {
+  .iterator_count,
+  .iterator_find,
+  .iterator_find_index,
+  .iterator_fold,
+  .iterator_map,
+  .iterator_scan,
+  .iterator_windows,
+  .iterator_zip,
+} = import "duck:prelude/iterators" ();
+let decode: I32 -> I32 = byte => byte - 64;
+let add: I32 -> I32 -> I32 = total => value => total + value;
+let add_window_length: I32 -> Bytes -> I32 = total => window => total + window.length();
+let lowercase = IntoIterator.iterator(@Utf8.encode("abc"));
+let uppercase = IntoIterator.iterator(@Utf8.encode("WX"));
+let pairs = iterator_zip(lowercase, uppercase);
+let difference = 0;
+
+for pair in pairs {
+  let [left, right] = pair;
+  difference = difference + left - right
+}
+
+let number_bytes = IntoIterator.iterator(@Utf8.encode("ABC"));
+let numbers = iterator_map(number_bytes, decode);
+let mapped_sum = iterator_fold(numbers, 0, add);
+let scan_bytes = IntoIterator.iterator(@Utf8.encode("ABC"));
+let scan_numbers = iterator_map(scan_bytes, decode);
+let partial_sums = iterator_scan(scan_numbers, 0, add);
+let scanned_sum = iterator_fold(partial_sums, 0, add);
+let windows = iterator_windows(@Utf8.encode("ABCD"), 3);
+let windowed_length = iterator_fold(windows, 0, add_window_length);
+let matching_value = iterator_find(
+  IntoIterator.iterator(@Utf8.encode("ABCD")),
+  byte => byte > @cast('B', I32),
+);
+let matching_index = iterator_find_index(
+  IntoIterator.iterator(@Utf8.encode("ABCD")),
+  byte => byte == @cast('C', I32),
+);
+let matching_count = iterator_count(
+  IntoIterator.iterator(@Utf8.encode("ABCD")),
+  byte => byte >= @cast('B', I32),
+);
+let found_value = if let \`Some value = matching_value { value } else { 0 };
+let found_index = if let \`Some index = matching_index { index } else { 0 };
+let search_score = found_value + found_index * 1000 + matching_count * 10000;
+
+difference * 100 + mapped_sum * 10 + scanned_sum + windowed_length + search_score
+`);
+    assert_equals(execution.value, { kind: "integer", value: 34_146 });
   } finally {
     compiler.destroy();
   }

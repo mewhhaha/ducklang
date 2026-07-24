@@ -1,37 +1,53 @@
 module () where
 
-const { format_i32, text_append, text_byte_is_ascii_digit, text_byte_is_ascii_lower, text_get, text_length } = import "duck:prelude/functional" ()
-const context_types_module = import "./context_types.duck"
+const {
+  .format_i32,
+  .text_append,
+  .text_byte_is_ascii_digit,
+  .text_byte_is_ascii_lower,
+  .text_get,
+  .text_length,
+} = import "duck:prelude/functional" ();
+const context_types_module = import "./context_types.duck";
 
 type FragmentTextOption = ContextTextOption
 type FragmentModelContext = ModelContextFragment
 
-const append_text = (left: Text, right: Text) => text_append([left, right])
+const append_text = (left: Text, right: Text) => text_append [left, right];
 
 const render_user_instructions = (directory: FragmentTextOption, instructions: Text) => {
-  let heading: Text = "# AGENTS.md instructions"
+  let heading: Text = "# AGENTS.md instructions";
 
   if let `Some value = directory {
     heading = append_text(heading, append_text(" for ", value))
   }
 
-  append_text(heading, append_text("\n\n<INSTRUCTIONS>\n", append_text(instructions, "\n</INSTRUCTIONS>")))
-}
+  append_text(
+    heading,
+    append_text("\n\n<INSTRUCTIONS>\n", append_text(instructions, "\n</INSTRUCTIONS>")),
+  )
+};
 
 const render_rollout_budget = (remaining_tokens: I32) => {
-  append_text("<rollout_budget>\nYou have ", append_text(format_i32(remaining_tokens), " weighted tokens left in the shared session token budget.\n</rollout_budget>"))
-}
+  append_text(
+    "<rollout_budget>\nYou have ",
+    append_text(
+      format_i32 remaining_tokens,
+      " weighted tokens left in the shared session token budget.\n</rollout_budget>",
+    ),
+  )
+};
 
 const valid_internal_context_source = (source: Text) => {
-  if text_length(source) == 0 || !text_byte_is_ascii_lower(text_get([source, 0])) {
+  if text_length source == 0 || !text_byte_is_ascii_lower(text_get [source, 0]) {
     false
   } else {
-    let valid = true
+    let valid = true;
 
-    for index in 1..text_length(source) {
-      let byte = text_get([source, index])
+    for index in 1..text_length source {
+      let byte = text_get [source, index];
 
-      if text_byte_is_ascii_lower(byte) || text_byte_is_ascii_digit(byte) || byte == 95 {
+      if text_byte_is_ascii_lower byte || text_byte_is_ascii_digit byte || byte == 95 {
         ()
       } else {
         valid = false
@@ -40,24 +56,29 @@ const valid_internal_context_source = (source: Text) => {
 
     valid
   }
-}
+};
 
 const render_internal_context = (source: Text, body: Text) => {
   if valid_internal_context_source source {
-    `Some (append_text("<codex_internal_context source=\"", append_text(source, append_text("\">\n", append_text(body, "\n</codex_internal_context>")))))
+    `Some (
+      append_text(
+        "<codex_internal_context source=\"",
+        append_text(source, append_text("\">\n", append_text(body, "\n</codex_internal_context>"))),
+      )
+    )
   } else {
     `None ()
   }
-}
+};
 
 const model_context_fragment = (role: Text, text: Text) => {
   [role, true, text] as FragmentModelContext
-}
+};
 
 return {
-  render_user_instructions,
-  render_rollout_budget,
-  valid_internal_context_source,
-  render_internal_context,
-  model_context_fragment,
-}
+  .render_user_instructions,
+  .render_rollout_budget,
+  .valid_internal_context_source,
+  .render_internal_context,
+  .model_context_fragment,
+};

@@ -1,19 +1,32 @@
 module () where
 
-const {} = import "./plugin_install_types.duck" ()
-const { parse_request_plugin_install_args } = import "./request_plugin_install_json.duck" ()
-const { plan_list_plugin_install_request, plan_recommended_plugin_install_request } = import "./request_plugin_install_policy.duck" ()
+const {} = import "./plugin_install_types.duck" ();
+const { .parse_request_plugin_install_args } = import "./request_plugin_install_json.duck" ();
+const { .plan_list_plugin_install_request, .plan_recommended_plugin_install_request } =
+  import "./request_plugin_install_policy.duck" ();
 
 type InstallCallCandidates = PluginInstallCandidates
 type InstallCallPayload = RequestPluginInstallPayload
 type InstallCallPlan = RequestPluginInstallPlan
 type InstallCallPresentation = ToolSuggestPresentation
 
-let plan_request_plugin_install_call: [InstallCallPayload, InstallCallPresentation, Text, Bool, InstallCallCandidates] -> InstallCallPlan = (payload: InstallCallPayload, presentation: InstallCallPresentation, call_id: Text, is_codex_tui: Bool, candidates: InstallCallCandidates) => {
+let plan_request_plugin_install_call: [
+  InstallCallPayload,
+  InstallCallPresentation,
+  Text,
+  Bool,
+  InstallCallCandidates,
+] -> InstallCallPlan = (
+  payload: InstallCallPayload,
+  presentation: InstallCallPresentation,
+  call_id: Text,
+  is_codex_tui: Bool,
+  candidates: InstallCallCandidates,
+) => {
   if let `Unsupported () = payload {
     `Fatal "request_plugin_install handler received unsupported payload"
   } else if let `Function arguments = payload {
-    let parsed = parse_request_plugin_install_args(presentation, arguments)
+    let parsed = parse_request_plugin_install_args(presentation, arguments);
     if let `ParseFailed message = parsed {
       `RespondToModel message
     } else if let `ListArgs args = parsed {
@@ -26,6 +39,6 @@ let plan_request_plugin_install_call: [InstallCallPayload, InstallCallPresentati
   } else {
     `Fatal "request_plugin_install handler received unsupported payload"
   }
-}
+};
 
-return { plan_request_plugin_install_call }
+return { .plan_request_plugin_install_call };

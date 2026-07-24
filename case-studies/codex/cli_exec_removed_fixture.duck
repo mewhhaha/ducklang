@@ -1,13 +1,13 @@
 module () where
 
-const { parse_exec_options } = import "./cli_exec.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_exec_options } = import "./cli_exec.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-let input: FixtureArgs = `Cons (["--full-auto", `Cons (["summarize", `Nil ()])])
-let parsed: FixtureResult = parse_exec_options input
-let score = if let `Err _ = parsed { 1 } else { 0 }
+let input: FixtureArgs = `Cons (["--full-auto", `Cons (["summarize", `Nil ()])]);
+let parsed: FixtureResult = parse_exec_options input;
+let score = if let `Err _ = parsed { 1 } else { 0 };
 
-return { .score = score }
+return { .score = score };

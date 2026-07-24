@@ -1,6 +1,6 @@
 module () where
 
-const {} = import "duck:prelude/types" ()
+const {} = import "duck:prelude/types" ();
 
 duck DefaultHandler Effect {
   type Handled
@@ -27,7 +27,7 @@ effect Raise error {
 }
 
 effect Do monad {
-  unwrap: forall value. (monad value) => value
+  unwrap: forall value.(monad value) => value
 }
 
 effect Clock {
@@ -100,4 +100,4 @@ effect Stm value {
   or_else: (I32) => Unit
 }
 
-return {}
+return {};

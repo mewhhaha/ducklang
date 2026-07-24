@@ -1,29 +1,36 @@
 module () where
 
-const {} = import "./view_image_types.duck" ()
-const { plan_view_image_call } = import "./view_image_call.duck" ()
+const {} = import "./view_image_types.duck" ();
+const { .plan_view_image_call } = import "./view_image_call.duck" ();
 
 type FixtureEnvironment = ViewImageEnvironment
 type FixtureEnvironmentNode = ViewImageEnvironmentNode
 type FixtureEnvironments = ViewImageEnvironments
 
-let local: FixtureEnvironment = [.environment_id = "local", .cwd = "/workspace", .is_primary = true]
-let environments: FixtureEnvironments = `Cons ([local, `Nil ()] as FixtureEnvironmentNode)
-let score = 0
+let local: FixtureEnvironment = [.environment_id = "local", .cwd = "/workspace", .is_primary = true];
+let environments: FixtureEnvironments = `Cons ([local, `Nil ()] as FixtureEnvironmentNode);
+let score = 0;
 
-let unsupported_model = plan_view_image_call("call-1", `Unsupported (), environments, false, false)
+let unsupported_model = plan_view_image_call("call-1", `Unsupported (), environments, false, false);
 if let `RejectRequest message = unsupported_model {
-  if message == "view_image is not allowed because you do not support image inputs" { score = score + 1 }
+  if message == "view_image is not allowed because you do not support image inputs" { score = score
+    + 1 }
 }
 
-let unsupported_payload = plan_view_image_call("call-2", `Unsupported (), environments, true, false)
+let unsupported_payload = plan_view_image_call("call-2", `Unsupported (), environments, true, false);
 if let `Fatal message = unsupported_payload {
   if message == "view_image handler received unsupported payload" { score = score + 10 }
 }
 
-let valid = plan_view_image_call("call-3", `Function "{\"path\":\"image.png\"}", environments, true, true)
+let valid = plan_view_image_call(
+  "call-3",
+  `Function "{\"path\":\"image.png\"}",
+  environments,
+  true,
+  true,
+);
 if let `ReadImage prepared = valid {
   if prepared.path == "/workspace/image.png" { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

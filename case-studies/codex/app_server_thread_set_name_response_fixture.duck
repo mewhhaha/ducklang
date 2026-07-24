@@ -1,7 +1,7 @@
-const { materialize_thread_set_name_response } = import "./app_server_thread_controls.duck" ()
+const { .materialize_thread_set_name_response } = import "./app_server_thread_controls.duck" ();
 
-let score = 0
-let response = materialize_thread_set_name_response()
+let score = 0;
+let response = materialize_thread_set_name_response();
 if let `Object fields = response { if let `Nil () = fields { score = score + 1 } }
 
-return { .score = score }
+return { .score = score };

@@ -1,7 +1,7 @@
 module () where
 
-const { text_append, text_starts_with } = import "duck:prelude/functional" ()
-const {} = import "./cli_types.duck" ()
+const { .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const {} = import "./cli_types.duck" ();
 
 type ApplicationArgs = CodexCliArgs
 type ApplicationCommandResult = CodexApplicationCommandResult
@@ -12,90 +12,101 @@ type RemoteControlFacts = CodexRemoteControlFacts
 type DesktopAppFactsResult = Result Text DesktopAppFacts
 type RemoteControlFactsResult = Result Text RemoteControlFacts
 
-let rec scan_desktop_app_from: [ApplicationArgs, DesktopAppFacts] -> DesktopAppFactsResult = (args: ApplicationArgs, facts: DesktopAppFacts) => {
+let rec scan_desktop_app_from: [ApplicationArgs, DesktopAppFacts] -> DesktopAppFactsResult = (
+  args: ApplicationArgs,
+  facts: DesktopAppFacts,
+) => {
   if let `Cons node = args {
-    let [argument, tail] = node
+    let [argument, tail] = node;
     if argument == "--download-url" {
       if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_desktop_app_from(remaining, facts :+ { .download_url = `Some value })
+        let [value, remaining] = value_node;
+        scan_desktop_app_from(remaining, facts <& { .download_url = `Some value })
       } else {
         `Err "missing value for --download-url"
       }
     } else if text_starts_with(argument, "-") {
       `Err (text_append("unknown app option: ", argument))
     } else if let `None () = facts.path {
-      scan_desktop_app_from(tail, facts :+ { .path = `Some argument })
+      scan_desktop_app_from(tail, facts <& { .path = `Some argument })
     } else {
       `Err "app accepts at most one workspace path"
     }
   } else {
     `Ok facts
   }
-}
+};
 
-let parse_desktop_app_options: ApplicationArgs -> ApplicationCommandResult = (args: ApplicationArgs) => {
-  let initial: DesktopAppFacts = [.path = `None (), .download_url = `None ()]
-  let scanned: DesktopAppFactsResult = scan_desktop_app_from(args, initial)
-  if let `Err message = scanned {
-    `Err message
-  } else if let `Ok facts = scanned {
-    let path = if let `Some selected = facts.path { selected } else { "." }
-    let options: DesktopAppOptions = [.path = path, .download_url = facts.download_url]
-    `Ok (`OpenDesktopApp options)
-  } else {
-    `Err "desktop app scanner returned an unknown result"
-  }
-}
-
-let rec scan_remote_control_from: [ApplicationArgs, RemoteControlFacts] -> RemoteControlFactsResult = (args: ApplicationArgs, facts: RemoteControlFacts) => {
-  if let `Cons node = args {
-    let [argument, tail] = node
-    if argument == "--json" {
-      scan_remote_control_from(tail, facts :+ { .json = true })
-    } else if argument == "start" {
-      if let `None () = facts.operation {
-        scan_remote_control_from(tail, facts :+ { .operation = `Some (`RemoteControlStart ()) })
-      } else {
-        `Err "remote-control accepts at most one operation"
-      }
-    } else if argument == "stop" {
-      if let `None () = facts.operation {
-        scan_remote_control_from(tail, facts :+ { .operation = `Some (`RemoteControlStop ()) })
-      } else {
-        `Err "remote-control accepts at most one operation"
-      }
-    } else if argument == "pair" {
-      if let `None () = facts.operation {
-        scan_remote_control_from(tail, facts :+ { .operation = `Some (`RemoteControlPair ()) })
-      } else {
-        `Err "remote-control accepts at most one operation"
-      }
-    } else if text_starts_with(argument, "-") {
-      `Err (text_append("unknown remote-control option: ", argument))
+let parse_desktop_app_options: ApplicationArgs -> ApplicationCommandResult = (args:
+  ApplicationArgs) => {
+    let initial: DesktopAppFacts = [.path = `None (), .download_url = `None ()];
+    let scanned: DesktopAppFactsResult = scan_desktop_app_from(args, initial);
+    if let `Err message = scanned {
+      `Err message
+    } else if let `Ok facts = scanned {
+      let path = if let `Some selected = facts.path { selected } else { "." };
+      let options: DesktopAppOptions = [.path = path, .download_url = facts.download_url]
+      `Ok (`OpenDesktopApp options);
     } else {
-      `Err (text_append("unknown remote-control operation: ", argument))
+      `Err "desktop app scanner returned an unknown result"
     }
-  } else {
-    `Ok facts
-  }
-}
+  };
 
-let parse_remote_control_options: ApplicationArgs -> ApplicationCommandResult = (args: ApplicationArgs) => {
-  let initial: RemoteControlFacts = [.operation = `None (), .json = false]
-  let scanned: RemoteControlFactsResult = scan_remote_control_from(args, initial)
+let rec scan_remote_control_from: [ApplicationArgs, RemoteControlFacts] ->
+  RemoteControlFactsResult = (
+    args: ApplicationArgs,
+    facts: RemoteControlFacts,
+  ) => {
+    if let `Cons node = args {
+      let [argument, tail] = node;
+      if argument == "--json" {
+        scan_remote_control_from(tail, facts <& { .json = true })
+      } else if argument == "start" {
+        if let `None () = facts.operation {
+          scan_remote_control_from(tail, facts <& { .operation = `Some (`RemoteControlStart ()) })
+        } else {
+          `Err "remote-control accepts at most one operation"
+        }
+      } else if argument == "stop" {
+        if let `None () = facts.operation {
+          scan_remote_control_from(tail, facts <& { .operation = `Some (`RemoteControlStop ()) })
+        } else {
+          `Err "remote-control accepts at most one operation"
+        }
+      } else if argument == "pair" {
+        if let `None () = facts.operation {
+          scan_remote_control_from(tail, facts <& { .operation = `Some (`RemoteControlPair ()) })
+        } else {
+          `Err "remote-control accepts at most one operation"
+        }
+      } else if text_starts_with(argument, "-") {
+        `Err (text_append("unknown remote-control option: ", argument))
+      } else {
+        `Err (text_append("unknown remote-control operation: ", argument))
+      }
+    } else {
+      `Ok facts
+    }
+  };
+
+let parse_remote_control_options: ApplicationArgs -> ApplicationCommandResult = (
+  args: ApplicationArgs
+) => {
+  let initial: RemoteControlFacts = [.operation = `None (), .json = false];
+  let scanned: RemoteControlFactsResult = scan_remote_control_from(args, initial);
   if let `Err message = scanned {
     `Err message
   } else if let `Ok facts = scanned {
-    let operation = if let `Some selected = facts.operation { selected } else { `RemoteControlForeground () }
+    let operation = if let `Some selected = facts.operation { selected } else {
+      `RemoteControlForeground () };
     let options: RemoteControlOptions = [.operation = operation, .json = facts.json]
-    `Ok (`RunRemoteControl options)
+    `Ok (`RunRemoteControl options);
   } else {
     `Err "remote-control scanner returned an unknown result"
   }
-}
+};
 
 return {
-  parse_desktop_app_options,
-  parse_remote_control_options,
-}
+  .parse_desktop_app_options,
+  .parse_remote_control_options,
+};

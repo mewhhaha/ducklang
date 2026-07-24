@@ -1,0 +1,6 @@
+module () where
+
+const { .verify_network_policy_amendment_fixture } =
+  import "./network_policy_amendment_fixture.duck" ();
+
+return { .score = verify_network_policy_amendment_fixture() };

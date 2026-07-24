@@ -11,7 +11,7 @@ let operation = if flag {
   (value: Int) => value + 1
 } else {
   (value: Int) => value * 2
-}
+};
 
-let result: I32 = operation(21)
-return { .result = result }
+let result: I32 = operation 21;
+return { .result = result };

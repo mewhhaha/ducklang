@@ -1,0 +1,376 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+
+type DiffState = TurnDiffState
+type DiffDelta = TurnDiffDelta
+type DiffAdd = TurnDiffAdd
+type DiffDelete = TurnDiffDelete
+type DiffUpdate = TurnDiffUpdate
+type DiffTrackedPath = TurnDiffTrackedPath
+type DiffTrackedPathOption = TurnDiffTrackedPathOption
+type DiffTrackedContent = TurnDiffTrackedContent
+type DiffTrackedContentOption = TurnDiffTrackedContentOption
+type DiffContentEntry = TurnDiffContentEntry
+type DiffContentEntries = TurnDiffContentEntries
+type DiffOriginEntry = TurnDiffOriginEntry
+type DiffOriginEntries = TurnDiffOriginEntries
+type DiffContentEntryNode = ListNode DiffContentEntry
+type DiffOriginEntryNode = ListNode DiffOriginEntry
+
+const turn_diff_paths_equal: [DiffTrackedPath, DiffTrackedPath] -> Bool = (left, right) => {
+  left.environment_id == right.environment_id && left.path == right.path
+};
+
+const turn_diff_content_at: [DiffContentEntries, DiffTrackedPath] -> DiffTrackedContentOption = (
+  entries,
+  requested_path,
+) => {
+  let current = entries;
+  let found: DiffTrackedContentOption = `None ();
+
+  loop {
+    if let `Some _ = found { break; }
+    if let `Cons node = current {
+      let [entry, tail] = node;
+      let [path, content] = entry;
+      if turn_diff_paths_equal(path, requested_path) {
+        found = `Some content
+      }
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  found
+};
+
+const turn_diff_content_entries_without: [DiffContentEntries, DiffTrackedPath] ->
+  DiffContentEntries = (
+    entries,
+    removed_path,
+  ) => {
+    let current = entries;
+    let reversed: DiffContentEntries = `Nil ();
+
+    loop {
+      if let `Cons node = current {
+        let [entry, tail] = node;
+        let [path, _] = entry;
+        if !(turn_diff_paths_equal(path, removed_path)) {
+          let kept_node: DiffContentEntryNode = [entry, reversed];
+          reversed = `Cons kept_node
+        }
+        current = tail
+      } else {
+        break;
+      }
+    }
+
+    let kept: DiffContentEntries = `Nil ();
+    loop {
+      if let `Cons node = reversed {
+        let [entry, tail] = node;
+        let kept_node: DiffContentEntryNode = [entry, kept];
+        kept = `Cons kept_node
+        reversed = tail
+      } else {
+        break;
+      }
+    }
+    kept
+  };
+
+const turn_diff_upsert_content: [DiffContentEntries, DiffTrackedPath, DiffTrackedContent] ->
+  DiffContentEntries = (
+    entries,
+    path,
+    content,
+  ) => {
+    let without = turn_diff_content_entries_without(entries, path);
+    let entry: DiffContentEntry = [path, content];
+    let node: DiffContentEntryNode = [entry, without];
+    `Cons node
+  };
+
+const turn_diff_origin_at: [DiffOriginEntries, DiffTrackedPath] -> DiffTrackedPathOption = (
+  entries,
+  requested_path,
+) => {
+  let current = entries;
+  let found: DiffTrackedPathOption = `None ();
+
+  loop {
+    if let `Some _ = found { break; }
+    if let `Cons node = current {
+      let [entry, tail] = node;
+      let [path, origin] = entry;
+      if turn_diff_paths_equal(path, requested_path) {
+        found = `Some origin
+      }
+      current = tail
+    } else {
+      break;
+    }
+  }
+
+  found
+};
+
+const turn_diff_origin_entries_without: [DiffOriginEntries, DiffTrackedPath] -> DiffOriginEntries =
+  (
+    entries,
+    removed_path,
+  ) => {
+    let current = entries;
+    let reversed: DiffOriginEntries = `Nil ();
+
+    loop {
+      if let `Cons node = current {
+        let [entry, tail] = node;
+        let [path, _] = entry;
+        if !(turn_diff_paths_equal(path, removed_path)) {
+          let kept_node: DiffOriginEntryNode = [entry, reversed];
+          reversed = `Cons kept_node
+        }
+        current = tail
+      } else {
+        break;
+      }
+    }
+
+    let kept: DiffOriginEntries = `Nil ();
+    loop {
+      if let `Cons node = reversed {
+        let [entry, tail] = node;
+        let kept_node: DiffOriginEntryNode = [entry, kept];
+        kept = `Cons kept_node
+        reversed = tail
+      } else {
+        break;
+      }
+    }
+    kept
+  };
+
+const empty_turn_diff: () -> DiffState = () => {
+  let baseline: DiffContentEntries = `Nil ();
+  let current: DiffContentEntries = `Nil ();
+  let origins: DiffOriginEntries = `Nil ();
+  [.valid = true, .baseline = baseline, .current = current, .origins = origins, .next_revision = 0]
+};
+
+const invalidate_turn_diff: DiffState -> DiffState = state => {
+  [
+    .valid = false,
+    .baseline = state.baseline,
+    .current = state.current,
+    .origins = state.origins,
+    .next_revision = state.next_revision,
+  ]
+};
+
+const apply_turn_diff_add: [DiffState, DiffTrackedPath, DiffAdd] -> DiffState = (
+  state,
+  path,
+  addition,
+) => {
+  let baseline = state.baseline;
+  let origins = turn_diff_origin_entries_without(state.origins, path);
+  let next_revision = state.next_revision;
+  let current_content = turn_diff_content_at(state.current, path);
+  let baseline_content = turn_diff_content_at(baseline, path);
+
+  if let `None () = current_content {
+    if let `None () = baseline_content {
+      if let `Some overwritten = addition.overwritten_content {
+        let tracked_content: DiffTrackedContent = [
+          .content = overwritten,
+          .revision = next_revision,
+        ];
+        next_revision = next_revision + 1
+        baseline = turn_diff_upsert_content(baseline, path, tracked_content)
+      }
+    }
+  }
+
+  let tracked_content: DiffTrackedContent = [.content = addition.content, .revision = next_revision];
+  let current = turn_diff_upsert_content(state.current, path, tracked_content);
+  [
+    .valid = true,
+    .baseline = baseline,
+    .current = current,
+    .origins = origins,
+    .next_revision = next_revision + 1,
+  ]
+};
+
+const apply_turn_diff_delete: [DiffState, DiffTrackedPath, DiffDelete] -> DiffState = (
+  state,
+  path,
+  deletion,
+) => {
+  let baseline = state.baseline;
+  let next_revision = state.next_revision;
+  let current_content = turn_diff_content_at(state.current, path);
+  let current = turn_diff_content_entries_without(state.current, path);
+  let baseline_content = turn_diff_content_at(baseline, path);
+
+  if let `None () = current_content {
+    if let `None () = baseline_content {
+      let tracked_content: DiffTrackedContent = [
+        .content = deletion.content,
+        .revision = next_revision,
+      ];
+      next_revision = next_revision + 1
+      baseline = turn_diff_upsert_content(baseline, path, tracked_content)
+    }
+  }
+
+  let origins = turn_diff_origin_entries_without(state.origins, path);
+  [
+    .valid = true,
+    .baseline = baseline,
+    .current = current,
+    .origins = origins,
+    .next_revision = next_revision,
+  ]
+};
+
+const apply_turn_diff_update: [DiffState, Text, DiffTrackedPath, DiffUpdate] -> DiffState = (
+  state,
+  environment_id,
+  path,
+  update,
+) => {
+  let baseline = state.baseline;
+  let current = state.current;
+  let origins = state.origins;
+  let next_revision = state.next_revision;
+  let current_content = turn_diff_content_at(current, path);
+  let baseline_content = turn_diff_content_at(baseline, path);
+
+  if let `None () = current_content {
+    if let `None () = baseline_content {
+      let tracked_content: DiffTrackedContent = [
+        .content = update.old_content,
+        .revision = next_revision,
+      ];
+      next_revision = next_revision + 1
+      baseline = turn_diff_upsert_content(baseline, path, tracked_content)
+    }
+  }
+
+  if let `Some destination_path = update.move_path {
+    let destination: DiffTrackedPath = [.environment_id = environment_id, .path = destination_path];
+    let destination_current = turn_diff_content_at(current, destination);
+    let destination_baseline = turn_diff_content_at(baseline, destination);
+    if let `None () = destination_current {
+      if let `None () = destination_baseline {
+        if let `Some overwritten = update.overwritten_move_content {
+          let tracked_content: DiffTrackedContent = [
+            .content = overwritten,
+            .revision = next_revision,
+          ];
+          next_revision = next_revision + 1
+          baseline = turn_diff_upsert_content(baseline, destination, tracked_content)
+        }
+      }
+    }
+
+    let origin = path;
+    if let `Some existing_origin = turn_diff_origin_at(origins, path) {
+      origin = existing_origin
+    }
+    origins = turn_diff_origin_entries_without(origins, path)
+    current = turn_diff_content_entries_without(current, path)
+    let tracked_content: DiffTrackedContent = [
+      .content = update.new_content,
+      .revision = next_revision,
+    ];
+    next_revision = next_revision + 1
+    current = turn_diff_upsert_content(current, destination, tracked_content)
+    origins = turn_diff_origin_entries_without(origins, destination)
+    if !(turn_diff_paths_equal(destination, origin)) {
+      let origin_entry: DiffOriginEntry = [destination, origin];
+      let origin_node: DiffOriginEntryNode = [origin_entry, origins];
+      origins = `Cons origin_node
+    }
+  } else {
+    let tracked_content: DiffTrackedContent = [
+      .content = update.new_content,
+      .revision = next_revision,
+    ];
+    next_revision = next_revision + 1
+    current = turn_diff_upsert_content(current, path, tracked_content)
+  }
+
+  [
+    .valid = true,
+    .baseline = baseline,
+    .current = current,
+    .origins = origins,
+    .next_revision = next_revision,
+  ]
+};
+
+const track_turn_diff_delta: [DiffState, Text, DiffDelta] -> DiffState = (
+  state,
+  environment_id,
+  delta,
+) => {
+  if !(state.valid) {
+    return state;
+  }
+  if !(delta.exact) {
+    return invalidate_turn_diff state;
+  }
+
+  let tracked_state = state;
+  let remaining = delta.mutations;
+
+  loop {
+    if let `Cons node = remaining {
+      let [change, tail] = node;
+      let mutation_path: DiffTrackedPath = [.environment_id = environment_id, .path = change.path];
+
+      if let `TurnDiffAdd addition = change.mutation {
+        tracked_state = apply_turn_diff_add(tracked_state, mutation_path, addition)
+      } else if let `TurnDiffDelete deletion = change.mutation {
+        tracked_state = apply_turn_diff_delete(tracked_state, mutation_path, deletion)
+      } else if let `TurnDiffUpdate update = change.mutation {
+        tracked_state = apply_turn_diff_update(tracked_state, environment_id, mutation_path, update)
+      }
+
+      remaining = tail
+    } else {
+      break;
+    }
+  }
+
+  tracked_state
+};
+
+const turn_diff_baseline_content: [DiffState, DiffTrackedPath] -> DiffTrackedContentOption = (
+  state,
+  path,
+) => {
+  turn_diff_content_at(state.baseline, path)
+};
+
+const turn_diff_current_content: [DiffState, DiffTrackedPath] -> DiffTrackedContentOption = (
+  state,
+  path,
+) => {
+  turn_diff_content_at(state.current, path)
+};
+
+return {
+  .empty_turn_diff,
+  .invalidate_turn_diff,
+  .track_turn_diff_delta,
+  .turn_diff_baseline_content,
+  .turn_diff_current_content,
+  .turn_diff_paths_equal,
+};

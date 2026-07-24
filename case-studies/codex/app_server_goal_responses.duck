@@ -1,8 +1,16 @@
 module () where
 
-const { json_bool, json_null, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { format_i64 } = import "duck:prelude/numeric" ()
-const {} = import "./app_server_types.duck" ()
+const {
+  .json_bool,
+  .json_null,
+  .json_number,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const {} = import "./app_server_types.duck" ();
 
 type GoalResponseJson = AppServerJson
 type GoalResponseJsonObject = JsonObject
@@ -11,12 +19,17 @@ type GoalResponseGoalOption = AppServerThreadGoalOption
 type GoalResponseTextOption = AppServerTextOption
 
 const materialize_thread_goal: GoalResponseGoal -> GoalResponseJson = (goal: GoalResponseGoal) => {
-  let fields: GoalResponseJsonObject = json_object_empty()
-  fields = json_object_prepend("updatedAt", json_number(format_i64(goal.updated_at)), fields)
-  fields = json_object_prepend("createdAt", json_number(format_i64(goal.created_at)), fields)
-  fields = json_object_prepend("timeUsedSeconds", json_number(format_i64(goal.time_used_seconds)), fields)
-  fields = json_object_prepend("tokensUsed", json_number(format_i64(goal.tokens_used)), fields)
-  let budget = if let `Some value = goal.token_budget { json_number(format_i64(value)) } else { json_null() }
+  let fields: GoalResponseJsonObject = json_object_empty();
+  fields = json_object_prepend("updatedAt", json_number(format_i64 goal.updated_at), fields)
+  fields = json_object_prepend("createdAt", json_number(format_i64 goal.created_at), fields)
+  fields = json_object_prepend(
+    "timeUsedSeconds",
+    json_number(format_i64 goal.time_used_seconds),
+    fields,
+  )
+  fields = json_object_prepend("tokensUsed", json_number(format_i64 goal.tokens_used), fields)
+  let budget = if let `Some value = goal.token_budget { json_number(format_i64 value) } else {
+    json_null() };
   fields = json_object_prepend("tokenBudget", budget, fields)
   let status = if let `GoalActive () = goal.status {
     "active"
@@ -30,44 +43,53 @@ const materialize_thread_goal: GoalResponseGoal -> GoalResponseJson = (goal: Goa
     "budgetLimited"
   } else {
     "complete"
-  }
-  fields = json_object_prepend("status", json_string(status), fields)
-  fields = json_object_prepend("objective", json_string(goal.objective), fields)
-  fields = json_object_prepend("threadId", json_string(goal.thread_id), fields)
-  json_object(fields)
-}
+  };
+  fields = json_object_prepend("status", json_string status, fields)
+  fields = json_object_prepend("objective", json_string goal.objective, fields)
+  fields = json_object_prepend("threadId", json_string goal.thread_id, fields)
+  json_object fields
+};
 
-const materialize_thread_goal_set_response: GoalResponseGoal -> GoalResponseJson = (goal: GoalResponseGoal) => {
-  json_object(json_object_prepend("goal", materialize_thread_goal(goal), json_object_empty()))
-}
+const materialize_thread_goal_set_response: GoalResponseGoal -> GoalResponseJson = (
+  goal: GoalResponseGoal
+) => {
+  json_object(json_object_prepend("goal", materialize_thread_goal goal, json_object_empty()))
+};
 
-const materialize_thread_goal_get_response: GoalResponseGoalOption -> GoalResponseJson = (goal: GoalResponseGoalOption) => {
-  let value = if let `Some current = goal { materialize_thread_goal(current) } else { json_null() }
+const materialize_thread_goal_get_response: GoalResponseGoalOption -> GoalResponseJson = (
+  goal: GoalResponseGoalOption
+) => {
+  let value = if let `Some current = goal { materialize_thread_goal current } else { json_null() };
   json_object(json_object_prepend("goal", value, json_object_empty()))
-}
+};
 
 const materialize_thread_goal_clear_response: Bool -> GoalResponseJson = (cleared: Bool) => {
-  json_object(json_object_prepend("cleared", json_bool(cleared), json_object_empty()))
-}
+  json_object(json_object_prepend("cleared", json_bool cleared, json_object_empty()))
+};
 
-const materialize_thread_goal_updated_notification: [GoalResponseGoal, GoalResponseTextOption] -> GoalResponseJson = (goal: GoalResponseGoal, turn_id: GoalResponseTextOption) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("goal", materialize_thread_goal(goal), fields)
-  let turn = if let `Some value = turn_id { json_string(value) } else { json_null() }
-  fields = json_object_prepend("turnId", turn, fields)
-  fields = json_object_prepend("threadId", json_string(goal.thread_id), fields)
-  json_object(fields)
-}
+const materialize_thread_goal_updated_notification: [GoalResponseGoal, GoalResponseTextOption] ->
+  GoalResponseJson = (
+    goal: GoalResponseGoal,
+    turn_id: GoalResponseTextOption,
+  ) => {
+    let fields = json_object_empty();
+    fields = json_object_prepend("goal", materialize_thread_goal goal, fields)
+    let turn = if let `Some value = turn_id { json_string value } else { json_null() };
+    fields = json_object_prepend("turnId", turn, fields)
+    fields = json_object_prepend("threadId", json_string goal.thread_id, fields)
+    json_object fields
+  };
 
-const materialize_thread_goal_cleared_notification: Text -> GoalResponseJson = (thread_id: Text) => {
-  json_object(json_object_prepend("threadId", json_string(thread_id), json_object_empty()))
-}
+const materialize_thread_goal_cleared_notification: Text -> GoalResponseJson = (thread_id:
+  Text) => {
+    json_object(json_object_prepend("threadId", json_string thread_id, json_object_empty()))
+  };
 
 return {
-  materialize_thread_goal,
-  materialize_thread_goal_set_response,
-  materialize_thread_goal_get_response,
-  materialize_thread_goal_clear_response,
-  materialize_thread_goal_updated_notification,
-  materialize_thread_goal_cleared_notification,
-}
+  .materialize_thread_goal,
+  .materialize_thread_goal_set_response,
+  .materialize_thread_goal_get_response,
+  .materialize_thread_goal_clear_response,
+  .materialize_thread_goal_updated_notification,
+  .materialize_thread_goal_cleared_notification,
+};

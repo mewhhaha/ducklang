@@ -1,5 +1,12 @@
 import { expect } from "../expect.ts";
-import type { Param, Pattern, PatternMode, Token, TypeExpr } from "./ast.ts";
+import type {
+  FrontExpr,
+  Param,
+  Pattern,
+  PatternMode,
+  Token,
+  TypeExpr,
+} from "./ast.ts";
 import { front_literal_expr } from "./literal.ts";
 import {
   expect_const_binding_name,
@@ -16,9 +23,11 @@ import { format_type_expr, parse_type_expr } from "./type_expr.ts";
 import { record_annotation_name_sites } from "./name_site.ts";
 import { pattern_bindings } from "./pattern.ts";
 
-export class ParserParams extends ParserCursor {
+export abstract class ParserParams extends ParserCursor {
   protected allow_pascal_type_names = 0;
   protected affine_call_names = new Set<string>();
+
+  protected abstract parse_expr(): FrontExpr;
 
   protected override parser_state(): import("./parser_cursor.ts").ParserState {
     const state = super.parser_state();
@@ -193,6 +202,12 @@ export class ParserParams extends ParserCursor {
     }
 
     if (this.match_symbol("#")) {
+      if (this.match_symbol("(")) {
+        const value = this.parse_expr();
+        this.expect_symbol(")");
+        return { tag: "const_value", value };
+      }
+
       const name = this.expect_name("Expected atom pattern name");
       expect_snake_case(name, "Atom pattern");
       return { tag: "literal", value: { tag: "atom", name } };
@@ -222,16 +237,18 @@ export class ParserParams extends ParserCursor {
     }
 
     if (this.match_symbol("{")) {
+      this.skip_newlines();
+
       if (
-        this.peek().kind === "name" ||
-        (this.peek().kind === "symbol" &&
-          (this.peek().text === "." || this.peek().text === "}"))
+        this.peek().kind === "symbol" &&
+        (this.peek().text === "." || this.peek().text === "}")
       ) {
         return this.parse_shape_pattern();
       }
 
       throw this.error(
-        "Product patterns use `{ .name = pattern }` or positional `[...]`",
+        "Product patterns use `{ .name }`, `{ .name = pattern }`, or " +
+          "positional `[...]`",
       );
     }
 
@@ -338,6 +355,10 @@ export class ParserParams extends ParserCursor {
     let rest: Pattern | undefined;
 
     while (true) {
+      if (this.match_symbol(")")) {
+        break;
+      }
+
       if (this.match_rest_prefix()) {
         expect(
           entries.length === 1,
@@ -423,6 +444,10 @@ export class ParserParams extends ParserCursor {
 
       this.expect_symbol(",");
       this.skip_newlines();
+
+      if (this.match_symbol("]")) {
+        break;
+      }
     }
 
     if (rest !== undefined) {
@@ -442,7 +467,7 @@ export class ParserParams extends ParserCursor {
 
     while (!this.match_symbol("}")) {
       const entry_start = this.index;
-      const explicit = this.match_symbol(".");
+      this.expect_symbol(".");
       const label = this.expect_name("Expected product pattern label");
       expect_snake_case(label, "Product pattern label");
       expect(!names.has(label), "Duplicate product pattern label: " + label);
@@ -454,7 +479,7 @@ export class ParserParams extends ParserCursor {
         annotation: undefined,
       };
 
-      if (explicit && this.match_symbol("=")) {
+      if (this.match_symbol("=")) {
         pattern = this.parse_pattern();
       } else if (this.match_symbol(":")) {
         const parsed = this.consume_annotation();
@@ -562,6 +587,10 @@ export class ParserParams extends ParserCursor {
   }
 
   protected expect_supported_name(name: string, label: string): void {
+    if (name === "loop") {
+      throw new Error(label + " is reserved syntax: loop");
+    }
+
     const feature = unsupported_reserved_feature(name);
 
     if (!feature) {
@@ -595,6 +624,7 @@ export class ParserParams extends ParserCursor {
   }
 
   protected expect_const_binding_name(name: string): void {
+    this.expect_supported_name(name, "Const binding");
     expect_const_binding_name(name);
   }
 
@@ -611,8 +641,23 @@ export class ParserParams extends ParserCursor {
     while (!this.is("eof")) {
       const token = this.peek();
 
+      if (token.kind === "newline") {
+        const previous = tokens.at(-1);
+        const continues_annotation = parens > 0 || brackets > 0 ||
+          braces > 0 || angles > 0 ||
+          (previous?.kind === "symbol" && previous.text === "->");
+
+        if (continues_annotation && token.raw !== ";") {
+          this.advance();
+          continue;
+        }
+
+        if (!continues_annotation) {
+          break;
+        }
+      }
+
       if (
-        (token.kind === "newline" && token.raw !== ";") ||
         (parens === 0 && brackets === 0 && braces === 0 && angles === 0 &&
           token.kind === "name" && token.text === "if") ||
         (parens === 0 && brackets === 0 && braces === 0 && angles === 0 &&

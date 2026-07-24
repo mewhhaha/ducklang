@@ -11,7 +11,17 @@ type McpToolVisibility =
   | `Hidden Unit
 
 type McpToolAnnotations = [McpBoolOption, McpBoolOption, McpBoolOption]
-type McpTool = [Text, Text, Text, Text, McpTextOption, McpTextOption, McpToolVisibility, Bool, McpToolAnnotations]
+type McpTool = [
+  Text,
+  Text,
+  Text,
+  Text,
+  McpTextOption,
+  McpTextOption,
+  McpToolVisibility,
+  Bool,
+  McpToolAnnotations,
+]
 type McpTools = List McpTool
 
 type McpToolRuntime = [McpTool, ToolExposure]
@@ -29,4 +39,4 @@ type McpApprovalDecision =
   | `AcceptAndRemember Unit
   | `Decline McpTextOption
 
-return {}
+return {};

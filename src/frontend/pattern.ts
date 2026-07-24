@@ -9,7 +9,8 @@ export function pattern_bindings(
 
   if (
     pattern.tag === "wildcard" || pattern.tag === "unit" ||
-    pattern.tag === "literal" || pattern.tag === "value" ||
+    pattern.tag === "literal" || pattern.tag === "const_value" ||
+    pattern.tag === "value" ||
     pattern.tag === "type"
   ) {
     return [];

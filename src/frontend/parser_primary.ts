@@ -58,9 +58,16 @@ export abstract class ParserPrimary extends ParserBlock {
     }
 
     if (this.match_name("handler")) {
-      throw this.error(
-        "Effect handlers use `Effect { ... }` literals instead of `handler`",
+      const effect = this.expect_name(
+        "Expected effect name after `handler`",
       );
+      expect(
+        this.effect_names.has(effect) ||
+          this.effect_instance_names.has(effect) ||
+          /^[A-Z][A-Za-z0-9]*$/.test(effect),
+        "Handler effect must use PascalCase: " + effect,
+      );
+      return this.parse_effect_handler_literal(effect);
     }
 
     if (this.match_name("comptime")) {
@@ -217,9 +224,6 @@ export abstract class ParserPrimary extends ParserBlock {
       }
 
       this.expect_supported_name(token.text, "Name");
-      const effect_literal = (this.effect_names.has(token.text) ||
-        /^[A-Z][A-Za-z0-9]*$/.test(token.text)) &&
-        this.peek().kind === "symbol" && this.peek().text === "{";
       const uppercase_application = /^[A-Z][A-Za-z0-9]*$/.test(token.text) &&
         (this.peek().kind === "name" ||
           (this.peek().kind === "symbol" &&
@@ -230,7 +234,6 @@ export abstract class ParserPrimary extends ParserBlock {
         !this.type_names.has(token.text) &&
         !this.effect_names.has(token.text) &&
         !uppercase_application &&
-        !effect_literal &&
         !/^[A-Z][A-Za-z0-9]*$/.test(token.text) &&
         !(
           /^[A-Z][A-Za-z0-9]*$/.test(token.text) &&

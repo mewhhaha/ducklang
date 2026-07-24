@@ -1,0 +1,74 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .plan_image_preparation } = import "./image_preparation_plan.duck" ();
+
+type FixtureImage = OutputImage
+type FixtureDetail = OutputImageDetail
+type FixtureDetailOption = OutputImageDetailOption
+type FixturePlanCase = [FixtureImage, I32, I32, I32, I32]
+type FixturePlanCases = List FixturePlanCase
+type FixturePlanCaseNode = ListNode FixturePlanCase
+
+const verify_image_preparation_plan_fixture: () -> I32 = () => {
+  let score = 0;
+  let no_detail: FixtureDetailOption = `None ();
+  let low: FixtureDetail = `Low ();
+  let low_detail: FixtureDetailOption = `Some low;
+  let high: FixtureDetail = `High ();
+  let high_detail: FixtureDetailOption = `Some high;
+  let original: FixtureDetail = `Original ();
+  let original_detail: FixtureDetailOption = `Some original;
+  let auto: FixtureDetail = `Auto ();
+  let auto_detail: FixtureDetailOption = `Some auto;
+
+  let cases: FixturePlanCases = `Nil ();
+  let image: FixtureImage = ["data:image/png;base64,MISSING", no_detail];
+  let plan_case: FixturePlanCase = [image, 1, 2048, 2500, 100000];
+  let case_node: FixturePlanCaseNode = [plan_case, cases];
+  cases = `Cons case_node
+  image = ["data:image/png;base64,AUTO", auto_detail]
+  plan_case = [image, 1, 2048, 2500, 100000]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+  image = ["data:image/png;base64,HIGH", high_detail]
+  plan_case = [image, 1, 2048, 2500, 10000]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+  image = ["DATA:image/png;base64,ORIGINAL", original_detail]
+  plan_case = [image, 1, 6000, 10000, 1000]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+  image = ["data:image/png;base64,LOW", low_detail]
+  plan_case = [image, 3, 0, 0, 100]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+  image = ["/workspace/image.png", low_detail]
+  plan_case = [image, 0, 0, 0, 10]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+  image = ["HTTPS://example.com/image.png", no_detail]
+  plan_case = [image, 2, 0, 0, 1]
+  case_node = [plan_case, cases]
+  cases = `Cons case_node
+
+  loop {
+    if let `Cons node = cases {
+      let [current_case, tail] = node;
+      let [current_image, expected_status, expected_dimension, expected_patches, weight] =
+        current_case;
+      let [expected_url, _] = current_image;
+      let plan = plan_image_preparation current_image;
+      if plan.status_code == expected_status && plan.image_url == expected_url && plan.max_dimension == expected_dimension && plan.max_patches == expected_patches {
+        score = score + weight
+      }
+      cases = tail
+    } else {
+      break;
+    }
+  }
+
+  score
+};
+
+return { .verify_image_preparation_plan_fixture };

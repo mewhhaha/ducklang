@@ -8,4 +8,4 @@ declare Init {
   wait_for_environment_host: WaitForEnvironmentHost
 }
 
-return {}
+return {};

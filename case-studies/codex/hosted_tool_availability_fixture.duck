@@ -1,5 +1,5 @@
-const { hosted_web_search_available } = import "./hosted_tool_availability.duck" ()
-const {} = import "./hosted_tool_types.duck" ()
+const { .hosted_web_search_available } = import "./hosted_tool_availability.duck" ();
+const {} = import "./hosted_tool_types.duck" ();
 
 type FixtureFacts = HostedToolAvailabilityFacts
 
@@ -9,8 +9,8 @@ let available: FixtureFacts = [
   .standalone_web_search = false,
   .has_web_run_executor = false,
   .provider_web_search = true,
-  .web_search_mode = `Live ()]
-let score = 0
+  .web_search_mode = `Live ()];
+let score = 0;
 if hosted_web_search_available available { score = score + 1 }
 
 let responses_lite: FixtureFacts = [
@@ -19,7 +19,7 @@ let responses_lite: FixtureFacts = [
   .standalone_web_search = false,
   .has_web_run_executor = false,
   .provider_web_search = true,
-  .web_search_mode = `Live ()]
+  .web_search_mode = `Live ()];
 if !(hosted_web_search_available responses_lite) { score = score + 10 }
 
 let standalone: FixtureFacts = [
@@ -28,15 +28,16 @@ let standalone: FixtureFacts = [
   .standalone_web_search = true,
   .has_web_run_executor = true,
   .provider_web_search = true,
-  .web_search_mode = `Live ()]
+  .web_search_mode = `Live ()];
 let missing_executor: FixtureFacts = [
   .use_responses_lite = false,
   .namespace_tools = true,
   .standalone_web_search = true,
   .has_web_run_executor = false,
   .provider_web_search = true,
-  .web_search_mode = `Live ()]
-if !(hosted_web_search_available standalone) && hosted_web_search_available missing_executor { score = score + 100 }
+  .web_search_mode = `Live ()];
+if !(hosted_web_search_available standalone) && hosted_web_search_available missing_executor { score
+  = score + 100 }
 
 let unsupported_provider: FixtureFacts = [
   .use_responses_lite = false,
@@ -44,7 +45,7 @@ let unsupported_provider: FixtureFacts = [
   .standalone_web_search = false,
   .has_web_run_executor = false,
   .provider_web_search = false,
-  .web_search_mode = `Live ()]
+  .web_search_mode = `Live ()];
 if !(hosted_web_search_available unsupported_provider) { score = score + 1000 }
 
 let disabled: FixtureFacts = [
@@ -53,7 +54,7 @@ let disabled: FixtureFacts = [
   .standalone_web_search = false,
   .has_web_run_executor = false,
   .provider_web_search = true,
-  .web_search_mode = `Disabled ()]
+  .web_search_mode = `Disabled ()];
 if !(hosted_web_search_available disabled) { score = score + 10000 }
 
 let namespace_tools_disabled: FixtureFacts = [
@@ -62,7 +63,7 @@ let namespace_tools_disabled: FixtureFacts = [
   .standalone_web_search = true,
   .has_web_run_executor = true,
   .provider_web_search = true,
-  .web_search_mode = `Live ()]
+  .web_search_mode = `Live ()];
 if hosted_web_search_available namespace_tools_disabled { score = score + 100000 }
 
-return { .score = score }
+return { .score = score };

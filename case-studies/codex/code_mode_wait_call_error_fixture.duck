@@ -1,20 +1,20 @@
 module () where
 
-const { plan_code_mode_wait_call } = import "./code_mode_wait.duck" ()
-const {} = import "./code_mode_wait_types.duck" ()
+const { .plan_code_mode_wait_call } = import "./code_mode_wait.duck" ();
+const {} = import "./code_mode_wait_types.duck" ();
 
 type FixtureCallPlan = CodeModeWaitCallPlan
 
-let score = 0
+let score = 0;
 
-let rejected: FixtureCallPlan = plan_code_mode_wait_call(`Function "{}")
+let rejected: FixtureCallPlan = plan_code_mode_wait_call(`Function "{}");
 if let `RejectRequest message = rejected {
   if message == "failed to parse function arguments: missing field `cell_id`" { score = score + 1 }
 }
 
-let unsupported: FixtureCallPlan = plan_code_mode_wait_call(`Unsupported ())
+let unsupported: FixtureCallPlan = plan_code_mode_wait_call(`Unsupported ());
 if let `Fatal message = unsupported {
   if message == "wait expects JSON arguments" { score = score + 10 }
 }
 
-return { .score = score }
+return { .score = score };

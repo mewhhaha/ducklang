@@ -1,5 +1,5 @@
 module () where
 
-const tool_search_tool_name: () -> [Text, Text] = () => ["", "tool_search"]
+const tool_search_tool_name: () -> [Text, Text] = () => ["", "tool_search"];
 
-return { tool_search_tool_name }
+return { .tool_search_tool_name };

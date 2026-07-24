@@ -1,15 +1,19 @@
 module () where
 
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { text_contains } = import "duck:prelude/runtime" ()
-const { parse_code_mode_schema } = import "./code_mode_schema_parse.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .text_contains } = import "duck:prelude/runtime" ();
+const { .parse_code_mode_schema } = import "./code_mode_schema_parse.duck" ();
 
-let score = 0
+let score = 0;
 
-let missing = parse_code_mode_schema("weather", "input", `CodeModeSchemaDocumentMissing ())
+let missing = parse_code_mode_schema("weather", "input", `CodeModeSchemaDocumentMissing ());
 if let `CodeModeParsedSchemaMissing () = missing { score = score + 1 }
 
-let parsed = parse_code_mode_schema("weather", "input", `CodeModeSchemaDocumentPresent "{\"type\":\"object\"}")
+let parsed = parse_code_mode_schema(
+  "weather",
+  "input",
+  `CodeModeSchemaDocumentPresent "{\"type\":\"object\"}",
+);
 if let `CodeModeParsedSchemaPresent schema = parsed {
   if let `Object object = schema {
     if let `Found value = json_object_get("type", object) {
@@ -20,9 +24,9 @@ if let `CodeModeParsedSchemaPresent schema = parsed {
   }
 }
 
-let invalid = parse_code_mode_schema("weather", "output", `CodeModeSchemaDocumentPresent "{")
+let invalid = parse_code_mode_schema("weather", "output", `CodeModeSchemaDocumentPresent "{");
 if let `CodeModeParsedSchemaFailed message = invalid {
   if text_contains(message, "tool weather output schema at byte") { score = score + 100 }
 }
 
-return { .score = score }
+return { .score = score };

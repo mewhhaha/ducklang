@@ -1,30 +1,33 @@
 module () where
 
-const {} = import "./view_image_types.duck" ()
-const { parse_view_image_args } = import "./view_image_json.duck" ()
+const {} = import "./view_image_types.duck" ();
+const { .parse_view_image_args } = import "./view_image_json.duck" ();
 
-let score = 0
+let score = 0;
 
-let invalid_detail = parse_view_image_args "{\"path\":\"a.png\",\"detail\":\"low\"}"
+let invalid_detail = parse_view_image_args "{\"path\":\"a.png\",\"detail\":\"low\"}";
 if let `ParseFailed message = invalid_detail {
   if message == "failed to parse function arguments: view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `low`" { score = score + 1 }
 }
 
-let nullable_unknown = parse_view_image_args "{\"path\":\"a.png\",\"environment_id\":null,\"detail\":null,\"future\":42}"
+let nullable_unknown =
+  parse_view_image_args "{\"path\":\"a.png\",\"environment_id\":null,\"detail\":null,\"future\":42}";
 if let `Parsed args = nullable_unknown {
-  let environment_valid = if let `ImageEnvironmentMissing () = args.environment_id { true } else { false }
-  let detail_valid = if let `ImageDetailMissing () = args.detail { true } else { false }
+  let environment_valid = if let `ImageEnvironmentMissing () = args.environment_id { true } else {
+    false };
+  let detail_valid = if let `ImageDetailMissing () = args.detail { true } else { false };
   if environment_valid && detail_valid { score = score + 10 }
 }
 
-let duplicate = parse_view_image_args "{\"path\":\"a.png\",\"path\":\"b.png\"}"
+let duplicate = parse_view_image_args "{\"path\":\"a.png\",\"path\":\"b.png\"}";
 if let `ParseFailed message = duplicate {
-  if message == "failed to parse function arguments: path is required exactly once" { score = score + 100 }
+  if message == "failed to parse function arguments: path is required exactly once" { score = score
+    + 100 }
 }
 
-let wrong_path = parse_view_image_args "{\"path\":42}"
+let wrong_path = parse_view_image_args "{\"path\":42}";
 if let `ParseFailed message = wrong_path {
   if message == "failed to parse function arguments: path must be a string" { score = score + 1000 }
 }
 
-return { .score = score }
+return { .score = score };

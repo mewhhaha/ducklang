@@ -1,7 +1,7 @@
 module (!init: Init) where
 
-const {} = import "./test_sync_types.duck" ()
-const { finish_test_sync_barrier } = import "./test_sync_policy.duck" ()
+const {} = import "./test_sync_types.duck" ();
+const { .finish_test_sync_barrier } = import "./test_sync_policy.duck" ();
 
 type SyncExecutionArgs = TestSyncArgs
 type SyncExecutionResult = TestSyncExecutionResult
@@ -12,11 +12,11 @@ let run_test_sync = (args: SyncExecutionArgs) => {
     if duration != "0" { _ <- TestSyncHost.sleep(&duration) }
   }
 
-  let result: SyncExecutionResult = `Completed "ok"
-  let continue_after_barrier = true
+  let result: SyncExecutionResult = `Completed "ok";
+  let continue_after_barrier = true;
   if let `SyncBarrierPresent barrier = args.barrier {
     host_result <- TestSyncHost.barrier(&barrier)
-    let barrier_result: SyncExecutionBarrierResult = host_result
+    let barrier_result: SyncExecutionBarrierResult = host_result;
     result = finish_test_sync_barrier(barrier.id, barrier_result)
     if let `Rejected _ = result { continue_after_barrier = false }
   }
@@ -28,6 +28,6 @@ let run_test_sync = (args: SyncExecutionArgs) => {
   }
 
   result
-}
+};
 
-return { run_test_sync }
+return { .run_test_sync };

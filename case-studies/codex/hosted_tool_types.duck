@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type HostedWebSearchMode =
   | `Cached Unit
@@ -21,4 +21,4 @@ type HostedToolAvailabilityFacts = struct {
   .web_search_mode = HostedWebSearchMode,
 }
 
-return {}
+return {};

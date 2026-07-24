@@ -1,24 +1,25 @@
 module () where
 
-const {} = import "./tool_types.duck" ()
-const { request_permissions_tool_definitions, request_permissions_tool_specs } = import "./request_permissions_registration.duck" ()
+const {} = import "./tool_types.duck" ();
+const { .request_permissions_tool_definitions, .request_permissions_tool_specs } =
+  import "./request_permissions_registration.duck" ();
 
 type FixtureDefinitions = ToolDefinitions
 type FixtureSpecs = ToolSpecs
 
 let definitions_score: I32 = scratch {
-  let score = 0
-  let no_environment: FixtureDefinitions = request_permissions_tool_definitions(false, true)
-  let disabled: FixtureDefinitions = request_permissions_tool_definitions(true, false)
+  let score = 0;
+  let no_environment: FixtureDefinitions = request_permissions_tool_definitions(false, true);
+  let disabled: FixtureDefinitions = request_permissions_tool_definitions(true, false);
   if let `Nil () = no_environment {
     if let `Nil () = disabled { score = score + 1 }
   }
 
-  let enabled: FixtureDefinitions = request_permissions_tool_definitions(true, true)
+  let enabled: FixtureDefinitions = request_permissions_tool_definitions(true, true);
   if let `Cons node = enabled {
-    let [definition, tail] = node
-    let [name, exposure, tool_handler, payload, parallel, waits] = definition
-    let [namespace, local_name] = name
+    let [definition, tail] = node;
+    let [name, exposure, tool_handler, payload, parallel, waits] = definition;
+    let [namespace, local_name] = name;
     if namespace == "" && local_name == "request_permissions" && !(parallel) && !(waits) {
       if let `Direct () = exposure {
         if let `RequestPermissions () = tool_handler {
@@ -31,19 +32,23 @@ let definitions_score: I32 = scratch {
   }
 
   score
-}
+};
 
 let specs_score: I32 = scratch {
-  let score = 0
-  let specs: FixtureSpecs = request_permissions_tool_specs(true, true)
+  let score = 0;
+  let specs: FixtureSpecs = request_permissions_tool_specs(true, true);
   if let `Cons node = specs {
-    let [spec, tail] = node
-    let [name, kind, description, parameters, output, strict] = spec
-    let [namespace, local_name] = name
-    let description_valid = description == "Request additional filesystem or network permissions from the user and wait for the client to grant a subset of the requested permission profile. Use environment_id to target a specific attached environment; omit it to use the primary environment. Relative filesystem paths resolve against the selected environment cwd. Granted permissions apply automatically to later shell-like commands in the current turn, or for the rest of the session if the client approves them at session scope."
-    let schema_valid = parameters == "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"permissions\":{\"type\":\"object\",\"properties\":{\"file_system\":{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant read access; omit when none are needed.\"},\"write\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant write access; omit when none are needed.\"}},\"additionalProperties\":false,\"description\":\"Filesystem access request.\"},\"network\":{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\",\"description\":\"True requests network access; false or omitted requests none.\"}},\"additionalProperties\":false,\"description\":\"Network access request.\"}},\"additionalProperties\":false,\"description\":\"Filesystem or network access request.\"},\"reason\":{\"type\":\"string\",\"description\":\"Optional short explanation for why additional permissions are needed.\"}},\"required\":[\"permissions\"],\"additionalProperties\":false}"
-    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false }
-    if namespace == "" && local_name == "request_permissions" && description_valid && schema_valid && output_valid && !(strict) {
+    let [spec, tail] = node;
+    let [name, kind, description, parameters, output, strict] = spec;
+    let [namespace, local_name] = name;
+    let description_valid =
+      description == "Request additional filesystem or network permissions from the user and wait for the client to grant a subset of the requested permission profile. Use environment_id to target a specific attached environment; omit it to use the primary environment. Relative filesystem paths resolve against the selected environment cwd. Granted permissions apply automatically to later shell-like commands in the current turn, or for the rest of the session if the client approves them at session scope.";
+    let schema_valid =
+      parameters == "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"permissions\":{\"type\":\"object\",\"properties\":{\"file_system\":{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant read access; omit when none are needed.\"},\"write\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant write access; omit when none are needed.\"}},\"additionalProperties\":false,\"description\":\"Filesystem access request.\"},\"network\":{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\",\"description\":\"True requests network access; false or omitted requests none.\"}},\"additionalProperties\":false,\"description\":\"Network access request.\"}},\"additionalProperties\":false,\"description\":\"Filesystem or network access request.\"},\"reason\":{\"type\":\"string\",\"description\":\"Optional short explanation for why additional permissions are needed.\"}},\"required\":[\"permissions\"],\"additionalProperties\":false}";
+    let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
+    if namespace == "" && local_name == "request_permissions" && description_valid && schema_valid && output_valid && !(
+      strict
+    ) {
       if let `FunctionSpec () = kind {
         if let `Nil () = tail { score = score + 100 }
       }
@@ -51,6 +56,6 @@ let specs_score: I32 = scratch {
   }
 
   score
-}
+};
 
-return { .score = definitions_score + specs_score }
+return { .score = definitions_score + specs_score };

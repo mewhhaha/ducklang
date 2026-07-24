@@ -1,21 +1,27 @@
 module (!init: Init) where
 
-const {} = import "./view_image_types.duck" ()
-const { plan_view_image_call } = import "./view_image_call.duck" ()
-const { run_view_image } = import "./view_image_execution.duck" ()
-const { view_image_output_json } = import "./view_image_output.duck" ()
+const {} = import "./view_image_types.duck" ();
+const { .plan_view_image_call } = import "./view_image_call.duck" ();
+const { .run_view_image } = import "./view_image_execution.duck" ();
+const { .view_image_output_json } = import "./view_image_output.duck" ();
 
 type FixtureEnvironment = ViewImageEnvironment
 type FixtureEnvironmentNode = ViewImageEnvironmentNode
 type FixtureEnvironments = ViewImageEnvironments
 
-let local: FixtureEnvironment = [.environment_id = "local", .cwd = "/workspace", .is_primary = true]
-let environments: FixtureEnvironments = `Cons ([local, `Nil ()] as FixtureEnvironmentNode)
-let score = 0
+let local: FixtureEnvironment = [.environment_id = "local", .cwd = "/workspace", .is_primary = true];
+let environments: FixtureEnvironments = `Cons ([local, `Nil ()] as FixtureEnvironmentNode);
+let score = 0;
 
-let loaded = plan_view_image_call("call-loaded", `Function "{\"path\":\"image.png\",\"detail\":\"original\"}", environments, true, true)
+let loaded = plan_view_image_call(
+  "call-loaded",
+  `Function "{\"path\":\"image.png\",\"detail\":\"original\"}",
+  environments,
+  true,
+  true,
+);
 if let `ReadImage prepared = loaded {
-  let result = run_view_image prepared
+  let result = run_view_image prepared;
   if let `Completed output = result {
     if output.image_url == "data:application/octet-stream;base64,Zm9v" && view_image_output_json output == "{\"image_url\":\"data:application/octet-stream;base64,Zm9v\",\"detail\":\"original\"}" {
       score = score + 1
@@ -23,12 +29,18 @@ if let `ReadImage prepared = loaded {
   }
 }
 
-let missing = plan_view_image_call("call-missing", `Function "{\"path\":\"missing.png\"}", environments, true, true)
+let missing = plan_view_image_call(
+  "call-missing",
+  `Function "{\"path\":\"missing.png\"}",
+  environments,
+  true,
+  true,
+);
 if let `ReadImage prepared = missing {
-  let result = run_view_image prepared
+  let result = run_view_image prepared;
   if let `Rejected message = result {
     if message == "image path `/workspace/missing.png` is not a file" { score = score + 10 }
   }
 }
 
-return { .score = score }
+return { .score = score };

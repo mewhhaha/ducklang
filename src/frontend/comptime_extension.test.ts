@@ -1,8 +1,7 @@
 import { assert_equals, assert_includes, assert_throws } from "../assert.ts";
-import { Core } from "../core.ts";
 import { Source } from "../frontend.ts";
 import { Ic } from "../ic.ts";
-import { Emit, Format } from "../trait.ts";
+import { Emit } from "../trait.ts";
 import { comptime_type_key, resolve_comptime_value } from "./comptime_value.ts";
 import { TestSource } from "./test_source.ts";
 
@@ -38,14 +37,14 @@ Deno.test("resolved comptime values preserve structural type shape", () => {
 Deno.test("computed type members defer const parameters until specialization", () => {
   const wat = Source.wat(`
 const attach_shape = (const shape) => {
-  let target = []
+  let target = [];
   target = target :+ ("shape", shape)
   target
-}
+};
 
-const target = attach_shape { .value = I32 }
-const value_type = target.shape.value
-let value: value_type = 42
+const target = attach_shape { .value = I32 };
+const value_type = target.shape.value;
+let value: value_type = 42;
 value
 `);
 
@@ -55,54 +54,124 @@ value
 Deno.test("type extensions accept shorthand member shapes after specialization", () => {
   const wat = Source.wat(`
 const attach_members = (const value_type) => {
-  let target = []
-  target = target :+ { value_type, .same_type = value_type }
+  let target = [];
+  target = target :+ { .value_type, .same_type = value_type }
   target
-}
+};
 
-const target = attach_members(I32)
-const result_type = target.value_type
-let value: result_type = 42
+const target = attach_members(I32);
+const result_type = target.value_type;
+let value: result_type = 42;
 value
 `);
 
   assert_includes(wat, "i32.const 42");
 });
 
-Deno.test("type extension syntax updates annotated runtime values", () => {
-  const core = Source.core(`
-const { struct } = import "duck:prelude" ()
+Deno.test("runtime merge syntax updates annotated values", () => {
+  const analysis = Source.analyze(
+    `
+const { .struct } = import "duck:prelude" ();
 type State = struct { .value = I32, .ready = Bool }
 
 let update: [State, I32] -> State = (state: State, value: I32) => {
-  state :+ { .value = value }
-}
+  state <& { .value = value }
+};
 
 update([.value = 0, .ready = true], 42).value
-`);
+`,
+    { route: "core" },
+  );
 
-  assert_includes(Format.fmt(Core, core), "state { value: value }");
+  assert_equals(analysis.diagnostics, []);
 });
 
-Deno.test("type extension syntax updates aliased runtime values", () => {
-  const core = Source.core(`
-const { struct } = import "duck:prelude" ()
+Deno.test("runtime merge syntax updates aliased values", () => {
+  const analysis = Source.analyze(
+    `
+const { .struct } = import "duck:prelude" ();
 type State = struct { .value = I32, .ready = Bool }
 
 let update: [State, I32] -> State = (state: State, value: I32) => {
-  let current: State = state
-  current :+ { .value = value }
-}
+  let current: State = state;
+  current <& { .value = value }
+};
 
 update([.value = 0, .ready = true], 42).value
-`);
+`,
+    { route: "core" },
+  );
 
-  assert_includes(Format.fmt(Core, core), "current { value: value }");
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("reverse runtime merge syntax accepts updates first", () => {
+  const analysis = Source.analyze(
+    `
+const { .struct } = import "duck:prelude" ();
+type State = struct { .value = I32, .ready = Bool }
+
+let state: State = State.new { .value = 0, .ready = true };
+({ .value = 42 } &> state).value
+`,
+    { route: "core" },
+  );
+
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("source-declared merge operators update runtime values", () => {
+  const analysis = Source.analyze(
+    `
+infixl 65 <+ = @merge
+
+const { .struct } = import "duck:prelude" ();
+type State = struct { .value = I32, .ready = Bool }
+
+let state: State = State.new { .value = 0, .ready = true };
+(state <+ { .value = 42 }).value
+`,
+    { route: "core" },
+  );
+
+  assert_equals(analysis.diagnostics, []);
+});
+
+Deno.test("concatenation syntax does not update structs", () => {
+  const analysis = Source.analyze(
+    `
+const { .struct } = import "duck:prelude" ();
+type State = struct { .value = I32 }
+
+let state: State = State.new { .value = 1 };
+state ++ { .value = 2 }
+`,
+    { route: "core" },
+  );
+
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.message),
+    ["Concatenation operators do not update structs; use `<&` or `&>`"],
+  );
+});
+
+Deno.test("type extension rejects runtime values", () => {
+  assert_throws(
+    () =>
+      Source.core(`
+const { .struct } = import "duck:prelude" ();
+type State = struct { .value = I32 }
+
+let state: State = State.new { .value = 1 };
+state :+ { .value = 2 }
+`),
+    "Runtime structural merge uses `<&` or `&>`; `:+` only extends compile-time values",
+  );
 });
 
 Deno.test("type match specializes a const function for a named type", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Name = Text
 type Player = struct {.name = Name, .score = Int}
 
@@ -110,7 +179,7 @@ const classify = target => match target {
   | struct { .name= Text, .. } => 40
   | union { .. } => 0
   | _ => 1
-}
+};
 
 classify(Player) + 2
 `);
@@ -122,7 +191,7 @@ classify(Player) + 2
 
 Deno.test("type descriptors expose record sum product and array layout", () => {
   const record = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Player = struct {.name = Text, .score = Int}
 @describe_type(Player).size + @describe_fields(Player)[1].offset
 `);
@@ -152,9 +221,9 @@ type Buffer = [Int; 3]
 
 Deno.test("type_of reifies a runtime value's declared type at compile time", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Player = struct {.name = Text, .score = I32}
-let player: Player = [.name = "Ada", .score = 42]
+let player: Player = [.name = "Ada", .score = 42];
 
 @describe_type(@type_of(player)).size
 `);
@@ -164,9 +233,9 @@ let player: Player = [.name = "Ada", .score = 42]
 
 Deno.test("type_of resolves a declared aggregate field type", () => {
   const wat = Source.ic_wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Player = struct {.name = Text, .score = I64}
-let player: Player = [.name = "Ada", .score = 42i64]
+let player: Player = [.name = "Ada", .score = 42i64];
 
 @size_of(@type_of(player.score))
 `);
@@ -176,10 +245,10 @@ let player: Player = [.name = "Ada", .score = 42i64]
 
 Deno.test("type_of preserves a structured compile-time parser result", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Config = struct {.length = I32}
-const parse_config: Text -> Config = text => [.length = @len(text)]
-const config = comptime parse_config("duck")
+const parse_config: Text -> Config = text => [.length = @len(text)];
+const config = comptime parse_config("duck");
 
 config.length + @describe_type(@type_of(config)).size
 `);
@@ -190,18 +259,18 @@ config.length + @describe_type(@type_of(config)).size
 
 Deno.test("type_of retains integer text and boolean literal types", () => {
   const integer = Source.wat(`
-const exact_type = @type_of(1)
-let value: exact_type = 1
+const exact_type = @type_of(1);
+let value: exact_type = 1;
 value
 `);
   const text = Source.wat(`
-const exact_type = @type_of("GET")
-let value: exact_type = "GET"
+const exact_type = @type_of("GET");
+let value: exact_type = "GET";
 @len(value)
 `);
   const boolean = Source.wat(`
-const exact_type = @type_of(true)
-let value: exact_type = true
+const exact_type = @type_of(true);
+let value: exact_type = true;
 if value { 1 } else { 0 }
 `);
 
@@ -211,8 +280,8 @@ if value { 1 } else { 0 }
   assert_throws(
     () =>
       Source.wat(`
-const exact_type = @type_of(1)
-let value: exact_type = 2
+const exact_type = @type_of(1);
+let value: exact_type = 2;
 value
 `),
     "annotation expects exact_type, got 2",
@@ -220,9 +289,9 @@ value
   assert_throws(
     () =>
       Source.wat(`
-const one = 1
-const exact_type = @type_of(one)
-let value: exact_type = 2
+const one = 1;
+const exact_type = @type_of(one);
+let value: exact_type = 2;
 value
 `),
     "annotation expects exact_type, got 2",
@@ -231,18 +300,18 @@ value
 
 Deno.test("@cast explicitly widens literal types", () => {
   const integer = Source.wat(`
-const wide_type = @type_of(@cast(1, I32))
-let value: wide_type = 2
+const wide_type = @type_of(@cast(1, I32));
+let value: wide_type = 2;
 value
 `);
   const text = Source.wat(`
-const wide_type = @type_of(@cast("GET", Text))
-let value: wide_type = "POST"
+const wide_type = @type_of(@cast("GET", Text));
+let value: wide_type = "POST";
 @len(value)
 `);
   const boolean = Source.wat(`
-const wide_type = @type_of(@cast(true, Bool))
-let value: wide_type = false
+const wide_type = @type_of(@cast(true, Bool));
+let value: wide_type = false;
 if value { 0 } else { 2 }
 `);
 
@@ -251,9 +320,9 @@ if value { 0 } else { 2 }
   assert_includes(boolean, "i32.const 2");
 
   const mutable = Source.wat(`
-let one = 1
-const wide_type = @type_of(one)
-let value: wide_type = 2
+let one = 1;
+const wide_type = @type_of(one);
+let value: wide_type = 2;
 value
 `);
   assert_includes(mutable, "i32.const 2");
@@ -268,7 +337,7 @@ Deno.test("type_of retains the storage width of suffixed literals", () => {
 Deno.test("type descriptors receive normalized const array lengths", () => {
   const wat = Source.wat(`
 type Buffer = [Int; width + 1]
-const width = 2
+const width = 2;
 
 @describe_type(Buffer).length
 `);
@@ -278,12 +347,12 @@ const width = 2
 
 Deno.test("const-directed construction and projection erase to fixed access", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Player = struct {.name = Int, .score = Int}
 
-const player_fields = @describe_fields(Player)
-const score_field = player_fields[1]
-let player = @construct(Player, [.name = 20, .score = 40])
+const player_fields = @describe_fields(Player);
+const score_field = player_fields[1];
+let player = @construct(Player, [.name = 20, .score = 40]);
 
 @project(player, score_field) + 2
 `);
@@ -296,19 +365,19 @@ let player = @construct(Player, [.name = 20, .score = 40])
 Deno.test("const-directed builders specialize construction inside loops", () => {
   const wat = Source.wat(`
 const sum_pair_for = (const pair_type) => value => {
-  let result = 0
+  let result = 0;
 
   loop {
-    let pair: pair_type = @construct(pair_type, [value, value + 1])
+    let pair: pair_type = @construct(pair_type, [value, value + 1]);
     result = pair[0] + pair[1]
-    break
+    break;
   }
 
   result
-}
+};
 
 type IntPair = [I32, I32]
-const sum_pair = comptime sum_pair_for(IntPair)
+const sum_pair = comptime sum_pair_for(IntPair);
 
 sum_pair 20
 `);
@@ -322,9 +391,9 @@ Deno.test("case descriptors construct inspect and project union cases", () => {
   const wat = Source.wat(`
 type Result = | \`Ok Int | \`Err Int
 
-const cases = @describe_cases(Result)
-const ok_case = cases[0]
-let result: Result = @construct(ok_case, 42)
+const cases = @describe_cases(Result);
+const ok_case = cases[0];
+let result: Result = @construct(ok_case, 42);
 
 if @is_case(result, ok_case) {
   @project(result, ok_case)
@@ -345,7 +414,7 @@ const factorial = rec (value, result) => {
   } else {
     rec(value - 1, result * value)
   }
-}
+};
 
 comptime factorial(5, 1)
 `);
@@ -362,7 +431,7 @@ const factorial = rec value => {
   } else {
     value * rec(value - 1)
   }
-}
+};
 
 comptime factorial(5)
 `);
@@ -379,7 +448,7 @@ const fibonacci = rec value => {
   } else {
     fibonacci(value - 1) + fibonacci(value - 2)
   }
-}
+};
 
 comptime fibonacci(20)
 `);
@@ -395,9 +464,9 @@ const countdown = rec value => {
   } else {
     [value, ...rec(value - 1)]
   }
-}
+};
 
-const values = comptime countdown(3)
+const values = comptime countdown(3);
 values[0] + values[2]
 `);
 
@@ -414,7 +483,7 @@ const factorial = rec value => {
   } else {
     value * factorial(value - 1)
   }
-}
+};
 
 comptime factorial(5)
 `);
@@ -430,7 +499,7 @@ const fold = rec (values, index, state, next) => {
   } else {
     rec(values, index + 1, next(state, values[index]), next)
   }
-}
+};
 
 comptime fold([1, 2, 3], 0, 0, (sum, value) => sum + value)
 `);
@@ -440,7 +509,7 @@ comptime fold([1, 2, 3], 0, 0, (sum, value) => sum + value)
 
 Deno.test("const fold derives a runtime record function from field descriptors", () => {
   const wat = Source.wat(`
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 type Player = struct {.left = Int, .right = Int}
 
 const fold = rec (values, index, state, next) => {
@@ -449,20 +518,20 @@ const fold = rec (values, index, state, next) => {
   } else {
     rec(values, index + 1, next(state, values[index]), next)
   }
-}
+};
 
 const add_field = (sum, field) => {
   value => sum(value) + @project(value, field)
-}
+};
 
 const derive_sum = (const target) => {
-  const fields = @describe_fields(target)
+  const fields = @describe_fields(target);
 
   fold(fields, 0, value => 0, add_field)
-}
+};
 
-const sum_player = comptime derive_sum(Player)
-let player: Player = [.left = 20, .right = 22]
+const sum_player = comptime derive_sum(Player);
+let player: Player = [.left = 20, .right = 22];
 sum_player(player)
 `);
 
@@ -477,7 +546,7 @@ Deno.test("comptime recursion reports repeated argument cycles", () => {
       Emit.emit(
         TestSource,
         TestSource.parse(`
-const forever = rec value => rec value
+const forever = rec value => rec value;
 comptime forever(1)
 `),
       ),

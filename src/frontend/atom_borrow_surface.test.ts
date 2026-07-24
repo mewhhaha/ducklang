@@ -3,7 +3,7 @@ import { format_source } from "./format.ts";
 import { parse_source } from "./parser.ts";
 
 Deno.test("atoms parse and borrows format canonically", () => {
-  const source = parse_source("let value = &#snake_case");
+  const source = parse_source("let value = &#snake_case;");
   const statement = source.statements[0];
 
   if (!statement || statement.tag !== "bind") {
@@ -14,10 +14,10 @@ Deno.test("atoms parse and borrows format canonically", () => {
     tag: "borrow",
     value: { tag: "atom", name: "snake_case" },
   });
-  assert_equals(format_source(source), "let value = &#snake_case");
+  assert_equals(format_source(source), "let value = &#snake_case;");
 });
 
 Deno.test("borrow is no longer a unary keyword", () => {
-  const source = parse_source("let value = borrow item");
-  assert_equals(format_source(source), "let value = borrow item");
+  const source = parse_source("let value = borrow item;");
+  assert_equals(format_source(source), "let value = borrow item;");
 });

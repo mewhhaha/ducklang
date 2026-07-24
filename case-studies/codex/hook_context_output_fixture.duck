@@ -1,17 +1,20 @@
 module () where
 
-const hook_output_types_module = import "./hook_output_types.duck"
-const hook_output_module = import "./hook_output.duck"
-const { parse_context_output } = hook_output_module()
+const hook_output_types_module = import "./hook_output_types.duck";
+const hook_output_module = import "./hook_output.duck";
+const { .parse_context_output } = hook_output_module();
 
 type FixtureContextParse = HookContextParse
 
-let parsed: FixtureContextParse = parse_context_output("SessionStart", "{\"continue\":false,\"stopReason\":\"pause\",\"systemMessage\":\"warn\",\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"remember\"}}")
-let score = 0
+let parsed: FixtureContextParse = parse_context_output(
+  "SessionStart",
+  "{\"continue\":false,\"stopReason\":\"pause\",\"systemMessage\":\"warn\",\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"remember\"}}",
+);
+let score = 0;
 
 if let `ContextOk output = parsed {
-  let [universal, additional_context] = output
-  let [continue_processing, stop_reason, _, system_message] = universal
+  let [universal, additional_context] = output;
+  let [continue_processing, stop_reason, _, system_message] = universal;
 
   if continue_processing {
     ()
@@ -32,4 +35,4 @@ if let `ContextOk output = parsed {
   }
 }
 
-return { .score = score }
+return { .score = score };

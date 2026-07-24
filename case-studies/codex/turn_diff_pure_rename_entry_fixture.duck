@@ -1,0 +1,5 @@
+module () where
+
+const { .verify_turn_diff_pure_rename_fixture } = import "./turn_diff_pure_rename_fixture.duck" ();
+
+return { .score = verify_turn_diff_pure_rename_fixture() };

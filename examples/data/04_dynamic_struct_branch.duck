@@ -1,6 +1,6 @@
 module (!init: Init) where
 
-const { struct } = import "duck:prelude" ()
+const { .struct } = import "duck:prelude" ();
 
 declare effect Input {
   flag: () => Bool
@@ -15,7 +15,7 @@ let point: Point = if flag {
   [40, 2]
 } else {
   [20, 22]
-}
+};
 
-let result: I32 = point.x + point.y
-return { .result = result }
+let result: I32 = point.x + point.y;
+return { .result = result };

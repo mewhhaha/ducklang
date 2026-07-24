@@ -1,0 +1,56 @@
+module () where
+
+const { .decode_utf8, .generate_bytes, .text_append } = import "duck:prelude/runtime" ();
+const { .finish_proposed_plan, .new_proposed_plan_parser, .push_proposed_plan_chunk } =
+  import "./proposed_plan.duck" ();
+
+type FixtureSegment = ProposedPlanSegment
+
+let vertical_tab = decode_utf8(generate_bytes(1, _ => 11));
+let form_feed = decode_utf8(generate_bytes(1, _ => 12));
+let padded_open = text_append [
+  vertical_tab,
+  text_append ["<proposed_plan>", text_append [form_feed, "\n"]],
+];
+let padded_close = text_append [
+  vertical_tab,
+  text_append ["</proposed_plan>", text_append [form_feed, "\n"]],
+];
+let source = text_append [padded_open, text_append ["step\n", padded_close]];
+let pushed = push_proposed_plan_chunk(new_proposed_plan_parser(), source);
+let [parser, visible_text, segments] = pushed;
+let finished = finish_proposed_plan parser;
+let [_, tail, finished_segments] = finished;
+let current = segments;
+let rendered = "";
+
+loop {
+  if let `Cons node = current {
+    let typed_node: ListNode FixtureSegment = node;
+    let [segment, remaining] = typed_node;
+
+    match segment {
+      | `Normal text => { rendered = text_append [
+        rendered,
+        text_append ["N(", text_append [text, ")"]],
+      ] }
+      | `ProposedPlanStart () => { rendered = text_append [rendered, "S"] }
+      | `ProposedPlanDelta text => { rendered = text_append [
+        rendered,
+        text_append ["D(", text_append [text, ")"]],
+      ] }
+      | `ProposedPlanEnd () => { rendered = text_append [rendered, "E"] }
+    }
+
+    current = remaining
+  } else {
+    break;
+  }
+}
+
+let no_finished_segments = if let `Nil () = finished_segments { true } else { false };
+let score =
+  if visible_text == "" && tail == "" && rendered == "SD(step\n)E" && no_finished_segments { 1
+  } else { 0 };
+
+return { .score = score };

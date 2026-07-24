@@ -1,28 +1,28 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const { parse_mcp_get, parse_mcp_list } = import "./cli_mcp.duck" ()
-const {} = import "./cli_types.duck" ()
+const { .list } = import "duck:prelude/functional" ();
+const { .parse_mcp_get, .parse_mcp_list } = import "./cli_mcp.duck" ();
+const {} = import "./cli_types.duck" ();
 
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexMcpCommandResult
 
-const args = comptime list(Text)
-let score = 0
+const args = comptime list Text;
+let score = 0;
 
-let listed: FixtureResult = parse_mcp_list(args.singleton("--json"))
+let listed: FixtureResult = parse_mcp_list(args.singleton("--json"));
 if let `Ok command = listed {
   if let `McpList json = command {
     if json { score = score + 1 }
   }
 }
 
-let get_args: FixtureArgs = args.prepend("server-a", args.singleton("--json"))
-let fetched: FixtureResult = parse_mcp_get(get_args)
+let get_args: FixtureArgs = args.prepend("server-a", args.singleton("--json"));
+let fetched: FixtureResult = parse_mcp_get get_args;
 if let `Ok command = fetched {
   if let `McpGet options = command {
     if options.name == "server-a" && options.json { score = score + 10 }
   }
 }
 
-return { .score = score }
+return { .score = score };

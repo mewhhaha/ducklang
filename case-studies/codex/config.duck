@@ -1,8 +1,8 @@
 module () where
 
-const { json_object, json_object_empty, merge_json } = import "duck:prelude/json" ()
-const { list, path_parent, text_append, text_starts_with } = import "duck:prelude/functional" ()
-const config_types_module = import "./config_types.duck"
+const { .json_object, .json_object_empty, .merge_json } = import "duck:prelude/json" ();
+const { .list, .path_parent, .text_append, .text_starts_with } = import "duck:prelude/functional" ();
+const config_types_module = import "./config_types.duck";
 
 type LayerTextOption = ConfigTextOption
 type LayerJsonOption = ConfigJsonOption
@@ -12,7 +12,7 @@ type Layers = ConfigLayers
 type LayerValidation = ConfigValidation
 type LayerJson = Json
 
-const layers = comptime list(Layer)
+const layers = comptime list Layer;
 
 const layer_precedence = (source: LayerSource) => if let `Mdm _ = source {
   0
@@ -21,7 +21,7 @@ const layer_precedence = (source: LayerSource) => if let `Mdm _ = source {
 } else if let `EnterpriseManaged _ = source {
   15
 } else if let `User user = source {
-  let [_, profile] = user
+  let [_, profile] = user;
 
   if let `Some _ = profile { 21 } else { 20 }
 } else if let `Project _ = source {
@@ -32,52 +32,52 @@ const layer_precedence = (source: LayerSource) => if let `Mdm _ = source {
   40
 } else {
   50
-}
+};
 
 const layer_is_disabled = (layer: Layer) => {
-  let [_, _, reason] = layer
+  let [_, _, reason] = layer;
 
   if let `Some _ = reason { true } else { false }
-}
+};
 
 const project_folder: LayerSource -> LayerTextOption = (source) => if let `Project folder = source {
   `Some folder
 } else {
   `None ()
-}
+};
 
 const path_is_strict_descendant = (path: Text, ancestor: Text) => {
   if path == ancestor {
     false
   } else if ancestor == "/" {
-    text_starts_with([path, "/"])
+    text_starts_with [path, "/"]
   } else {
-    text_starts_with([path, text_append([ancestor, "/"])])
+    text_starts_with [path, text_append [ancestor, "/"]]
   }
-}
+};
 
 const validate_layer_order: Layers -> LayerValidation = (values) => {
-  let current = values
-  let previous_precedence = -1
-  let previous_project: LayerTextOption = `None ()
-  let validation: LayerValidation = `Valid ()
-  let done = false
+  let current = values;
+  let previous_precedence = -1;
+  let previous_project: LayerTextOption = `None ();
+  let validation: LayerValidation = `Valid ();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [layer, tail] = node
-      let [source, _, _] = layer
-      let precedence = layer_precedence source
+      let [layer, tail] = node;
+      let [source, _, _] = layer;
+      let precedence = layer_precedence source;
 
       if precedence < previous_precedence {
         validation = `Invalid ("Config layers are not in precedence order")
         done = true
       } else {
-        let folder = project_folder source
+        let folder = project_folder source;
 
         if let `Some current_folder = folder {
           if let `Some previous_folder = previous_project {
-            let previous_root = path_parent previous_folder
+            let previous_root = path_parent previous_folder;
 
             if path_is_strict_descendant(current_folder, previous_root) {
               previous_project = `Some current_folder
@@ -98,22 +98,22 @@ const validate_layer_order: Layers -> LayerValidation = (values) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
   validation
-}
+};
 
 const effective_config = (values: Layers) => {
-  let current = values
-  let effective: LayerJson = json_object(json_object_empty())
-  let done = false
+  let current = values;
+  let effective: LayerJson = json_object(json_object_empty());
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [layer, tail] = node
-      let [_, config, _] = layer
+      let [layer, tail] = node;
+      let [_, config, _] = layer;
 
       if layer_is_disabled layer {
         ()
@@ -127,23 +127,23 @@ const effective_config = (values: Layers) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
   effective
-}
+};
 
 const effective_user_config: Layers -> LayerJsonOption = (values) => {
-  let current = values
-  let effective: LayerJson = json_object(json_object_empty())
-  let found = false
-  let done = false
+  let current = values;
+  let effective: LayerJson = json_object(json_object_empty());
+  let found = false;
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [layer, tail] = node
-      let [source, config, _] = layer
+      let [layer, tail] = node;
+      let [source, config, _] = layer;
 
       if layer_is_disabled layer {
         ()
@@ -158,7 +158,7 @@ const effective_user_config: Layers -> LayerJsonOption = (values) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
@@ -167,22 +167,22 @@ const effective_user_config: Layers -> LayerJsonOption = (values) => {
   } else {
     `None ()
   }
-}
+};
 
 const active_user_file: Layers -> LayerTextOption = (values) => {
-  let current = values
-  let file: LayerTextOption = `None ()
-  let done = false
+  let current = values;
+  let file: LayerTextOption = `None ();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [layer, tail] = node
-      let [source, _, _] = layer
+      let [layer, tail] = node;
+      let [source, _, _] = layer;
 
       if layer_is_disabled layer {
         ()
       } else if let `User user = source {
-        let [path, _] = user
+        let [path, _] = user;
         file = `Some path
       }
 
@@ -192,18 +192,18 @@ const active_user_file: Layers -> LayerTextOption = (values) => {
     }
 
     if done {
-      break
+      break;
     }
   }
 
   file
-}
+};
 
 return {
-  layer_precedence,
-  layer_is_disabled,
-  validate_layer_order,
-  effective_config,
-  effective_user_config,
-  active_user_file,
-}
+  .layer_precedence,
+  .layer_is_disabled,
+  .validate_layer_order,
+  .effective_config,
+  .effective_user_config,
+  .active_user_file,
+};

@@ -1,8 +1,17 @@
 module () where
 
-const { json_array, json_array_empty, json_null, json_number, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { format_i64 } = import "duck:prelude/numeric" ()
-const {} = import "./app_server_turn_types.duck" ()
+const {
+  .json_array,
+  .json_array_empty,
+  .json_null,
+  .json_number,
+  .json_object,
+  .json_object_empty,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json" ();
+const { .format_i64 } = import "duck:prelude/numeric" ();
+const {} = import "./app_server_turn_types.duck" ();
 
 type TurnJson = Json
 type TurnJsonArray = JsonArray
@@ -17,15 +26,15 @@ type Turn = AppServerTurn
 
 const optional_json = (value: TurnJsonOption) => {
   if let `Some json = value { json } else { json_null() }
-}
+};
 
 const optional_text_json = (value: TurnTextOption) => {
-  if let `Some text = value { json_string(text) } else { json_null() }
-}
+  if let `Some text = value { json_string text } else { json_null() }
+};
 
 const optional_i64_json = (value: TurnI64Option) => {
-  if let `Some number = value { json_number(format_i64(number)) } else { json_null() }
-}
+  if let `Some number = value { json_number(format_i64 number) } else { json_null() }
+};
 
 const turn_status_text = (status: TurnStatus) => {
   if let `Completed () = status {
@@ -37,7 +46,7 @@ const turn_status_text = (status: TurnStatus) => {
   } else {
     "inProgress"
   }
-}
+};
 
 const turn_items_view_text = (view: TurnItemsView) => {
   if let `NotLoaded () = view {
@@ -47,53 +56,59 @@ const turn_items_view_text = (view: TurnItemsView) => {
   } else {
     "full"
   }
-}
+};
 
 const turn_error_json = (error: TurnErrorOption) => {
   if let `Some details = error {
-    let [message, codex_error_info, additional_details] = details
-    let fields = json_object_empty()
-    fields = json_object_prepend("additionalDetails", optional_text_json(additional_details), fields)
-    fields = json_object_prepend("codexErrorInfo", optional_json(codex_error_info), fields)
-    fields = json_object_prepend("message", json_string(message), fields)
-    json_object(fields)
+    let [message, codex_error_info, additional_details] = details;
+    let fields = json_object_empty();
+    fields = json_object_prepend("additionalDetails", optional_text_json additional_details, fields)
+    fields = json_object_prepend("codexErrorInfo", optional_json codex_error_info, fields)
+    fields = json_object_prepend("message", json_string message, fields)
+    json_object fields
   } else {
     json_null()
   }
-}
+};
 
 const materialize_turn: Turn -> TurnJson = (turn: Turn) => {
-  let [id, items, items_view, status, error, started_at, completed_at, duration_ms] = turn
-  let fields = json_object_empty()
-  fields = json_object_prepend("durationMs", optional_i64_json(duration_ms), fields)
-  fields = json_object_prepend("completedAt", optional_i64_json(completed_at), fields)
-  fields = json_object_prepend("startedAt", optional_i64_json(started_at), fields)
-  fields = json_object_prepend("error", turn_error_json(error), fields)
-  fields = json_object_prepend("status", json_string(turn_status_text(status)), fields)
-  fields = json_object_prepend("itemsView", json_string(turn_items_view_text(items_view)), fields)
-  fields = json_object_prepend("items", json_array(items), fields)
-  fields = json_object_prepend("id", json_string(id), fields)
-  json_object(fields)
-}
+  let [id, items, items_view, status, error, started_at, completed_at, duration_ms] = turn;
+  let fields = json_object_empty();
+  fields = json_object_prepend("durationMs", optional_i64_json duration_ms, fields)
+  fields = json_object_prepend("completedAt", optional_i64_json completed_at, fields)
+  fields = json_object_prepend("startedAt", optional_i64_json started_at, fields)
+  fields = json_object_prepend("error", turn_error_json error, fields)
+  fields = json_object_prepend("status", json_string(turn_status_text status), fields)
+  fields = json_object_prepend("itemsView", json_string(turn_items_view_text items_view), fields)
+  fields = json_object_prepend("items", json_array items, fields)
+  fields = json_object_prepend("id", json_string id, fields)
+  json_object fields
+};
 
 const single_field_object = (name: Text, value: TurnJson) => {
   json_object(json_object_prepend(name, value, json_object_empty()))
-}
+};
 
-const materialize_turn_start_response = (turn: Turn) => single_field_object("turn", materialize_turn(turn))
+const materialize_turn_start_response = (turn: Turn) => single_field_object(
+  "turn",
+  materialize_turn turn,
+);
 
-const materialize_turn_steer_response = (turn_id: Text) => single_field_object("turnId", json_string(turn_id))
+const materialize_turn_steer_response = (turn_id: Text) => single_field_object(
+  "turnId",
+  json_string turn_id,
+);
 
 const materialize_turn_notification = (thread_id: Text, turn: Turn) => {
-  let fields = json_object_empty()
-  fields = json_object_prepend("turn", materialize_turn(turn), fields)
-  fields = json_object_prepend("threadId", json_string(thread_id), fields)
-  json_object(fields)
-}
+  let fields = json_object_empty();
+  fields = json_object_prepend("turn", materialize_turn turn, fields)
+  fields = json_object_prepend("threadId", json_string thread_id, fields)
+  json_object fields
+};
 
 return {
-  materialize_turn,
-  materialize_turn_start_response,
-  materialize_turn_steer_response,
-  materialize_turn_notification,
-}
+  .materialize_turn,
+  .materialize_turn_start_response,
+  .materialize_turn_steer_response,
+  .materialize_turn_notification,
+};

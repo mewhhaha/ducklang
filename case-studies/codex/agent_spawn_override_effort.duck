@@ -1,41 +1,62 @@
 module () where
 
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./agent_spawn_override_types.duck" ()
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./agent_spawn_override_types.duck" ();
 
 type SpawnOverrideEffortCatalog = AgentSpawnOverrideEfforts
 type SpawnOverrideEffortStageSelection = AgentSpawnOverrideSelection
 type SpawnOverrideEffortTextOption = AgentTextOption
 
-const select_spawn_override_effort: AgentSpawnOverrideEffortInput -> AgentSpawnOverrideResult = input => {
-  let selected_effort: SpawnOverrideEffortTextOption = input.default_reasoning_effort
-  if let `Some requested = input.requested_reasoning_effort { selected_effort = `Some requested }
-  if let `None () = selected_effort { selected_effort = input.model.default_reasoning_effort }
+const select_spawn_override_effort: AgentSpawnOverrideEffortInput -> AgentSpawnOverrideResult =
+  input => {
+    let selected_effort: SpawnOverrideEffortTextOption = input.default_reasoning_effort;
+    if let `Some requested = input.requested_reasoning_effort { selected_effort = `Some requested }
+    if let `None () = selected_effort { selected_effort = input.model.default_reasoning_effort }
 
-  if let `Some requested_effort = selected_effort {
-    let supported = false
-    let efforts: SpawnOverrideEffortCatalog = input.model.supported_reasoning_efforts
-    let available = ""
-    let done = false
-    loop {
-      if let `Cons node = efforts {
-        let [effort, tail] = node
-        if effort == requested_effort { supported = true }
-        if available == "" { available = effort } else { available = text_append(available, text_append(", ", effort)) }
-        efforts = tail
-      } else {
-        done = true
+    if let `Some requested_effort = selected_effort {
+      let supported = false;
+      let efforts: SpawnOverrideEffortCatalog = input.model.supported_reasoning_efforts;
+      let available = "";
+      let done = false;
+      loop {
+        if let `Cons node = efforts {
+          let [effort, tail] = node;
+          if effort == requested_effort { supported = true }
+          if available == "" { available = effort } else { available = text_append(
+            available,
+            text_append(", ", effort),
+          ) }
+          efforts = tail
+        } else {
+          done = true
+        }
+        if supported || done { break; }
       }
-      if supported || done { break }
+
+      if !(supported) {
+        return `SpawnOverrideRejected (
+          text_append(
+            "Reasoning effort `",
+            text_append(
+              requested_effort,
+              text_append(
+                "` is not supported for model `",
+                text_append(
+                  input.model.model,
+                  text_append("`. Supported reasoning efforts: ", available),
+                ),
+              ),
+            ),
+          )
+        );
+      }
     }
 
-    if !(supported) {
-      return `SpawnOverrideRejected (text_append("Reasoning effort `", text_append(requested_effort, text_append("` is not supported for model `", text_append(input.model.model, text_append("`. Supported reasoning efforts: ", available))))))
-    }
-  }
+    let selection: SpawnOverrideEffortStageSelection = [
+      .model = input.model.model,
+      .reasoning_effort = selected_effort,
+    ];
+    `SpawnOverrideSelected selection
+  };
 
-  let selection: SpawnOverrideEffortStageSelection = [.model = input.model.model, .reasoning_effort = selected_effort]
-  `SpawnOverrideSelected selection
-}
-
-return { select_spawn_override_effort }
+return { .select_spawn_override_effort };

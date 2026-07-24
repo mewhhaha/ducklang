@@ -1,9 +1,9 @@
 module () where
 
-const { json_object_get } = import "duck:prelude/json/values" ()
-const { text_append } = import "duck:prelude/text" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_account_types.duck" ()
+const { .json_object_get } = import "duck:prelude/json/values" ();
+const { .text_append } = import "duck:prelude/text" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_account_types.duck" ();
 
 type AccountMethodJson = AppServerJson
 type AccountMethodJsonLookup = JsonLookupResult
@@ -24,21 +24,25 @@ type AccountMethodTextOptionResult = Result Text AccountMethodTextOption
 type AccountMethodLoginBrandResult = Result Text AccountMethodLoginBrandOption
 
 let required_text: [JsonObject, Text, Text] -> AccountMethodTextResult = (object, key, context) => {
-  let lookup: AccountMethodJsonLookup = json_object_get(key, object)
+  let lookup: AccountMethodJsonLookup = json_object_get(key, object);
 
   if let `Found value = lookup {
     if let `String text = value {
       `Ok text
     } else {
-      `Err (text_append([context, text_append([".", text_append([key, " must be a string"])])]))
+      `Err (text_append [context, text_append [".", text_append [key, " must be a string"]]])
     }
   } else {
-    `Err (text_append([context, text_append([".", text_append([key, " is required"])])]))
+    `Err (text_append [context, text_append [".", text_append [key, " is required"]]])
   }
-}
+};
 
-let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (object, key, context) => {
-  let lookup: AccountMethodJsonLookup = json_object_get(key, object)
+let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (
+  object,
+  key,
+  context,
+) => {
+  let lookup: AccountMethodJsonLookup = json_object_get(key, object);
 
   if let `Found value = lookup {
     if let `Null () = value {
@@ -46,29 +50,31 @@ let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (
     } else if let `String text = value {
       `Ok (`Some text)
     } else {
-      `Err (text_append([context, text_append([".", text_append([key, " must be a string or null"])])]))
+      `Err (
+        text_append [context, text_append [".", text_append [key, " must be a string or null"]]]
+      )
     }
   } else {
     `Ok (`None ())
   }
-}
+};
 
 let default_bool: [JsonObject, Text, Text] -> AccountMethodBoolResult = (object, key, context) => {
-  let lookup: AccountMethodJsonLookup = json_object_get(key, object)
+  let lookup: AccountMethodJsonLookup = json_object_get(key, object);
 
   if let `Found value = lookup {
     if let `Bool boolean = value {
       `Ok boolean
     } else {
-      `Err (text_append([context, text_append([".", text_append([key, " must be a boolean"])])]))
+      `Err (text_append [context, text_append [".", text_append [key, " must be a boolean"]]])
     }
   } else {
     `Ok false
   }
-}
+};
 
 let decode_login_brand: [JsonObject, Text] -> AccountMethodLoginBrandResult = (object, context) => {
-  let lookup: AccountMethodJsonLookup = json_object_get("appBrand", object)
+  let lookup: AccountMethodJsonLookup = json_object_get("appBrand", object);
 
   if let `Found value = lookup {
     if let `Null () = value {
@@ -79,39 +85,47 @@ let decode_login_brand: [JsonObject, Text] -> AccountMethodLoginBrandResult = (o
       } else if brand == "chatgpt" {
         `Ok (`Some (`ChatgptBrand ()))
       } else {
-        `Err (text_append([context, ".appBrand has an unknown value"]))
+        `Err (text_append [context, ".appBrand has an unknown value"])
       }
     } else {
-      `Err (text_append([context, ".appBrand must be a string or null"]))
+      `Err (text_append [context, ".appBrand must be a string or null"])
     }
   } else {
     `Ok (`None ())
   }
-}
+};
 
 let decode_account_api_key_login: JsonObject -> AccountMethodLoginDecodeResult = object => {
-  let api_key: AccountMethodTextResult = required_text(object, "apiKey", "account/login/start.params")
+  let api_key: AccountMethodTextResult = required_text(
+    object,
+    "apiKey",
+    "account/login/start.params",
+  );
   if let `Ok value = api_key {
     let login: AccountMethodLoginParams = `AccountApiKeyLogin value
-    `AccountLoginOk login
+    `AccountLoginOk login;
   } else if let `Err reason = api_key {
     `AccountLoginError reason
   } else {
     `AccountLoginError "account/login/start.params.apiKey could not be decoded"
   }
-}
+};
 
 let decode_account_device_code_login: JsonObject -> AccountMethodLoginDecodeResult = object => {
-  let _ = object
+  let _ = object;
   let login: AccountMethodLoginParams = `AccountDeviceCodeLogin ()
-  `AccountLoginOk login
-}
+  `AccountLoginOk login;
+};
 
 let decode_account_chatgpt_login: JsonObject -> AccountMethodLoginDecodeResult = object => {
-  let context = "account/login/start.params"
-  let streamlined: AccountMethodBoolResult = default_bool(object, "codexStreamlinedLogin", context)
-  let hosted_page: AccountMethodBoolResult = default_bool(object, "useHostedLoginSuccessPage", context)
-  let brand: AccountMethodLoginBrandResult = decode_login_brand(object, context)
+  let context = "account/login/start.params";
+  let streamlined: AccountMethodBoolResult = default_bool(object, "codexStreamlinedLogin", context);
+  let hosted_page: AccountMethodBoolResult = default_bool(
+    object,
+    "useHostedLoginSuccessPage",
+    context,
+  );
+  let brand: AccountMethodLoginBrandResult = decode_login_brand(object, context);
 
   if let `Err reason = streamlined {
     `AccountLoginError reason
@@ -122,9 +136,9 @@ let decode_account_chatgpt_login: JsonObject -> AccountMethodLoginDecodeResult =
   } else if let `Ok streamlined_value = streamlined {
     if let `Ok hosted_page_value = hosted_page {
       if let `Ok brand_value = brand {
-        let chatgpt: AccountMethodChatgptLogin = [streamlined_value, hosted_page_value, brand_value]
+        let chatgpt: AccountMethodChatgptLogin = [streamlined_value, hosted_page_value, brand_value];
         let login: AccountMethodLoginParams = `AccountChatgptLogin chatgpt
-        `AccountLoginOk login
+        `AccountLoginOk login;
       } else {
         `AccountLoginError "account/login/start.params.appBrand could not be decoded"
       }
@@ -134,13 +148,13 @@ let decode_account_chatgpt_login: JsonObject -> AccountMethodLoginDecodeResult =
   } else {
     `AccountLoginError "account/login/start.params.codexStreamlinedLogin could not be decoded"
   }
-}
+};
 
 let decode_account_auth_tokens_login: JsonObject -> AccountMethodLoginDecodeResult = object => {
-  let context = "account/login/start.params"
-  let access_token: AccountMethodTextResult = required_text(object, "accessToken", context)
-  let account_id: AccountMethodTextResult = required_text(object, "chatgptAccountId", context)
-  let plan_type: AccountMethodTextOptionResult = optional_text(object, "chatgptPlanType", context)
+  let context = "account/login/start.params";
+  let access_token: AccountMethodTextResult = required_text(object, "accessToken", context);
+  let account_id: AccountMethodTextResult = required_text(object, "chatgptAccountId", context);
+  let plan_type: AccountMethodTextOptionResult = optional_text(object, "chatgptPlanType", context);
 
   if let `Err reason = access_token {
     `AccountLoginError reason
@@ -151,9 +165,13 @@ let decode_account_auth_tokens_login: JsonObject -> AccountMethodLoginDecodeResu
   } else if let `Ok access_token_value = access_token {
     if let `Ok account_id_value = account_id {
       if let `Ok plan_type_value = plan_type {
-        let tokens: AccountMethodAuthTokensLogin = [access_token_value, account_id_value, plan_type_value]
+        let tokens: AccountMethodAuthTokensLogin = [
+          access_token_value,
+          account_id_value,
+          plan_type_value,
+        ];
         let login: AccountMethodLoginParams = `AccountAuthTokensLogin tokens
-        `AccountLoginOk login
+        `AccountLoginOk login;
       } else {
         `AccountLoginError "account/login/start.params.chatgptPlanType could not be decoded"
       }
@@ -163,12 +181,12 @@ let decode_account_auth_tokens_login: JsonObject -> AccountMethodLoginDecodeResu
   } else {
     `AccountLoginError "account/login/start.params.accessToken could not be decoded"
   }
-}
+};
 
 let decode_account_bedrock_login: JsonObject -> AccountMethodLoginDecodeResult = object => {
-  let context = "account/login/start.params"
-  let api_key: AccountMethodTextResult = required_text(object, "apiKey", context)
-  let region: AccountMethodTextResult = required_text(object, "region", context)
+  let context = "account/login/start.params";
+  let api_key: AccountMethodTextResult = required_text(object, "apiKey", context);
+  let region: AccountMethodTextResult = required_text(object, "region", context);
 
   if let `Err reason = api_key {
     `AccountLoginError reason
@@ -176,25 +194,29 @@ let decode_account_bedrock_login: JsonObject -> AccountMethodLoginDecodeResult =
     `AccountLoginError reason
   } else if let `Ok api_key_value = api_key {
     if let `Ok region_value = region {
-      let bedrock: AccountMethodBedrockLogin = [api_key_value, region_value]
+      let bedrock: AccountMethodBedrockLogin = [api_key_value, region_value];
       let login: AccountMethodLoginParams = `AccountBedrockLogin bedrock
-      `AccountLoginOk login
+      `AccountLoginOk login;
     } else {
       `AccountLoginError "account/login/start.params.region could not be decoded"
     }
   } else {
     `AccountLoginError "account/login/start.params.apiKey could not be decoded"
   }
-}
+};
 
 let decode_account_login_start: AccountMethodJson -> AccountMethodDecodeResult = params => {
   if let `Object object = params {
-    let type_result: AccountMethodTextResult = required_text(object, "type", "account/login/start.params")
+    let type_result: AccountMethodTextResult = required_text(
+      object,
+      "type",
+      "account/login/start.params",
+    );
 
     if let `Err reason = type_result {
       `AccountMethodError reason
     } else if let `Ok login_type = type_result {
-      let kind: AccountMethodLoginKind = `ApiKeyLoginKind ()
+      let kind: AccountMethodLoginKind = `ApiKeyLoginKind ();
 
       if login_type == "apiKey" {
         kind = `ApiKeyLoginKind ()
@@ -207,22 +229,26 @@ let decode_account_login_start: AccountMethodJson -> AccountMethodDecodeResult =
       } else if login_type == "amazonBedrock" {
         kind = `BedrockLoginKind ()
       } else {
-        return `AccountMethodError "account/login/start.params.type has an unknown value"
+        return `AccountMethodError "account/login/start.params.type has an unknown value";
       }
 
       let route: AccountMethodLoginRoute = [kind, params]
-      `AccountMethodOk (`AccountLoginStart route)
+      `AccountMethodOk (`AccountLoginStart route);
     } else {
       `AccountMethodError "account/login/start.params.type could not be decoded"
     }
   } else {
     `AccountMethodError "account/login/start.params must be an object"
   }
-}
+};
 
 let decode_account_login_cancel: AccountMethodJson -> AccountMethodDecodeResult = params => {
   if let `Object object = params {
-    let login_id: AccountMethodTextResult = required_text(object, "loginId", "account/login/cancel.params")
+    let login_id: AccountMethodTextResult = required_text(
+      object,
+      "loginId",
+      "account/login/cancel.params",
+    );
     if let `Ok value = login_id {
       `AccountMethodOk (`AccountLoginCancel value)
     } else if let `Err reason = login_id {
@@ -233,11 +259,15 @@ let decode_account_login_cancel: AccountMethodJson -> AccountMethodDecodeResult 
   } else {
     `AccountMethodError "account/login/cancel.params must be an object"
   }
-}
+};
 
 let decode_account_read: AccountMethodJson -> AccountMethodDecodeResult = params => {
   if let `Object object = params {
-    let refresh: AccountMethodBoolResult = default_bool(object, "refreshToken", "account/read.params")
+    let refresh: AccountMethodBoolResult = default_bool(
+      object,
+      "refreshToken",
+      "account/read.params",
+    );
     if let `Ok value = refresh {
       `AccountMethodOk (`AccountRead value)
     } else if let `Err reason = refresh {
@@ -248,88 +278,103 @@ let decode_account_read: AccountMethodJson -> AccountMethodDecodeResult = params
   } else {
     `AccountMethodError "account/read.params must be an object"
   }
-}
+};
 
-let decode_account_rate_limit_reset_consume: AccountMethodJson -> AccountMethodDecodeResult = params => {
-  if let `Object object = params {
-    let context = "account/rateLimitResetCredit/consume.params"
-    let idempotency_key: AccountMethodTextResult = required_text(object, "idempotencyKey", context)
-    let credit_id: AccountMethodTextOptionResult = optional_text(object, "creditId", context)
+let decode_account_rate_limit_reset_consume: AccountMethodJson -> AccountMethodDecodeResult =
+  params => {
+    if let `Object object = params {
+      let context = "account/rateLimitResetCredit/consume.params";
+      let idempotency_key: AccountMethodTextResult = required_text(
+        object,
+        "idempotencyKey",
+        context,
+      );
+      let credit_id: AccountMethodTextOptionResult = optional_text(object, "creditId", context);
 
-    if let `Err reason = idempotency_key {
-      `AccountMethodError reason
-    } else if let `Err reason = credit_id {
-      `AccountMethodError reason
-    } else if let `Ok idempotency_key_value = idempotency_key {
-      if let `Ok credit_id_value = credit_id {
-        let decoded: AccountMethodRateLimitResetParams = [idempotency_key_value, credit_id_value]
-        `AccountMethodOk (`AccountRateLimitResetConsume decoded)
+      if let `Err reason = idempotency_key {
+        `AccountMethodError reason
+      } else if let `Err reason = credit_id {
+        `AccountMethodError reason
+      } else if let `Ok idempotency_key_value = idempotency_key {
+        if let `Ok credit_id_value = credit_id {
+          let decoded: AccountMethodRateLimitResetParams = [idempotency_key_value, credit_id_value]
+          `AccountMethodOk (`AccountRateLimitResetConsume decoded);
+        } else {
+          `AccountMethodError "account/rateLimitResetCredit/consume.params.creditId could not be decoded"
+        }
       } else {
-        `AccountMethodError "account/rateLimitResetCredit/consume.params.creditId could not be decoded"
+        `AccountMethodError "account/rateLimitResetCredit/consume.params.idempotencyKey could not be decoded"
       }
     } else {
-      `AccountMethodError "account/rateLimitResetCredit/consume.params.idempotencyKey could not be decoded"
+      `AccountMethodError "account/rateLimitResetCredit/consume.params must be an object"
     }
-  } else {
-    `AccountMethodError "account/rateLimitResetCredit/consume.params must be an object"
   }
-}
 
-let decode_account_send_add_credits_nudge: AccountMethodJson -> AccountMethodDecodeResult = params => {
-  if let `Object object = params {
-    let credit_type: AccountMethodTextResult = required_text(object, "creditType", "account/sendAddCreditsNudgeEmail.params")
-    if let `Ok value = credit_type {
-      if value == "credits" {
-        `AccountMethodOk (`AccountSendAddCreditsNudge (`CreditsNudge ()))
-      } else if value == "usage_limit" {
-        `AccountMethodOk (`AccountSendAddCreditsNudge (`UsageLimitNudge ()))
+let decode_account_send_add_credits_nudge: AccountMethodJson -> AccountMethodDecodeResult =
+  params => {
+    if let `Object object = params {
+      let credit_type: AccountMethodTextResult = required_text(
+        object,
+        "creditType",
+        "account/sendAddCreditsNudgeEmail.params",
+      );
+      if let `Ok value = credit_type {
+        if value == "credits" {
+          `AccountMethodOk (`AccountSendAddCreditsNudge (`CreditsNudge ()))
+        } else if value == "usage_limit" {
+          `AccountMethodOk (`AccountSendAddCreditsNudge (`UsageLimitNudge ()))
+        } else {
+          `AccountMethodError "account/sendAddCreditsNudgeEmail.params.creditType has an unknown value"
+        }
+      } else if let `Err reason = credit_type {
+        `AccountMethodError reason
       } else {
-        `AccountMethodError "account/sendAddCreditsNudgeEmail.params.creditType has an unknown value"
+        `AccountMethodError "account/sendAddCreditsNudgeEmail.params.creditType could not be decoded"
       }
-    } else if let `Err reason = credit_type {
-      `AccountMethodError reason
     } else {
-      `AccountMethodError "account/sendAddCreditsNudgeEmail.params.creditType could not be decoded"
+      `AccountMethodError "account/sendAddCreditsNudgeEmail.params must be an object"
     }
-  } else {
-    `AccountMethodError "account/sendAddCreditsNudgeEmail.params must be an object"
   }
-}
 
-let decode_account_method: [Text, AccountMethodJson] -> AccountMethodDecodeResult = (name, params) => {
-  if name == "account/login/start" {
-    decode_account_login_start(params)
-  } else if name == "account/login/cancel" {
-    decode_account_login_cancel(params)
-  } else if name == "account/logout" {
-    if let `Null () = params { `AccountMethodOk (`AccountLogout ()) } else { `AccountMethodError "account/logout.params must be null" }
-  } else if name == "account/read" {
-    decode_account_read(params)
-  } else if name == "account/rateLimits/read" {
-    if let `Null () = params { `AccountMethodOk (`AccountRateLimitsRead ()) } else { `AccountMethodError "account/rateLimits/read.params must be null" }
-  } else if name == "account/rateLimitResetCredit/consume" {
-    decode_account_rate_limit_reset_consume(params)
-  } else if name == "account/usage/read" {
-    if let `Null () = params { `AccountMethodOk (`AccountUsageRead ()) } else { `AccountMethodError "account/usage/read.params must be null" }
-  } else if name == "account/workspaceMessages/read" {
-    if let `Null () = params { `AccountMethodOk (`AccountWorkspaceMessagesRead ()) } else { `AccountMethodError "account/workspaceMessages/read.params must be null" }
-  } else if name == "account/sendAddCreditsNudgeEmail" {
-    decode_account_send_add_credits_nudge(params)
-  } else {
-    `AccountMethodError "unknown account method"
-  }
-}
+let decode_account_method: [Text, AccountMethodJson] -> AccountMethodDecodeResult = (name,
+  params) => {
+    if name == "account/login/start" {
+      decode_account_login_start params
+    } else if name == "account/login/cancel" {
+      decode_account_login_cancel params
+    } else if name == "account/logout" {
+      if let `Null () = params { `AccountMethodOk (`AccountLogout ()) } else { `AccountMethodError
+        "account/logout.params must be null" }
+    } else if name == "account/read" {
+      decode_account_read params
+    } else if name == "account/rateLimits/read" {
+      if let `Null () = params { `AccountMethodOk (`AccountRateLimitsRead ()) } else {
+        `AccountMethodError "account/rateLimits/read.params must be null" }
+    } else if name == "account/rateLimitResetCredit/consume" {
+      decode_account_rate_limit_reset_consume params
+    } else if name == "account/usage/read" {
+      if let `Null () = params { `AccountMethodOk (`AccountUsageRead ()) } else {
+        `AccountMethodError "account/usage/read.params must be null" }
+    } else if name == "account/workspaceMessages/read" {
+      if let `Null () = params { `AccountMethodOk (`AccountWorkspaceMessagesRead ()) } else {
+        `AccountMethodError "account/workspaceMessages/read.params must be null" }
+    } else if name == "account/sendAddCreditsNudgeEmail" {
+      decode_account_send_add_credits_nudge params
+    } else {
+      `AccountMethodError "unknown account method"
+    }
+  };
 
 return {
-  decode_account_api_key_login,
-  decode_account_auth_tokens_login,
-  decode_account_bedrock_login,
-  decode_account_chatgpt_login,
-  decode_account_device_code_login,
-  decode_account_method,
-  decode_account_login_start,
-  decode_account_login_cancel,
-  decode_account_read,
-  decode_account_rate_limit_reset_consume,
-  decode_account_send_add_credits_nudge,
-}
+  .decode_account_api_key_login,
+  .decode_account_auth_tokens_login,
+  .decode_account_bedrock_login,
+  .decode_account_chatgpt_login,
+  .decode_account_device_code_login,
+  .decode_account_method,
+  .decode_account_login_start,
+  .decode_account_login_cancel,
+  .decode_account_read,
+  .decode_account_rate_limit_reset_consume,
+  .decode_account_send_add_credits_nudge,
+};

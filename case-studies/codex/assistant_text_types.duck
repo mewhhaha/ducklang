@@ -1,0 +1,24 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./citation_parser.duck" ();
+const {} = import "./proposed_plan_types.duck" ();
+
+type AssistantTextMode =
+  | `NormalAssistantText Unit
+  | `PlanAssistantText Unit
+
+type AssistantTextParser = struct {
+  .mode = AssistantTextMode,
+  .citation_parser = CitationParser,
+  .proposed_plan_parser = ProposedPlanParser,
+}
+
+type AssistantTextChunk = struct {
+  .parser = AssistantTextParser,
+  .visible_text = Text,
+  .citations = Citations,
+  .plan_segments = ProposedPlanSegments,
+}
+
+return {};

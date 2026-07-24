@@ -1,7 +1,7 @@
 module () where
 
-const {} = import "duck:prelude/types" ()
-const {} = import "./tool_types.duck" ()
+const {} = import "duck:prelude/types" ();
+const {} = import "./tool_types.duck" ();
 
 type PermissionsToolDefinition = ToolDefinition
 type PermissionsToolDefinitionNode = ToolDefinitionNode
@@ -11,36 +11,57 @@ type PermissionsToolSpec = ToolSpec
 type PermissionsToolSpecNode = ToolSpecNode
 type PermissionsToolSpecs = ToolSpecs
 
-const request_permissions_tool_name: () -> PermissionsToolName = () => ["", "request_permissions"]
+const request_permissions_tool_name: () -> PermissionsToolName = () => ["", "request_permissions"];
 
 const request_permissions_tool_description: () -> Text = () => {
   "Request additional filesystem or network permissions from the user and wait for the client to grant a subset of the requested permission profile. Use environment_id to target a specific attached environment; omit it to use the primary environment. Relative filesystem paths resolve against the selected environment cwd. Granted permissions apply automatically to later shell-like commands in the current turn, or for the rest of the session if the client approves them at session scope."
-}
+};
 
-const request_permissions_tool_definitions: [Bool, Bool] -> PermissionsToolDefinitions = (has_environment: Bool, feature_enabled: Bool) => {
+const request_permissions_tool_definitions: [Bool, Bool] -> PermissionsToolDefinitions = (
+  has_environment: Bool,
+  feature_enabled: Bool,
+) => {
   if has_environment && feature_enabled {
-    let definition: PermissionsToolDefinition = [request_permissions_tool_name(), `Direct (), `RequestPermissions (), `FunctionPayload (), false, false]
-    let empty: PermissionsToolDefinitions = `Nil ()
+    let definition: PermissionsToolDefinition = [
+      request_permissions_tool_name(),
+      `Direct (),
+      `RequestPermissions (),
+      `FunctionPayload (),
+      false,
+      false,
+    ];
+    let empty: PermissionsToolDefinitions = `Nil ();
     `Cons ([definition, empty] as PermissionsToolDefinitionNode)
   } else {
     `Nil ()
   }
-}
+};
 
-const request_permissions_tool_specs: [Bool, Bool] -> PermissionsToolSpecs = (has_environment: Bool, feature_enabled: Bool) => {
+const request_permissions_tool_specs: [Bool, Bool] -> PermissionsToolSpecs = (
+  has_environment: Bool,
+  feature_enabled: Bool,
+) => {
   if has_environment && feature_enabled {
-    let parameters = "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"permissions\":{\"type\":\"object\",\"properties\":{\"file_system\":{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant read access; omit when none are needed.\"},\"write\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant write access; omit when none are needed.\"}},\"additionalProperties\":false,\"description\":\"Filesystem access request.\"},\"network\":{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\",\"description\":\"True requests network access; false or omitted requests none.\"}},\"additionalProperties\":false,\"description\":\"Network access request.\"}},\"additionalProperties\":false,\"description\":\"Filesystem or network access request.\"},\"reason\":{\"type\":\"string\",\"description\":\"Optional short explanation for why additional permissions are needed.\"}},\"required\":[\"permissions\"],\"additionalProperties\":false}"
-    let spec: PermissionsToolSpec = [request_permissions_tool_name(), `FunctionSpec (), request_permissions_tool_description(), parameters, `ToolOutputSchemaMissing (), false]
-    let empty: PermissionsToolSpecs = `Nil ()
+    let parameters =
+      "{\"type\":\"object\",\"properties\":{\"environment_id\":{\"type\":\"string\",\"description\":\"Environment id from <environment_context>. Omit to use the primary environment.\"},\"permissions\":{\"type\":\"object\",\"properties\":{\"file_system\":{\"type\":\"object\",\"properties\":{\"read\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant read access; omit when none are needed.\"},\"write\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Absolute paths to grant write access; omit when none are needed.\"}},\"additionalProperties\":false,\"description\":\"Filesystem access request.\"},\"network\":{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\",\"description\":\"True requests network access; false or omitted requests none.\"}},\"additionalProperties\":false,\"description\":\"Network access request.\"}},\"additionalProperties\":false,\"description\":\"Filesystem or network access request.\"},\"reason\":{\"type\":\"string\",\"description\":\"Optional short explanation for why additional permissions are needed.\"}},\"required\":[\"permissions\"],\"additionalProperties\":false}";
+    let spec: PermissionsToolSpec = [
+      request_permissions_tool_name(),
+      `FunctionSpec (),
+      request_permissions_tool_description(),
+      parameters,
+      `ToolOutputSchemaMissing (),
+      false,
+    ];
+    let empty: PermissionsToolSpecs = `Nil ();
     `Cons ([spec, empty] as PermissionsToolSpecNode)
   } else {
     `Nil ()
   }
-}
+};
 
 return {
-  request_permissions_tool_name,
-  request_permissions_tool_description,
-  request_permissions_tool_definitions,
-  request_permissions_tool_specs,
-}
+  .request_permissions_tool_name,
+  .request_permissions_tool_description,
+  .request_permissions_tool_definitions,
+  .request_permissions_tool_specs,
+};

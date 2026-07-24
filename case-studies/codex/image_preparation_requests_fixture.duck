@@ -1,0 +1,86 @@
+module () where
+
+const {} = import "./image_preparation_types.duck" ();
+const { .collect_image_processing_requests } = import "./image_preparation_requests.duck" ();
+
+type FixtureContent = HistoryContent
+type FixtureContentNode = ListNode HistoryContent
+type FixtureContents = HistoryContents
+type FixtureResponseNode = ListNode HistoryItem
+type FixtureResponses = HistoryItems
+type FixtureRequest = ImageProcessingRequest
+type FixtureRequests = ImageProcessingRequests
+type FixtureDetail = OutputImageDetail
+type FixtureDetailOption = OutputImageDetailOption
+
+const verify_image_preparation_requests_fixture: () -> I32 = () => {
+  let no_detail: FixtureDetailOption = `None ();
+  let low: FixtureDetail = `Low ();
+  let low_detail: FixtureDetailOption = `Some low;
+  let high: FixtureDetail = `High ();
+  let high_detail: FixtureDetailOption = `Some high;
+  let original: FixtureDetail = `Original ();
+  let original_detail: FixtureDetailOption = `Some original;
+
+  let message_contents: FixtureContents = `Nil ();
+  let content_node: FixtureContentNode = [
+    `InputImage (["data:image/png;base64,HIGH", high_detail]),
+    message_contents,
+  ];
+  message_contents = `Cons content_node
+  content_node = [`InputImage (["https://example.com/remote.png", no_detail]), message_contents]
+  message_contents = `Cons content_node
+
+  let function_contents: FixtureContents = `Nil ();
+  content_node = [
+    `InputImage (["data:image/png;base64,ORIGINAL", original_detail]),
+    function_contents,
+  ]
+  function_contents = `Cons content_node
+  content_node = [`InputImage (["/workspace/local.png", no_detail]), function_contents]
+  function_contents = `Cons content_node
+
+  let custom_contents: FixtureContents = `Nil ();
+  content_node = [`InputImage (["data:image/png;base64,DEFAULT", no_detail]), custom_contents]
+  custom_contents = `Cons content_node
+  content_node = [`InputImage (["data:image/png;base64,LOW", low_detail]), custom_contents]
+  custom_contents = `Cons content_node
+
+  let responses: FixtureResponses = `Nil ();
+  let response_node: FixtureResponseNode = [
+    `CustomOutput (["custom", "call-custom", custom_contents]),
+    responses,
+  ];
+  responses = `Cons response_node
+  response_node = [`FunctionOutput (["function", "call-function", function_contents]), responses]
+  responses = `Cons response_node
+  response_node = [`Message (["user", false, message_contents]), responses]
+  responses = `Cons response_node
+
+  let requests: FixtureRequests = collect_image_processing_requests responses;
+  let score = 0;
+  if let `Cons first_node = requests {
+    let [first, after_first] = first_node;
+    if first.image_url == "data:image/png;base64,HIGH" && first.max_dimension == 2048 && first.max_patches == 2500 {
+      score = score + 1
+    }
+    if let `Cons second_node = after_first {
+      let [second, after_second] = second_node;
+      if second.image_url == "data:image/png;base64,ORIGINAL" && second.max_dimension == 6000 && second.max_patches == 10000 {
+        score = score + 10
+      }
+      if let `Cons third_node = after_second {
+        let [third, tail] = third_node;
+        if third.image_url == "data:image/png;base64,DEFAULT" && third.max_dimension == 2048 && third.max_patches == 2500 {
+          if let `Nil () = tail {
+            score = score + 100
+          }
+        }
+      }
+    }
+  }
+
+  score
+};
+
+return { .verify_image_preparation_requests_fixture };

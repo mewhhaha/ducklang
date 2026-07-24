@@ -42,7 +42,7 @@ Deno.test("message decoder handles back-to-back frames", () => {
 });
 
 Deno.test("parse diagnostics report positions", () => {
-  const diagnostics = parse_diagnostics("let value = (1 + 2\nvalue\n");
+  const diagnostics = parse_diagnostics("let value = (1 + 2\nvalue\n;");
   assert_equals(diagnostics.length, 1);
   const diagnostic = diagnostics[0];
   assert_equals(diagnostic?.severity, 1);
@@ -50,7 +50,7 @@ Deno.test("parse diagnostics report positions", () => {
 });
 
 Deno.test("parse diagnostics are empty for valid programs", () => {
-  assert_equals(parse_diagnostics("let value = 1\nvalue\n"), []);
+  assert_equals(parse_diagnostics("let value = 1;\nvalue\n"), []);
 });
 
 Deno.test("document symbols cover top-level introductions", () => {
@@ -59,9 +59,9 @@ Deno.test("document symbols cover top-level introductions", () => {
     "  | `Some t",
     "  | `None Unit",
     "",
-    "const factor = 2",
-    "let scale = value => value * factor",
-    "let total = 0",
+    "const factor = 2;",
+    "let scale = value => value * factor;",
+    "let total = 0;",
     "",
     "effect Counter {",
     "  get: () => I32",
@@ -87,7 +87,7 @@ Deno.test("document symbols cover top-level introductions", () => {
 Deno.test("document symbols nest declaration members through broken syntax", () => {
   const prefix = "effect Counter {\n  get: () => I32\n}\n" +
     "type Result = | `Ok Int | `Error Text\n";
-  const valid = parse_source_with_diagnostics(prefix + "let value = 1\n");
+  const valid = parse_source_with_diagnostics(prefix + "let value = 1;\n");
   const broken = parse_source_with_diagnostics(prefix + "let = broken\n");
   const valid_symbols = document_symbols(
     valid.source,
@@ -133,7 +133,7 @@ Deno.test("server handles the core lifecycle", () => {
       textDocument: {
         uri: "file:///demo.duck",
         version: 1,
-        text: "let  a=1\na\n",
+        text: "let  a=1;\na\n",
       },
     },
   });
@@ -144,7 +144,7 @@ Deno.test("server handles the core lifecycle", () => {
     method: "textDocument/formatting",
     params: { textDocument: { uri: "file:///demo.duck" } },
   }) as [{ result: [{ newText: string }] }];
-  assert_equals(formatting[0]?.result[0]?.newText, "let a = 1\na\n");
+  assert_equals(formatting[0]?.result[0]?.newText, "let a = 1;\na\n");
 
   const shutdown = handle_message(state, { id: 3, method: "shutdown" });
   assert_equals(shutdown, [{ jsonrpc: "2.0", id: 3, result: null }]);
@@ -162,7 +162,7 @@ Deno.test("document formatting canonicalizes atomic unary calls", () => {
       textDocument: {
         uri,
         version: 1,
-        text: "let called=func(argument)\nlet passed=func\n",
+        text: "let called=func(argument);\nlet passed=func;\n",
       },
     },
   });
@@ -174,7 +174,7 @@ Deno.test("document formatting canonicalizes atomic unary calls", () => {
 
   assert_equals(
     formatting[0]?.result[0]?.newText,
-    "let called = func argument\nlet passed = func\n",
+    "let called = func argument;\nlet passed = func;\n",
   );
 });
 
@@ -328,7 +328,7 @@ Deno.test("server refuses to format broken documents", () => {
       textDocument: {
         uri: "file:///broken.duck",
         version: 1,
-        text: "let value = (1\n",
+        text: "let value = (1\n;",
       },
     },
   });
@@ -586,7 +586,7 @@ Deno.test("server accepts increasing signed document versions", () => {
   const opened = handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: -1, text: "let value = 1\n" },
+      textDocument: { uri, version: -1, text: "let value = 1;\n" },
     },
   });
   assert_equals(opened.length, 1);
@@ -595,7 +595,7 @@ Deno.test("server accepts increasing signed document versions", () => {
     method: "textDocument/didChange",
     params: {
       textDocument: { uri, version: 0 },
-      contentChanges: [{ text: "let value = 2\n" }],
+      contentChanges: [{ text: "let value = 2;\n" }],
     },
   });
   assert_equals(state.documents.get(uri)?.version, 0);
@@ -608,7 +608,7 @@ Deno.test("server versions diagnostics and reuses then invalidates parse work", 
   const opened = handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: 1, text: "let value = 1\nvalue\n" },
+      textDocument: { uri, version: 1, text: "let value = 1;\nvalue\n" },
     },
   });
   assert_equals(opened.length, 1);
@@ -631,7 +631,7 @@ Deno.test("server versions diagnostics and reuses then invalidates parse work", 
     method: "textDocument/didChange",
     params: {
       textDocument: { uri, version: 2 },
-      contentChanges: [{ text: "let value = (1\n" }],
+      contentChanges: [{ text: "let value = (1\n;" }],
     },
   });
   assert_equals(changed, []);
@@ -671,7 +671,7 @@ Deno.test("server versions diagnostics and reuses then invalidates parse work", 
     params: { textDocument: { uri } },
   });
   assert_equals(state.documents.compute_count(uri, "source_parse"), 4);
-  assert_equals(state.documents.get(uri)?.text, "let value = (1\n");
+  assert_equals(state.documents.get(uri)?.text, "let value = (1\n;");
 
   handle_message(state, {
     method: "workspace/didChangeWatchedFiles",
@@ -692,7 +692,7 @@ Deno.test("server debounces change bursts and publishes only the latest version"
   handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: 1, text: "let value = 1\n" },
+      textDocument: { uri, version: 1, text: "let value = 1;\n" },
     },
   });
   assert_equals(state.documents.compute_count(uri, "source_parse"), 1);
@@ -702,7 +702,7 @@ Deno.test("server debounces change bursts and publishes only the latest version"
     method: "textDocument/didChange",
     params: {
       textDocument: { uri, version: 2 },
-      contentChanges: [{ text: "let value = (1\n" }],
+      contentChanges: [{ text: "let value = (1\n;" }],
     },
   });
   now = 20;
@@ -710,7 +710,7 @@ Deno.test("server debounces change bursts and publishes only the latest version"
     method: "textDocument/didChange",
     params: {
       textDocument: { uri, version: 3 },
-      contentChanges: [{ text: "let value = 3\n" }],
+      contentChanges: [{ text: "let value = 3;\n" }],
     },
   });
 
@@ -729,7 +729,7 @@ Deno.test("server debounces change bursts and publishes only the latest version"
     message: "Unused runtime binding value",
     range: {
       start: { line: 0, character: 0 },
-      end: { line: 0, character: 13 },
+      end: { line: 0, character: 14 },
     },
   }]);
   assert_equals(state.documents.compute_count(uri, "source_parse"), 2);
@@ -782,9 +782,9 @@ Deno.test("server analyzes source tests with test import metadata", () => {
       textDocument: {
         uri,
         version: 1,
-        text: 'const { test } = import "duck:prelude/attributes" ()\n' +
+        text: 'const { .test } = import "duck:prelude/attributes" ();\n' +
           "@[test]\n" +
-          "const checked: I32 -> I32 = value => 40i64 + 2i32\n" +
+          "const checked: I32 -> I32 = value => 40i64 + 2i32;\n" +
           "0\n",
       },
     },
@@ -808,7 +808,7 @@ Deno.test("dependency edits invalidate and republish open importers", () => {
       textDocument: {
         uri: dependency_uri,
         version: 1,
-        text: "module () where\nreturn 1\n",
+        text: "module () where\nreturn 1;\n",
       },
     },
   });
@@ -818,7 +818,7 @@ Deno.test("dependency edits invalidate and republish open importers", () => {
       textDocument: {
         uri: importer_uri,
         version: 1,
-        text: 'const available = import "./dep.duck"\navailable\n',
+        text: 'const available = import "./dep.duck";\navailable\n',
       },
     },
   }) as [{ params: { diagnostics: unknown[] } }];
@@ -832,7 +832,7 @@ Deno.test("dependency edits invalidate and republish open importers", () => {
     method: "textDocument/didChange",
     params: {
       textDocument: { uri: dependency_uri, version: 2 },
-      contentChanges: [{ text: "const other = 1\nother\n" }],
+      contentChanges: [{ text: "const other = 1;\nother\n" }],
     },
   });
   assert_equals(next_diagnostic_deadline(state), 25);
@@ -914,7 +914,7 @@ Deno.test("server formats the Unicode whole-document range in the negotiated enc
       textDocument: {
         uri: "file:///unicode.duck",
         version: 1,
-        text: "let  value=1\nvalue//😀",
+        text: "let  value=1;\nvalue//😀",
       },
     },
   });
@@ -947,7 +947,7 @@ Deno.test("server encodes document symbol ranges with the negotiated encoding", 
       textDocument: {
         uri,
         version: 1,
-        text: '"😀";let x = 1\n',
+        text: '"😀";let x = 1;\n',
       },
     },
   });
@@ -964,7 +964,7 @@ Deno.test("server encodes document symbol ranges with the negotiated encoding", 
 
   assert_equals(response[0]?.result[0]?.range, {
     start: { line: 0, character: 7 },
-    end: { line: 0, character: 16 },
+    end: { line: 0, character: 17 },
   });
   assert_equals(response[0]?.result[0]?.selectionRange, {
     start: { line: 0, character: 11 },
@@ -982,7 +982,7 @@ Deno.test("server navigation and rename survive an unrelated parse error", () =>
       textDocument: {
         uri,
         version: 1,
-        text: "let value = 1\nlet = broken\nvalue\n",
+        text: "let value = 1;\nlet = broken;\nvalue\n",
       },
     },
   });
@@ -1054,8 +1054,10 @@ Deno.test("server serves type, import, and workspace symbol navigation", () => {
       textDocument: {
         uri: main,
         version: 1,
-        text: "type Pair = struct {.left = Int}\n" +
-          "let value: Pair = [.left = 1]\nvalue.left\n",
+        text: `type Pair = struct {.left = Int}
+let value: Pair = [.left = 1];
+value.left
+`,
       },
     },
   });
@@ -1065,7 +1067,7 @@ Deno.test("server serves type, import, and workspace symbol navigation", () => {
       textDocument: {
         uri: other,
         version: 1,
-        text: 'const dependency = import "./dep.duck"\ndependency\n',
+        text: 'const dependency = import "./dep.duck";\ndependency\n',
       },
     },
   });
@@ -1139,13 +1141,14 @@ Deno.test("server completes members, import paths, and resolved docs", () => {
       textDocument: {
         uri: dependency,
         version: 1,
-        text: "const dependency = 1\n",
+        text: "const dependency = 1;\n",
       },
     },
   });
-  const text = "/// A user record.\n" +
-    "type User = struct {.name = Text}\n" +
-    'let user: User = [.name = "Ada"]\nuser.';
+  const text = `/// A user record.
+type User = struct {.name = Text}
+let user: User = [.name = "Ada"];
+user.`;
   handle_message(state, {
     method: "textDocument/didOpen",
     params: { textDocument: { uri, version: 1, text } },
@@ -1220,8 +1223,8 @@ Deno.test("server returns semantic hover and signature help", () => {
   const state = create_state();
   handle_message(state, { id: 1, method: "initialize" });
   const uri = "file:///hover.duck";
-  const hover_text = "const make_adder = n => { x => x + n }\n" +
-    "const add_three = comptime make_adder(3)\n" +
+  const hover_text = "const make_adder = n => { x => x + n };\n" +
+    "const add_three = comptime make_adder(3);\n" +
     "add_three(39)\n";
   handle_message(state, {
     method: "textDocument/didOpen",
@@ -1242,7 +1245,7 @@ Deno.test("server returns semantic hover and signature help", () => {
     true,
   );
 
-  const signature_text = "let apply_const = (x, const f) => f(x)\n" +
+  const signature_text = "let apply_const = (x, const f) => f(x);\n" +
     "apply_const(21, ";
   handle_message(state, {
     method: "textDocument/didChange",
@@ -1278,7 +1281,7 @@ Deno.test("server returns and resolves inlay hints in the requested range", () =
   handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+      textDocument: { uri, version: 1, text: "let answer = 1;\nanswer\n" },
     },
   });
   const response = handle_message(state, {
@@ -1321,7 +1324,7 @@ Deno.test("server applies initialization inlay hint settings", () => {
   handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+      textDocument: { uri, version: 1, text: "let answer = 1;\nanswer\n" },
     },
   });
   const response = handle_message(state, {
@@ -1345,7 +1348,7 @@ Deno.test("server applies dynamic DUCK inlay hint settings", () => {
   handle_message(state, {
     method: "textDocument/didOpen",
     params: {
-      textDocument: { uri, version: 1, text: "let answer = 1\nanswer\n" },
+      textDocument: { uri, version: 1, text: "let answer = 1;\nanswer\n" },
     },
   });
   handle_message(state, {
@@ -1393,7 +1396,7 @@ Deno.test("server semantic tokens are stable, ranged, and minimally delta-update
       textDocument: {
         uri,
         version: 1,
-        text: "const first = 1\nlet second = first\nsecond\n",
+        text: "const first = 1;\nlet second = first;\nsecond\n",
       },
     },
   });
@@ -1432,7 +1435,7 @@ Deno.test("server semantic tokens are stable, ranged, and minimally delta-update
     params: {
       textDocument: { uri, version: 2 },
       contentChanges: [{
-        text: "const first = 1\nlet renamed = first\nrenamed\n",
+        text: "const first = 1;\nlet renamed = first;\nrenamed\n",
       }],
     },
   });
@@ -1476,7 +1479,7 @@ Deno.test("server enumerates and lazily resolves code actions", () => {
       textDocument: {
         uri,
         version: 1,
-        text: "let answer = 42\nanswer\n",
+        text: "let answer = 42;\nanswer\n",
       },
     },
   });
@@ -1518,7 +1521,7 @@ Deno.test("server enumerates and lazily resolves code actions", () => {
     method: "textDocument/didChange",
     params: {
       textDocument: { uri, version: 2 },
-      contentChanges: [{ text: "let answer = 43\nanswer\n" }],
+      contentChanges: [{ text: "let answer = 43;\nanswer\n" }],
     },
   });
   const stale = handle_message(state, {
@@ -1582,7 +1585,8 @@ Deno.test("server suppresses assists that fail workspace resolution", () => {
   const state = create_state();
   handle_message(state, { id: 1, method: "initialize" });
   const uri = "file:///missing-import/main.duck";
-  const text = 'let answer = 42\nconst dep = import "./missing.duck"\nanswer\n';
+  const text =
+    'let answer = 42;\nconst dep = import "./missing.duck";\nanswer\n';
   handle_message(state, {
     method: "textDocument/didOpen",
     params: { textDocument: { uri, version: 1, text } },
@@ -1610,8 +1614,8 @@ Deno.test("server exposes comptime powertools", () => {
   const state = create_state();
   handle_message(state, { id: 1, method: "initialize" });
   const uri = "file:///scratch/comptime.duck";
-  const text = "const make_adder = n => { x => x + n }\n" +
-    "const add_three = comptime make_adder(3)\n" +
+  const text = "const make_adder = n => { x => x + n };\n" +
+    "const add_three = comptime make_adder(3);\n" +
     "add_three(39)\n";
   handle_message(state, {
     method: "textDocument/didOpen",
@@ -1700,7 +1704,7 @@ Deno.test("server reports workspace progress and applies workspace config", asyn
 
   try {
     await Deno.writeTextFile(root_path + "/AGENTS.md", "workspace\n");
-    await Deno.writeTextFile(root_path + "/one.duck", "let value = 1\n");
+    await Deno.writeTextFile(root_path + "/one.duck", "let value = 1;\n");
     const root = new URL("file://" + root_path + "/").href;
     const state = create_state();
     const replies = handle_message(state, {
@@ -1751,8 +1755,8 @@ Deno.test("server follows cross-file members and renames workspace-wide", async 
   const root_path = await Deno.makeTempDir({ prefix: "duck-server-nav-" });
 
   try {
-    const a_text = "let exported = 1\nexported\n";
-    const b_text = 'const a = import "./a.duck"\nlet value = a.exported\n';
+    const a_text = "let exported = 1;\nexported\n";
+    const b_text = 'const a = import "./a.duck";\nlet value = a.exported;\n';
     await Deno.writeTextFile(root_path + "/a.duck", a_text);
     await Deno.writeTextFile(root_path + "/b.duck", b_text);
     const root = new URL("file://" + root_path + "/").href;
@@ -1825,13 +1829,13 @@ Deno.test("three-module edits reanalyze only capped reverse dependencies", () =>
   const b = "file:///chain/b.duck";
   const c = "file:///chain/c.duck";
   const unrelated = "file:///chain/unrelated.duck";
-  const fixtures = [{ uri: a, text: "let value = 1\n" }, {
+  const fixtures = [{ uri: a, text: "let value = 1;\n" }, {
     uri: b,
-    text: 'const a = import "./a.duck"\nlet b = a\n',
+    text: 'const a = import "./a.duck";\nlet b = a;\n',
   }, {
     uri: c,
-    text: 'const b = import "./b.duck"\nlet c = b\n',
-  }, { uri: unrelated, text: "let separate = 1\n" }];
+    text: 'const b = import "./b.duck";\nlet c = b;\n',
+  }, { uri: unrelated, text: "let separate = 1;\n" }];
 
   for (const fixture of fixtures) {
     handle_message(state, {
@@ -1854,7 +1858,7 @@ Deno.test("three-module edits reanalyze only capped reverse dependencies", () =>
     method: "textDocument/didChange",
     params: {
       textDocument: { uri: a, version: 2 },
-      contentChanges: [{ text: "let value = 2\n" }],
+      contentChanges: [{ text: "let value = 2;\n" }],
     },
   });
   const published = flush_due_diagnostics(state, 110) as Array<{
@@ -1880,10 +1884,10 @@ Deno.test("open dependency edits publish diagnostics for closed importers", asyn
   const root_path = await Deno.makeTempDir({ prefix: "duck-closed-importer-" });
 
   try {
-    await Deno.writeTextFile(root_path + "/a.duck", "let value = 1\n");
+    await Deno.writeTextFile(root_path + "/a.duck", "let value = 1;\n");
     await Deno.writeTextFile(
       root_path + "/b.duck",
-      'const a = import "./a.duck"\nlet imported = a\n',
+      'const a = import "./a.duck";\nlet imported = a;\n',
     );
     const root = new URL("file://" + root_path + "/").href;
     const a = new URL("a.duck", root).href;
@@ -1897,14 +1901,14 @@ Deno.test("open dependency edits publish diagnostics for closed importers", asyn
     handle_message(state, {
       method: "textDocument/didOpen",
       params: {
-        textDocument: { uri: a, version: 1, text: "let value = 1\n" },
+        textDocument: { uri: a, version: 1, text: "let value = 1;\n" },
       },
     });
     handle_message(state, {
       method: "textDocument/didChange",
       params: {
         textDocument: { uri: a, version: 2 },
-        contentChanges: [{ text: "let value = 2\n" }],
+        contentChanges: [{ text: "let value = 2;\n" }],
       },
     });
     const published = flush_due_diagnostics(state, 110) as Array<{

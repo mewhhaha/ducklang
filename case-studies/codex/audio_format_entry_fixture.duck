@@ -1,5 +1,5 @@
 module () where
 
-const { verify_audio_format_fixture } = import "./audio_format_fixture.duck" ()
+const { .verify_audio_format_fixture } = import "./audio_format_fixture.duck" ();
 
-return { .score = verify_audio_format_fixture() }
+return { .score = verify_audio_format_fixture() };

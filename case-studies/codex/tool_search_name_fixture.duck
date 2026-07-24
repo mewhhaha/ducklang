@@ -1,9 +1,9 @@
 module () where
 
-const { tool_search_tool_name } = import "./tool_search_name.duck" ()
+const { .tool_search_tool_name } = import "./tool_search_name.duck" ();
 
-let score = 0
-let [namespace, local_name] = tool_search_tool_name()
+let score = 0;
+let [namespace, local_name] = tool_search_tool_name();
 if namespace == "" && local_name == "tool_search" { score = 1 }
 
-return { .score = score }
+return { .score = score };

@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_common_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_common_types.duck" ();
 
 type AgentJobOptionalTextResult =
   | `AgentJobTextDecoded AgentJobTextOption
@@ -36,4 +36,4 @@ type AgentJobSpawnPlan =
   | `ReadCsv AgentJobSpawnArgs
   | `RejectSpawn Text
 
-return {}
+return {};

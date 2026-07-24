@@ -4,6 +4,6 @@ let gcd = rec (left, right) => {
   } else {
     rec(right, left % right)
   }
-}
+};
 
 gcd(84, 30) * 7

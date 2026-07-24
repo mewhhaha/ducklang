@@ -1,0 +1,99 @@
+module () where
+
+const { .struct } = import "duck:prelude/types" ();
+
+type TurnDiffTextOption = Option Text
+
+type TurnDiffTrackedPath = struct {
+  .environment_id = Text,
+  .path = Text,
+}
+
+type TurnDiffTrackedContent = struct {
+  .content = Text,
+  .revision = I32,
+}
+
+type TurnDiffTrackedContentOption = Option TurnDiffTrackedContent
+type TurnDiffTrackedPathOption = Option TurnDiffTrackedPath
+
+type TurnDiffContentEntry = [TurnDiffTrackedPath, TurnDiffTrackedContent]
+type TurnDiffContentEntries = List TurnDiffContentEntry
+type TurnDiffOriginEntry = [TurnDiffTrackedPath, TurnDiffTrackedPath]
+type TurnDiffOriginEntries = List TurnDiffOriginEntry
+
+type TurnDiffState = struct {
+  .valid = Bool,
+  .baseline = TurnDiffContentEntries,
+  .current = TurnDiffContentEntries,
+  .origins = TurnDiffOriginEntries,
+  .next_revision = I32,
+}
+
+type TurnDiffAdd = struct {
+  .content = Text,
+  .overwritten_content = TurnDiffTextOption,
+}
+
+type TurnDiffDelete = struct {
+  .content = Text,
+}
+
+type TurnDiffUpdate = struct {
+  .move_path = TurnDiffTextOption,
+  .old_content = Text,
+  .overwritten_move_content = TurnDiffTextOption,
+  .new_content = Text,
+}
+
+type TurnDiffFileMutation =
+  | `TurnDiffAdd TurnDiffAdd
+  | `TurnDiffDelete TurnDiffDelete
+  | `TurnDiffUpdate TurnDiffUpdate
+
+type TurnDiffMutation = struct {
+  .path = Text,
+  .mutation = TurnDiffFileMutation,
+}
+
+type TurnDiffMutations = List TurnDiffMutation
+
+type TurnDiffDelta = struct {
+  .exact = Bool,
+  .mutations = TurnDiffMutations,
+}
+
+type TurnDiffTrackedPaths = List TurnDiffTrackedPath
+
+type TurnDiffAdded = struct {
+  .path = TurnDiffTrackedPath,
+  .content = Text,
+}
+
+type TurnDiffDeleted = struct {
+  .path = TurnDiffTrackedPath,
+  .content = Text,
+}
+
+type TurnDiffUpdated = struct {
+  .path = TurnDiffTrackedPath,
+  .old_content = Text,
+  .new_content = Text,
+}
+
+type TurnDiffMoved = struct {
+  .source = TurnDiffTrackedPath,
+  .destination = TurnDiffTrackedPath,
+  .old_content = Text,
+  .new_content = Text,
+}
+
+type TurnDiffNetChange =
+  | `TurnDiffAdded TurnDiffAdded
+  | `TurnDiffDeleted TurnDiffDeleted
+  | `TurnDiffUpdated TurnDiffUpdated
+  | `TurnDiffMoved TurnDiffMoved
+
+type TurnDiffNetChanges = List TurnDiffNetChange
+
+return {};

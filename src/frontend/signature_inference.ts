@@ -9,6 +9,7 @@ import type {
 } from "./ast.ts";
 import { collect_linear_closure_names } from "./linear_closure_names.ts";
 import { apply_function_result_context } from "./parser_stmt/binding.ts";
+import { stmt_result_expr } from "./block_result.ts";
 import {
   source_facts,
   type SourceFacts,
@@ -194,7 +195,14 @@ function inferred_signature(
     fact.call_params.length === binding.value.params.length
   ) {
     const param_types = fact.call_params.map(source_type_expr);
-    const result_type = source_type_expr(fact.call_result);
+    let result_type = source_type_expr(fact.call_result);
+
+    if (
+      result_type?.tag === "product" &&
+      returns_value_pack_syntax(binding.value.body)
+    ) {
+      result_type = { ...result_type, value_pack: true };
+    }
 
     if (
       result_type !== undefined &&
@@ -379,6 +387,43 @@ function function_type(params: TypeExpr[], result: TypeExpr): TypeExpr {
   }
 
   return { tag: "arrow", param, effects: undefined, result };
+}
+
+function returns_value_pack_syntax(expr: FrontExpr): boolean {
+  if (expr.tag === "product") {
+    return expr.value_pack === true;
+  }
+
+  if (expr.tag === "captured" || expr.tag === "comptime") {
+    return returns_value_pack_syntax(expr.expr);
+  }
+
+  if (expr.tag === "scratch") {
+    return returns_value_pack_syntax(expr.body);
+  }
+
+  if (expr.tag === "block") {
+    const final_statement = expr.statements[expr.statements.length - 1];
+
+    if (final_statement === undefined) {
+      return false;
+    }
+
+    const result = stmt_result_expr(final_statement);
+    return result !== undefined && returns_value_pack_syntax(result);
+  }
+
+  if (expr.tag === "if" || expr.tag === "if_let") {
+    return returns_value_pack_syntax(expr.then_branch) &&
+      returns_value_pack_syntax(expr.else_branch);
+  }
+
+  if (expr.tag === "match") {
+    return expr.arms.length > 0 &&
+      expr.arms.every((arm) => returns_value_pack_syntax(arm.body));
+  }
+
+  return false;
 }
 
 function annotated_param(param: Param, type: TypeExpr): Param {

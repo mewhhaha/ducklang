@@ -1,9 +1,9 @@
 module () where
 
-const { json_object_get, json_object_key_count } = import "duck:prelude/json/values" ()
-const {} = import "duck:prelude/json/values" ()
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./view_image_types.duck" ()
+const { .json_object_get, .json_object_key_count } = import "duck:prelude/json/values" ();
+const {} = import "duck:prelude/json/values" ();
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./view_image_types.duck" ();
 
 type ImageValueArgs = ViewImageArgs
 type ImageValueDetail = ViewImageDetail
@@ -14,7 +14,7 @@ type ImageValueTextOption = ViewImageTextOption
 
 const view_image_parse_failure: Text -> ImageValueParseResult = reason => {
   `ParseFailed (text_append ["failed to parse function arguments: ", reason])
-}
+};
 
 const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value => {
   if let `Object object = value {
@@ -25,17 +25,18 @@ const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value =
     } else if json_object_key_count("detail", object) > 1 {
       view_image_parse_failure "detail must appear at most once"
     } else {
-      let path = ""
-      let environment_id: ImageValueTextOption = `ImageEnvironmentMissing ()
-      let detail: ImageValueDetailOption = `ImageDetailMissing ()
-      let failure = ""
+      let path = "";
+      let environment_id: ImageValueTextOption = `ImageEnvironmentMissing ();
+      let detail: ImageValueDetailOption = `ImageDetailMissing ();
+      let failure = "";
 
-      let path_lookup = json_object_get("path", object)
+      let path_lookup = json_object_get("path", object);
       if let `Found path_value = path_lookup {
-        if let `String path_text = path_value { path = path_text } else { failure = "path must be a string" }
+        if let `String path_text = path_value { path = path_text } else { failure =
+            "path must be a string" }
       }
 
-      let environment_lookup = json_object_get("environment_id", object)
+      let environment_lookup = json_object_get("environment_id", object);
       if let `Found environment_value = environment_lookup {
         if let `String environment_text = environment_value {
           environment_id = `ImageEnvironmentPresent environment_text
@@ -46,17 +47,20 @@ const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value =
         }
       }
 
-      let detail_lookup = json_object_get("detail", object)
+      let detail_lookup = json_object_get("detail", object);
       if let `Found detail_value = detail_lookup {
         if let `String detail_text = detail_value {
           if detail_text == "high" {
-            let parsed_detail: ImageValueDetail = `High ()
+            let parsed_detail: ImageValueDetail = `High ();
             detail = `ImageDetailPresent parsed_detail
           } else if detail_text == "original" {
-            let parsed_detail: ImageValueDetail = `Original ()
+            let parsed_detail: ImageValueDetail = `Original ();
             detail = `ImageDetailPresent parsed_detail
           } else {
-            failure = text_append ["view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `", text_append [detail_text, "`"]]
+            failure = text_append [
+              "view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `",
+              text_append [detail_text, "`"],
+            ]
           }
         } else if let `Null () = detail_value {
           detail = `ImageDetailMissing ()
@@ -66,8 +70,12 @@ const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value =
       }
 
       if failure == "" {
-        let args: ImageValueArgs = [.path = path, .environment_id = environment_id, .detail = detail]
-        `Parsed args
+        let args: ImageValueArgs = [
+          .path = path,
+          .environment_id = environment_id,
+          .detail = detail,
+        ]
+        `Parsed args;
       } else {
         view_image_parse_failure failure
       }
@@ -75,6 +83,6 @@ const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value =
   } else {
     view_image_parse_failure "view_image arguments must be an object"
   }
-}
+};
 
-return { decode_view_image_value, view_image_parse_failure }
+return { .decode_view_image_value, .view_image_parse_failure };

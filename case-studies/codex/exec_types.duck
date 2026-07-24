@@ -57,11 +57,36 @@ type ExecEventTextOption =
 type ExecEventCommand = [Text, Text, Text, Text, I32]
 
 type ExecLifecycleState = [Bool, Bool, I32]
-type ExecCommandBeginEvent = [Text, ExecEventI32Option, Text, I64, ExecEventCommand, Text, ExecCommandSource, ExecEventTextOption]
+type ExecCommandBeginEvent = [
+  Text,
+  ExecEventI32Option,
+  Text,
+  I64,
+  ExecEventCommand,
+  Text,
+  ExecCommandSource,
+  ExecEventTextOption,
+]
 type ExecCommandOutputDeltaEvent = [Text, ExecOutputStream, Text]
 type ExecOutputSplit = [Text, Text]
 type ExecTerminalInteractionEvent = [Text, I32, Text]
-type ExecCommandEndEvent = [Text, ExecEventI32Option, Text, I64, ExecEventCommand, Text, ExecCommandSource, ExecEventTextOption, Text, Text, Text, I32, I32, Text, ExecCommandStatus]
+type ExecCommandEndEvent = [
+  Text,
+  ExecEventI32Option,
+  Text,
+  I64,
+  ExecEventCommand,
+  Text,
+  ExecCommandSource,
+  ExecEventTextOption,
+  Text,
+  Text,
+  Text,
+  I32,
+  I32,
+  Text,
+  ExecCommandStatus,
+]
 
 type ExecBeginEmission = [ExecLifecycleState, ExecCommandBeginEvent]
 type ExecBeginPlan =
@@ -83,4 +108,4 @@ type ExecEndPlan =
   | `SuppressEnd ExecLifecycleState
   | `MissingBegin Unit
 
-return {}
+return {};

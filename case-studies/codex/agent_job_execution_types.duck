@@ -1,9 +1,9 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "./agent_job_export_types.duck" ()
-const {} = import "./agent_job_prepare_types.duck" ()
-const {} = import "./agent_job_runner_types.duck" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "./agent_job_export_types.duck" ();
+const {} = import "./agent_job_prepare_types.duck" ();
+const {} = import "./agent_job_runner_types.duck" ();
 
 type AgentJobCreateOutcome =
   | `JobCreated Unit
@@ -72,4 +72,4 @@ type AgentJobSpawnExecutionResult =
   | `Completed AgentJobRunCompletion
   | `Rejected Text
 
-return {}
+return {};

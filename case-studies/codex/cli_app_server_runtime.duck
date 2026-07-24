@@ -1,9 +1,10 @@
 module () where
 
-const { parse_i64_decimal } = import "duck:prelude/numeric/parse" ()
-const { text_append, text_byte_is_ascii_hex_digit, text_length, text_slice, text_starts_with } = import "duck:prelude/functional" ()
-const { text_trim_whitespace } = import "duck:prelude/text" ()
-const {} = import "./cli_types.duck" ()
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
+const { .text_append, .text_byte_is_ascii_hex_digit, .text_length, .text_slice, .text_starts_with } =
+  import "duck:prelude/functional" ()
+const { .text_trim_whitespace } = import "duck:prelude/text" ();
+const {} = import "./cli_types.duck" ();
 
 type AppServerArgs = CodexCliArgs
 type AppServerTextOption = CodexCliTextOption
@@ -21,7 +22,7 @@ const valid_sha256_digest: Text -> Bool = (digest: Text) => {
   if text_length digest != 64 {
     false
   } else {
-    let valid = true
+    let valid = true;
     for byte in digest {
       if text_byte_is_ascii_hex_digit byte {
         ()
@@ -31,9 +32,12 @@ const valid_sha256_digest: Text -> Bool = (digest: Text) => {
     }
     valid
   }
-}
+};
 
-const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransportResult = (listen: AppServerTextOption, stdio: Bool) => {
+const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransportResult = (
+  listen: AppServerTextOption,
+  stdio: Bool,
+) => {
   if stdio {
     if let `Some _ = listen {
       `Err "--stdio conflicts with --listen"
@@ -41,7 +45,7 @@ const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransp
       `Ok (`AppServerStdio ())
     }
   } else {
-    let endpoint = if let `Some value = listen { value } else { "stdio://" }
+    let endpoint = if let `Some value = listen { value } else { "stdio://" };
     if endpoint == "stdio://" {
       `Ok (`AppServerStdio ())
     } else if endpoint == "off" {
@@ -49,20 +53,29 @@ const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransp
     } else if text_starts_with(endpoint, "unix://") {
       if text_length endpoint == 7 {
         let socket_path: AppServerTextOption = `None ()
-        `Ok (`AppServerUnixSocket socket_path)
+        `Ok (`AppServerUnixSocket socket_path);
       } else {
-        let socket_path: AppServerTextOption = `Some (text_slice [endpoint, 7, text_length endpoint])
-        `Ok (`AppServerUnixSocket socket_path)
+        let socket_path: AppServerTextOption = `Some (
+          text_slice [endpoint, 7, text_length endpoint]
+        )
+        `Ok (`AppServerUnixSocket socket_path);
       }
     } else if text_starts_with(endpoint, "ws://") && text_length endpoint > 5 {
       `Ok (`AppServerWebSocket endpoint)
     } else {
-      `Err (text_append(text_append("unsupported --listen URL `", endpoint), "`; expected `stdio://`, `unix://`, `unix://PATH`, `ws://IP:PORT`, or `off`"))
+      `Err (
+        text_append(
+          text_append("unsupported --listen URL `", endpoint),
+          "`; expected `stdio://`, `unix://`, `unix://PATH`, `ws://IP:PORT`, or `off`",
+        )
+      )
     }
   }
-}
+};
 
-const resolve_app_server_auth: AppServerLaunchFacts -> AppServerAuthResult = (facts: AppServerLaunchFacts) => {
+const resolve_app_server_auth: AppServerLaunchFacts -> AppServerAuthResult = (
+  facts: AppServerLaunchFacts
+) => {
   if let `Some mode = facts.ws_auth {
     if let `WebsocketCapabilityToken () = mode {
       if let `Some _ = facts.ws_shared_secret_file {
@@ -95,20 +108,26 @@ const resolve_app_server_auth: AppServerLaunchFacts -> AppServerAuthResult = (fa
         `Err "capability token options require --ws-auth capability-token"
       } else if let `Some shared_secret_file = facts.ws_shared_secret_file {
         let issuer = if let `Some value = facts.ws_issuer {
-          let trimmed = text_trim_whitespace value
+          let trimmed = text_trim_whitespace value;
           if trimmed == "" { `None () } else { `Some trimmed }
         } else {
           `None ()
-        }
+        };
         let audience = if let `Some value = facts.ws_audience {
-          let trimmed = text_trim_whitespace value
+          let trimmed = text_trim_whitespace value;
           if trimmed == "" { `None () } else { `Some trimmed }
         } else {
           `None ()
-        }
-        let max_clock_skew_seconds = if let `Some value = facts.ws_max_clock_skew_seconds { value } else { 30i64 }
-        let options: AppServerSignedBearerOptions = [.shared_secret_file = shared_secret_file, .issuer = issuer, .audience = audience, .max_clock_skew_seconds = max_clock_skew_seconds]
-        `Ok (`WebsocketSignedBearerAuth options)
+        };
+        let max_clock_skew_seconds = if let `Some value = facts.ws_max_clock_skew_seconds { value
+        } else { 30i64 };
+        let options: AppServerSignedBearerOptions = [
+          .shared_secret_file = shared_secret_file,
+          .issuer = issuer,
+          .audience = audience,
+          .max_clock_skew_seconds = max_clock_skew_seconds,
+        ]
+        `Ok (`WebsocketSignedBearerAuth options);
       } else {
         `Err "--ws-shared-secret-file is required with signed-bearer-token auth"
       }
@@ -130,114 +149,146 @@ const resolve_app_server_auth: AppServerLaunchFacts -> AppServerAuthResult = (fa
   } else {
     `Ok (`WebsocketAuthNone ())
   }
-}
+};
 
-let rec scan_app_server_launch_from: [AppServerArgs, AppServerLaunchFacts] -> AppServerLaunchFactsResult = (args: AppServerArgs, facts: AppServerLaunchFacts) => {
-  if let `Cons node = args {
-    let [argument, tail] = node
-    if argument == "--strict-config" {
-      scan_app_server_launch_from(tail, facts :+ { .strict_config = true })
-    } else if argument == "--listen" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .listen = `Some value })
-      } else {
-        `Err "missing value for --listen"
-      }
-    } else if argument == "--stdio" {
-      scan_app_server_launch_from(tail, facts :+ { .stdio = true })
-    } else if argument == "--remote-control" {
-      scan_app_server_launch_from(tail, facts :+ { .remote_control = true })
-    } else if argument == "--analytics-default-enabled" {
-      scan_app_server_launch_from(tail, facts :+ { .analytics_default_enabled = true })
-    } else if argument == "--ws-auth" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        if value == "capability-token" {
-          scan_app_server_launch_from(remaining, facts :+ { .ws_auth = `Some (`WebsocketCapabilityToken ()) })
-        } else if value == "signed-bearer-token" {
-          scan_app_server_launch_from(remaining, facts :+ { .ws_auth = `Some (`WebsocketSignedBearerToken ()) })
+let rec scan_app_server_launch_from: [AppServerArgs, AppServerLaunchFacts] ->
+  AppServerLaunchFactsResult = (
+    args: AppServerArgs,
+    facts: AppServerLaunchFacts,
+  ) => {
+    if let `Cons node = args {
+      let [argument, tail] = node;
+      if argument == "--strict-config" {
+        scan_app_server_launch_from(tail, facts <& { .strict_config = true })
+      } else if argument == "--listen" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .listen = `Some value })
         } else {
-          `Err (text_append("unsupported websocket auth mode: ", value))
+          `Err "missing value for --listen"
         }
-      } else {
-        `Err "missing value for --ws-auth"
-      }
-    } else if argument == "--ws-token-file" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .ws_token_file = `Some value })
-      } else {
-        `Err "missing value for --ws-token-file"
-      }
-    } else if argument == "--ws-token-sha256" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .ws_token_sha256 = `Some value })
-      } else {
-        `Err "missing value for --ws-token-sha256"
-      }
-    } else if argument == "--ws-shared-secret-file" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .ws_shared_secret_file = `Some value })
-      } else {
-        `Err "missing value for --ws-shared-secret-file"
-      }
-    } else if argument == "--ws-issuer" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .ws_issuer = `Some value })
-      } else {
-        `Err "missing value for --ws-issuer"
-      }
-    } else if argument == "--ws-audience" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        scan_app_server_launch_from(remaining, facts :+ { .ws_audience = `Some value })
-      } else {
-        `Err "missing value for --ws-audience"
-      }
-    } else if argument == "--ws-max-clock-skew-seconds" {
-      if let `Cons value_node = tail {
-        let [value, remaining] = value_node
-        let parsed = parse_i64_decimal value
-        if let `Ok seconds = parsed {
-          if seconds >= 0i64 {
-            scan_app_server_launch_from(remaining, facts :+ { .ws_max_clock_skew_seconds = `Some seconds })
+      } else if argument == "--stdio" {
+        scan_app_server_launch_from(tail, facts <& { .stdio = true })
+      } else if argument == "--remote-control" {
+        scan_app_server_launch_from(tail, facts <& { .remote_control = true })
+      } else if argument == "--analytics-default-enabled" {
+        scan_app_server_launch_from(tail, facts <& { .analytics_default_enabled = true })
+      } else if argument == "--ws-auth" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          if value == "capability-token" {
+            scan_app_server_launch_from(
+              remaining,
+              facts <& { .ws_auth = `Some (`WebsocketCapabilityToken ()) },
+            )
+          } else if value == "signed-bearer-token" {
+            scan_app_server_launch_from(
+              remaining,
+              facts <& { .ws_auth = `Some (`WebsocketSignedBearerToken ()) },
+            )
           } else {
-            `Err "--ws-max-clock-skew-seconds must be non-negative"
+            `Err (text_append("unsupported websocket auth mode: ", value))
           }
         } else {
-          `Err "--ws-max-clock-skew-seconds must be a non-negative integer"
+          `Err "missing value for --ws-auth"
+        }
+      } else if argument == "--ws-token-file" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .ws_token_file = `Some value })
+        } else {
+          `Err "missing value for --ws-token-file"
+        }
+      } else if argument == "--ws-token-sha256" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .ws_token_sha256 = `Some value })
+        } else {
+          `Err "missing value for --ws-token-sha256"
+        }
+      } else if argument == "--ws-shared-secret-file" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .ws_shared_secret_file = `Some value })
+        } else {
+          `Err "missing value for --ws-shared-secret-file"
+        }
+      } else if argument == "--ws-issuer" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .ws_issuer = `Some value })
+        } else {
+          `Err "missing value for --ws-issuer"
+        }
+      } else if argument == "--ws-audience" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          scan_app_server_launch_from(remaining, facts <& { .ws_audience = `Some value })
+        } else {
+          `Err "missing value for --ws-audience"
+        }
+      } else if argument == "--ws-max-clock-skew-seconds" {
+        if let `Cons value_node = tail {
+          let [value, remaining] = value_node;
+          let parsed = parse_i64_decimal value;
+          if let `Ok seconds = parsed {
+            if seconds >= 0i64 {
+              scan_app_server_launch_from(
+                remaining,
+                facts <& { .ws_max_clock_skew_seconds = `Some seconds },
+              )
+            } else {
+              `Err "--ws-max-clock-skew-seconds must be non-negative"
+            }
+          } else {
+            `Err "--ws-max-clock-skew-seconds must be a non-negative integer"
+          }
+        } else {
+          `Err "missing value for --ws-max-clock-skew-seconds"
         }
       } else {
-        `Err "missing value for --ws-max-clock-skew-seconds"
+        `Err (text_append("unknown app-server option: ", argument))
       }
     } else {
-      `Err (text_append("unknown app-server option: ", argument))
+      `Ok facts
     }
-  } else {
-    `Ok facts
-  }
-}
+  };
 
 let parse_app_server_launch: AppServerArgs -> AppServerCommandResult = (args: AppServerArgs) => {
-  let initial: AppServerLaunchFacts = [.strict_config = false, .listen = `None (), .stdio = false, .remote_control = false, .analytics_default_enabled = false, .ws_auth = `None (), .ws_token_file = `None (), .ws_token_sha256 = `None (), .ws_shared_secret_file = `None (), .ws_issuer = `None (), .ws_audience = `None (), .ws_max_clock_skew_seconds = `None ()]
-  let scanned: AppServerLaunchFactsResult = scan_app_server_launch_from(args, initial)
+  let initial: AppServerLaunchFacts = [
+    .strict_config = false,
+    .listen = `None (),
+    .stdio = false,
+    .remote_control = false,
+    .analytics_default_enabled = false,
+    .ws_auth = `None (),
+    .ws_token_file = `None (),
+    .ws_token_sha256 = `None (),
+    .ws_shared_secret_file = `None (),
+    .ws_issuer = `None (),
+    .ws_audience = `None (),
+    .ws_max_clock_skew_seconds = `None (),
+  ];
+  let scanned: AppServerLaunchFactsResult = scan_app_server_launch_from(args, initial);
   if let `Err message = scanned {
     `Err message
   } else if let `Ok facts = scanned {
-    let transport: AppServerTransportResult = parse_app_server_transport(facts.listen, facts.stdio)
+    let transport: AppServerTransportResult = parse_app_server_transport(facts.listen, facts.stdio);
     if let `Err message = transport {
       `Err message
     } else if let `Ok selected_transport = transport {
-      let auth: AppServerAuthResult = resolve_app_server_auth facts
+      let auth: AppServerAuthResult = resolve_app_server_auth facts;
       if let `Err message = auth {
         `Err message
       } else if let `Ok websocket_auth = auth {
-        let options: AppServerLaunchOptions = [.strict_config = facts.strict_config, .transport = selected_transport, .remote_control = facts.remote_control, .analytics_default_enabled = facts.analytics_default_enabled, .websocket_auth = websocket_auth]
-        `Ok (`LaunchAppServer options)
+        let options: AppServerLaunchOptions = [
+          .strict_config = facts.strict_config,
+          .transport = selected_transport,
+          .remote_control = facts.remote_control,
+          .analytics_default_enabled = facts.analytics_default_enabled,
+          .websocket_auth = websocket_auth,
+        ]
+        `Ok (`LaunchAppServer options);
       } else {
         `Err "app-server auth resolver returned an unknown result"
       }
@@ -247,8 +298,8 @@ let parse_app_server_launch: AppServerArgs -> AppServerCommandResult = (args: Ap
   } else {
     `Err "app-server launch scanner returned an unknown result"
   }
-}
+};
 
 return {
-  parse_app_server_launch,
-}
+  .parse_app_server_launch,
+};

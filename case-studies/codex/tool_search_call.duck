@@ -1,9 +1,9 @@
 module () where
 
-const {} = import "./tool_search_types.duck" ()
-const { rank_tool_search } = import "./tool_search_rank.duck" ()
-const { coalesce_tool_search_results } = import "./tool_search_output.duck" ()
-const { validate_tool_search_invocation } = import "./tool_search_policy.duck" ()
+const {} = import "./tool_search_types.duck" ();
+const { .rank_tool_search } = import "./tool_search_rank.duck" ();
+const { .coalesce_tool_search_results } = import "./tool_search_output.duck" ();
+const { .validate_tool_search_invocation } = import "./tool_search_policy.duck" ();
 
 type SearchCallInvocation = ToolSearchInvocation
 type SearchCallPlan = ToolSearchCallPlan
@@ -14,14 +14,14 @@ type SearchCallSource = ToolSearchSourceInfo
 type SearchCallSourceNode = ToolSearchSourceInfoNode
 
 const tool_search_sources: SearchCallInfos -> SearchCallSources = values => {
-  let current = values
-  let reversed: SearchCallSources = `Nil ()
-  let done = false
+  let current = values;
+  let reversed: SearchCallSources = `Nil ();
+  let done = false;
 
   loop {
     if let `Cons node = current {
-      let [search_info, tail] = node
-      let [_, source_info] = search_info
+      let [search_info, tail] = node;
+      let [_, source_info] = search_info;
       if let `SearchSourcePresent source = source_info {
         reversed = `Cons ([source, reversed] as SearchCallSourceNode)
       }
@@ -30,30 +30,37 @@ const tool_search_sources: SearchCallInfos -> SearchCallSources = values => {
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
-  let ordered: SearchCallSources = `Nil ()
-  let source_current = reversed
+  let ordered: SearchCallSources = `Nil ();
+  let source_current = reversed;
   done = false
   loop {
     if let `Cons node = source_current {
-      let [source, tail] = node
+      let [source, tail] = node;
       ordered = `Cons ([source, ordered] as SearchCallSourceNode)
       source_current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   ordered
-}
+};
 
-const plan_tool_search_call: [SearchCallInvocation, SearchCallInfos] -> SearchCallPlan = (invocation: SearchCallInvocation, search_infos: SearchCallInfos) => {
-  let validation = validate_tool_search_invocation invocation
+const plan_tool_search_call: [SearchCallInvocation, SearchCallInfos] -> SearchCallPlan = (
+  invocation: SearchCallInvocation,
+  search_infos: SearchCallInfos,
+) => {
+  let validation = validate_tool_search_invocation invocation;
   if let `SearchValidated query = validation {
-    let ranked = rank_tool_search(query.query, query.limit, search_infos)
-    let output: SearchCallOutput = [.status = "completed", .execution = "client", .tools = coalesce_tool_search_results ranked]
+    let ranked = rank_tool_search(query.query, query.limit, search_infos);
+    let output: SearchCallOutput = [
+      .status = "completed",
+      .execution = "client",
+      .tools = coalesce_tool_search_results ranked,
+    ];
     `ReturnTools output
   } else if let `SearchRejected message = validation {
     `RejectRequest message
@@ -62,9 +69,9 @@ const plan_tool_search_call: [SearchCallInvocation, SearchCallInfos] -> SearchCa
   } else {
     `Fatal "tool_search validation produced no result"
   }
-}
+};
 
 return {
-  plan_tool_search_call,
-  tool_search_sources,
-}
+  .plan_tool_search_call,
+  .tool_search_sources,
+};

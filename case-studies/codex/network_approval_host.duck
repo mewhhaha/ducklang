@@ -8,4 +8,4 @@ declare Init {
   network_approval_host: NetworkApprovalHost
 }
 
-return {}
+return {};

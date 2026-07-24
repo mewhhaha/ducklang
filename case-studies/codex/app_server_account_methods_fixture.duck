@@ -1,7 +1,8 @@
-const { json_bool, json_null, json_object, json_object_empty, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const { decode_account_method } = import "./app_server_account_methods.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_account_types.duck" ()
+const { .json_bool, .json_null, .json_object, .json_object_empty, .json_object_prepend, .json_string } =
+  import "duck:prelude/json/values" ();
+const { .decode_account_method } = import "./app_server_account_methods.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_account_types.duck" ();
 
 type FixtureJson = AppServerJson
 type FixtureResult = AppServerAccountMethodDecodeResult
@@ -9,67 +10,67 @@ type FixtureCase = [Text, FixtureJson, I32]
 type FixtureCases = List FixtureCase
 type FixtureCaseNode = ListNode FixtureCase
 
-let cases: FixtureCases = `Nil ()
+let cases: FixtureCases = `Nil ();
 
-let unknown_case: FixtureCase = ["account/future", json_null(), 0]
-let unknown_node: FixtureCaseNode = [unknown_case, cases]
+let unknown_case: FixtureCase = ["account/future", json_null(), 0];
+let unknown_node: FixtureCaseNode = [unknown_case, cases];
 cases = `Cons unknown_node
 
-let invalid_case: FixtureCase = ["account/usage/read", json_object(json_object_empty()), -1]
-let invalid_node: FixtureCaseNode = [invalid_case, cases]
+let invalid_case: FixtureCase = ["account/usage/read", json_object(json_object_empty()), -1];
+let invalid_node: FixtureCaseNode = [invalid_case, cases];
 cases = `Cons invalid_node
 
-let workspace_case: FixtureCase = ["account/workspaceMessages/read", json_null(), 9]
-let workspace_node: FixtureCaseNode = [workspace_case, cases]
+let workspace_case: FixtureCase = ["account/workspaceMessages/read", json_null(), 9];
+let workspace_node: FixtureCaseNode = [workspace_case, cases];
 cases = `Cons workspace_node
 
-let usage_case: FixtureCase = ["account/usage/read", json_null(), 8]
-let usage_node: FixtureCaseNode = [usage_case, cases]
+let usage_case: FixtureCase = ["account/usage/read", json_null(), 8];
+let usage_node: FixtureCaseNode = [usage_case, cases];
 cases = `Cons usage_node
 
-let limits_case: FixtureCase = ["account/rateLimits/read", json_null(), 7]
-let limits_node: FixtureCaseNode = [limits_case, cases]
+let limits_case: FixtureCase = ["account/rateLimits/read", json_null(), 7];
+let limits_node: FixtureCaseNode = [limits_case, cases];
 cases = `Cons limits_node
 
-let logout_case: FixtureCase = ["account/logout", json_null(), 6]
-let logout_node: FixtureCaseNode = [logout_case, cases]
+let logout_case: FixtureCase = ["account/logout", json_null(), 6];
+let logout_node: FixtureCaseNode = [logout_case, cases];
 cases = `Cons logout_node
 
-let nudge_fields = json_object_prepend("creditType", json_string("usage_limit"), json_object_empty())
-let nudge_case: FixtureCase = ["account/sendAddCreditsNudgeEmail", json_object(nudge_fields), 5]
-let nudge_node: FixtureCaseNode = [nudge_case, cases]
+let nudge_fields = json_object_prepend("creditType", json_string "usage_limit", json_object_empty());
+let nudge_case: FixtureCase = ["account/sendAddCreditsNudgeEmail", json_object nudge_fields, 5];
+let nudge_node: FixtureCaseNode = [nudge_case, cases];
 cases = `Cons nudge_node
 
-let reset_fields = json_object_empty()
+let reset_fields = json_object_empty();
 reset_fields = json_object_prepend("creditId", json_null(), reset_fields)
-reset_fields = json_object_prepend("idempotencyKey", json_string("attempt-1"), reset_fields)
-let reset_case: FixtureCase = ["account/rateLimitResetCredit/consume", json_object(reset_fields), 4]
-let reset_node: FixtureCaseNode = [reset_case, cases]
+reset_fields = json_object_prepend("idempotencyKey", json_string "attempt-1", reset_fields)
+let reset_case: FixtureCase = ["account/rateLimitResetCredit/consume", json_object reset_fields, 4];
+let reset_node: FixtureCaseNode = [reset_case, cases];
 cases = `Cons reset_node
 
-let refresh_fields = json_object_prepend("refreshToken", json_bool(true), json_object_empty())
-let refresh_case: FixtureCase = ["account/read", json_object(refresh_fields), 3]
-let refresh_node: FixtureCaseNode = [refresh_case, cases]
+let refresh_fields = json_object_prepend("refreshToken", json_bool true, json_object_empty());
+let refresh_case: FixtureCase = ["account/read", json_object refresh_fields, 3];
+let refresh_node: FixtureCaseNode = [refresh_case, cases];
 cases = `Cons refresh_node
 
-let read_case: FixtureCase = ["account/read", json_object(json_object_empty()), 2]
-let read_node: FixtureCaseNode = [read_case, cases]
+let read_case: FixtureCase = ["account/read", json_object(json_object_empty()), 2];
+let read_node: FixtureCaseNode = [read_case, cases];
 cases = `Cons read_node
 
-let cancel_fields = json_object_prepend("loginId", json_string("login-1"), json_object_empty())
-let cancel_case: FixtureCase = ["account/login/cancel", json_object(cancel_fields), 1]
-let cancel_node: FixtureCaseNode = [cancel_case, cases]
+let cancel_fields = json_object_prepend("loginId", json_string "login-1", json_object_empty());
+let cancel_case: FixtureCase = ["account/login/cancel", json_object cancel_fields, 1];
+let cancel_node: FixtureCaseNode = [cancel_case, cases];
 cases = `Cons cancel_node
 
-let score = 0
-let remaining = cases
+let score = 0;
+let remaining = cases;
 loop {
   if let `Cons node = remaining {
-    let typed_node: FixtureCaseNode = node
-    let [test_case, tail] = typed_node
-    let [name, params, expected] = test_case
-    let decoded: FixtureResult = decode_account_method(name, params)
-    let observed = -2
+    let typed_node: FixtureCaseNode = node;
+    let [test_case, tail] = typed_node;
+    let [name, params, expected] = test_case;
+    let decoded: FixtureResult = decode_account_method(name, params);
+    let observed = -2;
 
     if let `AccountMethodOk account = decoded {
       if let `AccountLoginCancel login_id = account {
@@ -77,7 +78,7 @@ loop {
       } else if let `AccountRead refresh = account {
         if refresh { observed = 3 } else { observed = 2 }
       } else if let `AccountRateLimitResetConsume values = account {
-        let [idempotency_key, credit_id] = values
+        let [idempotency_key, credit_id] = values;
         if idempotency_key == "attempt-1" {
           if let `None () = credit_id { observed = 4 }
         }
@@ -100,8 +101,8 @@ loop {
     if observed == expected { score = score + 1 }
     remaining = tail
   } else {
-    break
+    break;
   }
 }
 
-return { .score = score }
+return { .score = score };

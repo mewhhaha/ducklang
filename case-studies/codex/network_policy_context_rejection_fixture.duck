@@ -1,0 +1,94 @@
+module () where
+
+const {} = import "./network_policy_context_types.duck" ();
+const { .network_approval_context_from_payload } = import "./network_policy_context.duck" ();
+
+type FixturePayload = NetworkDecisionPayload
+type FixturePayloads = List FixturePayload
+type FixturePayloadNode = ListNode FixturePayload
+type FixtureProtocol = NetworkPolicyProtocol
+type FixtureProtocolOption = NetworkPolicyContextProtocolOption
+type FixtureTextOption = NetworkPolicyContextTextOption
+
+const verify_network_policy_context_rejection_fixture: () -> I32 = () => {
+  let https: FixtureProtocol = `PolicyHttps ();
+  let protocol: FixtureProtocolOption = `ContextProtocol https;
+  let host: FixtureTextOption = `ContextText "example.com";
+  let missing_host: FixtureTextOption = `NoContextText ();
+  let missing_protocol: FixtureProtocolOption = `NoContextProtocol ();
+  let blank_host: FixtureTextOption = `ContextText " \t\n";
+
+  let payloads: FixturePayloads = `Nil ();
+  let blank_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `Decider (),
+    .protocol = protocol,
+    .host = blank_host,
+  ];
+  let blank_node: FixturePayloadNode = [blank_payload, payloads];
+  payloads = `Cons blank_node
+  let missing_host_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `Decider (),
+    .protocol = protocol,
+    .host = missing_host,
+  ];
+  let missing_host_node: FixturePayloadNode = [missing_host_payload, payloads];
+  payloads = `Cons missing_host_node
+  let missing_protocol_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `Decider (),
+    .protocol = missing_protocol,
+    .host = host,
+  ];
+  let missing_protocol_node: FixturePayloadNode = [missing_protocol_payload, payloads];
+  payloads = `Cons missing_protocol_node
+  let proxy_state_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `ProxyState (),
+    .protocol = protocol,
+    .host = host,
+  ];
+  let proxy_state_node: FixturePayloadNode = [proxy_state_payload, payloads];
+  payloads = `Cons proxy_state_node
+  let mode_guard_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `ModeGuard (),
+    .protocol = protocol,
+    .host = host,
+  ];
+  let mode_guard_node: FixturePayloadNode = [mode_guard_payload, payloads];
+  payloads = `Cons mode_guard_node
+  let baseline_payload: FixturePayload = [
+    .decision = `ProxyAsk (),
+    .source = `BaselinePolicy (),
+    .protocol = protocol,
+    .host = host,
+  ];
+  let baseline_node: FixturePayloadNode = [baseline_payload, payloads];
+  payloads = `Cons baseline_node
+  let denied_payload: FixturePayload = [
+    .decision = `ProxyDeny (),
+    .source = `Decider (),
+    .protocol = protocol,
+    .host = host,
+  ];
+  let denied_node: FixturePayloadNode = [denied_payload, payloads];
+  payloads = `Cons denied_node
+
+  let score = 0;
+  loop {
+    if let `Cons node = payloads {
+      let [payload, tail] = node;
+      if let `NoApprovalContext () = network_approval_context_from_payload payload {
+        score = score + 1
+      }
+      payloads = tail
+    } else {
+      break;
+    }
+  }
+  score
+};
+
+return { .verify_network_policy_context_rejection_fixture };

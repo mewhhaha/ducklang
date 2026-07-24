@@ -1,7 +1,7 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
-const {} = import "duck:prelude/json" ()
+const { .struct } = import "duck:prelude/types" ();
+const {} = import "duck:prelude/json" ();
 
 type AppServerJson = Json
 type AppServerTextOption = Option Text
@@ -48,7 +48,20 @@ type AppServerThreadSourceKind =
   | `Unknown Unit
 
 type AppServerThreadSourceKinds = List AppServerThreadSourceKind
-type AppServerThreadListParams = [AppServerTextOption, AppServerI32Option, AppServerThreadSortKey, AppServerSortDirection, AppServerTexts, AppServerThreadSourceKinds, AppServerBoolOption, AppServerTexts, Bool, AppServerTextOption, AppServerTextOption, AppServerTextOption]
+type AppServerThreadListParams = [
+  AppServerTextOption,
+  AppServerI32Option,
+  AppServerThreadSortKey,
+  AppServerSortDirection,
+  AppServerTexts,
+  AppServerThreadSourceKinds,
+  AppServerBoolOption,
+  AppServerTexts,
+  Bool,
+  AppServerTextOption,
+  AppServerTextOption,
+  AppServerTextOption,
+]
 type AppServerThreadReadParams = [Text, Bool]
 
 type AppServerTurnItemsView =
@@ -56,8 +69,20 @@ type AppServerTurnItemsView =
   | `Summary Unit
   | `Full Unit
 
-type AppServerThreadTurnsListParams = [Text, AppServerTextOption, I32, AppServerSortDirection, AppServerTurnItemsView]
-type AppServerThreadItemsListParams = [Text, AppServerTextOption, AppServerTextOption, I32, AppServerSortDirection]
+type AppServerThreadTurnsListParams = [
+  Text,
+  AppServerTextOption,
+  I32,
+  AppServerSortDirection,
+  AppServerTurnItemsView,
+]
+type AppServerThreadItemsListParams = [
+  Text,
+  AppServerTextOption,
+  AppServerTextOption,
+  I32,
+  AppServerSortDirection,
+]
 type AppServerThreadSetNameParams = [Text, Text]
 type AppServerThreadControlKind =
   | `SetThreadName Unit
@@ -224,7 +249,13 @@ type AppServerUserInput =
 
 type AppServerUserInputs = List AppServerUserInput
 type AppServerTurnStartParams = [Text, AppServerTextOption, AppServerUserInputs, AppServerJson]
-type AppServerTurnSteerParams = [Text, Text, AppServerTextOption, AppServerUserInputs, AppServerJson]
+type AppServerTurnSteerParams = [
+  Text,
+  Text,
+  AppServerTextOption,
+  AppServerUserInputs,
+  AppServerJson,
+]
 type AppServerTurnInterruptParams = [Text, Text]
 
 type AppServerUnknownMethod = [Text, AppServerJson]
@@ -291,20 +322,26 @@ type AppServerInitializeResult =
   | `InitializeOk AppServerInitializedSession
   | `InitializeError Text
 
-const allow_provider_fallback = (value: AppServerAllowProviderFallback) => if let `ProviderFallbackAllowed () = value { true } else { false }
+const allow_provider_fallback = (value:
+  AppServerAllowProviderFallback) => if let `ProviderFallbackAllowed () = value { true } else;
+  { false }
 
-const experimental_raw_events_enabled = (value: AppServerExperimentalRawEvents) => if let `RawEventsEnabled () = value { true } else { false }
+const experimental_raw_events_enabled = (value:
+  AppServerExperimentalRawEvents) => if let `RawEventsEnabled () = value { true } else { false };
 
-const turns_are_excluded = (value: AppServerExcludeTurns) => if let `TurnsExcluded () = value { true } else { false }
+const turns_are_excluded = (value: AppServerExcludeTurns) => if let `TurnsExcluded () = value { true
+} else { false };
 
-const thread_is_ephemeral = (value: AppServerThreadPersistence) => if let `EphemeralThread () = value { true } else { false }
+const thread_is_ephemeral = (value: AppServerThreadPersistence) => if let `EphemeralThread () =
+  value { true } else { false };
 
-const goal_continuation_is_deferred = (value: AppServerGoalContinuation) => if let `GoalContinuationDeferred () = value { true } else { false }
+const goal_continuation_is_deferred = (value:
+  AppServerGoalContinuation) => if let `GoalContinuationDeferred () = value { true } else { false };
 
 return {
-  allow_provider_fallback,
-  experimental_raw_events_enabled,
-  turns_are_excluded,
-  thread_is_ephemeral,
-  goal_continuation_is_deferred,
-}
+  .allow_provider_fallback,
+  .experimental_raw_events_enabled,
+  .turns_are_excluded,
+  .thread_is_ephemeral,
+  .goal_continuation_is_deferred,
+};

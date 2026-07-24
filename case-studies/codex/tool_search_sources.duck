@@ -1,30 +1,30 @@
 module () where
 
-const { text_append, text_less_than } = import "duck:prelude/runtime" ()
-const {} = import "./tool_search_types.duck" ()
+const { .text_append, .text_less_than } = import "duck:prelude/runtime" ();
+const {} = import "./tool_search_types.duck" ();
 
 type SearchSourcesSource = ToolSearchSourceInfo
 type SearchSourcesSourceNode = ToolSearchSourceInfoNode
 type SearchSourcesValues = ToolSearchSourceInfos
 
 const merge_search_sources: SearchSourcesValues -> SearchSourcesValues = values => {
-  let merged: SearchSourcesValues = `Nil ()
-  let current = values
-  let done = false
+  let merged: SearchSourcesValues = `Nil ();
+  let current = values;
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [source, tail] = node
-      let existing: SearchSourcesValues = merged
-      let preserved_reversed: SearchSourcesValues = `Nil ()
-      let replacement: SearchSourcesValues = `Nil ()
-      let found = false
-      let scan_done = false
+      let [source, tail] = node;
+      let existing: SearchSourcesValues = merged;
+      let preserved_reversed: SearchSourcesValues = `Nil ();
+      let replacement: SearchSourcesValues = `Nil ();
+      let found = false;
+      let scan_done = false;
 
       loop {
         if let `Cons existing_node = existing {
-          let [candidate, existing_tail] = existing_node
+          let [candidate, existing_tail] = existing_node;
           if candidate.name == source.name {
-            let selected = candidate
+            let selected = candidate;
             if let `None () = candidate.description {
               if let `Some description = source.description {
                 selected = [.name = candidate.name, .description = `Some description]
@@ -40,44 +40,44 @@ const merge_search_sources: SearchSourcesValues -> SearchSourcesValues = values 
         } else {
           scan_done = true
         }
-        if scan_done { break }
+        if scan_done { break; }
       }
 
       if !(found) {
         replacement = `Cons ([source, `Nil ()] as SearchSourcesSourceNode)
       }
 
-      let restore_done = false
+      let restore_done = false;
       loop {
         if let `Cons preserved_node = preserved_reversed {
-          let [preserved, preserved_tail] = preserved_node
+          let [preserved, preserved_tail] = preserved_node;
           replacement = `Cons ([preserved, replacement] as SearchSourcesSourceNode)
           preserved_reversed = preserved_tail
         } else {
           restore_done = true
         }
-        if restore_done { break }
+        if restore_done { break; }
       }
       merged = replacement
       current = tail
     } else { done = true }
-    if done { break }
+    if done { break; }
   }
 
-  let ordered: SearchSourcesValues = `Nil ()
+  let ordered: SearchSourcesValues = `Nil ();
   current = merged
   done = false
   loop {
     if let `Cons node = current {
-      let [source, tail] = node
-      let remaining = ordered
-      let prefix_reversed: SearchSourcesValues = `Nil ()
-      let inserted: SearchSourcesValues = `Nil ()
-      let insertion_done = false
+      let [source, tail] = node;
+      let remaining = ordered;
+      let prefix_reversed: SearchSourcesValues = `Nil ();
+      let inserted: SearchSourcesValues = `Nil ();
+      let insertion_done = false;
 
       loop {
         if let `Cons ordered_node = remaining {
-          let [candidate, ordered_tail] = ordered_node
+          let [candidate, ordered_tail] = ordered_node;
           if text_less_than [source.name, candidate.name] {
             inserted = `Cons ([source, remaining] as SearchSourcesSourceNode)
             insertion_done = true
@@ -89,56 +89,68 @@ const merge_search_sources: SearchSourcesValues -> SearchSourcesValues = values 
           inserted = `Cons ([source, `Nil ()] as SearchSourcesSourceNode)
           insertion_done = true
         }
-        if insertion_done { break }
+        if insertion_done { break; }
       }
 
-      let restore_done = false
+      let restore_done = false;
       loop {
         if let `Cons prefix_node = prefix_reversed {
-          let [candidate, prefix_tail] = prefix_node
+          let [candidate, prefix_tail] = prefix_node;
           inserted = `Cons ([candidate, inserted] as SearchSourcesSourceNode)
           prefix_reversed = prefix_tail
         } else {
           restore_done = true
         }
-        if restore_done { break }
+        if restore_done { break; }
       }
       ordered = inserted
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   ordered
-}
+};
 
 const render_search_sources: SearchSourcesValues -> Text = values => {
-  let ordered = merge_search_sources values
+  let ordered = merge_search_sources values;
   if let `Nil () = ordered {
     "None currently enabled."
   } else {
-    let rendered = ""
-    let current = ordered
-    let first = true
-    let done = false
+    let rendered = "";
+    let current = ordered;
+    let first = true;
+    let done = false;
     loop {
       if let `Cons node = current {
-        let [source, tail] = node
-        let line = text_append("- ", source.name)
-        if let `Some description = source.description { line = text_append(line, text_append(": ", description)) }
-        if first { rendered = line } else { rendered = text_append(rendered, text_append("\n", line)) }
+        let [source, tail] = node;
+        let line = text_append("- ", source.name);
+        if let `Some description = source.description { line = text_append(
+          line,
+          text_append(": ", description),
+        ) }
+        if first { rendered = line } else { rendered = text_append(
+          rendered,
+          text_append("\n", line),
+        ) }
         first = false
         current = tail
       } else { done = true }
-      if done { break }
+      if done { break; }
     }
     rendered
   }
-}
+};
 
 const tool_search_description: SearchSourcesValues -> Text = values => {
-  text_append("# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n", text_append(render_search_sources values, "\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`."))
-}
+  text_append(
+    "# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes matching tools for the next model call.\n\nYou have access to tools from the following sources:\n",
+    text_append(
+      render_search_sources values,
+      "\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`.",
+    ),
+  )
+};
 
-return { merge_search_sources, render_search_sources, tool_search_description }
+return { .merge_search_sources, .render_search_sources, .tool_search_description };

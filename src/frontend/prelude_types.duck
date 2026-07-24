@@ -39,26 +39,26 @@ infixl 45 :| = @type .union
 infixl 50 :& = @type .intersection
 infixl 55 :- = @type .difference
 
-const cast = (value, const target) => @cast(value, target)
+const cast = (value, const target) => @cast(value, target);
 
-const seal = (value, const target) => value :> target
+const seal = (value, const target) => value :> target;
 
-const representation = (value, const target) => value :< target
+const representation = (value, const target) => value :< target;
 
-const type_extend = (base, const additions) => base :+ additions
+const type_extend = (base, const additions) => base :+ additions;
 
-const type_union = (left, right) => left :| right
+const type_union = (left, right) => left :| right;
 
-const type_intersection = (left, right) => left :& right
+const type_intersection = (left, right) => left :& right;
 
-const type_difference = (base, removed) => base :- removed
+const type_difference = (base, removed) => base :- removed;
 
-const newtype = representation => representation
+const newtype = representation => representation;
 
-const packed = layout => layout
+const packed = layout => layout;
 
 const struct = (const shape) => {
-  let product_type = []
+  let product_type = [];
 
   for field in shape {
     product_type = [...product_type, field.value]
@@ -69,7 +69,7 @@ const struct = (const shape) => {
   }
 
   let new = (const values) => {
-    let product = []
+    let product = [];
 
     for field in shape {
       for candidate in values {
@@ -81,29 +81,29 @@ const struct = (const shape) => {
       }
     }
 
-    let checked_product = if @len(values) == @len(shape) {
+    let checked_product = if @len values == @len shape {
       product
     } else {
       [...product, 0, 0]
-    }
+    };
 
     cast(checked_product, product_type)
-  }
+  };
 
-  product_type = product_type :+ { shape, new }
+  product_type = product_type :+ { .shape, .new }
 
   product_type
-}
+};
 
 return {
-  struct,
-  packed,
-  newtype,
-  cast,
-  seal,
-  representation,
-  type_extend,
-  type_union,
-  type_intersection,
-  type_difference,
-}
+  .struct,
+  .packed,
+  .newtype,
+  .cast,
+  .seal,
+  .representation,
+  .type_extend,
+  .type_union,
+  .type_intersection,
+  .type_difference,
+};

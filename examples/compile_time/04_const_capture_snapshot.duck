@@ -1,5 +1,5 @@
-const factor = 2
-const scale = value => value * factor
-const factor = 3
+const factor = 2;
+const scale = value => value * factor;
+const factor = 3;
 
-scale(21)
+scale 21

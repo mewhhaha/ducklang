@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type HostedSpecMode =
   | `Cached Unit
@@ -75,31 +75,36 @@ type HostedSpecBoolOption =
   | `HostedBoolMissing Unit
   | `HostedBoolPresent Bool
 
-const create_hosted_web_search_spec: [HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType] -> HostedSpec = (mode, config, tool_type) => {
-  if let `Disabled () = mode {
-    return `HostedSpecMissing ()
-  }
-
-  if let `Cached () = mode {
-    if let `TextAndImage () = tool_type {
-      return `CachedTextAndImage config
+const create_hosted_web_search_spec: [HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType] ->
+  HostedSpec = (
+    mode,
+    config,
+    tool_type,
+  ) => {
+    if let `Disabled () = mode {
+      return `HostedSpecMissing ();
     }
-    return `CachedText config
-  }
 
-  if let `Indexed () = mode {
-    if let `TextAndImage () = tool_type {
-      return `IndexedTextAndImage config
+    if let `Cached () = mode {
+      if let `TextAndImage () = tool_type {
+        return `CachedTextAndImage config;
+      }
+      return `CachedText config;
     }
-    return `IndexedText config
-  }
 
-  if let `TextAndImage () = tool_type {
-    `LiveTextAndImage config
-  } else {
-    `LiveText config
-  }
-}
+    if let `Indexed () = mode {
+      if let `TextAndImage () = tool_type {
+        return `IndexedTextAndImage config;
+      }
+      return `IndexedText config;
+    }
+
+    if let `TextAndImage () = tool_type {
+      `LiveTextAndImage config
+    } else {
+      `LiveText config
+    }
+  };
 
 const hosted_web_search_external_access: HostedSpec -> HostedSpecBoolOption = spec => {
   if let `HostedSpecMissing () = spec {
@@ -111,7 +116,7 @@ const hosted_web_search_external_access: HostedSpec -> HostedSpecBoolOption = sp
   } else {
     `HostedBoolPresent true
   }
-}
+};
 
 const hosted_web_search_indexed_access: HostedSpec -> HostedSpecBoolOption = spec => {
   if let `IndexedText _ = spec {
@@ -121,10 +126,10 @@ const hosted_web_search_indexed_access: HostedSpec -> HostedSpecBoolOption = spe
   } else {
     `HostedBoolMissing ()
   }
-}
+};
 
 return {
-  create_hosted_web_search_spec,
-  hosted_web_search_external_access,
-  hosted_web_search_indexed_access,
-}
+  .create_hosted_web_search_spec,
+  .hosted_web_search_external_access,
+  .hosted_web_search_indexed_access,
+};

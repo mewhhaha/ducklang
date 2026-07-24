@@ -3,8 +3,8 @@ Let-else binding
 ==================
 
 let `Some value = result else {
-  return 0
-}
+  return 0;
+};
 value
 
 ---
@@ -23,3 +23,22 @@ value
   (expression_statement
     (postfix_expression
       (identifier))))
+
+==================
+Return without a value
+==================
+
+let stop = () => {
+  return;
+};
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter_list)
+      (postfix_expression
+        (block
+          (return_statement))))))

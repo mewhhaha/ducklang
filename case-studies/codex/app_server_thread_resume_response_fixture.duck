@@ -1,8 +1,9 @@
 module () where
 
-const { json_object, json_object_empty, json_object_get, json_object_prepend, json_string } = import "duck:prelude/json" ()
-const { materialize_thread_resume_response } = import "./app_server_thread_responses.duck" ()
-const {} = import "./app_server_thread_response_types.duck" ()
+const { .json_object, .json_object_empty, .json_object_get, .json_object_prepend, .json_string } =
+  import "duck:prelude/json" ();
+const { .materialize_thread_resume_response } = import "./app_server_thread_responses.duck" ();
+const {} = import "./app_server_thread_response_types.duck" ();
 
 type FixtureMetadata = AppServerThreadResponseMetadata
 type FixtureResumeMetadata = AppServerThreadResumeResponseMetadata
@@ -12,18 +13,36 @@ const field_is_string = (fields, key: Text, expected: Text) => {
   if let `Found value = json_object_get(key, fields) {
     if let `String text = value { text == expected } else { false }
   } else { false }
-}
+};
 
-let empty_texts: FixtureTexts = `Nil ()
-let common: FixtureMetadata = [json_object(json_object_prepend("id", json_string("thread-1"), json_object_empty())), "gpt-5.4", "openai", `None (), "/repo", empty_texts, empty_texts, json_string("never"), json_string("user"), json_string("read-only"), `None (), `None (), `ExperimentalThreadResponse ()]
-let page = json_object(json_object_prepend("nextCursor", json_string("next"), json_object_empty()))
-let metadata: FixtureResumeMetadata = [common, `Some page, `Some "turn-head", `Some "item-head"]
-let value = materialize_thread_resume_response(metadata)
-let score = 0
+let empty_texts: FixtureTexts = `Nil ();
+let common: FixtureMetadata = [
+  json_object(json_object_prepend("id", json_string "thread-1", json_object_empty())),
+  "gpt-5.4",
+  "openai",
+  `None (),
+  "/repo",
+  empty_texts,
+  empty_texts,
+  json_string "never",
+  json_string "user",
+  json_string "read-only",
+  `None (),
+  `None (),
+  `ExperimentalThreadResponse (),
+];
+let page = json_object(json_object_prepend("nextCursor", json_string "next", json_object_empty()));
+let metadata: FixtureResumeMetadata = [common, `Some page, `Some "turn-head", `Some "item-head"];
+let value = materialize_thread_resume_response metadata;
+let score = 0;
 
 if let `Object fields = value {
   if field_is_string(fields, "model", "gpt-5.4") { score = score + 1 }
-  if field_is_string(fields, "turnsBackwardsCursor", "turn-head") && field_is_string(fields, "itemsBackwardsCursor", "item-head") {
+  if field_is_string(fields, "turnsBackwardsCursor", "turn-head") && field_is_string(
+    fields,
+    "itemsBackwardsCursor",
+    "item-head",
+  ) {
     score = score + 10
   }
   if let `Found initial_page = json_object_get("initialTurnsPage", fields) {
@@ -33,4 +52,4 @@ if let `Object fields = value {
   }
 }
 
-return { .score = score }
+return { .score = score };

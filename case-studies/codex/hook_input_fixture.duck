@@ -1,9 +1,20 @@
 module () where
 
-const { json_string } = import "duck:prelude/json" ()
-const hook_input_types_module = import "./hook_input_types.duck"
-const hook_input_module = import "./hook_input.duck"
-const { encode_compact_input, encode_permission_request_input, encode_post_tool_input, encode_pre_tool_input, encode_session_end_input, encode_session_start_input, encode_stop_input, encode_subagent_start_input, encode_subagent_stop_input, encode_user_prompt_input } = hook_input_module()
+const { .json_string } = import "duck:prelude/json" ();
+const hook_input_types_module = import "./hook_input_types.duck";
+const hook_input_module = import "./hook_input.duck";
+const {
+  .encode_compact_input,
+  .encode_permission_request_input,
+  .encode_post_tool_input,
+  .encode_pre_tool_input,
+  .encode_session_end_input,
+  .encode_session_start_input,
+  .encode_stop_input,
+  .encode_subagent_start_input,
+  .encode_subagent_stop_input,
+  .encode_user_prompt_input,
+} = hook_input_module();
 
 type FixtureContext = HookTurnInputContext
 type FixturePreTool = HookPreToolInput
@@ -17,29 +28,77 @@ type FixtureUserPrompt = HookUserPromptInput
 type FixtureStop = HookStopInput
 type FixtureSubagentStop = HookSubagentStopInput
 
-let context: FixtureContext = ["session", "turn", `Some "agent", `None (), `None (), "/repo", "gpt"]
-let pre_tool: FixturePreTool = [context, "on-request", "shell", json_string("input"), "call"]
-let permission: FixturePermission = [context, "on-request", "shell", json_string("input")]
-let post_tool: FixturePostTool = [context, "on-request", "shell", json_string("input"), json_string("output"), "call"]
-let compact: FixtureCompact = [context, "auto"]
-let session_start: FixtureSessionStart = ["session", `None (), "/repo", "gpt", "on-request", "startup"]
-let session_end: FixtureSessionEnd = ["session", `Some "/rollout", "/repo"]
-let subagent_start: FixtureSubagentStart = ["session", "turn", `None (), "/repo", "gpt", "on-request", "agent", "worker"]
-let user_prompt: FixtureUserPrompt = [context, "on-request", "hello"]
-let stop: FixtureStop = ["session", "turn", `None (), "/repo", "gpt", "on-request", true, `Some "done"]
-let subagent_stop: FixtureSubagentStop = ["session", "turn", `None (), `Some "/agent-rollout", "/repo", "gpt", "on-request", false, "agent", "worker", `None ()]
-let score = 0
+let context: FixtureContext = ["session", "turn", `Some "agent", `None (), `None (), "/repo", "gpt"];
+let pre_tool: FixturePreTool = [context, "on-request", "shell", json_string "input", "call"];
+let permission: FixturePermission = [context, "on-request", "shell", json_string "input"];
+let post_tool: FixturePostTool = [
+  context,
+  "on-request",
+  "shell",
+  json_string "input",
+  json_string "output",
+  "call",
+];
+let compact: FixtureCompact = [context, "auto"];
+let session_start: FixtureSessionStart = [
+  "session",
+  `None (),
+  "/repo",
+  "gpt",
+  "on-request",
+  "startup",
+];
+let session_end: FixtureSessionEnd = ["session", `Some "/rollout", "/repo"];
+let subagent_start: FixtureSubagentStart = [
+  "session",
+  "turn",
+  `None (),
+  "/repo",
+  "gpt",
+  "on-request",
+  "agent",
+  "worker",
+];
+let user_prompt: FixtureUserPrompt = [context, "on-request", "hello"];
+let stop: FixtureStop = [
+  "session",
+  "turn",
+  `None (),
+  "/repo",
+  "gpt",
+  "on-request",
+  true,
+  `Some "done",
+];
+let subagent_stop: FixtureSubagentStop = [
+  "session",
+  "turn",
+  `None (),
+  `Some "/agent-rollout",
+  "/repo",
+  "gpt",
+  "on-request",
+  false,
+  "agent",
+  "worker",
+  `None (),
+];
+let score = 0;
 
-if encode_pre_tool_input(pre_tool) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PreToolUse\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\",\"tool_use_id\":\"call\"}" { score = score + 1 }
-if encode_permission_request_input(permission) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PermissionRequest\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\"}" { score = score + 1 }
-if encode_post_tool_input(post_tool) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PostToolUse\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\",\"tool_response\":\"output\",\"tool_use_id\":\"call\"}" { score = score + 1 }
-if encode_compact_input("PreCompact", compact) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PreCompact\",\"model\":\"gpt\",\"trigger\":\"auto\"}" { score = score + 1 }
-if encode_compact_input("PostCompact", compact) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PostCompact\",\"model\":\"gpt\",\"trigger\":\"auto\"}" { score = score + 1 }
-if encode_session_start_input(session_start) == "{\"session_id\":\"session\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"SessionStart\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"source\":\"startup\"}" { score = score + 1 }
-if encode_session_end_input(session_end) == "{\"session_id\":\"session\",\"transcript_path\":\"/rollout\",\"cwd\":\"/repo\",\"hook_event_name\":\"SessionEnd\",\"reason\":\"other\"}" { score = score + 1 }
-if encode_subagent_start_input(subagent_start) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"SubagentStart\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"agent_id\":\"agent\",\"agent_type\":\"worker\"}" { score = score + 1 }
-if encode_user_prompt_input(user_prompt) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"UserPromptSubmit\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"prompt\":\"hello\"}" { score = score + 1 }
-if encode_stop_input(stop) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"Stop\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"stop_hook_active\":true,\"last_assistant_message\":\"done\"}" { score = score + 1 }
-if encode_subagent_stop_input(subagent_stop) == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"agent_transcript_path\":\"/agent-rollout\",\"cwd\":\"/repo\",\"hook_event_name\":\"SubagentStop\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"stop_hook_active\":false,\"agent_id\":\"agent\",\"agent_type\":\"worker\",\"last_assistant_message\":null}" { score = score + 1 }
+if encode_pre_tool_input pre_tool == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PreToolUse\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\",\"tool_use_id\":\"call\"}" { score = score + 1 }
+if encode_permission_request_input permission == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PermissionRequest\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\"}" { score = score + 1 }
+if encode_post_tool_input post_tool == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PostToolUse\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"tool_name\":\"shell\",\"tool_input\":\"input\",\"tool_response\":\"output\",\"tool_use_id\":\"call\"}" { score = score + 1 }
+if encode_compact_input("PreCompact",
+  compact) ==
+  "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PreCompact\",\"model\":\"gpt\",\"trigger\":\"auto\"}" { score = score + 1 }
+if encode_compact_input("PostCompact",
+  compact) ==
+  "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"PostCompact\",\"model\":\"gpt\",\"trigger\":\"auto\"}" { score = score + 1 }
+if encode_session_start_input session_start == "{\"session_id\":\"session\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"SessionStart\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"source\":\"startup\"}" { score = score + 1 }
+if encode_session_end_input session_end == "{\"session_id\":\"session\",\"transcript_path\":\"/rollout\",\"cwd\":\"/repo\",\"hook_event_name\":\"SessionEnd\",\"reason\":\"other\"}" { score = score + 1 }
+if encode_subagent_start_input subagent_start == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"SubagentStart\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"agent_id\":\"agent\",\"agent_type\":\"worker\"}" { score = score + 1 }
+if encode_user_prompt_input user_prompt == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"agent_id\":\"agent\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"UserPromptSubmit\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"prompt\":\"hello\"}" { score = score + 1 }
+if encode_stop_input stop == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"cwd\":\"/repo\",\"hook_event_name\":\"Stop\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"stop_hook_active\":true,\"last_assistant_message\":\"done\"}" { score = score + 1 }
+if encode_subagent_stop_input subagent_stop == "{\"session_id\":\"session\",\"turn_id\":\"turn\",\"transcript_path\":null,\"agent_transcript_path\":\"/agent-rollout\",\"cwd\":\"/repo\",\"hook_event_name\":\"SubagentStop\",\"model\":\"gpt\",\"permission_mode\":\"on-request\",\"stop_hook_active\":false,\"agent_id\":\"agent\",\"agent_type\":\"worker\",\"last_assistant_message\":null}" { score = score + 1 }
 
-return { .score = score }
+return { .score = score };

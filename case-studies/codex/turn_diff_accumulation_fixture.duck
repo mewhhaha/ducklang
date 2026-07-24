@@ -1,0 +1,83 @@
+module () where
+
+const {} = import "./turn_diff_types.duck" ();
+const { .empty_turn_diff, .track_turn_diff_delta } = import "./turn_diff.duck" ();
+const { .turn_diff_net_changes } = import "./turn_diff_projection.duck" ();
+const { .turn_diff_fixture_exact_delta } = import "./turn_diff_fixture_common.duck" ();
+
+type FixtureMutation = TurnDiffMutation
+type FixtureFileMutation = TurnDiffFileMutation
+type FixtureTextOption = TurnDiffTextOption
+type FixtureAdd = TurnDiffAdd
+type FixtureUpdate = TurnDiffUpdate
+type FixtureDelete = TurnDiffDelete
+type FixtureDelta = TurnDiffDelta
+type FixtureDeltas = List FixtureDelta
+type FixtureDeltaNode = ListNode FixtureDelta
+
+const verify_turn_diff_accumulation_fixture: () -> I32 = () => {
+  let none: FixtureTextOption = `None ();
+  let addition: FixtureAdd = [.content = "foo\n", .overwritten_content = none];
+  let addition_file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+  let addition_mutation: FixtureMutation = [.path = "a.txt", .mutation = addition_file_mutation];
+
+  let update: FixtureUpdate = [
+    .move_path = none,
+    .old_content = "foo\n",
+    .overwritten_move_content = none,
+    .new_content = "foo\nbar\n",
+  ];
+  let update_file_mutation: FixtureFileMutation = `TurnDiffUpdate update;
+  let update_mutation: FixtureMutation = [.path = "a.txt", .mutation = update_file_mutation];
+
+  let deletion: FixtureDelete = [.content = "x\n"];
+  let deletion_file_mutation: FixtureFileMutation = `TurnDiffDelete deletion;
+  let deletion_mutation: FixtureMutation = [.path = "b.txt", .mutation = deletion_file_mutation];
+
+  let deltas: FixtureDeltas = `Nil ();
+  let deletion_delta = turn_diff_fixture_exact_delta deletion_mutation;
+  let deletion_node: FixtureDeltaNode = [deletion_delta, deltas];
+  deltas = `Cons deletion_node
+  let update_delta = turn_diff_fixture_exact_delta update_mutation;
+  let update_node: FixtureDeltaNode = [update_delta, deltas];
+  deltas = `Cons update_node
+  let addition_delta = turn_diff_fixture_exact_delta addition_mutation;
+  let addition_node: FixtureDeltaNode = [addition_delta, deltas];
+  deltas = `Cons addition_node
+
+  let state = empty_turn_diff();
+  loop {
+    if let `Cons node = deltas {
+      let [delta, tail] = node;
+      state = track_turn_diff_delta(state, "", delta)
+      deltas = tail
+    } else {
+      break;
+    }
+  }
+
+  let score = 0;
+  let changes = turn_diff_net_changes state;
+  if let `Cons first_node = changes {
+    let [first, after_first] = first_node;
+    if let `TurnDiffAdded added = first {
+      if added.path.environment_id == "" && added.path.path == "a.txt" && added.content == "foo\nbar\n" {
+        score = score + 1
+      }
+    }
+    if let `Cons second_node = after_first {
+      let [second, tail] = second_node;
+      if let `TurnDiffDeleted deleted = second {
+        if deleted.path.path == "b.txt" && deleted.content == "x\n" {
+          if let `Nil () = tail { score = score + 10 }
+        }
+      }
+    }
+  }
+  if state.valid && state.next_revision == 3 {
+    score = score + 100
+  }
+  score
+};
+
+return { .verify_turn_diff_accumulation_fixture };

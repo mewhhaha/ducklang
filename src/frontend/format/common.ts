@@ -78,7 +78,10 @@ export function format_params(params: Param[]): string {
   }).join(", ");
 }
 
-export function format_pattern(pattern: Pattern): string {
+export function format_pattern(
+  pattern: Pattern,
+  format_expr: (expr: FrontExpr) => string,
+): string {
   if (pattern.tag === "binding") {
     let text = "";
 
@@ -151,6 +154,10 @@ export function format_pattern(pattern: Pattern): string {
     );
   }
 
+  if (pattern.tag === "const_value") {
+    return "#(" + format_expr(pattern.value) + ")";
+  }
+
   if (pattern.tag === "value") {
     return pattern.name;
   }
@@ -160,14 +167,16 @@ export function format_pattern(pattern: Pattern): string {
   }
 
   if (pattern.tag === "or") {
-    return pattern.alternatives.map(format_pattern).join(" | ");
+    return pattern.alternatives.map((alternative) => {
+      return format_pattern(alternative, format_expr);
+    }).join(" | ");
   }
 
   if (pattern.tag === "union_case") {
     let text = "`" + pattern.name;
 
     if (pattern.value) {
-      text += " " + format_pattern(pattern.value);
+      text += " " + format_pattern(pattern.value, format_expr);
     } else {
       text += " ()";
     }
@@ -177,7 +186,7 @@ export function format_pattern(pattern: Pattern): string {
 
   if (pattern.tag === "product") {
     const entries = pattern.entries.map((entry) => {
-      let text = format_pattern(entry.pattern);
+      let text = format_pattern(entry.pattern, format_expr);
 
       if (entry.label !== undefined) {
         if (
@@ -185,7 +194,7 @@ export function format_pattern(pattern: Pattern): string {
           entry.pattern.name === entry.label &&
           entry.pattern.mode === "default"
         ) {
-          text = format_pattern(entry.pattern);
+          text = "." + format_pattern(entry.pattern, format_expr);
         } else {
           text = "." + entry.label + " = " + text;
         }
@@ -195,7 +204,7 @@ export function format_pattern(pattern: Pattern): string {
     });
 
     if (pattern.rest !== undefined) {
-      entries.push("..." + format_pattern(pattern.rest));
+      entries.push("..." + format_pattern(pattern.rest, format_expr));
     }
 
     if (
@@ -224,20 +233,20 @@ export function format_pattern(pattern: Pattern): string {
         return field.name;
       }
 
-      return field.name + ": " + format_pattern(field.pattern);
+      return field.name + ": " + format_pattern(field.pattern, format_expr);
     });
 
     if (pattern.rest) {
-      fields.push("..." + format_pattern(pattern.rest));
+      fields.push("..." + format_pattern(pattern.rest, format_expr));
     }
 
     return "{ " + fields.join(", ") + " }";
   }
 
-  const items = pattern.items.map(format_pattern);
+  const items = pattern.items.map((item) => format_pattern(item, format_expr));
 
   if (pattern.rest) {
-    items.push("..." + format_pattern(pattern.rest));
+    items.push("..." + format_pattern(pattern.rest, format_expr));
   }
 
   return "[" + items.join(", ") + "]";

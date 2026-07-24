@@ -1,6 +1,6 @@
 module () where
 
-const { struct } = import "duck:prelude/types" ()
+const { .struct } = import "duck:prelude/types" ();
 
 type RequestPermissionsTextOption =
   | `None Unit
@@ -143,4 +143,4 @@ type RequestPermissionsExecutionResult =
   | `Completed RequestPermissionsCompletion
   | `Rejected Text
 
-return {}
+return {};

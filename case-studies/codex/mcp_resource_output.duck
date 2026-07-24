@@ -1,14 +1,21 @@
 module () where
 
-const { text_append, text_less_than } = import "duck:prelude/runtime" ()
-const { encode_json } = import "duck:prelude/json/encode" ()
-const { parse_json_document } = import "duck:prelude/json" ()
-const { json_array, json_array_empty, json_array_prepend, json_object, json_object_prepend, json_string } = import "duck:prelude/json/values" ()
-const {} = import "duck:prelude/json/values" ()
-const {} = import "./mcp_resource_types.duck" ()
-const { bound_resource_output } = import "./mcp_resource_output_limit.duck" ()
-const { model_can_access_mcp_server } = import "./mcp_resource_policy.duck" ()
-const { read_payload_json } = import "./mcp_resource_read_output.duck" ()
+const { .text_append, .text_less_than } = import "duck:prelude/runtime" ();
+const { .encode_json } = import "duck:prelude/json/encode" ();
+const { .parse_json_document } = import "duck:prelude/json" ();
+const {
+  .json_array,
+  .json_array_empty,
+  .json_array_prepend,
+  .json_object,
+  .json_object_prepend,
+  .json_string,
+} = import "duck:prelude/json/values" ();
+const {} = import "duck:prelude/json/values" ();
+const {} = import "./mcp_resource_types.duck" ();
+const { .bound_resource_output } = import "./mcp_resource_output_limit.duck" ();
+const { .model_can_access_mcp_server } = import "./mcp_resource_policy.duck" ();
+const { .read_payload_json } = import "./mcp_resource_read_output.duck" ();
 
 type ResourceOutputOperation = McpResourceOperation
 type ResourceOutputPage = McpResourcePage
@@ -25,83 +32,93 @@ type ResourceOutputObjectResult =
   | `ResourceObjectFailed Text
 
 const reverse_json_array: ResourceOutputJsonArray -> ResourceOutputJsonArray = values => {
-  let current: ResourceOutputJsonArray = values
-  let reversed: ResourceOutputJsonArray = json_array_empty()
-  let done = false
+  let current: ResourceOutputJsonArray = values;
+  let reversed: ResourceOutputJsonArray = json_array_empty();
+  let done = false;
   loop {
     if let `Cons node = current {
-      let [value, tail] = node
+      let [value, tail] = node;
       reversed = json_array_prepend(value, reversed)
       current = tail
     } else {
       done = true
     }
-    if done { break }
+    if done { break; }
   }
   reversed
-}
+};
 
-let parse_resource_object: [Text, Text] -> ResourceOutputObjectResult = (server: Text, document: Text) => {
-  let parsed = parse_json_document document
+let parse_resource_object: [Text, Text] -> ResourceOutputObjectResult = (
+  server: Text,
+  document: Text,
+) => {
+  let parsed = parse_json_document document;
   if let `Ok value_and_position = parsed {
-    let [value, _] = value_and_position
+    let [value, _] = value_and_position;
     if let `Object object = value {
       `ResourceObject (json_object_prepend("server", json_string server, object))
     } else {
-      `ResourceObjectFailed (text_append("MCP server '", text_append(server, "' returned a non-object resource")))
+      `ResourceObjectFailed (
+        text_append("MCP server '", text_append(server, "' returned a non-object resource"))
+      )
     }
   } else {
-    `ResourceObjectFailed (text_append("MCP server '", text_append(server, "' returned invalid resource JSON")))
+    `ResourceObjectFailed (
+      text_append("MCP server '", text_append(server, "' returned invalid resource JSON"))
+    )
   }
-}
+};
 
-const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages = (values: ResourceOutputPages, orchestrator_mcp_enabled: Bool) => {
-  let current: ResourceOutputPages = values
-  let ordered: ResourceOutputPages = `Nil ()
-  let done = false
+const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages = (
+  values: ResourceOutputPages,
+  orchestrator_mcp_enabled: Bool,
+) => {
+  let current: ResourceOutputPages = values;
+  let ordered: ResourceOutputPages = `Nil ();
+  let done = false;
 
   loop {
     if let `Cons source_node = current {
-      let typed_source_node: ResourceOutputPageNode = source_node
-      let [page, tail] = typed_source_node
+      let typed_source_node: ResourceOutputPageNode = source_node;
+      let [page, tail] = typed_source_node;
 
       if model_can_access_mcp_server(page.server, orchestrator_mcp_enabled) {
-        let remaining: ResourceOutputPages = ordered
-        let prefix_reversed: ResourceOutputPages = `Nil ()
-        let inserted = false
+        let remaining: ResourceOutputPages = ordered;
+        let prefix_reversed: ResourceOutputPages = `Nil ();
+        let inserted = false;
 
         loop {
           if let `Cons ordered_node = remaining {
-            let typed_ordered_node: ResourceOutputPageNode = ordered_node
-            let [ordered_page, ordered_tail] = typed_ordered_node
+            let typed_ordered_node: ResourceOutputPageNode = ordered_node;
+            let [ordered_page, ordered_tail] = typed_ordered_node;
             if text_less_than [page.server, ordered_page.server] {
-              let inserted_node: ResourceOutputPageNode = [page, remaining]
+              let inserted_node: ResourceOutputPageNode = [page, remaining];
               remaining = `Cons inserted_node
               inserted = true
-              break
+              break;
             }
 
-            let prefix_node: ResourceOutputPageNode = [ordered_page, prefix_reversed]
+            let prefix_node: ResourceOutputPageNode = [ordered_page, prefix_reversed];
             prefix_reversed = `Cons prefix_node
             remaining = ordered_tail
           } else {
-            let inserted_node: ResourceOutputPageNode = [page, `Nil ()]
+            let inserted_node: ResourceOutputPageNode = [page, `Nil ()];
             remaining = `Cons inserted_node
             inserted = true
-            break
+            break;
           }
         }
 
         if inserted {
           loop {
             if let `Cons prefix_node = prefix_reversed {
-              let typed_prefix_node: ResourceOutputPageNode = prefix_node
-              let [prefix_page, prefix_tail] = typed_prefix_node
-              let restored_node: ResourceOutputPageNode = [prefix_page, remaining]
+              let typed_prefix_node: ResourceOutputPageNode = prefix_node;
+              let [prefix_page, prefix_tail] = typed_prefix_node;
+              let restored_node: ResourceOutputPageNode = [prefix_page, remaining];
               remaining = `Cons restored_node
               prefix_reversed = prefix_tail
             } else {
-              break
+              break;
             }
           }
           ordered = remaining
@@ -113,73 +130,91 @@ const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages 
       done = true
     }
 
-    if done { break }
+    if done { break; }
   }
 
   ordered
-}
+};
 
-let list_payload_json: [ResourceOutputOperation, ResourceOutputPages, Bool] -> ResourceOutputTextResult = (operation: ResourceOutputOperation, values: ResourceOutputPages, orchestrator_mcp_enabled: Bool) => {
-  let key = if let `ListResourceTemplates _ = operation { "resourceTemplates" } else { "resources" }
-  let requested_server: ResourceOutputTextOption = if let `ListResources args = operation {
-    args.server
-  } else if let `ListResourceTemplates args = operation {
-    args.server
-  } else {
-    `None ()
-  }
-
-  let ordered: ResourceOutputPages = ordered_visible_pages(values, orchestrator_mcp_enabled)
-  let current: ResourceOutputPages = ordered
-  let encoded_reversed: ResourceOutputJsonArray = json_array_empty()
-  let failure = ""
-  let next_cursor: ResourceOutputTextOption = `None ()
-  let done = false
-
-  loop {
-    if let `Cons page_node = current {
-      let [page, tail] = page_node
-      if let `Some requested = requested_server {
-        if page.server == requested { next_cursor = page.next_cursor }
-      }
-
-      let resource_current: ResourceOutputTexts = page.values
-      let resources_done = false
-      loop {
-        if let `Cons resource_node = resource_current {
-          let [document, resource_tail] = resource_node
-          let parsed = parse_resource_object(page.server, document)
-          if let `ResourceObject object = parsed {
-            encoded_reversed = json_array_prepend(json_object object, encoded_reversed)
-          } else if let `ResourceObjectFailed reason = parsed {
-            failure = reason
-          }
-          resource_current = resource_tail
-        } else {
-          resources_done = true
-        }
-        if resources_done { break }
-      }
-
-      current = tail
+let list_payload_json: [ResourceOutputOperation, ResourceOutputPages, Bool] ->
+  ResourceOutputTextResult = (
+    operation: ResourceOutputOperation,
+    values: ResourceOutputPages,
+    orchestrator_mcp_enabled: Bool,
+  ) => {
+    let key = if let `ListResourceTemplates _ = operation { "resourceTemplates" } else { "resources"
+    };
+    let requested_server: ResourceOutputTextOption = if let `ListResources args = operation {
+      args.server
+    } else if let `ListResourceTemplates args = operation {
+      args.server
     } else {
-      done = true
-    }
-    if done { break }
-  }
+      `None ()
+    };
 
-  if failure != "" {
-    `ResourceFailed failure
-  } else {
-    let fields = json_object_prepend(key, json_array(reverse_json_array encoded_reversed), `Nil ())
-    if let `Some cursor = next_cursor { fields = json_object_prepend("nextCursor", json_string cursor, fields) }
-    if let `Some server = requested_server { fields = json_object_prepend("server", json_string server, fields) }
-    `ResourceText (encode_json(json_object fields))
-  }
-}
+    let ordered: ResourceOutputPages = ordered_visible_pages(values, orchestrator_mcp_enabled);
+    let current: ResourceOutputPages = ordered;
+    let encoded_reversed: ResourceOutputJsonArray = json_array_empty();
+    let failure = "";
+    let next_cursor: ResourceOutputTextOption = `None ();
+    let done = false;
+
+    loop {
+      if let `Cons page_node = current {
+        let [page, tail] = page_node;
+        if let `Some requested = requested_server {
+          if page.server == requested { next_cursor = page.next_cursor }
+        }
+
+        let resource_current: ResourceOutputTexts = page.values;
+        let resources_done = false;
+        loop {
+          if let `Cons resource_node = resource_current {
+            let [document, resource_tail] = resource_node;
+            let parsed = parse_resource_object(page.server, document);
+            if let `ResourceObject object = parsed {
+              encoded_reversed = json_array_prepend(json_object object, encoded_reversed)
+            } else if let `ResourceObjectFailed reason = parsed {
+              failure = reason
+            }
+            resource_current = resource_tail
+          } else {
+            resources_done = true
+          }
+          if resources_done { break; }
+        }
+
+        current = tail
+      } else {
+        done = true
+      }
+      if done { break; }
+    }
+
+    if failure != "" {
+      `ResourceFailed failure
+    } else {
+      let fields = json_object_prepend(
+        key,
+        json_array(reverse_json_array encoded_reversed),
+        `Nil (),
+      );
+      if let `Some cursor = next_cursor { fields = json_object_prepend(
+        "nextCursor",
+        json_string cursor,
+        fields,
+      ) }
+      if let `Some server = requested_server { fields = json_object_prepend(
+        "server",
+        json_string server,
+        fields,
+      ) }
+      `ResourceText (encode_json(json_object fields))
+    }
+  };
 
 return {
-  bound_resource_output,
-  list_payload_json,
-  read_payload_json,
-}
+  .bound_resource_output,
+  .list_payload_json,
+  .read_payload_json,
+};

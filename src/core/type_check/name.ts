@@ -7,6 +7,10 @@ export function core_binding_value_type_name<ctx extends CoreTypeCheckCtx>(
   ctx: ctx,
   hooks: CoreTypeCheckHooks<ctx>,
 ): string {
+  if (value.ascribed_type !== undefined) {
+    return value.ascribed_type;
+  }
+
   if (value.tag === "num" && value.character !== undefined) {
     return "Char";
   }

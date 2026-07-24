@@ -12,12 +12,29 @@ function binding_signature(statement: Stmt | undefined): string | undefined {
   return format_type_expr(statement.type_annotation);
 }
 
+Deno.test("declared polymorphic signatures contextualize lambda parameters", () => {
+  const source = parse_source(`
+const choose: forall left right.[left, right] -> left = (first, second) => first;
+choose(42, true)
+`);
+  const choose = source.statements[0];
+
+  if (choose?.tag !== "bind" || choose.value.tag !== "lam") {
+    throw new Error("Missing choose function");
+  }
+
+  assert_equals(
+    choose.value.params.map((param) => param.annotation),
+    ["left", "right"],
+  );
+});
+
 Deno.test("function signatures infer field owners and transitive borrows", () => {
   const source = infer_front_function_signatures(parse_source(`
 type Point = struct { .x = I32 }
-let read = point => point.x
-let forward = point => read(point)
-let point = Point.new { .x = 42 }
+let read = point => point.x;
+let forward = point => read(point);
+let point = Point.new { .x = 42 };
 forward(&point)
 `));
   const read = source.statements.find((statement) => {
@@ -31,6 +48,21 @@ forward(&point)
   assert_equals(binding_signature(forward), "&Point -> I32");
 });
 
+Deno.test("function signatures preserve transient value-pack results", () => {
+  const source = infer_front_function_signatures(parse_source(`
+let direct = value => (value, true);
+let block = value => {
+  (value, false)
+};
+let (direct_value, direct_flag) = direct(1);
+let (block_value, block_flag) = block(2);
+direct_value + block_value
+`));
+
+  assert_equals(binding_signature(source.statements[0]), "I32 -> (I32, Bool)");
+  assert_equals(binding_signature(source.statements[1]), "I32 -> (I32, Bool)");
+});
+
 Deno.test("mutually recursive components infer one shared signature solution", () => {
   const source = infer_front_function_signatures(parse_source(`
 let rec even = value => {
@@ -38,7 +70,7 @@ let rec even = value => {
 }
 and odd = value => {
   if value == 0 { 0 } else { even(value - 1) }
-}
+};
 even(10)
 `));
   const even = source.statements[0];
@@ -59,7 +91,7 @@ even(10)
 
 Deno.test("unconstrained polymorphic functions remain unspecialized", () => {
   const source = infer_front_function_signatures(parse_source(`
-let identity = value => value
+let identity = value => value;
 identity(true)
 identity(1)
 `));

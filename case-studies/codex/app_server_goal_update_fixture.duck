@@ -1,24 +1,25 @@
-const { plan_thread_goal_set } = import "./app_server_goals.duck" ()
-const {} = import "./app_server_types.duck" ()
-const {} = import "./app_server_goal_types.duck" ()
+const { .plan_thread_goal_set } = import "./app_server_goals.duck" ();
+const {} = import "./app_server_types.duck" ();
+const {} = import "./app_server_goal_types.duck" ();
 
 type FixtureGoal = AppServerThreadGoal
 type FixtureGoalOption = AppServerThreadGoalOption
 type FixtureParams = AppServerThreadGoalSetParams
 type FixtureResult = AppServerThreadGoalSetPlanResult
 
-let goal: FixtureGoal = ["thread-7", "Old", `GoalActive (), `Some 10i64, 2i64, 3i64, 4i64, 5i64]
-let current: FixtureGoalOption = `Some goal
-let params: FixtureParams = ["thread-7", `Some "New", `Some (`GoalComplete ()), `Clear ()]
-let result: FixtureResult = plan_thread_goal_set(current, params)
-let score = 0
+let goal: FixtureGoal = ["thread-7", "Old", `GoalActive (), `Some 10i64, 2i64, 3i64, 4i64, 5i64];
+let current: FixtureGoalOption = `Some goal;
+let params: FixtureParams = ["thread-7", `Some "New", `Some (`GoalComplete ()), `Clear ()];
+let result: FixtureResult = plan_thread_goal_set(current, params);
+let score = 0;
 if let `GoalSetPlanned planned = result {
   if let `UpdateThreadGoal plan = planned {
-    let objective_valid = if let `Some value = plan.objective { value == "New" } else { false }
-    let status_valid = if let `Some status = plan.status { if let `GoalComplete () = status { true } else { false } } else { false }
-    let budget_valid = if let `Clear () = plan.token_budget { true } else { false }
+    let objective_valid = if let `Some value = plan.objective { value == "New" } else { false };
+    let status_valid = if let `Some status = plan.status { if let `GoalComplete () = status { true }
+      else { false } } else { false };
+    let budget_valid = if let `Clear () = plan.token_budget { true } else { false };
     if objective_valid && status_valid && budget_valid { score = score + 1 }
   }
 }
 
-return { .score = score }
+return { .score = score };

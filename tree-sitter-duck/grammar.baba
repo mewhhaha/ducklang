@@ -1,0 +1,891 @@
+grammar Duck
+
+skip _whitespace = /[ \t\r\n]+/ ;
+skip comment = /\/\/[^\r\n]*/ ;
+contextual _application_space priority 1 = /[ \t]+/ ;
+contextual _condition_application_space priority 1 = /[ \t]+/ ;
+contextual _type_application_space priority 1 = /[ \t]+/ ;
+
+token grouped_value_alternative_pattern priority 3 = /\([A-Za-z][A-Za-z0-9_]*([ \t\r\n]*\|[ \t\r\n]*[A-Za-z][A-Za-z0-9_]*)+\)/ ;
+token identifier = /([A-Za-z][A-Za-z0-9_]{0,2}|[A-Za-km-z][A-Za-z0-9_]{3}|l[A-Za-np-z0-9_][A-Za-z0-9_]{2}|lo[A-Za-np-z0-9_][A-Za-z0-9_]|loo[A-Za-oq-z0-9_]|[A-Za-z][A-Za-z0-9_]{4}[A-Za-z0-9_]*)/ ;
+token constructor_identifier = /[A-Z][A-Za-z0-9_]*/ ;
+token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_.]*/ ;
+token operator_symbol priority 0 = /([-!$%&*+\/<>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*|=[.\-!$%&*+\/<=?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)/ ;
+token effect_identifier priority 1 = /[A-Z][A-Za-z0-9]*/ ;
+token row_variable = /[a-z_][A-Za-z0-9_]*/ ;
+token number = /[0-9]+([iu][1-9][0-9]*|f(32|64))?/ ;
+token string = /"([^"\\]|\\[ntr"\\])*"/ ;
+token character = /'([^'\\\n\r]|\\[ntr'\\])'/ ;
+document = (
+             (
+               module_header
+               ((_module_statement (";")?))*
+               module_return_statement
+             )
+             | ((_module_statement (";")?))+
+           ) ;
+
+module_header = ("module" parameters:(parameter_list) "where") ;
+
+_module_statement = (
+                      declare_effect_statement
+                      | effect_statement
+                      | declare_record_statement
+                      | type_declaration_statement
+                      | duck_declaration_statement
+                      | extension_declaration_statement
+                      | fixity_declaration_statement
+                      | module_binding_statement
+                      | effect_binding_statement
+                      | resume_dup_statement
+                      | binding_statement
+                      | type_pattern_statement
+                      | for_statement
+                      | break_statement
+                      | continue_statement
+                      | index_assignment
+                      | assignment
+                      | expression_statement
+                    ) ;
+
+_statement = (
+               effect_binding_statement
+               | resume_dup_statement
+               | binding_statement
+               | type_pattern_statement
+               | return_statement
+               | for_statement
+               | break_statement
+               | continue_statement
+               | index_assignment
+               | assignment
+               | expression_statement
+             ) ;
+
+binding_statement = (
+                      (attribute:(attribute_group))*
+                      ((kind:("let") (recursive:("rec"))?) | (kind:("const") (open:("open"))?))
+                      (linear:("!"))?
+                      name:(_binding_pattern)
+                      ((":" type:(type_reference)))?
+                      "="
+                      value:(_expression)
+                      (
+                        (
+                          "and"
+                          mutual_name:(identifier)
+                          ((":" mutual_type:(type_reference)))?
+                          "="
+                          mutual_value:(_expression)
+                        )
+                      )*
+                      (("else" alternative:(block)))?
+                      ";"
+                    ) ;
+
+effect_row = _effect_row_expression ;
+
+_effect_row_expression = (
+                           effect_union_expression
+                           | effect_intersection_expression
+                           | effect_difference_expression
+                           | parenthesized_effect_expression
+                           | effect_family_reference
+                           | effect_row_variable
+                           | effect_operation_reference
+                         ) ;
+
+effect_union_expression = (left:(_effect_row_expression) ":|" right:(_effect_row_expression)) ;
+
+effect_intersection_expression = (
+                                   left:(_effect_row_expression)
+                                   ":&"
+                                   right:(_effect_row_expression)
+                                 ) ;
+
+effect_difference_expression = (left:(_effect_row_expression) ":-" right:(_effect_row_expression)) ;
+
+parenthesized_effect_expression = ("(" value:(_effect_row_expression) ")") ;
+
+effect_family_reference = effect:(effect_identifier) ;
+
+effect_row_variable = name:(row_variable) ;
+
+effect_operation_reference = (effect:(effect_identifier) "." operation:(identifier)) ;
+
+effect_binding_statement = (
+                             name:((identifier | wildcard | unit_pattern))
+                             "<-"
+                             value:(_expression)
+                           ) ;
+
+resume_dup_statement = (
+                         "let"
+                         "("
+                         "!"
+                         left:(identifier)
+                         ","
+                         "!"
+                         right:(identifier)
+                         ")"
+                         "="
+                         "dup"
+                         value:(linear_reference)
+                         ";"
+                       ) ;
+
+unit_pattern = ("(" ")") ;
+
+type_pattern_statement = (
+                           "let"
+                           pattern:(type_pattern)
+                           "="
+                           value:(_expression)
+                           ";"
+                         ) ;
+
+declare_effect_statement = (
+                             (attribute:(attribute_group))*
+                             "declare"
+                             "effect"
+                             name:(effect_identifier)
+                             operations:(effect_operation_block)
+                           ) ;
+
+effect_statement = (
+                     (attribute:(attribute_group))*
+                     "effect"
+                     name:(effect_identifier)
+                     (parameter:(identifier))*
+                     operations:(effect_operation_block)
+                   ) ;
+
+effect_operation_block = ("{" ((effect_operation (",")?))* "}") ;
+
+effect_operation = (
+                     ("suspending")?
+                     name:(identifier)
+                     ":"
+                     (forall:(effect_operation_forall))?
+                     parameters:(host_parameter_list)
+                     "=>"
+                     result:(host_result)
+                   ) ;
+
+effect_operation_forall = ("forall" (parameter:(identifier))+ ".") ;
+
+declare_record_statement = (
+                             (attribute:(attribute_group))*
+                             "declare"
+                             name:(identifier)
+                             fields:(type_field_block)
+                           ) ;
+
+type_declaration_statement = (
+                               (attribute:(attribute_group))*
+                               "type"
+                               name:(identifier)
+                               (parameter:(identifier))*
+                               "="
+                               definition:(
+                                 (
+                                   type_sum
+                                   | type_product
+                                   | struct_type
+                                   | newtype_type
+                                   | packed_type
+                                   | type_reference
+                                 )
+                               )
+                             ) ;
+
+newtype_type = ("newtype" representation:(type_reference)) ;
+
+packed_type = ("packed" (type_product | struct_type)) ;
+
+duck_declaration_statement = (
+                               (attribute:(attribute_group))*
+                               "duck"
+                               name:(identifier)
+                               (role:(identifier))+
+                               members:(duck_member_block)
+                             ) ;
+
+duck_member_block = ("{" (((duck_type_member | duck_member) (",")?))+ "}") ;
+
+duck_type_member = ("type" name:(identifier) (("=" default:(type_reference)))?) ;
+
+duck_member = ("." name:(identifier) "=" type:(type_reference)) ;
+
+extension_declaration_statement = (
+                                    (attribute:(attribute_group))*
+                                    "extend"
+                                    type:(identifier)
+                                    (parameter:(identifier))*
+                                    members:(extension_member_block)
+                                  ) ;
+
+extension_member_block = (
+                           "{"
+                           (
+                             (
+                               (extension_type_member | shape_field)
+                               (
+                                 (("," | ";") (extension_type_member | shape_field))
+                               )*
+                               (("," | ";"))?
+                             )
+                           )?
+                           "}"
+                         ) ;
+
+extension_type_member = ("type" name:(identifier) "=" type:(type_reference)) ;
+
+fixity_declaration_statement = (
+                                 (attribute:(attribute_group))*
+                                 fixity:(("infixl" | "infixr" | "infix" | "prefix"))
+                                 precedence:(number)
+                                 operator:(operator_symbol)
+                                 "="
+                                 target:(fixity_target)
+                               ) ;
+
+fixity_target = (
+                  _intrinsic_fixity_target
+                  | _qualified_fixity_target
+                  | identifier
+                  | intrinsic_identifier
+                ) ;
+
+qualified_identifier = (identifier "." identifier (("." identifier))*) ;
+
+type_sum = (type_case | ("|" type_case (("|" type_case))+)) ;
+
+type_case = ("`" name:(constructor_identifier) payload:(_type_intersection_reference)) ;
+
+type_product = positional_type_product ;
+
+named_type_field = ("." name:(identifier) "=" type:(type_reference)) ;
+
+positional_type_product = (
+                            (
+                              "("
+                              ((type_reference "," (type_reference (("," type_reference))*)) (",")?)
+                              ")"
+                            )
+                            | (
+                                "("
+                                element:(type_reference)
+                                ";"
+                                length:((_expression | wildcard))
+                                ")"
+                              )
+                            | ("[" (((type_reference (("," type_reference))*) (",")?))? "]")
+                          ) ;
+
+module_binding_statement = (
+                             (attribute:(attribute_group))*
+                             "module"
+                             name:(identifier)
+                             "="
+                             value:(_expression)
+                           ) ;
+
+host_parameter_list = ("(" (((host_parameter (("," host_parameter))*) (",")?))? ")") ;
+
+host_parameter = (
+                   (contract:(("&" | "#" | "scalar")) type:(type_reference))
+                   | type:(type_reference)
+                 ) ;
+
+host_result = ((contract:(("#" | "scalar")) type:(type_reference)) | type:(type_reference)) ;
+
+return_statement = ("return" (value:(_expression))? ";") ;
+
+module_return_statement = ("return" exports:(shape_value) ";") ;
+
+break_statement = ("break" (value:(_expression))? ";") ;
+
+continue_statement = ("continue" ";") ;
+
+assignment = (name:(identifier) operator:(("=" | ":=")) value:(_expression)) ;
+
+index_assignment = (
+                     name:(identifier)
+                     open:(_index_open)
+                     index:(_expression)
+                     "]"
+                     "="
+                     value:(_expression)
+                   ) ;
+
+for_statement = (
+                  (
+                    "for"
+                    first:(_match_pattern)
+                    (("," second:(_match_pattern)))?
+                    "in"
+                    start_or_collection:(condition_expression)
+                    (
+                      (
+                        (".." | "..=")
+                        end:(condition_expression)
+                        (("by" step:(condition_expression)))?
+                      )
+                    )?
+                    body:(_collection_range_body)
+                  )
+                  | (
+                      "for"
+                      start:(condition_expression)
+                      (".." | "..=")
+                      end:(condition_expression)
+                      (("by" step:(condition_expression)))?
+                      body:(_numeric_range_body)
+                    )
+                ) ;
+
+expression_statement = _expression ;
+
+_expression = (
+                try_with_expression
+                | loop_expression
+                | arrow_function
+                | recursive_function
+                | recursive_call_expression
+                | if_expression
+                | match_expression
+                | binary_expression
+                | is_expression
+                | as_expression
+                | unary_expression
+                | application_expression
+                | postfix_expression
+                | effect_handler_expression
+              ) ;
+
+try_with_expression = ("try" body:(_expression) (("with" handler:(_expression)))?) ;
+
+arrow_function = (_shape_arrow | _effect_arrow | _value_arrow) ;
+
+recursive_function = (
+                       "rec"
+                       parameters:(
+                         (identifier | wildcard | parameter_list | bracket_parameter_list)
+                       )
+                       "=>"
+                       body:(_expression)
+                     ) ;
+
+recursive_call_expression = ("rec" argument:(positional_product)) ;
+
+parameter_list = ("(" (((parameter (("," parameter))*) (",")?))? ")") ;
+
+bracket_parameter_list = ("[" (((parameter (("," parameter))*) (",")?))? "]") ;
+
+parameter = (
+              ((("const" ("...")?) | "!"))?
+              name:((identifier | wildcard))
+              ((":" type:(type_reference)))?
+            ) ;
+
+if_expression = (
+                  "if"
+                  (
+                    ("let" pattern:(_match_pattern) "=" value:(condition_expression))
+                    | ("(" ("let" pattern:(_match_pattern) "=" value:(condition_expression)) ")")
+                    | condition:(condition_expression)
+                  )
+                  consequence:(_if_consequence)
+                  (("else" alternative:((_else_block | _else_if))))?
+                ) ;
+
+union_pattern = (
+                  "`"
+                  case:(constructor_identifier)
+                  value:(
+                    (
+                      identifier
+                      | wildcard
+                      | unit_pattern
+                      | union_pattern
+                      | array_pattern
+                      | positional_product_pattern
+                    )
+                  )
+                ) ;
+
+condition_expression = (
+                         condition_binary_expression
+                         | condition_is_expression
+                         | condition_unary_expression
+                         | condition_call_expression
+                         | condition_application_expression
+                         | condition_field_expression
+                         | condition_index_expression
+                         | condition_parenthesized_expression
+                         | number
+                         | string
+                         | character
+                         | boolean
+                         | atom_expression
+                         | import_meta_expression
+                         | intrinsic_identifier
+                         | identifier
+                         | _aggregate_constructor_identifier
+                         | _effect_identifier_alias
+                         | linear_reference
+                         | union_case
+                       ) ;
+
+condition_binary_expression = (
+                                left:(condition_expression)
+                                operator:(operator_symbol)
+                                right:(condition_expression)
+                              ) ;
+
+condition_is_expression = (value:(condition_expression) operator:("is") type:(type_reference)) ;
+
+condition_unary_expression = (
+                               operator:(
+                                 ("!" | "&" | "freeze" | "comptime" | "do" | operator_symbol)
+                               )
+                               operand:(condition_expression)
+                             ) ;
+
+condition_call_expression = (function:(condition_expression) argument:(parenthesized_or_product)) ;
+
+condition_application_expression = (
+                                     function:(
+                                       (
+                                         condition_application_expression
+                                         | identifier
+                                         | _effect_identifier_alias
+                                         | intrinsic_identifier
+                                         | condition_field_expression
+                                       )
+                                     )
+                                     _condition_application_space
+                                     argument:(
+                                       (
+                                         identifier
+                                         | _aggregate_constructor_identifier
+                                         | _effect_identifier_alias
+                                         | intrinsic_identifier
+                                         | number
+                                         | string
+                                         | character
+                                         | boolean
+                                         | atom_expression
+                                         | import_meta_expression
+                                         | linear_reference
+                                         | parenthesized_or_product
+                                         | array_expression
+                                       )
+                                     )
+                                   ) ;
+
+condition_field_expression = (
+                               (object:(condition_expression) "." field:(identifier))
+                               | (object:(_effect_identifier_alias) "." field:(identifier))
+                             ) ;
+
+condition_index_expression = (
+                               object:(condition_expression)
+                               open:(_index_open)
+                               index:(_expression)
+                               "]"
+                             ) ;
+
+condition_parenthesized_expression = ("(" condition_expression ")") ;
+
+binary_expression = (left:(_expression) operator:(operator_symbol) right:(_expression)) ;
+
+is_expression = (value:(_expression) operator:("is") type:(type_reference)) ;
+
+as_expression = (value:(_expression) as_keyword type:(type_reference)) ;
+
+unary_expression = (
+                     operator:(("!" | "&" | "freeze" | "comptime" | operator_symbol))
+                     operand:(_expression)
+                   ) ;
+
+scratch_expression = ("scratch" body:(block)) ;
+
+loop_expression = ("loop" body:(block)) ;
+
+match_expression = ("match" target:(condition_expression) cases:(match_case_block)) ;
+
+match_case_block = ("{" match_case (((",")? match_case))* (",")? "}") ;
+
+match_case = (
+               "|"
+               pattern:(_match_pattern)
+               (("if" guard:(condition_expression)))?
+               "=>"
+               body:(_expression)
+             ) ;
+
+_match_pattern = (alternative_pattern | _single_match_pattern) ;
+
+_binding_pattern = (_binding_alternative_pattern | _single_binding_pattern) ;
+
+_binding_alternative_pattern = (
+                                 _single_binding_pattern
+                                 ((_pattern_pipe _single_binding_pattern))+
+                               ) ;
+
+_single_binding_pattern = (
+                            const_value_pattern
+                            | union_pattern
+                            | number
+                            | string
+                            | character
+                            | boolean
+                            | identifier
+                            | _aggregate_constructor_identifier
+                            | wildcard
+                            | array_pattern
+                            | positional_product_pattern
+                            | named_shape_pattern
+                          ) ;
+
+alternative_pattern = (_single_match_pattern ((_pattern_pipe _single_match_pattern))+) ;
+
+_single_match_pattern = (
+                          const_value_pattern
+                          | type_pattern
+                          | union_pattern
+                          | number
+                          | string
+                          | character
+                          | boolean
+                          | identifier
+                          | _aggregate_constructor_identifier
+                          | wildcard
+                          | array_pattern
+                          | positional_product_pattern
+                          | named_shape_pattern
+                        ) ;
+
+application_expression = (
+                           (
+                             function:((application_expression | postfix_expression))
+                             _application_space
+                             argument:(postfix_expression)
+                           )
+                           | (
+                               function:((application_expression | postfix_expression))
+                               argument:(parenthesized_or_product)
+                             )
+                         ) ;
+
+postfix_expression = (field_expression | index_expression | _primary_expression) ;
+
+field_expression = (
+                     (object:(postfix_expression) "." field:(identifier))
+                     | (object:(_effect_identifier_alias) "." field:(identifier))
+                   ) ;
+
+index_expression = (
+                     object:(postfix_expression)
+                     open:(_index_open)
+                     index:(_expression)
+                     "]"
+                   ) ;
+
+effect_handler_expression = (
+                              "handler"
+                              effect:(effect_identifier)
+                              clauses:(handler_clause_block)
+                            ) ;
+
+handler_clause_block = ("{" ((handler_operation_clause (",")?))* handler_return_clause (",")? "}") ;
+
+handler_operation_clause = (name:(identifier) ":" value:(arrow_function)) ;
+
+handler_return_clause = ("return" ":" value:(arrow_function)) ;
+
+_primary_expression = (
+                        number
+                        | string
+                        | character
+                        | boolean
+                        | identifier
+                        | _aggregate_constructor_identifier
+                        | _effect_identifier_alias
+                        | intrinsic_identifier
+                        | atom_expression
+                        | import_meta_expression
+                        | import_expression
+                        | include_expression
+                        | named_product
+                        | positional_product
+                        | union_case
+                        | linear_reference
+                        | unit_pattern
+                        | array_expression
+                        | array_repeat_expression
+                        | shape_value
+                        | scratch_expression
+                        | block
+                        | parenthesized_expression
+                      ) ;
+
+union_case = ("`" case:(constructor_identifier) _application_space value:(postfix_expression)) ;
+
+linear_reference = ("!" name:(identifier)) ;
+
+atom_expression = ("#" name:(_row_identifier_alias)) ;
+
+import_meta_expression = ("import" "." "meta") ;
+
+import_expression = ("import" path:(string)) ;
+
+include_expression = ("include" path:(string)) ;
+
+struct_type = ("struct" fields:(type_field_block)) ;
+
+named_product = ("[" ((product_field (("," product_field))*) (",")?) "]") ;
+
+product_field = (_named_product_dot name:(identifier) "=" value:(_expression)) ;
+
+positional_product = ("(" ((_expression "," (_expression (("," _expression))*)) (",")?) ")") ;
+
+parenthesized_or_product = (
+                             unit_pattern
+                             | named_product
+                             | positional_product
+                             | parenthesized_expression
+                           ) ;
+
+array_expression = (
+                     "["
+                     (
+                       (
+                         ((_expression (("," _expression))*) (",")?)
+                         | _array_spread_with_tail
+                         | ((((_expression (("," _expression))*) ","))? array_spread)
+                       )
+                     )?
+                     "]"
+                   ) ;
+
+array_spread = (_ellipsis_token value:(_expression)) ;
+
+array_repeat_expression = (
+                            "["
+                            value:(_expression)
+                            ";"
+                            length:(_expression)
+                            "]"
+                          ) ;
+
+array_pattern = ("[" (((_array_pattern_element (("," _array_pattern_element))*) (",")?))? "]") ;
+
+_array_pattern_element = (
+                           identifier
+                           | wildcard
+                           | union_pattern
+                           | array_pattern
+                           | positional_product_pattern
+                           | array_rest_pattern
+                         ) ;
+
+array_rest_pattern = ("..." name:((identifier | wildcard))) ;
+
+positional_product_pattern = (
+                               "("
+                               (
+                                 _match_pattern
+                                 ","
+                                 (
+                                   product_rest_pattern
+                                   | (_match_pattern (("," _match_pattern))* (",")?)
+                                 )
+                               )
+                               ")"
+                             ) ;
+
+product_rest_pattern = ("..." name:((identifier | wildcard))) ;
+
+named_shape_pattern = (
+                        "{"
+                        (
+                          (
+                            (named_shape_pattern_field (("," named_shape_pattern_field))*)
+                            (",")?
+                          )
+                        )?
+                        "}"
+                      ) ;
+
+named_shape_pattern_field = (
+                              "."
+                              name:(identifier)
+                              (("=" pattern:(_match_pattern)) | (":" type:(type_reference)))?
+                            ) ;
+
+shape_value = fields:(shape_field_block) ;
+
+shape_field_block = ("{" (((shape_field | shorthand_field) (",")?))* "}") ;
+
+shape_field = ("." name:(identifier) "=" value:(_expression)) ;
+
+shorthand_field = ("." name:(identifier)) ;
+
+type_field_block = ("{" (((type_field | named_type_field) (",")?))* "}") ;
+
+type_field = (name:(identifier) ":" type:(_identifier_type_reference)) ;
+
+type_pattern = (
+                 kind:(("struct" | "union"))
+                 "{"
+                 (((type_pattern_field | open:("..")) (",")?))*
+                 "}"
+               ) ;
+
+type_pattern_field = ("." name:(identifier) "=" type:(type_reference)) ;
+
+block = ("{" ((_statement (";")?))* "}") ;
+
+parenthesized_expression = ("(" _expression ")") ;
+
+type_reference = _type_expression ;
+
+_type_expression = (forall_type | function_type | type_union) ;
+
+forall_type = ("forall" (parameter:(identifier))+ "." body:(_type_expression)) ;
+
+function_type = (
+                  parameter:(type_union)
+                  "->"
+                  (effects:(latent_effect_row))?
+                  result:(_type_expression)
+                ) ;
+
+type_union = (type_intersection | (left:(type_union) ":|" right:(type_intersection))) ;
+
+type_intersection = (type_difference | (left:(type_intersection) ":&" right:(type_difference))) ;
+
+type_difference = (_type_application | (left:(type_difference) ":-" right:(_type_application))) ;
+
+latent_effect_row = ("<" row:(effect_row) ">") ;
+
+_type_application = (type_application | _type_prefix) ;
+
+type_application = (
+                     (
+                       constructor:((type_application | _type_prefix))
+                       _type_application_space
+                       argument:(_type_prefix)
+                     )
+                     | (
+                         constructor:((type_application | _type_prefix))
+                         argument:(type_parenthesized)
+                       )
+                   ) ;
+
+_type_prefix = (atom_type | frozen_type | borrow_type | _type_atom) ;
+
+atom_type = ("#" name:(_row_identifier_alias)) ;
+
+frozen_type = ("#" (name:(_effect_identifier_alias) | type_parenthesized)) ;
+
+borrow_type = ("&" (identifier | type_parenthesized)) ;
+
+_type_atom = (
+               _effect_identifier_alias
+               | identifier
+               | top_type
+               | type_literal
+               | unit_type
+               | type_parenthesized
+               | type_product
+               | array_type
+             ) ;
+
+type_literal = (number | string | character | boolean) ;
+
+unit_type = ("(" ")") ;
+
+top_type = "_" ;
+
+array_type = ("[" element:(_type_expression) ";" length:((_expression | wildcard)) "]") ;
+
+type_parenthesized = ("(" value:(_type_expression) ")") ;
+
+wildcard = "_" ;
+
+_aggregate_constructor_identifier = _struct_identifier_alias ;
+
+_named_product_dot = "." ;
+
+_pattern_pipe = "|" ;
+
+as_keyword = "as" ;
+
+attribute_group = ("@" "[" (_expression (("," _expression))*) (",")? "]") ;
+
+boolean = ("true" | "false") ;
+
+const_value_pattern = ("#" "(" value:(_expression) ")") ;
+
+_intrinsic_fixity_target = (intrinsic_identifier "." identifier (("." identifier))*) ;
+
+_qualified_fixity_target = qualified_identifier ;
+
+_type_intersection_reference = type_intersection ;
+
+_collection_range_body = block ;
+
+_numeric_range_body = block ;
+
+_shape_arrow = _shape_arrow_expression ;
+
+_effect_arrow = _effect_arrow_expression ;
+
+_value_arrow = _value_arrow_expression ;
+
+_if_consequence = block ;
+
+_else_block = block ;
+
+_else_if = if_expression ;
+
+_effect_identifier_alias = effect_identifier ;
+
+_row_identifier_alias = row_variable ;
+
+_array_spread_with_tail = (array_spread "," ((_expression (("," _expression))*) (",")?)) ;
+
+_ellipsis_token = "..." ;
+
+_index_open = "[" ;
+
+_identifier_type_reference = identifier ;
+
+_struct_keyword = "struct" ;
+
+_struct_identifier_alias = _struct_keyword ;
+
+_shape_arrow_expression = (parameters:(named_shape_pattern) "=>" body:(_expression)) ;
+
+_effect_arrow_expression = (parameters:(_effect_identifier_alias) "=>" body:(_expression)) ;
+
+_value_arrow_expression = (
+                       parameters:(
+                         (
+                           parameter
+                           | parameter_list
+                           | bracket_parameter_list
+                           | number
+                           | string
+                           | character
+                           | boolean
+                           | grouped_value_alternative_pattern
+                         )
+                       )
+                       "=>"
+                       body:(_expression)
+                     ) ;

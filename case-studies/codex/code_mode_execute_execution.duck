@@ -1,8 +1,12 @@
 module (!init: Init) where
 
-const { format_i64 } = import "duck:prelude/runtime" ()
-const { code_mode_execute_initial_response_is_terminal, plan_code_mode_execute_call, plan_code_mode_execute_started } = import "./code_mode_execute.duck" ()
-const {} = import "./code_mode_execute_types.duck" ()
+const { .format_i64 } = import "duck:prelude/runtime" ();
+const {
+  .code_mode_execute_initial_response_is_terminal,
+  .plan_code_mode_execute_call,
+  .plan_code_mode_execute_started,
+} = import "./code_mode_execute.duck" ();
+const {} = import "./code_mode_execute_types.duck" ();
 
 type ExecuteRuntime = CodeModeExecuteExecution
 type ExecuteResult = CodeModeExecuteResult
@@ -18,41 +22,47 @@ type ExecuteCompletion = CodeModeExecuteCompletion
 type RuntimeTokenLimit = CodeModeWaitU64Option
 
 let run_code_mode_execute = (execution: ExecuteRuntime) => {
-  let call_plan = plan_code_mode_execute_call execution.invocation
+  let call_plan = plan_code_mode_execute_call execution.invocation;
   if let `RejectCodeModeExecute message = call_plan {
-    return `CodeModeExecuteRejected message
+    return `CodeModeExecuteRejected message;
   }
   let `StartCodeModeExecute request = call_plan else {
-    return `CodeModeExecuteRejected "code-mode exec call planning produced no request"
-  }
-  let typed_request: ExecuteRuntimeRequest = request
+    return `CodeModeExecuteRejected "code-mode exec call planning produced no request";
+  };
+  let typed_request: ExecuteRuntimeRequest = request;
 
   timer_output <- CodeModeExecuteHost.start_timer()
-  let timer: ExecuteTimer = timer_output
+  let timer: ExecuteTimer = timer_output;
   start_output <- CodeModeExecuteHost.execute(&typed_request)
-  let start_result: ExecuteStartResult = start_output
+  let start_result: ExecuteStartResult = start_output;
   if let `CodeModeExecuteStartFailed message = start_result {
-    return `CodeModeExecuteRejected message
+    return `CodeModeExecuteRejected message;
   }
   let `CodeModeExecuteStarted started = start_result else {
-    return `CodeModeExecuteRejected "code-mode runtime returned no started cell"
-  }
-  let typed_started: ExecuteRuntimeStartedCell = started
+    return `CodeModeExecuteRejected "code-mode runtime returned no started cell";
+  };
+  let typed_started: ExecuteRuntimeStartedCell = started;
 
-  let started_plan: ExecuteRuntimeStartedPlan = plan_code_mode_execute_started(execution.turn_sub_id, typed_request, typed_started)
+  let started_plan: ExecuteRuntimeStartedPlan = plan_code_mode_execute_started(
+    execution.turn_sub_id,
+    typed_request,
+    typed_started,
+  );
   trace_output <- CodeModeExecuteHost.start_trace(&started_plan.trace)
-  let trace: ExecuteTrace = trace_output
+  let trace: ExecuteTrace = trace_output;
   _ <- CodeModeExecuteHost.mark_cell_ready(started_plan.mark_ready_cell_id)
 
-  initial_output <- CodeModeExecuteHost.initial_response(started_plan.await_initial_response_cell_id)
-  let initial_result: ExecuteInitialResult = initial_output
+  initial_output <- CodeModeExecuteHost.initial_response(
+    started_plan.await_initial_response_cell_id
+  )
+  let initial_result: ExecuteInitialResult = initial_output;
   if let `CodeModeInitialResponseFailed message = initial_result {
-    return `CodeModeExecuteRejected message
+    return `CodeModeExecuteRejected message;
   }
   let `CodeModeInitialResponse response = initial_result else {
-    return `CodeModeExecuteRejected "code-mode runtime returned no initial response"
-  }
-  let typed_response: ExecuteRuntimeResponseValue = response
+    return `CodeModeExecuteRejected "code-mode runtime returned no initial response";
+  };
+  let typed_response: ExecuteRuntimeResponseValue = response;
 
   _ <- CodeModeExecuteHost.record_initial_response(&trace, &typed_response)
   if code_mode_execute_initial_response_is_terminal typed_response {
@@ -62,9 +72,9 @@ let run_code_mode_execute = (execution: ExecuteRuntime) => {
 
   _ <- CodeModeExecuteHost.wait_until_elicitations_clear()
   elapsed_output <- CodeModeExecuteHost.elapsed_microseconds(&timer)
-  let elapsed_microseconds: I64 = elapsed_output
+  let elapsed_microseconds: I64 = elapsed_output;
 
-  let token_limit: RuntimeTokenLimit = `WaitLimitMissing ()
+  let token_limit: RuntimeTokenLimit = `WaitLimitMissing ();
   if let `CodeModeExecLimitPresent maximum_tokens = typed_request.max_output_tokens {
     token_limit = `WaitLimitPresent (`U64Decimal (format_i64 maximum_tokens))
   }
@@ -72,8 +82,8 @@ let run_code_mode_execute = (execution: ExecuteRuntime) => {
     .response = typed_response,
     .image_detail_policy = execution.image_detail_policy,
     .token_limit = token_limit,
-    .elapsed = `ElapsedMicroseconds elapsed_microseconds]
+    .elapsed = `ElapsedMicroseconds elapsed_microseconds];
   `CodeModeExecuteCompleted completion
-}
+};
 
-return { run_code_mode_execute }
+return { .run_code_mode_execute };

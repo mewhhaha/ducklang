@@ -1,45 +1,53 @@
 module () where
 
-const { list } = import "duck:prelude/functional" ()
-const exec_types_module = import "./exec_types.duck"
-const exec_store_module = import "./exec_store.duck"
-const { active_processes, allocate_process_id, contains_process, record_count, remove_process, select_process_to_prune } = exec_store_module()
+const { .list } = import "duck:prelude/functional" ();
+const exec_types_module = import "./exec_types.duck";
+const exec_store_module = import "./exec_store.duck";
+const {
+  .active_processes,
+  .allocate_process_id,
+  .contains_process,
+  .record_count,
+  .remove_process,
+  .select_process_to_prune,
+} = exec_store_module();
 
 type FixtureRecord = ExecProcessRecord
 type FixtureRecords = ExecProcessRecords
 
-const records = comptime list(FixtureRecord)
+const records = comptime list FixtureRecord;
 
-let values: FixtureRecords = records.empty()
-let locked_values: FixtureRecords = records.empty()
+let values: FixtureRecords = records.empty();
+let locked_values: FixtureRecords = records.empty();
 
 for index in 0..64 {
-  let process_id = 1000 + index
-  let exited = index == 3
-  let record: FixtureRecord = [process_id, "call", "/repo", index, exited, false]
-  let locked_record: FixtureRecord = [process_id, "call", "/repo", index, exited, exited]
+  let process_id = 1000 + index;
+  let exited = index == 3;
+  let record: FixtureRecord = [process_id, "call", "/repo", index, exited, false];
+  let locked_record: FixtureRecord = [process_id, "call", "/repo", index, exited, exited];
   values = records.prepend(record, values)
   locked_values = records.prepend(locked_record, locked_values)
 }
 
-let score: I32 = 0
+let score: I32 = 0;
 
-if record_count(values) == 64 && contains_process(values, 1030) && allocate_process_id(values) == 1064 {
-  score = score + 1
-}
+if record_count values == 64 && contains_process(values,
+  1030) && allocate_process_id values == 1064 {
+    score = score + 1
+  }
 
-let prune = select_process_to_prune values
+let prune = select_process_to_prune values;
 if let `Some process_id = prune {
   if process_id == 1003 { score = score + 10 }
 }
 
-let active = active_processes values
-if record_count(active) == 63 && !(contains_process(active, 1003)) {
+let active = active_processes values;
+if record_count active == 63 && !(contains_process(active, 1003)) {
   score = score + 100
 }
 
-let removed = remove_process(values, 1030)
-if record_count(removed) == 63 && !(contains_process(removed, 1030)) {
+let removed = remove_process(values, 1030);
+if record_count removed == 63 && !(contains_process(removed, 1030)) {
   score = score + 1000
 }
 
@@ -48,4 +56,4 @@ if let `Some process_id = prune {
   if process_id == 1000 { score = score + 10000 }
 }
 
-return { .score = score }
+return { .score = score };

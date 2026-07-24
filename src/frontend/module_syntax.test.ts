@@ -20,14 +20,14 @@ declare Init {
 let read_name = () => {
   name <- Io.read()
   name
-}
+};
 
 let greet: () -> <Io.read :| Io.print> Unit = () => {
   _ <- Io.print("hello")
-}
+};
 
-const { .a = a, .b = b } = dependency(init)
-return { a, .message = b }
+const { .a = a, .b = b } = dependency(init);
+return { .a, .message = b };
 `);
 
   assert_equals(source.module, {
@@ -91,18 +91,18 @@ return { a, .message = b }
   assert_includes(formatted, "module (!init: Init) where");
   assert_includes(formatted, "declare effect Io");
   assert_includes(formatted, '_ <- Io.print "hello"');
-  assert_includes(formatted, "const { a, b } = dependency init");
-  assert_includes(formatted, "return { a, .message = b }");
+  assert_includes(formatted, "const { .a, .b } = dependency init;");
+  assert_includes(formatted, "return { .a, .message = b };");
 });
 
 Deno.test("no-demand binders parse as distinct internal names and format as underscores", () => {
   const source = parse_source(`
-let _ = 1
-const _ = 2
-let pair = (_, const _) => 0
-let count = rec (_, const _) => 0
-let selected = if let \`Ok _ = result { 1 } else { 0 }
-let (_, value) = source
+let _ = 1;
+const _ = 2;
+let pair = (_, const _) => 0;
+let count = rec (_, const _) => 0;
+let selected = if let \`Ok _ = result { 1 } else { 0 };
+let (_, value) = source;
 `);
 
   const names: string[] = [];
@@ -134,25 +134,25 @@ let (_, value) = source
   assert_equals(new Set(no_demand).size, no_demand.length);
 
   const formatted = format_source(source);
-  assert_includes(formatted, "let _ = 1");
-  assert_includes(formatted, "const _ = 2");
-  assert_includes(formatted, "let pair = (_, const _) => 0");
-  assert_includes(formatted, "let count = rec (_, const _) => 0");
+  assert_includes(formatted, "let _ = 1;");
+  assert_includes(formatted, "const _ = 2;");
+  assert_includes(formatted, "let pair = (_, const _) => 0;");
+  assert_includes(formatted, "let count = rec (_, const _) => 0;");
   assert_includes(formatted, "if let `Ok _ = result");
-  assert_includes(formatted, "let (_, value) = source");
+  assert_includes(formatted, "let (_, value) = source;");
 });
 
 Deno.test("no-demand binders cannot be used as linear values or expressions", () => {
   assert_throws(
-    () => parse_source("let !_ = 1"),
+    () => parse_source("let !_ = 1;"),
     "`!_` is not supported",
   );
   assert_throws(
-    () => parse_source("let take = (!_ ) => 0"),
+    () => parse_source("let take = (!_ ) => 0;"),
     "`!_` is not supported",
   );
   assert_throws(
-    () => parse_source("let (!_) = source"),
+    () => parse_source("let (!_) = source;"),
     "`!_` is not supported",
   );
   assert_throws(
@@ -172,10 +172,10 @@ let code = loop {
     ()
   }
   if ready {
-    break 7
+    break 7;
   }
-  continue
-}
+  continue;
+};
 `);
   const statement = source.statements[0];
 
@@ -197,10 +197,88 @@ let code = loop {
   assert_equals(range.end, { tag: "num", type: "i32", value: 2 });
 
   const formatted = format_source(source);
-  assert_includes(formatted, "let code = loop");
+  assert_includes(formatted, "let code = loop {");
   assert_includes(formatted, "for 0..2 by 1");
-  assert_includes(formatted, "break 7");
-  assert_includes(formatted, "continue");
+  assert_includes(formatted, "break 7;");
+  assert_includes(formatted, "continue;");
+});
+
+Deno.test("loop is reserved for loop expressions", () => {
+  assert_throws(
+    () => parse_source("let loop = value => value;"),
+    "Parameter is reserved syntax: loop",
+  );
+  assert_throws(
+    () => parse_source("const loop = 1;"),
+    "Parameter is reserved syntax: loop",
+  );
+  assert_throws(
+    () => parse_source("loop 42"),
+    "Name is reserved syntax: loop",
+  );
+  assert_throws(
+    () => parse_source("loop = 1"),
+    "Runtime binding is reserved syntax: loop",
+  );
+  assert_throws(
+    () => parse_source("for loop, value in values {}"),
+    "Loop index is reserved syntax: loop",
+  );
+  assert_throws(
+    () => parse_source("type Box loop = loop"),
+    "Type parameter is reserved syntax: loop",
+  );
+});
+
+Deno.test("control transfers require explicit terminators", () => {
+  const source = parse_source(`
+const stop = () => {
+  return;
+};
+const finish = () => {
+  return 7;
+};
+const choose = () => loop {
+  if done {
+    break;
+  }
+  if ready {
+    break 7;
+  }
+  continue;
+};
+`);
+  const formatted = format_source(source);
+
+  assert_includes(formatted, "return;");
+  assert_includes(formatted, "return 7;");
+  assert_includes(formatted, "break;");
+  assert_includes(formatted, "break 7;");
+  assert_includes(formatted, "continue;");
+  assert_throws(
+    () => parse_source("let answer = 42\nanswer"),
+    "Expected `;` after binding",
+  );
+  assert_throws(
+    () => parse_source("const stop = () => { return };"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => parse_source("loop { break }"),
+    "Expected `;` after `break`",
+  );
+  assert_throws(
+    () => parse_source("const stop = () => { return 7 };"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => parse_source("loop { break 7 }"),
+    "Expected `;` after `break`",
+  );
+  assert_throws(
+    () => parse_source("loop { continue value; }"),
+    "Expected `;` after `continue`",
+  );
 });
 
 Deno.test("inclusive range bounds parse and format", () => {
@@ -227,8 +305,8 @@ effect Counter {
 }
 
 let counter = {
-  let state: I32 = 0
-  Counter {
+  let state: I32 = 0;
+  handler Counter {
     get: (!resume) => !resume(state),
     add: (amount, !resume) => {
       state = state + amount
@@ -236,15 +314,15 @@ let counter = {
     },
     return: value => [value, state],
   }
-}
+};
 
-let make = () => Counter {
+let make = () => handler Counter {
   get: (!resume) => !resume(0),
   return: value => value,
-}
+};
 
-let result = try run() with counter
-let (!left, !right) = dup !resume
+let result = try run() with counter;
+let (!left, !right) = dup !resume;
 result
 `);
 
@@ -332,12 +410,15 @@ result
 
   const formatted = format_source(source);
   assert_includes(formatted, "effect Counter");
-  assert_includes(formatted, "Counter { get: (!resume) => !resume state");
+  assert_includes(
+    formatted,
+    "handler Counter { get: (!resume) => !resume state",
+  );
   assert_includes(formatted, "return: value => [value, state]");
-  assert_includes(formatted, "let make = () => Counter {");
+  assert_includes(formatted, "let make = () => handler Counter {");
   assert_includes(formatted, "!resume ()");
   assert_includes(formatted, "try run () with counter");
-  assert_includes(formatted, "let (!left, !right) = dup !resume");
+  assert_includes(formatted, "let (!left, !right) = dup !resume;");
   assert_equals(parse_source(formatted), source);
 });
 
@@ -369,26 +450,27 @@ Deno.test("handler syntax requires a final return clause", () => {
     () =>
       parse_source(`
 effect Counter { get: () => I32 }
-let counter = Counter {
+let counter = handler Counter {
   get: (!resume) => !resume(0)
-}
+};
 counter
 `),
     "Handler requires a return clause",
   );
 });
 
-Deno.test("handler keyword spelling is rejected", () => {
+Deno.test("effect names cannot construct handlers without handler keyword", () => {
   assert_throws(
     () =>
       parse_source(`
 effect Counter { get: () => I32 }
-let counter = handler Counter {
-  return { .get = (!resume) => !resume(0) }
-}
+let counter = Counter {
+  get: (!resume) => !resume(0),
+  return: value => value,
+};
 counter
 `),
-    "Effect handlers use `Effect { ... }` literals",
+    "Effect handlers use `handler Counter { ... }`",
   );
 });
 
@@ -422,7 +504,7 @@ Deno.test("file loading requires a module header and record return", () => {
     Deno.writeTextFileSync(missing_return, "module () where\n42\n");
     assert_throws(
       () => load_source(missing_return),
-      "File module must end with `return { ... }`",
+      "File module must end with `return { ... };`",
     );
   } finally {
     Deno.removeSync(dir, { recursive: true });
@@ -435,13 +517,13 @@ Deno.test("module imports bind dependency initializers", () => {
   try {
     Deno.writeTextFileSync(
       dir + "/dependency.duck",
-      "module (value: I32) where\nreturn { .value = value }\n",
+      "module (value: I32) where\nreturn { .value = value };\n",
     );
     Deno.writeTextFileSync(
       dir + "/main.duck",
-      'module () where\nconst dependency = import "./dependency.duck"\n' +
-        "const { .value = value } = dependency(42)\n" +
-        "return { .value = value }\n",
+      'module () where\nconst dependency = import "./dependency.duck";\n' +
+        "const { .value = value } = dependency(42);\n" +
+        "return { .value = value };\n",
     );
 
     const loaded = load_source(dir + "/main.duck");
@@ -465,13 +547,13 @@ Deno.test("nullary module aliases specialize before Core lowering", () => {
   try {
     Deno.writeTextFileSync(
       dir + "/dependency.duck",
-      "module () where\nconst value: I32 = 42\nreturn { value }\n",
+      "module () where\nconst value: I32 = 42;\nreturn { .value };\n",
     );
     Deno.writeTextFileSync(
       dir + "/main.duck",
-      'module () where\nconst dependency = import "./dependency.duck"\n' +
-        "const { .value = value } = dependency()\n" +
-        "return { .value = value }\n",
+      'module () where\nconst dependency = import "./dependency.duck";\n' +
+        "const { .value = value } = dependency();\n" +
+        "return { .value = value };\n",
     );
 
     const wat = Source.wat(load_source(dir + "/main.duck"));
@@ -488,14 +570,14 @@ Deno.test("module imports specialize explicit const build parameters", () => {
     Deno.writeTextFileSync(
       dir + "/dependency.duck",
       "module (const release: Bool) where\n" +
-        "const value = if release { 42 } else { 0 }\n" +
-        "return { .value = value }\n",
+        "const value = if release { 42 } else { 0 };\n" +
+        "return { .value = value };\n",
     );
     Deno.writeTextFileSync(
       dir + "/main.duck",
-      'module () where\nconst dependency = import "./dependency.duck"\n' +
-        "const { .value = value } = dependency(true)\n" +
-        "return { .value = value }\n",
+      'module () where\nconst dependency = import "./dependency.duck";\n' +
+        "const { .value = value } = dependency(true);\n" +
+        "return { .value = value };\n",
     );
 
     const wat = Source.wat(load_source(dir + "/main.duck"));
@@ -511,18 +593,18 @@ Deno.test("imported modules retain source-defined type initializers", () => {
   try {
     Deno.writeTextFileSync(
       dir + "/dependency.duck",
-      'module () where\nconst { struct } = import "duck:prelude/types" ()\n' +
+      'module () where\nconst { .struct } = import "duck:prelude/types" ();\n' +
         "type Pair = struct { .left = I32, .right = I32 }\n" +
         "const sum: () -> I32 = () => {\n" +
-        "  let pair: Pair = [20, 22]\n" +
+        "  let pair: Pair = [20, 22];\n" +
         "  pair.left + pair.right\n" +
-        "}\n" +
-        "return { sum }\n",
+        "};\n" +
+        "return { .sum };\n",
     );
     Deno.writeTextFileSync(
       dir + "/main.duck",
-      'module () where\nconst { sum } = import "./dependency.duck" ()\n' +
-        "return { .value = sum() }\n",
+      'module () where\nconst { .sum } = import "./dependency.duck" ();\n' +
+        "return { .value = sum() };\n",
     );
 
     const wat = Source.wat(load_source(dir + "/main.duck"));
@@ -543,16 +625,16 @@ Deno.test("imported modules retain recursive runtime exports", () => {
       "module () where\n" +
         "let rec decrement: I32 -> I32 = value => {\n" +
         "  if value == 0 { 0 } else { decrement(value - 1) }\n" +
-        "}\n" +
+        "};\n" +
         "let rec sum_to: I32 -> I32 = value => {\n" +
         "  if value == 0 { 0 } else { value + sum_to(decrement(value - 1)) }\n" +
-        "}\n" +
-        "return { sum_to }\n",
+        "};\n" +
+        "return { .sum_to };\n",
     );
     Deno.writeTextFileSync(
       dir + "/main.duck",
-      'module () where\nconst { sum_to } = import "./dependency.duck" ()\n' +
-        "return { .value = sum_to(9) }\n",
+      'module () where\nconst { .sum_to } = import "./dependency.duck" ();\n' +
+        "return { .value = sum_to(9) };\n",
     );
 
     const diagnostics = Source.analyze_file(dir + "/main.duck").diagnostics;

@@ -1,4 +1,4 @@
-let total = 36
+let total = 36;
 
 for outer in 0..2 {
   for inner in 0..3 {

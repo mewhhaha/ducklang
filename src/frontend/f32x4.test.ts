@@ -5,8 +5,8 @@ import { source_facts } from "./source_facts.ts";
 
 Deno.test("frontend infers F32x4 builtins and records source facts", () => {
   const analysis = Source.analyze(`
-let vector: F32x4 = @f32x4(1f32, 2f32, 3f32, 4f32)
-let scaled = @f32x4_mul(vector, @f32x4_splat(2f32))
+let vector: F32x4 = @f32x4(1f32, 2f32, 3f32, 4f32);
+let scaled = @f32x4_mul(vector, @f32x4_splat(2f32));
 @f32x4_extract_lane(scaled, 2)
 `);
   assert_equals(analysis.diagnostics, []);
@@ -45,8 +45,8 @@ Deno.test("frontend requires exact F32x4 builtin operands and lane literals", ()
   );
 
   const overloaded = Source.analyze(`
-let left = @f32x4_splat(1f32)
-let right = @f32x4_splat(2f32)
+let left = @f32x4_splat(1f32);
+let right = @f32x4_splat(2f32);
 left + right
 `);
   assert_includes(

@@ -1,22 +1,38 @@
 module () where
 
-const { format_i32 } = import "duck:prelude/numeric" ()
-const { text_append } = import "duck:prelude/runtime" ()
-const {} = import "./tool_search_types.duck" ()
-const { tool_search_tool_name } = import "./tool_search_name.duck" ()
-const { tool_search_description } = import "./tool_search_sources.duck" ()
+const { .format_i32 } = import "duck:prelude/numeric" ();
+const { .text_append } = import "duck:prelude/runtime" ();
+const {} = import "./tool_search_types.duck" ();
+const { .tool_search_tool_name } = import "./tool_search_name.duck" ();
+const { .tool_search_description } = import "./tool_search_sources.duck" ();
 
 type SearchSpec = ToolSpec
 type SearchSpecs = ToolSpecs
 type SearchSpecSources = ToolSearchSourceInfos
 
 const tool_search_parameters: I32 -> Text = default_limit => {
-  text_append("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of tools to return. Defaults to ", text_append(format_i32 default_limit, ".\"},\"query\":{\"type\":\"string\",\"description\":\"Search query for deferred tools.\"}},\"required\":[\"query\"],\"additionalProperties\":false}"))
-}
+  text_append(
+    "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of tools to return. Defaults to ",
+    text_append(
+      format_i32 default_limit,
+      ".\"},\"query\":{\"type\":\"string\",\"description\":\"Search query for deferred tools.\"}},\"required\":[\"query\"],\"additionalProperties\":false}",
+    ),
+  )
+};
 
-const tool_search_tool_specs: [SearchSpecSources, I32] -> SearchSpecs = (searchable_sources: SearchSpecSources, default_limit: I32) => {
-  let spec: SearchSpec = [tool_search_tool_name(), `ToolSearchSpec (), tool_search_description searchable_sources, tool_search_parameters default_limit, `ToolOutputSchemaMissing (), false]
+const tool_search_tool_specs: [SearchSpecSources, I32] -> SearchSpecs = (
+  searchable_sources: SearchSpecSources,
+  default_limit: I32,
+) => {
+  let spec: SearchSpec = [
+    tool_search_tool_name(),
+    `ToolSearchSpec (),
+    tool_search_description searchable_sources,
+    tool_search_parameters default_limit,
+    `ToolOutputSchemaMissing (),
+    false,
+  ];
   `Cons ([spec, `Nil ()])
-}
+};
 
-return { tool_search_parameters, tool_search_tool_specs }
+return { .tool_search_parameters, .tool_search_tool_specs };

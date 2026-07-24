@@ -1,7 +1,7 @@
-const { text_append } = import "duck:prelude/functional" ()
-const { tool_source_definitions } = import "./tool_source_plan.duck" ()
-const {} = import "./tool_source_types.duck" ()
-const {} = import "./tool_types.duck" ()
+const { .text_append } = import "duck:prelude/functional" ();
+const { .tool_source_definitions } = import "./tool_source_plan.duck" ();
+const {} = import "./tool_source_types.duck" ();
+const {} = import "./tool_types.duck" ();
 
 type FixtureFacts = ToolSourceFacts
 type FixtureDefinitions = ToolSourceDefinitions
@@ -28,21 +28,29 @@ const fixture_facts: () -> FixtureFacts = () => {
     .tool_search = true,
     .agent_jobs = true,
     .agent_job_worker = false]
-}
+};
 
-let configured_runtimes: FixtureDefinitions = `Nil ()
-let extension_runtimes: FixtureDefinitions = `Nil ()
-let dynamic_runtimes: FixtureDefinitions = `Nil ()
-let current = tool_source_definitions(fixture_facts(), configured_runtimes, extension_runtimes, dynamic_runtimes)
-let trace = ""
-let deferred_count = 0
-let done = false
+let configured_runtimes: FixtureDefinitions = `Nil ();
+let extension_runtimes: FixtureDefinitions = `Nil ();
+let dynamic_runtimes: FixtureDefinitions = `Nil ();
+let current = tool_source_definitions(
+  fixture_facts(),
+  configured_runtimes,
+  extension_runtimes,
+  dynamic_runtimes,
+);
+let trace = "";
+let deferred_count = 0;
+let done = false;
 
 loop {
   if let `Cons node = current {
-    let [definition, tail] = node
-    let [[namespace, local_name], exposure, _, _, _, _] = definition
-    trace = text_append [text_append [text_append [text_append [trace, namespace], "."], local_name], "|"]
+    let [definition, tail] = node;
+    let [[namespace, local_name], exposure, _, _, _, _] = definition;
+    trace = text_append [
+      text_append [text_append [text_append [trace, namespace], "."], local_name],
+      "|",
+    ]
     if let `Deferred () = exposure {
       deferred_count = deferred_count + 1
     }
@@ -51,11 +59,12 @@ loop {
     done = true
   }
 
-  if done { break }
+  if done { break; }
 }
 
-let expected = ".shell_command|.update_plan|.view_image|multi_agent_v1.spawn_agent|multi_agent_v1.send_input|multi_agent_v1.resume_agent|multi_agent_v1.wait_agent|multi_agent_v1.close_agent|.spawn_agents_on_csv|"
-let score = 0
+let expected =
+  ".shell_command|.update_plan|.view_image|multi_agent_v1.spawn_agent|multi_agent_v1.send_input|multi_agent_v1.resume_agent|multi_agent_v1.wait_agent|multi_agent_v1.close_agent|.spawn_agents_on_csv|";
+let score = 0;
 if trace == expected { score = score + 1 }
 if deferred_count == 5 { score = score + 10 }
-return { .score = score }
+return { .score = score };
