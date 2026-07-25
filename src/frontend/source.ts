@@ -1,8 +1,6 @@
 import { diagnostic_sequence } from "../diagnostic.ts";
-import { Format } from "../trait.ts";
 import type { Source as SourceNode } from "./ast.ts";
 import type { FrontEffectAnalysis } from "./effect_analysis.ts";
-import { format_source } from "./format.ts";
 import { source_with_host_interface } from "./host_interface.ts";
 import type { SourceImportResolver } from "./import_diagnostic.ts";
 import {
@@ -87,8 +85,6 @@ Source.analyze_file = function analyze_file(
   });
 };
 
-Source.fmt = format_source;
-
 Source.effects = function effects(
   input: string | SourceNode,
 ): FrontEffectAnalysis {
@@ -117,5 +113,3 @@ function resolve_file_import(uri: string): string | undefined {
     throw error;
   }
 }
-
-Format.register<SourceNode>(Source);
