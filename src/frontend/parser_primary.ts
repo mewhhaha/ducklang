@@ -9,6 +9,7 @@ import {
 } from "./parser_support.ts";
 import { integer_literal_fits, integer_type_name } from "../integer.ts";
 import { import_meta_binding_name } from "./import_meta.ts";
+import { hole_name } from "./hole.ts";
 
 export abstract class ParserPrimary extends ParserBlock {
   protected allow_signed_minimum_literal = 0;
@@ -216,7 +217,10 @@ export abstract class ParserPrimary extends ParserBlock {
       this.advance();
 
       if (token.text === "_") {
-        throw this.error("Wildcard `_` cannot be used as an expression");
+        // A hole marks a missing argument. `apply_unary_product` lifts it into
+        // a lambda; any hole that survives to elaboration is one this parser
+        // could not lift, and is reported there.
+        return { tag: "var", name: hole_name };
       }
 
       if (is_no_demand_name(token.text)) {

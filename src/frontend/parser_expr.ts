@@ -14,6 +14,12 @@ import {
   type PrefixFixity,
 } from "./fixity.ts";
 import { wasm_intrinsic_prim } from "../op.ts";
+import {
+  contains_hole,
+  contains_hole_lambda,
+  hole_name,
+  mark_hole_lambda,
+} from "./hole.ts";
 
 export abstract class ParserExpr extends ParserPrimary {
   #stop_postfix_block = 0;
@@ -529,6 +535,60 @@ export abstract class ParserExpr extends ParserPrimary {
     return expr;
   }
 
+  /**
+   * Lift argument holes into a lambda: `f [v, _]` becomes `x => f [v, x]`.
+   *
+   * A hole binds to the application whose argument list it appears in, and
+   * several bind left to right. A hole nested inside another call within that
+   * list is rejected rather than silently bound to the inner call, which is
+   * what makes the same syntax hard to predict in other languages.
+   */
+  private lift_argument_holes(app: FrontExpr, arg: FrontExpr): FrontExpr {
+    const params: { name: string }[] = [];
+
+    const replace = (value: FrontExpr): FrontExpr => {
+      if (value.tag === "var" && value.name === hole_name) {
+        const name = "__hole_" + params.length.toString();
+        params.push({ name });
+        return { tag: "var", name };
+      }
+
+      return value;
+    };
+
+    if (arg.tag === "product") {
+      arg.entries = arg.entries.map((entry) => ({
+        ...entry,
+        value: replace(entry.value),
+      }));
+    }
+
+    // A hole belongs to the argument list it is written in. A nested call in
+    // that list has already lifted its own hole by now, so reject the shape
+    // rather than let each hole bind to its nearest call.
+    if (contains_hole_lambda(arg)) {
+      throw this.error(
+        "A hole cannot appear inside a nested call; write the lambda instead",
+      );
+    }
+
+    if (params.length === 0) {
+      return app;
+    }
+
+    if (contains_hole(arg)) {
+      throw this.error(
+        "A hole cannot appear inside a nested call; write the lambda instead",
+      );
+    }
+
+    return mark_hole_lambda({
+      tag: "lam",
+      params: params.map((param) => ({ name: param.name, is_const: false })),
+      body: app,
+    } as FrontExpr);
+  }
+
   private apply_unary_product(func: FrontExpr, arg: FrontExpr): FrontExpr {
     if (func.tag === "union_case" && func.value === undefined) {
       return { ...func, value: arg };
@@ -539,7 +599,10 @@ export abstract class ParserExpr extends ParserPrimary {
         return { tag: "app", func, arg, args: [] };
       }
 
-      return { tag: "app", func, arg, args: [arg] };
+      return this.lift_argument_holes(
+        { tag: "app", func, arg, args: [arg] },
+        arg,
+      );
     }
 
     const prim = wasm_intrinsic_prim(func.name.slice("@wasm.".length));
