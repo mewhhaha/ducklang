@@ -314,79 +314,35 @@ largest case study stops silently rotting.
 
 These are suggestions, not decisions. Each is argued from the principle above.
 
-### Holes for partial application
+### Holes for partial application — landed
 
-Write `_` in an argument position to mean "this one is missing", and get a
-lambda:
-
-```duck
-f [v, _]        -- x => f [v, x]
-f _             -- x => f x
-```
-
-**Why it earns its place.** `|>` requires its stage to be compile-time so the
-pipeline specializes away instead of allocating a closure per stage. A lambda
-satisfies that; a partial application does not, because there is no shape to
-inline. So today `hook_input.duck` writes
+`f [v, _]` becomes `x => f [v, x]`, so a pipeline stage stays the compile-time
+shape `|>` needs while still closing over runtime data:
 
 ```duck
-|> json_string_field("session_id", session_id)
+1 |> add [offset, _] |> add [30, _]
 ```
 
-which is rejected, and the working form is the verbose
-`|> (v => json_string_field ["session_id", session_id, v])`. A hole gives the
-concise spelling _and_ produces the `lam` the const parameter needs. That is the
-whole point: terse pipelines that still resolve away.
+Landed in `b65fd8f`. Holes bind left to right within one argument list; a hole
+inside a nested call is rejected, which needed a record of which lambdas were
+lifted from holes, because bottom-up parsing lifts an inner call's hole first.
 
-**The syntax is free.** `_` in expression position is not merely unused — it is
-deliberately rejected at `src/frontend/parser_primary.ts:219` with "Wildcard `_`
-cannot be used as an expression". Nothing to disambiguate against, and that
-throw site is where the desugar goes. There is precedent for synthesising a
-`lam` in the parser at `parser_support.ts:42` and `parser_expr.ts:80`.
+Two things the implementation had to get right, both found by building it:
 
-**Scoping is the decision to get right.** Scala scopes `_` to the innermost
-enclosing expression, which is why `f(g(_))` surprises people. Proposed rule,
-matching this language's preference for explicitness:
+- **The surface form must survive.** Desugaring in the parser meant
+  `format_source` rewrote `add [1, _]` as `__hole_0 => add [1, __hole_0]`,
+  leaking a generated name. The lambda now records its lifted parameter names
+  and the formatter puts the holes back, so parse/format round trips. That also
+  avoided a new `FrontExpr` variant, which would have touched every exhaustive
+  switch over expression tags.
+- **`_` is ambiguous with type syntax.** Adding it to `_primary_expression`
+  needed conflict declarations against `positional_type_product` and
+  `array_type`, since `[_, _]` could be either under LR parsing.
 
-- A hole lifts to the **immediately enclosing application**.
-- Several holes in that one argument list are allowed and bind left to right, so
-  `f [_, _]` is `(a, b) => f [a, b]`. In practice one hole is the common case,
-  because ownership limits how many values a stage can legally take.
-- A hole inside a **nested** call within that argument list is an error, with a
-  message pointing at the explicit lambda. `f [g [_], _]` is exactly the shape
-  that makes Scala's rule unpredictable, and rejecting it costs nothing.
+Covered by `src/frontend/hole.test.ts` and
+`examples/compile_time/24_argument_holes.duck`.
 
-**Prototyped on branch `holes-prototype` (`671e3d0`), not landable yet.**
-
-What works, verified end to end through `DuckCompiler`:
-
-- `add [1, _]` applied to `41` returns 42; `add [_, _]` applied to `[1, 41]`
-  returns 42, so several holes bind left to right.
-- The motivating case is clean: `1 |> add [runtime_value, _] |> add [31, _]`
-  reports **no diagnostics** and returns 42 — concise, closes over runtime data,
-  and still produces the `lam` the const parameter needs in order to specialize.
-- Nested holes are rejected with a real message. This needed a `WeakSet` of
-  lambdas lifted from holes, because bottom-up parsing lifts an inner call's
-  hole before the enclosing application sees it; without that, `f [g [_], _]`
-  silently binds each hole to its nearest call.
-- `src/frontend/hole.test.ts` encodes the intended behaviour.
-
-**Why it cannot land: it desugars at the wrong layer.** The lift happens in the
-parser, so the surface form is gone before anything else sees it, and
-`format_source` turns `add [1, _]` into `__hole_0 => add [1, __hole_0]` —
-rewriting the user's code and leaking an internal name. The round-trip test in
-`hole.test.ts` fails for exactly this reason, and the repo holds a strong
-`parse(format(x)) == x` discipline elsewhere.
-
-**The fix.** Keep a hole in the AST and desugar during elaboration, the way
-`loop_elaborate` and `duck_elaborate` handle their rewrites, so the formatter
-and LSP see what was written. A new `FrontExpr` variant would touch every
-exhaustive switch over expression tags; an optional field recording the lifted
-positions on the `lam` node would not, and may be the cheaper route. Decide that
-before continuing.
-
-**Cost.** Parser, tree-sitter grammar, formatter, LSP, docs.### Derived members
-on `duck` declarations
+### Derived members on `duck` declarations
 
 A `duck` currently declares members and nothing else (`docs/language.md:2108`).
 Every implementer must supply every member, even when one is always mechanically
