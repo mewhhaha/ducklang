@@ -93,7 +93,13 @@ async function run_fmt(args: string[]): Promise<number> {
     return 0;
   }
 
-  const files = await collect_files(paths.length > 0 ? paths : ["."]);
+  let roots = paths;
+
+  if (paths.length === 0) {
+    roots = ["."];
+  }
+
+  const files = await collect_files(roots);
   let changed = 0;
   let failed = 0;
 
@@ -161,7 +167,11 @@ async function run_check(args: string[]): Promise<number> {
     }
   }
 
-  return failed > 0 ? 1 : 0;
+  if (failed > 0) {
+    return 1;
+  }
+
+  return 0;
 }
 
 function format_source_diagnostic(

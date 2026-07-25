@@ -212,7 +212,13 @@ function collect_typescript_files(directory: URL): string[] {
         left.name.localeCompare(right.name)
       )
     ) {
-      const url = new URL(entry.name + (entry.isDirectory ? "/" : ""), current);
+      let entry_path = entry.name;
+
+      if (entry.isDirectory) {
+        entry_path = entry.name + "/";
+      }
+
+      const url = new URL(entry_path, current);
 
       if (entry.isDirectory) {
         collect(url);

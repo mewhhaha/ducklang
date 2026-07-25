@@ -2517,7 +2517,12 @@ function parse_duck_fact_type(
   try {
     return parse_type_expr(tokenize(type_name));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    let message = String(error);
+
+    if (error instanceof Error) {
+      message = error.message;
+    }
+
     throw new Error(
       "Duck member " + declaration.name + "." + member.name +
         " cannot inspect type " + type_name + ": " + message,

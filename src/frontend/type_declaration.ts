@@ -764,8 +764,7 @@ function runtime_type_name(type: SemType, declaration_name: string): string {
       }
 
       if (type.value.integer !== undefined) {
-        return (type.value.integer.signed ? "I" : "U") +
-          type.value.integer.width.toString();
+        return integer_type_name(type.value.integer);
       }
 
       if (type.value.type === "i64") {

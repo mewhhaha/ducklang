@@ -955,7 +955,11 @@ function source_metadata(
         !(previous?.kind === "symbol" && previous.text === "`")
       ) {
         if (token.text !== "_") {
-          const kind = declaration_members ? declaration_kind : binding_kind;
+          let kind = binding_kind;
+
+          if (declaration_members) {
+            kind = declaration_kind;
+          }
           symbol_sites.push({
             container_name: undefined,
             end: token.span.end,

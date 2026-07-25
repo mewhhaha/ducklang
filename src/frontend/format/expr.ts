@@ -14,6 +14,7 @@ import {
   format_type_field,
 } from "./common.ts";
 import { format_statement_sequence } from "./stmt.ts";
+import { integer_literal_suffix } from "../../integer.ts";
 
 const type_extend_fixity = (() => {
   const fixity = [...create_fixity_table().infix.values()].find(
@@ -54,8 +55,7 @@ function format_expr(
     }
 
     if (expr.integer) {
-      return expr.value.toString() + (expr.integer.signed ? "i" : "u") +
-        expr.integer.width.toString();
+      return expr.value.toString() + integer_literal_suffix(expr.integer);
     }
 
     if (expr.type === "i64") {

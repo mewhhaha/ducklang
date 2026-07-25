@@ -278,7 +278,12 @@ export function core_stmt(stmt: Stmt, ctx: CoreFromSourceCtx): CoreStmt {
       };
 
     case "break": {
-      const value = stmt.value ? core_expr(stmt.value, ctx) : undefined;
+      let value = undefined;
+
+      if (stmt.value) {
+        value = core_expr(stmt.value, ctx);
+      }
+
       return { tag: "break", value };
     }
 

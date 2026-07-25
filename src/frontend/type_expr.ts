@@ -10,6 +10,7 @@ import type {
 import { is_snake_case } from "./names.ts";
 import { format_effect_row } from "./effect_row.ts";
 import { format_character_literal, front_literal_expr } from "./literal.ts";
+import { integer_literal_suffix } from "../integer.ts";
 
 export function parse_type_expr(tokens: Token[]): TypeExpr {
   const parser = new TypeExprParser(tokens.filter((token) => {
@@ -647,8 +648,7 @@ function format_literal_type(literal: TypeLiteral): string {
 
   if (literal.integer !== undefined) {
     return literal.value.toString() +
-      (literal.integer.signed ? "i" : "u") +
-      literal.integer.width.toString();
+      integer_literal_suffix(literal.integer);
   }
 
   if (literal.type === "i64") {

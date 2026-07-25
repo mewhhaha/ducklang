@@ -27,7 +27,20 @@ export function integer_type_from_name(name: string): IntegerType | undefined {
 }
 
 export function integer_type_name(type: IntegerType): string {
-  return (type.signed ? "I" : "U") + type.width.toString();
+  if (type.signed) {
+    return "I" + type.width.toString();
+  }
+
+  return "U" + type.width.toString();
+}
+
+/** The suffix a fixed-width literal carries in source, such as `21i32`. */
+export function integer_literal_suffix(type: IntegerType): string {
+  if (type.signed) {
+    return "i" + type.width.toString();
+  }
+
+  return "u" + type.width.toString();
 }
 
 export function integer_val_type(

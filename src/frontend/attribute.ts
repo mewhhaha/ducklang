@@ -158,9 +158,15 @@ export function expand_source_attributes(source: Source): Source {
       continue;
     }
 
+    let kind: "let" | "const" = statement.kind;
+
+    if (applied.exported) {
+      kind = "let";
+    }
+
     statements.push({
       ...statement,
-      kind: applied.exported ? "let" : statement.kind,
+      kind,
       host_export: applied.exported || statement.host_export,
       attribute_groups: undefined,
       value: applied.value,

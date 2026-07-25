@@ -20,6 +20,7 @@ import {
   source_span,
   source_span_origin,
 } from "./syntax.ts";
+import { map_defined } from "../optional.ts";
 
 export type SourceTextResolver = (uri: string) => string | undefined;
 
@@ -657,9 +658,10 @@ function resolve_expression_imports_untracked(
         ...expr,
         func: resolve_expression_imports(expr.func, base, stack, resolution),
         args,
-        arg: expr.arg === undefined
-          ? undefined
-          : resolve_expression_imports(expr.arg, base, stack, resolution),
+        arg: map_defined(
+          expr.arg,
+          (arg) => resolve_expression_imports(arg, base, stack, resolution),
+        ),
       };
     }
 
@@ -684,9 +686,10 @@ function resolve_expression_imports_untracked(
         items: expr.items.map((item) =>
           resolve_expression_imports(item, base, stack, resolution)
         ),
-        rest: expr.rest === undefined
-          ? undefined
-          : resolve_expression_imports(expr.rest, base, stack, resolution),
+        rest: map_defined(
+          expr.rest,
+          (rest) => resolve_expression_imports(rest, base, stack, resolution),
+        ),
       };
 
     case "array_repeat":
@@ -983,9 +986,11 @@ function resolve_expression_imports_untracked(
         ),
         arms: expr.arms.map((arm) => ({
           ...arm,
-          guard: arm.guard === undefined
-            ? undefined
-            : resolve_expression_imports(arm.guard, base, stack, resolution),
+          guard: map_defined(
+            arm.guard,
+            (guard) =>
+              resolve_expression_imports(guard, base, stack, resolution),
+          ),
           body: resolve_expression_imports(arm.body, base, stack, resolution),
         })),
       };
@@ -993,12 +998,15 @@ function resolve_expression_imports_untracked(
     case "union_case":
       return {
         ...expr,
-        value: expr.value === undefined
-          ? undefined
-          : resolve_expression_imports(expr.value, base, stack, resolution),
-        type_expr: expr.type_expr === undefined
-          ? undefined
-          : resolve_expression_imports(expr.type_expr, base, stack, resolution),
+        value: map_defined(
+          expr.value,
+          (value) => resolve_expression_imports(value, base, stack, resolution),
+        ),
+        type_expr: map_defined(
+          expr.type_expr,
+          (type_expr) =>
+            resolve_expression_imports(type_expr, base, stack, resolution),
+        ),
       };
   }
 
@@ -1542,9 +1550,13 @@ function project_module_statements(
       continue;
     }
 
-    const names = statement.pattern === undefined
-      ? [statement.name]
-      : pattern_bindings(statement.pattern).map((binding) => binding.name);
+    let names = [statement.name];
+
+    if (statement.pattern !== undefined) {
+      names = pattern_bindings(statement.pattern).map((binding) =>
+        binding.name
+      );
+    }
 
     if (!names.some((name) => required.has(name))) {
       continue;

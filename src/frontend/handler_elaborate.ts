@@ -565,7 +565,14 @@ function compile_top_level_stmt(
   }
 
   if (stmt.tag === "return" || stmt.tag === "expr") {
-    const value = stmt.tag === "return" ? stmt.value : stmt.expr;
+    let value: FrontExpr;
+
+    if (stmt.tag === "return") {
+      value = stmt.value;
+    } else {
+      value = stmt.expr;
+    }
+
     const compiled = compile_expr(
       value,
       ctx,

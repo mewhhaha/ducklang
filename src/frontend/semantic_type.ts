@@ -9,6 +9,7 @@ import type {
 import { parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
 import { type Type, type_key, TypeEngine } from "./type_engine.ts";
+import { integer_literal_suffix, integer_type_name } from "../integer.ts";
 
 export type SemType =
   | { tag: "top" }
@@ -217,8 +218,7 @@ export function sem_type_from_front_type(type: FrontType): SemType {
       if (type.integer) {
         return {
           tag: "named",
-          name: (type.integer.signed ? "I" : "U") +
-            type.integer.width.toString(),
+          name: integer_type_name(type.integer),
         };
       }
 
@@ -239,8 +239,7 @@ export function sem_type_from_front_type(type: FrontType): SemType {
     case "wide_int":
       return {
         tag: "named",
-        name: (type.integer.signed ? "I" : "U") +
-          type.integer.width.toString(),
+        name: integer_type_name(type.integer),
       };
 
     case "atom":
@@ -896,8 +895,7 @@ function literal_base_type(literal: TypeLiteral): SemType {
   if (literal.integer !== undefined) {
     return {
       tag: "named",
-      name: (literal.integer.signed ? "I" : "U") +
-        literal.integer.width.toString(),
+      name: integer_type_name(literal.integer),
     };
   }
 
@@ -921,11 +919,10 @@ function type_literal_key(literal: TypeLiteral): string {
     return "char:" + literal.value.toString();
   }
 
-  let suffix = literal.type;
+  let suffix: string = literal.type;
 
   if (literal.integer !== undefined) {
-    suffix = (literal.integer.signed ? "i" : "u") +
-      literal.integer.width.toString();
+    suffix = integer_literal_suffix(literal.integer);
   }
 
   return "num:" + suffix + ":" + literal.value.toString();

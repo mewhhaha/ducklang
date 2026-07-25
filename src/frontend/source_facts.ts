@@ -1947,12 +1947,13 @@ class SourceFactRecorder {
         const effect_name = expr.func.object.name;
         const operation_name = expr.func.name;
         const declaration = this.declarations.get(effect_name);
-        const operation = declaration?.tag === "effect"
-          ? declaration.operations.find((candidate) =>
-            candidate.name === operation_name
-          )
-          : undefined;
+        let operation = undefined;
 
+        if (declaration?.tag === "effect") {
+          operation = declaration.operations.find((candidate) =>
+            candidate.name === operation_name
+          );
+        }
         if (declaration?.tag === "effect" && operation !== undefined) {
           const bindings = infer_effect_operation_type_arguments(
             declaration,
@@ -4553,9 +4554,11 @@ class SourceFactRecorder {
     const cacheable = args.every((arg) =>
       !arg.inference_variable && arg.resolved_name !== "unknown"
     );
-    const cached = cacheable
-      ? this.applied_declaration_types.get(specialized_name)
-      : undefined;
+    let cached = undefined;
+
+    if (cacheable) {
+      cached = this.applied_declaration_types.get(specialized_name);
+    }
 
     if (cached !== undefined) {
       return cached;

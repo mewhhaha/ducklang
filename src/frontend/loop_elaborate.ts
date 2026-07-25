@@ -509,9 +509,21 @@ function recursive_loop(
     assigned_types.every(is_known_type) &&
     result_types.every(is_known_type)
   ) {
+    let annotation_inputs = assigned_types;
+
+    if (assigned_types.length === 0) {
+      annotation_inputs = ["Unit"];
+    }
+
+    let annotation_results = result_types;
+
+    if (result_types.length === 0) {
+      annotation_results = ["Unit"];
+    }
+
     annotation = function_annotation(
-      assigned_types.length === 0 ? ["Unit"] : assigned_types,
-      result_types.length === 0 ? ["Unit"] : result_types,
+      annotation_inputs,
+      annotation_results,
       output_type_name,
     );
   }
@@ -580,7 +592,11 @@ function recursive_loop(
     });
   }
 
-  const state_offset = result_required ? 1 : 0;
+  let state_offset = 0;
+
+  if (result_required) {
+    state_offset = 1;
+  }
 
   for (let index = 0; index < assigned_names.length; index += 1) {
     const name = assigned_names[index];
