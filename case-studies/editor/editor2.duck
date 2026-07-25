@@ -1,0 +1,294 @@
+-- DESIGN SKETCH — THIS FILE DOES NOT COMPILE.
+--
+-- A rewrite of editor.duck in a keyword-delimited syntax that does not exist
+-- yet. Nothing parses it: not the frontend, not tree-sitter, not the formatter.
+-- It is here to be read, not run, and is excluded from every test glob.
+--
+-- The rules it is written to:
+--
+--   do … end        every block, including function bodies
+--   if … then … else … end
+--   match … with | … end
+--   loop do … end        for x in xs do … end
+--   let                  introduces a binding
+--   set                  introduces an assignment
+--   <-                   effect bind, unchanged
+--
+-- No semicolons and no mandatory `return`. Every statement begins with a
+-- keyword, so the boundary is already marked; adding a terminator as well
+-- would be the grey middle ground — more ink, no more information. A block's
+-- trailing expression is its value, which the closing `end` delimits
+-- unambiguously.
+--
+-- What this is meant to demonstrate: block structure that differs by *shape*.
+-- In editor.duck every construct is `{ }`, so `if`, `match`, `loop`, `for` and
+-- function bodies all share one silhouette. Here each has its own outline, and
+-- the parser gets the same disambiguation the eye does.
+
+module (!init: Init) where
+
+const { .cast, .struct } = import "duck:prelude/types" ()
+
+type Key =
+  | `Character Char
+  | `ArrowLeft Unit
+  | `ArrowRight Unit
+  | `Escape Unit
+  | `Backspace Unit
+  | `Enter Unit
+  | `Tab Unit
+  | `ControlC Unit
+
+type KeyDecoder = | `Ground Unit | `EscapePrefix Unit | `ControlSequence Unit
+type KeySequence = List Key
+type EditorCommand = | `Save Unit | `Quit Unit
+type EditorCommands = List EditorCommand
+
+type PieceTree = | `Empty Unit | `Leaf PieceLeaf | `Branch PieceBranch
+type PieceLeaf = struct { .piece = Bytes }
+type PieceBranch = struct {
+  .left = PieceTree,
+  .right = PieceTree,
+  .length = I32,
+  .height = I32,
+}
+type PieceTable = struct { .root = PieceTree, .length = I32 }
+type Selection = struct { .anchor = I32, .head = I32 }
+type Mode = | `Normal Unit | `Extend Unit | `Insert Unit
+type Status = | `Ready Unit | `SaveFailed Unit
+type Editor = struct {
+  .document = PieceTable,
+  .selection = Selection,
+  .mode = Mode,
+  .status = Status,
+}
+
+effect RenderOutput do
+  append: (I32) => Unit
+end
+
+const { .not, .slice } = import "duck:prelude" ()
+
+const escape_character = cast(27, Char)
+const utf8_continuation_lower_bound = 0x80
+const utf8_continuation_upper_bound = 0xc0
+
+-- A single-expression function needs no block, so it needs no `do`.
+let byte_at = (table: PieceTable, wanted: I32) =>
+  piece_tree_byte_at(table.root, wanted)
+
+let is_utf8_continuation = (byte: I32) =>
+  byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
+
+-- `match … with … end` reads as one shape. The arms keep their leading pipe,
+-- which is the strongest vertical edge the language already has.
+let piece_tree_length = (tree: PieceTree) =>
+  match tree with
+  | `Empty () => 0
+  | `Leaf leaf => leaf.piece.length()
+  | `Branch branch => branch.length
+  end
+
+let piece_tree_height = (tree: PieceTree) =>
+  match tree with
+  | `Empty () => 0
+  | `Leaf _ => 1
+  | `Branch branch => branch.height
+  end
+
+let piece_tree_leaf = (bytes: Bytes) => do
+  if bytes.length() == 0 then
+    empty_piece_tree()
+  else
+    let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes })
+    leaf
+  end
+end
+
+-- The if/else chain is where the shape difference shows most. Compare with the
+-- original, where every branch boundary is a brace among many braces.
+let rec join_piece_trees = (left: PieceTree, right: PieceTree) => do
+  let left_height = piece_tree_height(left)
+  let right_height = piece_tree_height(right)
+
+  if left_height > right_height + 1 then
+    let `Branch branch = left else piece_tree_branch(left, right)
+    piece_tree_branch(branch.left, join_piece_trees(branch.right, right))
+
+  else if right_height > left_height + 1 then
+    let `Branch branch = right else piece_tree_branch(left, right)
+    piece_tree_branch(join_piece_trees(left, branch.left), branch.right)
+
+  else
+    piece_tree_branch(left, right)
+  end
+end
+
+let rec split_piece_tree = (tree: PieceTree, position: I32) => do
+  let length = piece_tree_length(tree)
+
+  if position <= 0 then
+    (empty_piece_tree(), tree)
+
+  else if position >= length then
+    (tree, empty_piece_tree())
+
+  else
+    match tree with
+    | `Empty () => (empty_piece_tree(), empty_piece_tree())
+    | `Leaf leaf => do
+        let piece = leaf.piece
+        let left = piece_tree_leaf(slice(&piece, 0, position))
+        let right = piece_tree_leaf(slice(&piece, position, piece.length()))
+        (left, right)
+      end
+    | `Branch branch => do
+        let left_length = piece_tree_length(branch.left)
+
+        if position < left_length then
+          let (prefix, suffix) = split_piece_tree(branch.left, position)
+          (prefix, join_piece_trees(suffix, branch.right))
+        else
+          let (prefix, suffix) =
+            split_piece_tree(branch.right, position - left_length)
+          (join_piece_trees(branch.left, prefix), suffix)
+        end
+      end
+    end
+  end
+end
+
+-- `set` marks mutation. Every statement now begins with a keyword, so a
+-- statement boundary is visible without a terminator — and `}` followed by
+-- `[` on the next line stops being ambiguous, because an argument never
+-- starts a line.
+let materialize = (table: PieceTable) => do
+  let output = Bytes.generate(table.length, (_) => 0)
+  let output_offset = 0
+  let pending: List PieceTree = `Cons [table.root, `Nil ()]
+
+  loop do
+    let `Cons node = pending else break
+    let [tree, tail] = node
+
+    match tree with
+    | `Empty () => set pending = tail
+    | `Leaf leaf => do
+        set pending = tail
+        let piece: Bytes = leaf.piece
+
+        for byte in piece do
+          set output[output_offset] = byte
+          set output_offset = output_offset + 1
+        end
+      end
+    | `Branch branch => do
+        set pending = `Cons [branch.left, `Cons [branch.right, tail]]
+      end
+    end
+  end
+
+  output
+end
+
+let selection_start = (selection: Selection) =>
+  if selection.anchor < selection.head then selection.anchor
+  else selection.head
+  end
+
+let move_head = (editor: Editor, position: I32) => do
+  let head = clamp_character(&editor.document, position)
+
+  let anchor =
+    if let `Extend () = editor.mode then editor.selection.anchor
+    else head
+    end
+
+  editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
+end
+
+let apply_normal_character = (editor: Editor, character: Char) =>
+  match character with
+  | 'h' => continue_editing(move_left(editor))
+  | 'l' => continue_editing(move_right(editor))
+  | 'v' => do
+      let mode = if let `Extend () = editor.mode then `Normal () else `Extend () end
+      continue_editing(editor <& { .mode = mode })
+    end
+  | 'd' => continue_editing(delete_selection(editor))
+  | 'w' => request_editor_command(editor, `Save ())
+  | 'q' => request_editor_command(editor, `Quit ())
+  | _ => continue_editing(editor)
+  end
+
+-- Handlers keep their own opener, so a handler body never looks like a record.
+let render_output = (capacity: I32) => do
+  let output = output_builder(capacity)
+
+  handler RenderOutput do
+    append: (byte, !resume) => do
+      set output = append_output_byte(output, byte)
+      !resume(())
+    end,
+    return: (_) => slice(&output.buffer, 0, output.length),
+  end
+end
+
+let emit_control_sequence = (command: Char) => do
+  _ <- emit_output_character(escape_character)
+  _ <- emit_output_character(control_sequence_introducer)
+  _ <- emit_output_character(command)
+  ()
+end
+
+-- The main loop. Effect binds keep `<-`, which already reads differently from
+-- `=`; `break` carries no value here, but `loop do … end` could yield one.
+document <- Terminal.load()
+
+let editor = Editor.new {
+  .document = piece_table(document),
+  .selection = Selection.new { .anchor = 0, .head = 0 },
+  .mode = `Normal (),
+  .status = `Ready (),
+}
+let key_decoder: KeyDecoder = `Ground ()
+
+loop do
+  columns <- Terminal.columns()
+  rows <- Terminal.rows()
+
+  let view = RenderView.new {
+    .document = materialize(&editor.document),
+    .mode = editor.mode,
+    .status = editor.status,
+    .size = TerminalSize.new { .columns = columns, .rows = rows },
+  }
+
+  let frame = render(view)
+  _ <- Terminal.write(&frame)
+  read_result <- Terminal.read()
+  let `Keys keys = read_result else break
+
+  let input_step = apply_keys(editor, key_decoder, keys)
+  set editor = input_step.editor
+  set key_decoder = input_step.decoder
+
+  let quit_requested = false
+  let pending_commands = input_step.commands
+
+  for command in pending_commands do
+    match command with
+    | `Save () => do
+        let contents = materialize(&editor.document)
+        save_result <- Terminal.save(&contents)
+        let status = if let `Ok () = save_result then `Ready () else `SaveFailed () end
+        set editor = editor <& { .status = status }
+      end
+    | `Quit () => set quit_requested = true
+    end
+  end
+
+  if quit_requested then break end
+end
+
+[.code = 0]
