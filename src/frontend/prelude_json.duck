@@ -83,13 +83,13 @@ const json_hex_digit_value = byte => {
 
 let json_code_point_text: I32 -> Text = (code_point: I32) => {
   if code_point <= 127 {
-    decode_utf8(generate_bytes(1, _ => code_point))
+    decode_utf8(generate_bytes([1, _ => code_point]))
   } else if code_point <= 2047 {
-    decode_utf8(generate_bytes(2, index => {
+    decode_utf8(generate_bytes([2, index => {
       if index == 0 { 192 + code_point / 64 } else { 128 + code_point % 64 }
-    }))
+    }]))
   } else if code_point <= 65535 {
-    decode_utf8(generate_bytes(3, index => {
+    decode_utf8(generate_bytes([3, index => {
       if index == 0 {
         224 + code_point / 4096
       } else if index == 1 {
@@ -97,9 +97,9 @@ let json_code_point_text: I32 -> Text = (code_point: I32) => {
       } else {
         128 + code_point % 64
       }
-    }))
+    }]))
   } else {
-    decode_utf8(generate_bytes(4, index => {
+    decode_utf8(generate_bytes([4, index => {
       if index == 0 {
         240 + code_point / 262144
       } else if index == 1 {
@@ -109,7 +109,7 @@ let json_code_point_text: I32 -> Text = (code_point: I32) => {
       } else {
         128 + code_point % 64
       }
-    }))
+    }]))
   }
 };
 
