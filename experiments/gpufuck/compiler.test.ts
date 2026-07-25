@@ -90,6 +90,47 @@ third(39)
   assert_equals(module.definitionCount, 1);
 });
 
+Deno.test("Duck gpufuck lowering types an if from either branch", () => {
+  const source_text = `
+let f = rec (n: I32, total: I32) => {
+  if n > 0 { rec(n - 1, total + n) } else { total }
+};
+f(3, 0)
+`;
+  const lowered = lower_duck_source_to_gpufuck(
+    parse_source(source_text),
+    new TextEncoder().encode(source_text).byteLength,
+  );
+  const entry = lowered.artifact.exports.find((exported) =>
+    exported.name === "main"
+  );
+
+  assert_equals(entry?.type, { kind: "integer" });
+});
+
+Deno.test("Duck gpufuck lowering resolves a union case from the declared parameter", () => {
+  const source_text = `
+type Keys = | \`Empty Unit | \`Key I32
+type Commands = | \`Empty Unit | \`Command I32
+
+let known: Keys = \`Key 3;
+let pick = rec (values: Commands, fallback: I32) => {
+  if let \`Command value = values { value } else { fallback }
+};
+let out: I32 = pick(\`Empty (), 7);
+if let \`Key value = known { out + value } else { out }
+`;
+  const lowered = lower_duck_source_to_gpufuck(
+    parse_source(source_text),
+    new TextEncoder().encode(source_text).byteLength,
+  );
+  const entry = lowered.artifact.exports.find((exported) =>
+    exported.name === "main"
+  );
+
+  assert_equals(entry?.type, { kind: "integer" });
+});
+
 Deno.test("Duck compiler lowers empty generic union cases", async () => {
   const compiler = await DuckCompiler.create();
   try {

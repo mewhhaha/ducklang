@@ -2090,6 +2090,12 @@ class DuckCoreLowering {
         environment,
         consequent.type,
       );
+      let branch_type = consequent.type;
+
+      if (branch_type === undefined) {
+        branch_type = alternate.type;
+      }
+
       return {
         expression: {
           kind: "if",
@@ -2097,7 +2103,7 @@ class DuckCoreLowering {
           consequent: consequent.expression,
           alternate: alternate.expression,
         },
-        type: consequent.type,
+        type: branch_type,
       };
     }
 
@@ -3677,6 +3683,30 @@ class DuckCoreLowering {
     const callee = this.lower_expression(expression.func, environment);
     let result_expression = callee.expression;
     let result_type = callee.type;
+    let declared_parameters: readonly CoreParam[] | undefined;
+
+    if (
+      expression.func.tag === "rec_ref" || expression.func.tag === "rec" ||
+      expression.func.tag === "lam"
+    ) {
+      declared_parameters = expression.func.params;
+    }
+
+    if (declared_parameters === undefined && expression.func.tag === "var") {
+      const source_function = this.#source_functions.get(expression.func.name);
+
+      if (source_function !== undefined) {
+        declared_parameters = source_function.params;
+      }
+    }
+
+    if (
+      declared_parameters !== undefined &&
+      declared_parameters.length !== expression.args.length
+    ) {
+      declared_parameters = undefined;
+    }
+
     if (expression.args.length === 0) {
       result_expression = surface.apply(
         result_expression,
@@ -3686,10 +3716,35 @@ class DuckCoreLowering {
         result_type = result_type.result;
       }
     } else {
-      for (const arg of expression.args) {
+      for (let index = 0; index < expression.args.length; index += 1) {
+        const arg = expression.args[index];
+
+        if (arg === undefined) {
+          throw new Error(
+            "Duck gpufuck lowering lost call argument " + index.toString(),
+          );
+        }
+
         let parameter_type: TypeSchema | undefined;
         if (result_type?.kind === "function") {
           parameter_type = result_type.parameter;
+        }
+        if (parameter_type?.kind === "tuple" && expression.args.length > 1) {
+          parameter_type = undefined;
+        }
+        if (parameter_type === undefined && declared_parameters !== undefined) {
+          const declared = declared_parameters[index];
+          if (declared !== undefined) {
+            parameter_type = this.schema_from_optional_type_name(
+              declared.annotation,
+            );
+            if (
+              parameter_type?.kind === "named" &&
+              !this.#types.has(parameter_type.name)
+            ) {
+              parameter_type = undefined;
+            }
+          }
         }
         const lowered_arg = this.lower_expression(
           arg,
