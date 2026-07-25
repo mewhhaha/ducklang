@@ -131,8 +131,17 @@ reading the modules.
       API.
 - [ ] `src/frontend/prelude_collections.duck` is a third copy of
       `reverse`/`take`/`length`.
-- [ ] `src/frontend/prelude_json_string.duck` is a byte-identical copy of part
-      of `prelude_json_encode.duck`.
+- [x] ~~`src/frontend/prelude_json_string.duck` is a byte-identical copy of part
+      of `prelude_json_encode.duck`.~~ **Not duplication — do not merge these.**
+      The `encode_json_string` bodies are byte-identical, but the modules are
+      not interchangeable: `prelude_json_encode.duck` imports
+      `duck:prelude/json/values` and aliases `JsonArray`/`JsonObject`, so
+      importing it drags in the Json type machinery, while
+      `prelude_json_string.duck` depends only on `duck:prelude/runtime`. Its
+      four consumers want to escape a string without that. Attempting the merge
+      broke `agent_tool_control.test.ts` with `F2101 unknown type "Json"`,
+      confirmed by A/B against HEAD. Compare module dependency footprints, not
+      just function bodies.
 - [ ] **No canonical `fold`.** `list_fold_left` exists in `prelude_functional`
       with zero importers outside the prelude.
 - [x] **`iterator_windows` is broken.** Fixed in `09da064` by calling the
