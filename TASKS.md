@@ -267,6 +267,30 @@ left it out of the CI matrix. Three distinct classes, all **verified**.
 **Coherence target:** codex joins the CI matrix, which is the only way the
 largest case study stops silently rotting.
 
+## 4c. The tree-sitter grammar lags the language
+
+The grammar is what editor tooling uses, so anything it cannot parse loses
+highlighting and LSP structure even though the compiler accepts it. It had
+drifted from `src/frontend/tokenize.ts`.
+
+- [x] **Numeric literals.** The `number` token matched only `123`, `123i32` and
+      `1f32`, while the tokenizer also lexes hexadecimal, a fractional part and
+      an exponent. `0x80`, `0x46464952` and `0.5f32` all failed. Widened in
+      `b1ba9f3`.
+- [x] **Single-argument trailing comma.** `positional_product` required two or
+      more expressions, so `f(\n  1,\n)` — which the formatter itself emits when
+      wrapping — matched no rule. Fixed in `b1ba9f3`.
+- [ ] **`turn_profile.duck` still fails**, and differently: an assignment whose
+      value ends in `}` with no trailing `;`, followed by `[...]` on the next
+      line, has the bracket absorbed as an application argument. That is the
+      contextual-lexing layer deciding whether a newline ends a statement, not a
+      missing rule, so it needs the scanner rather than the grammar.
+
+Case-study parse failures went from 10 of 907 to 1. Examples (130) and the
+prelude (23) were already clean and stay clean.
+
+**Coherence target:** anything the compiler accepts, the editor grammar parses.
+
 ## 5. Structure
 
 - [x] **The backend lived in `experiments/`.** Moved to `src/backend/`, and
