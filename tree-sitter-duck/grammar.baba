@@ -13,7 +13,7 @@ token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_.]*/ ;
 token operator_symbol priority 0 = /([-!$%&*+\/<>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*|=[.\-!$%&*+\/<=?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)/ ;
 token effect_identifier priority 1 = /[A-Z][A-Za-z0-9]*/ ;
 token row_variable = /[a-z_][A-Za-z0-9_]*/ ;
-token number = /[0-9]+([iu][1-9][0-9]*|f(32|64))?/ ;
+token number = /(0[xX][0-9a-fA-F]+([iu][1-9][0-9]*)?|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?([iu][1-9][0-9]*|f(32|64))?)/ ;
 token string = /"([^"\\]|\\[ntr"\\])*"/ ;
 token character = /'([^'\\\n\r]|\\[ntr'\\])'/ ;
 document = (
@@ -667,7 +667,7 @@ named_product = ("[" ((product_field (("," product_field))*) (",")?) "]") ;
 
 product_field = (_named_product_dot name:(identifier) "=" value:(_expression)) ;
 
-positional_product = ("(" ((_expression "," (_expression (("," _expression))*)) (",")?) ")") ;
+positional_product = ("(" (((_expression "," (_expression (("," _expression))*)) (",")?) | (_expression ",")) ")") ;
 
 parenthesized_or_product = (
                              unit_pattern
