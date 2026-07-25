@@ -385,7 +385,7 @@ Deno.test("collection loop union patterns retain their surface form", () => {
   });
   assert_equals(
     format_source(source),
-    "for index, `Some value in values { total = total + value }",
+    "for index, `Some value in values { total = total + value; }",
   );
 });
 

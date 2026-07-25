@@ -138,11 +138,14 @@ function format_stmt_without_attributes(
   }
 
   if (stmt.tag === "assign") {
+    // Terminated like every other statement. Without this an assignment whose
+    // value ends in `}` runs into whatever follows it on the next line, which
+    // the tree-sitter grammar then reads as an application argument.
     if (stmt.mode === "same") {
-      return stmt.name + " = " + format_expr(stmt.value);
+      return stmt.name + " = " + format_expr(stmt.value) + ";";
     }
 
-    return stmt.name + " := " + format_expr(stmt.value);
+    return stmt.name + " := " + format_expr(stmt.value) + ";";
   }
 
   if (stmt.tag === "index_assign") {
