@@ -19,4 +19,4 @@ export type {
   WasmAsyncInit as DuckAsyncInit,
   WasmHostValue as DuckHostValue,
   WasmInit as DuckInit,
-} from "../../gpufuck/functional.ts";
+} from "gpufuck";

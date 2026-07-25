@@ -1,4 +1,4 @@
-import type { WasmHostValue } from "../../../gpufuck/functional.ts";
+import type { WasmHostValue } from "gpufuck";
 import { DuckCompiler } from "../compiler.ts";
 
 type CompileRequest = {
