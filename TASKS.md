@@ -356,28 +356,34 @@ matching this language's preference for explicitness:
   message pointing at the explicit lambda. `f [g [_], _]` is exactly the shape
   that makes Scala's rule unpredictable, and rejecting it costs nothing.
 
-**Prototyped, not landed.** A working parser prototype is in `git stash` as
-"hole-syntax prototype": `_` parses to a reserved `@hole` var at
-`parser_primary.ts`, and `lift_argument_holes` in `parser_expr.ts` wraps the
-enclosing application in a lambda. Verified end to end through `DuckCompiler`:
+**Prototyped on branch `holes-prototype` (`671e3d0`), not landable yet.**
 
-- `add [1, _]` then applying to `41` returns 42.
-- Several holes work — `add [_, _]` applied to `[1, 41]` returns 42.
+What works, verified end to end through `DuckCompiler`:
+
+- `add [1, _]` applied to `41` returns 42; `add [_, _]` applied to `[1, 41]`
+  returns 42, so several holes bind left to right.
 - The motivating case is clean: `1 |> add [runtime_value, _] |> add [31, _]`
-  reports **no diagnostics** and returns 42, closing over a runtime value while
-  still producing the `lam` the const parameter wants.
-- The full gate stays green: 481 tests, lint, format, type check.
+  reports **no diagnostics** and returns 42 — concise, closes over runtime data,
+  and still produces the `lam` the const parameter needs in order to specialize.
+- Nested holes are rejected with a real message. This needed a `WeakSet` of
+  lambdas lifted from holes, because bottom-up parsing lifts an inner call's
+  hole before the enclosing application sees it; without that, `f [g [_], _]`
+  silently binds each hole to its nearest call.
+- `src/frontend/hole.test.ts` encodes the intended behaviour.
 
-**One design point the prototype got wrong.** The rejection of nested holes
-never fires. Parsing is bottom-up, so an inner call lifts its own hole before
-the outer application ever sees it — `add [add [1, _], _]` silently becomes
-`add [(x => add [1, x]), y]`, which is exactly the innermost-binding rule the
-proposal set out to avoid. It fails later with a type error rather than a useful
-message. Implementing the intended rule needs the lifted lambda to remember it
-came from a hole, so the enclosing application can reject it.
+**Why it cannot land: it desugars at the wrong layer.** The lift happens in the
+parser, so the surface form is gone before anything else sees it, and
+`format_source` turns `add [1, _]` into `__hole_0 => add [1, __hole_0]` —
+rewriting the user's code and leaking an internal name. The round-trip test in
+`hole.test.ts` fails for exactly this reason, and the repo holds a strong
+`parse(format(x)) == x` discipline elsewhere.
 
-Decide the scoping rule before landing this. The prototype shows the feature
-works and is cheap; it does not yet show it is predictable.
+**The fix.** Keep a hole in the AST and desugar during elaboration, the way
+`loop_elaborate` and `duck_elaborate` handle their rewrites, so the formatter
+and LSP see what was written. A new `FrontExpr` variant would touch every
+exhaustive switch over expression tags; an optional field recording the lifted
+positions on the `lam` node would not, and may be the cheaper route. Decide that
+before continuing.
 
 **Cost.** Parser, tree-sitter grammar, formatter, LSP, docs.### Derived members
 on `duck` declarations
