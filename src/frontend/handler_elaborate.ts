@@ -1563,6 +1563,70 @@ function rewrite_effect_loop_control_expr(
   return expr;
 }
 
+/**
+ * Rewrite an effectful `for item in collection` into the indexed range form,
+ * which `effectful_range_block` already knows how to lower under CPS.
+ *
+ * Only collections that survive duck elaboration reach this point — Bytes,
+ * Text, and named aggregates — and every one of them has `@len` and integer
+ * indexing, so the rewrite is total. Duck-typed collections were already
+ * turned into cursor loops earlier in the pipeline.
+ */
+function effectful_collection_block(
+  stmt: Extract<Stmt, { tag: "for_collection" }>,
+  elaboration: Elaboration,
+): FrontExpr {
+  const suffix = elaboration.next_loop.toString();
+  const collection_name = "__duck_effect_collection_" + suffix;
+  let index_name = stmt.index;
+
+  if (index_name === undefined) {
+    index_name = "__duck_effect_collection_index_" + suffix;
+  }
+
+  const item: Stmt = {
+    tag: "bind",
+    kind: "let",
+    name: stmt.item,
+    is_linear: false,
+    annotation: undefined,
+    value: {
+      tag: "index",
+      object: { tag: "var", name: collection_name },
+      index: { tag: "var", name: index_name },
+    },
+  };
+
+  const range: Extract<Stmt, { tag: "for_range" }> = {
+    tag: "for_range",
+    index: index_name,
+    start: { tag: "num", type: "i32", value: 0 },
+    end: {
+      tag: "app",
+      func: { tag: "var", name: "@len" },
+      args: [{ tag: "var", name: collection_name }],
+    },
+    end_bound: "exclusive",
+    step: { tag: "num", type: "i32", value: 1 },
+    body: [item, ...stmt.body],
+  };
+
+  return {
+    tag: "block",
+    statements: [{
+      tag: "bind",
+      kind: "let",
+      name: collection_name,
+      is_linear: false,
+      annotation: undefined,
+      value: stmt.collection,
+    }, {
+      tag: "expr",
+      expr: effectful_range_block(range, elaboration),
+    }],
+  };
+}
+
 function effectful_range_block(
   stmt: Extract<Stmt, { tag: "for_range" }>,
   elaboration: Elaboration,
@@ -1952,12 +2016,16 @@ function compile_statement_at(
           stmt_calls_duck_function(body_statement, ctx, elaboration);
       })
     ) {
-      expect(
-        stmt.tag === "for_range",
-        "Local effects in collection loops require iterator CPS lowering",
-      );
+      let block: FrontExpr;
+
+      if (stmt.tag === "for_range") {
+        block = effectful_range_block(stmt, elaboration);
+      } else {
+        block = effectful_collection_block(stmt, elaboration);
+      }
+
       return compile_expr(
-        effectful_range_block(stmt, elaboration),
+        block,
         ctx,
         (_value, next_ctx) => rest(next_ctx),
         elaboration,

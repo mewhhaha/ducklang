@@ -1,0 +1,25 @@
+effect Counter {
+  add: (I32) => Unit
+}
+
+let run: () -> <Counter> Unit = () => {
+  let values = [10, 20, 12];
+
+  for value in values {
+    _ <- Counter.add(value)
+  }
+  ()
+};
+
+let counter = {
+  let sum = 0;
+  handler Counter {
+    add: (value, !resume) => {
+      sum = sum + value
+      !resume(())
+    },
+    return: _ => sum,
+  }
+};
+
+try run() with counter
