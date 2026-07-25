@@ -80,10 +80,8 @@ jobs:
       fail-fast: false
       matrix:
         study:
-          - chip8
-          - grep
+          - editor
           - raytracer
-          - tar
           - wav
     steps:
       - name: checkout
