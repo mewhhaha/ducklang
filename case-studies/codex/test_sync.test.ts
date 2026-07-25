@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -10,7 +10,7 @@ const host_interface_url = new URL("./test_sync_host.duck", import.meta.url);
 
 Deno.test("Codex runs synchronization mechanics in source order", async () => {
   const events: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     TestSyncHost: {
       $resource: { kind: "resource", id: 1 },
       sleep: (argument) => {
@@ -69,10 +69,10 @@ Deno.test("Codex runs synchronization mechanics in source order", async () => {
 });
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -82,7 +82,7 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_argument(value: FunctionalWasmHostValue): string {
+function text_argument(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }

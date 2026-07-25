@@ -1,27 +1,27 @@
 import {
-  createFunctionalModuleArtifact,
+  createModuleArtifact,
   type EncodedFunctionalModule,
-  FUNCTIONAL_BYTES_TYPE_NAME,
-  FUNCTIONAL_TEXT_TYPE_NAME,
-  FunctionalBinaryOperator,
-  FunctionalEvaluationProfile,
-  type FunctionalHostCapabilityDeclaration,
-  type FunctionalHostDefinitionBinding,
-  type FunctionalHostType,
-  FunctionalHostTypes,
-  type FunctionalModuleArtifact,
-  FunctionalNumericConversion,
-  type FunctionalSurfaceCaseArm,
-  type FunctionalSurfaceDefinition,
-  type FunctionalSurfaceExpression,
-  type FunctionalSurfaceTypeDeclaration,
-  type FunctionalTypeSchema,
-  FunctionalUnaryOperator,
-  type FunctionalWasmHostValue,
-  type FunctionalWasmInit,
-  type FunctionalWasmInitBinding,
-  FunctionalWasmIntrinsic,
-  linkFunctionalModules,
+  BYTES_TYPE_NAME,
+  TEXT_TYPE_NAME,
+  BinaryOperator,
+  EvaluationProfile,
+  type HostCapabilityDeclaration,
+  type HostDefinitionBinding,
+  type HostType,
+  HostTypes,
+  type ModuleArtifact,
+  NumericConversion,
+  type SurfaceCaseArm,
+  type SurfaceDefinition,
+  type SurfaceExpression,
+  type SurfaceTypeDeclaration,
+  type TypeSchema,
+  UnaryOperator,
+  type WasmHostValue,
+  type WasmInit,
+  type WasmInitBinding,
+  WasmIntrinsic,
+  linkModules,
   surface,
 } from "../../../gpufuck/functional.ts";
 import {
@@ -58,22 +58,22 @@ import type { Prim } from "../../src/op.ts";
 import { expect } from "../../src/expect.ts";
 
 const duck_runtime_capability = "$DuckRuntime";
-const unit_type: FunctionalTypeSchema = { kind: "unit" };
-const integer_type: FunctionalTypeSchema = { kind: "integer" };
+const unit_type: TypeSchema = { kind: "unit" };
+const integer_type: TypeSchema = { kind: "integer" };
 const empty_referenced_names: ReadonlySet<string> = new Set();
 
 export type LoweredDuckGpufuckModule = {
   abi: AbiManifest;
-  artifact: FunctionalModuleArtifact;
+  artifact: ModuleArtifact;
   encoded: EncodedFunctionalModule;
-  automatic_init: FunctionalWasmInit;
+  automatic_init: WasmInit;
 };
 
 type DuckTypeDefinition = {
   name: string;
   shape: "struct" | "union";
-  fields: readonly { name: string; type: FunctionalTypeSchema }[];
-  cases: readonly { name: string; type: FunctionalTypeSchema }[];
+  fields: readonly { name: string; type: TypeSchema }[];
+  cases: readonly { name: string; type: TypeSchema }[];
 };
 
 type DuckTypeConstructor = {
@@ -82,12 +82,12 @@ type DuckTypeConstructor = {
 };
 
 type LoweredExpression = {
-  expression: FunctionalSurfaceExpression;
-  type: FunctionalTypeSchema | undefined;
+  expression: SurfaceExpression;
+  type: TypeSchema | undefined;
 };
 
 type RuntimeField = {
-  declaration: FunctionalHostCapabilityDeclaration["fields"][number];
+  declaration: HostCapabilityDeclaration["fields"][number];
   binder: string;
 };
 
@@ -166,7 +166,7 @@ class DuckCoreLowering {
   readonly #materializing_types = new Set<string>();
   readonly #function_parameter_types = new Map<
     string,
-    readonly (FunctionalTypeSchema | undefined)[]
+    readonly (TypeSchema | undefined)[]
   >();
   readonly #source_functions = new Map<
     string,
@@ -179,17 +179,17 @@ class DuckCoreLowering {
   readonly #specializing_function_bodies = new Set<string>();
   readonly #specialized_type_parameters: Map<
     string,
-    FunctionalTypeSchema
+    TypeSchema
   >[] = [];
   readonly #function_expected_results: (
-    FunctionalTypeSchema | undefined
+    TypeSchema | undefined
   )[] = [];
   readonly #host_import_binders = new Map<string, string>();
-  readonly #host_capabilities: FunctionalHostCapabilityDeclaration[] = [];
+  readonly #host_capabilities: HostCapabilityDeclaration[] = [];
   readonly #runtime_fields = new Map<string, RuntimeField>();
   readonly #automatic_runtime_bindings: Record<
     string,
-    FunctionalWasmInitBinding
+    WasmInitBinding
   > = {};
   readonly #recursive_names: string[] = [];
   readonly #imported_recursive_dependencies = new Set<string>();
@@ -203,8 +203,8 @@ class DuckCoreLowering {
     ReadonlyMap<string, number>
   >();
   readonly #loop_controls: {
-    break_result: FunctionalSurfaceExpression;
-    continue_result: FunctionalSurfaceExpression;
+    break_result: SurfaceExpression;
+    continue_result: SurfaceExpression;
   }[] = [];
   #temporary_index = 0;
 
@@ -248,12 +248,12 @@ class DuckCoreLowering {
   }
 
   lower(): LoweredDuckGpufuckModule {
-    const environment = new Map<string, FunctionalTypeSchema>();
+    const environment = new Map<string, TypeSchema>();
     const body = this.lower_statements(this.#core.statements, 0, environment);
     const entry_type = this.entry_type(body.type);
     const definitions = this.callable_definitions();
     const entry_parameters: string[] = [];
-    const entry_annotation: FunctionalTypeSchema | null = entry_type;
+    const entry_annotation: TypeSchema | null = entry_type;
 
     const runtime_capability = this.runtime_capability();
     if (runtime_capability !== undefined) {
@@ -276,7 +276,7 @@ class DuckCoreLowering {
         "Duck gpufuck module artifact requires a concrete entry type",
       );
     }
-    const artifact = createFunctionalModuleArtifact({
+    const artifact = createModuleArtifact({
       name: "duck",
       definitions,
       typeDeclarations: type_declarations,
@@ -284,19 +284,19 @@ class DuckCoreLowering {
       exports: [{ name: "main", definition: "main", type: entry_annotation }],
       sourceByteLength: this.#source_byte_length,
       options: {
-        evaluationProfile: FunctionalEvaluationProfile.StrictEager,
+        evaluationProfile: EvaluationProfile.StrictEager,
         hostCapabilities: this.#host_capabilities,
         hostDefinitions: host_definitions.bindings,
         wasmExports: this.callable_exports(),
       },
     });
-    const encoded = linkFunctionalModules([artifact], {
+    const encoded = linkModules([artifact], {
       module: "duck",
       exportName: "main",
     }).module;
     const automatic_init: Record<
       string,
-      Record<string, FunctionalWasmInitBinding>
+      Record<string, WasmInitBinding>
     > = {};
     if (runtime_capability !== undefined) {
       automatic_init[duck_runtime_capability] =
@@ -424,7 +424,7 @@ class DuckCoreLowering {
         const name = "$DuckObject:" +
           struct_value.fields.map((field) => field.name).join(",");
         if (!this.#types.has(name)) {
-          const fields: { name: string; type: FunctionalTypeSchema }[] = [];
+          const fields: { name: string; type: TypeSchema }[] = [];
           for (const field of struct_value.fields) {
             const type = this.simple_expression_type(field.value, new Map());
             if (
@@ -475,7 +475,7 @@ class DuckCoreLowering {
         })),
       };
     }
-    const fields: { name: string; type: FunctionalTypeSchema }[] = [];
+    const fields: { name: string; type: TypeSchema }[] = [];
     for (let index = 0; index < type.length; index += 1) {
       fields.push({
         name: index.toString(),
@@ -486,7 +486,7 @@ class DuckCoreLowering {
   }
 
   private collect_function_parameter_types(): void {
-    const inferred = new Map<string, (FunctionalTypeSchema | undefined)[]>();
+    const inferred = new Map<string, (TypeSchema | undefined)[]>();
     for (const statement of this.#core.statements) {
       if (statement.tag !== "bind") {
         continue;
@@ -507,10 +507,10 @@ class DuckCoreLowering {
         );
       }
     }
-    const environment = new Map<string, FunctionalTypeSchema>();
+    const environment = new Map<string, TypeSchema>();
     const scan = (
       value: unknown,
-      scope: Map<string, FunctionalTypeSchema>,
+      scope: Map<string, TypeSchema>,
     ): void => {
       if (value === null || typeof value !== "object") {
         return;
@@ -626,8 +626,8 @@ class DuckCoreLowering {
 
   private simple_expression_type(
     expression: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-  ): FunctionalTypeSchema | undefined {
+    environment: ReadonlyMap<string, TypeSchema>,
+  ): TypeSchema | undefined {
     if (expression.tag === "num") {
       if (expression.type === "i64") {
         return { kind: "signed-integer-64" };
@@ -641,7 +641,7 @@ class DuckCoreLowering {
       return integer_type;
     }
     if (expression.tag === "text") {
-      return FunctionalHostTypes.text;
+      return HostTypes.text;
     }
     if (expression.tag === "var" || expression.tag === "linear") {
       return environment.get(expression.name);
@@ -696,7 +696,7 @@ class DuckCoreLowering {
         return this.named_type(this.type_expression_name(expression.type_expr));
       }
 
-      let payload_type: FunctionalTypeSchema | undefined = unit_type;
+      let payload_type: TypeSchema | undefined = unit_type;
       if (expression.value !== undefined) {
         payload_type = this.simple_expression_type(
           expression.value,
@@ -747,13 +747,13 @@ class DuckCoreLowering {
     if (expression.tag === "app") {
       if (expression.func.tag === "var") {
         if (expression.func.name === "@Bytes.generate") {
-          return FunctionalHostTypes.bytes;
+          return HostTypes.bytes;
         }
         if (expression.func.name === "@Utf8.encode") {
-          return FunctionalHostTypes.bytes;
+          return HostTypes.bytes;
         }
         if (expression.func.name === "@Utf8.decode") {
-          return FunctionalHostTypes.text;
+          return HostTypes.text;
         }
         if (
           expression.func.name === "@len" ||
@@ -834,7 +834,7 @@ class DuckCoreLowering {
     }
     if (expression.tag === "lam" || expression.tag === "rec") {
       const function_environment = new Map(environment);
-      const parameter_types: FunctionalTypeSchema[] = [];
+      const parameter_types: TypeSchema[] = [];
       for (const parameter of expression.params) {
         let parameter_type = this.schema_from_optional_type_name(
           parameter.annotation,
@@ -975,13 +975,13 @@ class DuckCoreLowering {
 
   private simple_anonymous_struct_type(
     fields: Extract<CoreExpr, { tag: "struct_value" }>["fields"],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-  ): FunctionalTypeSchema {
+    environment: ReadonlyMap<string, TypeSchema>,
+  ): TypeSchema {
     const name = "$DuckObject:" + fields.map((field) => field.name).join(",");
     if (this.#types.has(name)) {
       return this.named_type(name);
     }
-    const definition_fields: { name: string; type: FunctionalTypeSchema }[] =
+    const definition_fields: { name: string; type: TypeSchema }[] =
       [];
     for (const field of fields) {
       const type = this.simple_expression_type(field.value, environment);
@@ -1178,7 +1178,7 @@ class DuckCoreLowering {
   private collect_host_capabilities(): void {
     const imports = this.#abi.imports;
     for (const effect of Object.values(this.#abi.effects)) {
-      const fields: FunctionalHostCapabilityDeclaration["fields"][number][] =
+      const fields: HostCapabilityDeclaration["fields"][number][] =
         [];
       const init_field = this.#abi.init?.fields.find((field) =>
         field.type.effect === effect.name
@@ -1188,7 +1188,7 @@ class DuckCoreLowering {
         fields.push({
           kind: "value",
           name: "$resource",
-          type: FunctionalHostTypes.resource(effect.name),
+          type: HostTypes.resource(effect.name),
           ownership: "frozen-shareable",
         });
         this.#host_import_binders.set(init_field.import, binder);
@@ -1233,7 +1233,7 @@ class DuckCoreLowering {
       }
       if (imported.params.length === 0) {
         const mutable_fields =
-          fields as FunctionalHostCapabilityDeclaration["fields"][number][];
+          fields as HostCapabilityDeclaration["fields"][number][];
         mutable_fields.push({
           kind: "value",
           name: imported.field,
@@ -1242,7 +1242,7 @@ class DuckCoreLowering {
         });
       } else {
         const mutable_fields =
-          fields as FunctionalHostCapabilityDeclaration["fields"][number][];
+          fields as HostCapabilityDeclaration["fields"][number][];
         mutable_fields.push({
           kind: "operation",
           name: imported.field,
@@ -1262,8 +1262,8 @@ class DuckCoreLowering {
   private lower_statements(
     statements: readonly CoreStmt[],
     index: number,
-    environment: Map<string, FunctionalTypeSchema>,
-    expected_result?: FunctionalTypeSchema,
+    environment: Map<string, TypeSchema>,
+    expected_result?: TypeSchema,
   ): LoweredExpression {
     const statement = statements[index];
     if (statement === undefined) {
@@ -1369,12 +1369,12 @@ class DuckCoreLowering {
         if (recursive_names.size > 1) {
           const previous_types = new Map<
             string,
-            FunctionalTypeSchema | undefined
+            TypeSchema | undefined
           >();
           const bindings: {
             name: string;
             parameters: string[];
-            body: FunctionalSurfaceExpression;
+            body: SurfaceExpression;
           }[] = [];
           try {
             for (const recursive_name of recursive_names) {
@@ -1589,7 +1589,7 @@ class DuckCoreLowering {
       const binding_type = this.schema_from_optional_type_name(
         statement.annotation,
       );
-      let next_type: FunctionalTypeSchema | undefined;
+      let next_type: TypeSchema | undefined;
       if (
         binding_type?.kind === "named" && !this.#types.has(binding_type.name) &&
         value.type !== undefined
@@ -1739,8 +1739,8 @@ class DuckCoreLowering {
         environment,
         expected_result,
       );
-      let break_result: FunctionalSurfaceExpression | undefined;
-      let continue_result: FunctionalSurfaceExpression | undefined;
+      let break_result: SurfaceExpression | undefined;
+      let continue_result: SurfaceExpression | undefined;
       const loop_control = this.#loop_controls.at(-1);
       if (loop_control !== undefined) {
         break_result = loop_control.break_result;
@@ -1787,8 +1787,8 @@ class DuckCoreLowering {
         environment,
         expected_result,
       );
-      let break_result: FunctionalSurfaceExpression | undefined;
-      let continue_result: FunctionalSurfaceExpression | undefined;
+      let break_result: SurfaceExpression | undefined;
+      let continue_result: SurfaceExpression | undefined;
       const loop_control = this.#loop_controls.at(-1);
       if (loop_control !== undefined) {
         break_result = loop_control.break_result;
@@ -1821,8 +1821,8 @@ class DuckCoreLowering {
         environment,
         expected_result,
       );
-      let break_result: FunctionalSurfaceExpression | undefined;
-      let continue_result: FunctionalSurfaceExpression | undefined;
+      let break_result: SurfaceExpression | undefined;
+      let continue_result: SurfaceExpression | undefined;
       const loop_control = this.#loop_controls.at(-1);
       if (loop_control !== undefined) {
         break_result = loop_control.break_result;
@@ -1883,8 +1883,8 @@ class DuckCoreLowering {
         environment,
         expected_result,
       );
-      let break_result: FunctionalSurfaceExpression | undefined;
-      let continue_result: FunctionalSurfaceExpression | undefined;
+      let break_result: SurfaceExpression | undefined;
+      let continue_result: SurfaceExpression | undefined;
       const loop_control = this.#loop_controls.at(-1);
       if (loop_control !== undefined) {
         break_result = loop_control.break_result;
@@ -1910,8 +1910,8 @@ class DuckCoreLowering {
 
   private lower_expression(
     expression: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected?: TypeSchema,
   ): LoweredExpression {
     if (expression.tag === "num") {
       if (expression.type === "i32" && typeof expression.value === "number") {
@@ -1976,7 +1976,7 @@ class DuckCoreLowering {
       if (expected?.kind === "boolean" && type?.kind === "integer") {
         return {
           expression: surface.binary(
-            FunctionalBinaryOperator.NotEqual,
+            BinaryOperator.NotEqual,
             surface.name(expression.name),
             surface.integer(0),
           ),
@@ -2001,7 +2001,7 @@ class DuckCoreLowering {
     }
 
     if (expression.tag === "lam" || expression.tag === "rec") {
-      const parameter_types: (FunctionalTypeSchema | undefined)[] = [];
+      const parameter_types: (TypeSchema | undefined)[] = [];
       let function_type = expected;
       for (
         let parameter_index = 0;
@@ -2141,7 +2141,7 @@ class DuckCoreLowering {
 
   private lower_range_loop(
     statement: Extract<CoreStmt, { tag: "range_loop" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
     continuation: LoweredExpression,
   ): LoweredExpression {
     const loop_name = this.temporary("range");
@@ -2174,7 +2174,7 @@ class DuckCoreLowering {
       ...carried.map((name) => surface.name(name)),
     );
     const next_index = surface.binary(
-      FunctionalBinaryOperator.Add,
+      BinaryOperator.Add,
       surface.name(index_name),
       surface.name(step_name),
     );
@@ -2190,7 +2190,7 @@ class DuckCoreLowering {
       break_result: state_value,
       continue_result: continue_call,
     });
-    let loop_body: FunctionalSurfaceExpression;
+    let loop_body: SurfaceExpression;
     try {
       loop_body = this.lower_control_statements(
         statement.body,
@@ -2204,32 +2204,32 @@ class DuckCoreLowering {
       this.#loop_controls.pop();
     }
     const positive = surface.binary(
-      FunctionalBinaryOperator.Greater,
+      BinaryOperator.Greater,
       surface.name(step_name),
       surface.integer(0),
     );
     const ascending = surface.binary(
-      FunctionalBinaryOperator.Less,
+      BinaryOperator.Less,
       surface.name(index_name),
       surface.name(end_name),
     );
     const descending = surface.binary(
-      FunctionalBinaryOperator.Greater,
+      BinaryOperator.Greater,
       surface.name(index_name),
       surface.name(end_name),
     );
-    const direction_condition: FunctionalSurfaceExpression = {
+    const direction_condition: SurfaceExpression = {
       kind: "if",
       condition: positive,
       consequent: ascending,
       alternate: descending,
     };
     const nonzero = surface.binary(
-      FunctionalBinaryOperator.NotEqual,
+      BinaryOperator.NotEqual,
       surface.name(step_name),
       surface.integer(0),
     );
-    const valid_condition: FunctionalSurfaceExpression = {
+    const valid_condition: SurfaceExpression = {
       kind: "if",
       condition: nonzero,
       consequent: direction_condition,
@@ -2238,7 +2238,7 @@ class DuckCoreLowering {
         "Duck range step cannot be zero",
       ).expression,
     };
-    let loop_value: FunctionalSurfaceExpression = {
+    let loop_value: SurfaceExpression = {
       kind: "if",
       condition: valid_condition,
       consequent: {
@@ -2277,7 +2277,7 @@ class DuckCoreLowering {
       ...carried.map((name) => surface.name(name)),
     );
     const state_binders = carried.map((name) => name);
-    const resumed: FunctionalSurfaceExpression = {
+    const resumed: SurfaceExpression = {
       kind: "case",
       value: initial_call,
       arms: [{
@@ -2314,8 +2314,8 @@ class DuckCoreLowering {
 
   private lower_loop_expression(
     statements: readonly CoreStmt[],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected: FunctionalTypeSchema | undefined,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected: TypeSchema | undefined,
     continuation?: LoweredExpression,
   ): LoweredExpression {
     const loop_name = this.temporary("loop");
@@ -2357,7 +2357,7 @@ class DuckCoreLowering {
       );
     }
     this.#loop_controls.push({ break_result, continue_result: continue_call });
-    let body: FunctionalSurfaceExpression;
+    let body: SurfaceExpression;
     try {
       body = this.lower_control_statements(
         statements,
@@ -2448,11 +2448,11 @@ class DuckCoreLowering {
 
   private lower_if_let_statement(
     statement: Extract<CoreStmt, { tag: "if_let_stmt" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    terminal: FunctionalSurfaceExpression,
-    break_result: FunctionalSurfaceExpression | undefined,
-    continue_result: FunctionalSurfaceExpression | undefined,
-  ): FunctionalSurfaceExpression {
+    environment: ReadonlyMap<string, TypeSchema>,
+    terminal: SurfaceExpression,
+    break_result: SurfaceExpression | undefined,
+    continue_result: SurfaceExpression | undefined,
+  ): SurfaceExpression {
     const target = this.lower_expression(statement.target, environment);
     const name = this.named_type_name(
       target.type,
@@ -2465,7 +2465,7 @@ class DuckCoreLowering {
       fallback_name = this.temporary("if_let_fallback");
       fallback_parameter = this.temporary("if_let_unit");
     }
-    const arms: FunctionalSurfaceCaseArm[] = [];
+    const arms: SurfaceCaseArm[] = [];
     for (const union_case of definition.cases) {
       let binder = this.temporary(union_case.name);
       let body = terminal;
@@ -2495,7 +2495,7 @@ class DuckCoreLowering {
         body,
       });
     }
-    const matched: FunctionalSurfaceExpression = {
+    const matched: SurfaceExpression = {
       kind: "case",
       value: target.expression,
       arms,
@@ -2513,7 +2513,7 @@ class DuckCoreLowering {
 
   private lower_collection_loop(
     statement: Extract<CoreStmt, { tag: "collection_loop" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
     continuation: LoweredExpression,
   ): LoweredExpression {
     const collection = this.lower_expression(statement.collection, environment);
@@ -2525,8 +2525,8 @@ class DuckCoreLowering {
     let end: CoreExpr;
     let element: CoreExpr;
     if (
-      this.same_type(collection.type, FunctionalHostTypes.text) ||
-      this.same_type(collection.type, FunctionalHostTypes.bytes)
+      this.same_type(collection.type, HostTypes.text) ||
+      this.same_type(collection.type, HostTypes.bytes)
     ) {
       end = {
         tag: "app",
@@ -2603,11 +2603,11 @@ class DuckCoreLowering {
   private lower_control_statements(
     statements: readonly CoreStmt[],
     index: number,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    terminal: FunctionalSurfaceExpression,
-    break_result: FunctionalSurfaceExpression | undefined,
-    continue_result: FunctionalSurfaceExpression | undefined,
-  ): FunctionalSurfaceExpression {
+    environment: ReadonlyMap<string, TypeSchema>,
+    terminal: SurfaceExpression,
+    break_result: SurfaceExpression | undefined,
+    continue_result: SurfaceExpression | undefined,
+  ): SurfaceExpression {
     const statement = statements[index];
     if (statement === undefined) {
       return terminal;
@@ -2641,7 +2641,7 @@ class DuckCoreLowering {
         const body_environment = new Map(environment);
         const captures: {
           name: string;
-          value: FunctionalSurfaceExpression;
+          value: SurfaceExpression;
         }[] = [];
 
         for (const capture_statement of capture_statements) {
@@ -2724,7 +2724,7 @@ class DuckCoreLowering {
           break_result,
           continue_result,
         );
-        let result: FunctionalSurfaceExpression = {
+        let result: SurfaceExpression = {
           kind: "let-rec",
           name: statement.name,
           value: value.expression,
@@ -2947,11 +2947,11 @@ class DuckCoreLowering {
 
   private lower_control_expression(
     expression: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    terminal: FunctionalSurfaceExpression,
-    break_result: FunctionalSurfaceExpression | undefined,
-    continue_result: FunctionalSurfaceExpression | undefined,
-  ): FunctionalSurfaceExpression {
+    environment: ReadonlyMap<string, TypeSchema>,
+    terminal: SurfaceExpression,
+    break_result: SurfaceExpression | undefined,
+    continue_result: SurfaceExpression | undefined,
+  ): SurfaceExpression {
     if (expression.tag === "block") {
       return this.lower_control_statements(
         expression.statements,
@@ -3007,7 +3007,7 @@ class DuckCoreLowering {
       const definition = this.require_definition(name);
       let fallback_name: string | undefined;
       let fallback_parameter: string | undefined;
-      let fallback: FunctionalSurfaceExpression | undefined;
+      let fallback: SurfaceExpression | undefined;
       if (definition.cases.length > 2) {
         fallback_name = this.temporary("if_let_fallback");
         fallback_parameter = this.temporary("if_let_unit");
@@ -3019,10 +3019,10 @@ class DuckCoreLowering {
           continue_result,
         );
       }
-      const arms: FunctionalSurfaceCaseArm[] = [];
+      const arms: SurfaceCaseArm[] = [];
       for (const union_case of definition.cases) {
         let binder = this.temporary(union_case.name);
-        let body: FunctionalSurfaceExpression;
+        let body: SurfaceExpression;
         if (union_case.name === expression.case_name) {
           const branch_environment = new Map(environment);
           if (expression.value_name !== undefined) {
@@ -3056,7 +3056,7 @@ class DuckCoreLowering {
           body,
         });
       }
-      const matched: FunctionalSurfaceExpression = {
+      const matched: SurfaceExpression = {
         kind: "case",
         value: target.expression,
         arms,
@@ -3074,7 +3074,7 @@ class DuckCoreLowering {
       }
       return matched;
     }
-    let expected: FunctionalTypeSchema | undefined;
+    let expected: TypeSchema | undefined;
     if (
       expression.tag === "app" && expression.func.tag === "var" &&
       expression.func.name === "@panic"
@@ -3087,16 +3087,16 @@ class DuckCoreLowering {
       name: this.temporary("discarded"),
       value: value.expression,
       body: terminal,
-      valueEvaluation: FunctionalEvaluationProfile.StrictEager,
+      valueEvaluation: EvaluationProfile.StrictEager,
     };
   }
 
   private lower_function(
     params: readonly CoreParam[],
     body: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    known_parameter_types?: readonly (FunctionalTypeSchema | undefined)[],
-    expected_result?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    known_parameter_types?: readonly (TypeSchema | undefined)[],
+    expected_result?: TypeSchema,
   ): LoweredExpression {
     if (params.length === 0) {
       this.#function_expected_results.push(expected_result);
@@ -3126,7 +3126,7 @@ class DuckCoreLowering {
       };
     }
     const body_environment = new Map(environment);
-    const param_types: FunctionalTypeSchema[] = [];
+    const param_types: TypeSchema[] = [];
     for (let index = 0; index < params.length; index += 1) {
       const param = params[index];
       if (param === undefined) {
@@ -3200,7 +3200,7 @@ class DuckCoreLowering {
   private function_type_from_signature(
     params: readonly CoreParam[],
     result_annotation: string | undefined,
-  ): FunctionalTypeSchema | undefined {
+  ): TypeSchema | undefined {
     if (result_annotation === undefined) {
       return undefined;
     }
@@ -3229,12 +3229,12 @@ class DuckCoreLowering {
     return type;
   }
 
-  private callable_definitions(): FunctionalSurfaceDefinition[] {
+  private callable_definitions(): SurfaceDefinition[] {
     const callables = this.#abi.callables;
     if (callables === undefined) {
       return [];
     }
-    const callable_types = new Map<string, FunctionalTypeSchema>();
+    const callable_types = new Map<string, TypeSchema>();
     for (const callable of Object.values(callables)) {
       callable_types.set(callable.name, this.callable_type(callable));
     }
@@ -3281,7 +3281,7 @@ class DuckCoreLowering {
         }
       }
     }
-    const definitions: FunctionalSurfaceDefinition[] = [];
+    const definitions: SurfaceDefinition[] = [];
     const dependency_environment = new Map(callable_types);
     for (const statement of this.#core.statements) {
       if (
@@ -3441,7 +3441,7 @@ class DuckCoreLowering {
 
   private callable_type(
     callable: NonNullable<AbiManifest["callables"]>[string],
-  ): FunctionalTypeSchema {
+  ): TypeSchema {
     let type = this.schema_from_abi_ref(callable.result.type);
     for (let index = callable.params.length - 1; index >= 0; index -= 1) {
       const parameter = callable.params[index];
@@ -3474,10 +3474,10 @@ class DuckCoreLowering {
   private infer_function_parameter_type(
     body: CoreExpr,
     parameter_name: string,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-  ): FunctionalTypeSchema | undefined {
-    let inferred: FunctionalTypeSchema | undefined;
-    const record = (type: FunctionalTypeSchema): void => {
+    environment: ReadonlyMap<string, TypeSchema>,
+  ): TypeSchema | undefined {
+    let inferred: TypeSchema | undefined;
+    const record = (type: TypeSchema): void => {
       if (inferred !== undefined && !this.same_type(inferred, type)) {
         throw new Error(
           "Duck gpufuck lowering inferred conflicting types for parameter " +
@@ -3622,8 +3622,8 @@ class DuckCoreLowering {
 
   private lower_application(
     expression: Extract<CoreExpr, { tag: "app" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected?: TypeSchema,
   ): LoweredExpression {
     if (expression.func.tag === "var") {
       const builtin = this.lower_builtin_application(
@@ -3679,7 +3679,7 @@ class DuckCoreLowering {
       }
     } else {
       for (const arg of expression.args) {
-        let parameter_type: FunctionalTypeSchema | undefined;
+        let parameter_type: TypeSchema | undefined;
         if (result_type?.kind === "function") {
           parameter_type = result_type.parameter;
         }
@@ -3712,8 +3712,8 @@ class DuckCoreLowering {
   private lower_specialized_function_application(
     name: string,
     args: readonly CoreExpr[],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected: FunctionalTypeSchema | undefined,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected: TypeSchema | undefined,
   ): LoweredExpression | undefined {
     if (
       !this.function_requires_specialization(name) ||
@@ -3734,7 +3734,7 @@ class DuckCoreLowering {
       this.lower_expression(arg, environment)
     );
     const body_environment = new Map(environment);
-    const type_parameters = new Map<string, FunctionalTypeSchema>();
+    const type_parameters = new Map<string, TypeSchema>();
     const parameter_types = this.#function_parameter_types.get(name);
 
     for (let index = 0; index < definition.params.length; index += 1) {
@@ -3793,9 +3793,9 @@ class DuckCoreLowering {
   }
 
   private collect_specialized_type_parameters(
-    template: FunctionalTypeSchema,
-    actual: FunctionalTypeSchema,
-    parameters: Map<string, FunctionalTypeSchema>,
+    template: TypeSchema,
+    actual: TypeSchema,
+    parameters: Map<string, TypeSchema>,
   ): void {
     if (template.kind === "parameter") {
       const existing = parameters.get(template.name);
@@ -3907,8 +3907,8 @@ class DuckCoreLowering {
   private lower_builtin_application(
     name: string,
     args: readonly CoreExpr[],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected?: TypeSchema,
   ): LoweredExpression | undefined {
     if (name === "@Bytes.generate") {
       const length = this.lower_expression(
@@ -3916,7 +3916,7 @@ class DuckCoreLowering {
         environment,
         integer_type,
       );
-      const generator_type: FunctionalTypeSchema = {
+      const generator_type: TypeSchema = {
         kind: "function",
         parameter: integer_type,
         result: integer_type,
@@ -3930,8 +3930,8 @@ class DuckCoreLowering {
       const field = this.runtime_intrinsic(
         "generate:bytes",
         parameter,
-        FunctionalHostTypes.bytes,
-        FunctionalWasmIntrinsic.BufferGenerate,
+        HostTypes.bytes,
+        WasmIntrinsic.BufferGenerate,
         "bounded-borrow",
         "unique",
       );
@@ -3940,16 +3940,16 @@ class DuckCoreLowering {
           surface.name(field.binder),
           this.tuple_expression(length.expression, generator.expression),
         ),
-        type: FunctionalHostTypes.bytes,
+        type: HostTypes.bytes,
       };
     }
 
     if (name === "@Utf8.encode" || name === "@Utf8.decode") {
-      let parameter = FunctionalHostTypes.text;
-      let result = FunctionalHostTypes.bytes;
+      let parameter = HostTypes.text;
+      let result = HostTypes.bytes;
       if (name === "@Utf8.decode") {
-        parameter = FunctionalHostTypes.bytes;
-        result = FunctionalHostTypes.text;
+        parameter = HostTypes.bytes;
+        result = HostTypes.text;
       }
       const value = this.lower_expression(
         this.required_arg(args, 0, name),
@@ -3960,7 +3960,7 @@ class DuckCoreLowering {
         "convert:" + this.type_key(parameter) + ":" + this.type_key(result),
         parameter,
         result,
-        FunctionalWasmIntrinsic.BufferConvert,
+        WasmIntrinsic.BufferConvert,
         "bounded-borrow",
         "unique",
       );
@@ -3979,14 +3979,14 @@ class DuckCoreLowering {
       const argument_type = this.require_type(lowered.type, "@len argument");
       let field: RuntimeField;
       if (
-        this.same_type(argument_type, FunctionalHostTypes.text) ||
-        this.same_type(argument_type, FunctionalHostTypes.bytes)
+        this.same_type(argument_type, HostTypes.text) ||
+        this.same_type(argument_type, HostTypes.bytes)
       ) {
         field = this.runtime_intrinsic(
           "len:" + this.type_key(argument_type),
           argument_type,
           integer_type,
-          FunctionalWasmIntrinsic.BufferByteLength,
+          WasmIntrinsic.BufferByteLength,
           "bounded-borrow",
         );
       } else {
@@ -4016,17 +4016,17 @@ class DuckCoreLowering {
       const left_arg = this.required_arg(args, 0, name);
       const right_arg = this.required_arg(args, 1, name);
       const inferred_left = this.lower_expression(left_arg, environment);
-      let buffer_type: FunctionalTypeSchema;
+      let buffer_type: TypeSchema;
       if (
-        this.same_type(inferred_left.type, FunctionalHostTypes.text) ||
-        this.same_type(inferred_left.type, FunctionalHostTypes.bytes)
+        this.same_type(inferred_left.type, HostTypes.text) ||
+        this.same_type(inferred_left.type, HostTypes.bytes)
       ) {
         buffer_type = this.require_type(inferred_left.type, "@append left");
       } else if (
         expected !== undefined &&
-          this.same_type(expected, FunctionalHostTypes.text) ||
+          this.same_type(expected, HostTypes.text) ||
         expected !== undefined &&
-          this.same_type(expected, FunctionalHostTypes.bytes)
+          this.same_type(expected, HostTypes.bytes)
       ) {
         buffer_type = this.require_type(expected, "@append result");
       } else {
@@ -4050,7 +4050,7 @@ class DuckCoreLowering {
         "append:" + this.type_key(buffer_type),
         parameter,
         buffer_type,
-        FunctionalWasmIntrinsic.BufferAppend,
+        WasmIntrinsic.BufferAppend,
         "bounded-borrow",
         "unique",
       );
@@ -4074,8 +4074,8 @@ class DuckCoreLowering {
         integer_type,
       );
       if (
-        this.same_type(collection.type, FunctionalHostTypes.text) ||
-        this.same_type(collection.type, FunctionalHostTypes.bytes)
+        this.same_type(collection.type, HostTypes.text) ||
+        this.same_type(collection.type, HostTypes.bytes)
       ) {
         const buffer_type = this.require_buffer_type(
           collection.type,
@@ -4089,7 +4089,7 @@ class DuckCoreLowering {
           "get_byte:" + this.type_key(buffer_type),
           parameter,
           integer_type,
-          FunctionalWasmIntrinsic.BufferByteGet,
+          WasmIntrinsic.BufferByteGet,
           "bounded-borrow",
         );
         return {
@@ -4124,7 +4124,7 @@ class DuckCoreLowering {
         "slice:" + this.type_key(buffer_type),
         parameter,
         buffer_type,
-        FunctionalWasmIntrinsic.BufferByteSlice,
+        WasmIntrinsic.BufferByteSlice,
         "bounded-borrow",
         "unique",
       );
@@ -4150,7 +4150,7 @@ class DuckCoreLowering {
   private lower_host_import(
     imported: AbiImport,
     args: readonly CoreExpr[],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const binder = this.#host_import_binders.get(imported.name);
     if (binder === undefined) {
@@ -4198,7 +4198,7 @@ class DuckCoreLowering {
 
   private lower_primitive(
     expression: Extract<CoreExpr, { tag: "prim" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     if (
       expression.prim === "i32.lt_u" ||
@@ -4216,26 +4216,26 @@ class DuckCoreLowering {
         environment,
         integer_type,
       );
-      let operator: FunctionalBinaryOperator;
+      let operator: BinaryOperator;
       if (expression.prim === "i32.lt_u") {
-        operator = FunctionalBinaryOperator.Less;
+        operator = BinaryOperator.Less;
       } else if (expression.prim === "i32.le_u") {
-        operator = FunctionalBinaryOperator.LessEqual;
+        operator = BinaryOperator.LessEqual;
       } else if (expression.prim === "i32.gt_u") {
-        operator = FunctionalBinaryOperator.Greater;
+        operator = BinaryOperator.Greater;
       } else {
-        operator = FunctionalBinaryOperator.GreaterEqual;
+        operator = BinaryOperator.GreaterEqual;
       }
       const sign_bit = surface.integer(-2147483648);
       const compared = surface.binary(
         operator,
         surface.binary(
-          FunctionalBinaryOperator.BitwiseXor,
+          BinaryOperator.BitwiseXor,
           left.expression,
           sign_bit,
         ),
         surface.binary(
-          FunctionalBinaryOperator.BitwiseXor,
+          BinaryOperator.BitwiseXor,
           right.expression,
           sign_bit,
         ),
@@ -4291,15 +4291,15 @@ class DuckCoreLowering {
       expression.prim === "f32x4.mul" ||
       expression.prim === "f32x4.div"
     ) {
-      let operator: FunctionalBinaryOperator;
+      let operator: BinaryOperator;
       if (expression.prim === "f32x4.add") {
-        operator = FunctionalBinaryOperator.AddFloat32;
+        operator = BinaryOperator.AddFloat32;
       } else if (expression.prim === "f32x4.sub") {
-        operator = FunctionalBinaryOperator.SubtractFloat32;
+        operator = BinaryOperator.SubtractFloat32;
       } else if (expression.prim === "f32x4.mul") {
-        operator = FunctionalBinaryOperator.MultiplyFloat32;
+        operator = BinaryOperator.MultiplyFloat32;
       } else {
-        operator = FunctionalBinaryOperator.DivideFloat32;
+        operator = BinaryOperator.DivideFloat32;
       }
       const left = this.lower_expression(
         this.required_arg(expression.args, 0, expression.prim),
@@ -4434,8 +4434,8 @@ class DuckCoreLowering {
         left.type,
       );
       if (
-        this.same_type(left.type, FunctionalHostTypes.text) ||
-        this.same_type(left.type, FunctionalHostTypes.bytes)
+        this.same_type(left.type, HostTypes.text) ||
+        this.same_type(left.type, HostTypes.bytes)
       ) {
         const operand_type = this.require_type(
           left.type,
@@ -4445,10 +4445,10 @@ class DuckCoreLowering {
           "equal:" + this.type_key(operand_type),
           this.tuple_type(operand_type, operand_type),
           { kind: "boolean" },
-          FunctionalWasmIntrinsic.BufferEqual,
+          WasmIntrinsic.BufferEqual,
           "bounded-borrow",
         );
-        let compared: FunctionalSurfaceExpression = surface.apply(
+        let compared: SurfaceExpression = surface.apply(
           surface.name(field.binder),
           this.tuple_expression(left.expression, right.expression),
         );
@@ -4558,12 +4558,12 @@ class DuckCoreLowering {
 
   private lower_struct_value(
     expression: Extract<CoreExpr, { tag: "struct_value" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected: FunctionalTypeSchema | undefined,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected: TypeSchema | undefined,
   ): LoweredExpression {
     if (expected !== undefined) {
       const resolved_expected = this.resolve_type_alias(expected);
-      const field_types: FunctionalTypeSchema[] = [];
+      const field_types: TypeSchema[] = [];
       let remaining_type = resolved_expected;
 
       while (remaining_type.kind === "tuple") {
@@ -4688,7 +4688,7 @@ class DuckCoreLowering {
 
   private lower_extension(
     expression: Extract<CoreExpr, { tag: "with" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const name = "$DuckObject:" +
       expression.fields.map((field) => field.name).join(",");
@@ -4731,7 +4731,7 @@ class DuckCoreLowering {
   private lower_field(
     object: CoreExpr,
     field_name: string,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     if (object.tag === "union_type") {
       for (const definition of this.#types.values()) {
@@ -4840,12 +4840,12 @@ class DuckCoreLowering {
   private lower_index(
     object: CoreExpr,
     index: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const lowered_object = this.lower_expression(object, environment);
     if (
-      this.same_type(lowered_object.type, FunctionalHostTypes.text) ||
-      this.same_type(lowered_object.type, FunctionalHostTypes.bytes)
+      this.same_type(lowered_object.type, HostTypes.text) ||
+      this.same_type(lowered_object.type, HostTypes.bytes)
     ) {
       const lowered_index = this.lower_expression(
         index,
@@ -4860,7 +4860,7 @@ class DuckCoreLowering {
         "get_byte:" + this.type_key(collection_type),
         this.tuple_type(collection_type, integer_type),
         integer_type,
-        FunctionalWasmIntrinsic.BufferByteGet,
+        WasmIntrinsic.BufferByteGet,
         "bounded-borrow",
       );
       return {
@@ -4884,7 +4884,7 @@ class DuckCoreLowering {
       }
 
       let selected = lowered_object.expression;
-      let selected_type: FunctionalTypeSchema = lowered_object.type;
+      let selected_type: TypeSchema = lowered_object.type;
       let remaining_index = index.value;
 
       while (selected_type.kind === "tuple") {
@@ -5005,13 +5005,13 @@ class DuckCoreLowering {
   }
 
   private lower_index_update(
-    object: FunctionalSurfaceExpression,
-    object_type: FunctionalTypeSchema,
+    object: SurfaceExpression,
+    object_type: TypeSchema,
     index: CoreExpr,
     value: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
-    if (this.same_type(object_type, FunctionalHostTypes.bytes)) {
+    if (this.same_type(object_type, HostTypes.bytes)) {
       const lowered_index = this.lower_expression(
         index,
         environment,
@@ -5024,13 +5024,13 @@ class DuckCoreLowering {
       );
       const index_and_value = this.tuple_type(integer_type, integer_type);
       const parameter = this.tuple_type(
-        FunctionalHostTypes.bytes,
+        HostTypes.bytes,
         index_and_value,
       );
       const field = this.runtime_operation(
         "set_byte:bytes",
         parameter,
-        FunctionalHostTypes.bytes,
+        HostTypes.bytes,
         (argument) => {
           const [buffer, update] = this.tuple_values(
             argument,
@@ -5081,7 +5081,7 @@ class DuckCoreLowering {
             ),
           ),
         ),
-        type: FunctionalHostTypes.bytes,
+        type: HostTypes.bytes,
       };
     }
     const name = this.named_type_name(object_type, "indexed assignment");
@@ -5099,7 +5099,7 @@ class DuckCoreLowering {
     const fields = binders.map((binder, field_index) => ({
       kind: "if" as const,
       condition: surface.binary(
-        FunctionalBinaryOperator.Equal,
+        BinaryOperator.Equal,
         lowered_index.expression,
         surface.integer(field_index),
       ),
@@ -5125,7 +5125,7 @@ class DuckCoreLowering {
 
   private lower_struct_update(
     expression: Extract<CoreExpr, { tag: "struct_update" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const base = this.lower_expression(expression.base, environment);
     const name = this.named_type_name(base.type, "struct update");
@@ -5171,8 +5171,8 @@ class DuckCoreLowering {
 
   private lower_union_case(
     expression: Extract<CoreExpr, { tag: "union_case" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected?: TypeSchema,
   ): LoweredExpression {
     let name: string;
     if (expression.type_expr !== undefined) {
@@ -5187,7 +5187,7 @@ class DuckCoreLowering {
     } else if (expected?.kind === "named") {
       name = source_type_name_from_schema(expected);
     } else {
-      let payload_type: FunctionalTypeSchema | undefined;
+      let payload_type: TypeSchema | undefined;
       if (expression.value !== undefined) {
         payload_type = this.simple_expression_type(
           expression.value,
@@ -5251,7 +5251,7 @@ class DuckCoreLowering {
         "Duck union " + name + " does not contain case " + expression.name,
       );
     }
-    const args: FunctionalSurfaceExpression[] = [];
+    const args: SurfaceExpression[] = [];
     if (expression.value !== undefined) {
       args.push(
         this.lower_expression(expression.value, environment, union_case.type)
@@ -5271,8 +5271,8 @@ class DuckCoreLowering {
 
   private lower_if_let(
     expression: Extract<CoreExpr, { tag: "if_let" }>,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
-    expected?: FunctionalTypeSchema,
+    environment: ReadonlyMap<string, TypeSchema>,
+    expected?: TypeSchema,
   ): LoweredExpression {
     const target = this.lower_expression(expression.target, environment);
     const name = this.named_type_name(
@@ -5311,7 +5311,7 @@ class DuckCoreLowering {
       fallback_name = this.temporary("if_let_fallback");
       fallback_parameter = this.temporary("if_let_unit");
     }
-    const arms: FunctionalSurfaceCaseArm[] = [];
+    const arms: SurfaceCaseArm[] = [];
     for (const union_case of definition.cases) {
       let binder = this.temporary(union_case.name);
       if (union_case.name === expression.case_name) {
@@ -5336,7 +5336,7 @@ class DuckCoreLowering {
         });
       }
     }
-    const matched: FunctionalSurfaceExpression = {
+    const matched: SurfaceExpression = {
       kind: "case",
       value: target.expression,
       arms,
@@ -5365,14 +5365,14 @@ class DuckCoreLowering {
     type_name: string,
     member: string,
     args: readonly CoreExpr[],
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const definition = this.require_definition(type_name);
     const union_case = definition.cases.find((candidate) =>
       candidate.name === member
     );
     if (union_case !== undefined) {
-      let value: FunctionalSurfaceExpression;
+      let value: SurfaceExpression;
       if (this.same_type(union_case.type, unit_type) && args.length === 0) {
         value = surface.name("$Unit");
       } else {
@@ -5402,25 +5402,25 @@ class DuckCoreLowering {
 
   private lower_text_literal(
     value: string,
-    expected?: FunctionalTypeSchema,
+    expected?: TypeSchema,
   ): LoweredExpression {
-    if (this.same_type(expected, FunctionalHostTypes.bytes)) {
+    if (this.same_type(expected, HostTypes.bytes)) {
       return {
         expression: surface.bytes(new TextEncoder().encode(value)),
-        type: FunctionalHostTypes.bytes,
+        type: HostTypes.bytes,
       };
     }
     return {
       expression: surface.text(value),
-      type: FunctionalHostTypes.text,
+      type: HostTypes.text,
     };
   }
 
   private runtime_operation(
     key: string,
-    parameter: FunctionalHostType,
-    result: FunctionalHostType,
-    operation: (argument: FunctionalWasmHostValue) => FunctionalWasmHostValue,
+    parameter: HostType,
+    result: HostType,
+    operation: (argument: WasmHostValue) => WasmHostValue,
     parameter_ownership?: "bounded-borrow" | "ownership-transfer",
     result_ownership?: "frozen-shareable" | "ownership-transfer" | "unique",
   ): RuntimeField {
@@ -5439,7 +5439,7 @@ class DuckCoreLowering {
     if (result_ownership !== undefined) {
       ownership.resultOwnership = result_ownership;
     }
-    const declaration: FunctionalHostCapabilityDeclaration["fields"][number] = {
+    const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
       purity: "pure",
@@ -5455,9 +5455,9 @@ class DuckCoreLowering {
 
   private runtime_intrinsic(
     key: string,
-    parameter: FunctionalHostType,
-    result: FunctionalHostType,
-    wasm_intrinsic: FunctionalWasmIntrinsic,
+    parameter: HostType,
+    result: HostType,
+    wasm_intrinsic: WasmIntrinsic,
     parameter_ownership?: "bounded-borrow" | "ownership-transfer",
     result_ownership?: "frozen-shareable" | "ownership-transfer" | "unique",
   ): RuntimeField {
@@ -5476,7 +5476,7 @@ class DuckCoreLowering {
     if (result_ownership !== undefined) {
       ownership.resultOwnership = result_ownership;
     }
-    const declaration: FunctionalHostCapabilityDeclaration["fields"][number] = {
+    const declaration: HostCapabilityDeclaration["fields"][number] = {
       kind: "operation",
       name: key,
       purity: "pure",
@@ -5491,7 +5491,7 @@ class DuckCoreLowering {
   }
 
   private runtime_trap(
-    expected: FunctionalTypeSchema | undefined,
+    expected: TypeSchema | undefined,
     message: string,
   ): LoweredExpression {
     const result = this.require_type(expected, "trap result");
@@ -5514,7 +5514,7 @@ class DuckCoreLowering {
   }
 
   private runtime_capability():
-    | FunctionalHostCapabilityDeclaration
+    | HostCapabilityDeclaration
     | undefined {
     if (this.#runtime_fields.size === 0) {
       return undefined;
@@ -5528,16 +5528,16 @@ class DuckCoreLowering {
   }
 
   private host_definitions(): {
-    definitions: FunctionalSurfaceDefinition[];
-    bindings: FunctionalHostDefinitionBinding[];
+    definitions: SurfaceDefinition[];
+    bindings: HostDefinitionBinding[];
   } {
-    const definitions: FunctionalSurfaceDefinition[] = [];
-    const bindings: FunctionalHostDefinitionBinding[] = [];
+    const definitions: SurfaceDefinition[] = [];
+    const bindings: HostDefinitionBinding[] = [];
 
     for (const capability of this.#host_capabilities) {
       for (const field of capability.fields) {
         const definition = this.host_binder(capability.name, field.name);
-        let annotation: FunctionalTypeSchema;
+        let annotation: TypeSchema;
 
         if (field.kind === "value") {
           annotation = field.type;
@@ -5570,7 +5570,7 @@ class DuckCoreLowering {
     return { definitions, bindings };
   }
 
-  private functional_type_declarations(): FunctionalSurfaceTypeDeclaration[] {
+  private functional_type_declarations(): SurfaceTypeDeclaration[] {
     return [...this.#types.values()].flatMap((definition) => {
       const member_types = [
         ...definition.fields.map((field) => field.type),
@@ -5605,7 +5605,7 @@ class DuckCoreLowering {
     });
   }
 
-  private schema_from_abi_ref(type: AbiTypeRef): FunctionalTypeSchema {
+  private schema_from_abi_ref(type: AbiTypeRef): TypeSchema {
     switch (type.tag) {
       case "i32":
         return integer_type;
@@ -5618,15 +5618,15 @@ class DuckCoreLowering {
       case "unit":
         return unit_type;
       case "text":
-        return FunctionalHostTypes.text;
+        return HostTypes.text;
       case "bytes":
-        return FunctionalHostTypes.bytes;
+        return HostTypes.bytes;
       case "i32_slice":
-        return FunctionalHostTypes.slice(integer_type);
+        return HostTypes.slice(integer_type);
       case "text_slice":
-        return FunctionalHostTypes.slice(FunctionalHostTypes.text);
+        return HostTypes.slice(HostTypes.text);
       case "resource":
-        return FunctionalHostTypes.resource(type.effect);
+        return HostTypes.resource(type.effect);
       case "named":
         return this.schema_from_type_name(type.name);
     }
@@ -5634,14 +5634,14 @@ class DuckCoreLowering {
 
   private schema_from_optional_type_name(
     name: string | undefined,
-  ): FunctionalTypeSchema | undefined {
+  ): TypeSchema | undefined {
     if (name === undefined) {
       return undefined;
     }
     return this.schema_from_type_name(name);
   }
 
-  private schema_from_type_name(name: string): FunctionalTypeSchema {
+  private schema_from_type_name(name: string): TypeSchema {
     while (
       name.startsWith("&") || name.startsWith("#") || name.startsWith("!")
     ) {
@@ -5671,7 +5671,7 @@ class DuckCoreLowering {
         return integer_type;
       }
       if (resolved_type.value.tag === "text") {
-        return FunctionalHostTypes.text;
+        return HostTypes.text;
       }
       if (resolved_type.value.type === "i32") {
         return integer_type;
@@ -5754,10 +5754,10 @@ class DuckCoreLowering {
       return unit_type;
     }
     if (name === "Text") {
-      return FunctionalHostTypes.text;
+      return HostTypes.text;
     }
     if (name === "Bytes") {
-      return FunctionalHostTypes.bytes;
+      return HostTypes.bytes;
     }
     if (this.#types.has(name) || this.#type_aliases.has(name)) {
       this.materialize_type_definition(name);
@@ -5869,7 +5869,7 @@ class DuckCoreLowering {
 
   private operation_parameter_type(
     types: readonly AbiTypeRef[],
-  ): FunctionalHostType {
+  ): HostType {
     if (types.length === 0) {
       return unit_type;
     }
@@ -5891,8 +5891,8 @@ class DuckCoreLowering {
   }
 
   private pack_arguments(
-    args: readonly FunctionalSurfaceExpression[],
-  ): FunctionalSurfaceExpression {
+    args: readonly SurfaceExpression[],
+  ): SurfaceExpression {
     if (args.length === 0) {
       return surface.name("$Unit");
     }
@@ -5954,8 +5954,8 @@ class DuckCoreLowering {
   }
 
   private entry_type(
-    inferred: FunctionalTypeSchema | undefined,
-  ): FunctionalTypeSchema | null {
+    inferred: TypeSchema | undefined,
+  ): TypeSchema | null {
     if (this.#abi.entry?.result !== undefined) {
       return this.schema_from_abi_ref(this.#abi.entry.result.type);
     }
@@ -5965,28 +5965,28 @@ class DuckCoreLowering {
     return null;
   }
 
-  private named_type(name: string): FunctionalTypeSchema {
+  private named_type(name: string): TypeSchema {
     return { kind: "named", name, arguments: [] };
   }
 
   private tuple_type(
-    first: FunctionalTypeSchema,
-    second: FunctionalTypeSchema,
-  ): FunctionalTypeSchema {
+    first: TypeSchema,
+    second: TypeSchema,
+  ): TypeSchema {
     return { kind: "tuple", values: [first, second] };
   }
 
   private tuple_expression(
-    first: FunctionalSurfaceExpression,
-    second: FunctionalSurfaceExpression,
-  ): FunctionalSurfaceExpression {
+    first: SurfaceExpression,
+    second: SurfaceExpression,
+  ): SurfaceExpression {
     return surface.apply(surface.name("$Tuple"), first, second);
   }
 
   private tuple_values(
-    value: FunctionalWasmHostValue,
+    value: WasmHostValue,
     context: string,
-  ): readonly [FunctionalWasmHostValue, FunctionalWasmHostValue] {
+  ): readonly [WasmHostValue, WasmHostValue] {
     if (value.kind !== "tuple") {
       throw new TypeError(
         "Duck " + context + " expected a tuple, found " + value.kind,
@@ -5997,7 +5997,7 @@ class DuckCoreLowering {
 
   private lower_condition(
     expression: CoreExpr,
-    environment: ReadonlyMap<string, FunctionalTypeSchema>,
+    environment: ReadonlyMap<string, TypeSchema>,
   ): LoweredExpression {
     const lowered = this.lower_expression(expression, environment, {
       kind: "boolean",
@@ -6008,7 +6008,7 @@ class DuckCoreLowering {
     if (lowered.type?.kind === "integer") {
       return {
         expression: surface.binary(
-          FunctionalBinaryOperator.NotEqual,
+          BinaryOperator.NotEqual,
           lowered.expression,
           surface.integer(0),
         ),
@@ -6018,7 +6018,7 @@ class DuckCoreLowering {
     if (lowered.type === undefined || lowered.type.kind === "parameter") {
       return {
         expression: surface.binary(
-          FunctionalBinaryOperator.NotEqual,
+          BinaryOperator.NotEqual,
           lowered.expression,
           surface.integer(0),
         ),
@@ -6142,7 +6142,7 @@ class DuckCoreLowering {
   }
 
   private contains_unapplied_type_constructor(
-    type: FunctionalTypeSchema,
+    type: TypeSchema,
   ): boolean {
     if (type.kind === "function") {
       return this.contains_unapplied_type_constructor(type.parameter) ||
@@ -6195,9 +6195,9 @@ class DuckCoreLowering {
 
   private index_selection(
     binders: readonly string[],
-    index: FunctionalSurfaceExpression,
-    result_type: FunctionalTypeSchema | undefined,
-  ): FunctionalSurfaceExpression {
+    index: SurfaceExpression,
+    result_type: TypeSchema | undefined,
+  ): SurfaceExpression {
     let selected =
       this.runtime_trap(result_type, "Duck index is outside its aggregate")
         .expression;
@@ -6215,7 +6215,7 @@ class DuckCoreLowering {
       selected = {
         kind: "if",
         condition: surface.binary(
-          FunctionalBinaryOperator.Equal,
+          BinaryOperator.Equal,
           index,
           surface.integer(field_index),
         ),
@@ -6229,7 +6229,7 @@ class DuckCoreLowering {
   private unary_primitive(
     prim: Prim,
   ):
-    | { operator: FunctionalUnaryOperator; result: FunctionalTypeSchema }
+    | { operator: UnaryOperator; result: TypeSchema }
     | undefined {
     const operators = unary_operators();
     return operators.get(prim);
@@ -6238,13 +6238,13 @@ class DuckCoreLowering {
   private conversion_primitive(
     prim: Prim,
   ):
-    | { conversion: FunctionalNumericConversion; result: FunctionalTypeSchema }
+    | { conversion: NumericConversion; result: TypeSchema }
     | undefined {
     const conversions = numeric_conversions();
     return conversions.get(prim);
   }
 
-  private type_from_primitive_prefix(prim: Prim): FunctionalTypeSchema {
+  private type_from_primitive_prefix(prim: Prim): TypeSchema {
     if (prim.startsWith("i64.")) {
       return { kind: "signed-integer-64" };
     }
@@ -6347,7 +6347,7 @@ class DuckCoreLowering {
   }
 
   private named_type_name(
-    type: FunctionalTypeSchema | undefined,
+    type: TypeSchema | undefined,
     context: string,
   ): string {
     if (type?.kind !== "named") {
@@ -6369,9 +6369,9 @@ class DuckCoreLowering {
   }
 
   private require_type(
-    type: FunctionalTypeSchema | undefined,
+    type: TypeSchema | undefined,
     context: string,
-  ): FunctionalTypeSchema {
+  ): TypeSchema {
     if (type === undefined) {
       throw new Error("Duck gpufuck lowering cannot infer " + context);
     }
@@ -6379,12 +6379,12 @@ class DuckCoreLowering {
   }
 
   private require_buffer_type(
-    type: FunctionalTypeSchema | undefined,
+    type: TypeSchema | undefined,
     context: string,
-  ): FunctionalTypeSchema {
+  ): TypeSchema {
     if (
-      this.same_type(type, FunctionalHostTypes.text) ||
-      this.same_type(type, FunctionalHostTypes.bytes)
+      this.same_type(type, HostTypes.text) ||
+      this.same_type(type, HostTypes.bytes)
     ) {
       return this.require_type(type, context);
     }
@@ -6407,7 +6407,7 @@ class DuckCoreLowering {
     return arg;
   }
 
-  private type_key(type: FunctionalTypeSchema | undefined): string {
+  private type_key(type: TypeSchema | undefined): string {
     if (type === undefined) {
       return "unknown";
     }
@@ -6415,8 +6415,8 @@ class DuckCoreLowering {
   }
 
   private same_type(
-    left: FunctionalTypeSchema | undefined,
-    right: FunctionalTypeSchema,
+    left: TypeSchema | undefined,
+    right: TypeSchema,
   ): boolean {
     if (left === undefined) {
       return false;
@@ -6426,8 +6426,8 @@ class DuckCoreLowering {
   }
 
   private resolve_type_alias(
-    type: FunctionalTypeSchema,
-  ): FunctionalTypeSchema {
+    type: TypeSchema,
+  ): TypeSchema {
     let resolved = type;
     const seen = new Set<string>();
 
@@ -6468,74 +6468,74 @@ class DuckCoreLowering {
 function lower_binary_primitive(
   prim: Prim,
 ):
-  | { operator: FunctionalBinaryOperator; result: FunctionalTypeSchema }
+  | { operator: BinaryOperator; result: TypeSchema }
   | undefined {
   const integer = integer_type;
-  const boolean: FunctionalTypeSchema = { kind: "boolean" };
-  const i64: FunctionalTypeSchema = { kind: "signed-integer-64" };
-  const f32: FunctionalTypeSchema = { kind: "float-32" };
-  const f64: FunctionalTypeSchema = { kind: "float-64" };
+  const boolean: TypeSchema = { kind: "boolean" };
+  const i64: TypeSchema = { kind: "signed-integer-64" };
+  const f32: TypeSchema = { kind: "float-32" };
+  const f64: TypeSchema = { kind: "float-64" };
   const entries: readonly [
     Prim,
-    FunctionalBinaryOperator,
-    FunctionalTypeSchema,
+    BinaryOperator,
+    TypeSchema,
   ][] = [
-    ["i32.eq", FunctionalBinaryOperator.Equal, boolean],
-    ["i32.ne", FunctionalBinaryOperator.NotEqual, boolean],
-    ["i32.lt_s", FunctionalBinaryOperator.Less, boolean],
-    ["i32.le_s", FunctionalBinaryOperator.LessEqual, boolean],
-    ["i32.gt_s", FunctionalBinaryOperator.Greater, boolean],
-    ["i32.ge_s", FunctionalBinaryOperator.GreaterEqual, boolean],
-    ["i32.add", FunctionalBinaryOperator.Add, integer],
-    ["i32.sub", FunctionalBinaryOperator.Subtract, integer],
-    ["i32.mul", FunctionalBinaryOperator.Multiply, integer],
-    ["i32.div_s", FunctionalBinaryOperator.Divide, integer],
-    ["i32.rem_s", FunctionalBinaryOperator.Remainder, integer],
-    ["i32.and", FunctionalBinaryOperator.BitwiseAnd, integer],
-    ["i32.or", FunctionalBinaryOperator.BitwiseOr, integer],
-    ["i32.xor", FunctionalBinaryOperator.BitwiseXor, integer],
-    ["i32.shl", FunctionalBinaryOperator.ShiftLeft, integer],
-    ["i32.shr_u", FunctionalBinaryOperator.ShiftRightUnsigned, integer],
-    ["i64.eq", FunctionalBinaryOperator.EqualSignedInteger64, boolean],
-    ["i64.ne", FunctionalBinaryOperator.NotEqualSignedInteger64, boolean],
-    ["i64.lt_s", FunctionalBinaryOperator.LessSignedInteger64, boolean],
-    ["i64.le_s", FunctionalBinaryOperator.LessEqualSignedInteger64, boolean],
-    ["i64.gt_s", FunctionalBinaryOperator.GreaterSignedInteger64, boolean],
-    ["i64.ge_s", FunctionalBinaryOperator.GreaterEqualSignedInteger64, boolean],
-    ["i64.add", FunctionalBinaryOperator.AddSignedInteger64, i64],
-    ["i64.sub", FunctionalBinaryOperator.SubtractSignedInteger64, i64],
-    ["i64.mul", FunctionalBinaryOperator.MultiplySignedInteger64, i64],
-    ["i64.div_s", FunctionalBinaryOperator.DivideSignedInteger64, i64],
-    ["i64.rem_s", FunctionalBinaryOperator.RemainderSignedInteger64, i64],
-    ["i64.and", FunctionalBinaryOperator.BitwiseAndSignedInteger64, i64],
-    ["i64.or", FunctionalBinaryOperator.BitwiseOrSignedInteger64, i64],
-    ["i64.xor", FunctionalBinaryOperator.BitwiseXorSignedInteger64, i64],
-    ["i64.shl", FunctionalBinaryOperator.ShiftLeftSignedInteger64, i64],
+    ["i32.eq", BinaryOperator.Equal, boolean],
+    ["i32.ne", BinaryOperator.NotEqual, boolean],
+    ["i32.lt_s", BinaryOperator.Less, boolean],
+    ["i32.le_s", BinaryOperator.LessEqual, boolean],
+    ["i32.gt_s", BinaryOperator.Greater, boolean],
+    ["i32.ge_s", BinaryOperator.GreaterEqual, boolean],
+    ["i32.add", BinaryOperator.Add, integer],
+    ["i32.sub", BinaryOperator.Subtract, integer],
+    ["i32.mul", BinaryOperator.Multiply, integer],
+    ["i32.div_s", BinaryOperator.Divide, integer],
+    ["i32.rem_s", BinaryOperator.Remainder, integer],
+    ["i32.and", BinaryOperator.BitwiseAnd, integer],
+    ["i32.or", BinaryOperator.BitwiseOr, integer],
+    ["i32.xor", BinaryOperator.BitwiseXor, integer],
+    ["i32.shl", BinaryOperator.ShiftLeft, integer],
+    ["i32.shr_u", BinaryOperator.ShiftRightUnsigned, integer],
+    ["i64.eq", BinaryOperator.EqualSignedInteger64, boolean],
+    ["i64.ne", BinaryOperator.NotEqualSignedInteger64, boolean],
+    ["i64.lt_s", BinaryOperator.LessSignedInteger64, boolean],
+    ["i64.le_s", BinaryOperator.LessEqualSignedInteger64, boolean],
+    ["i64.gt_s", BinaryOperator.GreaterSignedInteger64, boolean],
+    ["i64.ge_s", BinaryOperator.GreaterEqualSignedInteger64, boolean],
+    ["i64.add", BinaryOperator.AddSignedInteger64, i64],
+    ["i64.sub", BinaryOperator.SubtractSignedInteger64, i64],
+    ["i64.mul", BinaryOperator.MultiplySignedInteger64, i64],
+    ["i64.div_s", BinaryOperator.DivideSignedInteger64, i64],
+    ["i64.rem_s", BinaryOperator.RemainderSignedInteger64, i64],
+    ["i64.and", BinaryOperator.BitwiseAndSignedInteger64, i64],
+    ["i64.or", BinaryOperator.BitwiseOrSignedInteger64, i64],
+    ["i64.xor", BinaryOperator.BitwiseXorSignedInteger64, i64],
+    ["i64.shl", BinaryOperator.ShiftLeftSignedInteger64, i64],
     [
       "i64.shr_u",
-      FunctionalBinaryOperator.ShiftRightUnsignedSignedInteger64,
+      BinaryOperator.ShiftRightUnsignedSignedInteger64,
       i64,
     ],
-    ["f32.eq", FunctionalBinaryOperator.EqualFloat32, boolean],
-    ["f32.ne", FunctionalBinaryOperator.NotEqualFloat32, boolean],
-    ["f32.lt", FunctionalBinaryOperator.LessFloat32, boolean],
-    ["f32.le", FunctionalBinaryOperator.LessEqualFloat32, boolean],
-    ["f32.gt", FunctionalBinaryOperator.GreaterFloat32, boolean],
-    ["f32.ge", FunctionalBinaryOperator.GreaterEqualFloat32, boolean],
-    ["f32.add", FunctionalBinaryOperator.AddFloat32, f32],
-    ["f32.sub", FunctionalBinaryOperator.SubtractFloat32, f32],
-    ["f32.mul", FunctionalBinaryOperator.MultiplyFloat32, f32],
-    ["f32.div", FunctionalBinaryOperator.DivideFloat32, f32],
-    ["f64.eq", FunctionalBinaryOperator.EqualFloat64, boolean],
-    ["f64.ne", FunctionalBinaryOperator.NotEqualFloat64, boolean],
-    ["f64.lt", FunctionalBinaryOperator.LessFloat64, boolean],
-    ["f64.le", FunctionalBinaryOperator.LessEqualFloat64, boolean],
-    ["f64.gt", FunctionalBinaryOperator.GreaterFloat64, boolean],
-    ["f64.ge", FunctionalBinaryOperator.GreaterEqualFloat64, boolean],
-    ["f64.add", FunctionalBinaryOperator.AddFloat64, f64],
-    ["f64.sub", FunctionalBinaryOperator.SubtractFloat64, f64],
-    ["f64.mul", FunctionalBinaryOperator.MultiplyFloat64, f64],
-    ["f64.div", FunctionalBinaryOperator.DivideFloat64, f64],
+    ["f32.eq", BinaryOperator.EqualFloat32, boolean],
+    ["f32.ne", BinaryOperator.NotEqualFloat32, boolean],
+    ["f32.lt", BinaryOperator.LessFloat32, boolean],
+    ["f32.le", BinaryOperator.LessEqualFloat32, boolean],
+    ["f32.gt", BinaryOperator.GreaterFloat32, boolean],
+    ["f32.ge", BinaryOperator.GreaterEqualFloat32, boolean],
+    ["f32.add", BinaryOperator.AddFloat32, f32],
+    ["f32.sub", BinaryOperator.SubtractFloat32, f32],
+    ["f32.mul", BinaryOperator.MultiplyFloat32, f32],
+    ["f32.div", BinaryOperator.DivideFloat32, f32],
+    ["f64.eq", BinaryOperator.EqualFloat64, boolean],
+    ["f64.ne", BinaryOperator.NotEqualFloat64, boolean],
+    ["f64.lt", BinaryOperator.LessFloat64, boolean],
+    ["f64.le", BinaryOperator.LessEqualFloat64, boolean],
+    ["f64.gt", BinaryOperator.GreaterFloat64, boolean],
+    ["f64.ge", BinaryOperator.GreaterEqualFloat64, boolean],
+    ["f64.add", BinaryOperator.AddFloat64, f64],
+    ["f64.sub", BinaryOperator.SubtractFloat64, f64],
+    ["f64.mul", BinaryOperator.MultiplyFloat64, f64],
+    ["f64.div", BinaryOperator.DivideFloat64, f64],
   ];
   const entry = entries.find((candidate) => candidate[0] === prim);
   if (entry === undefined) {
@@ -6546,13 +6546,13 @@ function lower_binary_primitive(
 
 function unary_operators(): ReadonlyMap<
   Prim,
-  { operator: FunctionalUnaryOperator; result: FunctionalTypeSchema }
+  { operator: UnaryOperator; result: TypeSchema }
 > {
   return new Map([
     [
       "f32.sqrt",
       {
-        operator: FunctionalUnaryOperator.SquareRootFloat32,
+        operator: UnaryOperator.SquareRootFloat32,
         result: { kind: "float-32" },
       },
     ],
@@ -6561,14 +6561,14 @@ function unary_operators(): ReadonlyMap<
 
 function numeric_conversions(): ReadonlyMap<
   Prim,
-  { conversion: FunctionalNumericConversion; result: FunctionalTypeSchema }
+  { conversion: NumericConversion; result: TypeSchema }
 > {
   return new Map([
     [
       "i64.extend_i32_s",
       {
         conversion:
-          FunctionalNumericConversion.SignedInteger32ToSignedInteger64,
+          NumericConversion.SignedInteger32ToSignedInteger64,
         result: { kind: "signed-integer-64" },
       },
     ],
@@ -6576,35 +6576,35 @@ function numeric_conversions(): ReadonlyMap<
       "i32.wrap_i64",
       {
         conversion:
-          FunctionalNumericConversion.SignedInteger64ToSignedInteger32,
+          NumericConversion.SignedInteger64ToSignedInteger32,
         result: integer_type,
       },
     ],
     [
       "f32.convert_i32_s",
       {
-        conversion: FunctionalNumericConversion.SignedInteger32ToFloat32,
+        conversion: NumericConversion.SignedInteger32ToFloat32,
         result: { kind: "float-32" },
       },
     ],
     [
       "f64.convert_i32_s",
       {
-        conversion: FunctionalNumericConversion.SignedInteger32ToFloat64,
+        conversion: NumericConversion.SignedInteger32ToFloat64,
         result: { kind: "float-64" },
       },
     ],
     [
       "i32.trunc_f32_s",
       {
-        conversion: FunctionalNumericConversion.Float32ToSignedInteger32,
+        conversion: NumericConversion.Float32ToSignedInteger32,
         result: integer_type,
       },
     ],
     [
       "i32.trunc_f64_s",
       {
-        conversion: FunctionalNumericConversion.Float64ToSignedInteger32,
+        conversion: NumericConversion.Float64ToSignedInteger32,
         result: integer_type,
       },
     ],
@@ -6612,7 +6612,7 @@ function numeric_conversions(): ReadonlyMap<
       "i32.reinterpret_f32",
       {
         conversion:
-          FunctionalNumericConversion.ReinterpretFloat32AsSignedInteger32,
+          NumericConversion.ReinterpretFloat32AsSignedInteger32,
         result: integer_type,
       },
     ],
@@ -6620,14 +6620,14 @@ function numeric_conversions(): ReadonlyMap<
       "f32.reinterpret_i32",
       {
         conversion:
-          FunctionalNumericConversion.ReinterpretSignedInteger32AsFloat32,
+          NumericConversion.ReinterpretSignedInteger32AsFloat32,
         result: { kind: "float-32" },
       },
     ],
   ]);
 }
 
-function contains_type_parameter(type: FunctionalTypeSchema): boolean {
+function contains_type_parameter(type: TypeSchema): boolean {
   if (type.kind === "parameter" || type.kind === "forall") {
     return true;
   }
@@ -6672,11 +6672,11 @@ function source_type_application(
   return { name: expression.name, args };
 }
 
-function source_type_name_from_schema(type: FunctionalTypeSchema): string {
+function source_type_name_from_schema(type: TypeSchema): string {
   return format_type_expr(source_type_expr_from_schema(type));
 }
 
-function source_type_expr_from_schema(type: FunctionalTypeSchema): TypeExpr {
+function source_type_expr_from_schema(type: TypeSchema): TypeExpr {
   if (type.kind === "integer") {
     return { tag: "name", name: "I32" };
   }
@@ -6723,9 +6723,9 @@ function source_type_expr_from_schema(type: FunctionalTypeSchema): TypeExpr {
   }
 
   let name = type.name;
-  if (type.name === FUNCTIONAL_TEXT_TYPE_NAME) {
+  if (type.name === TEXT_TYPE_NAME) {
     name = "Text";
-  } else if (type.name === FUNCTIONAL_BYTES_TYPE_NAME) {
+  } else if (type.name === BYTES_TYPE_NAME) {
     name = "Bytes";
   }
 

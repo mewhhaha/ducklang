@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -13,7 +13,7 @@ const host_interface_url = new URL("./view_image_host.duck", import.meta.url);
 
 Deno.test("Codex loads and records viewed images through typed capabilities", async () => {
   const events: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     ViewImageHost: {
       $resource: { kind: "resource", id: 1 },
       read: (argument) => {
@@ -75,10 +75,10 @@ Deno.test("Codex loads and records viewed images through typed capabilities", as
 });
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -88,7 +88,7 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_value(value: FunctionalWasmHostValue): string {
+function text_value(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }
@@ -98,8 +98,8 @@ function text_value(value: FunctionalWasmHostValue): string {
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,

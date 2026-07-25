@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -15,8 +15,8 @@ const host_interface_url = new URL(
 );
 
 Deno.test("Codex publishes typed plan updates through the host boundary", async () => {
-  const published_plans: FunctionalWasmHostValue[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const published_plans: WasmHostValue[] = [];
+  const init: WasmAsyncInit = {
     UpdatePlanHost: {
       $resource: { kind: "resource", id: 1 },
       publish: (argument) => {

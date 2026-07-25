@@ -1,5 +1,5 @@
 import { assert_equals } from "../../src/assert.ts";
-import { type FunctionalWasmAsyncInit } from "../../../gpufuck/functional.ts";
+import { type WasmAsyncInit } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
 const source_url = new URL(
@@ -13,7 +13,7 @@ const host_interface_url = new URL(
 
 Deno.test("Codex waits through a typed environment capability", async () => {
   const environment_ids: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     WaitForEnvironmentHost: {
       $resource: { kind: "resource", id: 1 },
       wait: (argument) => {

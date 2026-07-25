@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -15,7 +15,7 @@ Deno.test("Codex keeps hook process mechanics behind source-owned policy", async
     cwd: string;
     timeout: number;
   }[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     HookCommandHost: {
       $resource: { kind: "resource", id: 1 },
       run: (argument) => {
@@ -61,12 +61,12 @@ Deno.test("Codex keeps hook process mechanics behind source-owned policy", async
   }]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
 function struct_value(
   name: string,
-  fields: FunctionalWasmHostValue[],
-): FunctionalWasmHostValue {
+  fields: WasmHostValue[],
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckStruct:" + name,
@@ -77,8 +77,8 @@ function struct_value(
 function union_value(
   type_name: string,
   case_name: string,
-  field: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  field: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -87,10 +87,10 @@ function union_value(
 }
 
 function struct_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   field_count: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   const expected_name = "duck::$DuckStruct:" + name;
   if (
     value.kind !== "constructor" ||
@@ -104,16 +104,16 @@ function struct_fields(
   return value.fields;
 }
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function integer_value(value: number): FunctionalWasmHostValue {
+function integer_value(value: number): WasmHostValue {
   return { kind: "integer", value };
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -123,7 +123,7 @@ function text_argument(
 }
 
 function integer_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): number {
   if (value.kind !== "integer") {

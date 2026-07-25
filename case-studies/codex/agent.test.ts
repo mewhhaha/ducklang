@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -14,7 +14,7 @@ Deno.test("Codex keeps agent mechanics behind source-owned coordination policy",
   const interrupts: string[] = [];
   const waits: { agent_ids: string[]; timeout_ms: number }[] = [];
   const closes: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     AgentHost: {
       $resource: { kind: "resource", id: 1 },
       spawn: (argument) => {
@@ -106,32 +106,32 @@ Deno.test("Codex keeps agent mechanics behind source-owned coordination policy",
   assert_equals(closes, ["agent-1"]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function integer_value(value: number): FunctionalWasmHostValue {
+function integer_value(value: number): WasmHostValue {
   return { kind: "integer", value };
 }
 
 function status(
   name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return union("AgentStatus", name, payload);
 }
 
-function running_status(): FunctionalWasmHostValue {
+function running_status(): WasmHostValue {
   return status("Running", unit_value);
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -140,17 +140,17 @@ function union(
 }
 
 function status_entries(
-  entries: [string, FunctionalWasmHostValue][],
-): FunctionalWasmHostValue {
+  entries: [string, WasmHostValue][],
+): WasmHostValue {
   let result = union("AgentStatusEntries", "Nil", unit_value);
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const [agent_id, agent_status] = entries[index];
-    const entry: FunctionalWasmHostValue = {
+    const entry: WasmHostValue = {
       kind: "constructor",
       name: "duck::$DuckStruct:AgentStatusEntry",
       fields: [text_value(agent_id), agent_status],
     };
-    const node: FunctionalWasmHostValue = {
+    const node: WasmHostValue = {
       kind: "constructor",
       name: "duck::$DuckStruct:AgentStatusEntryNode",
       fields: [entry, result],
@@ -160,7 +160,7 @@ function status_entries(
   return result;
 }
 
-function agent_id_arguments(value: FunctionalWasmHostValue): string[] {
+function agent_id_arguments(value: WasmHostValue): string[] {
   const ids: string[] = [];
   let current = value;
   while (
@@ -186,11 +186,11 @@ function agent_id_arguments(value: FunctionalWasmHostValue): string[] {
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   expected_name: string,
   expected_count: number,
   operation: string,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor") {
     throw new Error(
       operation + " must be a constructor; received " + value.kind,
@@ -211,7 +211,7 @@ function constructor_fields(
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -221,7 +221,7 @@ function text_argument(
 }
 
 function signed_integer_64_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): number {
   if (value.kind !== "signed-integer-64") {

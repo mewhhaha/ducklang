@@ -16,7 +16,7 @@ export type {
 } from "../experiments/gpufuck/compiler.ts";
 
 export type {
-  FunctionalWasmAsyncInit as DuckAsyncInit,
-  FunctionalWasmHostValue as DuckHostValue,
-  FunctionalWasmInit as DuckInit,
+  WasmAsyncInit as DuckAsyncInit,
+  WasmHostValue as DuckHostValue,
+  WasmInit as DuckInit,
 } from "../../gpufuck/functional.ts";

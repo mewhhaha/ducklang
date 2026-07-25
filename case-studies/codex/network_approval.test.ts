@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -16,7 +16,7 @@ const host_interface_url = new URL(
 
 Deno.test("Codex defers network outcome handling to source policy", async () => {
   const prompts: { target: string; reason: string; is_owner: boolean }[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     NetworkApprovalHost: {
       $resource: { kind: "resource", id: 1 },
       request: (argument) => {
@@ -64,10 +64,10 @@ Deno.test("Codex defers network outcome handling to source policy", async () => 
   }]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -77,7 +77,7 @@ function text_argument(
 }
 
 function bool_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): boolean {
   if (value.kind !== "integer") {

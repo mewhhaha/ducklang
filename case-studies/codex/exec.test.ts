@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -29,7 +29,7 @@ Deno.test("Codex process execution keeps spawn mechanics at the host boundary", 
     bypass_sandbox: boolean;
   }[] = [];
   const writes: { process_id: number; input: string; yield_ms: number }[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     ProcessHost: {
       $resource: { kind: "resource", id: 1 },
       start: (argument) => {
@@ -104,7 +104,7 @@ Deno.test("Codex process execution keeps spawn mechanics at the host boundary", 
 
 Deno.test("Codex retries sandbox denials from source policy", async () => {
   const bypasses: boolean[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     ProcessHost: {
       $resource: { kind: "resource", id: 1 },
       start: (argument) => {
@@ -152,7 +152,7 @@ Deno.test("Codex retries sandbox denials from source policy", async () => {
 
 Deno.test("Codex emits terminal lifecycle records selected by source", async () => {
   const events: { name: string; field_count: number }[] = [];
-  const capture = (argument: FunctionalWasmHostValue) => {
+  const capture = (argument: WasmHostValue) => {
     if (argument.kind !== "constructor") {
       throw new Error(
         "terminal event must be a constructor; received " + argument.kind,
@@ -161,7 +161,7 @@ Deno.test("Codex emits terminal lifecycle records selected by source", async () 
     events.push({ name: argument.name, field_count: argument.fields.length });
     return unit_value;
   };
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     ExecEvents: {
       $resource: { kind: "resource", id: 1 },
       begin: capture,
@@ -200,7 +200,7 @@ Deno.test("Codex emits terminal lifecycle records selected by source", async () 
   ]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
 function process_snapshot(
   process_id: number,
@@ -208,7 +208,7 @@ function process_snapshot(
   has_exited: boolean,
   exit_code: number | undefined,
   sandbox_denied: boolean,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   let has_exited_value = 0;
   if (has_exited) {
     has_exited_value = 1;
@@ -241,7 +241,7 @@ function process_snapshot(
   };
 }
 
-function optional_integer(value: number | undefined): FunctionalWasmHostValue {
+function optional_integer(value: number | undefined): WasmHostValue {
   if (value === undefined) {
     return {
       kind: "constructor",
@@ -257,7 +257,7 @@ function optional_integer(value: number | undefined): FunctionalWasmHostValue {
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -267,7 +267,7 @@ function text_argument(
 }
 
 function bool_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): boolean {
   const integer = integer_argument(value, operation);
@@ -280,7 +280,7 @@ function bool_argument(
 }
 
 function integer_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): number {
   if (value.kind !== "integer") {

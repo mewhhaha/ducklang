@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -40,7 +40,7 @@ Deno.test("Codex rollout storage keeps filesystem mechanics at the host boundary
     "2025-01-03T09:00:01Z",
     contents,
   ]];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     RolloutStore: {
       $resource: { kind: "resource", id: 1 },
       snapshot_length: () => integer_value(snapshot.length),
@@ -93,18 +93,18 @@ Deno.test("Codex rollout storage keeps filesystem mechanics at the host boundary
   assert_equals(flushes, 1);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function integer_value(value: number): FunctionalWasmHostValue {
+function integer_value(value: number): WasmHostValue {
   return { kind: "integer", value };
 }
 
 function integer_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): number {
   if (value.kind !== "integer") {
@@ -114,7 +114,7 @@ function integer_argument(
 }
 
 function text_arguments(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): [string, string] {
   if (value.kind !== "tuple") {

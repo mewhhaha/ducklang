@@ -1,24 +1,24 @@
 import {
-  compileFunctionalModuleToWasm,
+  compileModuleToWasm,
   type EncodedFunctionalModule,
-  type FunctionalCompileResult,
-  type FunctionalComptimeExecutionOptions,
-  type FunctionalComptimeExecutionResult,
-  type FunctionalComptimeModuleArtifact,
-  type FunctionalStoragePlan,
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmAsyncRunOptions,
-  type FunctionalWasmExecution,
-  type FunctionalWasmInit,
-  type FunctionalWasmInitBinding,
-  type FunctionalWasmRunOptions,
-  GpuFunctionalCompiler,
-  GpuFunctionalComptimeExecutor,
-  type GpuFunctionalModule,
-  planFunctionalModuleStorage,
+  type CompileResult,
+  type ComptimeExecutionOptions,
+  type ComptimeExecutionResult,
+  type ComptimeModuleArtifact,
+  type StoragePlan,
+  type WasmAsyncInit,
+  type WasmAsyncRunOptions,
+  type WasmExecution,
+  type WasmInit,
+  type WasmInitBinding,
+  type WasmRunOptions,
+  GpuCompiler,
+  GpuComptimeExecutor,
+  type GpuModule,
+  planModuleStorage,
   requestWebGpuDevice,
-  runFunctionalWasmModule,
-  runFunctionalWasmModuleAsync,
+  runWasmModule,
+  runWasmModuleAsync,
 } from "../../../gpufuck/functional.ts";
 import type { Source as SourceNode } from "../../src/frontend/ast.ts";
 import { format_source } from "../../src/frontend/format.ts";
@@ -40,9 +40,9 @@ const maximum_gpufuck_compilation_steps = 10_000_000;
 const maximum_cached_compiler_entries = 64;
 
 export type DuckRunOptions =
-  & Omit<FunctionalWasmRunOptions, "init">
+  & Omit<WasmRunOptions, "init">
   & {
-    init?: FunctionalWasmInit;
+    init?: WasmInit;
   };
 
 export type DuckFileOptions = {
@@ -64,37 +64,37 @@ export type DuckAsyncRunFileOptions =
 
 export type DuckAsyncRunOptions =
   & Omit<
-    FunctionalWasmAsyncRunOptions,
+    WasmAsyncRunOptions,
     "init"
   >
   & {
-    init?: FunctionalWasmAsyncInit;
+    init?: WasmAsyncInit;
   };
 
-export type DuckComptimeOptions = FunctionalComptimeExecutionOptions;
+export type DuckComptimeOptions = ComptimeExecutionOptions;
 
-export type DuckComptimeResult = FunctionalComptimeExecutionResult;
+export type DuckComptimeResult = ComptimeExecutionResult;
 
 export interface DuckProgram {
   run(
     options?: DuckRunOptions,
-  ): Promise<FunctionalWasmExecution>;
+  ): Promise<WasmExecution>;
   run_async(
     options?: DuckAsyncRunOptions,
-  ): Promise<FunctionalWasmExecution>;
+  ): Promise<WasmExecution>;
   destroy(): void;
 }
 
 class PreparedDuckProgram implements DuckProgram {
   readonly #path: string;
-  readonly #module: GpuFunctionalModule;
-  readonly #automatic_init: FunctionalWasmInit;
+  readonly #module: GpuModule;
+  readonly #automatic_init: WasmInit;
   #destroyed = false;
 
   constructor(
     path: string,
-    module: GpuFunctionalModule,
-    automatic_init: FunctionalWasmInit,
+    module: GpuModule,
+    automatic_init: WasmInit,
   ) {
     this.#path = path;
     this.#module = module;
@@ -103,14 +103,14 @@ class PreparedDuckProgram implements DuckProgram {
 
   async run(
     options: DuckRunOptions = {},
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     if (this.#destroyed) {
       throw new Error(
         "Prepared Duck program has been destroyed: " + this.#path,
       );
     }
 
-    return await runFunctionalWasmModule(this.#module, {
+    return await runWasmModule(this.#module, {
       ...options,
       init: merge_init(this.#automatic_init, options.init),
     });
@@ -118,14 +118,14 @@ class PreparedDuckProgram implements DuckProgram {
 
   async run_async(
     options: DuckAsyncRunOptions = {},
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     if (this.#destroyed) {
       throw new Error(
         "Prepared Duck program has been destroyed: " + this.#path,
       );
     }
 
-    return await runFunctionalWasmModuleAsync(this.#module, {
+    return await runWasmModuleAsync(this.#module, {
       ...options,
       init: merge_async_init(this.#automatic_init, options.init),
     });
@@ -143,16 +143,16 @@ class PreparedDuckProgram implements DuckProgram {
 
 export class DuckCompiler {
   readonly #device: GPUDevice;
-  readonly #compiler: GpuFunctionalCompiler;
+  readonly #compiler: GpuCompiler;
   readonly #wasm_by_source = new Map<
     string,
     Promise<Uint8Array<ArrayBuffer>>
   >();
   readonly #lowered_by_source = new Map<string, LoweredDuckGpufuckModule>();
   readonly #loaded_by_file = new Map<string, LoadedDuckFile>();
-  #comptime: Promise<GpuFunctionalComptimeExecutor> | undefined;
+  #comptime: Promise<GpuComptimeExecutor> | undefined;
 
-  private constructor(device: GPUDevice, compiler: GpuFunctionalCompiler) {
+  private constructor(device: GPUDevice, compiler: GpuCompiler) {
     this.#device = device;
     this.#compiler = compiler;
   }
@@ -161,7 +161,7 @@ export class DuckCompiler {
     const device = await requestWebGpuDevice();
 
     try {
-      const compiler = await GpuFunctionalCompiler.create(device);
+      const compiler = await GpuCompiler.create(device);
       return new DuckCompiler(device, compiler);
     } catch (error) {
       device.destroy();
@@ -217,11 +217,11 @@ export class DuckCompiler {
     );
   }
 
-  async plan_storage(source: string): Promise<FunctionalStoragePlan> {
+  async plan_storage(source: string): Promise<StoragePlan> {
     const lowered = this.#lower_text(source);
     const module = await this.#compile_module(lowered);
     try {
-      return await planFunctionalModuleStorage(module);
+      return await planModuleStorage(module);
     } finally {
       module.destroy();
     }
@@ -250,11 +250,11 @@ export class DuckCompiler {
   async run(
     source: string,
     options: DuckRunOptions = {},
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     const lowered = this.#lower_text(source);
     const module = await this.#compile_module(lowered);
     try {
-      return await runFunctionalWasmModule(module, {
+      return await runWasmModule(module, {
         ...options,
         init: merge_init(lowered.automatic_init, options.init),
       });
@@ -266,7 +266,7 @@ export class DuckCompiler {
   async run_file(
     path: string,
     options: DuckRunFileOptions = {},
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     const lowered = this.#lower_file(path, options);
     const {
       host_interface: _host_interface,
@@ -275,7 +275,7 @@ export class DuckCompiler {
     } = options;
     const module = await this.#compile_module(lowered);
     try {
-      return await runFunctionalWasmModule(module, {
+      return await runWasmModule(module, {
         ...run_options,
         init: merge_init(lowered.automatic_init, run_options.init),
       });
@@ -287,11 +287,11 @@ export class DuckCompiler {
   async run_async(
     source: string,
     options: DuckAsyncRunOptions = {},
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     const lowered = this.#lower_text(source);
     const module = await this.#compile_module(lowered);
     try {
-      return await runFunctionalWasmModuleAsync(module, {
+      return await runWasmModuleAsync(module, {
         ...options,
         init: merge_async_init(lowered.automatic_init, options.init),
       });
@@ -303,7 +303,7 @@ export class DuckCompiler {
   async run_async_file(
     path: string,
     options: DuckAsyncRunFileOptions,
-  ): Promise<FunctionalWasmExecution> {
+  ): Promise<WasmExecution> {
     const lowered = this.#lower_file(path, options);
     const {
       host_interface: _host_interface,
@@ -312,7 +312,7 @@ export class DuckCompiler {
     } = options;
     const module = await this.#compile_module(lowered);
     try {
-      return await runFunctionalWasmModuleAsync(module, {
+      return await runWasmModuleAsync(module, {
         ...run_options,
         init: merge_async_init(lowered.automatic_init, run_options.init),
       });
@@ -328,7 +328,7 @@ export class DuckCompiler {
     const module = await this.#compile_module(lowered);
 
     try {
-      const execution = await runFunctionalWasmModule(module, {
+      const execution = await runWasmModule(module, {
         init: lowered.automatic_init,
       });
       const callables = lowered.abi.callables;
@@ -397,7 +397,7 @@ export class DuckCompiler {
     try {
       return await Promise.all(
         compiled_modules.map((module) => {
-          return compileFunctionalModuleToWasm(module);
+          return compileModuleToWasm(module);
         }),
       );
     } finally {
@@ -416,7 +416,7 @@ export class DuckCompiler {
       compilation = Promise.resolve().then(async () => {
         const module = await this.#compile_module(lower());
         try {
-          return await compileFunctionalModuleToWasm(module);
+          return await compileModuleToWasm(module);
         } finally {
           module.destroy();
         }
@@ -516,7 +516,7 @@ export class DuckCompiler {
 
   async #compile_module(
     lowered: LoweredDuckGpufuckModule,
-  ): Promise<GpuFunctionalModule> {
+  ): Promise<GpuModule> {
     const results = await this.#compiler.compileBatch(
       [lowered.encoded],
       {
@@ -539,7 +539,7 @@ export class DuckCompiler {
     options: DuckComptimeOptions,
   ): Promise<DuckComptimeResult> {
     const lowered_artifact = lowered.artifact;
-    let comptime_artifact: FunctionalComptimeModuleArtifact = {
+    let comptime_artifact: ComptimeModuleArtifact = {
       name: lowered_artifact.name,
       definitions: lowered_artifact.definitions,
       typeDeclarations: lowered_artifact.typeDeclarations,
@@ -559,7 +559,7 @@ export class DuckCompiler {
       };
     }
     if (this.#comptime === undefined) {
-      this.#comptime = GpuFunctionalComptimeExecutor.create(this.#device);
+      this.#comptime = GpuComptimeExecutor.create(this.#device);
     }
     const comptime = await this.#comptime;
     return await comptime.executeExports(
@@ -751,10 +751,10 @@ function lower_gpufuck_source(
 }
 
 function successful_modules(
-  results: readonly FunctionalCompileResult[],
+  results: readonly CompileResult[],
   expected_module_count: number,
-): GpuFunctionalModule[] {
-  const modules: GpuFunctionalModule[] = [];
+): GpuModule[] {
+  const modules: GpuModule[] = [];
 
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
@@ -786,7 +786,7 @@ function successful_modules(
 }
 
 function compilation_error(
-  result: Extract<FunctionalCompileResult, { ok: false }>,
+  result: Extract<CompileResult, { ok: false }>,
   index: number,
 ): Error {
   const diagnostic = result.diagnostics[0];
@@ -803,17 +803,17 @@ function compilation_error(
   );
 }
 
-function destroy_modules(modules: readonly GpuFunctionalModule[]): void {
+function destroy_modules(modules: readonly GpuModule[]): void {
   for (const module of modules) {
     module.destroy();
   }
 }
 
 function merge_init(
-  automatic: FunctionalWasmInit,
-  supplied: FunctionalWasmInit | undefined,
-): FunctionalWasmInit {
-  const merged: Record<string, Record<string, FunctionalWasmInitBinding>> = {};
+  automatic: WasmInit,
+  supplied: WasmInit | undefined,
+): WasmInit {
+  const merged: Record<string, Record<string, WasmInitBinding>> = {};
   for (const [capability, fields] of Object.entries(automatic)) {
     merged[capability] = { ...fields };
   }
@@ -831,12 +831,12 @@ function merge_init(
 }
 
 function merge_async_init(
-  automatic: FunctionalWasmInit,
-  supplied: FunctionalWasmAsyncInit | undefined,
-): FunctionalWasmAsyncInit {
+  automatic: WasmInit,
+  supplied: WasmAsyncInit | undefined,
+): WasmAsyncInit {
   const merged: Record<
     string,
-    Record<string, FunctionalWasmAsyncInit[string][string]>
+    Record<string, WasmAsyncInit[string][string]>
   > = {};
   for (const [capability, fields] of Object.entries(automatic)) {
     merged[capability] = { ...fields };

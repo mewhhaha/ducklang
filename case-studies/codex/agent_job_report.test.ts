@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -19,7 +19,7 @@ Deno.test("Codex records agent-job results through a typed capability", async ()
     stop: boolean;
   }[] = [];
   const cancellations: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     AgentJobHost: {
       $resource: { kind: "resource", id: 1 },
       record: (argument) => {
@@ -81,10 +81,10 @@ Deno.test("Codex records agent-job results through a typed capability", async ()
 });
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -94,14 +94,14 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_value(value: FunctionalWasmHostValue): string {
+function text_value(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }
   return value.value;
 }
 
-function bool_value(value: FunctionalWasmHostValue): boolean {
+function bool_value(value: WasmHostValue): boolean {
   if (value.kind !== "integer") {
     throw new Error("expected Bool; received " + value.kind);
   }

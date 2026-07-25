@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -23,7 +23,7 @@ Deno.test("Codex keeps interactive prompting behind normalized source policy", a
     is_secret: boolean;
     auto_resolution_ms: bigint;
   }[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     RequestUserInputHost: {
       $resource: { kind: "resource", id: 1 },
       request: (argument) => {
@@ -117,17 +117,17 @@ Deno.test("Codex keeps interactive prompting behind normalized source policy", a
   }]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -138,8 +138,8 @@ function union(
 function answered_response(
   question_id: string,
   answer_text: string,
-): FunctionalWasmHostValue {
-  const answer_text_node: FunctionalWasmHostValue = {
+): WasmHostValue {
+  const answer_text_node: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:RequestUserInputAnswerTextNode",
     fields: [
@@ -147,7 +147,7 @@ function answered_response(
       union("RequestUserInputAnswerTexts", "Nil", unit_value),
     ],
   };
-  const answer: FunctionalWasmHostValue = {
+  const answer: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:RequestUserInputAnswer",
     fields: [
@@ -155,7 +155,7 @@ function answered_response(
       union("RequestUserInputAnswerTexts", "Cons", answer_text_node),
     ],
   };
-  const answer_node: FunctionalWasmHostValue = {
+  const answer_node: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:RequestUserInputAnswerNode",
     fields: [
@@ -163,7 +163,7 @@ function answered_response(
       union("RequestUserInputAnswers", "Nil", unit_value),
     ],
   };
-  const response: FunctionalWasmHostValue = {
+  const response: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:RequestUserInputResponse",
     fields: [union("RequestUserInputAnswers", "Cons", answer_node)],
@@ -171,7 +171,7 @@ function answered_response(
   return union("RequestUserInputHostResponse", "Answered", response);
 }
 
-function assert_single_option(value: FunctionalWasmHostValue): void {
+function assert_single_option(value: WasmHostValue): void {
   const options = union_payload(
     value,
     "RequestUserInputQuestionOptionsField",
@@ -212,18 +212,18 @@ function assert_single_option(value: FunctionalWasmHostValue): void {
 }
 
 function union_payload(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   type_name: string,
   case_name: string,
   operation: string,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   const expected_name = "duck::$DuckUnion:" + type_name + ":" + case_name;
   const fields = constructor_fields(value, expected_name, 1, operation);
   return fields[0];
 }
 
 function assert_nil_union(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   type_name: string,
   operation: string,
 ): void {
@@ -234,11 +234,11 @@ function assert_nil_union(
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   expected_name: string,
   expected_count: number,
   operation: string,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor") {
     throw new Error(
       operation + " must be a constructor; received " + value.kind,
@@ -259,7 +259,7 @@ function constructor_fields(
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -269,7 +269,7 @@ function text_argument(
 }
 
 function bool_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): boolean {
   if (value.kind !== "integer") {
@@ -284,7 +284,7 @@ function bool_argument(
 }
 
 function signed_integer_64_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): bigint {
   if (value.kind !== "signed-integer-64") {

@@ -1,8 +1,8 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
-  type FunctionalWasmInit,
+  type WasmAsyncInit,
+  type WasmHostValue,
+  type WasmInit,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler, type DuckProgram } from "../../src/compiler.ts";
 
@@ -61,7 +61,7 @@ Deno.test("Codex controls V2 agents through typed collaboration capabilities", a
       list_output_stage_url.href,
       { host_interface: list_output_stage_host_url.href },
     );
-    const init: FunctionalWasmAsyncInit = {
+    const init: WasmAsyncInit = {
       AgentCollaborationHost: {
         $resource: { kind: "resource", id: 1 },
         spawn: () => {
@@ -195,28 +195,28 @@ Deno.test("Codex controls V2 agents through typed collaboration capabilities", a
   ]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function integer_value(value: number): FunctionalWasmHostValue {
+function integer_value(value: number): WasmHostValue {
   return { kind: "integer", value };
 }
 
 function status(
   name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return union("AgentStatus", name, payload);
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -226,7 +226,7 @@ function union(
 
 function message_request(
   operation: string,
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
 ): { operation: string; target: string; message: string } {
   const fields = constructor_fields(
     value,
@@ -242,17 +242,17 @@ function message_request(
 }
 
 function status_entries(
-  entries: [string, FunctionalWasmHostValue][],
-): FunctionalWasmHostValue {
+  entries: [string, WasmHostValue][],
+): WasmHostValue {
   let result = union("AgentStatusEntries", "Nil", unit_value);
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const [agent_name, agent_status] = entries[index];
-    const entry: FunctionalWasmHostValue = {
+    const entry: WasmHostValue = {
       kind: "constructor",
       name: "duck::$DuckStruct:AgentStatusEntry",
       fields: [text_value(agent_name), agent_status],
     };
-    const node: FunctionalWasmHostValue = {
+    const node: WasmHostValue = {
       kind: "constructor",
       name: "duck::$DuckStruct:AgentStatusEntryNode",
       fields: [entry, result],
@@ -263,11 +263,11 @@ function status_entries(
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   expected_name: string,
   expected_count: number,
   operation: string,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor") {
     throw new Error(
       operation + " must be a constructor; received " + value.kind,
@@ -288,7 +288,7 @@ function constructor_fields(
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -298,7 +298,7 @@ function text_argument(
 }
 
 function option_text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   const fields = constructor_fields(
@@ -311,7 +311,7 @@ function option_text_argument(
 }
 
 function i64_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): bigint {
   if (value.kind !== "signed-integer-64") {
@@ -321,9 +321,9 @@ function i64_argument(
 }
 
 function stage_init(
-  argument: FunctionalWasmHostValue,
+  argument: WasmHostValue,
   resource_id: number,
-): FunctionalWasmInit {
+): WasmInit {
   return {
     StageInput: {
       $resource: { kind: "resource", id: resource_id },
@@ -333,9 +333,9 @@ function stage_init(
 }
 
 function stage_result(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   const fields = constructor_fields(
     value,
     "duck::$DuckStruct:duck_entry_result_type",
@@ -345,7 +345,7 @@ function stage_result(
   return fields[0];
 }
 
-function lifecycle_event(value: FunctionalWasmHostValue): string {
+function lifecycle_event(value: WasmHostValue): string {
   if (value.kind !== "constructor") {
     throw new Error("collaboration lifecycle event must be a constructor");
   }

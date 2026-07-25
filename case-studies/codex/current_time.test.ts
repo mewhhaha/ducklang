@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -16,7 +16,7 @@ const host_interface_url = new URL(
 
 Deno.test("Codex keeps clock mechanics behind source-owned tool policy", async () => {
   const sleep_durations: bigint[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     CurrentTimeHost: {
       $resource: { kind: "resource", id: 1 },
       current_time: () => signed_integer_64_value(1_781_717_655n),
@@ -57,12 +57,12 @@ Deno.test("Codex keeps clock mechanics behind source-owned tool policy", async (
   assert_equals(sleep_durations, [1_000n]);
 });
 
-function signed_integer_64_value(value: bigint): FunctionalWasmHostValue {
+function signed_integer_64_value(value: bigint): WasmHostValue {
   return { kind: "signed-integer-64", value };
 }
 
 function signed_integer_64_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): bigint {
   if (value.kind !== "signed-integer-64") {

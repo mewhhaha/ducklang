@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler, type DuckProgram } from "../../src/compiler.ts";
 
@@ -57,7 +57,7 @@ Deno.test("Codex spawns V2 agents through a typed collaboration capability", asy
     output_program = await compiler.prepare_file(output_stage_url.href, {
       host_interface: output_stage_host_url.href,
     });
-    const init: FunctionalWasmAsyncInit = {
+    const init: WasmAsyncInit = {
       AgentCollaborationHost: {
         $resource: { kind: "resource", id: 1 },
         spawn_override_facts: () => spawn_override_facts(),
@@ -207,7 +207,7 @@ Deno.test("Codex rejects an unavailable V2 model before spawning", async () => {
       override_stage_url.href,
       { host_interface: override_stage_host_url.href },
     );
-    const init: FunctionalWasmAsyncInit = {
+    const init: WasmAsyncInit = {
       AgentCollaborationHost: {
         $resource: { kind: "resource", id: 1 },
         spawn_override_facts: () => spawn_override_facts(),
@@ -266,17 +266,17 @@ Deno.test("Codex rejects an unavailable V2 model before spawning", async () => {
   assert_equals(spawn_calls, 0);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -286,8 +286,8 @@ function union(
 
 function structure(
   type_name: string,
-  fields: FunctionalWasmHostValue[],
-): FunctionalWasmHostValue {
+  fields: WasmHostValue[],
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckStruct:" + type_name,
@@ -295,7 +295,7 @@ function structure(
   };
 }
 
-function spawn_override_facts(): FunctionalWasmHostValue {
+function spawn_override_facts(): WasmHostValue {
   const efforts = spawn_override_efforts(["medium", "high"]);
   const model = structure("AgentSpawnOverrideModel", [
     text_value("gpt-5.6"),
@@ -324,7 +324,7 @@ function spawn_override_facts(): FunctionalWasmHostValue {
 
 function spawn_override_efforts(
   names: readonly string[],
-): FunctionalWasmHostValue {
+): WasmHostValue {
   let efforts = union("AgentSpawnOverrideEfforts", "Nil", unit_value);
   for (let index = names.length - 1; index >= 0; index -= 1) {
     efforts = union(
@@ -340,11 +340,11 @@ function spawn_override_efforts(
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   expected_name: string,
   expected_count: number,
   operation: string,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor") {
     throw new Error(
       operation + " must be a constructor; received " + value.kind,
@@ -365,7 +365,7 @@ function constructor_fields(
 }
 
 function text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   if (value.kind !== "text") {
@@ -375,7 +375,7 @@ function text_argument(
 }
 
 function option_text_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   operation: string,
 ): string {
   const fields = constructor_fields(
@@ -388,7 +388,7 @@ function option_text_argument(
 }
 
 function union_i64_argument(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   type_name: string,
   case_name: string,
   operation: string,
@@ -407,8 +407,8 @@ function union_i64_argument(
 }
 
 function stage_result(
-  value: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  value: WasmHostValue,
+): WasmHostValue {
   const fields = constructor_fields(
     value,
     "duck::$DuckStruct:duck_entry_result_type",

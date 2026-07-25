@@ -1,4 +1,4 @@
-import type { FunctionalWasmHostValue } from "../../../gpufuck/functional.ts";
+import type { WasmHostValue } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../compiler.ts";
 
 type CompileRequest = {
@@ -148,7 +148,7 @@ function join_path(directory: string, file: string): string {
   return directory + "/" + file;
 }
 
-function format_value(value: FunctionalWasmHostValue): string | undefined {
+function format_value(value: WasmHostValue): string | undefined {
   if (value.kind === "unit") {
     return undefined;
   }

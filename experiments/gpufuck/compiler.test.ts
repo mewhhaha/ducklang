@@ -1,8 +1,8 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
   beginFunctionalWasmArena,
-  FunctionalStorageClass,
-  type FunctionalWasmHostValue,
+  StorageClass,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { success_examples } from "../../examples/manifest.ts";
 import { parse_source } from "../../src/frontend/parser.ts";
@@ -3230,7 +3230,7 @@ Deno.test("Duck compiler executes structured Core, ownership, handlers, and loop
 
 Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
   const compiler = await DuckCompiler.create();
-  const written: FunctionalWasmHostValue[] = [];
+  const written: WasmHostValue[] = [];
 
   try {
     const execution = await compiler.run_file(
@@ -3243,7 +3243,7 @@ Deno.test("Duck compiler executes aggregate effect capabilities", async () => {
           },
           Stdout: {
             $resource: { kind: "resource", id: 2 },
-            write_line: (value: FunctionalWasmHostValue) => {
+            write_line: (value: WasmHostValue) => {
               written.push(value);
               return { kind: "unit" };
             },
@@ -3286,15 +3286,15 @@ return { .add = add, .sum_to = sum_to, .answer = 42 };
     assert_equals(
       storage_plan.values.some((value) =>
         value.valueKind === "closure" &&
-        value.storage === FunctionalStorageClass.ScalarLocal &&
-        value.escapeStorage === FunctionalStorageClass.InvocationArena
+        value.storage === StorageClass.ScalarLocal &&
+        value.escapeStorage === StorageClass.InvocationArena
       ),
       true,
     );
     assert_equals(
       storage_plan.values.some((value) =>
         value.valueKind === "closure" &&
-        value.storage === FunctionalStorageClass.InvocationArena
+        value.storage === StorageClass.InvocationArena
       ),
       true,
     );
@@ -3333,7 +3333,7 @@ return { .result = result + 1 };
       init: {
         Timer: {
           $resource: { kind: "resource", id: 1 },
-          wait: (argument: FunctionalWasmHostValue) =>
+          wait: (argument: WasmHostValue) =>
             Promise.resolve(argument),
         },
       },
@@ -3349,7 +3349,7 @@ return { .result = result + 1 };
         init: {
           Timer: {
             $resource: { kind: "resource", id: 1 },
-            wait: (argument: FunctionalWasmHostValue) => argument,
+            wait: (argument: WasmHostValue) => argument,
           },
         },
       });

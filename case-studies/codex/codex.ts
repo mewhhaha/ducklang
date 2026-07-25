@@ -1,6 +1,6 @@
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -63,7 +63,7 @@ export async function run_turn(
 
 function functional_capabilities(
   capabilities: CodexCapabilities,
-): FunctionalWasmAsyncInit {
+): WasmAsyncInit {
   return {
     Input: {
       $resource: { kind: "resource", id: 1 },
@@ -148,13 +148,13 @@ function functional_capabilities(
   };
 }
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(value: string): FunctionalWasmHostValue {
+function text_value(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function start_result(result: CodexStartResult): FunctionalWasmHostValue {
+function start_result(result: CodexStartResult): WasmHostValue {
   if (result.tag === "Started") {
     return {
       kind: "constructor",
@@ -171,7 +171,7 @@ function start_result(result: CodexStartResult): FunctionalWasmHostValue {
 
 function approval_decision(
   decision: CodexApprovalDecision,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   if (decision.tag === "Approved") {
     return {
       kind: "constructor",
@@ -186,7 +186,7 @@ function approval_decision(
   };
 }
 
-function expect_text(value: FunctionalWasmHostValue, name: string): string {
+function expect_text(value: WasmHostValue, name: string): string {
   if (value.kind !== "text") {
     throw new Error(name + " must be Text; received " + value.kind);
   }
@@ -194,11 +194,11 @@ function expect_text(value: FunctionalWasmHostValue, name: string): string {
 }
 
 function expect_text_arguments(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   expected_count: number,
   name: string,
 ): string[] {
-  const values: FunctionalWasmHostValue[] = [];
+  const values: WasmHostValue[] = [];
   let current = value;
   while (values.length < expected_count - 1) {
     if (current.kind !== "tuple") {
@@ -217,7 +217,7 @@ function expect_text_arguments(
   });
 }
 
-function decode_tool_count(value: FunctionalWasmHostValue): number {
+function decode_tool_count(value: WasmHostValue): number {
   if (
     value.kind !== "constructor" ||
     value.name !== "duck::$DuckStruct:duck_entry_result_type" ||

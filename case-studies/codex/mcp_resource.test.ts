@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler, type DuckProgram } from "../../src/compiler.ts";
 
@@ -48,7 +48,7 @@ Deno.test("Codex accesses MCP resources through a typed transport", async () => 
       read_output_stage_url.href,
       { host_interface: read_output_stage_host_url.href },
     );
-    const init: FunctionalWasmAsyncInit = {
+    const init: WasmAsyncInit = {
       McpResourceHost: {
         $resource: { kind: "resource", id: 1 },
         event: (argument) => {
@@ -181,8 +181,8 @@ Deno.test("Codex accesses MCP resources through a typed transport", async () => 
 });
 
 function stage_result(
-  value: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  value: WasmHostValue,
+): WasmHostValue {
   if (value.kind !== "constructor") {
     throw new Error(
       "MCP output stage returned " + value.kind + " instead of a struct",
@@ -198,10 +198,10 @@ function stage_result(
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -211,14 +211,14 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_value(value: FunctionalWasmHostValue): string {
+function text_value(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }
   return value.value;
 }
 
-function boolean_value(value: FunctionalWasmHostValue): boolean {
+function boolean_value(value: WasmHostValue): boolean {
   if (value.kind !== "integer") {
     throw new Error("expected Bool; received " + value.kind);
   }
@@ -231,11 +231,11 @@ function boolean_value(value: FunctionalWasmHostValue): boolean {
   throw new Error("expected Bool representation; received " + value.value);
 }
 
-function text(value: string): FunctionalWasmHostValue {
+function text(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function listed_response(): FunctionalWasmHostValue {
+function listed_response(): WasmHostValue {
   const values = union(
     "McpResourceTexts",
     "Cons",
@@ -248,7 +248,7 @@ function listed_response(): FunctionalWasmHostValue {
       ],
     },
   );
-  const page: FunctionalWasmHostValue = {
+  const page: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:McpResourcePage",
     fields: [
@@ -275,8 +275,8 @@ function listed_response(): FunctionalWasmHostValue {
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,

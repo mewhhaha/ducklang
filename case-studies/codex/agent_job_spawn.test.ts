@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -25,7 +25,7 @@ Deno.test("Codex runs a blocking CSV agent job through typed capabilities", asyn
   }[] = [];
   let spawn_attempt = 0;
   let wait_count = 0;
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     AgentJobSpawnHost: {
       $resource: { kind: "resource", id: 1 },
       create: (argument) => {
@@ -145,21 +145,21 @@ Deno.test("Codex runs a blocking CSV agent job through typed capabilities", asyn
   }]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text(value: string): FunctionalWasmHostValue {
+function text(value: string): WasmHostValue {
   return { kind: "text", value };
 }
 
-function integer(value: number): FunctionalWasmHostValue {
+function integer(value: number): WasmHostValue {
   return { kind: "integer", value };
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -171,8 +171,8 @@ function worker_completed(
   thread_id: string,
   reported: boolean,
   cancel_requested: boolean,
-): FunctionalWasmHostValue {
-  const completion: FunctionalWasmHostValue = {
+): WasmHostValue {
+  const completion: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:AgentJobWorkerCompletion",
     fields: [
@@ -184,7 +184,7 @@ function worker_completed(
   return union("AgentJobWaitOutcome", "WorkerCompleted", completion);
 }
 
-function finalize_facts(): FunctionalWasmHostValue {
+function finalize_facts(): WasmHostValue {
   const second = failure_summary(
     "row-2",
     union("AgentJobTextOption", "None", unit_value),
@@ -215,9 +215,9 @@ function finalize_facts(): FunctionalWasmHostValue {
 
 function failure_summary(
   item_id: string,
-  source_id: FunctionalWasmHostValue,
+  source_id: WasmHostValue,
   last_error: string,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckStruct:AgentJobFailureSummary",
@@ -226,10 +226,10 @@ function failure_summary(
 }
 
 function failure_node(
-  failure: FunctionalWasmHostValue,
-  tail: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
-  const node: FunctionalWasmHostValue = {
+  failure: WasmHostValue,
+  tail: WasmHostValue,
+): WasmHostValue {
+  const node: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:AgentJobFailureSummaryNode",
     fields: [failure, tail],
@@ -237,7 +237,7 @@ function failure_node(
   return union("AgentJobFailureSummaries", "Cons", node);
 }
 
-function active_worker_count(value: FunctionalWasmHostValue): number {
+function active_worker_count(value: WasmHostValue): number {
   let count = 0;
   let current = value;
   while (
@@ -261,10 +261,10 @@ function active_worker_count(value: FunctionalWasmHostValue): number {
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -274,21 +274,21 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_value(value: FunctionalWasmHostValue): string {
+function text_value(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }
   return value.value;
 }
 
-function integer_value(value: FunctionalWasmHostValue): number {
+function integer_value(value: WasmHostValue): number {
   if (value.kind !== "integer") {
     throw new Error("expected I32; received " + value.kind);
   }
   return value.value;
 }
 
-function boolean_value(value: FunctionalWasmHostValue): boolean {
+function boolean_value(value: WasmHostValue): boolean {
   const representation = integer_value(value);
   if (representation === 0) {
     return false;

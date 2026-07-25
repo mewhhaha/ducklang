@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler } from "../../src/compiler.ts";
 
@@ -16,7 +16,7 @@ const host_interface_url = new URL(
 
 Deno.test("Codex executes code-mode cells in source-owned lifecycle order", async () => {
   const events: string[] = [];
-  const init: FunctionalWasmAsyncInit = {
+  const init: WasmAsyncInit = {
     CodeModeExecuteHost: {
       $resource: { kind: "resource", id: 1 },
       start_timer: () => {
@@ -142,17 +142,17 @@ Deno.test("Codex executes code-mode cells in source-owned lifecycle order", asyn
   ]);
 });
 
-const unit_value: FunctionalWasmHostValue = { kind: "unit" };
+const unit_value: WasmHostValue = { kind: "unit" };
 
-function text_value(text: string): FunctionalWasmHostValue {
+function text_value(text: string): WasmHostValue {
   return { kind: "text", value: text };
 }
 
 function union(
   type_name: string,
   case_name: string,
-  payload: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  payload: WasmHostValue,
+): WasmHostValue {
   return {
     kind: "constructor",
     name: "duck::$DuckUnion:" + type_name + ":" + case_name,
@@ -163,7 +163,7 @@ function union(
 function runtime_result(
   cell_id: string,
   text: string,
-): FunctionalWasmHostValue {
+): WasmHostValue {
   const content = union(
     "CodeModeRuntimeContentItems",
     "RuntimeItemsCons",
@@ -180,7 +180,7 @@ function runtime_result(
       ],
     },
   );
-  const result: FunctionalWasmHostValue = {
+  const result: WasmHostValue = {
     kind: "constructor",
     name: "duck::$DuckStruct:CodeModeRuntimeResult",
     fields: [
@@ -193,10 +193,10 @@ function runtime_result(
 }
 
 function constructor_fields(
-  value: FunctionalWasmHostValue,
+  value: WasmHostValue,
   name: string,
   arity: number,
-): readonly FunctionalWasmHostValue[] {
+): readonly WasmHostValue[] {
   if (value.kind !== "constructor" || value.name !== name) {
     throw new Error("expected " + name + "; received " + value.kind);
   }
@@ -206,14 +206,14 @@ function constructor_fields(
   return value.fields;
 }
 
-function text_argument(value: FunctionalWasmHostValue): string {
+function text_argument(value: WasmHostValue): string {
   if (value.kind !== "text") {
     throw new Error("expected Text; received " + value.kind);
   }
   return value.value;
 }
 
-function trace_id(value: FunctionalWasmHostValue): string {
+function trace_id(value: WasmHostValue): string {
   const trace = constructor_fields(
     value,
     "duck::$DuckStruct:CodeModeExecuteTrace",
@@ -223,8 +223,8 @@ function trace_id(value: FunctionalWasmHostValue): string {
 }
 
 function tuple_values(
-  value: FunctionalWasmHostValue,
-): readonly [FunctionalWasmHostValue, FunctionalWasmHostValue] {
+  value: WasmHostValue,
+): readonly [WasmHostValue, WasmHostValue] {
   if (value.kind !== "tuple") {
     throw new Error("expected tuple; received " + value.kind);
   }

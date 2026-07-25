@@ -1,7 +1,7 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  type FunctionalWasmAsyncInit,
-  type FunctionalWasmHostValue,
+  type WasmAsyncInit,
+  type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
 import { DuckCompiler, type DuckProgram } from "../../src/compiler.ts";
 
@@ -54,7 +54,7 @@ Deno.test("Codex composes bounded JSON and update-plan stages under Duck policy"
     );
     prepared_programs.push(composition_program);
 
-    const init: FunctionalWasmAsyncInit = {
+    const init: WasmAsyncInit = {
       CodexStages: {
         $resource: { kind: "resource", id: 1 },
         parse_json: async (argument) => {
@@ -110,8 +110,8 @@ Deno.test("Codex composes bounded JSON and update-plan stages under Duck policy"
 
 function read_stage_result(
   stage: string,
-  value: FunctionalWasmHostValue,
-): FunctionalWasmHostValue {
+  value: WasmHostValue,
+): WasmHostValue {
   if (value.kind !== "constructor") {
     throw new Error(stage + " returned " + value.kind + " instead of a struct");
   }
