@@ -2407,7 +2407,14 @@ function validate_call_arguments(
       continue;
     }
 
-    if (param?.is_const === true) {
+    if (param?.is_const === true && arg.tag !== "lam") {
+      // A lambda written at the call site is already statically known, which
+      // is all a const parameter needs: specialization inlines the body and a
+      // value it captures stays an ordinary runtime operand there. Requiring
+      // the captures to be const too would reject
+      // `value |> (v => f [v, runtime_value])`, which compiles and
+      // specializes correctly. `scope_const_expr_known` already accepts a
+      // `lam` for the same reason.
       try {
         validate_const_expr(
           arg,
