@@ -4,42 +4,41 @@
 // yet. Nothing parses it: not the frontend, not tree-sitter, not the formatter.
 // It is here to be read, not run, and is excluded from every test glob.
 //
-// The rules it is written to:
+// THE BLOCK IS AN EXPRESSION. `do … end` is the only block form, it appears
+// everywhere a block appears — function body, loop body, if arm, match arm —
+// and it is an expression that produces a value. A block's value is an
+// explicit `return`; there is no trailing expression that silently becomes the
+// value, so a reader never has to decide whether a block's last line is a
+// value or a side effect.
 //
-//   do … end        every block, including function bodies
-//   if … then … else … end
-//   match … with | … end
-//   loop do … end        for x in xs do … end
-//   let                  introduces a binding
-//   set                  introduces an assignment
-//   return               produces a block's value — required, see below
-//   <-                   effect bind, unchanged
+//   let piece_tree_leaf = (bytes: Bytes) => do
+//     let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes })
+//     return leaf
+//   end
 //
-// RETURN. A block's value is always an explicit `return`. There is no trailing
-// expression that silently becomes the value, so a reader never has to decide
-// whether the last line of a block is a value or a side effect — the keyword
-// says which. `return` yields the block that encloses it, so an `if` used as a
-// value has a `return` in each arm and the arm's value becomes the `if`'s:
+// IF NEEDS NO TERMINATOR. Because `do … end` closes itself, `if` does not need
+// an `end` of its own — the arm already says where it stops. So the chain is
+// `if … then … else if … then … else …`, and the arms are expressions:
 //
-//   let anchor = if let `Extend () = editor.mode then
-//       return editor.selection.anchor
-//     else
-//       return head
-//     end
+//   let anchor = if let `Extend () = editor.mode then editor.selection.anchor
+//     else head
 //
-// The one exemption is a bare expression after `=>`, where there is no block to
-// delimit and nothing to disambiguate:
+// A short arm is a bare expression and carries no `return`, because there is
+// no block to delimit. A long arm is a `do … end` and must `return`. The two
+// forms compose in one chain, and `end else if … then do` is the hinge:
 //
-//   let byte_at = (t: PieceTable, w: I32) => piece_tree_byte_at(t.root, w)
+//   if a > b then do … return x end else if b > a then do … return y end
+//   else do … return z end
 //
-// So `return` appears exactly where a block does, and nowhere else.
+// `match` keeps its `end`, because a `|`-separated arm list has nothing else
+// to close it. Everything else is delimited by the block it opens.
 //
-// OPEN QUESTION. editor.duck already spells the refutable-let alternative as
-// `let `Branch b = left else { return …; }`, and there the `return` exits the
-// *function*, not the else-block — if it only produced the else-block's value
-// that value would be discarded. That is a second meaning for the keyword and
-// this sketch does not resolve it; the `else` arms below are written the way
-// the original spells them.
+// NO `rec`. In the real language `rec` decides only whether a binding's name
+// is in scope inside its own body — it is ML's `let rec`, and it guards the
+// case where you want `f` inside `f`'s body to mean some *outer* `f`. Nobody
+// writes that. It says nothing about tail recursion and there is no tail-call
+// optimisation in the pipeline, so it does not buy the guarantee it looks like
+// it buys. Here bindings simply see themselves.
 //
 // What this is meant to demonstrate: block structure that differs by *shape*.
 // In editor.duck every construct is `{ }`, so `if`, `match`, `loop`, `for` and
@@ -94,7 +93,7 @@ const escape_character = cast(27, Char)
 const utf8_continuation_lower_bound = 0x80
 const utf8_continuation_upper_bound = 0xc0
 
-// A single-expression function has no block, so it has no `return`.
+// No block, so no `return`.
 let byte_at = (table: PieceTable, wanted: I32) =>
   piece_tree_byte_at(table.root, wanted)
 
@@ -102,9 +101,8 @@ let is_utf8_continuation = (byte: I32) =>
   byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
 
 // `match … with … end` reads as one shape. The arms keep their leading pipe,
-// which is the strongest vertical edge the language already has. An arm whose
-// body is a bare expression needs no `return`, so a dispatch table stays a
-// table.
+// which is the strongest vertical edge the language already has, and a
+// bare-expression arm stays one line, so a dispatch table stays a table.
 let piece_tree_length = (tree: PieceTree) =>
   match tree with
   | `Empty () => 0
@@ -119,11 +117,10 @@ let piece_tree_height = (tree: PieceTree) =>
   | `Branch branch => branch.height
   end
 
-// The body is a single `if`, so it needs no enclosing `do … end`.
+// A short arm and a long arm in one chain: the first is an expression, the
+// second is a block that returns.
 let piece_tree_leaf = (bytes: Bytes) =>
-  if bytes.length() == 0 then
-    return empty_piece_tree()
-  else
+  if bytes.length() == 0 then empty_piece_tree() else do
     let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes })
     return leaf
   end
@@ -133,35 +130,33 @@ let piece_tree_leaf = (bytes: Bytes) =>
 //
 // Note where the recursion is: `join_piece_trees` calls itself in *argument*
 // position, inside `piece_tree_branch(…)`, not as the outermost call. Both
-// rebalancing arms recurse; only the final `else` is a base case. That is easy
-// to miss, and is why the function needs `rec` despite not looking recursive.
-let rec join_piece_trees = (left: PieceTree, right: PieceTree) => do
+// rebalancing arms recurse; only the final `else` is a base case. That also
+// means it is not a tail call — there is still work pending when it returns —
+// so no amount of compiler support would flatten it into a loop. Depth is
+// bounded at O(log n) because each step descends one level of a balanced tree.
+let join_piece_trees = (left: PieceTree, right: PieceTree) => do
   let left_height = piece_tree_height(left)
   let right_height = piece_tree_height(right)
 
-  if left_height > right_height + 1 then
+  if left_height > right_height + 1 then do
     let `Branch branch = left else return piece_tree_branch(left, right)
     return piece_tree_branch(branch.left, join_piece_trees(branch.right, right))
 
-  else if right_height > left_height + 1 then
+  end else if right_height > left_height + 1 then do
     let `Branch branch = right else return piece_tree_branch(left, right)
     return piece_tree_branch(join_piece_trees(left, branch.left), branch.right)
 
-  else
+  end else do
     return piece_tree_branch(left, right)
   end
 end
 
-let rec split_piece_tree = (tree: PieceTree, position: I32) => do
+let split_piece_tree = (tree: PieceTree, position: I32) => do
   let length = piece_tree_length(tree)
 
-  if position <= 0 then
-    return (empty_piece_tree(), tree)
-
-  else if position >= length then
-    return (tree, empty_piece_tree())
-
-  else
+  if position <= 0 then (empty_piece_tree(), tree)
+  else if position >= length then (tree, empty_piece_tree())
+  else do
     return match tree with
     | `Empty () => (empty_piece_tree(), empty_piece_tree())
     | `Leaf leaf => do
@@ -173,10 +168,10 @@ let rec split_piece_tree = (tree: PieceTree, position: I32) => do
     | `Branch branch => do
         let left_length = piece_tree_length(branch.left)
 
-        if position < left_length then
+        if position < left_length then do
           let (prefix, suffix) = split_piece_tree(branch.left, position)
           return (prefix, join_piece_trees(suffix, branch.right))
-        else
+        end else do
           let (prefix, suffix) =
             split_piece_tree(branch.right, position - left_length)
           return (join_piece_trees(branch.left, prefix), suffix)
@@ -187,7 +182,7 @@ let rec split_piece_tree = (tree: PieceTree, position: I32) => do
 end
 
 // `set` marks mutation. Every statement now begins with a keyword, so a
-// statement boundary is visible without a terminator — and `}` followed by
+// statement boundary is visible without a terminator — and `end` followed by
 // `[` on the next line stops being ambiguous, because an argument never
 // starts a line.
 //
@@ -222,23 +217,16 @@ let materialize = (table: PieceTable) => do
   return output
 end
 
+// Both arms are expressions, so the whole function is one line of control flow
+// with no `return` and no terminator.
 let selection_start = (selection: Selection) =>
-  if selection.anchor < selection.head then
-    return selection.anchor
-  else
-    return selection.head
-  end
+  if selection.anchor < selection.head then selection.anchor
+  else selection.head
 
-// An `if` used as a value: each arm returns, and the arm's value becomes the
-// value of the `if`, which becomes `anchor`.
 let move_head = (editor: Editor, position: I32) => do
   let head = clamp_character(&editor.document, position)
-
-  let anchor = if let `Extend () = editor.mode then
-      return editor.selection.anchor
-    else
-      return head
-    end
+  let anchor = if let `Extend () = editor.mode then editor.selection.anchor
+    else head
 
   return editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
 end
@@ -248,12 +236,7 @@ let apply_normal_character = (editor: Editor, character: Char) =>
   | 'h' => continue_editing(move_left(editor))
   | 'l' => continue_editing(move_right(editor))
   | 'v' => do
-      let mode = if let `Extend () = editor.mode then
-          return `Normal ()
-        else
-          return `Extend ()
-        end
-
+      let mode = if let `Extend () = editor.mode then `Normal () else `Extend ()
       return continue_editing(editor <& { .mode = mode })
     end
   | 'd' => continue_editing(delete_selection(editor))
@@ -324,12 +307,8 @@ loop do
     | `Save () => do
         let contents = materialize(&editor.document)
         save_result <- Terminal.save(&contents)
-
-        let status = if let `Ok () = save_result then
-            return `Ready ()
-          else
-            return `SaveFailed ()
-          end
+        let status = if let `Ok () = save_result then `Ready ()
+          else `SaveFailed ()
 
         set editor = editor <& { .status = status }
       end
@@ -337,7 +316,7 @@ loop do
     end
   end
 
-  if quit_requested then break end
+  if quit_requested then break
 end
 
 [.code = 0]
