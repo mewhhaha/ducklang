@@ -204,22 +204,36 @@ implementations exist, a recorded reason for each.
 left it out of the CI matrix. Three distinct classes, all **verified**.
 
 - [ ] **`Compile-time shape cannot be emitted as a Core result`**
-      (`src/core/from_source/expr.ts:418`, reached from
+      (`src/core/from_source/expr.ts:418`, from
       `src/core/from_source/stmt.ts:303`). Fails `exec.test.ts` (2) and
-      `hook.test.ts`. Partially diagnosed: `hook_adapter_fixture.duck` does not
-      analyze clean — `Source.analyze_file` reports five diagnostics before any
-      lowering happens, four
-      `DUCK2307 Call requires a tuple argument written
-      f([a, b])` and one
-      `DUCK2101 Const parameter transform requires
-      compile-time argument: session_id`.
-      The reported spans run past the end of the fixture, so they belong to
-      imported modules surfaced under the fixture's URI. So the real defect may
-      be two defects: source that is genuinely invalid, and a compile path that
-      lowers it anyway and reports an internal error instead of the diagnostics.
-      Establish which before fixing. Note `DUCK2307` is the same class as the
-      `iterator_windows` bug fixed in `09da064`, so a tuple/pack call-shape
-      mistake is recurring.
+      `hook.test.ts`. Diagnosed to a language-level tension, not yet fixed.
+
+      `hook_adapter_fixture.duck` reported five diagnostics before lowering.
+      Four were a real prelude bug — `generate_bytes` called pack-style in
+      `prelude_json` — fixed in `69d3452`. That did **not** change the codex
+      tally: the same eight tests fail before and after.
+
+      The fifth is the cause: `DUCK2101 Const parameter transform requires
+      compile-time argument: session_id`. `pipe` is declared in
+      `prelude_functional.duck:280` as `(value, const transform) => transform
+      value` and bound to `|>` at `:7`, so the right-hand side of every pipe
+      must be a compile-time value. `hook_input.duck:41` writes
+      `|> json_string_field("session_id", session_id)`, where `session_id` is
+      destructured from a runtime tuple — so the stage captures a runtime value
+      and the const check rejects it.
+
+      The `const` is load-bearing: removing it trades the one `DUCK2101` for
+      three `DUCK2310` unification failures, because the specialization it
+      enables is what makes the pipeline typecheck. So neither "drop the const"
+      nor "rewrite the call site" is obviously right, and a pipe operator that
+      cannot take a stage capturing a runtime value is a real restriction on
+      the language rather than a bug in this fixture. Decide the semantics
+      first.
+
+      Separately, the compiler lowers source that has diagnostics and fails
+      with an internal error instead of surfacing them. Worth fixing on its own
+      — it is what made this take four hours to locate.
+
 - [ ] **`Host callable cannot expose borrowed or frozen values`**
       (`src/abi.ts:481`, via `src/backend/core_lowering.ts:130`). Fails
       `request_permissions.test.ts` and `update_plan_stage_composition.test.ts`.
