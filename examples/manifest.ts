@@ -482,6 +482,10 @@ export const success_examples: SuccessExample[] = [
     path: "examples/handlers/07_effectful_loop_continue.duck",
     runs: run(42),
   },
+  {
+    path: "examples/handlers/06_effects_in_cursor_loop.duck",
+    runs: run(42),
+  },
 
   {
     path: "examples/showcases/01_numeric_toolkit.duck",

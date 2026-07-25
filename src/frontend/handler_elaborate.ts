@@ -113,6 +113,7 @@ type Elaboration = {
   next_factory: number;
   next_loop: number;
   effect_loops: WeakSet<object>;
+  loop_exits: WeakMap<object, { target: number | undefined }>;
 };
 
 export function elaborate_front_handlers(
@@ -349,6 +350,7 @@ function create_elaboration(
     next_factory: 0,
     next_loop: 0,
     effect_loops: new WeakSet(),
+    loop_exits: new WeakMap(),
   };
 }
 
@@ -1263,6 +1265,11 @@ function compile_effectful_loop(
     args: parameters.map((param) => ({ tag: "var", name: param.name })),
   };
   const after = cont(unit_value(), clone_compile_ctx(ctx));
+  // `after.expr` is already fully compiled, and it is what a `break` evaluates
+  // to. Record it so the `return` statement that `rewrite_effect_loop_control`
+  // emits leaves the loop instead of being threaded through the continuation
+  // that follows the loop body, which would re-enter the loop after breaking.
+  elaboration.loop_exits.set(after.expr, { target: after.target });
   const body = rewrite_effect_loop_control(
     expr.body,
     after.expr,
@@ -1910,6 +1917,12 @@ function compile_statement_at(
   }
 
   if (stmt.tag === "return") {
+    const exit = elaboration.loop_exits.get(stmt.value);
+
+    if (exit !== undefined) {
+      return { expr: stmt.value, target: exit.target, ctx };
+    }
+
     return compile_expr(stmt.value, ctx, cont, elaboration);
   }
 
@@ -3659,10 +3672,231 @@ function statement_has_direct_duck_effects(
     return effect.implementation === "duck";
   }
 
-  if (stmt.tag === "if_stmt" || stmt.tag === "if_let_stmt") {
+  if (stmt.tag === "bind") {
+    if (stmt.value.tag === "lam" || stmt.value.tag === "rec") {
+      return false;
+    }
+
+    return expression_has_direct_duck_effects(stmt.value, elaboration);
+  }
+
+  if (
+    stmt.tag === "bind_pattern" || stmt.tag === "resume_dup" ||
+    stmt.tag === "assign" || stmt.tag === "return"
+  ) {
+    return expression_has_direct_duck_effects(stmt.value, elaboration);
+  }
+
+  if (stmt.tag === "index_assign") {
+    return expression_has_direct_duck_effects(stmt.index, elaboration) ||
+      expression_has_direct_duck_effects(stmt.value, elaboration);
+  }
+
+  if (stmt.tag === "type_check") {
+    return expression_has_direct_duck_effects(stmt.target, elaboration);
+  }
+
+  if (stmt.tag === "break") {
+    if (stmt.value === undefined) {
+      return false;
+    }
+
+    return expression_has_direct_duck_effects(stmt.value, elaboration);
+  }
+
+  if (stmt.tag === "expr") {
+    return expression_has_direct_duck_effects(stmt.expr, elaboration);
+  }
+
+  if (stmt.tag === "if_stmt") {
+    if (expression_has_direct_duck_effects(stmt.cond, elaboration)) {
+      return true;
+    }
+
     return stmt.body.some((item) => {
       return statement_has_direct_duck_effects(item, elaboration);
     });
+  }
+
+  if (stmt.tag === "if_let_stmt") {
+    if (expression_has_direct_duck_effects(stmt.target, elaboration)) {
+      return true;
+    }
+
+    return stmt.body.some((item) => {
+      return statement_has_direct_duck_effects(item, elaboration);
+    });
+  }
+
+  if (stmt.tag === "for_range") {
+    if (
+      expression_has_direct_duck_effects(stmt.start, elaboration) ||
+      expression_has_direct_duck_effects(stmt.end, elaboration) ||
+      expression_has_direct_duck_effects(stmt.step, elaboration)
+    ) {
+      return true;
+    }
+
+    return stmt.body.some((item) => {
+      return statement_has_direct_duck_effects(item, elaboration);
+    });
+  }
+
+  if (stmt.tag === "for_collection") {
+    if (expression_has_direct_duck_effects(stmt.collection, elaboration)) {
+      return true;
+    }
+
+    return stmt.body.some((item) => {
+      return statement_has_direct_duck_effects(item, elaboration);
+    });
+  }
+
+  return false;
+}
+
+function expression_has_direct_duck_effects(
+  expr: FrontExpr,
+  elaboration: Elaboration,
+): boolean {
+  if (expr.tag === "lam" || expr.tag === "rec") {
+    return false;
+  }
+
+  if (expr.tag === "block") {
+    return expr.statements.some((stmt) => {
+      return statement_has_direct_duck_effects(stmt, elaboration);
+    });
+  }
+
+  if (expr.tag === "loop") {
+    return expr.body.some((stmt) => {
+      return statement_has_direct_duck_effects(stmt, elaboration);
+    });
+  }
+
+  if (expr.tag === "if") {
+    return expression_has_direct_duck_effects(expr.cond, elaboration) ||
+      expression_has_direct_duck_effects(expr.then_branch, elaboration) ||
+      expression_has_direct_duck_effects(expr.else_branch, elaboration);
+  }
+
+  if (expr.tag === "if_let") {
+    return expression_has_direct_duck_effects(expr.target, elaboration) ||
+      expression_has_direct_duck_effects(expr.then_branch, elaboration) ||
+      expression_has_direct_duck_effects(expr.else_branch, elaboration);
+  }
+
+  if (expr.tag === "match") {
+    if (expression_has_direct_duck_effects(expr.target, elaboration)) {
+      return true;
+    }
+
+    return expr.arms.some((arm) => {
+      if (
+        arm.guard !== undefined &&
+        expression_has_direct_duck_effects(arm.guard, elaboration)
+      ) {
+        return true;
+      }
+
+      return expression_has_direct_duck_effects(arm.body, elaboration);
+    });
+  }
+
+  if (expr.tag === "app") {
+    if (expression_has_direct_duck_effects(expr.func, elaboration)) {
+      return true;
+    }
+
+    return expr.args.some((arg) => {
+      return expression_has_direct_duck_effects(arg, elaboration);
+    });
+  }
+
+  if (expr.tag === "prim") {
+    return expression_has_direct_duck_effects(expr.left, elaboration) ||
+      expression_has_direct_duck_effects(expr.right, elaboration);
+  }
+
+  if (expr.tag === "comptime" || expr.tag === "captured") {
+    return expression_has_direct_duck_effects(expr.expr, elaboration);
+  }
+
+  if (expr.tag === "borrow" || expr.tag === "freeze") {
+    return expression_has_direct_duck_effects(expr.value, elaboration);
+  }
+
+  if (expr.tag === "scratch") {
+    return expression_has_direct_duck_effects(expr.body, elaboration);
+  }
+
+  if (expr.tag === "with" || expr.tag === "struct_update") {
+    if (expression_has_direct_duck_effects(expr.base, elaboration)) {
+      return true;
+    }
+
+    return expr.fields.some((field) => {
+      return expression_has_direct_duck_effects(field.value, elaboration);
+    });
+  }
+
+  if (expr.tag === "struct_value") {
+    if (expression_has_direct_duck_effects(expr.type_expr, elaboration)) {
+      return true;
+    }
+
+    return expr.fields.some((field) => {
+      return expression_has_direct_duck_effects(field.value, elaboration);
+    });
+  }
+
+  if (expr.tag === "product" || expr.tag === "shape") {
+    return expr.entries.some((entry) => {
+      return expression_has_direct_duck_effects(entry.value, elaboration);
+    });
+  }
+
+  if (expr.tag === "array") {
+    if (
+      expr.rest !== undefined &&
+      expression_has_direct_duck_effects(expr.rest, elaboration)
+    ) {
+      return true;
+    }
+
+    return expr.items.some((item) => {
+      return expression_has_direct_duck_effects(item, elaboration);
+    });
+  }
+
+  if (expr.tag === "array_repeat") {
+    return expression_has_direct_duck_effects(expr.value, elaboration) ||
+      expression_has_direct_duck_effects(expr.length, elaboration);
+  }
+
+  if (expr.tag === "field") {
+    return expression_has_direct_duck_effects(expr.object, elaboration);
+  }
+
+  if (expr.tag === "index") {
+    return expression_has_direct_duck_effects(expr.object, elaboration) ||
+      expression_has_direct_duck_effects(expr.index, elaboration);
+  }
+
+  if (expr.tag === "union_case") {
+    if (
+      expr.value !== undefined &&
+      expression_has_direct_duck_effects(expr.value, elaboration)
+    ) {
+      return true;
+    }
+
+    if (expr.type_expr === undefined) {
+      return false;
+    }
+
+    return expression_has_direct_duck_effects(expr.type_expr, elaboration);
   }
 
   return false;

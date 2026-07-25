@@ -62,6 +62,16 @@ const unit_type: TypeSchema = { kind: "unit" };
 const integer_type: TypeSchema = { kind: "integer" };
 const empty_referenced_names: ReadonlySet<string> = new Set();
 
+// The recursive functions a `loop` lowers to. `loop_elaborate.ts` emits the
+// pure form and `handler_elaborate.ts` emits the CPS form; both carry the
+// mutated locals as parameters that shadow the enclosing bindings of the same
+// name, so the enclosing environment already holds their types.
+const duck_loop_function_prefixes = ["__duck_loop_", "__duck_effect_loop_"];
+
+function is_duck_loop_function(name: string): boolean {
+  return duck_loop_function_prefixes.some((prefix) => name.startsWith(prefix));
+}
+
 export type LoweredDuckGpufuckModule = {
   abi: AbiManifest;
   artifact: ModuleArtifact;
@@ -1516,7 +1526,7 @@ class DuckCoreLowering {
           );
           if (
             known_parameter_types === undefined &&
-            statement.name.startsWith("__duck_loop_")
+            is_duck_loop_function(statement.name)
           ) {
             known_parameter_types = statement.value.params.map((param) =>
               environment.get(param.name)
@@ -2695,7 +2705,7 @@ class DuckCoreLowering {
           );
           if (
             known_parameter_types === undefined &&
-            statement.name.startsWith("__duck_loop_")
+            is_duck_loop_function(statement.name)
           ) {
             known_parameter_types = recursive_value.params.map((param) =>
               body_environment.get(param.name)
@@ -5267,6 +5277,51 @@ class DuckCoreLowering {
     };
   }
 
+  /**
+   * Whether `expression` ends in a call to the recursive binding currently
+   * being lowered. Such a tail cannot carry a type yet, so a branch that ends
+   * this way never decides the surrounding expression's type.
+   */
+  private tail_calls_current_recursion(expression: CoreExpr): boolean {
+    const recursive_name = this.#recursive_names.at(-1);
+
+    if (recursive_name === undefined) {
+      return false;
+    }
+
+    let tail = expression;
+
+    while (tail.tag === "block") {
+      const final_statement = tail.statements.at(-1);
+
+      if (final_statement === undefined) {
+        return false;
+      }
+
+      if (final_statement.tag === "expr") {
+        tail = final_statement.expr;
+        continue;
+      }
+
+      if (final_statement.tag === "return") {
+        tail = final_statement.value;
+        continue;
+      }
+
+      return false;
+    }
+
+    if (tail.tag !== "app") {
+      return false;
+    }
+
+    if (tail.func.tag === "var" && tail.func.name === "rec") {
+      return true;
+    }
+
+    return tail.func.tag === "var" && tail.func.name === recursive_name;
+  }
+
   private lower_if_let(
     expression: Extract<CoreExpr, { tag: "if_let" }>,
     environment: ReadonlyMap<string, TypeSchema>,
@@ -5302,7 +5357,20 @@ class DuckCoreLowering {
       environment,
       selected_branch.type,
     );
-    const result_type = selected_branch.type;
+    // A cursor loop lowers to `if let <case> = cursor { iterate } else { exit }`
+    // where the matched arm tail-calls the function currently being defined, so
+    // its type is not knowable yet. The loop's value is the exit arm's value,
+    // so read the result from there. Only that shape qualifies: for any other
+    // arm an unknown type stays unknown rather than borrowing the other arm's.
+    let result_type = selected_branch.type;
+
+    if (
+      result_type === undefined &&
+      this.tail_calls_current_recursion(expression.then_branch)
+    ) {
+      result_type = other_branch.type;
+    }
+
     let fallback_name: string | undefined;
     let fallback_parameter: string | undefined;
     if (definition.cases.length > 2) {

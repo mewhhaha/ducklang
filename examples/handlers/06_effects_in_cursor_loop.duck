@@ -1,0 +1,33 @@
+const {} = import "duck:prelude" ();
+
+type Ints = List I32
+type IntNode = ListNode I32
+
+effect Counter {
+  add: (I32) => Unit
+}
+
+let run: Ints -> <Counter> Unit = (values: Ints) => {
+  for value in values {
+    _ <- Counter.add(value)
+  }
+  ()
+};
+
+let counter = {
+  let sum = 0;
+  handler Counter {
+    add: (value, !resume) => {
+      sum = sum + value
+      !resume(())
+    },
+    return: _ => sum,
+  }
+};
+
+let third: IntNode = [12, `Nil ()];
+let second: IntNode = [20, `Cons third];
+let first: IntNode = [10, `Cons second];
+let values: Ints = `Cons first;
+
+try run(values) with counter
