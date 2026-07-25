@@ -314,7 +314,73 @@ largest case study stops silently rotting.
 
 These are suggestions, not decisions. Each is argued from the principle above.
 
-### Derived members on `duck` declarations
+### Holes for partial application
+
+Write `_` in an argument position to mean "this one is missing", and get a
+lambda:
+
+```duck
+f [v, _]        -- x => f [v, x]
+f _             -- x => f x
+```
+
+**Why it earns its place.** `|>` requires its stage to be compile-time so the
+pipeline specializes away instead of allocating a closure per stage. A lambda
+satisfies that; a partial application does not, because there is no shape to
+inline. So today `hook_input.duck` writes
+
+```duck
+|> json_string_field("session_id", session_id)
+```
+
+which is rejected, and the working form is the verbose
+`|> (v => json_string_field ["session_id", session_id, v])`. A hole gives the
+concise spelling _and_ produces the `lam` the const parameter needs. That is the
+whole point: terse pipelines that still resolve away.
+
+**The syntax is free.** `_` in expression position is not merely unused — it is
+deliberately rejected at `src/frontend/parser_primary.ts:219` with "Wildcard `_`
+cannot be used as an expression". Nothing to disambiguate against, and that
+throw site is where the desugar goes. There is precedent for synthesising a
+`lam` in the parser at `parser_support.ts:42` and `parser_expr.ts:80`.
+
+**Scoping is the decision to get right.** Scala scopes `_` to the innermost
+enclosing expression, which is why `f(g(_))` surprises people. Proposed rule,
+matching this language's preference for explicitness:
+
+- A hole lifts to the **immediately enclosing application**.
+- Several holes in that one argument list are allowed and bind left to right, so
+  `f [_, _]` is `(a, b) => f [a, b]`. In practice one hole is the common case,
+  because ownership limits how many values a stage can legally take.
+- A hole inside a **nested** call within that argument list is an error, with a
+  message pointing at the explicit lambda. `f [g [_], _]` is exactly the shape
+  that makes Scala's rule unpredictable, and rejecting it costs nothing.
+
+**Prototyped, not landed.** A working parser prototype is in `git stash` as
+"hole-syntax prototype": `_` parses to a reserved `@hole` var at
+`parser_primary.ts`, and `lift_argument_holes` in `parser_expr.ts` wraps the
+enclosing application in a lambda. Verified end to end through `DuckCompiler`:
+
+- `add [1, _]` then applying to `41` returns 42.
+- Several holes work — `add [_, _]` applied to `[1, 41]` returns 42.
+- The motivating case is clean: `1 |> add [runtime_value, _] |> add [31, _]`
+  reports **no diagnostics** and returns 42, closing over a runtime value while
+  still producing the `lam` the const parameter wants.
+- The full gate stays green: 481 tests, lint, format, type check.
+
+**One design point the prototype got wrong.** The rejection of nested holes
+never fires. Parsing is bottom-up, so an inner call lifts its own hole before
+the outer application ever sees it — `add [add [1, _], _]` silently becomes
+`add [(x => add [1, x]), y]`, which is exactly the innermost-binding rule the
+proposal set out to avoid. It fails later with a type error rather than a useful
+message. Implementing the intended rule needs the lifted lambda to remember it
+came from a hole, so the enclosing application can reject it.
+
+Decide the scoping rule before landing this. The prototype shows the feature
+works and is cheap; it does not yet show it is predictable.
+
+**Cost.** Parser, tree-sitter grammar, formatter, LSP, docs.### Derived members
+on `duck` declarations
 
 A `duck` currently declares members and nothing else (`docs/language.md:2108`).
 Every implementer must supply every member, even when one is always mechanically
