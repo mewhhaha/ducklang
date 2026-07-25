@@ -349,16 +349,33 @@ So nothing is blocked on semantics.
       node whose span coincides with its parent as derived and leaving it
       unedited. Migrating `examples/` now changes 126 files with the suite
       green, and `editor.duck` still migrates to a passing 7/7.
-- [ ] **New blocker: the grammar rejects `return match … { … };`.** Migrating
-      `examples/` drops tree-sitter from 130/130 to 128/130, on
-      `failures/compile/13_runtime_value_pattern.duck` and
-      `compile_time/23_derived_sequence.duck`. The frontend accepts the form —
-      the Deno suite stays green — but the grammar parses the arms as unary `|`
-      operators instead of a match. `match_expression` is already in
-      `_expression` and `return_statement` takes one, so this is a precedence or
-      conflict problem rather than a missing rule. CI runs `tree-sitter parse`
-      over every example, so this must be fixed before the migration lands. The
-      examples migration was reverted pending it.
+- [ ] **New blocker: the grammar rejects a `match` on a literal in expression
+      position.** Migrating `examples/` drops tree-sitter from 130/130 to
+      128/130 on `failures/compile/13_runtime_value_pattern.duck` and
+      `compile_time/23_derived_sequence.duck`. The frontend accepts the form and
+      the Deno suite stays green, so this is a grammar gap only.
+
+      Narrowed by bisection, and it is **not** about `return`:
+
+      | program | parses |
+      | --- | --- |
+      | `match v { \| 3 => 42 }` as a statement | yes |
+      | `return match v { \| 3 => 42 };` | yes |
+      | `return match 3 { \| 3 => 42 };` | **no** |
+      | `let x = match 3 { \| #(r) => 42 };` | **no** |
+
+      So a *literal* scrutinee in expression position is what breaks —
+      `match 3 { …` — where the arm block is then parsed as an ordinary block
+      and `\|` becomes a unary operator. `match_expression` takes
+      `condition_expression | condition_positional_product` as its target, so
+      the fix is likely in that class rather than in `return_statement`.
+
+      Do not reach for conflict declarations. Adding
+      `const_value_pattern`/`frozen_type` and
+      `const_value_pattern`/`atom_expression` made it strictly worse — cases
+      that previously parsed began failing — and the compiled parser has to be
+      regenerated to undo them, since `git checkout` restores the sources but
+      leaves the built parser stale. Reverted and reverified at 130/130.
 - [ ] **Then migrate**, per directory, verifying each suite as it goes.
 - [ ] **Then make it required** — parse error on a bare trailing expression.
 - [ ] **Then simplify the grammar**, which is the payoff.
