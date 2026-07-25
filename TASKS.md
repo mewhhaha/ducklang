@@ -280,11 +280,31 @@ drifted from `src/frontend/tokenize.ts`.
 - [x] **Single-argument trailing comma.** `positional_product` required two or
       more expressions, so `f(\n  1,\n)` — which the formatter itself emits when
       wrapping — matched no rule. Fixed in `b1ba9f3`.
-- [ ] **`turn_profile.duck` still fails**, and differently: an assignment whose
-      value ends in `}` with no trailing `;`, followed by `[...]` on the next
-      line, has the bracket absorbed as an application argument. That is the
-      contextual-lexing layer deciding whether a newline ends a statement, not a
-      missing rule, so it needs the scanner rather than the grammar.
+- [ ] **`turn_profile.duck` still fails — root cause found.** The grammar lets a
+      call apply across a newline; the real parser does not.
+
+      `application_expression` (`grammar.baba:587`) has two alternatives. The
+      first requires `_application_space`, a contextual token matching only
+      space and tab, so it cannot span lines. The second —
+      `function argument:(parenthesized_or_product)`, which exists for `f(x)` —
+      carries **no whitespace constraint at all**, and the skip rule
+      `/[ \t\r\n]+/` then permits a newline between them. So `}` followed by
+      `[...]` on the next line parses as an application.
+
+      The language does not allow this. Parsing `let x = f\n(1);` reports
+      ``Expected `;` after binding``, while `f(1)` on one line is clean. The
+      grammar is wrong; the source is fine.
+
+      The fix is adjacency, and the mechanism already exists: `_index_open` is
+      declared `token.immediate` in `baba.json` so `obj[i]` requires no gap.
+      The second application alternative wants the same. Note the first
+      alternative already covers the spaced forms — `add [1, 2]` and `f (x)` —
+      because `named_product` is a `_primary_expression`, so tightening the
+      second should not lose them. Verify that before changing it.
+
+      **This is why no syntax redesign is needed.** Mandatory semicolons or an
+      ML-style `let ... in` would both paper over a grammar bug, at the cost of
+      touching all 1060 Duck files.
 
 Case-study parse failures went from 10 of 907 to 1. Examples (130) and the
 prelude (23) were already clean and stay clean.
