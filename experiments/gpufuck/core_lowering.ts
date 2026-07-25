@@ -1,28 +1,28 @@
 import {
-  createModuleArtifact,
-  type EncodedFunctionalModule,
-  BYTES_TYPE_NAME,
-  TEXT_TYPE_NAME,
   BinaryOperator,
+  BYTES_TYPE_NAME,
+  createModuleArtifact,
+  type EncodedModule,
   EvaluationProfile,
   type HostCapabilityDeclaration,
   type HostDefinitionBinding,
   type HostType,
   HostTypes,
+  linkModules,
   type ModuleArtifact,
   NumericConversion,
+  surface,
   type SurfaceCaseArm,
   type SurfaceDefinition,
   type SurfaceExpression,
   type SurfaceTypeDeclaration,
+  TEXT_TYPE_NAME,
   type TypeSchema,
   UnaryOperator,
   type WasmHostValue,
   type WasmInit,
   type WasmInitBinding,
   WasmIntrinsic,
-  linkModules,
-  surface,
 } from "../../../gpufuck/functional.ts";
 import {
   type AbiImport,
@@ -65,7 +65,7 @@ const empty_referenced_names: ReadonlySet<string> = new Set();
 export type LoweredDuckGpufuckModule = {
   abi: AbiManifest;
   artifact: ModuleArtifact;
-  encoded: EncodedFunctionalModule;
+  encoded: EncodedModule;
   automatic_init: WasmInit;
 };
 
@@ -981,8 +981,7 @@ class DuckCoreLowering {
     if (this.#types.has(name)) {
       return this.named_type(name);
     }
-    const definition_fields: { name: string; type: TypeSchema }[] =
-      [];
+    const definition_fields: { name: string; type: TypeSchema }[] = [];
     for (const field of fields) {
       const type = this.simple_expression_type(field.value, environment);
       if (
@@ -1178,8 +1177,7 @@ class DuckCoreLowering {
   private collect_host_capabilities(): void {
     const imports = this.#abi.imports;
     for (const effect of Object.values(this.#abi.effects)) {
-      const fields: HostCapabilityDeclaration["fields"][number][] =
-        [];
+      const fields: HostCapabilityDeclaration["fields"][number][] = [];
       const init_field = this.#abi.init?.fields.find((field) =>
         field.type.effect === effect.name
       );
@@ -6567,16 +6565,14 @@ function numeric_conversions(): ReadonlyMap<
     [
       "i64.extend_i32_s",
       {
-        conversion:
-          NumericConversion.SignedInteger32ToSignedInteger64,
+        conversion: NumericConversion.SignedInteger32ToSignedInteger64,
         result: { kind: "signed-integer-64" },
       },
     ],
     [
       "i32.wrap_i64",
       {
-        conversion:
-          NumericConversion.SignedInteger64ToSignedInteger32,
+        conversion: NumericConversion.SignedInteger64ToSignedInteger32,
         result: integer_type,
       },
     ],
@@ -6611,16 +6607,14 @@ function numeric_conversions(): ReadonlyMap<
     [
       "i32.reinterpret_f32",
       {
-        conversion:
-          NumericConversion.ReinterpretFloat32AsSignedInteger32,
+        conversion: NumericConversion.ReinterpretFloat32AsSignedInteger32,
         result: integer_type,
       },
     ],
     [
       "f32.reinterpret_i32",
       {
-        conversion:
-          NumericConversion.ReinterpretSignedInteger32AsFloat32,
+        conversion: NumericConversion.ReinterpretSignedInteger32AsFloat32,
         result: { kind: "float-32" },
       },
     ],

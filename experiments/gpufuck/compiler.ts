@@ -1,17 +1,10 @@
 import {
   compileModuleToWasm,
-  type EncodedFunctionalModule,
   type CompileResult,
   type ComptimeExecutionOptions,
   type ComptimeExecutionResult,
   type ComptimeModuleArtifact,
-  type StoragePlan,
-  type WasmAsyncInit,
-  type WasmAsyncRunOptions,
-  type WasmExecution,
-  type WasmInit,
-  type WasmInitBinding,
-  type WasmRunOptions,
+  type EncodedModule,
   GpuCompiler,
   GpuComptimeExecutor,
   type GpuModule,
@@ -19,6 +12,13 @@ import {
   requestWebGpuDevice,
   runWasmModule,
   runWasmModuleAsync,
+  type StoragePlan,
+  type WasmAsyncInit,
+  type WasmAsyncRunOptions,
+  type WasmExecution,
+  type WasmInit,
+  type WasmInitBinding,
+  type WasmRunOptions,
 } from "../../../gpufuck/functional.ts";
 import type { Source as SourceNode } from "../../src/frontend/ast.ts";
 import { format_source } from "../../src/frontend/format.ts";
@@ -579,11 +579,11 @@ export class DuckCompiler {
 
 export function encode_duck_module(
   source_text: string,
-): EncodedFunctionalModule {
+): EncodedModule {
   return lower_duck_text(source_text).encoded;
 }
 
-export function encode_duck_file(path: string): EncodedFunctionalModule {
+export function encode_duck_file(path: string): EncodedModule {
   return lower_duck_file(path).encoded;
 }
 

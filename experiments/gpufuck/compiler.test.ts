@@ -1,6 +1,6 @@
 import { assert_equals } from "../../src/assert.ts";
 import {
-  beginFunctionalWasmArena,
+  beginWasmArena,
   StorageClass,
   type WasmHostValue,
 } from "../../../gpufuck/functional.ts";
@@ -360,7 +360,7 @@ Deno.test("Duck compiler executes the Codex-derived citation parser", async () =
     }
     const initial_heap_top = heap_top.value;
     for (let invocation = 0; invocation < 2; invocation += 1) {
-      const arena = beginFunctionalWasmArena(execution.instance);
+      const arena = beginWasmArena(execution.instance);
       try {
         assert_equals(main(), 474_580_703);
       } finally {
@@ -3333,8 +3333,7 @@ return { .result = result + 1 };
       init: {
         Timer: {
           $resource: { kind: "resource", id: 1 },
-          wait: (argument: WasmHostValue) =>
-            Promise.resolve(argument),
+          wait: (argument: WasmHostValue) => Promise.resolve(argument),
         },
       },
     });
