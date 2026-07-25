@@ -256,18 +256,16 @@ largest case study stops silently rotting.
       `deno task compiler:test` still runs it deliberately. Fix the suite, then
       drop the ignore.
 
-- [~] **The cross-repo import has no pin.** Partly addressed: the three
-  scattered `../../../gpufuck/functional.ts` specifiers are now one `"gpufuck"`
-  import-map entry in `deno.json`, so the coupling is stated in one place and
-  can be repointed at an absolute path or at JSR by editing one line. A real pin
-  still is not possible — `jsr:@mewhhaha/gpufuck@0.2.0` predates the sibling's
-  rename and still exports `FunctionalWasmInit`, where this repo now expects
-  `WasmInit`. Switch once a version carrying the current API is published.
-  Original note: `../../../gpufuck/functional.ts` is a relative path into a
-  sibling checkout; a removed export breaks Duck on the next compile with no
-  version range to protect it. gpufuck's own `ARCHITECTURE.md` §7 documents this
-  as the fragile seam. At minimum, a smoke test that fails loudly when the
-  boundary drifts.
+- [x] **The cross-repo import has no pin.** Fixed. The three scattered
+      `../../../gpufuck/functional.ts` specifiers became one `"gpufuck"`
+      import-map entry, and that entry now points at
+      `jsr:@mewhhaha/gpufuck@^0.4.0` rather than the sibling checkout. 0.4.0
+      carries the renamed API this repo expects, so a version range finally
+      applies and a removed export shows up as a resolution failure instead of
+      breaking the next compile silently. The `jsr:@mewhhaha/*` entry in
+      `minimumDependencyAge` lets same-day releases resolve. This also removes
+      the constraint that a checkout must sit beside `gpufuck/`, which broke
+      every worktree used for A/B testing today.
 
 ## 6. TypeScript side
 
