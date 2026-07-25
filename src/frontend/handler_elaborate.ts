@@ -1631,10 +1631,6 @@ function effectful_range_block(
   stmt: Extract<Stmt, { tag: "for_range" }>,
   elaboration: Elaboration,
 ): FrontExpr {
-  expect(
-    !statements_continue_current_loop(stmt.body),
-    "Effectful range loops do not yet support continue",
-  );
   const suffix = elaboration.next_loop.toString();
   const end_name = "__duck_effect_range_end_" + suffix;
   const step_name = "__duck_effect_range_step_" + suffix;
@@ -1653,6 +1649,8 @@ function effectful_range_block(
     left: condition,
     right: { tag: "bool", value: false },
   };
+  // The index advances before the body runs, so a `continue` inside the body
+  // can tail-call the loop directly without skipping the increment.
   const body: Stmt[] = [
     { tag: "if_stmt", cond: done, body: [{ tag: "break" }] },
     {
@@ -1663,7 +1661,6 @@ function effectful_range_block(
       annotation: "I32",
       value: { tag: "var", name: index_name },
     },
-    ...stmt.body,
     {
       tag: "assign",
       name: index_name,
@@ -1675,6 +1672,7 @@ function effectful_range_block(
         right: { tag: "var", name: step_name },
       },
     },
+    ...stmt.body,
   ];
   const loop: Extract<FrontExpr, { tag: "loop" }> = {
     tag: "loop",
@@ -1739,30 +1737,6 @@ function range_comparison_primitive(
   }
 
   return "i32.gt_s";
-}
-
-function statements_continue_current_loop(statements: Stmt[]): boolean {
-  for (const stmt of statements) {
-    if (stmt.tag === "continue") {
-      return true;
-    }
-
-    if (
-      stmt.tag === "if_stmt" &&
-      statements_continue_current_loop(stmt.body)
-    ) {
-      return true;
-    }
-
-    if (
-      stmt.tag === "if_let_stmt" &&
-      statements_continue_current_loop(stmt.body)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function compile_statement_at(

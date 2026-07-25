@@ -478,6 +478,10 @@ export const success_examples: SuccessExample[] = [
     path: "examples/loops/14_iterator_windows.duck",
     runs: run(42),
   },
+  {
+    path: "examples/handlers/07_effectful_loop_continue.duck",
+    runs: run(42),
+  },
 
   {
     path: "examples/showcases/01_numeric_toolkit.duck",

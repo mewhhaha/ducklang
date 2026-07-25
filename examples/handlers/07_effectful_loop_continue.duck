@@ -1,0 +1,31 @@
+effect Total {
+  read: () => I32
+  add: (I32) => Unit
+}
+
+let sum_odd: () -> <Total> I32 = () => {
+  for value in 0..12 {
+    if value % 2 == 0 {
+      continue;
+    }
+
+    _ <- Total.add(value)
+  }
+
+  total <- Total.read()
+  total
+};
+
+let accumulator = {
+  let running = 6;
+  handler Total {
+    read: (!resume) => !resume running,
+    add: (amount, !resume) => {
+      running = running + amount
+      !resume(())
+    },
+    return: value => value,
+  }
+};
+
+try sum_odd() with accumulator
