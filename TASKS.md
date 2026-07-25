@@ -32,8 +32,11 @@ The pitch is effects and handlers. Today they work in some loops.
       was rejected while `for index in 0..n` compiled. Fixed in `63be37c` by
       rewriting to the indexed range form; covered by
       `examples/handlers/05_effects_in_collection_loop.duck`. **verified**
-- [ ] **Effects in cursor loops (`List` and any `Iterator` duck).** Fails with
-      `Effect operation requires CPS elaboration`. Root cause:
+- [x] **Effects in cursor loops (`List` and any `Iterator` duck).** Fixed in
+      `58a81ae`; the hypothesis below was right but incomplete — it also
+      required fixing `break` re-entering CPS loops. Covered by
+      `examples/handlers/06_effects_in_cursor_loop.duck`. Original note: Fails
+      with `Effect operation requires CPS elaboration`. Root cause:
       `statement_has_direct_duck_effects`
       (`src/frontend/handler_elaborate.ts:3677`) only recurses into `if_stmt`
       and `if_let_stmt` bodies. The union-cursor desugar
@@ -43,9 +46,12 @@ The pitch is effects and handlers. Today they work in some loops.
       to descend into `expr`-statement `block`/`if_let`/`if`/`match`, and into
       `for_*` and `loop` bodies. **hypothesis** — the misclassification is
       confirmed by reading; the fix is not yet demonstrated.
-- [ ] **`continue` in effectful loops.** Rejected outright at
-      `src/frontend/handler_elaborate.ts:1636`. Once cursor loops work this is
-      the last hole in "effects work in every loop". **verified**
+- [x] **`continue` in effectful loops.** Fixed in `9720e89`: the index increment
+      sat after the body, so a `continue` tail-called with a stale index.
+      Covered by `examples/handlers/07_effectful_loop_continue.duck`. Original
+      note: rejected outright at `src/frontend/handler_elaborate.ts:1636`. Once
+      cursor loops work this is the last hole in "effects work in every loop".
+      **verified**
 - [ ] **Effect inference cliff.** An effectful function without an explicit
       `<Effect>` row annotation silently falls into the pure rewrite and fails
       deep inside elaboration with a message that names neither the function nor
@@ -64,7 +70,20 @@ case study never writes `` `Nil () `` directly — it routes through
 `comptime list Text` where the element type is pinned. That workaround is the
 symptom.
 
-Four distinct failures, all **verified** by attempting the editor migration:
+**Correction (2026-07-25).** This section's diagnosis was largely wrong, and the
+record is kept rather than rewritten so the mistake stays visible. A dedicated
+investigation could not reproduce symptoms (a) or (b) at all — ten shapes
+holding `List <union>` in a struct field compile and run — and **both**
+suspected root causes below (the space heuristic, `lower_union_case`) turned out
+to be dead ends. What was really broken were two Core lowering defects that are
+not parametric-specific and reproduce with hand-rolled monomorphic unions; both
+are fixed in `43b4572`. Symptoms (c) and (d) are resolved by that commit,
+confirmed against real code: two codex fixtures that previously failed
+union-case inference now compile past it. Treat (a) and (b) as unreproduced
+until someone produces a failing program.
+
+Four distinct failures, originally believed **verified** from the editor
+migration:
 
 - [ ] `List <union>` as a **struct field** fails backend lowering with "requires
       a named runtime type, found lam". The `lam` is the unapplied type
@@ -116,10 +135,12 @@ reading the modules.
       of `prelude_json_encode.duck`.
 - [ ] **No canonical `fold`.** `list_fold_left` exists in `prelude_functional`
       with zero importers outside the prelude.
-- [ ] **`iterator_windows` is broken.**
-      `src/frontend/prelude_iterators.duck:353` calls the tuple-lambda `slice`
-      with comma arguments, so any module that uses it fails `DUCK2307`. It is
-      hidden only because unused const-module members are pruned.
+- [x] **`iterator_windows` is broken.** Fixed in `09da064` by calling the
+      `@slice` intrinsic; the literal tuple form regresses `for` over the
+      iterator. Original note: `src/frontend/prelude_iterators.duck:353` calls
+      the tuple-lambda `slice` with comma arguments, so any module that uses it
+      fails `DUCK2307`. It is hidden only because unused const-module members
+      are pruned.
 - [ ] **`prelude_iterators` now has no consumers** — the editor was the only one
       and no longer imports it.
 
@@ -137,7 +158,10 @@ contradict itself.
       only `*.test.ts`; there is no `.duck` runner, and `examples/manifest.ts`
       has zero codex entries. All 80 `app_server_*` fixtures — the largest
       subsystem — are among them. **verified**
-- [ ] **Neither `codex` nor `editor` is in the CI matrix**
+- [x] **The CI matrix was wrong in both directions.** Fixed in `c58ea7e`: three
+      of five entries (chip8, grep, tar) named directories not tracked in the
+      repo, so those jobs failed on every PR, while editor was covered by
+      nothing. Codex remains excluded until its suite is green. Original note:
       (`.github/workflows/pr.yaml:77-87` lists chip8, grep, raytracer, tar,
       wav). The editor work in `ca194ae` was verified locally and by nothing
       else. **verified**
@@ -164,10 +188,11 @@ contradict itself.
       `SourceDiagnostic[]` across 104 `push` sites. Convert bottom-up with the
       `diagnostics.push(...diagnostics_of(check))` bridge so every increment
       stays green.
-- [ ] **`Format`'s `Source` instance is registered but never dispatched.**
-      `src/frontend/source.ts:121` registers it; all nine formatting call sites
-      use the plain `format_source`. Either give it a polymorphic call site or
-      drop the registration.
+- [x] **`Format`'s `Source` instance is registered but never dispatched.**
+      Removed in `42882b7`. Original note: `src/frontend/source.ts:121`
+      registers it; all nine formatting call sites use the plain
+      `format_source`. Either give it a polymorphic call site or drop the
+      registration.
 
 ## Language proposals
 
