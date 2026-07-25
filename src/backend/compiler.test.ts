@@ -3180,7 +3180,7 @@ Deno.test("Duck compiler compiles the benchmark suite to runnable Wasm", async (
     assert_equals(f32x4_main(), 4, "portable F32x4 output");
 
     const workload = await compiler.compile_file(
-      "experiments/gpufuck/workload/main.duck",
+      "src/backend/workload/main.duck",
     );
     const instantiated = await WebAssembly.instantiate(workload);
     const main = instantiated.instance.exports.main;

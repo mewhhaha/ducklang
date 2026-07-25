@@ -1,12 +1,8 @@
 {
   "tasks": {
     "duck": "deno run --allow-read --allow-write duck.ts",
-    "compiler": "deno run --allow-read --allow-write experiments/gpufuck/compile.ts",
-    "compiler:test": "deno test --allow-read --allow-write experiments/gpufuck/compiler.test.ts",
-    "baba:check": "deno run --allow-read @mewhhaha/baba/cli check experiments/baba/grammar.baba --name duck_contextual_lexer --root document --metadata experiments/baba/metadata.json",
-    "baba:generate": "deno run --allow-read --allow-write @mewhhaha/baba/cli generate experiments/baba/grammar.baba --name duck_contextual_lexer --root document --target all --metadata experiments/baba/metadata.json --out build/baba",
-    "baba:tree-sitter": "deno task baba:generate && cd build/baba && tree-sitter generate grammar.js",
-    "baba:test": "deno test --allow-read --allow-write experiments/baba/grammar.test.ts",
+    "compiler": "deno run --allow-read --allow-write src/backend/compile.ts",
+    "compiler:test": "deno test --allow-read --allow-write src/backend/compiler.test.ts",
     "grammar:generate": "deno run --allow-read --allow-write --allow-run=tree-sitter scripts/generate-grammar.ts",
     "grammar:check": "deno run --allow-read --allow-write --allow-run=tree-sitter scripts/generate-grammar.ts --check",
     "lsp:perf": "deno run --allow-read scripts/lsp-performance.ts"

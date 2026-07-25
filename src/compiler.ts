@@ -2,7 +2,7 @@ export {
   DuckCompiler,
   encode_duck_file,
   encode_duck_module,
-} from "../experiments/gpufuck/compiler.ts";
+} from "./backend/compiler.ts";
 export type {
   DuckAsyncRunFileOptions,
   DuckAsyncRunOptions,
@@ -13,7 +13,7 @@ export type {
   DuckRunFileOptions,
   DuckRunOptions,
   DuckTestResult,
-} from "../experiments/gpufuck/compiler.ts";
+} from "./backend/compiler.ts";
 
 export type {
   WasmAsyncInit as DuckAsyncInit,

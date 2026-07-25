@@ -28,7 +28,7 @@ architecture-baseline:
   deno run --allow-read --allow-write scripts/dependency-boundaries.ts --write-baseline
 
 source-test:
-  deno test --allow-read --allow-write --allow-run src scripts
+  deno test --allow-read --allow-write --allow-run --ignore=src/backend/compiler.test.ts src scripts
 
 case-studies:
   deno test --allow-read --allow-write --allow-run case-studies

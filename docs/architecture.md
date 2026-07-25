@@ -34,10 +34,10 @@ layout.
 
 ## Gpufuck adapter
 
-`experiments/gpufuck/core_lowering.ts` is the single compiler boundary. It loads
-and elaborates source, builds semantic Core, and lowers Core to gpufuck's typed
-Functional Core. `experiments/gpufuck/compiler.ts` owns compiler caching, WebGPU
-setup, comptime execution, host capability binding, and gpufuck calls.
+`src/backend/core_lowering.ts` is the single compiler boundary. It loads and
+elaborates source, builds semantic Core, and lowers Core to gpufuck's typed
+Functional Core. `src/backend/compiler.ts` owns compiler caching, WebGPU setup,
+comptime execution, host capability binding, and gpufuck calls.
 
 `src/compiler.ts` is the supported TypeScript compiler API. `DuckCompiler`
 compiles binary Wasm, prepares programs, runs programs, and executes source

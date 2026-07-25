@@ -67,7 +67,7 @@ Use Deno tests and keep them next to the implementation they cover:
 ```txt
 src/frontend/parser.test.ts
 src/core/from_source.test.ts
-experiments/gpufuck/compiler.test.ts
+src/backend/compiler.test.ts
 ```
 
 When changing source lowering, cover the exact semantic Core shape when

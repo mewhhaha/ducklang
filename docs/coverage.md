@@ -14,7 +14,7 @@ The authoritative inventory is executable rather than duplicated here:
   `DuckCompiler`.
 - `examples/corpus_coverage.ts` maps every Tree-sitter corpus feature to a
   runnable example.
-- `experiments/gpufuck/compiler.test.ts` covers the compiler boundary, batching,
+- `src/backend/compiler.test.ts` covers the compiler boundary, batching,
   caching, host interfaces, comptime execution, and Wasm execution.
 - `case-studies/` exercises larger programs through the same compiler API.
 

@@ -72,7 +72,7 @@ jobs:
           echo "/tmp/wabt-1.0.41/bin" >> "$GITHUB_PATH"
 
       - name: run source and example tests
-        run: deno test --allow-read --allow-write --allow-run src examples scripts
+        run: deno test --allow-read --allow-write --allow-run --ignore=src/backend/compiler.test.ts src examples scripts
 
   case-studies:
     runs-on: ubuntu-latest

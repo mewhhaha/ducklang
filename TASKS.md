@@ -88,8 +88,8 @@ migration:
 - [ ] `List <union>` as a **struct field** fails backend lowering with "requires
       a named runtime type, found lam". The `lam` is the unapplied type
       constructor: a `type List value` declaration becomes a Core lambda
-      (`experiments/gpufuck/core_lowering.ts:349`), and `type_expression_name`
-      (`:6343`) accepts only `var`, `type_name`, `app`, and `union_type`.
+      (`src/backend/core_lowering.ts:349`), and `type_expression_name` (`:6343`)
+      accepts only `var`, `type_name`, `app`, and `union_type`.
 - [ ] **Alias and application do not unify.** Using `EditorCommands` where
       `List EditorCommand` is expected reports "nominal names differ", so the
       alias is not transparent to the unifier.
@@ -108,10 +108,10 @@ Two root causes worth fixing before the symptoms:
       parametric instantiations as real nominal types instead of testing for a
       space. This is the change that retires the whole class.
 - [ ] **`lower_union_case` prefers the wrong source of truth.**
-      `experiments/gpufuck/core_lowering.ts:5179` calls `type_expression_name`
-      on `type_expr` first and only falls back to `expected` in the `else`
-      branch — so it throws even when the declared field type was correct and
-      available. Guard the call and fall back.
+      `src/backend/core_lowering.ts:5179` calls `type_expression_name` on
+      `type_expr` first and only falls back to `expected` in the `else` branch —
+      so it throws even when the declared field type was correct and available.
+      Guard the call and fall back.
 
 **Coherence target:** the prelude's collections are usable directly, so no
 consumer has a reason to hand-roll a cons list.
@@ -172,9 +172,23 @@ contradict itself.
 
 ## 5. Structure
 
-- [ ] **The backend lives in `experiments/`.** `experiments/gpufuck/` is ~11k
-      lines and the only path to a target. Move to `src/backend/` and reserve
-      `experiments/` for things that can be deleted without consequence.
+- [x] **The backend lived in `experiments/`.** Moved to `src/backend/`, and
+      `experiments/` is gone entirely: the only other thing in it was a baba
+      compatibility probe whose own README recorded that the real grammar had
+      already moved to `tree-sitter-duck/grammar.baba`. The sibling import
+      `../../../gpufuck/functional.ts` is unchanged — `src/backend/` sits at the
+      same depth `experiments/gpufuck/` did.
+- [ ] **`src/backend/compiler.test.ts` is excluded from the test run.** Moving
+      the backend under `src/` would have wired its 140-test suite into CI,
+      which is red: roughly 120 failures, most of them WebGPU device exhaustion
+      (each test wants its own device, and a local `ollama` holding 12.5 GB of
+      16 GB is enough to starve them) plus real pre-existing lowering bugs such
+      as `cannot infer function parameter left in (left, right)` for `append`,
+      which reproduces identically at `f0ff59b`. The suite ran in no CI job
+      before the move, so `--ignore` preserves that rather than turning CI red.
+      `deno task compiler:test` still runs it deliberately. Fix the suite, then
+      drop the ignore.
+
 - [ ] **The cross-repo import has no pin.** `../../../gpufuck/functional.ts` is
       a relative path into a sibling checkout; a removed export breaks Duck on
       the next compile with no version range to protect it. gpufuck's own
