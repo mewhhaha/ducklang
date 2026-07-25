@@ -32,6 +32,8 @@ export default grammar({
     [$.array_expression, $.array_pattern],
     [$.parameter, $._primary_expression, $._array_pattern_element],
     [$.parameter, $._array_pattern_element],
+    [$.positional_type_product, $._primary_expression],
+    [$._primary_expression, $.array_type],
   ],
 
   inline: $ => [$.document],
@@ -135,7 +137,7 @@ export default grammar({
     handler_clause_block: $ => seq("{", repeat(seq($.handler_operation_clause, optional(","))), $.handler_return_clause, optional(","), "}"),
     handler_operation_clause: $ => seq(field("name", $.identifier), ":", field("value", $.arrow_function)),
     handler_return_clause: $ => seq("return", ":", field("value", $.arrow_function)),
-    _primary_expression: $ => choice($.number, $.string, $.character, $.boolean, $.identifier, $._aggregate_constructor_identifier, $._effect_identifier_alias, $.intrinsic_identifier, $.atom_expression, $.import_meta_expression, $.import_expression, $.include_expression, $.named_product, $.positional_product, $.union_case, $.linear_reference, $.unit_pattern, $.array_expression, $.array_repeat_expression, $.shape_value, $.scratch_expression, $.block, $.parenthesized_expression),
+    _primary_expression: $ => choice($.number, $.string, $.character, $.boolean, $.identifier, $.wildcard, $._aggregate_constructor_identifier, $._effect_identifier_alias, $.intrinsic_identifier, $.atom_expression, $.import_meta_expression, $.import_expression, $.include_expression, $.named_product, $.positional_product, $.union_case, $.linear_reference, $.unit_pattern, $.array_expression, $.array_repeat_expression, $.shape_value, $.scratch_expression, $.block, $.parenthesized_expression),
     union_case: $ => prec(-1, seq("`", field("case", $.constructor_identifier), $._application_space, field("value", $.postfix_expression))),
     linear_reference: $ => seq("!", field("name", $.identifier)),
     atom_expression: $ => seq("#", field("name", $._row_identifier_alias)),

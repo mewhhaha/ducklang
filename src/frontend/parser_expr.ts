@@ -586,6 +586,7 @@ export abstract class ParserExpr extends ParserPrimary {
       tag: "lam",
       params: params.map((param) => ({ name: param.name, is_const: false })),
       body: app,
+      hole_params: params.map((param) => param.name),
     } as FrontExpr);
   }
 

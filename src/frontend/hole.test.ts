@@ -58,7 +58,8 @@ Deno.test("a hole inside a nested call is rejected", () => {
 });
 
 Deno.test("a hole survives a format round trip", () => {
-  const text = "let add = [a: I32, b: I32] => a + b;\nlet inc = add [1, _];\ninc 41\n";
+  const text =
+    "let add = [a: I32, b: I32] => a + b;\nlet inc = add [1, _];\ninc 41\n";
   const once = format_source(parse_source_with_diagnostics(text).source);
   const twice = format_source(parse_source_with_diagnostics(once).source);
 

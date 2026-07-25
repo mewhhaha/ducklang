@@ -113,6 +113,17 @@ function format_expr(
     return parenthesize(text, precedence, parent_precedence);
   }
 
+  // A lambda the parser lifted out of argument holes prints as the hole form
+  // it was written in, so formatting does not rewrite `f [a, _]` into the
+  // generated parameter.
+  if (
+    expr.tag === "lam" && expr.hole_params !== undefined &&
+    expr.hole_params.length > 0
+  ) {
+    const holes = new Set(expr.hole_params);
+    return nested(restore_holes(expr.body, holes), parent_precedence);
+  }
+
   if (expr.tag === "lam" || expr.tag === "rec") {
     let text = "";
 
@@ -535,4 +546,36 @@ function parenthesize(
   }
 
   return text;
+}
+
+/** Put `_` back where a lifted hole's generated parameter is referenced. */
+function restore_holes(expr: FrontExpr, holes: ReadonlySet<string>): FrontExpr {
+  if (expr.tag === "var") {
+    if (holes.has(expr.name)) {
+      return { tag: "var", name: "_" };
+    }
+
+    return expr;
+  }
+
+  if (expr.tag === "product") {
+    return {
+      ...expr,
+      entries: expr.entries.map((entry) => ({
+        ...entry,
+        value: restore_holes(entry.value, holes),
+      })),
+    };
+  }
+
+  if (expr.tag === "app") {
+    return {
+      ...expr,
+      func: restore_holes(expr.func, holes),
+      arg: expr.arg === undefined ? undefined : restore_holes(expr.arg, holes),
+      args: expr.args.map((arg) => restore_holes(arg, holes)),
+    };
+  }
+
+  return expr;
 }

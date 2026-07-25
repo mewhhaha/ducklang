@@ -312,6 +312,13 @@ export type FrontExpr =
     pattern?: Pattern;
     params: Param[];
     body: FrontExpr;
+    /**
+     * Parameter names synthesised from argument holes, in the order the holes
+     * were written. Present only on a lambda the parser lifted out of
+     * `f [a, _]`, and used by the formatter to print the hole back rather than
+     * the generated parameter.
+     */
+    hole_params?: string[];
   }
   | { tag: "rec"; pattern?: Pattern; params: Param[]; body: FrontExpr }
   | {
