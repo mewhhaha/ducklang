@@ -15,16 +15,50 @@ it grows. Prefer explicit compiler stages over clever abstractions.
 
 ## Style rules
 
-- Do not use ternary expressions.
+- Do not use ternary expressions. Type-level conditionals are fine.
 - Do not use the nullish coalescing operator.
 - Do not silently default when compiler information is missing.
-- If a binding, type, local, or lowering fact cannot be found, throw an error.
 - Prefer explicit `if` blocks over compact expressions when the branch matters.
 - Use `expect(value, message)` directly at invariant sites.
 - Define `expect` as an assertion helper for its first argument so TypeScript narrows after it succeeds.
 - Do not hide `expect` behind tiny wrapper helpers such as `expectType` or `expectArity`.
 - If a helper function only calls another function or performs one trivial lookup, inline it at the call site.
 - Keep semantic operations separate from concrete Wasm instructions.
+
+The first two are enforced by `deno lint` through `scripts/lint_rules.ts`, so
+they fail in CI rather than in review. Add a rule there whenever a style rule
+becomes mechanically checkable.
+
+## Invariants and diagnostics
+
+These are different failures and get different treatment.
+
+An **invariant** is a fact the compiler must already know: a binding that has to
+be in scope by this pass, a type that has to have been resolved. If one is
+missing the compiler is wrong, not the source, so throw — `expect(value,
+message)` at the site.
+
+A **diagnostic** is a problem with the user's program. Those return a verdict
+instead of throwing, so a pass reports everything it found rather than stopping
+at the first problem. `src/frontend/checked.ts` defines `Checked<value>`, a
+`Validation` over an accumulating diagnostic semigroup:
+
+```ts
+const arity = check_arity(name, expected, actual, node);
+const arguments_checked = call.args.map((arg, index) => check_argument(arg, index));
+
+return all([arity, ...arguments_checked]);
+```
+
+Do not thread a mutable `SourceDiagnostic[]` through new code. Where existing
+passes still do, `diagnostics.push(...diagnostics_of(check))` bridges the two
+so a conversion can proceed one function at a time.
+
+Accumulating is not the same as reporting everything. A check that cannot infer
+a type returns `ok_unit()` and stays silent, so one root cause is reported once
+instead of cascading into every expression derived from it. Keep that: it is
+what `semantic validation keeps nested width errors structured and singular`
+covers.
 
 ## Tests
 

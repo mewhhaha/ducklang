@@ -21,6 +21,9 @@
       "jsr:@mewhhaha/*"
     ]
   },
+  "lint": {
+    "plugins": ["./scripts/lint_rules.ts"]
+  },
   "fmt": {
     "exclude": [
       "AGENTS.md",
