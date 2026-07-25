@@ -1,6 +1,6 @@
 module () where
 
-const { .not, .slice } = import "duck:prelude" ();
+const { .not } = import "duck:prelude" ();
 const { .struct } = import "duck:prelude/types" ();
 
 type IteratorValue state item = struct {
@@ -350,7 +350,7 @@ const iterator_windows = (bytes: Bytes, width: I32) => {
   let next: ByteWindowState -> [Bytes, ByteWindowState] = (state: ByteWindowState) => {
     let remaining = state.length - state.index;
     let window_length = if remaining < state.width { remaining } else { state.width };
-    let window = slice(&state.bytes, state.index, state.index + window_length);
+    let window = @slice(&state.bytes, state.index, state.index + window_length);
     let next_state: ByteWindowState = [
       .bytes = state.bytes,
       .index = state.index + 1,

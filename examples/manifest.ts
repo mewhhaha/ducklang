@@ -474,6 +474,10 @@ export const success_examples: SuccessExample[] = [
     path: "examples/handlers/05_effects_in_collection_loop.duck",
     runs: run(42),
   },
+  {
+    path: "examples/loops/14_iterator_windows.duck",
+    runs: run(42),
+  },
 
   {
     path: "examples/showcases/01_numeric_toolkit.duck",

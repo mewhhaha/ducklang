@@ -1,0 +1,13 @@
+const { .iterator_fold, .iterator_windows } = import "duck:prelude/iterators" ();
+
+let add_length: I32 -> Bytes -> I32 = total => window => total + window.length();
+let lengths = iterator_windows(@Utf8.encode("ABCD"), 3);
+let total = iterator_fold(lengths, 0, add_length);
+let windows = iterator_windows(@Utf8.encode("ABCD"), 3);
+let count = 0;
+
+for window in windows {
+  count = count + 1
+}
+
+total * 4 + count + 2
