@@ -6,6 +6,7 @@ import {
 } from "../op.ts";
 import { Callable } from "../trait.ts";
 import { expect } from "../expect.ts";
+import { all, type Checked, diagnostics_of, fail, ok_unit } from "./checked.ts";
 import { specialize_effect_operation } from "./effect_operation.ts";
 import type { DiagnosticCode } from "../diagnostic.ts";
 import type {
@@ -1331,7 +1332,9 @@ function validate_expr(
       }
 
       if (diagnostics.length === before) {
-        validate_f32x4_builtin_call(expr, f32x4_call, env, diagnostics);
+        diagnostics.push(
+          ...diagnostics_of(check_f32x4_builtin_call(expr, f32x4_call, env)),
+        );
       }
 
       return;
@@ -3329,72 +3332,72 @@ function validate_numeric_builtin_call(
   }
 }
 
-function validate_f32x4_builtin_call(
+/** Bridge a `throw`-based check into a verdict, keeping the message. */
+function attempt(expr: FrontExpr, run: () => void): Checked<null> {
+  try {
+    run();
+    return ok_unit();
+  } catch (error) {
+    if (error instanceof Error) {
+      return fail(source_diagnostic("DUCK2302", error.message, expr));
+    }
+
+    throw error;
+  }
+}
+
+function check_f32x4_builtin_call(
   expr: Extract<FrontExpr, { tag: "app" }>,
   call: NonNullable<ReturnType<typeof f32x4_builtin_call>>,
   env: SemanticEnv,
-  diagnostics: SourceDiagnostic[],
-): void {
+): Checked<null> {
   const signature = Callable.type(Prim, call.prim);
 
+  // Arity gates the rest: without it the positional checks are meaningless.
   if (call.args.length !== signature.args.length) {
     expect(expr.func.tag === "var", "F32x4 builtin requires a name");
-    diagnostics.push(source_diagnostic(
+    return fail(source_diagnostic(
       "DUCK2302",
       expr.func.name + " expects " + signature.args.length +
         " arguments, got " + call.args.length,
       expr,
     ));
-    return;
   }
 
-  try {
+  const lane = attempt(expr, () => {
     validate_f32x4_lane_argument(call.prim, call.args);
+  });
 
-    for (let index = 0; index < call.args.length; index += 1) {
-      const arg = call.args[index];
-      const expected_type = signature.args[index];
-      expect(arg, "Missing f32x4 builtin argument " + index);
-      expect(expected_type, "Missing f32x4 builtin argument type " + index);
-      const actual = infer_type(arg, env);
+  const arguments_checked = call.args.map((arg, index): Checked<null> => {
+    const expected_type = signature.args[index];
+    expect(expected_type, "Missing f32x4 builtin argument type " + index);
+    const actual = infer_type(arg, env);
 
-      if (actual.tag === "unknown") {
-        continue;
-      }
-
-      let matches = false;
-
-      if (expected_type === "v128" && actual.tag === "f32x4") {
-        matches = true;
-      }
-
-      if (
-        expected_type !== "v128" && actual.tag === "int" &&
-        actual.type === expected_type
-      ) {
-        matches = true;
-      }
-
-      if (!matches) {
-        throw new Error(
-          "F32x4 builtin argument " + index + " expects " +
-            source_name_for_val_type(expected_type) + ", got " +
-            type_name(actual),
-        );
-      }
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      diagnostics.push(source_diagnostic(
-        "DUCK2302",
-        error.message,
-        expr,
-      ));
-      return;
+    // Poisoned operand: a root cause was already reported, so stay quiet.
+    if (actual.tag === "unknown") {
+      return ok_unit();
     }
 
-    throw error;
-  }
+    if (expected_type === "v128" && actual.tag === "f32x4") {
+      return ok_unit();
+    }
+
+    if (
+      expected_type !== "v128" && actual.tag === "int" &&
+      actual.type === expected_type
+    ) {
+      return ok_unit();
+    }
+
+    return fail(source_diagnostic(
+      "DUCK2302",
+      "F32x4 builtin argument " + index + " expects " +
+        source_name_for_val_type(expected_type) + ", got " + type_name(actual),
+      expr,
+    ));
+  });
+
+  return all([lane, ...arguments_checked]);
 }
 
 function source_name_for_val_type(type: ValType): string {
