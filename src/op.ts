@@ -868,10 +868,6 @@ Prim.type = function type(prim: Prim): CallableType<ValType> {
   }
 };
 
-Prim.arity = function arity(prim: Prim): number {
-  return Prim.type(prim).args.length;
-};
-
 export function f32x4_lane_index(
   prim: "f32x4.extract_lane" | "f32x4.replace_lane",
   value: number | undefined,

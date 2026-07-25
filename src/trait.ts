@@ -65,23 +65,16 @@ export type CallableType<type> = {
 };
 
 export type Callable<self, type> = {
-  arity: (value: self) => number;
   type: (value: self) => CallableType<type>;
 };
 
 export const Callable = typeclass(callable_typeclass, {
   register<self, type>(impl: Callable<self, type>): void {
-    install_instance(impl, callable_typeclass, {
-      arity: impl.arity,
-      type: impl.type,
-    });
+    install_instance(impl, callable_typeclass, { type: impl.type });
   },
+  // Derived from `type`, so instances only supply the signature.
   arity<self, type>(impl: Callable<self, type>, value: self): number {
-    const instance = instance_on<
-      typeof callable_typeclass,
-      Callable<self, type>
-    >(impl, callable_typeclass, "Callable");
-    return call_typeclass_method(instance.arity, impl, value);
+    return this.type(impl, value).args.length;
   },
   type<self, type>(
     impl: Callable<self, type>,
