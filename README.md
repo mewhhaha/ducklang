@@ -1,10 +1,9 @@
 # Ducklang
 
-Ducklang is an Interaction Calculus inspired language that compiles to
-WebAssembly. The parts other languages wire into their compiler — arithmetic
-operators, type algebra, `derive`, effect handling — are ordinary Ducklang
-declarations here, and the compiler specializes them away before anything
-reaches the target.
+Ducklang is a functional language that compiles to WebAssembly. The parts other
+languages wire into their compiler — arithmetic operators, type algebra,
+`derive`, effect handling — are ordinary Ducklang declarations here, and the
+compiler specializes them away before anything reaches the target.
 
 ```txt
 Source -> Frontend -> semantic Core -> gpufuck Functional Core -> Wasm

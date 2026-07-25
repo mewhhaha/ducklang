@@ -2,8 +2,7 @@
 
 ## Goal
 
-Build an Interaction Calculus inspired source-language toolchain in Deno with
-one compiler target:
+Build a functional source-language toolchain in Deno with one compiler target:
 
 ```txt
 Source -> frontend -> semantic Core -> gpufuck Functional Core -> Wasm
@@ -11,46 +10,8 @@ Source -> frontend -> semantic Core -> gpufuck Functional Core -> Wasm
 
 Duck owns parsing, source elaboration, semantic checks, and Core construction.
 Gpufuck owns semantic compilation and Wasm emission. Do not add another Duck
-Wasm backend or expose the retired IC/Core/WAT route switches. The project
-should stay inspectable while it grows. Prefer explicit compiler stages over
-clever abstractions.
-
-## Theory background
-
-This project is inspired by HVM4 and should stay aligned with the theory it is based on.
-
-Primary implementation references:
-
-- HVM4 repository: https://github.com/HigherOrderCO/HVM4
-- HVM4 Interaction Calculus notes: https://github.com/HigherOrderCO/HVM4/blob/main/docs/theory/interaction_calculus.md
-- HVM4 core syntax: https://github.com/HigherOrderCO/HVM4/blob/main/docs/hvm/core.md
-- HVM4 memory layout: https://github.com/HigherOrderCO/HVM4/blob/main/docs/hvm/memory.md
-- HVM2 repository and paper entry point: https://github.com/HigherOrderCO/HVM
-- Bend, the high-level language targeting HVM: https://github.com/HigherOrderCO/Bend
-
-Theory roots to keep in mind:
-
-- Lambda Calculus: lambdas, applications, beta reduction, normal forms.
-- Optimal reduction: avoid duplicating shared work, especially under lambdas.
-- Interaction Nets: local graph rewriting with active pairs and strong confluence.
-- Lafont Interaction Combinators: a tiny universal interaction-net system based on erasure, duplication, and constructor/fan behavior.
-- HVM4 Interaction Calculus: extends lambda calculus with explicit duplications and superpositions.
-
-Useful papers / historical anchors:
-
-- Yves Lafont, "Interaction Nets", POPL 1990: https://doi.org/10.1145/96709.96718
-- Yves Lafont, "Interaction Combinators", Information and Computation 1997: https://doi.org/10.1006/inco.1997.2643
-- John Lamping, "An Algorithm for Optimal Lambda Calculus Reduction", POPL 1990.
-- Andrea Asperti and Stefano Guerrini, "The Optimal Implementation of Functional Programming Languages".
-
-HVM4 ideas that inform the source model:
-
-- Variables are affine: each variable is used at most once.
-- Variables are global: a variable can occur outside its binder's lexical scope.
-- Duplications and superpositions are dual constructs.
-- Dup/sup labels matter: equal labels annihilate, different labels commute.
-- The four central IC interactions are APP-LAM, DUP-SUP, APP-SUP, and DUP-LAM.
-- Practical constructs such as numbers, constructors, matching, and operations should be layered on top of that core rather than mixed into it.
+Wasm backend or a separate WAT route. The project should stay inspectable while
+it grows. Prefer explicit compiler stages over clever abstractions.
 
 ## Style rules
 
@@ -127,92 +88,6 @@ primitive behavior must remain explicit for the gpufuck target.
 
 Do not use an `isOp` style type guard to detect primitive names as tags.
 
-## Historical IC reduction model
-
-This section records the calculus that inspired Duck. It is not a supported
-compiler route; runtime source programs compile through semantic Core and
-gpufuck.
-
-Put Interaction Calculus rewrite rules in `IC.reduce` before lowering to `Expr`.
-
-Start with the small core rules and keep each rule explicit. The first real interaction rule is APP-LAM:
-
-```txt
-(λx. body)(arg) -> body[x := arg]
-```
-
-Same-label DUP-SUP annihilation:
-
-```txt
-! x &L = &L{a, b}; body -> body[x0 := a, x1 := b]
-```
-
-Different-label DUP-SUP commute:
-
-```txt
-! x &L = &R{a, b}; body
-->
-! p &L = a;
-! q &L = b;
-body[x0 := &R{p0, q0}, x1 := &R{p1, q1}]
-```
-
-APP-SUP propagation creates a duplication for the argument and a superposition of applications:
-
-```txt
-(&L{f, g})(x) -> ! a &L = x; &L{f(a0), g(a1)}
-```
-
-DUP-LAM propagation shares the lambda body through a new duplication:
-
-```txt
-! f &L = λx.body; rest
-->
-! b &L = body[x := &L{x0, x1}];
-rest[f0 := λx0.b0, f1 := λx1.b1]
-```
-
-Primitive superposition propagation:
-
-```txt
-add(&L{a, b}, x) -> ! p &L = x; &L{add(a, p0), add(b, p1)}
-```
-
-Explicit erasure discards a value before continuing:
-
-```txt
-~ value;
-body
-```
-
-Erasure is structural. Erasing a compound value should recursively erase its children before continuing. Erasure must reduce away before lowering to `Expr`.
-
-Primitive numeric folding should preserve the target value type. Use wrapping behavior for fixed-width integer primitives.
-
-When reducing `dup`, inspect the active pair formed by the duplicated expression before reducing the body. Reducing the body too early can erase the global-variable behavior that DUP-LAM relies on.
-
-Use deterministic fresh names for generated binders.
-
-Do not lower unreduced `lam`, `app`, `sup`, or `era` nodes to `Expr`. If they remain after reduction, throw an error.
-
-## Historical module layer
-
-`Expr`, `Mod`, and WAT emission describe the retired in-repository backend.
-Do not extend or expose this path; new compiler work belongs in the gpufuck
-adapter or upstream gpufuck.
-
-Keep `Expr` focused on computing one value. Do not put module, function, export, import, memory, or start-function structure into `Expr`.
-
-Use a separate `Mod` layer after `Expr`:
-
-```txt
-Expr -> Mod -> WAT
-```
-
-The module layer owns Wasm functions and exports. `Expr.emit` should emit only the function body instructions.
-
-Store module functions as a map keyed by function name. This makes export validation a direct lookup instead of a scan.
-
 ## Typeclasses
 
 Compiler traits are typeclasses built on `@mewhhaha/typeclasses` (JSR). The trait definitions live in `src/trait.ts`: each trait exports its structural type, a token symbol, and a typeclass object created with the library's `typeclass()` whose static methods dispatch through the instance registered under the token.
@@ -230,46 +105,56 @@ export const Format = typeclass(format_typeclass, {
 });
 ```
 
-Define the data type and an empty function with the same exported name:
+`src/trait.ts` defines two traits: `Format` (`fmt`, plus a derived `all`) and
+`Callable` (`type`, plus a derived `arity`). `src/op.ts` is the reference
+implementation. Derived methods live on the typeclass and dispatch through
+`this`, so instances supply only the primitive members — never re-implement a
+derived method on the companion.
+
+Define the data type and an empty function with the same exported name. The
+function is the namespace-like value that instances are installed onto:
 
 ```ts
-export type IC =
+export type Prim =
   | { tag: "num"; type: ValType; value: number | bigint }
   | { tag: "var"; name: string };
 
-export function IC() {}
+export function Prim() {}
 ```
 
-Attach methods directly to the function:
+Attach methods directly to the function, one per trait member:
 
 ```ts
-IC.fmt = function fmt(ic: IC): string {
-  if (ic.tag === "num") {
-    return ic.value.toString() + ":" + ic.type;
+Prim.fmt = function fmt(prim: Prim): string {
+  if (prim.tag === "num") {
+    return prim.value.toString() + ":" + prim.type;
   }
 
-  if (ic.tag === "var") {
-    return ic.name;
+  if (prim.tag === "var") {
+    return prim.name;
   }
 
-  ic satisfies never;
+  prim satisfies never;
   throw new Error("panic");
 };
+
+Prim.type = function type(prim: Prim): CallableType<ValType> {/* ... */};
 ```
 
-Register the companion's instances in the implementation file, immediately after the relevant methods are assigned. Registration checks the trait shape structurally (replacing the old `satisfies` statements) and installs the instance under the typeclass token:
+`Callable.arity(Prim, p)` then works without `Prim` defining `arity` — the
+typeclass derives it from `type`.
+
+Register the companion at the bottom of the implementation file, after every
+method is assigned. Registration checks the trait shape structurally and
+installs the instance under the typeclass token:
 
 ```ts
-IC.emit = function emit(ic: IC): Expr {
-  return lower(ic, new Map());
-};
-
-Format.register<IC>(IC);
-Emit.register<IC, Expr>(IC);
+Format.register<Prim>(Prim);
+Callable.register<Prim, ValType>(Prim);
 ```
 
-Call sites keep the explicit dictionary shape, such as `Format.fmt(IC, node)`. Registering `Format` also installs the library's `Show` instance, so wrapped values created with `as_data(IC, node)` work with the library's `Show.show`. Do not keep registrations in `main.ts`. Do not replace this pattern with object literals or constructor casts. The empty function is the namespace-like value, and typeclass instances are installed onto it.
+Call sites keep the explicit dictionary shape: `Format.fmt(Prim, node)`. Registering `Format` also installs the library's `Show` instance, so wrapped values created with `as_data(Prim, node)` work with the library's `Show.show`. Do not keep registrations in `main.ts`. Do not replace this pattern with object literals or constructor casts.
 
-The library's `Do` syntax and `Program`/`Effect` machinery are for the tooling layer, not the compiler core: `main.ts` runs the demo pipeline as an effect program (Reader for configuration, Writer for stage dumps, Task for filesystem output), and `Do` chains `Maybe` extractions in the demo and tests. Compiler passes keep the explicit `if`-block style from the rules above.
+New traits belong in `src/trait.ts`, where `register` calls `install_instance` and each method dispatches with `call_typeclass_method`. Keep the dispatch helpers there rather than spreading them across implementation files.
 
 `@mewhhaha/typeclasses` is excluded from the `minimumDependencyAge` gate in `deno.json` so fresh releases of first-party packages resolve immediately; other dependencies stay behind the age gate.

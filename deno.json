@@ -13,7 +13,7 @@
   },
   "imports": {
     "@mewhhaha/baba": "jsr:@mewhhaha/baba@6.1.0",
-    "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.0"
+    "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.2"
   },
   "minimumDependencyAge": {
     "age": "P7D",
@@ -24,6 +24,7 @@
   "fmt": {
     "exclude": [
       "AGENTS.md",
+      "CLAUDE.md",
       "tree-sitter-duck/grammar.js",
       "tree-sitter-duck/src/grammar.json",
       "tree-sitter-duck/src/node-types.json"
