@@ -340,17 +340,25 @@ So nothing is blocked on semantics.
       spans, so layout and comments survive. Distinguishes value blocks (lambda
       body, block expression, match arm) from statement blocks (`loop`, `for`,
       statement-position `if`), whose last statement is not a value.
-- [ ] **The codemod has a traversal bug — do not run it at scale yet.**
-      Validated on `case-studies/editor/editor.duck`: 134 lines change, analyzes
-      clean, editor suite 7/7. But on
-      `examples/loops/11_refutable_collection_pattern.duck` it emits
-      `return for … { … };;` — wrapping a `for` **statement** in `return`, which
-      the backend then rejects with "does not support an early return", and
-      doubling the terminator. The spans are correct (`for` at 170–238, the
-      trailing `total` at 240–245), and `is_self_terminating` covers
-      `for_collection`, so something reaches that statement through a second
-      path. Isolate before running over 1060 files. Running it on `examples/`
-      changed 126 files and broke one; reverted.
+- [x] **Codemod traversal bug fixed** in `3b1b950`. It had wrapped a `for`
+      statement in `return` and doubled its terminator. Both causes came from
+      the AST being post-desugar: a refutable `for` pattern becomes a match
+      whose nodes report the `for`'s own span, and match arms were treated as
+      value blocks unconditionally. The walker now threads the enclosing block
+      kind through expression recursion and carries the parent span, treating a
+      node whose span coincides with its parent as derived and leaving it
+      unedited. Migrating `examples/` now changes 126 files with the suite
+      green, and `editor.duck` still migrates to a passing 7/7.
+- [ ] **New blocker: the grammar rejects `return match … { … };`.** Migrating
+      `examples/` drops tree-sitter from 130/130 to 128/130, on
+      `failures/compile/13_runtime_value_pattern.duck` and
+      `compile_time/23_derived_sequence.duck`. The frontend accepts the form —
+      the Deno suite stays green — but the grammar parses the arms as unary `|`
+      operators instead of a match. `match_expression` is already in
+      `_expression` and `return_statement` takes one, so this is a precedence or
+      conflict problem rather than a missing rule. CI runs `tree-sitter parse`
+      over every example, so this must be fixed before the migration lands. The
+      examples migration was reverted pending it.
 - [ ] **Then migrate**, per directory, verifying each suite as it goes.
 - [ ] **Then make it required** — parse error on a bare trailing expression.
 - [ ] **Then simplify the grammar**, which is the payoff.
