@@ -311,6 +311,44 @@ prelude (23) were already clean and stay clean.
 
 **Coherence target:** anything the compiler accepts, the editor grammar parses.
 
+## 4d. Required `return` and mandatory semicolons
+
+Decided direction: every block ends with an explicit `return <expr>;`, every
+statement is terminated, and the concise lambda form `() => value` stays
+implicit. That gives the grammar a real terminator and removes the trailing-
+expression special case, so statement position and argument position stop
+overlapping.
+
+**Blocker found before migrating: `return` already means two different things
+depending on position.** Both measured through `DuckCompiler`:
+
+| context               | meaning                     | evidence                                                                            |
+| --------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| block used as a value | the block's value           | `let x = if n > 0 { return 99; } else { return 0; }; x + 1` returns **100**, not 99 |
+| `let … else { … }`    | exit the enclosing function | `let \`Some v = m else { return 7; }; v + 1` returns **7**                          |
+
+Making `return` required for every block therefore needs a spec decision first,
+because the same keyword would carry both readings on every block in the
+language:
+
+- [ ] **Decide the semantics.** Either keep one keyword and define its meaning
+      by position — value in a value block, divergence in a diverging block —
+      and write that down; or split it, keeping `return` for function exit and
+      giving value blocks a different word. The second is clearer but touches
+      the `let … else` sites too.
+- [ ] **Then migrate.** 1060 files, 77,090 lines. 3,421 assignments need
+      terminators and every block's trailing expression needs wrapping. The
+      `duck fmt` CLI cannot perform this: `src/fmt/format.ts` reflows tokens and
+      has no notion of statement kinds, so it needs statement-boundary awareness
+      first, or the migration needs a one-off codemod built on the frontend AST.
+- [ ] **Then simplify the grammar**, which is the payoff — a real terminator
+      should retire the ambiguity in `application_expression` and possibly
+      shrink the 178-line contextual scanner.
+
+Note this is a larger fix than the bug that prompted it. The parse failure in
+section 4c has a one-token fix. This is worth doing for its own sake, not as a
+workaround.
+
 ## 5. Structure
 
 - [x] **The backend lived in `experiments/`.** Moved to `src/backend/`, and
