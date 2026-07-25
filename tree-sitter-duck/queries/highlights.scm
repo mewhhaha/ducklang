@@ -15,12 +15,17 @@
   "include"
 ] @keyword.control.import
 
+; `and` joins a mutual binding group, so it belongs with the binding keywords.
 [
   "let"
   "const"
+  "and"
 ] @keyword.storage
 
-"open" @keyword.storage.modifier
+[
+  "open"
+  "suspending"
+] @keyword.storage.modifier
 
 [
   "declare"
@@ -51,19 +56,15 @@
 
 "rec" @keyword.function
 
-[
-  "if"
-  "else"
-] @keyword.control.conditional
-
 (try_with_expression
   ["try" "with"] @keyword.control.exception)
 
 (as_keyword) @keyword.operator
 
 [
-  "match"
   "if"
+  "else"
+  "match"
 ] @keyword.control.conditional
 
 [
@@ -73,10 +74,12 @@
   "by"
 ] @keyword.control.repeat
 
+; Capture the keyword token, not the statement node. `(break_statement)` spans
+; `break … ;`, so the terminator inherited the keyword colour.
 [
   "return"
-  (break_statement)
-  (continue_statement)
+  "break"
+  "continue"
 ] @keyword.control.return
 
 (wildcard) @variable.builtin
@@ -124,6 +127,7 @@
 
 [
   ","
+  ";"
   ":"
   "."
   "#"
@@ -287,23 +291,26 @@
 (handler_operation_clause
   name: (identifier) @function.method)
 
+; A call site is `function.call`, distinct from the `function` of a definition
+; above. Themes routinely give the two different colours, and collapsing them
+; put every application in the same colour as the keywords.
 (application_expression
   function: (postfix_expression
-    (identifier) @function))
+    (identifier) @function.call))
 
 (condition_call_expression
   function: (condition_expression
-    (identifier) @function))
+    (identifier) @function.call))
 
 (application_expression
   function: (postfix_expression
     (linear_reference
-      name: (identifier) @function)))
+      name: (identifier) @function.call)))
 
 (condition_call_expression
   function: (condition_expression
     (linear_reference
-      name: (identifier) @function)))
+      name: (identifier) @function.call)))
 
 ((application_expression
   function: (postfix_expression
@@ -343,9 +350,9 @@
 (application_expression
   function: (postfix_expression
     (field_expression
-      field: (identifier) @function.method)))
+      field: (identifier) @function.method.call)))
 
 (condition_call_expression
   function: (condition_expression
     (condition_field_expression
-      field: (identifier) @function.method)))
+      field: (identifier) @function.method.call)))
