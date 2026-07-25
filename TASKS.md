@@ -118,47 +118,61 @@ consumer has a reason to hand-roll a cons list.
 
 ## 3. One collection API in the prelude
 
-There are three-to-four implementations of the same list operations, and the
-canonical one is whichever a given file happened to import. All **verified** by
-reading the modules.
+**Rewritten (2026-07-25) — the original premise was wrong.** This section
+claimed three-to-four careless copies of the same list operations. Working
+through every item found the opposite: the prelude has _variants tuned to
+different constraints_, and only one was genuine duplication. The real defect is
+that nothing records which variant to reach for, so it reads as sloppiness.
 
-- [ ] `src/frontend/prelude_list.duck` defines its whole API **twice** —
-      standalone `list_*` consts (`:5-157`) and a `list` factory (`:159-308`)
-      with byte-identical bodies.
-- [ ] `src/frontend/prelude_functional.duck`'s `list` factory (`:316-716`) is a
-      near-clone of that factory, extended with `filter`/`find`/`any`/`count`/
-      `fold_i32`/`sort_by`. With ~110 importers it is the de facto canonical
-      API.
-- [ ] `src/frontend/prelude_collections.duck` is a third copy of
-      `reverse`/`take`/`length`.
-- [x] ~~`src/frontend/prelude_json_string.duck` is a byte-identical copy of part
-      of `prelude_json_encode.duck`.~~ **Not duplication — do not merge these.**
-      The `encode_json_string` bodies are byte-identical, but the modules are
-      not interchangeable: `prelude_json_encode.duck` imports
-      `duck:prelude/json/values` and aliases `JsonArray`/`JsonObject`, so
-      importing it drags in the Json type machinery, while
-      `prelude_json_string.duck` depends only on `duck:prelude/runtime`. Its
-      four consumers want to escape a string without that. Attempting the merge
-      broke `agent_tool_control.test.ts` with `F2101 unknown type "Json"`,
-      confirmed by A/B against HEAD. Compare module dependency footprints, not
-      just function bodies.
-- [ ] **No canonical `fold`.** `list_fold_left` exists in `prelude_functional`
-      with zero importers outside the prelude.
+What each module is actually for:
+
+| module                | constraint it serves                                     |
+| --------------------- | -------------------------------------------------------- |
+| `prelude_list`        | depends only on `duck:prelude/types`; naive constructors |
+| `prelude_collections` | **zero** imports; `List` used ambiently                  |
+| `prelude_functional`  | pins nominal types with `@construct`; the robust one     |
+| `prelude_json_string` | escapes a string without pulling in Json types           |
+
+- [x] **`prelude_list` defined its API twice.** Genuine, and the only genuine
+      one. Fixed in `67e5254`: the `list` factory now delegates to the
+      standalone `list_*` consts. 150 lines removed, both surfaces kept.
+- [x] ~~`prelude_functional`'s `list` factory is a near-clone.~~ **Do not
+      merge.** It uses `@construct(node_type, [value, values])` and a `cons`
+      helper to pin the nominal type explicitly, where `prelude_list` writes a
+      bare literal and `` `Cons ``. That is precisely the workaround for §2's
+      ambiguity symptom, and it is why the codex study routes through
+      `comptime list Text` instead of writing constructors by hand. Delegating
+      would reintroduce the ambiguity across 138 importers.
+- [x] ~~`prelude_json_string` is a byte-identical copy.~~ **Do not merge.** The
+      bodies match; the dependency footprints do not. `prelude_json_encode`
+      imports `duck:prelude/json/values` and aliases `JsonArray`/`JsonObject`.
+      Merging failed `agent_tool_control.test.ts` with
+      `F2101 unknown type
+      "Json"`, confirmed by A/B.
+- [x] ~~No canonical `fold`.~~ **There is one:** `list_fold_left`, generic over
+      `forall value state`, exported from `prelude_functional`. It cannot be a
+      member of the `list` factory because the factory is parameterized on
+      `value_type` alone and a fold needs a second type parameter — which is why
+      `fold_i32` exists alongside it. Attempting to add `.fold` fails to parse.
+      The gap is discoverability, not absence.
+- [x] ~~`prelude_iterators` has no consumers.~~ It has one again:
+      `examples/loops/14_iterator_windows.duck`, added with the fix in
+      `09da064`.
 - [x] **`iterator_windows` is broken.** Fixed in `09da064` by calling the
       `@slice` intrinsic; the literal tuple form regresses `for` over the
-      iterator. Original note: `src/frontend/prelude_iterators.duck:353` calls
-      the tuple-lambda `slice` with comma arguments, so any module that uses it
-      fails `DUCK2307`. It is hidden only because unused const-module members
-      are pruned.
-- [ ] **`prelude_iterators` now has no consumers** — the editor was the only one
-      and no longer imports it.
+      iterator.
+- [ ] **`prelude_collections` overlaps `prelude_list`** on
+      `reverse`/`take`/`length`. Unlike the others this may be mergeable, but it
+      is the only module in the prelude with **zero** imports, so delegating to
+      `prelude_list` would add a dependency where none exists. Establish first
+      whether any consumer depends on that, the way `prelude_json_string`'s
+      consumers depend on not seeing Json types.
+- [ ] **Document the variants.** The table above belongs in the prelude itself,
+      next to the modules. Four separate attempts today assumed duplication and
+      three were wrong; the next reader will assume the same.
 
-Decide one home, make the others re-export, and delete the copies. Pick
-`prelude_functional`'s API on usage grounds, or move it to `prelude_list` on
-naming grounds — but pick.
-
-**Coherence target:** one obvious way to fold a list, and the prelude does not
-contradict itself.
+**Coherence target:** one obvious way to fold a list, and where several
+implementations exist, a recorded reason for each.
 
 ## 4. Tests that actually run
 
