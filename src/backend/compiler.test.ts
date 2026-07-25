@@ -1,9 +1,5 @@
 import { assert_equals } from "../../src/assert.ts";
-import {
-  beginWasmArena,
-  StorageClass,
-  type WasmHostValue,
-} from "../../../gpufuck/functional.ts";
+import { beginWasmArena, StorageClass, type WasmHostValue } from "gpufuck";
 import { success_examples } from "../../examples/manifest.ts";
 import { parse_source } from "../../src/frontend/parser.ts";
 import { compiler_compatibility_cases } from "./benchmark_cases.ts";

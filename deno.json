@@ -9,6 +9,7 @@
   },
   "imports": {
     "@mewhhaha/baba": "jsr:@mewhhaha/baba@6.1.0",
+    "gpufuck": "../gpufuck/functional.ts",
     "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.2"
   },
   "minimumDependencyAge": {

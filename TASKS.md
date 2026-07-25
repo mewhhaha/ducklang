@@ -198,6 +198,45 @@ implementations exist, a recorded reason for each.
 
 **Coherence target:** a green CI run means the case studies still work.
 
+## 4b. The three bugs keeping codex out of CI
+
+`case-studies/codex` fails 8 of 27 tests at `ad87e2f`, which is why `c58ea7e`
+left it out of the CI matrix. Three distinct classes, all **verified**.
+
+- [ ] **`Compile-time shape cannot be emitted as a Core result`**
+      (`src/core/from_source/expr.ts:418`, reached from
+      `src/core/from_source/stmt.ts:303`). Fails `exec.test.ts` (2) and
+      `hook.test.ts`. Partially diagnosed: `hook_adapter_fixture.duck` does not
+      analyze clean — `Source.analyze_file` reports five diagnostics before any
+      lowering happens, four
+      `DUCK2307 Call requires a tuple argument written
+      f([a, b])` and one
+      `DUCK2101 Const parameter transform requires
+      compile-time argument: session_id`.
+      The reported spans run past the end of the fixture, so they belong to
+      imported modules surfaced under the fixture's URI. So the real defect may
+      be two defects: source that is genuinely invalid, and a compile path that
+      lowers it anyway and reports an internal error instead of the diagnostics.
+      Establish which before fixing. Note `DUCK2307` is the same class as the
+      `iterator_windows` bug fixed in `09da064`, so a tuple/pack call-shape
+      mistake is recurring.
+- [ ] **`Host callable cannot expose borrowed or frozen values`**
+      (`src/abi.ts:481`, via `src/backend/core_lowering.ts:130`). Fails
+      `request_permissions.test.ts` and `update_plan_stage_composition.test.ts`.
+      Not investigated.
+- [ ] **`F2102` type mismatch during gpufuck compilation**
+      (`src/backend/compiler.ts:799`). Fails `agent_job_report.test.ts` and
+      `view_image.test.ts` with
+      `expected duck::JsonArray, received
+      duck::JsonObject`, and
+      `code_mode_execute.test.ts` with
+      `expected
+      ($FunctionalText, duck::JsonObject), received $FunctionalText`.
+      Not investigated.
+
+**Coherence target:** codex joins the CI matrix, which is the only way the
+largest case study stops silently rotting.
+
 ## 5. Structure
 
 - [x] **The backend lived in `experiments/`.** Moved to `src/backend/`, and
@@ -217,11 +256,18 @@ implementations exist, a recorded reason for each.
       `deno task compiler:test` still runs it deliberately. Fix the suite, then
       drop the ignore.
 
-- [ ] **The cross-repo import has no pin.** `../../../gpufuck/functional.ts` is
-      a relative path into a sibling checkout; a removed export breaks Duck on
-      the next compile with no version range to protect it. gpufuck's own
-      `ARCHITECTURE.md` §7 documents this as the fragile seam. At minimum, a
-      smoke test that fails loudly when the boundary drifts.
+- [~] **The cross-repo import has no pin.** Partly addressed: the three
+  scattered `../../../gpufuck/functional.ts` specifiers are now one `"gpufuck"`
+  import-map entry in `deno.json`, so the coupling is stated in one place and
+  can be repointed at an absolute path or at JSR by editing one line. A real pin
+  still is not possible — `jsr:@mewhhaha/gpufuck@0.2.0` predates the sibling's
+  rename and still exports `FunctionalWasmInit`, where this repo now expects
+  `WasmInit`. Switch once a version carrying the current API is published.
+  Original note: `../../../gpufuck/functional.ts` is a relative path into a
+  sibling checkout; a removed export breaks Duck on the next compile with no
+  version range to protect it. gpufuck's own `ARCHITECTURE.md` §7 documents this
+  as the fragile seam. At minimum, a smoke test that fails loudly when the
+  boundary drifts.
 
 ## 6. TypeScript side
 

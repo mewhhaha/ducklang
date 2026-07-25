@@ -23,7 +23,7 @@ import {
   type WasmInit,
   type WasmInitBinding,
   WasmIntrinsic,
-} from "../../../gpufuck/functional.ts";
+} from "gpufuck";
 import {
   type AbiImport,
   type AbiManifest,

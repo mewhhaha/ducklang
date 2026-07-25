@@ -19,7 +19,7 @@ import {
   type WasmInit,
   type WasmInitBinding,
   type WasmRunOptions,
-} from "../../../gpufuck/functional.ts";
+} from "gpufuck";
 import type { Source as SourceNode } from "../../src/frontend/ast.ts";
 import { format_source } from "../../src/frontend/format.ts";
 import { source_with_host_interface } from "../../src/frontend/host_interface.ts";
