@@ -54,7 +54,10 @@
   "prefix"
 ] @keyword.directive
 
-"rec" @keyword.function
+; `rec` changes how a binding evaluates rather than naming a function, so it
+; sits in the plain keyword bucket with `return` and `break` rather than under
+; keyword.function, which themes colour like a definition.
+"rec" @keyword
 
 (try_with_expression
   ["try" "with"] @keyword.control.exception)
