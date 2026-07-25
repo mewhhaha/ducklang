@@ -4418,6 +4418,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "wildcard"
+        },
+        {
+          "type": "SYMBOL",
           "name": "_aggregate_constructor_identifier"
         },
         {
@@ -6849,6 +6853,14 @@
     [
       "parameter",
       "_array_pattern_element"
+    ],
+    [
+      "positional_type_product",
+      "_primary_expression"
+    ],
+    [
+      "_primary_expression",
+      "array_type"
     ]
   ],
   "precedences": [],

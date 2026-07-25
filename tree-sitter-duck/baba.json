@@ -63,6 +63,14 @@
     [
       "parameter",
       "_array_pattern_element"
+    ],
+    [
+      "positional_type_product",
+      "_primary_expression"
+    ],
+    [
+      "_primary_expression",
+      "array_type"
     ]
   ],
   "inline": [

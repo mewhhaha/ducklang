@@ -4947,6 +4947,10 @@
         {
           "type": "unit_pattern",
           "named": true
+        },
+        {
+          "type": "wildcard",
+          "named": true
         }
       ]
     }

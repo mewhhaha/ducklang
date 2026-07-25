@@ -628,6 +628,7 @@ _primary_expression = (
                         | character
                         | boolean
                         | identifier
+                        | wildcard
                         | _aggregate_constructor_identifier
                         | _effect_identifier_alias
                         | intrinsic_identifier
