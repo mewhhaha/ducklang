@@ -85,33 +85,36 @@ until someone produces a failing program.
 Four distinct failures, originally believed **verified** from the editor
 migration:
 
-- [ ] `List <union>` as a **struct field** fails backend lowering with "requires
-      a named runtime type, found lam". The `lam` is the unapplied type
-      constructor: a `type List value` declaration becomes a Core lambda
-      (`src/backend/core_lowering.ts:349`), and `type_expression_name` (`:6343`)
-      accepts only `var`, `type_name`, `app`, and `union_type`.
-- [ ] **Alias and application do not unify.** Using `EditorCommands` where
-      `List EditorCommand` is expected reports "nominal names differ", so the
-      alias is not transparent to the unifier.
-- [ ] **Bare `` `Nil () `` is ambiguous** once several `List` instantiations are
-      in scope — resolution is a structural payload search, which cannot
-      disambiguate `List Key` from `List EditorCommand`.
-- [ ] **`rec` functions over `List T`** → `cannot infer function result`, even
-      with an explicit `[…] -> …` annotation on the binding.
+- [~] **Unreproduced.** `List <union>` as a **struct field** was reported to
+  fail backend lowering with "requires a named runtime type, found lam". The
+  `lam` is the unapplied type constructor: a `type List value` declaration
+  becomes a Core lambda (`src/backend/core_lowering.ts:349`), and
+  `type_expression_name` (`:6343`) accepts only `var`, `type_name`, `app`, and
+  `union_type`.
+- [~] **Unreproduced.** Alias and application reported not to unify. Using
+  `EditorCommands` where `List EditorCommand` is expected reports "nominal names
+  differ", so the alias is not transparent to the unifier.
+- [x] **Fixed in `43b4572`.** Bare `` `Nil () `` was ambiguous once several
+      `List` instantiations are in scope — resolution is a structural payload
+      search, which cannot disambiguate `List Key` from `List EditorCommand`.
+- [x] **Fixed in `43b4572`.** `rec` functions over `List T` →
+      `cannot infer function result`, even with an explicit `[…] -> …`
+      annotation on the binding.
 
 Two root causes worth fixing before the symptoms:
 
-- [ ] **The space heuristic.** `src/frontend/type_set_elaborate.ts:4749`
-      collapses a resolved union to its nominal name only when the name has no
-      space. `"List Key"` has one, so parametric instantiations skip the
-      collapse and ship an unnameable type expression to the backend. Register
-      parametric instantiations as real nominal types instead of testing for a
-      space. This is the change that retires the whole class.
-- [ ] **`lower_union_case` prefers the wrong source of truth.**
-      `src/backend/core_lowering.ts:5179` calls `type_expression_name` on
-      `type_expr` first and only falls back to `expected` in the `else` branch —
-      so it throws even when the declared field type was correct and available.
-      Guard the call and fall back.
+- [~] **Dead end.** The space heuristic.
+  `src/frontend/type_set_elaborate.ts:4749` collapses a resolved union to its
+  nominal name only when the name has no space. `"List Key"` has one, so
+  parametric instantiations skip the collapse and ship an unnameable type
+  expression to the backend. Register parametric instantiations as real nominal
+  types instead of testing for a space. This is the change that retires the
+  whole class.
+- [~] **Dead end.** `lower_union_case` prefers the wrong source of truth.
+  `src/backend/core_lowering.ts:5179` calls `type_expression_name` on
+  `type_expr` first and only falls back to `expected` in the `else` branch — so
+  it throws even when the declared field type was correct and available. Guard
+  the call and fall back.
 
 **Coherence target:** the prelude's collections are usable directly, so no
 consumer has a reason to hand-roll a cons list.
@@ -188,7 +191,9 @@ implementations exist, a recorded reason for each.
       (`.github/workflows/pr.yaml:77-87` lists chip8, grep, raytracer, tar,
       wav). The editor work in `ca194ae` was verified locally and by nothing
       else. **verified**
-- [ ] **`for` over `List` is documented but untested.** `docs/language.md:2098`
+- [x] **`for` over `List` is documented but untested.** Now exercised by
+      `examples/handlers/06_effects_in_cursor_loop.duck`, which iterates a
+      `List I32` and runs in CI. Original note: `docs/language.md:2098`
       describes it; no `.duck` file in the repo exercises it. **verified**
 
 **Coherence target:** a green CI run means the case studies still work.
