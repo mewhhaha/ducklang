@@ -224,11 +224,27 @@ left it out of the CI matrix. Three distinct classes, all **verified**.
 
       The `const` is load-bearing: removing it trades the one `DUCK2101` for
       three `DUCK2310` unification failures, because the specialization it
-      enables is what makes the pipeline typecheck. So neither "drop the const"
-      nor "rewrite the call site" is obviously right, and a pipe operator that
-      cannot take a stage capturing a runtime value is a real restriction on
-      the language rather than a bug in this fixture. Decide the semantics
-      first.
+      enables is what makes the pipeline typecheck — and that specialization is
+      the point, since it resolves the pipeline instead of building an
+      intermediate closure per stage.
+
+      **Correction.** The commit message for `7c2772a` called this `DUCK2101`
+      the cause of the `Compile-time shape` failure. That is not established. A
+      probe reproducing the same diagnostic — a pipe whose stage closes over a
+      runtime binding — **compiles and runs correctly**, returning the expected
+      value with the diagnostic present. So `DUCK2101` does not by itself block
+      lowering, and the cause of the codex failure is still unknown.
+
+      What is established: the lambda-stage form works.
+      `value |> (v => f [v, runtime_value])` runs correctly and specializes;
+      the parentheses are required because the lambda binds looser than `|>`.
+      `scope_const_expr_known` (`type_set_elaborate.ts:5806`) already accepts a
+      `lam` argument, so this form is intended. The spurious part is that the
+      check still walks into the lambda body and rejects free *runtime*
+      bindings referenced there — `add`, then `runtime_value` — even though
+      only the stage's shape needs to be compile-time for specialization.
+      Narrowing that check is the actual fix, and it is in
+      `type_set_elaborate.ts:5341`, not `call_args.ts:210`.
 
       Separately, the compiler lowers source that has diagnostics and fails
       with an internal error instead of surfacing them. Worth fixing on its own
