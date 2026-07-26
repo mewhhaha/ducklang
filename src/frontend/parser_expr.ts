@@ -21,6 +21,29 @@ import {
   mark_hole_lambda,
 } from "./hole.ts";
 
+/**
+ * Words that end a juxtaposition application rather than becoming its argument.
+ * `f x then` is `f x` followed by `then`, not `f` applied to `x` and `then`.
+ *
+ * This list must stay in step with `application_stop_keyword` in
+ * `tree-sitter-duck/src/scanner.c`; the two parsers disagreeing shows up as a
+ * file the editor highlights correctly but the compiler rejects.
+ */
+const application_stop_keywords = new Set([
+  "as",
+  "by",
+  "do",
+  "else",
+  "end",
+  "if",
+  "in",
+  "is",
+  "of",
+  "then",
+  "where",
+  "with",
+]);
+
 export abstract class ParserExpr extends ParserPrimary {
   #stop_postfix_block = 0;
   #stop_arrow = 0;
@@ -113,7 +136,7 @@ export abstract class ParserExpr extends ParserPrimary {
   }
 
   private parse_closure_body(): FrontExpr {
-    if (this.peek().kind === "symbol" && this.peek().text === "{") {
+    if (this.at_keyword("do")) {
       return this.parse_block();
     }
 
@@ -311,9 +334,13 @@ export abstract class ParserExpr extends ParserPrimary {
         break;
       }
 
+      // A block delimiter ends the operand as surely as `as` or `is` does;
+      // without this, `value is Int then do` hands `then do` to the type
+      // parser, which reports an unexpected token in the annotation.
       if (
         parens === 0 && brackets === 0 && token.kind === "name" &&
-        (token.text === "as" || token.text === "is" || token.text === "with")
+        (token.text === "as" || token.text === "is" || token.text === "with" ||
+          application_stop_keywords.has(token.text))
       ) {
         break;
       }
@@ -385,7 +412,7 @@ export abstract class ParserExpr extends ParserPrimary {
     }
 
     if (this.match_name("scratch")) {
-      if (this.peek().kind !== "symbol" || this.peek().text !== "{") {
+      if (!this.at_keyword("do")) {
         throw this.error("Expected scratch block");
       }
 
@@ -529,7 +556,7 @@ export abstract class ParserExpr extends ParserPrimary {
     }
 
     if (expr.tag === "union_case" && expr.value === undefined) {
-      throw this.error("Union constructor `" + expr.name + " requires a value");
+      expr = { ...expr, value: { tag: "unit" } };
     }
 
     return expr;
@@ -592,7 +619,25 @@ export abstract class ParserExpr extends ParserPrimary {
 
   private apply_unary_product(func: FrontExpr, arg: FrontExpr): FrontExpr {
     if (func.tag === "union_case" && func.value === undefined) {
+      if (arg.tag === "unit") {
+        throw this.error(
+          "Nullary union constructor #" + func.name + " omits `()`",
+        );
+      }
+
       return { ...func, value: arg };
+    }
+
+    if (arg.tag === "product" && arg.template_literal === true) {
+      return this.lift_argument_holes(
+        {
+          tag: "app",
+          func,
+          arg,
+          args: arg.entries.map((entry) => entry.value),
+        },
+        arg,
+      );
     }
 
     if (func.tag !== "var" || !func.name.startsWith("@wasm.")) {
@@ -633,20 +678,17 @@ export abstract class ParserExpr extends ParserPrimary {
 
     if (
       token.kind === "number" || token.kind === "string" ||
-      token.kind === "character"
+      token.kind === "character" || token.kind === "template_start"
     ) {
       return true;
     }
 
     if (token.kind === "name") {
-      return token.text !== "as" && token.text !== "is" &&
-        token.text !== "with" && token.text !== "else" &&
-        token.text !== "by" && token.text !== "in" &&
-        token.text !== "if" && token.text !== "where";
+      return !application_stop_keywords.has(token.text);
     }
 
     return token.kind === "symbol" &&
-      (token.text === "(" || token.text === "[" || token.text === "`" ||
+      (token.text === "(" || token.text === "[" ||
         token.text === "." || token.text === "!" ||
         token.text === "#" || token.text === "@" ||
         (token.text === "{" && this.is_shape_literal()));
@@ -670,7 +712,7 @@ export abstract class ParserExpr extends ParserPrimary {
           }
 
           throw this.error(
-            "Union constructor application uses `" + expr.name + " value",
+            "Union constructor application uses #" + expr.name + " value",
           );
         }
 
@@ -739,14 +781,13 @@ export abstract class ParserExpr extends ParserPrimary {
             "the source-defined type extension operator",
         );
       } else if (
-        this.#stop_try_with > 0 && this.peek().kind === "name" &&
-        this.peek().text === "with"
+        this.peek().kind === "name" &&
+        (this.peek().text === "of" || this.peek().text === "with")
       ) {
+        // `of` closes a case target and `with` closes a try body. The
+        // construct that opened the expression decides which delimiter
+        // belongs to it.
         break;
-      } else if (
-        this.peek().kind === "name" && this.peek().text === "with"
-      ) {
-        throw this.error("`with` is reserved for `try ... with ...`");
       } else {
         break;
       }
@@ -927,7 +968,7 @@ function product_pattern_params(
 ): Param[] {
   expect(
     pattern.rest === undefined,
-    "Value-pack rest patterns are not supported as function parameters; use match",
+    "Value-pack rest patterns are not supported as function parameters; use case",
   );
   const params: Param[] = [];
 

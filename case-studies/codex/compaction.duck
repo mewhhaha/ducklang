@@ -19,199 +19,200 @@ const summary_prefix: Text =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
 
 const compaction_content_text: (CompactionContent) -> CompactionTextOption =
-  content => if let `InputText text = content {
-    `Some text
-  } else if let `OutputText text = content {
-    `Some text
-  } else {
-    `None ()
-  };
+  content => if let #InputText text = content then
+    #Some text
+  else let #OutputText text = content then
+    #Some text
+  else
+    #None
+  end;
 
-const content_items_to_text: (CompactionContents) -> CompactionTextOption = values => {
+const content_items_to_text: (CompactionContents) -> CompactionTextOption = values => do
   let current = values;
   let text: Text = "";
   let has_text = false;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [content, tail] = node;
       let content_text = compaction_content_text content;
 
-      if let `Some part = content_text {
-        if part == "" {
+      if let #Some part = content_text then
+        if part == "" then
           ()
-        } else if has_text {
+        else has_text then
           text = text_append [text, text_append ["\n", part]]
-        } else {
+        else
           text = part
           has_text = true
-        }
-      }
+        end;
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
-  if has_text {
-    `Some text
-  } else {
-    `None ()
-  }
-};
+  if has_text then
+    #Some text
+  else
+    #None
+  end;
+end;
 
-const is_summary_message = (message: Text) => {
+const is_summary_message = (message: Text) => do
   text_starts_with [message, text_append [summary_prefix, "\n"]]
-};
+end;
 
 const user_message_text: (CompactionItem) -> CompactionTextOption =
-  item => if let `Message message = item {
+  item => if let #Message message = item then
     let [role, contextual, contents] = message;
 
-    if role == "user" {
-      if contextual {
-        `None ()
-      } else {
+    if role == "user" then
+      if contextual then
+        #None
+      else
         let text = content_items_to_text contents;
 
-        if let `Some message_text = text {
-          if is_summary_message message_text {
-            `None ()
-          } else {
-            `Some message_text
-          }
-        } else {
-          `None ()
-        }
-      }
-    } else {
-      `None ()
-    }
-  } else {
-    `None ()
-  };
+        if let #Some message_text = text then
+          if is_summary_message message_text then
+            #None
+          else
+            #Some message_text
+          end;
+        else
+          #None
+        end;
+      end;
+    else
+      #None
+    end;
+  else
+    #None
+  end;
 
-const collect_user_messages = (values: CompactionItems) => {
+const collect_user_messages = (values: CompactionItems) => do
   let current = values;
   let messages_reversed = compaction_texts.empty();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
       let message = user_message_text item;
 
-      if let `Some text = message {
+      if let #Some text = message then
         messages_reversed = compaction_texts.prepend(text, messages_reversed)
-      }
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   compaction_texts.reverse messages_reversed
-};
+end;
 
-const select_recent_user_messages = (values: List Text, maximum_tokens: I32) => {
+const select_recent_user_messages = (values: List Text, maximum_tokens: I32) => do
   let current = compaction_texts.reverse values;
   let selected: List Text = compaction_texts.empty();
   let remaining = maximum_tokens;
   let done = remaining <= 0;
 
-  loop {
-    if done {
+  loop do
+    if done then
       break;
-    }
+    end;
 
-    if let `Cons node = current {
+    if let #Cons node = current then
       let [message, tail] = node;
       let tokens = text_approx_token_count message;
 
-      if tokens <= remaining {
+      if tokens <= remaining then
         selected = compaction_texts.prepend(message, selected)
         remaining = remaining - tokens
         current = tail
 
-        if remaining == 0 {
+        if remaining == 0 then
           done = true
-        }
-      } else {
+        end;
+      else
         selected = compaction_texts.prepend(
           text_truncate_middle_tokens(message, remaining),
           selected,
         )
         done = true
-      }
-    } else {
+      end;
+    else
       done = true
-    }
-  }
+    end;
+  end;
 
   selected
-};
+end;
 
-const user_message_item = (text: Text) => {
-  let contents = compaction_contents.singleton(`InputText text);
+const user_message_item = (text: Text) => do
+  let contents = compaction_contents.singleton(#InputText text);
   let message: CompactionMessage = ["user", false, contents];
-  `Message message
-};
+  #Message message
+end;
 
 const build_compacted_history = (
   initial_context: CompactionItems,
   user_messages: List Text,
   summary_text: Text,
   maximum_tokens: I32,
-) => {
+) => do
   let selected = select_recent_user_messages(user_messages, maximum_tokens);
   let history_reversed = compaction_items.reverse initial_context;
   let current = selected;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [message, tail] = node;
       history_reversed = compaction_items.prepend(user_message_item message, history_reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   let summary = summary_text;
 
-  if summary == "" {
+  if summary == "" then
     summary = "(no summary available)"
-  }
+  end;
 
   history_reversed = compaction_items.prepend(user_message_item summary, history_reversed)
   compaction_items.reverse history_reversed
-};
+end;
 
-const compact_history = (values: CompactionItems, summary_text: Text, maximum_user_tokens: I32) => {
-  let user_messages = collect_user_messages values;
-  build_compacted_history(
-    compaction_items.empty(),
-    user_messages,
-    summary_text,
-    maximum_user_tokens,
-  )
-};
+const compact_history =
+  (values: CompactionItems, summary_text: Text, maximum_user_tokens: I32) => do
+    let user_messages = collect_user_messages values;
+    build_compacted_history(
+      compaction_items.empty(),
+      user_messages,
+      summary_text,
+      maximum_user_tokens,
+    )
+  end;
 
 return {
   .summary_prefix,

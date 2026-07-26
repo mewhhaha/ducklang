@@ -13,63 +13,63 @@ let source = "\"A\\b\\f\\n\\u00df\\u6771\\ud83e\\udd86\"";
 let parsed = parse_json_document source;
 let score = 0;
 
-if let `Ok value_and_index = parsed {
+if let #Ok value_and_index = parsed then
   let [value, index] = value_and_index;
 
-  if let `String text = value {
+  if let #String text = value then
     let expected = [65, 8, 12, 10, 195, 159, 230, 157, 177, 240, 159, 166, 134];
     let matches = 0;
 
-    for byte_index in 0..13 {
-      if text_get [text, byte_index] == expected[byte_index] {
+    for byte_index in 0..13 do
+      if text_get [text, byte_index] == expected[byte_index] then
         matches = matches + 1
-      }
-    }
+      end;
+    end
 
-    if index == text_length source && text_length text == 13 && matches == 13 {
+    if index == text_length source && text_length text == 13 && matches == 13 then
       score = score + 1
-    }
+    end;
 
-    if encode_json_string text == "\"A\\b\\f\\nß東🦆\"" {
+    if encode_json_string text == "\"A\\b\\f\\nß東🦆\"" then
       score = score + 10
-    }
+    end;
 
     let members = json_object_prepend("message", json_string text, json_object_empty());
     let document = encode_json(json_object members);
 
-    if document == "{\"message\":\"A\\b\\f\\nß東🦆\"}" {
+    if document == "{\"message\":\"A\\b\\f\\nß東🦆\"}" then
       score = score + 100
-    }
+    end;
 
     let round_trip = parse_json_document document;
 
-    if let `Ok round_trip_value_and_index = round_trip {
+    if let #Ok round_trip_value_and_index = round_trip then
       let [round_trip_value, round_trip_index] = round_trip_value_and_index;
 
-      if let `Object round_trip_members = round_trip_value {
-        if round_trip_index == text_length document {
-          if let `Cons node = round_trip_members {
+      if let #Object round_trip_members = round_trip_value then
+        if round_trip_index == text_length document then
+          if let #Cons node = round_trip_members then
             let [member, tail] = node;
             let [key, member_value] = member;
 
-            if let `String round_trip_text = member_value {
-              if key == "message" && round_trip_text == text {
-                if let `Nil () = tail {
+            if let #String round_trip_text = member_value then
+              if key == "message" && round_trip_text == text then
+                if let #Nil = tail then
                   score = score + 1000
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let invalid = parse_json_document "\"\\ud83eX\"";
 
-if let `Err _ = invalid {
+if let #Err _ = invalid then
   score = score + 10000
-}
+end;
 
 score

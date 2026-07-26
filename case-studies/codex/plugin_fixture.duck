@@ -24,12 +24,12 @@ const texts = comptime list Text;
 const loaded_plugins = comptime list FixtureLoaded;
 const summaries = comptime list FixtureSummary;
 
-let no_text: FixtureTextOption = `None ();
+let no_text: FixtureTextOption = #None;
 let alpha: FixtureLoaded = [
   "alpha@local",
-  `Some "Alpha",
-  `Some "alpha",
-  `Some "  Search   and\nreview  ",
+  #Some "Alpha",
+  #Some "alpha",
+  #Some "  Search   and\nreview  ",
   "/plugins/alpha",
   true,
   no_text,
@@ -42,8 +42,8 @@ let alpha: FixtureLoaded = [
 ];
 let beta: FixtureLoaded = [
   "beta@local",
-  `Some "Beta",
-  `Some "beta",
+  #Some "Beta",
+  #Some "beta",
   no_text,
   "/plugins/beta",
   true,
@@ -77,7 +77,7 @@ let broken: FixtureLoaded = [
   no_text,
   "/plugins/broken",
   true,
-  `Some "invalid manifest",
+  #Some "invalid manifest",
   true,
   texts.singleton("/skills/broken"),
   texts.singleton("broken"),
@@ -93,18 +93,20 @@ let outcome = plugin_load_outcome plugins;
 let [_, capability_summaries] = outcome;
 let score = 0;
 
-if summaries.length(capability_summaries) == 2 {
+if summaries.length(capability_summaries) == 2 then
   score = score + 1
-}
+end;
 
-if let `Cons node = capability_summaries {
+if let #Cons node = capability_summaries then
   let [summary, _] = node;
   let [_, _, description, _, _, _] = summary;
 
-  if let `Some value = description {
-    if value == "Search and review" { score = score + 10 }
-  }
-}
+  if let #Some value = description then
+    if value == "Search and review" then
+      score = score + 10
+    end;
+  end;
+end;
 
 let roots = effective_skill_roots plugins;
 
@@ -112,43 +114,43 @@ if texts.length(roots) == 3 && texts.nth_or("", 0, roots) == "/skills/a" && text
   "",
   2,
   roots,
-) == "/skills/shared" {
+) == "/skills/shared" then
   score = score + 100
-}
+end;
 
 let mcp = effective_mcp_servers plugins;
 
 if texts.length(mcp) == 3 && texts.nth_or("", 0, mcp) == "search" && texts.nth_or("", 2,
-  mcp) == "files" {
+  mcp) == "files" then
     score = score + 1000
-  }
+  end;
 
 let paths = texts.prepend("plugin://alpha@local", texts.singleton("app://calendar"));
 let mentioned = collect_explicit_plugin_mentions(paths, capability_summaries);
 
-if summaries.length(mentioned) == 1 {
+if summaries.length(mentioned) == 1 then
   score = score + 10000
-}
+end;
 
-if let `Cons node = mentioned {
+if let #Cons node = mentioned then
   let [summary, _] = node;
   let apps = effective_apps plugins;
 
-  if let `Some rendered = render_explicit_plugin_instructions(summary, mcp, apps) {
-    if text_contains [rendered, "`search`, `review`"] && text_contains [rendered, "`calendar`"] {
+  if let #Some rendered = render_explicit_plugin_instructions(summary, mcp, apps) then
+    if text_contains [rendered, "`search`, `review`"] && text_contains [rendered, "`calendar`"] then
       score = score + 100000
-    }
-  }
-}
+    end;
+  end;
+end;
 
-if let `Ok plugin_id = parse_plugin_id "alpha@local" {
+if let #Ok plugin_id = parse_plugin_id "alpha@local" then
   let [plugin_name, marketplace_name] = plugin_id;
 
-  if plugin_name == "alpha" && marketplace_name == "local" {
-    if let `Err _ = parse_plugin_id "bad/name@local" {
+  if plugin_name == "alpha" && marketplace_name == "local" then
+    if let #Err _ = parse_plugin_id "bad/name@local" then
       score = score + 1000000
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

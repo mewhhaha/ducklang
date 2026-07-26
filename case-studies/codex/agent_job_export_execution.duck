@@ -8,29 +8,30 @@ type AgentJobExportOutcome = AgentJobCsvWriteOutcome
 type AgentJobExportRequest = AgentJobCsvWriteRequest
 type AgentJobExportResult = AgentJobExportExecutionResult
 
-let run_agent_job_export = (completed: AgentJobExportCompletion) => {
+let run_agent_job_export = (completed: AgentJobExportCompletion) => do
   let rendered = render_agent_job_csv completed;
-  if let `CsvExportFailed reason = rendered {
-    let result: AgentJobExportResult = `Rejected reason;
+  if let #CsvExportFailed reason = rendered then
+    let result: AgentJobExportResult = #Rejected reason;
     result
-  } else if let `CsvExported content = rendered {
+  else let #CsvExported content = rendered then
     let request: AgentJobExportRequest = [.output_path = completed.output_path, .content = content];
     written <- AgentJobExportHost.write(&request)
     let outcome: AgentJobExportOutcome = written;
-    if let `CsvWritten () = outcome {
-      let result: AgentJobExportResult = `Completed completed.output_path;
+    if let #CsvWritten = outcome then
+      let result: AgentJobExportResult = #Completed completed.output_path;
       result
-    } else if let `CsvWriteFailed reason = outcome {
-      let result: AgentJobExportResult = `Rejected reason;
+    else let #CsvWriteFailed reason = outcome then
+      let result: AgentJobExportResult = #Rejected reason;
       result
-    } else {
-      let result: AgentJobExportResult = `Rejected "agent job export host returned no write outcome";
+    else
+      let result: AgentJobExportResult =
+        #Rejected "agent job export host returned no write outcome";
       result
-    }
-  } else {
-    let result: AgentJobExportResult = `Rejected "agent job csv renderer returned no result";
+    end;
+  else
+    let result: AgentJobExportResult = #Rejected "agent job csv renderer returned no result";
     result
-  }
-};
+  end;
+end;
 
 return { .run_agent_job_export };

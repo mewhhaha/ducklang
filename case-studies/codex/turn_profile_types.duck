@@ -4,8 +4,8 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "duck:prelude/abstractions" ();
 
 type TurnProfilePhase =
-  | `Sampling Unit
-  | `ToolBlocking Unit
+  | #Sampling
+  | #ToolBlocking
 
 type TurnProfilePhaseOption = Option TurnProfilePhase
 

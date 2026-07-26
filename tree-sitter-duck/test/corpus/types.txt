@@ -251,11 +251,11 @@ let unit: () -> Text = () => ();
 ==================
 Inline and multiline type sums
 ==================
-type Maybe a = | `Just a | `Nothing Unit
+type Maybe a = | #Just a | #Nothing
 type Maybe2 a =
-  | `Just a
-  | `Nothing Unit
-type X = `X I32
+  | #Just a
+  | #Nothing
+type X = #X I32
 
 ---
 
@@ -270,10 +270,7 @@ type X = `X I32
           (type_difference
             (identifier))))
       (type_case
-        name: (constructor_identifier)
-        payload: (type_reference
-          (type_difference
-            (identifier))))))
+        name: (constructor_identifier))))
   (type_declaration_statement
     name: (identifier)
     parameter: (identifier)
@@ -284,10 +281,7 @@ type X = `X I32
           (type_difference
             (identifier))))
       (type_case
-        name: (constructor_identifier)
-        payload: (type_reference
-          (type_difference
-            (identifier))))))
+        name: (constructor_identifier))))
   (type_declaration_statement
     name: (identifier)
     definition: (type_sum
@@ -426,10 +420,14 @@ Type sets, atoms, and modalities
 ==================
 type Choice = #ready :| Int :- Never
 type Any = _
-type Frozen = #(List a)
+type Frozen = freeze (List a)
 let marker: #ready :| #waiting = #ready;
 let view: &Text = &text;
-if marker is #ready { 1 } else { 0 }
+if marker is #ready then
+  1
+else
+  0
+end;
 
 ---
 
@@ -508,14 +506,15 @@ if marker is #ready { 1 } else { 0 }
                 (type_difference
                   (atom_type
                     (identifier))))))))
-      (block
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
 
 ==================
 Literal types

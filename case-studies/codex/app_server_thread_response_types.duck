@@ -4,8 +4,8 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "./app_server_types.duck" ();
 
 type AppServerThreadResponseView =
-  | `StableThreadResponse Unit
-  | `ExperimentalThreadResponse Unit
+  | #StableThreadResponse
+  | #ExperimentalThreadResponse
 
 type AppServerThreadResponseMetadata = struct {
   .thread = AppServerJson,

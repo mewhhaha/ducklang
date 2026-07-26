@@ -5,16 +5,18 @@ const { .text_append } = import "duck:prelude/runtime" ();
 const agent_types_module = import "./agent_types.duck";
 const { .agent_status_json } = import "./agent_status_json.duck" ();
 
-const render_list_agents_output: AgentStatusEntries -> Text = statuses => {
+const render_list_agents_output: AgentStatusEntries -> Text = statuses => do
   let current = statuses;
   let agents = "";
   let first = true;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
       let [agent_name, status] = entry;
-      if !(first) { agents = text_append [agents, ","] }
+      if !(first) then
+        agents = text_append [agents, ","]
+      end;
       agents = text_append [agents, "{\"agent_name\":"]
       agents = text_append [agents, encode_json_string agent_name]
       agents = text_append [agents, ",\"agent_status\":"]
@@ -22,13 +24,15 @@ const render_list_agents_output: AgentStatusEntries -> Text = statuses => {
       agents = text_append [agents, "}"]
       first = false
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   text_append ["{\"agents\":[", text_append [agents, "]}"]]
-};
+end;
 
 return { .render_list_agents_output };

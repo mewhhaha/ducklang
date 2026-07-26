@@ -32,20 +32,20 @@ let input: FixtureArgs = args.prepend(
 let parsed: FixtureResult = parse_mcp_add input;
 let score = 0;
 
-if let `Ok command = parsed {
-  if let `McpAddHttp options = command {
-    if options.name == "server-b" && options.url == "https://mcp.example" {
-      if let `Some token_env = options.bearer_token_env_var {
-        if let `Some client_id = options.oauth_client_id {
-          if let `Some resource = options.oauth_resource {
-            if token_env == "MCP_TOKEN" && client_id == "client-1" && resource == "resource-1" {
+if let #Ok command = parsed then
+  if let #McpAddHttp options = command then
+    if options.name == "server-b" && options.url == "https://mcp.example" then
+      if let #Some token_env = options.bearer_token_env_var then
+        if let #Some client_id = options.oauth_client_id then
+          if let #Some resource = options.oauth_resource then
+            if token_env == "MCP_TOKEN" && client_id == "client-1" && resource == "resource-1" then
               score = 1
-            }
-          }
-        }
-      }
-    }
-  }
-}
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

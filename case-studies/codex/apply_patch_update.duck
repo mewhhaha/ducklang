@@ -28,7 +28,7 @@ const singleton = list_singleton Text;
 const take = list_take Text;
 const replacement_prepend = list_prepend PatchUpdateReplacement;
 
-let normalize_match_line: Text -> Text = (line: Text) => {
+let normalize_match_line: Text -> Text = (line: Text) => do
   let normalized = text_trim_ascii_whitespace line;
   normalized = text_replace_all [normalized, "‐", "-"]
   normalized = text_replace_all [normalized, "‑", "-"]
@@ -58,159 +58,171 @@ let normalize_match_line: Text -> Text = (line: Text) => {
   normalized = text_replace_all [normalized, " ", " "]
   normalized = text_replace_all [normalized, " ", " "]
   text_replace_all [normalized, "　", " "]
-};
+end;
 
 let patch_lines_match_at: [PatchUpdateTexts, PatchUpdateTexts, I32, I32] -> Bool = (
   source: PatchUpdateTexts,
   pattern: PatchUpdateTexts,
   start: I32,
   strictness: I32,
-) => {
+) => do
   let position = 0;
   let current = pattern;
   let matches = true;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [expected, tail] = node;
       let actual = nth_or("", start + position, source);
 
-      if strictness == 0 {
+      if strictness == 0 then
         matches = actual == expected
-      } else if strictness == 1 {
+      else strictness == 1 then
         matches = text_trim_end_ascii_whitespace actual == text_trim_end_ascii_whitespace expected
-      } else if strictness == 2 {
+      else strictness == 2 then
         matches = text_trim_ascii_whitespace actual == text_trim_ascii_whitespace expected
-      } else {
+      else
         matches = normalize_match_line actual == normalize_match_line expected
-      }
+      end;
 
-      if !(matches) { break; }
+      if !(matches) then
+        break;
+      end;
       position = position + 1
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   matches
-};
+end;
 
 let seek_patch_lines: [PatchUpdateTexts, PatchUpdateTexts, I32, Bool] -> PatchUpdateI32Option = (
   source: PatchUpdateTexts,
   pattern: PatchUpdateTexts,
   start: I32,
   end_of_file: Bool,
-) => {
+) => do
   let source_length = length source;
   let pattern_length = length pattern;
-  let found: PatchUpdateI32Option = `None ();
+  let found: PatchUpdateI32Option = #None;
 
-  if pattern_length == 0 {
-    found = `Some start
-  } else if pattern_length <= source_length {
+  if pattern_length == 0 then
+    found = #Some start
+  else pattern_length <= source_length then
     let first = start;
-    if end_of_file { first = source_length - pattern_length }
+    if end_of_file then
+      first = source_length - pattern_length
+    end;
     let last = source_length - pattern_length;
     let strictness = 0;
 
-    loop {
-      if strictness > 3 { break; }
+    loop do
+      if strictness > 3 then
+        break;
+      end;
       let index = first;
 
-      loop {
-        if index > last { break; }
-        if patch_lines_match_at(source, pattern, index, strictness) {
-          found = `Some index
+      loop do
+        if index > last then
           break;
-        }
+        end;
+        if patch_lines_match_at(source, pattern, index, strictness) then
+          found = #Some index
+          break;
+        end;
         index = index + 1
-      }
+      end;
 
-      if let `Some _ = found { break; }
+      if let #Some _ = found then
+        break;
+      end;
       strictness = strictness + 1
-    }
-  }
+    end;
+  end;
 
   found
-};
+end;
 
-const apply_replacement = (lines: PatchUpdateTexts, replacement: PatchUpdateReplacement) => {
+const apply_replacement = (lines: PatchUpdateTexts, replacement: PatchUpdateReplacement) => do
   let prefix = take(replacement.start, lines);
   let suffix = drop(replacement.start + replacement.old_count, lines);
   append(prefix, append(replacement.new_lines, suffix))
-};
+end;
 
 let derive_apply_patch_update: [Text, Text, PatchUpdateChunks] -> PatchUpdateResult = (
   path: Text,
   original: Text,
   patch_chunks: PatchUpdateChunks,
-) => {
+) => do
   let original_lines: PatchUpdateTexts = text_split [original, "\n"];
   let original_length = length original_lines;
-  if original_length > 0 && nth_or("not-empty", original_length - 1, original_lines) == "" {
+  if original_length > 0 && nth_or("not-empty", original_length - 1, original_lines) == "" then
     original_lines = take(original_length - 1, original_lines)
-  }
+  end;
 
-  let planned_replacements: PatchUpdateReplacements = `Nil ();
+  let planned_replacements: PatchUpdateReplacements = #Nil;
   let line_index = 0;
   let current = patch_chunks;
   let failed = false;
   let failure: Text = "";
 
-  loop {
-    if failed { break; }
-    if let `Cons node = current {
+  loop do
+    if failed then
+      break;
+    end;
+    if let #Cons node = current then
       let [chunk, tail] = node;
       current = tail
 
-      if let `Some context = chunk.context {
+      if let #Some context = chunk.context then
         let context_lines = singleton context;
         let found_context = seek_patch_lines(original_lines, context_lines, line_index, false);
-        if let `None () = found_context {
+        if let #None = found_context then
           failed = true
           failure = "Failed to find context '" <> context <> "' in " <> path
-        } else if let `Some index = found_context {
+        else let #Some index = found_context then
           line_index = index + 1
-        }
-      }
+        end;
+      end;
 
-      if !(failed) {
+      if !(failed) then
         let old_count = length chunk.old_lines;
-        if old_count == 0 {
+        if old_count == 0 then
           let insertion = length original_lines;
-          if insertion > 0 && nth_or("not-empty", insertion - 1, original_lines) == "" {
+          if insertion > 0 && nth_or("not-empty", insertion - 1, original_lines) == "" then
             insertion = insertion - 1
-          }
+          end;
           let replacement: PatchUpdateReplacement = [
             .start = insertion,
             .old_count = 0,
             .new_lines = chunk.new_lines,
           ];
           planned_replacements = replacement_prepend(replacement, planned_replacements)
-        } else {
+        else
           let pattern = chunk.old_lines;
           let new_lines = chunk.new_lines;
           let found = seek_patch_lines(original_lines, pattern, line_index, chunk.end_of_file);
 
-          if let `None () = found {
-            if nth_or("not-empty", length pattern - 1, pattern) == "" {
+          if let #None = found then
+            if nth_or("not-empty", length pattern - 1, pattern) == "" then
               pattern = take(length pattern - 1, pattern)
               if length new_lines > 0 && nth_or("not-empty", length new_lines - 1,
-                new_lines) == "" {
+                new_lines) == "" then
                   new_lines = take(length new_lines - 1, new_lines)
-                }
+                end;
               found = seek_patch_lines(original_lines, pattern, line_index, chunk.end_of_file)
-            }
-          }
+            end;
+          end;
 
-          if let `None () = found {
+          if let #None = found then
             failed = true
             failure = "Failed to find expected lines in " <> path <> ":\n" <> text_join(
               chunk.old_lines,
               "\n",
             )
-          } else if let `Some start = found {
+          else let #Some start = found then
             let replacement: PatchUpdateReplacement = [
               .start = start,
               .old_count = length pattern,
@@ -218,35 +230,35 @@ let derive_apply_patch_update: [Text, Text, PatchUpdateChunks] -> PatchUpdateRes
             ];
             planned_replacements = replacement_prepend(replacement, planned_replacements)
             line_index = start + length pattern
-          }
-        }
-      }
-    } else {
+          end;
+        end;
+      end;
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  if failed {
-    `Err failure
-  } else {
+  if failed then
+    #Err failure
+  else
     let updated = original_lines;
     let remaining = planned_replacements;
 
-    loop {
-      if let `Cons node = remaining {
+    loop do
+      if let #Cons node = remaining then
         let [replacement, tail] = node;
         updated = apply_replacement(updated, replacement)
         remaining = tail
-      } else {
+      else
         break;
-      }
-    }
+      end;
+    end;
 
-    if length updated == 0 || nth_or("not-empty", length updated - 1, updated) != "" {
+    if length updated == 0 || nth_or("not-empty", length updated - 1, updated) != "" then
       updated = append(updated, singleton "")
-    }
-    `Ok (text_join(updated, "\n"))
-  }
-};
+    end;
+    #Ok (text_join(updated, "\n"))
+  end;
+end;
 
 return { .derive_apply_patch_update };

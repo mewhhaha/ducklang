@@ -9,30 +9,30 @@ type ProcessTextOption = HookTextOption
 
 const append_text = (left: Text, right: Text) => text_append [left, right];
 
-const classify_hook_command = (result: ProcessCommandResult) => {
+const classify_hook_command = (result: ProcessCommandResult) => do
   let [error, exit_code, _, stderr] = result;
 
-  if let `Some message = error {
-    let outcome: ProcessCommandOutcome = [`ProcessFailed message, `Some message];
+  if let #Some message = error then
+    let outcome: ProcessCommandOutcome = [#ProcessFailed message, #Some message];
     outcome
-  } else if let `Some code = exit_code {
-    let message: ProcessTextOption = if code == 0 {
-      `None ()
-    } else {
+  else let #Some code = exit_code then
+    let message: ProcessTextOption = if code == 0 then
+      #None
+    else
       let trimmed = text_trim_ascii_whitespace stderr;
-      if trimmed == "" {
-        `Some (append_text("hook exited with code ", format_i32 code))
-      } else {
-        `Some trimmed
-      }
-    };
-    let outcome: ProcessCommandOutcome = [`Exited code, message];
+      if trimmed == "" then
+        #Some (append_text("hook exited with code ", format_i32 code))
+      else
+        #Some trimmed
+      end;
+    end;
+    let outcome: ProcessCommandOutcome = [#Exited code, message];
     outcome
-  } else {
+  else
     let message = "hook process terminated without an exit code";
-    let outcome: ProcessCommandOutcome = [`MissingExit (), `Some message];
+    let outcome: ProcessCommandOutcome = [#MissingExit, #Some message];
     outcome
-  }
-};
+  end;
+end;
 
 return { .classify_hook_command };

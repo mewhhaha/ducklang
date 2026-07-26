@@ -1,9 +1,9 @@
-let factorial = rec (value, result) => {
-  if value == 0 {
+let factorial = rec (value, result) => do
+  if value == 0 then
     result
-  } else {
+  else
     rec(value - 1, result * value)
-  }
-};
+  end;
+end;
 
 factorial(5, 1) - 78

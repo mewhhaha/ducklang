@@ -289,11 +289,14 @@ shallow field-type facts when every field has a simple known type such as `Int`,
 facts when the payload has a simple known type, so `` `Ok Int `` and
 `` `Ok Text `` are different types for `=` shadowing.
 
-`:=` shadows an existing name and allows the type to change.
+`:=` shadows an existing name without constraining the new value to the previous
+type. Its right-hand side sees the previous binding, and the inferred binding is
+visible from the following statement to the end of the lexical scope.
 
 ```txt
-let x = 2;
-x := "hello"
+let value = raw;
+value := value.map(transform);
+value := value.fold(initial, combine)
 ```
 
 Internally, shadowing creates deterministic fresh names.

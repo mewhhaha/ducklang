@@ -15,32 +15,34 @@ type FixtureJson = AppServerJson
 type FixtureMethodResult = AppServerMethodDecodeResult
 type FixtureInputs = AppServerUserInputs
 
-const count_inputs = (values: FixtureInputs) => {
+const count_inputs = (values: FixtureInputs) => do
   let current = values;
   let count = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   count
-};
+end;
 
-const input_one: [Text, Text, Text] -> FixtureJson = (kind: Text, key: Text, value: Text) => {
+const input_one: [Text, Text, Text] -> FixtureJson = (kind: Text, key: Text, value: Text) => do
   let fields = json_object_empty();
   fields = json_object_prepend(key, json_string value, fields)
   fields = json_object_prepend("type", json_string kind, fields)
   json_object fields
-};
+end;
 
 const input_two: [Text, Text, Text, Text, Text] -> FixtureJson = (
   kind: Text,
@@ -48,13 +50,13 @@ const input_two: [Text, Text, Text, Text, Text] -> FixtureJson = (
   first_value: Text,
   second_key: Text,
   second_value: Text,
-) => {
+) => do
   let fields = json_object_empty();
   fields = json_object_prepend(second_key, json_string second_value, fields)
   fields = json_object_prepend(first_key, json_string first_value, fields)
   fields = json_object_prepend("type", json_string kind, fields)
   json_object fields
-};
+end;
 
 let score = 0;
 let text_fields = json_object_empty();
@@ -85,36 +87,46 @@ start_fields = json_object_prepend("clientUserMessageId", json_string "client-1"
 start_fields = json_object_prepend("threadId", json_string "thread-1", start_fields)
 let start_params: FixtureJson = json_object start_fields;
 let start_result: FixtureMethodResult = decode_turn_start start_params;
-if let `MethodOk method = start_result {
-  if let `TurnStart params = method {
+if let #MethodOk method = start_result then
+  if let #TurnStart params = method then
     let [thread_id, client_id, inputs, raw_params] = params;
     let client_valid = false;
     let params_valid = false;
-    if let `Some value = client_id { client_valid = value == "client-1" }
-    if let `Object _ = raw_params { params_valid = true }
-    if thread_id == "thread-1" && client_valid && params_valid && count_inputs inputs == 7 { score = score + 1 }
-  }
-}
+    if let #Some value = client_id then
+      client_valid = value == "client-1"
+    end;
+    if let #Object _ = raw_params then
+      params_valid = true
+    end;
+    if thread_id == "thread-1" && client_valid && params_valid && count_inputs inputs == 7 then
+      score = score + 1
+    end;
+  end;
+end;
 
 let interrupt_fields = json_object_empty();
 interrupt_fields = json_object_prepend("turnId", json_string "turn-1", interrupt_fields)
 interrupt_fields = json_object_prepend("threadId", json_string "thread-1", interrupt_fields)
 let interrupt_params: FixtureJson = json_object interrupt_fields;
 let interrupt_result: FixtureMethodResult = decode_turn_interrupt interrupt_params;
-if let `MethodOk method = interrupt_result {
-  if let `TurnInterrupt params = method {
+if let #MethodOk method = interrupt_result then
+  if let #TurnInterrupt params = method then
     let [thread_id, turn_id] = params;
-    if thread_id == "thread-1" && turn_id == "turn-1" { score = score + 10 }
-  }
-}
+    if thread_id == "thread-1" && turn_id == "turn-1" then
+      score = score + 10
+    end;
+  end;
+end;
 
 let invalid_fields = json_object_empty();
 invalid_fields = json_object_prepend("input", json_object(json_object_empty()), invalid_fields)
 invalid_fields = json_object_prepend("threadId", json_string "thread-1", invalid_fields)
 let invalid_params: FixtureJson = json_object invalid_fields;
 let invalid_result: FixtureMethodResult = decode_turn_start invalid_params;
-if let `MethodError message = invalid_result {
-  if message == "turn/start.params.input must be an array" { score = score + 100 }
-}
+if let #MethodError message = invalid_result then
+  if message == "turn/start.params.input must be an array" then
+    score = score + 100
+  end;
+end;
 
 score

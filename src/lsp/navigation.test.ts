@@ -215,10 +215,10 @@ value.name
     },
     {
       label: "union case",
-      text: "type Result = `Ok Int\n" +
-        "let value = `Ok (1);\n" +
-        "if let `Ok payload = value { payload }\n",
-      selected: "`Ok",
+      text: "type Result = #Ok Int\n" +
+        "let value = #Ok (1);\n" +
+        "if let #Ok payload = value { payload }\n",
+      selected: "#Ok",
       replacement: "Success",
       count: 3,
     },

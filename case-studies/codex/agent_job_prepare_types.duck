@@ -20,7 +20,7 @@ type AgentJobPreparedJob = struct {
 }
 
 type AgentJobPreparationResult =
-  | `JobPrepared AgentJobPreparedJob
-  | `JobPreparationFailed Text
+  | #JobPrepared AgentJobPreparedJob
+  | #JobPreparationFailed Text
 
 return {};

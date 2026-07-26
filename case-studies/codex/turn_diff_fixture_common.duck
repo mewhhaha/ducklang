@@ -7,10 +7,11 @@ type TurnDiffFixtureMutations = TurnDiffMutations
 type TurnDiffFixtureDelta = TurnDiffDelta
 type TurnDiffFixtureMutationNode = ListNode TurnDiffFixtureMutation
 
-const turn_diff_fixture_exact_delta: TurnDiffFixtureMutation -> TurnDiffFixtureDelta = mutation => {
-  let mutations: TurnDiffFixtureMutations = `Nil ();
-  let node: TurnDiffFixtureMutationNode = [mutation, mutations];
-  [.exact = true, .mutations = `Cons node]
-};
+const turn_diff_fixture_exact_delta: TurnDiffFixtureMutation -> TurnDiffFixtureDelta =
+  mutation => do
+    let mutations: TurnDiffFixtureMutations = #Nil;
+    let node: TurnDiffFixtureMutationNode = [mutation, mutations];
+    [.exact = true, .mutations = #Cons node]
+  end;
 
 return { .turn_diff_fixture_exact_delta };

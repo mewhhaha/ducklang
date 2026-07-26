@@ -5,22 +5,22 @@ const { .json_null, .json_object, .json_object_empty, .json_object_prepend, .jso
   import "duck:prelude/json/values" ();
 const {} = import "./agent_tool_types.duck" ();
 
-const render_spawn_agent_output: AgentToolSpawnOutputInput -> Text = input => {
+const render_spawn_agent_output: AgentToolSpawnOutputInput -> Text = input => do
   let fields = json_object_prepend(
     "task_name",
     json_string input.snapshot.task_name,
     json_object_empty(),
   );
-  if !(input.hide_metadata) {
-    let nickname = if let `Some value = input.snapshot.nickname { json_string value } else {
-      json_null() };
+  if !(input.hide_metadata) then
+    let nickname = if let #Some value = input.snapshot.nickname then json_string value else
+      json_null() end;
     fields = json_object_prepend(
       "task_name",
       json_string input.snapshot.task_name,
       json_object_prepend("nickname", nickname, json_object_empty()),
     )
-  }
+  end;
   encode_json(json_object fields)
-};
+end;
 
 return { .render_spawn_agent_output };

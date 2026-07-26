@@ -8,17 +8,17 @@ const { .decode_test_sync_value, .sync_parse_failure } = import "./test_sync_val
 
 type SyncJsonParseResult = TestSyncParseResult
 
-let parse_test_sync_args: Text -> SyncJsonParseResult = document => {
+let parse_test_sync_args: Text -> SyncJsonParseResult = document => do
   let parsed = parse_json_document document;
-  if let `Ok value_and_position = parsed {
+  if let #Ok value_and_position = parsed then
     let [value, _] = value_and_position;
     decode_test_sync_value value
-  } else if let `Err error = parsed {
+  else let #Err error = parsed then
     let [position, message] = error;
     sync_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
-  } else {
+  else
     sync_parse_failure "invalid JSON parse result"
-  }
-};
+  end;
+end;
 
 return { .parse_test_sync_args };

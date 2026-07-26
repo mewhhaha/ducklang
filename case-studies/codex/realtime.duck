@@ -1,0 +1,145 @@
+module () where
+
+const { .text_append, .text_escape_xml } = import "duck:prelude/functional" ();
+
+type RealtimeState =
+  | #RealtimeInactive
+  | #RealtimeActive
+  | #RealtimeActiveWithInstructions Text
+
+type RealtimePreviousState =
+  | #NoRealtimeSnapshot
+  | #UnknownRealtimeSnapshot
+  | #KnownRealtimeInactive
+  | #KnownRealtimeActive
+
+type RealtimeSection =
+  | #OmitRealtimeSection
+  | #RenderRealtimeSection Text
+
+type RealtimeDelegationSource =
+  | #RealtimeHandoff
+  | #RealtimeTranscriptTailFlush
+
+type RealtimeTranscriptDelta =
+  | #NoRealtimeTranscriptDelta
+  | #RealtimeTranscriptDelta Text
+
+const realtime_start_instructions = () => do
+  "<realtime_conversation>\nRealtime conversation started.\n\nYou are operating as a backend executor behind an intermediary. The user does not talk to you directly. Any response you produce will be consumed by the intermediary and may be summarized before the user sees it.\n\nWhen invoked, you receive the latest conversation transcript and any relevant mode or metadata. The intermediary may invoke you even when backend help is not actually needed. Use the transcript to decide whether you should do work. If backend help is unnecessary, avoid verbose responses that add user-visible latency.\n\nWhen user text is routed from realtime, treat it as a transcript. It may be unpunctuated or contain recognition errors.\n\n- Keep responses concise and action-oriented. Your updates should help the intermediary respond to the user.\n</realtime_conversation>"
+end;
+
+const realtime_start_with_instructions: Text -> Text = instructions => do
+  text_append [
+    "<realtime_conversation>\n",
+    text_append [instructions, "\n</realtime_conversation>"],
+  ]
+end;
+
+const realtime_end_instructions: Text -> Text = reason => do
+  text_append [
+    "<realtime_conversation>\nRealtime conversation ended.\n\nSubsequent user input will return to typed text rather than transcript-style text. Do not assume recognition errors or missing punctuation once realtime has ended. Resume normal chat behavior.\n\nReason: ",
+    text_append [reason, "\n</realtime_conversation>"],
+  ]
+end;
+
+const render_realtime_delegation: [
+  Text,
+  RealtimeTranscriptDelta,
+  RealtimeDelegationSource,
+] -> Text = (
+  input: Text,
+  transcript_delta: RealtimeTranscriptDelta,
+  source: RealtimeDelegationSource,
+) => do
+  let rendered = "<realtime_delegation>\n";
+
+  if let #RealtimeTranscriptTailFlush = source then
+    rendered = text_append [
+      rendered,
+      "  <source>transcript_tail_flush</source>\n",
+    ]
+  end;
+
+  rendered = text_append [
+    rendered,
+    text_append [
+      "  <input>",
+      text_append [text_escape_xml input, "</input>\n"],
+    ],
+  ]
+
+  if let #RealtimeTranscriptDelta delta = transcript_delta then
+    if delta != "" then
+      rendered = text_append [
+        rendered,
+        text_append [
+          "  <transcript_delta>",
+          text_append [text_escape_xml delta, "</transcript_delta>\n"],
+        ],
+      ]
+    end;
+  end;
+
+  text_append [rendered, "</realtime_delegation>"]
+end;
+
+const render_realtime_start: RealtimeState -> RealtimeSection = state => do
+  case state of
+    #RealtimeActive => #RenderRealtimeSection (realtime_start_instructions()),
+    #RealtimeActiveWithInstructions instructions => do
+      #RenderRealtimeSection (realtime_start_with_instructions instructions)
+    end,
+    #RealtimeInactive => #OmitRealtimeSection;
+end;
+
+const render_realtime_diff: [RealtimeState, RealtimePreviousState] -> RealtimeSection = (
+  state: RealtimeState,
+  previous: RealtimePreviousState,
+) => do
+  case state of
+    #RealtimeInactive => do
+      case previous of
+        #KnownRealtimeActive => do
+          #RenderRealtimeSection (realtime_end_instructions "inactive")
+        end,
+        #NoRealtimeSnapshot => #OmitRealtimeSection,
+        #UnknownRealtimeSnapshot => #OmitRealtimeSection,
+        #KnownRealtimeInactive => #OmitRealtimeSection;
+    end,
+    #RealtimeActive => do
+      case previous of
+        #KnownRealtimeActive => #OmitRealtimeSection,
+        #NoRealtimeSnapshot => do
+          #RenderRealtimeSection (realtime_start_instructions())
+        end,
+        #UnknownRealtimeSnapshot => do
+          #RenderRealtimeSection (realtime_start_instructions())
+        end,
+        #KnownRealtimeInactive => do
+          #RenderRealtimeSection (realtime_start_instructions())
+        end;
+    end,
+    #RealtimeActiveWithInstructions instructions => do
+      case previous of
+        #KnownRealtimeActive => #OmitRealtimeSection,
+        #NoRealtimeSnapshot => do
+          #RenderRealtimeSection (realtime_start_with_instructions instructions)
+        end,
+        #UnknownRealtimeSnapshot => do
+          #RenderRealtimeSection (realtime_start_with_instructions instructions)
+        end,
+        #KnownRealtimeInactive => do
+          #RenderRealtimeSection (realtime_start_with_instructions instructions)
+        end;
+    end;
+end;
+
+return {
+  .realtime_start_instructions,
+  .realtime_start_with_instructions,
+  .realtime_end_instructions,
+  .render_realtime_delegation,
+  .render_realtime_start,
+  .render_realtime_diff,
+};

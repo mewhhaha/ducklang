@@ -352,7 +352,7 @@ function specialize_imported_callables(
       pattern,
       name: replacement.name,
       is_recursive: substituted.is_recursive,
-      host_export: true,
+      host_export: binding.name === exported_name,
       is_linear: false,
       annotation,
       type_annotation,

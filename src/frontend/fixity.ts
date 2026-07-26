@@ -94,7 +94,8 @@ function declared_fixities(tokens: Token[]): Fixity[] {
     if (
       braces !== 0 || brackets !== 0 || parens !== 0 ||
       token.kind !== "name" || !is_fixity_keyword(token.text) ||
-      !is_line_start(tokens, index)
+      !is_line_start(tokens, index) ||
+      tokens[index + 1]?.kind !== "number"
     ) {
       continue;
     }

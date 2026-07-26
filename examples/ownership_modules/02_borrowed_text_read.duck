@@ -1,7 +1,7 @@
 const { .length } = import "duck:prelude/runtime" ();
 
-let measure = (message: Text) => {
+let measure = (message: Text) => do
   length(&message)
-};
+end;
 
 measure "interaction" + 31

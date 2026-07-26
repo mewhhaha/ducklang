@@ -25,323 +25,324 @@ const snapshot_entries = comptime list DiscoverySnapshotEntry;
 const instruction_documents = comptime list DiscoveryDocument;
 const instruction_texts = comptime list Text;
 
-const snapshot_entry_path = (entry: DiscoverySnapshotEntry) => if let `File file = entry {
+const snapshot_entry_path = (entry: DiscoverySnapshotEntry) => if let #File file = entry then
   let [path, _] = file;
   path
-} else if let `Directory path = entry {
+else let #Directory path = entry then
   path
-} else if let `Other path = entry {
+else let #Other path = entry then
   path
-} else {
+else
   ""
-};
+end;
 
-const snapshot_contains_path = (snapshot: DiscoverySnapshot, path: Text) => {
+const snapshot_contains_path = (snapshot: DiscoverySnapshot, path: Text) => do
   let current = snapshot;
   let found = false;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
 
-      if snapshot_entry_path entry == path {
+      if snapshot_entry_path entry == path then
         found = true
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   found
-};
+end;
 
-const snapshot_file: [DiscoverySnapshot, Text] -> DiscoveryDocumentOption = (snapshot, path) => {
+const snapshot_file: [DiscoverySnapshot, Text] -> DiscoveryDocumentOption = (snapshot, path) => do
   let current = snapshot;
-  let result: DiscoveryDocumentOption = `None ();
+  let result: DiscoveryDocumentOption = #None;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [entry, tail] = node;
-      let candidate: DiscoveryDocumentOption = if let `File file = entry {
+      let candidate: DiscoveryDocumentOption = if let #File file = entry then
         let [candidate_path, _] = file;
 
-        if candidate_path == path {
-          `Some file
-        } else {
-          `None ()
-        }
-      } else {
-        `None ()
-      };
+        if candidate_path == path then
+          #Some file
+        else
+          #None
+        end;
+      else
+        #None
+      end;
 
-      if let `Some _ = candidate {
+      if let #Some _ = candidate then
         result = candidate
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
-const directory_has_marker = (snapshot: DiscoverySnapshot, directory: Text, markers: DiscoveryTexts) => {
+const directory_has_marker =
+  (snapshot: DiscoverySnapshot, directory: Text, markers: DiscoveryTexts) => do
     let current = markers;
     let found = false;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [marker, tail] = node;
 
-        if marker == "" {
+        if marker == "" then
           current = tail
-        } else if snapshot_contains_path(snapshot, path_join [directory, marker]) {
+        else snapshot_contains_path(snapshot, path_join [directory, marker]) then
           found = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     found
-  };
+  end;
 
 const project_directories: [DiscoverySnapshot, Text, DiscoveryTexts] -> DiscoveryTexts = (
   snapshot,
   cwd,
   markers,
-) => {
-  if instruction_texts.length(markers) == 0 {
+) => do
+  if instruction_texts.length(markers) == 0 then
     instruction_texts.singleton cwd
-  } else {
+  else
     let current = cwd;
-    let root: DiscoveryTextOption = `None ();
+    let root: DiscoveryTextOption = #None;
     let done = false;
 
-    loop {
-      if directory_has_marker(snapshot, current, markers) {
-        root = `Some current
+    loop do
+      if directory_has_marker(snapshot, current, markers) then
+        root = #Some current
         done = true
-      } else {
+      else
         let parent = path_parent current;
 
-        if parent == current {
+        if parent == current then
           done = true
-        } else {
+        else
           current = parent
-        }
-      }
+        end;
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
-    if let `Some root_path = root {
+    if let #Some root_path = root then
       let directories = instruction_texts.empty();
       current = cwd
       done = false
 
-      loop {
+      loop do
         directories = instruction_texts.prepend(current, directories)
 
-        if current == root_path {
+        if current == root_path then
           done = true
-        } else {
+        else
           current = path_parent current
-        }
+        end;
 
-        if done {
+        if done then
           break;
-        }
-      }
+        end;
+      end;
 
       directories
-    } else {
+    else
       instruction_texts.singleton cwd
-    }
-  }
-};
+    end;
+  end;
+end;
 
 const first_regular_file: [DiscoverySnapshot, Text, DiscoveryTexts] -> DiscoveryDocumentOption = (
   snapshot,
   directory,
   names,
-) => {
+) => do
   let current = names;
-  let result: DiscoveryDocumentOption = `None ();
+  let result: DiscoveryDocumentOption = #None;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [name, tail] = node;
 
-      if name == "" {
+      if name == "" then
         current = tail
-      } else {
+      else
         let candidate = snapshot_file(snapshot, path_join [directory, name]);
 
-        if let `Some _ = candidate {
+        if let #Some _ = candidate then
           result = candidate
           done = true
-        } else {
+        else
           current = tail
-        }
-      }
-    } else {
+        end;
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
-const candidate_names = (fallback_names: DiscoveryTexts) => {
+const candidate_names = (fallback_names: DiscoveryTexts) => do
   let names = instruction_texts.prepend("AGENTS.md", fallback_names);
   instruction_texts.prepend("AGENTS.override.md", names)
-};
+end;
 
 const load_project_documents = (
   snapshot: DiscoverySnapshot,
   directories: DiscoveryTexts,
   fallback_names: DiscoveryTexts,
   maximum_bytes: I32,
-) => {
+) => do
   let current = directories;
   let loaded_reversed = instruction_documents.empty();
   let remaining = maximum_bytes;
   let done = remaining <= 0;
   let names = candidate_names fallback_names;
 
-  loop {
-    if done {
+  loop do
+    if done then
       break;
-    }
+    end;
 
-    if let `Cons node = current {
+    if let #Cons node = current then
       let [directory, tail] = node;
       let candidate = first_regular_file(snapshot, directory, names);
 
-      if let `Some document = candidate {
+      if let #Some document = candidate then
         let [path, contents] = document;
         let truncated = text_truncate_end_bytes(contents, remaining);
 
-        if text_is_blank truncated {
+        if text_is_blank truncated then
           ()
-        } else {
+        else
           loaded_reversed = instruction_documents.prepend([path, truncated], loaded_reversed)
           remaining = remaining - text_length truncated
 
-          if remaining <= 0 {
+          if remaining <= 0 then
             done = true
-          }
-        }
-      }
+          end;
+        end;
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
-  }
+    end;
+  end;
 
   instruction_documents.reverse loaded_reversed
-};
+end;
 
 const render_loaded_instructions: [DiscoveryDocumentOption, DiscoveryDocuments] -> DiscoveryLoaded =
   (
     user_instructions,
     project_documents,
-  ) => {
+  ) => do
     let output: Text = "";
     let sources_reversed = instruction_texts.empty();
     let has_output = false;
 
-    if let `Some document = user_instructions {
+    if let #Some document = user_instructions then
       let [path, contents] = document;
 
-      if text_is_blank contents {
+      if text_is_blank contents then
         ()
-      } else {
+      else
         output = contents
         sources_reversed = instruction_texts.prepend(path, sources_reversed)
         has_output = true
-      }
-    }
+      end;
+    end;
 
     let current = project_documents;
     let first_project = true;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [document, tail] = node;
         let [path, contents] = document;
 
-        if has_output {
-          if first_project {
+        if has_output then
+          if first_project then
             output = text_append [output, "\n\n--- project-doc ---\n\n"]
-          } else {
+          else
             output = text_append [output, "\n\n"]
-          }
-        }
+          end;
+        end;
 
         output = text_append [output, contents]
         sources_reversed = instruction_texts.prepend(path, sources_reversed)
         has_output = true
         first_project = false
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
-    let text: DiscoveryTextOption = if has_output {
-      `Some output
-    } else {
-      `None ()
-    };
+    let text: DiscoveryTextOption = if has_output then
+      #Some output
+    else
+      #None
+    end;
     let sources = instruction_texts.reverse sources_reversed;
     [text, sources] as DiscoveryLoaded;
-  };
+  end;
 
-const discover_instructions = (snapshot: DiscoverySnapshot, config: DiscoveryConfig) => {
+const discover_instructions = (snapshot: DiscoverySnapshot, config: DiscoveryConfig) => do
   let [cwd, maximum_bytes, fallback_names, root_markers, user_instructions] = config;
   let directories = project_directories(snapshot, cwd, root_markers);
   let documents = load_project_documents(snapshot, directories, fallback_names, maximum_bytes);
   render_loaded_instructions(user_instructions, documents)
-};
+end;
 
 return {
   .project_directories,

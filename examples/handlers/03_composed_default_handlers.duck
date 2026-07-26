@@ -32,10 +32,10 @@ extend Bonus {
   .order = _ => 20,
 }
 
-let calculate: () -> <Base :| Bonus> I32 = () => {
+let calculate: () -> <Base :| Bonus> I32 = () => do
   base <- Base.read()
   bonus <- Bonus.read()
   base + bonus
-};
+end;
 
 try calculate()

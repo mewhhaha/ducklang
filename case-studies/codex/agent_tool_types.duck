@@ -32,9 +32,9 @@ type AgentToolSpawnArguments = struct {
 }
 
 type AgentToolForkTurns =
-  | `ForkAllTurns Unit
-  | `ForkNoTurns Unit
-  | `ForkRecentTurns I64
+  | #ForkAllTurns
+  | #ForkNoTurns
+  | #ForkRecentTurns I64
 
 type AgentToolSpawnPlanRequest = struct {
   .path = Text,
@@ -76,11 +76,11 @@ type AgentToolWaitRequest = struct {
 
 type AgentToolEventReference = [Text, Text]
 type AgentToolLifecycleEvent =
-  | `AgentStarted AgentToolEventReference
-  | `AgentInteracted AgentToolEventReference
-  | `AgentInterrupted AgentToolEventReference
-  | `WaitStarted Text
-  | `WaitCompleted Text
+  | #AgentStarted AgentToolEventReference
+  | #AgentInteracted AgentToolEventReference
+  | #AgentInterrupted AgentToolEventReference
+  | #WaitStarted Text
+  | #WaitCompleted Text
 
 type AgentToolMessageArguments = struct {
   .target = Text,
@@ -88,43 +88,43 @@ type AgentToolMessageArguments = struct {
 }
 
 type AgentToolControlOperation =
-  | `SendMessageCall AgentToolMessageArguments
-  | `FollowupTaskCall AgentToolMessageArguments
-  | `InterruptAgentCall Text
-  | `WaitAgentCall AgentI64Option
-  | `ListAgentsCall AgentTextOption
+  | #SendMessageCall AgentToolMessageArguments
+  | #FollowupTaskCall AgentToolMessageArguments
+  | #InterruptAgentCall Text
+  | #WaitAgentCall AgentI64Option
+  | #ListAgentsCall AgentTextOption
 
 type AgentToolOperation =
-  | `SpawnAgentCall AgentToolSpawnArguments
-  | `ControlAgentCall AgentToolControlOperation
+  | #SpawnAgentCall AgentToolSpawnArguments
+  | #ControlAgentCall AgentToolControlOperation
 
 type AgentToolPlan =
-  | `SpawnAgentPlanned AgentToolSpawnPlanRequest
-  | `SendMessagePlanned AgentSendRequest
-  | `FollowupTaskPlanned AgentSendRequest
-  | `InterruptAgentPlanned Text
-  | `WaitAgentPlanned I64
-  | `ListAgentsPlanned AgentTextOption
-  | `AgentToolRejected Text
+  | #SpawnAgentPlanned AgentToolSpawnPlanRequest
+  | #SendMessagePlanned AgentSendRequest
+  | #FollowupTaskPlanned AgentSendRequest
+  | #InterruptAgentPlanned Text
+  | #WaitAgentPlanned I64
+  | #ListAgentsPlanned AgentTextOption
+  | #AgentToolRejected Text
 
 type AgentToolSpawnDecodeResult =
-  | `AgentSpawnDecoded AgentToolSpawnArguments
-  | `AgentSpawnDecodeFailed Text
+  | #AgentSpawnDecoded AgentToolSpawnArguments
+  | #AgentSpawnDecodeFailed Text
 
 type AgentToolMessageDecodeResult =
-  | `AgentMessageDecoded AgentToolMessageArguments
-  | `AgentMessageDecodeFailed Text
+  | #AgentMessageDecoded AgentToolMessageArguments
+  | #AgentMessageDecodeFailed Text
 
 type AgentToolTargetDecodeResult =
-  | `AgentTargetDecoded Text
-  | `AgentTargetDecodeFailed Text
+  | #AgentTargetDecoded Text
+  | #AgentTargetDecodeFailed Text
 
 type AgentToolWaitDecodeResult =
-  | `AgentWaitDecoded AgentI64Option
-  | `AgentWaitDecodeFailed Text
+  | #AgentWaitDecoded AgentI64Option
+  | #AgentWaitDecodeFailed Text
 
 type AgentToolListDecodeResult =
-  | `AgentListDecoded AgentTextOption
-  | `AgentListDecodeFailed Text
+  | #AgentListDecoded AgentTextOption
+  | #AgentListDecodeFailed Text
 
 return {};

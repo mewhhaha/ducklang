@@ -16,39 +16,39 @@ type MetadataJson = AppServerJson
 const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextOption = (
   current: MetadataTextOption,
   patch: MetadataTextPatch,
-) => {
-  if let `Keep () = patch {
+) => do
+  if let #Keep = patch then
     current
-  } else if let `Clear () = patch {
-    `None ()
-  } else if let `Set value = patch {
-    `Some value
-  } else {
+  else let #Clear = patch then
+    #None
+  else let #Set value = patch then
+    #Some value
+  else
     current
-  }
-};
+  end;
+end;
 
 let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] ->
   MetadataThreadSummary = (
     summary: MetadataThreadSummary,
     patch: MetadataGitInfoPatch,
-  ) => {
-    let sha: MetadataTextOption = `None ();
-    let branch: MetadataTextOption = `None ();
-    let origin_url: MetadataTextOption = `None ();
+  ) => do
+    let sha: MetadataTextOption = #None;
+    let branch: MetadataTextOption = #None;
+    let origin_url: MetadataTextOption = #None;
 
-    if let `Some current = summary.git_info {
+    if let #Some current = summary.git_info then
       sha = current.sha
       branch = current.branch
       origin_url = current.origin_url
-    }
+    end;
 
     let updated_git_info: MetadataGitInfo = [
       apply_text_patch(sha, patch.sha),
       apply_text_patch(branch, patch.branch),
       apply_text_patch(origin_url, patch.origin_url),
     ];
-    let updated_git_info_option: MetadataGitInfoOption = `Some updated_git_info;
+    let updated_git_info_option: MetadataGitInfoOption = #Some updated_git_info;
     let updated: MetadataThreadSummary = [
       summary.path,
       summary.thread_id,
@@ -69,14 +69,14 @@ let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] -
       updated_git_info_option,
     ];
     updated
-  };
+  end;
 
 const materialize_thread_metadata_update: [MetadataThreadSummary, Bool] -> MetadataJson = (
   summary: MetadataThreadSummary,
   experimental: Bool,
-) => {
+) => do
   materialize_thread_read(summary, json_array_empty(), experimental)
-};
+end;
 
 return {
   .apply_thread_metadata_patch,

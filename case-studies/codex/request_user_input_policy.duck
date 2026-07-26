@@ -12,102 +12,107 @@ type UserInputQuestion = RequestUserInputQuestion
 type UserInputQuestionNode = RequestUserInputQuestionNode
 type UserInputQuestions = RequestUserInputQuestions
 
-const reverse_questions: UserInputQuestions -> UserInputQuestions = questions => {
+const reverse_questions: UserInputQuestions -> UserInputQuestions = questions => do
   let current = questions;
-  let reversed: UserInputQuestions = `Nil ();
+  let reversed: UserInputQuestions = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [question, tail] = node;
       let reversed_node: UserInputQuestionNode = [question, reversed];
-      reversed = `Cons reversed_node
+      reversed = #Cons reversed_node
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   reversed
-};
+end;
 
-const normalize_request_user_input_args: UserInputArgs -> UserInputNormalization = args => {
+const normalize_request_user_input_args: UserInputArgs -> UserInputNormalization = args => do
   let current = args.questions;
-  let normalized_reversed: UserInputQuestions = `Nil ();
+  let normalized_reversed: UserInputQuestions = #Nil;
   let valid = true;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [question, tail] = node;
-      if let `Present options = question.options {
-        if let `Nil () = options {
+      if let #Present options = question.options then
+        if let #Nil = options then
           valid = false
           done = true
-        } else {
+        else
           let normalized_question: UserInputQuestion = question <& { .is_other = true };
           let normalized_node: UserInputQuestionNode = [normalized_question, normalized_reversed];
-          normalized_reversed = `Cons normalized_node
+          normalized_reversed = #Cons normalized_node
           current = tail
-        }
-      } else {
+        end;
+      else
         valid = false
         done = true
-      }
-    } else {
+      end;
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let normalized_questions = reverse_questions normalized_reversed;
-  if valid {
-    let auto_resolution: UserInputAutoResolution = if let `AutoResolutionAboveMaximum () = args.auto_resolution {
-        `AutoResolutionMs 240000i64
-      } else if let `AutoResolutionMs value = args.auto_resolution {
-        if value < 60000i64 {
-          `AutoResolutionMs 60000i64
-        } else if value > 240000i64 {
-          `AutoResolutionMs 240000i64
-        } else {
+  if valid then
+    let auto_resolution: UserInputAutoResolution =
+      if let #AutoResolutionAboveMaximum = args.auto_resolution then
+        #AutoResolutionMs 240000i64
+      else let #AutoResolutionMs value = args.auto_resolution then
+        if value < 60000i64 then
+          #AutoResolutionMs 60000i64
+        else value > 240000i64 then
+          #AutoResolutionMs 240000i64
+        else
           args.auto_resolution
-        }
-      } else {
+        end;
+      else
         args.auto_resolution
-      };
+      end;
     let normalized: UserInputArgs = [
       .questions = normalized_questions,
       .auto_resolution = auto_resolution,
     ];
-    `Normalized normalized;
-  } else {
-    `Invalid "request_user_input requires non-empty options for every question"
-  }
-};
+    #Normalized normalized;
+  else
+    #Invalid "request_user_input requires non-empty options for every question"
+  end;
+end;
 
 const plan_request_user_input: [Bool, UserInputMode, Bool, UserInputArgs] -> UserInputPlan = (
   is_root_thread: Bool,
   mode: UserInputMode,
   default_mode_enabled: Bool,
   args: UserInputArgs,
-) => {
-  if !(is_root_thread) {
-    `RejectRequest "request_user_input can only be used by the root thread"
-  } else {
+) => do
+  if !(is_root_thread) then
+    #RejectRequest "request_user_input can only be used by the root thread"
+  else
     let availability = request_user_input_availability(mode, default_mode_enabled);
-    if let `Unavailable message = availability {
-      `RejectRequest message
-    } else {
+    if let #Unavailable message = availability then
+      #RejectRequest message
+    else
       let normalization = normalize_request_user_input_args args;
-      if let `Normalized normalized = normalization {
-        `PromptUser normalized
-      } else if let `Invalid message = normalization {
-        `RejectRequest message
-      } else {
-        `RejectRequest "request_user_input normalization produced no result"
-      }
-    }
-  }
-};
+      if let #Normalized normalized = normalization then
+        #PromptUser normalized
+      else let #Invalid message = normalization then
+        #RejectRequest message
+      else
+        #RejectRequest "request_user_input normalization produced no result"
+      end;
+    end;
+  end;
+end;
 
 return {
   .normalize_request_user_input_args,

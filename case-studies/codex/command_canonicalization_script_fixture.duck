@@ -22,4 +22,4 @@ let matches = texts.length(command) == 3 && texts.nth_or("", 0,
     command,
   ) == "-lc" && texts.nth_or("", 2, command) == script;
 
-return { .score = if matches { 3 } else { 0 } };
+return { .score = if matches then 3 else 0 end };

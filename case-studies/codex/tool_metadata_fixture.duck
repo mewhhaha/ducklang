@@ -10,26 +10,32 @@ type FixtureDefinitions = ToolDefinitions
 let shell_name: FixtureName = ["", "exec_command"];
 let shell: FixtureDefinition = [
   shell_name,
-  `Direct (),
-  `UnifiedExec (),
-  `FunctionPayload (),
+  #Direct,
+  #UnifiedExec,
+  #FunctionPayload,
   true,
   false,
 ];
 let legacy_name: FixtureName = ["", "shell_command"];
 let legacy: FixtureDefinition = [
   legacy_name,
-  `Hidden (),
-  `Shell (),
-  `FunctionPayload (),
+  #Hidden,
+  #Shell,
+  #FunctionPayload,
   true,
   true,
 ];
-let registry: FixtureDefinitions = `Cons ([legacy, `Cons ([shell, `Nil ()])]);
+let registry: FixtureDefinitions = #Cons ([legacy, #Cons ([shell, #Nil])]);
 let score: I32 = 0;
 
-if tool_supports_parallel(registry, shell_name) { score = score + 1 }
-if !(tool_supports_parallel(registry, legacy_name)) { score = score + 1 }
-if tool_waits_for_cancellation(registry, legacy_name) { score = score + 1 }
+if tool_supports_parallel(registry, shell_name) then
+  score = score + 1
+end;
+if !(tool_supports_parallel(registry, legacy_name)) then
+  score = score + 1
+end;
+if tool_waits_for_cancellation(registry, legacy_name) then
+  score = score + 1
+end;
 
 return { .score = score };

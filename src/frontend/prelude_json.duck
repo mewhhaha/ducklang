@@ -41,84 +41,83 @@ type JsonModuleArray = JsonArray
 type JsonModuleObject = JsonObject
 type JsonFailure = Option JsonError
 
-const json_error: [I32, Text] -> (JsonError) = (position, message) => {
+const json_error: [I32, Text] -> (JsonError) = (position, message) => do
   [position, message]
-};
+end;
 
-const json_parsed: [Json, I32] -> (JsonParsed) = (value, next) => {
+const json_parsed: [Json, I32] -> (JsonParsed) = (value, next) => do
   [value, next]
-};
+end;
 
-const json_string_parsed: [Text, I32] -> (JsonStringParsed) = (value, next) => {
+const json_string_parsed: [Text, I32] -> (JsonStringParsed) = (value, next) => do
   [value, next]
-};
+end;
 
-let skip_json_whitespace: [Text, I32] -> I32 = (text: Text, start: I32) => {
+let skip_json_whitespace: [Text, I32] -> I32 = (text: Text, start: I32) => do
   let index = start;
 
-  loop {
-    if index >= text_length text {
+  loop do
+    if index >= text_length text then
       break;
-    } else if text_byte_is_ascii_whitespace(text_get [text, index]) {
+    else text_byte_is_ascii_whitespace(text_get [text, index]) then
       index = index + 1
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   index
-};
+end;
 
-const json_hex_digit_value = byte => {
-  if byte >= 48 && byte <= 57 {
+const json_hex_digit_value: I32 -> I32 = byte => do
+  if byte >= 48 && byte <= 57 then
     byte - 48
-  } else if byte >= 65 && byte <= 70 {
+  else byte >= 65 && byte <= 70 then
     byte - 55
-  } else if byte >= 97 && byte <= 102 {
+  else byte >= 97 && byte <= 102 then
     byte - 87
-  } else {
-    -1
-  }
-};
+  else -1
+  end;
+end;
 
-let json_code_point_text: I32 -> Text = (code_point: I32) => {
-  if code_point <= 127 {
-    decode_utf8(generate_bytes([1, _ => code_point]))
-  } else if code_point <= 2047 {
-    decode_utf8(generate_bytes([2, index => {
-      if index == 0 { 192 + code_point / 64 } else { 128 + code_point % 64 }
-    }]))
-  } else if code_point <= 65535 {
-    decode_utf8(generate_bytes([3, index => {
-      if index == 0 {
+let json_code_point_text: I32 -> Text = (code_point: I32) => do
+  if code_point <= 127 then
+    decode_utf8(generate_bytes [1, _ => code_point])
+  else code_point <= 2047 then
+    decode_utf8(generate_bytes [2, index => do
+      if index == 0 then 192 + code_point / 64 else 128 + code_point % 64 end;
+    end])
+  else code_point <= 65535 then
+    decode_utf8(generate_bytes [3, index => do
+      if index == 0 then
         224 + code_point / 4096
-      } else if index == 1 {
+      else index == 1 then
         128 + code_point / 64 % 64
-      } else {
+      else
         128 + code_point % 64
-      }
-    }]))
-  } else {
-    decode_utf8(generate_bytes([4, index => {
-      if index == 0 {
+      end;
+    end])
+  else
+    decode_utf8(generate_bytes [4, index => do
+      if index == 0 then
         240 + code_point / 262144
-      } else if index == 1 {
+      else index == 1 then
         128 + code_point / 4096 % 64
-      } else if index == 2 {
+      else index == 2 then
         128 + code_point / 64 % 64
-      } else {
+      else
         128 + code_point % 64
-      }
-    }]))
-  }
-};
+      end;
+    end])
+  end;
+end;
 
-const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start: I32) => {
+const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start: I32) => do
   let length = text_length text;
 
-  if start >= length || text_get [text, start] != 34 {
-    `Err (json_error(start, "Expected JSON string"))
-  } else {
+  if start >= length || text_get [text, start] != 34 then
+    #Err (json_error(start, "Expected JSON string"))
+  else
     let index = start + 1;
     let segment_start = index;
     let decoded: Text = "";
@@ -127,560 +126,561 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
     let failure_index = start;
     let failure_message: Text = "";
 
-    loop {
-      if index >= length {
+    loop do
+      if index >= length then
         failed = true
         failure_index = index
         failure_message = "Unterminated JSON string"
         break;
-      }
+      end;
 
       let byte = text_get [text, index];
 
-      if byte == 34 {
+      if byte == 34 then
         decoded = text_append [decoded, text_slice [text, segment_start, index]]
         index = index + 1
         closed = true
         break;
-      } else if byte < 32 {
+      else byte < 32 then
         failed = true
         failure_index = index
         failure_message = "Unescaped control byte in JSON string"
         break;
-      } else if byte == 92 {
+      else byte == 92 then
         decoded = text_append [decoded, text_slice [text, segment_start, index]]
         index = index + 1
 
-        if index >= length {
+        if index >= length then
           failed = true
           failure_index = index
           failure_message = "Unterminated JSON escape"
           break;
-        }
+        end;
 
         let escape = text_get [text, index];
 
-        if escape == 34 || escape == 47 || escape == 92 {
+        if escape == 34 || escape == 47 || escape == 92 then
           decoded = text_append [decoded, text_slice [text, index, index + 1]]
           index = index + 1
-        } else if escape == 98 {
+        else escape == 98 then
           decoded = text_append [decoded, json_code_point_text 8]
           index = index + 1
-        } else if escape == 102 {
+        else escape == 102 then
           decoded = text_append [decoded, json_code_point_text 12]
           index = index + 1
-        } else if escape == 110 {
+        else escape == 110 then
           decoded = text_append [decoded, "\n"]
           index = index + 1
-        } else if escape == 114 {
+        else escape == 114 then
           decoded = text_append [decoded, "\r"]
           index = index + 1
-        } else if escape == 116 {
+        else escape == 116 then
           decoded = text_append [decoded, "\t"]
           index = index + 1
-        } else if escape == 117 {
-          if index + 5 > length {
+        else escape == 117 then
+          if index + 5 > length then
             failed = true
             failure_index = index
             failure_message = "Incomplete JSON unicode escape"
             break;
-          }
+          end;
 
           let first = json_hex_digit_value(text_get [text, index + 1]);
           let second = json_hex_digit_value(text_get [text, index + 2]);
           let third = json_hex_digit_value(text_get [text, index + 3]);
           let fourth = json_hex_digit_value(text_get [text, index + 4]);
 
-          if first < 0 || second < 0 || third < 0 || fourth < 0 {
+          if first < 0 || second < 0 || third < 0 || fourth < 0 then
             failed = true
             failure_index = index
             failure_message = "Invalid JSON unicode escape"
             break;
-          }
+          end;
 
           let code_point = first * 4096 + second * 256 + third * 16 + fourth;
           index = index + 5
 
-          if code_point >= 55296 && code_point <= 56319 {
-            if index + 6 > length || text_get [text, index] != 92 || text_get [text, index + 1] != 117 {
+          if code_point >= 55296 && code_point <= 56319 then
+            if index + 6 > length || text_get [text, index] != 92 || text_get [text, index + 1]
+              != 117 then
                 failed = true
                 failure_index = index
                 failure_message = "JSON high surrogate requires a low surrogate"
                 break;
-              }
+              end;
 
             first = json_hex_digit_value(text_get [text, index + 2])
             second = json_hex_digit_value(text_get [text, index + 3])
             third = json_hex_digit_value(text_get [text, index + 4])
             fourth = json_hex_digit_value(text_get [text, index + 5])
 
-            if first < 0 || second < 0 || third < 0 || fourth < 0 {
+            if first < 0 || second < 0 || third < 0 || fourth < 0 then
               failed = true
               failure_index = index
               failure_message = "Invalid JSON low surrogate escape"
               break;
-            }
+            end;
 
             let low = first * 4096 + second * 256 + third * 16 + fourth;
 
-            if low < 56320 || low > 57343 {
+            if low < 56320 || low > 57343 then
               failed = true
               failure_index = index
               failure_message = "JSON high surrogate requires a low surrogate"
               break;
-            }
+            end;
 
             code_point = 65536 + (code_point - 55296) * 1024 + low - 56320
             index = index + 6
-          } else if code_point >= 56320 && code_point <= 57343 {
+          else code_point >= 56320 && code_point <= 57343 then
             failed = true
             failure_index = index - 5
             failure_message = "JSON low surrogate has no high surrogate"
             break;
-          }
+          end;
 
           decoded = text_append [decoded, json_code_point_text code_point]
-        } else {
+        else
           failed = true
           failure_index = index
           failure_message = "Invalid JSON escape"
           break;
-        }
+        end;
 
         segment_start = index
-      } else {
+      else
         index = index + 1
-      }
-    }
+      end;
+    end;
 
-    if failed {
-      `Err (json_error(failure_index, failure_message))
-    } else if closed {
-      `Ok (json_string_parsed(decoded, index))
-    } else {
-      `Err (json_error(index, "Unterminated JSON string"))
-    }
-  }
-};
+    if failed then
+      #Err (json_error(failure_index, failure_message))
+    else closed then
+      #Ok (json_string_parsed(decoded, index))
+    else
+      #Err (json_error(index, "Unterminated JSON string"))
+    end;
+  end;
+end;
 
-let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => {
+let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => do
   let length = text_length text;
   let index = start;
   let valid = true;
 
-  if index < length && text_get [text, index] == 45 {
+  if index < length && text_get [text, index] == 45 then
     index = index + 1
-  }
+  end;
 
-  if index >= length {
+  if index >= length then
     valid = false
-  } else if text_get [text, index] == 48 {
+  else text_get [text, index] == 48 then
     index = index + 1
-  } else if text_get [text, index] >= 49 && text_get [text, index] <= 57 {
+  else text_get [text, index] >= 49 && text_get [text, index] <= 57 then
     index = index + 1
 
-    loop {
-      if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
+    loop do
+      if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
         index = index + 1
-      } else {
+      else
         break;
-      }
-    }
-  } else {
+      end;
+    end;
+  else
     valid = false
-  }
+  end;
 
-  if valid && index < length && text_get [text, index] == 46 {
+  if valid && index < length && text_get [text, index] == 46 then
     index = index + 1
 
-    if index >= length {
+    if index >= length then
       valid = false
-    } else if text_byte_is_ascii_digit(text_get [text, index]) {
-      loop {
-        if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
+    else text_byte_is_ascii_digit(text_get [text, index]) then
+      loop do
+        if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
           index = index + 1
-        } else {
+        else
           break;
-        }
-      }
-    } else {
+        end;
+      end;
+    else
       valid = false
-    }
-  }
+    end;
+  end;
 
-  if valid && index < length && (text_get [text, index] == 69 || text_get [text, index] == 101) {
+  if valid && index < length && (text_get [text, index] == 69 || text_get [text, index] == 101) then
     index = index + 1
 
-    if index < length && (text_get [text, index] == 43 || text_get [text, index] == 45) {
+    if index < length && (text_get [text, index] == 43 || text_get [text, index] == 45) then
       index = index + 1
-    }
+    end;
 
-    if index >= length {
+    if index >= length then
       valid = false
-    } else if text_byte_is_ascii_digit(text_get [text, index]) {
-      loop {
-        if index < length && text_byte_is_ascii_digit(text_get [text, index]) {
+    else text_byte_is_ascii_digit(text_get [text, index]) then
+      loop do
+        if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
           index = index + 1
-        } else {
+        else
           break;
-        }
-      }
-    } else {
+        end;
+      end;
+    else
       valid = false
-    }
-  }
+    end;
+  end;
 
-  if valid { index } else { -1 }
-};
+  if valid then index else -1 end;
+end;
 
-let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) => {
+let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) => do
   let index = skip_json_whitespace(text_copy(&text), start);
 
-  if index >= text_length text {
-    `Err (json_error(index, "Expected JSON value"))
-  } else {
+  if index >= text_length text then
+    #Err (json_error(index, "Expected JSON value"))
+  else
     let byte = text_get [text, index];
 
-    if byte == 34 {
+    if byte == 34 then
       let parsed = parse_json_string(text_copy(&text), index);
 
-      if let `Ok string_value = parsed {
+      if let #Ok string_value = parsed then
         let [value, next] = string_value;
-        `Ok (json_parsed(`String (value), next))
-      } else if let `Err string_error = parsed {
-        `Err string_error
-      } else {
-        `Err (json_error(index, "Invalid JSON string result"))
-      }
-    } else if byte == 91 {
+        #Ok (json_parsed(#String (value), next))
+      else let #Err string_error = parsed then
+        #Err string_error
+      else
+        #Err (json_error(index, "Invalid JSON string result"))
+      end;
+    else byte == 91 then
       index = skip_json_whitespace(text_copy(&text), index + 1)
       let values = json_array_empty();
       let done = false;
-      let failure: JsonFailure = `None ();
+      let failure: JsonFailure = #None;
 
-      if index < text_length text && text_get [text, index] == 93 {
+      if index < text_length text && text_get [text, index] == 93 then
         done = true
         index = index + 1
-      }
+      end;
 
-      loop {
-        let failed = if let `Some _ = failure { true } else { false };
-        if done || failed {
+      loop do
+        let failed = if let #Some _ = failure then true else false end;
+        if done || failed then
           break;
-        }
+        end;
 
         let parsed = parse_json(text_copy(&text), index);
 
-        if let `Ok parsed_value = parsed {
+        if let #Ok parsed_value = parsed then
           let [value, next] = parsed_value;
           values = json_array_prepend(value, values)
           index = skip_json_whitespace(text_copy(&text), next)
 
-          if index >= text_length text {
-            failure = `Some (json_error(index, "Unterminated JSON array"))
-          } else if text_get [text, index] == 93 {
+          if index >= text_length text then
+            failure = #Some (json_error(index, "Unterminated JSON array"))
+          else text_get [text, index] == 93 then
             done = true
             index = index + 1
-          } else if text_get [text, index] == 44 {
+          else text_get [text, index] == 44 then
             index = skip_json_whitespace(text_copy(&text), index + 1)
-          } else {
-            failure = `Some (json_error(index, "Expected comma or closing bracket"))
-          }
-        } else if let `Err array_error = parsed {
-          failure = `Some array_error
-        }
-      }
+          else
+            failure = #Some (json_error(index, "Expected comma or closing bracket"))
+          end;
+        else let #Err array_error = parsed then
+          failure = #Some array_error
+        end;
+      end;
 
-      if let `Some error = failure {
-        `Err error
-      } else {
+      if let #Some error = failure then
+        #Err error
+      else
         let current: JsonModuleArray = values;
         let ordered: JsonModuleArray = json_array_empty();
         let reversed = false;
 
-        loop {
-          if let `Cons node = current {
+        loop do
+          if let #Cons node = current then
             let [value, tail] = node;
             ordered = json_array_prepend(value, ordered)
             current = tail
-          } else {
+          else
             reversed = true
-          }
+          end;
 
-          if reversed {
+          if reversed then
             break;
-          }
-        }
+          end;
+        end;
 
-        `Ok (json_parsed(`Array (ordered), index))
-      }
-    } else if byte == 123 {
+        #Ok (json_parsed(#Array (ordered), index))
+      end;
+    else byte == 123 then
       index = skip_json_whitespace(text_copy(&text), index + 1)
       let members = json_object_empty();
       let done = false;
-      let failure: JsonFailure = `None ();
+      let failure: JsonFailure = #None;
 
-      if index < text_length text && text_get [text, index] == 125 {
+      if index < text_length text && text_get [text, index] == 125 then
         done = true
         index = index + 1
-      }
+      end;
 
-      loop {
-        let failed = if let `Some _ = failure { true } else { false };
-        if done || failed {
+      loop do
+        let failed = if let #Some _ = failure then true else false end;
+        if done || failed then
           break;
-        }
+        end;
 
         let parsed_key = parse_json_string(text_copy(&text), index);
 
-        if let `Ok parsed_string = parsed_key {
+        if let #Ok parsed_string = parsed_key then
           let [key, after_key] = parsed_string;
           index = skip_json_whitespace(text_copy(&text), after_key)
 
-          if index >= text_length text || text_get [text, index] != 58 {
-            failure = `Some (json_error(index, "Expected colon after JSON object key"))
-          } else {
+          if index >= text_length text || text_get [text, index] != 58 then
+            failure = #Some (json_error(index, "Expected colon after JSON object key"))
+          else
             let parsed_value = parse_json(text_copy(&text), index + 1);
 
-            if let `Ok value_and_index = parsed_value {
+            if let #Ok value_and_index = parsed_value then
               let [value, next] = value_and_index;
               members = json_object_prepend(text_copy(&key), value, members)
               index = skip_json_whitespace(text_copy(&text), next)
 
-              if index >= text_length text {
-                failure = `Some (json_error(index, "Unterminated JSON object"))
-              } else if text_get [text, index] == 125 {
+              if index >= text_length text then
+                failure = #Some (json_error(index, "Unterminated JSON object"))
+              else text_get [text, index] == 125 then
                 done = true
                 index = index + 1
-              } else if text_get [text, index] == 44 {
+              else text_get [text, index] == 44 then
                 index = skip_json_whitespace(text_copy(&text), index + 1)
-              } else {
-                failure = `Some (json_error(index, "Expected comma or closing brace"))
-              }
-            } else if let `Err object_value_error = parsed_value {
-              failure = `Some object_value_error
-            }
-          }
-        } else if let `Err object_key_error = parsed_key {
-          failure = `Some object_key_error
-        }
-      }
+              else
+                failure = #Some (json_error(index, "Expected comma or closing brace"))
+              end;
+            else let #Err object_value_error = parsed_value then
+              failure = #Some object_value_error
+            end;
+          end;
+        else let #Err object_key_error = parsed_key then
+          failure = #Some object_key_error
+        end;
+      end;
 
-      if let `Some error = failure {
-        `Err error
-      } else {
+      if let #Some error = failure then
+        #Err error
+      else
         let current: JsonModuleObject = members;
         let ordered: JsonModuleObject = json_object_empty();
         let reversed = false;
 
-        loop {
-          if let `Cons node = current {
+        loop do
+          if let #Cons node = current then
             let [member, tail] = node;
             let [key, value] = member;
             ordered = json_object_prepend(text_copy(&key), value, ordered)
             current = tail
-          } else {
+          else
             reversed = true
-          }
+          end;
 
-          if reversed {
+          if reversed then
             break;
-          }
-        }
+          end;
+        end;
 
-        `Ok (json_parsed(`Object (ordered), index))
-      }
-    } else if byte == 116 {
-      if index + 4 > text_length text {
-        `Err (json_error(index, "Invalid JSON literal"))
-      } else {
+        #Ok (json_parsed(#Object (ordered), index))
+      end;
+    else byte == 116 then
+      if index + 4 > text_length text then
+        #Err (json_error(index, "Invalid JSON literal"))
+      else
         let true_literal = text_slice [text, index, index + 4];
 
-        if true_literal == "true" {
-          `Ok (json_parsed(`Bool (true), index + 4))
-        } else {
-          `Err (json_error(index, "Invalid JSON literal"))
-        }
-      }
-    } else if byte == 102 {
-      if index + 5 > text_length text {
-        `Err (json_error(index, "Invalid JSON literal"))
-      } else {
+        if true_literal == "true" then
+          #Ok (json_parsed(#Bool (true), index + 4))
+        else
+          #Err (json_error(index, "Invalid JSON literal"))
+        end;
+      end;
+    else byte == 102 then
+      if index + 5 > text_length text then
+        #Err (json_error(index, "Invalid JSON literal"))
+      else
         let false_literal = text_slice [text, index, index + 5];
 
-        if false_literal == "false" {
-          `Ok (json_parsed(`Bool (false), index + 5))
-        } else {
-          `Err (json_error(index, "Invalid JSON literal"))
-        }
-      }
-    } else if byte == 110 {
-      if index + 4 > text_length text {
-        `Err (json_error(index, "Invalid JSON literal"))
-      } else {
+        if false_literal == "false" then
+          #Ok (json_parsed(#Bool (false), index + 5))
+        else
+          #Err (json_error(index, "Invalid JSON literal"))
+        end;
+      end;
+    else byte == 110 then
+      if index + 4 > text_length text then
+        #Err (json_error(index, "Invalid JSON literal"))
+      else
         let null_literal = text_slice [text, index, index + 4];
 
-        if null_literal == "null" {
-          `Ok (json_parsed(`Null (), index + 4))
-        } else {
-          `Err (json_error(index, "Invalid JSON literal"))
-        }
-      }
-    } else if byte == 45 || text_byte_is_ascii_digit byte {
+        if null_literal == "null" then
+          #Ok (json_parsed(#Null, index + 4))
+        else
+          #Err (json_error(index, "Invalid JSON literal"))
+        end;
+      end;
+    else byte == 45 || text_byte_is_ascii_digit byte then
       let next = number_end(text_copy(&text), index);
 
-      if next < 0 {
-        `Err (json_error(index, "Invalid JSON number"))
-      } else {
-        `Ok (json_parsed(`Number (text_slice [text, index, next]), next))
-      }
-    } else {
-      `Err (json_error(index, "Unexpected byte in JSON value"))
-    }
-  }
-};
+      if next < 0 then
+        #Err (json_error(index, "Invalid JSON number"))
+      else
+        #Ok (json_parsed(#Number (text_slice [text, index, next]), next))
+      end;
+    else
+      #Err (json_error(index, "Unexpected byte in JSON value"))
+    end;
+  end;
+end;
 
-let parse_json_document: Text -> (JsonParseResult) = text => {
+let parse_json_document: Text -> (JsonParseResult) = text => do
   let parsed = parse_json(text_copy(&text), 0);
 
-  if let `Ok value_and_index = parsed {
+  if let #Ok value_and_index = parsed then
     let [value, index] = value_and_index;
     let next = skip_json_whitespace(text_copy(&text), index);
 
-    if next == text_length text {
-      `Ok (json_parsed(value, next))
-    } else {
-      `Err (json_error(next, "Unexpected bytes after JSON value"))
-    }
-  } else if let `Err document_error = parsed {
-    `Err document_error
-  } else {
-    `Err (json_error(0, "Invalid JSON parse result"))
-  }
-};
+    if next == text_length text then
+      #Ok (json_parsed(value, next))
+    else
+      #Err (json_error(next, "Unexpected bytes after JSON value"))
+    end;
+  else let #Err document_error = parsed then
+    #Err document_error
+  else
+    #Err (json_error(0, "Invalid JSON parse result"))
+  end;
+end;
 
-let encode_json_string: Text -> Text = text => {
+let encode_json_string: Text -> Text = text => do
   let encoded: Text = "\"";
   let index = 0;
   let segment_start = 0;
 
-  loop {
-    if index >= text_length text {
+  loop do
+    if index >= text_length text then
       break;
-    }
+    end;
 
     let byte = text_get [text, index];
 
-    if byte == 34 || byte == 92 || byte < 32 {
+    if byte == 34 || byte == 92 || byte < 32 then
       encoded = text_append [encoded, text_slice [text, segment_start, index]]
 
-      if byte == 34 {
+      if byte == 34 then
         encoded = text_append [encoded, "\\\""]
-      } else if byte == 92 {
+      else byte == 92 then
         encoded = text_append [encoded, "\\\\"]
-      } else if byte == 8 {
+      else byte == 8 then
         encoded = text_append [encoded, "\\b"]
-      } else if byte == 9 {
+      else byte == 9 then
         encoded = text_append [encoded, "\\t"]
-      } else if byte == 10 {
+      else byte == 10 then
         encoded = text_append [encoded, "\\n"]
-      } else if byte == 12 {
+      else byte == 12 then
         encoded = text_append [encoded, "\\f"]
-      } else if byte == 13 {
+      else byte == 13 then
         encoded = text_append [encoded, "\\r"]
-      } else {
+      else
         let high = byte / 16;
         let low = byte % 16;
-        let high_ascii = if high < 10 { high + 48 } else { high + 87 };
-        let low_ascii = if low < 10 { low + 48 } else { low + 87 };
+        let high_ascii = if high < 10 then high + 48 else high + 87 end;
+        let low_ascii = if low < 10 then low + 48 else low + 87 end;
         encoded = text_append [encoded, "\\u00"]
         encoded = text_append [encoded, json_code_point_text high_ascii]
         encoded = text_append [encoded, json_code_point_text low_ascii]
-      }
+      end;
 
       index = index + 1
       segment_start = index
-    } else {
+    else
       index = index + 1
-    }
-  }
+    end;
+  end;
 
   encoded = text_append [encoded, text_slice [text, segment_start, index]]
   text_append [encoded, "\""]
-};
+end;
 
-let rec encode_json: Json -> Text = value => {
-  if let `Null () = value {
+let rec encode_json: Json -> Text = value => do
+  if let #Null = value then
     "null"
-  } else if let `Bool boolean = value {
-    if boolean { "true" } else { "false" }
-  } else if let `Number number = value {
+  else let #Bool boolean = value then
+    if boolean then "true" else "false" end;
+  else let #Number number = value then
     number
-  } else if let `String text = value {
+  else let #String text = value then
     encode_json_string text
-  } else if let `Array values = value {
+  else let #Array values = value then
     let encoded: Text = "[";
     let current: JsonModuleArray = values;
     let first = true;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [element, tail] = node;
 
-        if first {
+        if first then
           first = false
-        } else {
+        else
           encoded = text_append [encoded, ","]
-        }
+        end;
 
         encoded = text_append [encoded, encode_json element]
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     text_append [encoded, "]"]
-  } else if let `Object members = value {
+  else let #Object members = value then
     let encoded: Text = "{";
     let current: JsonModuleObject = members;
     let first = true;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [member, tail] = node;
         let [key, member_value] = member;
 
-        if first {
+        if first then
           first = false
-        } else {
+        else
           encoded = text_append [encoded, ","]
-        }
+        end;
 
         encoded = text_append [encoded, encode_json_string key]
         encoded = text_append [encoded, ":"]
         encoded = text_append [encoded, encode_json member_value]
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     text_append [encoded, "}"]
-  } else {
+  else
     "null"
-  }
-};
+  end;
+end;
 
 let encode_json_object: JsonEncoderObject -> Text = fields => encode_json(json_object fields);
 

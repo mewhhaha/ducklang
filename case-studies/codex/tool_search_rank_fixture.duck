@@ -11,57 +11,63 @@ type FixtureSpec = ToolSpec
 
 let calendar: FixtureSpec = [
   ["", "create_event"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "Create and schedule calendar events with attendees.",
   "{\"timezone\":\"IANA timezone\"}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 let files: FixtureSpec = [
   ["", "read_file"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "Read a local source file from disk.",
   "{\"path\":\"filesystem path\"}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 let search: FixtureSpec = [
   ["", "search_calendar"],
-  `FunctionSpec (),
+  #FunctionSpec,
   "Search calendar entries.",
   "{\"query\":\"search query\"}",
-  `ToolOutputSchemaMissing (),
+  #ToolOutputSchemaMissing,
   false,
 ];
 
-let values: FixtureInfos = `Nil ();
-values = append_search_infos(values, searchable_function(files, `SearchSourceMissing ()))
-values = append_search_infos(values, searchable_function(calendar, `SearchSourceMissing ()))
-values = append_search_infos(values, searchable_function(search, `SearchSourceMissing ()))
+let values: FixtureInfos = #Nil;
+values = append_search_infos(values, searchable_function(files, #SearchSourceMissing))
+values = append_search_infos(values, searchable_function(calendar, #SearchSourceMissing))
+values = append_search_infos(values, searchable_function(search, #SearchSourceMissing))
 
 let score = 0;
 let logarithm = natural_log_positive_q10 2048;
-if logarithm >= 709 && logarithm <= 711 { score = score + 1 }
+if logarithm >= 709 && logarithm <= 711 then
+  score = score + 1
+end;
 
 let ranked: FixtureRanked = rank_tool_search("create calendar event", 2, values);
-if let `Cons first_node = ranked {
+if let #Cons first_node = ranked then
   let [first, tail] = first_node;
   let [_, _, first_entry] = first;
   let [_, first_output] = first_entry;
-  if let `Function function = first_output {
+  if let #Function function = first_output then
     let [function_spec, _] = function;
     let [name, _, _, _, _, _] = function_spec;
     let [_, local_name] = name;
-    if local_name == "create_event" { score = score + 10 }
-  }
+    if local_name == "create_event" then
+      score = score + 10
+    end;
+  end;
 
-  if let `Cons second_node = tail {
+  if let #Cons second_node = tail then
     let [second, rest] = second_node;
     let [_, second_score, _] = second;
-    if second_score > 0 {
-      if let `Nil () = rest { score = score + 100 }
-    }
-  }
-}
+    if second_score > 0 then
+      if let #Nil = rest then
+        score = score + 100
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

@@ -6,36 +6,36 @@ type HookOutputTextOption = Option Text
 
 type HookUniversalOutput = [Bool, HookOutputTextOption, Bool, HookOutputTextOption]
 type HookUniversalParse =
-  | `UniversalOk HookUniversalOutput
-  | `UniversalErr Text
+  | #UniversalOk HookUniversalOutput
+  | #UniversalErr Text
 
 type HookStopOutput = [HookUniversalOutput, Bool, HookOutputTextOption, HookOutputTextOption]
 type HookStopParse =
-  | `StopOk HookStopOutput
-  | `StopErr Text
+  | #StopOk HookStopOutput
+  | #StopErr Text
 
 type HookPermissionOutput = [
   HookUniversalOutput,
   HookPermissionDecisionOption,
-  HookOutputTextOption ]
+  HookOutputTextOption]
 type HookPermissionParse =
-  | `PermissionOk HookPermissionOutput
-  | `PermissionErr Text
+  | #PermissionOk HookPermissionOutput
+  | #PermissionErr Text
 
 type HookPreToolOutput = [
   HookUniversalOutput,
   HookOutputTextOption,
   HookOutputTextOption,
   HookUpdatedInput,
-  HookOutputTextOption ]
+  HookOutputTextOption]
 type HookPreToolParse =
-  | `PreToolOk HookPreToolOutput
-  | `PreToolErr Text
+  | #PreToolOk HookPreToolOutput
+  | #PreToolErr Text
 
 type HookContextOutput = [HookUniversalOutput, HookOutputTextOption]
 type HookContextParse =
-  | `ContextOk HookContextOutput
-  | `ContextErr Text
+  | #ContextOk HookContextOutput
+  | #ContextErr Text
 
 type HookPostToolOutput = [
   HookUniversalOutput,
@@ -43,23 +43,23 @@ type HookPostToolOutput = [
   HookOutputTextOption,
   HookOutputTextOption,
   HookOutputTextOption,
-  HookOutputTextOption ]
+  HookOutputTextOption]
 type HookPostToolParse =
-  | `PostToolOk HookPostToolOutput
-  | `PostToolErr Text
+  | #PostToolOk HookPostToolOutput
+  | #PostToolErr Text
 
 type HookUserPromptOutput = [
   HookUniversalOutput,
   Bool,
   HookOutputTextOption,
   HookOutputTextOption,
-  HookOutputTextOption ]
+  HookOutputTextOption]
 type HookUserPromptParse =
-  | `UserPromptOk HookUserPromptOutput
-  | `UserPromptErr Text
+  | #UserPromptOk HookUserPromptOutput
+  | #UserPromptErr Text
 
 type HookStatelessParse =
-  | `StatelessOk HookUniversalOutput
-  | `StatelessErr Text
+  | #StatelessOk HookUniversalOutput
+  | #StatelessErr Text
 
 return {};

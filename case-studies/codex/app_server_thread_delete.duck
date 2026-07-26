@@ -15,37 +15,37 @@ const delete_texts = comptime list Text;
 const ordered_thread_delete_plan: [Text, ThreadDeleteSubtree] -> ThreadDeletePlanResult = (
   thread_id: Text,
   subtree: ThreadDeleteSubtree,
-) => {
+) => do
   let root_node: ListNode Text = [subtree.head, subtree.tail];
-  let roots: ThreadDeleteTexts = `Cons root_node;
+  let roots: ThreadDeleteTexts = #Cons root_node;
   let plan: ThreadDeletePlan = [thread_id, delete_texts.reverse(roots)];
-  `Ok plan
-};
+  #Ok plan
+end;
 
 const plan_thread_delete: [Text, ThreadDeleteRoot, ThreadDeleteSubtree] -> ThreadDeletePlanResult =
   (
     thread_id: Text,
     root: ThreadDeleteRoot,
     subtree: ThreadDeleteSubtree,
-  ) => {
-    if subtree.head != thread_id {
-      `Err (text_append("thread delete subtree does not begin with root: ", thread_id))
-    } else if let `LoadedThreadRoot persistence = root {
-      if let `EphemeralThread () = persistence {
-        `Err (text_append("thread is not persisted and cannot be deleted: ", thread_id))
-      } else {
+  ) => do
+    if subtree.head != thread_id then
+      #Err (text_append("thread delete subtree does not begin with root: ", thread_id))
+    else let #LoadedThreadRoot persistence = root then
+      if let #EphemeralThread = persistence then
+        #Err (text_append("thread is not persisted and cannot be deleted: ", thread_id))
+      else
         ordered_thread_delete_plan(thread_id, subtree)
-      }
-    } else if let `MissingThreadRoot () = root {
-      if let `Nil () = subtree.tail {
-        `Err (text_append("thread not found: ", thread_id))
-      } else {
+      end;
+    else let #MissingThreadRoot = root then
+      if let #Nil = subtree.tail then
+        #Err (text_append("thread not found: ", thread_id))
+      else
         ordered_thread_delete_plan(thread_id, subtree)
-      }
-    } else {
+      end;
+    else
       ordered_thread_delete_plan(thread_id, subtree)
-    }
-  };
+    end;
+  end;
 
 return {
   .plan_thread_delete,

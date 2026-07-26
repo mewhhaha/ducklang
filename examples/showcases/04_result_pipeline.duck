@@ -9,21 +9,21 @@ declare effect Input {
 
 declare Init { input: Input }
 
-type PipelineResult error value = | `Ok value | `Err error
+type PipelineResult error value = | #Ok value | #Err error
 type User = struct { .name = Text, .score = Int }
 type UserResult = PipelineResult Text User
 
 flag <- Input.flag()
-let outcome: UserResult = if flag {
-  `Ok [.name = "Ada", .score = 42]
-} else {
-  `Err ("missing")
-};
+let outcome: UserResult = if flag then
+  #Ok [.name = "Ada", .score = 42]
+else
+  #Err ("missing")
+end;
 
-let result: I32 = if let `Ok user = outcome {
+let result: I32 = if let #Ok user = outcome then
   user.score
-} else {
+else
   length "missing" * 6
-};
+end;
 
 return { .result = result };

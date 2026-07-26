@@ -55,6 +55,7 @@ static bool starts_application_argument(int32_t character) {
     case '{':
     case '!':
     case '#':
+    case '`':
       return true;
     default:
       return false;
@@ -86,9 +87,41 @@ static bool application_stop_keyword(TSLexer *lexer) {
   }
 
   return strcmp(word, "as") == 0 || strcmp(word, "by") == 0 ||
-    strcmp(word, "else") == 0 || strcmp(word, "if") == 0 ||
+    strcmp(word, "do") == 0 || strcmp(word, "else") == 0 ||
+    strcmp(word, "end") == 0 || strcmp(word, "if") == 0 ||
     strcmp(word, "in") == 0 || strcmp(word, "is") == 0 ||
-    strcmp(word, "where") == 0 || strcmp(word, "with") == 0;
+    strcmp(word, "of") == 0 || strcmp(word, "then") == 0 ||
+    strcmp(word, "where") == 0 ||
+    strcmp(word, "with") == 0;
+}
+
+/** The `do … end` delimiters, which never continue an application or a type. */
+static bool block_stop_keyword(TSLexer *lexer) {
+  char word[8] = {0};
+  unsigned length = 0;
+
+  while (
+    length < sizeof(word) - 1 &&
+    ((lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+      (lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+      lexer->lookahead == '_')
+  ) {
+    word[length] = (char)lexer->lookahead;
+    length += 1;
+    lexer->advance(lexer, false);
+  }
+
+  if (
+    (lexer->lookahead >= '0' && lexer->lookahead <= '9') ||
+    (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+    (lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+    lexer->lookahead == '_'
+  ) {
+    return false;
+  }
+
+  return strcmp(word, "do") == 0 || strcmp(word, "else") == 0 ||
+    strcmp(word, "end") == 0 || strcmp(word, "then") == 0;
 }
 
 static bool starts_type_argument(int32_t character) {
@@ -127,6 +160,18 @@ bool tree_sitter_duck_external_scanner_scan(
     valid_symbols[TYPE_APPLICATION_SPACE] &&
     starts_type_argument(lexer->lookahead)
   ) {
+    // A block keyword never continues a type. Without this, the type in
+    // `if value is Int then do … end` swallows `then` as a type argument.
+    // Only the block delimiters are excluded here, not the whole application
+    // stop list, which carries words that are meaningful in type position.
+    if (
+      ((lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+        (lexer->lookahead >= 'a' && lexer->lookahead <= 'z')) &&
+      block_stop_keyword(lexer)
+    ) {
+      return false;
+    }
+
     lexer->result_symbol = TYPE_APPLICATION_SPACE;
     return true;
   }

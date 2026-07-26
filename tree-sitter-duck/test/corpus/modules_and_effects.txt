@@ -13,11 +13,11 @@ declare Init {
   io: Io
 }
 
-let greet: () -> <Io.read :| Io.print> Text = () => {
+let greet: () -> <Io.read :| Io.print> Text = () => do
   name <- Io.read()
   _ <- Io.print(&name)
   name
-};
+end;
 
 let result = greet();
 return { .result = result };
@@ -135,9 +135,9 @@ return { .result = result };
 Local module binding
 ==================
 
-module adder = capabilities => {
+module adder = capabilities => do
   { .run = value => value + capabilities.base }
-}
+end
 
 ---
 
@@ -172,11 +172,11 @@ module adder = capabilities => {
 Effect row expressions and effectful bind
 ==================
 
-let run: () -> <Stdin :| Stdout :& (Trace :- Debug)> Text = () => {
+let run: () -> <Stdin :| Stdout :& (Trace :- Debug)> Text = () => do
   line <- Stdin.read_line()
   _ <- Stdout.write_line(&line)
   line
-};
+end;
 
 let inspect: () -> <Stdin :| Stdout.write_line :| Trace :- Debug> Unit = () => ();
 
@@ -317,17 +317,17 @@ effect Counter state {
   add: (I32) => Unit
 }
 
-let counter = {
+let counter = do
   let count: I32 = 0;
   handler Counter {
     get: (!resume) => !resume(count),
-    add: (amount, !resume) => {
+    add: (amount, !resume) => do
       count = count + amount
       !resume(())
-    },
+    end,
     return: value => { .value, .count },
   }
-};
+end;
 
 let make = () => handler Counter {
   get: (!resume) => !resume(0),
@@ -498,11 +498,11 @@ module (!init: Init) where
 
 let console = import "./console.duck";
 
-let greet: () -> <Io.read :| Io.print> Text = () => {
+let greet: () -> <Io.read :| Io.print> Text = () => do
   name <- Io.read()
   _ <- Io.print(&name)
   name
-};
+end;
 
 const { .run, .close } = console({ .io = !init.io });
 let result = run();

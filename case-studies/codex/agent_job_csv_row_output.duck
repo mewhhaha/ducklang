@@ -9,63 +9,67 @@ type AgentJobCsvRowOutputResult = AgentJobCsvExportResult
 type AgentJobCsvRowOutputStatus = AgentJobFinalItemStatus
 type AgentJobCsvRowOutputTextOption = AgentJobTextOption
 
-const agent_job_csv_option: AgentJobCsvRowOutputTextOption -> Text = value => {
-  if let `Some text = value { text } else { "" }
-};
+const agent_job_csv_option: AgentJobCsvRowOutputTextOption -> Text = value => do
+  if let #Some text = value then text else "" end;
+end;
 
-const agent_job_csv_status: AgentJobCsvRowOutputStatus -> Text = status => {
-  if let `Pending () = status {
+const agent_job_csv_status: AgentJobCsvRowOutputStatus -> Text = status => do
+  if let #Pending = status then
     "pending"
-  } else if let `Running () = status {
+  else let #Running = status then
     "running"
-  } else if let `Completed () = status {
+  else let #Completed = status then
     "completed"
-  } else if let `Failed () = status {
+  else let #Failed = status then
     "failed"
-  } else {
+  else
     ""
-  }
-};
+  end;
+end;
 
 const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvRowOutputItem] ->
   AgentJobCsvRowOutputResult = (
     job_id: Text,
     headers: AgentJobCsvRowOutputHeaders,
     item: AgentJobCsvRowOutputItem,
-  ) => {
+  ) => do
     let current_headers = headers;
     let current_values = item.row_values;
     let line = "";
     let first = true;
     let matches = true;
     let done = false;
-    loop {
-      if let `Cons header_node = current_headers {
+    loop do
+      if let #Cons header_node = current_headers then
         let [_, header_tail] = header_node;
-        if let `Cons value_node = current_values {
+        if let #Cons value_node = current_values then
           let [value, value_tail] = value_node;
           line = csv_append_field(line, value, first)
           first = false
           current_headers = header_tail
           current_values = value_tail
-        } else {
+        else
           matches = false
           done = true
-        }
-      } else {
-        if let `Cons _ = current_values { matches = false }
+        end;
+      else
+        if let #Cons _ = current_values then
+          matches = false
+        end;
         done = true
-      }
-      if done { break; }
-    }
-    if !(matches) {
-      `CsvExportFailed (
+      end;
+      if done then
+        break;
+      end;
+    end;
+    if !(matches) then
+      #CsvExportFailed (
         csv_text_append [
           "row values for item ",
           csv_text_append [item.item_id, " do not match csv headers"],
         ]
       )
-    } else {
+    else
       line = csv_append_field(line, job_id, first)
       line = csv_append_field(line, item.item_id, false)
       line = csv_append_field(line, csv_format_i32 item.row_index, false)
@@ -76,8 +80,8 @@ const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvR
       line = csv_append_field(line, agent_job_csv_option item.result_json, false)
       line = csv_append_field(line, agent_job_csv_option item.reported_at, false)
       line = csv_append_field(line, agent_job_csv_option item.completed_at, false)
-      `CsvExported (csv_text_append [line, "\n"])
-    }
-  };
+      #CsvExported (csv_text_append [line, "\n"])
+    end;
+  end;
 
 return { .render_agent_job_csv_row };

@@ -9,30 +9,34 @@ type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 
 let score = 0;
-let original: FixtureDetail = `Original ();
-let original_detail: FixtureDetailOption = `Some original;
-let low: FixtureDetail = `Low ();
-let low_detail: FixtureDetailOption = `Some low;
-let absent: FixtureDetailOption = `None ();
+let original: FixtureDetail = #Original;
+let original_detail: FixtureDetailOption = #Some original;
+let low: FixtureDetail = #Low;
+let low_detail: FixtureDetailOption = #Some low;
+let absent: FixtureDetailOption = #None;
 
-if can_request_original_image_detail true && !(can_request_original_image_detail false) {
+if can_request_original_image_detail true && !(can_request_original_image_detail false) then
   score = score + 1
-}
+end;
 
-if let `Some selected = normalize_output_image_detail(true, original_detail) {
-  if let `Original () = selected { score = score + 10 }
-}
+if let #Some selected = normalize_output_image_detail(true, original_detail) then
+  if let #Original = selected then
+    score = score + 10
+  end;
+end;
 
-if let `None () = normalize_output_image_detail(false, original_detail) {
+if let #None = normalize_output_image_detail(false, original_detail) then
   score = score + 100
-}
+end;
 
-if let `Some selected = normalize_output_image_detail(false, low_detail) {
-  if let `Low () = selected { score = score + 1000 }
-}
+if let #Some selected = normalize_output_image_detail(false, low_detail) then
+  if let #Low = selected then
+    score = score + 1000
+  end;
+end;
 
-if let `None () = normalize_output_image_detail(true, absent) {
+if let #None = normalize_output_image_detail(true, absent) then
   score = score + 10000
-}
+end;
 
 return { .score = score };

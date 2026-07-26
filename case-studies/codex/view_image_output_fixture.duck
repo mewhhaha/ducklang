@@ -6,18 +6,20 @@ const { .view_image_detail_text, .view_image_output_json } = import "./view_imag
 type FixtureOutput = ViewImageOutput
 
 let score = 0;
-let high: FixtureOutput = [.image_url = "data:image/png;base64,aA==", .detail = `High ()];
-let high_detail = view_image_detail_text(`High ());
+let high: FixtureOutput = [.image_url = "data:image/png;base64,aA==", .detail = #High];
+let high_detail = view_image_detail_text(#High);
 let high_json = view_image_output_json high;
-if high_detail == "high" && high_json == "{\"image_url\":\"data:image/png;base64,aA==\",\"detail\":\"high\"}" {
-  score = score + 1
-}
+if high_detail == "high" && high_json
+  == "{\"image_url\":\"data:image/png;base64,aA==\",\"detail\":\"high\"}" then
+    score = score + 1
+  end;
 
-let original: FixtureOutput = [.image_url = "data:image/png;base64,bw==", .detail = `Original ()];
-let original_detail = view_image_detail_text(`Original ());
+let original: FixtureOutput = [.image_url = "data:image/png;base64,bw==", .detail = #Original];
+let original_detail = view_image_detail_text(#Original);
 let original_json = view_image_output_json original;
-if original_detail == "original" && original_json == "{\"image_url\":\"data:image/png;base64,bw==\",\"detail\":\"original\"}" {
-  score = score + 10
-}
+if original_detail == "original" && original_json
+  == "{\"image_url\":\"data:image/png;base64,bw==\",\"detail\":\"original\"}" then
+    score = score + 10
+  end;
 
 return { .score = score };

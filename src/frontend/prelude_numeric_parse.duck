@@ -4,123 +4,129 @@ const { .text_get, .text_length, .text_less_than, .text_slice, .unsafe_i64_exten
   import "duck:prelude/runtime" ();
 
 type DecimalU32Result =
-  | `Err Text
-  | `Ok I64
+  | #Err Text
+  | #Ok I64
 type DecimalI64Result =
-  | `Err Text
-  | `Ok I64
+  | #Err Text
+  | #Ok I64
 type DecimalU64TextResult =
-  | `Err Text
-  | `Ok Text
+  | #Err Text
+  | #Ok Text
 
-const parse_u32_decimal: Text -> DecimalU32Result = text => {
+const parse_u32_decimal: Text -> DecimalU32Result = text => do
   let valid = text_length text > 0;
   let exceeds_u32 = false;
   let parsed = 0i64;
   let index = 0;
 
-  loop {
-    if index >= text_length text { break; }
+  loop do
+    if index >= text_length text then
+      break;
+    end;
     let byte = text_get [text, index];
 
-    if byte < 48 || byte > 57 {
+    if byte < 48 || byte > 57 then
       valid = false
-    } else if valid {
+    else valid then
       let digit = unsafe_i64_extend_i32_signed(byte - 48);
-      if parsed > 429496729i64 || parsed == 429496729i64 && digit > 5i64 {
+      if parsed > 429496729i64 || parsed == 429496729i64 && digit > 5i64 then
         valid = false
         exceeds_u32 = true
-      } else {
+      else
         parsed = parsed * 10i64 + digit
-      }
-    }
+      end;
+    end;
 
     index = index + 1
-  }
+  end;
 
-  if valid {
-    `Ok parsed
-  } else if exceeds_u32 {
-    `Err "number exceeds U32"
-  } else {
-    `Err "must be a non-negative integer"
-  }
-};
+  if valid then
+    #Ok parsed
+  else exceeds_u32 then
+    #Err "number exceeds U32"
+  else
+    #Err "must be a non-negative integer"
+  end;
+end;
 
-const parse_i64_decimal: Text -> DecimalI64Result = text => {
-  if text == "-9223372036854775808" {
-    `Ok (-9223372036854775808i64)
-  } else {
+const parse_i64_decimal: Text -> DecimalI64Result = text => do
+  if text == "-9223372036854775808" then
+    #Ok (-9223372036854775808i64)
+  else
     let negative = text_length text > 0 && text_get [text, 0] == 45;
-    let start = if negative { 1 } else { 0 };
+    let start = if negative then 1 else 0 end;
     let valid = start < text_length text;
     let exceeds_i64 = false;
     let parsed = 0i64;
     let index = start;
 
-    loop {
-      if index >= text_length text { break; }
+    loop do
+      if index >= text_length text then
+        break;
+      end;
       let byte = text_get [text, index];
 
-      if byte < 48 || byte > 57 {
+      if byte < 48 || byte > 57 then
         valid = false
-      } else if valid {
+      else valid then
         let digit = unsafe_i64_extend_i32_signed(byte - 48);
-        if parsed > 922337203685477580i64 || parsed == 922337203685477580i64 && digit > 7i64 {
+        if parsed > 922337203685477580i64 || parsed == 922337203685477580i64 && digit > 7i64 then
           valid = false
           exceeds_i64 = true
-        } else {
+        else
           parsed = parsed * 10i64 + digit
-        }
-      }
+        end;
+      end;
 
       index = index + 1
-    }
+    end;
 
-    if valid {
-      if negative { `Ok (0i64 - parsed) } else { `Ok parsed }
-    } else if exceeds_i64 {
-      `Err "number exceeds I64"
-    } else {
-      `Err "must be an integer"
-    }
-  }
-};
+    if valid then
+      if negative then #Ok (0i64 - parsed) else #Ok parsed end;
+    else exceeds_i64 then
+      #Err "number exceeds I64"
+    else
+      #Err "must be an integer"
+    end;
+  end;
+end;
 
-const parse_u64_decimal_text: Text -> DecimalU64TextResult = text => {
+const parse_u64_decimal_text: Text -> DecimalU64TextResult = text => do
   let valid = text_length text > 0;
   let first_nonzero = text_length text;
   let index = 0;
 
-  loop {
-    if index >= text_length text { break; }
+  loop do
+    if index >= text_length text then
+      break;
+    end;
     let byte = text_get [text, index];
-    if byte < 48 || byte > 57 {
+    if byte < 48 || byte > 57 then
       valid = false
-    } else if byte != 48 && first_nonzero == text_length text {
+    else byte != 48 && first_nonzero == text_length text then
       first_nonzero = index
-    }
+    end;
     index = index + 1
-  }
+  end;
 
-  if !(valid) {
-    `Err "must be a non-negative integer"
-  } else {
-    let canonical = if first_nonzero == text_length text { "0" } else { text_slice [
+  if !(valid) then
+    #Err "must be a non-negative integer"
+  else
+    let canonical = if first_nonzero == text_length text then "0" else text_slice [
       text,
       first_nonzero,
       text_length text,
-    ] };
+    ] end;
     if text_length canonical > 20 || text_length canonical == 20 && text_less_than [
       "18446744073709551615",
       canonical,
-    ] {
-      `Err "number exceeds U64"
-    } else {
-      `Ok canonical
-    }
-  }
-};
+    ] then
+      #Err "number exceeds U64"
+    else
+      #Ok canonical
+    end;
+  end;
+end;
 
 return {
   .parse_i64_decimal,

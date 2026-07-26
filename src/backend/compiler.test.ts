@@ -31,10 +31,10 @@ Deno.test("Duck compiler executes float arithmetic after integer conversion", as
   try {
     const execution = await compiler.run(`
 const { .f32_from_i32, .i32_from_f32 } = import "duck:prelude/runtime" ();
-let halve: I32 -> F32 = (value: I32) => {
+let halve: I32 -> F32 = (value: I32) => do
   let converted: F32 = f32_from_i32 value;
   converted / 2.0f32
-};
+end;
 i32_from_f32(halve(42))
 `);
 
@@ -46,8 +46,8 @@ i32_from_f32(halve(42))
 
 Deno.test("Duck gpufuck lowering represents Char payloads as integers", () => {
   const source_text = `
-type Key = | \`Character Char | \`Escape Unit
-let key: Key = \`Character 'q';
+type Key = | #Character Char | #Escape
+let key: Key = #Character 'q';
 key
 `;
   const lowered = lower_duck_source_to_gpufuck(
@@ -88,9 +88,9 @@ third(39)
 
 Deno.test("Duck gpufuck lowering types an if from either branch", () => {
   const source_text = `
-let f = rec (n: I32, total: I32) => {
-  if n > 0 { rec(n - 1, total + n) } else { total }
-};
+let f = rec (n: I32, total: I32) => do
+  if n > 0 then rec(n - 1, total + n)  else  total end;
+end;
 f(3, 0)
 `;
   const lowered = lower_duck_source_to_gpufuck(
@@ -104,17 +104,40 @@ f(3, 0)
   assert_equals(entry?.type, { kind: "integer" });
 });
 
+Deno.test("Duck gpufuck lowering types an if-let from its non-trapping branch", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+type Value = | #Missing | #Present I32
+
+let require_value = (value: Value) => do
+  let #Present present = value else do
+    return @panic "Expected a present value";
+  end;
+  present
+end;
+
+require_value(#Present 42)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck gpufuck lowering resolves a union case from the declared parameter", () => {
   const source_text = `
-type Keys = | \`Empty Unit | \`Key I32
-type Commands = | \`Empty Unit | \`Command I32
+type Keys = | #Empty | #Key I32
+type Commands = | #Empty | #Command I32
 
-let known: Keys = \`Key 3;
-let pick = rec (values: Commands, fallback: I32) => {
-  if let \`Command value = values { value } else { fallback }
-};
-let out: I32 = pick(\`Empty (), 7);
-if let \`Key value = known { out + value } else { out }
+let known: Keys = #Key 3;
+let pick = rec (values: Commands, fallback: I32) => do
+  if let #Command value = values then value  else  fallback end;
+end;
+let out: I32 = pick(#Empty, 7);
+if let #Key value = known then out + value  else  out end;
 `;
   const lowered = lower_duck_source_to_gpufuck(
     parse_source(source_text),
@@ -131,10 +154,10 @@ Deno.test("Duck compiler lowers empty generic union cases", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Option value = | \`None Unit | \`Some value
+type Option value = | #None | #Some value
 type IntOption = Option I32
-let value: IntOption = \`None ();
-if let \`None () = value { 42 } else { 0 }
+let value: IntOption = #None;
+if let #None = value then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -146,9 +169,9 @@ Deno.test("Duck compiler preserves direct generic union identity", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Option value = | \`None Unit | \`Some value
-let value: Option I32 = \`Some 42;
-if let \`Some item = value { item } else { 0 }
+type Option value = | #None | #Some value
+let value: Option I32 = #Some 42;
+if let #Some item = value then item  else  0 end;
 `);
 
     assert_equals(execution.value, { kind: "integer", value: 42 });
@@ -205,10 +228,10 @@ Deno.test("Duck compiler runs common prelude comparisons", async () => {
   try {
     const execution = await compiler.run(`
 const { .max_i32, .min_i32, .text_equal_ascii_case_insensitive } = import "duck:prelude/functional" ();
-let equal_score = if text_equal_ascii_case_insensitive(["PowerShell.EXE", "powershell.exe"]) { 1 } else { 0 };
-let unequal_score = if text_equal_ascii_case_insensitive(["bash", "zsh"]) { 0 } else { 10 };
-let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" { 10000 } else { 0 };
-equal_score + unequal_score + min_i32([7, 3]) * 100 + max_i32([7, 3]) * 1000 + concat_score
+let equal_score = if text_equal_ascii_case_insensitive("PowerShell.EXE", "powershell.exe") then 1  else  0 end;
+let unequal_score = if text_equal_ascii_case_insensitive("bash", "zsh") then 0  else  10 end;
+let concat_score = if "a" <> "b" <> "c" <> "d" == "abcd" then 10000  else  0 end;
+equal_score + unequal_score + min_i32(7, 3) * 100 + max_i32(7, 3) * 1000 + concat_score
 `);
     assert_equals(execution.value, { kind: "integer", value: 17_311 });
   } finally {
@@ -221,7 +244,7 @@ Deno.test("Duck compiler formats signed I32 values in source", async () => {
   try {
     const execution = await compiler.run(`
 const { .format_i32 } = import "duck:prelude/numeric" ();
-if format_i32(-2147483648) == "-2147483648" && format_i32(443) == "443" { 42 } else { 0 }
+if format_i32(-2147483648) == "-2147483648" && format_i32(443) == "443" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -234,7 +257,7 @@ Deno.test("Duck compiler formats signed I64 values in source", async () => {
   try {
     const execution = await compiler.run(`
 const { .format_i64 } = import "duck:prelude/numeric" ();
-if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1735894800i64) == "1735894800" { 42 } else { 0 }
+if format_i64(-9223372036854775808i64) == "-9223372036854775808" && format_i64(1735894800i64) == "1735894800" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -246,15 +269,15 @@ Deno.test("Duck compiler parses signed I64 values in source", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { .parse_i64_decimal } = import "duck:prelude/numeric" ();
+const { .parse_i64_decimal } = import "duck:prelude/numeric/parse" ();
 let minimum = parse_i64_decimal("-9223372036854775808");
 let maximum = parse_i64_decimal("9223372036854775807");
 let overflow = parse_i64_decimal("9223372036854775808");
 let malformed = parse_i64_decimal("--1");
-let score = if let \`Ok value = minimum { if value == -9223372036854775808i64 { 1 } else { 0 } } else { 0 };
-if let \`Ok value = maximum { if value == 9223372036854775807i64 { score = score + 10 } }
-if let \`Err reason = overflow { if reason == "number exceeds I64" { score = score + 100 } }
-if let \`Err reason = malformed { if reason == "must be an integer" { score = score + 1000 } }
+let score = if let #Ok value = minimum then if value == -9223372036854775808i64 then 1  else  0 end;  else  0 end;
+if let #Ok value = maximum then if value == 9223372036854775807i64 then score = score + 10 end; end;
+if let #Err reason = overflow then if reason == "number exceeds I64" then score = score + 100 end; end;
+if let #Err reason = malformed then if reason == "must be an integer" then score = score + 1000 end; end;
 score
 `);
     assert_equals(execution.value, { kind: "integer", value: 1_111 });
@@ -267,13 +290,13 @@ Deno.test("Duck compiler validates full-range U64 decimal text in source", async
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-const { .parse_u64_decimal_text } = import "duck:prelude/numeric" ();
+const { .parse_u64_decimal_text } = import "duck:prelude/numeric/parse" ();
 let maximum = parse_u64_decimal_text("18446744073709551615");
 let leading_zero = parse_u64_decimal_text("00042");
 let overflow = parse_u64_decimal_text("18446744073709551616");
-let score = if let \`Ok value = maximum { if value == "18446744073709551615" { 1 } else { 0 } } else { 0 };
-if let \`Ok value = leading_zero { if value == "42" { score = score + 10 } }
-if let \`Err message = overflow { if message == "number exceeds U64" { score = score + 100 } }
+let score = if let #Ok value = maximum then if value == "18446744073709551615" then 1  else  0 end;  else  0 end;
+if let #Ok value = leading_zero then if value == "42" then score = score + 10 end; end;
+if let #Err message = overflow then if message == "number exceeds U64" then score = score + 100 end; end;
 score
 `);
     assert_equals(execution.value, { kind: "integer", value: 111 });
@@ -292,17 +315,25 @@ Deno.test("Duck compiler preserves annotated function result types", async () =>
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-type Decision = | \`Accepted Text | \`Rejected Text
-let decide: Bool -> Decision = accepted => {
-  if accepted { \`Accepted "yes" } else { \`Rejected "no" }
-};
+type Decision = | #Accepted Text | #Rejected Text
+let decide: Bool -> Decision = accepted => do
+  if accepted then #Accepted "yes"  else  #Rejected "no" end;
+end;
 let decision = decide(true);
-if let \`Accepted message = decision { if message == "yes" { 42 } else { 0 } } else { 0 }
+if let #Accepted message = decision then if message == "yes" then 42  else  0 end;  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
     compiler.destroy();
   }
+});
+
+Deno.test("Duck compiler applies binding signatures to value-pack parameters", () => {
+  const module = encode_duck_module(`
+let add: [I32, I32] -> I32 = (left, right) => left + right;
+add(19, 23)
+`);
+  assert_equals(module.definitionCount, 1);
 });
 
 Deno.test("Duck compiler lowers F32x4 through portable aggregate lanes", () => {
@@ -436,12 +467,12 @@ Deno.test("gpufuck JSON parser rejects truncated literals", async () => {
     const execution = await compiler.run(`
 const { .parse_json } = import "duck:prelude/json" ();
 let parsed = parse_json("t", 0);
-if let \`Err error = parsed {
+if let #Err error = parsed then
   let [position, _] = error;
   position + 42
-} else {
+ else
   0
-}
+end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
   } finally {
@@ -473,7 +504,7 @@ Deno.test("gpufuck source JSON encoder emits ASCII-only strings", async () => {
   try {
     const execution = await compiler.run(`
 const { .encode_json_string_ascii } = import "duck:prelude/json/encode" ();
-if encode_json_string_ascii("東京😀") == "\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\"" { 42 } else { 0 }
+if encode_json_string_ascii("東京😀") == "\\"\\\\u6771\\\\u4eac\\\\ud83d\\\\ude00\\"" then 42  else  0 end;
 `);
     assert_equals(execution.value, { kind: "integer", value: 42 });
     assert_equals(execution.stats.thunkEvaluations, 1);
@@ -3049,16 +3080,32 @@ Deno.test("Duck compiler executes Text append and indexing", async () => {
   }
 });
 
+Deno.test("Duck compiler passes template holes with their source types", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+let extract: [["answer: ", "!"], [I32]] -> I32 =
+  (strings, values) => @len(strings[0]) + @len(strings[1]) + values[0];
+extract \`answer: {42}!\`
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 51 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler executes Bytes conversion and slicing", async () => {
   const compiler = await DuckCompiler.create();
   try {
     const execution = await compiler.run(`
-scratch {
+scratch do
   let bytes: Bytes = @Utf8.encode("AB");
   let part: Bytes = @slice(bytes, 0, 2);
   let joined: Bytes = @append(part, @Utf8.encode("C"));
   @len(joined) * 100 + @get(joined, 2)
-}
+end
 `);
     assert_equals(execution.value, { kind: "integer", value: 367 });
   } finally {
@@ -3071,12 +3118,12 @@ Deno.test("Duck compiler preserves assignments from iterator loops", async () =>
   try {
     const execution = await compiler.run(`
 const { .struct } = import "duck:prelude" ();
-let values: List I32 = \`Cons [42, \`Nil ()];
+let values: List I32 = #Cons [42, #Nil];
 let result = 0;
 
-for value in values {
+for value in values do
   result = value
-}
+end
 
 result
 `);
@@ -3093,15 +3140,15 @@ Deno.test("Duck compiler preserves conditional assignments from loops", async ()
 let index = 0;
 let result = 0;
 
-loop {
-  if index >= 2 { break; }
+loop do
+  if index >= 2 then break; end;
 
-  if index == 1 {
+  if index == 1 then
     result = 42
-  }
+  end;
 
   index = index + 1
-}
+end;
 
 result
 `);
@@ -3425,10 +3472,10 @@ let uppercase = IntoIterator.iterator(@Utf8.encode("WX"));
 let pairs = iterator_zip(lowercase, uppercase);
 let difference = 0;
 
-for pair in pairs {
+for pair in pairs do
   let [left, right] = pair;
   difference = difference + left - right
-}
+end
 
 let number_bytes = IntoIterator.iterator(@Utf8.encode("ABC"));
 let numbers = iterator_map(number_bytes, decode);
@@ -3451,8 +3498,8 @@ let matching_count = iterator_count(
   IntoIterator.iterator(@Utf8.encode("ABCD")),
   byte => byte >= @cast('B', I32),
 );
-let found_value = if let \`Some value = matching_value { value } else { 0 };
-let found_index = if let \`Some index = matching_index { index } else { 0 };
+let found_value = if let #Some value = matching_value then value  else  0 end;
+let found_index = if let #Some index = matching_index then index  else  0 end;
 let search_score = found_value + found_index * 1000 + matching_count * 10000;
 
 difference * 100 + mapped_sum * 10 + scanned_sum + windowed_length + search_score
@@ -3477,17 +3524,17 @@ extend Numbers {
   .iterator = numbers => numbers.values,
 }
 
-let tail: List I32 = \`Nil ();
+let tail: List I32 = #Nil;
 let second: ListNode I32 = [22, tail];
-tail = \`Cons second
+tail = #Cons second
 let first: ListNode I32 = [20, tail];
-let values: List I32 = \`Cons first;
+let values: List I32 = #Cons first;
 let numbers: Numbers = [.values = values];
 let total = 0;
 
-for value in numbers {
+for value in numbers do
   total = total + value
-}
+end
 
 total
 `);

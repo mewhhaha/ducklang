@@ -8,3 +8,4 @@
 (comment)+ @comment.around
 
 (block (_) @class.inside) @class.around
+(conditional_branch (_) @class.inside) @class.around

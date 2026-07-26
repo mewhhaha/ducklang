@@ -165,7 +165,7 @@ Deno.test("headless client sends fragmented LSP frames and finishes orderly", as
   );
 });
 
-Deno.test("headless server reports a non-exhaustive match and stays alive", async () => {
+Deno.test("headless server reports a non-exhaustive case and stays alive", async () => {
   const client = new LspTestClient(new Deno.Command(Deno.execPath(), {
     args: ["run", "--no-check", entry, "lsp"],
     stdin: "piped",
@@ -188,7 +188,7 @@ Deno.test("headless server reports a non-exhaustive match and stays alive", asyn
         uri,
         languageId: "duck",
         version: 1,
-        text: "match 1 { | 1 => 10 }\n",
+        text: "case 1 of 1 => 10;\n",
       },
     },
   });

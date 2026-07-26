@@ -1,16 +1,15 @@
-const sum = (const ...values) => comptime {
+const sum = (const ...values) => comptime do
   let total = 0;
 
-  for value in values {
+  for value in values do
     total = total + value
-  }
+  end
 
   total
-};
+end;
 
-let first = match (2, 99) {
-  | (value, ...remaining) => value
-  | _ => 0
-};
+let first = case (2, 99) of
+  (value, ...remaining) => value,
+  _ => 0;
 
 sum(19, 20, 1) + first

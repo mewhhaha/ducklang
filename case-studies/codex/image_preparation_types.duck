@@ -27,17 +27,17 @@ type ImageProcessingResult = struct {
 
 type ImageProcessingResultNode = [ImageProcessingResult, ImageProcessingResults]
 type ImageProcessingResults =
-  | `ImageResultsNil Unit
-  | `ImageResultsCons ImageProcessingResultNode
+  | #ImageResultsNil
+  | #ImageResultsCons ImageProcessingResultNode
 
 type ImageRewriteFailure =
-  | `MissingImageProcessingResult I32
-  | `ExtraImageProcessingResults I32
-  | `InvalidImageProcessingStatus I32
-  | `InvalidProcessedImageUrl I32
+  | #MissingImageProcessingResult I32
+  | #ExtraImageProcessingResults I32
+  | #InvalidImageProcessingStatus I32
+  | #InvalidProcessedImageUrl I32
 
 type ImageRewriteResult =
-  | `PreparedImageResponses HistoryItems
-  | `RejectedImageRewrite ImageRewriteFailure
+  | #PreparedImageResponses HistoryItems
+  | #RejectedImageRewrite ImageRewriteFailure
 
 return {};

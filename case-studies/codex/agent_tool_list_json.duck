@@ -7,52 +7,56 @@ const {} = import "./agent_tool_types.duck" ();
 
 type AgentListJsonOption = AgentTextOption
 
-const list_decode_failure: Text -> AgentToolListDecodeResult = reason => {
-  `AgentListDecodeFailed (text_append("failed to parse list_agents arguments: ", reason))
-};
+const list_decode_failure: Text -> AgentToolListDecodeResult = reason => do
+  #AgentListDecodeFailed (text_append("failed to parse list_agents arguments: ", reason))
+end;
 
-const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => {
+const parse_list_agents_args: Text -> AgentToolListDecodeResult = document => do
   let parsed = parse_json_document document;
-  if let `Err error = parsed {
+  if let #Err error = parsed then
     let [position, message] = error;
     return list_decode_failure(text_append(message, text_append(" at byte ", format_i32 position)));
-  }
-  if let `Ok value_and_position = parsed {
+  end;
+  if let #Ok value_and_position = parsed then
     let [value, _] = value_and_position;
-    if let `Object object = value {
-      let path_prefix: AgentListJsonOption = `None ();
+    if let #Object object = value then
+      let path_prefix: AgentListJsonOption = #None;
       let seen_prefix = false;
       let failure = "";
       let current = object;
       let done = false;
-      loop {
-        if failure != "" { break; }
-        if let `Cons node = current {
+      loop do
+        if failure != "" then
+          break;
+        end;
+        if let #Cons node = current then
           let [member, tail] = node;
           let [key, field] = member;
-          if key != "path_prefix" {
+          if key != "path_prefix" then
             failure = text_append("unknown list_agents field: ", key)
-          } else if seen_prefix {
+          else seen_prefix then
             failure = "path_prefix must not be repeated"
-          } else if let `String prefix = field {
-            path_prefix = `Some prefix
+          else let #String prefix = field then
+            path_prefix = #Some prefix
             seen_prefix = true
-          } else {
+          else
             failure = "path_prefix must be a string"
-          }
+          end;
           current = tail
-        } else {
+        else
           done = true
-        }
-        if done { break; }
-      }
-      if failure == "" { `AgentListDecoded path_prefix } else { list_decode_failure failure }
-    } else {
+        end;
+        if done then
+          break;
+        end;
+      end;
+      if failure == "" then #AgentListDecoded path_prefix else list_decode_failure failure end;
+    else
       list_decode_failure "arguments must be an object"
-    }
-  } else {
+    end;
+  else
     list_decode_failure "JSON parsing produced no result"
-  }
-};
+  end;
+end;
 
 return { .parse_list_agents_args };

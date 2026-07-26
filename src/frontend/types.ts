@@ -164,6 +164,13 @@ export function front_type_name(type: FrontType): string {
         return "Bytes";
       }
 
+      if (type.literal !== undefined) {
+        return format_type_expr({
+          tag: "literal",
+          value: { tag: "text", value: type.literal },
+        });
+      }
+
       return "Text";
 
     case "type":
@@ -268,6 +275,17 @@ export function common_front_type(
     return left;
   }
 
+  if (
+    left.tag === "text" && right.tag === "text" &&
+    left.encoding === right.encoding
+  ) {
+    if (left.literal === right.literal) {
+      return left;
+    }
+
+    return { tag: "text", encoding: left.encoding };
+  }
+
   if (!same_type(left, right)) {
     return undefined;
   }
@@ -336,7 +354,18 @@ export function same_type(left: FrontType, right: FrontType): boolean {
   }
 
   if (left.tag === "text" && right.tag === "text") {
-    return left.encoding === right.encoding;
+    if (left.encoding !== right.encoding) {
+      return false;
+    }
+
+    if (
+      left.literal !== undefined && right.literal !== undefined &&
+      left.literal !== right.literal
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   if (left.tag === "struct" && right.tag === "struct") {
@@ -360,6 +389,25 @@ export function same_type(left: FrontType, right: FrontType): boolean {
       if (left_field !== right_field) {
         return false;
       }
+    }
+
+    if (left.field_value_types && right.field_value_types) {
+      if (left.field_value_types.length !== right.field_value_types.length) {
+        return false;
+      }
+
+      for (let index = 0; index < left.field_value_types.length; index += 1) {
+        const left_field_type = left.field_value_types[index];
+        const right_field_type = right.field_value_types[index];
+        expect(left_field_type, "Missing left struct field type " + index);
+        expect(right_field_type, "Missing right struct field type " + index);
+
+        if (!same_type(left_field_type, right_field_type)) {
+          return false;
+        }
+      }
+
+      return true;
     }
 
     if (left.field_types && right.field_types) {
@@ -470,6 +518,13 @@ function same_type_fields(left: TypeField[], right: TypeField[]): boolean {
 
 function same_type_name(left: string, right: string): boolean {
   if (left === right) {
+    return true;
+  }
+
+  if (
+    (left === "Text" && right.startsWith('"') && right.endsWith('"')) ||
+    (right === "Text" && left.startsWith('"') && left.endsWith('"'))
+  ) {
     return true;
   }
 

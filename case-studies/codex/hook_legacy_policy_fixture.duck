@@ -11,16 +11,16 @@ type FixtureLegacyResults = HookLegacyResults
 const legacy_results = comptime list FixtureLegacyResult;
 
 let legacy_values: FixtureLegacyResults = legacy_results.prepend(
-  `FailedContinue "warn",
-  legacy_results.prepend(`FailedAbort "stop", legacy_results.singleton(`Success ())),
+  #FailedContinue "warn",
+  legacy_results.prepend(#FailedAbort "stop", legacy_results.singleton(#Success)),
 );
 let [continued, messages, message_count] = fold_legacy_hook_results legacy_values;
 let score: I32 = 0;
 
-if continued {
+if continued then
   ()
-} else if messages == "warn\n\nstop" && message_count == 2 {
+else messages == "warn\n\nstop" && message_count == 2 then
   score = 1
-}
+end;
 
 return { .score = score };

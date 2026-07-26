@@ -11,65 +11,67 @@ type WaitEnvironmentResult = WaitForEnvironmentExecutionResult
 const plan_wait_for_environment: [WaitEnvironments, Text] -> WaitEnvironmentPlan = (
   environments: WaitEnvironments,
   environment_id: Text,
-) => {
+) => do
   let current = environments;
   let ready = false;
   let starting = false;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [environment, tail] = node;
-      if environment.environment_id == environment_id {
-        if let `Ready () = environment.status {
+      if environment.environment_id == environment_id then
+        if let #Ready = environment.status then
           ready = true
           done = true
-        } else if let `Starting () = environment.status {
+        else let #Starting = environment.status then
           starting = true
           current = tail
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  if ready {
-    `AlreadyReady environment_id
-  } else if starting {
-    `Wait environment_id
-  } else {
+  if ready then
+    #AlreadyReady environment_id
+  else starting then
+    #Wait environment_id
+  else
     let suffix: Text = text_append(environment_id, "` is neither ready nor starting");
-    `RejectRequest (text_append("environment `", suffix))
-  }
-};
+    #RejectRequest (text_append("environment `", suffix))
+  end;
+end;
 
-const ready_environment_output: Text -> Text = environment_id => {
+const ready_environment_output: Text -> Text = environment_id => do
   let encoded_environment_id: Text = encode_json_string environment_id;
   let encoded: Text = text_append("{\"environment_id\":", encoded_environment_id);
   text_append(encoded, ",\"status\":\"ready\"}")
-};
+end;
 
 const finish_wait_for_environment: [Text, WaitEnvironmentHostResponse] -> WaitEnvironmentResult = (
   environment_id: Text,
   response: WaitEnvironmentHostResponse,
-) => {
-  if response {
-    `Completed (ready_environment_output environment_id)
-  } else {
+) => do
+  if response then
+    #Completed (ready_environment_output environment_id)
+  else
     let suffix: Text = text_append(
       environment_id,
       "` failed to start and is unavailable. Continue without it.",
     );
-    `Rejected (text_append("Environment `", suffix))
-  }
-};
+    #Rejected (text_append("Environment `", suffix))
+  end;
+end;
 
 return {
   .finish_wait_for_environment,

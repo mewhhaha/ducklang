@@ -1,7 +1,7 @@
-let adjust = value => {
+let adjust = value => do
   let result = value;
   result = result + 1
   result
-};
+end;
 
 adjust 41

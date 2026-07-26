@@ -15,20 +15,20 @@ type FragmentModelContext = ModelContextFragment
 
 const append_text = (left: Text, right: Text) => text_append [left, right];
 
-const render_user_instructions = (directory: FragmentTextOption, instructions: Text) => {
+const render_user_instructions = (directory: FragmentTextOption, instructions: Text) => do
   let heading: Text = "# AGENTS.md instructions";
 
-  if let `Some value = directory {
+  if let #Some value = directory then
     heading = append_text(heading, append_text(" for ", value))
-  }
+  end;
 
   append_text(
     heading,
     append_text("\n\n<INSTRUCTIONS>\n", append_text(instructions, "\n</INSTRUCTIONS>")),
   )
-};
+end;
 
-const render_rollout_budget = (remaining_tokens: I32) => {
+const render_rollout_budget = (remaining_tokens: I32) => do
   append_text(
     "<rollout_budget>\nYou have ",
     append_text(
@@ -36,44 +36,44 @@ const render_rollout_budget = (remaining_tokens: I32) => {
       " weighted tokens left in the shared session token budget.\n</rollout_budget>",
     ),
   )
-};
+end;
 
-const valid_internal_context_source = (source: Text) => {
-  if text_length source == 0 || !text_byte_is_ascii_lower(text_get [source, 0]) {
+const valid_internal_context_source = (source: Text) => do
+  if text_length source == 0 || !text_byte_is_ascii_lower(text_get [source, 0]) then
     false
-  } else {
+  else
     let valid = true;
 
-    for index in 1..text_length source {
+    for index in 1..text_length source do
       let byte = text_get [source, index];
 
-      if text_byte_is_ascii_lower byte || text_byte_is_ascii_digit byte || byte == 95 {
+      if text_byte_is_ascii_lower byte || text_byte_is_ascii_digit byte || byte == 95 then
         ()
-      } else {
+      else
         valid = false
-      }
-    }
+      end;
+    end
 
     valid
-  }
-};
+  end;
+end;
 
-const render_internal_context = (source: Text, body: Text) => {
-  if valid_internal_context_source source {
-    `Some (
+const render_internal_context = (source: Text, body: Text) => do
+  if valid_internal_context_source source then
+    #Some (
       append_text(
         "<codex_internal_context source=\"",
         append_text(source, append_text("\">\n", append_text(body, "\n</codex_internal_context>"))),
       )
     )
-  } else {
-    `None ()
-  }
-};
+  else
+    #None
+  end;
+end;
 
-const model_context_fragment = (role: Text, text: Text) => {
+const model_context_fragment = (role: Text, text: Text) => do
   [role, true, text] as FragmentModelContext
-};
+end;
 
 return {
   .render_user_instructions,

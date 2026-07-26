@@ -7,8 +7,8 @@ contextual _condition_application_space priority 1 = /[ \t]+/ ;
 contextual _type_application_space priority 1 = /[ \t]+/ ;
 
 token grouped_value_alternative_pattern priority 3 = /\([A-Za-z][A-Za-z0-9_]*([ \t\r\n]*\|[ \t\r\n]*[A-Za-z][A-Za-z0-9_]*)+\)/ ;
-token identifier = /([A-Za-z][A-Za-z0-9_]{0,2}|[A-Za-km-z][A-Za-z0-9_]{3}|l[A-Za-np-z0-9_][A-Za-z0-9_]{2}|lo[A-Za-np-z0-9_][A-Za-z0-9_]|loo[A-Za-oq-z0-9_]|[A-Za-z][A-Za-z0-9_]{4}[A-Za-z0-9_]*)/ ;
-token constructor_identifier = /[A-Z][A-Za-z0-9_]*/ ;
+token identifier = /([A-Za-z][A-Za-z0-9_]{0,1}|[A-Za-df-z][A-Za-z0-9_]{2}|e[A-Za-mo-z0-9_][A-Za-z0-9_]|en[A-Zace-z0-9_]|[A-Za-km-z][A-Za-z0-9_]{3}|l[A-Za-np-z0-9_][A-Za-z0-9_]{2}|lo[A-Za-np-z0-9_][A-Za-z0-9_]|loo[A-Za-oq-z0-9_]|[A-Za-z][A-Za-z0-9_]{4}[A-Za-z0-9_]*)/ ;
+token constructor_identifier priority 2 = /[A-Z][A-Za-z0-9_]*/ ;
 token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_.]*/ ;
 token operator_symbol priority 0 = /([-!$%&*+\/<>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*|=[.\-!$%&*+\/<=?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)/ ;
 token effect_identifier priority 1 = /[A-Z][A-Za-z0-9]*/ ;
@@ -16,6 +16,8 @@ token row_variable = /[a-z_][A-Za-z0-9_]*/ ;
 token number = /(0[xX][0-9a-fA-F]+([iu][1-9][0-9]*)?|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?([iu][1-9][0-9]*|f(32|64))?)/ ;
 token string = /"([^"\\]|\\[ntr"\\])*"/ ;
 token character = /'([^'\\\n\r]|\\[ntr'\\])'/ ;
+token template_start priority 2 = /`/ ;
+token template_text priority 1 = /([^`{}\\]|\\[ntr`\\]|\{\{|\}\})+/ ;
 document = (
              (
                module_header
@@ -215,7 +217,7 @@ duck_member_block = ("{" (((duck_type_member | duck_member) (",")?))+ "}") ;
 
 duck_type_member = ("type" name:(identifier) (("=" default:(type_reference)))?) ;
 
-duck_member = ("." name:(identifier) "=" type:(type_reference)) ;
+duck_member = ("." name:((identifier | "end")) "=" type:(type_reference)) ;
 
 extension_declaration_statement = (
                                     (attribute:(attribute_group))*
@@ -259,13 +261,13 @@ fixity_target = (
 
 qualified_identifier = (identifier "." identifier (("." identifier))*) ;
 
-type_sum = (type_case | ("|" type_case (("|" type_case))+)) ;
+type_sum = (("|")? type_case (("|" type_case))*) ;
 
-type_case = ("`" name:(constructor_identifier) payload:(_type_intersection_reference)) ;
+type_case = ("#" name:(constructor_identifier) (payload:(_type_intersection_reference))?) ;
 
 type_product = positional_type_product ;
 
-named_type_field = ("." name:(identifier) "=" type:(type_reference)) ;
+named_type_field = ("." name:((identifier | "end")) "=" type:(type_reference)) ;
 
 positional_type_product = (
                             (
@@ -300,7 +302,7 @@ host_parameter = (
 
 host_result = ((contract:(("#" | "scalar")) type:(type_reference)) | type:(type_reference)) ;
 
-return_statement = ("return" (value:(_expression))? ";") ;
+return_statement = ("return" value:(_expression)) ;
 
 module_return_statement = ("return" exports:(shape_value) ";") ;
 
@@ -354,7 +356,7 @@ _expression = (
                 | recursive_function
                 | recursive_call_expression
                 | if_expression
-                | match_expression
+                | case_expression
                 | binary_expression
                 | is_expression
                 | as_expression
@@ -396,14 +398,32 @@ if_expression = (
                     | ("(" ("let" pattern:(_match_pattern) "=" value:(condition_expression)) ")")
                     | condition:(condition_expression)
                   )
-                  consequence:(_if_consequence)
-                  (("else" alternative:((_else_block | _else_if))))?
+                  "then"
+                  consequence:(conditional_branch)
+                  (else_if_clause)*
+                  (else_clause)?
+                  "end"
                 ) ;
 
+else_if_clause = (
+                   "else"
+                   (
+                     ("let" pattern:(_match_pattern) "=" value:(_expression))
+                     | ("(" ("let" pattern:(_match_pattern) "=" value:(_expression)) ")")
+                     | condition:(_expression)
+                   )
+                   "then"
+                   consequence:(conditional_branch)
+                 ) ;
+
+else_clause = ("else" alternative:(conditional_branch)) ;
+
+conditional_branch = ((_statement (";")?))+ ;
+
 union_pattern = (
-                  "`"
+                  "#"
                   case:(constructor_identifier)
-                  value:(
+                  (value:(
                     (
                       identifier
                       | wildcard
@@ -412,7 +432,7 @@ union_pattern = (
                       | array_pattern
                       | positional_product_pattern
                     )
-                  )
+                  ))?
                 ) ;
 
 condition_expression = (
@@ -448,7 +468,7 @@ condition_is_expression = (value:(condition_expression) operator:("is") type:(ty
 
 condition_unary_expression = (
                                operator:(
-                                 ("!" | "&" | "freeze" | "comptime" | "do" | operator_symbol)
+                                 ("!" | "&" | "freeze" | "comptime" | "perform" | operator_symbol)
                                )
                                operand:(condition_expression)
                              ) ;
@@ -486,8 +506,8 @@ condition_application_expression = (
                                    ) ;
 
 condition_field_expression = (
-                               (object:(condition_expression) "." field:(identifier))
-                               | (object:(_effect_identifier_alias) "." field:(identifier))
+                               (object:(condition_expression) "." field:((identifier | "end")))
+                               | (object:(_effect_identifier_alias) "." field:((identifier | "end")))
                              ) ;
 
 condition_index_expression = (
@@ -526,21 +546,20 @@ scratch_expression = ("scratch" body:(block)) ;
 
 loop_expression = ("loop" body:(block)) ;
 
-match_expression = (
-                     "match"
-                     target:((condition_expression | condition_positional_product))
-                     cases:(match_case_block)
-                   ) ;
+case_expression = (
+                    "case"
+                    target:((condition_expression | condition_positional_product))
+                    "of"
+                    arm:(case_arm)
+                    (("," arm:(case_arm)))*
+                  ) ;
 
-match_case_block = ("{" match_case (((",")? match_case))* (",")? "}") ;
-
-match_case = (
-               "|"
-               pattern:(_match_pattern)
-               (("if" guard:(condition_expression)))?
-               "=>"
-               body:(_expression)
-             ) ;
+case_arm = (
+             pattern:(_match_pattern)
+             (("if" guard:(condition_expression)))?
+             "=>"
+             body:(_expression)
+           ) ;
 
 _match_pattern = (alternative_pattern | _single_match_pattern) ;
 
@@ -599,8 +618,8 @@ application_expression = (
 postfix_expression = (field_expression | index_expression | _primary_expression) ;
 
 field_expression = (
-                     (object:(postfix_expression) "." field:(identifier))
-                     | (object:(_effect_identifier_alias) "." field:(identifier))
+                     (object:(postfix_expression) "." field:((identifier | "end")))
+                     | (object:(_effect_identifier_alias) "." field:((identifier | "end")))
                    ) ;
 
 index_expression = (
@@ -626,6 +645,7 @@ _primary_expression = (
                         number
                         | string
                         | character
+                        | template_literal
                         | boolean
                         | identifier
                         | wildcard
@@ -649,7 +669,15 @@ _primary_expression = (
                         | parenthesized_expression
                       ) ;
 
-union_case = ("`" case:(constructor_identifier) _application_space value:(postfix_expression)) ;
+template_literal = (
+                     template_start
+                     ((template_text | template_interpolation))*
+                     "`"
+                   ) ;
+
+template_interpolation = ("{" value:(_expression) "}") ;
+
+union_case = ("#" case:(constructor_identifier) ((_application_space value:(postfix_expression)))?) ;
 
 linear_reference = ("!" name:(identifier)) ;
 
@@ -665,7 +693,7 @@ struct_type = ("struct" fields:(type_field_block)) ;
 
 named_product = ("[" ((product_field (("," product_field))*) (",")?) "]") ;
 
-product_field = (_named_product_dot name:(identifier) "=" value:(_expression)) ;
+product_field = (_named_product_dot name:((identifier | "end")) "=" value:(_expression)) ;
 
 positional_product = ("(" (((_expression "," (_expression (("," _expression))*)) (",")?) | (_expression ",")) ")") ;
 
@@ -747,9 +775,9 @@ shape_value = fields:(shape_field_block) ;
 
 shape_field_block = ("{" (((shape_field | shorthand_field) (",")?))* "}") ;
 
-shape_field = ("." name:(identifier) "=" value:(_expression)) ;
+shape_field = ("." name:((identifier | "end")) "=" value:(_expression)) ;
 
-shorthand_field = ("." name:(identifier)) ;
+shorthand_field = ("." name:((identifier | "end"))) ;
 
 type_field_block = ("{" (((type_field | named_type_field) (",")?))* "}") ;
 
@@ -762,9 +790,9 @@ type_pattern = (
                  "}"
                ) ;
 
-type_pattern_field = ("." name:(identifier) "=" type:(type_reference)) ;
+type_pattern_field = ("." name:((identifier | "end")) "=" type:(type_reference)) ;
 
-block = ("{" ((_statement (";")?))* "}") ;
+block = ("do" ((_statement (";")?))* "end") ;
 
 parenthesized_expression = ("(" _expression ")") ;
 
@@ -807,7 +835,7 @@ _type_prefix = (atom_type | frozen_type | borrow_type | _type_atom) ;
 
 atom_type = ("#" name:(_row_identifier_alias)) ;
 
-frozen_type = ("#" (name:(_effect_identifier_alias) | type_parenthesized)) ;
+frozen_type = ("freeze" (name:(_effect_identifier_alias) | type_parenthesized)) ;
 
 borrow_type = ("&" (identifier | type_parenthesized)) ;
 
@@ -863,12 +891,6 @@ _shape_arrow = _shape_arrow_expression ;
 _effect_arrow = _effect_arrow_expression ;
 
 _value_arrow = _value_arrow_expression ;
-
-_if_consequence = block ;
-
-_else_block = block ;
-
-_else_if = if_expression ;
 
 _effect_identifier_alias = effect_identifier ;
 

@@ -7,21 +7,28 @@ type FixtureResult = CodeModeExecSourceResult
 let score = 0;
 
 let nonobject: FixtureResult = parse_code_mode_exec_source "// @exec: []\ntext('hi')";
-if let `CodeModeExecSourceError message = nonobject {
-  if message == "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`" { score = score + 1 }
-}
+if let #CodeModeExecSourceError message = nonobject then
+  if message
+    == "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`" then
+      score = score + 1
+    end;
+end;
 
 let unknown: FixtureResult =
   parse_code_mode_exec_source "// @exec: {\"zeta\": 1, \"alpha\": 2}\ntext('hi')";
-if let `CodeModeExecSourceError message = unknown {
-  if message == "exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `alpha`" {
-    score = score + 10 }
-}
+if let #CodeModeExecSourceError message = unknown then
+  if message
+    == "exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `alpha`" then
+      score = score + 10 end;
+end;
 
 let malformed_field: FixtureResult =
   parse_code_mode_exec_source "// @exec: {\"yield_time_ms\": \"fast\"}\ntext('hi')";
-if let `CodeModeExecSourceError message = malformed_field {
-  if message == "exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: field `yield_time_ms` must be a number or null; got string" { score = score + 100 }
-}
+if let #CodeModeExecSourceError message = malformed_field then
+  if message
+    == "exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: field `yield_time_ms` must be a number or null; got string" then
+      score = score + 100
+    end;
+end;
 
 return { .score = score };

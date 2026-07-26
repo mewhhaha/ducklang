@@ -11,40 +11,40 @@ type TestSyncSpecs = ToolSpecs
 
 const test_sync_tool_name: () -> TestSyncName = () => ["", "test_sync_tool"];
 
-let test_sync_tool_definitions: Bool -> TestSyncDefinitions = supported => {
-  if supported {
+let test_sync_tool_definitions: Bool -> TestSyncDefinitions = supported => do
+  if supported then
     let definition: TestSyncDefinition = [
       test_sync_tool_name(),
-      `Direct (),
-      `TestSync (),
-      `FunctionPayload (),
+      #Direct,
+      #TestSync,
+      #FunctionPayload,
       true,
       false,
     ];
-    `Cons ([definition, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([definition, #Nil])
+  else
+    #Nil
+  end;
+end;
 
-let test_sync_tool_specs: Bool -> TestSyncSpecs = supported => {
-  if supported {
+let test_sync_tool_specs: Bool -> TestSyncSpecs = supported => do
+  if supported then
     let description = "Internal synchronization helper used by Codex integration tests.";
     let parameters =
       "{\"type\":\"object\",\"properties\":{\"barrier\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"Identifier shared by concurrent calls that should rendezvous\"},\"participants\":{\"type\":\"number\",\"description\":\"Number of tool calls that must arrive before the barrier opens\"},\"timeout_ms\":{\"type\":\"number\",\"description\":\"Maximum barrier wait in milliseconds. Defaults to 1000.\"}},\"required\":[\"id\",\"participants\"],\"additionalProperties\":false},\"sleep_after_ms\":{\"type\":\"number\",\"description\":\"Delay after completing the barrier. Defaults to no delay.\"},\"sleep_before_ms\":{\"type\":\"number\",\"description\":\"Delay before any other action. Defaults to no delay.\"}},\"additionalProperties\":false}";
     let spec: TestSyncSpec = [
       test_sync_tool_name(),
-      `FunctionSpec (),
+      #FunctionSpec,
       description,
       parameters,
-      `ToolOutputSchemaMissing (),
+      #ToolOutputSchemaMissing,
       false,
     ];
-    `Cons ([spec, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([spec, #Nil])
+  else
+    #Nil
+  end;
+end;
 
 return {
   .test_sync_tool_definitions,

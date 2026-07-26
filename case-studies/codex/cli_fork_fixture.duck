@@ -7,15 +7,15 @@ type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexForkOptionsResult
 type FixtureNode = ListNode Text
 
-const prepend_arg = (value: Text, values: FixtureArgs) => {
+const prepend_arg = (value: Text, values: FixtureArgs) => do
   let node: FixtureNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
-const singleton_arg = (value: Text) => {
-  let empty: FixtureArgs = `Nil ();
+end;
+const singleton_arg = (value: Text) => do
+  let empty: FixtureArgs = #Nil;
   prepend_arg(value, empty)
-};
+end;
 let input: FixtureArgs = prepend_arg(
   "--all",
   prepend_arg("thread-1", singleton_arg "continue here"),
@@ -23,15 +23,30 @@ let input: FixtureArgs = prepend_arg(
 let parsed: FixtureResult = parse_fork_options input;
 let score = 0;
 
-if let `Ok options = parsed {
+if let #Ok options = parsed then
   let valid = options.all;
-  if options.last { valid = false }
-  if options.picker { valid = false }
-  if let `Some session_id = options.session_id { if session_id != "thread-1" { valid = false }
-  } else { valid = false }
-  if let `Some prompt = options.prompt { if prompt != "continue here" { valid = false } } else {
-    valid = false }
-  if valid { score = 1 }
-}
+  if options.last then
+    valid = false
+  end;
+  if options.picker then
+    valid = false
+  end;
+  if let #Some session_id = options.session_id then
+    if session_id != "thread-1" then
+      valid = false
+    end;
+  else
+    valid = false
+  end;
+  if let #Some prompt = options.prompt then
+    if prompt != "continue here" then
+      valid = false
+    end;
+  else
+    valid = false end;
+  if valid then
+    score = 1
+  end;
+end;
 
 return { .score = score };

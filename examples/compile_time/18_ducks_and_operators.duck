@@ -17,4 +17,4 @@ extend Bool {
 infixl 60 +++ = Add.add
 prefix 80 ^^ = Invert.invert
 
-if ^^ false { 20 +++ 22 } else { 0 }
+if ^^ false then 20 +++ 22 else 0 end;

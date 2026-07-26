@@ -30,20 +30,24 @@ let input: FixtureArgs = args.prepend(
   ),
 );
 let planned: FixtureResult = parse_execpolicy_check input;
-if let `Ok command = planned {
-  if let `CheckExecPolicy options = command {
+if let #Ok command = planned then
+  if let #CheckExecPolicy options = command then
     let first_rule = args.nth_or("", 0, options.rules);
     let second_rule = args.nth_or("", 1, options.rules);
     let program = args.nth_or("", 0, options.command);
     let flag = args.nth_or("", 1, options.command);
     let subcommand = args.nth_or("", 3, options.command);
-    if first_rule == "base.rules" && second_rule == "local.rules" && options.pretty && options.resolve_host_executables && program == "git" && flag == "-C" && subcommand == "status" {
-      score = score + 1
-    }
-  }
-}
+    if first_rule == "base.rules" && second_rule == "local.rules" && options.pretty
+      && options.resolve_host_executables && program == "git" && flag == "-C" && subcommand
+      == "status" then
+        score = score + 1
+      end;
+  end;
+end;
 
 let invalid: FixtureResult = parse_execpolicy_check(args.singleton("git"));
-if let `Err _ = invalid { score = score + 10 }
+if let #Err _ = invalid then
+  score = score + 10
+end;
 
 return { .score = score };

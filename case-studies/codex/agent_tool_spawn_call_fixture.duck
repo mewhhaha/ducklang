@@ -12,7 +12,7 @@ let context: FixtureContext = [
   .current_path = "/root",
   .current_depth = 0,
   .maximum_depth = 2,
-  .source = `Root (),
+  .source = #Root,
   .active_turn = true,
   .active_agents = 1,
   .maximum_threads = 4,
@@ -20,58 +20,66 @@ let context: FixtureContext = [
 let arguments: FixtureSpawnArguments = [
   .task_name = "reviewer",
   .message = "inspect the compiler",
-  .fork_turns = `Some " 3 ",
-  .model = `Some "gpt-5.6",
-  .reasoning_effort = `None (),
+  .fork_turns = #Some " 3 ",
+  .model = #Some "gpt-5.6",
+  .reasoning_effort = #None,
 ];
 let plan: FixturePlan = plan_spawn_agent_call(context, arguments);
 let score = 0;
-if let `SpawnAgentPlanned request = plan {
-  if request.path == "/root/reviewer" && request.message == "inspect the compiler" {
-    if let `ForkRecentTurns turns = request.fork_turns {
-      if turns == 3i64 {
-        if let `Some model = request.model {
-          if model == "gpt-5.6" { score = 1 }
-        }
-      }
-    }
-  }
-}
+if let #SpawnAgentPlanned request = plan then
+  if request.path == "/root/reviewer" && request.message == "inspect the compiler" then
+    if let #ForkRecentTurns turns = request.fork_turns then
+      if turns == 3i64 then
+        if let #Some model = request.model then
+          if model == "gpt-5.6" then
+            score = 1
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let all_arguments: FixtureSpawnArguments = [
   .task_name = "writer",
   .message = "write the patch",
-  .fork_turns = `Some " ALL ",
-  .model = `None (),
-  .reasoning_effort = `None (),
+  .fork_turns = #Some " ALL ",
+  .model = #None,
+  .reasoning_effort = #None,
 ];
 let all_plan: FixturePlan = plan_spawn_agent_call(context, all_arguments);
-if let `SpawnAgentPlanned request = all_plan {
-  if let `ForkAllTurns () = request.fork_turns { score = score + 10 }
-}
+if let #SpawnAgentPlanned request = all_plan then
+  if let #ForkAllTurns = request.fork_turns then
+    score = score + 10
+  end;
+end;
 
 let none_arguments: FixtureSpawnArguments = [
   .task_name = "tester",
   .message = "run the tests",
-  .fork_turns = `Some "\tNoNe\n",
-  .model = `None (),
-  .reasoning_effort = `None (),
+  .fork_turns = #Some "\tNoNe\n",
+  .model = #None,
+  .reasoning_effort = #None,
 ];
 let none_plan: FixturePlan = plan_spawn_agent_call(context, none_arguments);
-if let `SpawnAgentPlanned request = none_plan {
-  if let `ForkNoTurns () = request.fork_turns { score = score + 100 }
-}
+if let #SpawnAgentPlanned request = none_plan then
+  if let #ForkNoTurns = request.fork_turns then
+    score = score + 100
+  end;
+end;
 
 let blank_arguments: FixtureSpawnArguments = [
   .task_name = "reader",
   .message = "read the code",
-  .fork_turns = `Some "  ",
-  .model = `None (),
-  .reasoning_effort = `None (),
+  .fork_turns = #Some "  ",
+  .model = #None,
+  .reasoning_effort = #None,
 ];
 let blank_plan: FixturePlan = plan_spawn_agent_call(context, blank_arguments);
-if let `SpawnAgentPlanned request = blank_plan {
-  if let `ForkAllTurns () = request.fork_turns { score = score + 1000 }
-}
+if let #SpawnAgentPlanned request = blank_plan then
+  if let #ForkAllTurns = request.fork_turns then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

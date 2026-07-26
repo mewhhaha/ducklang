@@ -5,13 +5,15 @@ const {} = import "./agent_job_report_types.duck" ();
 type AgentJobExecutionArgs = AgentJobReportArgs
 type AgentJobExecutionResult = AgentJobReportExecutionResult
 
-let run_report_agent_job_result = (args: AgentJobExecutionArgs) => {
+let run_report_agent_job_result = (args: AgentJobExecutionArgs) => do
   accepted <- AgentJobHost.record(&args)
   let was_accepted: Bool = accepted;
-  if was_accepted && args.stop { _ <- AgentJobHost.cancel(&args.job_id) }
-  let output = if was_accepted { "{\"accepted\":true}" } else { "{\"accepted\":false}" };
-  let result: AgentJobExecutionResult = `Completed output;
+  if was_accepted && args.stop then
+    _ <- AgentJobHost.cancel(&args.job_id)
+  end;
+  let output = if was_accepted then "{\"accepted\":true}" else "{\"accepted\":false}" end;
+  let result: AgentJobExecutionResult = #Completed output;
   result
-};
+end;
 
 return { .run_report_agent_job_result };

@@ -10,39 +10,42 @@ type FixtureFileMutation = TurnDiffFileMutation
 type FixtureTextOption = TurnDiffTextOption
 type FixtureUpdate = TurnDiffUpdate
 
-const verify_turn_diff_overwrite_fixture: () -> I32 = () => {
-  let destination: FixtureTextOption = `Some "b.txt";
-  let overwritten: FixtureTextOption = `Some "existing\n";
+const verify_turn_diff_overwrite_fixture: () -> I32 = () => do
+  let destination: FixtureTextOption = #Some "b.txt";
+  let overwritten: FixtureTextOption = #Some "existing\n";
   let update: FixtureUpdate = [
     .move_path = destination,
     .old_content = "from\n",
     .overwritten_move_content = overwritten,
     .new_content = "new\n",
   ];
-  let file_mutation: FixtureFileMutation = `TurnDiffUpdate update;
+  let file_mutation: FixtureFileMutation = #TurnDiffUpdate update;
   let mutation: FixtureMutation = [.path = "a.txt", .mutation = file_mutation];
   let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
 
   let score = 0;
   let changes = turn_diff_net_changes state;
-  if let `Cons first_node = changes {
+  if let #Cons first_node = changes then
     let [first, after_first] = first_node;
-    if let `TurnDiffDeleted deleted = first {
-      if deleted.path.path == "a.txt" && deleted.content == "from\n" {
+    if let #TurnDiffDeleted deleted = first then
+      if deleted.path.path == "a.txt" && deleted.content == "from\n" then
         score = score + 1
-      }
-    }
-    if let `Cons second_node = after_first {
+      end;
+    end;
+    if let #Cons second_node = after_first then
       let [second, tail] = second_node;
-      if let `TurnDiffUpdated updated = second {
-        if updated.path.path == "b.txt" && updated.old_content == "existing\n" && updated.new_content == "new\n" {
-          if let `Nil () = tail { score = score + 10 }
-        }
-      }
-    }
-  }
+      if let #TurnDiffUpdated updated = second then
+        if updated.path.path == "b.txt" && updated.old_content == "existing\n"
+          && updated.new_content == "new\n" then
+            if let #Nil = tail then
+              score = score + 10
+            end;
+          end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
 return { .verify_turn_diff_overwrite_fixture };

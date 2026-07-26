@@ -1,9 +1,9 @@
 ==================
 Loop expression with a value break
 ==================
-let result = loop {
+let result = loop do
   break 42;
-};
+end;
 ---
 
 (source_file
@@ -18,18 +18,18 @@ let result = loop {
 ==================
 Wildcard and binderless ranges
 ==================
-for _ in 0..2 {
+for _ in 0..2 do
   ()
-};
-for 0..2 {
+end;
+for 0..2 do
   ()
-}
-for value in 0..=2 {
+end
+for value in 0..=2 do
   ()
-}
-for 0..=2 {
+end
+for 0..=2 do
   ()
-}
+end
 ---
 
 (source_file
@@ -75,9 +75,9 @@ for 0..=2 {
 ==================
 Refutable collection loop pattern
 ==================
-for index, `Some value in values {
+for index, #Some value in values do
   ()
-}
+end
 ---
 
 (source_file
@@ -96,9 +96,9 @@ for index, `Some value in values {
 ==================
 Break without a value
 ==================
-loop {
+loop do
   break;
-}
+end;
 ---
 
 (source_file
@@ -110,7 +110,11 @@ loop {
 ==================
 Inline break without a value
 ==================
-loop { if done { break; } }
+loop do
+  if done then
+    break;
+  end;
+end;
 ---
 
 (source_file
@@ -121,16 +125,16 @@ loop { if done { break; } }
           (if_expression
             (condition_expression
               (identifier))
-            (block
+            (conditional_branch
               (break_statement))))))))
 
 ==================
 Bare break does not consume the next line
 ==================
-loop {
+loop do
   break;
   42
-}
+end;
 ---
 
 (source_file
@@ -148,7 +152,11 @@ No-demand binding positions
 let _ = 1;
 let ignore = (_, const _) => 2;
 const { .ignored = _, .value } = pair;
-let selected = if let `Ok _ = result { 1 } else { 0 };
+let selected = if let #Ok _ = result then
+  1
+else
+  0
+end;
 ---
 
 (source_file
@@ -183,21 +191,22 @@ let selected = if let `Ok _ = result { 1 } else { 0 };
         (wildcard))
       (condition_expression
         (identifier))
-      (block
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
 
 ==================
 Continue in a loop expression
 ==================
-let result = loop {
+let result = loop do
   continue;
-};
+end;
 
 ---
 

@@ -3,29 +3,29 @@ effect Total {
   add: (I32) => Unit
 }
 
-let sum_odd: () -> <Total> I32 = () => {
-  for value in 0..12 {
-    if value % 2 == 0 {
+let sum_odd: () -> <Total> I32 = () => do
+  for value in 0..12 do
+    if value % 2 == 0 then
       continue;
-    }
+    end;
 
     _ <- Total.add(value)
-  }
+  end
 
   total <- Total.read()
   total
-};
+end;
 
-let accumulator = {
+let accumulator = do
   let running = 6;
   handler Total {
     read: (!resume) => !resume running,
-    add: (amount, !resume) => {
+    add: (amount, !resume) => do
       running = running + amount
       !resume(())
-    },
+    end,
     return: value => value,
   }
-};
+end;
 
 try sum_odd() with accumulator

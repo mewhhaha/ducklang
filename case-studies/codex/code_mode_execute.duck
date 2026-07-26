@@ -16,42 +16,42 @@ type ExecuteRuntimeResponse = CodeModeRuntimeResponse
 type ExecuteRuntimeProgress = CodeModeRuntimeProgress
 type ExecuteRuntimeResult = CodeModeRuntimeResult
 
-const code_mode_execute_initial_response_is_terminal: ExecuteRuntimeResponse -> Bool = response => {
-  match response {
-    | `RuntimeYielded progress => {
-      let typed_progress: ExecuteRuntimeProgress = progress;
-      false
-    }
-    | `RuntimeTerminated progress => {
-      let typed_progress: ExecuteRuntimeProgress = progress;
-      true
-    }
-    | `RuntimeResult result => {
-      let typed_result: ExecuteRuntimeResult = result;
-      true
-    }
-  }
-};
+const code_mode_execute_initial_response_is_terminal: ExecuteRuntimeResponse -> Bool =
+  response => do
+    case response of
+      #RuntimeYielded progress => do
+        let typed_progress: ExecuteRuntimeProgress = progress;
+        false
+      end,
+      #RuntimeTerminated progress => do
+        let typed_progress: ExecuteRuntimeProgress = progress;
+        true
+      end,
+      #RuntimeResult result => do
+        let typed_result: ExecuteRuntimeResult = result;
+        true
+      end;
+  end;
 
-const plan_code_mode_execute_call: ExecuteInvocation -> ExecuteCallPlan = invocation => {
+const plan_code_mode_execute_call: ExecuteInvocation -> ExecuteCallPlan = invocation => do
   let [namespace, local_name] = invocation.tool_name;
-  if namespace != "" || local_name != "exec" {
-    return `RejectCodeModeExecute "exec expects raw JavaScript source text";
-  }
+  if namespace != "" || local_name != "exec" then
+    return #RejectCodeModeExecute "exec expects raw JavaScript source text";
+  end;
 
-  let `ExecuteCustomPayload input = invocation.payload else {
-    return `RejectCodeModeExecute "exec expects raw JavaScript source text";
-  };
+  let #ExecuteCustomPayload input = invocation.payload else do
+    return #RejectCodeModeExecute "exec expects raw JavaScript source text";
+  end;
 
   let parsed = parse_code_mode_exec_source input;
-  if let `CodeModeExecSourceError message = parsed {
-    return `RejectCodeModeExecute message;
-  }
-  let `CodeModeExecSourceParsed source = parsed else {
+  if let #CodeModeExecSourceError message = parsed then
+    return #RejectCodeModeExecute message;
+  end;
+  let #CodeModeExecSourceParsed source = parsed else do
     let impossible: ExecuteCallPlan =
       panic "code-mode exec source parser returned no recognized result";
     return impossible;
-  };
+  end;
 
   let request: ExecuteRequest = [
     .tool_call_id = invocation.call_id,
@@ -59,15 +59,15 @@ const plan_code_mode_execute_call: ExecuteInvocation -> ExecuteCallPlan = invoca
     .source = source.code,
     .yield_time_ms = source.yield_time_ms,
     .max_output_tokens = source.max_output_tokens];
-  `StartCodeModeExecute request
-};
+  #StartCodeModeExecute request
+end;
 
 const plan_code_mode_execute_started: [Text, ExecuteRequest, ExecuteStartedCell] ->
   ExecuteStartedPlan = (
     turn_sub_id,
     request,
     started,
-  ) => {
+  ) => do
     let trace: ExecuteTraceStart = [
       .turn_sub_id = turn_sub_id,
       .cell_id = started.cell_id,
@@ -78,20 +78,20 @@ const plan_code_mode_execute_started: [Text, ExecuteRequest, ExecuteStartedCell]
       .mark_ready_cell_id = started.cell_id,
       .await_initial_response_cell_id = started.cell_id,
     ]
-  };
+  end;
 
 const plan_code_mode_execute_initial_response: [Text, ExecuteRuntimeResponse] ->
   ExecuteInitialPlan = (
     started_cell_id,
     response,
-  ) => {
-    let lifecycle: ExecuteInitialLifecycle = `ExecuteInitialCellYielded started_cell_id;
-    if code_mode_execute_initial_response_is_terminal response {
-      lifecycle = `ExecuteInitialCellEnded started_cell_id
-    }
+  ) => do
+    let lifecycle: ExecuteInitialLifecycle = #ExecuteInitialCellYielded started_cell_id;
+    if code_mode_execute_initial_response_is_terminal response then
+      lifecycle = #ExecuteInitialCellEnded started_cell_id
+    end;
 
-    [.lifecycle = lifecycle, .barrier = `WaitUntilCodeModeElicitationsClear ()]
-  };
+    [.lifecycle = lifecycle, .barrier = #WaitUntilCodeModeElicitationsClear]
+  end;
 
 return {
   .code_mode_execute_initial_response_is_terminal,

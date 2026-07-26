@@ -56,8 +56,8 @@ Deno.test("parse diagnostics are empty for valid programs", () => {
 Deno.test("document symbols cover top-level introductions", () => {
   const text = [
     "type Option t =",
-    "  | `Some t",
-    "  | `None Unit",
+    "  | #Some t",
+    "  | #None",
     "",
     "const factor = 2;",
     "let scale = value => value * factor;",
@@ -86,7 +86,7 @@ Deno.test("document symbols cover top-level introductions", () => {
 
 Deno.test("document symbols nest declaration members through broken syntax", () => {
   const prefix = "effect Counter {\n  get: () => I32\n}\n" +
-    "type Result = | `Ok Int | `Error Text\n";
+    "type Result = | #Ok Int | #Error Text\n";
   const valid = parse_source_with_diagnostics(prefix + "let value = 1;\n");
   const broken = parse_source_with_diagnostics(prefix + "let = broken\n");
   const valid_symbols = document_symbols(

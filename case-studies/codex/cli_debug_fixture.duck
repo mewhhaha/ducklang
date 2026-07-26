@@ -12,24 +12,30 @@ const args = comptime list Text;
 let score = 0;
 
 let models: FixtureResult = parse_debug_models(args.singleton("--bundled"));
-if let `Ok command = models {
-  if let `DebugModels bundled = command {
-    if bundled { score = score + 1 }
-  }
-}
+if let #Ok command = models then
+  if let #DebugModels bundled = command then
+    if bundled then
+      score = score + 1
+    end;
+  end;
+end;
 
 let message: FixtureResult = parse_debug_app_server(
   args.prepend("send-message-v2", args.singleton("hello"))
 );
-if let `Ok command = message {
-  if let `DebugAppServerMessage value = command {
-    if value == "hello" { score = score + 10 }
-  }
-}
+if let #Ok command = message then
+  if let #DebugAppServerMessage value = command then
+    if value == "hello" then
+      score = score + 10
+    end;
+  end;
+end;
 
 let cleared: FixtureResult = parse_debug_options(args.singleton("clear-memories"));
-if let `Ok command = cleared {
-  if let `DebugClearMemories () = command { score = score + 100 }
-}
+if let #Ok command = cleared then
+  if let #DebugClearMemories = command then
+    score = score + 100
+  end;
+end;
 
 return { .score = score };

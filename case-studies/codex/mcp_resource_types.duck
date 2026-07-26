@@ -3,8 +3,8 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type McpResourceTextOption =
-  | `None Unit
-  | `Some Text
+  | #None
+  | #Some Text
 
 type McpResourceListArgs = struct {
   .server = McpResourceTextOption,
@@ -17,30 +17,30 @@ type McpResourceReadArgs = struct {
 }
 
 type McpResourcePayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type McpResourceParsedArgs =
-  | `ListParsed McpResourceListArgs
-  | `ReadParsed McpResourceReadArgs
-  | `ParseFailed Text
+  | #ListParsed McpResourceListArgs
+  | #ReadParsed McpResourceReadArgs
+  | #ParseFailed Text
 
 type McpResourceOptionalTextResult =
-  | `TextDecoded McpResourceTextOption
-  | `TextDecodeFailed Text
+  | #TextDecoded McpResourceTextOption
+  | #TextDecodeFailed Text
 
 type McpResourceListValidation =
-  | `ListValid McpResourceListArgs
-  | `ListValidationFailed Text
+  | #ListValid McpResourceListArgs
+  | #ListValidationFailed Text
 
 type McpResourceReadValidation =
-  | `ReadValid McpResourceReadArgs
-  | `ReadValidationFailed Text
+  | #ReadValid McpResourceReadArgs
+  | #ReadValidationFailed Text
 
 type McpResourceOperation =
-  | `ListResources McpResourceListArgs
-  | `ListResourceTemplates McpResourceListArgs
-  | `ReadResource McpResourceReadArgs
+  | #ListResources McpResourceListArgs
+  | #ListResourceTemplates McpResourceListArgs
+  | #ReadResource McpResourceReadArgs
 
 type McpResourcePreparedCall = struct {
   .call_id = Text,
@@ -48,13 +48,13 @@ type McpResourcePreparedCall = struct {
 }
 
 type McpResourceCallPlan =
-  | `RunMcpResource McpResourcePreparedCall
-  | `RejectRequest Text
+  | #RunMcpResource McpResourcePreparedCall
+  | #RejectRequest Text
 
 type McpResourceTextNode = [Text, McpResourceTexts]
 type McpResourceTexts =
-  | `Nil Unit
-  | `Cons McpResourceTextNode
+  | #Nil
+  | #Cons McpResourceTextNode
 
 type McpResourcePage = struct {
   .server = Text,
@@ -63,8 +63,8 @@ type McpResourcePage = struct {
 }
 type McpResourcePageNode = [McpResourcePage, McpResourcePages]
 type McpResourcePages =
-  | `Nil Unit
-  | `Cons McpResourcePageNode
+  | #Nil
+  | #Cons McpResourcePageNode
 
 type McpResourceHostRequest = struct {
   .operation = McpResourceOperation,
@@ -82,9 +82,9 @@ type McpResourceListOutputInput = struct {
 }
 
 type McpResourceHostResponse =
-  | `Listed McpResourcePages
-  | `Read Text
-  | `Failed Text
+  | #Listed McpResourcePages
+  | #Read Text
+  | #Failed Text
 
 type McpResourceEvent = struct {
   .call_id = Text,
@@ -96,11 +96,11 @@ type McpResourceEvent = struct {
 }
 
 type McpResourceExecutionResult =
-  | `Completed Text
-  | `Rejected Text
+  | #Completed Text
+  | #Rejected Text
 
 type McpResourceTextResult =
-  | `ResourceText Text
-  | `ResourceFailed Text
+  | #ResourceText Text
+  | #ResourceFailed Text
 
 return {};

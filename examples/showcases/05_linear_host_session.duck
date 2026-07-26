@@ -8,10 +8,10 @@ declare effect Host {
 
 declare Init { host: Host }
 
-let message = scratch {
+let message = scratch do
   let temporary: Text = "hel" <> "lo";
   freeze temporary
-};
+end;
 
 result <- Host.print(&message)
 return { .result = result };

@@ -17,63 +17,68 @@ const {
 let state = empty_turn_timing_state();
 let score = 0;
 
-let before_start = record_time_to_first_token(state, `OutputDelta (), monotonic_ms 100i64);
-let before_start_missing = if let `None () = before_start.duration { true } else { false };
+let before_start = record_time_to_first_token(state, #OutputDelta, monotonic_ms 100i64);
+let before_start_missing = if let #None = before_start.duration then true else false end;
 state = before_start.state
-if before_start_missing {
+if before_start_missing then
   score = score + 1
-}
+end;
 
 state = mark_turn_started(state, monotonic_ms 1000i64, unix_time_ms 2000000i64)
-let started_at_valid = if let `Some started_at_seconds = turn_timing_started_at_unix_seconds(&state) { started_at_seconds == 2000i64 } else { false };
-let ignored = record_time_to_first_token(state, `NoOutput (), monotonic_ms 1100i64);
+let started_at_valid =
+  if let #Some started_at_seconds = turn_timing_started_at_unix_seconds(&state) then started_at_seconds == 2000i64 else false end;
+let ignored = record_time_to_first_token(state, #NoOutput, monotonic_ms 1100i64);
 state = ignored.state
-let first_token = record_time_to_first_token(state, `OutputDelta (), monotonic_ms 1125i64);
-let token_valid = if let `Some duration = turn_timing_duration_ms(&first_token.duration) { duration
-  == 125i64 } else { false };
+let first_token = record_time_to_first_token(state, #OutputDelta, monotonic_ms 1125i64);
+let token_valid =
+  if let #Some duration = turn_timing_duration_ms(&first_token.duration) then duration
+      == 125i64 else false end;
 state = first_token.state
-let repeated_token = record_time_to_first_token(state, `ToolCall (), monotonic_ms 1200i64);
-let repeated_token_missing = if let `None () = repeated_token.duration { true } else { false };
+let repeated_token = record_time_to_first_token(state, #ToolCall, monotonic_ms 1200i64);
+let repeated_token_missing = if let #None = repeated_token.duration then true else false end;
 state = repeated_token.state
-if token_valid && started_at_valid && repeated_token_missing {
+if token_valid && started_at_valid && repeated_token_missing then
   score = score + 10
-}
+end;
 
-let ignored_message = record_time_to_first_message(state, `OtherItem (), monotonic_ms 1300i64);
+let ignored_message = record_time_to_first_message(state, #OtherItem, monotonic_ms 1300i64);
 state = ignored_message.state
-let first_message = record_time_to_first_message(state, `AgentMessage (), monotonic_ms 1400i64);
-let message_valid = if let `Some duration = turn_timing_duration_ms(&first_message.duration) {
-  duration == 400i64 } else { false };
+let first_message = record_time_to_first_message(state, #AgentMessage, monotonic_ms 1400i64);
+let message_valid = if let #Some duration = turn_timing_duration_ms(&first_message.duration) then
+  duration == 400i64 else false end;
 state = first_message.state
-let repeated_message = record_time_to_first_message(state, `AgentMessage (), monotonic_ms 1500i64);
-let repeated_message_missing = if let `None () = repeated_message.duration { true } else { false };
+let repeated_message = record_time_to_first_message(state, #AgentMessage, monotonic_ms 1500i64);
+let repeated_message_missing = if let #None = repeated_message.duration then true else false end;
 state = repeated_message.state
-if message_valid && repeated_message_missing {
+if message_valid && repeated_message_missing then
   score = score + 100
-}
+end;
 
 let completion = complete_turn_timing(&state, monotonic_ms 1600i64, unix_time_seconds 2001i64);
-let completion_valid = if let `Some duration = turn_timing_duration_ms(&completion.duration) {
-  duration == 600i64 } else { false };
-if completion_valid && unix_time_seconds_value completion.completed_at_unix_seconds == 2001i64 {
+let completion_valid = if let #Some duration = turn_timing_duration_ms(&completion.duration) then
+  duration == 600i64 else false end;
+if completion_valid && unix_time_seconds_value completion.completed_at_unix_seconds == 2001i64 then
   score = score + 1000
-}
+end;
 
-let empty_output = `CompletedOutputText "";
-let completed_output = `CompletedOutputText "answer";
-let completed_reasoning = `CompletedReasoningText "thought";
-if !(response_signal_records_first_token empty_output) && response_signal_records_first_token completed_output && response_signal_records_first_token completed_reasoning {
+let empty_output = #CompletedOutputText "";
+let completed_output = #CompletedOutputText "answer";
+let completed_reasoning = #CompletedReasoningText "thought";
+if !(response_signal_records_first_token empty_output)
+  && response_signal_records_first_token completed_output
+  && response_signal_records_first_token completed_reasoning then
     score = score + 10000
-  }
+  end;
 
 let restarted = mark_turn_started(state, monotonic_ms 3000i64, unix_time_ms 4000000i64);
-let restarted_token = record_time_to_first_token(restarted, `ToolCall (), monotonic_ms 3010i64);
-let restarted_valid = if let `Some duration = turn_timing_duration_ms(&restarted_token.duration) {
-  duration == 10i64 } else { false };
-let restarted_message_missing = if let `None () = restarted_token.state.first_message_at { true
-} else { false };
-if restarted_valid && restarted_message_missing {
+let restarted_token = record_time_to_first_token(restarted, #ToolCall, monotonic_ms 3010i64);
+let restarted_valid =
+  if let #Some duration = turn_timing_duration_ms(&restarted_token.duration) then
+    duration == 10i64 else false end;
+let restarted_message_missing = if let #None = restarted_token.state.first_message_at then true
+else false end;
+if restarted_valid && restarted_message_missing then
   score = score + 100000
-}
+end;
 
 return { .score = score };

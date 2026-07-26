@@ -29,227 +29,229 @@ type StoragePage = RolloutThreadPage
 type StorageJsonObject = JsonObject
 type StorageJsonObjectOption = Option StorageJsonObject
 
-const empty_threads: () -> StorageThreads = () => `Nil ();
+const empty_threads: () -> StorageThreads = () => #Nil;
 
 const prepend_thread: [StorageThread, StorageThreads] -> StorageThreads = (
   thread: StorageThread,
   tail: StorageThreads,
-) => {
-  `Cons ([thread, tail])
-};
+) => do
+  #Cons ([thread, tail])
+end;
 
-const singleton_thread: StorageThread -> StorageThreads = (thread: StorageThread) => {
+const singleton_thread: StorageThread -> StorageThreads = (thread: StorageThread) => do
   prepend_thread(thread, empty_threads())
-};
+end;
 
-const reverse_threads: StorageThreads -> StorageThreads = (values: StorageThreads) => {
+const reverse_threads: StorageThreads -> StorageThreads = (values: StorageThreads) => do
   let current = values;
   let reversed: StorageThreads = empty_threads();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [thread, tail] = node;
       reversed = prepend_thread(thread, reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   reversed
-};
+end;
 
-const thread_count: StorageThreads -> I32 = (values: StorageThreads) => {
+const thread_count: StorageThreads -> I32 = (values: StorageThreads) => do
   let current = values;
   let count = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   count
-};
+end;
 
-const json_text_field: [StorageJsonObject, Text] -> Text = (object: StorageJsonObject, key: Text) => {
+const json_text_field: [StorageJsonObject, Text] -> Text =
+  (object: StorageJsonObject, key: Text) => do
     let result: Text = "";
     let lookup = json_object_get(key, object);
 
-    if let `Found value = lookup {
-      if let `String text = value {
+    if let #Found value = lookup then
+      if let #String text = value then
         result = text
-      }
-    }
+      end;
+    end;
 
     result
-  };
+  end;
 
 const json_optional_text_field: [StorageJsonObject, Text] -> StorageTextOption = (
   object: StorageJsonObject,
   key: Text,
-) => {
+) => do
   let result: StorageTextOption = StorageTextOption.None();
   let lookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `String text = value {
+  if let #Found value = lookup then
+    if let #String text = value then
       result = StorageTextOption.Some(text)
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
 const json_object_field: [StorageJsonObject, Text] -> StorageJsonObjectOption = (
   object: StorageJsonObject,
   key: Text,
-) => {
+) => do
   let result: StorageJsonObjectOption = StorageJsonObjectOption.None();
   let lookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `Object nested = value {
+  if let #Found value = lookup then
+    if let #Object nested = value then
       result = StorageJsonObjectOption.Some(nested)
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
-const preview_from_event: StorageJsonObject -> Text = (event: StorageJsonObject) => {
+const preview_from_event: StorageJsonObject -> Text = (event: StorageJsonObject) => do
   let event_type = json_text_field(event, "type");
   let preview: Text = "";
 
-  if event_type == "user_message" || event_type == "agent_message" {
+  if event_type == "user_message" || event_type == "agent_message" then
     preview = json_text_field(event, "message")
-  } else if event_type == "thread_goal_updated" {
+  else event_type == "thread_goal_updated" then
     let goal = json_object_field(event, "goal");
 
-    if let `Some object = goal {
+    if let #Some object = goal then
       preview = json_text_field(object, "objective")
-    }
-  } else if event_type == "item_completed" {
+    end;
+  else event_type == "item_completed" then
     let item = json_object_field(event, "item");
 
-    if let `Some object = item {
-      if json_text_field(object, "type") == "user_message" {
+    if let #Some object = item then
+      if json_text_field(object, "type") == "user_message" then
         preview = json_text_field(object, "message")
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   preview
-};
+end;
 
-const git_info_from_meta: StorageJsonObject -> StorageGitInfoOption = (meta: StorageJsonObject) => {
-  let result: StorageGitInfoOption = `None ();
-  let git = json_object_field(meta, "git");
+const git_info_from_meta: StorageJsonObject -> StorageGitInfoOption =
+  (meta: StorageJsonObject) => do
+    let result: StorageGitInfoOption = #None;
+    let git = json_object_field(meta, "git");
 
-  if let `Some object = git {
-    let info: StorageGitInfo = [
-      json_optional_text_field(object, "commit_hash"),
-      json_optional_text_field(object, "branch"),
-      json_optional_text_field(object, "repository_url"),
-    ];
-    result = `Some info
-  }
+    if let #Some object = git then
+      let info: StorageGitInfo = [
+        json_optional_text_field(object, "commit_hash"),
+        json_optional_text_field(object, "branch"),
+        json_optional_text_field(object, "repository_url"),
+      ];
+      result = #Some info
+    end;
 
-  result
-};
+    result
+  end;
 
 const session_source_from_meta: StorageJsonObject -> StorageSessionSource = (
-  meta: StorageJsonObject ) => {
-  let result: StorageSessionSource = `VsCode ();
-  let lookup = json_object_get("source", meta);
+  meta: StorageJsonObject) => do
+    let result: StorageSessionSource = #VsCode;
+    let lookup = json_object_get("source", meta);
 
-  if let `Found value = lookup {
-    if let `String source = value {
-      if source == "cli" {
-        result = `Cli ()
-      } else if source == "vscode" {
-        result = `VsCode ()
-      } else if source == "exec" {
-        result = `Exec ()
-      } else if source == "mcp" {
-        result = `AppServer ()
-      } else {
-        result = `Unknown ()
-      }
-    } else if let `Object source = value {
-      let custom = json_optional_text_field(source, "custom");
-      let subagent = json_object_get("subagent", source);
+    if let #Found value = lookup then
+      if let #String source = value then
+        if source == "cli" then
+          result = #Cli
+        else source == "vscode" then
+          result = #VsCode
+        else source == "exec" then
+          result = #Exec
+        else source == "mcp" then
+          result = #AppServer
+        else
+          result = #Unknown
+        end;
+      else let #Object source = value then
+        let custom = json_optional_text_field(source, "custom");
+        let subagent = json_object_get("subagent", source);
 
-      if let `Some name = custom {
-        result = `Custom name
-      } else if let `Found subagent_source = subagent {
-        result = `SubAgent subagent_source
-      } else {
-        result = `Unknown ()
-      }
-    }
-  }
+        if let #Some name = custom then
+          result = #Custom name
+        else let #Found subagent_source = subagent then
+          result = #SubAgent subagent_source
+        else
+          result = #Unknown
+        end;
+      end;
+    end;
 
-  result
-};
+    result
+  end;
 
-const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: StorageFile) => {
+const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: StorageFile) => do
   let [path, updated_at, contents] = file;
   let thread_id: Text = "";
   let session_id: Text = "";
-  let forked_from_id: StorageTextOption = `None ();
-  let parent_thread_id: StorageTextOption = `None ();
+  let forked_from_id: StorageTextOption = #None;
+  let parent_thread_id: StorageTextOption = #None;
   let preview: Text = "";
   let cwd: Text = "";
-  let source: StorageSessionSource = `VsCode ();
+  let source: StorageSessionSource = #VsCode;
   let model_provider: Text = "";
   let cli_version: Text = "";
-  let thread_source: StorageTextOption = `None ();
+  let thread_source: StorageTextOption = #None;
   let history_mode: Text = "legacy";
-  let agent_nickname: StorageTextOption = `None ();
-  let agent_role: StorageTextOption = `None ();
+  let agent_nickname: StorageTextOption = #None;
+  let agent_role: StorageTextOption = #None;
   let created_at: Text = "";
-  let git_info: StorageGitInfoOption = `None ();
+  let git_info: StorageGitInfoOption = #None;
   let start = 0;
   let saw_meta = false;
   let scanned_lines = 0;
   let done = false;
 
-  loop {
-    if done || start >= text_length contents || scanned_lines >= 210 {
+  loop do
+    if done || start >= text_length contents || scanned_lines >= 210 then
       break;
-    }
+    end;
 
     let newline = text_find_from [contents, "\n", start];
-    let end = if newline < 0 { text_length contents } else { newline };
-    let line = text_slice [contents, start, end];
+    let line_end = if newline < 0 then text_length contents else newline end;
+    let line = text_slice [contents, start, line_end];
 
-    if line != "" {
+    if line != "" then
       let parsed = parse_json_document line;
 
-      if let `Ok value_and_index = parsed {
+      if let #Ok value_and_index = parsed then
         let [value, _] = value_and_index;
 
-        if let `Object object = value {
+        if let #Object object = value then
           let record_type = json_text_field(object, "type");
           let payload = json_object_field(object, "payload");
 
-          if let `Some payload_object = payload {
-            if record_type == "session_meta" && !(saw_meta) {
+          if let #Some payload_object = payload then
+            if record_type == "session_meta" && !(saw_meta) then
               thread_id = json_text_field(payload_object, "id")
               session_id = json_text_field(payload_object, "session_id")
               forked_from_id = json_optional_text_field(payload_object, "forked_from_id")
@@ -260,31 +262,35 @@ const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: Storag
               cli_version = json_text_field(payload_object, "cli_version")
               thread_source = json_optional_text_field(payload_object, "thread_source")
               let stored_history_mode = json_text_field(payload_object, "history_mode");
-              if stored_history_mode != "" { history_mode = stored_history_mode }
+              if stored_history_mode != "" then
+                history_mode = stored_history_mode
+              end;
               agent_nickname = json_optional_text_field(payload_object, "agent_nickname")
               agent_role = json_optional_text_field(payload_object, "agent_role")
               created_at = json_text_field(payload_object, "timestamp")
               git_info = git_info_from_meta payload_object
-              if session_id == "" { session_id = thread_id }
+              if session_id == "" then
+                session_id = thread_id
+              end;
               saw_meta = true
-            } else if record_type == "event_msg" && preview == "" {
+            else record_type == "event_msg" && preview == "" then
               preview = preview_from_event payload_object
-            }
-          }
-        }
-      }
+            end;
+          end;
+        end;
+      end;
 
       scanned_lines = scanned_lines + 1
-    }
+    end;
 
-    if newline < 0 {
+    if newline < 0 then
       done = true
-    } else {
+    else
       start = newline + 1
-    }
-  }
+    end;
+  end;
 
-  if saw_meta {
+  if saw_meta then
     let summary: StorageThread = [
       path,
       thread_id,
@@ -305,59 +311,59 @@ const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: Storag
       git_info,
     ];
     StorageThreadOption.Some(summary)
-  } else {
+  else
     StorageThreadOption.None()
-  }
-};
+  end;
+end;
 
-const text_list_allows: [StorageTexts, Text] -> Bool = (allowed: StorageTexts, value: Text) => {
+const text_list_allows: [StorageTexts, Text] -> Bool = (allowed: StorageTexts, value: Text) => do
   let current = allowed;
   let saw_candidate = false;
   let found = false;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [candidate, tail] = node;
       saw_candidate = true
 
-      if candidate == value {
+      if candidate == value then
         found = true
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
-  if saw_candidate { found } else { true }
-};
+  if saw_candidate then found else true end;
+end;
 
-const session_source_text: StorageSessionSource -> Text = (source: StorageSessionSource) => {
-  if let `Cli () = source {
+const session_source_text: StorageSessionSource -> Text = (source: StorageSessionSource) => do
+  if let #Cli = source then
     "cli"
-  } else if let `VsCode () = source {
+  else let #VsCode = source then
     "vscode"
-  } else if let `Exec () = source {
+  else let #Exec = source then
     "exec"
-  } else if let `AppServer () = source {
+  else let #AppServer = source then
     "mcp"
-  } else {
+  else
     "unknown"
-  }
-};
+  end;
+end;
 
 const thread_matches_query: [StorageThread, StorageFile, StorageQuery] -> Bool = (
   thread: StorageThread,
   file: StorageFile,
   query: StorageQuery,
-) => {
+) => do
   let [_, _, contents] = file;
   let [_, _, _, allowed_sources, cwd_filters, model_providers, search_term, _] = query;
   let source_text = session_source_text thread.source;
@@ -369,241 +375,242 @@ const thread_matches_query: [StorageThread, StorageFile, StorageQuery] -> Bool =
     search_term,
   ];
   source_allowed && cwd_allowed && provider_allowed && search_matches
-};
+end;
 
 const thread_sort_value: [StorageThread, StorageSortKey] -> Text = (
   thread: StorageThread,
   sort_key: StorageSortKey,
-) => {
-  if let `UpdatedAt () = sort_key { thread.updated_at } else { thread.created_at }
-};
+) => do
+  if let #UpdatedAt = sort_key then thread.updated_at else thread.created_at end;
+end;
 
 const thread_precedes: [StorageThread, StorageThread, StorageSortKey] -> Bool = (
   left: StorageThread,
   right: StorageThread,
   sort_key: StorageSortKey,
-) => {
+) => do
   let left_value = thread_sort_value(left, sort_key);
   let right_value = thread_sort_value(right, sort_key);
   let comparison = text_compare [left_value, right_value];
 
-  if comparison == 0 {
+  if comparison == 0 then
     text_compare [left.thread_id, right.thread_id] > 0
-  } else {
+  else
     comparison > 0
-  }
-};
+  end;
+end;
 
 const thread_after_cursor: [StorageThread, StorageTextOption, StorageSortKey] -> Bool = (
   thread: StorageThread,
   cursor: StorageTextOption,
   sort_key: StorageSortKey,
-) => {
-  if let `Some value = cursor {
+) => do
+  if let #Some value = cursor then
     text_compare [thread_sort_value(thread, sort_key), value] < 0
-  } else {
+  else
     true
-  }
-};
+  end;
+end;
 
 const sort_threads: [StorageThreads, StorageSortKey] -> StorageThreads = (
   values: StorageThreads,
   sort_key: StorageSortKey,
-) => {
+) => do
   let current = values;
   let sorted: StorageThreads = empty_threads();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
       let remaining = sorted;
       let prefix_reversed: StorageThreads = empty_threads();
       let inserted = false;
 
-      loop {
-        if let `Cons sorted_node = remaining {
+      loop do
+        if let #Cons sorted_node = remaining then
           let [sorted_value, sorted_tail] = sorted_node;
 
-          if thread_precedes(value, sorted_value, sort_key) {
+          if thread_precedes(value, sorted_value, sort_key) then
             remaining = prepend_thread(value, remaining)
             inserted = true
             break;
-          } else {
+          else
             prefix_reversed = prepend_thread(sorted_value, prefix_reversed)
             remaining = sorted_tail
-          }
-        } else {
+          end;
+        else
           remaining = singleton_thread value
           inserted = true
           break;
-        }
-      }
+        end;
+      end;
 
-      if inserted {
+      if inserted then
         let prefix = prefix_reversed;
 
-        loop {
-          if let `Cons prefix_node = prefix {
+        loop do
+          if let #Cons prefix_node = prefix then
             let [prefix_value, prefix_tail] = prefix_node;
             remaining = prepend_thread(prefix_value, remaining)
             prefix = prefix_tail
-          } else {
+          else
             break;
-          }
-        }
-      }
+          end;
+        end;
+      end;
 
       sorted = remaining
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   sorted
-};
+end;
 
-const take_threads: [I32, StorageThreads] -> StorageThreads = (count: I32, values: StorageThreads) => {
+const take_threads: [I32, StorageThreads] -> StorageThreads =
+  (count: I32, values: StorageThreads) => do
     let current = values;
     let remaining = count;
     let taken_reversed: StorageThreads = empty_threads();
     let done = remaining <= 0;
 
-    loop {
-      if done {
+    loop do
+      if done then
         break;
-      }
+      end;
 
-      if let `Cons node = current {
+      if let #Cons node = current then
         let [thread, tail] = node;
         taken_reversed = prepend_thread(thread, taken_reversed)
         current = tail
         remaining = remaining - 1
 
-        if remaining <= 0 {
+        if remaining <= 0 then
           done = true
-        }
-      } else {
+        end;
+      else
         done = true
-      }
-    }
+      end;
+    end;
 
     reverse_threads taken_reversed
-  };
+  end;
 
 const list_rollout_threads: [StorageFiles, StorageQuery] -> StoragePage = (
   snapshot: StorageFiles,
   query: StorageQuery,
-) => {
+) => do
   let [page_size, cursor, sort_key, _, _, _, _, scan_limit] = query;
   let current = snapshot;
   let candidates: StorageThreads = empty_threads();
   let scanned = 0;
   let scan_done = scan_limit <= 0;
 
-  loop {
-    if scan_done {
+  loop do
+    if scan_done then
       break;
-    }
+    end;
 
-    if let `Cons node = current {
+    if let #Cons node = current then
       let [file, tail] = node;
       scanned = scanned + 1
       let summary = summarize_rollout_file file;
 
-      if let `Some thread = summary {
+      if let #Some thread = summary then
         if thread_matches_query(thread, file, query) && thread_after_cursor(
           thread,
           cursor,
           sort_key,
-        ) {
+        ) then
           candidates = prepend_thread(thread, candidates)
-        }
-      }
+        end;
+      end;
 
       current = tail
-      if scanned >= scan_limit {
+      if scanned >= scan_limit then
         scan_done = true
-      }
-    } else {
+      end;
+    else
       scan_done = true
-    }
-  }
+    end;
+  end;
 
   let reached_scan_limit = scanned >= scan_limit;
-  if let `Nil () = current {
+  if let #Nil = current then
     reached_scan_limit = false
-  }
+  end;
 
   let sorted = sort_threads(candidates, sort_key);
   let page_items = take_threads(page_size, sorted);
   let has_more = thread_count sorted > thread_count page_items;
   let next_cursor: StorageTextOption = StorageTextOption.None();
 
-  if has_more {
+  if has_more then
     let page_current = page_items;
 
-    loop {
-      if let `Cons node = page_current {
+    loop do
+      if let #Cons node = page_current then
         let [thread, tail] = node;
         next_cursor = StorageTextOption.Some(thread_sort_value(thread, sort_key))
         page_current = tail
-      } else {
+      else
         break;
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   let page: StoragePage = [page_items, next_cursor, scanned, reached_scan_limit];
   page
-};
+end;
 
 const find_rollout_path_by_id: [StorageFiles, Text] -> StorageTextOption = (
   snapshot: StorageFiles,
   thread_id: Text,
-) => {
+) => do
   let current = snapshot;
   let result: StorageTextOption = StorageTextOption.None();
   let done = false;
 
-  loop {
-    if done {
+  loop do
+    if done then
       break;
-    }
+    end;
 
-    if let `Cons node = current {
+    if let #Cons node = current then
       let [file, tail] = node;
       let summary = summarize_rollout_file file;
 
-      if let `Some thread = summary {
-        if thread.thread_id == thread_id {
+      if let #Some thread = summary then
+        if thread.thread_id == thread_id then
           result = StorageTextOption.Some(thread.path)
           done = true
-        }
-      }
+        end;
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
 const rollout_path: [Text, Text, Text] -> StorageTextOption = (
   codex_home: Text,
   timestamp: Text,
   thread_id: Text,
-) => {
-  if text_length timestamp < 19 {
+) => do
+  if text_length timestamp < 19 then
     StorageTextOption.None()
-  } else {
+  else
     let year = text_slice [timestamp, 0, 4];
     let month = text_slice [timestamp, 5, 7];
     let day = text_slice [timestamp, 8, 10];
@@ -613,21 +620,21 @@ const rollout_path: [Text, Text, Text] -> StorageTextOption = (
       day,
     ];
     StorageTextOption.Some(path_join [dated, filename])
-  }
-};
+  end;
+end;
 
-const is_rollout_path: Text -> Bool = (path: Text) => {
+const is_rollout_path: Text -> Bool = (path: Text) => do
   let name_start = 0;
 
-  for index in 0..text_length path {
-    if text_slice [path, index, index + 1] == "/" {
+  for index in 0..text_length path do
+    if text_slice [path, index, index + 1] == "/" then
       name_start = index + 1
-    }
-  }
+    end;
+  end
 
   let name = text_slice [path, name_start, text_length path];
   text_starts_with [name, "rollout-"] && text_ends_with [name, ".jsonl"]
-};
+end;
 
 return {
   .summarize_rollout_file,

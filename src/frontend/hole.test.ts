@@ -54,7 +54,11 @@ Deno.test("a hole inside a nested call is rejected", () => {
   );
 
   assert_equals(messages.length > 0, true);
-  assert_includes(messages[0] ?? "", "hole cannot appear inside a nested call");
+  const message = messages[0];
+  if (message === undefined) {
+    throw new Error("Missing nested hole diagnostic");
+  }
+  assert_includes(message, "hole cannot appear inside a nested call");
 });
 
 Deno.test("a hole survives a format round trip", () => {

@@ -42,7 +42,7 @@ Deno.test("is parses type operands at comparison precedence", () => {
 
 Deno.test("is stops before blocks and expression delimiters", () => {
   const source = parse_source(
-    "if value is #(Left :| Right) { 1 }\ncall(value is Thing, other)",
+    "if value is #(Left :| Right) then 1 end\ncall(value is Thing, other)",
   );
   const first = source.statements[0];
   const second = source.statements[1];
@@ -75,6 +75,6 @@ Deno.test("is formatter protects a logical value", () => {
       },
       type_expr: { tag: "name", name: "Truth" },
     }),
-    "(if left right else 0) is Truth",
+    "(if left then right else 0 end) is Truth",
   );
 });

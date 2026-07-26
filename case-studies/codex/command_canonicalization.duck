@@ -20,90 +20,96 @@ type CanonicalScanState = [CanonicalTexts, Text, Bool, I32, Bool]
 
 const texts = comptime list Text;
 
-const command_basename = (path: Text) => {
+const command_basename = (path: Text) => do
   let start = 0;
   let index = 0;
 
-  loop {
-    if index >= text_length path { break; }
+  loop do
+    if index >= text_length path then
+      break;
+    end;
     let byte = text_get [path, index];
 
-    if byte == 47 || byte == 92 {
+    if byte == 47 || byte == 92 then
       start = index + 1
-    }
+    end;
 
     index = index + 1
-  }
+  end;
 
   text_slice [path, start, text_length path]
-};
+end;
 
-const shell_candidate_matches = (candidate: Text, first: Text, second: Text, third: Text) => {
-  if candidate == first || candidate == second {
+const shell_candidate_matches = (candidate: Text, first: Text, second: Text, third: Text) => do
+  if candidate == first || candidate == second then
     true
-  } else if third == "" {
+  else third == "" then
     false
-  } else {
+  else
     candidate == third
-  }
-};
+  end;
+end;
 
-const shell_name_matches = (path: Text, first: Text, second: Text, third: Text) => {
+const shell_name_matches = (path: Text, first: Text, second: Text, third: Text) => do
   let candidate = command_basename path;
   let matches = false;
   let done = false;
 
-  loop {
-    if shell_candidate_matches(candidate, first, second, third) {
+  loop do
+    if shell_candidate_matches(candidate, first, second, third) then
       matches = true
       break;
-    }
+    end;
 
     let final_dot = -1;
     let index = 0;
 
-    loop {
-      if index >= text_length candidate { break; }
+    loop do
+      if index >= text_length candidate then
+        break;
+      end;
 
-      if text_get [candidate, index] == 46 {
+      if text_get [candidate, index] == 46 then
         final_dot = index
-      }
+      end;
 
       index = index + 1
-    }
+    end;
 
-    if final_dot <= 0 {
+    if final_dot <= 0 then
       done = true
-    } else {
+    else
       candidate = text_slice [candidate, 0, final_dot]
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   matches
-};
+end;
 
 const is_bourne_shell = (path: Text) => shell_name_matches(path, "bash", "zsh", "sh");
 const is_powershell = (path: Text) => shell_name_matches(path, "powershell", "pwsh", "");
 
-const extract_bash_invocation: CanonicalTexts -> CanonicalBashInvocationOption = command => {
-  if texts.length(command) != 3 {
-    `None ()
-  } else {
+const extract_bash_invocation: CanonicalTexts -> CanonicalBashInvocationOption = command => do
+  if texts.length(command) != 3 then
+    #None
+  else
     let shell = texts.nth_or("", 0, command);
     let mode = texts.nth_or("", 1, command);
     let script = texts.nth_or("", 2, command);
 
-    if is_bourne_shell shell && (mode == "-lc" || mode == "-c") {
-      `Some ([mode, script])
-    } else {
-      `None ()
-    }
-  }
-};
+    if is_bourne_shell shell && (mode == "-lc" || mode == "-c") then
+      #Some ([mode, script])
+    else
+      #None
+    end;
+  end;
+end;
 
-const powershell_flag_allowed = (flag: Text) => {
+const powershell_flag_allowed = (flag: Text) => do
   text_equal_ascii_case_insensitive [flag, "-nologo"] || text_equal_ascii_case_insensitive [
     flag,
     "-noprofile",
@@ -111,68 +117,70 @@ const powershell_flag_allowed = (flag: Text) => {
     flag,
     "-c",
   ]
-};
+end;
 
-const powershell_command_flag = (flag: Text) => {
+const powershell_command_flag = (flag: Text) => do
   text_equal_ascii_case_insensitive [flag, "-command"] || text_equal_ascii_case_insensitive [
     flag,
     "-c",
   ]
-};
+end;
 
-const extract_powershell_script: CanonicalTexts -> CanonicalTextOption = command => {
-  let script: CanonicalTextOption = `None ();
+const extract_powershell_script: CanonicalTexts -> CanonicalTextOption = command => do
+  let script: CanonicalTextOption = #None;
 
-  if texts.length(command) >= 3 && is_powershell(texts.nth_or("", 0, command)) {
+  if texts.length(command) >= 3 && is_powershell(texts.nth_or("", 0, command)) then
     let index = 1;
     let valid = true;
     let done = false;
 
-    loop {
-      if index + 1 >= texts.length(command) {
+    loop do
+      if index + 1 >= texts.length(command) then
         break;
-      }
+      end;
 
       let flag = texts.nth_or("", index, command);
 
-      if !(powershell_flag_allowed flag) {
+      if !(powershell_flag_allowed flag) then
         valid = false
         break;
-      } else if powershell_command_flag flag {
-        script = `Some (texts.nth_or("", index + 1, command))
+      else powershell_command_flag flag then
+        script = #Some (texts.nth_or("", index + 1, command))
         done = true
-      } else {
+      else
         index = index + 1
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
-    if !(valid) {
-      script = `None ()
-    }
-  }
+    if !(valid) then
+      script = #None
+    end;
+  end;
 
   script
-};
+end;
 
 let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalScanState = (
   script: Text,
   index: I32,
   state: CanonicalScanState,
-) => {
+) => do
   let [reversed, word, has_word, quote, valid] = state;
 
-  if index >= text_length script || !(valid) {
+  if index >= text_length script || !(valid) then
     state
-  } else {
+  else
     let byte = text_get [script, index];
     let next: CanonicalScanState = state;
 
-    if quote == 39 {
-      if byte == 39 {
+    if quote == 39 then
+      if byte == 39 then
         next = [reversed, word, has_word, 0, valid]
-      } else {
+      else
         next = [
           reversed,
           text_append [word, text_slice [script, index, index + 1]],
@@ -180,13 +188,13 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
           quote,
           valid,
         ]
-      }
-    } else if quote == 34 {
-      if byte == 34 {
+      end;
+    else quote == 34 then
+      if byte == 34 then
         next = [reversed, word, has_word, 0, valid]
-      } else if byte == 36 || byte == 92 || byte == 96 {
+      else byte == 36 || byte == 92 || byte == 96 then
         next = [reversed, word, has_word, quote, false]
-      } else {
+      else
         next = [
           reversed,
           text_append [word, text_slice [script, index, index + 1]],
@@ -194,76 +202,78 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
           quote,
           valid,
         ]
-      }
-    } else if byte == 32 || byte == 9 {
-      if has_word {
-        if texts.length(reversed) == 0 && text_contains [word, "="] {
+      end;
+    else byte == 32 || byte == 9 then
+      if has_word then
+        if texts.length(reversed) == 0 && text_contains [word, "="] then
           next = [reversed, word, has_word, quote, false]
-        } else {
+        else
           next = [texts.prepend(word, reversed), "", false, quote, valid]
-        }
-      }
-    } else if byte == 39 || byte == 34 {
+        end;
+      end;
+    else byte == 39 || byte == 34 then
       next = [reversed, word, true, byte, valid]
-    } else if byte < 32 || byte == 33 || byte == 35 || byte == 36 || byte == 38 || byte == 40 || byte == 41 || byte == 59 || byte == 60 || byte == 62 || byte == 92 || byte == 96 || byte == 123 || byte == 124 || byte == 125 || byte == 127 {
-      next = [reversed, word, has_word, quote, false]
-    } else {
-      next = [
-        reversed,
-        text_append [word, text_slice [script, index, index + 1]],
-        true,
-        quote,
-        valid,
-      ]
-    }
+    else byte < 32 || byte == 33 || byte == 35 || byte == 36 || byte == 38 || byte == 40 || byte
+        == 41 || byte == 59 || byte == 60 || byte == 62 || byte == 92 || byte == 96 || byte == 123
+        || byte == 124 || byte == 125 || byte == 127 then
+          next = [reversed, word, has_word, quote, false]
+        else
+          next = [
+            reversed,
+            text_append [word, text_slice [script, index, index + 1]],
+            true,
+            quote,
+            valid,
+          ]
+        end;
 
-    scan_plain_shell_command(script, index + 1, next)
-  }
-};
+      scan_plain_shell_command(script, index + 1, next)
+    end;
+  end;
 
-let parse_single_plain_shell_command: Text -> CanonicalParse = script => {
-  let initial: CanonicalScanState = [texts.empty(), "", false, 0, true];
-  let [reversed, word, has_word, quote, scanned] = scan_plain_shell_command(script, 0, initial);
-  let valid = scanned && quote == 0;
+  let parse_single_plain_shell_command: Text -> CanonicalParse = script => do
+    let initial: CanonicalScanState = [texts.empty(), "", false, 0, true];
+    let [reversed, word, has_word, quote, scanned] = scan_plain_shell_command(script, 0, initial);
+    let valid = scanned && quote == 0;
 
-  if valid && has_word {
-    if texts.length(reversed) == 0 && text_contains [word, "="] {
+    if valid && has_word then
+      if texts.length(reversed) == 0 && text_contains [word, "="] then
+        valid = false
+      else
+        reversed = texts.prepend(word, reversed)
+      end;
+    end;
+
+    if texts.length(reversed) == 0 then
       valid = false
-    } else {
-      reversed = texts.prepend(word, reversed)
-    }
-  }
+    end;
 
-  if texts.length(reversed) == 0 {
-    valid = false
-  }
+    [valid, texts.reverse(reversed)]
+  end;
 
-  [valid, texts.reverse(reversed)]
-};
+  let canonicalize_command_for_approval: CanonicalTexts -> CanonicalTexts = command => do
+    let bash = extract_bash_invocation command;
 
-let canonicalize_command_for_approval: CanonicalTexts -> CanonicalTexts = command => {
-  let bash = extract_bash_invocation command;
+    if let #Some invocation = bash then
+      let [mode, script] = invocation;
+      let [plain, words] = parse_single_plain_shell_command script;
 
-  if let `Some invocation = bash {
-    let [mode, script] = invocation;
-    let [plain, words] = parse_single_plain_shell_command script;
+      if plain then
+        words
+      else
+        texts.prepend("__codex_shell_script__", texts.prepend(mode, texts.singleton(script)))
+      end;
+    else
+      let powershell = extract_powershell_script command;
 
-    if plain {
-      words
-    } else {
-      texts.prepend("__codex_shell_script__", texts.prepend(mode, texts.singleton(script)))
-    }
-  } else {
-    let powershell = extract_powershell_script command;
+      if let #Some script = powershell then
+        texts.prepend("__codex_powershell_script__", texts.singleton(script))
+      else
+        command
+      end;
+    end;
+  end;
 
-    if let `Some script = powershell {
-      texts.prepend("__codex_powershell_script__", texts.singleton(script))
-    } else {
-      command
-    }
-  }
-};
-
-return {
-  .canonicalize_command_for_approval,
-};
+  return {
+    .canonicalize_command_for_approval,
+  };

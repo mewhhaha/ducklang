@@ -108,14 +108,14 @@ Deno.test("semantic validation keeps nested width errors structured and singular
 
 Deno.test("semantic validation does not re-infer an invalid indexed branch", () => {
   const source = parse_source(
-    "let pair=[.a=true,.b=1];\nif true { pair[input] } else { 0 }",
+    "let pair=[.a=true,.b=1];\nif true then pair[input] else 0 end",
   );
 
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2304",
     severity: "error",
     message: "Mixed Bool and numeric indexed values",
-    span: { start: 35, end: 46 },
+    span: { start: 38, end: 49 },
   }]);
 });
 
@@ -131,46 +131,46 @@ Deno.test("semantic validation reuses constness checks with source spans", () =>
   }]);
 });
 
-Deno.test("semantic validation reports non-exhaustive matches", () => {
-  const source = parse_source("match 1 { | 1 => 10 }\n");
+Deno.test("semantic validation reports non-exhaustive cases", () => {
+  const source = parse_source("case 1 of 1 => 10;\n");
 
   assert_equals(validate_frontend_semantics(source), [{
     code: "DUCK2314",
     severity: "error",
-    message: "Non-exhaustive match requires a wildcard or binding arm",
-    span: { start: 0, end: 21 },
+    message: "Non-exhaustive case requires a wildcard or binding arm",
+    span: { start: 0, end: 17 },
   }]);
 });
 
-Deno.test("semantic validation defers match coverage without a target type", () => {
+Deno.test("semantic validation defers case coverage without a target type", () => {
   const source = parse_source(
-    "let inspect = value => match value { | `Present payload => payload };\n",
+    "let inspect = value => case value of #Present payload => payload;\n",
   );
 
   assert_equals(validate_frontend_semantics(source), []);
 });
 
-Deno.test("semantic validation recognizes exact atom match coverage", () => {
+Deno.test("semantic validation recognizes exact atom case coverage", () => {
   const source = parse_source(`
-let unit = match () { | () => 1 };
-let atom = match #ready { | #ready => 2 };
+let unit = case () of () => 1;
+let atom = case #ready of #ready => 2;
 unit + atom
 `);
 
   assert_equals(validate_frontend_semantics(source), []);
 });
 
-Deno.test("semantic validation checks match guards and arm bodies", () => {
+Deno.test("semantic validation checks case guards and arm bodies", () => {
   const source = parse_source(
-    'match true { | value if 1 => if "bad" { 1 } else { 0 } }\n',
+    'case true of value if 1 => if "bad" then 1 else 0 end;\n',
   );
 
   assert_equals(
     validate_frontend_semantics(source).map((diagnostic) => diagnostic.message),
     [
-      "Match guard expects Bool, got I32",
+      "Case guard expects Bool, got I32",
       "If condition expects Bool, got Text",
-      "Non-exhaustive match requires a wildcard or binding arm",
+      "Non-exhaustive case requires a wildcard or binding arm",
     ],
   );
 });
@@ -178,11 +178,11 @@ Deno.test("semantic validation checks match guards and arm bodies", () => {
 Deno.test("semantic validation preserves compile-time locals in generated functions", () => {
   const source = parse_source(`
 const cast = (value, const target) => @cast(value, target);
-const build = (const target) => {
+const build = (const target) => do
   let captured = target;
   let generated = value => cast(value, captured);
   generated
-};
+end;
 build(I32)
 `);
 
@@ -266,13 +266,12 @@ Deno.test("semantic validation optionally reports unused binding warnings", () =
   }]);
 });
 
-Deno.test("semantic warning liveness traverses compile-time value match patterns", () => {
+Deno.test("semantic warning liveness traverses compile-time value case patterns", () => {
   const source = parse_source(`
 const expected = 1;
-let choose = value => match value {
-  | #(expected) => value
-  | _ => 0
-};
+let choose = value => case value of
+  #(expected) => value,
+  _ => 0;
 choose(1)
 `);
 
@@ -320,7 +319,7 @@ Deno.test("semantic validation scopes lambda binders and const parameters", () =
   const source = parse_source(
     'let flag = "outer";\n' +
       "let constant = (const x) => comptime x + 1;\n" +
-      "let condition = flag => if flag { 1 } else { 0 };\n" +
+      "let condition = flag => if flag then 1 else 0 end;\n" +
       "constant(41) + condition(true)",
   );
   assert_equals(validate_frontend_semantics(source), []);
@@ -358,7 +357,7 @@ Deno.test("semantic validation reports one const capture cause", () => {
   assert_equals(diagnostics[0]?.code, "DUCK2101");
 });
 
-Deno.test("value packs pass and return without becoming stored tuples", () => {
+Deno.test("value packs remain transient when bound to a local name", () => {
   const accepted = parse_source(`
 let swap = (left, right) => (right, left);
 let (first, second) = swap(1, 2);
@@ -367,20 +366,50 @@ let (first, second) = swap(1, 2);
   assert_equals(validate_frontend_semantics(accepted), []);
 
   const block_return = parse_source(`
-let swap = (left, right) => {
+let swap = (left, right) => do
   (right, left)
-};
+end;
 let (first, second) = swap(1, 2);
 [first, second]
 `);
   assert_equals(validate_frontend_semantics(block_return), []);
 
   const stored = parse_source("let pair = (1, 2);\npair");
+  assert_equals(validate_frontend_semantics(stored), []);
+});
+
+Deno.test("template consumers type-check chunks and interpolations", () => {
+  const accepted = parse_source(`
+let choose: [["value: ", ""], [I32]] -> I32 =
+  (strings, values) => values[0];
+choose \`value: {42}\`
+`);
+  assert_equals(validate_frontend_semantics(accepted), []);
+
+  const invalid_value = parse_source(`
+let choose: [[Text, Text], [Bool]] -> Bool =
+  (strings, values) => values[0];
+choose \`value: {42}\`
+`);
+  const value_diagnostics = validate_frontend_semantics(invalid_value);
+
+  assert_equals(value_diagnostics.length, 1);
   assert_equals(
-    validate_frontend_semantics(stored).map((diagnostic) => diagnostic.message),
-    [
-      "Value packs may only be passed, returned, or destructured immediately; use `[...]` to store a tuple",
-    ],
+    value_diagnostics[0]?.message,
+    "Call to choose argument 2 for parameter values expects [Bool], got [I32]",
+  );
+
+  const invalid_chunks = parse_source(`
+let choose: [["amount: ", ""], [I32]] -> I32 =
+  (strings, values) => values[0];
+choose \`value: {42}\`
+`);
+  const chunk_diagnostics = validate_frontend_semantics(invalid_chunks);
+
+  assert_equals(chunk_diagnostics.length, 1);
+  assert_equals(
+    chunk_diagnostics[0]?.message,
+    'Call to choose argument 1 for parameter strings expects ["amount: ", ""], got ["value: ", ""]',
   );
 });
 
@@ -413,20 +442,20 @@ type Counter = struct { .next_value = I32, .end = I32 }
 extend Counter {
   type Item = I32,
   .has_next = counter => counter.next_value < counter.end,
-  .next = counter => {
+  .next = counter => do
     let next = [
       .next_value = counter.next_value + 1,
       .end = counter.end,
     ];
     [counter.next_value, next]
-  },
+  end,
 }
 
 let counter: Counter = [.next_value = 0, .end = 3];
 let total = 0;
-for value in counter {
+for value in counter do
   total = total + value
-}
+end
 total
 `);
 
@@ -445,7 +474,7 @@ extend Counter {
 }
 
 let value: Lookalike = [.next_value = 0, .done = false];
-for member in value { member }
+for member in value do member end
 0
 `);
 

@@ -3,14 +3,14 @@ module () where
 const {} = import "./history_types.duck" ();
 
 type FunctionOutputContentItem =
-  | `InputText Text
-  | `InputImage OutputImage
-  | `InputAudio Text
-  | `EncryptedContent Text
+  | #InputText Text
+  | #InputImage OutputImage
+  | #InputAudio Text
+  | #EncryptedContent Text
 
 type FunctionOutputContentItemNode = [FunctionOutputContentItem, FunctionOutputContentItems]
 type FunctionOutputContentItems =
-  | `Nil Unit
-  | `Cons FunctionOutputContentItemNode
+  | #Nil
+  | #Cons FunctionOutputContentItemNode
 
 return {};

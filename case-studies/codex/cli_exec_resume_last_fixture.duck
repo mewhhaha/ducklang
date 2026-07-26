@@ -6,16 +6,16 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-const empty_args = () => {
-  let values: FixtureArgs = `Nil ();
+const empty_args = () => do
+  let values: FixtureArgs = #Nil;
   values
-};
+end;
 
-const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => {
+const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => do
   let node: ListNode Text = [value, tail];
-  let values: FixtureArgs = `Cons node;
+  let values: FixtureArgs = #Cons node;
   values
-};
+end;
 
 let input: FixtureArgs = prepend_arg("continue", empty_args());
 input = prepend_arg("gpt-test", input)
@@ -26,21 +26,21 @@ input = prepend_arg("--last", input)
 input = prepend_arg("resume", input)
 input = prepend_arg("--json", input)
 let parsed: FixtureResult = parse_exec_options input;
-let score = if let `Ok options = parsed {
-  if let `ExecResume resume = options.command {
-    if let `Some prompt = resume.prompt {
-      if let `None () = resume.session_id {
-        let two_images = if let `Cons first_image_node = resume.images {
+let score = if let #Ok options = parsed then
+  if let #ExecResume resume = options.command then
+    if let #Some prompt = resume.prompt then
+      if let #None = resume.session_id then
+        let two_images = if let #Cons first_image_node = resume.images then
           let [_, remaining_images] = first_image_node;
-          if let `Cons second_image_node = remaining_images {
+          if let #Cons second_image_node = remaining_images then
             let [_, extra_images] = second_image_node;
-            if let `Nil () = extra_images { true } else { false }
-          } else { false }
-        } else { false };
-        if resume.last && prompt == "continue" && two_images && options.json { 1 } else { 0 }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+            if let #Nil = extra_images then true else false end;
+          else false end;
+        else false end;
+        if resume.last && prompt == "continue" && two_images && options.json then 1 else 0 end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

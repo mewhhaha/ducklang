@@ -3,11 +3,11 @@ const {} = import "duck:prelude/effects/defaults" ();
 
 type IntOption = Option I32
 
-let calculate = () => {
-  let wrapped: IntOption = `Some 40;
-  value <- do wrapped
+let calculate = () => do
+  let wrapped: IntOption = #Some 40;
+  value <- perform wrapped
   value + 2
-};
+end;
 
 let result: IntOption = try calculate();
 option_unwrap_or [0, result]

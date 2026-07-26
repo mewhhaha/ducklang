@@ -6,11 +6,11 @@ const {} = import "./tool_types.duck" ();
 type FixtureFacts = ToolSourceFacts
 type FixtureDefinitions = ToolSourceDefinitions
 
-const fixture_facts: () -> FixtureFacts = () => {
+const fixture_facts: () -> FixtureFacts = () => do
   [
     .guardian_reviewer = false,
-    .environment = `SingleEnvironment (),
-    .shell = `LegacyShell (),
+    .environment = #SingleEnvironment,
+    .shell = #LegacyShell,
     .has_mcp_servers = false,
     .deferred_executor = false,
     .request_user_input = false,
@@ -18,21 +18,21 @@ const fixture_facts: () -> FixtureFacts = () => {
     .token_budget = false,
     .current_time = false,
     .sleep_tool = false,
-    .plugin_install = `NoPluginInstall (),
+    .plugin_install = #NoPluginInstall,
     .apply_patch = false,
     .test_sync = false,
-    .collaboration = `CollaborationV1 (),
+    .collaboration = #CollaborationV1,
     .collaboration_direct_model_only = false,
     .namespace_tools = true,
     .collaboration_namespace = "",
     .tool_search = true,
     .agent_jobs = true,
     .agent_job_worker = false]
-};
+end;
 
-let configured_runtimes: FixtureDefinitions = `Nil ();
-let extension_runtimes: FixtureDefinitions = `Nil ();
-let dynamic_runtimes: FixtureDefinitions = `Nil ();
+let configured_runtimes: FixtureDefinitions = #Nil;
+let extension_runtimes: FixtureDefinitions = #Nil;
+let dynamic_runtimes: FixtureDefinitions = #Nil;
 let current = tool_source_definitions(
   fixture_facts(),
   configured_runtimes,
@@ -43,28 +43,34 @@ let trace = "";
 let deferred_count = 0;
 let done = false;
 
-loop {
-  if let `Cons node = current {
+loop do
+  if let #Cons node = current then
     let [definition, tail] = node;
     let [[namespace, local_name], exposure, _, _, _, _] = definition;
     trace = text_append [
       text_append [text_append [text_append [trace, namespace], "."], local_name],
       "|",
     ]
-    if let `Deferred () = exposure {
+    if let #Deferred = exposure then
       deferred_count = deferred_count + 1
-    }
+    end;
     current = tail
-  } else {
+  else
     done = true
-  }
+  end;
 
-  if done { break; }
-}
+  if done then
+    break;
+  end;
+end;
 
 let expected =
   ".shell_command|.update_plan|.view_image|multi_agent_v1.spawn_agent|multi_agent_v1.send_input|multi_agent_v1.resume_agent|multi_agent_v1.wait_agent|multi_agent_v1.close_agent|.spawn_agents_on_csv|";
 let score = 0;
-if trace == expected { score = score + 1 }
-if deferred_count == 5 { score = score + 10 }
+if trace == expected then
+  score = score + 1
+end;
+if deferred_count == 5 then
+  score = score + 10
+end;
 return { .score = score };

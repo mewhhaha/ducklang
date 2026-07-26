@@ -10,26 +10,26 @@ type WireResponseRequestId = AppServerRequestId
 const encode_response: [WireResponseRequestId, WireResponseJson] -> Text = (
   id: WireResponseRequestId,
   result: WireResponseJson,
-) => {
+) => do
   let fields = json_object_empty();
   fields = json_object_prepend("result", result, fields)
   fields = json_object_prepend("id", id, fields)
   encode_json(json_object fields)
-};
+end;
 
 const encode_error: [WireResponseRequestId, Text, Text] -> Text = (
   id: WireResponseRequestId,
   code: Text,
   message: Text,
-) => {
+) => do
   let error_fields = json_object_empty();
-  error_fields = json_object_prepend("message", `String message, error_fields)
-  error_fields = json_object_prepend("code", `Number code, error_fields)
+  error_fields = json_object_prepend("message", #String message, error_fields)
+  error_fields = json_object_prepend("code", #Number code, error_fields)
   let fields = json_object_empty();
   fields = json_object_prepend("error", json_object error_fields, fields)
   fields = json_object_prepend("id", id, fields)
   encode_json(json_object fields)
-};
+end;
 
 return {
   .encode_response,

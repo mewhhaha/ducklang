@@ -15,9 +15,9 @@ type FixtureThresholdNode = RolloutBudgetThresholdNode
 type FixtureThresholds = RolloutBudgetThresholds
 type FixtureUsage = RolloutBudgetTokenUsage
 
-let thresholds: FixtureThresholds = `Nil ();
+let thresholds: FixtureThresholds = #Nil;
 let threshold_node: FixtureThresholdNode = [50, thresholds];
-thresholds = `Cons threshold_node
+thresholds = #Cons threshold_node
 let config: FixtureConfig = [
   .limit_tokens = 100,
   .reminder_at_remaining_tokens = thresholds,
@@ -34,11 +34,15 @@ let ignored_usage: FixtureUsage = [
 ];
 let ignored = record_rollout_budget_usage(budget, ignored_usage);
 budget = ignored.budget
-if !(ignored.exhausted) { score = score + 1 }
-if let `None () = pending_rollout_budget_reminder(&budget, &"root", &"window-1") { score = score + 10 }
+if !(ignored.exhausted) then
+  score = score + 1
+end;
+if let #None = pending_rollout_budget_reminder(&budget, &"root", &"window-1") then
+  score = score + 10
+end;
 
 budget = configure_rollout_budget(budget, config)
-let replacement_thresholds: FixtureThresholds = `Nil ();
+let replacement_thresholds: FixtureThresholds = #Nil;
 let replacement: FixtureConfig = [
   .limit_tokens = 10,
   .reminder_at_remaining_tokens = replacement_thresholds,
@@ -47,26 +51,34 @@ let replacement: FixtureConfig = [
 ];
 budget = configure_rollout_budget(budget, replacement)
 
-let first_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 40, .output_tokens = 15];
+let first_usage: FixtureUsage =
+  [.input_tokens = 60, .cached_input_tokens = 40, .output_tokens = 15];
 let first = record_rollout_budget_usage(budget, first_usage);
 budget = first.budget
-if !(first.exhausted) {
-  if let `Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-1") {
-    if reminder.remaining_tokens == 60 { score = score + 100 }
-  }
-}
+if !(first.exhausted) then
+  if let #Some reminder = pending_rollout_budget_reminder(&budget, &"root", &"window-1") then
+    if reminder.remaining_tokens == 60 then
+      score = score + 100
+    end;
+  end;
+end;
 
-let final_usage: FixtureUsage = [.input_tokens = 60, .cached_input_tokens = 80, .output_tokens = 30];
+let final_usage: FixtureUsage =
+  [.input_tokens = 60, .cached_input_tokens = 80, .output_tokens = 30];
 let final = record_rollout_budget_usage(budget, final_usage);
 budget = final.budget
-if final.exhausted { score = score + 1000 }
+if final.exhausted then
+  score = score + 1000
+end;
 
 let later_usage: FixtureUsage = [.input_tokens = 0, .cached_input_tokens = 0, .output_tokens = -5];
 let later = record_rollout_budget_usage(budget, later_usage);
-if later.exhausted {
-  if let `Some reminder = pending_rollout_budget_reminder(&later.budget, &"root", &"window-1") {
-    if reminder.remaining_tokens == 0 { score = score + 10000 }
-  }
-}
+if later.exhausted then
+  if let #Some reminder = pending_rollout_budget_reminder(&later.budget, &"root", &"window-1") then
+    if reminder.remaining_tokens == 0 then
+      score = score + 10000
+    end;
+  end;
+end;
 
 return { .score = score };

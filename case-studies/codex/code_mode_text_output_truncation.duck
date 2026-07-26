@@ -19,39 +19,41 @@ type TextTruncationItems = FunctionOutputContentItems
 const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncationItems = (
   maximum_tokens,
   items,
-) => {
+) => do
   let current = items;
   let combined = "";
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
-      if let `InputText text = item {
-        if combined != "" {
+      if let #InputText text = item then
+        if combined != "" then
           combined = text_append [combined, "\n"]
-        }
+        end;
         combined = text_append [combined, text]
-      }
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   let within_budget = false;
-  if maximum_tokens >= 536870912i64 {
+  if maximum_tokens >= 536870912i64 then
     within_budget = true
-  } else {
+  else
     let combined_bytes = unsafe_i64_extend_i32_signed(text_length combined);
     within_budget = combined_bytes <= maximum_tokens * 4i64
-  }
+  end;
 
-  if within_budget {
+  if within_budget then
     items
-  } else {
+  else
     let original_tokens = text_approx_token_count combined;
     let total_lines = text_line_count combined;
     let truncated = text_truncate_middle_tokens(combined, unsafe_i32_wrap_i64 maximum_tokens);
@@ -60,10 +62,10 @@ const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncati
     let output_lines = text_append [")\nTotal output lines: ", line_count];
     let token_count = text_append [format_i32 original_tokens, output_lines];
     let warning = text_append ["Warning: truncated output (original token count: ", token_count];
-    let warning_item: TextTruncationItem = `InputText warning;
-    let warning_node: TextTruncationItemNode = [warning_item, `Nil ()];
-    `Cons warning_node
-  }
-};
+    let warning_item: TextTruncationItem = #InputText warning;
+    let warning_node: TextTruncationItemNode = [warning_item, #Nil];
+    #Cons warning_node
+  end;
+end;
 
 return { .truncate_code_mode_text_output };

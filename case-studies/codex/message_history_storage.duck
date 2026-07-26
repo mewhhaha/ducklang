@@ -12,84 +12,100 @@ type MessageHistoryStorageAppendPlan = MessageHistoryAppendPlan
 type MessageHistoryStorageByteLimit = MessageHistoryByteLimit
 type MessageHistoryStorageTrimPlan = MessageHistoryTrimPlan
 
-const copy_message_history_byte_limit: &MessageHistoryStorageByteLimit -> MessageHistoryStorageByteLimit = (
-    max_bytes: &MessageHistoryStorageByteLimit ) => {
-    if let `Some limit = max_bytes { `Some limit } else { `None () }
-  };
+const copy_message_history_byte_limit: &MessageHistoryStorageByteLimit -> MessageHistoryStorageByteLimit =
+  (
+    max_bytes: &MessageHistoryStorageByteLimit) => do
+      if let #Some limit = max_bytes then #Some limit else #None end;
+    end;
 
-const plan_message_history_append: [&MessageHistoryStorageEntry, &MessageHistoryStorageConfig] -> MessageHistoryStorageAppendPlan = (
+const plan_message_history_append: [&MessageHistoryStorageEntry, &MessageHistoryStorageConfig] -> MessageHistoryStorageAppendPlan =
+  (
     entry: &MessageHistoryStorageEntry,
     config: &MessageHistoryStorageConfig,
-  ) => {
-    if let `SaveNone () = config.persistence {
-      `SkipHistoryAppend ()
-    } else {
+  ) => do
+    if let #SaveNone = config.persistence then
+      #SkipHistoryAppend
+    else
       let append: MessageHistoryStorageAppend = [
         .line = encode_message_history_line entry,
         .max_bytes = copy_message_history_byte_limit(&config.max_bytes),
       ];
-      `AppendHistory append;
-    }
-  };
+      #AppendHistory append;
+    end;
+  end;
 
-const newest_history_row_start: Text -> I32 = (contents: Text) => {
+const newest_history_row_start: Text -> I32 = (contents: Text) => do
   let length = text_length contents;
   let start = 0;
   let search_from = 0;
 
-  loop {
+  loop do
     let newline = text_find_from [contents, "\n", search_from];
-    if newline < 0 { break; }
-    if newline + 1 < length { start = newline + 1 }
+    if newline < 0 then
+      break;
+    end;
+    if newline + 1 < length then
+      start = newline + 1
+    end;
     search_from = newline + 1
-  }
+  end;
 
   start
-};
+end;
 
-const plan_message_history_trim: [Text, MessageHistoryStorageByteLimit] -> MessageHistoryStorageTrimPlan = (
+const plan_message_history_trim: [Text, MessageHistoryStorageByteLimit] -> MessageHistoryStorageTrimPlan =
+  (
     contents: Text,
     max_bytes: MessageHistoryStorageByteLimit,
-  ) => {
-    if let `None () = max_bytes {
-      `KeepHistory ()
-    } else if let `Some limit = max_bytes {
+  ) => do
+    if let #None = max_bytes then
+      #KeepHistory
+    else let #Some limit = max_bytes then
       let length = text_length contents;
-      if limit <= 0 || length <= limit {
-        `KeepHistory ()
-      } else {
+      if limit <= 0 || length <= limit then
+        #KeepHistory
+      else
         let newest_start = newest_history_row_start contents;
         let newest_length = length - newest_start;
         let target = limit * 4 / 5;
-        if target < 1 { target = 1 }
-        if target < newest_length { target = newest_length }
+        if target < 1 then
+          target = 1
+        end;
+        if target < newest_length then
+          target = newest_length
+        end;
 
         let drop_bytes = 0;
-        loop {
-          if length - drop_bytes <= target || drop_bytes >= newest_start { break; }
+        loop do
+          if length - drop_bytes <= target || drop_bytes >= newest_start then
+            break;
+          end;
           let newline = text_find_from [contents, "\n", drop_bytes];
-          if newline < 0 { break; }
+          if newline < 0 then
+            break;
+          end;
           drop_bytes = newline + 1
-        }
+        end;
 
-        if drop_bytes > 0 {
-          `RewriteHistory (text_slice [contents, drop_bytes, length])
-        } else {
-          `KeepHistory ()
-        }
-      }
-    } else {
-      `KeepHistory ()
-    }
-  };
+        if drop_bytes > 0 then
+          #RewriteHistory (text_slice [contents, drop_bytes, length])
+        else
+          #KeepHistory
+        end;
+      end;
+    else
+      #KeepHistory
+    end;
+  end;
 
-const plan_message_history_after_append: [Text, &MessageHistoryStorageAppend] -> MessageHistoryStorageTrimPlan = (
+const plan_message_history_after_append: [Text, &MessageHistoryStorageAppend] -> MessageHistoryStorageTrimPlan =
+  (
     contents: Text,
     append: &MessageHistoryStorageAppend,
-  ) => {
+  ) => do
     let combined = text_append [contents, text_copy(&append.line)];
     plan_message_history_trim(combined, copy_message_history_byte_limit(&append.max_bytes))
-  };
+  end;
 
 return {
   .plan_message_history_append,

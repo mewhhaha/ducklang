@@ -173,12 +173,10 @@ export function format_pattern(
   }
 
   if (pattern.tag === "union_case") {
-    let text = "`" + pattern.name;
+    let text = "#" + pattern.name;
 
-    if (pattern.value) {
+    if (pattern.value && pattern.value.tag !== "unit") {
       text += " " + format_pattern(pattern.value, format_expr);
-    } else {
-      text += " ()";
     }
 
     return text;

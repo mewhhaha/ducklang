@@ -12,16 +12,16 @@ const decisions = comptime list FixtureDecision;
 
 let score: I32 = 0;
 let permission_values: FixtureDecisions = decisions.prepend(
-  `Allow (),
-  decisions.prepend(`Deny "blocked", decisions.singleton(`Allow ())),
+  #Allow,
+  decisions.prepend(#Deny "blocked", decisions.singleton(#Allow)),
 );
 
-if let `Some resolved = resolve_permission_decisions permission_values {
-  if let `Deny message = resolved {
-    if message == "blocked" {
+if let #Some resolved = resolve_permission_decisions permission_values then
+  if let #Deny message = resolved then
+    if message == "blocked" then
       score = score + 1
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

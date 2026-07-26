@@ -12,29 +12,31 @@ const fixture_texts = comptime list Text;
 
 let score: I32 = 0;
 
-let session_context: FixtureResult = [`None (), `Some 0, "session context", ""];
+let session_context: FixtureResult = [#None, #Some 0, "session context", ""];
 let [session_status, _, _, session_contexts, _, _, _] = evaluate_hook_command(
-  `SessionStart (),
+  #SessionStart,
   session_context,
 );
-if let `Completed () = session_status {
-  if fixture_texts.nth_or("", 0, session_contexts) == "session context" { score = score + 1 }
-}
+if let #Completed = session_status then
+  if fixture_texts.nth_or("", 0, session_contexts) == "session context" then
+    score = score + 1 end;
+end;
 
 let subagent_continue_false: FixtureResult = [
-  `None (),
-  `Some 0,
+  #None,
+  #Some 0,
   "{\"continue\":false,\"stopReason\":\"ignored\",\"hookSpecificOutput\":{\"hookEventName\":\"SubagentStart\",\"additionalContext\":\"child context\"}}",
   "",
 ];
 let [subagent_status, _, subagent_action, subagent_contexts, _, _, _] = evaluate_hook_command(
-  `SubagentStart (),
+  #SubagentStart,
   subagent_continue_false,
 );
-if let `Completed () = subagent_status {
-  if action_is_continue subagent_action {
-    if fixture_texts.nth_or("", 0, subagent_contexts) == "child context" { score = score + 1 }
-  }
-}
+if let #Completed = subagent_status then
+  if action_is_continue subagent_action then
+    if fixture_texts.nth_or("", 0, subagent_contexts) == "child context" then
+      score = score + 1 end;
+  end;
+end;
 
 return { .score = score };

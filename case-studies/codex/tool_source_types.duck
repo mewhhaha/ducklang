@@ -3,24 +3,24 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type ToolSourceEnvironment =
-  | `NoEnvironment Unit
-  | `SingleEnvironment Unit
-  | `MultipleEnvironments Unit
+  | #NoEnvironment
+  | #SingleEnvironment
+  | #MultipleEnvironments
 
 type ToolSourceShell =
-  | `UnifiedExecShell Unit
-  | `LegacyShell Unit
-  | `DisabledShell Unit
+  | #UnifiedExecShell
+  | #LegacyShell
+  | #DisabledShell
 
 type ToolSourcePluginInstall =
-  | `NoPluginInstall Unit
-  | `RecommendPluginInstall Unit
-  | `ListPluginInstall Unit
+  | #NoPluginInstall
+  | #RecommendPluginInstall
+  | #ListPluginInstall
 
 type ToolSourceCollaboration =
-  | `CollaborationDisabled Unit
-  | `CollaborationV1 Unit
-  | `CollaborationV2 Unit
+  | #CollaborationDisabled
+  | #CollaborationV1
+  | #CollaborationV2
 
 type ToolSourceFacts = struct {
   .guardian_reviewer = Bool,

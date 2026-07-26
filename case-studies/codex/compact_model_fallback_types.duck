@@ -4,14 +4,14 @@ const { .struct } = import "duck:prelude/types" ();
 const {} = import "./compaction_types.duck" ();
 
 type CompactionModelError =
-  | `InvalidRequest Text
-  | `UnexpectedStatus Text
-  | `ContextWindowExceeded Unit
-  | `UsageLimitReached Text
-  | `ServerOverloaded Unit
-  | `InternalServerError Unit
-  | `RetryLimit Text
-  | `Other Text
+  | #InvalidRequest Text
+  | #UnexpectedStatus Text
+  | #ContextWindowExceeded
+  | #UsageLimitReached Text
+  | #ServerOverloaded
+  | #InternalServerError
+  | #RetryLimit Text
+  | #Other Text
 
 type CompactionFallbackTextOption = Option Text
 

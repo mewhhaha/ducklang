@@ -8,26 +8,36 @@ type FixtureResult = CodeModeExecSourceResult
 let score = 0;
 
 let blank: FixtureResult = parse_code_mode_exec_source " 　\n";
-if let `CodeModeExecSourceError message = blank {
-  if message == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." { score = score + 1 }
-}
+if let #CodeModeExecSourceError message = blank then
+  if message
+    == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." then
+      score = score + 1
+    end;
+end;
 
 let no_body: FixtureResult = parse_code_mode_exec_source "// @exec: {}\n \t";
-if let `CodeModeExecSourceError message = no_body {
-  if message == "exec pragma must be followed by JavaScript source on subsequent lines" { score = score + 10 }
-}
+if let #CodeModeExecSourceError message = no_body then
+  if message == "exec pragma must be followed by JavaScript source on subsequent lines" then
+    score = score + 10
+  end;
+end;
 
 let empty_directive: FixtureResult = parse_code_mode_exec_source "// @exec: \ntext('hi')";
-if let `CodeModeExecSourceError message = empty_directive {
-  if message == "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`" { score = score + 100 }
-}
+if let #CodeModeExecSourceError message = empty_directive then
+  if message
+    == "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`" then
+      score = score + 100
+    end;
+end;
 
 let malformed_json: FixtureResult = parse_code_mode_exec_source "// @exec: {\ntext('hi')";
-if let `CodeModeExecSourceError message = malformed_json {
+if let #CodeModeExecSourceError message = malformed_json then
   if text_starts_with [
     message,
     "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens` at byte ",
-  ] { score = score + 1000 }
-}
+  ] then
+    score = score + 1000
+  end;
+end;
 
 return { .score = score };

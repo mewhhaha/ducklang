@@ -25,181 +25,183 @@ const texts = comptime list Text;
 
 const append_text = (left: Text, right: Text) => text_append [left, right];
 
-const unquote_yaml_scalar = (value: Text) => {
+const unquote_yaml_scalar = (value: Text) => do
   let trimmed = text_trim_ascii_whitespace value;
 
-  if text_length trimmed >= 2 {
+  if text_length trimmed >= 2 then
     let first = text_get [trimmed, 0];
     let last = text_get [trimmed, text_length trimmed - 1];
 
-    if first == last && (first == 34 || first == 39) {
+    if first == last && (first == 34 || first == 39) then
       trimmed = text_slice [trimmed, 1, text_length trimmed - 1]
-    }
-  }
+    end;
+  end;
 
   text_collapse_ascii_whitespace trimmed
-};
+end;
 
 let rec yaml_scalar_from: [Text, Text, I32] -> MetadataTextOption = (
   yaml: Text,
   key: Text,
   start: I32,
-) => {
-  if start >= text_length yaml {
-    `None ()
-  } else {
+) => do
+  if start >= text_length yaml then
+    #None
+  else
     let newline = text_find_from [yaml, "\n", start];
-    let end = if newline < 0 { text_length yaml } else { newline };
-    let line = text_trim_ascii_whitespace(text_slice [yaml, start, end]);
+    let line_end = if newline < 0 then text_length yaml else newline end;
+    let line = text_trim_ascii_whitespace(text_slice [yaml, start, line_end]);
     let prefix = append_text(key, ":");
 
-    if text_starts_with [line, prefix] {
+    if text_starts_with [line, prefix] then
       let value = unquote_yaml_scalar(text_slice [line, text_length prefix, text_length line]);
-      if value == "" { `None () } else { `Some value }
-    } else if newline < 0 {
-      `None ()
-    } else {
+      if value == "" then #None else #Some value end;
+    else newline < 0 then
+      #None
+    else
       yaml_scalar_from(yaml, key, newline + 1)
-    }
-  }
-};
+    end;
+  end;
+end;
 
 const yaml_scalar = (yaml: Text, key: Text) => yaml_scalar_from(yaml, key, 0);
 
-const frontmatter = (contents: Text) => {
-  if text_starts_with [contents, "---\n"] {
+const frontmatter = (contents: Text) => do
+  if text_starts_with [contents, "---\n"] then
     let closing = text_find_from [contents, "\n---", 4];
-    if closing >= 0 { `Some (text_slice [contents, 4, closing]) } else { `None () }
-  } else {
-    `None ()
-  }
-};
+    if closing >= 0 then #Some (text_slice [contents, 4, closing]) else #None end;
+  else
+    #None
+  end;
+end;
 
-const product_name = (product: MetadataProduct) => {
-  if let `Chatgpt () = product {
+const product_name = (product: MetadataProduct) => do
+  if let #Chatgpt = product then
     "chatgpt"
-  } else if let `Codex () = product {
+  else let #Codex = product then
     "codex"
-  } else {
+  else
     "atlas"
-  }
-};
+  end;
+end;
 
 let rec yaml_inline_list_contains_from: [Text, Text, I32] -> Bool = (
   value: Text,
   expected: Text,
   start: I32,
-) => {
+) => do
   let comma = text_find_from [value, ",", start];
-  let end = if comma < 0 { text_length value } else { comma };
-  let candidate = unquote_yaml_scalar(text_slice [value, start, end]);
+  let entry_end = if comma < 0 then text_length value else comma end;
+  let candidate = unquote_yaml_scalar(text_slice [value, start, entry_end]);
 
   if text_contains_ascii_case_insensitive(candidate,
-    expected) && text_length candidate == text_length expected {
+    expected) && text_length candidate == text_length expected then
       true
-    } else if comma < 0 {
+    else comma < 0 then
       false
-    } else {
+    else
       yaml_inline_list_contains_from(value, expected, comma + 1)
-    }
-};
+    end;
+end;
 
-const yaml_inline_list_contains = (value: Text, expected: Text) => {
+const yaml_inline_list_contains = (value: Text, expected: Text) => do
   let trimmed = text_trim_ascii_whitespace value;
   let normalized = if text_length trimmed >= 2 && text_get [trimmed, 0] == 91 && text_get [
     trimmed,
     text_length trimmed - 1,
-  ] == 93 {
+  ] == 93 then
     text_slice [trimmed, 1, text_length trimmed - 1]
-  } else {
+  else
     trimmed
-  };
+  end;
 
   yaml_inline_list_contains_from(normalized, expected, 0)
-};
+end;
 
-const parse_skill_policy = (metadata_yaml: MetadataTextOption) => {
-  let implicit: MetadataBoolOption = if let `Some yaml = metadata_yaml {
-    if let `Some value = yaml_scalar(yaml, "allow_implicit_invocation") {
-      if value == "true" {
-        `Some true
-      } else if value == "false" {
-        `Some false
-      } else {
-        `None ()
-      }
-    } else {
-      `None ()
-    }
-  } else {
-    `None ()
-  };
+const parse_skill_policy = (metadata_yaml: MetadataTextOption) => do
+  let implicit: MetadataBoolOption = if let #Some yaml = metadata_yaml then
+    if let #Some value = yaml_scalar(yaml, "allow_implicit_invocation") then
+      if value == "true" then
+        #Some true
+      else value == "false" then
+        #Some false
+      else
+        #None
+      end;
+    else
+      #None
+    end;
+  else
+    #None
+  end;
 
-  let products: MetadataTexts = if let `Some yaml = metadata_yaml {
-    if let `Some value = yaml_scalar(yaml, "products") {
+  let products: MetadataTexts = if let #Some yaml = metadata_yaml then
+    if let #Some value = yaml_scalar(yaml, "products") then
       let found: MetadataTexts = texts.empty();
 
-      if yaml_inline_list_contains(value, "chatgpt") {
+      if yaml_inline_list_contains(value, "chatgpt") then
         found = texts.prepend("chatgpt", found)
-      }
+      end;
 
-      if yaml_inline_list_contains(value, "codex") {
+      if yaml_inline_list_contains(value, "codex") then
         found = texts.prepend("codex", found)
-      }
+      end;
 
-      if yaml_inline_list_contains(value, "atlas") {
+      if yaml_inline_list_contains(value, "atlas") then
         found = texts.prepend("atlas", found)
-      }
+      end;
 
       texts.reverse found
-    } else {
+    else
       texts.empty()
-    }
-  } else {
+    end;
+  else
     texts.empty()
-  };
+  end;
 
   [implicit, products] as MetadataPolicy
-};
+end;
 
-const policy_allows_product = (policy: MetadataPolicy, product: MetadataProductOption) => {
+const policy_allows_product = (policy: MetadataPolicy, product: MetadataProductOption) => do
   let [_, restricted_products] = policy;
 
-  if texts.length(restricted_products) == 0 {
+  if texts.length(restricted_products) == 0 then
     true
-  } else if let `Some requested = product {
+  else let #Some requested = product then
     let current = restricted_products;
     let expected = product_name requested;
     let allowed = false;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [candidate, tail] = node;
 
-        if candidate == expected {
+        if candidate == expected then
           allowed = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
     allowed
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const policy_allows_implicit_invocation = (policy: MetadataPolicy) => {
+const policy_allows_implicit_invocation = (policy: MetadataPolicy) => do
   let [allowed, _] = policy;
-  if let `Some value = allowed { value } else { true }
-};
+  if let #Some value = allowed then value else true end;
+end;
 
 return {
   .frontmatter,

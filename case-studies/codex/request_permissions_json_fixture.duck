@@ -7,44 +7,48 @@ let document =
   "{\"environmentId\":\"remote\",\"reason\":\"read inputs\",\"permissions\":{\"network\":{\"enabled\":false},\"file_system\":{\"read\":[\"docs\"],\"write\":[\"/tmp/output\"]}}}";
 let score = 0;
 
-if let `ParsedEnvironmentId environment_id = parse_request_permissions_environment_id document {
-  if let `Some value = environment_id {
-    if value == "remote" { score = score + 1 }
-  }
-}
+if let #ParsedEnvironmentId environment_id = parse_request_permissions_environment_id document then
+  if let #Some value = environment_id then
+    if value == "remote" then
+      score = score + 1
+    end;
+  end;
+end;
 
-if let `Parsed args = parse_request_permissions_args(document, "/workspace") {
-  if let `Some environment_id = args.environment_id {
-    if environment_id == "remote" {
-      if let `Some reason = args.reason {
-        if reason == "read inputs" {
-          if let `NetworkPresent network = args.permissions.network {
-            if let `Some enabled = network.enabled {
-              if !(enabled) {
-                if let `FileSystemPresent file_system = args.permissions.file_system {
-                  if let `Cons read_node = file_system.entries {
+if let #Parsed args = parse_request_permissions_args(document, "/workspace") then
+  if let #Some environment_id = args.environment_id then
+    if environment_id == "remote" then
+      if let #Some reason = args.reason then
+        if reason == "read inputs" then
+          if let #NetworkPresent network = args.permissions.network then
+            if let #Some enabled = network.enabled then
+              if !(enabled) then
+                if let #FileSystemPresent file_system = args.permissions.file_system then
+                  if let #Cons read_node = file_system.entries then
                     let [read, tail] = read_node;
-                    if read.path == "/workspace/docs" {
-                      if let `Read () = read.access {
-                        if let `Cons write_node = tail {
-                          let [write, end] = write_node;
-                          if write.path == "/tmp/output" {
-                            if let `Write () = write.access {
-                              if let `Nil () = end { score = score + 10 }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+                    if read.path == "/workspace/docs" then
+                      if let #Read = read.access then
+                        if let #Cons write_node = tail then
+                          let [write, finish] = write_node;
+                          if write.path == "/tmp/output" then
+                            if let #Write = write.access then
+                              if let #Nil = finish then
+                                score = score + 10
+                              end;
+                            end;
+                          end;
+                        end;
+                      end;
+                    end;
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

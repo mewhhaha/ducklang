@@ -13,28 +13,28 @@ let plan_request_user_input_call: [Bool, RequestCallMode, Bool, Text] -> Request
   mode: RequestCallMode,
   default_mode_enabled: Bool,
   arguments: Text,
-) => {
-  if !(is_root_thread) {
-    `RejectRequest "request_user_input can only be used by the root thread"
-  } else if let `Unavailable message = request_user_input_availability(mode, default_mode_enabled) {
-    `RejectRequest message
-  } else {
+) => do
+  if !(is_root_thread) then
+    #RejectRequest "request_user_input can only be used by the root thread"
+  else let #Unavailable message = request_user_input_availability(mode, default_mode_enabled) then
+    #RejectRequest message
+  else
     let parsed = parse_request_user_input_args arguments;
-    if let `Parsed args = parsed {
+    if let #Parsed args = parsed then
       let normalization = normalize_request_user_input_args args;
-      if let `Normalized normalized = normalization {
-        `PromptUser normalized
-      } else if let `Invalid message = normalization {
-        `RejectRequest message
-      } else {
-        `RejectRequest "request_user_input normalization produced no result"
-      }
-    } else if let `ParseFailed message = parsed {
-      `RejectRequest message
-    } else {
-      `RejectRequest "request_user_input argument parsing produced no result"
-    }
-  }
-};
+      if let #Normalized normalized = normalization then
+        #PromptUser normalized
+      else let #Invalid message = normalization then
+        #RejectRequest message
+      else
+        #RejectRequest "request_user_input normalization produced no result"
+      end;
+    else let #ParseFailed message = parsed then
+      #RejectRequest message
+    else
+      #RejectRequest "request_user_input argument parsing produced no result"
+    end;
+  end;
+end;
 
 return { .plan_request_user_input_call };

@@ -9,78 +9,85 @@ const plan_agent_message: [AgentToolContext, AgentToolMessageArguments, Bool] ->
   context,
   arguments,
   followup,
-) => {
-  let validated = validate_collab_input(`Some arguments.message, -1);
-  if let `InputRejected message = validated { return `AgentToolRejected message; }
+) => do
+  let validated = validate_collab_input(#Some arguments.message, -1);
+  if let #InputRejected message = validated then
+    return #AgentToolRejected message;
+  end;
 
   let target = resolve_agent_path(context.current_path, arguments.target);
-  if let `InvalidPath message = target { return `AgentToolRejected message; }
-  if let `Path path = target {
-    if followup && path == "/root" { return `AgentToolRejected "Follow-up tasks can't target the root agent"; }
-    if followup { `FollowupTaskPlanned [path, arguments.message] } else { `SendMessagePlanned [
+  if let #InvalidPath message = target then
+    return #AgentToolRejected message;
+  end;
+  if let #Path path = target then
+    if followup && path == "/root" then
+      return #AgentToolRejected "Follow-up tasks can't target the root agent";
+    end;
+    if followup then #FollowupTaskPlanned [path, arguments.message] else #SendMessagePlanned [
       path,
       arguments.message,
-    ] }
-  } else {
-    `AgentToolRejected "agent target resolution produced no path"
-  }
-};
+    ] end;
+  else
+    #AgentToolRejected "agent target resolution produced no path"
+  end;
+end;
 
 const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> AgentToolPlan = (
   context,
   operation,
-) => {
-  if !(context.v2_enabled) { return `AgentToolRejected "collaboration tools require multi-agent V2";
-  }
+) => do
+  if !(context.v2_enabled) then
+    return #AgentToolRejected "collaboration tools require multi-agent V2";
+  end;
 
-  if let `SendMessageCall arguments = operation {
+  if let #SendMessageCall arguments = operation then
     plan_agent_message(context, arguments, false)
-  } else if let `FollowupTaskCall arguments = operation {
+  else let #FollowupTaskCall arguments = operation then
     plan_agent_message(context, arguments, true)
-  } else if let `InterruptAgentCall target = operation {
+  else let #InterruptAgentCall target = operation then
     let resolved = resolve_agent_path(context.current_path, target);
-    if let `Path path = resolved {
-      if path == "/root" {
-        `AgentToolRejected "root is not a spawned agent"
-      } else if path == context.current_path {
-        `AgentToolRejected "an agent cannot interrupt itself; return your result and let the parent interrupt you if needed"
-      } else {
-        `InterruptAgentPlanned path
-      }
-    } else if let `InvalidPath message = resolved {
-      `AgentToolRejected message
-    } else {
-      `AgentToolRejected "agent interrupt target resolution produced no path"
-    }
-  } else if let `WaitAgentCall timeout = operation {
+    if let #Path path = resolved then
+      if path == "/root" then
+        #AgentToolRejected "root is not a spawned agent"
+      else path == context.current_path then
+        #AgentToolRejected "an agent cannot interrupt itself; return your result and let the parent interrupt you if needed"
+      else
+        #InterruptAgentPlanned path
+      end;
+    else let #InvalidPath message = resolved then
+      #AgentToolRejected message
+    else
+      #AgentToolRejected "agent interrupt target resolution produced no path"
+    end;
+  else let #WaitAgentCall timeout = operation then
     let normalized = normalize_wait_timeout timeout;
-    if let `Timeout timeout_ms = normalized {
-      `WaitAgentPlanned timeout_ms
-    } else if let `InvalidTimeout message = normalized {
-      `AgentToolRejected message
-    } else {
-      `AgentToolRejected "agent wait timeout normalization produced no result"
-    }
-  } else if let `ListAgentsCall prefix = operation {
-    if let `Some requested_prefix = prefix {
-      if text_trim_ascii_whitespace requested_prefix == "" {
-        `AgentToolRejected "path_prefix must not be empty"
-      } else {
+    if let #Timeout timeout_ms = normalized then
+      #WaitAgentPlanned timeout_ms
+    else let #InvalidTimeout message = normalized then
+      #AgentToolRejected message
+    else
+      #AgentToolRejected "agent wait timeout normalization produced no result"
+    end;
+  else let #ListAgentsCall prefix = operation then
+    if let #Some requested_prefix = prefix then
+      if text_trim_ascii_whitespace requested_prefix == "" then
+        #AgentToolRejected "path_prefix must not be empty"
+      else
         let resolved = resolve_agent_path(context.current_path, requested_prefix);
-        if let `Path path = resolved {
-          `ListAgentsPlanned (`Some path)
-        } else if let `InvalidPath message = resolved {
-          `AgentToolRejected message
-        } else {
-          `AgentToolRejected "agent list prefix resolution produced no path"
-        }
-      }
-    } else {
-      `ListAgentsPlanned (`None ())
-    }
-  } else {
-    `AgentToolRejected "collaboration handler received unsupported payload"
-  }
-};
+        if let #Path path = resolved then
+          #ListAgentsPlanned (#Some path)
+        else let #InvalidPath message = resolved then
+          #AgentToolRejected message
+        else
+          #AgentToolRejected "agent list prefix resolution produced no path"
+        end;
+      end;
+    else
+      #ListAgentsPlanned (#None)
+    end;
+  else
+    #AgentToolRejected "collaboration handler received unsupported payload"
+  end;
+end;
 
 return { .plan_agent_control_call };

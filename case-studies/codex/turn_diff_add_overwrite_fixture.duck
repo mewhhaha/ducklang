@@ -10,27 +10,30 @@ type FixtureFileMutation = TurnDiffFileMutation
 type FixtureTextOption = TurnDiffTextOption
 type FixtureAdd = TurnDiffAdd
 
-const verify_turn_diff_add_overwrite_fixture: () -> I32 = () => {
-  let overwritten: FixtureTextOption = `Some "before\n";
+const verify_turn_diff_add_overwrite_fixture: () -> I32 = () => do
+  let overwritten: FixtureTextOption = #Some "before\n";
   let addition: FixtureAdd = [.content = "after\n", .overwritten_content = overwritten];
-  let file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+  let file_mutation: FixtureFileMutation = #TurnDiffAdd addition;
   let mutation: FixtureMutation = [.path = "existing.txt", .mutation = file_mutation];
   let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
 
   let score = 0;
   let changes = turn_diff_net_changes state;
-  if let `Cons node = changes {
+  if let #Cons node = changes then
     let [change, tail] = node;
-    if let `TurnDiffUpdated updated = change {
-      if updated.path.path == "existing.txt" && updated.old_content == "before\n" && updated.new_content == "after\n" {
-        if let `Nil () = tail { score = score + 1 }
-      }
-    }
-  }
-  if state.next_revision == 2 {
+    if let #TurnDiffUpdated updated = change then
+      if updated.path.path == "existing.txt" && updated.old_content == "before\n"
+        && updated.new_content == "after\n" then
+          if let #Nil = tail then
+            score = score + 1
+          end;
+        end;
+    end;
+  end;
+  if state.next_revision == 2 then
     score = score + 10
-  }
+  end;
   score
-};
+end;
 
 return { .verify_turn_diff_add_overwrite_fixture };

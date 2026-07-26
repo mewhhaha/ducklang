@@ -14,42 +14,49 @@ type FixtureTexts = RolloutStorageTexts
 type FixtureQuery = RolloutThreadQuery
 type FixturePage = RolloutThreadPage
 
-const empty_files: () -> FixtureFiles = () => `Nil ();
+const empty_files: () -> FixtureFiles = () => #Nil;
 const prepend_file: [FixtureFile, FixtureFiles] -> FixtureFiles = (
   file: FixtureFile,
   tail: FixtureFiles,
-) => `Cons ([file, tail]);
-const empty_texts: () -> FixtureTexts = () => `Nil ();
-const singleton_text: Text -> FixtureTexts = (text: Text) => `Cons ([text, empty_texts()]);
+) => #Cons ([file, tail]);
+const empty_texts: () -> FixtureTexts = () => #Nil;
+const singleton_text: Text -> FixtureTexts = (text: Text) => #Cons ([text, empty_texts()]);
 
-const thread_count = (values: FixtureThreads) => {
+const thread_count = (values: FixtureThreads) => do
   let current = values;
   let count = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   count
-};
+end;
 
-const stored_file = (path: Text, updated_at: Text, thread_id: Text, created_at: Text, preview: Text) => {
+const stored_file =
+  (path: Text, updated_at: Text, thread_id: Text, created_at: Text, preview: Text) => do
     let meta =
-      "{\"timestamp\":\"" <> created_at <> "\",\"type\":\"session_meta\",\"payload\":{\"id\":\"" <> thread_id <> "\",\"timestamp\":\"" <> created_at <> "\",\"cwd\":\"/repo\",\"source\":\"cli\",\"model_provider\":\"openai\"}}";
+      "{\"timestamp\":\"" <> created_at <> "\",\"type\":\"session_meta\",\"payload\":{\"id\":\""
+      <> thread_id <> "\",\"timestamp\":\"" <> created_at
+      <> "\",\"cwd\":\"/repo\",\"source\":\"cli\",\"model_provider\":\"openai\"}}";
     let event =
-      "{\"timestamp\":\"" <> created_at <> "\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"" <> preview <> "\"}}";
+      "{\"timestamp\":\"" <> created_at
+      <> "\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\""
+      <> preview <> "\"}}";
     let file: FixtureFile = [path, updated_at, meta <> "\nnot-json\n" <> event <> "\n"];
     file
-  };
+  end;
 
 const query = (
   page_size: I32,
@@ -57,7 +64,7 @@ const query = (
   sort_key: FixtureSortKey,
   search_term: Text,
   scan_limit: I32,
-) => {
+) => do
   let value: FixtureQuery = [
     page_size,
     cursor,
@@ -69,16 +76,16 @@ const query = (
     scan_limit,
   ];
   value
-};
+end;
 
-const first_preview = (values: FixtureThreads) => {
-  if let `Cons node = values {
+const first_preview = (values: FixtureThreads) => do
+  if let #Cons node = values then
     let [thread, _] = node;
     thread.preview
-  } else {
+  else
     ""
-  }
-};
+  end;
+end;
 
 let malformed: FixtureFile = [
   "/home/sessions/2025/01/04/rollout-bad.jsonl",
@@ -116,46 +123,46 @@ snapshot = prepend_file(newest, snapshot)
 let score: I32 = 0;
 let first_page: FixturePage = list_rollout_threads(
   snapshot,
-  query(2, `None (), `CreatedAt (), "", 10),
+  query(2, #None, #CreatedAt, "", 10),
 );
 let [first_page_items, first_page_cursor, _, _] = first_page;
-if thread_count first_page_items == 2 && first_preview first_page_items == "Alpha task" {
+if thread_count first_page_items == 2 && first_preview first_page_items == "Alpha task" then
   score = score + 100
-}
+end;
 
-if let `Some cursor = first_page_cursor {
+if let #Some cursor = first_page_cursor then
   let second_page: FixturePage = list_rollout_threads(
     snapshot,
-    query(2, `Some (cursor), `CreatedAt (), "", 10),
+    query(2, #Some (cursor), #CreatedAt, "", 10),
   );
   let [second_page_items, _, _, _] = second_page;
-  if thread_count second_page_items == 1 && first_preview second_page_items == "Gamma task" {
+  if thread_count second_page_items == 1 && first_preview second_page_items == "Gamma task" then
     score = score + 1000
-  }
-}
+  end;
+end;
 
 let updated_page: FixturePage = list_rollout_threads(
   snapshot,
-  query(3, `None (), `UpdatedAt (), "", 10),
+  query(3, #None, #UpdatedAt, "", 10),
 );
 let [updated_page_items, _, _, _] = updated_page;
-if first_preview updated_page_items == "Gamma task" {
+if first_preview updated_page_items == "Gamma task" then
   score = score + 10000
-}
+end;
 
 let search_page: FixturePage = list_rollout_threads(
   snapshot,
-  query(3, `None (), `CreatedAt (), "bEtA TASK", 10),
+  query(3, #None, #CreatedAt, "bEtA TASK", 10),
 );
 let [search_page_items, _, _, _] = search_page;
-if thread_count search_page_items == 1 && first_preview search_page_items == "Beta task" {
+if thread_count search_page_items == 1 && first_preview search_page_items == "Beta task" then
   score = score + 100000
-}
+end;
 
-let capped: FixturePage = list_rollout_threads(snapshot, query(3, `None (), `CreatedAt (), "", 2));
+let capped: FixturePage = list_rollout_threads(snapshot, query(3, #None, #CreatedAt, "", 2));
 let [_, _, capped_scanned, capped_reached] = capped;
-if capped_reached && capped_scanned == 2 {
+if capped_reached && capped_scanned == 2 then
   score = score + 10000000
-}
+end;
 
 return { .score = score };

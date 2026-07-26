@@ -9,7 +9,7 @@ type Point = struct {
   .y = I32,
 }
 
-type MaybeI32 = | `Some I32 | `None Unit
+type MaybeI32 = | #Some I32 | #None
 
 type Pixels = [Rgb; 640 * 480]
 let point: Point = [20, 22];
@@ -57,10 +57,7 @@ let { .x = x } = moved;
           (type_difference
             (identifier))))
       (type_case
-        (constructor_identifier)
-        (type_reference
-          (type_difference
-            (identifier))))))
+        (constructor_identifier))))
   (type_declaration_statement
     (identifier)
     (type_reference

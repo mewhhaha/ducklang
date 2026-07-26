@@ -192,10 +192,10 @@ Deno.test("hover renders TSDoc for documented functions", () => {
 
 Deno.test("hover shows inferred latent effect rows", () => {
   const text = `effect Counter { get: () => I32 }
-let run: () -> <Counter> I32 = () => {
+let run: () -> <Counter> I32 = () => do
   value <- Counter.get()
   value
-};
+end;
 `;
   const { parsed, index } = analyzed(text);
   const result = hover(
@@ -408,13 +408,13 @@ let point: Point = [1];
 
 Deno.test("handler state annotations suppress only their type token", () => {
   const text = `effect Check { test: () => Bool }
-let checker = {
+let checker = do
   let ready: Bool = true;
   handler Check {
     test: (!resume) => !resume(ready),
     return: value => value,
   }
-};
+end;
 `;
   const analysis = analyzed(text);
   const annotation = hover(
@@ -680,7 +680,7 @@ Deno.test("hover folds boolean const values without losing their type", () => {
 });
 
 Deno.test("hover shows one honest type presentation for every value entity", () => {
-  const text = "type Result = | `Ok Bool | `Err Text\n" +
+  const text = "type Result = | #Ok Bool | #Err Text\n" +
     "declare effect Choice { decide: (I32) => Bool }\n" +
     "let identity = value => value;\n" +
     "let unresolved = missing;\n";
@@ -741,9 +741,9 @@ invalid
 });
 
 Deno.test("hover reports union case constructor types", () => {
-  const text = "type Result = | `Ok Bool | `Err Unit\n" +
-    "let ok = `Ok true;\n" +
-    "let err = `Err ();\n";
+  const text = "type Result = | #Ok Bool | #Err\n" +
+    "let ok = #Ok true;\n" +
+    "let err = #Err;\n";
   const analysis = analyzed(text);
 
   assert_hover_type(text, analysis, text.lastIndexOf("ok"), "Result");
@@ -813,11 +813,11 @@ Bad.run
 
 Deno.test("hover preserves source struct and declared sum types", () => {
   const text = `const flags_type = struct { .ready= Bool };
-type ResultType = | \`Ok Int | \`Err Int
+type ResultType = | #Ok Int | #Err Int
 let flags = [.ready = true] as flags_type;
-let qualified = \`Ok 40;
-let result: ResultType = \`Ok 41;
-if let \`Ok value = result { value } else { 0 }
+let qualified = #Ok 40;
+let result: ResultType = #Ok 41;
+if let #Ok value = result then value  else  0 end;
 flags.ready
 `;
   const analysis = analyzed(text);
@@ -830,14 +830,14 @@ flags.ready
         type: "Bool",
       },
       {
-        offset: text.indexOf("`Ok 40") + 1,
+        offset: text.indexOf("#Ok 40") + 1,
         type: "ResultType",
       },
       { offset: text.indexOf("qualified ="), type: "ResultType" },
       { offset: text.indexOf("result: ResultType"), type: "ResultType" },
-      { offset: text.indexOf("`Ok 41"), type: "ResultType" },
+      { offset: text.indexOf("#Ok 41"), type: "ResultType" },
       {
-        offset: text.indexOf("`Ok value") + "`Ok ".length,
+        offset: text.indexOf("#Ok value") + "#Ok ".length,
         type: "Int",
       },
       { offset: text.lastIndexOf("value"), type: "Int" },
@@ -853,13 +853,13 @@ flags.ready
 
 Deno.test("hover follows nested lexical aliases and effect results", () => {
   const text = `effect Check { test: () => Bool }
-let run = () => {
+let run = () => do
   let operation = Check.test;
   let alias = operation;
   let called = alias();
   state <- Check.test()
   called == state
-};
+end;
 run()
 `;
   const analysis = analyzed(text);
@@ -881,10 +881,10 @@ run()
 });
 
 Deno.test("hover resolves typed parameters and higher-order calls", () => {
-  const text = `let apply = (f: (I32) -> Bool) => {
+  const text = `let apply = (f: (I32) -> Bool) => do
   let alias = f;
   alias(1)
-};
+end;
 let factory: () -> (I32) -> Bool = () => ((x: I32) => true);
 let inferred_factory = () => (x => true);
 apply(factory())
@@ -914,15 +914,15 @@ inferred_factory()(1)
 });
 
 Deno.test("hover derives resumption call results from the handler return", () => {
-  const text = `type Result = \`Done Bool
+  const text = `type Result = #Done Bool
 effect Check { test: () => Bool }
 let checker = handler Check {
-  test: (!resume) => {
+  test: (!resume) => do
     let !later = !resume;
     let completed = !later(true);
     completed
-  },
-  return: value => \`Done (value),
+  end,
+  return: value => #Done (value),
 };
 `;
   const analysis = analyzed(text);
@@ -1009,24 +1009,24 @@ value[0]
 });
 
 Deno.test("hover preserves nominal unions and if-let payload types", () => {
-  const text = "type Result = | `Ok Bool | `Err Unit\n" +
-    "let qualified = `Ok true;\n" +
-    "let through_value = `Ok false;\n" +
-    "let unqualified = `Ok true;\n" +
-    "if let `Ok payload = through_value { payload } else { false }\n";
+  const text = "type Result = | #Ok Bool | #Err\n" +
+    "let qualified = #Ok true;\n" +
+    "let through_value = #Ok false;\n" +
+    "let unqualified = #Ok true;\n" +
+    "if let #Ok payload = through_value { payload } else { false }\n";
   const analysis = analyzed(text);
 
   for (
     const expected of [
       { offset: text.indexOf("qualified ="), type: "Result" },
       {
-        offset: text.indexOf("`Ok true") + 1,
+        offset: text.indexOf("#Ok true") + 1,
         type: "Result",
       },
       { offset: text.indexOf("through_value ="), type: "Result" },
       { offset: text.indexOf("unqualified ="), type: "Result" },
       {
-        offset: text.indexOf("`Ok payload") + "`Ok ".length,
+        offset: text.indexOf("#Ok payload") + "#Ok ".length,
         type: "Bool",
       },
       { offset: text.lastIndexOf("payload"), type: "Bool" },
@@ -1265,7 +1265,7 @@ let score = @project(player, score_field);
 });
 
 Deno.test("hover follows case descriptors through union operations", () => {
-  const text = "type Result = | `Ok Int | `Err Text\n" +
+  const text = "type Result = | #Ok Int | #Err Text\n" +
     "const ok_case = @describe_cases(Result)[0];\n" +
     "let result = @construct(ok_case, 42);\n" +
     "let matches = @is_case(result, ok_case);\n" +

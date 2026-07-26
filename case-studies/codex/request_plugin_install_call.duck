@@ -22,23 +22,23 @@ let plan_request_plugin_install_call: [
   call_id: Text,
   is_codex_tui: Bool,
   candidates: InstallCallCandidates,
-) => {
-  if let `Unsupported () = payload {
-    `Fatal "request_plugin_install handler received unsupported payload"
-  } else if let `Function arguments = payload {
+) => do
+  if let #Unsupported = payload then
+    #Fatal "request_plugin_install handler received unsupported payload"
+  else let #Function arguments = payload then
     let parsed = parse_request_plugin_install_args(presentation, arguments);
-    if let `ParseFailed message = parsed {
-      `RespondToModel message
-    } else if let `ListArgs args = parsed {
+    if let #ParseFailed message = parsed then
+      #RespondToModel message
+    else let #ListArgs args = parsed then
       plan_list_plugin_install_request(call_id, is_codex_tui, args, candidates)
-    } else if let `RecommendedArgs args = parsed {
+    else let #RecommendedArgs args = parsed then
       plan_recommended_plugin_install_request(call_id, is_codex_tui, args, candidates)
-    } else {
-      `Fatal "request_plugin_install argument parsing produced no result"
-    }
-  } else {
-    `Fatal "request_plugin_install handler received unsupported payload"
-  }
-};
+    else
+      #Fatal "request_plugin_install argument parsing produced no result"
+    end;
+  else
+    #Fatal "request_plugin_install handler received unsupported payload"
+  end;
+end;
 
 return { .plan_request_plugin_install_call };

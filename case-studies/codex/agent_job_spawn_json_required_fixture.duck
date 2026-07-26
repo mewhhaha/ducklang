@@ -5,12 +5,16 @@ const { .decode_agent_job_spawn_required } = import "./agent_job_spawn_json_requ
 let score = 0;
 let valid =
   decode_agent_job_spawn_required "{\"csv_path\":\"input.csv\",\"instruction\":\"Review {path}\"}";
-if let `SpawnDecoded args = valid {
-  if args.csv_path == "input.csv" && args.instruction == "Review {path}" { score = 1 }
-}
+if let #SpawnDecoded args = valid then
+  if args.csv_path == "input.csv" && args.instruction == "Review {path}" then
+    score = 1
+  end;
+end;
 let missing = decode_agent_job_spawn_required "{\"instruction\":\"run\"}";
-if let `SpawnDecodeFailed reason = missing {
-  if reason == "missing field `csv_path`" { score = score + 10 }
-}
+if let #SpawnDecodeFailed reason = missing then
+  if reason == "missing field `csv_path`" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

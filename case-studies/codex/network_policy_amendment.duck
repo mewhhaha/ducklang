@@ -14,32 +14,32 @@ const execpolicy_network_rule_amendment: [PolicyAmendment, AmendmentContext, Tex
     amendment,
     approval_context,
     host,
-  ) => {
-    let protocol: ExecPolicyProtocol = `ExecHttp ();
+  ) => do
+    let protocol: ExecPolicyProtocol = #ExecHttp;
     let protocol_label = "http";
-    if let `PolicyHttps () = approval_context.protocol {
-      protocol = `ExecHttps ()
+    if let #PolicyHttps = approval_context.protocol then
+      protocol = #ExecHttps
       protocol_label = "https_connect"
-    } else if let `PolicySocks5Tcp () = approval_context.protocol {
-      protocol = `ExecSocks5Tcp ()
+    else let #PolicySocks5Tcp = approval_context.protocol then
+      protocol = #ExecSocks5Tcp
       protocol_label = "socks5_tcp"
-    } else if let `PolicySocks5Udp () = approval_context.protocol {
-      protocol = `ExecSocks5Udp ()
+    else let #PolicySocks5Udp = approval_context.protocol then
+      protocol = #ExecSocks5Udp
       protocol_label = "socks5_udp"
-    }
+    end;
 
-    let decision: ExecPolicyDecision = `ExecAllow ();
+    let decision: ExecPolicyDecision = #ExecAllow;
     let action_verb = "Allow";
-    if let `DenyRule () = amendment.action {
-      decision = `ExecForbidden ()
+    if let #DenyRule = amendment.action then
+      decision = #ExecForbidden
       action_verb = "Deny"
-    }
+    end;
 
     let justification = text_append(
       action_verb,
       text_append(" ", text_append(protocol_label, text_append(" access to ", host))),
     );
     [.protocol = protocol, .decision = decision, .justification = justification]
-  };
+  end;
 
 return { .execpolicy_network_rule_amendment };

@@ -1,0 +1,28 @@
+module () where
+
+const { .render_user_shell_command } = import "./user_shell_command.duck" ();
+
+let basic = render_user_shell_command(
+  "echo hi",
+  0,
+  1000,
+  #CompletedShellOutput "hi",
+);
+let aggregated = render_user_shell_command(
+  "false",
+  42,
+  120,
+  #CompletedShellOutput "combined output wins",
+);
+let timed_out = render_user_shell_command(
+  "sleep 2",
+  124,
+  1500,
+  #TimedOutShellOutput [1500, "partial"],
+);
+
+return {
+  .basic = basic,
+  .aggregated = aggregated,
+  .timed_out = timed_out,
+};

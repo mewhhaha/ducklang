@@ -330,7 +330,12 @@ export type FrontExpr =
     operator_syntax?: OperatorSyntax;
     effect_type_arguments?: { name: string; type_name: string }[];
   }
-  | { tag: "product"; entries: ProductExprEntry[]; value_pack?: true }
+  | {
+    tag: "product";
+    entries: ProductExprEntry[];
+    value_pack?: true;
+    template_literal?: true;
+  }
   | { tag: "shape"; entries: ProductExprEntry[] }
   | {
     tag: "array";
@@ -493,13 +498,14 @@ export type FrontType =
   | { tag: "wide_int"; integer: IntegerType }
   | { tag: "f32x4" }
   | { tag: "atom"; name: string }
-  | { tag: "text"; encoding?: "bytes" }
+  | { tag: "text"; encoding?: "bytes"; literal?: string }
   | { tag: "type" }
   | { tag: "set"; type_expr: TypeExpr }
   | {
     tag: "struct";
     fields: string[];
     field_types: TypeField[] | undefined;
+    field_value_types?: FrontType[];
     nominal_name?: string;
   }
   | { tag: "union"; case_name: string }

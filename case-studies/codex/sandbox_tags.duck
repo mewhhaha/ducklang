@@ -9,29 +9,29 @@ type TagPermissionProfile = SandboxTagPermissionProfile
 type TagWindowsLevel = SandboxTagWindowsLevel
 type TagPlatform = SandboxTagPlatform
 
-let rec network_policy_is_enabled: &TagNetworkPolicy -> Bool = (policy: &TagNetworkPolicy) => {
-  if let `Enabled () = policy { true } else { false }
-};
+let rec network_policy_is_enabled: &TagNetworkPolicy -> Bool = (policy: &TagNetworkPolicy) => do
+  if let #Enabled = policy then true else false end;
+end;
 
-let rec file_system_is_external: &TagFileSystemKind -> Bool = (kind: &TagFileSystemKind) => {
-  if let `ExternalFileSystem () = kind { true } else { false }
-};
+let rec file_system_is_external: &TagFileSystemKind -> Bool = (kind: &TagFileSystemKind) => do
+  if let #ExternalFileSystem = kind then true else false end;
+end;
 
 let rec should_require_platform_sandbox: [&TagFileSystem, &TagNetworkPolicy, Bool] -> Bool = (
   file_system: &TagFileSystem,
   network: &TagNetworkPolicy,
   enforce_managed_network: Bool,
-) => {
-  if enforce_managed_network {
+) => do
+  if enforce_managed_network then
     true
-  } else if !(network_policy_is_enabled network) {
+  else !(network_policy_is_enabled network) then
     !(file_system_is_external(&file_system.kind))
-  } else if let `RestrictedFileSystem () = file_system.kind {
+  else let #RestrictedFileSystem = file_system.kind then
     !(file_system.has_full_disk_write_access)
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
 let rec permission_profile_sandbox_tag: [
   &TagPermissionProfile,
@@ -43,56 +43,56 @@ let rec permission_profile_sandbox_tag: [
   windows_level: &TagWindowsLevel,
   enforce_managed_network: Bool,
   platform: &TagPlatform,
-) => {
-  if let `DisabledProfile () = profile {
+) => do
+  if let #DisabledProfile = profile then
     @append("none", "")
-  } else if let `ExternalProfile _ = profile {
+  else let #ExternalProfile _ = profile then
     @append("external", "")
-  } else if let `ManagedProfile managed = profile {
+  else let #ManagedProfile managed = profile then
     if !(
       should_require_platform_sandbox(
         &managed.file_system,
         &managed.network,
         enforce_managed_network,
       )
-    ) {
+    ) then
       @append("none", "")
-    } else if platform.is_windows {
-      if let `WindowsElevated () = windows_level {
+    else platform.is_windows then
+      if let #WindowsElevated = windows_level then
         @append("windows_elevated", "")
-      } else if let `Some tag = platform.platform_sandbox_tag {
+      else let #Some tag = platform.platform_sandbox_tag then
         @append(tag, "")
-      } else {
+      else
         @append("none", "")
-      }
-    } else if let `Some tag = platform.platform_sandbox_tag {
+      end;
+    else let #Some tag = platform.platform_sandbox_tag then
       @append(tag, "")
-    } else {
+    else
       @append("none", "")
-    }
-  } else {
+    end;
+  else
     @append("none", "")
-  }
-};
+  end;
+end;
 
 let rec permission_profile_policy_tag: &TagPermissionProfile -> Text = (
-  profile: &TagPermissionProfile ) => {
-  if let `DisabledProfile () = profile {
-    @append("danger-full-access", "")
-  } else if let `ExternalProfile _ = profile {
-    @append("external-sandbox", "")
-  } else if let `ManagedProfile managed = profile {
-    if managed.file_system.has_full_disk_write_access {
+  profile: &TagPermissionProfile) => do
+    if let #DisabledProfile = profile then
       @append("danger-full-access", "")
-    } else if managed.file_system.has_writable_roots {
-      @append("workspace-write", "")
-    } else {
-      @append("read-only", "")
-    }
-  } else {
-    @append("danger-full-access", "")
-  }
-};
+    else let #ExternalProfile _ = profile then
+      @append("external-sandbox", "")
+    else let #ManagedProfile managed = profile then
+      if managed.file_system.has_full_disk_write_access then
+        @append("danger-full-access", "")
+      else managed.file_system.has_writable_roots then
+        @append("workspace-write", "")
+      else
+        @append("read-only", "")
+      end;
+    else
+      @append("danger-full-access", "")
+    end;
+  end;
 
 return {
   .should_require_platform_sandbox,

@@ -3,41 +3,41 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type HostedSpecMode =
-  | `Cached Unit
-  | `Indexed Unit
-  | `Live Unit
-  | `Disabled Unit
+  | #Cached
+  | #Indexed
+  | #Live
+  | #Disabled
 
 type HostedSpecToolType =
-  | `TextOnly Unit
-  | `TextAndImage Unit
+  | #TextOnly
+  | #TextAndImage
 
 type HostedSpecContextSize =
-  | `Low Unit
-  | `Medium Unit
-  | `High Unit
+  | #Low
+  | #Medium
+  | #High
 
 type HostedSpecUserLocationType =
-  `Approximate Unit
+  #Approximate
 
 type HostedSpecDomainsNode = [Text, HostedSpecDomains]
 type HostedSpecDomains =
-  | `DomainsNil Unit
-  | `DomainsCons HostedSpecDomainsNode
+  | #DomainsNil
+  | #DomainsCons HostedSpecDomainsNode
 type HostedSpecDomainsOption =
-  | `DomainsMissing Unit
-  | `DomainsPresent HostedSpecDomains
+  | #DomainsMissing
+  | #DomainsPresent HostedSpecDomains
 
 type HostedSpecTextOption =
-  | `SearchTextMissing Unit
-  | `SearchTextPresent Text
+  | #SearchTextMissing
+  | #SearchTextPresent Text
 
 type HostedSpecFilters = struct {
   .allowed_domains = HostedSpecDomainsOption,
 }
 type HostedSpecFiltersOption =
-  | `FiltersMissing Unit
-  | `FiltersPresent HostedSpecFilters
+  | #FiltersMissing
+  | #FiltersPresent HostedSpecFilters
 
 type HostedSpecUserLocation = struct {
   .location_type = HostedSpecUserLocationType,
@@ -47,11 +47,11 @@ type HostedSpecUserLocation = struct {
   .timezone = HostedSpecTextOption,
 }
 type HostedSpecUserLocationOption =
-  | `UserLocationMissing Unit
-  | `UserLocationPresent HostedSpecUserLocation
+  | #UserLocationMissing
+  | #UserLocationPresent HostedSpecUserLocation
 type HostedSpecContextSizeOption =
-  | `ContextSizeMissing Unit
-  | `ContextSizePresent HostedSpecContextSize
+  | #ContextSizeMissing
+  | #ContextSizePresent HostedSpecContextSize
 
 type HostedSpecConfig = struct {
   .filters = HostedSpecFiltersOption,
@@ -59,74 +59,74 @@ type HostedSpecConfig = struct {
   .search_context_size = HostedSpecContextSizeOption,
 }
 type HostedSpecConfigOption =
-  | `SearchConfigMissing Unit
-  | `SearchConfigPresent HostedSpecConfig
+  | #SearchConfigMissing
+  | #SearchConfigPresent HostedSpecConfig
 
 type HostedSpec =
-  | `HostedSpecMissing Unit
-  | `CachedText HostedSpecConfigOption
-  | `CachedTextAndImage HostedSpecConfigOption
-  | `IndexedText HostedSpecConfigOption
-  | `IndexedTextAndImage HostedSpecConfigOption
-  | `LiveText HostedSpecConfigOption
-  | `LiveTextAndImage HostedSpecConfigOption
+  | #HostedSpecMissing
+  | #CachedText HostedSpecConfigOption
+  | #CachedTextAndImage HostedSpecConfigOption
+  | #IndexedText HostedSpecConfigOption
+  | #IndexedTextAndImage HostedSpecConfigOption
+  | #LiveText HostedSpecConfigOption
+  | #LiveTextAndImage HostedSpecConfigOption
 
 type HostedSpecBoolOption =
-  | `HostedBoolMissing Unit
-  | `HostedBoolPresent Bool
+  | #HostedBoolMissing
+  | #HostedBoolPresent Bool
 
 const create_hosted_web_search_spec: [HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType] ->
   HostedSpec = (
     mode,
     config,
     tool_type,
-  ) => {
-    if let `Disabled () = mode {
-      return `HostedSpecMissing ();
-    }
+  ) => do
+    if let #Disabled = mode then
+      return #HostedSpecMissing;
+    end;
 
-    if let `Cached () = mode {
-      if let `TextAndImage () = tool_type {
-        return `CachedTextAndImage config;
-      }
-      return `CachedText config;
-    }
+    if let #Cached = mode then
+      if let #TextAndImage = tool_type then
+        return #CachedTextAndImage config;
+      end;
+      return #CachedText config;
+    end;
 
-    if let `Indexed () = mode {
-      if let `TextAndImage () = tool_type {
-        return `IndexedTextAndImage config;
-      }
-      return `IndexedText config;
-    }
+    if let #Indexed = mode then
+      if let #TextAndImage = tool_type then
+        return #IndexedTextAndImage config;
+      end;
+      return #IndexedText config;
+    end;
 
-    if let `TextAndImage () = tool_type {
-      `LiveTextAndImage config
-    } else {
-      `LiveText config
-    }
-  };
+    if let #TextAndImage = tool_type then
+      #LiveTextAndImage config
+    else
+      #LiveText config
+    end;
+  end;
 
-const hosted_web_search_external_access: HostedSpec -> HostedSpecBoolOption = spec => {
-  if let `HostedSpecMissing () = spec {
-    `HostedBoolMissing ()
-  } else if let `CachedText _ = spec {
-    `HostedBoolPresent false
-  } else if let `CachedTextAndImage _ = spec {
-    `HostedBoolPresent false
-  } else {
-    `HostedBoolPresent true
-  }
-};
+const hosted_web_search_external_access: HostedSpec -> HostedSpecBoolOption = spec => do
+  if let #HostedSpecMissing = spec then
+    #HostedBoolMissing
+  else let #CachedText _ = spec then
+    #HostedBoolPresent false
+  else let #CachedTextAndImage _ = spec then
+    #HostedBoolPresent false
+  else
+    #HostedBoolPresent true
+  end;
+end;
 
-const hosted_web_search_indexed_access: HostedSpec -> HostedSpecBoolOption = spec => {
-  if let `IndexedText _ = spec {
-    `HostedBoolPresent true
-  } else if let `IndexedTextAndImage _ = spec {
-    `HostedBoolPresent true
-  } else {
-    `HostedBoolMissing ()
-  }
-};
+const hosted_web_search_indexed_access: HostedSpec -> HostedSpecBoolOption = spec => do
+  if let #IndexedText _ = spec then
+    #HostedBoolPresent true
+  else let #IndexedTextAndImage _ = spec then
+    #HostedBoolPresent true
+  else
+    #HostedBoolMissing
+  end;
+end;
 
 return {
   .create_hosted_web_search_spec,

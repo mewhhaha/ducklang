@@ -7,18 +7,18 @@ const { .single_image_processing_fixture_response } =
 
 type MissingFixtureResults = ImageProcessingResults
 
-const verify_image_preparation_missing_fixture: () -> I32 = () => {
-  let results: MissingFixtureResults = `ImageResultsNil ();
+const verify_image_preparation_missing_fixture: () -> I32 = () => do
+  let results: MissingFixtureResults = #ImageResultsNil;
   let rewrite = apply_image_processing_results(single_image_processing_fixture_response(), results);
-  if let `RejectedImageRewrite failure = rewrite {
-    if let `MissingImageProcessingResult index = failure {
-      if index == 0 { 1 } else { 0 }
-    } else {
+  if let #RejectedImageRewrite failure = rewrite then
+    if let #MissingImageProcessingResult index = failure then
+      if index == 0 then 1 else 0 end;
+    else
       0
-    }
-  } else {
+    end;
+  else
     0
-  }
-};
+  end;
+end;
 
 return { .verify_image_preparation_missing_fixture };

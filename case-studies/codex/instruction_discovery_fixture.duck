@@ -13,48 +13,51 @@ const snapshot_entries = comptime list FixtureSnapshotEntry;
 const instruction_texts = comptime list Text;
 
 let snapshot = snapshot_entries.empty();
-snapshot = snapshot_entries.prepend(`File (["/repo/crate/src/PROJECT.md", "abcdef"]), snapshot)
-snapshot = snapshot_entries.prepend(`File (["/repo/crate/AGENTS.md", "ignored"]), snapshot)
-snapshot = snapshot_entries.prepend(`File (["/repo/crate/AGENTS.override.md", "crate"]), snapshot)
-snapshot = snapshot_entries.prepend(`File (["/repo/AGENTS.md", "root"]), snapshot)
-snapshot = snapshot_entries.prepend(`Directory "/repo/.git", snapshot)
+snapshot = snapshot_entries.prepend(#File (["/repo/crate/src/PROJECT.md", "abcdef"]), snapshot)
+snapshot = snapshot_entries.prepend(#File (["/repo/crate/AGENTS.md", "ignored"]), snapshot)
+snapshot = snapshot_entries.prepend(
+  #File (["/repo/crate/AGENTS.override.md", "crate"]),
+  snapshot,
+)
+snapshot = snapshot_entries.prepend(#File (["/repo/AGENTS.md", "root"]), snapshot)
+snapshot = snapshot_entries.prepend(#Directory "/repo/.git", snapshot)
 
 let fallback_names = instruction_texts.singleton "PROJECT.md";
 let root_markers = instruction_texts.singleton ".git";
-let user: FixtureDocumentOption = `Some (["/home/me/.codex/AGENTS.md", "global"]);
+let user: FixtureDocumentOption = #Some (["/home/me/.codex/AGENTS.md", "global"]);
 let config: FixtureDiscoveryConfig = ["/repo/crate/src", 12, fallback_names, root_markers, user];
 let loaded = discover_instructions(snapshot, config);
 let [text, sources] = loaded;
 let score: I32 = instruction_texts.length sources;
 
-if let `Some contents = text {
-  if contents == "global\n\n--- project-doc ---\n\nroot\n\ncrate\n\nabc" {
+if let #Some contents = text then
+  if contents == "global\n\n--- project-doc ---\n\nroot\n\ncrate\n\nabc" then
     score = score + 10
-  }
-}
+  end;
+end;
 
-if instruction_texts.nth_or("", 0, sources) == "/home/me/.codex/AGENTS.md" {
+if instruction_texts.nth_or("", 0, sources) == "/home/me/.codex/AGENTS.md" then
   score = score + 100
-}
+end;
 
-if instruction_texts.nth_or("", 2, sources) == "/repo/crate/AGENTS.override.md" {
+if instruction_texts.nth_or("", 2, sources) == "/repo/crate/AGENTS.override.md" then
   score = score + 1000
-}
+end;
 
 let local_config: FixtureDiscoveryConfig = [
   "/repo/crate/src",
   32,
   fallback_names,
   instruction_texts.empty(),
-  `None (),
+  #None,
 ];
 let local_loaded = discover_instructions(snapshot, local_config);
 let [local_text, local_sources] = local_loaded;
 
-if let `Some contents = local_text {
-  if contents == "abcdef" && instruction_texts.length(local_sources) == 1 {
+if let #Some contents = local_text then
+  if contents == "abcdef" && instruction_texts.length(local_sources) == 1 then
     score = score + 10000
-  }
-}
+  end;
+end;
 
 return { .score = score };

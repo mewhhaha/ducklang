@@ -3,20 +3,20 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type InstallTextOption =
-  | `InstallTextMissing Unit
-  | `InstallTextPresent Text
+  | #InstallTextMissing
+  | #InstallTextPresent Text
 type InstallTextNode = [Text, InstallTexts]
 type InstallTexts =
-  | `Nil Unit
-  | `Cons InstallTextNode
+  | #Nil
+  | #Cons InstallTextNode
 
 type DiscoverableToolType =
-  | `Connector Unit
-  | `Plugin Unit
+  | #Connector
+  | #Plugin
 
 type DiscoverableToolAction =
-  | `Install Unit
-  | `Enable Unit
+  | #Install
+  | #Enable
 
 type PluginInstallCandidate = struct {
   .id = Text,
@@ -32,18 +32,18 @@ type PluginInstallCandidate = struct {
 
 type PluginInstallCandidates = List PluginInstallCandidate
 type PluginInstallCandidateOption =
-  | `InstallCandidateMissing Unit
-  | `InstallCandidatePresent PluginInstallCandidate
+  | #InstallCandidateMissing
+  | #InstallCandidatePresent PluginInstallCandidate
 
 type ToolSuggestPresentation =
-  | `ListTool Unit
-  | `RecommendationContext Unit
+  | #ListTool
+  | #RecommendationContext
 
 type ListPluginInstallPayload = Bool
 
 type ListPluginInstallCallPlan =
-  | `ReturnCandidates Text
-  | `RejectRequest Text
+  | #ReturnCandidates Text
+  | #RejectRequest Text
 
 type RequestPluginInstallListArgs = struct {
   .tool_type = DiscoverableToolType,
@@ -58,21 +58,21 @@ type RequestPluginInstallRecommendedArgs = struct {
 }
 
 type RequestPluginInstallPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type RequestPluginInstallParseResult =
-  | `ListArgs RequestPluginInstallListArgs
-  | `RecommendedArgs RequestPluginInstallRecommendedArgs
-  | `ParseFailed Text
+  | #ListArgs RequestPluginInstallListArgs
+  | #RecommendedArgs RequestPluginInstallRecommendedArgs
+  | #ParseFailed Text
 
 type RequestPluginInstallListParseResult =
-  | `Parsed RequestPluginInstallListArgs
-  | `ParseFailed Text
+  | #Parsed RequestPluginInstallListArgs
+  | #ParseFailed Text
 
 type RequestPluginInstallRecommendedParseResult =
-  | `Parsed RequestPluginInstallRecommendedArgs
-  | `ParseFailed Text
+  | #Parsed RequestPluginInstallRecommendedArgs
+  | #ParseFailed Text
 
 type RequestPluginInstallHostRequest = struct {
   .suggestion_id = Text,
@@ -81,10 +81,10 @@ type RequestPluginInstallHostRequest = struct {
 }
 
 type PluginInstallElicitationAction =
-  | `Accept Unit
-  | `Decline Unit
-  | `Cancel Unit
-  | `Unavailable Unit
+  | #Accept
+  | #Decline
+  | #Cancel
+  | #Unavailable
 
 type RequestPluginInstallHostResponse = struct {
   .sent = Bool,
@@ -94,9 +94,9 @@ type RequestPluginInstallHostResponse = struct {
 }
 
 type RequestPluginInstallPlan =
-  | `Elicit RequestPluginInstallHostRequest
-  | `RespondToModel Text
-  | `Fatal Text
+  | #Elicit RequestPluginInstallHostRequest
+  | #RespondToModel Text
+  | #Fatal Text
 
 type RequestPluginInstallCompletion = struct {
   .output = Text,

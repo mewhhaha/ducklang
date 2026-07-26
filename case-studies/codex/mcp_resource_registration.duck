@@ -16,91 +16,91 @@ const list_mcp_resource_templates_name: () -> ResourceRegistrationName = () => [
 ];
 const read_mcp_resource_name: () -> ResourceRegistrationName = () => ["", "read_mcp_resource"];
 
-const list_mcp_resources_definition: () -> ResourceRegistrationDefinition = () => {
-  [list_mcp_resources_name(), `Direct (), `ListMcpResources (), `FunctionPayload (), true, false]
-};
+const list_mcp_resources_definition: () -> ResourceRegistrationDefinition = () => do
+  [list_mcp_resources_name(), #Direct, #ListMcpResources, #FunctionPayload, true, false]
+end;
 
-const list_mcp_resource_templates_definition: () -> ResourceRegistrationDefinition = () => {
+const list_mcp_resource_templates_definition: () -> ResourceRegistrationDefinition = () => do
   [
     list_mcp_resource_templates_name(),
-    `Direct (),
-    `ListMcpResourceTemplates (),
-    `FunctionPayload (),
+    #Direct,
+    #ListMcpResourceTemplates,
+    #FunctionPayload,
     true,
     false,
   ]
-};
+end;
 
-const read_mcp_resource_definition: () -> ResourceRegistrationDefinition = () => {
-  [read_mcp_resource_name(), `Direct (), `ReadMcpResource (), `FunctionPayload (), true, false]
-};
+const read_mcp_resource_definition: () -> ResourceRegistrationDefinition = () => do
+  [read_mcp_resource_name(), #Direct, #ReadMcpResource, #FunctionPayload, true, false]
+end;
 
-const mcp_resource_tool_definitions: Bool -> ResourceRegistrationDefinitions = enabled => {
-  if enabled {
+const mcp_resource_tool_definitions: Bool -> ResourceRegistrationDefinitions = enabled => do
+  if enabled then
     let list_resources = list_mcp_resources_definition();
     let list_templates = list_mcp_resource_templates_definition();
     let read_resource = read_mcp_resource_definition();
-    `Cons ([list_resources, `Cons ([list_templates, `Cons ([read_resource, `Nil ()])])])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([list_resources, #Cons ([list_templates, #Cons ([read_resource, #Nil])])])
+  else
+    #Nil
+  end;
+end;
 
-const list_mcp_resources_parameters: () -> Text = () => {
+const list_mcp_resources_parameters: () -> Text = () => do
   "{\"type\":\"object\",\"properties\":{\"cursor\":{\"type\":\"string\",\"description\":\"Opaque cursor from a previous list_mcp_resources call; omit for the first page.\"},\"server\":{\"type\":\"string\",\"description\":\"MCP server name. Omit to list resources from every configured server.\"}},\"additionalProperties\":false}"
-};
+end;
 
-const list_mcp_resource_templates_parameters: () -> Text = () => {
+const list_mcp_resource_templates_parameters: () -> Text = () => do
   "{\"type\":\"object\",\"properties\":{\"cursor\":{\"type\":\"string\",\"description\":\"Opaque cursor from a previous list_mcp_resource_templates call; omit for the first page.\"},\"server\":{\"type\":\"string\",\"description\":\"MCP server name. Omit to list resource templates from every configured server.\"}},\"additionalProperties\":false}"
-};
+end;
 
-const read_mcp_resource_parameters: () -> Text = () => {
+const read_mcp_resource_parameters: () -> Text = () => do
   "{\"type\":\"object\",\"properties\":{\"server\":{\"type\":\"string\",\"description\":\"MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources.\"},\"uri\":{\"type\":\"string\",\"description\":\"Resource URI to read. Must be one of the URIs returned by list_mcp_resources.\"}},\"required\":[\"server\",\"uri\"],\"additionalProperties\":false}"
-};
+end;
 
-const list_mcp_resources_spec: () -> ResourceRegistrationSpec = () => {
+const list_mcp_resources_spec: () -> ResourceRegistrationSpec = () => do
   [
     list_mcp_resources_name(),
-    `FunctionSpec (),
+    #FunctionSpec,
     "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
     list_mcp_resources_parameters(),
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     false,
   ]
-};
+end;
 
-const list_mcp_resource_templates_spec: () -> ResourceRegistrationSpec = () => {
+const list_mcp_resource_templates_spec: () -> ResourceRegistrationSpec = () => do
   [
     list_mcp_resource_templates_name(),
-    `FunctionSpec (),
+    #FunctionSpec,
     "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
     list_mcp_resource_templates_parameters(),
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     false,
   ]
-};
+end;
 
-const read_mcp_resource_spec: () -> ResourceRegistrationSpec = () => {
+const read_mcp_resource_spec: () -> ResourceRegistrationSpec = () => do
   [
     read_mcp_resource_name(),
-    `FunctionSpec (),
+    #FunctionSpec,
     "Read a specific resource from an MCP server given the server name and resource URI.",
     read_mcp_resource_parameters(),
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     false,
   ]
-};
+end;
 
-const mcp_resource_tool_specs: Bool -> ResourceRegistrationSpecs = enabled => {
-  if enabled {
+const mcp_resource_tool_specs: Bool -> ResourceRegistrationSpecs = enabled => do
+  if enabled then
     let list_resources = list_mcp_resources_spec();
     let list_templates = list_mcp_resource_templates_spec();
     let read_resource = read_mcp_resource_spec();
-    `Cons ([list_resources, `Cons ([list_templates, `Cons ([read_resource, `Nil ()])])])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([list_resources, #Cons ([list_templates, #Cons ([read_resource, #Nil])])])
+  else
+    #Nil
+  end;
+end;
 
 return {
   .list_mcp_resource_templates_definition,

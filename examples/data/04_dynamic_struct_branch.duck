@@ -11,11 +11,11 @@ declare Init { input: Input }
 type Point = struct { .x = Int, .y = Int }
 
 flag <- Input.flag()
-let point: Point = if flag {
+let point: Point = if flag then
   [40, 2]
-} else {
+else
   [20, 22]
-};
+end;
 
 let result: I32 = point.x + point.y;
 return { .result = result };

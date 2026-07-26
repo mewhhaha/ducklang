@@ -9,46 +9,57 @@ type SpawnOverrideModelCatalog = AgentSpawnOverrideModels
 type SpawnOverrideModelTextOption = AgentTextOption
 
 const select_spawn_override_model: AgentSpawnOverrideInput -> AgentSpawnOverrideModelResult =
-  input => {
+  input => do
     let selected_model: SpawnOverrideModelTextOption = input.default_model;
-    if let `Some requested = input.requested_model { selected_model = `Some requested }
+    if let #Some requested = input.requested_model then
+      selected_model = #Some requested
+    end;
 
-    if let `None () = selected_model {
+    if let #None = selected_model then
       let selection: SpawnOverrideModelStageSelection = [
         .model = input.parent_model,
         .default_reasoning_effort = input.parent_reasoning_effort,
         .supported_reasoning_efforts = input.parent_supported_reasoning_efforts,
       ];
-      return `SpawnOverrideModelSelected selection;
-    }
+      return #SpawnOverrideModelSelected selection;
+    end;
 
-    if let `Some requested_model = selected_model {
-      let matched: SpawnOverrideModelMatch = `NoOverrideModel ();
+    if let #Some requested_model = selected_model then
+      let matched: SpawnOverrideModelMatch = #NoOverrideModel;
       let models: SpawnOverrideModelCatalog = input.available_models;
       let available = "";
       let visible_count = 0;
       let done = false;
-      loop {
-        if let `Cons node = models {
+      loop do
+        if let #Cons node = models then
           let [model, tail] = node;
-          if model.name == requested_model && model.v2_supported { matched = `OverrideModel model }
-          if model.visible && model.v2_supported && visible_count < 5 {
-            if available == "" { available = model.name } else { available = text_append(
-              available,
-              text_append(", ", model.name),
-            ) }
+          if model.name == requested_model && model.v2_supported then
+            matched = #OverrideModel model
+          end;
+          if model.visible && model.v2_supported && visible_count < 5 then
+            if available == "" then
+              available = model.name
+            else
+              available = text_append(
+                available,
+                text_append(", ", model.name),
+              ) end;
             visible_count = visible_count + 1
-          }
+          end;
           models = tail
-        } else {
+        else
           done = true
-        }
-        if let `OverrideModel _ = matched { break; }
-        if done { break; }
-      }
+        end;
+        if let #OverrideModel _ = matched then
+          break;
+        end;
+        if done then
+          break;
+        end;
+      end;
 
-      if let `NoOverrideModel () = matched {
-        return `SpawnOverrideModelRejected (
+      if let #NoOverrideModel = matched then
+        return #SpawnOverrideModelRejected (
           text_append(
             "Unknown model `",
             text_append(
@@ -57,21 +68,21 @@ const select_spawn_override_model: AgentSpawnOverrideInput -> AgentSpawnOverride
             ),
           )
         );
-      }
+      end;
 
-      if let `OverrideModel model = matched {
+      if let #OverrideModel model = matched then
         let selection: SpawnOverrideModelStageSelection = [
           .model = model.name,
           .default_reasoning_effort = model.default_reasoning_effort,
           .supported_reasoning_efforts = model.supported_reasoning_efforts,
         ];
-        `SpawnOverrideModelSelected selection
-      } else {
-        `SpawnOverrideModelRejected "spawn_agent model selection produced no model"
-      }
-    } else {
-      `SpawnOverrideModelRejected "spawn_agent model selection produced no request"
-    }
-  };
+        #SpawnOverrideModelSelected selection
+      else
+        #SpawnOverrideModelRejected "spawn_agent model selection produced no model"
+      end;
+    else
+      #SpawnOverrideModelRejected "spawn_agent model selection produced no request"
+    end;
+  end;
 
 return { .select_spawn_override_model };

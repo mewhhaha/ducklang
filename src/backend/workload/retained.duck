@@ -8,39 +8,39 @@ const sequence = comptime sequence_module 7;
 const folder = comptime folder_module 11;
 const pipeline = comptime pipeline_module 4;
 
-let rec mix = (state, remaining) => {
-  if remaining == 0 {
+let rec mix = (state, remaining) => do
+  if remaining == 0 then
     state
-  } else {
+  else
     mix(state * mixer.factor + mixer.salt, remaining - 1)
-  }
-};
+  end;
+end;
 
-let rec advance = (left, right, remaining) => {
-  if remaining == 0 {
+let rec advance = (left, right, remaining) => do
+  if remaining == 0 then
     left
-  } else {
+  else
     advance(right, left + right + sequence.increment, remaining - 1)
-  }
-};
+  end;
+end;
 
-let rec fold = (state, remaining) => {
-  if remaining == 0 {
+let rec fold = (state, remaining) => do
+  if remaining == 0 then
     state
-  } else {
+  else
     fold(
       state * folder.factor + remaining + folder.bias,
       remaining - 1
     )
-  }
-};
+  end;
+end;
 
 let mixed = mix(pipeline.seed, pipeline.rounds);
 let advanced = advance(mixed, sequence.second, pipeline.rounds);
 let result = fold(mixed + advanced, pipeline.rounds);
-let selected = if result == 381455585 {
+let selected = if result == 381455585 then
   (value: I32) => value
-} else {
+else
   (value: I32) => value + 0
-};
+end;
 selected result

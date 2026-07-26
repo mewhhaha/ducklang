@@ -1,34 +1,34 @@
 module () where
 
 type Option value =
-  | `Some value
-  | `None Unit
+  | #Some value
+  | #None
 
 type Result error value =
-  | `Ok value
-  | `Err error
+  | #Ok value
+  | #Err error
 
 type Either left right =
-  | `Left left
-  | `Right right
+  | #Left left
+  | #Right right
 
 type Ordering =
-  | `Less Unit
-  | `Equal Unit
-  | `Greater Unit
+  | #Less
+  | #Equal
+  | #Greater
 
 type Identity value = value
 
 type Validation error value = Result error value
 
 type FieldPatch value =
-  | `Keep Unit
-  | `Clear Unit
-  | `Set value
+  | #Keep
+  | #Clear
+  | #Set value
 
 type List value =
-  | `Nil Unit
-  | `Cons ListNode value
+  | #Nil
+  | #Cons ListNode value
 
 type ListNode value = [value, List value]
 
@@ -57,43 +57,43 @@ const newtype = representation => representation;
 
 const packed = layout => layout;
 
-const struct = (const shape) => {
+const struct = (const shape) => do
   let product_type = [];
 
-  for field in shape {
+  for field in shape do
     product_type = [...product_type, field.value]
-  }
+  end
 
-  for index, field in shape {
+  for index, field in shape do
     product_type = product_type :+ (field.name, value => value[index])
-  }
+  end
 
-  let new = (const values) => {
+  let new = (const values) => do
     let product = [];
 
-    for field in shape {
-      for candidate in values {
-        product = if field.name == candidate.name {
+    for field in shape do
+      for candidate in values do
+        product = if field.name == candidate.name then
           [...product, candidate.value]
-        } else {
+        else
           product
-        }
-      }
-    }
+        end
+      end
+    end
 
-    let checked_product = if @len values == @len shape {
+    let checked_product = if @len values == @len shape then
       product
-    } else {
+    else
       [...product, 0, 0]
-    };
+    end;
 
     cast(checked_product, product_type)
-  };
+  end;
 
   product_type = product_type :+ { .shape, .new }
 
   product_type
-};
+end;
 
 return {
   .struct,

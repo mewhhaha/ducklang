@@ -1,8 +1,8 @@
-type Result = | `Ok Int | `Err Text
-let result = `Ok ("wrong");
+type Result = | #Ok Int | #Err Text
+let result = #Ok ("wrong");
 
-if let `Ok value = result {
+if let #Ok value = result then
   value
-} else {
+else
   0
-}
+end;

@@ -4,50 +4,50 @@ const { .struct } = import "duck:prelude/types" ();
 
 type CodexCliArgs = List Text
 type CodexCliCommand =
-  | `Interactive CodexCliArgs
-  | `Exec CodexCliArgs
-  | `Review CodexCliArgs
-  | `Login CodexCliArgs
-  | `Logout CodexCliArgs
-  | `Mcp CodexCliArgs
-  | `Plugin CodexCliArgs
-  | `McpServer CodexCliArgs
-  | `AppServer CodexCliArgs
-  | `RemoteControl CodexCliArgs
-  | `App CodexCliArgs
-  | `Completion CodexCliArgs
-  | `Update CodexCliArgs
-  | `Doctor CodexCliArgs
-  | `Sandbox CodexCliArgs
-  | `Debug CodexCliArgs
-  | `Execpolicy CodexCliArgs
-  | `Apply CodexCliArgs
-  | `Resume CodexCliArgs
-  | `Archive CodexCliArgs
-  | `Delete CodexCliArgs
-  | `Unarchive CodexCliArgs
-  | `Fork CodexCliArgs
-  | `Cloud CodexCliArgs
-  | `ResponsesApiProxy CodexCliArgs
-  | `StdioToUds CodexCliArgs
-  | `ExecServer CodexCliArgs
-  | `Features CodexCliArgs
+  | #Interactive CodexCliArgs
+  | #Exec CodexCliArgs
+  | #Review CodexCliArgs
+  | #Login CodexCliArgs
+  | #Logout CodexCliArgs
+  | #Mcp CodexCliArgs
+  | #Plugin CodexCliArgs
+  | #McpServer CodexCliArgs
+  | #AppServer CodexCliArgs
+  | #RemoteControl CodexCliArgs
+  | #App CodexCliArgs
+  | #Completion CodexCliArgs
+  | #Update CodexCliArgs
+  | #Doctor CodexCliArgs
+  | #Sandbox CodexCliArgs
+  | #Debug CodexCliArgs
+  | #Execpolicy CodexCliArgs
+  | #Apply CodexCliArgs
+  | #Resume CodexCliArgs
+  | #Archive CodexCliArgs
+  | #Delete CodexCliArgs
+  | #Unarchive CodexCliArgs
+  | #Fork CodexCliArgs
+  | #Cloud CodexCliArgs
+  | #ResponsesApiProxy CodexCliArgs
+  | #StdioToUds CodexCliArgs
+  | #ExecServer CodexCliArgs
+  | #Features CodexCliArgs
 
 type CodexCompletionShell =
-  | `Bash Unit
-  | `Elvish Unit
-  | `Fish Unit
-  | `PowerShell Unit
-  | `Zsh Unit
+  | #Bash
+  | #Elvish
+  | #Fish
+  | #PowerShell
+  | #Zsh
 
 type CodexCompletionOptions = struct {
   .shell = CodexCompletionShell
 }
 
 type CodexFeatureCommand =
-  | `List Unit
-  | `Enable Text
-  | `Disable Text
+  | #List
+  | #Enable Text
+  | #Disable Text
 
 type CodexCompletionOptionsResult = Result Text CodexCompletionOptions
 type CodexFeatureCommandResult = Result Text CodexFeatureCommand
@@ -56,16 +56,16 @@ type CodexCliTextOption = Option Text
 type CodexCliTexts = List Text
 
 type CodexCliSandboxMode =
-  | `SandboxReadOnly Unit
-  | `SandboxWorkspaceWrite Unit
-  | `SandboxDangerFullAccess Unit
+  | #SandboxReadOnly
+  | #SandboxWorkspaceWrite
+  | #SandboxDangerFullAccess
 
 type CodexCliSandboxModeOption = Option CodexCliSandboxMode
 
 type CodexCliApprovalMode =
-  | `ApprovalUntrusted Unit
-  | `ApprovalOnRequest Unit
-  | `ApprovalNever Unit
+  | #ApprovalUntrusted
+  | #ApprovalOnRequest
+  | #ApprovalNever
 
 type CodexCliApprovalModeOption = Option CodexCliApprovalMode
 
@@ -189,11 +189,11 @@ type CodexLoginFacts = struct {
 }
 
 type CodexLoginAction =
-  | `LoginStatus Unit
-  | `BrowserLogin Unit
-  | `DeviceLogin CodexDeviceLoginOptions
-  | `ApiKeyLogin Unit
-  | `AccessTokenLogin Unit
+  | #LoginStatus
+  | #BrowserLogin
+  | #DeviceLogin CodexDeviceLoginOptions
+  | #ApiKeyLogin
+  | #AccessTokenLogin
 
 type CodexLoginActionResult = Result Text CodexLoginAction
 type CodexLogoutResult = Result Text Unit
@@ -226,13 +226,13 @@ type CodexMcpLoginOptions = struct {
 }
 
 type CodexMcpCommand =
-  | `McpList Bool
-  | `McpGet CodexMcpNamedOutputOptions
-  | `McpAddStdio CodexMcpStdioOptions
-  | `McpAddHttp CodexMcpHttpOptions
-  | `McpRemove Text
-  | `McpLogin CodexMcpLoginOptions
-  | `McpLogout Text
+  | #McpList Bool
+  | #McpGet CodexMcpNamedOutputOptions
+  | #McpAddStdio CodexMcpStdioOptions
+  | #McpAddHttp CodexMcpHttpOptions
+  | #McpRemove Text
+  | #McpLogin CodexMcpLoginOptions
+  | #McpLogout Text
 
 type CodexMcpCommandResult = Result Text CodexMcpCommand
 
@@ -291,13 +291,13 @@ type CodexMarketplaceRemoveOptions = struct {
 }
 
 type CodexPluginCommand =
-  | `PluginAdd CodexPluginMutationOptions
-  | `PluginList CodexPluginListOptions
-  | `PluginRemove CodexPluginMutationOptions
-  | `MarketplaceAdd CodexMarketplaceAddOptions
-  | `MarketplaceList Bool
-  | `MarketplaceUpgrade CodexMarketplaceUpgradeOptions
-  | `MarketplaceRemove CodexMarketplaceRemoveOptions
+  | #PluginAdd CodexPluginMutationOptions
+  | #PluginList CodexPluginListOptions
+  | #PluginRemove CodexPluginMutationOptions
+  | #MarketplaceAdd CodexMarketplaceAddOptions
+  | #MarketplaceList Bool
+  | #MarketplaceUpgrade CodexMarketplaceUpgradeOptions
+  | #MarketplaceRemove CodexMarketplaceRemoveOptions
 
 type CodexPluginCommandResult = Result Text CodexPluginCommand
 
@@ -340,12 +340,12 @@ type CodexCloudTaskAttemptOptions = struct {
 }
 
 type CodexCloudCommand =
-  | `CloudBrowse Unit
-  | `CloudExec CodexCloudExecOptions
-  | `CloudStatus Text
-  | `CloudList CodexCloudListOptions
-  | `CloudApply CodexCloudTaskAttemptOptions
-  | `CloudDiff CodexCloudTaskAttemptOptions
+  | #CloudBrowse
+  | #CloudExec CodexCloudExecOptions
+  | #CloudStatus Text
+  | #CloudList CodexCloudListOptions
+  | #CloudApply CodexCloudTaskAttemptOptions
+  | #CloudDiff CodexCloudTaskAttemptOptions
 
 type CodexCloudCommandResult = Result Text CodexCloudCommand
 
@@ -382,9 +382,9 @@ type CodexExecServerOptions = struct {
 }
 
 type CodexServerCommand =
-  | `StartMcpServer CodexMcpServerOptions
-  | `StartExecServer CodexExecServerOptions
-  | `RelayStdioToUds Text
+  | #StartMcpServer CodexMcpServerOptions
+  | #StartExecServer CodexExecServerOptions
+  | #RelayStdioToUds Text
 
 type CodexServerCommandResult = Result Text CodexServerCommand
 
@@ -403,10 +403,10 @@ type CodexDesktopAppOptions = struct {
 }
 
 type CodexRemoteControlOperation =
-  | `RemoteControlForeground Unit
-  | `RemoteControlStart Unit
-  | `RemoteControlStop Unit
-  | `RemoteControlPair Unit
+  | #RemoteControlForeground
+  | #RemoteControlStart
+  | #RemoteControlStop
+  | #RemoteControlPair
 
 type CodexRemoteControlOptions = struct {
   .operation = CodexRemoteControlOperation,
@@ -414,8 +414,8 @@ type CodexRemoteControlOptions = struct {
 }
 
 type CodexApplicationCommand =
-  | `OpenDesktopApp CodexDesktopAppOptions
-  | `RunRemoteControl CodexRemoteControlOptions
+  | #OpenDesktopApp CodexDesktopAppOptions
+  | #RunRemoteControl CodexRemoteControlOptions
 
 type CodexApplicationCommandResult = Result Text CodexApplicationCommand
 
@@ -430,18 +430,18 @@ type CodexRemoteControlFacts = struct {
 }
 
 type CodexAppServerTransport =
-  | `AppServerStdio Unit
-  | `AppServerUnixSocket CodexCliTextOption
-  | `AppServerWebSocket Text
-  | `AppServerOff Unit
+  | #AppServerStdio
+  | #AppServerUnixSocket CodexCliTextOption
+  | #AppServerWebSocket Text
+  | #AppServerOff
 
 type CodexAppServerWebsocketAuthMode =
-  | `WebsocketCapabilityToken Unit
-  | `WebsocketSignedBearerToken Unit
+  | #WebsocketCapabilityToken
+  | #WebsocketSignedBearerToken
 
 type CodexAppServerCapabilityTokenSource =
-  | `WebsocketTokenFile Text
-  | `WebsocketTokenSha256 Text
+  | #WebsocketTokenFile Text
+  | #WebsocketTokenSha256 Text
 
 type CodexAppServerSignedBearerOptions = struct {
   .shared_secret_file = Text,
@@ -451,9 +451,9 @@ type CodexAppServerSignedBearerOptions = struct {
 }
 
 type CodexAppServerWebsocketAuth =
-  | `WebsocketAuthNone Unit
-  | `WebsocketCapabilityAuth CodexAppServerCapabilityTokenSource
-  | `WebsocketSignedBearerAuth CodexAppServerSignedBearerOptions
+  | #WebsocketAuthNone
+  | #WebsocketCapabilityAuth CodexAppServerCapabilityTokenSource
+  | #WebsocketSignedBearerAuth CodexAppServerSignedBearerOptions
 
 type CodexAppServerLaunchOptions = struct {
   .strict_config = Bool,
@@ -464,14 +464,14 @@ type CodexAppServerLaunchOptions = struct {
 }
 
 type CodexAppServerDaemonOperation =
-  | `AppServerDaemonBootstrap Bool
-  | `AppServerDaemonStart Unit
-  | `AppServerDaemonRestart Unit
-  | `AppServerDaemonEnableRemoteControl Unit
-  | `AppServerDaemonDisableRemoteControl Unit
-  | `AppServerDaemonStop Unit
-  | `AppServerDaemonVersion Unit
-  | `AppServerDaemonPidUpdateLoop Unit
+  | #AppServerDaemonBootstrap Bool
+  | #AppServerDaemonStart
+  | #AppServerDaemonRestart
+  | #AppServerDaemonEnableRemoteControl
+  | #AppServerDaemonDisableRemoteControl
+  | #AppServerDaemonStop
+  | #AppServerDaemonVersion
+  | #AppServerDaemonPidUpdateLoop
 
 type CodexAppServerGenerateTsOptions = struct {
   .out_dir = Text,
@@ -485,12 +485,12 @@ type CodexAppServerGenerateJsonOptions = struct {
 }
 
 type CodexAppServerCommand =
-  | `LaunchAppServer CodexAppServerLaunchOptions
-  | `ManageAppServerDaemon CodexAppServerDaemonOperation
-  | `ProxyAppServer CodexCliTextOption
-  | `GenerateAppServerTs CodexAppServerGenerateTsOptions
-  | `GenerateAppServerJsonSchema CodexAppServerGenerateJsonOptions
-  | `GenerateAppServerInternalJsonSchema Text
+  | #LaunchAppServer CodexAppServerLaunchOptions
+  | #ManageAppServerDaemon CodexAppServerDaemonOperation
+  | #ProxyAppServer CodexCliTextOption
+  | #GenerateAppServerTs CodexAppServerGenerateTsOptions
+  | #GenerateAppServerJsonSchema CodexAppServerGenerateJsonOptions
+  | #GenerateAppServerInternalJsonSchema Text
 
 type CodexAppServerCommandResult = Result Text CodexAppServerCommand
 
@@ -537,9 +537,9 @@ type CodexResponsesProxyOptions = struct {
 }
 
 type CodexUtilityCommand =
-  | `RunDoctor CodexDoctorOptions
-  | `ApplyTask CodexApplyTaskOptions
-  | `RunResponsesProxy CodexResponsesProxyOptions
+  | #RunDoctor CodexDoctorOptions
+  | #ApplyTask CodexApplyTaskOptions
+  | #RunResponsesProxy CodexResponsesProxyOptions
 
 type CodexUtilityCommandResult = Result Text CodexUtilityCommand
 
@@ -567,11 +567,11 @@ type CodexDebugTraceReduceOptions = struct {
 }
 
 type CodexDebugCommand =
-  | `DebugModels Bool
-  | `DebugAppServerMessage Text
-  | `DebugPromptInput CodexDebugPromptInputOptions
-  | `DebugTraceReduce CodexDebugTraceReduceOptions
-  | `DebugClearMemories Unit
+  | #DebugModels Bool
+  | #DebugAppServerMessage Text
+  | #DebugPromptInput CodexDebugPromptInputOptions
+  | #DebugTraceReduce CodexDebugTraceReduceOptions
+  | #DebugClearMemories
 
 type CodexDebugCommandResult = Result Text CodexDebugCommand
 
@@ -587,7 +587,7 @@ type CodexExecPolicyCheckOptions = struct {
   .command = CodexCliTexts,
 }
 
-type CodexExecPolicyCommand = `CheckExecPolicy CodexExecPolicyCheckOptions
+type CodexExecPolicyCommand = #CheckExecPolicy CodexExecPolicyCheckOptions
 
 type CodexExecPolicyCommandResult = Result Text CodexExecPolicyCommand
 
@@ -600,14 +600,14 @@ type CodexExecPolicyCheckFacts = struct {
 }
 
 type CodexExecColor =
-  | `ExecColorAlways Unit
-  | `ExecColorNever Unit
-  | `ExecColorAuto Unit
+  | #ExecColorAlways
+  | #ExecColorNever
+  | #ExecColorAuto
 
 type CodexExecMode =
-  | `ExecStartMode Unit
-  | `ExecResumeMode Unit
-  | `ExecReviewMode Unit
+  | #ExecStartMode
+  | #ExecResumeMode
+  | #ExecReviewMode
 
 type CodexReviewCommit = struct {
   .sha = Text,
@@ -615,10 +615,10 @@ type CodexReviewCommit = struct {
 }
 
 type CodexReviewTarget =
-  | `ReviewUncommitted Unit
-  | `ReviewBase Text
-  | `ReviewCommit CodexReviewCommit
-  | `ReviewCustom Text
+  | #ReviewUncommitted
+  | #ReviewBase Text
+  | #ReviewCommit CodexReviewCommit
+  | #ReviewCustom Text
 
 type CodexExecStart = struct {
   .prompt = CodexCliTextOption,
@@ -633,9 +633,9 @@ type CodexExecResume = struct {
 }
 
 type CodexExecCommand =
-  | `ExecStart CodexExecStart
-  | `ExecResume CodexExecResume
-  | `ExecReview CodexReviewTarget
+  | #ExecStart CodexExecStart
+  | #ExecResume CodexExecResume
+  | #ExecReview CodexReviewTarget
 
 type CodexExecOptions = struct {
   .shared = CodexCliSharedOptions,
@@ -707,28 +707,28 @@ type CodexSandboxFacts = struct {
 }
 
 type CodexCliPlan =
-  | `Command CodexCliCommand
-  | `GenerateCompletion CodexCompletionOptions
-  | `ManageFeature CodexFeatureCommand
-  | `UpdateBinary Unit
-  | `ResumeSession CodexResumeOptions
-  | `ForkSession CodexForkOptions
-  | `ArchiveSession CodexArchiveOptions
-  | `UnarchiveSession CodexArchiveOptions
-  | `DeleteSession CodexDeleteOptions
-  | `Authenticate CodexLoginAction
-  | `LogoutAuth Unit
-  | `ManageMcp CodexMcpCommand
-  | `ManagePlugin CodexPluginCommand
-  | `ManageCloud CodexCloudCommand
-  | `ManageServer CodexServerCommand
-  | `ManageApplication CodexApplicationCommand
-  | `ManageAppServer CodexAppServerCommand
-  | `ManageUtility CodexUtilityCommand
-  | `ManageDebug CodexDebugCommand
-  | `ManageExecPolicy CodexExecPolicyCommand
-  | `RunExec CodexExecOptions
-  | `RunSandbox CodexSandboxOptions
-  | `Invalid Text
+  | #Command CodexCliCommand
+  | #GenerateCompletion CodexCompletionOptions
+  | #ManageFeature CodexFeatureCommand
+  | #UpdateBinary
+  | #ResumeSession CodexResumeOptions
+  | #ForkSession CodexForkOptions
+  | #ArchiveSession CodexArchiveOptions
+  | #UnarchiveSession CodexArchiveOptions
+  | #DeleteSession CodexDeleteOptions
+  | #Authenticate CodexLoginAction
+  | #LogoutAuth
+  | #ManageMcp CodexMcpCommand
+  | #ManagePlugin CodexPluginCommand
+  | #ManageCloud CodexCloudCommand
+  | #ManageServer CodexServerCommand
+  | #ManageApplication CodexApplicationCommand
+  | #ManageAppServer CodexAppServerCommand
+  | #ManageUtility CodexUtilityCommand
+  | #ManageDebug CodexDebugCommand
+  | #ManageExecPolicy CodexExecPolicyCommand
+  | #RunExec CodexExecOptions
+  | #RunSandbox CodexSandboxOptions
+  | #Invalid Text
 
 return {};

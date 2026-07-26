@@ -3,8 +3,8 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type TestSyncDurationOption =
-  | `SyncDurationMissing Unit
-  | `SyncDurationPresent Text
+  | #SyncDurationMissing
+  | #SyncDurationPresent Text
 
 type TestSyncBarrier = struct {
   .id = Text,
@@ -13,8 +13,8 @@ type TestSyncBarrier = struct {
 }
 
 type TestSyncBarrierOption =
-  | `SyncBarrierMissing Unit
-  | `SyncBarrierPresent TestSyncBarrier
+  | #SyncBarrierMissing
+  | #SyncBarrierPresent TestSyncBarrier
 
 type TestSyncArgs = struct {
   .sleep_before_ms = TestSyncDurationOption,
@@ -23,32 +23,32 @@ type TestSyncArgs = struct {
 }
 
 type TestSyncPayload =
-  | `Function Text
-  | `Unsupported Unit
+  | #Function Text
+  | #Unsupported
 
 type TestSyncParseResult =
-  | `Parsed TestSyncArgs
-  | `ParseFailed Text
+  | #Parsed TestSyncArgs
+  | #ParseFailed Text
 
 type TestSyncDurationParseResult =
-  | `DurationParsed TestSyncDurationOption
-  | `DurationParseFailed Text
+  | #DurationParsed TestSyncDurationOption
+  | #DurationParseFailed Text
 
 type TestSyncBarrierParseResult =
-  | `BarrierParsed TestSyncBarrierOption
-  | `BarrierParseFailed Text
+  | #BarrierParsed TestSyncBarrierOption
+  | #BarrierParseFailed Text
 
 type TestSyncPlan =
-  | `RunSync TestSyncArgs
-  | `RejectRequest Text
+  | #RunSync TestSyncArgs
+  | #RejectRequest Text
 
 type TestSyncBarrierHostResult =
-  | `Released Unit
-  | `ParticipantsMismatch Text
-  | `TimedOut Unit
+  | #Released
+  | #ParticipantsMismatch Text
+  | #TimedOut
 
 type TestSyncExecutionResult =
-  | `Completed Text
-  | `Rejected Text
+  | #Completed Text
+  | #Rejected Text
 
 return {};

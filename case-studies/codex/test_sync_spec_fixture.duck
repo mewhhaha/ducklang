@@ -7,20 +7,24 @@ type FixtureSpecs = ToolSpecs
 
 let score = 0;
 let specs: FixtureSpecs = test_sync_tool_specs true;
-if let `Cons node = specs {
+if let #Cons node = specs then
   let [spec, tail] = node;
   let [name, kind, description, parameters, output, strict] = spec;
   let [namespace, local_name] = name;
   let expected =
     "{\"type\":\"object\",\"properties\":{\"barrier\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"Identifier shared by concurrent calls that should rendezvous\"},\"participants\":{\"type\":\"number\",\"description\":\"Number of tool calls that must arrive before the barrier opens\"},\"timeout_ms\":{\"type\":\"number\",\"description\":\"Maximum barrier wait in milliseconds. Defaults to 1000.\"}},\"required\":[\"id\",\"participants\"],\"additionalProperties\":false},\"sleep_after_ms\":{\"type\":\"number\",\"description\":\"Delay after completing the barrier. Defaults to no delay.\"},\"sleep_before_ms\":{\"type\":\"number\",\"description\":\"Delay before any other action. Defaults to no delay.\"}},\"additionalProperties\":false}";
-  let output_valid = if let `ToolOutputSchemaMissing () = output { true } else { false };
-  if namespace == "" && local_name == "test_sync_tool" && description == "Internal synchronization helper used by Codex integration tests." && parameters == expected && output_valid && !(
-    strict
-  ) {
-    if let `FunctionSpec () = kind {
-      if let `Nil () = tail { score = 100 }
-    }
-  }
-}
+  let output_valid = if let #ToolOutputSchemaMissing = output then true else false end;
+  if namespace == "" && local_name == "test_sync_tool" && description
+    == "Internal synchronization helper used by Codex integration tests." && parameters == expected
+    && output_valid && !(
+      strict
+    ) then
+      if let #FunctionSpec = kind then
+        if let #Nil = tail then
+          score = 100
+        end;
+      end;
+    end;
+end;
 
 return { .score = score };

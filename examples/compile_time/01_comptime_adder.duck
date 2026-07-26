@@ -1,6 +1,6 @@
-const make_adder = n => {
+const make_adder = n => do
   x => x + n
-};
+end;
 
 const add_three = comptime make_adder 3;
 let result = add_three 39;

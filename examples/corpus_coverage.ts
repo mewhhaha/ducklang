@@ -46,11 +46,14 @@ export const corpus_feature_examples: Record<string, string[]> = {
     "examples/functions/12_let_else_return.duck",
     "examples/loops/12_let_else_continue.duck",
   ],
-  "let_else.txt / Return without a value": [
+  "let_else.txt / Return of unit": [
     "examples/functions/12_let_else_return.duck",
   ],
   "literals.txt / Text, character, and boolean literals": [
     "examples/basics/09_literals.duck",
+  ],
+  "literals.txt / End is reserved outside field access": [
+    "examples/data/03_nested_structs.duck",
   ],
   "loop_expressions.txt / Loop expression with a value break": [
     "examples/loops/09_loop_expression_syntax.duck",
@@ -105,13 +108,13 @@ export const corpus_feature_examples: Record<string, string[]> = {
     "examples/handlers/01_local_counter.duck",
     "examples/ownership_modules/06_multi_file_capability_app.duck",
   ],
-  "polymorphic_effects.txt / Polymorphic do effect": [
+  "polymorphic_effects.txt / Polymorphic perform effect": [
     "examples/handlers/02_inferred_option_do.duck",
   ],
   "surface_forms.txt / Operator prefixes do not become application arguments": [
     "examples/compile_time/18_ducks_and_operators.duck",
   ],
-  "surface_forms.txt / Compile-time value match patterns": [
+  "surface_forms.txt / Compile-time value case patterns": [
     "examples/data/18_const_value_patterns.duck",
   ],
   "surface_forms.txt / Bracket value after a binding": [
@@ -143,7 +146,7 @@ export const corpus_feature_examples: Record<string, string[]> = {
     "examples/compile_time/22_generic_extension.duck",
     "examples/basics/12_value_packs_and_tuples.duck",
   ],
-  "surface_forms.txt / Arrays, imports, casts, updates, and matches": [
+  "surface_forms.txt / Arrays, imports, casts, updates, and cases": [
     "examples/compile_time/17_newtypes_and_literal_types.duck",
     "examples/data/02_projected_struct_update.duck",
     "examples/data/17_match_patterns.duck",

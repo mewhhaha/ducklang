@@ -187,6 +187,61 @@ function format_expr(
   }
 
   if (expr.tag === "product") {
+    if (expr.template_literal === true) {
+      const strings = expr.entries[0]?.value;
+      const values = expr.entries[1]?.value;
+
+      if (strings?.tag !== "product" || values?.tag !== "product") {
+        throw new Error(
+          "Template literal requires strings and values tuples",
+        );
+      }
+      if (strings.entries.length !== values.entries.length + 1) {
+        throw new Error(
+          "Template literal requires one more string than value",
+        );
+      }
+
+      let text = "`";
+
+      for (let index = 0; index < strings.entries.length; index += 1) {
+        const string = strings.entries[index]?.value;
+
+        if (string?.tag !== "text") {
+          throw new Error(
+            "Template literal string " + index.toString() + " is not Text",
+          );
+        }
+
+        for (const char of string.value) {
+          if (char === "\\") {
+            text += "\\\\";
+          } else if (char === "`") {
+            text += "\\`";
+          } else if (char === "\n") {
+            text += "\\n";
+          } else if (char === "\t") {
+            text += "\\t";
+          } else if (char === "\r") {
+            text += "\\r";
+          } else if (char === "{") {
+            text += "{{";
+          } else if (char === "}") {
+            text += "}}";
+          } else {
+            text += char;
+          }
+        }
+
+        const value = values.entries[index]?.value;
+        if (value !== undefined) {
+          text += "{" + nested(value) + "}";
+        }
+      }
+
+      return text + "`";
+    }
+
     const entries = expr.entries.map((entry) => {
       let text = nested(entry.value);
 
@@ -243,8 +298,8 @@ function format_expr(
   }
 
   if (expr.tag === "block") {
-    return "{ " + format_statement_sequence(expr.statements, format_stmt) +
-      " }";
+    return "do " + format_statement_sequence(expr.statements, format_stmt) +
+      " end";
   }
 
   if (expr.tag === "comptime") {
@@ -268,8 +323,8 @@ function format_expr(
   }
 
   if (expr.tag === "loop") {
-    return "loop { " + format_statement_sequence(expr.body, format_stmt) +
-      " }";
+    return "loop do " + format_statement_sequence(expr.body, format_stmt) +
+      " end";
   }
 
   if (expr.tag === "captured") {
@@ -401,13 +456,19 @@ function format_expr(
   }
 
   if (expr.tag === "if") {
-    const text = "if " + nested(expr.cond) + " " +
-      nested(expr.then_branch) + " else " + nested(expr.else_branch);
+    let text = "if " + nested(expr.cond) + " then " +
+      format_conditional_branch(expr.then_branch, format_stmt, nested);
+
+    if (expr.implicit_else !== true) {
+      text += format_conditional_else(expr.else_branch, format_stmt, nested);
+    }
+
+    text += " end";
     return parenthesize(text, 0, parent_precedence);
   }
 
   if (expr.tag === "if_let") {
-    let pattern = "`" + expr.case_name;
+    let pattern = "#" + expr.case_name;
 
     if (expr.value_name) {
       pattern += " " + format_binding_name(expr.value_name);
@@ -415,8 +476,14 @@ function format_expr(
       pattern += " _";
     }
 
-    const text = "if let " + pattern + " = " + nested(expr.target) + " " +
-      nested(expr.then_branch) + " else " + nested(expr.else_branch);
+    let text = "if let " + pattern + " = " + nested(expr.target) + " then " +
+      format_conditional_branch(expr.then_branch, format_stmt, nested);
+
+    if (expr.implicit_else !== true) {
+      text += format_conditional_else(expr.else_branch, format_stmt, nested);
+    }
+
+    text += " end";
     return parenthesize(text, 0, parent_precedence);
   }
 
@@ -444,27 +511,43 @@ function format_expr(
 
   if (expr.tag === "match") {
     const arms = expr.arms.map((arm) => {
-      let text = "| " + format_pattern(arm.pattern, nested);
+      let text = format_pattern(arm.pattern, nested);
 
       if (arm.guard) {
         text += " if " + nested(arm.guard);
       }
 
-      return text + " => " + nested(arm.body);
+      let body = nested(arm.body);
+
+      if (arm.body.tag === "match") {
+        body = "do " + body + " end";
+      }
+
+      return text + " => " + body;
     });
-    const text = "match " + nested(expr.target) + " { " + arms.join(" ") +
-      " }";
-    return parenthesize(text, 0, parent_precedence);
+    let target = nested(expr.target);
+
+    if (expr.target.tag === "match") {
+      target = "do " + target + " end";
+    }
+
+    const text = "case " + target + " of " + arms.join(", ") + ";";
+
+    if (parent_precedence > 0) {
+      return "do " + text + " end";
+    }
+
+    return text;
   }
 
   if (expr.tag === "union_case") {
-    if (expr.value) {
+    if (expr.value && expr.value.tag !== "unit") {
       const precedence = 110;
-      const text = "`" + expr.name + " " + nested(expr.value, precedence + 1);
+      const text = "#" + expr.name + " " + nested(expr.value, precedence + 1);
       return parenthesize(text, precedence, parent_precedence);
     }
 
-    return "`" + expr.name + " ()";
+    return "#" + expr.name;
   }
 
   if (expr.tag === "linear") {
@@ -472,6 +555,41 @@ function format_expr(
   }
 
   return "<unsupported " + expr.feature + ">";
+}
+
+function format_conditional_branch(
+  branch: FrontExpr,
+  format_stmt: (stmt: Stmt) => string,
+  format_expr: (expr: FrontExpr, precedence?: number) => string,
+): string {
+  if (branch.tag === "block") {
+    return format_statement_sequence(branch.statements, format_stmt);
+  }
+
+  return format_expr(branch);
+}
+
+function format_conditional_else(
+  branch: FrontExpr,
+  format_stmt: (stmt: Stmt) => string,
+  format_expr: (expr: FrontExpr, precedence?: number) => string,
+): string {
+  if (branch.tag === "if") {
+    let text = " else " + format_expr(branch.cond) + " then " +
+      format_conditional_branch(branch.then_branch, format_stmt, format_expr);
+
+    if (branch.implicit_else !== true) {
+      text += format_conditional_else(
+        branch.else_branch,
+        format_stmt,
+        format_expr,
+      );
+    }
+
+    return text;
+  }
+
+  return " else " + format_conditional_branch(branch, format_stmt, format_expr);
 }
 
 function application_arg(expr: Extract<FrontExpr, { tag: "app" }>): FrontExpr {
@@ -569,10 +687,15 @@ function restore_holes(expr: FrontExpr, holes: ReadonlySet<string>): FrontExpr {
   }
 
   if (expr.tag === "app") {
+    let arg: FrontExpr | undefined;
+    if (expr.arg !== undefined) {
+      arg = restore_holes(expr.arg, holes);
+    }
+
     return {
       ...expr,
       func: restore_holes(expr.func, holes),
-      arg: expr.arg === undefined ? undefined : restore_holes(expr.arg, holes),
+      arg,
       args: expr.args.map((arg) => restore_holes(arg, holes)),
     };
   }

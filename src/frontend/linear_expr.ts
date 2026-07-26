@@ -269,7 +269,7 @@ export function consume_linear_expr(
       }
 
       if (!first_branch) {
-        throw new Error("Match expression has no arms");
+        throw new Error("Case expression has no arms");
       }
 
       if (item.arms.length === 1) {

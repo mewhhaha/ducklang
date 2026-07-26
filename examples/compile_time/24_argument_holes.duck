@@ -10,7 +10,4 @@ let offset = 10;
 
 let scaled = add [_, _];
 
-1
-|> add [offset, _]
-|> add [30, _]
-|> (value => scaled [value, 1])
+1 |> add [offset, _] |> add [30, _] |> (value => scaled [value, 1])

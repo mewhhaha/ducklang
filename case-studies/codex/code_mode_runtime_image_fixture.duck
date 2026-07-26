@@ -10,72 +10,76 @@ type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 type FixtureResponse = CodeModeRuntimeResponse
 
-let no_detail: FixtureDetailOption = `None ();
-let original: FixtureDetail = `Original ();
-let original_detail: FixtureDetailOption = `Some original;
-let runtime_items: FixtureRuntimeItems = `RuntimeItemsNil ();
-let original_item: FixtureRuntimeItem = `RuntimeInputImage (["original", original_detail]);
+let no_detail: FixtureDetailOption = #None;
+let original: FixtureDetail = #Original;
+let original_detail: FixtureDetailOption = #Some original;
+let runtime_items: FixtureRuntimeItems = #RuntimeItemsNil;
+let original_item: FixtureRuntimeItem = #RuntimeInputImage (["original", original_detail]);
 let original_node: FixtureRuntimeItemNode = [original_item, runtime_items];
-runtime_items = `RuntimeItemsCons original_node
-let default_item: FixtureRuntimeItem = `RuntimeInputImage (["default", no_detail]);
+runtime_items = #RuntimeItemsCons original_node
+let default_item: FixtureRuntimeItem = #RuntimeInputImage (["default", no_detail]);
 let default_node: FixtureRuntimeItemNode = [default_item, runtime_items];
-runtime_items = `RuntimeItemsCons default_node
-let response: FixtureResponse = `RuntimeResult (["cell-1", runtime_items, `RuntimeErrorMissing ()]);
+runtime_items = #RuntimeItemsCons default_node
+let response: FixtureResponse = #RuntimeResult (["cell-1", runtime_items, #RuntimeErrorMissing]);
 let score = 0;
 
 let supported = handle_code_mode_runtime_response(
   response,
-  `OriginalDetailSupported (),
-  `WaitLimitMissing (),
-  `ElapsedMicroseconds 0i64,
+  #OriginalDetailSupported,
+  #WaitLimitMissing,
+  #ElapsedMicroseconds 0i64,
 );
-if let `Cons header_node = supported.content_items {
+if let #Cons header_node = supported.content_items then
   let [_, header_tail] = header_node;
-  if let `Cons default_output_node = header_tail {
+  if let #Cons default_output_node = header_tail then
     let [default_output_item, default_output_tail] = default_output_node;
-    if let `InputImage default_image = default_output_item {
+    if let #InputImage default_image = default_output_item then
       let [_, default_output_detail] = default_image;
-      if let `Some selected_default = default_output_detail {
-        if let `High () = selected_default {
-          if let `Cons original_output_node = default_output_tail {
+      if let #Some selected_default = default_output_detail then
+        if let #High = selected_default then
+          if let #Cons original_output_node = default_output_tail then
             let [original_output_item, original_output_tail] = original_output_node;
-            if let `InputImage original_image = original_output_item {
+            if let #InputImage original_image = original_output_item then
               let [_, original_output_detail] = original_image;
-              if let `Some selected_original = original_output_detail {
-                if let `Original () = selected_original {
-                  if let `Nil () = original_output_tail { score = score + 1 }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+              if let #Some selected_original = original_output_detail then
+                if let #Original = selected_original then
+                  if let #Nil = original_output_tail then
+                    score = score + 1
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let unsupported = handle_code_mode_runtime_response(
   response,
-  `OriginalDetailUnsupported (),
-  `WaitLimitMissing (),
-  `ElapsedMicroseconds 0i64,
+  #OriginalDetailUnsupported,
+  #WaitLimitMissing,
+  #ElapsedMicroseconds 0i64,
 );
-if let `Cons header_node = unsupported.content_items {
+if let #Cons header_node = unsupported.content_items then
   let [_, header_tail] = header_node;
-  if let `Cons default_output_node = header_tail {
+  if let #Cons default_output_node = header_tail then
     let [_, default_output_tail] = default_output_node;
-    if let `Cons original_output_node = default_output_tail {
+    if let #Cons original_output_node = default_output_tail then
       let [original_output_item, original_output_tail] = original_output_node;
-      if let `InputImage original_image = original_output_item {
+      if let #InputImage original_image = original_output_item then
         let [_, original_output_detail] = original_image;
-        if let `Some selected = original_output_detail {
-          if let `High () = selected {
-            if let `Nil () = original_output_tail { score = score + 10 }
-          }
-        }
-      }
-    }
-  }
-}
+        if let #Some selected = original_output_detail then
+          if let #High = selected then
+            if let #Nil = original_output_tail then
+              score = score + 10
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

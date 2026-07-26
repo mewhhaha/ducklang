@@ -14,28 +14,28 @@ let meta =
 let event =
   "{\"timestamp\":\"2025-01-03T09:00:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Alpha task\"}}";
 let file: FixtureFile = [path, "2025-01-05T00:00:00Z", meta <> "\nnot-json\n" <> event <> "\n"];
-let snapshot: FixtureFiles = `Cons ([file, `Nil ()]);
+let snapshot: FixtureFiles = #Cons ([file, #Nil]);
 let score: I32 = 0;
 
 let generated = rollout_path("/home", "2025-01-03T09-00-00", "thread-new");
-if let `Some generated_path = generated {
-  if generated_path == path && is_rollout_path generated_path {
+if let #Some generated_path = generated then
+  if generated_path == path && is_rollout_path generated_path then
     score = score + 1
-  }
-}
+  end;
+end;
 
 let summary = summarize_rollout_file file;
-if let `Some thread = summary {
-  if thread.preview == "Alpha task" && thread.thread_id == "thread-new" {
+if let #Some thread = summary then
+  if thread.preview == "Alpha task" && thread.thread_id == "thread-new" then
     score = score + 10
-  }
-}
+  end;
+end;
 
 let found = find_rollout_path_by_id(snapshot, "thread-new");
-if let `Some found_path = found {
-  if found_path == path {
+if let #Some found_path = found then
+  if found_path == path then
     score = score + 100
-  }
-}
+  end;
+end;
 
 return { .score = score };

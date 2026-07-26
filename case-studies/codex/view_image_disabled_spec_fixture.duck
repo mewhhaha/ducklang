@@ -7,6 +7,8 @@ type FixtureSpecs = ToolSpecs
 
 let score = 0;
 let specs: FixtureSpecs = view_image_tool_specs(false, false, false);
-if let `Nil () = specs { score = 10000 }
+if let #Nil = specs then
+  score = 10000
+end;
 
 return { .score = score };

@@ -9,66 +9,73 @@ type FixtureDefinitions = CodeModeExecuteToolDefinitions
 type FixtureInvocation = CodeModeExecuteInvocation
 type FixtureJson = Json
 
-let input_schema: FixtureJson = `Object (`Nil ());
+let input_schema: FixtureJson = #Object (#Nil);
 let definition: FixtureDefinition = [
   .name = "lookup",
   .tool_name = ["", "lookup"],
   .description = "Look up a value.",
-  .kind = `NestedFunction (),
-  .input_schema = `Some input_schema,
-  .output_schema = `None ()];
-let definition_node: FixtureDefinitionNode = [definition, `ExecuteToolsNil ()];
-let enabled_tools: FixtureDefinitions = `ExecuteToolsCons definition_node;
+  .kind = #NestedFunction,
+  .input_schema = #Some input_schema,
+  .output_schema = #None];
+let definition_node: FixtureDefinitionNode = [definition, #ExecuteToolsNil];
+let enabled_tools: FixtureDefinitions = #ExecuteToolsCons definition_node;
 
 let score = 0;
 
 let valid: FixtureInvocation = [
   .call_id = "call-exec",
   .tool_name = ["", "exec"],
-  .payload = `ExecuteCustomPayload "// @exec: {\"yield_time_ms\":5,\"max_output_tokens\":7}\ntext('ok')",
+  .payload = #ExecuteCustomPayload "// @exec: {\"yield_time_ms\":5,\"max_output_tokens\":7}\ntext('ok')",
   .enabled_tools = enabled_tools];
-if let `StartCodeModeExecute request = plan_code_mode_execute_call valid {
-  if request.tool_call_id == "call-exec" && request.source == "text('ok')" {
-    if let `CodeModeExecLimitPresent yield_time_ms = request.yield_time_ms {
-      if let `CodeModeExecLimitPresent max_output_tokens = request.max_output_tokens {
-        if yield_time_ms == 5i64 && max_output_tokens == 7i64 {
-          if let `ExecuteToolsCons node = request.enabled_tools {
+if let #StartCodeModeExecute request = plan_code_mode_execute_call valid then
+  if request.tool_call_id == "call-exec" && request.source == "text('ok')" then
+    if let #CodeModeExecLimitPresent yield_time_ms = request.yield_time_ms then
+      if let #CodeModeExecLimitPresent max_output_tokens = request.max_output_tokens then
+        if yield_time_ms == 5i64 && max_output_tokens == 7i64 then
+          if let #ExecuteToolsCons node = request.enabled_tools then
             let [enabled, _] = node;
-            if enabled.name == "lookup" { score = score + 1 }
-          }
-        }
-      }
-    }
-  }
-}
+            if enabled.name == "lookup" then
+              score = score + 1
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let namespaced: FixtureInvocation = [
   .call_id = "call-namespaced",
   .tool_name = ["tools__", "exec"],
-  .payload = `ExecuteCustomPayload "text('nested')",
-  .enabled_tools = `ExecuteToolsNil ()];
-if let `RejectCodeModeExecute message = plan_code_mode_execute_call namespaced {
-  if message == "exec expects raw JavaScript source text" { score = score + 10 }
-}
+  .payload = #ExecuteCustomPayload "text('nested')",
+  .enabled_tools = #ExecuteToolsNil];
+if let #RejectCodeModeExecute message = plan_code_mode_execute_call namespaced then
+  if message == "exec expects raw JavaScript source text" then
+    score = score + 10
+  end;
+end;
 
 let unsupported: FixtureInvocation = [
   .call_id = "call-function",
   .tool_name = ["", "exec"],
-  .payload = `ExecuteUnsupportedPayload (),
-  .enabled_tools = `ExecuteToolsNil ()];
-if let `RejectCodeModeExecute message = plan_code_mode_execute_call unsupported {
-  if message == "exec expects raw JavaScript source text" { score = score + 100 }
-}
+  .payload = #ExecuteUnsupportedPayload,
+  .enabled_tools = #ExecuteToolsNil];
+if let #RejectCodeModeExecute message = plan_code_mode_execute_call unsupported then
+  if message == "exec expects raw JavaScript source text" then
+    score = score + 100
+  end;
+end;
 
 let blank: FixtureInvocation = [
   .call_id = "call-blank",
   .tool_name = ["", "exec"],
-  .payload = `ExecuteCustomPayload "  ",
-  .enabled_tools = `ExecuteToolsNil ()];
-if let `RejectCodeModeExecute message = plan_code_mode_execute_call blank {
-  if message == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." {
-    score = score + 1000
-  }
-}
+  .payload = #ExecuteCustomPayload "  ",
+  .enabled_tools = #ExecuteToolsNil];
+if let #RejectCodeModeExecute message = plan_code_mode_execute_call blank then
+  if message
+    == "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`." then
+      score = score + 1000
+    end;
+end;
 
 return { .score = score };

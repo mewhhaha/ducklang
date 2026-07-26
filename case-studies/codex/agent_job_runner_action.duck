@@ -7,70 +7,74 @@ type AgentJobActionPending = AgentJobPreparedItems
 type AgentJobActionState = AgentJobRunnerState
 type AgentJobActionStep = AgentJobRunnerAction
 
-const agent_job_active_count: AgentJobActionActive -> I32 = values => {
+const agent_job_active_count: AgentJobActionActive -> I32 = values => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const agent_job_item_count: AgentJobActionPending -> I32 = values => {
+const agent_job_item_count: AgentJobActionPending -> I32 = values => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const start_agent_job_runner: AgentJobActionPending -> AgentJobActionState = pending => {
+const start_agent_job_runner: AgentJobActionPending -> AgentJobActionState = pending => do
   [
     .pending = pending,
-    .active = `Nil (),
+    .active = #Nil,
     .total_items = agent_job_item_count pending,
     .completed_items = 0,
     .failed_items = 0,
     .spawn_blocked = false,
     .cancelled = false,
   ]
-};
+end;
 
 const next_agent_job_runner_action: [AgentJobActionState, I32] -> AgentJobActionStep = (
   state: AgentJobActionState,
   maximum_concurrency: I32,
-) => {
+) => do
   let active_count = agent_job_active_count state.active;
   let may_retry_spawn = !(state.spawn_blocked) || active_count == 0;
-  if !(state.cancelled) && may_retry_spawn && active_count < maximum_concurrency {
-    if let `Cons node = state.pending {
+  if !(state.cancelled) && may_retry_spawn && active_count < maximum_concurrency then
+    if let #Cons node = state.pending then
       let [item, _] = node;
-      return `SpawnWorker item;
-    }
-  }
-  if let `Cons _ = state.active {
-    `WaitForWorker state.active
-  } else {
-    `FinalizeJob state.cancelled
-  }
-};
+      return #SpawnWorker item;
+    end;
+  end;
+  if let #Cons _ = state.active then
+    #WaitForWorker state.active
+  else
+    #FinalizeJob state.cancelled
+  end;
+end;
 
 return {
   .agent_job_active_count,

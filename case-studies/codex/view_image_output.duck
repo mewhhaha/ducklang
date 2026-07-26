@@ -7,11 +7,11 @@ const {} = import "./view_image_types.duck" ();
 type ImageOutputDetail = ViewImageDetail
 type ImageOutputValue = ViewImageOutput
 
-const view_image_detail_text: ImageOutputDetail -> Text = detail => {
-  if let `Original () = detail { "original" } else { "high" }
-};
+const view_image_detail_text: ImageOutputDetail -> Text = detail => do
+  if let #Original = detail then "original" else "high" end;
+end;
 
-let view_image_output_json: ImageOutputValue -> Text = output => {
+let view_image_output_json: ImageOutputValue -> Text = output => do
   text_append [
     "{\"image_url\":",
     text_append [
@@ -22,7 +22,7 @@ let view_image_output_json: ImageOutputValue -> Text = output => {
       ],
     ],
   ]
-};
+end;
 
 return {
   .view_image_detail_text,

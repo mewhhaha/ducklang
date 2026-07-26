@@ -80,7 +80,7 @@ Deno.test("editor language service retains inferred local structure", async () =
       { needle: "left_height = piece_tree_height left", type: "I32" },
       { needle: "root = join_piece_trees", type: "PieceTree" },
       { needle: "output = output_builder", type: "OutputBuilder" },
-      { needle: "mode = if let `Extend", type: "Mode" },
+      { needle: "mode = if let #Extend", type: "Mode" },
     ]
   ) {
     const offset = text.indexOf(expected.needle);

@@ -1,0 +1,12 @@
+module () where
+
+const { .list } = import "duck:prelude/functional" ();
+const {} = import "./apps_types.duck" ();
+const { .render_apps_diff } = import "./apps.duck" ();
+
+return {
+  .absent = render_apps_diff(#Absent),
+  .known_unavailable = render_apps_diff(#KnownUnavailable),
+  .known_available = render_apps_diff(#KnownAvailable),
+  .unknown = render_apps_diff(#Unknown),
+};

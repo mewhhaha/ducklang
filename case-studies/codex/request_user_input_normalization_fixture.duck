@@ -15,22 +15,24 @@ let score_normalization: [FixtureArgs, I64, I32] -> I32 = (
   args: FixtureArgs,
   expected_auto_resolution: I64,
   weight: I32,
-) => {
+) => do
   let score = 0;
-  if let `Normalized normalized = normalize_request_user_input_args args {
-    if let `AutoResolutionMs value = normalized.auto_resolution {
-      if value == expected_auto_resolution {
-        if let `Cons node = normalized.questions {
+  if let #Normalized normalized = normalize_request_user_input_args args then
+    if let #AutoResolutionMs value = normalized.auto_resolution then
+      if value == expected_auto_resolution then
+        if let #Cons node = normalized.questions then
           let [normalized_question, _] = node;
-          if normalized_question.is_other && normalized_question.is_secret { score = weight }
-        }
-      }
-    }
-  }
+          if normalized_question.is_other && normalized_question.is_secret then
+            score = weight
+          end;
+        end;
+      end;
+    end;
+  end;
   score
-};
+end;
 
-let low_questions: FixtureQuestions = `Cons (
+let low_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -38,21 +40,21 @@ let low_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = true,
-      .options = `Present (
-        `Cons (
+      .options = #Present (
+        #Cons (
           [
             [.label = "Continue (Recommended)", .description = "Proceed with the change."] as FixtureOption,
-            `Nil () ] as FixtureOptionNode
+            #Nil] as FixtureOptionNode
         )
       ),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
-let low: FixtureArgs = [.questions = low_questions, .auto_resolution = `AutoResolutionMs 1i64];
+let low: FixtureArgs = [.questions = low_questions, .auto_resolution = #AutoResolutionMs 1i64];
 let low_score = score_normalization(low, 60000i64, 1);
 
-let high_questions: FixtureQuestions = `Cons (
+let high_questions: FixtureQuestions = #Cons (
   [
     [
       .id = "confirm",
@@ -60,20 +62,20 @@ let high_questions: FixtureQuestions = `Cons (
       .question = "Proceed?",
       .is_other = false,
       .is_secret = true,
-      .options = `Present (
-        `Cons (
+      .options = #Present (
+        #Cons (
           [
             [.label = "Continue (Recommended)", .description = "Proceed with the change."] as FixtureOption,
-            `Nil () ] as FixtureOptionNode
+            #Nil] as FixtureOptionNode
         )
       ),
     ] as FixtureQuestion,
-    `Nil (),
+    #Nil,
   ] as FixtureQuestionNode
 );
 let high: FixtureArgs = [
   .questions = high_questions,
-  .auto_resolution = `AutoResolutionMs 999999i64,
+  .auto_resolution = #AutoResolutionMs 999999i64,
 ];
 let high_score = score_normalization(high, 240000i64, 10);
 

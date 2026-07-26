@@ -61,9 +61,9 @@ Deno.test("source facts retain the distinct Char type", () => {
 
 Deno.test("source facts expose let-else bindings only after the fallback", () => {
   const source = parse_source(`
-type Maybe = | \`Some I32 | \`None Unit
-let option: Maybe = \`Some 42;
-let \`Some value = option else { return 0; };
+type Maybe = | #Some I32 | #None
+let option: Maybe = #Some 42;
+let #Some value = option else do return 0; end;
 value
 `);
   const facts = source_facts(source);
@@ -80,8 +80,8 @@ value
 
 Deno.test("applied source types preserve function argument grouping", () => {
   const source = parse_source(`
-type Maybe value = | \`Just value | \`Nothing Unit
-let callback: Maybe (I32 -> I32) = \`Nothing ();
+type Maybe value = | #Just value | #Nothing
+let callback: Maybe (I32 -> I32) = #Nothing;
 callback
 `);
   const facts = source_facts(source);
@@ -231,23 +231,23 @@ Deno.test("source facts expose Bytes.empty as Bytes", () => {
 
 Deno.test("source facts traverse unreachable expressions without changing returns", () => {
   assert_equals(
-    expression_type_names("let f = () => { return true; 1 };\nf()", "num"),
+    expression_type_names("let f = () => do return true; 1 end;\nf()", "num"),
     ["I32"],
   );
   assert_equals(
-    expression_type_names("let f = () => { return true; 1 };\nf()", "app"),
+    expression_type_names("let f = () => do return true; 1 end;\nf()", "app"),
     ["Bool"],
   );
   assert_equals(
     expression_type_names(
-      "let f = () => { { return true; }; 1 };\nlet out = f();",
+      "let f = () => do do return true; end; 1 end;\nlet out = f();",
       "app",
     ),
     ["Bool"],
   );
   assert_equals(
     expression_type_names(
-      "let f = () => { scratch { return true; }; 1 };\nlet out = f();",
+      "let f = () => do scratch do return true; end; 1 end;\nlet out = f();",
       "app",
     ),
     ["Bool"],
@@ -281,11 +281,11 @@ Deno.test("source facts infer each untyped call independently", () => {
 
 Deno.test("source facts apply consistent call types inside untyped functions", () => {
   const source = parse_source(`
-let suffix = (bytes, pattern) => {
+let suffix = (bytes, pattern) => do
   let tail = @slice(bytes, 0, @len(bytes));
   let width = @len(pattern);
   @slice(tail, 0, width)
-};
+end;
 let bytes: Bytes = Bytes.empty;
 suffix(bytes, "")
 `);
@@ -407,15 +407,15 @@ Deno.test("source facts reject invalid annotations and same assignments", () => 
 Deno.test("source facts require known indexes and valid loop binders", () => {
   assert_equals(expression_type_names('"abc"[index]', "index"), ["unknown"]);
   assert_equals(
-    expression_type_names('for byte in "abc" { byte }; 0', "var"),
+    expression_type_names('for byte in "abc" do byte end; 0', "var"),
     ["I32"],
   );
   assert_equals(
-    expression_type_names("for value in true..2 { value }; 0", "var"),
+    expression_type_names("for value in true..2 do value end; 0", "var"),
     ["unknown"],
   );
   assert_equals(
-    expression_type_names('let out = loop { break "x"; };\nout', "loop"),
+    expression_type_names('let out = loop do break "x"; end;\nout', "loop"),
     ["unknown"],
   );
 });
@@ -729,9 +729,9 @@ flags.ready
 
 Deno.test("source facts preserve declared sum constructors", () => {
   const text = `
-type ResultType = | \`Ok Int | \`Err Int
-let result: ResultType = \`Ok 41;
-if let \`Ok value = result { value } else { 0 }
+type ResultType = | #Ok Int | #Err Int
+let result: ResultType = #Ok 41;
+if let #Ok value = result then value  else  0 end;
 `;
   const source = parse_source(text);
   const facts = source_facts(source);
@@ -757,10 +757,10 @@ if let \`Ok value = result { value } else { 0 }
     "Int",
   );
 
-  for (const value of ["`Ok true", "`Missing 1"]) {
+  for (const value of ["#Ok true", "#Missing 1"]) {
     assert_equals(
       expression_type_names(
-        "type ResultType = | `Ok Int | `Err Int\n" +
+        "type ResultType = | #Ok Int | #Err Int\n" +
           "const result_type = ResultType;\n" +
           "let result: result_type = " + value + ";",
         "union_case",
@@ -768,6 +768,42 @@ if let \`Ok value = result { value } else { 0 }
       ["unknown"],
     );
   }
+});
+
+Deno.test("source facts resolve recursive union aliases before matching constructors", () => {
+  const source = parse_source(`
+type TextNode = [Text, Texts]
+type Texts = | #Nil | #Cons TextNode
+type Entry = struct { .name = Text }
+type EntryNode = [Entry, Entries]
+type Entries = | #Nil | #Cons EntryNode
+type EntryList = Entries
+let entries: Entries = #Nil;
+let current: EntryList = entries;
+if let #Cons node = current then
+  let [entry, _] = node;
+  entry.name
+ else
+  ""
+end;
+`);
+  const facts = source_facts(source);
+  const current = source.statements[1];
+  const conditional = source.statements[2];
+
+  assert_equals(binding_type_name(current!, facts), "EntryList");
+
+  if (
+    conditional === undefined || conditional.tag !== "expr" ||
+    conditional.expr.tag !== "if_let"
+  ) {
+    throw new Error("Missing recursive alias union conditional");
+  }
+
+  assert_equals(
+    definition_type_name(conditional.expr, "value_name", facts),
+    "EntryNode",
+  );
 });
 
 Deno.test("source facts do not unify poisoned call arguments", () => {
@@ -789,10 +825,10 @@ Deno.test("quantified closures resolve local applied type annotations", () => {
   const source = parse_source(`
 type Pair left right = [left, right]
 const pair: forall left right.[left, right] -> Pair left right =
-  (left, right) => {
+  (left, right) => do
     let result: Pair left right = [left, right];
     result
-  };
+  end;
 let mixed = pair(1, true);
 let reversed = pair(false, 2);
 `);

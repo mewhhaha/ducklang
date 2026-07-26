@@ -5766,6 +5766,20 @@ function canonical_type_from_source_fact(
   }
 
   if (
+    source.alias_target !== undefined &&
+    !source_is_opaque_alias(source)
+  ) {
+    return canonical_type_from_source_fact(
+      source.alias_target,
+      engine,
+      variables,
+      visiting,
+      unwrapped_quantifiers,
+      variable_kind,
+    );
+  }
+
+  if (
     source.quantified_variables !== undefined &&
     !unwrapped_quantifiers.has(source)
   ) {

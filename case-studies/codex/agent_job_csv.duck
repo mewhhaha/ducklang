@@ -15,249 +15,272 @@ type AgentJobCsvTextListNode = AgentJobTextNode
 type AgentJobTemplateJson = Json
 type AgentJobTemplateObject = JsonObject
 
-const reverse_agent_job_texts: AgentJobCsvTextList -> AgentJobCsvTextList = values => {
+const reverse_agent_job_texts: AgentJobCsvTextList -> AgentJobCsvTextList = values => do
   let current = values;
-  let reversed: AgentJobCsvTextList = `Nil ();
+  let reversed: AgentJobCsvTextList = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
       let reversed_node: AgentJobCsvTextListNode = [value, reversed];
-      reversed = `Cons reversed_node
+      reversed = #Cons reversed_node
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   reversed
-};
+end;
 
-const reverse_agent_job_rows: AgentJobCsvRowList -> AgentJobCsvRowList = values => {
+const reverse_agent_job_rows: AgentJobCsvRowList -> AgentJobCsvRowList = values => do
   let current = values;
-  let reversed: AgentJobCsvRowList = `Nil ();
+  let reversed: AgentJobCsvRowList = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
       let reversed_node: AgentJobCsvRowListNode = [value, reversed];
-      reversed = `Cons reversed_node
+      reversed = #Cons reversed_node
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   reversed
-};
+end;
 
-const agent_job_row_is_empty: AgentJobCsvTextList -> Bool = values => {
+const agent_job_row_is_empty: AgentJobCsvTextList -> Bool = values => do
   let current = values;
   let empty = true;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      if value != "" { empty = false }
+      if value != "" then
+        empty = false
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   empty
-};
+end;
 
-const agent_job_text_count: AgentJobCsvTextList -> I32 = values => {
+const agent_job_text_count: AgentJobCsvTextList -> I32 = values => do
   let current = values;
   let count = 0;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   count
-};
+end;
 
-const strip_csv_bom: AgentJobCsvTextList -> AgentJobCsvTextList = headers => {
-  if let `Cons node = headers {
+const strip_csv_bom: AgentJobCsvTextList -> AgentJobCsvTextList = headers => do
+  if let #Cons node = headers then
     let [first, tail] = node;
     if text_length first >= 3 && text_get [first, 0] == 239 && text_get [first,
       1] == 187 && text_get [
         first,
         2,
-      ] == 191 {
+      ] == 191 then
         let stripped_node: AgentJobCsvTextListNode = [
           text_slice [first, 3, text_length first],
           tail,
         ];
-        `Cons stripped_node
-      } else {
+        #Cons stripped_node
+      else
         headers
-      }
-  } else {
+      end;
+  else
     headers
-  }
-};
+  end;
+end;
 
-let parse_agent_job_csv: Text -> AgentJobCsvParse = content => {
-  let rows_reversed: AgentJobCsvRowList = `Nil ();
-  let row_reversed: AgentJobCsvTextList = `Nil ();
+let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
+  let rows_reversed: AgentJobCsvRowList = #Nil;
+  let row_reversed: AgentJobCsvTextList = #Nil;
   let field = "";
   let segment_start = 0;
   let index = 0;
   let quoted = false;
   let failure = "";
 
-  loop {
-    if index >= text_length content { break; }
+  loop do
+    if index >= text_length content then
+      break;
+    end;
     let byte = text_get [content, index];
 
-    if quoted {
-      if byte == 34 {
+    if quoted then
+      if byte == 34 then
         field = text_append [field, text_slice [content, segment_start, index]]
-        if index + 1 < text_length content && text_get [content, index + 1] == 34 {
+        if index + 1 < text_length content && text_get [content, index + 1] == 34 then
           field = text_append [field, "\""]
           index = index + 2
           segment_start = index
-        } else {
+        else
           quoted = false
           index = index + 1
           segment_start = index
-        }
-      } else {
+        end;
+      else
         index = index + 1
-      }
-    } else if byte == 34 && field == "" && index == segment_start {
+      end;
+    else byte == 34 && field == "" && index == segment_start then
       quoted = true
       index = index + 1
       segment_start = index
-    } else if byte == 44 || byte == 10 || byte == 13 {
+    else byte == 44 || byte == 10 || byte == 13 then
       field = text_append [field, text_slice [content, segment_start, index]]
       let field_node: AgentJobCsvTextListNode = [field, row_reversed];
-      row_reversed = `Cons field_node
+      row_reversed = #Cons field_node
       field = ""
 
-      if byte == 10 || byte == 13 {
+      if byte == 10 || byte == 13 then
         let row = reverse_agent_job_texts row_reversed;
-        if !(agent_job_row_is_empty row) {
+        if !(agent_job_row_is_empty row) then
           let row_node: AgentJobCsvRowListNode = [row, rows_reversed];
-          rows_reversed = `Cons row_node
-        }
-        row_reversed = `Nil ()
-        if byte == 13 && index + 1 < text_length content && text_get [content, index + 1] == 10 {
-          index = index + 1 }
-      }
+          rows_reversed = #Cons row_node
+        end;
+        row_reversed = #Nil
+        if byte == 13 && index + 1 < text_length content && text_get [content, index + 1] == 10 then
+          index = index + 1 end;
+      end;
 
       index = index + 1
       segment_start = index
-    } else {
+    else
       index = index + 1
-    }
-  }
+    end;
+  end;
 
-  if quoted {
+  if quoted then
     failure = "unterminated quoted field"
-  } else if segment_start < text_length content || field != "" || agent_job_text_count row_reversed
-  > 0 {
-    field = text_append [field, text_slice [content, segment_start, text_length content]]
-    let field_node: AgentJobCsvTextListNode = [field, row_reversed];
-    row_reversed = `Cons field_node
-    let row = reverse_agent_job_texts row_reversed;
-    if !(agent_job_row_is_empty row) {
-      let row_node: AgentJobCsvRowListNode = [row, rows_reversed];
-      rows_reversed = `Cons row_node
-    }
-  }
+  else segment_start < text_length content || field != "" || agent_job_text_count row_reversed
+      > 0 then
+        field = text_append [field, text_slice [content, segment_start, text_length content]]
+        let field_node: AgentJobCsvTextListNode = [field, row_reversed];
+        row_reversed = #Cons field_node
+        let row = reverse_agent_job_texts row_reversed;
+        if !(agent_job_row_is_empty row) then
+          let row_node: AgentJobCsvRowListNode = [row, rows_reversed];
+          rows_reversed = #Cons row_node
+        end;
+      end;
 
-  if failure != "" {
-    `CsvParseFailed failure
-  } else {
-    let rows = reverse_agent_job_rows rows_reversed;
-    if let `Cons first_node = rows {
-      let [headers, remaining] = first_node;
-      let document: AgentJobCsvDocumentValue = [.headers = strip_csv_bom headers, .rows = remaining];
-      `CsvParsed document
-    } else {
-      `CsvParseFailed "csv input must include a header row"
-    }
-  }
-};
+    if failure != "" then
+      #CsvParseFailed failure
+    else
+      let rows = reverse_agent_job_rows rows_reversed;
+      if let #Cons first_node = rows then
+        let [headers, remaining] = first_node;
+        let document: AgentJobCsvDocumentValue = [
+          .headers = strip_csv_bom headers,
+          .rows = remaining,
+        ];
+        #CsvParsed document
+      else
+        #CsvParseFailed "csv input must include a header row"
+      end;
+    end;
+  end;
 
-let render_agent_job_instruction: [Text, AgentJobTemplateObject] -> Text = (
-  instruction: Text,
-  row: AgentJobTemplateObject,
-) => {
-  let rendered = text_replace_all [
-    text_replace_all [instruction, "{{", "__CODEX_OPEN_BRACE__"],
-    "}}",
-    "__CODEX_CLOSE_BRACE__",
-  ];
-  let current = row;
-  let done = false;
-  loop {
-    if let `Cons node = current {
-      let [member, tail] = node;
-      let [key, value] = member;
-      let replacement = if let `String text = value { text } else { encode_json value };
-      rendered = text_replace_all [rendered, text_append ["{", text_append [key, "}"]], replacement]
-      current = tail
-    } else {
-      done = true
-    }
-    if done { break; }
-  }
-  text_replace_all [
-    text_replace_all [rendered, "__CODEX_OPEN_BRACE__", "{"],
-    "__CODEX_CLOSE_BRACE__",
-    "}",
-  ]
-};
+  let render_agent_job_instruction: [Text, AgentJobTemplateObject] -> Text = (
+    instruction: Text,
+    row: AgentJobTemplateObject,
+  ) => do
+    let rendered = text_replace_all [
+      text_replace_all [instruction, "{{", "__CODEX_OPEN_BRACE__"],
+      "}}",
+      "__CODEX_CLOSE_BRACE__",
+    ];
+    let current = row;
+    let done = false;
+    loop do
+      if let #Cons node = current then
+        let [member, tail] = node;
+        let [key, value] = member;
+        let replacement = if let #String text = value then text else encode_json value end;
+        rendered = text_replace_all [
+          rendered,
+          text_append ["{", text_append [key, "}"]],
+          replacement,
+        ]
+        current = tail
+      else
+        done = true
+      end;
+      if done then
+        break;
+      end;
+    end;
+    text_replace_all [
+      text_replace_all [rendered, "__CODEX_OPEN_BRACE__", "{"],
+      "__CODEX_CLOSE_BRACE__",
+      "}",
+    ]
+  end;
 
-const validate_agent_job_csv_rows: AgentJobCsvDocumentValue -> Text = document => {
-  let expected = agent_job_text_count document.headers;
-  let current = document.rows;
-  let row_number = 2;
-  let failure = "";
-  let done = false;
-  loop {
-    if let `Cons node = current {
-      let [row, tail] = node;
-      let actual = agent_job_text_count row;
-      if failure == "" && actual != expected {
-        failure = text_append [
-          "csv row ",
-          text_append [
-            format_i32 row_number,
+  const validate_agent_job_csv_rows: AgentJobCsvDocumentValue -> Text = document => do
+    let expected = agent_job_text_count document.headers;
+    let current = document.rows;
+    let row_number = 2;
+    let failure = "";
+    let done = false;
+    loop do
+      if let #Cons node = current then
+        let [row, tail] = node;
+        let actual = agent_job_text_count row;
+        if failure == "" && actual != expected then
+          failure = text_append [
+            "csv row ",
             text_append [
-              " has ",
+              format_i32 row_number,
               text_append [
-                format_i32 actual,
-                text_append [" fields but header has ", format_i32 expected],
+                " has ",
+                text_append [
+                  format_i32 actual,
+                  text_append [" fields but header has ", format_i32 expected],
+                ],
               ],
             ],
-          ],
-        ]
-      }
-      row_number = row_number + 1
-      current = tail
-    } else {
-      done = true
-    }
-    if done { break; }
-  }
-  failure
-};
+          ]
+        end;
+        row_number = row_number + 1
+        current = tail
+      else
+        done = true
+      end;
+      if done then
+        break;
+      end;
+    end;
+    failure
+  end;
 
-return {
-  .agent_job_text_count,
-  .parse_agent_job_csv,
-  .render_agent_job_instruction,
-  .validate_agent_job_csv_rows,
-};
+  return {
+    .agent_job_text_count,
+    .parse_agent_job_csv,
+    .render_agent_job_instruction,
+    .validate_agent_job_csv_rows,
+  };

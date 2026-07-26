@@ -2264,7 +2264,7 @@ function elaborate_match_expr(
 
         if (condition === undefined) {
           throw new Error(
-            "Value-pack match guard requires a compile-time condition",
+            "Value-pack case guard requires a compile-time condition",
           );
         }
 
@@ -2295,7 +2295,7 @@ function elaborate_match_expr(
       if (arm.pattern.tag === "binding") {
         if (arm.pattern.mode === "linear") {
           throw new Error(
-            "Linear bindings are not supported in compile-time matches",
+            "Linear bindings are not supported in compile-time cases",
           );
         }
 
@@ -2377,7 +2377,7 @@ function elaborate_match_expr(
 
   const unreachable_message: FrontExpr = {
     tag: "text",
-    value: "Exhaustive match reached its fallback",
+    value: "Exhaustive case reached its fallback",
   };
   let result: FrontExpr = {
     tag: "app",
@@ -2647,7 +2647,7 @@ function elaborate_type_match_expr(
     } else if (arm.pattern.tag === "binding") {
       if (arm.pattern.mode === "linear") {
         throw new Error(
-          "Linear bindings are not supported in compile-time type matches",
+          "Linear bindings are not supported in compile-time type cases",
         );
       }
 
@@ -2658,7 +2658,7 @@ function elaborate_type_match_expr(
       );
     } else {
       throw new Error(
-        "Compile-time type match arm must use a type pattern or catch-all",
+        "Compile-time type case arm must use a type pattern or catch-all",
       );
     }
 
@@ -2675,7 +2675,7 @@ function elaborate_type_match_expr(
 
     if (result === undefined) {
       throw new Error(
-        "Non-exhaustive guarded type match at arm " + index.toString(),
+        "Non-exhaustive guarded type case at arm " + index.toString(),
       );
     }
 
@@ -2687,7 +2687,7 @@ function elaborate_type_match_expr(
     };
   }
 
-  expect(result, "Non-exhaustive type match for compile-time type value");
+  expect(result, "Non-exhaustive type case for compile-time type value");
   return result;
 }
 
@@ -2702,7 +2702,7 @@ function const_value_pack_pattern_replacements(
   if (pattern.tag === "binding") {
     if (pattern.mode === "linear") {
       throw new Error(
-        "Linear bindings are not supported in compile-time value-pack matches",
+        "Linear bindings are not supported in compile-time value-pack cases",
       );
     }
 
@@ -2933,7 +2933,7 @@ function elaborate_match_arm(
   if (arm.pattern.tag === "binding") {
     if (arm.pattern.mode === "linear") {
       throw new Error(
-        "Linear binding match patterns are not supported during elaboration: " +
+        "Linear binding case patterns are not supported during elaboration: " +
           arm.pattern.name,
       );
     }
@@ -3010,7 +3010,7 @@ function elaborate_match_arm(
   }
 
   if (arm.pattern.tag === "type") {
-    throw new Error("Type match must be elaborated at compile time");
+    throw new Error("Type case must be elaborated at compile time");
   }
 
   if (arm.pattern.tag === "value") {
@@ -3027,7 +3027,7 @@ function elaborate_match_arm(
     if (arm.pattern.value?.tag === "binding") {
       if (arm.pattern.value.mode === "linear") {
         throw new Error(
-          "Linear union payload patterns are not supported during match elaboration: " +
+          "Linear union payload patterns are not supported during case elaboration: " +
             arm.pattern.value.name,
         );
       }
@@ -3042,7 +3042,7 @@ function elaborate_match_arm(
       arm.pattern.value.tag !== "wildcard" && arm.pattern.value.tag !== "unit"
     ) {
       throw new Error(
-        "Unsupported nested match payload pattern for ." +
+        "Unsupported nested case payload pattern for ." +
           arm.pattern.name + ": " + arm.pattern.value.tag,
       );
     }
@@ -3130,7 +3130,7 @@ function elaborate_match_arm(
   }
 
   arm.pattern satisfies never;
-  throw new Error("Unsupported match pattern during elaboration");
+  throw new Error("Unsupported case pattern during elaboration");
 }
 
 function elaborate_text_capture_arm(
@@ -3402,7 +3402,7 @@ function validate_match_coverage(
       union_coverage_complete(union_type, covered_union_cases)
     ) {
       throw_match_coverage_diagnostic(
-        "Unreachable match arm " + index.toString(),
+        "Unreachable case arm " + index.toString(),
         arm,
       );
     }
@@ -3428,7 +3428,7 @@ function validate_match_coverage(
     if (arm.pattern.tag === "unit") {
       if (covered_literals.has("unit")) {
         throw_match_coverage_diagnostic(
-          "Unreachable duplicate unit match at arm " + index.toString(),
+          "Unreachable duplicate unit case at arm " + index.toString(),
           arm,
         );
       }
@@ -3444,7 +3444,7 @@ function validate_match_coverage(
 
       if (covered_literals.has(key)) {
         throw_match_coverage_diagnostic(
-          "Unreachable duplicate match literal at arm " + index.toString() +
+          "Unreachable duplicate case literal at arm " + index.toString() +
             ": " + key,
           arm,
         );
@@ -3492,14 +3492,14 @@ function validate_match_coverage(
         !union_type.cases.some((item) => item.name === case_name)
       ) {
         throw_match_coverage_diagnostic(
-          "Unknown match union case ." + case_name,
+          "Unknown case union variant ." + case_name,
           arm,
         );
       }
 
       if (covered_union_cases.has(case_name)) {
         throw_match_coverage_diagnostic(
-          "Unreachable duplicate match case at arm " + index.toString() +
+          "Unreachable duplicate union case at arm " + index.toString() +
             ": `" + case_name,
           arm,
         );
@@ -3512,7 +3512,7 @@ function validate_match_coverage(
     }
 
     arm.pattern satisfies never;
-    throw new Error("Unsupported match pattern during coverage analysis");
+    throw new Error("Unsupported case pattern during coverage analysis");
   }
 
   if (
@@ -3534,19 +3534,19 @@ function validate_match_coverage(
       !covered_union_cases.has(item.name)
     ).map((item) => {
       if (item.type_name === "Unit") {
-        return "`" + item.name + " ()";
+        return "#" + item.name;
       }
 
-      return "`" + item.name + " _";
+      return "#" + item.name + " _";
     });
     throw_match_coverage_diagnostic(
-      "Non-exhaustive match, missing " + missing.join(", "),
+      "Non-exhaustive case, missing " + missing.join(", "),
       subject,
     );
   }
 
   throw_match_coverage_diagnostic(
-    "Non-exhaustive match requires a wildcard or binding arm",
+    "Non-exhaustive case requires a wildcard or binding arm",
     subject,
   );
 }

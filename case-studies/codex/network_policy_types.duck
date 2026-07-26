@@ -3,10 +3,10 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type NetworkPolicyProtocol =
-  | `PolicyHttp Unit
-  | `PolicyHttps Unit
-  | `PolicySocks5Tcp Unit
-  | `PolicySocks5Udp Unit
+  | #PolicyHttp
+  | #PolicyHttps
+  | #PolicySocks5Tcp
+  | #PolicySocks5Udp
 
 type NetworkPolicyApprovalContext = struct {
   .host = Text,

@@ -6,34 +6,34 @@ effect Emit {
 
 type Builder = struct { .buffer = Bytes, .length = I32 }
 
-let output_builder = capacity => {
+let output_builder = capacity => do
   Builder.new {
     .buffer = Bytes.generate(capacity, _ => 0),
     .length = 0,
   }
-};
+end;
 
-let append = (output, byte) => {
+let append = (output, byte) => do
   let buffer = output.buffer;
   buffer[output.length] = byte
   Builder.new { .buffer = buffer, .length = output.length + 1 }
-};
+end;
 
-let collect = capacity => {
+let collect = capacity => do
   let output = output_builder capacity;
   handler Emit {
-    byte: (value, !resume) => {
+    byte: (value, !resume) => do
       output = append(output, value)
       !resume(())
-    },
+    end,
     return: _ => slice [&output.buffer, 0, output.length],
   }
-};
+end;
 
-let emitted = try {
+let emitted = try do
   _ <- Emit.byte(40)
   _ <- Emit.byte(2)
   ()
-} with collect 4;
+end with collect 4;
 
 emitted[0] + emitted[1]

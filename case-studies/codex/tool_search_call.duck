@@ -13,63 +13,67 @@ type SearchCallSources = ToolSearchSourceInfos
 type SearchCallSource = ToolSearchSourceInfo
 type SearchCallSourceNode = ToolSearchSourceInfoNode
 
-const tool_search_sources: SearchCallInfos -> SearchCallSources = values => {
+const tool_search_sources: SearchCallInfos -> SearchCallSources = values => do
   let current = values;
-  let reversed: SearchCallSources = `Nil ();
+  let reversed: SearchCallSources = #Nil;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [search_info, tail] = node;
       let [_, source_info] = search_info;
-      if let `SearchSourcePresent source = source_info {
-        reversed = `Cons ([source, reversed] as SearchCallSourceNode)
-      }
+      if let #SearchSourcePresent source = source_info then
+        reversed = #Cons ([source, reversed] as SearchCallSourceNode)
+      end;
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  let ordered: SearchCallSources = `Nil ();
+  let ordered: SearchCallSources = #Nil;
   let source_current = reversed;
   done = false
-  loop {
-    if let `Cons node = source_current {
+  loop do
+    if let #Cons node = source_current then
       let [source, tail] = node;
-      ordered = `Cons ([source, ordered] as SearchCallSourceNode)
+      ordered = #Cons ([source, ordered] as SearchCallSourceNode)
       source_current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   ordered
-};
+end;
 
 const plan_tool_search_call: [SearchCallInvocation, SearchCallInfos] -> SearchCallPlan = (
   invocation: SearchCallInvocation,
   search_infos: SearchCallInfos,
-) => {
+) => do
   let validation = validate_tool_search_invocation invocation;
-  if let `SearchValidated query = validation {
+  if let #SearchValidated query = validation then
     let ranked = rank_tool_search(query.query, query.limit, search_infos);
     let output: SearchCallOutput = [
       .status = "completed",
       .execution = "client",
       .tools = coalesce_tool_search_results ranked,
     ];
-    `ReturnTools output
-  } else if let `SearchRejected message = validation {
-    `RejectRequest message
-  } else if let `SearchFatal message = validation {
-    `Fatal message
-  } else {
-    `Fatal "tool_search validation produced no result"
-  }
-};
+    #ReturnTools output
+  else let #SearchRejected message = validation then
+    #RejectRequest message
+  else let #SearchFatal message = validation then
+    #Fatal message
+  else
+    #Fatal "tool_search validation produced no result"
+  end;
+end;
 
 return {
   .plan_tool_search_call,

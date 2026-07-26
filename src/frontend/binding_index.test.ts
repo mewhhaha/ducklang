@@ -41,10 +41,9 @@ Deno.test("binding index keeps recursive self visible and linear repeats consuma
 
 Deno.test("binding index resolves value-pack rest bindings", () => {
   const indexed = occurrences(
-    `const first = (const ...values) => comptime match values {
-  | () => 0
-  | (value, ...remaining) => value + @len(remaining)
-};
+    `const first = (const ...values) => comptime case values of
+  () => 0,
+  (value, ...remaining) => value + @len(remaining);
 `,
   );
   const remaining = indexed.filter((occurrence) =>
@@ -61,7 +60,7 @@ Deno.test("binding index resolves value-pack rest bindings", () => {
 Deno.test("binding index resolves compile-time values in alternative patterns", () => {
   const indexed = occurrences(
     "const expected = 1;\n" +
-      "match value { | 0 | #(expected) => 1 | _ => 0 }\n",
+      "case value of 0 | #(expected) => 1, _ => 0;\n",
   );
   const expected = indexed.filter((occurrence) => {
     return occurrence.name === "expected";
@@ -76,8 +75,8 @@ Deno.test("binding index resolves compile-time values in alternative patterns", 
 
 Deno.test("binding index records members and dynamic receivers explicitly", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Result = `Ok Unit\n" +
-      "let value = `Ok ();\nlet field = value.name;\n",
+    "type Result = #Ok\n" +
+      "let value = #Ok;\nlet field = value.name;\n",
   ));
   const result = [...indexed.entities.values()].find((entity) =>
     entity.name === "Result"
@@ -103,7 +102,7 @@ Deno.test("binding index is deterministic and preserves recovered later names", 
 
 Deno.test("binding index keeps declaration type parameters local to their declaration", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Maybe a = | `Just a | `Nothing Unit\n" +
+    "type Maybe a = | #Just a | #Nothing\n" +
       "type Other = a\n0\n",
   ));
   const params = [...indexed.entities.values()].filter((entity) =>
@@ -143,7 +142,8 @@ Deno.test("binding index scopes effect parameters across operation signatures", 
 
 Deno.test("binding index uses nested annotation facts for statically known members", () => {
   const indexed = build_binding_index(parse_source_with_diagnostics(
-    "type Vec = struct {.x = Int}\nif true { let point: Vec = [.x = 1];\npoint.x }\n",
+    "type Vec = struct {.x = Int}\n" +
+      "if true then let point: Vec = [.x = 1];\npoint.x end\n",
   ));
   const member = [...indexed.occurrences.values()].find((occurrence) =>
     occurrence.name === "x" && occurrence.role === "member" &&
@@ -155,9 +155,9 @@ Deno.test("binding index uses nested annotation facts for statically known membe
 });
 
 Deno.test("binding index resolves cases and reports the current lexical generation", () => {
-  const text = "type Result = `Ok Int\nlet x = 0;\n" +
-    "{ let x = 1;\nx }\nx\nlet result = `Ok (1);\n" +
-    "if let `Ok value = result { value }\n";
+  const text = "type Result = #Ok Int\nlet x = 0;\n" +
+    "do let x = 1;\nx end\nx\nlet result = #Ok (1);\n" +
+    "if let #Ok value = result then value end\n";
   const indexed = build_binding_index(parse_source_with_diagnostics(text));
   const occurrences = [...indexed.occurrences.values()];
   const xs = occurrences.filter((occurrence) => occurrence.name === "x");

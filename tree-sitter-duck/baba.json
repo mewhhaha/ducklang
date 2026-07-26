@@ -52,6 +52,18 @@
       "_single_match_pattern"
     ],
     [
+      "_single_binding_pattern",
+      "_single_match_pattern"
+    ],
+    [
+      "type_pattern_statement",
+      "_single_match_pattern"
+    ],
+    [
+      "else_if_clause",
+      "else_clause"
+    ],
+    [
       "array_expression",
       "array_pattern"
     ],
@@ -71,6 +83,36 @@
     [
       "_primary_expression",
       "array_type"
+    ],
+    [
+      "condition_expression",
+      "_primary_expression"
+    ],
+    [
+      "condition_expression",
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "parameter",
+      "condition_expression",
+      "_primary_expression"
+    ],
+    [
+      "parameter",
+      "condition_expression",
+      "_primary_expression",
+      "linear_reference"
+    ],
+    [
+      "condition_field_expression",
+      "field_expression"
+    ],
+    [
+      "union_case"
+    ],
+    [
+      "type_case"
     ]
   ],
   "inline": [
@@ -122,6 +164,12 @@
     "if_expression": {
       "wrap": {
         "kind": "prec.right"
+      }
+    },
+    "else_clause": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
       }
     },
     "condition_binary_expression": {
@@ -201,7 +249,7 @@
         "value": 10
       }
     },
-    "match_expression": {
+    "case_expression": {
       "wrap": {
         "kind": "prec.right"
       }
@@ -300,6 +348,12 @@
         "value": 5
       }
     },
+    "type_sum": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
     "_type_atom": {
       "wrap": {
         "kind": "prec",
@@ -386,24 +440,6 @@
       "wrap": {
         "kind": "prec",
         "value": 100
-      }
-    },
-    "_if_consequence": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
-      }
-    },
-    "_else_block": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
-      }
-    },
-    "_else_if": {
-      "wrap": {
-        "kind": "prec",
-        "value": 10
       }
     },
     "_effect_identifier_alias": {

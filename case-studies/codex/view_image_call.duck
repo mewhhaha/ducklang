@@ -15,23 +15,23 @@ const plan_view_image_call: [Text, ImageCallPayload, ImageCallEnvironments, Bool
     environments: ImageCallEnvironments,
     supports_image_inputs: Bool,
     can_request_original_detail: Bool,
-  ) => {
-    if !(supports_image_inputs) {
-      `RejectRequest "view_image is not allowed because you do not support image inputs"
-    } else if let `Unsupported () = payload {
-      `Fatal "view_image handler received unsupported payload"
-    } else if let `Function arguments = payload {
+  ) => do
+    if !(supports_image_inputs) then
+      #RejectRequest "view_image is not allowed because you do not support image inputs"
+    else let #Unsupported = payload then
+      #Fatal "view_image handler received unsupported payload"
+    else let #Function arguments = payload then
       let parsed = parse_view_image_args arguments;
-      if let `Parsed args = parsed {
+      if let #Parsed args = parsed then
         prepare_view_image(call_id, args, environments, can_request_original_detail)
-      } else if let `ParseFailed message = parsed {
-        `RejectRequest message
-      } else {
-        `RejectRequest "view_image argument parsing produced no result"
-      }
-    } else {
-      `Fatal "view_image handler received unsupported payload"
-    }
-  };
+      else let #ParseFailed message = parsed then
+        #RejectRequest message
+      else
+        #RejectRequest "view_image argument parsing produced no result"
+      end;
+    else
+      #Fatal "view_image handler received unsupported payload"
+    end;
+  end;
 
 return { .plan_view_image_call };

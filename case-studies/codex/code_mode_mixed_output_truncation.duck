@@ -17,82 +17,86 @@ type MixedTruncationItems = FunctionOutputContentItems
 const truncate_code_mode_mixed_output: [I64, MixedTruncationItems] -> MixedTruncationItems = (
   maximum_tokens,
   items,
-) => {
+) => do
   let current = items;
   let remaining_tokens = maximum_tokens;
   let omitted_text_items = 0;
-  let reversed: MixedTruncationItems = `Nil ();
+  let reversed: MixedTruncationItems = #Nil;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [item, tail] = node;
 
-      if let `InputText text = item {
-        if remaining_tokens == 0i64 {
+      if let #InputText text = item then
+        if remaining_tokens == 0i64 then
           omitted_text_items = omitted_text_items + 1
-        } else {
+        else
           let cost = unsafe_i64_extend_i32_signed(text_approx_token_count text);
 
-          if cost <= remaining_tokens {
+          if cost <= remaining_tokens then
             let output_node: MixedTruncationItemNode = [item, reversed];
-            reversed = `Cons output_node
+            reversed = #Cons output_node
             remaining_tokens = remaining_tokens - cost
-          } else {
+          else
             let snippet = text_truncate_middle_tokens(text, unsafe_i32_wrap_i64 remaining_tokens);
-            if snippet == "" {
+            if snippet == "" then
               omitted_text_items = omitted_text_items + 1
-            } else {
-              let snippet_item: MixedTruncationItem = `InputText snippet;
+            else
+              let snippet_item: MixedTruncationItem = #InputText snippet;
               let output_node: MixedTruncationItemNode = [snippet_item, reversed];
-              reversed = `Cons output_node
-            }
+              reversed = #Cons output_node
+            end;
             remaining_tokens = 0i64
-          }
-        }
-      } else if let `InputImage _ = item {
+          end;
+        end;
+      else let #InputImage _ = item then
         let output_node: MixedTruncationItemNode = [item, reversed];
-        reversed = `Cons output_node
-      } else if let `EncryptedContent _ = item {
+        reversed = #Cons output_node
+      else let #EncryptedContent _ = item then
         let output_node: MixedTruncationItemNode = [item, reversed];
-        reversed = `Cons output_node
-      } else {
+        reversed = #Cons output_node
+      else
         ()
-      }
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  if omitted_text_items > 0 {
+  if omitted_text_items > 0 then
     let marker_count = text_append [format_i32 omitted_text_items, " text items ...]"];
     let marker = text_append ["[omitted ", marker_count];
-    let marker_item: MixedTruncationItem = `InputText marker;
+    let marker_item: MixedTruncationItem = #InputText marker;
     let marker_node: MixedTruncationItemNode = [marker_item, reversed];
-    reversed = `Cons marker_node
-  }
+    reversed = #Cons marker_node
+  end;
 
-  let output: MixedTruncationItems = `Nil ();
+  let output: MixedTruncationItems = #Nil;
   done = false
 
-  loop {
-    if let `Cons node = reversed {
+  loop do
+    if let #Cons node = reversed then
       let [item, tail] = node;
       let output_node: MixedTruncationItemNode = [item, output];
-      output = `Cons output_node
+      output = #Cons output_node
       reversed = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   output
-};
+end;
 
 return { .truncate_code_mode_mixed_output };

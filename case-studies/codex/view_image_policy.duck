@@ -17,44 +17,46 @@ const select_view_image_environment: [ImagePolicyEnvironments, ImagePolicyTextOp
   ImagePolicyEnvironmentSelection = (
     environments: ImagePolicyEnvironments,
     requested_id: ImagePolicyTextOption,
-  ) => {
+  ) => do
     let current = environments;
     let selection: ImagePolicyEnvironmentSelection =
-      `SelectionFailed "view_image is unavailable in this session";
+      #SelectionFailed "view_image is unavailable in this session";
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [environment, tail] = node;
-        let matches = if let `ImageEnvironmentPresent environment_id = requested_id {
+        let matches = if let #ImageEnvironmentPresent environment_id = requested_id then
           environment.environment_id == environment_id
-        } else {
+        else
           environment.is_primary
-        };
+        end;
 
-        if matches {
-          selection = `Selected environment
+        if matches then
+          selection = #Selected environment
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
-    if let `Selected environment = selection {
-      `Selected environment
-    } else if let `ImageEnvironmentPresent environment_id = requested_id {
-      `SelectionFailed (
+    if let #Selected environment = selection then
+      #Selected environment
+    else let #ImageEnvironmentPresent environment_id = requested_id then
+      #SelectionFailed (
         text_append ["unknown turn environment id `", text_append [environment_id, "`"]]
       )
-    } else {
+    else
       selection
-    }
-  };
+    end;
+  end;
 
 const prepare_view_image: [Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool] ->
   ImagePolicyPlan = (
@@ -62,15 +64,17 @@ const prepare_view_image: [Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool]
     args: ImagePolicyArgs,
     environments: ImagePolicyEnvironments,
     can_request_original_detail: Bool,
-  ) => {
+  ) => do
     let selection = select_view_image_environment(environments, args.environment_id);
-    if let `Selected selected = selection {
-      let detail: ImagePolicyDetail = `High ();
-      if let `ImageDetailPresent requested = args.detail {
-        if can_request_original_detail {
-          if let `Original () = requested { detail = `Original () }
-        }
-      }
+    if let #Selected selected = selection then
+      let detail: ImagePolicyDetail = #High;
+      if let #ImageDetailPresent requested = args.detail then
+        if can_request_original_detail then
+          if let #Original = requested then
+            detail = #Original
+          end;
+        end;
+      end;
 
       let path = path_resolve(selected.cwd, args.path);
       let prepared: ImagePolicyPrepared = [
@@ -79,13 +83,13 @@ const prepare_view_image: [Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool]
         .path = path,
         .detail = detail,
       ];
-      `ReadImage prepared
-    } else if let `SelectionFailed message = selection {
-      `RejectRequest message
-    } else {
-      `RejectRequest "view_image environment selection produced no result"
-    }
-  };
+      #ReadImage prepared
+    else let #SelectionFailed message = selection then
+      #RejectRequest message
+    else
+      #RejectRequest "view_image environment selection produced no result"
+    end;
+  end;
 
 return {
   .prepare_view_image,

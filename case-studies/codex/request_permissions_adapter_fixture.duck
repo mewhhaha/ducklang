@@ -17,27 +17,27 @@ type FixtureProfile = RequestPermissionProfile
 type FixtureTextOption = RequestPermissionsTextOption
 type FixtureApprovalPolicy = ToolApprovalPolicy
 
-let paths: FixturePaths = `Cons (
+let paths: FixturePaths = #Cons (
   [
-    [.path = "/workspace", .access = `Read ()] as FixturePath,
-    `Cons (
-      [[.path = "/workspace/out", .access = `Write ()] as FixturePath, `Nil ()] as FixturePathNode
+    [.path = "/workspace", .access = #Read] as FixturePath,
+    #Cons (
+      [[.path = "/workspace/out", .access = #Write] as FixturePath, #Nil] as FixturePathNode
     ),
   ] as FixturePathNode
 );
 let file_system: FixtureFileSystem = [.entries = paths];
-let network: FixtureNetwork = [.enabled = `Some true];
-let reason: FixtureTextOption = `Some "compile generated output";
+let network: FixtureNetwork = [.enabled = #Some true];
+let reason: FixtureTextOption = #Some "compile generated output";
 let profile: FixtureProfile = [
-  .network = `NetworkPresent network,
-  .file_system = `FileSystemPresent file_system,
+  .network = #NetworkPresent network,
+  .file_system = #FileSystemPresent file_system,
 ];
-let args: FixtureArgs = [.environment_id = `None (), .reason = reason, .permissions = profile];
-let approval: FixtureApprovalPolicy = `OnRequest ();
+let args: FixtureArgs = [.environment_id = #None, .reason = reason, .permissions = profile];
+let approval: FixtureApprovalPolicy = #OnRequest;
 let score = 0;
 
-if request_permissions_approval_allowed(&approval) {
-  if let `Normalized normalized = normalize_request_permissions_args args {
+if request_permissions_approval_allowed(&approval) then
+  if let #Normalized normalized = normalize_request_permissions_args args then
     let request: FixtureHostRequest = [
       .call_id = "call-1",
       .turn_id = "turn-1",
@@ -48,20 +48,22 @@ if request_permissions_approval_allowed(&approval) {
       .cwd = "/workspace"];
     response <- RequestPermissionsHost.request(&request)
     let typed_response: FixtureHostResponse = response;
-    if let `Completed completion = finish_request_permissions(
+    if let #Completed completion = finish_request_permissions(
       normalized.permissions,
       "primary",
       typed_response,
-    ) {
+    ) then
       let expected =
         "{\"permissions\":{\"network\":{\"enabled\":true},\"file_system\":{\"read\":[\"/workspace/docs\"],\"write\":[\"/workspace/out/build\"]}},\"scope\":\"turn\",\"strict_auto_review\":true}";
-      if completion.output == expected {
-        if let `GrantForTurn grant = completion.grant {
-          if grant.environment_id == "primary" && grant.strict_auto_review { score = 1 }
-        }
-      }
-    }
-  }
-}
+      if completion.output == expected then
+        if let #GrantForTurn grant = completion.grant then
+          if grant.environment_id == "primary" && grant.strict_auto_review then
+            score = 1
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

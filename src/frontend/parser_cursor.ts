@@ -153,6 +153,48 @@ export class ParserCursor {
     }
   }
 
+  /** Block delimiters are words, so they arrive as `name` tokens. */
+  protected expect_keyword(text: string): void {
+    if (!this.match_name(text)) {
+      throw this.error("Expected `" + text + "`");
+    }
+  }
+
+  /**
+   * Whether a name token spelled `name` appears in `[start, end)`. Used to see
+   * if a binding's body refers back to the binding, which is what makes it
+   * recursive now that there is no `rec` modifier to say so.
+   */
+  protected mentions_name(start: number, end: number, name: string): boolean {
+    for (let index = start; index < end; index += 1) {
+      const token = this.tokens[index];
+
+      if (token === undefined || token.kind !== "name" || token.text !== name) {
+        continue;
+      }
+
+      // A field spelled the same as the binding is not a self-reference:
+      // `let read = … => operations.read(value)` calls a member, not itself.
+      const previous = this.tokens[index - 1];
+
+      if (
+        previous !== undefined && previous.kind === "symbol" &&
+        previous.text === "."
+      ) {
+        continue;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  protected at_keyword(text: string): boolean {
+    const token = this.peek();
+    return token.kind === "name" && token.text === text;
+  }
+
   protected expect_name(message: string): string {
     const token = this.peek();
 
@@ -164,8 +206,24 @@ export class ParserCursor {
     return token.text;
   }
 
-  protected expect_binding_name(message: string): string {
+  protected expect_variable_name(message: string): string {
     const name = this.expect_name(message);
+
+    if (name === "end") {
+      throw this.error("`end` is reserved and cannot be used as a variable");
+    }
+
+    if (name === "case" || name === "of") {
+      throw this.error(
+        "`" + name + "` is reserved and cannot be used as a variable",
+      );
+    }
+
+    return name;
+  }
+
+  protected expect_binding_name(message: string): string {
+    const name = this.expect_variable_name(message);
 
     if (name !== "_") {
       return name;

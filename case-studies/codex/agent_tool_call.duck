@@ -11,14 +11,14 @@ type AgentCallPlan = AgentToolPlan
 const plan_agent_tool_call: [AgentCallContext, AgentCallOperation] -> AgentCallPlan = (
   context: AgentCallContext,
   operation: AgentCallOperation,
-) => {
-  if let `SpawnAgentCall arguments = operation {
+) => do
+  if let #SpawnAgentCall arguments = operation then
     plan_spawn_agent_call(context, arguments)
-  } else if let `ControlAgentCall control = operation {
+  else let #ControlAgentCall control = operation then
     plan_agent_control_call(context, control)
-  } else {
-    `AgentToolRejected "collaboration handler received unsupported payload"
-  }
-};
+  else
+    #AgentToolRejected "collaboration handler received unsupported payload"
+  end;
+end;
 
 return { .plan_agent_tool_call };

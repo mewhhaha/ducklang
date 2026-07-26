@@ -6,10 +6,12 @@ const { .fixture_override_input } = import "./agent_spawn_override_fixture_value
 
 let score = 0;
 let result = select_spawn_overrides(
-  fixture_override_input(`Some "missing", `None (), `None (), `None ())
+  fixture_override_input(#Some "missing", #None, #None, #None)
 );
-if let `SpawnOverrideRejected message = result {
-  if message == "Unknown model `missing` for spawn_agent. Available models: alpha" { score = 1 }
-}
+if let #SpawnOverrideRejected message = result then
+  if message == "Unknown model `missing` for spawn_agent. Available models: alpha" then
+    score = 1
+  end;
+end;
 
 return { .score = score };

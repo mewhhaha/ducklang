@@ -9,30 +9,34 @@ type FixtureBarrier = TestSyncBarrier
 
 let barrier: FixtureBarrier = [.id = "shared", .participants = "1", .timeout_ms = "1000"];
 let args: FixtureArgs = [
-  .sleep_before_ms = `SyncDurationPresent "2",
-  .sleep_after_ms = `SyncDurationPresent "3",
-  .barrier = `SyncBarrierPresent barrier,
+  .sleep_before_ms = #SyncDurationPresent "2",
+  .sleep_after_ms = #SyncDurationPresent "3",
+  .barrier = #SyncBarrierPresent barrier,
 ];
 let score = 0;
 
-if let `RunSync normalized = plan_test_sync args {
+if let #RunSync normalized = plan_test_sync args then
   let result = run_test_sync normalized;
-  if let `Completed output = result {
-    if output == "ok" { score = 1 }
-  }
-}
+  if let #Completed output = result then
+    if output == "ok" then
+      score = 1
+    end;
+  end;
+end;
 
 let timeout_barrier: FixtureBarrier = [.id = "timeout", .participants = "2", .timeout_ms = "5"];
 let timeout_args: FixtureArgs = [
-  .sleep_before_ms = `SyncDurationMissing (),
-  .sleep_after_ms = `SyncDurationPresent "9",
-  .barrier = `SyncBarrierPresent timeout_barrier,
+  .sleep_before_ms = #SyncDurationMissing,
+  .sleep_after_ms = #SyncDurationPresent "9",
+  .barrier = #SyncBarrierPresent timeout_barrier,
 ];
-if let `RunSync normalized = plan_test_sync timeout_args {
+if let #RunSync normalized = plan_test_sync timeout_args then
   let result = run_test_sync normalized;
-  if let `Rejected message = result {
-    if message == "test_sync_tool barrier wait timed out" { score = score + 10 }
-  }
-}
+  if let #Rejected message = result then
+    if message == "test_sync_tool barrier wait timed out" then
+      score = score + 10
+    end;
+  end;
+end;
 
 return { .score = score };

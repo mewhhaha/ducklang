@@ -10,16 +10,16 @@ type CodeModeNotification = struct {
 }
 
 type CodeModeDispatchRequest =
-  | `DispatchNestedInvocation CodeModeNestedToolInvocation
-  | `DispatchNotification CodeModeNotification
+  | #DispatchNestedInvocation CodeModeNestedToolInvocation
+  | #DispatchNotification CodeModeNotification
 
 type CodeModeDispatchCancellation =
-  | `DispatchActive Unit
-  | `DispatchCancelled Unit
+  | #DispatchActive
+  | #DispatchCancelled
 
 type CodeModeDispatchChannelState =
-  | `DispatchChannelOpen Unit
-  | `DispatchChannelUnavailable Unit
+  | #DispatchChannelOpen
+  | #DispatchChannelUnavailable
 
 type CodeModeDispatchSubmissionFacts = struct {
   .request = CodeModeDispatchRequest,
@@ -28,26 +28,26 @@ type CodeModeDispatchSubmissionFacts = struct {
 }
 
 type CodeModeDispatchSubmissionPlan =
-  | `QueueCodeModeDispatch CodeModeDispatchRequest
-  | `RejectCodeModeDispatch Text
+  | #QueueCodeModeDispatch CodeModeDispatchRequest
+  | #RejectCodeModeDispatch Text
 
 type CodeModeDispatchDeliveredResponse =
-  | `DispatchDeliveredSuccess Unit
-  | `DispatchDeliveredFailure Text
+  | #DispatchDeliveredSuccess
+  | #DispatchDeliveredFailure Text
 
 type CodeModeDispatchResponseState =
-  | `DispatchResponseDelivered CodeModeDispatchDeliveredResponse
-  | `DispatchResponseStopped Unit
-  | `DispatchResponseCancelled Unit
+  | #DispatchResponseDelivered CodeModeDispatchDeliveredResponse
+  | #DispatchResponseStopped
+  | #DispatchResponseCancelled
 
 type CodeModeDispatchResponsePlan =
-  | `AcceptCodeModeDispatchResponse Unit
-  | `RejectCodeModeDispatchResponse Text
+  | #AcceptCodeModeDispatchResponse
+  | #RejectCodeModeDispatchResponse Text
 
 type CodeModeDispatchGateState =
-  | `DispatchGateWaiting Unit
-  | `DispatchGateReady Unit
-  | `DispatchGateClosed Unit
+  | #DispatchGateWaiting
+  | #DispatchGateReady
+  | #DispatchGateClosed
 
 type CodeModeDispatchGateFacts = struct {
   .request = CodeModeDispatchRequest,
@@ -60,11 +60,11 @@ type CodeModeClosedNotification = struct {
   .error = Text,
 }
 type CodeModeDispatchGatePlan =
-  | `WaitForCodeModeDispatchGate Text
-  | `SpawnNestedToolDispatch CodeModeNestedToolInvocation
-  | `RunCodeModeNotification CodeModeNotification
-  | `CloseNestedToolDispatchGate Text
-  | `CloseNotificationDispatchGate CodeModeClosedNotification
+  | #WaitForCodeModeDispatchGate Text
+  | #SpawnNestedToolDispatch CodeModeNestedToolInvocation
+  | #RunCodeModeNotification CodeModeNotification
+  | #CloseNestedToolDispatchGate Text
+  | #CloseNotificationDispatchGate CodeModeClosedNotification
 
 type CodeModeNotificationOutput = struct {
   .call_id = Text,
@@ -73,15 +73,15 @@ type CodeModeNotificationOutput = struct {
 }
 
 type CodeModeNotificationPlan =
-  | `CompleteBlankNotification Unit
-  | `InjectCodeModeNotification CodeModeNotificationOutput
+  | #CompleteBlankNotification
+  | #InjectCodeModeNotification CodeModeNotificationOutput
 
 type CodeModeNotificationInjection =
-  | `NotificationInjected Unit
-  | `NotificationTurnMissing Unit
+  | #NotificationInjected
+  | #NotificationTurnMissing
 
 type CodeModeNotificationCompletion =
-  | `NotificationComplete Unit
-  | `NotificationRejected Text
+  | #NotificationComplete
+  | #NotificationRejected Text
 
 return {};

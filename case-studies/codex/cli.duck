@@ -40,229 +40,229 @@ type CliDebugResult = CodexDebugCommandResult
 type CliExecPolicyResult = CodexExecPolicyCommandResult
 type CliSandboxResult = CodexSandboxOptionsResult
 
-const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => {
-  if let `Cons node = args {
+const parse_cli: CliArgs -> CliPlan = (args: CliArgs) => do
+  if let #Cons node = args then
     let [name, remaining] = node;
-    if name == "completion" {
+    if name == "completion" then
       let parsed: CliCompletionResult = parse_completion_options remaining;
-      if let `Ok options = parsed {
-        `GenerateCompletion options
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "completion parser returned an unknown result"
-      }
-    } else if name == "features" {
+      if let #Ok options = parsed then
+        #GenerateCompletion options
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "completion parser returned an unknown result"
+      end;
+    else name == "features" then
       let parsed: CliFeatureResult = parse_feature_command remaining;
-      if let `Ok feature = parsed {
-        `ManageFeature feature
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "feature parser returned an unknown result"
-      }
-    } else if name == "update" {
-      if let `Nil () = remaining {
-        `UpdateBinary ()
-      } else {
-        `Invalid "update does not accept arguments"
-      }
-    } else if name == "login" {
+      if let #Ok feature = parsed then
+        #ManageFeature feature
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "feature parser returned an unknown result"
+      end;
+    else name == "update" then
+      if let #Nil = remaining then
+        #UpdateBinary
+      else
+        #Invalid "update does not accept arguments"
+      end;
+    else name == "login" then
       let parsed: CliLoginResult = parse_login_options remaining;
-      if let `Ok action = parsed {
-        `Authenticate action
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "login parser returned an unknown result"
-      }
-    } else if name == "logout" {
+      if let #Ok action = parsed then
+        #Authenticate action
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "login parser returned an unknown result"
+      end;
+    else name == "logout" then
       let parsed: CliLogoutResult = parse_logout_options remaining;
-      if let `Ok () = parsed {
-        `LogoutAuth ()
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "logout parser returned an unknown result"
-      }
-    } else if name == "mcp" {
+      if let #Ok = parsed then
+        #LogoutAuth
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "logout parser returned an unknown result"
+      end;
+    else name == "mcp" then
       let parsed: CliMcpResult = parse_mcp_options remaining;
-      if let `Ok command = parsed {
-        `ManageMcp command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "MCP parser returned an unknown result"
-      }
-    } else if name == "plugin" {
+      if let #Ok command = parsed then
+        #ManageMcp command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "MCP parser returned an unknown result"
+      end;
+    else name == "plugin" then
       let parsed: CliPluginResult = parse_plugin_options remaining;
-      if let `Ok command = parsed {
-        `ManagePlugin command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "plugin parser returned an unknown result"
-      }
-    } else if name == "cloud" || name == "cloud-tasks" {
+      if let #Ok command = parsed then
+        #ManagePlugin command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "plugin parser returned an unknown result"
+      end;
+    else name == "cloud" || name == "cloud-tasks" then
       let parsed: CliCloudResult = parse_cloud_options remaining;
-      if let `Ok command = parsed {
-        `ManageCloud command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "cloud parser returned an unknown result"
-      }
-    } else if name == "mcp-server" {
+      if let #Ok command = parsed then
+        #ManageCloud command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "cloud parser returned an unknown result"
+      end;
+    else name == "mcp-server" then
       let parsed: CliServerResult = parse_mcp_server_options remaining;
-      if let `Ok command = parsed {
-        `ManageServer command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "MCP server parser returned an unknown result"
-      }
-    } else if name == "exec-server" {
+      if let #Ok command = parsed then
+        #ManageServer command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "MCP server parser returned an unknown result"
+      end;
+    else name == "exec-server" then
       let parsed: CliServerResult = parse_exec_server_options remaining;
-      if let `Ok command = parsed {
-        `ManageServer command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "exec server parser returned an unknown result"
-      }
-    } else if name == "stdio-to-uds" {
+      if let #Ok command = parsed then
+        #ManageServer command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "exec server parser returned an unknown result"
+      end;
+    else name == "stdio-to-uds" then
       let parsed: CliServerResult = parse_stdio_to_uds_options remaining;
-      if let `Ok command = parsed {
-        `ManageServer command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "stdio relay parser returned an unknown result"
-      }
-    } else if name == "app" {
+      if let #Ok command = parsed then
+        #ManageServer command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "stdio relay parser returned an unknown result"
+      end;
+    else name == "app" then
       let parsed: CliApplicationResult = parse_desktop_app_options remaining;
-      if let `Ok command = parsed {
-        `ManageApplication command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "desktop app parser returned an unknown result"
-      }
-    } else if name == "remote-control" {
+      if let #Ok command = parsed then
+        #ManageApplication command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "desktop app parser returned an unknown result"
+      end;
+    else name == "remote-control" then
       let parsed: CliApplicationResult = parse_remote_control_options remaining;
-      if let `Ok command = parsed {
-        `ManageApplication command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "remote-control parser returned an unknown result"
-      }
-    } else if name == "app-server" {
+      if let #Ok command = parsed then
+        #ManageApplication command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "remote-control parser returned an unknown result"
+      end;
+    else name == "app-server" then
       let parsed: CliAppServerResult = parse_app_server_options remaining;
-      if let `Ok command = parsed {
-        `ManageAppServer command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "app-server parser returned an unknown result"
-      }
-    } else if name == "doctor" {
+      if let #Ok command = parsed then
+        #ManageAppServer command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "app-server parser returned an unknown result"
+      end;
+    else name == "doctor" then
       let parsed: CliUtilityResult = parse_doctor_options remaining;
-      if let `Ok command = parsed {
-        `ManageUtility command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "doctor parser returned an unknown result"
-      }
-    } else if name == "apply" || name == "a" {
+      if let #Ok command = parsed then
+        #ManageUtility command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "doctor parser returned an unknown result"
+      end;
+    else name == "apply" || name == "a" then
       let parsed: CliUtilityResult = parse_apply_options remaining;
-      if let `Ok command = parsed {
-        `ManageUtility command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "apply parser returned an unknown result"
-      }
-    } else if name == "responses-api-proxy" {
+      if let #Ok command = parsed then
+        #ManageUtility command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "apply parser returned an unknown result"
+      end;
+    else name == "responses-api-proxy" then
       let parsed: CliUtilityResult = parse_responses_proxy_options remaining;
-      if let `Ok command = parsed {
-        `ManageUtility command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "responses-api-proxy parser returned an unknown result"
-      }
-    } else if name == "debug" {
+      if let #Ok command = parsed then
+        #ManageUtility command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "responses-api-proxy parser returned an unknown result"
+      end;
+    else name == "debug" then
       let parsed: CliDebugResult = parse_debug_options remaining;
-      if let `Ok command = parsed {
-        `ManageDebug command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "debug parser returned an unknown result"
-      }
-    } else if name == "execpolicy" {
+      if let #Ok command = parsed then
+        #ManageDebug command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "debug parser returned an unknown result"
+      end;
+    else name == "execpolicy" then
       let parsed: CliExecPolicyResult = parse_execpolicy_options remaining;
-      if let `Ok command = parsed {
-        `ManageExecPolicy command
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "execpolicy parser returned an unknown result"
-      }
-    } else if name == "sandbox" {
+      if let #Ok command = parsed then
+        #ManageExecPolicy command
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "execpolicy parser returned an unknown result"
+      end;
+    else name == "sandbox" then
       let parsed: CliSandboxResult = parse_sandbox_options remaining;
-      if let `Ok options = parsed {
-        `RunSandbox options
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "sandbox parser returned an unknown result"
-      }
-    } else if name == "resume" {
+      if let #Ok options = parsed then
+        #RunSandbox options
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "sandbox parser returned an unknown result"
+      end;
+    else name == "resume" then
       let parsed: CliResumeResult = parse_resume_options remaining;
-      if let `Ok options = parsed {
-        `ResumeSession options
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "resume parser returned an unknown result"
-      }
-    } else if name == "fork" {
+      if let #Ok options = parsed then
+        #ResumeSession options
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "resume parser returned an unknown result"
+      end;
+    else name == "fork" then
       let parsed: CliForkResult = parse_fork_options remaining;
-      if let `Ok options = parsed {
-        `ForkSession options
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "fork parser returned an unknown result"
-      }
-    } else if name == "archive" || name == "unarchive" {
+      if let #Ok options = parsed then
+        #ForkSession options
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "fork parser returned an unknown result"
+      end;
+    else name == "archive" || name == "unarchive" then
       let parsed: CliArchiveResult = parse_archive_options remaining;
-      if let `Ok options = parsed {
-        if name == "archive" { `ArchiveSession options } else { `UnarchiveSession options }
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "archive parser returned an unknown result"
-      }
-    } else if name == "delete" {
+      if let #Ok options = parsed then
+        if name == "archive" then #ArchiveSession options else #UnarchiveSession options end;
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "archive parser returned an unknown result"
+      end;
+    else name == "delete" then
       let parsed: CliDeleteResult = parse_delete_options remaining;
-      if let `Ok options = parsed {
-        `DeleteSession options
-      } else if let `Err message = parsed {
-        `Invalid message
-      } else {
-        `Invalid "delete parser returned an unknown result"
-      }
-    } else {
-      `Command (classify_cli_head args)
-    }
-  } else {
-    `Command (classify_cli_head args)
-  }
-};
+      if let #Ok options = parsed then
+        #DeleteSession options
+      else let #Err message = parsed then
+        #Invalid message
+      else
+        #Invalid "delete parser returned an unknown result"
+      end;
+    else
+      #Command (classify_cli_head args)
+    end;
+  else
+    #Command (classify_cli_head args)
+  end;
+end;
 
 return {
   .classify_cli_head,

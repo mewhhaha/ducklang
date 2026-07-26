@@ -12,68 +12,71 @@ type AdapterOutputItems = FunctionOutputContentItems
 const adapt_code_mode_runtime_items: [AdapterPolicy, AdapterRuntimeItems] -> AdapterOutputItems = (
   policy,
   runtime_items,
-) => {
+) => do
   let original_detail_supported = false;
-  if let `OriginalDetailSupported () = policy {
+  if let #OriginalDetailSupported = policy then
     original_detail_supported = true
-  }
+  end;
 
   let current = runtime_items;
-  let reversed: AdapterOutputItems = `Nil ();
+  let reversed: AdapterOutputItems = #Nil;
   let done = false;
 
-  loop {
-    if let `RuntimeItemsCons node = current {
+  loop do
+    if let #RuntimeItemsCons node = current then
       let [runtime_item, tail] = node;
-      let output_item: AdapterOutputItem = match runtime_item {
-        | `RuntimeInputText text => `InputText text
-        | `RuntimeInputImage image => {
+      let output_item: AdapterOutputItem = case runtime_item of
+        #RuntimeInputText text => #InputText text,
+        #RuntimeInputImage image => do
           let [image_url, requested_detail] = image;
           let output_detail = requested_detail;
 
-          if let `None () = requested_detail {
-            let high: AdapterOutputDetail = `High ();
-            output_detail = `Some high
-          } else if let `Some detail = requested_detail {
-            if let `Original () = detail {
-              if !original_detail_supported {
-                let high: AdapterOutputDetail = `High ();
-                output_detail = `Some high
-              }
-            }
-          }
+          if let #None = requested_detail then
+            let high: AdapterOutputDetail = #High;
+            output_detail = #Some high
+          else let #Some detail = requested_detail then
+            if let #Original = detail then
+              if !original_detail_supported then
+                let high: AdapterOutputDetail = #High;
+                output_detail = #Some high
+              end;
+            end;
+          end;
 
-          `InputImage ([image_url, output_detail])
-        }
-      };
+          #InputImage ([image_url, output_detail])
+        end;
 
       let output_node: AdapterOutputItemNode = [output_item, reversed];
-      reversed = `Cons output_node
+      reversed = #Cons output_node
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  let output: AdapterOutputItems = `Nil ();
+  let output: AdapterOutputItems = #Nil;
   done = false
 
-  loop {
-    if let `Cons node = reversed {
+  loop do
+    if let #Cons node = reversed then
       let [item, tail] = node;
       let output_node: AdapterOutputItemNode = [item, output];
-      output = `Cons output_node
+      output = #Cons output_node
       reversed = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   output
-};
+end;
 
 return { .adapt_code_mode_runtime_items };

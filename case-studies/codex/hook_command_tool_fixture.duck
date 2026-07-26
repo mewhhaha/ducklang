@@ -8,26 +8,32 @@ type FixtureResult = HookCommandResult
 
 let score: I32 = 0;
 
-let pre_plain: FixtureResult = [`None (), `Some 0, "ignored", ""];
-let [pre_plain_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_plain);
-if let `Completed () = pre_plain_status { score = score + 1 }
+let pre_plain: FixtureResult = [#None, #Some 0, "ignored", ""];
+let [pre_plain_status, _, _, _, _, _, _] = evaluate_hook_command(#PreToolUse, pre_plain);
+if let #Completed = pre_plain_status then
+  score = score + 1
+end;
 
-let pre_invalid: FixtureResult = [`None (), `Some 0, "{bad", ""];
-let [pre_invalid_status, _, _, _, _, _, _] = evaluate_hook_command(`PreToolUse (), pre_invalid);
-if let `Failed () = pre_invalid_status { score = score + 1 }
+let pre_invalid: FixtureResult = [#None, #Some 0, "{bad", ""];
+let [pre_invalid_status, _, _, _, _, _, _] = evaluate_hook_command(#PreToolUse, pre_invalid);
+if let #Failed = pre_invalid_status then
+  score = score + 1
+end;
 
-let pre_blocked: FixtureResult = [`None (), `Some 2, "", " policy says no "];
+let pre_blocked: FixtureResult = [#None, #Some 2, "", " policy says no "];
 let [pre_blocked_status, _, pre_blocked_action, _, _, _, _] = evaluate_hook_command(
-  `PreToolUse (),
+  #PreToolUse,
   pre_blocked,
 );
-if let `Blocked () = pre_blocked_status {
+if let #Blocked = pre_blocked_status then
   let [_, reason] = pre_blocked_action;
-  if action_is_block pre_blocked_action {
-    if let `Some value = reason {
-      if value == "policy says no" { score = score + 1 }
-    }
-  }
-}
+  if action_is_block pre_blocked_action then
+    if let #Some value = reason then
+      if value == "policy says no" then
+        score = score + 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

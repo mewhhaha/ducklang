@@ -1,7 +1,7 @@
 let total = 0;
 
-for byte in "ABC" {
+for byte in "ABC" do
   total = total + byte
-}
+end
 
 total

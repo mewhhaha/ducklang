@@ -29,25 +29,36 @@ let params: FixtureJson = json_object fields;
 let decoded: FixtureMethodResult = decode_turn_steer params;
 let score = 0;
 
-if let `MethodOk method = decoded {
-  if let `TurnSteer steer = method {
+if let #MethodOk method = decoded then
+  if let #TurnSteer steer = method then
     let [thread_id, expected_turn_id, client_id, values, raw_params] = steer;
     let client_valid = false;
     let input_valid = false;
     let params_valid = false;
-    if let `Some value = client_id { client_valid = value == "client-2" }
-    if let `Cons _ = values { input_valid = true }
-    if let `Object _ = raw_params { params_valid = true }
-    if thread_id == "thread-1" && expected_turn_id == "turn-1" && client_valid && input_valid && params_valid { score = score + 1 }
-  }
-}
+    if let #Some value = client_id then
+      client_valid = value == "client-2"
+    end;
+    if let #Cons _ = values then
+      input_valid = true
+    end;
+    if let #Object _ = raw_params then
+      params_valid = true
+    end;
+    if thread_id == "thread-1" && expected_turn_id == "turn-1" && client_valid && input_valid
+      && params_valid then
+        score = score + 1
+      end;
+  end;
+end;
 
 let missing_fields = json_object_empty();
 missing_fields = json_object_prepend("input", json_array inputs, missing_fields)
 missing_fields = json_object_prepend("threadId", json_string "thread-1", missing_fields)
 let missing: FixtureMethodResult = decode_turn_steer(json_object missing_fields);
-if let `MethodError message = missing {
-  if message == "turn/steer.params.expectedTurnId is required" { score = score + 10 }
-}
+if let #MethodError message = missing then
+  if message == "turn/steer.params.expectedTurnId is required" then
+    score = score + 10
+  end;
+end;
 
 return { .score = score };

@@ -11,15 +11,15 @@ type FixtureTextOption = CodexCliTextOption
 type FixtureSandboxOption = CodexCliSandboxModeOption
 type FixtureApprovalOption = CodexCliApprovalModeOption
 
-const empty_args = () => {
-  let values: FixtureArgs = `Nil ();
+const empty_args = () => do
+  let values: FixtureArgs = #Nil;
   values
-};
-const prepend_arg = (value: Text, values: FixtureArgs) => {
+end;
+const prepend_arg = (value: Text, values: FixtureArgs) => do
   let node: FixtureTextNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
+end;
 let input: FixtureArgs = prepend_arg("sid",
   prepend_arg("--oss",
     prepend_arg("--search",
@@ -41,60 +41,67 @@ let input: FixtureArgs = prepend_arg("sid",
 const text_option_equals: [FixtureTextOption, Text] -> Bool = (
   value: FixtureTextOption,
   expected: Text,
-) => {
-  if let `Some present = value { present == expected } else { false }
-};
+) => do
+  if let #Some present = value then present == expected else false end;
+end;
 
-const sandbox_is_workspace_write: FixtureSandboxOption -> Bool = (value: FixtureSandboxOption) => {
-  if let `Some sandbox = value {
-    if let `SandboxWorkspaceWrite () = sandbox { true } else { false }
-  } else {
+const sandbox_is_workspace_write: FixtureSandboxOption -> Bool = (value: FixtureSandboxOption) => do
+  if let #Some sandbox = value then
+    if let #SandboxWorkspaceWrite = sandbox then true else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const approval_is_on_request: FixtureApprovalOption -> Bool = (value: FixtureApprovalOption) => {
-  if let `Some approval = value {
-    if let `ApprovalOnRequest () = approval { true } else { false }
-  } else {
+const approval_is_on_request: FixtureApprovalOption -> Bool = (value: FixtureApprovalOption) => do
+  if let #Some approval = value then
+    if let #ApprovalOnRequest = approval then true else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const images_match: FixtureTexts -> Bool = (images: FixtureTexts) => {
-  if let `Cons first_node = images {
+const images_match: FixtureTexts -> Bool = (images: FixtureTexts) => do
+  if let #Cons first_node = images then
     let typed_first: FixtureTextNode = first_node;
     let [first, tail] = typed_first;
-    if let `Cons second_node = tail {
+    if let #Cons second_node = tail then
       let typed_second: FixtureTextNode = second_node;
       let [second, done] = typed_second;
-      if let `Nil () = done { first == "/tmp/a.png" && second == "/tmp/b.png" } else { false }
-    } else {
+      if let #Nil = done then first == "/tmp/a.png" && second == "/tmp/b.png" else false end;
+    else
       false
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
 let parsed: FixtureResult = parse_resume_options input;
-let score = if let `Ok options = parsed {
+let score = if let #Ok options = parsed then
   let controls = options.shared.oss && options.shared.search && options.shared.strict_config;
-  if options.picker { controls = false }
-  if options.last { controls = false }
-  if options.all { controls = false }
-  let controls_score = if controls { 1 } else { 0 };
-  let session_score = if text_option_equals(options.session_id, "sid") { 2 } else { 0 };
-  let prompt_score = if text_option_equals(options.prompt, "continue here") { 4 } else { 0 };
-  let model_score = if text_option_equals(options.shared.model, "gpt-5.1-test") { 8 } else { 0 };
-  let profile_score = if text_option_equals(options.shared.profile, "my-config") { 16 } else { 0 };
-  let cwd_score = if text_option_equals(options.shared.cwd, "/tmp") { 32 } else { 0 };
-  let sandbox_score = if sandbox_is_workspace_write options.shared.sandbox { 64 } else { 0 };
-  let approval_score = if approval_is_on_request options.shared.approval { 128 } else { 0 };
-  let images_score = if images_match options.shared.images { 256 } else { 0 };
-  controls_score + session_score + prompt_score + model_score + profile_score + cwd_score + sandbox_score + approval_score + images_score
-} else {
+  if options.picker then
+    controls = false
+  end;
+  if options.last then
+    controls = false
+  end;
+  if options.all then
+    controls = false
+  end;
+  let controls_score = if controls then 1 else 0 end;
+  let session_score = if text_option_equals(options.session_id, "sid") then 2 else 0 end;
+  let prompt_score = if text_option_equals(options.prompt, "continue here") then 4 else 0 end;
+  let model_score = if text_option_equals(options.shared.model, "gpt-5.1-test") then 8 else 0 end;
+  let profile_score = if text_option_equals(options.shared.profile, "my-config") then 16 else 0 end;
+  let cwd_score = if text_option_equals(options.shared.cwd, "/tmp") then 32 else 0 end;
+  let sandbox_score = if sandbox_is_workspace_write options.shared.sandbox then 64 else 0 end;
+  let approval_score = if approval_is_on_request options.shared.approval then 128 else 0 end;
+  let images_score = if images_match options.shared.images then 256 else 0 end;
+  controls_score + session_score + prompt_score + model_score + profile_score + cwd_score
+    + sandbox_score + approval_score + images_score
+else
   0
-};
+end;
 
 return { .score = score };

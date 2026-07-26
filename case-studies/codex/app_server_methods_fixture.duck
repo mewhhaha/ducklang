@@ -17,7 +17,7 @@ type FixtureJson = AppServerJson
 type FixtureMethodResult = AppServerMethodDecodeResult
 type FixtureThreadListParams = AppServerThreadListParams
 
-const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThreadListParams) => {
+const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThreadListParams) => do
   let [
     cursor,
     limit,
@@ -34,29 +34,31 @@ const thread_list_valid: FixtureThreadListParams -> Bool = (params: FixtureThrea
   ] = params;
   let valid = false;
 
-  if let `Some cursor_value = cursor {
-    if let `Some limit_value = limit {
-      if let `UpdatedAt () = sort_key {
-        if let `Ascending () = direction {
-          if let `Some archived_value = archived {
-            if let `Some search_value = search {
-              if let `Some parent_value = parent {
-                if let `None () = ancestor {
-                  if let `Cons cwd_node = cwd {
+  if let #Some cursor_value = cursor then
+    if let #Some limit_value = limit then
+      if let #UpdatedAt = sort_key then
+        if let #Ascending = direction then
+          if let #Some archived_value = archived then
+            if let #Some search_value = search then
+              if let #Some parent_value = parent then
+                if let #None = ancestor then
+                  if let #Cons cwd_node = cwd then
                     let [first_cwd, _] = cwd_node;
-                    valid = cursor_value == "cursor-1" && limit_value == 25 && archived_value && state_db_only && search_value == "needle" && parent_value == "parent-1" && first_cwd == "/repo"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+                    valid = cursor_value == "cursor-1" && limit_value == 25 && archived_value
+                      && state_db_only && search_value == "needle" && parent_value == "parent-1"
+                      && first_cwd == "/repo"
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 
   valid
-};
+end;
 
 let score = 0;
 let providers = json_array_prepend(json_string "openai", json_array_empty());
@@ -80,36 +82,43 @@ list_fields = json_object_prepend("limit", json_number "25", list_fields)
 list_fields = json_object_prepend("cursor", json_string "cursor-1", list_fields)
 let list_params: FixtureJson = json_object list_fields;
 let list_result: FixtureMethodResult = decode_thread_list list_params;
-if let `MethodOk method = list_result {
-  if let `ThreadList params = method {
-    if thread_list_valid params { score = score + 1 }
-  }
-}
+if let #MethodOk method = list_result then
+  if let #ThreadList params = method then
+    if thread_list_valid params then
+      score = score + 1
+    end;
+  end;
+end;
 
 let default_fields = json_object_prepend("limit", json_number "20", json_object_empty());
 let default_result: FixtureMethodResult = decode_thread_list(json_object default_fields);
-if let `MethodOk method = default_result {
-  if let `ThreadList _ = method { score = score + 10000 }
-}
+if let #MethodOk method = default_result then
+  if let #ThreadList _ = method then
+    score = score + 10000
+  end;
+end;
 
 let read_fields = json_object_empty();
 read_fields = json_object_prepend("includeTurns", json_bool true, read_fields)
 read_fields = json_object_prepend("threadId", json_string "thread-1", read_fields)
 let read_params: FixtureJson = json_object read_fields;
 let read_result: FixtureMethodResult = decode_thread_read read_params;
-if let `MethodOk method = read_result {
-  if let `ThreadRead params = method {
+if let #MethodOk method = read_result then
+  if let #ThreadRead params = method then
     let [thread_id, include_turns] = params;
-    if thread_id == "thread-1" && include_turns { score = score + 10 }
-  }
-}
+    if thread_id == "thread-1" && include_turns then
+      score = score + 10
+    end;
+  end;
+end;
 
 let invalid_fields = json_object_prepend("limit", json_number "-1", json_object_empty());
 let invalid_params: FixtureJson = json_object invalid_fields;
 let invalid_result: FixtureMethodResult = decode_thread_list invalid_params;
-if let `MethodError message = invalid_result {
-  if message == "thread/list.params.limit must be a non-negative integer" { score = score + 100 }
-}
+if let #MethodError message = invalid_result then
+  if message == "thread/list.params.limit must be a non-negative integer" then
+    score = score + 100 end;
+end;
 
 let conflicting_fields = json_object_empty();
 conflicting_fields = json_object_prepend(
@@ -117,12 +126,16 @@ conflicting_fields = json_object_prepend(
   json_string "ancestor",
   conflicting_fields,
 )
-conflicting_fields = json_object_prepend("parentThreadId", json_string "parent", conflicting_fields)
+conflicting_fields = json_object_prepend(
+  "parentThreadId",
+  json_string "parent",
+  conflicting_fields,
+)
 let conflicting_params: FixtureJson = json_object conflicting_fields;
 let conflicting_result: FixtureMethodResult = decode_thread_list conflicting_params;
-if let `MethodError message = conflicting_result {
-  if message == "thread/list.params.parentThreadId and ancestorThreadId are mutually exclusive" {
-    score = score + 1000 }
-}
+if let #MethodError message = conflicting_result then
+  if message == "thread/list.params.parentThreadId and ancestorThreadId are mutually exclusive" then
+    score = score + 1000 end;
+end;
 
 score

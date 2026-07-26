@@ -19,14 +19,14 @@ let complete_request_permissions_response: [
   requested: ExecutionPermissionsProfile,
   environment_id: Text,
   response: ExecutionPermissionsResponse,
-) => {
+) => do
   let normalized = normalize_request_permissions_response(requested, response);
   let completion: ExecutionPermissionsCompletion = [
     .output = encode_request_permissions_response normalized,
     .grant = request_permissions_grant_application(environment_id, normalized),
   ];
-  `Completed completion
-};
+  #Completed completion
+end;
 
 let finish_request_permissions: [
   ExecutionPermissionsProfile,
@@ -36,13 +36,13 @@ let finish_request_permissions: [
   requested: ExecutionPermissionsProfile,
   environment_id: Text,
   host_response: ExecutionPermissionsHostResponse,
-) => {
-  if let `Answered response = host_response {
+) => do
+  if let #Answered response = host_response then
     complete_request_permissions_response(requested, environment_id, response)
-  } else {
-    `Rejected "request_permissions was cancelled before receiving a response"
-  }
-};
+  else
+    #Rejected "request_permissions was cancelled before receiving a response"
+  end;
+end;
 
 return {
   .complete_request_permissions_response,

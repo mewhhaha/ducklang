@@ -28,9 +28,9 @@ type AppServerThreadPermissionSettings = struct {
 }
 
 type AppServerThreadPermissionResolution =
-  | `PermissionSelectionNotRequested Unit
-  | `PermissionSelectionResolved AppServerThreadPermissionSettings
-  | `PermissionSelectionRejected Text
+  | #PermissionSelectionNotRequested
+  | #PermissionSelectionResolved AppServerThreadPermissionSettings
+  | #PermissionSelectionRejected Text
 
 type AppServerThreadPermissionSettingsOption = Option AppServerThreadPermissionSettings
 type AppServerThreadSettingsOverrides = struct {
@@ -62,8 +62,8 @@ type AppServerThreadSettingsUpdatePlanInput = struct {
 }
 
 type AppServerThreadSettingsUpdatePlanResult =
-  | `NoThreadSettingsChanges Unit
-  | `ThreadSettingsUpdatePlanned AppServerThreadSettingsUpdatePlan
-  | `ThreadSettingsUpdateInvalid Text
+  | #NoThreadSettingsChanges
+  | #ThreadSettingsUpdatePlanned AppServerThreadSettingsUpdatePlan
+  | #ThreadSettingsUpdateInvalid Text
 
 return {};

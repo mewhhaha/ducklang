@@ -2,77 +2,85 @@ module () where
 
 const csv_text_append: [Text, Text] -> Text = [left: Text, right: Text] => @append(left, right);
 
-const csv_escape_field: Text -> Text = value => {
+const csv_escape_field: Text -> Text = value => do
   let source: Bytes = @Utf8.encode value;
   let escaped: Bytes = @Bytes.generate(0, _ => 0);
   let requires_quotes = false;
-  for index in 0..@len source {
+  for index in 0..@len source do
     let byte = @get(source, index);
     let encoded_byte: Bytes = @Bytes.generate(1, _ => byte);
     escaped = @append(escaped, encoded_byte)
-    if byte == 34 {
+    if byte == 34 then
       escaped = @append(escaped, encoded_byte)
       requires_quotes = true
-    } else if byte == 44 || byte == 10 || byte == 13 {
+    else byte == 44 || byte == 10 || byte == 13 then
       requires_quotes = true
-    }
-  }
-  if requires_quotes {
+    end;
+  end
+  if requires_quotes then
     let quote: Bytes = @Bytes.generate(1, _ => 34);
     escaped = @append(quote, escaped)
     escaped = @append(escaped, quote)
     @Utf8.decode escaped
-  } else {
+  else
     @Utf8.decode escaped
-  }
-};
+  end;
+end;
 
-const csv_append_field: [Text, Text, Bool] -> Text = (line: Text, value: Text, first: Bool) => {
-  if first {
+const csv_append_field: [Text, Text, Bool] -> Text = (line: Text, value: Text, first: Bool) => do
+  if first then
     csv_escape_field value
-  } else {
+  else
     csv_text_append(line, csv_text_append(",", csv_escape_field value))
-  }
-};
+  end;
+end;
 
-const csv_i32_decimal_digit_count: I32 -> I32 = value => {
+const csv_i32_decimal_digit_count: I32 -> I32 = value => do
   let remaining = value;
   let count = 1;
   let done = false;
-  if remaining < 0 {
+  if remaining < 0 then
     done = remaining > -10
-  } else {
+  else
     done = remaining < 10
-  }
-  loop {
-    if done { break; }
+  end;
+  loop do
+    if done then
+      break;
+    end;
     remaining = remaining / 10
     count = count + 1
-    if remaining > -10 { done = true }
-  }
+    if remaining > -10 then
+      done = true
+    end;
+  end;
   count
-};
+end;
 
-const csv_format_i32: I32 -> Text = value => {
+const csv_format_i32: I32 -> Text = value => do
   let digit_count = csv_i32_decimal_digit_count value;
   let negative = value < 0;
-  let output_length = if negative { digit_count + 1 } else { digit_count };
-  let encoded = @Bytes.generate(output_length, index => {
-    if negative && index == 0 {
+  let output_length = if negative then digit_count + 1 else digit_count end;
+  let encoded = @Bytes.generate(output_length, index => do
+    if negative && index == 0 then
       45
-    } else {
+    else
       let digit_index = output_length - index - 1;
       let divisor = 1;
-      if digit_index > 0 {
-        for _ in 0..digit_index { divisor = divisor * 10 }
-      }
+      if digit_index > 0 then
+        for _ in 0..digit_index do
+          divisor = divisor * 10
+        end
+      end;
       let digit = (value / divisor) % 10;
-      if digit < 0 { digit = 0 - digit }
+      if digit < 0 then
+        digit = 0 - digit
+      end;
       48 + digit
-    }
-  });
+    end;
+  end);
   @Utf8.decode encoded
-};
+end;
 
 return {
   .csv_append_field,

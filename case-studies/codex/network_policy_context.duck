@@ -7,39 +7,40 @@ type DecisionPayload = NetworkDecisionPayload
 type ApprovalContext = NetworkPolicyApprovalContext
 type ApprovalContextOption = NetworkPolicyApprovalContextOption
 
-const network_approval_context_from_payload: DecisionPayload -> ApprovalContextOption = payload => {
-  let missing_context: ApprovalContextOption = `NoApprovalContext ();
-  let asks_for_approval = false;
-  if let `ProxyAsk () = payload.decision {
-    asks_for_approval = true
-  }
-  if !(asks_for_approval) {
-    return missing_context;
-  }
+const network_approval_context_from_payload: DecisionPayload -> ApprovalContextOption =
+  payload => do
+    let missing_context: ApprovalContextOption = #NoApprovalContext;
+    let asks_for_approval = false;
+    if let #ProxyAsk = payload.decision then
+      asks_for_approval = true
+    end;
+    if !(asks_for_approval) then
+      return missing_context;
+    end;
 
-  let came_from_decider = false;
-  if let `Decider () = payload.source {
-    came_from_decider = true
-  }
-  if !(came_from_decider) {
-    return missing_context;
-  }
+    let came_from_decider = false;
+    if let #Decider = payload.source then
+      came_from_decider = true
+    end;
+    if !(came_from_decider) then
+      return missing_context;
+    end;
 
-  if let `ContextProtocol selected_protocol = payload.protocol {
-    if let `ContextText selected_host = payload.host {
-      let normalized_host = text_trim_whitespace selected_host;
-      if normalized_host == "" {
-        return missing_context;
-      }
-      let context: ApprovalContext = [.host = normalized_host, .protocol = selected_protocol];
-      let selected_context: ApprovalContextOption = `ApprovalContext context;
-      selected_context
-    } else {
+    if let #ContextProtocol selected_protocol = payload.protocol then
+      if let #ContextText selected_host = payload.host then
+        let normalized_host = text_trim_whitespace selected_host;
+        if normalized_host == "" then
+          return missing_context;
+        end;
+        let context: ApprovalContext = [.host = normalized_host, .protocol = selected_protocol];
+        let selected_context: ApprovalContextOption = #ApprovalContext context;
+        selected_context
+      else
+        missing_context
+      end;
+    else
       missing_context
-    }
-  } else {
-    missing_context
-  }
-};
+    end;
+  end;
 
 return { .network_approval_context_from_payload };

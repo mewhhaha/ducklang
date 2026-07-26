@@ -13,24 +13,24 @@ type FixtureResults = ImageProcessingResults
 type FixtureDetail = OutputImageDetail
 type FixtureDetailOption = OutputImageDetailOption
 
-const verify_image_preparation_custom_response_fixture: () -> I32 = () => {
-  let auto: FixtureDetail = `Auto ();
-  let auto_detail: FixtureDetailOption = `Some auto;
+const verify_image_preparation_custom_response_fixture: () -> I32 = () => do
+  let auto: FixtureDetail = #Auto;
+  let auto_detail: FixtureDetailOption = #Some auto;
 
-  let contents: FixtureContents = `Nil ();
-  let content_node: FixtureContentNode = [`InputAudio "data:audio/wav;base64,AA==", contents];
-  contents = `Cons content_node
-  content_node = [`InputImage (["data:image/png;base64,AUTO", auto_detail]), contents]
-  contents = `Cons content_node
+  let contents: FixtureContents = #Nil;
+  let content_node: FixtureContentNode = [#InputAudio "data:audio/wav;base64,AA==", contents];
+  contents = #Cons content_node
+  content_node = [#InputImage (["data:image/png;base64,AUTO", auto_detail]), contents]
+  contents = #Cons content_node
 
-  let responses: FixtureResponses = `Nil ();
+  let responses: FixtureResponses = #Nil;
   let response_node: FixtureResponseNode = [
-    `CustomOutput (["custom", "call-custom", contents]),
+    #CustomOutput (["custom", "call-custom", contents]),
     responses,
   ];
-  responses = `Cons response_node
+  responses = #Cons response_node
 
-  let results: FixtureResults = `ImageResultsNil ();
+  let results: FixtureResults = #ImageResultsNil;
   let result: FixtureResult = [
     .status_code = 2,
     .image_url = "",
@@ -38,35 +38,44 @@ const verify_image_preparation_custom_response_fixture: () -> I32 = () => {
     .size = 50000000,
   ];
   let result_node: FixtureResultNode = [result, results];
-  results = `ImageResultsCons result_node
+  results = #ImageResultsCons result_node
 
   let rewrite = apply_image_processing_results(responses, results);
   let score = 0;
-  if let `PreparedImageResponses rewritten = rewrite {
-    if let `Cons response_node = rewritten {
+  if let #PreparedImageResponses rewritten = rewrite then
+    if let #Cons response_node = rewritten then
       let [response, response_tail] = response_node;
-      if let `CustomOutput output = response {
+      if let #CustomOutput output = response then
         let [identifier, call_id, rewritten_contents] = output;
-        if identifier == "custom" && call_id == "call-custom" {
+        if identifier == "custom" && call_id == "call-custom" then
           score = score + 1
-          if let `Cons first_node = rewritten_contents {
+          if let #Cons first_node = rewritten_contents then
             let [first, after_first] = first_node;
-            if let `InputText value = first { if value == "image content omitted because it exceeded the supported size limit; use a smaller image" { score = score + 10 } }
-            if let `Cons second_node = after_first {
+            if let #InputText value = first then
+              if value
+                == "image content omitted because it exceeded the supported size limit; use a smaller image" then
+                  score = score + 10
+                end;
+            end;
+            if let #Cons second_node = after_first then
               let [second, content_tail] = second_node;
-              if let `InputAudio url = second {
-                if url == "data:audio/wav;base64,AA==" {
-                  if let `Nil () = content_tail { if let `Nil () = response_tail { score = score + 100 } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+              if let #InputAudio url = second then
+                if url == "data:audio/wav;base64,AA==" then
+                  if let #Nil = content_tail then
+                    if let #Nil = response_tail then
+                      score = score + 100
+                    end;
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 
   score
-};
+end;
 
 return { .verify_image_preparation_custom_response_fixture };

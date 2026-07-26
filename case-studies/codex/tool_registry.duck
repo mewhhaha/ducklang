@@ -14,257 +14,269 @@ type RegistryLookup = ToolLookup
 type RegistryDispatch = ToolDispatch
 type RegistryDispatchPlan = ToolDispatchPlan
 
-const empty_registry: () -> RegistryDefinitions = () => `Nil ();
+const empty_registry: () -> RegistryDefinitions = () => #Nil;
 
 const prepend_definition: [RegistryDefinition, RegistryDefinitions] -> RegistryDefinitions = (
   definition: RegistryDefinition,
   registry: RegistryDefinitions,
-) => {
-  `Cons ([definition, registry])
-};
+) => do
+  #Cons ([definition, registry])
+end;
 
 const reverse_definitions: RegistryDefinitions -> RegistryDefinitions = (
-  registry: RegistryDefinitions ) => {
-  let current = registry;
-  let reversed: RegistryDefinitions = empty_registry();
-  let done = false;
+  registry: RegistryDefinitions) => do
+    let current = registry;
+    let reversed: RegistryDefinitions = empty_registry();
+    let done = false;
 
-  loop {
-    if let `Cons node = current {
-      let [definition, tail] = node;
-      reversed = prepend_definition(definition, reversed)
-      current = tail
-    } else {
-      done = true
-    }
+    loop do
+      if let #Cons node = current then
+        let [definition, tail] = node;
+        reversed = prepend_definition(definition, reversed)
+        current = tail
+      else
+        done = true
+      end;
 
-    if done { break; }
-  }
+      if done then
+        break;
+      end;
+    end;
 
-  reversed
-};
+    reversed
+  end;
 
-const registry_count = (registry: RegistryDefinitions) => {
+const registry_count = (registry: RegistryDefinitions) => do
   let current = registry;
   let count = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   count
-};
+end;
 
-const tool_name_equal = (left: RegistryName, right: RegistryName) => {
+const tool_name_equal = (left: RegistryName, right: RegistryName) => do
   let [left_namespace, left_name] = left;
   let [right_namespace, right_name] = right;
   left_namespace == right_namespace && left_name == right_name
-};
+end;
 
-const tool_name_text = (name: RegistryName) => {
+const tool_name_text = (name: RegistryName) => do
   let [namespace, local_name] = name;
 
-  if namespace != "" {
+  if namespace != "" then
     text_append [namespace, local_name]
-  } else {
+  else
     local_name
-  }
-};
+  end;
+end;
 
-const definition_name = (definition: RegistryDefinition) => {
+const definition_name = (definition: RegistryDefinition) => do
   let [name, _, _, _, _, _] = definition;
   name
-};
+end;
 
 let rec find_tool: [RegistryDefinitions, RegistryName] -> RegistryLookup = (
   registry: RegistryDefinitions,
   name: RegistryName,
-) => {
-  if let `Cons node = registry {
+) => do
+  if let #Cons node = registry then
     let [definition, tail] = node;
 
-    if tool_name_equal(definition_name definition, name) {
-      `Found definition
-    } else {
+    if tool_name_equal(definition_name definition, name) then
+      #Found definition
+    else
       find_tool(tail, name)
-    }
-  } else {
-    `Missing name
-  }
-};
+    end;
+  else
+    #Missing name
+  end;
+end;
 
-const contains_tool = (registry: RegistryDefinitions, name: RegistryName) => {
+const contains_tool = (registry: RegistryDefinitions, name: RegistryName) => do
   let current = registry;
   let found = false;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [definition, tail] = node;
 
-      if tool_name_equal(definition_name definition, name) {
+      if tool_name_equal(definition_name definition, name) then
         found = true
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   found
-};
+end;
 
 const register_tool: [RegistryDefinitions, RegistryDefinition] -> RegistryRegistrationResult = (
   registry: RegistryDefinitions,
   definition: RegistryDefinition,
-) => {
+) => do
   let name = definition_name definition;
 
-  if contains_tool(registry, name) {
-    `Duplicate name
-  } else {
-    `Registered (prepend_definition(definition, registry))
-  }
-};
+  if contains_tool(registry, name) then
+    #Duplicate name
+  else
+    #Registered (prepend_definition(definition, registry))
+  end;
+end;
 
-const exposure_is_direct = (exposure: RegistryExposure) => {
-  if let `Direct () = exposure {
+const exposure_is_direct = (exposure: RegistryExposure) => do
+  if let #Direct = exposure then
     true
-  } else if let `DirectModelOnly () = exposure {
+  else let #DirectModelOnly = exposure then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const exposure_is_deferred = (exposure: RegistryExposure) => {
-  if let `Deferred () = exposure { true } else { false }
-};
+const exposure_is_deferred = (exposure: RegistryExposure) => do
+  if let #Deferred = exposure then true else false end;
+end;
 
 const model_visible_tools: RegistryDefinitions -> RegistryDefinitions = (
-  registry: RegistryDefinitions ) => {
-  let current = registry;
-  let visible: RegistryDefinitions = empty_registry();
-  let done = false;
+  registry: RegistryDefinitions) => do
+    let current = registry;
+    let visible: RegistryDefinitions = empty_registry();
+    let done = false;
 
-  loop {
-    if let `Cons node = current {
-      let [definition, tail] = node;
-      let [_, exposure, _, _, _, _] = definition;
+    loop do
+      if let #Cons node = current then
+        let [definition, tail] = node;
+        let [_, exposure, _, _, _, _] = definition;
 
-      if exposure_is_direct exposure {
-        visible = prepend_definition(definition, visible)
-      }
+        if exposure_is_direct exposure then
+          visible = prepend_definition(definition, visible)
+        end;
 
-      current = tail
-    } else {
-      done = true
-    }
+        current = tail
+      else
+        done = true
+      end;
 
-    if done { break; }
-  }
+      if done then
+        break;
+      end;
+    end;
 
-  reverse_definitions visible
-};
+    reverse_definitions visible
+  end;
 
-const deferred_tools: RegistryDefinitions -> RegistryDefinitions = (registry: RegistryDefinitions) => {
+const deferred_tools: RegistryDefinitions -> RegistryDefinitions =
+  (registry: RegistryDefinitions) => do
     let current = registry;
     let deferred: RegistryDefinitions = empty_registry();
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [definition, tail] = node;
         let [_, exposure, _, _, _, _] = definition;
 
-        if exposure_is_deferred exposure {
+        if exposure_is_deferred exposure then
           deferred = prepend_definition(definition, deferred)
-        }
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
     reverse_definitions deferred
-  };
+  end;
 
-const payload_kinds_match = (expected: RegistryPayloadKind, received: RegistryPayloadKind) => {
-  if let `FunctionPayload () = expected {
-    if let `FunctionPayload () = received { true } else { false }
-  } else if let `ToolSearchPayload () = expected {
-    if let `ToolSearchPayload () = received { true } else { false }
-  } else if let `CustomPayload () = received {
+const payload_kinds_match = (expected: RegistryPayloadKind, received: RegistryPayloadKind) => do
+  if let #FunctionPayload = expected then
+    if let #FunctionPayload = received then true else false end;
+  else let #ToolSearchPayload = expected then
+    if let #ToolSearchPayload = received then true else false end;
+  else let #CustomPayload = received then
     true
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const plan_tool_dispatch: [RegistryDefinitions, RegistryName, RegistryPayloadKind, Text] -> RegistryDispatchPlan = (
+const plan_tool_dispatch: [RegistryDefinitions, RegistryName, RegistryPayloadKind, Text] -> RegistryDispatchPlan =
+  (
     registry: RegistryDefinitions,
     name: RegistryName,
     payload: RegistryPayloadKind,
     input: Text,
-  ) => {
+  ) => do
     let found: RegistryLookup = find_tool(registry, name);
 
-    if let `Found definition = found {
+    if let #Found definition = found then
       let [_, _, runtime, expected_payload, _, _] = definition;
 
-      if payload_kinds_match(expected_payload, payload) {
+      if payload_kinds_match(expected_payload, payload) then
         let dispatch: RegistryDispatch = [runtime, payload, input];
-        `Execute dispatch;
-      } else {
-        `Incompatible ("Tool " <> tool_name_text name <> " received an incompatible payload")
-      }
-    } else {
-      `Unsupported ("Unsupported tool " <> tool_name_text name)
-    }
-  };
+        #Execute dispatch;
+      else
+        #Incompatible ("Tool " <> tool_name_text name <> " received an incompatible payload")
+      end;
+    else
+      #Unsupported ("Unsupported tool " <> tool_name_text name)
+    end;
+  end;
 
-const tool_supports_parallel = (registry: RegistryDefinitions, name: RegistryName) => {
+const tool_supports_parallel = (registry: RegistryDefinitions, name: RegistryName) => do
   let found: RegistryLookup = find_tool(registry, name);
 
-  if let `Found definition = found {
+  if let #Found definition = found then
     let [_, exposure, _, _, supports_parallel, _] = definition;
 
-    if let `Hidden () = exposure {
+    if let #Hidden = exposure then
       false
-    } else {
+    else
       supports_parallel
-    }
-  } else {
+    end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const tool_waits_for_cancellation = (registry: RegistryDefinitions, name: RegistryName) => {
+const tool_waits_for_cancellation = (registry: RegistryDefinitions, name: RegistryName) => do
   let found: RegistryLookup = find_tool(registry, name);
 
-  if let `Found definition = found {
+  if let #Found definition = found then
     let [_, _, _, _, _, waits] = definition;
     waits
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
 return {
   .empty_registry,

@@ -238,12 +238,16 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
   private parse_resume_dup(): Stmt {
     this.expect_symbol("(");
     this.expect_symbol("!");
-    const left = this.expect_name("Expected left duplicated resumption");
+    const left = this.expect_variable_name(
+      "Expected left duplicated resumption",
+    );
     this.expect_supported_name(left, "Duplicated resumption");
     expect_snake_case(left, "Duplicated resumption");
     this.expect_symbol(",");
     this.expect_symbol("!");
-    const right = this.expect_name("Expected right duplicated resumption");
+    const right = this.expect_variable_name(
+      "Expected right duplicated resumption",
+    );
     this.expect_supported_name(right, "Duplicated resumption");
     expect_snake_case(right, "Duplicated resumption");
     this.expect_symbol(")");
@@ -281,7 +285,9 @@ export abstract class ParserStmtBinding extends ParserStmtControl {
     if (this.match_symbol("(")) {
       this.expect_symbol(")");
     } else {
-      const name = this.expect_name("Expected effect result binding");
+      const name = this.expect_variable_name(
+        "Expected effect result binding",
+      );
 
       if (name !== "_") {
         this.expect_supported_name(name, "Effect result binding");

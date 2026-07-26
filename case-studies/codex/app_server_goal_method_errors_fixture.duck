@@ -10,9 +10,11 @@ status_fields = json_object_prepend("status", json_string "done", status_fields)
 status_fields = json_object_prepend("threadId", json_string "thread-4", status_fields)
 let invalid_status: FixtureResult = decode_thread_goal_set(json_object status_fields);
 let score = 0;
-if let `MethodError reason = invalid_status {
-  if reason == "thread/goal/set.params.status has an unknown value" { score = score + 1 }
-}
+if let #MethodError reason = invalid_status then
+  if reason == "thread/goal/set.params.status has an unknown value" then
+    score = score + 1
+  end;
+end;
 
 let overflow_fields = json_object_empty();
 overflow_fields = json_object_prepend(
@@ -22,8 +24,9 @@ overflow_fields = json_object_prepend(
 )
 overflow_fields = json_object_prepend("threadId", json_string "thread-5", overflow_fields)
 let overflow: FixtureResult = decode_thread_goal_set(json_object overflow_fields);
-if let `MethodError reason = overflow {
-  if reason == "thread/goal/set.params.tokenBudget number exceeds I64" { score = score + 10 }
-}
+if let #MethodError reason = overflow then
+  if reason == "thread/goal/set.params.tokenBudget number exceeds I64" then
+    score = score + 10 end;
+end;
 
 return { .score = score };

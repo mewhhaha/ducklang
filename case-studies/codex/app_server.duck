@@ -42,198 +42,208 @@ type ServerInitializeResult = AppServerInitializeResult
 
 const texts = comptime list Text;
 
-const uninitialized_app_server_session: () -> ServerSession = () => `Uninitialized ();
+const uninitialized_app_server_session: () -> ServerSession = () => #Uninitialized;
 
-const json_null_value: () -> ServerJson = () => `Null ();
+const json_null_value: () -> ServerJson = () => #Null;
 
-const request_id_number_valid: Text -> Bool = (number: Text) => {
+const request_id_number_valid: Text -> Bool = (number: Text) => do
   let length = text_length number;
   let index = 0;
   let valid = length > 0;
   let done = false;
 
-  if valid {
-    if text_get [number, 0] == 45 {
+  if valid then
+    if text_get [number, 0] == 45 then
       index = 1
-      if index == length { valid = false }
-    }
-  }
+      if index == length then
+        valid = false
+      end;
+    end;
+  end;
 
-  loop {
-    if index >= length {
+  loop do
+    if index >= length then
       done = true
-    } else {
+    else
       let byte = text_get [number, index];
 
-      if byte < 48 || byte > 57 {
+      if byte < 48 || byte > 57 then
         valid = false
         done = true
-      } else {
+      else
         index = index + 1
-      }
-    }
+      end;
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   valid
-};
+end;
 
-const request_id_valid: ServerJson -> Bool = (value: ServerJson) => {
-  if let `String _ = value {
+const request_id_valid: ServerJson -> Bool = (value: ServerJson) => do
+  if let #String _ = value then
     true
-  } else if let `Number number = value {
+  else let #Number number = value then
     request_id_number_valid number
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
-const lookup_or_null: [ServerJsonObject, Text] -> ServerJson = (object: ServerJsonObject, key: Text) => {
+const lookup_or_null: [ServerJsonObject, Text] -> ServerJson =
+  (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
-    if let `Found value = lookup {
+    if let #Found value = lookup then
       value
-    } else {
+    else
       json_null_value()
-    }
-  };
+    end;
+  end;
 
 const required_text: [ServerJsonObject, Text] -> ServerTextOption = (
   object: ServerJsonObject,
   key: Text,
-) => {
+) => do
   let lookup: ServerJsonLookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `String text = value { `Some text } else { `None () }
-  } else {
-    `None ()
-  }
-};
+  if let #Found value = lookup then
+    if let #String text = value then #Some text else #None end;
+  else
+    #None
+  end;
+end;
 
 const optional_text: [ServerJsonObject, Text] -> ServerTextOption = (
   object: ServerJsonObject,
   key: Text,
-) => {
+) => do
   let lookup: ServerJsonLookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `String text = value { `Some text } else { `None () }
-  } else {
-    `None ()
-  }
-};
+  if let #Found value = lookup then
+    if let #String text = value then #Some text else #None end;
+  else
+    #None
+  end;
+end;
 
-const optional_text_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
+const optional_text_valid: [ServerJsonObject, Text] -> Bool =
+  (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
-    if let `Found value = lookup {
-      if let `Null () = value {
+    if let #Found value = lookup then
+      if let #Null = value then
         true
-      } else if let `String _ = value {
+      else let #String _ = value then
         true
-      } else {
+      else
         false
-      }
-    } else {
+      end;
+    else
       true
-    }
-  };
+    end;
+  end;
 
-const optional_bool: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
+const optional_bool: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => do
   let lookup: ServerJsonLookup = json_object_get(key, object);
 
-  if let `Found value = lookup {
-    if let `Bool boolean = value { boolean } else { false }
-  } else {
+  if let #Found value = lookup then
+    if let #Bool boolean = value then boolean else false end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const optional_bool_valid: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => {
+const optional_bool_valid: [ServerJsonObject, Text] -> Bool =
+  (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
-    if let `Found value = lookup {
-      if let `Null () = value {
+    if let #Found value = lookup then
+      if let #Null = value then
         true
-      } else if let `Bool _ = value {
+      else let #Bool _ = value then
         true
-      } else {
+      else
         false
-      }
-    } else {
+      end;
+    else
       true
-    }
-  };
+    end;
+  end;
 
-const decode_text_array: ServerJson -> ServerTextArrayResult = (value: ServerJson) => {
-  if let `Array values = value {
+const decode_text_array: ServerJson -> ServerTextArrayResult = (value: ServerJson) => do
+  if let #Array values = value then
     let current = values;
     let reversed = texts.empty();
     let valid = true;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [entry, tail] = node;
 
-        if let `String text = entry {
+        if let #String text = entry then
           reversed = texts.prepend(text, reversed)
           current = tail
-        } else {
+        else
           valid = false
           done = true
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
-    if valid {
-      `TextArrayOk (texts.reverse(reversed))
-    } else {
-      `TextArrayError "optOutNotificationMethods must contain only strings"
-    }
-  } else {
-    `TextArrayError "optOutNotificationMethods must be an array"
-  }
-};
+    if valid then
+      #TextArrayOk (texts.reverse(reversed))
+    else
+      #TextArrayError "optOutNotificationMethods must contain only strings"
+    end;
+  else
+    #TextArrayError "optOutNotificationMethods must be an array"
+  end;
+end;
 
-const client_name_valid: Text -> Bool = (name: Text) => {
+const client_name_valid: Text -> Bool = (name: Text) => do
   let valid = true;
   let index = 0;
   let length = text_length name;
   let done = false;
 
-  loop {
-    if index >= length {
+  loop do
+    if index >= length then
       done = true
-    } else {
+    else
       let byte = text_get [name, index];
 
-      if byte < 32 {
-        if byte != 9 { valid = false }
-      } else if byte == 127 {
+      if byte < 32 then
+        if byte != 9 then
+          valid = false
+        end;
+      else byte == 127 then
         valid = false
-      }
+      end;
 
       index = index + 1
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   valid
-};
+end;
 
-const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult = (params: ServerJsonObject) => {
+const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult =
+  (params: ServerJsonObject) => do
     let experimental_api = false;
     let request_attestation = false;
     let openai_form = false;
@@ -241,53 +251,53 @@ const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult = (param
     let error: Text = "";
     let lookup: ServerJsonLookup = json_object_get("capabilities", params);
 
-    if let `Found value = lookup {
-      if let `Null () = value {
+    if let #Found value = lookup then
+      if let #Null = value then
         ()
-      } else if let `Object object = value {
-        if optional_bool_valid(object, "experimentalApi") {
+      else let #Object object = value then
+        if optional_bool_valid(object, "experimentalApi") then
           experimental_api = optional_bool(object, "experimentalApi")
-        } else {
+        else
           error = "initialize.params.capabilities.experimentalApi must be a boolean or null"
-        }
+        end;
 
-        if text_length error == 0 {
-          if optional_bool_valid(object, "requestAttestation") {
+        if text_length error == 0 then
+          if optional_bool_valid(object, "requestAttestation") then
             request_attestation = optional_bool(object, "requestAttestation")
-          } else {
+          else
             error = "initialize.params.capabilities.requestAttestation must be a boolean or null"
-          }
-        }
+          end;
+        end;
 
-        if text_length error == 0 {
-          if optional_bool_valid(object, "mcpServerOpenaiFormElicitation") {
+        if text_length error == 0 then
+          if optional_bool_valid(object, "mcpServerOpenaiFormElicitation") then
             openai_form = optional_bool(object, "mcpServerOpenaiFormElicitation")
-          } else {
+          else
             error = "initialize.params.capabilities.mcpServerOpenaiFormElicitation must be a boolean or null"
-          }
-        }
+          end;
+        end;
 
-        if text_length error == 0 {
+        if text_length error == 0 then
           let methods: ServerJsonLookup = json_object_get("optOutNotificationMethods", object);
 
-          if let `Found method_values = methods {
-            if let `Null () = method_values {
+          if let #Found method_values = methods then
+            if let #Null = method_values then
               ()
-            } else {
+            else
               let decoded = decode_text_array method_values;
 
-              if let `TextArrayOk values = decoded {
+              if let #TextArrayOk values = decoded then
                 opt_out = values
-              } else if let `TextArrayError reason = decoded {
+              else let #TextArrayError reason = decoded then
                 error = text_append ["initialize.params.capabilities.", reason]
-              }
-            }
-          }
-        }
-      } else {
+              end;
+            end;
+          end;
+        end;
+      else
         error = "initialize.params.capabilities must be an object or null"
-      }
-    }
+      end;
+    end;
 
     let capabilities: ServerCapabilities = [
       experimental_api,
@@ -295,186 +305,186 @@ const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult = (param
       openai_form,
       opt_out,
     ];
-    if text_length error == 0 {
-      `CapabilitiesOk capabilities
-    } else {
-      `CapabilitiesError error
-    }
-  };
+    if text_length error == 0 then
+      #CapabilitiesOk capabilities
+    else
+      #CapabilitiesError error
+    end;
+  end;
 
-const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJson) => {
-  let result: ServerInitializeResult = `InitializeError "initialize.params must be an object";
+const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJson) => do
+  let result: ServerInitializeResult = #InitializeError "initialize.params must be an object";
 
-  if let `Object object = params {
+  if let #Object object = params then
     let client_lookup: ServerJsonLookup = json_object_get("clientInfo", object);
 
-    if let `Found client_value = client_lookup {
-      if let `Object client = client_value {
+    if let #Found client_value = client_lookup then
+      if let #Object client = client_value then
         let name = required_text(client, "name");
         let version = required_text(client, "version");
 
-        if let `Some client_name = name {
-          if let `Some client_version = version {
-            if optional_text_valid(client, "title") {
-              if client_name_valid client_name {
+        if let #Some client_name = name then
+          if let #Some client_version = version then
+            if optional_text_valid(client, "title") then
+              if client_name_valid client_name then
                 let capabilities_result = decode_capabilities object;
 
-                if let `CapabilitiesOk capabilities = capabilities_result {
+                if let #CapabilitiesOk capabilities = capabilities_result then
                   let info: ServerClientInfo = [
                     client_name,
                     optional_text(client, "title"),
                     client_version,
                   ];
                   let initialized: ServerInitializedSession = [info, capabilities];
-                  result = `InitializeOk initialized
-                } else if let `CapabilitiesError error = capabilities_result {
-                  result = `InitializeError error
-                }
-              } else {
+                  result = #InitializeOk initialized
+                else let #CapabilitiesError error = capabilities_result then
+                  result = #InitializeError error
+                end;
+              else
                 let prefix = text_append ["Invalid clientInfo.name: '", client_name];
-                result = `InitializeError (
+                result = #InitializeError (
                   text_append [prefix, "'. Must be a valid HTTP header value."]
                 )
-              }
-            } else {
-              result = `InitializeError "initialize.params.clientInfo.title must be a string or null"
-            }
-          } else {
-            result = `InitializeError "initialize.params.clientInfo.version must be a string"
-          }
-        } else {
-          result = `InitializeError "initialize.params.clientInfo.name must be a string"
-        }
-      } else {
-        result = `InitializeError "initialize.params.clientInfo must be an object"
-      }
-    } else {
-      result = `InitializeError "initialize.params.clientInfo is required"
-    }
-  }
+              end;
+            else
+              result = #InitializeError "initialize.params.clientInfo.title must be a string or null"
+            end;
+          else
+            result = #InitializeError "initialize.params.clientInfo.version must be a string"
+          end;
+        else
+          result = #InitializeError "initialize.params.clientInfo.name must be a string"
+        end;
+      else
+        result = #InitializeError "initialize.params.clientInfo must be an object"
+      end;
+    else
+      result = #InitializeError "initialize.params.clientInfo is required"
+    end;
+  end;
 
   result
-};
+end;
 
 const decode_peer_error: [ServerRequestId, ServerJson] -> ServerDecodeResult = (
   id: ServerRequestId,
   value: ServerJson,
-) => {
-  if let `Object object = value {
+) => do
+  if let #Object object = value then
     let code_lookup: ServerJsonLookup = json_object_get("code", object);
     let message = required_text(object, "message");
 
-    if let `Found code_value = code_lookup {
-      if let `Number code = code_value {
-        if request_id_number_valid code {
-          if let `Some error_message = message {
+    if let #Found code_value = code_lookup then
+      if let #Number code = code_value then
+        if request_id_number_valid code then
+          if let #Some error_message = message then
             let peer_error: ServerPeerError = [
               id,
               code,
               error_message,
               lookup_or_null(object, "data"),
             ];
-            `Decoded (`PeerError peer_error);
-          } else {
-            `DecodeError "error response message must be a string"
-          }
-        } else {
-          `DecodeError "error response code must be an integer"
-        }
-      } else {
-        `DecodeError "error response code must be an integer"
-      }
-    } else {
-      `DecodeError "error response code is required"
-    }
-  } else {
-    `DecodeError "error response must contain an error object"
-  }
-};
+            #Decoded (#PeerError peer_error);
+          else
+            #DecodeError "error response message must be a string"
+          end;
+        else
+          #DecodeError "error response code must be an integer"
+        end;
+      else
+        #DecodeError "error response code must be an integer"
+      end;
+    else
+      #DecodeError "error response code is required"
+    end;
+  else
+    #DecodeError "error response must contain an error object"
+  end;
+end;
 
-const decode_app_server_message: Text -> ServerDecodeResult = (document: Text) => {
+const decode_app_server_message: Text -> ServerDecodeResult = (document: Text) => do
   let parsed = parse_json_document document;
 
-  if let `Err error = parsed {
+  if let #Err error = parsed then
     let [_, message] = error;
-    `DecodeError message;
-  } else if let `Ok value_and_index = parsed {
+    #DecodeError message;
+  else let #Ok value_and_index = parsed then
     let [value, _] = value_and_index;
 
-    if let `Object object = value {
+    if let #Object object = value then
       let method_lookup: ServerJsonLookup = json_object_get("method", object);
       let id_lookup: ServerJsonLookup = json_object_get("id", object);
 
-      if let `Found method_value = method_lookup {
-        if let `String method = method_value {
+      if let #Found method_value = method_lookup then
+        if let #String method = method_value then
           let params = lookup_or_null(object, "params");
 
-          if let `Found id = id_lookup {
-            if request_id_valid id {
+          if let #Found id = id_lookup then
+            if request_id_valid id then
               let request: ServerRequest = [id, method, params];
-              `Decoded (`Request request);
-            } else {
-              `DecodeError "request id must be a string or integer"
-            }
-          } else {
+              #Decoded (#Request request);
+            else
+              #DecodeError "request id must be a string or integer"
+            end;
+          else
             let notification: ServerNotification = [method, params];
-            `Decoded (`Notification notification);
-          }
-        } else {
-          `DecodeError "message method must be a string"
-        }
-      } else if let `Found id = id_lookup {
-        if request_id_valid id {
+            #Decoded (#Notification notification);
+          end;
+        else
+          #DecodeError "message method must be a string"
+        end;
+      else let #Found id = id_lookup then
+        if request_id_valid id then
           let response_lookup: ServerJsonLookup = json_object_get("result", object);
           let error_lookup: ServerJsonLookup = json_object_get("error", object);
 
-          if let `Found response_value = response_lookup {
+          if let #Found response_value = response_lookup then
             let response: ServerResponse = [id, response_value];
-            `Decoded (`Response response);
-          } else if let `Found error_value = error_lookup {
+            #Decoded (#Response response);
+          else let #Found error_value = error_lookup then
             decode_peer_error(id, error_value)
-          } else {
-            `DecodeError "response must contain result or error"
-          }
-        } else {
-          `DecodeError "response id must be a string or integer"
-        }
-      } else {
-        `DecodeError "message must contain method or id"
-      }
-    } else {
-      `DecodeError "message must be a JSON object"
-    }
-  } else {
-    `DecodeError "invalid JSON parse result"
-  }
-};
+          else
+            #DecodeError "response must contain result or error"
+          end;
+        else
+          #DecodeError "response id must be a string or integer"
+        end;
+      else
+        #DecodeError "message must contain method or id"
+      end;
+    else
+      #DecodeError "message must be a JSON object"
+    end;
+  else
+    #DecodeError "invalid JSON parse result"
+  end;
+end;
 
 const encode_response: [ServerRequestId, ServerJson] -> Text = (
   id: ServerRequestId,
   result: ServerJson,
-) => {
+) => do
   let fields = json_object_empty();
   fields = json_object_prepend("result", result, fields)
   fields = json_object_prepend("id", id, fields)
   encode_json(json_object fields)
-};
+end;
 
 const encode_error: [ServerRequestId, Text, Text] -> Text = (
   id: ServerRequestId,
   code: Text,
   message: Text,
-) => {
+) => do
   let error_fields = json_object_empty();
   error_fields = json_object_prepend("message", json_string message, error_fields)
-  error_fields = json_object_prepend("code", `Number code, error_fields)
+  error_fields = json_object_prepend("code", #Number code, error_fields)
   let fields = json_object_empty();
   fields = json_object_prepend("error", json_object error_fields, fields)
   fields = json_object_prepend("id", id, fields)
   encode_json(json_object fields)
-};
+end;
 
-const initialize_response: ServerIdentity -> ServerJson = (identity: ServerIdentity) => {
+const initialize_response: ServerIdentity -> ServerJson = (identity: ServerIdentity) => do
   let [user_agent, codex_home, platform_family, platform_os] = identity;
   let fields = json_object_empty();
   fields = json_object_prepend("platformOs", json_string platform_os, fields)
@@ -482,115 +492,116 @@ const initialize_response: ServerIdentity -> ServerJson = (identity: ServerIdent
   fields = json_object_prepend("codexHome", json_string codex_home, fields)
   fields = json_object_prepend("userAgent", json_string user_agent, fields)
   json_object fields
-};
+end;
 
 const handle_request: [ServerSession, ServerIdentity, ServerRequest] -> ServerPlan = (
   session: ServerSession,
   identity: ServerIdentity,
   request: ServerRequest,
-) => {
+) => do
   let [id, method, params] = request;
-  let plan: ServerPlan = `Drop ([session, "request method could not be decoded"]);
+  let plan: ServerPlan = #Drop ([session, "request method could not be decoded"]);
 
-  if method == "initialize" {
-    if let `Initialized _ = session {
+  if method == "initialize" then
+    if let #Initialized _ = session then
       let send: ServerSend = [session, encode_error(id, "-32600", "Already initialized")];
-      plan = `Send send
-    } else {
+      plan = #Send send
+    else
       let initialized = decode_initialize params;
 
-      if let `InitializeOk initialized_session = initialized {
-        let next: ServerSession = `Initialized initialized_session;
+      if let #InitializeOk initialized_session = initialized then
+        let next: ServerSession = #Initialized initialized_session;
         let send: ServerSend = [next, encode_response(id, initialize_response identity)];
-        plan = `Send send
-      } else if let `InitializeError message = initialized {
+        plan = #Send send
+      else let #InitializeError message = initialized then
         let send: ServerSend = [session, encode_error(id, "-32600", message)];
-        plan = `Send send
-      }
-    }
-  } else if let `Uninitialized () = session {
+        plan = #Send send
+      end;
+    end;
+  else let #Uninitialized = session then
     let send: ServerSend = [session, encode_error(id, "-32600", "Not initialized")];
-    plan = `Send send
-  } else {
+    plan = #Send send
+  else
     let route: ServerRoute = [session, id, method, params];
-    plan = `Route route
-  }
+    plan = #Route route
+  end;
 
   plan
-};
+end;
 
 const handle_app_server_line: [ServerSession, ServerIdentity, Text] -> ServerPlan = (
   session: ServerSession,
   identity: ServerIdentity,
   document: Text,
-) => {
+) => do
   let decoded = decode_app_server_message document;
 
-  if let `Decoded message = decoded {
-    if let `Request request = message {
+  if let #Decoded message = decoded then
+    if let #Request request = message then
       handle_request(session, identity, request)
-    } else {
+    else
       let observed: ServerObserve = [session, message];
-      `Observe observed;
-    }
-  } else if let `DecodeError message = decoded {
+      #Observe observed;
+    end;
+  else let #DecodeError message = decoded then
     let dropped: ServerDrop = [session, message];
-    `Drop dropped;
-  } else {
+    #Drop dropped;
+  else
     let dropped: ServerDrop = [session, "could not classify app-server message"];
-    `Drop dropped;
-  }
-};
+    #Drop dropped;
+  end;
+end;
 
-const notification_opted_out: [ServerTexts, Text] -> Bool = (values: ServerTexts, method: Text) => {
-  let current = values;
-  let opted_out = false;
-  let done = false;
+const notification_opted_out: [ServerTexts, Text] -> Bool =
+  (values: ServerTexts, method: Text) => do
+    let current = values;
+    let opted_out = false;
+    let done = false;
 
-  loop {
-    if let `Cons node = current {
-      let [candidate, tail] = node;
+    loop do
+      if let #Cons node = current then
+        let [candidate, tail] = node;
 
-      if candidate == method {
-        opted_out = true
+        if candidate == method then
+          opted_out = true
+          done = true
+        else
+          current = tail
+        end;
+      else
         done = true
-      } else {
-        current = tail
-      }
-    } else {
-      done = true
-    }
+      end;
 
-    if done {
-      break;
-    }
-  }
+      if done then
+        break;
+      end;
+    end;
 
-  opted_out
-};
+    opted_out
+  end;
 
 const should_emit_notification: [ServerSession, Text] -> Bool = (
   session: ServerSession,
   method: Text,
-) => {
-  if let `Initialized initialized = session {
+) => do
+  if let #Initialized initialized = session then
     let [_, capabilities] = initialized;
     let [_, _, _, opt_out] = capabilities;
-    if notification_opted_out(opt_out, method) { false } else { true }
-  } else {
+    if notification_opted_out(opt_out, method) then false else true end;
+  else
     false
-  }
-};
+  end;
+end;
 
-const experimental_api_enabled: ServerSession -> Bool = (session: ServerSession) => {
-  if let `Initialized initialized = session {
+const experimental_api_enabled: ServerSession -> Bool = (session: ServerSession) => do
+  if let #Initialized initialized = session then
     let [_, capabilities] = initialized;
     let [enabled, _, _, _] = capabilities;
     enabled
-  } else {
+  else
     false
-  }
-};
+  end;
+end;
 
 return {
   .uninitialized_app_server_session,

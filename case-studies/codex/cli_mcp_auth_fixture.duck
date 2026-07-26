@@ -15,29 +15,33 @@ let login_args: FixtureArgs = args.prepend(
   args.prepend("--scopes", args.singleton("read,write")),
 );
 let login: FixtureResult = parse_mcp_login login_args;
-if let `Ok command = login {
-  if let `McpLogin options = command {
-    if options.name == "server-c" && args.length(options.scopes) == 2 {
+if let #Ok command = login then
+  if let #McpLogin options = command then
+    if options.name == "server-c" && args.length(options.scopes) == 2 then
       if args.nth_or("", 0, options.scopes) == "read" && args.nth_or("", 1,
-        options.scopes) == "write" {
+        options.scopes) == "write" then
           score = score + 1
-        }
-    }
-  }
-}
+        end;
+    end;
+  end;
+end;
 
 let removed: FixtureResult = parse_mcp_remove(args.singleton("server-c"));
-if let `Ok command = removed {
-  if let `McpRemove name = command {
-    if name == "server-c" { score = score + 10 }
-  }
-}
+if let #Ok command = removed then
+  if let #McpRemove name = command then
+    if name == "server-c" then
+      score = score + 10
+    end;
+  end;
+end;
 
 let logout: FixtureResult = parse_mcp_logout(args.singleton("server-c"));
-if let `Ok command = logout {
-  if let `McpLogout name = command {
-    if name == "server-c" { score = score + 100 }
-  }
-}
+if let #Ok command = logout then
+  if let #McpLogout name = command then
+    if name == "server-c" then
+      score = score + 100
+    end;
+  end;
+end;
 
 return { .score = score };

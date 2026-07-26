@@ -3,25 +3,25 @@ module () where
 const { .encode_json_string } = import "duck:prelude/json/string" ();
 const agent_types_module = import "./agent_types.duck";
 
-const agent_status_json: AgentStatus -> Text = status => {
-  if let `PendingInit () = status {
+const agent_status_json: AgentStatus -> Text = status => do
+  if let #PendingInit = status then
     "\"pending_init\""
-  } else if let `Running () = status {
+  else let #Running = status then
     "\"running\""
-  } else if let `Interrupted () = status {
+  else let #Interrupted = status then
     "\"interrupted\""
-  } else if let `Shutdown () = status {
+  else let #Shutdown = status then
     "\"shutdown\""
-  } else if let `NotFound () = status {
+  else let #NotFound = status then
     "\"not_found\""
-  } else if let `Completed message = status {
-    let value = if let `Some text = message { encode_json_string text } else { "null" };
+  else let #Completed message = status then
+    let value = if let #Some text = message then encode_json_string text else "null" end;
     "{\"completed\":" <> value <> "}"
-  } else if let `Errored message = status {
+  else let #Errored message = status then
     "{\"errored\":" <> encode_json_string message <> "}"
-  } else {
+  else
     "\"not_found\""
-  }
-};
+  end;
+end;
 
 return { .agent_status_json };

@@ -5,10 +5,10 @@ const {} = import "duck:prelude/abstractions" ();
 const {} = import "./app_server_types.duck" ();
 
 type AppServerThreadDeleteRoot =
-  | `LoadedThreadRoot AppServerThreadPersistence
-  | `StoredThreadRoot Unit
-  | `StateOnlyThreadRoot Unit
-  | `MissingThreadRoot Unit
+  | #LoadedThreadRoot AppServerThreadPersistence
+  | #StoredThreadRoot
+  | #StateOnlyThreadRoot
+  | #MissingThreadRoot
 
 type AppServerThreadDeleteSubtree = NonEmpty Text
 type AppServerThreadDeletePlan = struct {

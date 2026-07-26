@@ -1,34 +1,34 @@
-type IntStack = | `Empty Unit | `Node IntStackNode
+type IntStack = | #Empty | #Node IntStackNode
 type IntStackNode = [I32, IntStack]
 
-const stack_module = (const item_type, const stack_type, const node_type) => comptime {
-  const empty = () => {
-    let values: stack_type = `Empty ();
+const stack_module = (const item_type, const stack_type, const node_type) => comptime do
+  const empty = () => do
+    let values: stack_type = #Empty;
     values
-  };
-  const push = (value: item_type, values: stack_type) => {
+  end;
+  const push = (value: item_type, values: stack_type) => do
     let node: node_type = [value, values];
-    let pushed: stack_type = `Node node;
+    let pushed: stack_type = #Node node;
     pushed
-  };
-  const top = (values: stack_type, fallback: item_type) => {
-    if let `Node node = values {
+  end;
+  const top = (values: stack_type, fallback: item_type) => do
+    if let #Node node = values then
       node[0]
-    } else {
+    else
       fallback
-    }
-  };
-  const rest = (values: stack_type) => {
-    if let `Node node = values {
+    end;
+  end;
+  const rest = (values: stack_type) => do
+    if let #Node node = values then
       let tail: stack_type = node[1];
       tail
-    } else {
+    else
       values
-    }
-  };
+    end;
+  end;
 
   { .empty, .push, .top, .rest }
-};
+end;
 
 const int_stack = comptime stack_module(I32, IntStack, IntStackNode);
 

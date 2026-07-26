@@ -13,7 +13,9 @@ let enabled: FixtureConfig = [
   .hide_spawn_metadata = false,
   .namespace = "",
 ];
-if collaboration_tools_enabled enabled { score = score + 1 }
+if collaboration_tools_enabled enabled then
+  score = score + 1
+end;
 
 let feature_disabled: FixtureConfig = [
   .enabled = false,
@@ -22,7 +24,9 @@ let feature_disabled: FixtureConfig = [
   .hide_spawn_metadata = false,
   .namespace = "",
 ];
-if !(collaboration_tools_enabled feature_disabled) { score = score + 10 }
+if !(collaboration_tools_enabled feature_disabled) then
+  score = score + 10
+end;
 
 let v2_disabled: FixtureConfig = [
   .enabled = true,
@@ -31,6 +35,8 @@ let v2_disabled: FixtureConfig = [
   .hide_spawn_metadata = false,
   .namespace = "",
 ];
-if !(collaboration_tools_enabled v2_disabled) { score = score + 100 }
+if !(collaboration_tools_enabled v2_disabled) then
+  score = score + 100
+end;
 
 return { .score = score };

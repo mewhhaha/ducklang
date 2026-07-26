@@ -1,14 +1,14 @@
-type Maybe = | `Some I32 | `None Unit
+type Maybe = | #Some I32 | #None
 
-let select = (input: Maybe) => {
-  let `Some value = input else {
+let select = (input: Maybe) => do
+  let #Some value = input else do
     return 7;
-  };
+  end;
 
   value + 1
-};
+end;
 
-let some: Maybe = `Some 41;
-let none: Maybe = `None ();
+let some: Maybe = #Some 41;
+let none: Maybe = #None;
 
 select some + select none

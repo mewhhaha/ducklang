@@ -38,7 +38,9 @@ let consumed = consume !linear;
 Prefix negation in values and conditions
 ==================
 let negated = !(ready);
-if !(ready || done) { () }
+if !(ready || done) then
+  ()
+end;
 
 ---
 
@@ -63,51 +65,49 @@ if !(ready || done) { () }
                   (operator_symbol)
                   (condition_expression
                     (identifier))))))))
-      (block
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (unit_pattern)))))))
 
 ==================
-Compile-time value match patterns
+Compile-time value case patterns
 ==================
 
-let result = match key {
-  | 'q' | #(ctrl_c) => 1
-  | _ => 0
-};
+let result = case key of
+  'q' | #(ctrl_c) => 1,
+  _ => 0;
 
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_expression
         (identifier))
-      (match_case_block
-        (match_case
-          (alternative_pattern
-            (character)
-            (const_value_pattern
-              (postfix_expression
-                (identifier))))
-          (postfix_expression
-            (number)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number)))))))
+      (case_arm
+        (alternative_pattern
+          (character)
+          (const_value_pattern
+            (postfix_expression
+              (identifier))))
+        (postfix_expression
+          (number)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number))))))
 
 ==================
 Bracket value after a binding
 ==================
-let pair = () => {
+let pair = () => do
   let right = [
     .value = 1,
   ];
   [right];
-};
+end;
 
 ---
 
@@ -136,11 +136,11 @@ let pair = () => {
 Condition forms and type tests
 ==================
 let type_match = value is I32;
-if predicate value && record.ready && values[0] == 1 && value is I32 {
+if predicate value && record.ready && values[0] == 1 && value is I32 then
   42
-} else {
+else
   0
-}
+end;
 
 ---
 
@@ -195,14 +195,15 @@ if predicate value && record.ready && values[0] == 1 && value is I32 {
               (type_intersection
                 (type_difference
                   (identifier)))))))
-      (block
+      (conditional_branch
         (expression_statement
           (postfix_expression
             (number))))
-      (block
-        (expression_statement
-          (postfix_expression
-            (number)))))))
+      (else_clause
+        (conditional_branch
+          (expression_statement
+            (postfix_expression
+              (number))))))))
 
 ==================
 Positional, shape, and type-check patterns
@@ -246,7 +247,7 @@ let struct { .name = Text, .. } = Player;
 ==================
 Scratch regions and aggregate rebuilding
 ==================
-let temporary = scratch { value };
+let temporary = scratch do value end;
 values[index] = temporary
 
 ---
@@ -271,7 +272,7 @@ values[index] = temporary
 Union case values
 ==================
 
-let value = `Some 42;
+let value = #Some 42;
 
 ---
 
@@ -356,7 +357,7 @@ let named = [.x = x, .y = y];
             (identifier)))))))
 
 ==================
-Arrays, imports, casts, updates, and matches
+Arrays, imports, casts, updates, and cases
 ==================
 let values = [x, y];
 let rebuilt = [x, ...rec(index + 1, length)];
@@ -367,15 +368,13 @@ let cast = x as Text;
 let updated = x <& { .field = y };
 let reverse_updated = { .field = y } &> x;
 let [first, ...rest] = values;
-let result = match target {
-| `Ok value if ready => value
-| _ => 0
-};
-let selected = match value {
-| 1 | 2 => 3
-| "hello ${name} why" => name
-| _ => ""
-};
+let result = case target of
+#Ok value if ready => value,
+_ => 0;
+let selected = case value of
+1 | 2 => 3,
+"hello ${name} why" => name,
+_ => "";
 type Values = [I32; 3]
 
 ---
@@ -470,42 +469,40 @@ type Values = [I32; 3]
       (identifier)))
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_expression
         (identifier))
-      (match_case_block
-        (match_case
-          (union_pattern
-            (constructor_identifier)
-            (identifier))
-          (condition_expression
-            (identifier))
-          (postfix_expression
-            (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number))))))
+      (case_arm
+        (union_pattern
+          (constructor_identifier)
+          (identifier))
+        (condition_expression
+          (identifier))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number)))))
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_expression
         (identifier))
-      (match_case_block
-        (match_case
-          (alternative_pattern
-            (number)
-            (number))
-          (postfix_expression
-            (number)))
-        (match_case
-          (string)
-          (postfix_expression
-            (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (string))))))
+      (case_arm
+        (alternative_pattern
+          (number)
+          (number))
+        (postfix_expression
+          (number)))
+      (case_arm
+        (string)
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (string)))))
   (type_declaration_statement
     (identifier)
     (type_reference
@@ -524,13 +521,13 @@ type Values = [I32; 3]
 Const recursive fold with unary condition call
 ==================
 
-const fold = rec (values, index) => {
-  if index == @len(values) {
+const fold = rec (values, index) => do
+  if index == @len(values) then
     index
-  } else {
+  else
     rec(values, index + 1)
-  }
-};
+  end;
+end;
 
 ---
 
@@ -560,22 +557,23 @@ const fold = rec (values, index) => {
                         (parenthesized_expression
                           (postfix_expression
                             (identifier))))))))
-              (block
+              (conditional_branch
                 (expression_statement
                   (postfix_expression
                     (identifier))))
-              (block
-                (expression_statement
-                  (recursive_call_expression
-                    (positional_product
-                      (postfix_expression
-                        (identifier))
-                      (binary_expression
+              (else_clause
+                (conditional_branch
+                  (expression_statement
+                    (recursive_call_expression
+                      (positional_product
                         (postfix_expression
                           (identifier))
-                        (operator_symbol)
-                        (postfix_expression
-                          (number))))))))))))))
+                        (binary_expression
+                          (postfix_expression
+                            (identifier))
+                          (operator_symbol)
+                          (postfix_expression
+                            (number)))))))))))))))
 
 ==================
 Const variadic parameter
@@ -597,31 +595,29 @@ const collect = (const ...values) => values;
 ==================
 Value-pack rest pattern
 ==================
-let first = match (2, 99) {
-| (value, ...remaining) => value
-| _ => 0
-};
+let first = case (2, 99) of
+(value, ...remaining) => value,
+_ => 0;
 
 ---
 
 (source_file
   (binding_statement
     (identifier)
-    (match_expression
+    (case_expression
       (condition_positional_product
         (condition_expression
           (number))
         (condition_expression
           (number)))
-      (match_case_block
-        (match_case
-          (positional_product_pattern
-            (identifier)
-            (product_rest_pattern
-              (identifier)))
-          (postfix_expression
+      (case_arm
+        (positional_product_pattern
+          (identifier)
+          (product_rest_pattern
             (identifier)))
-        (match_case
-          (wildcard)
-          (postfix_expression
-            (number)))))))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (number))))))

@@ -65,7 +65,7 @@ Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () =
 
 Deno.test("import validation skips a statically eliminated branch", () => {
   const source = parse_source(
-    'const dependency = if false { import "./missing.duck" } else { import "./dep.duck" };\ndependency',
+    'const dependency = if false then import "./missing.duck" else import "./dep.duck" end;\ndependency',
   );
   const sources = new Map<string, string>([
     ["file:///dep.duck", "module () where\nreturn {};"],

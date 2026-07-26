@@ -1181,7 +1181,7 @@ function validate_expr(
           if (guard_type.tag !== "unknown" && guard_type.tag !== "bool") {
             diagnostics.push(source_diagnostic(
               "DUCK2303",
-              "Match guard expects Bool, got " + type_name(guard_type),
+              "Case guard expects Bool, got " + type_name(guard_type),
               arm.guard,
             ));
           }
@@ -1269,19 +1269,19 @@ function validate_expr(
         subject = final_arm;
       }
 
-      let message = "Non-exhaustive match requires a wildcard or binding arm";
+      let message = "Non-exhaustive case requires a wildcard or binding arm";
 
       if (target_type.tag === "union_value") {
         const missing = target_type.cases.filter((union_case) =>
           !covered_union_cases.has(union_case.name)
         ).map((union_case) => {
           if (union_case.type_name === "Unit") {
-            return "`" + union_case.name + " ()";
+            return "#" + union_case.name;
           }
 
-          return "`" + union_case.name + " _";
+          return "#" + union_case.name + " _";
         });
-        message = "Non-exhaustive match, missing " + missing.join(", ");
+        message = "Non-exhaustive case, missing " + missing.join(", ");
       }
 
       diagnostics.push(source_diagnostic("DUCK2314", message, subject));
@@ -1724,17 +1724,6 @@ function validate_expr(
   }
 
   if (expr.tag === "product" || expr.tag === "shape") {
-    if (
-      expr.tag === "product" && expr.value_pack === true &&
-      !accepts_value_pack
-    ) {
-      diagnostics.push(source_diagnostic(
-        "DUCK2307",
-        "Value packs may only be passed, returned, or destructured immediately; use `[...]` to store a tuple",
-        expr,
-      ));
-    }
-
     for (const entry of expr.entries) {
       validate_expr(entry.value, env, diagnostics, check_comptime);
     }
@@ -2482,6 +2471,19 @@ function validate_call_arguments(
 
     if (representation_diagnostic) {
       diagnostics.push(representation_diagnostic);
+      continue;
+    }
+
+    if (
+      expected.tag === "struct" && actual.tag === "struct" &&
+      !same_type(expected, actual)
+    ) {
+      diagnostics.push(source_diagnostic(
+        "DUCK2307",
+        message_prefix + parameter_label + " expects " + type_name(expected) +
+          ", got " + type_name(actual),
+        arg,
+      ));
     }
   }
 
@@ -4421,9 +4423,16 @@ function infer_struct_value_type(
   }
 
   const field_types: TypeField[] = [];
+  const field_value_types: FrontType[] = [];
 
   for (const field of expr.fields) {
-    const field_type = infer_type(field.value, env, active_calls);
+    let field_type = infer_type(field.value, env, active_calls);
+
+    if (field.value.tag === "text" && field.value.encoding !== "bytes") {
+      field_type = { tag: "text", literal: field.value.value };
+    }
+
+    field_value_types.push(field_type);
     let field_type_name: string | undefined;
 
     if (field_type.tag === "bool") {
@@ -4449,6 +4458,11 @@ function infer_struct_value_type(
 
       if (field_type.encoding === "bytes") {
         field_type_name = "Bytes";
+      } else if (field_type.literal !== undefined) {
+        field_type_name = format_type_expr({
+          tag: "literal",
+          value: { tag: "text", value: field_type.literal },
+        });
       }
     }
 
@@ -4457,6 +4471,7 @@ function infer_struct_value_type(
         tag: "struct",
         fields: expr.fields.map((candidate) => candidate.name),
         field_types: undefined,
+        field_value_types,
       };
     }
 
@@ -4467,6 +4482,7 @@ function infer_struct_value_type(
     tag: "struct",
     fields: expr.fields.map((field) => field.name),
     field_types,
+    field_value_types,
   };
 }
 
@@ -4918,7 +4934,7 @@ function type_from_type_expr(
     }
 
     if (type.value.tag === "text") {
-      return { tag: "text" };
+      return { tag: "text", literal: type.value.value };
     }
 
     if (type.value.character !== undefined) {
@@ -4945,6 +4961,46 @@ function type_from_type_expr(
     (type.tag === "product" && type.entries.length === 0)
   ) {
     return { tag: "atom", name: semantic_unit_atom_name };
+  }
+
+  if (type.tag === "tuple") {
+    const fields = type.items.map((_item, index) => "item_" + index.toString());
+
+    return {
+      tag: "struct",
+      fields,
+      field_types: type.items.map((item, index) => {
+        const name = fields[index];
+        expect(name, "Missing tuple type field " + index.toString());
+        return { name, type_name: format_type_expr(item) };
+      }),
+      field_value_types: type.items.map((item) =>
+        type_from_type_expr(item, env)
+      ),
+    };
+  }
+
+  if (type.tag === "product" && type.repeat === undefined) {
+    const fields = type.entries.map((entry, index) => {
+      if (entry.label !== undefined) {
+        return entry.label;
+      }
+
+      return "item_" + index.toString();
+    });
+
+    return {
+      tag: "struct",
+      fields,
+      field_types: type.entries.map((entry, index) => {
+        const name = fields[index];
+        expect(name, "Missing product type field " + index.toString());
+        return { name, type_name: format_type_expr(entry.type_expr) };
+      }),
+      field_value_types: type.entries.map((entry) =>
+        type_from_type_expr(entry.type_expr, env)
+      ),
+    };
   }
 
   if (type.tag === "frozen" || type.tag === "borrow") {
@@ -6001,6 +6057,10 @@ function resolve_type_name(
     return { tag: "atom", name: name.slice(1) };
   }
 
+  if (name.startsWith("freeze ") || name.startsWith("&")) {
+    return type_from_type_expr(parse_type_expr(tokenize(name)), env);
+  }
+
   const builtin = front_type_from_type_name(name);
 
   if (builtin.tag !== "unknown") {
@@ -6592,6 +6652,13 @@ function type_name(type: FrontType): string {
       return "Bytes";
     }
 
+    if (type.literal !== undefined) {
+      return format_type_expr({
+        tag: "literal",
+        value: { tag: "text", value: type.literal },
+      });
+    }
+
     return "Text";
   }
 
@@ -6617,6 +6684,29 @@ function type_name(type: FrontType): string {
 
   if (type.tag === "int") {
     return "I32";
+  }
+
+  if (type.tag === "struct") {
+    for (let index = 0; index < type.fields.length; index += 1) {
+      if (type.fields[index] !== "item_" + index.toString()) {
+        if (type.nominal_name !== undefined) {
+          return type.nominal_name;
+        }
+
+        return "struct";
+      }
+    }
+
+    if (type.field_value_types !== undefined) {
+      return "[" + type.field_value_types.map(type_name).join(", ") + "]";
+    }
+
+    if (type.field_types !== undefined) {
+      return "[" + type.field_types.map((field) => field.type_name).join(", ") +
+        "]";
+    }
+
+    return "struct";
   }
 
   return type.tag;

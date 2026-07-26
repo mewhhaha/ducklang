@@ -21,18 +21,18 @@ const citation_close = "</oai-mem-citation>";
 let new_citation_parser: [] -> CitationParser = () => ["", false, ""];
 
 let push_citation_chunk: [CitationParser, Text] -> CitationChunk =
-  (parser: CitationParser, chunk: Text) => {
+  (parser: CitationParser, chunk: Text) => do
     let pending: Text = text_append [parser.pending, chunk];
     let active: Bool = parser.active;
     let content: Text = parser.content;
     let visible_text: Text = "";
     let citations: Citations = texts.empty();
 
-    loop {
-      if active {
+    loop do
+      if active then
         let close_index = text_find [pending, citation_close];
 
-        if close_index >= 0 {
+        if close_index >= 0 then
           let prefix = text_slice [pending, 0, close_index];
           content = text_append [content, prefix]
           citations = texts.prepend(content, citations)
@@ -43,22 +43,22 @@ let push_citation_chunk: [CitationParser, Text] -> CitationChunk =
             text_length pending,
           ]
           active = false
-        } else {
+        else
           let keep = text_longest_suffix_prefix_length [pending, citation_close];
           let take = text_length pending - keep;
 
-          if take > 0 {
+          if take > 0 then
             let prefix = text_slice [pending, 0, take];
             content = text_append [content, prefix]
             pending = text_slice [pending, take, text_length pending]
-          }
+          end;
 
           break;
-        }
-      } else {
+        end;
+      else
         let open_index = text_find [pending, citation_open];
 
-        if open_index >= 0 {
+        if open_index >= 0 then
           let prefix = text_slice [pending, 0, open_index];
           visible_text = text_append [visible_text, prefix]
           pending = text_slice [
@@ -67,39 +67,39 @@ let push_citation_chunk: [CitationParser, Text] -> CitationChunk =
             text_length pending,
           ]
           active = true
-        } else {
+        else
           let keep = text_longest_suffix_prefix_length [pending, citation_open];
           let take = text_length pending - keep;
 
-          if take > 0 {
+          if take > 0 then
             let prefix = text_slice [pending, 0, take];
             visible_text = text_append [visible_text, prefix]
             pending = text_slice [pending, take, text_length pending]
-          }
+          end;
 
           break;
-        }
-      }
-    }
+        end;
+      end;
+    end;
 
     let next_parser: CitationParser = [pending, active, content];
     [next_parser, visible_text, texts.reverse(citations)]
-  };
+  end;
 
 let finish_citations: CitationParser -> CitationChunk =
-  (parser: CitationParser) => {
+  (parser: CitationParser) => do
     let citations: Citations = texts.empty();
     let visible_text: Text = "";
 
-    if parser.active {
+    if parser.active then
       let content = text_append [parser.content, parser.pending];
       citations = texts.singleton(content)
-    } else {
+    else
       visible_text = parser.pending
-    }
+    end;
 
     [["", false, ""] as CitationParser, visible_text, citations]
-  };
+  end;
 
 return {
   .new_citation_parser,

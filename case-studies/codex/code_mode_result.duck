@@ -9,58 +9,57 @@ type ResultInput = CodeModeResultInput
 type ResultJson = Json
 type ResultTextOption = Option Text
 
-const code_mode_content_result: ResultContentItems -> Text = content_items => {
+const code_mode_content_result: ResultContentItems -> Text = content_items => do
   let current = content_items;
   let output = "";
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [content_item, tail] = node;
-      let value: ResultTextOption = match content_item {
-        | `InputText text => `Some text
-        | `InputImage image => {
+      let value: ResultTextOption = case content_item of
+        #InputText text => #Some text,
+        #InputImage image => do
           let [image_url, _] = image;
-          `Some image_url
-        }
-        | `InputAudio audio_url => `Some audio_url
-        | `EncryptedContent _ => `None ()
-      };
+          #Some image_url
+        end,
+        #InputAudio audio_url => #Some audio_url,
+        #EncryptedContent _ => #None;
 
-      if let `Some text = value {
-        if text_trim_whitespace text != "" {
-          if output != "" {
+      if let #Some text = value then
+        if text_trim_whitespace text != "" then
+          if output != "" then
             output = text_append [output, "\n"]
-          }
+          end;
           output = text_append [output, text]
-        }
-      }
+        end;
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   output
-};
+end;
 
-const code_mode_result: ResultInput -> ResultJson = input => {
-  match input {
-    | `ResultMessage content_items => `String (code_mode_content_result content_items)
-    | `ResultFunctionCall body | `ResultCustomCall body => {
-      match body {
-        | `ResultTextBody text => `String text
-        | `ResultContentBody content_items => `String (code_mode_content_result content_items)
-      }
-    }
-    | `ResultToolSearch tools => `Array tools
-    | `ResultMcpCall result => result
-    | `ResultJsonToolOutput value => value
-  }
-};
+const code_mode_result: ResultInput -> ResultJson = input => do
+  case input of
+    #ResultMessage content_items => #String (code_mode_content_result content_items),
+    #ResultFunctionCall body | #ResultCustomCall body => do
+      case body of
+        #ResultTextBody text => #String text,
+        #ResultContentBody content_items => #String (code_mode_content_result content_items);
+    end,
+    #ResultToolSearch tools => #Array tools,
+    #ResultMcpCall result => result,
+    #ResultJsonToolOutput value => value;
+end;
 
 return {
   .code_mode_content_result,

@@ -150,101 +150,107 @@ duck Profunctor P A B C D {
 }
 
 extend Option {
-  .map = [transform, wrapped] => if let `Some value = wrapped {
-    `Some (transform value)
-  } else {
-    `None ()
-  },
-  .apply = [wrapped_transform, wrapped] => if let `Some transform = wrapped_transform {
-    if let `Some value = wrapped {
-      `Some (transform value)
-    } else {
-      `None ()
-    }
-  } else {
-    `None ()
-  },
-  .pure = value => `Some value,
-  .bind = [wrapped, transform] => if let `Some value = wrapped {
+  .map = [transform, wrapped] => if let #Some value = wrapped then
+    #Some (transform value)
+  else
+    #None
+  end,
+  .apply = [wrapped_transform, wrapped] => if let #Some transform = wrapped_transform then
+    if let #Some value = wrapped then
+      #Some (transform value)
+    else
+      #None
+    end;
+  else
+    #None
+  end,
+  .pure = value => #Some value,
+  .bind = [wrapped, transform] => if let #Some value = wrapped then
     transform value
-  } else {
-    `None ()
-  },
-  .pure_affine = value => `Some value,
-  .bind_affine = [wrapped, transform] => if let `Some value = wrapped {
+  else
+    #None
+  end,
+  .pure_affine = value => #Some value,
+  .bind_affine = [wrapped, transform] => if let #Some value = wrapped then
     transform value
-  } else {
-    `None ()
-  },
-  .empty = () => `None (),
-  .or_else = [left, right] => if let `Some value = left {
-    `Some value
-  } else {
+  else
+    #None
+  end,
+  .empty = () => #None,
+  .or_else = [left, right] => if let #Some value = left then
+    #Some value
+  else
     right
-  },
+  end,
 }
 
 extend List {
-  .pure = value => {
-    let empty: List A = `Nil ();
-    let result: List A = `Cons [value, empty];
+  .pure = value => do
+    let empty: List A = #Nil;
+    let result: List A = #Cons [value, empty];
     result
-  },
-  .bind = [wrapped, transform] => {
-    let append: [List B, List B] -> List B = (left, right) => {
+  end,
+  .bind = [wrapped, transform] => do
+    let append: [List B, List B] -> List B = (left, right) => do
       let current_left = left;
-      let reversed: List B = `Nil ();
+      let reversed: List B = #Nil;
       let reverse_done = false;
 
-      loop {
-        if let `Cons node = current_left {
+      loop do
+        if let #Cons node = current_left then
           let [value, tail] = node;
-          reversed = `Cons [value, reversed]
+          reversed = #Cons [value, reversed]
           current_left = tail
-        } else {
+        else
           reverse_done = true
-        }
+        end;
 
-        if reverse_done { break; }
-      }
+        if reverse_done then
+          break;
+        end;
+      end;
 
       let appended = right;
       let append_done = false;
 
-      loop {
-        if let `Cons node = reversed {
+      loop do
+        if let #Cons node = reversed then
           let [value, tail] = node;
-          appended = `Cons [value, appended]
+          appended = #Cons [value, appended]
           reversed = tail
-        } else {
+        else
           append_done = true
-        }
+        end;
 
-        if append_done { break; }
-      }
+        if append_done then
+          break;
+        end;
+      end;
 
       appended
-    };
+    end;
 
     let current = wrapped;
-    let bound_values: List B = `Nil ();
+    let bound_values: List B = #Nil;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [value, tail] = node;
         let chunk = transform value;
         bound_values = append(bound_values, chunk)
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done { break; }
-    }
+      if done then
+        break;
+      end;
+    end;
 
     bound_values
-  },
+  end,
 }
 
 extend Text {
@@ -303,398 +309,398 @@ const fanout = [left, right] => value => [left value, right value];
 
 const converge = [combine, left, right] => value => combine [left value, right value];
 
-const iterate_i32 = (count: I32, initial: I32, const step) => {
+const iterate_i32 = (count: I32, initial: I32, const step) => do
   let state = initial;
 
-  for 0..count {
+  for 0..count do
     state = step state
-  }
+  end
 
   state
-};
+end;
 
-const list = (const value_type) => {
+const list = (const value_type) => do
   const list_type = List value_type;
   const node_type = ListNode value_type;
 
-  const empty: () -> List value_type = () => `Nil ();
-  const cons: ListNode value_type -> List value_type = node => `Cons node;
+  const empty: () -> List value_type = () => #Nil;
+  const cons: ListNode value_type -> List value_type = node => #Cons node;
 
-  const prepend = (value: value_type, values: List value_type) => {
+  const prepend = (value: value_type, values: List value_type) => do
     let node: ListNode value_type = @construct(node_type, [value, values]);
     cons node
-  };
+  end;
 
-  const reverse = (values: List value_type) => {
+  const reverse = (values: List value_type) => do
     let current = values;
     let reversed: List value_type = empty();
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
         reversed = prepend(head, reversed)
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     reversed
-  };
+  end;
 
-  const append = (left: List value_type, right: List value_type) => {
+  const append = (left: List value_type, right: List value_type) => do
     let current = left;
     let reversed: List value_type = empty();
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
         reversed = prepend(head, reversed)
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     let appended = right;
     done = false
 
-    loop {
-      if let `Cons node = reversed {
+    loop do
+      if let #Cons node = reversed then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
         appended = prepend(head, appended)
         reversed = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     appended
-  };
+  end;
 
   const singleton = (value: value_type) => prepend(value, empty());
 
-  const filter = (values: List value_type, const predicate: value_type -> Bool) => {
+  const filter = (values: List value_type, const predicate: value_type -> Bool) => do
     let current = values;
     let kept_reversed: List value_type = empty();
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
 
-        if predicate head {
+        if predicate head then
           kept_reversed = prepend(head, kept_reversed)
-        }
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     reverse kept_reversed
-  };
+  end;
 
-  const take = (count: I32, values: List value_type) => {
+  const take = (count: I32, values: List value_type) => do
     let current = values;
     let remaining = count;
     let taken_reversed: List value_type = empty();
     let done = remaining <= 0;
 
-    loop {
-      if done {
+    loop do
+      if done then
         break;
-      }
+      end;
 
-      if let `Cons node = current {
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
         taken_reversed = prepend(head, taken_reversed)
         current = tail
         remaining = remaining - 1
 
-        if remaining <= 0 {
+        if remaining <= 0 then
           done = true
-        }
-      } else {
+        end;
+      else
         done = true
-      }
-    }
+      end;
+    end;
 
     reverse taken_reversed
-  };
+  end;
 
-  const drop = (count: I32, values: List value_type) => {
+  const drop = (count: I32, values: List value_type) => do
     let current = values;
     let remaining = count;
     let done = remaining <= 0;
 
-    loop {
-      if done {
+    loop do
+      if done then
         break;
-      }
+      end;
 
-      if let `Cons node = current {
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [_, tail] = typed_node;
         current = tail
         remaining = remaining - 1
 
-        if remaining <= 0 {
+        if remaining <= 0 then
           done = true
-        }
-      } else {
+        end;
+      else
         done = true
-      }
-    }
+      end;
+    end;
 
     current
-  };
+  end;
 
-  const find = (values: List value_type, const predicate: value_type -> Bool) => {
+  const find = (values: List value_type, const predicate: value_type -> Bool) => do
     let current = values;
-    let result: Option value_type = `None ();
+    let result: Option value_type = #None;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
 
-        if predicate head {
-          result = `Some head
+        if predicate head then
+          result = #Some head
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     result
-  };
+  end;
 
-  const length = (values: List value_type) => {
+  const length = (values: List value_type) => do
     let current = values;
     let count = 0;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [_, tail] = typed_node;
         count = count + 1
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     count
-  };
+  end;
 
-  const any = (values: List value_type, const predicate: value_type -> Bool) => {
+  const any = (values: List value_type, const predicate: value_type -> Bool) => do
     let current = values;
     let matched = false;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
 
-        if predicate head {
+        if predicate head then
           matched = true
           done = true
-        } else {
+        else
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     matched
-  };
+  end;
 
-  const count = (values: List value_type, const predicate: value_type -> Bool) => {
+  const count = (values: List value_type, const predicate: value_type -> Bool) => do
     let current = values;
     let matched = 0;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
 
-        if predicate head {
+        if predicate head then
           matched = matched + 1
-        }
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     matched
-  };
+  end;
 
-  const nth_or = (fallback: value_type, index: I32, values: List value_type) => {
+  const nth_or = (fallback: value_type, index: I32, values: List value_type) => do
     let current = values;
     let result = fallback;
     let position = 0;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [head, tail] = typed_node;
 
-        if position == index {
+        if position == index then
           result = head
           done = true
-        } else {
+        else
           position = position + 1
           current = tail
-        }
-      } else {
+        end;
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     result
-  };
+  end;
 
   const fold_i32 = (values: List value_type, initial: I32, const combine: [I32, value_type] ->
-      I32) => {
+      I32) => do
         let current = values;
         let state = initial;
         let done = false;
 
-        loop {
-          if let `Cons node = current {
+        loop do
+          if let #Cons node = current then
             let typed_node: ListNode value_type = node;
             let [head, tail] = typed_node;
             state = combine(state, head)
             current = tail
-          } else {
+          else
             done = true
-          }
+          end;
 
-          if done {
+          if done then
             break;
-          }
-        }
+          end;
+        end;
 
         state
-      };
+      end;
 
-  const sort_by = (values: List value_type, const before: [value_type, value_type] -> Bool) => {
+  const sort_by = (values: List value_type, const before: [value_type, value_type] -> Bool) => do
     let current = values;
     let sorted = empty();
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let typed_node: ListNode value_type = node;
         let [value, tail] = typed_node;
         let remaining = sorted;
         let prefix_reversed = empty();
         let inserted = false;
 
-        loop {
-          if let `Cons sorted_node = remaining {
+        loop do
+          if let #Cons sorted_node = remaining then
             let typed_sorted_node: ListNode value_type = sorted_node;
             let [sorted_value, sorted_tail] = typed_sorted_node;
 
-            if before(value, sorted_value) {
+            if before(value, sorted_value) then
               remaining = prepend(value, remaining)
               inserted = true
               break;
-            } else {
+            else
               prefix_reversed = prepend(sorted_value, prefix_reversed)
               remaining = sorted_tail
-            }
-          } else {
+            end;
+          else
             remaining = singleton value
             inserted = true
             break;
-          }
-        }
+          end;
+        end;
 
-        if inserted {
+        if inserted then
           let prefix = prefix_reversed;
 
-          loop {
-            if let `Cons prefix_node = prefix {
+          loop do
+            if let #Cons prefix_node = prefix then
               let typed_prefix_node: ListNode value_type = prefix_node;
               let [prefix_value, prefix_tail] = typed_prefix_node;
               remaining = prepend(prefix_value, remaining)
               prefix = prefix_tail
-            } else {
+            else
               break;
-            }
-          }
-        }
+            end;
+          end;
+        end;
 
         sorted = remaining
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     sorted
-  };
+  end;
 
   {
     .empty = empty,
@@ -713,151 +719,151 @@ const list = (const value_type) => {
     .fold_i32 = fold_i32,
     .sort_by = sort_by,
   }
-};
+end;
 
 const list_fold_left: forall value state.[List value, state, [state, value] -> state] -> state =
-  (values, initial, const combine) => {
+  (values, initial, const combine) => do
     let current = values;
     let state = initial;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [head, tail] = node;
         state = combine(state, head)
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
+      end;
+    end;
 
     state
-  };
+  end;
 
-const list_is_empty = values => if let `Cons _ = values {
+const list_is_empty = values => if let #Cons _ = values then
   false
-} else {
+else
   true
-};
+end;
 
-const list_any = (values, const predicate) => {
-  list_fold_left(values, false, (matched, value) => {
-    if matched {
+const list_any = (values, const predicate) => do
+  list_fold_left(values, false, (matched, value) => do
+    if matched then
       true
-    } else {
+    else
       predicate value
-    }
-  })
-};
+    end;
+  end)
+end;
 
-const list_all = (values, const predicate) => {
-  list_fold_left(values, true, (matched, value) => {
-    if matched {
+const list_all = (values, const predicate) => do
+  list_fold_left(values, true, (matched, value) => do
+    if matched then
       predicate value
-    } else {
+    else
       false
-    }
-  })
-};
+    end;
+  end)
+end;
 
-const list_count = (values, const predicate) => {
-  list_fold_left(values, 0, (count, value) => {
-    if predicate value {
+const list_count = (values, const predicate) => do
+  list_fold_left(values, 0, (count, value) => do
+    if predicate value then
       count + 1
-    } else {
+    else
       count
-    }
-  })
-};
+    end;
+  end)
+end;
 
-const list_last_or = (fallback, values) => {
+const list_last_or = (fallback, values) => do
   list_fold_left(values, fallback, (_, value) => value)
-};
+end;
 
-const list_nth_or = (fallback, index: I32, values) => {
+const list_nth_or = (fallback, index: I32, values) => do
   let current = values;
   let result = fallback;
   let position = 0;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [head, tail] = node;
 
-      if position == index {
+      if position == index then
         result = head
         done = true
-      } else {
+      else
         position = position + 1
         current = tail
-      }
+      end;
 
       ()
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done {
+    if done then
       break;
-    }
-  }
+    end;
+  end;
 
   result
-};
+end;
 
 const list_head_or = (fallback, values) => list_nth_or(fallback, 0, values);
 
-const list_sum_i32 = values => {
+const list_sum_i32 = values => do
   list_fold_left(values, 0, (total, value) => total + value)
-};
+end;
 
-const list_product_i32 = values => {
+const list_product_i32 = values => do
   list_fold_left(values, 1, (product, value) => product * value)
-};
+end;
 
-const option = [fallback, transform] => value => if let `Some item = value {
+const option = [fallback, transform] => value => if let #Some item = value then
   transform item
-} else {
+else
   fallback
-};
+end;
 
-const option_unwrap_or = [fallback, value] => if let `Some item = value {
+const option_unwrap_or = [fallback, value] => if let #Some item = value then
   item
-} else {
+else
   fallback
-};
+end;
 
-const option_is_some = value => if let `Some _ = value { true } else { false };
+const option_is_some = value => if let #Some _ = value then true else false end;
 
-const option_is_none = value => if let `Some _ = value { false } else { true };
+const option_is_none = value => if let #Some _ = value then false else true end;
 
 const option_fold = option;
 
-const result_unwrap_or = [fallback, value] => if let `Ok item = value {
+const result_unwrap_or = [fallback, value] => if let #Ok item = value then
   item
-} else {
+else
   fallback
-};
+end;
 
-const result_is_ok = value => if let `Ok _ = value { true } else { false };
+const result_is_ok = value => if let #Ok _ = value then true else false end;
 
-const result_is_err = value => if let `Err _ = value { true } else { false };
+const result_is_err = value => if let #Err _ = value then true else false end;
 
-const result_fold = [on_error, on_ok] => value => if let `Ok item = value {
+const result_fold = [on_error, on_ok] => value => if let #Ok item = value then
   on_ok item
-} else if let `Err error = value {
+else let #Err error = value then
   on_error error
-} else {
+else
   @panic "Invalid Result value"
-};
+end;
 
-const either_is_left = value => if let `Left _ = value { true } else { false };
+const either_is_left = value => if let #Left _ = value then true else false end;
 
-const either_is_right = value => if let `Right _ = value { true } else { false };
+const either_is_right = value => if let #Right _ = value then true else false end;
 
 const {
   .append,
@@ -931,11 +937,9 @@ const {
   .i32_from_f64,
   .format_i32,
   .format_i64,
-  .format_f32,
   .generate_bytes,
   .encode_utf8,
   .decode_utf8,
-  .panic,
   .f32x4,
   .f32x4_splat,
   .f32x4_add,
@@ -1058,11 +1062,9 @@ return {
   .i32_from_f64,
   .format_i32,
   .format_i64,
-  .format_f32,
   .generate_bytes,
   .encode_utf8,
   .decode_utf8,
-  .panic,
   .f32x4,
   .f32x4_splat,
   .f32x4_add,

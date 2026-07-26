@@ -15,12 +15,14 @@ let input: FixtureArgs = args.prepend(
 let plan: FixturePlan = parse_cli input;
 let score = 0;
 
-if let `ManageServer command = plan {
-  if let `StartExecServer options = command {
-    if let `Some listen = options.listen {
-      if listen == "stdio://" { score = 1 }
-    }
-  }
-}
+if let #ManageServer command = plan then
+  if let #StartExecServer options = command then
+    if let #Some listen = options.listen then
+      if listen == "stdio://" then
+        score = 1
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

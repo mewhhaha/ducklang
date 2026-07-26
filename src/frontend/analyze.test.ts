@@ -59,10 +59,10 @@ Deno.test("Source.analyze reports reused linear parameters with related spans", 
 
 Deno.test("Source.analyze accepts linear branches and closures with exact use", () => {
   const branch = Source.analyze(
-    "let main = (!x, flag) => if flag { !x } else { !x };\nmain(1, true)",
+    "let main = (!x, flag) => if flag then !x else !x end;\nmain(1, true)",
   );
   const closure = Source.analyze(
-    "let main = (!x) => {\n  let consume = () => !x;\n  consume()\n};\nmain(1)",
+    "let main = (!x) => do\n  let consume = () => !x;\n  consume()\nend;\nmain(1)",
   );
 
   assert_equals(branch.diagnostics, []);

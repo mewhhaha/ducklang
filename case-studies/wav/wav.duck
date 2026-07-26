@@ -9,72 +9,71 @@ const phrase_samples = 8000;
 const pcm_bytes = phrase_samples * 2;
 const wav_bytes = header_bytes + pcm_bytes;
 
-let little_endian_byte = (value: I32, byte_position: I32) => {
+let little_endian_byte = (value: I32, byte_position: I32) => do
   (value >> (byte_position * 8)) &&& 0xff
-};
+end;
 
-let header_byte = (index: I32) => {
-  if index < 4 {
+let header_byte = (index: I32) => do
+  if index < 4 then
     little_endian_byte(0x46464952, index)
-  } else if index < 8 {
+  else index < 8 then
     little_endian_byte(wav_bytes - 8, index - 4)
-  } else if index < 12 {
+  else index < 12 then
     little_endian_byte(0x45564157, index - 8)
-  } else if index < 16 {
+  else index < 16 then
     little_endian_byte(0x20746d66, index - 12)
-  } else if index < 20 {
+  else index < 20 then
     little_endian_byte(16, index - 16)
-  } else if index < 22 {
+  else index < 22 then
     little_endian_byte(1, index - 20)
-  } else if index < 24 {
+  else index < 24 then
     little_endian_byte(1, index - 22)
-  } else if index < 28 {
+  else index < 28 then
     little_endian_byte(sample_rate, index - 24)
-  } else if index < 32 {
+  else index < 32 then
     little_endian_byte(sample_rate * 2, index - 28)
-  } else if index < 34 {
+  else index < 34 then
     little_endian_byte(2, index - 32)
-  } else if index < 36 {
+  else index < 36 then
     little_endian_byte(16, index - 34)
-  } else if index < 40 {
+  else index < 40 then
     little_endian_byte(0x61746164, index - 36)
-  } else if index < 44 {
+  else index < 44 then
     little_endian_byte(pcm_bytes, index - 40)
-  } else {
+  else
     0
-  }
-};
+  end;
+end;
 
-let square_wave = (sample: I32, period: I32) => {
-  if sample % period < period / 2 {
+let square_wave = (sample: I32, period: I32) => do
+  if sample % period < period / 2 then
     1
-  } else {
-    -1
-  }
-};
+  else -1
+  end;
+end;
 
-let sample_value = (sample: I32) => {
+let sample_value = (sample: I32) => do
   let phrase_position = sample % (note_samples * 4);
   let note =
-    if phrase_position < note_samples {
+    if phrase_position < note_samples then
       31
-    } else if phrase_position < note_samples * 2 {
+    else phrase_position < note_samples * 2 then
       28
-    } else if phrase_position < note_samples * 3 {
+    else phrase_position < note_samples * 3 then
       24
-    } else {
+    else
       21
-    };
+    end;
   square_wave(sample, note) * 0x2328 + square_wave(sample + 7, 17) * 0x0fa0
-};
+end;
 
-let wav_byte = (index: I32) => {
-  if index < header_bytes {
+let wav_byte = (index: I32) => do
+  if index < header_bytes then
     header_byte index
-  } else {
+  else
     little_endian_byte(sample_value((index - header_bytes) / 2) &&& 0xffff, index % 2)
-  }
-};
+  end;
+end;
 
 let wav: Bytes = generate_bytes [wav_bytes, wav_byte];
 return { .wav = wav };

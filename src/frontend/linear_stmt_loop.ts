@@ -374,13 +374,13 @@ function validate_linear_loop_match_branches(
     expect_same_linear_state(
       fallthrough_available,
       arm_available,
-      "match arm",
+      "case arm",
       expr,
     );
     expect_same_linear_closure_state(
       fallthrough_closures,
       arm_closures,
-      "match arm",
+      "case arm",
       expr,
     );
   }

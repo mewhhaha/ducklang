@@ -12,9 +12,9 @@ type FixtureRegistrationResult = ToolRegistrationResult
 let shell_name: FixtureName = ["", "exec_command"];
 let shell: FixtureDefinition = [
   shell_name,
-  `Direct (),
-  `UnifiedExec (),
-  `FunctionPayload (),
+  #Direct,
+  #UnifiedExec,
+  #FunctionPayload,
   true,
   false,
 ];
@@ -22,9 +22,9 @@ let shell: FixtureDefinition = [
 let search_name: FixtureName = ["", "tool_search"];
 let search: FixtureDefinition = [
   search_name,
-  `Deferred (),
-  `ToolSearch (),
-  `ToolSearchPayload (),
+  #Deferred,
+  #ToolSearch,
+  #ToolSearchPayload,
   false,
   false,
 ];
@@ -32,9 +32,9 @@ let search: FixtureDefinition = [
 let legacy_name: FixtureName = ["", "shell_command"];
 let legacy: FixtureDefinition = [
   legacy_name,
-  `Hidden (),
-  `Shell (),
-  `FunctionPayload (),
+  #Hidden,
+  #Shell,
+  #FunctionPayload,
   true,
   true,
 ];
@@ -43,23 +43,33 @@ let registry: FixtureDefinitions = empty_registry();
 let score: I32 = 0;
 let registered: FixtureRegistrationResult = register_tool(registry, shell);
 
-if let `Registered next = registered {
+if let #Registered next = registered then
   registry = next
   score = score + 1
-}
+end;
 
 registered = register_tool(registry, search)
-if let `Registered next = registered { registry = next }
+if let #Registered next = registered then
+  registry = next
+end;
 registered = register_tool(registry, legacy)
-if let `Registered next = registered { registry = next }
+if let #Registered next = registered then
+  registry = next
+end;
 
 let duplicate: FixtureRegistrationResult = register_tool(registry, shell);
-if let `Duplicate name = duplicate {
+if let #Duplicate name = duplicate then
   let [_, local_name] = name;
-  if local_name == "exec_command" { score = score + 10 }
-}
+  if local_name == "exec_command" then
+    score = score + 10
+  end;
+end;
 
-if registry_count(model_visible_tools registry) == 1 { score = score + 100 }
-if registry_count(deferred_tools registry) == 1 { score = score + 1000 }
+if registry_count(model_visible_tools registry) == 1 then
+  score = score + 100
+end;
+if registry_count(deferred_tools registry) == 1 then
+  score = score + 1000
+end;
 
 return { .score = score };

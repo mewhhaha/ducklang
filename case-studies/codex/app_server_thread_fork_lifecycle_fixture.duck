@@ -9,26 +9,26 @@ type FixtureInput = AppServerThreadForkPlanInput
 
 let input: FixtureInput = [
   "thread-1",
-  `Some "turn-2",
-  `None (),
-  `Some "/rollouts/thread-1.jsonl",
-  `PersistentThread (),
-  `TurnsExcluded (),
-  `GoalContinuationImmediate (),
+  #Some "turn-2",
+  #None,
+  #Some "/rollouts/thread-1.jsonl",
+  #PersistentThread,
+  #TurnsExcluded,
+  #GoalContinuationImmediate,
 ];
 let planned: FixtureResult = plan_thread_fork input;
-let score = if let `Ok plan = planned {
+let score = if let #Ok plan = planned then
   let [source, boundary, persistence, turns, continuation] = plan;
-  let source_valid = if let `ForkPath path = source { path == "/rollouts/thread-1.jsonl" } else {
-    false };
-  let boundary_valid = if let `ForkThroughTurn turn_id = boundary { turn_id == "turn-2" } else {
-    false };
-  let persistence_valid = if let `PersistentThread () = persistence { true } else { false };
-  let turns_valid = if let `TurnsExcluded () = turns { true } else { false };
-  let continuation_valid = if let `GoalContinuationImmediate () = continuation { true } else { false
-  };
-  if source_valid && boundary_valid && persistence_valid && turns_valid && continuation_valid { 1
-  } else { 0 }
-} else { 0 };
+  let source_valid = if let #ForkPath path = source then path == "/rollouts/thread-1.jsonl" else
+    false end;
+  let boundary_valid = if let #ForkThroughTurn turn_id = boundary then turn_id == "turn-2" else
+    false end;
+  let persistence_valid = if let #PersistentThread = persistence then true else false end;
+  let turns_valid = if let #TurnsExcluded = turns then true else false end;
+  let continuation_valid = if let #GoalContinuationImmediate = continuation then true else false
+  end;
+  if source_valid && boundary_valid && persistence_valid && turns_valid && continuation_valid then 1
+  else 0 end;
+else 0 end;
 
 return { .score = score };

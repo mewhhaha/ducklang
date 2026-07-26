@@ -103,10 +103,10 @@ Deno.test("workspace symbols use declaration metadata without semantic analysis"
       [
         "module (!init: Init) where",
         "type Pair value = struct { .left = value, .right = value }",
-        "type Choice = | `Some Pair | `None Unit",
+        "type Choice = | #Some Pair | #None",
         "const choose = value => value;",
-        "let selected = `Some ();",
-        "if let `Some local = selected { local }",
+        "let selected = #Some;",
+        "if let #Some local = selected { local }",
         "",
       ].join("\n"),
     );

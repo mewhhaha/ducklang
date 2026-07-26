@@ -1,0 +1,31 @@
+module () where
+
+const {
+  .complete_elicitation,
+  .elicitation_is_paused,
+  .empty_elicitation_state,
+  .register_elicitation,
+} = import "./elicitation.duck" ();
+
+let outstanding = empty_elicitation_state();
+let score = 0;
+
+if !(elicitation_is_paused outstanding) then
+  score = score + 1
+end;
+
+outstanding = register_elicitation outstanding
+outstanding = register_elicitation outstanding
+outstanding = complete_elicitation outstanding
+
+if elicitation_is_paused outstanding then
+  score = score + 10
+end;
+
+outstanding = complete_elicitation outstanding
+
+if !(elicitation_is_paused outstanding) then
+  score = score + 100
+end;
+
+return { .score = score };

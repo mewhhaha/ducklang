@@ -7,44 +7,53 @@ const { .parse_agent_job_csv, .render_agent_job_instruction, .validate_agent_job
 let score = 0;
 let parsed =
   parse_agent_job_csv "id,name,path\r\n1,\"alpha, beta\",src/lib.rs\r\n2,\"a\"\"b\",docs/readme.md\r\n\r\n";
-if let `CsvParsed document = parsed {
-  if validate_agent_job_csv_rows document == "" {
-    if let `Cons first_node = document.rows {
+if let #CsvParsed document = parsed then
+  if validate_agent_job_csv_rows document == "" then
+    if let #Cons first_node = document.rows then
       let [first, tail] = first_node;
-      if let `Cons id_node = first {
+      if let #Cons id_node = first then
         let [id, first_tail] = id_node;
-        if let `Cons name_node = first_tail {
+        if let #Cons name_node = first_tail then
           let [name, _] = name_node;
-          if id == "1" && name == "alpha, beta" { score = score + 1 }
-        }
-      }
-      if let `Cons second_node = tail {
+          if id == "1" && name == "alpha, beta" then
+            score = score + 1
+          end;
+        end;
+      end;
+      if let #Cons second_node = tail then
         let [second, _] = second_node;
-        if let `Cons _ = second { score = score + 10 }
-      }
-    }
-  }
-}
+        if let #Cons _ = second then
+          score = score + 10
+        end;
+      end;
+    end;
+  end;
+end;
 
 let bad = parse_agent_job_csv "id,name\n1,alpha,extra\n";
-if let `CsvParsed document = bad {
-  if validate_agent_job_csv_rows document == "csv row 2 has 3 fields but header has 2" { score = score + 100 }
-}
+if let #CsvParsed document = bad then
+  if validate_agent_job_csv_rows document == "csv row 2 has 3 fields but header has 2" then
+    score = score + 100
+  end;
+end;
 
 let row = json_object_prepend(
   "path",
   json_string "src/lib.rs",
-  json_object_prepend("area", json_string "test", `Nil ()),
+  json_object_prepend("area", json_string "test", #Nil),
 );
 let rendered = render_agent_job_instruction(
   "Review {path} in {area}. Keep {{literal}} and {missing}.",
   row,
 );
-if rendered == "Review src/lib.rs in test. Keep {literal} and {missing}." { score = score + 1000 }
+if rendered == "Review src/lib.rs in test. Keep {literal} and {missing}." then
+  score = score + 1000 end;
 
 let unterminated = parse_agent_job_csv "id,name\n1,\"alpha";
-if let `CsvParseFailed message = unterminated {
-  if message == "unterminated quoted field" { score = score + 10000 }
-}
+if let #CsvParseFailed message = unterminated then
+  if message == "unterminated quoted field" then
+    score = score + 10000
+  end;
+end;
 
 return { .score = score };

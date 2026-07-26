@@ -6,21 +6,22 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-let input: FixtureArgs = `Cons (
+let input: FixtureArgs = #Cons (
   [
     "--strict-config",
-    `Cons (["--commit", `Cons (["abc123", `Cons (["--title", `Cons (["Fix parser", `Nil ()])])])]),
+    #Cons (["--commit", #Cons (["abc123", #Cons (["--title", #Cons (["Fix parser", #Nil])])])]),
   ]
 );
 let parsed: FixtureResult = parse_review_options input;
-let score = if let `Ok options = parsed {
-  if let `ExecReview target = options.command {
-    if let `ReviewCommit commit = target {
-      if let `Some title = commit.title {
-        if commit.sha == "abc123" && title == "Fix parser" && options.strict_config { 1 } else { 0 }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+let score = if let #Ok options = parsed then
+  if let #ExecReview target = options.command then
+    if let #ReviewCommit commit = target then
+      if let #Some title = commit.title then
+        if commit.sha == "abc123" && title == "Fix parser"
+          && options.strict_config then 1 else 0 end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 return { .score = score };

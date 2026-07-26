@@ -10,66 +10,69 @@ type SessionPrefixTextOption = AgentTextOption
 const error_next_action =
   "This agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task.";
 
-let agent_status_json: SessionPrefixStatus -> Text = status => {
-  if let `PendingInit () = status {
+let agent_status_json: SessionPrefixStatus -> Text = status => do
+  if let #PendingInit = status then
     "\"pending_init\""
-  } else if let `Running () = status {
+  else let #Running = status then
     "\"running\""
-  } else if let `Interrupted () = status {
+  else let #Interrupted = status then
     "\"interrupted\""
-  } else if let `Completed message = status {
-    let value = if let `Some text = message { encode_json_string text } else { "null" };
+  else let #Completed message = status then
+    let value = if let #Some text = message then encode_json_string text else "null" end;
     "{\"completed\":" <> value <> "}"
-  } else if let `Errored error = status {
+  else let #Errored error = status then
     "{\"errored\":" <> encode_json_string error <> "}"
-  } else if let `Shutdown () = status {
+  else let #Shutdown = status then
     "\"shutdown\""
-  } else {
+  else
     "\"not_found\""
-  }
-};
+  end;
+end;
 
-let format_subagent_notification_message = (agent_reference: Text, status: SessionPrefixStatus) => {
-  "<subagent_notification>\n{\"agent_path\":" <> encode_json_string agent_reference <> ",\"status\":" <> agent_status_json status <> "}\n</subagent_notification>"
-};
+let format_subagent_notification_message =
+  (agent_reference: Text, status: SessionPrefixStatus) => do
+    "<subagent_notification>\n{\"agent_path\":" <> encode_json_string agent_reference
+      <> ",\"status\":" <> agent_status_json status <> "}\n</subagent_notification>"
+  end;
 
 let format_inter_agent_completion_message: [Text, Text, SessionPrefixStatus] ->
   SessionPrefixTextOption = (
     task_name: Text,
     sender: Text,
     status: SessionPrefixStatus,
-  ) => {
-    let payload: SessionPrefixTextOption = if let `Completed message = status {
-      if let `Some text = message { `Some text } else { `Some "" }
-    } else if let `Errored error = status {
+  ) => do
+    let payload: SessionPrefixTextOption = if let #Completed message = status then
+      if let #Some text = message then #Some text else #Some "" end;
+    else let #Errored error = status then
       let truncated = text_truncate_middle_tokens(error, 900);
-      `Some ("Agent errored: " <> truncated <> "\n\n" <> error_next_action)
-    } else if let `Shutdown () = status {
-      `Some "Agent shut down."
-    } else if let `NotFound () = status {
-      `Some "Agent was not found."
-    } else {
-      `None ()
-    };
+      #Some ("Agent errored: " <> truncated <> "\n\n" <> error_next_action)
+    else let #Shutdown = status then
+      #Some "Agent shut down."
+    else let #NotFound = status then
+      #Some "Agent was not found."
+    else
+      #None
+    end;
 
-    let completion: SessionPrefixTextOption = if let `Some message = payload {
-      `Some (
-        "Message Type: FINAL_ANSWER\nTask name: " <> task_name <> "\nSender: " <> sender <> "\nPayload:\n" <> message
+    let completion: SessionPrefixTextOption = if let #Some message = payload then
+      #Some (
+        "Message Type: FINAL_ANSWER\nTask name: " <> task_name <> "\nSender: " <> sender
+        <> "\nPayload:\n" <> message
       )
-    } else {
-      `None ()
-    };
+    else
+      #None
+    end;
 
     completion
-  };
+  end;
 
-let format_subagent_context_line = (agent_reference: Text, nickname: SessionPrefixTextOption) => {
-  if let `Some value = nickname {
-    if value == "" { "- " <> agent_reference } else { "- " <> agent_reference <> ": " <> value }
-  } else {
+let format_subagent_context_line = (agent_reference: Text, nickname: SessionPrefixTextOption) => do
+  if let #Some value = nickname then
+    if value == "" then "- " <> agent_reference else "- " <> agent_reference <> ": " <> value end;
+  else
     "- " <> agent_reference
-  }
-};
+  end;
+end;
 
 return {
   .agent_status_json,

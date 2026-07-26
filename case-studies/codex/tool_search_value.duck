@@ -20,45 +20,49 @@ type SearchValueNamespace = ToolSearchNamespace
 const append_search_infos: [SearchValueInfos, SearchValueInfos] -> SearchValueInfos = (
   left: SearchValueInfos,
   right: SearchValueInfos,
-) => {
+) => do
   let current = left;
-  let reversed: SearchValueInfos = `Nil ();
+  let reversed: SearchValueInfos = #Nil;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      reversed = `Cons ([value, reversed] as SearchValueInfoNode)
+      reversed = #Cons ([value, reversed] as SearchValueInfoNode)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
 
   let appended = right;
   current = reversed
   done = false
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
-      appended = `Cons ([value, appended] as SearchValueInfoNode)
+      appended = #Cons ([value, appended] as SearchValueInfoNode)
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   appended
-};
+end;
 
-const function_search_text: SearchValueSpec -> Text = spec => {
+const function_search_text: SearchValueSpec -> Text = spec => do
   let [name, _, description, parameters, _, _] = spec;
   let [namespace, local_name] = name;
   let spaced_name = text_replace_all [local_name, "_", " "];
-  let qualified_name = if namespace == "" { local_name } else { text_append(
+  let qualified_name = if namespace == "" then local_name else text_append(
     namespace,
     text_append(" ", local_name),
-  ) };
+  ) end;
   text_trim_ascii_whitespace(
     text_append(
       qualified_name,
@@ -71,35 +75,35 @@ const function_search_text: SearchValueSpec -> Text = spec => {
       ),
     )
   )
-};
+end;
 
-const deferred_function: SearchValueSpec -> SearchValueFunction = spec => {
+const deferred_function: SearchValueSpec -> SearchValueFunction = spec => do
   let [name, kind, description, parameters, _, strict] = spec;
   let normalized: SearchValueSpec = [
     name,
     kind,
     description,
     parameters,
-    `ToolOutputSchemaMissing (),
+    #ToolOutputSchemaMissing,
     strict,
   ];
   [normalized, true]
-};
+end;
 
 const searchable_function: [SearchValueSpec, SearchValueSourceOption] -> SearchValueInfos = (
   spec: SearchValueSpec,
   source_info: SearchValueSourceOption,
-) => {
+) => do
   let [_, kind, _, _, _, _] = spec;
 
-  if let `FunctionSpec () = kind {
-    let entry: SearchValueEntry = [function_search_text spec, `Function (deferred_function spec)];
+  if let #FunctionSpec = kind then
+    let entry: SearchValueEntry = [function_search_text spec, #Function (deferred_function spec)];
     let search_info: SearchValueInfo = [entry, source_info];
-    `Cons ([search_info, `Nil ()])
-  } else {
-    `Nil ()
-  }
-};
+    #Cons ([search_info, #Nil])
+  else
+    #Nil
+  end;
+end;
 
 const default_namespace_description: Text -> Text = name => text_append(
   "Tools in the ",
@@ -112,12 +116,14 @@ const searchable_namespaced_function: [Text, Text, SearchValueSpec, SearchValueS
     namespace_description: Text,
     spec: SearchValueSpec,
     source_info: SearchValueSourceOption,
-  ) => {
+  ) => do
     let [_, kind, _, _, _, _] = spec;
 
-    if let `FunctionSpec () = kind {
+    if let #FunctionSpec = kind then
       let description = text_trim_ascii_whitespace namespace_description;
-      if description == "" { description = default_namespace_description namespace_name }
+      if description == "" then
+        description = default_namespace_description namespace_name
+      end;
       let [name, _, tool_description, parameters, output_schema, strict] = spec;
       let [_, local_name] = name;
       let local_spec: SearchValueSpec = [
@@ -128,19 +134,19 @@ const searchable_namespaced_function: [Text, Text, SearchValueSpec, SearchValueS
         output_schema,
         strict,
       ];
-      let tool_node: SearchValueFunctionNode = [deferred_function local_spec, `Nil ()];
-      let namespace: SearchValueNamespace = [namespace_name, description, `Cons tool_node];
+      let tool_node: SearchValueFunctionNode = [deferred_function local_spec, #Nil];
+      let namespace: SearchValueNamespace = [namespace_name, description, #Cons tool_node];
       let search_text = text_append(
         namespace_name,
         text_append(" ", text_append(description, text_append(" ", function_search_text spec))),
       );
-      let entry: SearchValueEntry = [search_text, `Namespace namespace];
+      let entry: SearchValueEntry = [search_text, #Namespace namespace];
       let search_info: SearchValueInfo = [entry, source_info];
-      `Cons ([search_info, `Nil ()])
-    } else {
-      `Nil ()
-    }
-  };
+      #Cons ([search_info, #Nil])
+    else
+      #Nil
+    end;
+  end;
 
 return {
   .append_search_infos,

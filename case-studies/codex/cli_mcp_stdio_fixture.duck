@@ -21,18 +21,20 @@ let input: FixtureArgs = args.prepend(
 let parsed: FixtureResult = parse_mcp_add input;
 let score = 0;
 
-if let `Ok command = parsed {
-  if let `McpAddStdio options = command {
-    if options.name == "server-a" && args.length(options.command) == 2 && env.length(options.env) == 1 {
-      let first_command = args.nth_or("", 0, options.command);
-      let second_command = args.nth_or("", 1, options.command);
-      let pair = env.nth_or(["", ""], 0, options.env);
-      let [key, value] = pair;
-      if first_command == "deno" && second_command == "serve" && key == "MODE" && value == "fast" {
-        score = 1
-      }
-    }
-  }
-}
+if let #Ok command = parsed then
+  if let #McpAddStdio options = command then
+    if options.name == "server-a" && args.length(options.command) == 2 && env.length(options.env)
+      == 1 then
+        let first_command = args.nth_or("", 0, options.command);
+        let second_command = args.nth_or("", 1, options.command);
+        let pair = env.nth_or(["", ""], 0, options.env);
+        let [key, value] = pair;
+        if first_command == "deno" && second_command == "serve" && key == "MODE" && value
+          == "fast" then
+            score = 1
+          end;
+      end;
+  end;
+end;
 
 return { .score = score };

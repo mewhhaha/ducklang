@@ -1,67 +1,67 @@
 module () where
 
 type AgentTextOption =
-  | `None Unit
-  | `Some Text
+  | #None
+  | #Some Text
 type AgentI64Option =
-  | `None Unit
-  | `Some I64
+  | #None
+  | #Some I64
 
 type AgentStatus =
-  | `PendingInit Unit
-  | `Running Unit
-  | `Interrupted Unit
-  | `Completed AgentTextOption
-  | `Errored Text
-  | `Shutdown Unit
-  | `NotFound Unit
+  | #PendingInit
+  | #Running
+  | #Interrupted
+  | #Completed AgentTextOption
+  | #Errored Text
+  | #Shutdown
+  | #NotFound
 
 type AgentEvent =
-  | `TurnStarted Unit
-  | `TurnComplete AgentTextOption
-  | `TurnInterrupted Unit
-  | `TurnBudgetLimited Unit
-  | `TurnAborted Text
-  | `AgentError Text
-  | `ShutdownComplete Unit
-  | `Unrelated Unit
+  | #TurnStarted
+  | #TurnComplete AgentTextOption
+  | #TurnInterrupted
+  | #TurnBudgetLimited
+  | #TurnAborted Text
+  | #AgentError Text
+  | #ShutdownComplete
+  | #Unrelated
 
 type AgentStatusChange =
-  | `StatusChanged AgentStatus
-  | `StatusUnchanged Unit
+  | #StatusChanged AgentStatus
+  | #StatusUnchanged
 
 type AgentMultiAgentVersion =
-  | `Disabled Unit
-  | `V1 Unit
-  | `V2 Unit
+  | #Disabled
+  | #V1
+  | #V2
 
 type AgentSessionSource =
-  | `Root Unit
-  | `SubAgent Unit
+  | #Root
+  | #SubAgent
 
 type AgentCapacityDecision =
-  | `CapacityAvailable Unit
-  | `AgentLimitReached I32
+  | #CapacityAvailable
+  | #AgentLimitReached I32
 
 type AgentInputValidation =
-  | `InputAccepted Text
-  | `InputRejected Text
+  | #InputAccepted Text
+  | #InputRejected Text
 
 type AgentTimeoutDecision =
-  | `Timeout I64
-  | `InvalidTimeout Text
+  | #Timeout I64
+  | #InvalidTimeout Text
 
 type AgentStatusEntry = [Text, AgentStatus]
 type AgentStatusEntryNode = [AgentStatusEntry, AgentStatusEntries]
 type AgentStatusEntries =
-  | `Nil Unit
-  | `Cons AgentStatusEntryNode
+  | #Nil
+  | #Cons AgentStatusEntryNode
 type AgentWaitOutcome = [AgentStatusEntries, Bool]
 
 type AgentIdNode = [Text, AgentIds]
 type AgentIds =
-  | `Nil Unit
-  | `Cons AgentIdNode
+  | #Nil
+  | #Cons AgentIdNode
 
 type AgentSpawnRequest = [Text, Text]
 type AgentSpawnSnapshot = [Text, Text, AgentStatus]
@@ -72,16 +72,16 @@ type AgentWaitSnapshot = [AgentStatusEntries, Bool]
 type AgentRecord = [Text, Text, AgentTextOption, AgentTextOption, AgentStatus, Bool, Bool]
 type AgentRecordNode = [AgentRecord, AgentRecords]
 type AgentRecords =
-  | `Nil Unit
-  | `Cons AgentRecordNode
+  | #Nil
+  | #Cons AgentRecordNode
 
 type AgentResidencyDecision =
-  | `ResidencyAvailable Unit
-  | `UnloadResident Text
-  | `ResidencyLimitReached I32
+  | #ResidencyAvailable
+  | #UnloadResident Text
+  | #ResidencyLimitReached I32
 
 type AgentPathResolution =
-  | `Path Text
-  | `InvalidPath Text
+  | #Path Text
+  | #InvalidPath Text
 
 return {};

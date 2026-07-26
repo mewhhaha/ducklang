@@ -1,70 +1,53 @@
 // DESIGN SKETCH — THIS FILE DOES NOT COMPILE.
 //
-// A rewrite of editor.duck in a keyword-delimited syntax that does not exist
-// yet. Nothing parses it: not the frontend, not tree-sitter, not the formatter.
-// It is here to be read, not run, and is excluded from every test glob.
-//
-// THE BLOCK IS AN EXPRESSION. `do … end` is the only block form, it appears
-// everywhere a block appears — function body, loop body, if arm, match arm —
-// and it is an expression that produces a value. A block's value is an
-// explicit `return`; there is no trailing expression that silently becomes the
-// value, so a reader never has to decide whether a block's last line is a
-// value or a side effect.
-//
-//   let piece_tree_leaf = (bytes: Bytes) => do
-//     let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes })
-//     return leaf
-//   end
-//
-// IF NEEDS NO TERMINATOR. Because `do … end` closes itself, `if` does not need
-// an `end` of its own — the arm already says where it stops. So the chain is
-// `if … then … else if … then … else …`, and the arms are expressions:
-//
-//   let anchor = if let `Extend () = editor.mode then editor.selection.anchor
-//     else head
-//
-// A short arm is a bare expression and carries no `return`, because there is
-// no block to delimit. A long arm is a `do … end` and must `return`. The two
-// forms compose in one chain, and `end else if … then do` is the hinge:
-//
-//   if a > b then do … return x end else if b > a then do … return y end
-//   else do … return z end
-//
-// `match` keeps its `end`, because a `|`-separated arm list has nothing else
-// to close it. Everything else is delimited by the block it opens.
-//
-// NO `rec`. In the real language `rec` decides only whether a binding's name
-// is in scope inside its own body — it is ML's `let rec`, and it guards the
-// case where you want `f` inside `f`'s body to mean some *outer* `f`. Nobody
-// writes that. It says nothing about tail recursion and there is no tail-call
-// optimisation in the pipeline, so it does not buy the guarantee it looks like
-// it buys. Here bindings simply see themselves.
-//
-// What this is meant to demonstrate: block structure that differs by *shape*.
-// In editor.duck every construct is `{ }`, so `if`, `match`, `loop`, `for` and
-// function bodies all share one silhouette. Here each has its own outline, and
-// the parser gets the same disambiguation the eye does.
-
+// `of` lists do not depend on indentation: commas close non-final entries and
+// a semicolon closes the final entry and the list. `do … end` is reserved for
+// effectful or rebinding sequences; pure setup uses comma-separated, sequential
+// `let … in` bindings whose right-hand sides see earlier bindings. Bare
+// `name = value` shadows the nearest binding; indexed writes mutate storage.
+// A name shadowed in a loop is carried into its next iteration and its final
+// binding remains in scope after the loop. Plain `for` and `repeat` return Unit;
+// `loop` returns the value supplied by `break`. Braces are reserved for shapes,
+// `[…]` is stored product data, and `(…)` is a nameable inline value pack whose
+// slots remain separate and cannot be embedded in stored data. `then` and
+// `else` open implicit sequence blocks; `else condition then` continues a chain,
+// and one `end` closes the entire conditional.
 module (!init: Init) where
 
 const { .cast, .struct } = import "duck:prelude/types" ()
 
 type Key =
-  | `Character Char
-  | `ArrowLeft Unit
-  | `ArrowRight Unit
-  | `Escape Unit
-  | `Backspace Unit
-  | `Enter Unit
-  | `Tab Unit
-  | `ControlC Unit
+  | #Character Char
+  | #ArrowLeft
+  | #ArrowRight
+  | #Escape
+  | #Backspace
+  | #Enter
+  | #Tab
+  | #ControlC
 
-type KeyDecoder = | `Ground Unit | `EscapePrefix Unit | `ControlSequence Unit
-type KeySequence = List Key
-type EditorCommand = | `Save Unit | `Quit Unit
-type EditorCommands = List EditorCommand
+type KeyDecoder =
+  | #Ground
+  | #EscapePrefix
+  | #ControlSequence
 
-type PieceTree = | `Empty Unit | `Leaf PieceLeaf | `Branch PieceBranch
+type KeySequence =
+  | #NoKeys
+  | #MoreKeys KeySequenceNode
+
+type KeySequenceNode = [Key, KeySequence]
+
+type EditorCommand =
+  | #Save
+  | #Quit
+
+type EditorCommands =
+  | #NoCommands
+  | #MoreCommands EditorCommandNode
+
+type EditorCommandNode = [EditorCommand, EditorCommands]
+
+type PieceTree = | #Empty | #Leaf PieceLeaf | #Branch PieceBranch
 type PieceLeaf = struct { .piece = Bytes }
 type PieceBranch = struct {
   .left = PieceTree,
@@ -74,8 +57,31 @@ type PieceBranch = struct {
 }
 type PieceTable = struct { .root = PieceTree, .length = I32 }
 type Selection = struct { .anchor = I32, .head = I32 }
-type Mode = | `Normal Unit | `Extend Unit | `Insert Unit
-type Status = | `Ready Unit | `SaveFailed Unit
+type Mode = | #Normal | #Extend | #Insert
+type Status = | #Ready | #SaveFailed
+type Highlight = struct { .start = I32, .end = I32 }
+type TerminalSize = struct { .columns = I32, .rows = I32 }
+type OutputBuilder = struct { .buffer = Bytes, .length = I32 }
+type KeyDecodeStep = struct {
+  .decoder = KeyDecoder,
+  .keys = KeySequence,
+}
+type EditorStep = struct {
+  .editor = Editor,
+  .commands = EditorCommands,
+}
+type EditorInputStep = struct {
+  .editor = Editor,
+  .decoder = KeyDecoder,
+  .commands = EditorCommands,
+}
+type RenderView = struct {
+  .document = Bytes,
+  .highlight = Highlight,
+  .mode = Mode,
+  .status = Status,
+  .size = TerminalSize,
+}
 type Editor = struct {
   .document = PieceTable,
   .selection = Selection,
@@ -83,240 +89,712 @@ type Editor = struct {
   .status = Status,
 }
 
-effect RenderOutput do
-  append: (I32) => Unit
-end
+effect RenderOutput of
+  append: (I32) => Unit;
 
 const { .not, .slice } = import "duck:prelude" ()
 
 const escape_character = cast(27, Char)
+const control_c_character = cast(3, Char)
+const backspace_character = cast(8, Char)
+const delete_character = cast(127, Char)
+const control_sequence_introducer: Char = '['
+const cursor_home_command: Char = 'H'
+const erase_display_command: Char = 'J'
+const inverse_video_parameter: Char = '7'
+const reset_style_parameter: Char = '0'
+const select_graphic_rendition_command: Char = 'm'
 const utf8_continuation_lower_bound = 0x80
 const utf8_continuation_upper_bound = 0xc0
+const minimum_document_rows = 1
+const terminal_status_row_count = 1
+const minimum_render_columns = 8
+const terminal_line_break_byte_count = 2
+// The frame emits two 3-byte cursor/display sequences and at most four 4-byte style sequences.
+const terminal_frame_control_capacity = 22
 
-// No block, so no `return`.
-let byte_at = (table: PieceTable, wanted: I32) =>
-  piece_tree_byte_at(table.root, wanted)
+const empty_piece_tree: () -> PieceTree = () => #Empty
 
-let is_utf8_continuation = (byte: I32) =>
-  byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
+let piece_tree_length = (tree: PieceTree) => case tree of
+  #Empty => 0,
+  #Leaf leaf => leaf.piece.length(),
+  #Branch branch => branch.length;
 
-// `match … with … end` reads as one shape. The arms keep their leading pipe,
-// which is the strongest vertical edge the language already has, and a
-// bare-expression arm stays one line, so a dispatch table stays a table.
-let piece_tree_length = (tree: PieceTree) =>
-  match tree with
-  | `Empty () => 0
-  | `Leaf leaf => leaf.piece.length()
-  | `Branch branch => branch.length
-  end
+let piece_tree_height = (tree: PieceTree) => case tree of
+  #Empty => 0,
+  #Leaf _ => 1,
+  #Branch branch => branch.height;
 
-let piece_tree_height = (tree: PieceTree) =>
-  match tree with
-  | `Empty () => 0
-  | `Leaf _ => 1
-  | `Branch branch => branch.height
-  end
-
-// A short arm and a long arm in one chain: the first is an expression, the
-// second is a block that returns.
 let piece_tree_leaf = (bytes: Bytes) =>
-  if bytes.length() == 0 then empty_piece_tree() else do
-    let leaf: PieceTree = `Leaf (PieceLeaf.new { .piece = bytes })
-    return leaf
+  if bytes.length() == 0 then
+    empty_piece_tree()
+  else
+    let leaf: PieceTree = #Leaf (PieceLeaf.new { .piece = bytes }) in
+      leaf
   end
 
-// The if/else chain is where the shape difference shows most. Compare with the
-// original, where every branch boundary is a brace among many braces.
-//
-// Note where the recursion is: `join_piece_trees` calls itself in *argument*
-// position, inside `piece_tree_branch(…)`, not as the outermost call. Both
-// rebalancing arms recurse; only the final `else` is a base case. That also
-// means it is not a tail call — there is still work pending when it returns —
-// so no amount of compiler support would flatten it into a loop. Depth is
-// bounded at O(log n) because each step descends one level of a balanced tree.
-let join_piece_trees = (left: PieceTree, right: PieceTree) => do
-  let left_height = piece_tree_height(left)
-  let right_height = piece_tree_height(right)
-
-  if left_height > right_height + 1 then do
-    let `Branch branch = left else return piece_tree_branch(left, right)
-    return piece_tree_branch(branch.left, join_piece_trees(branch.right, right))
-
-  end else if right_height > left_height + 1 then do
-    let `Branch branch = right else return piece_tree_branch(left, right)
-    return piece_tree_branch(join_piece_trees(left, branch.left), branch.right)
-
-  end else do
-    return piece_tree_branch(left, right)
+let piece_tree_branch = (left: PieceTree, right: PieceTree) =>
+  if let #Empty = left then
+    right
+  else let #Empty = right then
+    left
+  else
+    let
+      left_height = piece_tree_height left,
+      right_height = piece_tree_height right,
+      height =
+        if left_height > right_height then
+          left_height + 1
+        else
+          right_height + 1
+        end,
+      branch: PieceTree = #Branch (PieceBranch.new {
+        .left = left,
+        .right = right,
+        .length = piece_tree_length left + piece_tree_length right,
+        .height = height,
+      }),
+    in
+      branch
   end
-end
 
-let split_piece_tree = (tree: PieceTree, position: I32) => do
-  let length = piece_tree_length(tree)
-
-  if position <= 0 then (empty_piece_tree(), tree)
-  else if position >= length then (tree, empty_piece_tree())
-  else do
-    return match tree with
-    | `Empty () => (empty_piece_tree(), empty_piece_tree())
-    | `Leaf leaf => do
-        let piece = leaf.piece
-        let left = piece_tree_leaf(slice(&piece, 0, position))
-        let right = piece_tree_leaf(slice(&piece, position, piece.length()))
-        return (left, right)
-      end
-    | `Branch branch => do
-        let left_length = piece_tree_length(branch.left)
-
-        if position < left_length then do
-          let (prefix, suffix) = split_piece_tree(branch.left, position)
-          return (prefix, join_piece_trees(suffix, branch.right))
-        end else do
-          let (prefix, suffix) =
-            split_piece_tree(branch.right, position - left_length)
-          return (join_piece_trees(branch.left, prefix), suffix)
-        end
-      end
+let join_piece_trees = (left: PieceTree, right: PieceTree) =>
+  let
+    left_height = piece_tree_height left,
+    right_height = piece_tree_height right,
+  in
+    if left_height > right_height + 1 then
+      case left of
+        #Branch branch =>
+          piece_tree_branch(branch.left, join_piece_trees(branch.right, right)),
+        _ => piece_tree_branch(left, right);
+    else right_height > left_height + 1 then
+      case right of
+        #Branch branch =>
+          piece_tree_branch(join_piece_trees(left, branch.left), branch.right),
+        _ => piece_tree_branch(left, right);
+    else
+      piece_tree_branch(left, right)
     end
-  end
-end
 
-// `set` marks mutation. Every statement now begins with a keyword, so a
-// statement boundary is visible without a terminator — and `end` followed by
-// `[` on the next line stops being ambiguous, because an argument never
-// starts a line.
-//
-// A loop body produces nothing, so it carries no `return`; the one `return`
-// here is the function's own value.
+let piece_table = (bytes: Bytes) =>
+  let root = piece_tree_leaf bytes in
+    PieceTable.new { .root = root, .length = piece_tree_length root }
+
+let piece_tree_byte_at = (tree: PieceTree, wanted: I32) => case tree of
+  #Empty => 0,
+  #Leaf leaf =>
+    let piece: Bytes = leaf.piece in
+      piece[wanted],
+  #Branch branch =>
+    let left_length = piece_tree_length(branch.left) in
+      if wanted < left_length then
+        piece_tree_byte_at(branch.left, wanted)
+      else
+        piece_tree_byte_at(branch.right, wanted - left_length)
+      end;
+
+let byte_at = (table: PieceTable, wanted: I32) => piece_tree_byte_at(table.root, wanted)
+
+let split_piece_tree = (tree: PieceTree, position: I32) =>
+  let length = piece_tree_length tree in
+    if position <= 0 then
+      (empty_piece_tree(), tree)
+    else position >= length then
+      (tree, empty_piece_tree())
+    else
+      case tree of
+        #Empty => (empty_piece_tree(), empty_piece_tree()),
+        #Leaf leaf =>
+          let
+            piece = leaf.piece,
+            left = piece_tree_leaf(slice(&piece, 0, position)),
+            right = piece_tree_leaf(slice(&piece, position, piece.length())),
+          in
+            (left, right),
+        #Branch branch =>
+          let
+            left = branch.left,
+            right = branch.right,
+            left_length = piece_tree_length left,
+          in
+            if position < left_length then
+              let (prefix, suffix) = split_piece_tree(left, position) in
+                (prefix, join_piece_trees(suffix, right))
+            else
+              let (prefix, suffix) = split_piece_tree(right, position - left_length) in
+                (join_piece_trees(left, prefix), suffix)
+            end;
+    end
+
+let insert_bytes = (table, position, bytes) =>
+  let inserted_length = bytes.length() in
+    if inserted_length == 0 then
+      table
+    else
+      let
+        (left, right) = split_piece_tree(table.root, position),
+        inserted = piece_tree_leaf bytes,
+        root = join_piece_trees(join_piece_trees(left, inserted), right),
+      in
+        PieceTable.new { .root = root, .length = piece_tree_length root }
+    end
+
+let delete_bytes = (table, start, finish) =>
+  if start >= finish then
+    table
+  else
+    let
+      (prefix, suffix) = split_piece_tree(table.root, finish),
+      (left, _) = split_piece_tree(prefix, start),
+      root = join_piece_trees(left, suffix),
+    in
+      PieceTable.new { .root = root, .length = piece_tree_length root }
+  end
+
 let materialize = (table: PieceTable) => do
-  let output = Bytes.generate(table.length, (_) => 0)
-  let output_offset = 0
-  let pending: List PieceTree = `Cons [table.root, `Nil ()]
+  let output = Bytes.generate(table.length, _ => 0);
+  let output_offset = 0;
+  let empty_stack: List PieceTree = #Nil;
+  let pending: List PieceTree = #Cons [table.root, empty_stack];
 
   loop do
-    let `Cons node = pending else break
-    let [tree, tail] = node
+    let #Cons node = pending else break ();
+    let [tree, tail] = node;
 
-    match tree with
-    | `Empty () => set pending = tail
-    | `Leaf leaf => do
-        set pending = tail
-        let piece: Bytes = leaf.piece
+    case tree of
+      #Empty =>
+        pending = tail,
+      #Leaf leaf => do
+        pending = tail;
+        let piece: Bytes = leaf.piece in
+          for byte in piece do
+            output[output_offset] = byte;
+            output_offset = output_offset + 1
+          end
+      end,
+      #Branch branch => do
+        let right_node: List PieceTree = #Cons [branch.right, tail];
+        pending = #Cons [branch.left, right_node]
+      end;
+  end;
 
-        for byte in piece do
-          set output[output_offset] = byte
-          set output_offset = output_offset + 1
+  output
+end
+
+let selection_start = selection =>
+  if selection.anchor < selection.head then
+    selection.anchor
+  else
+    selection.head
+  end
+
+let is_utf8_continuation = byte =>
+  byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
+
+let next_character = (table, position) => do
+  let next = position + 1;
+
+  for candidate in next..table.length do
+    let byte = byte_at(table, candidate);
+    if not(is_utf8_continuation byte) then
+      break ()
+    end;
+    next = candidate + 1
+  end;
+
+  next
+end
+
+let previous_character = (table, position) => do
+  let previous = position - 1;
+
+  for candidate in previous..0 by -1 do
+    let byte = byte_at(table, candidate);
+    if not(is_utf8_continuation byte) then
+      break ()
+    end;
+    previous = candidate - 1
+  end;
+
+  previous
+end
+
+let clamp_character = (table, position) =>
+  if table.length == 0 then
+    0
+  else position < 0 then
+    0
+  else position >= table.length then
+    previous_character(table, table.length)
+  else
+    position
+  end
+
+let selection_head_end = (table, selection) =>
+  if table.length == 0 then
+    0
+  else
+    let furthest =
+      if selection.anchor > selection.head then
+        selection.anchor
+      else
+        selection.head
+      end
+    in
+      next_character(table, furthest)
+  end
+
+let move_head = (editor, position) =>
+  let
+    head = clamp_character(&editor.document, position),
+    anchor =
+      if let #Extend = editor.mode then
+        editor.selection.anchor
+      else
+        head
+      end,
+  in
+    editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
+
+let move_left = editor =>
+  move_head(editor, previous_character(&editor.document, editor.selection.head))
+
+let move_right = editor =>
+  move_head(editor, next_character(&editor.document, editor.selection.head))
+
+let collapse = (editor, position) =>
+  let
+    cursor = clamp_character(&editor.document, position),
+    mode =
+      if let #Extend = editor.mode then
+        #Normal
+      else
+        editor.mode
+      end,
+    updated = editor <& { .selection = Selection.new { .anchor = cursor, .head = cursor } },
+  in
+    updated <& { .mode = mode }
+
+let delete_selection = editor =>
+  let
+    start = selection_start(&editor.selection),
+    finish = selection_head_end(&editor.document, &editor.selection),
+    document = delete_bytes(editor.document, start, finish),
+    updated = editor <& { .document = document },
+  in
+    collapse(updated, start)
+
+let insert_byte = (editor, byte) =>
+  let
+    bytes = Bytes.generate(1, _ => byte),
+    position = editor.selection.head,
+    document = insert_bytes(editor.document, position, bytes),
+    updated = editor <& { .document = document },
+  in
+    collapse(updated, position + 1)
+
+let continue_editing = editor =>
+  EditorStep.new {
+    .editor = editor,
+    .commands = #NoCommands,
+  }
+
+let request_editor_command = (editor, command: EditorCommand) =>
+  let
+    no_commands: EditorCommands = #NoCommands,
+    commands: EditorCommands = #MoreCommands [command, no_commands],
+  in
+    EditorStep.new {
+      .editor = editor,
+      .commands = commands,
+    }
+
+let apply_normal_character = (editor, character) =>
+  case character of
+    'h' => continue_editing(move_left editor),
+    'l' => continue_editing(move_right editor),
+    'v' =>
+      let mode =
+        if let #Extend = editor.mode then
+          #Normal
+        else
+          #Extend
         end
-      end
-    | `Branch branch => do
-        set pending = `Cons [branch.left, `Cons [branch.right, tail]]
-      end
-    end
+      in
+        continue_editing(editor <& { .mode = mode }),
+    'd' => continue_editing(delete_selection editor),
+    'c' =>
+      let updated = delete_selection editor in
+        continue_editing(updated <& { .mode = #Insert }),
+    'i' =>
+      let updated = collapse(editor, selection_start(&editor.selection)) in
+        continue_editing(updated <& { .mode = #Insert }),
+    'a' =>
+      let
+        position = selection_head_end(&editor.document, &editor.selection),
+        updated = collapse(editor, position),
+      in
+        continue_editing(updated <& { .mode = #Insert }),
+    'w' => request_editor_command(editor, #Save),
+    'q' => request_editor_command(editor, #Quit),
+    _ => continue_editing editor;
+
+let apply_backspace = editor =>
+  if editor.selection.head == 0 then
+    continue_editing editor
+  else
+    let
+      start = previous_character(&editor.document, editor.selection.head),
+      document = delete_bytes(editor.document, start, editor.selection.head),
+      updated = editor <& { .document = document },
+    in
+      continue_editing(collapse(updated, start))
   end
 
-  return output
-end
+let apply_insert_key = (editor, key: Key) => case key of
+  #Escape => continue_editing(editor <& { .mode = #Normal }),
+  #Backspace => apply_backspace editor,
+  #Enter => continue_editing(insert_byte(editor, cast('\n', I32))),
+  #Tab => continue_editing(insert_byte(editor, cast('\t', I32))),
+  #Character character =>
+    let byte: I32 = cast(character, I32) in
+      if byte >= cast(' ', I32) then
+        continue_editing(insert_byte(editor, byte))
+      else
+        continue_editing editor
+      end,
+  _ => continue_editing editor;
 
-// Both arms are expressions, so the whole function is one line of control flow
-// with no `return` and no terminator.
-let selection_start = (selection: Selection) =>
-  if selection.anchor < selection.head then selection.anchor
-  else selection.head
-
-let move_head = (editor: Editor, position: I32) => do
-  let head = clamp_character(&editor.document, position)
-  let anchor = if let `Extend () = editor.mode then editor.selection.anchor
-    else head
-
-  return editor <& { .selection = Selection.new { .anchor = anchor, .head = head } }
-end
-
-let apply_normal_character = (editor: Editor, character: Char) =>
-  match character with
-  | 'h' => continue_editing(move_left(editor))
-  | 'l' => continue_editing(move_right(editor))
-  | 'v' => do
-      let mode = if let `Extend () = editor.mode then `Normal () else `Extend ()
-      return continue_editing(editor <& { .mode = mode })
-    end
-  | 'd' => continue_editing(delete_selection(editor))
-  | 'w' => request_editor_command(editor, `Save ())
-  | 'q' => request_editor_command(editor, `Quit ())
-  | _ => continue_editing(editor)
-  end
-
-// Handlers keep their own opener, so a handler body never looks like a record.
-// Note the collision this syntax inherits: `return:` below is a handler clause
-// *name*, and it now sits beside `return` the keyword.
-let render_output = (capacity: I32) => do
-  let output = output_builder(capacity)
-
-  return handler RenderOutput do
-    append: (byte, !resume) => do
-      set output = append_output_byte(output, byte)
-      return !resume(())
+let apply_key = (editor, key) => case key of
+  #ArrowLeft => continue_editing(move_left editor),
+  #ArrowRight => continue_editing(move_right editor),
+  #ControlC =>
+    if let #Insert = editor.mode then
+      continue_editing editor
+    else
+      request_editor_command(editor, #Quit)
     end,
-    return: (_) => slice(&output.buffer, 0, output.length),
-  end
+  #Character character =>
+    if let #Insert = editor.mode then
+      apply_insert_key(editor, key)
+    else
+      apply_normal_character(editor, character)
+    end,
+  _ =>
+    if let #Insert = editor.mode then
+      apply_insert_key(editor, key)
+    else
+      continue_editing editor
+    end;
+
+let decoded_without_key = decoder =>
+  KeyDecodeStep.new {
+    .decoder = decoder,
+    .keys = #NoKeys,
+  }
+
+let decoded_key = (decoder, key: Key) =>
+  let
+    no_keys: KeySequence = #NoKeys,
+    keys: KeySequence = #MoreKeys [key, no_keys],
+  in
+    KeyDecodeStep.new {
+      .decoder = decoder,
+      .keys = keys,
+    }
+
+let decode_ground_character = character => case character of
+  #(escape_character) => decoded_without_key(#EscapePrefix),
+  #(control_c_character) => decoded_key(#Ground, #ControlC),
+  #(backspace_character) | #(delete_character) =>
+    decoded_key(#Ground, #Backspace),
+  '\r' => decoded_key(#Ground, #Enter),
+  '\t' => decoded_key(#Ground, #Tab),
+  _ => decoded_key(#Ground, #Character character);
+
+let decode_key_character = (decoder, character) =>
+  case decoder of
+    #Ground => decode_ground_character character,
+    #EscapePrefix =>
+      if character == control_sequence_introducer then
+        decoded_without_key(#ControlSequence)
+      else
+        let
+          decoded = decode_ground_character character,
+          escape_key: Key = #Escape,
+          keys: KeySequence = #MoreKeys [escape_key, decoded.keys],
+        in
+          KeyDecodeStep.new {
+            .decoder = decoded.decoder,
+            .keys = keys,
+          }
+      end,
+    #ControlSequence =>
+      case character of
+        'D' => decoded_key(#Ground, #ArrowLeft),
+        'C' => decoded_key(#Ground, #ArrowRight),
+        _ => decoded_without_key(#Ground);;
+
+let prepend_commands = (
+  pending: EditorCommands,
+  reversed: EditorCommands,
+) => case pending of
+  #MoreCommands node =>
+    prepend_commands(node[1], #MoreCommands [node[0], reversed]),
+  #NoCommands => reversed;
+
+let apply_decoded_keys = (
+  editor: Editor,
+  keys: KeySequence,
+  reversed_commands: EditorCommands,
+) => case keys of
+  #MoreKeys node =>
+    let
+      step = apply_key(editor, node[0]),
+      commands = prepend_commands(step.commands, reversed_commands),
+    in
+      apply_decoded_keys(step.editor, node[1], commands),
+  #NoKeys => EditorStep.new {
+    .editor = editor,
+    .commands = reversed_commands,
+  };
+
+let apply_keys = (editor, decoder, bytes) => do
+  let updated = editor;
+  let current_decoder = decoder;
+  let reversed_commands: EditorCommands = #NoCommands;
+
+  for byte in bytes do
+    let character = cast(byte, Char);
+    let decoded = decode_key_character(current_decoder, character);
+    current_decoder = decoded.decoder;
+    let applied = apply_decoded_keys(
+      updated,
+      decoded.keys,
+      reversed_commands,
+    );
+    updated = applied.editor;
+    reversed_commands = applied.commands
+  end;
+
+  if let #EscapePrefix = current_decoder then
+    let step = apply_key(updated, #Escape);
+    updated = step.editor;
+    current_decoder = #Ground
+  end;
+
+  let no_commands: EditorCommands = #NoCommands in
+    EditorInputStep.new {
+      .editor = updated,
+      .decoder = current_decoder,
+      .commands = prepend_commands(reversed_commands, no_commands),
+    }
+end
+
+let output_builder = capacity =>
+  OutputBuilder.new {
+    .buffer = Bytes.generate(capacity, _ => 0),
+    .length = 0,
+  }
+
+let append_output_byte = (output, byte) => do
+  let buffer = output.buffer;
+  buffer[output.length] = byte;
+  OutputBuilder.new { .buffer = buffer, .length = output.length + 1 }
+end
+
+let render_output = capacity =>
+  let output = output_builder capacity in
+    handler RenderOutput of
+      append: (byte, !resume) => do
+        output = append_output_byte(output, byte);
+        !resume(())
+      end,
+      return: _ => slice(&output.buffer, 0, output.length);
+
+let emit_output_byte = byte => do
+  _ <- RenderOutput.append(byte);
+  ()
+end
+
+let emit_output_character = (character: Char) => do
+  _ <- emit_output_byte(cast(character, I32));
+  ()
 end
 
 let emit_control_sequence = (command: Char) => do
-  _ <- emit_output_character(escape_character)
-  _ <- emit_output_character(control_sequence_introducer)
-  _ <- emit_output_character(command)
-  return ()
+  _ <- emit_output_character escape_character;
+  _ <- emit_output_character control_sequence_introducer;
+  _ <- emit_output_character command;
+  ()
 end
 
-// The main loop. Effect binds keep `<-`, which already reads differently from
-// `=`; `break` carries no value here, but `loop do … end` could yield one.
-document <- Terminal.load()
+let emit_sgr = (parameter: Char) => do
+  _ <- emit_control_sequence parameter;
+  _ <- emit_output_character select_graphic_rendition_command;
+  ()
+end
 
+const display_byte = (byte: I32) =>
+  let character = cast(byte, Char) in
+    if character == '\t' then
+      cast(' ', I32)
+    else
+      byte
+    end
+
+let render = view =>
+  let
+    document = view.document,
+    selected_start = view.highlight.start,
+    selected_end = view.highlight.end,
+    mode = view.mode,
+    status = view.status,
+    columns = view.size.columns,
+    rows = view.size.rows,
+    document_rows = rows - terminal_status_row_count,
+    visible_rows =
+      if document_rows > minimum_document_rows then
+        document_rows
+      else
+        minimum_document_rows
+      end,
+    visible_columns =
+      if columns > minimum_render_columns then
+        columns
+      else
+        minimum_render_columns
+      end,
+    line_break_capacity = visible_rows * terminal_line_break_byte_count,
+    output_capacity =
+      document.length() + line_break_capacity + visible_columns + terminal_frame_control_capacity,
+  in
+    try do
+      _ <- emit_control_sequence cursor_home_command;
+      _ <- emit_control_sequence erase_display_command;
+      let highlighted = false;
+      let row = 0;
+      let column = 0;
+
+      for position in 0..document.length() do
+        let byte = display_byte document[position];
+        let character = cast(byte, Char);
+
+        if row < visible_rows then
+          if position == selected_start then
+            _ <- emit_sgr inverse_video_parameter;
+            highlighted = true
+          end;
+
+          if position == selected_end && highlighted then
+            _ <- emit_sgr reset_style_parameter;
+            highlighted = false
+          end;
+
+          if character == '\n' then
+            _ <- emit_output_character '\r';
+            _ <- emit_output_character '\n';
+            row = row + 1;
+            column = 0
+          else column < visible_columns then
+            _ <- emit_output_byte byte;
+
+            if not(is_utf8_continuation byte) then
+              column = column + 1
+            end
+          end
+        end
+      end;
+
+      if highlighted then
+        _ <- emit_sgr reset_style_parameter
+      end;
+
+      repeat visible_rows - row do
+        _ <- emit_output_character '\r';
+        _ <- emit_output_character '\n'
+      end;
+
+      _ <- emit_sgr inverse_video_parameter;
+      let label =
+        if let #SaveFailed = status then
+          " SAVE FAILED  w retry  q quit "
+        else let #Insert = mode then
+          " INSERT  esc normal "
+        else let #Extend = mode then
+          " EXTEND  h/l move  d delete  i/a insert  w save  q quit "
+        else
+          " NORMAL  h/l move  v extend  d delete  i/a insert  w save  q quit "
+        end;
+
+      for label_index in 0..label.length() do
+        if label_index < visible_columns then
+          _ <- emit_output_byte label[label_index]
+        end
+      end;
+
+      _ <- emit_sgr reset_style_parameter;
+      ()
+    end with render_output output_capacity
+
+document <- Terminal.load();
+let initial_document = piece_table document;
 let editor = Editor.new {
-  .document = piece_table(document),
+  .document = initial_document,
   .selection = Selection.new { .anchor = 0, .head = 0 },
-  .mode = `Normal (),
-  .status = `Ready (),
-}
-let key_decoder: KeyDecoder = `Ground ()
+  .mode = #Normal,
+  .status = #Ready,
+};
+let key_decoder: KeyDecoder = #Ground;
 
 loop do
-  columns <- Terminal.columns()
-  rows <- Terminal.rows()
-
+  columns <- Terminal.columns();
+  rows <- Terminal.rows();
+  let rendered_document = materialize(&editor.document);
+  let rendered_start = selection_start(&editor.selection);
+  let rendered_end = selection_head_end(&editor.document, &editor.selection);
   let view = RenderView.new {
-    .document = materialize(&editor.document),
+    .document = rendered_document,
+    .highlight = Highlight.new { .start = rendered_start, .end = rendered_end },
     .mode = editor.mode,
     .status = editor.status,
     .size = TerminalSize.new { .columns = columns, .rows = rows },
-  }
+  };
+  let frame = render view;
+  _ <- Terminal.write(&frame);
+  read_result <- Terminal.read();
+  let #Keys keys = read_result else break ();
+  let input_step: EditorInputStep = apply_keys(editor, key_decoder, keys);
+  editor = input_step.editor;
+  key_decoder = input_step.decoder;
+  let quit_requested = false;
+  let pending_commands = input_step.commands;
 
-  let frame = render(view)
-  _ <- Terminal.write(&frame)
-  read_result <- Terminal.read()
-  let `Keys keys = read_result else break
+  loop do
+    let #MoreCommands command_node = pending_commands else break ();
+    let [command, remaining_commands] = command_node;
+    pending_commands = remaining_commands;
 
-  let input_step = apply_keys(editor, key_decoder, keys)
-  set editor = input_step.editor
-  set key_decoder = input_step.decoder
+    case command of
+      #Save => do
+        let contents = materialize(&editor.document);
+        save_result <- Terminal.save(&contents);
+        let status =
+          if let #Ok = save_result then
+            #Ready
+          else
+            #SaveFailed
+          end;
+        editor = editor <& { .status = status }
+      end,
+      #Quit =>
+        quit_requested = true;
+  end;
 
-  let quit_requested = false
-  let pending_commands = input_step.commands
-
-  for command in pending_commands do
-    match command with
-    | `Save () => do
-        let contents = materialize(&editor.document)
-        save_result <- Terminal.save(&contents)
-        let status = if let `Ok () = save_result then `Ready ()
-          else `SaveFailed ()
-
-        set editor = editor <& { .status = status }
-      end
-    | `Quit () => set quit_requested = true
-    end
+  if quit_requested then
+    break ()
   end
+end;
 
-  if quit_requested then break
-end
-
-[.code = 0]
+return { .code = 0 };

@@ -3,22 +3,22 @@ effect Counter {
   add: (I32) => Unit
 }
 
-let run: () -> <Counter> I32 = () => {
+let run: () -> <Counter> I32 = () => do
   _ <- Counter.add(40)
   value <- Counter.get()
   value + 2
-};
+end;
 
-let counter = {
+let counter = do
   let count = 0;
   handler Counter {
     get: (!resume) => !resume count,
-    add: (amount, !resume) => {
+    add: (amount, !resume) => do
       count = count + amount
       !resume(())
-    },
+    end,
     return: value => value,
   }
-};
+end;
 
 try run() with counter

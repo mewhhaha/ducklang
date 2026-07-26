@@ -36,66 +36,79 @@ let valid_fields = json_object_prepend(
 );
 let score = 0;
 
-if let `Parsed args = decode_update_plan_value(json_object valid_fields) {
-  if let `Some explanation = args.explanation {
-    if explanation == "Keep this ordered" {
-      if let `Cons first_node = args.plan {
+if let #Parsed args = decode_update_plan_value(json_object valid_fields) then
+  if let #Some explanation = args.explanation then
+    if explanation == "Keep this ordered" then
+      if let #Cons first_node = args.plan then
         let typed_first_node: FixtureStepNode = first_node;
         let [first, tail] = typed_first_node;
-        if first.step == "compile" {
-          if let `Pending () = first.status {
-            if let `Cons second_node = tail {
+        if first.step == "compile" then
+          if let #Pending = first.status then
+            if let #Cons second_node = tail then
               let typed_second_node: FixtureStepNode = second_node;
-              let [second, end] = typed_second_node;
-              if second.step == "test" {
-                if let `Completed () = second.status {
-                  if let `Nil () = end { score = score + 1 }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+              let [second, finish] = typed_second_node;
+              if second.step == "test" then
+                if let #Completed = second.status then
+                  if let #Nil = finish then
+                    score = score + 1
+                  end;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
 
 let unknown_fields = json_object_prepend(
   "plan",
   json_array(json_array_empty()),
   json_object_prepend("extra", json_null(), json_object_empty()),
 );
-if let `ParseFailed message = decode_update_plan_value(json_object unknown_fields) {
-  if message == "failed to parse function arguments: update_plan arguments contain an unknown field" { score = score + 10 }
-}
+if let #ParseFailed message = decode_update_plan_value(json_object unknown_fields) then
+  if message
+    == "failed to parse function arguments: update_plan arguments contain an unknown field" then
+      score = score + 10
+    end;
+end;
 
 let duplicate_fields = json_object_prepend(
   "plan",
   json_array(json_array_empty()),
   json_object_prepend("plan", json_array(json_array_empty()), json_object_empty()),
 );
-if let `ParseFailed message = decode_update_plan_value(json_object duplicate_fields) {
-  if message == "failed to parse function arguments: update_plan arguments contain a duplicate field" { score = score + 100 }
-}
+if let #ParseFailed message = decode_update_plan_value(json_object duplicate_fields) then
+  if message
+    == "failed to parse function arguments: update_plan arguments contain a duplicate field" then
+      score = score + 100
+    end;
+end;
 
 let missing_fields = json_object_prepend("explanation", json_null(), json_object_empty());
-if let `ParseFailed message = decode_update_plan_value(json_object missing_fields) {
-  if message == "failed to parse function arguments: plan is required" { score = score + 1000 }
-}
+if let #ParseFailed message = decode_update_plan_value(json_object missing_fields) then
+  if message == "failed to parse function arguments: plan is required" then
+    score = score + 1000 end;
+end;
 
 let invalid_status_fields = json_object_prepend(
   "step",
   json_string "compile",
   json_object_prepend("status", json_string "active", json_object_empty()),
 );
-let invalid_status_steps = json_array_prepend(json_object invalid_status_fields, json_array_empty());
+let invalid_status_steps =
+  json_array_prepend(json_object invalid_status_fields, json_array_empty());
 let invalid_status_root = json_object_prepend(
   "plan",
   json_array invalid_status_steps,
   json_object_empty(),
 );
-if let `ParseFailed message = decode_update_plan_value(json_object invalid_status_root) {
-  if message == "failed to parse function arguments: plan[0].status must be pending, in_progress, or completed" { score = score + 10000 }
-}
+if let #ParseFailed message = decode_update_plan_value(json_object invalid_status_root) then
+  if message
+    == "failed to parse function arguments: plan[0].status must be pending, in_progress, or completed" then
+      score = score + 10000
+    end;
+end;
 
 return { .score = score };

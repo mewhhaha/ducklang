@@ -3,23 +3,30 @@ module () where
 const { .plan_request_user_input_call } = import "./request_user_input_call.duck" ();
 
 let score = 0;
-if let `RejectRequest message = plan_request_user_input_call(false, `Execute (), false,
-  "not json") {
-    if message == "request_user_input can only be used by the root thread" { score = score + 1 }
-  }
-if let `RejectRequest message = plan_request_user_input_call(true, `Execute (), false, "not json") {
-  if message == "request_user_input is unavailable in Execute mode" { score = score + 10 }
-}
-if let `RejectRequest message = plan_request_user_input_call(true, `Plan (), false, "[]") {
-  if message == "failed to parse function arguments: request_user_input arguments must be an object" { score = score + 100 }
-}
-if let `RejectRequest message = plan_request_user_input_call(
+if let #RejectRequest message = plan_request_user_input_call(false, #Execute, false,
+  "not json") then
+    if message == "request_user_input can only be used by the root thread" then
+      score = score + 1 end;
+  end;
+if let #RejectRequest message = plan_request_user_input_call(true, #Execute, false, "not json") then
+  if message == "request_user_input is unavailable in Execute mode" then
+    score = score + 10
+  end;
+end;
+if let #RejectRequest message = plan_request_user_input_call(true, #Plan, false, "[]") then
+  if message
+    == "failed to parse function arguments: request_user_input arguments must be an object" then
+      score = score + 100
+    end;
+end;
+if let #RejectRequest message = plan_request_user_input_call(
   true,
-  `Plan (),
+  #Plan,
   false,
   "{\"questions\":[{\"id\":\"pick\",\"header\":\"Pick\",\"question\":\"Choose.\",\"options\":[]}]}",
-) {
-  if message == "request_user_input requires non-empty options for every question" { score = score + 1000 }
-}
+) then
+  if message == "request_user_input requires non-empty options for every question" then
+    score = score + 1000 end;
+end;
 
 return { .score = score };

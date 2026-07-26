@@ -12,8 +12,8 @@ Deno.test("format_text normalizes spacing around operators", () => {
 
 Deno.test("format_text keeps unary sigils tight", () => {
   assert_equals(
-    format_text("let  measure=( message :Text )=>{\n@len( &message )\n};\n"),
-    "let measure = (message: Text) => {\n  @len(&message)\n};\n",
+    format_text("let  measure=( message :Text )=>do\n@len( &message )\nend;\n"),
+    "let measure = (message: Text) => do\n  @len(&message)\nend;\n",
   );
 });
 
@@ -34,6 +34,13 @@ Deno.test("format_text uses whitespace for atomic unary calls", () => {
   );
 });
 
+Deno.test("format_text normalizes expressions inside template literals", () => {
+  assert_equals(
+    format_text('render   `hello { name+ "!" } {{reader}}`\n'),
+    'render `hello {name + "!"} {{reader}}`\n',
+  );
+});
+
 Deno.test("format_text separates prefix operators from fixity assignment", () => {
   assert_equals(
     format_text("prefix 80 ! = @syntax.not\n"),
@@ -41,25 +48,26 @@ Deno.test("format_text separates prefix operators from fixity assignment", () =>
   );
 });
 
-Deno.test("format_text indents blocks by bracket depth", () => {
+Deno.test("format_text indents keyword blocks", () => {
   assert_equals(
-    format_text("for i in 1..5 {\nif i==2 {\nbreak;\n}\n}\n"),
-    "for i in 1..5 {\n  if i == 2 {\n    break;\n  }\n}\n",
+    format_text("for i in 1..5 do\nif i==2 then\nbreak;\nend\nend\n"),
+    "for i in 1..5 do\n  if i == 2 then\n    break;\n  end\nend\n",
   );
 });
 
-Deno.test("format_text keeps compact guard blocks on one line", () => {
-  const source = "for candidate in candidates {\n" +
-    "if not(is_utf8_continuation candidate) { break;\n" +
-    "}\n" +
-    "}\n";
+Deno.test("format_text places block closers after terminated statements", () => {
+  const source = "for candidate in candidates do\n" +
+    "if not(is_utf8_continuation candidate) then break; end\n" +
+    "end\n";
   const formatted = format_text(source);
 
   assert_equals(
     formatted,
-    "for candidate in candidates {\n" +
-      "  if not(is_utf8_continuation candidate) { break; }\n" +
-      "}\n",
+    "for candidate in candidates do\n" +
+      "  if not(is_utf8_continuation candidate) then\n" +
+      "    break;\n" +
+      "  end\n" +
+      "end\n",
   );
   assert_equals(
     format_source(Source.parse(formatted)),
@@ -67,25 +75,82 @@ Deno.test("format_text keeps compact guard blocks on one line", () => {
   );
 });
 
+Deno.test("format_text expands inline statements into their keyword scopes", () => {
+  assert_equals(
+    format_text(
+      "if ready then value=1 else value=2 end;\n" +
+        "let #Some item = selected else do return fallback; end;\n" +
+        "let chosen=if ready then 1 else 2 end;\n",
+    ),
+    "if ready then\n" +
+      "  value = 1\n" +
+      "else\n" +
+      "  value = 2\n" +
+      "end;\n" +
+      "let #Some item = selected else do\n" +
+      "  return fallback;\n" +
+      "end;\n" +
+      "let chosen = if ready then 1 else 2 end;\n",
+  );
+});
+
+Deno.test("format_text keeps end fields inside their enclosing scope", () => {
+  assert_equals(
+    format_text(
+      "loop do\n" +
+        "let boundary={.start=0,.end=finish};\n" +
+        "if ready then finish=finish+1 end;\n" +
+        "end\n",
+    ),
+    "loop do\n" +
+      "  let boundary = { .start = 0, .end = finish };\n" +
+      "  if ready then\n" +
+      "    finish = finish + 1\n" +
+      "  end;\n" +
+      "end\n",
+  );
+});
+
+Deno.test("format_text keeps let else blocks inside conditional branches", () => {
+  assert_equals(
+    format_text(
+      "if ready then\n" +
+        "let #Some value = result else do return 0; end;\n" +
+        "value\n" +
+        "else\n" +
+        "0\n" +
+        "end\n",
+    ),
+    "if ready then\n" +
+      "  let #Some value = result else do\n" +
+      "    return 0;\n" +
+      "  end;\n" +
+      "  value\n" +
+      "else\n" +
+      "  0\n" +
+      "end\n",
+  );
+});
+
 Deno.test("format_text wraps wide definitions before their value", () => {
-  const source = "let update = () => {\n" +
-    "if has_selection {\n" +
+  const source = "let update = () => do\n" +
+    "if has_selection then\n" +
     "let furthest = if selection.anchor\n" +
     "> selection.head " +
-    "{ selection.anchor } else { selection.head };\n" +
-    "}\n" +
-    "};\n";
+    "then selection.anchor else selection.head end;\n" +
+    "end\n" +
+    "end;\n";
   const formatted = format_text(source);
 
   assert_equals(
     formatted,
-    "let update = () => {\n" +
-      "  if has_selection {\n" +
+    "let update = () => do\n" +
+      "  if has_selection then\n" +
       "    let furthest =\n" +
-      "      if selection.anchor > selection.head " +
-      "{ selection.anchor } else { selection.head };\n" +
-      "  }\n" +
-      "};\n",
+      "      if selection.anchor > selection.head then selection.anchor " +
+      "else selection.head end;\n" +
+      "  end\n" +
+      "end;\n",
   );
   assert_equals(
     format_source(Source.parse(formatted)),
@@ -95,15 +160,17 @@ Deno.test("format_text wraps wide definitions before their value", () => {
 
 Deno.test("format_text indents union alternatives", () => {
   assert_equals(
-    format_text("type Option t =\n| `Some t\n| `None Unit\n"),
-    "type Option t =\n  | `Some t\n  | `None Unit\n",
+    format_text("type Option t =\n| #Some t\n| #None\n"),
+    "type Option t =\n  | #Some t\n  | #None\n",
   );
 });
 
-Deno.test("format_text keeps match alternatives inside their braces", () => {
+Deno.test("format_text indents case arms", () => {
   assert_equals(
-    format_text("match value {\n| `Some item => item\n| `None () => 0\n}\n"),
-    "match value {\n  | `Some item => item\n  | `None () => 0\n}\n",
+    format_text(
+      "case value of\n#Some item => item,\n#None => 0\n;\n",
+    ),
+    "case value of\n  #Some item => item,\n  #None => 0;\n",
   );
 });
 
@@ -121,17 +188,19 @@ Deno.test("format_text collapses blank runs", () => {
   );
 });
 
-Deno.test("format_text drops blanks hugging braces", () => {
+Deno.test("format_text drops blanks hugging blocks", () => {
   assert_equals(
-    format_text("let f = () => {\n\nlet a = 1;\na\n\n};\n"),
-    "let f = () => {\n  let a = 1;\n  a\n};\n",
+    format_text("let f = () => do\n\nlet a = 1;\na\n\nend;\n"),
+    "let f = () => do\n  let a = 1;\n  a\nend;\n",
   );
 });
 
 Deno.test("format_text keeps effect rows tight", () => {
   assert_equals(
-    format_text("let echo: () -> < Stdin :|Stdout > Text = () => {\n1\n};\n"),
-    "let echo: () -> <Stdin :| Stdout> Text = () => {\n  1\n};\n",
+    format_text(
+      "let echo: () -> < Stdin :|Stdout > Text = () => do\n1\nend;\n",
+    ),
+    "let echo: () -> <Stdin :| Stdout> Text = () => do\n  1\nend;\n",
   );
 });
 
@@ -168,8 +237,8 @@ Deno.test("format_text canonicalizes string escapes", () => {
 
 Deno.test("format_text indents multiline binding values", () => {
   assert_equals(
-    format_text("let apply: Int -> Int =\n(value: Int) => {\nvalue\n};\n"),
-    "let apply: Int -> Int =\n  (value: Int) => {\n    value\n  };\n",
+    format_text("let apply: Int -> Int =\n(value: Int) => do\nvalue\nend;\n"),
+    "let apply: Int -> Int =\n  (value: Int) => do\n    value\n  end;\n",
   );
 });
 

@@ -7,59 +7,63 @@ type AgentJobSpawnNumericArgs = AgentJobSpawnDecodedArgs
 type AgentJobSpawnNumericOptionalResult = AgentJobOptionalTextResult
 type AgentJobSpawnNumericResult = AgentJobSpawnDecodeResult
 
-let decode_agent_job_spawn_numeric_options: [Text, AgentJobSpawnNumericArgs] -> AgentJobSpawnNumericResult = (
+let decode_agent_job_spawn_numeric_options: [Text, AgentJobSpawnNumericArgs] -> AgentJobSpawnNumericResult =
+  (
     document: Text,
     base: AgentJobSpawnNumericArgs,
-  ) => {
+  ) => do
     let parsed = parse_json_document document;
-    if let `Ok value_and_position = parsed {
+    if let #Ok value_and_position = parsed then
       let [value, _] = value_and_position;
-      if let `Object object = value {
+      if let #Object object = value then
         let concurrency_lookup = json_object_get("max_concurrency", object);
-        let decoded_concurrency: AgentJobSpawnNumericOptionalResult = if let `Found field = concurrency_lookup {
-            if let `Number max_concurrency = field {
-              `AgentJobTextDecoded (`Some max_concurrency)
-            } else if let `Null () = field {
-              `AgentJobTextDecoded (`None ())
-            } else {
-              `AgentJobTextDecodeFailed "max_concurrency"
-            }
-          } else {
-            `AgentJobTextDecoded (`None ())
-          };
-        if let `AgentJobTextDecodeFailed _ = decoded_concurrency {
-          `SpawnDecodeFailed "max_concurrency must be a number"
-        } else if let `AgentJobTextDecoded max_concurrency = decoded_concurrency {
+        let decoded_concurrency: AgentJobSpawnNumericOptionalResult =
+          if let #Found field = concurrency_lookup then
+            if let #Number max_concurrency = field then
+              #AgentJobTextDecoded (#Some max_concurrency)
+            else let #Null = field then
+              #AgentJobTextDecoded (#None)
+            else
+              #AgentJobTextDecodeFailed "max_concurrency"
+            end;
+          else
+            #AgentJobTextDecoded (#None)
+          end;
+        if let #AgentJobTextDecodeFailed _ = decoded_concurrency then
+          #SpawnDecodeFailed "max_concurrency must be a number"
+        else let #AgentJobTextDecoded max_concurrency = decoded_concurrency then
           let workers_lookup = json_object_get("max_workers", object);
-          let decoded_workers: AgentJobSpawnNumericOptionalResult = if let `Found field = workers_lookup {
-              if let `Number max_workers = field {
-                `AgentJobTextDecoded (`Some max_workers)
-              } else if let `Null () = field {
-                `AgentJobTextDecoded (`None ())
-              } else {
-                `AgentJobTextDecodeFailed "max_workers"
-              }
-            } else {
-              `AgentJobTextDecoded (`None ())
-            };
-          if let `AgentJobTextDecodeFailed _ = decoded_workers {
-            `SpawnDecodeFailed "max_workers must be a number"
-          } else if let `AgentJobTextDecoded max_workers = decoded_workers {
+          let decoded_workers: AgentJobSpawnNumericOptionalResult =
+            if let #Found field = workers_lookup then
+              if let #Number max_workers = field then
+                #AgentJobTextDecoded (#Some max_workers)
+              else let #Null = field then
+                #AgentJobTextDecoded (#None)
+              else
+                #AgentJobTextDecodeFailed "max_workers"
+              end;
+            else
+              #AgentJobTextDecoded (#None)
+            end;
+          if let #AgentJobTextDecodeFailed _ = decoded_workers then
+            #SpawnDecodeFailed "max_workers must be a number"
+          else let #AgentJobTextDecoded max_workers = decoded_workers then
             let runtime_lookup = json_object_get("max_runtime_seconds", object);
-            let decoded_runtime: AgentJobSpawnNumericOptionalResult = if let `Found field = runtime_lookup {
-                if let `Number max_runtime_seconds = field {
-                  `AgentJobTextDecoded (`Some max_runtime_seconds)
-                } else if let `Null () = field {
-                  `AgentJobTextDecoded (`None ())
-                } else {
-                  `AgentJobTextDecodeFailed "max_runtime_seconds"
-                }
-              } else {
-                `AgentJobTextDecoded (`None ())
-              };
-            if let `AgentJobTextDecodeFailed _ = decoded_runtime {
-              `SpawnDecodeFailed "max_runtime_seconds must be a number"
-            } else if let `AgentJobTextDecoded max_runtime_seconds = decoded_runtime {
+            let decoded_runtime: AgentJobSpawnNumericOptionalResult =
+              if let #Found field = runtime_lookup then
+                if let #Number max_runtime_seconds = field then
+                  #AgentJobTextDecoded (#Some max_runtime_seconds)
+                else let #Null = field then
+                  #AgentJobTextDecoded (#None)
+                else
+                  #AgentJobTextDecodeFailed "max_runtime_seconds"
+                end;
+              else
+                #AgentJobTextDecoded (#None)
+              end;
+            if let #AgentJobTextDecodeFailed _ = decoded_runtime then
+              #SpawnDecodeFailed "max_runtime_seconds must be a number"
+            else let #AgentJobTextDecoded max_runtime_seconds = decoded_runtime then
               let args: AgentJobSpawnNumericArgs = [
                 .csv_path = base.csv_path,
                 .instruction = base.instruction,
@@ -70,22 +74,22 @@ let decode_agent_job_spawn_numeric_options: [Text, AgentJobSpawnNumericArgs] -> 
                 .max_workers = max_workers,
                 .max_runtime_seconds = max_runtime_seconds,
               ];
-              `SpawnDecoded args;
-            } else {
-              `SpawnDecodeFailed "max_runtime_seconds decoder returned no result"
-            }
-          } else {
-            `SpawnDecodeFailed "max_workers decoder returned no result"
-          }
-        } else {
-          `SpawnDecodeFailed "max_concurrency decoder returned no result"
-        }
-      } else {
-        `SpawnDecodeFailed "failed to parse function arguments: expected an object"
-      }
-    } else {
-      `SpawnDecodeFailed "failed to parse function arguments: invalid JSON"
-    }
-  };
+              #SpawnDecoded args;
+            else
+              #SpawnDecodeFailed "max_runtime_seconds decoder returned no result"
+            end;
+          else
+            #SpawnDecodeFailed "max_workers decoder returned no result"
+          end;
+        else
+          #SpawnDecodeFailed "max_concurrency decoder returned no result"
+        end;
+      else
+        #SpawnDecodeFailed "failed to parse function arguments: expected an object"
+      end;
+    else
+      #SpawnDecodeFailed "failed to parse function arguments: invalid JSON"
+    end;
+  end;
 
 return { .decode_agent_job_spawn_numeric_options };

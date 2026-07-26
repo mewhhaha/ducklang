@@ -5,152 +5,189 @@ const { .text_append, .text_split, .text_trim_whitespace } = import "duck:prelud
 const { .normalize_code_mode_identifier } = import "./code_mode_identifier.duck" ();
 const { .plan_schema_input } = import "./code_mode_schema_decode.duck" ();
 
-let rec render_schema_input: CodeModeSchemaInput -> Text = input => {
+let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
   let plan = plan_schema_input input;
-  if let `CodeModePlanRendered rendered = plan {
+  if let #CodeModePlanRendered rendered = plan then
     rendered
-  } else if let `CodeModePlanArray element = plan {
+  else let #CodeModePlanArray element = plan then
     text_append [text_append ["Array<", render_schema_input element], ">"]
-  } else if let `CodeModePlanTuple elements = plan {
+  else let #CodeModePlanTuple elements = plan then
     let current = elements;
     let rendered = "";
     let first = true;
     let done = false;
-    loop {
-      if let `CodeModeInputsCons node = current {
+    loop do
+      if let #CodeModeInputsCons node = current then
         let [element, tail] = node;
-        if first { first = false } else { rendered = text_append [rendered, ", "] }
+        if first then
+          first = false
+        else
+          rendered = text_append [rendered, ", "]
+        end;
         rendered = text_append [rendered, render_schema_input element]
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     text_append [text_append ["[", rendered], "]"]
-  } else if let `CodeModePlanUnion variants = plan {
+  else let #CodeModePlanUnion variants = plan then
     let current = variants;
     let rendered = "";
     let first = true;
     let done = false;
-    loop {
-      if let `CodeModeInputsCons node = current {
+    loop do
+      if let #CodeModeInputsCons node = current then
         let [variant, tail] = node;
-        if first { first = false } else { rendered = text_append [rendered, " | "] }
+        if first then
+          first = false
+        else
+          rendered = text_append [rendered, " | "]
+        end;
         rendered = text_append [rendered, render_schema_input variant]
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     rendered
-  } else if let `CodeModePlanIntersection variants = plan {
+  else let #CodeModePlanIntersection variants = plan then
     let current = variants;
     let rendered = "";
     let first = true;
     let done = false;
-    loop {
-      if let `CodeModeInputsCons node = current {
+    loop do
+      if let #CodeModeInputsCons node = current then
         let [variant, tail] = node;
-        if first { first = false } else { rendered = text_append [rendered, " & "] }
+        if first then
+          first = false
+        else
+          rendered = text_append [rendered, " & "]
+        end;
         rendered = text_append [rendered, render_schema_input variant]
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
     rendered
-  } else if let `CodeModePlanObject object = plan {
+  else let #CodeModePlanObject object = plan then
     let [properties, additional] = object;
     let multiline = false;
     let description_current = properties;
     let descriptions_done = false;
-    loop {
-      if let `CodeModePropertiesCons node = description_current {
+    loop do
+      if let #CodeModePropertiesCons node = description_current then
         let [[_, description, _, _], tail] = node;
-        if description != "" {
+        if description != "" then
           multiline = true
           descriptions_done = true
-        } else {
+        else
           description_current = tail
-        }
-      } else {
+        end;
+      else
         descriptions_done = true
-      }
-      if descriptions_done { break; }
-    }
+      end;
+      if descriptions_done then
+        break;
+      end;
+    end;
 
     let rendered = "";
-    if multiline { rendered = "{" }
+    if multiline then
+      rendered = "{"
+    end;
     let current = properties;
     let first = true;
     let done = false;
-    loop {
-      if let `CodeModePropertiesCons node = current {
+    loop do
+      if let #CodeModePropertiesCons node = current then
         let [[name, description, required, property_input], tail] = node;
-        if multiline {
+        if multiline then
           let lines = text_split [description, "\n"];
           let line_current = lines;
           let lines_done = false;
-          loop {
-            if let `Cons line_node = line_current {
+          loop do
+            if let #Cons line_node = line_current then
               let [line, line_tail] = line_node;
               let trimmed = text_trim_whitespace line;
-              if trimmed != "" { rendered = text_append [rendered, text_append ["\n  // ", trimmed]]
-              }
+              if trimmed != "" then
+                rendered = text_append [
+                  rendered,
+                  text_append ["\n  // ", trimmed],
+                ]
+              end;
               line_current = line_tail
-            } else {
+            else
               lines_done = true
-            }
-            if lines_done { break; }
-          }
+            end;
+            if lines_done then
+              break;
+            end;
+          end;
           rendered = text_append [rendered, "\n  "]
-        } else if !(first) {
+        else !(first) then
           rendered = text_append [rendered, " "]
-        }
+        end;
 
         let property_name = name;
-        if normalize_code_mode_identifier name != name { property_name = encode_json_string name }
+        if normalize_code_mode_identifier name != name then
+          property_name = encode_json_string name
+        end;
         rendered = text_append [rendered, property_name]
-        if !(required) { rendered = text_append [rendered, "?"] }
-        rendered = text_append [rendered, text_append [": ", render_schema_input property_input]]
+        if !(required) then
+          rendered = text_append [rendered, "?"]
+        end;
+        rendered = text_append [
+          rendered,
+          text_append [": ", render_schema_input property_input],
+        ]
         rendered = text_append [rendered, ";"]
         first = false
         current = tail
-      } else {
+      else
         done = true
-      }
-      if done { break; }
-    }
+      end;
+      if done then
+        break;
+      end;
+    end;
 
-    if let `CodeModeAdditionalPresent additional_input = additional {
-      if multiline {
+    if let #CodeModeAdditionalPresent additional_input = additional then
+      if multiline then
         rendered = text_append [rendered, "\n  "]
-      } else if rendered != "" {
+      else rendered != "" then
         rendered = text_append [rendered, " "]
-      }
+      end;
       rendered = text_append [
         rendered,
         text_append ["[key: string]: ", text_append [render_schema_input additional_input, ";"]],
       ]
-    }
+    end;
 
-    if multiline {
+    if multiline then
       text_append [rendered, "\n}"]
-    } else if rendered == "" {
+    else rendered == "" then
       "{}"
-    } else {
+    else
       text_append [text_append ["{ ", rendered], " }"]
-    }
-  } else {
+    end;
+  else
     "unknown"
-  }
-};
+  end;
+end;
 
-let render_json_schema_to_typescript: Json -> Text = schema => {
-  render_schema_input(`CodeModeInputSchema schema)
-};
+let render_json_schema_to_typescript: Json -> Text = schema => do
+  render_schema_input(#CodeModeInputSchema schema)
+end;
 
 return { .normalize_code_mode_identifier, .render_schema_input, .render_json_schema_to_typescript };

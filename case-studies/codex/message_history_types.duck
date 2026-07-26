@@ -3,8 +3,8 @@ module () where
 const { .struct } = import "duck:prelude/types" ();
 
 type MessageHistoryPersistence =
-  | `SaveAll Unit
-  | `SaveNone Unit
+  | #SaveAll
+  | #SaveNone
 
 type MessageHistoryByteLimit = Option I32
 
@@ -27,12 +27,12 @@ type MessageHistoryAppend = struct {
 }
 
 type MessageHistoryAppendPlan =
-  | `SkipHistoryAppend Unit
-  | `AppendHistory MessageHistoryAppend
+  | #SkipHistoryAppend
+  | #AppendHistory MessageHistoryAppend
 
 type MessageHistoryTrimPlan =
-  | `KeepHistory Unit
-  | `RewriteHistory Text
+  | #KeepHistory
+  | #RewriteHistory Text
 
 type MessageHistoryBatchEntry = struct {
   .offset = I32,

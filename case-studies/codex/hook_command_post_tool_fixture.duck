@@ -11,19 +11,19 @@ type FixtureTexts = HookTexts
 const fixture_texts = comptime list Text;
 
 let result: FixtureResult = [
-  `None (),
-  `Some 0,
+  #None,
+  #Some 0,
   "{\"continue\":false,\"stopReason\":\"halt\",\"reason\":\"model feedback\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"context\"}}",
   "",
 ];
-let [status, _, _, contexts, feedback, _, _] = evaluate_hook_command(`PostToolUse (), result);
+let [status, _, _, contexts, feedback, _, _] = evaluate_hook_command(#PostToolUse, result);
 let score: I32 = 0;
 
-if let `Stopped () = status {
+if let #Stopped = status then
   if fixture_texts.nth_or("", 0, contexts) == "context" && fixture_texts.nth_or("", 0,
-    feedback) == "model feedback" {
+    feedback) == "model feedback" then
       score = 1
-    }
-}
+    end;
+end;
 
 return { .score = score };

@@ -44,20 +44,22 @@ let profile_input: FixtureArgs = args.prepend(
   ),
 );
 let profile: FixtureResult = parse_sandbox_options profile_input;
-let profile_score = if let `Ok options = profile {
-  if let `Some permission = options.permissions_profile {
-    if let `Some config = options.config_profile {
-      if let `Some cwd = options.cwd {
+let profile_score = if let #Ok options = profile then
+  if let #Some permission = options.permissions_profile then
+    if let #Some config = options.config_profile then
+      if let #Some cwd = options.cwd then
         let socket_path = args.nth_or("", 0, options.allow_unix_sockets);
         let program = args.nth_or("", 0, options.command);
         let flag = args.nth_or("", 1, options.command);
-        if permission == ":workspace" && config == "work" && cwd == "/tmp" && options.include_managed_config && socket_path == "/tmp/socket" && options.log_denials && program == "echo" && flag == "-n" {
-          1
-        } else { 0 }
-      } else { 0 }
-    } else { 0 }
-  } else { 0 }
-} else { 0 };
+        if permission == ":workspace" && config == "work" && cwd == "/tmp"
+          && options.include_managed_config && socket_path == "/tmp/socket" && options.log_denials
+          && program == "echo" && flag == "-n" then
+            1
+          else 0 end;
+      else 0 end;
+    else 0 end;
+  else 0 end;
+else 0 end;
 
 let state_input: FixtureArgs = args.prepend(
   "--sandbox-state-json",
@@ -82,22 +84,23 @@ let state_input: FixtureArgs = args.prepend(
   ),
 );
 let state: FixtureResult = parse_sandbox_options state_input;
-let state_score = if let `Ok options = state {
-  if let `Some json = options.sandbox_state_json {
+let state_score = if let #Ok options = state then
+  if let #Some json = options.sandbox_state_json then
     let first = args.nth_or("", 0, options.sandbox_state_readable_roots);
     let second = args.nth_or("", 1, options.sandbox_state_readable_roots);
-    if json == "{}" && first == "/one" && second == "/two" && options.sandbox_state_disable_network { 10 } else { 0 }
-  } else { 0 }
-} else { 0 };
+    if json == "{}" && first == "/one" && second == "/two"
+      && options.sandbox_state_disable_network then 10 else 0 end;
+  else 0 end;
+else 0 end;
 
 let missing_state: FixtureResult = parse_sandbox_options(
   args.prepend("--sandbox-state-readable-root", args.prepend("/tmp", args.singleton("echo")))
 );
-let missing_state_score = if let `Err _ = missing_state { 100 } else { 0 };
+let missing_state_score = if let #Err _ = missing_state then 100 else 0 end;
 
 let missing_profile: FixtureResult = parse_sandbox_options(
   args.prepend("-C", args.prepend("/tmp", args.singleton("echo")))
 );
-let missing_profile_score = if let `Err _ = missing_profile { 1000 } else { 0 };
+let missing_profile_score = if let #Err _ = missing_profile then 1000 else 0 end;
 
 return { .score = profile_score + state_score + missing_state_score + missing_profile_score };

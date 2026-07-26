@@ -3,53 +3,53 @@ module () where
 type RolloutTextOption = Option Text
 
 type RolloutHistoryMode =
-  | `Legacy Unit
-  | `Paginated Unit
+  | #Legacy
+  | #Paginated
 
 type RolloutMessage = [Text, Bool]
 type RolloutResponse =
-  | `Message RolloutMessage
-  | `AgentMessage Unit
-  | `Reasoning Unit
-  | `FunctionCall Unit
-  | `FunctionOutput Unit
-  | `ToolCall Unit
-  | `ToolOutput Unit
-  | `WebSearch Unit
-  | `ImageGeneration Unit
-  | `Compaction Unit
-  | `ContextCompaction Unit
-  | `AdditionalTools Unit
-  | `CompactionTrigger Unit
-  | `Other Unit
+  | #Message RolloutMessage
+  | #AgentMessage
+  | #Reasoning
+  | #FunctionCall
+  | #FunctionOutput
+  | #ToolCall
+  | #ToolOutput
+  | #WebSearch
+  | #ImageGeneration
+  | #Compaction
+  | #ContextCompaction
+  | #AdditionalTools
+  | #CompactionTrigger
+  | #Other
 
 type RolloutCompletedItem =
-  | `UserMessage Unit
-  | `Plan Unit
-  | `Sleep Unit
-  | `Other Unit
+  | #UserMessage
+  | #Plan
+  | #Sleep
+  | #Other
 
 type RolloutCompleted = [Text, RolloutCompletedItem]
 type RolloutEvent =
-  | `ItemCompleted RolloutCompleted
-  | `TurnStarted Text
-  | `TurnComplete Text
-  | `TurnAborted RolloutTextOption
-  | `ThreadRolledBack Unit
-  | `Durable Unit
-  | `LegacyOnly Unit
-  | `Transient Unit
+  | #ItemCompleted RolloutCompleted
+  | #TurnStarted Text
+  | #TurnComplete Text
+  | #TurnAborted RolloutTextOption
+  | #ThreadRolledBack
+  | #Durable
+  | #LegacyOnly
+  | #Transient
 
 type RolloutCompaction = [Bool, Bool]
 type RolloutItem =
-  | `Response RolloutResponse
-  | `InterAgent Unit
-  | `InterAgentMetadata Unit
-  | `Event RolloutEvent
-  | `Compacted RolloutCompaction
-  | `TurnContext RolloutTextOption
-  | `WorldState Unit
-  | `SessionMeta Unit
+  | #Response RolloutResponse
+  | #InterAgent
+  | #InterAgentMetadata
+  | #Event RolloutEvent
+  | #Compacted RolloutCompaction
+  | #TurnContext RolloutTextOption
+  | #WorldState
+  | #SessionMeta
 
 type RolloutItems = List RolloutItem
 

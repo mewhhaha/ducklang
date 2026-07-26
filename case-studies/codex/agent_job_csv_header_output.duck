@@ -5,22 +5,24 @@ const {} = import "./agent_job_export_types.duck" ();
 
 type AgentJobCsvHeaderOutputHeaders = AgentJobCreateHeaders
 
-const render_agent_job_csv_headers: AgentJobCsvHeaderOutputHeaders -> Text = headers => {
+const render_agent_job_csv_headers: AgentJobCsvHeaderOutputHeaders -> Text = headers => do
   let current = headers;
   let line = "";
   let first = true;
   let done = false;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [header, tail] = node;
       line = csv_append_field(line, header, first)
       first = false
       current = tail
-    } else {
+    else
       done = true
-    }
-    if done { break; }
-  }
+    end;
+    if done then
+      break;
+    end;
+  end;
   line = csv_append_field(line, "job_id", first)
   line = csv_append_field(line, "item_id", false)
   line = csv_append_field(line, "row_index", false)
@@ -32,6 +34,6 @@ const render_agent_job_csv_headers: AgentJobCsvHeaderOutputHeaders -> Text = hea
   line = csv_append_field(line, "reported_at", false)
   line = csv_append_field(line, "completed_at", false)
   csv_text_append [line, "\n"]
-};
+end;
 
 return { .render_agent_job_csv_headers };

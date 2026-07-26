@@ -1,0 +1,25 @@
+module () where
+
+const { .render_realtime_delegation } = import "./realtime.duck" ();
+
+let handoff: Text = render_realtime_delegation(
+  "run <now> & wait",
+  #NoRealtimeTranscriptDelta,
+  #RealtimeHandoff,
+);
+let transcript_tail: Text = render_realtime_delegation(
+  "continue",
+  #RealtimeTranscriptDelta "last <bit> & more",
+  #RealtimeTranscriptTailFlush,
+);
+let empty_transcript_tail: Text = render_realtime_delegation(
+  "continue",
+  #RealtimeTranscriptDelta "",
+  #RealtimeTranscriptTailFlush,
+);
+
+return {
+  .handoff = handoff,
+  .transcript_tail = transcript_tail,
+  .empty_transcript_tail = empty_transcript_tail,
+};

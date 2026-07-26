@@ -14,82 +14,82 @@ const {} = import "./app_server_thread_response_types.duck" ();
 type FixtureMetadata = AppServerThreadResponseMetadata
 type FixtureTexts = AppServerTexts
 
-const field_is_string = (fields, key: Text, expected: Text) => {
-  if let `Found value = json_object_get(key, fields) {
-    if let `String text = value { text == expected } else { false }
-  } else { false }
-};
+const field_is_string = (fields, key: Text, expected: Text) => do
+  if let #Found value = json_object_get(key, fields) then
+    if let #String text = value then text == expected else false end;
+  else false end;
+end;
 
-const field_is_null = (fields, key: Text) => {
-  if let `Found value = json_object_get(key, fields) {
-    if let `Null () = value { true } else { false }
-  } else { false }
-};
+const field_is_null = (fields, key: Text) => do
+  if let #Found value = json_object_get(key, fields) then
+    if let #Null = value then true else false end;
+  else false end;
+end;
 
-const field_is_first_string = (fields, key: Text, expected: Text) => {
-  if let `Found value = json_object_get(key, fields) {
-    if let `Array values = value {
-      if let `Cons node = values {
+const field_is_first_string = (fields, key: Text, expected: Text) => do
+  if let #Found value = json_object_get(key, fields) then
+    if let #Array values = value then
+      if let #Cons node = values then
         let [first, _] = node;
-        if let `String text = first { text == expected } else { false }
-      } else { false }
-    } else { false }
-  } else { false }
-};
+        if let #String text = first then text == expected else false end;
+      else false end;
+    else false end;
+  else false end;
+end;
 
 let thread_fields = json_object_prepend("id", json_string "thread-1", json_object_empty());
-let roots: FixtureTexts = `Cons (["/repo", `Nil ()]);
-let sources: FixtureTexts = `Cons (["/repo/AGENTS.md", `Nil ()]);
+let roots: FixtureTexts = #Cons (["/repo", #Nil]);
+let sources: FixtureTexts = #Cons (["/repo/AGENTS.md", #Nil]);
 let metadata: FixtureMetadata = [
   json_object thread_fields,
   "gpt-5.4",
   "openai",
-  `None (),
+  #None,
   "/repo",
   roots,
   sources,
   json_string "on-request",
   json_string "user",
   json_string "workspace-write",
-  `Some (json_string "workspace-write"),
-  `Some (json_string "high"),
-  `ExperimentalThreadResponse (),
+  #Some (json_string "workspace-write"),
+  #Some (json_string "high"),
+  #ExperimentalThreadResponse,
 ];
 let start_value = materialize_thread_start_response metadata;
 let score = 0;
 
-if let `Object fields = start_value {
+if let #Object fields = start_value then
   if field_is_string(fields, "model", "gpt-5.4") && field_is_string(
     fields,
     "modelProvider",
     "openai",
-  ) && field_is_string(fields, "cwd", "/repo") {
+  ) && field_is_string(fields, "cwd", "/repo") then
     score = score + 1
-  }
-  if field_is_null(fields, "serviceTier") && field_is_string(fields, "reasoningEffort", "high") {
+  end;
+  if field_is_null(fields, "serviceTier") && field_is_string(fields, "reasoningEffort", "high") then
     score = score + 10
-  }
+  end;
   if field_is_first_string(fields, "runtimeWorkspaceRoots", "/repo") && field_is_first_string(
     fields,
     "instructionSources",
     "/repo/AGENTS.md",
-  ) {
+  ) then
     score = score + 100
-  }
+  end;
   if field_is_string(fields, "approvalPolicy", "on-request") && field_is_string(
     fields,
     "approvalsReviewer",
     "user",
-  ) && field_is_string(fields, "sandbox", "workspace-write") {
+  ) && field_is_string(fields, "sandbox", "workspace-write") then
     score = score + 1000
-  }
+  end;
   if field_is_string(fields, "activePermissionProfile", "workspace-write") && field_is_string(
     fields,
     "multiAgentMode",
     "explicitRequestOnly",
-  ) {
+  ) then
     score = score + 10000
-  }
-}
+  end;
+end;
 
 return { .score = score };

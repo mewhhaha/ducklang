@@ -17,236 +17,236 @@ type ProtocolJson = Json
 type ModelToolCall = [Text, Text, Text]
 
 type ModelEvent =
-  | `Message Text
-  | `ToolCall ModelToolCall
-  | `Completed Unit
-  | `Error Text
-  | `Ignored Unit
+  | #Message Text
+  | #ToolCall ModelToolCall
+  | #Completed
+  | #Error Text
+  | #Ignored
 
 type ModelEventResult =
-  | `Ok ModelEvent
-  | `Err Text
+  | #Ok ModelEvent
+  | #Err Text
 
-const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => {
+const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => do
   let text: Text = "";
 
-  if let `Array values = content {
+  if let #Array values = content then
     let current = values;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [value, tail] = node;
 
-        if let `Object fields = value {
+        if let #Object fields = value then
           let field_current = fields;
           let content_type: Text = "";
           let content_text: Text = "";
           let fields_done = false;
 
-          loop {
-            if let `Cons field_node = field_current {
+          loop do
+            if let #Cons field_node = field_current then
               let [member, field_tail] = field_node;
               let [key, field_value] = member;
 
-              if key == "type" {
-                if let `String value_text = field_value {
+              if key == "type" then
+                if let #String value_text = field_value then
                   content_type = value_text
-                }
-              } else if key == "text" {
-                if let `String value_text = field_value {
+                end;
+              else key == "text" then
+                if let #String value_text = field_value then
                   content_text = value_text
-                }
-              }
+                end;
+              end;
 
               field_current = field_tail
-            } else {
+            else
               fields_done = true
-            }
+            end;
 
-            if fields_done {
+            if fields_done then
               break;
-            }
-          }
+            end;
+          end;
 
-          if content_type == "output_text" {
+          if content_type == "output_text" then
             text = text_append [text, content_text]
-          }
-        }
+          end;
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
   text
-};
+end;
 
-const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson) => {
+const decode_output_item: ProtocolJson -> ModelEventResult = (item: ProtocolJson) => do
   let item_type: Text = "";
   let call_id: Text = "";
   let name: Text = "";
   let arguments: Text = "";
   let message: Text = "";
 
-  if let `Object fields = item {
+  if let #Object fields = item then
     let current = fields;
     let done = false;
 
-    loop {
-      if let `Cons node = current {
+    loop do
+      if let #Cons node = current then
         let [member, tail] = node;
         let [key, value] = member;
 
-        if key == "type" {
-          if let `String text = value {
+        if key == "type" then
+          if let #String text = value then
             item_type = text
-          }
-        } else if key == "call_id" {
-          if let `String text = value {
+          end;
+        else key == "call_id" then
+          if let #String text = value then
             call_id = text
-          }
-        } else if key == "name" {
-          if let `String text = value {
+          end;
+        else key == "name" then
+          if let #String text = value then
             name = text
-          }
-        } else if key == "arguments" {
-          if let `String text = value {
+          end;
+        else key == "arguments" then
+          if let #String text = value then
             arguments = text
-          }
-        } else if key == "content" {
+          end;
+        else key == "content" then
           message = decode_message_content value
-        }
+        end;
 
         current = tail
-      } else {
+      else
         done = true
-      }
+      end;
 
-      if done {
+      if done then
         break;
-      }
-    }
-  }
+      end;
+    end;
+  end;
 
-  if item_type == "function_call" {
-    if call_id == "" || name == "" || arguments == "" {
-      `Err ("Function call is missing call_id, name, or arguments")
-    } else {
+  if item_type == "function_call" then
+    if call_id == "" || name == "" || arguments == "" then
+      #Err ("Function call is missing call_id, name, or arguments")
+    else
       let tool_call: ModelToolCall = [call_id, name, arguments];
-      `Ok (`ToolCall tool_call)
-    }
-  } else if item_type == "message" {
-    `Ok (`Message message)
-  } else {
-    `Ok (`Ignored ())
-  }
-};
+      #Ok (#ToolCall tool_call)
+    end;
+  else item_type == "message" then
+    #Ok (#Message message)
+  else
+    #Ok (#Ignored)
+  end;
+end;
 
-const decode_model_event: Text -> ModelEventResult = (document: Text) => {
+const decode_model_event: Text -> ModelEventResult = (document: Text) => do
   let parsed = parse_json_document document;
 
-  if let `Err error = parsed {
+  if let #Err error = parsed then
     let [_, message] = error;
-    `Err (message)
-  } else if let `Ok value_and_index = parsed {
+    #Err (message)
+  else let #Ok value_and_index = parsed then
     let [value, _] = value_and_index;
     let event_type: Text = "";
     let delta: Text = "";
     let error_message: Text = "";
     let item = value;
 
-    if let `Object fields = value {
+    if let #Object fields = value then
       let current = fields;
       let done = false;
 
-      loop {
-        if let `Cons node = current {
+      loop do
+        if let #Cons node = current then
           let [member, tail] = node;
           let [key, field_value] = member;
 
-          if key == "type" {
-            if let `String text = field_value {
+          if key == "type" then
+            if let #String text = field_value then
               event_type = text
-            }
-          } else if key == "delta" {
-            if let `String text = field_value {
+            end;
+          else key == "delta" then
+            if let #String text = field_value then
               delta = text
-            }
-          } else if key == "message" {
-            if let `String text = field_value {
+            end;
+          else key == "message" then
+            if let #String text = field_value then
               error_message = text
-            }
-          } else if key == "item" {
+            end;
+          else key == "item" then
             item = field_value
-          } else if key == "error" {
-            if let `Object error_fields = field_value {
+          else key == "error" then
+            if let #Object error_fields = field_value then
               let error_current = error_fields;
               let error_done = false;
 
-              loop {
-                if let `Cons error_node = error_current {
+              loop do
+                if let #Cons error_node = error_current then
                   let [error_member, error_tail] = error_node;
                   let [error_key, error_value] = error_member;
 
-                  if error_key == "message" {
-                    if let `String text = error_value {
+                  if error_key == "message" then
+                    if let #String text = error_value then
                       error_message = text
-                    }
-                  }
+                    end;
+                  end;
 
                   error_current = error_tail
-                } else {
+                else
                   error_done = true
-                }
+                end;
 
-                if error_done {
+                if error_done then
                   break;
-                }
-              }
-            }
-          }
+                end;
+              end;
+            end;
+          end;
 
           current = tail
-        } else {
+        else
           done = true
-        }
+        end;
 
-        if done {
+        if done then
           break;
-        }
-      }
+        end;
+      end;
 
-      if event_type == "response.output_text.delta" {
-        `Ok (`Message delta)
-      } else if event_type == "response.output_item.done" {
+      if event_type == "response.output_text.delta" then
+        #Ok (#Message delta)
+      else event_type == "response.output_item.done" then
         decode_output_item item
-      } else if event_type == "response.completed" {
-        `Ok (`Completed ())
-      } else if event_type == "error" || event_type == "response.failed" {
-        if error_message == "" {
-          `Err ("Model response failed without a message")
-        } else {
-          `Ok (`Error error_message)
-        }
-      } else {
-        `Ok (`Ignored ())
-      }
-    } else {
-      `Err ("Model event must be a JSON object")
-    }
-  } else {
-    `Err ("Invalid JSON parse result")
-  }
-};
+      else event_type == "response.completed" then
+        #Ok (#Completed)
+      else event_type == "error" || event_type == "response.failed" then
+        if error_message == "" then
+          #Err ("Model response failed without a message")
+        else
+          #Ok (#Error error_message)
+        end;
+      else
+        #Ok (#Ignored)
+      end;
+    else
+      #Err ("Model event must be a JSON object")
+    end;
+  else
+    #Err ("Invalid JSON parse result")
+  end;
+end;
 
-const encode_user_message: Text -> Text = (prompt: Text) => {
+const encode_user_message: Text -> Text = (prompt: Text) => do
   let content_fields = json_object_empty();
   content_fields = json_object_prepend("text", json_string prompt, content_fields)
   content_fields = json_object_prepend("type", json_string "input_text", content_fields)
@@ -256,15 +256,15 @@ const encode_user_message: Text -> Text = (prompt: Text) => {
   fields = json_object_prepend("role", json_string "user", fields)
   fields = json_object_prepend("type", json_string "message", fields)
   encode_json(json_object fields)
-};
+end;
 
-const encode_tool_result: [Text, Text] -> Text = (call_id: Text, output: Text) => {
+const encode_tool_result: [Text, Text] -> Text = (call_id: Text, output: Text) => do
   let fields = json_object_empty();
   fields = json_object_prepend("output", json_string output, fields)
   fields = json_object_prepend("call_id", json_string call_id, fields)
   fields = json_object_prepend("type", json_string "function_call_output", fields)
   encode_json(json_object fields)
-};
+end;
 
 return {
   .decode_model_event,

@@ -14,28 +14,28 @@ let original: FixtureFragment = [
   .hook_run_id = "hook&\"1",
 ];
 
-if let `Some rendered = render_hook_prompt_fragment original {
-  if let `Some parsed = parse_hook_prompt_fragment rendered {
-    if parsed.text == "Retry with \"waves\" & <tides> 'now'." {
-      if parsed.hook_run_id == "hook&\"1" {
+if let #Some rendered = render_hook_prompt_fragment original then
+  if let #Some parsed = parse_hook_prompt_fragment rendered then
+    if parsed.text == "Retry with \"waves\" & <tides> 'now'." then
+      if parsed.hook_run_id == "hook&\"1" then
         score = score + 1
-      }
-    }
-  }
-}
+      end;
+    end;
+  end;
+end;
 
-if let `None () = parse_hook_prompt_fragment(
+if let #None = parse_hook_prompt_fragment(
   "<hook_prompt hook_run_id=\"hook-run-1\">bad &unknown; entity</hook_prompt>",
-) {
-  if let `None () = parse_hook_prompt_fragment(
+) then
+  if let #None = parse_hook_prompt_fragment(
     "<hook_prompt hook_run_id=\"   \">blank id</hook_prompt>",
-  ) {
-    if let `None () = parse_hook_prompt_fragment(
+  ) then
+    if let #None = parse_hook_prompt_fragment(
       "<hook_prompt hook_run_id=\"hook-run-1\"><raw>xml</raw></hook_prompt>",
-    ) {
+    ) then
       score = score + 10
-    }
-  }
-}
+    end;
+  end;
+end;
 
 return { .score = score };

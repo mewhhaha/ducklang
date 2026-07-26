@@ -21,26 +21,26 @@ type ExecuteRuntimeResponseValue = CodeModeRuntimeResponse
 type ExecuteCompletion = CodeModeExecuteCompletion
 type RuntimeTokenLimit = CodeModeWaitU64Option
 
-let run_code_mode_execute = (execution: ExecuteRuntime) => {
+let run_code_mode_execute = (execution: ExecuteRuntime) => do
   let call_plan = plan_code_mode_execute_call execution.invocation;
-  if let `RejectCodeModeExecute message = call_plan {
-    return `CodeModeExecuteRejected message;
-  }
-  let `StartCodeModeExecute request = call_plan else {
-    return `CodeModeExecuteRejected "code-mode exec call planning produced no request";
-  };
+  if let #RejectCodeModeExecute message = call_plan then
+    return #CodeModeExecuteRejected message;
+  end;
+  let #StartCodeModeExecute request = call_plan else do
+    return #CodeModeExecuteRejected "code-mode exec call planning produced no request";
+  end;
   let typed_request: ExecuteRuntimeRequest = request;
 
   timer_output <- CodeModeExecuteHost.start_timer()
   let timer: ExecuteTimer = timer_output;
   start_output <- CodeModeExecuteHost.execute(&typed_request)
   let start_result: ExecuteStartResult = start_output;
-  if let `CodeModeExecuteStartFailed message = start_result {
-    return `CodeModeExecuteRejected message;
-  }
-  let `CodeModeExecuteStarted started = start_result else {
-    return `CodeModeExecuteRejected "code-mode runtime returned no started cell";
-  };
+  if let #CodeModeExecuteStartFailed message = start_result then
+    return #CodeModeExecuteRejected message;
+  end;
+  let #CodeModeExecuteStarted started = start_result else do
+    return #CodeModeExecuteRejected "code-mode runtime returned no started cell";
+  end;
   let typed_started: ExecuteRuntimeStartedCell = started;
 
   let started_plan: ExecuteRuntimeStartedPlan = plan_code_mode_execute_started(
@@ -56,34 +56,34 @@ let run_code_mode_execute = (execution: ExecuteRuntime) => {
     started_plan.await_initial_response_cell_id
   )
   let initial_result: ExecuteInitialResult = initial_output;
-  if let `CodeModeInitialResponseFailed message = initial_result {
-    return `CodeModeExecuteRejected message;
-  }
-  let `CodeModeInitialResponse response = initial_result else {
-    return `CodeModeExecuteRejected "code-mode runtime returned no initial response";
-  };
+  if let #CodeModeInitialResponseFailed message = initial_result then
+    return #CodeModeExecuteRejected message;
+  end;
+  let #CodeModeInitialResponse response = initial_result else do
+    return #CodeModeExecuteRejected "code-mode runtime returned no initial response";
+  end;
   let typed_response: ExecuteRuntimeResponseValue = response;
 
   _ <- CodeModeExecuteHost.record_initial_response(&trace, &typed_response)
-  if code_mode_execute_initial_response_is_terminal typed_response {
+  if code_mode_execute_initial_response_is_terminal typed_response then
     _ <- CodeModeExecuteHost.record_ended(&trace, &typed_response)
     _ <- CodeModeExecuteHost.close_cell(typed_started.cell_id)
-  }
+  end;
 
   _ <- CodeModeExecuteHost.wait_until_elicitations_clear()
   elapsed_output <- CodeModeExecuteHost.elapsed_microseconds(&timer)
   let elapsed_microseconds: I64 = elapsed_output;
 
-  let token_limit: RuntimeTokenLimit = `WaitLimitMissing ();
-  if let `CodeModeExecLimitPresent maximum_tokens = typed_request.max_output_tokens {
-    token_limit = `WaitLimitPresent (`U64Decimal (format_i64 maximum_tokens))
-  }
+  let token_limit: RuntimeTokenLimit = #WaitLimitMissing;
+  if let #CodeModeExecLimitPresent maximum_tokens = typed_request.max_output_tokens then
+    token_limit = #WaitLimitPresent (#U64Decimal (format_i64 maximum_tokens))
+  end;
   let completion: ExecuteCompletion = [
     .response = typed_response,
     .image_detail_policy = execution.image_detail_policy,
     .token_limit = token_limit,
-    .elapsed = `ElapsedMicroseconds elapsed_microseconds];
-  `CodeModeExecuteCompleted completion
-};
+    .elapsed = #ElapsedMicroseconds elapsed_microseconds];
+  #CodeModeExecuteCompleted completion
+end;
 
 return { .run_code_mode_execute };

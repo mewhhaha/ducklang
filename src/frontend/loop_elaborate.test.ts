@@ -9,9 +9,9 @@ import { parse_source } from "./parser.ts";
 Deno.test("loop elaboration makes recursive state explicit", () => {
   const source = parse_source(`
 let total: I32 = 0;
-for index in 0..3 {
+for index in 0..3 do
   total = total + index
-}
+end
 total
 `);
 
@@ -31,9 +31,9 @@ Deno.test("collection loops share the recursive range representation", () => {
   const source = parse_source(`
 let values = [20, 22];
 let total = 0;
-for value in values {
+for value in values do
   total = total + value
-}
+end
 total
 `);
 

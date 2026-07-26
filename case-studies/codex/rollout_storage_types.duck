@@ -14,13 +14,13 @@ type RolloutGitInfo = struct {
 type RolloutGitInfoOption = Option RolloutGitInfo
 
 type RolloutSessionSource =
-  | `Cli Unit
-  | `VsCode Unit
-  | `Exec Unit
-  | `AppServer Unit
-  | `Custom Text
-  | `SubAgent Json
-  | `Unknown Unit
+  | #Cli
+  | #VsCode
+  | #Exec
+  | #AppServer
+  | #Custom Text
+  | #SubAgent Json
+  | #Unknown
 
 type RolloutThreadSummary = struct {
   .path = Text,
@@ -45,8 +45,8 @@ type RolloutThreadSummaries = List RolloutThreadSummary
 type RolloutThreadSummaryOption = Option RolloutThreadSummary
 
 type RolloutThreadSortKey =
-  | `CreatedAt Unit
-  | `UpdatedAt Unit
+  | #CreatedAt
+  | #UpdatedAt
 
 type RolloutStorageTexts = List Text
 
@@ -58,7 +58,7 @@ type RolloutThreadQuery = [
   RolloutStorageTexts,
   RolloutStorageTexts,
   Text,
-  I32 ]
+  I32]
 type RolloutThreadPage = [RolloutThreadSummaries, RolloutStorageTextOption, I32, Bool]
 
 return {};

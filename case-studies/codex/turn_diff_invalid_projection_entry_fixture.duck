@@ -12,26 +12,26 @@ type FixtureAdd = TurnDiffAdd
 type FixtureFileMutation = TurnDiffFileMutation
 type FixtureMutation = TurnDiffMutation
 
-let none: FixtureTextOption = `None ();
+let none: FixtureTextOption = #None;
 let addition: FixtureAdd = [.content = "visible\n", .overwritten_content = none];
-let file_mutation: FixtureFileMutation = `TurnDiffAdd addition;
+let file_mutation: FixtureFileMutation = #TurnDiffAdd addition;
 let mutation: FixtureMutation = [.path = "visible.txt", .mutation = file_mutation];
 let state = track_turn_diff_delta(empty_turn_diff(), "", turn_diff_fixture_exact_delta mutation);
 
-let no_mutations: FixtureMutations = `Nil ();
+let no_mutations: FixtureMutations = #Nil;
 let inexact: FixtureDelta = [.exact = false, .mutations = no_mutations];
 state = track_turn_diff_delta(state, "", inexact)
 
 let ignored_addition: FixtureAdd = [.content = "ignored\n", .overwritten_content = none];
-let ignored_file_mutation: FixtureFileMutation = `TurnDiffAdd ignored_addition;
+let ignored_file_mutation: FixtureFileMutation = #TurnDiffAdd ignored_addition;
 let ignored_mutation: FixtureMutation = [.path = "ignored.txt", .mutation = ignored_file_mutation];
 state = track_turn_diff_delta(state, "", turn_diff_fixture_exact_delta ignored_mutation)
 
 let score: I32 = 0;
-if !(state.valid) && state.next_revision == 1 {
-  if let `Nil () = turn_diff_net_changes state {
+if !(state.valid) && state.next_revision == 1 then
+  if let #Nil = turn_diff_net_changes state then
     score = score + 1
-  }
-}
+  end;
+end;
 
 return { .score = score };

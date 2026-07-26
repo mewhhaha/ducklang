@@ -6,12 +6,12 @@ const { .encode_request_user_input_response } = import "./request_user_input_out
 type UserInputHostResponse = RequestUserInputHostResponse
 type UserInputExecutionResult = RequestUserInputExecutionResult
 
-const finish_request_user_input: UserInputHostResponse -> UserInputExecutionResult = response => {
-  if let `Answered answer = response {
-    `Completed (encode_request_user_input_response answer)
-  } else {
-    `Rejected "request_user_input was cancelled before receiving a response"
-  }
-};
+const finish_request_user_input: UserInputHostResponse -> UserInputExecutionResult = response => do
+  if let #Answered answer = response then
+    #Completed (encode_request_user_input_response answer)
+  else
+    #Rejected "request_user_input was cancelled before receiving a response"
+  end;
+end;
 
 return { .finish_request_user_input };

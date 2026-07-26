@@ -8,17 +8,17 @@ const { .decode_view_image_value, .view_image_parse_failure } = import "./view_i
 
 type ImageJsonParseResult = ViewImageParseResult
 
-let parse_view_image_args: Text -> ImageJsonParseResult = document => {
+let parse_view_image_args: Text -> ImageJsonParseResult = document => do
   let parsed = parse_json_document document;
-  if let `Ok value_and_position = parsed {
+  if let #Ok value_and_position = parsed then
     let [value, _] = value_and_position;
     decode_view_image_value value
-  } else if let `Err error = parsed {
+  else let #Err error = parsed then
     let [position, message] = error;
     view_image_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
-  } else {
+  else
     view_image_parse_failure "invalid JSON parse result"
-  }
-};
+  end;
+end;
 
 return { .parse_view_image_args };

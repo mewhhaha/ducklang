@@ -15,7 +15,7 @@ type AgentJobPreparedItem = struct {
 
 type AgentJobPreparedItemNode = [AgentJobPreparedItem, AgentJobPreparedItems]
 type AgentJobPreparedItems =
-  | `Nil Unit
-  | `Cons AgentJobPreparedItemNode
+  | #Nil
+  | #Cons AgentJobPreparedItemNode
 
 return {};

@@ -103,7 +103,7 @@ Deno.test("completion ranks local scope before outer scope and keywords", () => 
 
 Deno.test("completion lists union constructors with payload details", () => {
   const result = complete(
-    `type Result = | \`Ok Int | \`Error Text
+    `type Result = | #Ok Int | #Error Text
 let value: Result = \``,
   );
 

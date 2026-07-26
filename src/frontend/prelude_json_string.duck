@@ -2,49 +2,51 @@ module () where
 
 const { .text_append, .text_get, .text_length, .text_slice } = import "duck:prelude/runtime" ();
 
-let encode_json_string: Text -> Text = text => {
+let encode_json_string: Text -> Text = text => do
   let encoded: Text = "\"";
   let index = 0;
   let segment_start = 0;
 
-  loop {
-    if index >= text_length text { break; }
+  loop do
+    if index >= text_length text then
+      break;
+    end;
     let byte = text_get [text, index];
 
-    if byte == 34 || byte == 92 || byte < 32 {
+    if byte == 34 || byte == 92 || byte < 32 then
       encoded = text_append [encoded, text_slice [text, segment_start, index]]
 
-      if byte == 34 {
+      if byte == 34 then
         encoded = text_append [encoded, "\\\""]
-      } else if byte == 92 {
+      else byte == 92 then
         encoded = text_append [encoded, "\\\\"]
-      } else if byte == 8 {
+      else byte == 8 then
         encoded = text_append [encoded, "\\b"]
-      } else if byte == 9 {
+      else byte == 9 then
         encoded = text_append [encoded, "\\t"]
-      } else if byte == 10 {
+      else byte == 10 then
         encoded = text_append [encoded, "\\n"]
-      } else if byte == 12 {
+      else byte == 12 then
         encoded = text_append [encoded, "\\f"]
-      } else if byte == 13 {
+      else byte == 13 then
         encoded = text_append [encoded, "\\r"]
-      } else {
+      else
         let high = byte / 16;
         let low = byte % 16;
         encoded = text_append [encoded, "\\u00"]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", high, high + 1]]
         encoded = text_append [encoded, text_slice ["0123456789abcdef", low, low + 1]]
-      }
+      end;
 
       index = index + 1
       segment_start = index
-    } else {
+    else
       index = index + 1
-    }
-  }
+    end;
+  end;
 
   encoded = text_append [encoded, text_slice [text, segment_start, index]]
   text_append [encoded, "\""]
-};
+end;
 
 return { .encode_json_string };

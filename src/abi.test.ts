@@ -67,7 +67,7 @@ Deno.test("gpufuck ABI rejects source-defined effects in Init", () => {
       build_abi_manifest(Source.parse(`
 effect Counter { get: () => I32 }
 declare Init { counter: Counter }
-return {};
+return doend;
 `)),
     "Init field must name a declared effect: counter: Counter",
   );
@@ -183,7 +183,7 @@ Deno.test("gpufuck ABI builds recursive type schemas", () => {
 Deno.test("gpufuck ABI records scalar float effect contracts", () => {
   const manifest = build_abi_manifest(Source.parse(`
 declare effect FloatMath { scale: (F32) => F32, widen: (F64) => F64 }
-return {};
+return doend;
 `));
 
   assert_equals(manifest.effects.FloatMath?.operations.scale, {

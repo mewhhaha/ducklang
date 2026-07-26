@@ -11,29 +11,36 @@ const args = comptime list Text;
 let score = 0;
 
 let status: FixtureResult = parse_cloud_status(args.singleton("task-1"));
-if let `Ok command = status {
-  if let `CloudStatus task_id = command {
-    if task_id == "task-1" { score = score + 1 }
-  }
-}
+if let #Ok command = status then
+  if let #CloudStatus task_id = command then
+    if task_id == "task-1" then
+      score = score + 1
+    end;
+  end;
+end;
 
-let apply_args: FixtureArgs = args.prepend("task-2", args.prepend("--attempt", args.singleton("2")));
+let apply_args: FixtureArgs =
+  args.prepend("task-2", args.prepend("--attempt", args.singleton("2")));
 let applied: FixtureResult = parse_cloud_task("apply", apply_args);
-if let `Ok command = applied {
-  if let `CloudApply options = command {
-    if let `Some attempt = options.attempt {
-      if options.task_id == "task-2" && attempt == 2i64 { score = score + 10 }
-    }
-  }
-}
+if let #Ok command = applied then
+  if let #CloudApply options = command then
+    if let #Some attempt = options.attempt then
+      if options.task_id == "task-2" && attempt == 2i64 then
+        score = score + 10
+      end;
+    end;
+  end;
+end;
 
 let diffed: FixtureResult = parse_cloud_task("diff", args.singleton("task-3"));
-if let `Ok command = diffed {
-  if let `CloudDiff options = command {
-    if options.task_id == "task-3" {
-      if let `None () = options.attempt { score = score + 100 }
-    }
-  }
-}
+if let #Ok command = diffed then
+  if let #CloudDiff options = command then
+    if options.task_id == "task-3" then
+      if let #None = options.attempt then
+        score = score + 100
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

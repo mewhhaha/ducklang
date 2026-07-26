@@ -22,12 +22,12 @@ let plan_spawn_agents_on_csv: [
   remote_environment: Bool,
   maximum_threads: I32,
   configured_runtime_seconds: AgentJobSpawnCallOption,
-) => {
-  if let `Unsupported () = payload {
-    `RejectSpawn "agent jobs handler received unsupported payload"
-  } else if let `Function document = payload {
+) => do
+  if let #Unsupported = payload then
+    #RejectSpawn "agent jobs handler received unsupported payload"
+  else let #Function document = payload then
     let decoded = decode_agent_job_spawn_json document;
-    if let `SpawnDecoded args = decoded {
+    if let #SpawnDecoded args = decoded then
       prepare_agent_job_spawn(
         args,
         cwd,
@@ -36,14 +36,14 @@ let plan_spawn_agents_on_csv: [
         maximum_threads,
         configured_runtime_seconds,
       )
-    } else if let `SpawnDecodeFailed reason = decoded {
-      `RejectSpawn reason
-    } else {
-      `RejectSpawn "agent job argument decoder produced no result"
-    }
-  } else {
-    `RejectSpawn "agent jobs handler received unsupported payload"
-  }
-};
+    else let #SpawnDecodeFailed reason = decoded then
+      #RejectSpawn reason
+    else
+      #RejectSpawn "agent job argument decoder produced no result"
+    end;
+  else
+    #RejectSpawn "agent jobs handler received unsupported payload"
+  end;
+end;
 
 return { .plan_spawn_agents_on_csv };

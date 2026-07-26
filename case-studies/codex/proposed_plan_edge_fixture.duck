@@ -7,36 +7,41 @@ const { .finish_proposed_plan, .new_proposed_plan_parser, .push_proposed_plan_ch
 type FixtureSegment = ProposedPlanSegment
 type FixtureSegments = ProposedPlanSegments
 
-const render_plan_segments = (segments: FixtureSegments) => {
+const render_plan_segments = (segments: FixtureSegments) => do
   let current = segments;
   let rendered = "";
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let typed_node: ListNode FixtureSegment = node;
       let [segment, remaining] = typed_node;
 
-      match segment {
-        | `Normal text => { rendered = text_append [
-          rendered,
-          text_append ["N(", text_append [text, ")"]],
-        ] }
-        | `ProposedPlanStart () => { rendered = text_append [rendered, "S"] }
-        | `ProposedPlanDelta text => { rendered = text_append [
-          rendered,
-          text_append ["D(", text_append [text, ")"]],
-        ] }
-        | `ProposedPlanEnd () => { rendered = text_append [rendered, "E"] }
-      }
+      case segment of
+        #Normal text => do
+          rendered = text_append [
+            rendered,
+            text_append ["N(", text_append [text, ")"]],
+          ] end,
+        #ProposedPlanStart => do
+          rendered = text_append [rendered, "S"]
+        end,
+        #ProposedPlanDelta text => do
+          rendered = text_append [
+            rendered,
+            text_append ["D(", text_append [text, ")"]],
+          ] end,
+        #ProposedPlanEnd => do
+          rendered = text_append [rendered, "E"]
+        end;
 
       current = remaining
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
   rendered
-};
+end;
 
 let score = 0;
 let malformed_close = push_proposed_plan_chunk(
@@ -47,17 +52,21 @@ let [malformed_close_parser, malformed_close_prefix, malformed_close_prefix_segm
   malformed_close;
 let malformed_close_finish = finish_proposed_plan malformed_close_parser;
 let [_, malformed_close_tail, malformed_close_tail_segments] = malformed_close_finish;
-if malformed_close_prefix == "" && malformed_close_tail == "" && render_plan_segments malformed_close_prefix_segments == "SD(body\n</proposed_plan> extra\n)E" && render_plan_segments malformed_close_tail_segments == "" {
-  score = score + 1
-}
+if malformed_close_prefix == "" && malformed_close_tail == ""
+  && render_plan_segments malformed_close_prefix_segments == "SD(body\n</proposed_plan> extra\n)E"
+  && render_plan_segments malformed_close_tail_segments == "" then
+    score = score + 1
+  end;
 
 let buffered_prefix = push_proposed_plan_chunk(new_proposed_plan_parser(), "<prop");
 let [buffered_prefix_parser, buffered_prefix_visible, buffered_prefix_segments] = buffered_prefix;
 let buffered_prefix_finish = finish_proposed_plan buffered_prefix_parser;
 let [_, buffered_prefix_tail, buffered_prefix_tail_segments] = buffered_prefix_finish;
-if buffered_prefix_visible == "" && render_plan_segments buffered_prefix_segments == "" && buffered_prefix_tail == "<prop" && render_plan_segments buffered_prefix_tail_segments == "N(<prop)" {
-  score = score + 1
-}
+if buffered_prefix_visible == "" && render_plan_segments buffered_prefix_segments == ""
+  && buffered_prefix_tail == "<prop" && render_plan_segments buffered_prefix_tail_segments
+  == "N(<prop)" then
+    score = score + 1
+  end;
 
 let disproved_prefix_seed = push_proposed_plan_chunk(new_proposed_plan_parser(), "<prop");
 let [disproved_prefix_parser, _, _] = disproved_prefix_seed;
@@ -66,8 +75,10 @@ let [disproved_prefix_finish_parser, disproved_prefix_visible, disproved_prefix_
   disproved_prefix;
 let disproved_prefix_finish = finish_proposed_plan disproved_prefix_finish_parser;
 let [_, disproved_prefix_tail, disproved_prefix_tail_segments] = disproved_prefix_finish;
-if disproved_prefix_visible == "<propX" && render_plan_segments disproved_prefix_segments == "N(<propX)" && disproved_prefix_tail == "" && render_plan_segments disproved_prefix_tail_segments == "" {
-  score = score + 1
-}
+if disproved_prefix_visible == "<propX" && render_plan_segments disproved_prefix_segments
+  == "N(<propX)" && disproved_prefix_tail == ""
+  && render_plan_segments disproved_prefix_tail_segments == "" then
+    score = score + 1
+  end;
 
 return { .score = score };

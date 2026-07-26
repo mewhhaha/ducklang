@@ -27,16 +27,17 @@ let input: FixtureArgs = args.prepend(
 let parsed: FixtureResult = parse_marketplace_add input;
 let score = 0;
 
-if let `Ok command = parsed {
-  if let `MarketplaceAdd options = command {
-    if let `Some ref_name = options.ref_name {
+if let #Ok command = parsed then
+  if let #MarketplaceAdd options = command then
+    if let #Some ref_name = options.ref_name then
       let first = args.nth_or("", 0, options.sparse_paths);
       let second = args.nth_or("", 1, options.sparse_paths);
-      if options.source == "https://example.com/plugins.git" && ref_name == "main" && first == "first" && second == "second" && options.json {
-        score = 1
-      }
-    }
-  }
-}
+      if options.source == "https://example.com/plugins.git" && ref_name == "main" && first
+        == "first" && second == "second" && options.json then
+          score = 1
+        end;
+    end;
+  end;
+end;
 
 return { .score = score };

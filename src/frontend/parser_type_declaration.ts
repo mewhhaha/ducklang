@@ -131,7 +131,11 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
         };
       }
 
-      if (this.peek().kind === "symbol" && this.peek().text === "`") {
+      if (
+        this.peek().kind === "symbol" && this.peek().text === "#" &&
+        this.peek(1).kind === "name" &&
+        /^[A-Z][A-Za-z0-9]*$/.test(this.peek(1).text)
+      ) {
         const body_start = this.index;
         const sum = this.parse_sum_type(name, false);
         return {
@@ -190,7 +194,7 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
 
     while (true) {
       const case_start = this.index;
-      this.expect_symbol("`");
+      this.expect_symbol("#");
       const case_name = this.expect_name("Expected sum case name");
       expect(
         /^[A-Z][A-Za-z0-9]*$/.test(case_name),
@@ -198,18 +202,25 @@ export abstract class ParserTypeDeclaration extends ParserStmtBinding {
       );
       expect(!names.has(case_name), "Duplicate sum case: " + case_name);
       names.add(case_name);
-      const member = this.consume_type_member(
-        declaration_name,
-        new Set(["|"]),
-      );
-      let type_name = member.text;
+      let type_name = "Unit";
+      const next = this.peek();
+      const nullary = next.kind === "newline" || next.kind === "eof" ||
+        (next.kind === "symbol" && next.text === "|");
 
-      if (type_name === "[]") {
-        type_name = "Unit";
-      }
+      if (!nullary) {
+        const member = this.consume_type_member(
+          declaration_name,
+          new Set(["|"]),
+        );
+        type_name = member.text;
+        expect(
+          type_name !== "Unit" && type_name !== "[]",
+          "Nullary sum case #" + case_name + " omits `Unit`",
+        );
 
-      if (member.recursive) {
-        recursive = true;
+        if (member.recursive) {
+          recursive = true;
+        }
       }
 
       cases.push(this.concrete_node(case_start, {

@@ -5,70 +5,70 @@ const {} = import "./cli_types.duck" ();
 type CliHeadArgs = CodexCliArgs
 type CliHeadCommand = CodexCliCommand
 
-const classify_cli_head: CliHeadArgs -> CliHeadCommand = (args: CliHeadArgs) => {
-  if let `Cons node = args {
+const classify_cli_head: CliHeadArgs -> CliHeadCommand = (args: CliHeadArgs) => do
+  if let #Cons node = args then
     let [name, tail] = node;
-    if name == "exec" || name == "e" {
-      `Exec tail
-    } else if name == "review" {
-      `Review tail
-    } else if name == "login" {
-      `Login tail
-    } else if name == "logout" {
-      `Logout tail
-    } else if name == "mcp" {
-      `Mcp tail
-    } else if name == "plugin" {
-      `Plugin tail
-    } else if name == "mcp-server" {
-      `McpServer tail
-    } else if name == "app-server" {
-      `AppServer tail
-    } else if name == "remote-control" {
-      `RemoteControl tail
-    } else if name == "app" {
-      `App tail
-    } else if name == "completion" {
-      `Completion tail
-    } else if name == "update" {
-      `Update tail
-    } else if name == "doctor" {
-      `Doctor tail
-    } else if name == "sandbox" {
-      `Sandbox tail
-    } else if name == "debug" {
-      `Debug tail
-    } else if name == "execpolicy" {
-      `Execpolicy tail
-    } else if name == "apply" || name == "a" {
-      `Apply tail
-    } else if name == "resume" {
-      `Resume tail
-    } else if name == "archive" {
-      `Archive tail
-    } else if name == "delete" {
-      `Delete tail
-    } else if name == "unarchive" {
-      `Unarchive tail
-    } else if name == "fork" {
-      `Fork tail
-    } else if name == "cloud" || name == "cloud-tasks" {
-      `Cloud tail
-    } else if name == "responses-api-proxy" {
-      `ResponsesApiProxy tail
-    } else if name == "stdio-to-uds" {
-      `StdioToUds tail
-    } else if name == "exec-server" {
-      `ExecServer tail
-    } else if name == "features" {
-      `Features tail
-    } else {
-      `Interactive args
-    }
-  } else {
-    `Interactive args
-  }
-};
+    if name == "exec" || name == "e" then
+      #Exec tail
+    else name == "review" then
+      #Review tail
+    else name == "login" then
+      #Login tail
+    else name == "logout" then
+      #Logout tail
+    else name == "mcp" then
+      #Mcp tail
+    else name == "plugin" then
+      #Plugin tail
+    else name == "mcp-server" then
+      #McpServer tail
+    else name == "app-server" then
+      #AppServer tail
+    else name == "remote-control" then
+      #RemoteControl tail
+    else name == "app" then
+      #App tail
+    else name == "completion" then
+      #Completion tail
+    else name == "update" then
+      #Update tail
+    else name == "doctor" then
+      #Doctor tail
+    else name == "sandbox" then
+      #Sandbox tail
+    else name == "debug" then
+      #Debug tail
+    else name == "execpolicy" then
+      #Execpolicy tail
+    else name == "apply" || name == "a" then
+      #Apply tail
+    else name == "resume" then
+      #Resume tail
+    else name == "archive" then
+      #Archive tail
+    else name == "delete" then
+      #Delete tail
+    else name == "unarchive" then
+      #Unarchive tail
+    else name == "fork" then
+      #Fork tail
+    else name == "cloud" || name == "cloud-tasks" then
+      #Cloud tail
+    else name == "responses-api-proxy" then
+      #ResponsesApiProxy tail
+    else name == "stdio-to-uds" then
+      #StdioToUds tail
+    else name == "exec-server" then
+      #ExecServer tail
+    else name == "features" then
+      #Features tail
+    else
+      #Interactive args
+    end;
+  else
+    #Interactive args
+  end;
+end;
 
 return {
   .classify_cli_head,

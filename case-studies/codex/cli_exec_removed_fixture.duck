@@ -6,8 +6,8 @@ const {} = import "./cli_types.duck" ();
 type FixtureArgs = CodexCliArgs
 type FixtureResult = CodexExecOptionsResult
 
-let input: FixtureArgs = `Cons (["--full-auto", `Cons (["summarize", `Nil ()])]);
+let input: FixtureArgs = #Cons (["--full-auto", #Cons (["summarize", #Nil])]);
 let parsed: FixtureResult = parse_exec_options input;
-let score = if let `Err _ = parsed { 1 } else { 0 };
+let score = if let #Err _ = parsed then 1 else 0 end;
 
 return { .score = score };

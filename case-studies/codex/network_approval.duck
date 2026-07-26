@@ -27,231 +27,240 @@ type ApprovalFinishResult = NetworkFinishResult
 type ApprovalKeyNode = ListNode ApprovalKey
 type ApprovalCallNode = ListNode ApprovalCall
 
-const empty_network_approval_state: () -> ApprovalState = () => {
-  let active: ApprovalCalls = `Nil ();
-  let approved: ApprovalKeys = `Nil ();
-  let denied: ApprovalKeys = `Nil ();
-  let pending: ApprovalKeys = `Nil ();
+const empty_network_approval_state: () -> ApprovalState = () => do
+  let active: ApprovalCalls = #Nil;
+  let approved: ApprovalKeys = #Nil;
+  let denied: ApprovalKeys = #Nil;
+  let pending: ApprovalKeys = #Nil;
   [active, approved, denied, pending];
-};
+end;
 
-const protocol_label = (protocol: ApprovalProtocol) => {
-  if let `Http () = protocol {
+const protocol_label = (protocol: ApprovalProtocol) => do
+  if let #Http = protocol then
     "http"
-  } else if let `Https () = protocol {
+  else let #Https = protocol then
     "https"
-  } else if let `Socks5Tcp () = protocol {
+  else let #Socks5Tcp = protocol then
     "socks5-tcp"
-  } else {
+  else
     "socks5-udp"
-  }
-};
+  end;
+end;
 
-const host_key_equal = (left: ApprovalKey, right: ApprovalKey) => {
+const host_key_equal = (left: ApprovalKey, right: ApprovalKey) => do
   let [left_environment, left_host, left_protocol, left_port] = left;
   let [right_environment, right_host, right_protocol, right_port] = right;
 
   let hosts_equal = false;
   let host_length = text_length left_host;
-  if host_length == text_length right_host {
+  if host_length == text_length right_host then
     hosts_equal = true
     let index = 0;
-    loop {
-      if index >= host_length { break; }
+    loop do
+      if index >= host_length then
+        break;
+      end;
       let left_byte = text_byte_ascii_lowercase(text_get [left_host, index]);
       let right_byte = text_byte_ascii_lowercase(text_get [right_host, index]);
-      if left_byte != right_byte {
+      if left_byte != right_byte then
         hosts_equal = false
-      }
+      end;
       index = index + 1
-    }
-  }
+    end;
+  end;
 
-  left_environment == right_environment && hosts_equal && protocol_label left_protocol == protocol_label right_protocol && left_port == right_port
-};
+  left_environment == right_environment && hosts_equal && protocol_label left_protocol
+    == protocol_label right_protocol && left_port == right_port
+end;
 
-const contains_key = (values: ApprovalKeys, key: ApprovalKey) => {
+const contains_key = (values: ApprovalKeys, key: ApprovalKey) => do
   let current = values;
   let found = false;
-  loop {
-    if found { break; }
-    if let `Cons node = current {
+  loop do
+    if found then
+      break;
+    end;
+    if let #Cons node = current then
       let [candidate, tail] = node;
-      if host_key_equal(candidate, key) {
+      if host_key_equal(candidate, key) then
         found = true
-      }
+      end;
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
   found
-};
+end;
 
-const remove_key = (values: ApprovalKeys, key: ApprovalKey) => {
+const remove_key = (values: ApprovalKeys, key: ApprovalKey) => do
   let current = values;
-  let reversed: ApprovalKeys = `Nil ();
-  loop {
-    if let `Cons node = current {
+  let reversed: ApprovalKeys = #Nil;
+  loop do
+    if let #Cons node = current then
       let [candidate, tail] = node;
-      if !(host_key_equal(candidate, key)) {
+      if !(host_key_equal(candidate, key)) then
         let kept_node: ApprovalKeyNode = [candidate, reversed];
-        reversed = `Cons kept_node
-      }
+        reversed = #Cons kept_node
+      end;
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
 
-  let kept: ApprovalKeys = `Nil ();
-  loop {
-    if let `Cons node = reversed {
+  let kept: ApprovalKeys = #Nil;
+  loop do
+    if let #Cons node = reversed then
       let [candidate, tail] = node;
       let kept_node: ApprovalKeyNode = [candidate, kept];
-      kept = `Cons kept_node
+      kept = #Cons kept_node
       reversed = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
   kept
-};
+end;
 
-const approval_call_count = (active: ApprovalCalls) => {
+const approval_call_count = (active: ApprovalCalls) => do
   let current = active;
   let count = 0;
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [_, tail] = node;
       count = count + 1
       current = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
   count
-};
+end;
 
 const register_network_call: [ApprovalState, ApprovalCall] -> ApprovalState = (
   state: ApprovalState,
   call: ApprovalCall,
-) => {
+) => do
   let [active, approved, denied, pending] = state;
   let call_node: ApprovalCallNode = [call, active];
-  [`Cons call_node, approved, denied, pending];
-};
+  [#Cons call_node, approved, denied, pending];
+end;
 
-const approval_flow_allowed = (policy: ApprovalPolicy, profile: ApprovalProfile) => {
-  let managed = if let `Managed () = profile { true } else { false };
-  let disabled = if let `Never () = policy { true } else { false };
+const approval_flow_allowed = (policy: ApprovalPolicy, profile: ApprovalProfile) => do
+  let managed = if let #Managed = profile then true else false end;
+  let disabled = if let #Never = policy then true else false end;
   managed && !(disabled)
-};
+end;
 
 const find_call: [ApprovalCalls, Text] -> ApprovalCallOption = (
   active: ApprovalCalls,
   registration_id: Text,
-) => {
+) => do
   let current = active;
   let result: ApprovalCallOption = ApprovalCallOption.None();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [call, tail] = node;
       let [candidate_id, _, _, _, _, _] = call;
 
-      if candidate_id == registration_id {
+      if candidate_id == registration_id then
         result = ApprovalCallOption.Some(call)
         done = true
-      } else {
+      else
         current = tail
-      }
-    } else {
+      end;
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   result
-};
+end;
 
-const first_call = (active: ApprovalCalls) => {
+const first_call = (active: ApprovalCalls) => do
   let result: ApprovalCallOption = ApprovalCallOption.None();
-  if let `Cons node = active {
+  if let #Cons node = active then
     let [call, _] = node;
     result = ApprovalCallOption.Some(call)
-  }
+  end;
   result
-};
+end;
 
-const resolve_request_attribution: [ApprovalCalls, ApprovalTextOption, ApprovalTextOption] -> ApprovalAttribution = (
+const resolve_request_attribution: [ApprovalCalls, ApprovalTextOption, ApprovalTextOption] -> ApprovalAttribution =
+  (
     active: ApprovalCalls,
     execution_id: ApprovalTextOption,
     requested_environment: ApprovalTextOption,
-  ) => {
-    if let `Some requested_id = execution_id {
+  ) => do
+    if let #Some requested_id = execution_id then
       let found: ApprovalCallOption = find_call(active, requested_id);
 
-      if let `Some call = found {
+      if let #Some call = found then
         let [_, environment_id, _, _, _, _] = call;
 
-        if let `Some requested = requested_environment {
-          if requested == environment_id { `Owner call } else { `Invalid () }
-        } else {
-          `Owner call
-        }
-      } else {
-        `Invalid ()
-      }
-    } else if let `Some environment_id = requested_environment {
-      if approval_call_count active == 1 {
+        if let #Some requested = requested_environment then
+          if requested == environment_id then #Owner call else #Invalid end;
+        else
+          #Owner call
+        end;
+      else
+        #Invalid
+      end;
+    else let #Some environment_id = requested_environment then
+      if approval_call_count active == 1 then
         let found: ApprovalCallOption = first_call active;
 
-        if let `Some call = found {
+        if let #Some call = found then
           let [_, candidate_environment, _, _, _, _] = call;
-          if candidate_environment == environment_id { `Owner call } else { `Environment environment_id }
-        } else {
-          `Environment environment_id
-        }
-      } else {
-        `Environment environment_id
-      }
-    } else if approval_call_count active == 0 {
-      `Missing ()
-    } else if approval_call_count active == 1 {
+          if candidate_environment
+            == environment_id then #Owner call else #Environment environment_id end;
+        else
+          #Environment environment_id
+        end;
+      else
+        #Environment environment_id
+      end;
+    else approval_call_count active == 0 then
+      #Missing
+    else approval_call_count active == 1 then
       let found: ApprovalCallOption = first_call active;
-      if let `Some call = found { `Owner call } else { `Missing () }
-    } else {
-      `Ambiguous ()
-    }
-  };
+      if let #Some call = found then #Owner call else #Missing end;
+    else
+      #Ambiguous
+    end;
+  end;
 
 const request_environment: [ApprovalAttribution, ApprovalTextOption] -> ApprovalTextOption = (
   attribution: ApprovalAttribution,
   primary_environment: ApprovalTextOption,
-) => {
-  if let `Owner call = attribution {
+) => do
+  if let #Owner call = attribution then
     let [_, environment_id, _, _, _, _] = call;
-    `Some environment_id;
-  } else if let `Environment environment_id = attribution {
-    `Some environment_id
-  } else if let `Missing () = attribution {
+    #Some environment_id;
+  else let #Environment environment_id = attribution then
+    #Some environment_id
+  else let #Missing = attribution then
     primary_environment
-  } else {
-    `None ()
-  }
-};
+  else
+    #None
+  end;
+end;
 
-const request_owner = (attribution: ApprovalAttribution) => {
-  if let `Owner call = attribution {
+const request_owner = (attribution: ApprovalAttribution) => do
+  if let #Owner call = attribution then
     let [registration_id, _, _, _, _, _] = call;
-    `Some registration_id;
-  } else {
-    `None ()
-  }
-};
+    #Some registration_id;
+  else
+    #None
+  end;
+end;
 
 const plan_network_request: [
   ApprovalState,
@@ -267,39 +276,39 @@ const plan_network_request: [
   policy: ApprovalPolicy,
   profile: ApprovalProfile,
   has_active_turn: Bool,
-) => {
+) => do
   let [active, approved, denied, pending] = state;
   let [host, protocol, port, execution_id, requested_environment] = request;
   let attribution = resolve_request_attribution(active, execution_id, requested_environment);
   let environment = request_environment(attribution, primary_environment);
 
-  if let `Ambiguous () = attribution {
-    [state, `Reject ("network request cannot be attributed while multiple calls are active")]
-  } else if let `Invalid () = attribution {
-    [state, `Reject ("network request does not match an active call")]
-  } else if let `None () = environment {
-    [state, `Reject ("network request has no active environment")]
-  } else if let `Some environment_id = environment {
+  if let #Ambiguous = attribution then
+    [state, #Reject ("network request cannot be attributed while multiple calls are active")]
+  else let #Invalid = attribution then
+    [state, #Reject ("network request does not match an active call")]
+  else let #None = environment then
+    [state, #Reject ("network request has no active environment")]
+  else let #Some environment_id = environment then
     let key: ApprovalKey = [environment_id, host, protocol, port];
 
-    if contains_key(denied, key) {
-      [state, `Reject ("network target was denied for this session")]
-    } else if contains_key(approved, key) {
-      [state, `Allow ()]
-    } else if !(has_active_turn) {
-      [state, `Reject ("network approval requires an active turn")]
-    } else if !(approval_flow_allowed(policy, profile)) {
+    if contains_key(denied, key) then
+      [state, #Reject ("network target was denied for this session")]
+    else contains_key(approved, key) then
+      [state, #Allow]
+    else !(has_active_turn) then
+      [state, #Reject ("network approval requires an active turn")]
+    else !(approval_flow_allowed(policy, profile)) then
       [
         state,
-        `Reject (text_append ["Network access to ", text_append [host, " is blocked by policy"]]),
+        #Reject (text_append ["Network access to ", text_append [host, " is blocked by policy"]]),
       ]
-    } else {
+    else
       let is_owner = !(contains_key(pending, key));
       let next_pending = pending;
-      if is_owner {
+      if is_owner then
         let pending_node: ApprovalKeyNode = [key, pending];
-        next_pending = `Cons pending_node
-      }
+        next_pending = #Cons pending_node
+      end;
       let next_state: ApprovalState = [active, approved, denied, next_pending];
       let target = text_append [
         protocol_label protocol,
@@ -307,177 +316,182 @@ const plan_network_request: [
       ];
       let reason = text_append [host, " is not in the allowed_domains"];
       let prompt: ApprovalPrompt = [key, request_owner attribution, target, reason, is_owner];
-      if is_owner { [next_state, `Prompt prompt] } else { [next_state, `Await prompt] }
-    }
-  } else {
-    [state, `Reject ("invalid network request attribution")]
-  }
-};
+      if is_owner then [next_state, #Prompt prompt] else [next_state, #Await prompt] end;
+    end;
+  else
+    [state, #Reject ("invalid network request attribution")]
+  end;
+end;
 
 const record_call_outcome: [ApprovalState, Text, ApprovalOutcome, Bool] -> ApprovalState = (
   state: ApprovalState,
   registration_id: Text,
   outcome: ApprovalOutcome,
   blocked_request: Bool,
-) => {
+) => do
   let [active, approved, denied, pending] = state;
   let current = active;
-  let updated: ApprovalCalls = `Nil ();
+  let updated: ApprovalCalls = #Nil;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [call, tail] = node;
       let [candidate_id, environment_id, command, mode, previous, cancelled] = call;
       let replacement = call;
-      let user_denial = if let `DeniedByUser () = previous { true } else { false };
-      let previous_is_empty = if let `NoOutcome () = previous { true } else { false };
+      let user_denial = if let #DeniedByUser = previous then true else false end;
+      let previous_is_empty = if let #NoOutcome = previous then true else false end;
 
-      if candidate_id == registration_id && !(user_denial) {
-        if !(blocked_request) || previous_is_empty {
+      if candidate_id == registration_id && !(user_denial) then
+        if !(blocked_request) || previous_is_empty then
           replacement = [candidate_id, environment_id, command, mode, outcome, true]
-        }
-      }
+        end;
+      end;
 
       let updated_node: ApprovalCallNode = [replacement, updated];
-      updated = `Cons updated_node
+      updated = #Cons updated_node
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  let ordered: ApprovalCalls = `Nil ();
-  loop {
-    if let `Cons node = updated {
+  let ordered: ApprovalCalls = #Nil;
+  loop do
+    if let #Cons node = updated then
       let [call, tail] = node;
       let ordered_node: ApprovalCallNode = [call, ordered];
-      ordered = `Cons ordered_node
+      ordered = #Cons ordered_node
       updated = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
   [ordered, approved, denied, pending]
-};
+end;
 
-const resolve_network_prompt: [ApprovalState, ApprovalPrompt, ApprovalHostDecision] -> ApprovalState = (
+const resolve_network_prompt: [ApprovalState, ApprovalPrompt, ApprovalHostDecision] -> ApprovalState =
+  (
     state: ApprovalState,
     prompt: ApprovalPrompt,
     decision: ApprovalHostDecision,
-  ) => {
+  ) => do
     let [active, approved, denied, pending] = state;
     let [key, registration_option, _, _, _] = prompt;
     let next_approved = approved;
     let next_denied = denied;
 
-    if let `AllowForSession () = decision {
-      if !(contains_key(approved, key)) {
+    if let #AllowForSession = decision then
+      if !(contains_key(approved, key)) then
         let approved_node: ApprovalKeyNode = [key, approved];
-        next_approved = `Cons approved_node
-      }
-    }
+        next_approved = #Cons approved_node
+      end;
+    end;
 
-    if let `Deny () = decision {
-      if !(contains_key(denied, key)) {
+    if let #Deny = decision then
+      if !(contains_key(denied, key)) then
         let denied_node: ApprovalKeyNode = [key, denied];
-        next_denied = `Cons denied_node
-      }
-    }
+        next_denied = #Cons denied_node
+      end;
+    end;
 
     let next: ApprovalState = [active, next_approved, next_denied, remove_key(pending, key)];
 
-    if let `Deny () = decision {
-      if let `Some registration_id = registration_option {
-        record_call_outcome(next, registration_id, `DeniedByUser (), false)
-      } else {
+    if let #Deny = decision then
+      if let #Some registration_id = registration_option then
+        record_call_outcome(next, registration_id, #DeniedByUser, false)
+      else
         next
-      }
-    } else {
+      end;
+    else
       next
-    }
-  };
+    end;
+  end;
 
 const record_blocked_request: [ApprovalState, ApprovalTextOption, Text] -> ApprovalState = (
   state: ApprovalState,
   execution_id: ApprovalTextOption,
   message: Text,
-) => {
+) => do
   let [active, _, _, _] = state;
-  let registration: ApprovalTextOption = if let `Some requested = execution_id {
-    if let `Some _ = find_call(active, requested) { `Some requested } else { `None () }
-  } else if approval_call_count active == 1 {
+  let registration: ApprovalTextOption = if let #Some requested = execution_id then
+    if let #Some _ = find_call(active, requested) then #Some requested else #None end;
+  else approval_call_count active == 1 then
     let found: ApprovalCallOption = first_call active;
-    if let `Some call = found {
+    if let #Some call = found then
       let [registration_id, _, _, _, _, _] = call;
-      `Some registration_id;
-    } else {
-      `None ()
-    }
-  } else {
-    `None ()
-  };
+      #Some registration_id;
+    else
+      #None
+    end;
+  else
+    #None
+  end;
 
-  if let `Some registration_id = registration {
-    record_call_outcome(state, registration_id, `DeniedByPolicy message, true)
-  } else {
+  if let #Some registration_id = registration then
+    record_call_outcome(state, registration_id, #DeniedByPolicy message, true)
+  else
     state
-  }
-};
+  end;
+end;
 
 const finish_network_call: [ApprovalState, Text] -> ApprovalFinishResult = (
   state: ApprovalState,
   registration_id: Text,
-) => {
+) => do
   let [active, approved, denied, pending] = state;
-  let remaining: ApprovalCalls = `Nil ();
-  let outcome: ApprovalOutcome = `NoOutcome ();
+  let remaining: ApprovalCalls = #Nil;
+  let outcome: ApprovalOutcome = #NoOutcome;
   let current = active;
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [call, tail] = node;
       let [candidate_id, _, _, _, candidate_outcome, _] = call;
 
-      if candidate_id == registration_id {
+      if candidate_id == registration_id then
         outcome = candidate_outcome
-      } else {
+      else
         let remaining_node: ApprovalCallNode = [call, remaining];
-        remaining = `Cons remaining_node
-      }
+        remaining = #Cons remaining_node
+      end;
 
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
-  let ordered: ApprovalCalls = `Nil ();
-  loop {
-    if let `Cons node = remaining {
+  let ordered: ApprovalCalls = #Nil;
+  loop do
+    if let #Cons node = remaining then
       let [call, tail] = node;
       let ordered_node: ApprovalCallNode = [call, ordered];
-      ordered = `Cons ordered_node
+      ordered = #Cons ordered_node
       remaining = tail
-    } else {
+    else
       break;
-    }
-  }
+    end;
+  end;
   let next: ApprovalState = [ordered, approved, denied, pending];
-  let result: ApprovalFinishOutcome = if let `DeniedByUser () = outcome {
-    `Rejected ("rejected by user")
-  } else if let `DeniedByPolicy message = outcome {
-    `Rejected message
-  } else {
-    `Finished ()
-  };
+  let result: ApprovalFinishOutcome = if let #DeniedByUser = outcome then
+    #Rejected ("rejected by user")
+  else let #DeniedByPolicy message = outcome then
+    #Rejected message
+  else
+    #Finished
+  end;
   [next, result];
-};
+end;
 
 return {
   .empty_network_approval_state,

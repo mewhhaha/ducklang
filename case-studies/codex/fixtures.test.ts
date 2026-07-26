@@ -1,10 +1,6 @@
-import { assert_equals, assert_includes } from "../../src/assert.ts";
+import { assert_equals } from "../../src/assert.ts";
 import { DuckCompiler, type DuckHostValue } from "../../src/compiler.ts";
-import {
-  adapter_fixtures,
-  blocked_fixtures,
-  fixture_cases,
-} from "./fixtures.ts";
+import { adapter_fixtures, fixture_cases } from "./fixtures.ts";
 
 const fixture_prefix = "agent_job_";
 
@@ -23,34 +19,6 @@ Deno.test("codex agent-job fixtures score every check", async (test) => {
         );
       });
     }
-
-    for (const fixture of blocked_fixtures) {
-      await test.step("still blocked: " + fixture.name, async () => {
-        const path = new URL("./" + fixture.name, import.meta.url).href;
-        let message = "";
-
-        try {
-          await compiler.run_file(path);
-        } catch (error) {
-          if (!(error instanceof Error)) {
-            throw new Error(
-              "Fixture threw a non-Error value: " + fixture.name,
-            );
-          }
-
-          message = error.message;
-        }
-
-        if (message.length === 0) {
-          throw new Error(
-            "Fixture now compiles and runs: " + fixture.name +
-              "\nMove it into fixture_cases with its expected score.",
-          );
-        }
-
-        assert_includes(message, fixture.message);
-      });
-    }
   } finally {
     compiler.destroy();
   }
@@ -60,10 +28,6 @@ Deno.test("fixture manifest accounts for every agent-job fixture", () => {
   const expected = new Set<string>();
 
   for (const fixture of fixture_cases) {
-    expected.add(fixture.name);
-  }
-
-  for (const fixture of blocked_fixtures) {
     expected.add(fixture.name);
   }
 
@@ -90,8 +54,7 @@ Deno.test("fixture manifest accounts for every agent-job fixture", () => {
   }
 
   assert_equals([...actual].sort(), [...expected].sort());
-  assert_equals(fixture_cases.length, 9);
-  assert_equals(blocked_fixtures.length, 12);
+  assert_equals(fixture_cases.length, 18);
   assert_equals(adapter_fixtures.length, 3);
 });
 

@@ -7,13 +7,13 @@ type FixtureArgs = CodexCliArgs
 type FixtureNode = ListNode Text
 type FixtureLoginResult = CodexLoginActionResult
 
-const prepend = (value: Text, values: FixtureArgs) => {
+const prepend = (value: Text, values: FixtureArgs) => do
   let node: FixtureNode = [value, values];
-  let result: FixtureArgs = `Cons node;
+  let result: FixtureArgs = #Cons node;
   result
-};
+end;
 
-let empty: FixtureArgs = `Nil ();
+let empty: FixtureArgs = #Nil;
 let args = prepend(
   "--device-auth",
   prepend(
@@ -27,16 +27,16 @@ let args = prepend(
 let parsed: FixtureLoginResult = parse_login_options args;
 let score = 0;
 
-if let `Ok action = parsed {
-  if let `DeviceLogin options = action {
-    if let `Some issuer = options.issuer_base_url {
-      if let `Some client_id = options.client_id {
-        if issuer == "https://issuer.example" && client_id == "client-1" {
+if let #Ok action = parsed then
+  if let #DeviceLogin options = action then
+    if let #Some issuer = options.issuer_base_url then
+      if let #Some client_id = options.client_id then
+        if issuer == "https://issuer.example" && client_id == "client-1" then
           score = 1
-        }
-      }
-    }
-  }
-}
+        end;
+      end;
+    end;
+  end;
+end;
 
 return { .score = score };

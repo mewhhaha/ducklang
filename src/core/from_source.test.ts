@@ -4,10 +4,10 @@ import { core_from_source } from "./from_source.ts";
 
 Deno.test("integer-to-float conversions do not taint later arithmetic", () => {
   const core = core_from_source(parse_source(`
-let scale: I32 -> F32 = (value: I32) => {
+let scale: I32 -> F32 = (value: I32) => do
   let converted: F32 = @f32_from_i32(value);
   converted / 2.0f32
-};
+end;
 scale
 `));
   const scale = core.recFunctions?.scale;

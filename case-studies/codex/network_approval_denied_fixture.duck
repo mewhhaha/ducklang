@@ -1,7 +1,8 @@
 module () where
 
 const {} = import "./network_types.duck" ();
-const { .empty_network_approval_state, .plan_network_request } = import "./network_approval.duck" ();
+const { .empty_network_approval_state, .plan_network_request } =
+  import "./network_approval.duck" ();
 
 type FixtureTextOption = NetworkTextOption
 type FixtureProtocol = NetworkApprovalProtocol
@@ -10,12 +11,12 @@ type FixturePolicy = NetworkApprovalPolicy
 type FixtureRequest = NetworkRequest
 type FixtureResult = NetworkPolicyResult
 
-let https: FixtureProtocol = `Https ();
-let no_execution: FixtureTextOption = `None ();
-let local_environment: FixtureTextOption = `Some "local";
+let https: FixtureProtocol = #Https;
+let no_execution: FixtureTextOption = #None;
+let local_environment: FixtureTextOption = #Some "local";
 let request: FixtureRequest = ["example.com", https, 443, no_execution, local_environment];
-let policy: FixturePolicy = `Never ();
-let profile: FixtureProfile = `Managed ();
+let policy: FixturePolicy = #Never;
+let profile: FixtureProfile = #Managed;
 let planned: FixtureResult = plan_network_request(
   empty_network_approval_state(),
   request,
@@ -26,10 +27,10 @@ let planned: FixtureResult = plan_network_request(
 );
 let [_, decision] = planned;
 let score = 0;
-if let `Reject message = decision {
-  if message == "Network access to example.com is blocked by policy" {
+if let #Reject message = decision then
+  if message == "Network access to example.com is blocked by policy" then
     score = score + 1
-  }
-}
+  end;
+end;
 
 return { .score = score };

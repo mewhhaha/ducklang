@@ -1,19 +1,19 @@
-const pair = () => {
+const pair = () => do
   return [7, 40];
-};
+end;
 
 let _ = 1;
 const _ = 2;
 const [_, value] = pair();
 let add_two = (_, number) => number + 2;
 
-type Option = | `Some I32 | `None Unit
+type Option = | #Some I32 | #None
 
-let choice = `Some (99);
-let result = if let `Some _ = choice {
+let choice = #Some (99);
+let result = if let #Some _ = choice then
   add_two(100, value)
-} else {
+else
   0
-};
+end;
 
 result

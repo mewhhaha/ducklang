@@ -23,89 +23,97 @@ type ThreadResponseMetadata = AppServerThreadResponseMetadata
 type ThreadResumeResponseMetadata = AppServerThreadResumeResponseMetadata
 type ThreadUnsubscribeStatus = AppServerThreadUnsubscribeStatus
 
-const optional_json = (value: ThreadResponseJsonOption) => {
-  if let `Some json = value { json } else { json_null() }
-};
+const optional_json = (value: ThreadResponseJsonOption) => do
+  if let #Some json = value then json else json_null() end;
+end;
 
-const optional_text_json = (value: ThreadResponseTextOption) => {
-  if let `Some text = value { json_string text } else { json_null() }
-};
+const optional_text_json = (value: ThreadResponseTextOption) => do
+  if let #Some text = value then json_string text else json_null() end;
+end;
 
-const text_array = (texts: ThreadResponseTexts) => {
+const text_array = (texts: ThreadResponseTexts) => do
   let current = texts;
   let reversed: ThreadResponseJsonArray = json_array_empty();
   let done = false;
 
-  loop {
-    if let `Cons node = current {
+  loop do
+    if let #Cons node = current then
       let [value, tail] = node;
       reversed = json_array_prepend(json_string value, reversed)
       current = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   let values: ThreadResponseJsonArray = json_array_empty();
   done = false
 
-  loop {
-    if let `Cons node = reversed {
+  loop do
+    if let #Cons node = reversed then
       let [value, tail] = node;
       values = json_array_prepend(value, values)
       reversed = tail
-    } else {
+    else
       done = true
-    }
+    end;
 
-    if done { break; }
-  }
+    if done then
+      break;
+    end;
+  end;
 
   json_array values
-};
+end;
 
 const lifecycle_response_fields: ThreadResponseMetadata -> ThreadResponseJsonObject = (
-  metadata: ThreadResponseMetadata ) => {
-  let fields = json_object_empty();
-  if let `ExperimentalThreadResponse () = metadata.view {
-    fields = json_object_prepend("multiAgentMode", json_string "explicitRequestOnly", fields)
+  metadata: ThreadResponseMetadata) => do
+    let fields = json_object_empty();
+    if let #ExperimentalThreadResponse = metadata.view then
+      fields = json_object_prepend("multiAgentMode", json_string "explicitRequestOnly", fields)
+      fields = json_object_prepend(
+        "activePermissionProfile",
+        optional_json metadata.active_permission_profile,
+        fields,
+      )
+      fields = json_object_prepend(
+        "runtimeWorkspaceRoots",
+        text_array metadata.runtime_workspace_roots,
+        fields,
+      )
+    end;
     fields = json_object_prepend(
-      "activePermissionProfile",
-      optional_json metadata.active_permission_profile,
+      "reasoningEffort",
+      optional_json metadata.reasoning_effort,
       fields,
     )
+    fields = json_object_prepend("sandbox", metadata.sandbox, fields)
+    fields = json_object_prepend("approvalsReviewer", metadata.approvals_reviewer, fields)
+    fields = json_object_prepend("approvalPolicy", metadata.approval_policy, fields)
     fields = json_object_prepend(
-      "runtimeWorkspaceRoots",
-      text_array metadata.runtime_workspace_roots,
+      "instructionSources",
+      text_array metadata.instruction_sources,
       fields,
     )
-  }
-  fields = json_object_prepend("reasoningEffort", optional_json metadata.reasoning_effort, fields)
-  fields = json_object_prepend("sandbox", metadata.sandbox, fields)
-  fields = json_object_prepend("approvalsReviewer", metadata.approvals_reviewer, fields)
-  fields = json_object_prepend("approvalPolicy", metadata.approval_policy, fields)
-  fields = json_object_prepend(
-    "instructionSources",
-    text_array metadata.instruction_sources,
-    fields,
-  )
-  fields = json_object_prepend("cwd", json_string metadata.cwd, fields)
-  fields = json_object_prepend("serviceTier", optional_json metadata.service_tier, fields)
-  fields = json_object_prepend("modelProvider", json_string metadata.model_provider, fields)
-  fields = json_object_prepend("model", json_string metadata.model, fields)
-  fields = json_object_prepend("thread", metadata.thread, fields)
-  fields
-};
+    fields = json_object_prepend("cwd", json_string metadata.cwd, fields)
+    fields = json_object_prepend("serviceTier", optional_json metadata.service_tier, fields)
+    fields = json_object_prepend("modelProvider", json_string metadata.model_provider, fields)
+    fields = json_object_prepend("model", json_string metadata.model, fields)
+    fields = json_object_prepend("thread", metadata.thread, fields)
+    fields
+  end;
 
-const materialize_thread_start_response = (metadata: ThreadResponseMetadata) => {
+const materialize_thread_start_response = (metadata: ThreadResponseMetadata) => do
   json_object(lifecycle_response_fields metadata)
-};
+end;
 
-const materialize_thread_resume_response = (metadata: ThreadResumeResponseMetadata) => {
+const materialize_thread_resume_response = (metadata: ThreadResumeResponseMetadata) => do
   let fields = lifecycle_response_fields metadata.common;
-  if let `ExperimentalThreadResponse () = metadata.common.view {
+  if let #ExperimentalThreadResponse = metadata.common.view then
     fields = json_object_prepend(
       "itemsBackwardsCursor",
       optional_text_json metadata.items_backwards_cursor,
@@ -121,38 +129,38 @@ const materialize_thread_resume_response = (metadata: ThreadResumeResponseMetada
       optional_json metadata.initial_turns_page,
       fields,
     )
-  }
+  end;
   json_object fields
-};
+end;
 
-const materialize_thread_fork_response = (metadata: ThreadResponseMetadata) => {
+const materialize_thread_fork_response = (metadata: ThreadResponseMetadata) => do
   json_object(lifecycle_response_fields metadata)
-};
+end;
 
-const materialize_thread_started_notification = (thread: ThreadResponseJson) => {
+const materialize_thread_started_notification = (thread: ThreadResponseJson) => do
   json_object(json_object_prepend("thread", thread, json_object_empty()))
-};
+end;
 
 const materialize_empty_thread_response = () => json_object(json_object_empty());
 
-const materialize_thread_unarchive_response = (thread: ThreadResponseJson) => {
+const materialize_thread_unarchive_response = (thread: ThreadResponseJson) => do
   json_object(json_object_prepend("thread", thread, json_object_empty()))
-};
+end;
 
-const materialize_thread_unsubscribe_response = (status: ThreadUnsubscribeStatus) => {
-  let text = if let `UnsubscribeNotLoaded () = status {
+const materialize_thread_unsubscribe_response = (status: ThreadUnsubscribeStatus) => do
+  let text = if let #UnsubscribeNotLoaded = status then
     "notLoaded"
-  } else if let `UnsubscribeNotSubscribed () = status {
+  else let #UnsubscribeNotSubscribed = status then
     "notSubscribed"
-  } else {
+  else
     "unsubscribed"
-  };
+  end;
   json_object(json_object_prepend("status", json_string text, json_object_empty()))
-};
+end;
 
-const materialize_thread_id_notification = (thread_id: Text) => {
+const materialize_thread_id_notification = (thread_id: Text) => do
   json_object(json_object_prepend("threadId", json_string thread_id, json_object_empty()))
-};
+end;
 
 return {
   .materialize_thread_start_response,
