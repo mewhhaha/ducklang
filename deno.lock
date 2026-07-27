@@ -1,14 +1,14 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@mewhhaha/baba@7.1.0": "7.1.0",
+    "jsr:@mewhhaha/baba@7.0.0": "7.0.0",
     "jsr:@mewhhaha/gpufuck@0.4": "0.4.0",
     "jsr:@mewhhaha/typeclasses@~0.5.2": "0.5.2",
     "npm:typescript@5.9.3": "5.9.3"
   },
   "jsr": {
-    "@mewhhaha/baba@7.1.0": {
-      "integrity": "8a91ebf57d939f8d654027ba2a68e582a94fb92261b3b913606cb88f7fa03145"
+    "@mewhhaha/baba@7.0.0": {
+      "integrity": "ffcf9676f69b1f560465bf674f46cf41d44130e8600ba1bf20e8635546b6b705"
     },
     "@mewhhaha/gpufuck@0.4.0": {
       "integrity": "c63f2652b8a7ac71a49d00912079985e5f622382e588ed1243936af97e52e248"
@@ -28,7 +28,7 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@mewhhaha/baba@7.1.0",
+      "jsr:@mewhhaha/baba@7.0.0",
       "jsr:@mewhhaha/gpufuck@0.4",
       "jsr:@mewhhaha/typeclasses@~0.5.2"
     ]

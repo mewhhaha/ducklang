@@ -190,6 +190,12 @@
         "value": 8
       }
     },
+    "condition_call_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 9
+      }
+    },
     "condition_application_expression": {
       "wrap": {
         "kind": "prec.left",
