@@ -1,4 +1,9 @@
-import { generate, parseMetadata } from "@mewhhaha/baba";
+import {
+  generate,
+  parseGrammar,
+  parseMetadata,
+  validateGrammar,
+} from "@mewhhaha/baba";
 
 const repository = new URL("../", import.meta.url);
 const grammar_directory = new URL("tree-sitter-duck/", repository);
@@ -28,6 +33,19 @@ const grammar_source = await Deno.readTextFile(
 const metadata = parseMetadata(
   await Deno.readTextFile(new URL("baba.json", grammar_directory)),
 );
+const parsed_grammar = parseGrammar(grammar_source);
+const validation_diagnostics = validateGrammar(parsed_grammar, {
+  targets: ["tree-sitter"],
+});
+const validation_errors = validation_diagnostics.filter((diagnostic) =>
+  diagnostic.severity === undefined || diagnostic.severity === "error"
+);
+if (validation_errors.length > 0) {
+  const rendered = validation_errors.map((diagnostic) =>
+    `${diagnostic.code}: ${diagnostic.message}`
+  ).join("\n");
+  throw new Error(`Baba grammar validation failed:\n${rendered}`);
+}
 const bundle = generate(grammar_source, {
   name: "duck",
   rootRule: "document",
