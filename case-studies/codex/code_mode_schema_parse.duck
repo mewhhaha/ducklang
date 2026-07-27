@@ -12,7 +12,7 @@ type CodeModeParsedSchema =
   | #CodeModeParsedSchemaPresent Json
   | #CodeModeParsedSchemaFailed Text
 
-let parse_code_mode_schema: [Text, Text, CodeModeSchemaDocument] -> CodeModeParsedSchema = (
+let parse_code_mode_schema: (Text, Text, CodeModeSchemaDocument) -> CodeModeParsedSchema = (
   tool_name,
   field_name,
   document,
@@ -22,7 +22,7 @@ let parse_code_mode_schema: [Text, Text, CodeModeSchemaDocument] -> CodeModePars
   end;
   let #CodeModeSchemaDocumentPresent source = document else do
     return #CodeModeParsedSchemaFailed (
-      text_append ["tool ", text_append [tool_name, text_append [" has invalid ", field_name]]]
+      text_append ("tool ", text_append (tool_name, text_append (" has invalid ", field_name)))
     );
   end;
 
@@ -32,18 +32,18 @@ let parse_code_mode_schema: [Text, Text, CodeModeSchemaDocument] -> CodeModePars
     #CodeModeParsedSchemaPresent value
   else let #Err error = parsed then
     let [position, message] = error;
-    let prefix = text_append ["tool ", text_append [tool_name, text_append [" ", field_name]]];
-    let location = text_append [text_append [" schema at byte ", format_i32 position], ": "];
-    #CodeModeParsedSchemaFailed (text_append [prefix, text_append [location, message]])
+    let prefix = text_append ("tool ", text_append (tool_name, text_append (" ", field_name)));
+    let location = text_append (text_append (" schema at byte ", format_i32 position), ": ");
+    #CodeModeParsedSchemaFailed (text_append (prefix, text_append (location, message)))
   else
     #CodeModeParsedSchemaFailed (
-      text_append [
+      text_append (
         "tool ",
-        text_append [
+        text_append (
           tool_name,
-          text_append [" ", text_append [field_name, " schema parser returned no result"]],
-        ],
-      ]
+          text_append (" ", text_append (field_name, " schema parser returned no result")),
+        ),
+      )
     )
   end;
 end;

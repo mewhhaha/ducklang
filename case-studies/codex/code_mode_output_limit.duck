@@ -15,7 +15,7 @@ const resolve_code_mode_output_token_limit: OutputLimit -> I64 = token_limit => 
       let bounded = text_length decimal < 19;
 
       if text_length decimal == 19 then
-        bounded = !(text_less_than ["9223372036854775807", decimal])
+        bounded = !(text_less_than ("9223372036854775807", decimal))
       end;
 
       if !(bounded) then
@@ -28,7 +28,7 @@ const resolve_code_mode_output_token_limit: OutputLimit -> I64 = token_limit => 
           if index >= text_length decimal then
             break;
           end;
-          let digit = unsafe_i64_extend_i32_signed(text_get [decimal, index] - 48);
+          let digit = unsafe_i64_extend_i32_signed(text_get (decimal, index) - 48);
           maximum_tokens = maximum_tokens * 10i64 + digit
           index = index + 1
         end;

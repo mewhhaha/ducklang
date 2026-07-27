@@ -9,7 +9,7 @@ type ThreadControlMethodKind = AppServerThreadControlKind
 type ThreadControlMethodDecodeResult = AppServerMethodDecodeResult
 type ThreadControlMethodSetNameParams = AppServerThreadSetNameParams
 
-const decode_thread_control_method: [ThreadControlMethodKind, ThreadControlMethodJson] ->
+const decode_thread_control_method: (ThreadControlMethodKind, ThreadControlMethodJson) ->
   ThreadControlMethodDecodeResult = (
     kind: ThreadControlMethodKind,
     params: ThreadControlMethodJson,

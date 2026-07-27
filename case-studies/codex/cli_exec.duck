@@ -31,7 +31,7 @@ const singleton_text = (value: Text) => do
   values
 end;
 
-let rec append_texts: [ExecTexts, ExecTexts] -> ExecTexts =
+let rec append_texts: (ExecTexts, ExecTexts) -> ExecTexts =
   (left: ExecTexts, right: ExecTexts) => do
     if let #Cons node = left then
       let [value, tail] = node;
@@ -66,7 +66,7 @@ const empty_shared = () => do
   shared
 end;
 
-const initial_exec_facts: [ExecMode, Bool] -> ExecFacts =
+const initial_exec_facts: (ExecMode, Bool) -> ExecFacts =
   (mode: ExecMode, command_selected: Bool) => do
     [
       .shared = empty_shared(),
@@ -92,7 +92,7 @@ const initial_exec_facts: [ExecMode, Bool] -> ExecFacts =
     ]
   end;
 
-let rec scan_exec_from: [ExecArgs, ExecFacts] -> ExecFactsResult = (
+let rec scan_exec_from: (ExecArgs, ExecFacts) -> ExecFactsResult = (
   args: ExecArgs,
   facts: ExecFacts,
 ) => do

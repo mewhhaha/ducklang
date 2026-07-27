@@ -35,7 +35,7 @@ type McpTextResult = Result Text Text
 const texts = comptime list Text;
 const env_pairs = comptime list McpEnvPair;
 
-let rec scan_name_json_from: [McpArgs, McpNameJsonFacts] -> McpNameJsonFactsResult = (
+let rec scan_name_json_from: (McpArgs, McpNameJsonFacts) -> McpNameJsonFactsResult = (
   args: McpArgs,
   facts: McpNameJsonFacts,
 ) => do
@@ -89,19 +89,19 @@ let parse_mcp_get: McpArgs -> McpCommandResult = (args: McpArgs) => do
 end;
 
 const parse_env_pair: Text -> McpEnvPairResult = (value: Text) => do
-  let separator = text_find_from [value, "=", 0];
+  let separator = text_find_from (value, "=", 0);
   if separator <= 0 then
     #Err (text_append("MCP environment entry must be KEY=VALUE: ", value))
   else
     let pair: McpEnvPair = [
-      text_slice [value, 0, separator],
-      text_slice [value, separator + 1, text_length value],
+      text_slice (value, 0, separator),
+      text_slice (value, separator + 1, text_length value),
     ];
     #Ok pair
   end;
 end;
 
-let rec scan_mcp_add_from: [McpArgs, McpAddFacts] -> McpAddFactsResult = (
+let rec scan_mcp_add_from: (McpArgs, McpAddFacts) -> McpAddFactsResult = (
   args: McpArgs,
   facts: McpAddFacts,
 ) => do
@@ -232,7 +232,7 @@ let parse_mcp_add: McpArgs -> McpCommandResult = (args: McpArgs) => do
   end;
 end;
 
-let rec scan_mcp_login_from: [McpArgs, McpLoginFacts] -> McpLoginFactsResult = (
+let rec scan_mcp_login_from: (McpArgs, McpLoginFacts) -> McpLoginFactsResult = (
   args: McpArgs,
   facts: McpLoginFacts,
 ) => do
@@ -275,7 +275,7 @@ let parse_mcp_login: McpArgs -> McpCommandResult = (args: McpArgs) => do
   end;
 end;
 
-const parse_exact_name: [Text, McpArgs] -> McpTextResult = (command: Text, args: McpArgs) => do
+const parse_exact_name: (Text, McpArgs) -> McpTextResult = (command: Text, args: McpArgs) => do
   if let #Cons node = args then
     let [name, tail] = node;
     if let #Nil = tail then

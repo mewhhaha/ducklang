@@ -23,7 +23,7 @@ type AccountMethodBoolResult = Result Text Bool
 type AccountMethodTextOptionResult = Result Text AccountMethodTextOption
 type AccountMethodLoginBrandResult = Result Text AccountMethodLoginBrandOption
 
-let required_text: [JsonObject, Text, Text] -> AccountMethodTextResult =
+let required_text: (JsonObject, Text, Text) -> AccountMethodTextResult =
   (object, key, context) => do
     let lookup: AccountMethodJsonLookup = json_object_get(key, object);
 
@@ -31,14 +31,14 @@ let required_text: [JsonObject, Text, Text] -> AccountMethodTextResult =
       if let #String text = value then
         #Ok text
       else
-        #Err (text_append [context, text_append [".", text_append [key, " must be a string"]]])
+        #Err (text_append (context, text_append (".", text_append (key, " must be a string"))))
       end;
     else
-      #Err (text_append [context, text_append [".", text_append [key, " is required"]]])
+      #Err (text_append (context, text_append (".", text_append (key, " is required"))))
     end;
   end;
 
-let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (
+let optional_text: (JsonObject, Text, Text) -> AccountMethodTextOptionResult = (
   object,
   key,
   context,
@@ -52,7 +52,7 @@ let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (
       #Ok (#Some text)
     else
       #Err (
-        text_append [context, text_append [".", text_append [key, " must be a string or null"]]]
+        text_append (context, text_append (".", text_append (key, " must be a string or null")))
       )
     end;
   else
@@ -60,21 +60,21 @@ let optional_text: [JsonObject, Text, Text] -> AccountMethodTextOptionResult = (
   end;
 end;
 
-let default_bool: [JsonObject, Text, Text] -> AccountMethodBoolResult = (object, key, context) => do
+let default_bool: (JsonObject, Text, Text) -> AccountMethodBoolResult = (object, key, context) => do
   let lookup: AccountMethodJsonLookup = json_object_get(key, object);
 
   if let #Found value = lookup then
     if let #Bool boolean = value then
       #Ok boolean
     else
-      #Err (text_append [context, text_append [".", text_append [key, " must be a boolean"]]])
+      #Err (text_append (context, text_append (".", text_append (key, " must be a boolean"))))
     end;
   else
     #Ok false
   end;
 end;
 
-let decode_login_brand: [JsonObject, Text] -> AccountMethodLoginBrandResult =
+let decode_login_brand: (JsonObject, Text) -> AccountMethodLoginBrandResult =
   (object, context) => do
     let lookup: AccountMethodJsonLookup = json_object_get("appBrand", object);
 
@@ -87,10 +87,10 @@ let decode_login_brand: [JsonObject, Text] -> AccountMethodLoginBrandResult =
         else brand == "chatgpt" then
           #Ok (#Some (#ChatgptBrand))
         else
-          #Err (text_append [context, ".appBrand has an unknown value"])
+          #Err (text_append (context, ".appBrand has an unknown value"))
         end;
       else
-        #Err (text_append [context, ".appBrand must be a string or null"])
+        #Err (text_append (context, ".appBrand must be a string or null"))
       end;
     else
       #Ok (#None)
@@ -339,7 +339,7 @@ let decode_account_send_add_credits_nudge: AccountMethodJson -> AccountMethodDec
     end;
   end;
 
-let decode_account_method: [Text, AccountMethodJson] -> AccountMethodDecodeResult = (name,
+let decode_account_method: (Text, AccountMethodJson) -> AccountMethodDecodeResult = (name,
   params) => do
     if name == "account/login/start" then
       decode_account_login_start params

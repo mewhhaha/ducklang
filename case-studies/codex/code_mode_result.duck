@@ -29,9 +29,9 @@ const code_mode_content_result: ResultContentItems -> Text = content_items => do
       if let #Some text = value then
         if text_trim_whitespace text != "" then
           if output != "" then
-            output = text_append [output, "\n"]
+            output = text_append (output, "\n")
           end;
-          output = text_append [output, text]
+          output = text_append (output, text)
         end;
       end;
 

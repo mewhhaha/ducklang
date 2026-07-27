@@ -16,7 +16,7 @@ type TextTruncationItem = FunctionOutputContentItem
 type TextTruncationItemNode = FunctionOutputContentItemNode
 type TextTruncationItems = FunctionOutputContentItems
 
-const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncationItems = (
+const truncate_code_mode_text_output: (I64, TextTruncationItems) -> TextTruncationItems = (
   maximum_tokens,
   items,
 ) => do
@@ -29,9 +29,9 @@ const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncati
       let [item, tail] = node;
       if let #InputText text = item then
         if combined != "" then
-          combined = text_append [combined, "\n"]
+          combined = text_append (combined, "\n")
         end;
-        combined = text_append [combined, text]
+        combined = text_append (combined, text)
       end;
       current = tail
     else
@@ -57,11 +57,11 @@ const truncate_code_mode_text_output: [I64, TextTruncationItems] -> TextTruncati
     let original_tokens = text_approx_token_count combined;
     let total_lines = text_line_count combined;
     let truncated = text_truncate_middle_tokens(combined, unsafe_i32_wrap_i64 maximum_tokens);
-    let truncated_output = text_append ["\n\n", truncated];
-    let line_count = text_append [format_i32 total_lines, truncated_output];
-    let output_lines = text_append [")\nTotal output lines: ", line_count];
-    let token_count = text_append [format_i32 original_tokens, output_lines];
-    let warning = text_append ["Warning: truncated output (original token count: ", token_count];
+    let truncated_output = text_append ("\n\n", truncated);
+    let line_count = text_append (format_i32 total_lines, truncated_output);
+    let output_lines = text_append (")\nTotal output lines: ", line_count);
+    let token_count = text_append (format_i32 original_tokens, output_lines);
+    let warning = text_append ("Warning: truncated output (original token count: ", token_count);
     let warning_item: TextTruncationItem = #InputText warning;
     let warning_node: TextTruncationItemNode = [warning_item, #Nil];
     #Cons warning_node

@@ -13,7 +13,7 @@ type ApplyPolicyTextOption = ApplyPatchTextOption
 const prepend_patch_target = list_prepend ApplyPolicyPatchTarget;
 const reverse_patch_targets = list_reverse ApplyPolicyPatchTarget;
 
-let apply_patch_targets: [ApplyPolicyDocument, Text] -> ApplyPolicyPatchTargets = (
+let apply_patch_targets: (ApplyPolicyDocument, Text) -> ApplyPolicyPatchTargets = (
   document: ApplyPolicyDocument,
   cwd: Text,
 ) => do

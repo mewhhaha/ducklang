@@ -2,6 +2,65 @@
 
 Planned work on Ducklang, and the coherence it is meant to produce.
 
+## Terminal editor functional core
+
+The editor already keeps its state transitions pure and interprets effects at
+the outer boundary. These tasks preserve that shape while making the persistent
+data structures and algebraic state model carry more of the implementation.
+
+- [x] **Commands preserve their request-time state.** A save command carries the
+      persistent `PieceTable` root from the exact `w` that requested it, and
+      quit halts the remaining keys in the same terminal input batch.
+- [x] **Rendering traverses the piece tree.** Keep `PieceTable` in `RenderView`
+      and visit visible leaves directly instead of materializing the complete
+      document on every frame.
+- [x] **Piece-tree combination and traversal have one vocabulary.** Treat
+      `#Empty` and `append_piece_trees` as the tree's identity and associative
+      append, then centralize ordered leaf traversal instead of maintaining
+      unrelated tree walks.
+- [x] **The data structure has its own module and real pieces.**
+      `case-studies/editor/piece_tree.duck` owns balancing, lookup, editing,
+      traversal, and materialization. Leaves reference immutable backing buffers
+      by span, so splitting changes offsets without slicing bytes.
+- [ ] **Insert runs become pieces rather than byte-sized leaves.** The indexed
+      batching loop was removed while isolating a gpufuck compilation failure;
+      the byte-wise collection loop preserves behavior but creates one backing
+      buffer per inserted byte. Restore batching after gpufuck can compile the
+      richer loop-carried editor state.
+- [x] **Editor modes make illegal cursor states unrepresentable.** Normal and
+      insert modes carry one cursor; extend mode alone carries an anchored
+      selection.
+- [~] **Panics have the source type `Never`.** Source facts and semantic
+  validation now treat `@panic` as bottom, and non-recursive branches no longer
+  need unreachable values. Gpufuck still loses the contextual result type in
+  recursive and nominal case fallbacks, so those two shapes retain placeholders
+  until lowering can preserve their expected type.
+- [x] **Save failures retain evidence.** Carry a typed error message from the
+      host through `SaveResult` and editor status so the terminal can display
+      why the write failed.
+- [~] **Model and command-order tests protect the functional invariants.**
+  Compare random edit sequences with a contiguous byte model, assert balance
+  whenever a branch is constructed, and cover save snapshots plus quit
+  short-circuiting. Source/LSP checks and isolated piece-tree execution pass;
+  the linked editor runtime suite is blocked by the gpufuck issue below.
+- [x] **Inference carries local implementation detail.** Constructor results,
+      ordinary function parameters, state carried through loops, and local
+      shadowing no longer repeat their types. The remaining annotations break
+      nominal-inference, recursive, exhaustive-match, cast, or effect-lowering
+      cycles at explicit function and module boundaries.
+- [ ] **Gpufuck compiles the linked editor modules.** Duck elaboration and Core
+      lowering finish, and the standard piece-byte iterator executes in the
+      isolated piece-tree fixture. Linking the same iterator with the nominal
+      editor model causes gpufuck compilation to be killed during adapter
+      compilation, including a smoke program that only constructs an editor. Do
+      not replace direct rendering with full-document materialization to hide
+      this: minimize the generated 39-type module and fix the target compiler's
+      non-termination.
+- [ ] **Save sequences use the standard `List PieceTable`.** The editor boundary
+      currently retains a closed `SaveSequence`; attempts to carry or construct
+      `List PieceTable` exposed the same linked-module compilation failure.
+      Re-run this migration after the gpufuck blocker is reduced independently.
+
 Entries cite `file:line` so a claim can be checked rather than believed. Each is
 marked **verified** (reproduced by running it) or **hypothesis** (read from the
 code, not yet demonstrated). Do not promote a hypothesis without a repro.

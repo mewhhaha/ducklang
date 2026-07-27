@@ -38,7 +38,7 @@ let input: FixtureArgs = prepend_arg("sid",
                               prepend_arg("/tmp/a.png,/tmp/b.png",
                                 prepend_arg("continue here", empty_args())))))))))))))))));
 
-const text_option_equals: [FixtureTextOption, Text] -> Bool = (
+const text_option_equals: (FixtureTextOption, Text) -> Bool = (
   value: FixtureTextOption,
   expected: Text,
 ) => do

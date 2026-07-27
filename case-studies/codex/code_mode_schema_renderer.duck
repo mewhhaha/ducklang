@@ -10,7 +10,7 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
   if let #CodeModePlanRendered rendered = plan then
     rendered
   else let #CodeModePlanArray element = plan then
-    text_append [text_append ["Array<", render_schema_input element], ">"]
+    text_append (text_append ("Array<", render_schema_input element), ">")
   else let #CodeModePlanTuple elements = plan then
     let current = elements;
     let rendered = "";
@@ -22,9 +22,9 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
         if first then
           first = false
         else
-          rendered = text_append [rendered, ", "]
+          rendered = text_append (rendered, ", ")
         end;
-        rendered = text_append [rendered, render_schema_input element]
+        rendered = text_append (rendered, render_schema_input element)
         current = tail
       else
         done = true
@@ -33,7 +33,7 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
         break;
       end;
     end;
-    text_append [text_append ["[", rendered], "]"]
+    text_append (text_append ("[", rendered), "]")
   else let #CodeModePlanUnion variants = plan then
     let current = variants;
     let rendered = "";
@@ -45,9 +45,9 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
         if first then
           first = false
         else
-          rendered = text_append [rendered, " | "]
+          rendered = text_append (rendered, " | ")
         end;
-        rendered = text_append [rendered, render_schema_input variant]
+        rendered = text_append (rendered, render_schema_input variant)
         current = tail
       else
         done = true
@@ -68,9 +68,9 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
         if first then
           first = false
         else
-          rendered = text_append [rendered, " & "]
+          rendered = text_append (rendered, " & ")
         end;
-        rendered = text_append [rendered, render_schema_input variant]
+        rendered = text_append (rendered, render_schema_input variant)
         current = tail
       else
         done = true
@@ -113,7 +113,7 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
       if let #CodeModePropertiesCons node = current then
         let [[name, description, required, property_input], tail] = node;
         if multiline then
-          let lines = text_split [description, "\n"];
+          let lines = text_split (description, "\n");
           let line_current = lines;
           let lines_done = false;
           loop do
@@ -121,10 +121,10 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
               let [line, line_tail] = line_node;
               let trimmed = text_trim_whitespace line;
               if trimmed != "" then
-                rendered = text_append [
+                rendered = text_append (
                   rendered,
-                  text_append ["\n  // ", trimmed],
-                ]
+                  text_append ("\n  // ", trimmed),
+                )
               end;
               line_current = line_tail
             else
@@ -134,24 +134,24 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
               break;
             end;
           end;
-          rendered = text_append [rendered, "\n  "]
+          rendered = text_append (rendered, "\n  ")
         else !(first) then
-          rendered = text_append [rendered, " "]
+          rendered = text_append (rendered, " ")
         end;
 
         let property_name = name;
         if normalize_code_mode_identifier name != name then
           property_name = encode_json_string name
         end;
-        rendered = text_append [rendered, property_name]
+        rendered = text_append (rendered, property_name)
         if !(required) then
-          rendered = text_append [rendered, "?"]
+          rendered = text_append (rendered, "?")
         end;
-        rendered = text_append [
+        rendered = text_append (
           rendered,
-          text_append [": ", render_schema_input property_input],
-        ]
-        rendered = text_append [rendered, ";"]
+          text_append (": ", render_schema_input property_input),
+        )
+        rendered = text_append (rendered, ";")
         first = false
         current = tail
       else
@@ -164,22 +164,22 @@ let rec render_schema_input: CodeModeSchemaInput -> Text = input => do
 
     if let #CodeModeAdditionalPresent additional_input = additional then
       if multiline then
-        rendered = text_append [rendered, "\n  "]
+        rendered = text_append (rendered, "\n  ")
       else rendered != "" then
-        rendered = text_append [rendered, " "]
+        rendered = text_append (rendered, " ")
       end;
-      rendered = text_append [
+      rendered = text_append (
         rendered,
-        text_append ["[key: string]: ", text_append [render_schema_input additional_input, ";"]],
-      ]
+        text_append ("[key: string]: ", text_append (render_schema_input additional_input, ";")),
+      )
     end;
 
     if multiline then
-      text_append [rendered, "\n}"]
+      text_append (rendered, "\n}")
     else rendered == "" then
       "{}"
     else
-      text_append [text_append ["{ ", rendered], " }"]
+      text_append (text_append ("{ ", rendered), " }")
     end;
   else
     "unknown"

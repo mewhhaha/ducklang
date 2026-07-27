@@ -17,16 +17,16 @@ type SyncValueObject = JsonObject
 type SyncValueParseResult = TestSyncParseResult
 
 let sync_parse_failure: Text -> SyncValueParseResult = reason => #ParseFailed (
-  text_append ["failed to parse function arguments: ", reason]
+  text_append ("failed to parse function arguments: ", reason)
 );
 
-let parse_sync_duration: [Text, SyncValueJson] -> SyncValueDurationParseResult = (
+let parse_sync_duration: (Text, SyncValueJson) -> SyncValueDurationParseResult = (
   field_name: Text,
   container: SyncValueJson,
 ) => do
   if let #Object object = container then
     if json_object_key_count(field_name, object) > 1 then
-      #DurationParseFailed (text_append [field_name, " must appear at most once"])
+      #DurationParseFailed (text_append (field_name, " must appear at most once"))
     else
       let lookup = json_object_get(field_name, object);
       if let #Missing = lookup then
@@ -38,13 +38,13 @@ let parse_sync_duration: [Text, SyncValueJson] -> SyncValueDurationParseResult =
           let parsed = parse_u64_decimal_text text;
           if let #Ok canonical = parsed then #DurationParsed (#SyncDurationPresent canonical)
           else let #Err message = parsed then #DurationParseFailed (
-            text_append [field_name, text_append [" ", message]]
-          ) else #DurationParseFailed (text_append [field_name, " is invalid"]) end;
+            text_append (field_name, text_append (" ", message))
+          ) else #DurationParseFailed (text_append (field_name, " is invalid")) end;
         else
-          #DurationParseFailed (text_append [field_name, " must be a U64 integer or null"])
+          #DurationParseFailed (text_append (field_name, " must be a U64 integer or null"))
         end;
       else
-        #DurationParseFailed (text_append [field_name, " is invalid"])
+        #DurationParseFailed (text_append (field_name, " is invalid"))
       end;
     end;
   else

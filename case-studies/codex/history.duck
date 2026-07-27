@@ -275,7 +275,7 @@ const missing_output_for =
     if has_function_output(values, call_id) then
       #None
     else
-      let synthetic_id = if id == "" then "" else text_append ["fco:", id] end;
+      let synthetic_id = if id == "" then "" else text_append ("fco:", id) end;
       let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()];
       #Some (#FunctionOutput output);
     end;
@@ -285,7 +285,7 @@ const missing_output_for =
     if has_custom_output(values, call_id) then
       #None
     else
-      let synthetic_id = if id == "" then "" else text_append ["ctco:", id] end;
+      let synthetic_id = if id == "" then "" else text_append ("ctco:", id) end;
       let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()];
       #Some (#CustomOutput output);
     end;
@@ -295,7 +295,7 @@ const missing_output_for =
     if call_id == "" || has_function_output(values, call_id) then
       #None
     else
-      let synthetic_id = if id == "" then "" else text_append ["fco:", id] end;
+      let synthetic_id = if id == "" then "" else text_append ("fco:", id) end;
       let output: NormalizedHistoryOutput = [synthetic_id, call_id, aborted_output()];
       #Some (#FunctionOutput output);
     end;
@@ -725,7 +725,7 @@ else
   2
 end;
 
-const estimate_history_tokens: [Text, NormalizedHistoryItems] -> I32 = (base_instructions,
+const estimate_history_tokens: (Text, NormalizedHistoryItems) -> I32 = (base_instructions,
   values) => do
     let bytes = text_length base_instructions;
     bytes = history_item_list.fold_i32(

@@ -14,7 +14,7 @@ type AgentJobSource = AgentJobTextOption
 const spawn_agents_on_csv_tool_name: () -> AgentJobName = () => ["", "spawn_agents_on_csv"];
 const report_agent_job_result_tool_name: () -> AgentJobName = () => ["", "report_agent_job_result"];
 
-const agent_job_worker_enabled: [Bool, Bool, AgentJobSource] -> Bool = (
+const agent_job_worker_enabled: (Bool, Bool, AgentJobSource) -> Bool = (
   feature_enabled: Bool,
   collaboration_enabled: Bool,
   source: AgentJobSource,
@@ -28,7 +28,7 @@ const agent_job_worker_enabled: [Bool, Bool, AgentJobSource] -> Bool = (
   end;
 end;
 
-const agent_job_tool_definitions: [Bool, Bool, AgentJobSource] -> AgentJobDefinitions = (
+const agent_job_tool_definitions: (Bool, Bool, AgentJobSource) -> AgentJobDefinitions = (
   feature_enabled: Bool,
   collaboration_enabled: Bool,
   source: AgentJobSource,
@@ -61,7 +61,7 @@ const agent_job_tool_definitions: [Bool, Bool, AgentJobSource] -> AgentJobDefini
   end;
 end;
 
-const agent_job_tool_specs: [Bool, Bool, AgentJobSource] -> AgentJobSpecs = (
+const agent_job_tool_specs: (Bool, Bool, AgentJobSource) -> AgentJobSpecs = (
   feature_enabled: Bool,
   collaboration_enabled: Bool,
   source: AgentJobSource,

@@ -17,7 +17,7 @@ type SearchValueFunctions = ToolSearchFunctions
 type SearchValueLoadable = ToolSearchLoadableSpec
 type SearchValueNamespace = ToolSearchNamespace
 
-const append_search_infos: [SearchValueInfos, SearchValueInfos] -> SearchValueInfos = (
+const append_search_infos: (SearchValueInfos, SearchValueInfos) -> SearchValueInfos = (
   left: SearchValueInfos,
   right: SearchValueInfos,
 ) => do
@@ -58,7 +58,7 @@ end;
 const function_search_text: SearchValueSpec -> Text = spec => do
   let [name, _, description, parameters, _, _] = spec;
   let [namespace, local_name] = name;
-  let spaced_name = text_replace_all [local_name, "_", " "];
+  let spaced_name = text_replace_all (local_name, "_", " ");
   let qualified_name = if namespace == "" then local_name else text_append(
     namespace,
     text_append(" ", local_name),
@@ -90,7 +90,7 @@ const deferred_function: SearchValueSpec -> SearchValueFunction = spec => do
   [normalized, true]
 end;
 
-const searchable_function: [SearchValueSpec, SearchValueSourceOption] -> SearchValueInfos = (
+const searchable_function: (SearchValueSpec, SearchValueSourceOption) -> SearchValueInfos = (
   spec: SearchValueSpec,
   source_info: SearchValueSourceOption,
 ) => do
@@ -110,7 +110,7 @@ const default_namespace_description: Text -> Text = name => text_append(
   text_append(name, " namespace."),
 );
 
-const searchable_namespaced_function: [Text, Text, SearchValueSpec, SearchValueSourceOption] ->
+const searchable_namespaced_function: (Text, Text, SearchValueSpec, SearchValueSourceOption) ->
   SearchValueInfos = (
     namespace_name: Text,
     namespace_description: Text,

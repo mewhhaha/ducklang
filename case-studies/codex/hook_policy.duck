@@ -21,7 +21,7 @@ type PolicyLegacyResults = HookLegacyResults
 type PolicyLegacyOutcome = HookLegacyOutcome
 
 const texts = comptime list Text;
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
 const hook_event_key_label = (event: PolicyEvent) => do
   if let #PreToolUse = event then

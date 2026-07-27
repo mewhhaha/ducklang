@@ -11,7 +11,7 @@ type ExecPolicyCheckFactsResult = Result Text ExecPolicyCheckFacts
 
 const texts = comptime list Text;
 
-let rec scan_execpolicy_check_from: [ExecPolicyArgs, ExecPolicyCheckFacts] -> ExecPolicyCheckFactsResult =
+let rec scan_execpolicy_check_from: (ExecPolicyArgs, ExecPolicyCheckFacts) -> ExecPolicyCheckFactsResult =
   (
     args: ExecPolicyArgs,
     facts: ExecPolicyCheckFacts,

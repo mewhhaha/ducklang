@@ -43,9 +43,9 @@ type OutputObjectRead =
   | #ObjectReadErr Text
 
 const texts = comptime list Text;
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
-const text_values_contain: [OutputTexts, Text] -> Bool = (values: OutputTexts, expected: Text) => do
+const text_values_contain: (OutputTexts, Text) -> Bool = (values: OutputTexts, expected: Text) => do
   let current = values;
   let found = false;
 

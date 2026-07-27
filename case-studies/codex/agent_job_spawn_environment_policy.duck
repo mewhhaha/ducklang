@@ -9,11 +9,11 @@ type AgentJobSpawnEnvironmentOption = AgentJobTextOption
 type AgentJobSpawnEnvironmentResult = AgentJobSpawnDecodeResult
 
 const agent_job_path_is_absolute: Text -> Bool = path => do
-  if text_starts_with [path, "/"] || text_starts_with [path, "\\\\"] then
+  if text_starts_with (path, "/") || text_starts_with (path, "\\\\") then
     true
-  else text_length path >= 3 && text_get [path, 1] == 58 then
-    let first = text_get [path, 0];
-    let separator = text_get [path, 2];
+  else text_length path >= 3 && text_get (path, 1) == 58 then
+    let first = text_get (path, 0);
+    let separator = text_get (path, 2);
     let drive_letter = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
     drive_letter && (separator == 47 || separator == 92)
   else
@@ -21,7 +21,7 @@ const agent_job_path_is_absolute: Text -> Bool = path => do
   end;
 end;
 
-const prepare_agent_job_spawn_environment: [AgentJobSpawnEnvironmentArgs, Text, I32, Bool, I32] ->
+const prepare_agent_job_spawn_environment: (AgentJobSpawnEnvironmentArgs, Text, I32, Bool, I32) ->
   AgentJobSpawnEnvironmentResult = (
     decoded: AgentJobSpawnEnvironmentArgs,
     cwd: Text,
@@ -39,14 +39,14 @@ const prepare_agent_job_spawn_environment: [AgentJobSpawnEnvironmentArgs, Text, 
       #SpawnDecodeFailed "instruction must be non-empty"
     else
       let input_path = if agent_job_path_is_absolute decoded.csv_path then decoded.csv_path else
-        path_join [
+        path_join (
           cwd,
           decoded.csv_path,
-        ] end;
+        ) end;
       let output_path: AgentJobSpawnEnvironmentOption = decoded.output_path;
       if let #Some path = output_path then
         if !(agent_job_path_is_absolute path) then
-          output_path = #Some (path_join [cwd, path])
+          output_path = #Some (path_join (cwd, path))
         end;
       end;
       let args: AgentJobSpawnEnvironmentArgs = [

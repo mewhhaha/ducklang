@@ -11,7 +11,7 @@ type SandboxFactsResult = Result Text SandboxFacts
 
 const texts = comptime list Text;
 
-let rec scan_sandbox_from: [SandboxArgs, SandboxFacts] -> SandboxFactsResult = (
+let rec scan_sandbox_from: (SandboxArgs, SandboxFacts) -> SandboxFactsResult = (
   args: SandboxArgs,
   facts: SandboxFacts,
 ) => do

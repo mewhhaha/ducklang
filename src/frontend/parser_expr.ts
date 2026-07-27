@@ -563,7 +563,7 @@ export abstract class ParserExpr extends ParserPrimary {
   }
 
   /**
-   * Lift argument holes into a lambda: `f [v, _]` becomes `x => f [v, x]`.
+   * Lift argument holes into a lambda: `f(v, _)` becomes `x => f(v, x)`.
    *
    * A hole binds to the application whose argument list it appears in, and
    * several bind left to right. A hole nested inside another call within that
@@ -588,6 +588,8 @@ export abstract class ParserExpr extends ParserPrimary {
         ...entry,
         value: replace(entry.value),
       }));
+    } else {
+      arg = replace(arg);
     }
 
     // A hole belongs to the argument list it is written in. A nested call in
@@ -607,6 +609,15 @@ export abstract class ParserExpr extends ParserPrimary {
       throw this.error(
         "A hole cannot appear inside a nested call; write the lambda instead",
       );
+    }
+
+    expect(app.tag === "app", "Argument holes require an application");
+    app.arg = arg;
+
+    if (arg.tag === "product" && arg.value_pack === true) {
+      app.args = arg.entries.map((entry) => entry.value);
+    } else {
+      app.args = [arg];
     }
 
     return mark_hole_lambda({
@@ -717,7 +728,10 @@ export abstract class ParserExpr extends ParserPrimary {
         }
 
         const call = this.parse_parenthesized_call();
-        expr = { tag: "app", func: expr, arg: call.arg, args: call.args };
+        expr = this.lift_argument_holes(
+          { tag: "app", func: expr, arg: call.arg, args: call.args },
+          call.arg,
+        );
       } else if (this.match_symbol(".")) {
         const token = this.peek();
         const name = this.expect_name("Expected field name");
@@ -902,9 +916,7 @@ function pattern_params(pattern: Pattern, source_offset: number): Param[] {
 
   if (
     pattern.tag === "binding" ||
-    (pattern.tag === "product" &&
-      (pattern.value_pack === true ||
-        product_pattern_binds_every_leaf(pattern)))
+    (pattern.tag === "product" && pattern.value_pack === true)
   ) {
     if (pattern.tag === "product") {
       return product_pattern_params(pattern, source_offset, { next: 0 });
@@ -1017,26 +1029,6 @@ function product_pattern_params(
   }
 
   return params;
-}
-
-function product_pattern_binds_every_leaf(
-  pattern: Extract<Pattern, { tag: "product" }>,
-): boolean {
-  return pattern.entries.every((entry) => {
-    if (entry.pattern.tag === "binding") {
-      return true;
-    }
-
-    if (entry.pattern.tag === "wildcard") {
-      return true;
-    }
-
-    if (entry.pattern.tag === "product") {
-      return product_pattern_binds_every_leaf(entry.pattern);
-    }
-
-    return false;
-  });
 }
 
 function unary_product_args(arg: FrontExpr): FrontExpr[] {

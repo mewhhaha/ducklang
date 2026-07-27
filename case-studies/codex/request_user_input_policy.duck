@@ -89,7 +89,7 @@ const normalize_request_user_input_args: UserInputArgs -> UserInputNormalization
   end;
 end;
 
-const plan_request_user_input: [Bool, UserInputMode, Bool, UserInputArgs] -> UserInputPlan = (
+const plan_request_user_input: (Bool, UserInputMode, Bool, UserInputArgs) -> UserInputPlan = (
   is_root_thread: Bool,
   mode: UserInputMode,
   default_mode_enabled: Bool,

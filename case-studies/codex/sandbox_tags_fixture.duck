@@ -17,7 +17,7 @@ let rec fixture_profile: Bool -> FixtureProfile = disabled => do
   if disabled then #DisabledProfile else #ExternalProfile (#Restricted) end;
 end;
 
-let rec fixture_managed_profile: [FixtureFileSystem, FixtureNetworkPolicy] -> FixtureProfile = (
+let rec fixture_managed_profile: (FixtureFileSystem, FixtureNetworkPolicy) -> FixtureProfile = (
   file_system: FixtureFileSystem,
   network: FixtureNetworkPolicy,
 ) => do

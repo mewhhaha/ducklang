@@ -1,6 +1,6 @@
 module () where
 
-const { .pipe: forall input output.[input, input -> output] -> output } =
+const { .pipe: forall input output.(input, input -> output) -> output } =
   import "duck:prelude/functional" ();
 const {
   .encode_json_object,

@@ -56,7 +56,7 @@ const turn_timing_duration_ms: &TimingDurationOption -> Option I64 = (
     end;
   end;
 
-const mark_turn_started: [TimingState, TimingInstant, TimingUnixMillis] -> TimingState = (
+const mark_turn_started: (TimingState, TimingInstant, TimingUnixMillis) -> TimingState = (
   state: TimingState,
   started_at: TimingInstant,
   started_at_unix_ms: TimingUnixMillis,
@@ -85,7 +85,7 @@ const response_signal_records_first_token: TimingResponseSignal -> Bool = signal
   end;
 end;
 
-const record_time_to_first_token: [TimingState, TimingResponseSignal, TimingInstant] -> TimingRecord =
+const record_time_to_first_token: (TimingState, TimingResponseSignal, TimingInstant) -> TimingRecord =
   (
     state: TimingState,
     signal: TimingResponseSignal,
@@ -108,7 +108,7 @@ const record_time_to_first_token: [TimingState, TimingResponseSignal, TimingInst
     end;
   end;
 
-const record_time_to_first_message: [TimingState, TimingItemSignal, TimingInstant] -> TimingRecord =
+const record_time_to_first_message: (TimingState, TimingItemSignal, TimingInstant) -> TimingRecord =
   (
     state: TimingState,
     signal: TimingItemSignal,
@@ -132,7 +132,7 @@ const record_time_to_first_message: [TimingState, TimingItemSignal, TimingInstan
     end;
   end;
 
-const complete_turn_timing: [&TimingState, TimingInstant, TimingUnixSeconds] -> TimingCompletion = (
+const complete_turn_timing: (&TimingState, TimingInstant, TimingUnixSeconds) -> TimingCompletion = (
   state: &TimingState,
   completed_at: TimingInstant,
   completed_at_unix_seconds: TimingUnixSeconds,

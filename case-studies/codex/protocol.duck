@@ -70,7 +70,7 @@ const decode_message_content: ProtocolJson -> Text = (content: ProtocolJson) => 
           end;
 
           if content_type == "output_text" then
-            text = text_append [text, content_text]
+            text = text_append (text, content_text)
           end;
         end;
 
@@ -258,7 +258,7 @@ const encode_user_message: Text -> Text = (prompt: Text) => do
   encode_json(json_object fields)
 end;
 
-const encode_tool_result: [Text, Text] -> Text = (call_id: Text, output: Text) => do
+const encode_tool_result: (Text, Text) -> Text = (call_id: Text, output: Text) => do
   let fields = json_object_empty();
   fields = json_object_prepend("output", json_string output, fields)
   fields = json_object_prepend("call_id", json_string call_id, fields)

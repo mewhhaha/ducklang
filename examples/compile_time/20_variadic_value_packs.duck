@@ -9,7 +9,6 @@ const sum = (const ...values) => comptime do
 end;
 
 let first = case (2, 99) of
-  (value, ...remaining) => value,
-  _ => 0;
+  (value, ...remaining) => value;
 
 sum(19, 20, 1) + first

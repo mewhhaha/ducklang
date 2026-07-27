@@ -28,7 +28,7 @@ const command_basename = (path: Text) => do
     if index >= text_length path then
       break;
     end;
-    let byte = text_get [path, index];
+    let byte = text_get (path, index);
 
     if byte == 47 || byte == 92 then
       start = index + 1
@@ -37,7 +37,7 @@ const command_basename = (path: Text) => do
     index = index + 1
   end;
 
-  text_slice [path, start, text_length path]
+  text_slice (path, start, text_length path)
 end;
 
 const shell_candidate_matches = (candidate: Text, first: Text, second: Text, third: Text) => do
@@ -69,7 +69,7 @@ const shell_name_matches = (path: Text, first: Text, second: Text, third: Text) 
         break;
       end;
 
-      if text_get [candidate, index] == 46 then
+      if text_get (candidate, index) == 46 then
         final_dot = index
       end;
 
@@ -79,7 +79,7 @@ const shell_name_matches = (path: Text, first: Text, second: Text, third: Text) 
     if final_dot <= 0 then
       done = true
     else
-      candidate = text_slice [candidate, 0, final_dot]
+      candidate = text_slice (candidate, 0, final_dot)
     end;
 
     if done then
@@ -110,20 +110,20 @@ const extract_bash_invocation: CanonicalTexts -> CanonicalBashInvocationOption =
 end;
 
 const powershell_flag_allowed = (flag: Text) => do
-  text_equal_ascii_case_insensitive [flag, "-nologo"] || text_equal_ascii_case_insensitive [
+  text_equal_ascii_case_insensitive (flag, "-nologo") || text_equal_ascii_case_insensitive (
     flag,
     "-noprofile",
-  ] || text_equal_ascii_case_insensitive [flag, "-command"] || text_equal_ascii_case_insensitive [
+  ) || text_equal_ascii_case_insensitive (flag, "-command") || text_equal_ascii_case_insensitive (
     flag,
     "-c",
-  ]
+  )
 end;
 
 const powershell_command_flag = (flag: Text) => do
-  text_equal_ascii_case_insensitive [flag, "-command"] || text_equal_ascii_case_insensitive [
+  text_equal_ascii_case_insensitive (flag, "-command") || text_equal_ascii_case_insensitive (
     flag,
     "-c",
-  ]
+  )
 end;
 
 const extract_powershell_script: CanonicalTexts -> CanonicalTextOption = command => do
@@ -164,7 +164,7 @@ const extract_powershell_script: CanonicalTexts -> CanonicalTextOption = command
   script
 end;
 
-let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalScanState = (
+let rec scan_plain_shell_command: (Text, I32, CanonicalScanState) -> CanonicalScanState = (
   script: Text,
   index: I32,
   state: CanonicalScanState,
@@ -174,7 +174,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
   if index >= text_length script || !(valid) then
     state
   else
-    let byte = text_get [script, index];
+    let byte = text_get (script, index);
     let next: CanonicalScanState = state;
 
     if quote == 39 then
@@ -183,7 +183,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
       else
         next = [
           reversed,
-          text_append [word, text_slice [script, index, index + 1]],
+          text_append (word, text_slice (script, index, index + 1)),
           has_word,
           quote,
           valid,
@@ -197,7 +197,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
       else
         next = [
           reversed,
-          text_append [word, text_slice [script, index, index + 1]],
+          text_append (word, text_slice (script, index, index + 1)),
           has_word,
           quote,
           valid,
@@ -205,7 +205,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
       end;
     else byte == 32 || byte == 9 then
       if has_word then
-        if texts.length(reversed) == 0 && text_contains [word, "="] then
+        if texts.length(reversed) == 0 && text_contains (word, "=") then
           next = [reversed, word, has_word, quote, false]
         else
           next = [texts.prepend(word, reversed), "", false, quote, valid]
@@ -220,7 +220,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
         else
           next = [
             reversed,
-            text_append [word, text_slice [script, index, index + 1]],
+            text_append (word, text_slice (script, index, index + 1)),
             true,
             quote,
             valid,
@@ -237,7 +237,7 @@ let rec scan_plain_shell_command: [Text, I32, CanonicalScanState] -> CanonicalSc
     let valid = scanned && quote == 0;
 
     if valid && has_word then
-      if texts.length(reversed) == 0 && text_contains [word, "="] then
+      if texts.length(reversed) == 0 && text_contains (word, "=") then
         valid = false
       else
         reversed = texts.prepend(word, reversed)

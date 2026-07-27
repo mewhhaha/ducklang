@@ -8,7 +8,7 @@ type WaitEnvironments = WaitForEnvironments
 type WaitEnvironmentHostResponse = WaitForEnvironmentHostResponse
 type WaitEnvironmentPlan = WaitForEnvironmentPlan
 type WaitEnvironmentResult = WaitForEnvironmentExecutionResult
-const plan_wait_for_environment: [WaitEnvironments, Text] -> WaitEnvironmentPlan = (
+const plan_wait_for_environment: (WaitEnvironments, Text) -> WaitEnvironmentPlan = (
   environments: WaitEnvironments,
   environment_id: Text,
 ) => do
@@ -58,7 +58,7 @@ const ready_environment_output: Text -> Text = environment_id => do
   text_append(encoded, ",\"status\":\"ready\"}")
 end;
 
-const finish_wait_for_environment: [Text, WaitEnvironmentHostResponse] -> WaitEnvironmentResult = (
+const finish_wait_for_environment: (Text, WaitEnvironmentHostResponse) -> WaitEnvironmentResult = (
   environment_id: Text,
   response: WaitEnvironmentHostResponse,
 ) => do

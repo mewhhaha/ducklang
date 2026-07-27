@@ -3,7 +3,7 @@ module () where
 const {} = import "./agent_spawn_override_types.duck" ();
 const {} = import "./agent_types.duck" ();
 
-const fixture_override_efforts: [Text, Text] -> AgentSpawnOverrideEfforts = (first, second) => do
+const fixture_override_efforts: (Text, Text) -> AgentSpawnOverrideEfforts = (first, second) => do
   #Cons [first, #Cons [second, #Nil]]
 end;
 
@@ -38,8 +38,8 @@ const fixture_override_models: () -> AgentSpawnOverrideModels = () => do
   ]
 end;
 
-const fixture_override_input: [AgentTextOption, AgentTextOption, AgentTextOption,
-  AgentTextOption] -> AgentSpawnOverrideInput = (
+const fixture_override_input: (AgentTextOption, AgentTextOption, AgentTextOption,
+  AgentTextOption) -> AgentSpawnOverrideInput = (
     requested_model,
     requested_effort,
     default_model,

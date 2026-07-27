@@ -1,0 +1,483 @@
+module () where
+
+const { .cast, .struct } = import "duck:prelude/types" ();
+const { .not } = import "duck:prelude" ();
+
+type Cursor = struct { .position = I32 }
+type Selection = struct { .anchor = I32, .head = I32 }
+type EditorMode =
+  | #Normal Cursor
+  | #Extend Selection
+  | #Insert Cursor
+type Editor = struct {
+  .document = PieceTable,
+  .mode = EditorMode,
+}
+type EditorHighlight = struct {
+  .start = I32,
+  .end = I32,
+}
+type EditorSave = [Editor, PieceTable]
+type SaveSequence =
+  | #NoSaves
+  | #SavedDocument SavedDocument
+type SavedDocument = [PieceTable, SaveSequence]
+type EditorStep =
+  | #EditorContinues Editor
+  | #EditorSaves EditorSave
+  | #EditorQuits Editor
+
+type KeyApplicationState = struct {
+  .editor = Editor,
+  .saves = SaveSequence,
+}
+type KeyApplication =
+  | #ContinueKeys KeyApplicationState
+  | #QuitKeys KeyApplicationState
+type EditorInputContinuation = struct {
+  .editor = Editor,
+  .decoder = KeyDecoder,
+  .saves = SaveSequence,
+}
+type EditorInputQuit = struct {
+  .editor = Editor,
+  .saves = SaveSequence,
+}
+type EditorInputResult =
+  | #ContinueInput EditorInputContinuation
+  | #QuitInput EditorInputQuit
+
+const utf8_continuation_lower_bound = 0x80;
+const utf8_continuation_upper_bound = 0xc0;
+
+const {
+  .piece_table,
+  .piece_table_length,
+  .byte_at,
+  .insert_bytes,
+  .delete_bytes,
+} = import "./piece_tree.duck" ();
+const {
+  .ground_key_decoder,
+  .decode_key_byte,
+  .finish_key_decoder,
+} = import "./terminal_keys.duck" ();
+
+let editor_from_bytes: Bytes -> Editor = document => do
+  Editor.new {
+    .document = piece_table document,
+    .mode = #Normal (Cursor.new { .position = 0 }),
+  }
+end;
+
+let selection_start: Selection -> I32 = selection => do
+  if selection.anchor < selection.head then selection.anchor else selection.head end;
+end;
+
+let editor_selection: Editor -> Selection = editor => do
+  let mode: EditorMode = editor.mode;
+
+  case mode of
+    #Normal cursor => do
+      let position: I32 = cursor.position;
+      Selection.new {
+        .anchor = position,
+        .head = position,
+      }
+    end,
+    #Insert cursor => do
+      let position: I32 = cursor.position;
+      Selection.new {
+        .anchor = position,
+        .head = position,
+      }
+    end,
+    #Extend selection => selection;
+end;
+
+let is_utf8_continuation: I32 -> Bool = byte => do
+  byte >= utf8_continuation_lower_bound && byte < utf8_continuation_upper_bound
+end;
+
+let next_character: (PieceTable, I32) -> I32 = (table, position) => do
+  let next = position + 1;
+  let length: I32 = piece_table_length table;
+
+  for candidate in next..length do
+    let byte = byte_at(table, candidate);
+    if not(is_utf8_continuation byte) then
+      break;
+    end;
+    next = candidate + 1
+  end
+
+  next
+end;
+
+let previous_character: (PieceTable, I32) -> I32 = (table, position) => do
+  let previous = position - 1;
+
+  for candidate in previous..0 by -1 do
+    let byte = byte_at(table, candidate);
+    if not(is_utf8_continuation byte) then
+      break;
+    end;
+    previous = candidate - 1
+  end
+
+  previous
+end;
+
+let clamp_character: (PieceTable, I32) -> I32 = (table, position) => do
+  let length = piece_table_length table;
+
+  if length == 0 then
+    0
+  else position < 0 then
+    0
+  else position >= length then
+    previous_character(table, length)
+  else
+    position
+  end;
+end;
+
+let clamp_insert_position: (PieceTable, I32) -> I32 = (table, position) => do
+  let length = piece_table_length table;
+
+  if position < 0 then
+    0
+  else position > length then
+    length
+  else
+    position
+  end;
+end;
+
+let selection_head_end: (PieceTable, Selection) -> I32 = (
+  table,
+  selection,
+) => do
+  if piece_table_length table == 0 then
+    0
+  else
+    let furthest =
+      if selection.anchor > selection.head then selection.anchor else selection.head end;
+    next_character(table, furthest)
+  end;
+end;
+
+let editor_highlight: Editor -> EditorHighlight = editor => do
+  let selection = editor_selection editor;
+  let start = selection_start(&selection);
+  let finish = if let #Insert _ = editor.mode then
+    start
+  else
+    selection_head_end(&editor.document, &selection)
+  end;
+  EditorHighlight.new {
+    .start = start,
+    .end = finish,
+  }
+end;
+
+let move_head: (Editor, I32) -> Editor = (editor, position) => do
+  let head = if let #Insert _ = editor.mode then
+    clamp_insert_position(&editor.document, position)
+  else
+    clamp_character(&editor.document, position)
+  end;
+  let current_mode: EditorMode = editor.mode;
+  let mode = case current_mode of
+    #Normal _ => #Normal (Cursor.new { .position = head }),
+    #Insert _ => #Insert (Cursor.new { .position = head }),
+    #Extend selection => #Extend (Selection.new {
+      .anchor = selection.anchor,
+      .head = head,
+    });
+  editor <& { .mode = mode }
+end;
+
+let move_left: Editor -> Editor = editor => do
+  let selection = editor_selection editor;
+  move_head(editor, previous_character(&editor.document, selection.head))
+end;
+
+let move_right: Editor -> Editor = editor => do
+  let selection = editor_selection editor;
+  move_head(editor, next_character(&editor.document, selection.head))
+end;
+
+let collapse: (Editor, I32) -> Editor = (editor, position) => do
+  let position = if let #Insert _ = editor.mode then
+    clamp_insert_position(&editor.document, position)
+  else
+    clamp_character(&editor.document, position)
+  end;
+  let cursor = Cursor.new { .position = position };
+  let mode = if let #Insert _ = editor.mode then
+    #Insert cursor
+  else
+    #Normal cursor
+  end;
+  editor <& { .mode = mode }
+end;
+
+let delete_selection: Editor -> Editor = editor => do
+  let selection = editor_selection editor;
+  let start = selection_start(&selection);
+  let finish = selection_head_end(&editor.document, &selection);
+  let document = delete_bytes(editor.document, start, finish);
+  let updated = editor <& { .document = document };
+  collapse(updated, start)
+end;
+
+let insert_piece: (Editor, Bytes) -> Editor = (editor, bytes) => do
+  let selection = editor_selection editor;
+  let position = selection.head;
+  let document = insert_bytes(editor.document, position, bytes);
+  let updated = editor <& { .document = document };
+  collapse(updated, position + bytes.length())
+end;
+
+let insert_byte: (Editor, I32) -> Editor = (editor, byte) => do
+  insert_piece(editor, Bytes.generate(1, _ => byte))
+end;
+
+let continue_editing: Editor -> EditorStep = editor => #EditorContinues editor;
+
+let save_editor: Editor -> EditorStep = editor => do
+  #EditorSaves [editor, editor.document]
+end;
+
+let apply_normal_character: (Editor, Char) -> EditorStep =
+  (editor, character) => case character of
+    'h' => continue_editing(move_left editor),
+    'l' => continue_editing(move_right editor),
+    'v' => do
+      let selection = editor_selection editor;
+      let mode = if let #Extend _ = editor.mode then
+        #Normal (Cursor.new { .position = selection.head })
+      else
+        #Extend selection
+      end;
+      continue_editing(editor <& { .mode = mode })
+    end,
+    'd' => continue_editing(delete_selection editor),
+    'c' => do
+      let updated = delete_selection editor;
+      let selection = editor_selection updated;
+      let mode = #Insert (Cursor.new { .position = selection.head });
+      continue_editing(updated <& { .mode = mode })
+    end,
+    'i' => do
+      let selection = editor_selection editor;
+      let position = selection_start(&selection);
+      let updated = collapse(editor, position);
+      let mode = #Insert (Cursor.new { .position = position });
+      continue_editing(updated <& { .mode = mode })
+    end,
+    'a' => do
+      let selection = editor_selection editor;
+      let position = selection_head_end(&editor.document, &selection);
+      let updated = collapse(editor, position);
+      let mode = #Insert (Cursor.new { .position = position });
+      continue_editing(updated <& { .mode = mode })
+    end,
+    'w' => save_editor editor,
+    'q' => #EditorQuits editor,
+    _ => continue_editing editor;
+
+let apply_backspace: Editor -> EditorStep = editor => do
+  let selection = editor_selection editor;
+
+  if selection.head == 0 then
+    continue_editing editor
+  else
+    let start = previous_character(&editor.document, selection.head);
+    let document = delete_bytes(editor.document, start, selection.head);
+    let updated = editor <& { .document = document };
+    continue_editing(collapse(updated, start))
+  end;
+end;
+
+let apply_insert_key: (Editor, Key) -> EditorStep = (editor, key) => case key of
+  #Escape => do
+    let selection = editor_selection editor;
+    let position = clamp_character(&editor.document, selection.head);
+    let mode = #Normal (Cursor.new { .position = position });
+    continue_editing(editor <& { .mode = mode })
+  end,
+  #Backspace => apply_backspace editor,
+  #Enter => continue_editing(insert_byte(editor, cast('\n', I32))),
+  #Tab => continue_editing(insert_byte(editor, cast('\t', I32))),
+  #Character character => do
+    let inserted_character: Char = character;
+    let byte = cast(inserted_character, I32);
+
+    if byte >= cast(' ', I32) then
+      continue_editing(insert_byte(editor, byte))
+    else
+      continue_editing editor
+    end;
+  end,
+  #ArrowLeft => do
+    @panic "Key dispatch sent ArrowLeft to insert-mode editing"
+  end,
+  #ArrowRight => do
+    @panic "Key dispatch sent ArrowRight to insert-mode editing"
+  end,
+  #ControlC => do
+    @panic "Key dispatch sent a handled terminal key to insert-mode editing"
+  end;
+
+let apply_key: (Editor, Key) -> EditorStep = (editor, key) => case key of
+  #ArrowLeft => continue_editing(move_left editor),
+  #ArrowRight => continue_editing(move_right editor),
+  #ControlC => if let #Insert _ = editor.mode then
+    continue_editing editor
+  else
+    #EditorQuits editor
+  end,
+  #Character character => if let #Insert _ = editor.mode then
+    apply_insert_key(editor, key)
+  else
+    apply_normal_character(editor, character)
+  end,
+  #Escape => if let #Insert _ = editor.mode then
+    apply_insert_key(editor, key)
+  else
+    continue_editing editor
+  end,
+  #Backspace => if let #Insert _ = editor.mode then
+    apply_insert_key(editor, key)
+  else
+    continue_editing editor
+  end,
+  #Enter => if let #Insert _ = editor.mode then
+    apply_insert_key(editor, key)
+  else
+    continue_editing editor
+  end,
+  #Tab => if let #Insert _ = editor.mode then
+    apply_insert_key(editor, key)
+  else
+    continue_editing editor
+  end;
+
+let apply_one_key: (KeyApplicationState, Key) -> KeyApplication = (
+  state,
+  key,
+) => do
+  let step = apply_key(state.editor, key);
+  let rec append_saved_document: (SaveSequence, PieceTable) -> SaveSequence = (
+    saves,
+    document,
+  ) => case saves of
+    #NoSaves => #SavedDocument [document, #NoSaves],
+    #SavedDocument saved => #SavedDocument [
+      saved[0],
+      append_saved_document(saved[1], document),
+    ];
+
+  case step of
+    #EditorContinues editor => do
+      #ContinueKeys (state <& { .editor = editor })
+    end,
+    #EditorSaves save => do
+      let next = KeyApplicationState.new {
+        .editor = save[0],
+        .saves = append_saved_document(state.saves, save[1]),
+      };
+      #ContinueKeys next
+    end,
+    #EditorQuits editor => do
+      #QuitKeys (state <& { .editor = editor })
+    end;
+end;
+
+let apply_decoded_keys: (KeyApplicationState, DecodedKeys) -> KeyApplication = (
+  state,
+  keys,
+) => case keys of
+  #NoDecodedKeys => #ContinueKeys state,
+  #OneDecodedKey key => apply_one_key(state, key),
+  #TwoDecodedKeys pair => do
+    let first = apply_one_key(state, pair[0]);
+
+    case first of
+      #ContinueKeys continued => apply_one_key(continued, pair[1]),
+      #QuitKeys quit => #QuitKeys quit;
+  end;
+
+let continue_input: (KeyApplicationState, KeyDecoder) -> EditorInputResult = (
+  state,
+  decoder,
+) => do
+  #ContinueInput (EditorInputContinuation.new {
+    .editor = state.editor,
+    .decoder = decoder,
+    .saves = state.saves,
+  })
+end;
+
+let quit_input: KeyApplicationState -> EditorInputResult = state => do
+  #QuitInput (EditorInputQuit.new {
+    .editor = state.editor,
+    .saves = state.saves,
+  })
+end;
+
+let apply_keys: (Editor, KeyDecoder, Bytes) -> EditorInputResult = (
+  editor,
+  decoder,
+  bytes,
+) => do
+  let initial_state = KeyApplicationState.new {
+    .editor = editor,
+    .saves = #NoSaves,
+  };
+  let state = initial_state;
+  let quit_requested = false;
+  let decoder = decoder;
+
+  for byte in bytes do
+    if quit_requested then
+      break;
+    end;
+
+    let decoded = decode_key_byte(decoder, byte);
+    decoder = decoded.decoder
+    let application: KeyApplication = apply_decoded_keys(state, decoded.keys);
+
+    if let #QuitKeys quit = application then
+      state = quit
+      quit_requested = true
+    else
+      let #ContinueKeys continued = application else do
+        @panic "Key application returned an unknown state"
+        ()
+      end;
+      state = continued
+    end;
+  end
+
+  if quit_requested then
+    quit_input state
+  else
+    let finished = finish_key_decoder decoder;
+    let final_application: KeyApplication =
+      apply_decoded_keys(state, finished.keys);
+
+    case final_application of
+      #ContinueKeys continued => continue_input(continued, finished.decoder),
+      #QuitKeys quit => quit_input quit;
+  end;
+end;
+
+return {
+  .editor_from_bytes,
+  .editor_highlight,
+  .apply_keys,
+  .ground_key_decoder,
+};

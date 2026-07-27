@@ -16,7 +16,7 @@ type CallPermissionsNativeCwd = RequestPermissionsNativeCwd
 type CallPermissionsPayload = RequestPermissionsPayload
 type CallPermissionsPreparedCall = RequestPermissionsPreparedCall
 
-const plan_request_permissions_call: [CallPermissionsPayload, CallPermissionsEnvironments] ->
+const plan_request_permissions_call: (CallPermissionsPayload, CallPermissionsEnvironments) ->
   CallPermissionsCallPlan = (
     payload: CallPermissionsPayload,
     environments: CallPermissionsEnvironments,

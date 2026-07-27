@@ -1198,9 +1198,8 @@ function rewrite_statements(
         stmt.type_annotation?.tag === "tuple" ||
         stmt.type_annotation?.tag === "product"
       ) {
-        throw new Error(
-          "Rich type annotation is not lowered yet on " + stmt.name,
-        );
+        annotation = undefined;
+        type_annotation = stmt.type_annotation;
       }
 
       result.push({
@@ -1287,7 +1286,7 @@ function apply_function_parameter_types(
     types = type.param.items;
   }
 
-  if (type.param.tag === "product") {
+  if (type.param.tag === "product" && type.param.value_pack === true) {
     types = expanded_type_product_entries(
       type.param,
       (name) =>

@@ -21,7 +21,7 @@ if let #Ok value_and_index = parsed then
     let matches = 0;
 
     for byte_index in 0..13 do
-      if text_get [text, byte_index] == expected[byte_index] then
+      if text_get (text, byte_index) == expected[byte_index] then
         matches = matches + 1
       end;
     end

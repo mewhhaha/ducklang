@@ -98,13 +98,13 @@ end;
 const strip_csv_bom: AgentJobCsvTextList -> AgentJobCsvTextList = headers => do
   if let #Cons node = headers then
     let [first, tail] = node;
-    if text_length first >= 3 && text_get [first, 0] == 239 && text_get [first,
-      1] == 187 && text_get [
+    if text_length first >= 3 && text_get (first, 0) == 239 && text_get (first,
+      1) == 187 && text_get (
         first,
         2,
-      ] == 191 then
+      ) == 191 then
         let stripped_node: AgentJobCsvTextListNode = [
-          text_slice [first, 3, text_length first],
+          text_slice (first, 3, text_length first),
           tail,
         ];
         #Cons stripped_node
@@ -129,13 +129,13 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
     if index >= text_length content then
       break;
     end;
-    let byte = text_get [content, index];
+    let byte = text_get (content, index);
 
     if quoted then
       if byte == 34 then
-        field = text_append [field, text_slice [content, segment_start, index]]
-        if index + 1 < text_length content && text_get [content, index + 1] == 34 then
-          field = text_append [field, "\""]
+        field = text_append (field, text_slice (content, segment_start, index))
+        if index + 1 < text_length content && text_get (content, index + 1) == 34 then
+          field = text_append (field, "\"")
           index = index + 2
           segment_start = index
         else
@@ -151,7 +151,7 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
       index = index + 1
       segment_start = index
     else byte == 44 || byte == 10 || byte == 13 then
-      field = text_append [field, text_slice [content, segment_start, index]]
+      field = text_append (field, text_slice (content, segment_start, index))
       let field_node: AgentJobCsvTextListNode = [field, row_reversed];
       row_reversed = #Cons field_node
       field = ""
@@ -163,7 +163,7 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
           rows_reversed = #Cons row_node
         end;
         row_reversed = #Nil
-        if byte == 13 && index + 1 < text_length content && text_get [content, index + 1] == 10 then
+        if byte == 13 && index + 1 < text_length content && text_get (content, index + 1) == 10 then
           index = index + 1 end;
       end;
 
@@ -178,7 +178,7 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
     failure = "unterminated quoted field"
   else segment_start < text_length content || field != "" || agent_job_text_count row_reversed
       > 0 then
-        field = text_append [field, text_slice [content, segment_start, text_length content]]
+        field = text_append (field, text_slice (content, segment_start, text_length content))
         let field_node: AgentJobCsvTextListNode = [field, row_reversed];
         row_reversed = #Cons field_node
         let row = reverse_agent_job_texts row_reversed;
@@ -205,15 +205,15 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
     end;
   end;
 
-  let render_agent_job_instruction: [Text, AgentJobTemplateObject] -> Text = (
+  let render_agent_job_instruction: (Text, AgentJobTemplateObject) -> Text = (
     instruction: Text,
     row: AgentJobTemplateObject,
   ) => do
-    let rendered = text_replace_all [
-      text_replace_all [instruction, "{{", "__CODEX_OPEN_BRACE__"],
+    let rendered = text_replace_all (
+      text_replace_all (instruction, "{{", "__CODEX_OPEN_BRACE__"),
       "}}",
       "__CODEX_CLOSE_BRACE__",
-    ];
+    );
     let current = row;
     let done = false;
     loop do
@@ -221,11 +221,11 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
         let [member, tail] = node;
         let [key, value] = member;
         let replacement = if let #String text = value then text else encode_json value end;
-        rendered = text_replace_all [
+        rendered = text_replace_all (
           rendered,
-          text_append ["{", text_append [key, "}"]],
+          text_append ("{", text_append (key, "}")),
           replacement,
-        ]
+        )
         current = tail
       else
         done = true
@@ -234,11 +234,11 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
         break;
       end;
     end;
-    text_replace_all [
-      text_replace_all [rendered, "__CODEX_OPEN_BRACE__", "{"],
+    text_replace_all (
+      text_replace_all (rendered, "__CODEX_OPEN_BRACE__", "{"),
       "__CODEX_CLOSE_BRACE__",
       "}",
-    ]
+    )
   end;
 
   const validate_agent_job_csv_rows: AgentJobCsvDocumentValue -> Text = document => do
@@ -252,19 +252,19 @@ let parse_agent_job_csv: Text -> AgentJobCsvParse = content => do
         let [row, tail] = node;
         let actual = agent_job_text_count row;
         if failure == "" && actual != expected then
-          failure = text_append [
+          failure = text_append (
             "csv row ",
-            text_append [
+            text_append (
               format_i32 row_number,
-              text_append [
+              text_append (
                 " has ",
-                text_append [
+                text_append (
                   format_i32 actual,
-                  text_append [" fields but header has ", format_i32 expected],
-                ],
-              ],
-            ],
-          ]
+                  text_append (" fields but header has ", format_i32 expected),
+                ),
+              ),
+            ),
+          )
         end;
         row_number = row_number + 1
         current = tail

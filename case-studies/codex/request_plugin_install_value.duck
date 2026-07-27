@@ -16,11 +16,11 @@ type InstallValueJson = Json
 type InstallValueObject = JsonObject
 
 let list_install_parse_failure: Text -> InstallValueListParseResult = reason => #ParseFailed (
-  text_append ["failed to parse function arguments: ", reason]
+  text_append ("failed to parse function arguments: ", reason)
 );
 let recommended_install_parse_failure: Text -> InstallValueRecommendedParseResult =
   reason => #ParseFailed (
-    text_append ["failed to parse function arguments: ", reason]
+    text_append ("failed to parse function arguments: ", reason)
   );
 
 let decode_list_plugin_install_value: InstallValueObject -> InstallValueListParseResult =

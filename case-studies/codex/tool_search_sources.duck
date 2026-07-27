@@ -88,7 +88,7 @@ const merge_search_sources: SearchSourcesValues -> SearchSourcesValues = values 
       loop do
         if let #Cons ordered_node = remaining then
           let [candidate, ordered_tail] = ordered_node;
-          if text_less_than [source.name, candidate.name] then
+          if text_less_than (source.name, candidate.name) then
             inserted = #Cons ([source, remaining] as SearchSourcesSourceNode)
             insertion_done = true
           else

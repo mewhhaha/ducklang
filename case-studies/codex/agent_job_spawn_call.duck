@@ -8,14 +8,14 @@ type AgentJobSpawnCallOption = AgentJobTextOption
 type AgentJobSpawnCallPayload = AgentJobPayload
 type AgentJobSpawnCallPlan = AgentJobSpawnPlan
 
-let plan_spawn_agents_on_csv: [
+let plan_spawn_agents_on_csv: (
   AgentJobSpawnCallPayload,
   Text,
   I32,
   Bool,
   I32,
   AgentJobSpawnCallOption,
-] -> AgentJobSpawnCallPlan = (
+) -> AgentJobSpawnCallPlan = (
   payload: AgentJobSpawnCallPayload,
   cwd: Text,
   environment_count: I32,

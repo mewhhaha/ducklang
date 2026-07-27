@@ -356,6 +356,7 @@ _expression = (
                 | recursive_function
                 | recursive_call_expression
                 | if_expression
+                | case_function_expression
                 | case_expression
                 | binary_expression
                 | is_expression
@@ -545,6 +546,14 @@ unary_expression = (
 scratch_expression = ("scratch" body:(block)) ;
 
 loop_expression = ("loop" body:(block)) ;
+
+case_function_expression = (
+                             "case"
+                             "=>"
+                             "of"
+                             arm:(case_arm)
+                             (("," arm:(case_arm)))*
+                           ) ;
 
 case_expression = (
                     "case"

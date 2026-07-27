@@ -31,7 +31,7 @@ const request_user_input_tool_definitions: Bool -> UserInputToolDefinitions = en
   end;
 end;
 
-const request_user_input_tool_specs: [Bool, Bool] -> UserInputToolSpecs = (
+const request_user_input_tool_specs: (Bool, Bool) -> UserInputToolSpecs = (
   enabled: Bool,
   default_mode_enabled: Bool,
 ) => do

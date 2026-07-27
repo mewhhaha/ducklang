@@ -10,7 +10,7 @@ type RetryError = ResponseStreamError
 type RetryDirective = ResponseRetryDirective
 type RetryPlan = ResponseRetryPlan
 
-const retry_delay: [&RetryError, I64, I32] -> DurationMs = (
+const retry_delay: (&RetryError, I64, I32) -> DurationMs = (
   error: &RetryError,
   retry_count: I64,
   jitter_per_mille: I32,
@@ -22,7 +22,7 @@ const retry_delay: [&RetryError, I64, I32] -> DurationMs = (
   end;
 end;
 
-const plan_response_retry: [I64, I64, Bool, &RetryError, Bool, Bool, I32] -> RetryPlan = (
+const plan_response_retry: (I64, I64, Bool, &RetryError, Bool, Bool, I32) -> RetryPlan = (
   retries: I64,
   max_retries: I64,
   fallback_switched: Bool,
@@ -33,15 +33,15 @@ const plan_response_retry: [I64, I64, Bool, &RetryError, Bool, Bool, I32] -> Ret
 ) => do
   if retries >= max_retries && fallback_switched then
     #Fallback (
-      text_append ["Falling back from WebSockets to HTTPS transport. ", text_copy(&error.message)]
+      text_append ("Falling back from WebSockets to HTTPS transport. ", text_copy(&error.message))
     )
   else retries < max_retries then
     let retry_count = retries + 1i64;
     let report_error = retry_count > 1i64 || debug_build || !(websocket_enabled);
-    let notification: Text = text_append [
+    let notification: Text = text_append (
       "Reconnecting... ",
-      text_append [format_i64 retry_count, text_append ["/", format_i64 max_retries]],
-    ];
+      text_append (format_i64 retry_count, text_append ("/", format_i64 max_retries)),
+    );
     let directive: RetryDirective = [
       .retries = retry_count,
       .delay = retry_delay(error, retry_count, jitter_per_mille),

@@ -10,7 +10,7 @@ type WaitEnvironmentArgs = WaitForEnvironmentArgs
 type WaitEnvironmentParseResult = WaitForEnvironmentParseResult
 
 let wait_environment_parse_failure: Text -> WaitEnvironmentParseResult = reason => do
-  #ParseFailed (text_append ["failed to parse function arguments: ", reason])
+  #ParseFailed (text_append ("failed to parse function arguments: ", reason))
 end;
 
 let parse_wait_for_environment_args: Text -> WaitEnvironmentParseResult = document => do
@@ -35,7 +35,7 @@ let parse_wait_for_environment_args: Text -> WaitEnvironmentParseResult = docume
   else let #Err error = parsed then
     let [position, message] = error;
     wait_environment_parse_failure(
-      text_append [message, text_append [" at byte ", format_i32 position]]
+      text_append (message, text_append (" at byte ", format_i32 position))
     )
   else
     wait_environment_parse_failure "invalid JSON parse result"

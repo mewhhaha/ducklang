@@ -236,6 +236,7 @@ export type Stmt =
     annotation: string | undefined;
     type_annotation?: TypeExpr;
     effectful?: boolean;
+    duck_member_alias?: true;
     mutual?: RecursiveBinding[];
     attribute_groups?: AttributeGroup[];
     value: FrontExpr;
@@ -312,6 +313,7 @@ export type FrontExpr =
     pattern?: Pattern;
     params: Param[];
     body: FrontExpr;
+    case_function?: true;
     /**
      * Parameter names synthesised from argument holes, in the order the holes
      * were written. Present only on a lambda the parser lifted out of

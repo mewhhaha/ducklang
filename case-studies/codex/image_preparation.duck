@@ -12,7 +12,7 @@ type ImageContentRewriteStatus =
 
 type ImageContentRewrite = [HistoryContents, ImageProcessingResults, ImageContentRewriteStatus, I32]
 
-const rewrite_image_contents: [HistoryContents, ImageProcessingResults, I32] -> ImageContentRewrite =
+const rewrite_image_contents: (HistoryContents, ImageProcessingResults, I32) -> ImageContentRewrite =
   (
     contents,
     results,
@@ -94,7 +94,7 @@ const rewrite_image_contents: [HistoryContents, ImageProcessingResults, I32] -> 
     [rewritten_contents, remaining_results, status, request_index]
   end;
 
-const apply_image_processing_results: [HistoryItems, ImageProcessingResults] -> ImageRewriteResult =
+const apply_image_processing_results: (HistoryItems, ImageProcessingResults) -> ImageRewriteResult =
   (
     responses,
     results,

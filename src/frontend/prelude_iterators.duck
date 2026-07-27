@@ -130,10 +130,10 @@ extend Text {
   end,
 }
 
-const iterator_map: forall source_state input output.[
+const iterator_map: forall source_state input output.(
   IteratorValue source_state input,
   input -> output,
-] -> IteratorValue(MappedIteratorState source_state input output) output =
+) -> IteratorValue(MappedIteratorState source_state input output) output =
   (source, transform) => do
     let state: MappedIteratorState source_state input output = [
       .source = source.state,
@@ -167,10 +167,10 @@ const iterator_map: forall source_state input output.[
     iterator
   end;
 
-const iterator_zip: forall left_state right_state left_item right_item.[
+const iterator_zip: forall left_state right_state left_item right_item.(
   IteratorValue left_state left_item,
   IteratorValue right_state right_item,
-] ->
+) ->
   IteratorValue(ZippedIteratorState left_state right_state left_item right_item)(
     ZippedItem left_item right_item
   ) =
@@ -214,11 +214,11 @@ const iterator_zip: forall left_state right_state left_item right_item.[
     iterator
   end;
 
-const iterator_scan: forall source_state item state.[
+const iterator_scan: forall source_state item state.(
   IteratorValue source_state item,
   state,
   state -> item -> state,
-] -> IteratorValue(ScannedIteratorState source_state item state) state =
+) -> IteratorValue(ScannedIteratorState source_state item state) state =
   (source, initial, combine) => do
     let state: ScannedIteratorState source_state item state = [
       .source = source.state,
@@ -254,11 +254,11 @@ const iterator_scan: forall source_state item state.[
     iterator
   end;
 
-const iterator_fold: forall source_state item state.[
+const iterator_fold: forall source_state item state.(
   IteratorValue source_state item,
   state,
   state -> item -> state,
-] -> state =
+) -> state =
   (source, initial, combine) => do
     let state = initial;
     let current = source.state;
@@ -275,10 +275,10 @@ const iterator_fold: forall source_state item state.[
     state
   end;
 
-const iterator_find: forall source_state item.[
+const iterator_find: forall source_state item.(
   IteratorValue source_state item,
   item -> Bool,
-] -> Option item =
+) -> Option item =
   (source, predicate) => do
     let found: Option item = #None;
     let current = source.state;
@@ -299,10 +299,10 @@ const iterator_find: forall source_state item.[
     found
   end;
 
-const iterator_find_index: forall source_state item.[
+const iterator_find_index: forall source_state item.(
   IteratorValue source_state item,
   item -> Bool,
-] -> Option I32 =
+) -> Option I32 =
   (source, predicate) => do
     let found: Option I32 = #None;
     let current = source.state;
@@ -326,10 +326,10 @@ const iterator_find_index: forall source_state item.[
     found
   end;
 
-const iterator_count: forall source_state item.[
+const iterator_count: forall source_state item.(
   IteratorValue source_state item,
   item -> Bool,
-] -> I32 =
+) -> I32 =
   (source, predicate) => do
     let current = source.state;
     let count = 0;

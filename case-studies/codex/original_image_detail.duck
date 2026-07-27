@@ -12,7 +12,7 @@ const can_request_original_image_detail: Bool -> Bool = supported => do
   if supported then true else false end;
 end;
 
-const normalize_output_image_detail: [Bool, ImagePolicyDetailOption] -> ImagePolicyDetailOption = (
+const normalize_output_image_detail: (Bool, ImagePolicyDetailOption) -> ImagePolicyDetailOption = (
   supported,
   detail,
 ) => do
@@ -27,7 +27,7 @@ const normalize_output_image_detail: [Bool, ImagePolicyDetailOption] -> ImagePol
   end;
 end;
 
-const sanitize_output_item: [Bool, ImagePolicyItem] -> ImagePolicyItem = (supported, item) => do
+const sanitize_output_item: (Bool, ImagePolicyItem) -> ImagePolicyItem = (supported, item) => do
   if supported then
     item
   else let #InputImage image = item then
@@ -50,7 +50,7 @@ const sanitize_output_item: [Bool, ImagePolicyItem] -> ImagePolicyItem = (suppor
   end;
 end;
 
-const sanitize_original_image_detail: [Bool, ImagePolicyItems] -> ImagePolicyItems = (
+const sanitize_original_image_detail: (Bool, ImagePolicyItems) -> ImagePolicyItems = (
   supported,
   items,
 ) => do

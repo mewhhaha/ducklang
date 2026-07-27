@@ -15,14 +15,14 @@ type BudgetThresholds = RolloutBudgetThresholds
 type BudgetUsage = RolloutBudgetTokenUsage
 type BudgetUsageResult = RolloutBudgetUsageResult
 
-const weighted_add: [F64, F64] -> F64 = (left: F64, right: F64) => left + right;
-const weighted_subtract: [F64, F64] -> F64 = (left: F64, right: F64) => left - right;
-const weighted_multiply: [F64, F64] -> F64 = (left: F64, right: F64) => left * right;
-const weighted_at_least: [F64, F64] -> Bool = (left: F64, right: F64) => left >= right;
+const weighted_add: (F64, F64) -> F64 = (left: F64, right: F64) => left + right;
+const weighted_subtract: (F64, F64) -> F64 = (left: F64, right: F64) => left - right;
+const weighted_multiply: (F64, F64) -> F64 = (left: F64, right: F64) => left * right;
+const weighted_at_least: (F64, F64) -> Bool = (left: F64, right: F64) => left >= right;
 
 const new_rollout_budget: () -> Budget = () => #None;
 
-const configure_rollout_budget: [Budget, BudgetConfig] -> Budget = (budget, config) => do
+const configure_rollout_budget: (Budget, BudgetConfig) -> Budget = (budget, config) => do
   if let #Some _ = budget then
     budget
   else
@@ -36,7 +36,7 @@ const configure_rollout_budget: [Budget, BudgetConfig] -> Budget = (budget, conf
   end;
 end;
 
-const record_rollout_budget_usage: [Budget, BudgetUsage] -> BudgetUsageResult =
+const record_rollout_budget_usage: (Budget, BudgetUsage) -> BudgetUsageResult =
   (budget, usage) => do
     if let #Some state = budget then
       let output_tokens = if usage.output_tokens > 0 then usage.output_tokens else 0 end;
@@ -76,7 +76,7 @@ const remaining_rollout_budget_tokens: &BudgetState -> I32 = (state: &BudgetStat
   if remaining <= 0.0f64 then 0 else i32_from_f64 remaining end;
 end;
 
-const crossed_reminder_count: [I32, &BudgetThresholds] -> I32 = (
+const crossed_reminder_count: (I32, &BudgetThresholds) -> I32 = (
   remaining_tokens,
   thresholds: &BudgetThresholds,
 ) => do
@@ -103,7 +103,7 @@ const crossed_reminder_count: [I32, &BudgetThresholds] -> I32 = (
   count
 end;
 
-const pending_rollout_budget_reminder: [&Budget, &Text, &Text] -> BudgetReminderOption = (
+const pending_rollout_budget_reminder: (&Budget, &Text, &Text) -> BudgetReminderOption = (
   budget: &Budget,
   thread_id: &Text,
   window_id: &Text,
@@ -150,7 +150,7 @@ const pending_rollout_budget_reminder: [&Budget, &Text, &Text] -> BudgetReminder
   end;
 end;
 
-const mark_rollout_budget_reminder_delivered: [Budget, Text, Text, &BudgetReminder] -> Budget = (
+const mark_rollout_budget_reminder_delivered: (Budget, Text, Text, &BudgetReminder) -> Budget = (
   budget,
   thread_id,
   window_id,
@@ -170,7 +170,7 @@ const mark_rollout_budget_reminder_delivered: [Budget, Text, Text, &BudgetRemind
   end;
 end;
 
-const rearm_rollout_budget_reminder: [Budget, Text] -> Budget = (budget, thread_id) => do
+const rearm_rollout_budget_reminder: (Budget, Text) -> Budget = (budget, thread_id) => do
   if let #Some state = budget then
     let delivery: BudgetDelivery = [.thread_id = thread_id, .window_id = "", .reminder_index = -1];
     let node: BudgetDeliveryNode = [delivery, state.deliveries];

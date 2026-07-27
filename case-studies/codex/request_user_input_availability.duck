@@ -18,7 +18,7 @@ const request_user_input_mode_name: AvailabilityMode -> Text = mode => do
   end;
 end;
 
-const request_user_input_availability: [AvailabilityMode, Bool] -> AvailabilityResult = (
+const request_user_input_availability: (AvailabilityMode, Bool) -> AvailabilityResult = (
   mode: AvailabilityMode,
   default_mode_enabled: Bool,
 ) => do
@@ -28,8 +28,8 @@ const request_user_input_availability: [AvailabilityMode, Bool] -> AvailabilityR
     if default_mode_enabled then #Available else #Unavailable "request_user_input is unavailable in Default mode" end;
   else
     let mode_name: Text = request_user_input_mode_name mode;
-    let mode_suffix: Text = text_append [mode_name, " mode"];
-    let message: Text = text_append ["request_user_input is unavailable in ", mode_suffix];
+    let mode_suffix: Text = text_append (mode_name, " mode");
+    let message: Text = text_append ("request_user_input is unavailable in ", mode_suffix);
     #Unavailable message;
   end;
 end;

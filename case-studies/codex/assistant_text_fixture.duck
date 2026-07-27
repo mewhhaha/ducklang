@@ -26,7 +26,7 @@ const render_citations = (citations: FixtureCitations) => do
     if let #Cons node = current then
       let typed_node: ListNode Text = node;
       let [citation, tail] = typed_node;
-      rendered = text_append [rendered, text_append ["C(", text_append [citation, ")"]]]
+      rendered = text_append (rendered, text_append ("C(", text_append (citation, ")")))
       current = tail
     else
       break;
@@ -47,20 +47,20 @@ const render_plan_segments = (segments: FixturePlanSegments) => do
 
       case segment of
         #Normal text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["N(", text_append [text, ")"]],
-          ] end,
+            text_append ("N(", text_append (text, ")")),
+          ) end,
         #ProposedPlanStart => do
-          rendered = text_append [rendered, "S"]
+          rendered = text_append (rendered, "S")
         end,
         #ProposedPlanDelta text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["D(", text_append [text, ")"]],
-          ] end,
+            text_append ("D(", text_append (text, ")")),
+          ) end,
         #ProposedPlanEnd => do
-          rendered = text_append [rendered, "E"]
+          rendered = text_append (rendered, "E")
         end;
 
       current = tail
@@ -125,7 +125,7 @@ let normal = push_assistant_text_chunk(
   "<proposed_plan>\n- <oai-mem-citation>source</oai-mem-citation>\n</proposed_plan>",
 );
 let normal_finish = finish_assistant_text normal.parser;
-let normal_visible = text_append [normal.visible_text, normal_finish.visible_text];
+let normal_visible = text_append (normal.visible_text, normal_finish.visible_text);
 let normal_citations = citation_values.append(normal.citations, normal_finish.citations);
 let normal_segments = plan_segments.append(normal.plan_segments, normal_finish.plan_segments);
 if normal_visible == "<proposed_plan>\n- \n</proposed_plan>" && render_citations normal_citations

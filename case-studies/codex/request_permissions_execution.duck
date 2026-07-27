@@ -11,11 +11,11 @@ type ExecutionPermissionsHostResponse = RequestPermissionsHostResponse
 type ExecutionPermissionsProfile = RequestPermissionProfile
 type ExecutionPermissionsResponse = RequestPermissionsResponse
 
-let complete_request_permissions_response: [
+let complete_request_permissions_response: (
   ExecutionPermissionsProfile,
   Text,
   ExecutionPermissionsResponse,
-] -> ExecutionPermissionsExecutionResult = (
+) -> ExecutionPermissionsExecutionResult = (
   requested: ExecutionPermissionsProfile,
   environment_id: Text,
   response: ExecutionPermissionsResponse,
@@ -28,11 +28,11 @@ let complete_request_permissions_response: [
   #Completed completion
 end;
 
-let finish_request_permissions: [
+let finish_request_permissions: (
   ExecutionPermissionsProfile,
   Text,
   ExecutionPermissionsHostResponse,
-] -> ExecutionPermissionsExecutionResult = (
+) -> ExecutionPermissionsExecutionResult = (
   requested: ExecutionPermissionsProfile,
   environment_id: Text,
   host_response: ExecutionPermissionsHostResponse,

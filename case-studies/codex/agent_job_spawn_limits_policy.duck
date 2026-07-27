@@ -10,8 +10,8 @@ type AgentJobSpawnLimitsI64 = I64
 type AgentJobSpawnLimitsOption = AgentJobTextOption
 type AgentJobSpawnLimitsPlan = AgentJobSpawnPlan
 
-const prepare_agent_job_spawn_limits: [AgentJobSpawnLimitsDecoded, I32,
-  AgentJobSpawnLimitsOption] -> AgentJobSpawnLimitsPlan = (
+const prepare_agent_job_spawn_limits: (AgentJobSpawnLimitsDecoded, I32,
+  AgentJobSpawnLimitsOption) -> AgentJobSpawnLimitsPlan = (
     decoded: AgentJobSpawnLimitsDecoded,
     maximum_threads: I32,
     configured_runtime_seconds: AgentJobSpawnLimitsOption,

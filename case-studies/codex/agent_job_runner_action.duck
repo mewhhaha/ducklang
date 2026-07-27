@@ -57,7 +57,7 @@ const start_agent_job_runner: AgentJobActionPending -> AgentJobActionState = pen
   ]
 end;
 
-const next_agent_job_runner_action: [AgentJobActionState, I32] -> AgentJobActionStep = (
+const next_agent_job_runner_action: (AgentJobActionState, I32) -> AgentJobActionStep = (
   state: AgentJobActionState,
   maximum_concurrency: I32,
 ) => do

@@ -156,7 +156,7 @@ const rfc3339_unix_seconds_or_zero: Text -> I64 = (timestamp: Text) => do
   if valid then seconds else 0i64 end;
 end;
 
-const floor_div_i64: [I64, I64] -> I64 = (value: I64, divisor: I64) => do
+const floor_div_i64: (I64, I64) -> I64 = (value: I64, divisor: I64) => do
   let quotient = value / divisor;
   if value < 0i64 && value % divisor != 0i64 then quotient - 1i64 else quotient end;
 end;

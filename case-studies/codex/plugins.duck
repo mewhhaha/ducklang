@@ -31,14 +31,14 @@ const texts = comptime list Text;
 const loaded_plugins = comptime list PluginsLoaded;
 const summaries = comptime list PluginsSummary;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 const prepend_text = (value: Text, values: PluginsTexts) => texts.prepend(value, values);
 const prepend_summary = (value: PluginsSummary, values: PluginsSummaries) => summaries.prepend(
   value,
   values,
 );
 
-let rec text_values_contain: [PluginsTexts, Text] -> Bool =
+let rec text_values_contain: (PluginsTexts, Text) -> Bool =
   (values: PluginsTexts, expected: Text) => do
     if let #Cons node = values then
       let [value, tail] = node;
@@ -48,7 +48,7 @@ let rec text_values_contain: [PluginsTexts, Text] -> Bool =
     end;
   end;
 
-let rec append_unique_texts_reversed: [PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec append_unique_texts_reversed: (PluginsTexts, PluginsTexts) -> PluginsTexts = (
   values: PluginsTexts,
   reversed: PluginsTexts,
 ) => do
@@ -122,7 +122,7 @@ const plugin_capability_summary = (plugin: PluginsLoaded) => do
   end;
 end;
 
-let rec build_plugin_summaries: [PluginsLoadedValues, PluginsSummaries] -> PluginsSummaries = (
+let rec build_plugin_summaries: (PluginsLoadedValues, PluginsSummaries) -> PluginsSummaries = (
   plugins: PluginsLoadedValues,
   reversed: PluginsSummaries,
 ) => do
@@ -141,7 +141,7 @@ const plugin_load_outcome = (plugins: PluginsLoadedValues) => do
   [plugins, build_plugin_summaries(plugins, summaries.empty())] as PluginsOutcome
 end;
 
-let rec effective_plugin_values: [PluginsLoadedValues, I32, PluginsTexts] -> PluginsTexts = (
+let rec effective_plugin_values: (PluginsLoadedValues, I32, PluginsTexts) -> PluginsTexts = (
   plugins: PluginsLoadedValues,
   field: I32,
   reversed: PluginsTexts,
@@ -171,7 +171,7 @@ end;
 
 const effective_skill_roots = (plugins: PluginsLoadedValues) => texts.sort_by(
   effective_plugin_values(plugins, 0, texts.empty()),
-  (left: Text, right: Text) => text_less_than [left, right],
+  (left: Text, right: Text) => text_less_than (left, right),
 );
 const effective_mcp_servers = (plugins: PluginsLoadedValues) => effective_plugin_values(
   plugins,
@@ -195,8 +195,8 @@ const effective_hook_warnings = (plugins: PluginsLoadedValues) => effective_plug
 );
 
 const plugin_name_from_path = (path: Text) => do
-  if text_starts_with [path, "plugin://"] && text_length path > 9 then
-    #Some (text_slice [path, 9, text_length path])
+  if text_starts_with (path, "plugin://") && text_length path > 9 then
+    #Some (text_slice (path, 9, text_length path))
   else
     #None
   end;
@@ -224,7 +224,7 @@ const parse_plugin_id = (key: Text) => do
   let separator = -1;
 
   for index in 0..text_length key do
-    if text_get [key, index] == 64 then
+    if text_get (key, index) == 64 then
       separator = index
     end;
   end
@@ -234,8 +234,8 @@ const parse_plugin_id = (key: Text) => do
       append_text("invalid plugin key `", append_text(key, "`; expected <plugin>@<marketplace>"))
     )
   else
-    let plugin_name = text_slice [key, 0, separator];
-    let marketplace_name = text_slice [key, separator + 1, text_length key];
+    let plugin_name = text_slice (key, 0, separator);
+    let marketplace_name = text_slice (key, separator + 1, text_length key);
 
     if valid_plugin_segment plugin_name then
       if valid_plugin_segment marketplace_name then
@@ -250,7 +250,7 @@ const parse_plugin_id = (key: Text) => do
   end;
 end;
 
-let rec mentioned_plugin_names: [PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec mentioned_plugin_names: (PluginsTexts, PluginsTexts) -> PluginsTexts = (
   paths: PluginsTexts,
   reversed: PluginsTexts,
 ) => do
@@ -268,7 +268,7 @@ let rec mentioned_plugin_names: [PluginsTexts, PluginsTexts] -> PluginsTexts = (
   end;
 end;
 
-let rec select_plugin_summaries: [PluginsSummaries, PluginsTexts, PluginsSelection] -> PluginsSelection =
+let rec select_plugin_summaries: (PluginsSummaries, PluginsTexts, PluginsSelection) -> PluginsSelection =
   (
     available: PluginsSummaries,
     names: PluginsTexts,
@@ -293,7 +293,7 @@ const collect_explicit_plugin_mentions = (paths: PluginsTexts, available: Plugin
   )
 end;
 
-let rec append_quoted_values: [PluginsTexts, Text, Bool] -> Text = (
+let rec append_quoted_values: (PluginsTexts, Text, Bool) -> Text = (
   values: PluginsTexts,
   output: Text,
   first: Bool,
@@ -311,7 +311,7 @@ let rec append_quoted_values: [PluginsTexts, Text, Bool] -> Text = (
   end;
 end;
 
-let rec filter_available_values: [PluginsTexts, PluginsTexts, PluginsTexts] -> PluginsTexts = (
+let rec filter_available_values: (PluginsTexts, PluginsTexts, PluginsTexts) -> PluginsTexts = (
   declared: PluginsTexts,
   available: PluginsTexts,
   reversed: PluginsTexts,

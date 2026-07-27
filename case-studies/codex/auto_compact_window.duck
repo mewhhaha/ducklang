@@ -25,7 +25,7 @@ const clear_auto_compact_prefill: CompactWindow -> CompactWindow = window => do
   window <& { .prefill_input_tokens = #None }
 end;
 
-const restore_auto_compact_window: [CompactWindow, I64, CompactWindowIds] -> CompactWindow = (
+const restore_auto_compact_window: (CompactWindow, I64, CompactWindowIds) -> CompactWindow = (
   window: CompactWindow,
   window_number: I64,
   ids: CompactWindowIds,
@@ -33,7 +33,7 @@ const restore_auto_compact_window: [CompactWindow, I64, CompactWindowIds] -> Com
   window <& { .window_number = window_number, .ids = ids }
 end;
 
-const advance_auto_compact_window: [CompactWindow, Text] -> CompactWindow = (
+const advance_auto_compact_window: (CompactWindow, Text) -> CompactWindow = (
   window: CompactWindow,
   next_window_id: Text,
 ) => do
@@ -73,7 +73,7 @@ const take_new_context_window_request: CompactWindow -> CompactWindowClaim = win
   [.window = cleared_window, .granted = granted];
 end;
 
-const ensure_server_observed_prefill: [CompactWindow, I64] -> CompactWindow = (
+const ensure_server_observed_prefill: (CompactWindow, I64) -> CompactWindow = (
   window: CompactWindow,
   input_tokens: I64,
 ) => do
@@ -90,7 +90,7 @@ const ensure_server_observed_prefill: [CompactWindow, I64] -> CompactWindow = (
   end;
 end;
 
-const set_estimated_prefill: [CompactWindow, I64] -> CompactWindow = (
+const set_estimated_prefill: (CompactWindow, I64) -> CompactWindow = (
   window: CompactWindow,
   input_tokens: I64,
 ) => do

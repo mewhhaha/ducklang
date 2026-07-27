@@ -18,11 +18,11 @@ type DiffOriginEntries = TurnDiffOriginEntries
 type DiffContentEntryNode = ListNode DiffContentEntry
 type DiffOriginEntryNode = ListNode DiffOriginEntry
 
-const turn_diff_paths_equal: [DiffTrackedPath, DiffTrackedPath] -> Bool = (left, right) => do
+const turn_diff_paths_equal: (DiffTrackedPath, DiffTrackedPath) -> Bool = (left, right) => do
   left.environment_id == right.environment_id && left.path == right.path
 end;
 
-const turn_diff_content_at: [DiffContentEntries, DiffTrackedPath] -> DiffTrackedContentOption = (
+const turn_diff_content_at: (DiffContentEntries, DiffTrackedPath) -> DiffTrackedContentOption = (
   entries,
   requested_path,
 ) => do
@@ -48,7 +48,7 @@ const turn_diff_content_at: [DiffContentEntries, DiffTrackedPath] -> DiffTracked
   found
 end;
 
-const turn_diff_content_entries_without: [DiffContentEntries, DiffTrackedPath] ->
+const turn_diff_content_entries_without: (DiffContentEntries, DiffTrackedPath) ->
   DiffContentEntries = (
     entries,
     removed_path,
@@ -84,7 +84,7 @@ const turn_diff_content_entries_without: [DiffContentEntries, DiffTrackedPath] -
     kept
   end;
 
-const turn_diff_upsert_content: [DiffContentEntries, DiffTrackedPath, DiffTrackedContent] ->
+const turn_diff_upsert_content: (DiffContentEntries, DiffTrackedPath, DiffTrackedContent) ->
   DiffContentEntries = (
     entries,
     path,
@@ -96,7 +96,7 @@ const turn_diff_upsert_content: [DiffContentEntries, DiffTrackedPath, DiffTracke
     #Cons node
   end;
 
-const turn_diff_origin_at: [DiffOriginEntries, DiffTrackedPath] -> DiffTrackedPathOption = (
+const turn_diff_origin_at: (DiffOriginEntries, DiffTrackedPath) -> DiffTrackedPathOption = (
   entries,
   requested_path,
 ) => do
@@ -122,7 +122,7 @@ const turn_diff_origin_at: [DiffOriginEntries, DiffTrackedPath] -> DiffTrackedPa
   found
 end;
 
-const turn_diff_origin_entries_without: [DiffOriginEntries, DiffTrackedPath] -> DiffOriginEntries =
+const turn_diff_origin_entries_without: (DiffOriginEntries, DiffTrackedPath) -> DiffOriginEntries =
   (
     entries,
     removed_path,
@@ -175,7 +175,7 @@ const invalidate_turn_diff: DiffState -> DiffState = state => do
   ]
 end;
 
-const apply_turn_diff_add: [DiffState, DiffTrackedPath, DiffAdd] -> DiffState = (
+const apply_turn_diff_add: (DiffState, DiffTrackedPath, DiffAdd) -> DiffState = (
   state,
   path,
   addition,
@@ -211,7 +211,7 @@ const apply_turn_diff_add: [DiffState, DiffTrackedPath, DiffAdd] -> DiffState = 
   ]
 end;
 
-const apply_turn_diff_delete: [DiffState, DiffTrackedPath, DiffDelete] -> DiffState = (
+const apply_turn_diff_delete: (DiffState, DiffTrackedPath, DiffDelete) -> DiffState = (
   state,
   path,
   deletion,
@@ -243,7 +243,7 @@ const apply_turn_diff_delete: [DiffState, DiffTrackedPath, DiffDelete] -> DiffSt
   ]
 end;
 
-const apply_turn_diff_update: [DiffState, Text, DiffTrackedPath, DiffUpdate] -> DiffState = (
+const apply_turn_diff_update: (DiffState, Text, DiffTrackedPath, DiffUpdate) -> DiffState = (
   state,
   environment_id,
   path,
@@ -320,7 +320,7 @@ const apply_turn_diff_update: [DiffState, Text, DiffTrackedPath, DiffUpdate] -> 
   ]
 end;
 
-const track_turn_diff_delta: [DiffState, Text, DiffDelta] -> DiffState = (
+const track_turn_diff_delta: (DiffState, Text, DiffDelta) -> DiffState = (
   state,
   environment_id,
   delta,
@@ -362,14 +362,14 @@ const track_turn_diff_delta: [DiffState, Text, DiffDelta] -> DiffState = (
   tracked_state
 end;
 
-const turn_diff_baseline_content: [DiffState, DiffTrackedPath] -> DiffTrackedContentOption = (
+const turn_diff_baseline_content: (DiffState, DiffTrackedPath) -> DiffTrackedContentOption = (
   state,
   path,
 ) => do
   turn_diff_content_at(state.baseline, path)
 end;
 
-const turn_diff_current_content: [DiffState, DiffTrackedPath] -> DiffTrackedContentOption = (
+const turn_diff_current_content: (DiffState, DiffTrackedPath) -> DiffTrackedContentOption = (
   state,
   path,
 ) => do

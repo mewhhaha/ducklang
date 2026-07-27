@@ -65,7 +65,7 @@ const missing_text: () -> MethodTextOption = () => #None;
 const missing_i32: () -> MethodI32Option = () => #None;
 const missing_bool: () -> MethodBoolOption = () => #None;
 
-const required_text: [MethodJsonObject, Text, Text] -> MethodTextResult = (
+const required_text: (MethodJsonObject, Text, Text) -> MethodTextResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -83,7 +83,7 @@ const required_text: [MethodJsonObject, Text, Text] -> MethodTextResult = (
   end;
 end;
 
-const optional_text: [MethodJsonObject, Text, Text] -> MethodTextOptionResult = (
+const optional_text: (MethodJsonObject, Text, Text) -> MethodTextOptionResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -103,7 +103,7 @@ const optional_text: [MethodJsonObject, Text, Text] -> MethodTextOptionResult = 
   end;
 end;
 
-const optional_bool: [MethodJsonObject, Text, Text] -> MethodBoolOptionResult = (
+const optional_bool: (MethodJsonObject, Text, Text) -> MethodBoolOptionResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -123,7 +123,7 @@ const optional_bool: [MethodJsonObject, Text, Text] -> MethodBoolOptionResult = 
   end;
 end;
 
-const default_bool: [MethodJsonObject, Text, Text, Bool] -> MethodBoolResult = (
+const default_bool: (MethodJsonObject, Text, Text, Bool) -> MethodBoolResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -153,7 +153,7 @@ const json_nonnegative_i32: MethodJson -> MethodI32Result = (value: MethodJson) 
       if index >= text_length number then
         break;
       end;
-      let byte = text_get [number, index];
+      let byte = text_get (number, index);
 
       if byte < 48 || byte > 57 then
         valid = false
@@ -182,7 +182,7 @@ const json_nonnegative_i32: MethodJson -> MethodI32Result = (value: MethodJson) 
   end;
 end;
 
-const optional_i32: [MethodJsonObject, Text, Text] -> MethodI32OptionResult = (
+const optional_i32: (MethodJsonObject, Text, Text) -> MethodI32OptionResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -207,7 +207,7 @@ const optional_i32: [MethodJsonObject, Text, Text] -> MethodI32OptionResult = (
   end;
 end;
 
-let rec decode_text_values: [MethodJsonArray, MethodTexts, Text] -> MethodTextsResult = (
+let rec decode_text_values: (MethodJsonArray, MethodTexts, Text) -> MethodTextsResult = (
   values: MethodJsonArray,
   reversed: MethodTexts,
   context: Text,
@@ -225,7 +225,7 @@ let rec decode_text_values: [MethodJsonArray, MethodTexts, Text] -> MethodTextsR
   end;
 end;
 
-const optional_texts: [MethodJsonObject, Text, Text] -> MethodTextsResult = (
+const optional_texts: (MethodJsonObject, Text, Text) -> MethodTextsResult = (
   object: MethodJsonObject,
   key: Text,
   context: Text,
@@ -245,7 +245,7 @@ const optional_texts: [MethodJsonObject, Text, Text] -> MethodTextsResult = (
   end;
 end;
 
-const optional_cwd: [MethodJsonObject, Text] -> MethodTextsResult = (
+const optional_cwd: (MethodJsonObject, Text) -> MethodTextsResult = (
   object: MethodJsonObject,
   context: Text,
 ) => do
@@ -340,7 +340,7 @@ const source_kind_from_text: Text -> MethodThreadSourceKindResult = (value: Text
   end;
 end;
 
-let rec decode_source_kind_values: [MethodJsonArray, MethodThreadSourceKinds] -> MethodThreadSourceKindsResult =
+let rec decode_source_kind_values: (MethodJsonArray, MethodThreadSourceKinds) -> MethodThreadSourceKindsResult =
   (
     values: MethodJsonArray,
     reversed: MethodThreadSourceKinds,
@@ -556,7 +556,7 @@ const decode_user_input: MethodJson -> MethodUserInputResult = (value: MethodJso
   end;
 end;
 
-let rec decode_user_inputs: [MethodJsonArray, MethodUserInputs] -> MethodUserInputsResult = (
+let rec decode_user_inputs: (MethodJsonArray, MethodUserInputs) -> MethodUserInputsResult = (
   values: MethodJsonArray,
   reversed: MethodUserInputs,
 ) => do
@@ -681,7 +681,7 @@ const decode_turn_interrupt: MethodJson -> MethodDecodeResult = (params: MethodJ
   end;
 end;
 
-const decode_app_server_method: [Text, MethodJson] -> MethodDecodeResult = (
+const decode_app_server_method: (Text, MethodJson) -> MethodDecodeResult = (
   name: Text,
   params: MethodJson,
 ) => do

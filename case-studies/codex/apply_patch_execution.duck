@@ -15,7 +15,7 @@ type PatchExecutionMutation = ApplyPatchMutationResult
 const patch_text_prepend = list_prepend Text;
 const patch_text_reverse = list_reverse Text;
 
-let render_changed_paths: [Text, PatchExecutionTexts, Text] -> Text = (
+let render_changed_paths: (Text, PatchExecutionTexts, Text) -> Text = (
   prefix: Text,
   paths: PatchExecutionTexts,
   initial: Text,

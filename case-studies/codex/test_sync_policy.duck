@@ -22,7 +22,7 @@ const plan_test_sync: SyncPolicyArgs -> SyncPolicyPlan = args => do
   end;
 end;
 
-const finish_test_sync_barrier: [Text, SyncPolicyBarrierResult] -> SyncPolicyExecutionResult = (
+const finish_test_sync_barrier: (Text, SyncPolicyBarrierResult) -> SyncPolicyExecutionResult = (
   barrier_id: Text,
   result: SyncPolicyBarrierResult,
 ) => do
@@ -30,13 +30,13 @@ const finish_test_sync_barrier: [Text, SyncPolicyBarrierResult] -> SyncPolicyExe
     #Completed "ok"
   else let #ParticipantsMismatch existing = result then
     #Rejected (
-      text_append [
+      text_append (
         "barrier ",
-        text_append [
+        text_append (
           barrier_id,
-          text_append [" already registered with ", text_append [existing, " participants"]],
-        ],
-      ]
+          text_append (" already registered with ", text_append (existing, " participants")),
+        ),
+      )
     )
   else
     #Rejected "test_sync_tool barrier wait timed out"

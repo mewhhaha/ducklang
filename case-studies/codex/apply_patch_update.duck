@@ -30,37 +30,37 @@ const replacement_prepend = list_prepend PatchUpdateReplacement;
 
 let normalize_match_line: Text -> Text = (line: Text) => do
   let normalized = text_trim_ascii_whitespace line;
-  normalized = text_replace_all [normalized, "‐", "-"]
-  normalized = text_replace_all [normalized, "‑", "-"]
-  normalized = text_replace_all [normalized, "‒", "-"]
-  normalized = text_replace_all [normalized, "–", "-"]
-  normalized = text_replace_all [normalized, "—", "-"]
-  normalized = text_replace_all [normalized, "―", "-"]
-  normalized = text_replace_all [normalized, "−", "-"]
-  normalized = text_replace_all [normalized, "‘", "'"]
-  normalized = text_replace_all [normalized, "’", "'"]
-  normalized = text_replace_all [normalized, "‚", "'"]
-  normalized = text_replace_all [normalized, "‛", "'"]
-  normalized = text_replace_all [normalized, "“", "\""]
-  normalized = text_replace_all [normalized, "”", "\""]
-  normalized = text_replace_all [normalized, "„", "\""]
-  normalized = text_replace_all [normalized, "‟", "\""]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  normalized = text_replace_all [normalized, " ", " "]
-  text_replace_all [normalized, "　", " "]
+  normalized = text_replace_all (normalized, "‐", "-")
+  normalized = text_replace_all (normalized, "‑", "-")
+  normalized = text_replace_all (normalized, "‒", "-")
+  normalized = text_replace_all (normalized, "–", "-")
+  normalized = text_replace_all (normalized, "—", "-")
+  normalized = text_replace_all (normalized, "―", "-")
+  normalized = text_replace_all (normalized, "−", "-")
+  normalized = text_replace_all (normalized, "‘", "'")
+  normalized = text_replace_all (normalized, "’", "'")
+  normalized = text_replace_all (normalized, "‚", "'")
+  normalized = text_replace_all (normalized, "‛", "'")
+  normalized = text_replace_all (normalized, "“", "\"")
+  normalized = text_replace_all (normalized, "”", "\"")
+  normalized = text_replace_all (normalized, "„", "\"")
+  normalized = text_replace_all (normalized, "‟", "\"")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  normalized = text_replace_all (normalized, " ", " ")
+  text_replace_all (normalized, "　", " ")
 end;
 
-let patch_lines_match_at: [PatchUpdateTexts, PatchUpdateTexts, I32, I32] -> Bool = (
+let patch_lines_match_at: (PatchUpdateTexts, PatchUpdateTexts, I32, I32) -> Bool = (
   source: PatchUpdateTexts,
   pattern: PatchUpdateTexts,
   start: I32,
@@ -98,7 +98,7 @@ let patch_lines_match_at: [PatchUpdateTexts, PatchUpdateTexts, I32, I32] -> Bool
   matches
 end;
 
-let seek_patch_lines: [PatchUpdateTexts, PatchUpdateTexts, I32, Bool] -> PatchUpdateI32Option = (
+let seek_patch_lines: (PatchUpdateTexts, PatchUpdateTexts, I32, Bool) -> PatchUpdateI32Option = (
   source: PatchUpdateTexts,
   pattern: PatchUpdateTexts,
   start: I32,
@@ -151,12 +151,12 @@ const apply_replacement = (lines: PatchUpdateTexts, replacement: PatchUpdateRepl
   append(prefix, append(replacement.new_lines, suffix))
 end;
 
-let derive_apply_patch_update: [Text, Text, PatchUpdateChunks] -> PatchUpdateResult = (
+let derive_apply_patch_update: (Text, Text, PatchUpdateChunks) -> PatchUpdateResult = (
   path: Text,
   original: Text,
   patch_chunks: PatchUpdateChunks,
 ) => do
-  let original_lines: PatchUpdateTexts = text_split [original, "\n"];
+  let original_lines: PatchUpdateTexts = text_split (original, "\n");
   let original_length = length original_lines;
   if original_length > 0 && nth_or("not-empty", original_length - 1, original_lines) == "" then
     original_lines = take(original_length - 1, original_lines)

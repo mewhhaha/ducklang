@@ -180,6 +180,61 @@ Deno.test("gpufuck ABI builds recursive type schemas", () => {
   });
 });
 
+Deno.test("gpufuck ABI retains aggregate schemas when their namespaces are extended", () => {
+  const manifest = build_abi_manifest({
+    tag: "program",
+    declarations: [{
+      tag: "effect",
+      implementation: "host",
+      name: "Host",
+      params: [],
+      operations: [{
+        name: "read",
+        type_params: [],
+        params: [],
+        result: { type_name: "Choice", ownership: "unique_heap" },
+      }],
+    }],
+    statements: [
+      {
+        tag: "bind",
+        kind: "const",
+        name: "Choice",
+        is_linear: false,
+        annotation: undefined,
+        value: {
+          tag: "union_type",
+          cases: [
+            { name: "Left", type_name: "I32" },
+            { name: "Right", type_name: "Unit" },
+          ],
+        },
+      },
+      {
+        tag: "bind",
+        kind: "const",
+        name: "Choice",
+        is_linear: false,
+        annotation: undefined,
+        value: {
+          tag: "struct_update",
+          base: { tag: "var", name: "Choice" },
+          fields: [{ name: "label", value: { tag: "text", value: "choice" } }],
+        },
+      },
+    ],
+  });
+
+  assert_equals(manifest.types.Choice, {
+    tag: "union",
+    name: "Choice",
+    cases: [
+      { name: "Left", payload: { tag: "i32" } },
+      { name: "Right", payload: { tag: "unit" } },
+    ],
+  });
+});
+
 Deno.test("gpufuck ABI records scalar float effect contracts", () => {
   const manifest = build_abi_manifest(Source.parse(`
 declare effect FloatMath { scale: (F32) => F32, widen: (F64) => F64 }

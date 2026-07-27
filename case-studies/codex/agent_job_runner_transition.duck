@@ -11,7 +11,7 @@ type AgentJobTransitionOutcome = AgentJobSpawnOutcome
 type AgentJobTransitionState = AgentJobRunnerState
 type AgentJobTransitionValue = AgentJobRunnerTransition
 
-const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome] ->
+const apply_agent_job_spawn: (AgentJobTransitionState, AgentJobTransitionOutcome) ->
   AgentJobTransitionValue = (
     state: AgentJobTransitionState,
     outcome: AgentJobTransitionOutcome,
@@ -64,7 +64,7 @@ const apply_agent_job_spawn: [AgentJobTransitionState, AgentJobTransitionOutcome
     end;
   end;
 
-const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCompletion] ->
+const apply_agent_job_completion: (AgentJobTransitionState, AgentJobTransitionCompletion) ->
   AgentJobTransitionValue = (
     state: AgentJobTransitionState,
     completion: AgentJobTransitionCompletion,
@@ -92,7 +92,7 @@ const apply_agent_job_completion: [AgentJobTransitionState, AgentJobTransitionCo
     end;
     if !(found) then
       #RunnerInvariantFailed (
-        text_append ["agent job completion referenced inactive worker ", completion.thread_id]
+        text_append ("agent job completion referenced inactive worker ", completion.thread_id)
       )
     else
       let remaining: AgentJobTransitionActive = #Nil;

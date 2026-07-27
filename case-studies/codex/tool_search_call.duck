@@ -53,7 +53,7 @@ const tool_search_sources: SearchCallInfos -> SearchCallSources = values => do
   ordered
 end;
 
-const plan_tool_search_call: [SearchCallInvocation, SearchCallInfos] -> SearchCallPlan = (
+const plan_tool_search_call: (SearchCallInvocation, SearchCallInfos) -> SearchCallPlan = (
   invocation: SearchCallInvocation,
   search_infos: SearchCallInfos,
 ) => do

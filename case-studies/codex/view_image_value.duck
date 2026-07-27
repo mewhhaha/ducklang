@@ -13,7 +13,7 @@ type ImageValueParseResult = ViewImageParseResult
 type ImageValueTextOption = ViewImageTextOption
 
 const view_image_parse_failure: Text -> ImageValueParseResult = reason => do
-  #ParseFailed (text_append ["failed to parse function arguments: ", reason])
+  #ParseFailed (text_append ("failed to parse function arguments: ", reason))
 end;
 
 const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value => do
@@ -60,10 +60,10 @@ const decode_view_image_value: ImageValueJson -> ImageValueParseResult = value =
             let parsed_detail: ImageValueDetail = #Original;
             detail = #ImageDetailPresent parsed_detail
           else
-            failure = text_append [
+            failure = text_append (
               "view_image.detail only supports `high` or `original`; omit `detail` for default high resized behavior, got `",
-              text_append [detail_text, "`"],
-            ]
+              text_append (detail_text, "`"),
+            )
           end;
         else let #Null = detail_value then
           detail = #ImageDetailMissing

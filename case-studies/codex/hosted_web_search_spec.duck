@@ -75,7 +75,7 @@ type HostedSpecBoolOption =
   | #HostedBoolMissing
   | #HostedBoolPresent Bool
 
-const create_hosted_web_search_spec: [HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType] ->
+const create_hosted_web_search_spec: (HostedSpecMode, HostedSpecConfigOption, HostedSpecToolType) ->
   HostedSpec = (
     mode,
     config,

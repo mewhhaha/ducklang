@@ -38,7 +38,7 @@ const empty_turn_profile_state: () -> ProfileState = () => do
   ]
 end;
 
-const start_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
+const start_turn_profile: (ProfileState, ProfileInstant) -> ProfileState = (
   state: ProfileState,
   started_at: ProfileInstant,
 ) => do
@@ -50,7 +50,7 @@ const start_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
   }
 end;
 
-const turn_profile_phase_equal: [ProfilePhase, ProfilePhase] -> Bool = (
+const turn_profile_phase_equal: (ProfilePhase, ProfilePhase) -> Bool = (
   left: ProfilePhase,
   right: ProfilePhase,
 ) => do
@@ -63,7 +63,7 @@ const turn_profile_phase_equal: [ProfilePhase, ProfilePhase] -> Bool = (
   end;
 end;
 
-const advance_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
+const advance_turn_profile: (ProfileState, ProfileInstant) -> ProfileState = (
   state: ProfileState,
   now: ProfileInstant,
 ) => do
@@ -117,7 +117,7 @@ const advance_turn_profile: [ProfileState, ProfileInstant] -> ProfileState = (
   end;
 end;
 
-const begin_sampling: [ProfileState, ProfileInstant] -> ProfileTransition = (
+const begin_sampling: (ProfileState, ProfileInstant) -> ProfileTransition = (
   state: ProfileState,
   now: ProfileInstant,
 ) => do
@@ -147,7 +147,7 @@ const begin_sampling: [ProfileState, ProfileInstant] -> ProfileTransition = (
   end;
 end;
 
-const begin_tool_blocking: [ProfileState, ProfileInstant] -> ProfileTransition = (
+const begin_tool_blocking: (ProfileState, ProfileInstant) -> ProfileTransition = (
   state: ProfileState,
   now: ProfileInstant,
 ) => do
@@ -164,7 +164,7 @@ const begin_tool_blocking: [ProfileState, ProfileInstant] -> ProfileTransition =
   end;
 end;
 
-const end_turn_profile_phase: [ProfileState, ProfileInstant, ProfilePhase] -> ProfileState = (
+const end_turn_profile_phase: (ProfileState, ProfileInstant, ProfilePhase) -> ProfileState = (
   state: ProfileState,
   now: ProfileInstant,
   phase: ProfilePhase,
@@ -195,7 +195,7 @@ const record_sampling_retry: ProfileState -> ProfileState = state => do
   end;
 end;
 
-const add_turn_profile_rounding: [Profile, ProfilePhaseOption, Bool, ProfileDuration] -> Profile = (
+const add_turn_profile_rounding: (Profile, ProfilePhaseOption, Bool, ProfileDuration) -> Profile = (
   profile: Profile,
   final_phase: ProfilePhaseOption,
   seen_sampling: Bool,
@@ -216,7 +216,7 @@ const add_turn_profile_rounding: [Profile, ProfilePhaseOption, Bool, ProfileDura
   end;
 end;
 
-const complete_turn_profile: [ProfileState, ProfileInstant] -> ProfileCompletion = (
+const complete_turn_profile: (ProfileState, ProfileInstant) -> ProfileCompletion = (
   state: ProfileState,
   now: ProfileInstant,
 ) => do

@@ -28,20 +28,20 @@ const render_plan_segments = (values: FixtureSegments) => do
 
       case segment of
         #Normal text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["N(", text_append [text, ")"]],
-          ] end,
+            text_append ("N(", text_append (text, ")")),
+          ) end,
         #ProposedPlanStart => do
-          rendered = text_append [rendered, "S"]
+          rendered = text_append (rendered, "S")
         end,
         #ProposedPlanDelta text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["D(", text_append [text, ")"]],
-          ] end,
+            text_append ("D(", text_append (text, ")")),
+          ) end,
         #ProposedPlanEnd => do
-          rendered = text_append [rendered, "E"]
+          rendered = text_append (rendered, "E")
         end;
 
       current = tail
@@ -61,21 +61,21 @@ let streamed_segments: FixtureSegments = fixture_segments.empty();
 let first = push_proposed_plan_chunk(parser, "Intro text\n<prop");
 let [first_parser, first_visible, first_segments] = first;
 parser = first_parser
-streamed_visible = text_append [streamed_visible, first_visible]
+streamed_visible = text_append (streamed_visible, first_visible)
 streamed_segments = fixture_segments.append(streamed_segments, first_segments)
 let second = push_proposed_plan_chunk(parser, "osed_plan>\n- step 1\n");
 let [second_parser, second_visible, second_segments] = second;
 parser = second_parser
-streamed_visible = text_append [streamed_visible, second_visible]
+streamed_visible = text_append (streamed_visible, second_visible)
 streamed_segments = fixture_segments.append(streamed_segments, second_segments)
 let third = push_proposed_plan_chunk(parser, "</proposed_plan>\nOutro");
 let [third_parser, third_visible, third_segments] = third;
 parser = third_parser
-streamed_visible = text_append [streamed_visible, third_visible]
+streamed_visible = text_append (streamed_visible, third_visible)
 streamed_segments = fixture_segments.append(streamed_segments, third_segments)
 let streamed_finish = finish_proposed_plan parser;
 let [_, streamed_tail, streamed_finish_segments] = streamed_finish;
-streamed_visible = text_append [streamed_visible, streamed_tail]
+streamed_visible = text_append (streamed_visible, streamed_tail)
 streamed_segments = fixture_segments.append(streamed_segments, streamed_finish_segments)
 
 if streamed_visible == "Intro text\nOutro" && render_plan_segments streamed_segments
@@ -87,7 +87,7 @@ let malformed = push_proposed_plan_chunk(new_proposed_plan_parser(), "  <propose
 let [malformed_parser, malformed_prefix, malformed_prefix_segments] = malformed;
 let malformed_finish = finish_proposed_plan malformed_parser;
 let [_, malformed_tail, malformed_tail_segments] = malformed_finish;
-let malformed_visible = text_append [malformed_prefix, malformed_tail];
+let malformed_visible = text_append (malformed_prefix, malformed_tail);
 let malformed_segments =
   fixture_segments.append(malformed_prefix_segments, malformed_tail_segments);
 if malformed_visible == "  <proposed_plan> extra\n" && render_plan_segments malformed_segments
@@ -134,7 +134,7 @@ let state_mismatch = push_proposed_plan_chunk(
 let [state_mismatch_parser, state_mismatch_prefix, state_mismatch_prefix_segments] = state_mismatch;
 let state_mismatch_finish = finish_proposed_plan state_mismatch_parser;
 let [_, state_mismatch_tail, state_mismatch_tail_segments] = state_mismatch_finish;
-let state_mismatch_visible = text_append [state_mismatch_prefix, state_mismatch_tail];
+let state_mismatch_visible = text_append (state_mismatch_prefix, state_mismatch_tail);
 let state_mismatch_segments = fixture_segments.append(
   state_mismatch_prefix_segments,
   state_mismatch_tail_segments,

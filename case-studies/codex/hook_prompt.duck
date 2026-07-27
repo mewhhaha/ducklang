@@ -23,20 +23,20 @@ const unescape_hook_prompt_xml = (text: Text) => do
   let valid = true;
 
   loop do
-    let ampersand = text_find_from [text, "&", start];
+    let ampersand = text_find_from (text, "&", start);
     if ampersand < 0 then
-      output = text_append [output, text_slice [text, start, text_length text]]
+      output = text_append (output, text_slice (text, start, text_length text))
       break;
     end;
 
-    output = text_append [output, text_slice [text, start, ampersand]]
-    let semicolon = text_find_from [text, ";", ampersand + 1];
+    output = text_append (output, text_slice (text, start, ampersand))
+    let semicolon = text_find_from (text, ";", ampersand + 1);
     if semicolon < 0 then
       valid = false
       break;
     end;
 
-    let entity = text_slice [text, ampersand + 1, semicolon];
+    let entity = text_slice (text, ampersand + 1, semicolon);
     let replacement: Text = "";
     if entity == "amp" then
       replacement = "&"
@@ -56,7 +56,7 @@ const unescape_hook_prompt_xml = (text: Text) => do
       break;
     end;
 
-    output = text_append [output, replacement]
+    output = text_append (output, replacement)
     start = semicolon + 1
   end;
 
@@ -72,23 +72,23 @@ const parse_hook_prompt_fragment = (text: Text) => do
   let trimmed = text_trim_whitespace text;
   let start_marker = "<hook_prompt hook_run_id=\"";
   let end_marker = "</hook_prompt>";
-  let opening_end = text_find_from [trimmed, "\">", text_length start_marker];
+  let opening_end = text_find_from (trimmed, "\">", text_length start_marker);
   let content_end = text_length trimmed - text_length end_marker;
   let has_shape =
-    text_starts_with [trimmed, start_marker] && text_ends_with [trimmed, end_marker] && opening_end
+    text_starts_with (trimmed, start_marker) && text_ends_with (trimmed, end_marker) && opening_end
     >= text_length start_marker && opening_end + 2 <= content_end;
 
   if has_shape then
-    let encoded_hook_run_id = text_slice [
+    let encoded_hook_run_id = text_slice (
       trimmed,
       text_length start_marker,
       opening_end,
-    ];
-    let encoded_text = text_slice [trimmed, opening_end + 2, content_end];
-    let malformed_xml = text_contains [encoded_hook_run_id, "\""] || text_contains [
+    );
+    let encoded_text = text_slice (trimmed, opening_end + 2, content_end);
+    let malformed_xml = text_contains (encoded_hook_run_id, "\"") || text_contains (
       encoded_hook_run_id,
       "<",
-    ] || text_contains [encoded_text, "<"];
+    ) || text_contains (encoded_text, "<");
 
     if !(malformed_xml) then
       let hook_run_id_result: UserTextOption = unescape_hook_prompt_xml encoded_hook_run_id;
@@ -117,10 +117,10 @@ const render_hook_prompt_fragment = (fragment: HookPromptFragment) => do
 
   if text_trim_whitespace hook_run_id != "" then
     let rendered = "<hook_prompt hook_run_id=\"";
-    rendered = text_append [rendered, text_escape_xml hook_run_id]
-    rendered = text_append [rendered, "\">"]
-    rendered = text_append [rendered, text_escape_xml text]
-    rendered = text_append [rendered, "</hook_prompt>"]
+    rendered = text_append (rendered, text_escape_xml hook_run_id)
+    rendered = text_append (rendered, "\">")
+    rendered = text_append (rendered, text_escape_xml text)
+    rendered = text_append (rendered, "</hook_prompt>")
     result = #Some rendered
   end;
 

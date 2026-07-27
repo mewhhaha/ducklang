@@ -16,7 +16,7 @@ const hunks = comptime list FixtureHunk;
 let score: I32 = 0;
 let patch =
   "*** Begin Patch\n*** Environment ID: remote\n*** Add File: docs/new.txt\n+hello\n+world\n*** Delete File: old.txt\n*** Update File: src/old.ts\n*** Move to: src/new.ts\n@@ function run\n-old\n+new\n@@\n tail\n+last\n*** End of File\n*** End Patch";
-let parsed = parse_apply_patch_lines(text_split [patch, "\n"]);
+let parsed = parse_apply_patch_lines(text_split (patch, "\n"));
 
 if let #Ok document = parsed then
   if let #Some environment_id = document.environment_id then
@@ -64,7 +64,7 @@ if let #Ok document = parsed then
 end;
 
 if let #Err message = parse_apply_patch_lines(
-  text_split ["*** Begin Patch\n*** Update File: empty.txt\n*** End Patch", "\n"]
+  text_split ("*** Begin Patch\n*** Update File: empty.txt\n*** End Patch", "\n")
 ) then
   if message == "invalid hunk at line 2, Update file hunk for path 'empty.txt' is empty" then
     score = score + 10000
@@ -72,10 +72,10 @@ if let #Err message = parse_apply_patch_lines(
 end;
 
 if let #Err message = parse_apply_patch_lines(
-  text_split [
+  text_split (
     "*** Begin Patch\n*** Environment ID: first\n*** Environment ID: second\n*** Add File: a.txt\n+a\n*** End Patch",
     "\n",
-  ]
+  )
 ) then
   if message == "invalid patch: apply_patch environment_id cannot be specified more than once" then
     score = score + 100000 end;

@@ -10,7 +10,7 @@ type ToolSourceDefinitions =
   | #Nil
   | #Cons SourceDefinitionNode
 
-let rec append_tool_definitions: [ToolSourceDefinitions, ToolSourceDefinitions] ->
+let rec append_tool_definitions: (ToolSourceDefinitions, ToolSourceDefinitions) ->
   ToolSourceDefinitions = (
     first,
     second,
@@ -31,7 +31,7 @@ const environment_available: ToolSourceEnvironment -> Bool = environment => do
   if let #NoEnvironment = environment then false else true end;
 end;
 
-const shell_tool_definitions: [ToolSourceEnvironment, ToolSourceShell] -> ToolSourceDefinitions = (
+const shell_tool_definitions: (ToolSourceEnvironment, ToolSourceShell) -> ToolSourceDefinitions = (
   environment,
   shell,
 ) => do
@@ -473,12 +473,12 @@ const agent_job_tool_source_definitions: ToolSourceFacts -> ToolSourceDefinition
   #Cons ([spawn, #Cons ([report, #Nil])])
 end;
 
-let tool_source_definitions: [
+let tool_source_definitions: (
   ToolSourceFacts,
   ToolSourceDefinitions,
   ToolSourceDefinitions,
   ToolSourceDefinitions,
-] -> ToolSourceDefinitions = (facts, configured_runtimes, extension_runtimes, dynamic_runtimes) => do
+) -> ToolSourceDefinitions = (facts, configured_runtimes, extension_runtimes, dynamic_runtimes) => do
   if facts.guardian_reviewer then
     return guardian_tool_definitions facts.environment;
   end;

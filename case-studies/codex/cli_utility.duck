@@ -16,7 +16,7 @@ type ResponsesProxyFactsResult = Result Text ResponsesProxyFacts
 
 const texts = comptime list Text;
 
-let rec scan_doctor_from: [UtilityArgs, DoctorOptions] -> UtilityCommandResult = (
+let rec scan_doctor_from: (UtilityArgs, DoctorOptions) -> UtilityCommandResult = (
   args: UtilityArgs,
   options: DoctorOptions,
 ) => do
@@ -51,7 +51,7 @@ let parse_doctor_options: UtilityArgs -> UtilityCommandResult = (args: UtilityAr
   scan_doctor_from(args, initial)
 end;
 
-let rec scan_apply_task_from: [UtilityArgs, ApplyTaskFacts] -> ApplyTaskFactsResult = (
+let rec scan_apply_task_from: (UtilityArgs, ApplyTaskFacts) -> ApplyTaskFactsResult = (
   args: UtilityArgs,
   facts: ApplyTaskFacts,
 ) => do
@@ -102,7 +102,7 @@ let parse_apply_options: UtilityArgs -> UtilityCommandResult = (args: UtilityArg
   end;
 end;
 
-let rec scan_responses_proxy_from: [UtilityArgs, ResponsesProxyFacts] -> ResponsesProxyFactsResult =
+let rec scan_responses_proxy_from: (UtilityArgs, ResponsesProxyFacts) -> ResponsesProxyFactsResult =
   (
     args: UtilityArgs,
     facts: ResponsesProxyFacts,

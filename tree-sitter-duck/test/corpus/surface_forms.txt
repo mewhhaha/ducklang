@@ -71,6 +71,93 @@ end;
             (unit_pattern)))))))
 
 ==================
+Target-directed conversion
+==================
+
+let exact: [1, 2] = from (1, 2);
+let byte: U8 = from 1;
+
+---
+
+(source_file
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (type_product
+              (positional_type_product
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (type_literal
+                          (number))))))
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (type_literal
+                          (number))))))))))))
+    value: (application_expression
+      function: (postfix_expression
+        (identifier))
+      argument: (postfix_expression
+        (positional_product
+          (postfix_expression
+            (number))
+          (postfix_expression
+            (number))))))
+  (binding_statement
+    name: (identifier)
+    type: (type_reference
+      (type_union
+        (type_intersection
+          (type_difference
+            (identifier)))))
+    value: (application_expression
+      function: (postfix_expression
+        (identifier))
+      argument: (postfix_expression
+        (number)))))
+
+==================
+Case function
+==================
+
+let branch = case => of
+  (#Empty, tree) => tree,
+  (tree, #Empty) => tree,
+  _ => #Empty;
+
+---
+
+(source_file
+  (binding_statement
+    (identifier)
+    (case_function_expression
+      (case_arm
+        (positional_product_pattern
+          (union_pattern
+            (constructor_identifier))
+          (identifier))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (positional_product_pattern
+          (identifier)
+          (union_pattern
+            (constructor_identifier)))
+        (postfix_expression
+          (identifier)))
+      (case_arm
+        (wildcard)
+        (postfix_expression
+          (union_case
+            (constructor_identifier)))))))
+
+==================
 Compile-time value case patterns
 ==================
 

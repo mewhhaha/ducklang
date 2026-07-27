@@ -25,7 +25,7 @@ type MarketplaceFactsResult = Result Text MarketplaceFacts
 
 const texts = comptime list Text;
 
-let rec scan_plugin_facts_from: [PluginArgs, PluginFacts] -> PluginFactsResult = (
+let rec scan_plugin_facts_from: (PluginArgs, PluginFacts) -> PluginFactsResult = (
   args: PluginArgs,
   facts: PluginFacts,
 ) => do
@@ -54,7 +54,7 @@ let rec scan_plugin_facts_from: [PluginArgs, PluginFacts] -> PluginFactsResult =
   end;
 end;
 
-const resolve_plugin_selector: [Text, CliPluginTextOption] -> PluginSelectorResult = (
+const resolve_plugin_selector: (Text, CliPluginTextOption) -> PluginSelectorResult = (
   plugin: Text,
   marketplace: CliPluginTextOption,
 ) => do
@@ -179,7 +179,7 @@ let parse_plugin_list: PluginArgs -> PluginCommandResult = (args: PluginArgs) =>
   end;
 end;
 
-let rec scan_marketplace_add_from: [PluginArgs, MarketplaceAddFacts] -> MarketplaceAddFactsResult =
+let rec scan_marketplace_add_from: (PluginArgs, MarketplaceAddFacts) -> MarketplaceAddFactsResult =
   (
     args: PluginArgs,
     facts: MarketplaceAddFacts,
@@ -244,7 +244,7 @@ let parse_marketplace_add: PluginArgs -> PluginCommandResult = (args: PluginArgs
   end;
 end;
 
-let rec scan_marketplace_from: [PluginArgs, MarketplaceFacts] -> MarketplaceFactsResult = (
+let rec scan_marketplace_from: (PluginArgs, MarketplaceFacts) -> MarketplaceFactsResult = (
   args: PluginArgs,
   facts: MarketplaceFacts,
 ) => do

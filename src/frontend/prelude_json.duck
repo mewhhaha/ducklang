@@ -41,25 +41,25 @@ type JsonModuleArray = JsonArray
 type JsonModuleObject = JsonObject
 type JsonFailure = Option JsonError
 
-const json_error: [I32, Text] -> (JsonError) = (position, message) => do
+const json_error: (I32, Text) -> (JsonError) = (position, message) => do
   [position, message]
 end;
 
-const json_parsed: [Json, I32] -> (JsonParsed) = (value, next) => do
+const json_parsed: (Json, I32) -> (JsonParsed) = (value, next) => do
   [value, next]
 end;
 
-const json_string_parsed: [Text, I32] -> (JsonStringParsed) = (value, next) => do
+const json_string_parsed: (Text, I32) -> (JsonStringParsed) = (value, next) => do
   [value, next]
 end;
 
-let skip_json_whitespace: [Text, I32] -> I32 = (text: Text, start: I32) => do
+let skip_json_whitespace: (Text, I32) -> I32 = (text: Text, start: I32) => do
   let index = start;
 
   loop do
     if index >= text_length text then
       break;
-    else text_byte_is_ascii_whitespace(text_get [text, index]) then
+    else text_byte_is_ascii_whitespace(text_get (text, index)) then
       index = index + 1
     else
       break;
@@ -82,13 +82,13 @@ end;
 
 let json_code_point_text: I32 -> Text = (code_point: I32) => do
   if code_point <= 127 then
-    decode_utf8(generate_bytes [1, _ => code_point])
+    decode_utf8(generate_bytes (1, _ => code_point))
   else code_point <= 2047 then
-    decode_utf8(generate_bytes [2, index => do
+    decode_utf8(generate_bytes (2, index => do
       if index == 0 then 192 + code_point / 64 else 128 + code_point % 64 end;
-    end])
+    end))
   else code_point <= 65535 then
-    decode_utf8(generate_bytes [3, index => do
+    decode_utf8(generate_bytes (3, index => do
       if index == 0 then
         224 + code_point / 4096
       else index == 1 then
@@ -96,9 +96,9 @@ let json_code_point_text: I32 -> Text = (code_point: I32) => do
       else
         128 + code_point % 64
       end;
-    end])
+    end))
   else
-    decode_utf8(generate_bytes [4, index => do
+    decode_utf8(generate_bytes (4, index => do
       if index == 0 then
         240 + code_point / 262144
       else index == 1 then
@@ -108,14 +108,14 @@ let json_code_point_text: I32 -> Text = (code_point: I32) => do
       else
         128 + code_point % 64
       end;
-    end])
+    end))
   end;
 end;
 
-const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start: I32) => do
+const parse_json_string: (Text, I32) -> (JsonStringResult) = (text: Text, start: I32) => do
   let length = text_length text;
 
-  if start >= length || text_get [text, start] != 34 then
+  if start >= length || text_get (text, start) != 34 then
     #Err (json_error(start, "Expected JSON string"))
   else
     let index = start + 1;
@@ -134,10 +134,10 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
         break;
       end;
 
-      let byte = text_get [text, index];
+      let byte = text_get (text, index);
 
       if byte == 34 then
-        decoded = text_append [decoded, text_slice [text, segment_start, index]]
+        decoded = text_append (decoded, text_slice (text, segment_start, index))
         index = index + 1
         closed = true
         break;
@@ -147,7 +147,7 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
         failure_message = "Unescaped control byte in JSON string"
         break;
       else byte == 92 then
-        decoded = text_append [decoded, text_slice [text, segment_start, index]]
+        decoded = text_append (decoded, text_slice (text, segment_start, index))
         index = index + 1
 
         if index >= length then
@@ -157,25 +157,25 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
           break;
         end;
 
-        let escape = text_get [text, index];
+        let escape = text_get (text, index);
 
         if escape == 34 || escape == 47 || escape == 92 then
-          decoded = text_append [decoded, text_slice [text, index, index + 1]]
+          decoded = text_append (decoded, text_slice (text, index, index + 1))
           index = index + 1
         else escape == 98 then
-          decoded = text_append [decoded, json_code_point_text 8]
+          decoded = text_append (decoded, json_code_point_text 8)
           index = index + 1
         else escape == 102 then
-          decoded = text_append [decoded, json_code_point_text 12]
+          decoded = text_append (decoded, json_code_point_text 12)
           index = index + 1
         else escape == 110 then
-          decoded = text_append [decoded, "\n"]
+          decoded = text_append (decoded, "\n")
           index = index + 1
         else escape == 114 then
-          decoded = text_append [decoded, "\r"]
+          decoded = text_append (decoded, "\r")
           index = index + 1
         else escape == 116 then
-          decoded = text_append [decoded, "\t"]
+          decoded = text_append (decoded, "\t")
           index = index + 1
         else escape == 117 then
           if index + 5 > length then
@@ -185,10 +185,10 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
             break;
           end;
 
-          let first = json_hex_digit_value(text_get [text, index + 1]);
-          let second = json_hex_digit_value(text_get [text, index + 2]);
-          let third = json_hex_digit_value(text_get [text, index + 3]);
-          let fourth = json_hex_digit_value(text_get [text, index + 4]);
+          let first = json_hex_digit_value(text_get (text, index + 1));
+          let second = json_hex_digit_value(text_get (text, index + 2));
+          let third = json_hex_digit_value(text_get (text, index + 3));
+          let fourth = json_hex_digit_value(text_get (text, index + 4));
 
           if first < 0 || second < 0 || third < 0 || fourth < 0 then
             failed = true
@@ -201,7 +201,7 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
           index = index + 5
 
           if code_point >= 55296 && code_point <= 56319 then
-            if index + 6 > length || text_get [text, index] != 92 || text_get [text, index + 1]
+            if index + 6 > length || text_get (text, index) != 92 || text_get (text, index + 1)
               != 117 then
                 failed = true
                 failure_index = index
@@ -209,10 +209,10 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
                 break;
               end;
 
-            first = json_hex_digit_value(text_get [text, index + 2])
-            second = json_hex_digit_value(text_get [text, index + 3])
-            third = json_hex_digit_value(text_get [text, index + 4])
-            fourth = json_hex_digit_value(text_get [text, index + 5])
+            first = json_hex_digit_value(text_get (text, index + 2))
+            second = json_hex_digit_value(text_get (text, index + 3))
+            third = json_hex_digit_value(text_get (text, index + 4))
+            fourth = json_hex_digit_value(text_get (text, index + 5))
 
             if first < 0 || second < 0 || third < 0 || fourth < 0 then
               failed = true
@@ -239,7 +239,7 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
             break;
           end;
 
-          decoded = text_append [decoded, json_code_point_text code_point]
+          decoded = text_append (decoded, json_code_point_text code_point)
         else
           failed = true
           failure_index = index
@@ -263,24 +263,24 @@ const parse_json_string: [Text, I32] -> (JsonStringResult) = (text: Text, start:
   end;
 end;
 
-let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => do
+let number_end: (Text, I32) -> I32 = (text: Text, start: I32) => do
   let length = text_length text;
   let index = start;
   let valid = true;
 
-  if index < length && text_get [text, index] == 45 then
+  if index < length && text_get (text, index) == 45 then
     index = index + 1
   end;
 
   if index >= length then
     valid = false
-  else text_get [text, index] == 48 then
+  else text_get (text, index) == 48 then
     index = index + 1
-  else text_get [text, index] >= 49 && text_get [text, index] <= 57 then
+  else text_get (text, index) >= 49 && text_get (text, index) <= 57 then
     index = index + 1
 
     loop do
-      if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
+      if index < length && text_byte_is_ascii_digit(text_get (text, index)) then
         index = index + 1
       else
         break;
@@ -290,14 +290,14 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => do
     valid = false
   end;
 
-  if valid && index < length && text_get [text, index] == 46 then
+  if valid && index < length && text_get (text, index) == 46 then
     index = index + 1
 
     if index >= length then
       valid = false
-    else text_byte_is_ascii_digit(text_get [text, index]) then
+    else text_byte_is_ascii_digit(text_get (text, index)) then
       loop do
-        if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
+        if index < length && text_byte_is_ascii_digit(text_get (text, index)) then
           index = index + 1
         else
           break;
@@ -308,18 +308,18 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => do
     end;
   end;
 
-  if valid && index < length && (text_get [text, index] == 69 || text_get [text, index] == 101) then
+  if valid && index < length && (text_get (text, index) == 69 || text_get (text, index) == 101) then
     index = index + 1
 
-    if index < length && (text_get [text, index] == 43 || text_get [text, index] == 45) then
+    if index < length && (text_get (text, index) == 43 || text_get (text, index) == 45) then
       index = index + 1
     end;
 
     if index >= length then
       valid = false
-    else text_byte_is_ascii_digit(text_get [text, index]) then
+    else text_byte_is_ascii_digit(text_get (text, index)) then
       loop do
-        if index < length && text_byte_is_ascii_digit(text_get [text, index]) then
+        if index < length && text_byte_is_ascii_digit(text_get (text, index)) then
           index = index + 1
         else
           break;
@@ -333,13 +333,13 @@ let number_end: [Text, I32] -> I32 = (text: Text, start: I32) => do
   if valid then index else -1 end;
 end;
 
-let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) => do
+let rec parse_json: (Text, I32) -> (JsonParseResult) = (text: Text, start: I32) => do
   let index = skip_json_whitespace(text_copy(&text), start);
 
   if index >= text_length text then
     #Err (json_error(index, "Expected JSON value"))
   else
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
 
     if byte == 34 then
       let parsed = parse_json_string(text_copy(&text), index);
@@ -358,7 +358,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       let done = false;
       let failure: JsonFailure = #None;
 
-      if index < text_length text && text_get [text, index] == 93 then
+      if index < text_length text && text_get (text, index) == 93 then
         done = true
         index = index + 1
       end;
@@ -378,10 +378,10 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
 
           if index >= text_length text then
             failure = #Some (json_error(index, "Unterminated JSON array"))
-          else text_get [text, index] == 93 then
+          else text_get (text, index) == 93 then
             done = true
             index = index + 1
-          else text_get [text, index] == 44 then
+          else text_get (text, index) == 44 then
             index = skip_json_whitespace(text_copy(&text), index + 1)
           else
             failure = #Some (json_error(index, "Expected comma or closing bracket"))
@@ -420,7 +420,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       let done = false;
       let failure: JsonFailure = #None;
 
-      if index < text_length text && text_get [text, index] == 125 then
+      if index < text_length text && text_get (text, index) == 125 then
         done = true
         index = index + 1
       end;
@@ -437,7 +437,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
           let [key, after_key] = parsed_string;
           index = skip_json_whitespace(text_copy(&text), after_key)
 
-          if index >= text_length text || text_get [text, index] != 58 then
+          if index >= text_length text || text_get (text, index) != 58 then
             failure = #Some (json_error(index, "Expected colon after JSON object key"))
           else
             let parsed_value = parse_json(text_copy(&text), index + 1);
@@ -449,10 +449,10 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
 
               if index >= text_length text then
                 failure = #Some (json_error(index, "Unterminated JSON object"))
-              else text_get [text, index] == 125 then
+              else text_get (text, index) == 125 then
                 done = true
                 index = index + 1
-              else text_get [text, index] == 44 then
+              else text_get (text, index) == 44 then
                 index = skip_json_whitespace(text_copy(&text), index + 1)
               else
                 failure = #Some (json_error(index, "Expected comma or closing brace"))
@@ -494,7 +494,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 4 > text_length text then
         #Err (json_error(index, "Invalid JSON literal"))
       else
-        let true_literal = text_slice [text, index, index + 4];
+        let true_literal = text_slice (text, index, index + 4);
 
         if true_literal == "true" then
           #Ok (json_parsed(#Bool (true), index + 4))
@@ -506,7 +506,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 5 > text_length text then
         #Err (json_error(index, "Invalid JSON literal"))
       else
-        let false_literal = text_slice [text, index, index + 5];
+        let false_literal = text_slice (text, index, index + 5);
 
         if false_literal == "false" then
           #Ok (json_parsed(#Bool (false), index + 5))
@@ -518,7 +518,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if index + 4 > text_length text then
         #Err (json_error(index, "Invalid JSON literal"))
       else
-        let null_literal = text_slice [text, index, index + 4];
+        let null_literal = text_slice (text, index, index + 4);
 
         if null_literal == "null" then
           #Ok (json_parsed(#Null, index + 4))
@@ -532,7 +532,7 @@ let rec parse_json: [Text, I32] -> (JsonParseResult) = (text: Text, start: I32) 
       if next < 0 then
         #Err (json_error(index, "Invalid JSON number"))
       else
-        #Ok (json_parsed(#Number (text_slice [text, index, next]), next))
+        #Ok (json_parsed(#Number (text_slice (text, index, next)), next))
       end;
     else
       #Err (json_error(index, "Unexpected byte in JSON value"))
@@ -569,33 +569,33 @@ let encode_json_string: Text -> Text = text => do
       break;
     end;
 
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
 
     if byte == 34 || byte == 92 || byte < 32 then
-      encoded = text_append [encoded, text_slice [text, segment_start, index]]
+      encoded = text_append (encoded, text_slice (text, segment_start, index))
 
       if byte == 34 then
-        encoded = text_append [encoded, "\\\""]
+        encoded = text_append (encoded, "\\\"")
       else byte == 92 then
-        encoded = text_append [encoded, "\\\\"]
+        encoded = text_append (encoded, "\\\\")
       else byte == 8 then
-        encoded = text_append [encoded, "\\b"]
+        encoded = text_append (encoded, "\\b")
       else byte == 9 then
-        encoded = text_append [encoded, "\\t"]
+        encoded = text_append (encoded, "\\t")
       else byte == 10 then
-        encoded = text_append [encoded, "\\n"]
+        encoded = text_append (encoded, "\\n")
       else byte == 12 then
-        encoded = text_append [encoded, "\\f"]
+        encoded = text_append (encoded, "\\f")
       else byte == 13 then
-        encoded = text_append [encoded, "\\r"]
+        encoded = text_append (encoded, "\\r")
       else
         let high = byte / 16;
         let low = byte % 16;
         let high_ascii = if high < 10 then high + 48 else high + 87 end;
         let low_ascii = if low < 10 then low + 48 else low + 87 end;
-        encoded = text_append [encoded, "\\u00"]
-        encoded = text_append [encoded, json_code_point_text high_ascii]
-        encoded = text_append [encoded, json_code_point_text low_ascii]
+        encoded = text_append (encoded, "\\u00")
+        encoded = text_append (encoded, json_code_point_text high_ascii)
+        encoded = text_append (encoded, json_code_point_text low_ascii)
       end;
 
       index = index + 1
@@ -605,8 +605,8 @@ let encode_json_string: Text -> Text = text => do
     end;
   end;
 
-  encoded = text_append [encoded, text_slice [text, segment_start, index]]
-  text_append [encoded, "\""]
+  encoded = text_append (encoded, text_slice (text, segment_start, index))
+  text_append (encoded, "\"")
 end;
 
 let rec encode_json: Json -> Text = value => do
@@ -631,10 +631,10 @@ let rec encode_json: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
 
-        encoded = text_append [encoded, encode_json element]
+        encoded = text_append (encoded, encode_json element)
         current = tail
       else
         done = true
@@ -645,7 +645,7 @@ let rec encode_json: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "]"]
+    text_append (encoded, "]")
   else let #Object members = value then
     let encoded: Text = "{";
     let current: JsonModuleObject = members;
@@ -660,12 +660,12 @@ let rec encode_json: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
 
-        encoded = text_append [encoded, encode_json_string key]
-        encoded = text_append [encoded, ":"]
-        encoded = text_append [encoded, encode_json member_value]
+        encoded = text_append (encoded, encode_json_string key)
+        encoded = text_append (encoded, ":")
+        encoded = text_append (encoded, encode_json member_value)
         current = tail
       else
         done = true
@@ -676,7 +676,7 @@ let rec encode_json: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "}"]
+    text_append (encoded, "}")
   else
     "null"
   end;

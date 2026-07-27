@@ -2,7 +2,7 @@ module () where
 
 type ReadResult = | #Keys Bytes | #End
 
-type SaveResult = | #Ok | #Err
+type SaveResult = | #Ok | #Err Text
 
 declare effect Terminal {
   load: () => Bytes

@@ -30,24 +30,24 @@ const realtime_start_instructions = () => do
 end;
 
 const realtime_start_with_instructions: Text -> Text = instructions => do
-  text_append [
+  text_append (
     "<realtime_conversation>\n",
-    text_append [instructions, "\n</realtime_conversation>"],
-  ]
+    text_append (instructions, "\n</realtime_conversation>"),
+  )
 end;
 
 const realtime_end_instructions: Text -> Text = reason => do
-  text_append [
+  text_append (
     "<realtime_conversation>\nRealtime conversation ended.\n\nSubsequent user input will return to typed text rather than transcript-style text. Do not assume recognition errors or missing punctuation once realtime has ended. Resume normal chat behavior.\n\nReason: ",
-    text_append [reason, "\n</realtime_conversation>"],
-  ]
+    text_append (reason, "\n</realtime_conversation>"),
+  )
 end;
 
-const render_realtime_delegation: [
+const render_realtime_delegation: (
   Text,
   RealtimeTranscriptDelta,
   RealtimeDelegationSource,
-] -> Text = (
+) -> Text = (
   input: Text,
   transcript_delta: RealtimeTranscriptDelta,
   source: RealtimeDelegationSource,
@@ -55,33 +55,33 @@ const render_realtime_delegation: [
   let rendered = "<realtime_delegation>\n";
 
   if let #RealtimeTranscriptTailFlush = source then
-    rendered = text_append [
+    rendered = text_append (
       rendered,
       "  <source>transcript_tail_flush</source>\n",
-    ]
+    )
   end;
 
-  rendered = text_append [
+  rendered = text_append (
     rendered,
-    text_append [
+    text_append (
       "  <input>",
-      text_append [text_escape_xml input, "</input>\n"],
-    ],
-  ]
+      text_append (text_escape_xml input, "</input>\n"),
+    ),
+  )
 
   if let #RealtimeTranscriptDelta delta = transcript_delta then
     if delta != "" then
-      rendered = text_append [
+      rendered = text_append (
         rendered,
-        text_append [
+        text_append (
           "  <transcript_delta>",
-          text_append [text_escape_xml delta, "</transcript_delta>\n"],
-        ],
-      ]
+          text_append (text_escape_xml delta, "</transcript_delta>\n"),
+        ),
+      )
     end;
   end;
 
-  text_append [rendered, "</realtime_delegation>"]
+  text_append (rendered, "</realtime_delegation>")
 end;
 
 const render_realtime_start: RealtimeState -> RealtimeSection = state => do
@@ -93,7 +93,7 @@ const render_realtime_start: RealtimeState -> RealtimeSection = state => do
     #RealtimeInactive => #OmitRealtimeSection;
 end;
 
-const render_realtime_diff: [RealtimeState, RealtimePreviousState] -> RealtimeSection = (
+const render_realtime_diff: (RealtimeState, RealtimePreviousState) -> RealtimeSection = (
   state: RealtimeState,
   previous: RealtimePreviousState,
 ) => do

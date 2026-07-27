@@ -42,7 +42,7 @@ type CodeModeJsonProperties =
   | #CodeModeJsonPropertiesNil
   | #CodeModeJsonPropertiesCons CodeModeJsonPropertyNode
 
-let rec insert_json_property: [CodeModeJsonProperty, CodeModeJsonProperties] ->
+let rec insert_json_property: (CodeModeJsonProperty, CodeModeJsonProperties) ->
   CodeModeJsonProperties = (
     property,
     properties,
@@ -51,7 +51,7 @@ let rec insert_json_property: [CodeModeJsonProperty, CodeModeJsonProperties] ->
     if let #CodeModeJsonPropertiesCons node = properties then
       let [existing, tail] = node;
       let [existing_name, _] = existing;
-      if text_compare [name, existing_name] < 0 then
+      if text_compare (name, existing_name) < 0 then
         #CodeModeJsonPropertiesCons ([property, properties])
       else
         #CodeModeJsonPropertiesCons ([existing, insert_json_property(property, tail)])
@@ -81,7 +81,7 @@ let sorted_json_properties: JsonObject -> CodeModeJsonProperties = object => do
   properties
 end;
 
-const required_property: [Text, JsonArray] -> Bool = (name, required) => do
+const required_property: (Text, JsonArray) -> Bool = (name, required) => do
   let current = required;
   let found = false;
   let done = false;
@@ -143,7 +143,7 @@ let reverse_properties: CodeModeSchemaProperties -> CodeModeSchemaProperties = p
   reversed
 end;
 
-const schema_property: [Text, Text, Bool, CodeModeSchemaInput] -> CodeModeSchemaProperty = (
+const schema_property: (Text, Text, Bool, CodeModeSchemaInput) -> CodeModeSchemaProperty = (
   name,
   description,
   required,
@@ -152,10 +152,10 @@ const schema_property: [Text, Text, Bool, CodeModeSchemaInput] -> CodeModeSchema
   [name, description, required, input]
 end;
 
-const schema_keyword: [JsonObject, Text] -> CodeModeSchemaKeyword =
+const schema_keyword: (JsonObject, Text) -> CodeModeSchemaKeyword =
   (object, name) => [object, name];
 
-const schema_object: [CodeModeSchemaProperties, CodeModeSchemaAdditional] -> CodeModeSchemaObject =
+const schema_object: (CodeModeSchemaProperties, CodeModeSchemaAdditional) -> CodeModeSchemaObject =
   (
     properties,
     additional,

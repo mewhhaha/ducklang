@@ -71,7 +71,7 @@ let valid_u64_decimal: Text -> Bool = number => do
     if index >= text_length number then
       break;
     end;
-    let byte = text_get [number, index];
+    let byte = text_get (number, index);
     if byte < 48 || byte > 57 then
       valid = false
     end;
@@ -88,8 +88,8 @@ let valid_u64_decimal: Text -> Bool = number => do
       if index >= 20 || decided then
         break;
       end;
-      let digit = text_get [number, index];
-      let maximum_digit = text_get [maximum, index];
+      let digit = text_get (number, index);
+      let maximum_digit = text_get (maximum, index);
       if digit < maximum_digit then
         decided = true
       else digit > maximum_digit then

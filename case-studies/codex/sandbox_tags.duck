@@ -17,7 +17,7 @@ let rec file_system_is_external: &TagFileSystemKind -> Bool = (kind: &TagFileSys
   if let #ExternalFileSystem = kind then true else false end;
 end;
 
-let rec should_require_platform_sandbox: [&TagFileSystem, &TagNetworkPolicy, Bool] -> Bool = (
+let rec should_require_platform_sandbox: (&TagFileSystem, &TagNetworkPolicy, Bool) -> Bool = (
   file_system: &TagFileSystem,
   network: &TagNetworkPolicy,
   enforce_managed_network: Bool,
@@ -33,12 +33,12 @@ let rec should_require_platform_sandbox: [&TagFileSystem, &TagNetworkPolicy, Boo
   end;
 end;
 
-let rec permission_profile_sandbox_tag: [
+let rec permission_profile_sandbox_tag: (
   &TagPermissionProfile,
   &TagWindowsLevel,
   Bool,
   &TagPlatform,
-] -> Text = (
+) -> Text = (
   profile: &TagPermissionProfile,
   windows_level: &TagWindowsLevel,
   enforce_managed_network: Bool,

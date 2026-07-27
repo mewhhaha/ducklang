@@ -49,7 +49,7 @@ const resident_is_unloadable = (record: ResidencyRecord) => do
   end;
 end;
 
-const choose_resident_to_unload: [ResidencyRecords, ResidencyTextOption] -> ResidencyTextOption = (
+const choose_resident_to_unload: (ResidencyRecords, ResidencyTextOption) -> ResidencyTextOption = (
   lru_records: ResidencyRecords,
   protected_id: ResidencyTextOption,
 ) => do

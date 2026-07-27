@@ -98,14 +98,14 @@ const monotonic_ms_value: MonotonicMs -> I64 =
 const read_monotonic_ms: &MonotonicMs -> I64 =
   (value: &MonotonicMs) => if let #MonotonicMs milliseconds = value then milliseconds else panic "Invalid MonotonicMs" end;
 
-const duration_add: [DurationMs, DurationMs] -> DurationMs = (
+const duration_add: (DurationMs, DurationMs) -> DurationMs = (
   left: DurationMs,
   right: DurationMs,
 ) => do
   duration_ms(saturating_add_i64(duration_ms_value left, duration_ms_value right))
 end;
 
-const duration_between: [MonotonicMs, MonotonicMs] -> DurationMs = (
+const duration_between: (MonotonicMs, MonotonicMs) -> DurationMs = (
   start: MonotonicMs,
   finish: MonotonicMs,
 ) => do
@@ -114,7 +114,7 @@ const duration_between: [MonotonicMs, MonotonicMs] -> DurationMs = (
   if finish_ms > start_ms then duration_ms(finish_ms - start_ms) else duration_ms 0i64 end;
 end;
 
-const exponential_backoff: [DurationMs, I64, I32] -> DurationMs = (
+const exponential_backoff: (DurationMs, I64, I32) -> DurationMs = (
   base: DurationMs,
   attempt: I64,
   jitter_per_mille: I32,
@@ -187,17 +187,17 @@ end;
 const fuel_is_exhausted: Fuel -> Bool = value => fuel_remaining value == 0;
 const fuel_is_valid: Fuel -> Bool = value => fuel_remaining value >= 0;
 
-const encode_span: [I32, I32] -> I64 = (start, finish) => do
+const encode_span: (I32, I32) -> I64 = (start, finish) => do
   let low = unsafe_i64_extend_i32_signed start;
   let high = unsafe_i64_extend_i32_signed finish * 4294967296i64;
   low + high
 end;
 
-const span: [I32, I32] -> Span = (start, finish) => do
+const span: (I32, I32) -> Span = (start, finish) => do
   #Span (encode_span(start, finish))
 end;
 
-const span_is_valid: [I32, I32] -> Bool = (start, finish) => start >= 0 && start <= finish;
+const span_is_valid: (I32, I32) -> Bool = (start, finish) => start >= 0 && start <= finish;
 
 const span_start: Span -> I32 = value => if let #Span encoded = value then
   unsafe_i32_wrap_i64 encoded
@@ -216,11 +216,11 @@ const span_length: Span -> I32 = value => span_end value - span_start value;
 const span_contains =
   (value: Span, position: I32) => position >= span_start value && position < span_end value;
 
-const span_overlaps: [Span, Span] -> Bool = (left, right) => do
+const span_overlaps: (Span, Span) -> Bool = (left, right) => do
   span_start left < span_end right && span_start right < span_end left
 end;
 
-const span_intersection: [Span, Span] -> Span = (left, right) => do
+const span_intersection: (Span, Span) -> Span = (left, right) => do
   let left_start = span_start left;
   let left_end = span_end left;
   let right_start = span_start right;
@@ -234,7 +234,7 @@ end;
 
 const decision_is_accept = value => if let #Accept _ = value then true else false end;
 const decision_is_reject = value => if let #Reject _ = value then true else false end;
-const decision_fold = [on_reject, on_accept] => value => if let #Accept accepted = value then
+const decision_fold = (on_reject, on_accept) => value => if let #Accept accepted = value then
   on_accept accepted
 else let #Reject rejected = value then
   on_reject rejected
@@ -243,7 +243,7 @@ else
 end;
 
 const these_is_both = value => if let #Both _ = value then true else false end;
-const these_fold = [on_this, on_that, on_both] => value => if let #This left = value then
+const these_fold = (on_this, on_that, on_both) => value => if let #This left = value then
   on_this left
 else let #That right = value then
   on_that right
@@ -254,17 +254,17 @@ else
   panic "Invalid These"
 end;
 
-const diagnostic = [offset, message, severity] => [
+const diagnostic = (offset, message, severity) => [
   .offset = offset,
   .message = message,
   .severity = severity,
 ];
-const non_empty = [head, tail] => [.head = head, .tail = tail];
-const non_empty_singleton = [head, empty] => [.head = head, .tail = empty];
+const non_empty = (head, tail) => [.head = head, .tail = tail];
+const non_empty_singleton = (head, empty) => [.head = head, .tail = empty];
 const non_empty_head = values => values.head;
 const non_empty_tail = values => values.tail;
 const authority = capability => #Authority capability;
-const with_authority = [authorized, use] => if let #Authority capability = authorized then
+const with_authority = (authorized, use) => if let #Authority capability = authorized then
   use capability
 else
   panic "Invalid Authority"
@@ -279,30 +279,30 @@ const once_claim: Once -> OnceClaim = value => [.state = true, .granted = !(valu
 const predicate: forall value.(value -> Bool) -> (value -> Bool) =
   (const test) => test;
 
-const predicate_test: forall value.[value -> Bool, value] -> Bool =
+const predicate_test: forall value.(value -> Bool, value) -> Bool =
   (const condition, value) => condition value;
 
 const predicate_not: forall value.(value -> Bool) -> (value -> Bool) =
   (const condition) => value => if condition value then false else true end;
 
-const predicate_and: forall value.[value -> Bool, value -> Bool] -> (value -> Bool) =
+const predicate_and: forall value.(value -> Bool, value -> Bool) -> (value -> Bool) =
   (const left, const right) => value => if left value then right value else false end;
 
-const predicate_or: forall value.[value -> Bool, value -> Bool] -> (value -> Bool) =
+const predicate_or: forall value.(value -> Bool, value -> Bool) -> (value -> Bool) =
   (const left, const right) => value => if left value then true else right value end;
-const comparator: forall value.([value, value] -> Ordering) -> ([value, value] -> Ordering) =
+const comparator: forall value.((value, value) -> Ordering) -> ((value, value) -> Ordering) =
   (const compare) => compare;
 
-const comparing: forall value key.[value -> key, [key, key] -> Ordering] -> (
-  [value, value] -> Ordering
+const comparing: forall value key.(value -> key, (key, key) -> Ordering) -> (
+  (value, value) -> Ordering
 ) =
   (const project, const ordering) => (left, right) => ordering(project left, project right);
 
-const reverse_comparator: forall value.([value, value] -> Ordering) -> ([value, value] -> Ordering) =
+const reverse_comparator: forall value.((value, value) -> Ordering) -> ((value, value) -> Ordering) =
   (const ordering) => (left, right) => ordering(right, left);
 
-const then_comparator: forall value.[[value, value] -> Ordering, [value, value] -> Ordering] -> (
-  [value, value] -> Ordering
+const then_comparator: forall value.((value, value) -> Ordering, (value, value) -> Ordering) -> (
+  (value, value) -> Ordering
 ) =
   (const first_comparator, const second_comparator) => (left, right) => do
     let ordering = first_comparator(left, right);
@@ -314,14 +314,14 @@ const then_comparator: forall value.[[value, value] -> Ordering, [value, value] 
     end;
   end;
 
-const reducer: forall state value.([state, value] -> state) -> ([state, value] -> state) =
+const reducer: forall state value.((state, value) -> state) -> ((state, value) -> state) =
   (const reduce) => reduce;
 
-const reducer_run: forall state value.[[state, value] -> state, state, value] -> state =
+const reducer_run: forall state value.((state, value) -> state, state, value) -> state =
   (const accumulator, state, value) => accumulator(state, value);
 
-const reducer_map_input: forall state input value.[[state, input] -> state, value -> input] -> (
-  [state, value] -> state
+const reducer_map_input: forall state input value.((state, input) -> state, value -> input) -> (
+  (state, value) -> state
 ) =
   (const accumulator, const transform) => (state, value) => accumulator(state, transform value);
 const patch: forall value.(value -> value) -> (value -> value) =
@@ -330,21 +330,21 @@ const patch: forall value.(value -> value) -> (value -> value) =
 const patch_identity: forall value.() -> (value -> value) =
   () => value => value;
 
-const patch_compose: forall value.[value -> value, value -> value] -> (value -> value) =
+const patch_compose: forall value.(value -> value, value -> value) -> (value -> value) =
   (const outer, const inner) => value => outer(inner value);
 
-const patch_apply: forall value.[value -> value, value] -> value =
+const patch_apply: forall value.(value -> value, value) -> value =
   (const change, value) => change value;
-const transition: forall state event error.([state, event] -> Result error state) -> (
-  [state, event] -> Result error state
+const transition: forall state event error.((state, event) -> Result error state) -> (
+  (state, event) -> Result error state
 ) =
   (const run) => run;
 
-const transition_run: forall state event error.[[state, event] -> Result error state, state,
-  event] -> Result error state =
+const transition_run: forall state event error.((state, event) -> Result error state, state,
+  event) -> Result error state =
   (const state_transition, state, event) => state_transition(state, event);
-const iso = [forward, backward] => [.forward = forward, .backward = backward];
-const codec = [encode, decode] => [.encode = encode, .decode = decode];
+const iso = (forward, backward) => [.forward = forward, .backward = backward];
+const codec = (encode, decode) => [.encode = encode, .decode = decode];
 
 const iso_reverse = iso => [.forward = iso.backward, .backward = iso.forward];
 
@@ -365,7 +365,7 @@ const hash_text: Text -> I32 = text => do
       break;
     end;
 
-    hash = bit_xor(hash, text_get [text, index]) * 16777619
+    hash = bit_xor(hash, text_get (text, index)) * 16777619
     index = index + 1
   end;
 

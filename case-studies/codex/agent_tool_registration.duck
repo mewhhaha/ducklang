@@ -12,7 +12,7 @@ type AgentRegistrationSpecs =
   | #Nil
   | #Cons AgentRegistrationSpecNode
 
-const collaboration_tool_name: [AgentToolRegistrationConfig, Text] -> ToolName = (
+const collaboration_tool_name: (AgentToolRegistrationConfig, Text) -> ToolName = (
   config,
   local_name,
 ) => do
@@ -23,7 +23,7 @@ const collaboration_tool_exposure: AgentToolRegistrationConfig -> ToolExposure =
   if config.direct_model_only then #DirectModelOnly else #Direct end;
 end;
 
-const collaboration_tool_definition: [AgentToolRegistrationConfig, Text, ToolHandler, Bool] ->
+const collaboration_tool_definition: (AgentToolRegistrationConfig, Text, ToolHandler, Bool) ->
   ToolDefinition = (
     config,
     local_name,
@@ -72,7 +72,7 @@ const collaboration_tool_definitions: AgentToolRegistrationConfig -> AgentRegist
     ]
   end;
 
-const collaboration_tool_spec: [AgentToolRegistrationConfig, Text, Text, Text, ToolOutputSchema] ->
+const collaboration_tool_spec: (AgentToolRegistrationConfig, Text, Text, Text, ToolOutputSchema) ->
   ToolSpec = (
     config,
     local_name,

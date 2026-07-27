@@ -19,13 +19,13 @@ let render_agent_job_csv: AgentJobCsvOutputCompletion -> AgentJobCsvOutputResult
       let [item, tail] = node;
       let rendered = render_agent_job_csv_row(completed.job_id, completed.headers, item);
       if let #CsvExported row = rendered then
-        output = csv_text_append [output, row]
+        output = csv_text_append (output, row)
         current = tail
       else let #CsvExportFailed reason = rendered then
         failure = reason
         done = true
       else
-        failure = csv_text_append ["failed to render csv row for item ", item.item_id]
+        failure = csv_text_append ("failed to render csv row for item ", item.item_id)
         done = true
       end;
     else

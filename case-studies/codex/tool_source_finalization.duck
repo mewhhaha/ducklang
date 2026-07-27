@@ -26,7 +26,7 @@ type ToolSourceFinalizationFacts = struct {
   .direct_model_only_namespaces = ToolSourceTexts,
 }
 
-let rec append_tool_definitions: [FinalizationDefinitions, FinalizationDefinitions] ->
+let rec append_tool_definitions: (FinalizationDefinitions, FinalizationDefinitions) ->
   FinalizationDefinitions = (
     first,
     second,
@@ -39,7 +39,7 @@ let rec append_tool_definitions: [FinalizationDefinitions, FinalizationDefinitio
     end;
   end;
 
-const namespace_is_direct_model_only: [Text, ToolSourceTexts] -> Bool = (
+const namespace_is_direct_model_only: (Text, ToolSourceTexts) -> Bool = (
   namespace,
   direct_model_only_namespaces,
 ) => do
@@ -70,7 +70,7 @@ const namespace_is_direct_model_only: [Text, ToolSourceTexts] -> Bool = (
   found
 end;
 
-const overridden_exposure: [ToolName, ToolExposure, ToolSourceTexts] -> ToolExposure = (
+const overridden_exposure: (ToolName, ToolExposure, ToolSourceTexts) -> ToolExposure = (
   name,
   exposure,
   direct_model_only_namespaces,
@@ -89,7 +89,7 @@ const overridden_exposure: [ToolName, ToolExposure, ToolSourceTexts] -> ToolExpo
   end;
 end;
 
-let rec apply_direct_model_only_namespace_overrides: [FinalizationDefinitions, ToolSourceTexts] ->
+let rec apply_direct_model_only_namespace_overrides: (FinalizationDefinitions, ToolSourceTexts) ->
   FinalizationDefinitions = (
     definitions,
     direct_model_only_namespaces,
@@ -117,7 +117,7 @@ let rec apply_direct_model_only_namespace_overrides: [FinalizationDefinitions, T
     end;
   end;
 
-const tool_name_is_searchable: [ToolName, ToolSourceSearchNames] -> Bool = (name,
+const tool_name_is_searchable: (ToolName, ToolSourceSearchNames) -> Bool = (name,
   searchable_names) => do
     let [namespace, local_name] = name;
     let current = searchable_names;
@@ -144,7 +144,7 @@ const tool_name_is_searchable: [ToolName, ToolSourceSearchNames] -> Bool = (name
     found
   end;
 
-const has_searchable_deferred_tool: [FinalizationDefinitions, ToolSourceSearchNames] -> Bool = (
+const has_searchable_deferred_tool: (FinalizationDefinitions, ToolSourceSearchNames) -> Bool = (
   definitions,
   searchable_names,
 ) => do
@@ -176,7 +176,7 @@ const has_searchable_deferred_tool: [FinalizationDefinitions, ToolSourceSearchNa
   found
 end;
 
-let finalize_tool_sources: [FinalizationDefinitions, ToolSourceFinalizationFacts] ->
+let finalize_tool_sources: (FinalizationDefinitions, ToolSourceFinalizationFacts) ->
   FinalizationDefinitions = (
     definitions,
     facts,

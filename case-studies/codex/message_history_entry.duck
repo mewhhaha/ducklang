@@ -13,7 +13,7 @@ type MessageHistoryCodecJson = Json
 type MessageHistoryCodecTextOption = Option Text
 type MessageHistoryCodecTimestampOption = Option I64
 
-const message_history_entry: [Text, I64, Text] -> MessageHistoryCodecEntry = (
+const message_history_entry: (Text, I64, Text) -> MessageHistoryCodecEntry = (
   session_id: Text,
   timestamp: I64,
   text: Text,
@@ -24,12 +24,12 @@ end;
 const encode_message_history_line: &MessageHistoryCodecEntry -> Text = (
   entry: &MessageHistoryCodecEntry) => do
     let encoded =
-      text_append ["{\"session_id\":", encode_json_string(text_copy(&entry.session_id))];
-    encoded = text_append [encoded, ",\"ts\":"]
-    encoded = text_append [encoded, format_i64 entry.timestamp]
-    encoded = text_append [encoded, ",\"text\":"]
-    encoded = text_append [encoded, encode_json_string(text_copy(&entry.text))]
-    text_append [encoded, "}\n"]
+      text_append ("{\"session_id\":", encode_json_string(text_copy(&entry.session_id)));
+    encoded = text_append (encoded, ",\"ts\":")
+    encoded = text_append (encoded, format_i64 entry.timestamp)
+    encoded = text_append (encoded, ",\"text\":")
+    encoded = text_append (encoded, encode_json_string(text_copy(&entry.text)))
+    text_append (encoded, "}\n")
   end;
 
 const parse_message_history_entry: Text -> MessageHistoryCodecEntryOption = (line: Text) => do

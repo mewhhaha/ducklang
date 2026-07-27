@@ -727,6 +727,25 @@ flags.ready
   );
 });
 
+Deno.test("source facts resolve byte append imported from the prelude", () => {
+  assert_equals(
+    expression_type_names(
+      `
+const { .append_bytes } = import "duck:prelude" ();
+append_bytes(Bytes.generate(1, _ => 1), Bytes.generate(1, _ => 2))
+`,
+      "app",
+    ).at(-1),
+    "Bytes",
+  );
+});
+
+Deno.test("source facts record panic expressions as Never", () => {
+  assert_equals(expression_type_names('@panic "unreachable"', "app"), [
+    "Never",
+  ]);
+});
+
 Deno.test("source facts preserve declared sum constructors", () => {
   const text = `
 type ResultType = | #Ok Int | #Err Int
@@ -824,7 +843,7 @@ Deno.test("source facts do not unify poisoned call arguments", () => {
 Deno.test("quantified closures resolve local applied type annotations", () => {
   const source = parse_source(`
 type Pair left right = [left, right]
-const pair: forall left right.[left, right] -> Pair left right =
+const pair: forall left right.(left, right) -> Pair left right =
   (left, right) => do
     let result: Pair left right = [left, right];
     result

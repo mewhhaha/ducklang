@@ -10,7 +10,7 @@ type FixtureTerminalKind =
   | #FallbackKind
   | #FailKind
 
-let retry_matches: [FixturePlan, I64, I64, Bool, Text] -> Bool = (
+let retry_matches: (FixturePlan, I64, I64, Bool, Text) -> Bool = (
   plan: FixturePlan,
   expected_retries: I64,
   expected_delay_ms: I64,
@@ -22,7 +22,7 @@ let retry_matches: [FixturePlan, I64, I64, Bool, Text] -> Bool = (
     == expected_notification then true else false end;
 else false end;
 
-let terminal_matches: [FixturePlan, FixtureTerminalKind, Text] -> Bool = (
+let terminal_matches: (FixturePlan, FixtureTerminalKind, Text) -> Bool = (
   plan: FixturePlan,
   expected_kind: FixtureTerminalKind,
   expected_message: Text,

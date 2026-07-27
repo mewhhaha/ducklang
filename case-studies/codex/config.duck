@@ -52,9 +52,9 @@ const path_is_strict_descendant = (path: Text, ancestor: Text) => do
   if path == ancestor then
     false
   else ancestor == "/" then
-    text_starts_with [path, "/"]
+    text_starts_with (path, "/")
   else
-    text_starts_with [path, text_append [ancestor, "/"]]
+    text_starts_with (path, text_append (ancestor, "/"))
   end;
 end;
 

@@ -940,9 +940,10 @@ function rewrite_statements(
         };
       }
 
-      let compiletime_only = elaborated_candidate.kind === "const" &&
-        (elaborated_candidate.value.tag === "rec" ||
-          elaborated_candidate.value.tag === "shape");
+      let compiletime_only = elaborated_candidate.duck_member_alias === true ||
+        elaborated_candidate.kind === "const" &&
+          (elaborated_candidate.value.tag === "rec" ||
+            elaborated_candidate.value.tag === "shape");
 
       if (
         elaborated_candidate.kind === "const" &&
@@ -993,7 +994,10 @@ function rewrite_statements(
           (forward_value?.tag === "with" ||
             forward_value?.tag === "struct_update")
         ) {
-          type_value = forward_value;
+          type_value = replace_type_namespace_base(
+            forward_value,
+            binding_value,
+          );
         }
 
         set_scope_type_value(scope, elaborated_candidate.name, type_value);
@@ -1199,8 +1203,7 @@ function function_pattern_requires_projection(
   if (
     pattern === undefined || pattern.tag === "binding" ||
     pattern.tag === "unit" ||
-    (pattern.tag === "product" &&
-      (pattern.value_pack === true || flattenable_product_pattern(pattern)))
+    (pattern.tag === "product" && pattern.value_pack === true)
   ) {
     return false;
   }
@@ -3066,6 +3069,23 @@ function elaborate_match_arm(
     arm.pattern.tag === "product" || arm.pattern.tag === "record" ||
     arm.pattern.tag === "array"
   ) {
+    if (
+      arm.pattern.tag === "product" &&
+      product_pattern_contains_union_case(arm.pattern)
+    ) {
+      const targets = nested_product_pattern_targets(
+        arm.pattern,
+        target,
+        target_shape,
+      );
+      const result = elaborate_nested_product_patterns(
+        targets,
+        arm,
+        fallback,
+      );
+      return rewrite_expr(result, clone_scope(scope));
+    }
+
     const branch = clone_scope(scope);
     const bindings: Stmt[] = [];
     elaborate_pattern_bindings(
@@ -3131,6 +3151,207 @@ function elaborate_match_arm(
 
   arm.pattern satisfies never;
   throw new Error("Unsupported case pattern during elaboration");
+}
+
+type NestedPatternTarget = {
+  pattern: Pattern;
+  target: FrontExpr;
+  target_shape: FrontExpr | undefined;
+};
+
+function product_pattern_contains_union_case(
+  pattern: Extract<Pattern, { tag: "product" }>,
+): boolean {
+  for (const entry of pattern.entries) {
+    if (entry.pattern.tag === "union_case") {
+      return true;
+    }
+
+    if (
+      entry.pattern.tag === "product" &&
+      product_pattern_contains_union_case(entry.pattern)
+    ) {
+      return true;
+    }
+  }
+
+  return pattern.rest?.tag === "union_case";
+}
+
+function nested_product_pattern_targets(
+  pattern: Extract<Pattern, { tag: "product" }>,
+  source: FrontExpr,
+  source_shape: FrontExpr | undefined,
+): NestedPatternTarget[] {
+  validate_product_pattern_shape(pattern, source_shape);
+  const targets: NestedPatternTarget[] = [];
+
+  for (let index = 0; index < pattern.entries.length; index += 1) {
+    const entry = pattern.entries[index];
+    expect(entry, "Missing nested product pattern entry " + index.toString());
+    const direct = product_source_entry(source_shape, entry.label, index);
+    let target: FrontExpr;
+
+    if (source === source_shape && direct !== undefined) {
+      target = direct;
+    } else if (entry.label !== undefined) {
+      target = {
+        tag: "field",
+        object: source,
+        name: entry.label,
+        move: true,
+      };
+    } else {
+      target = {
+        tag: "index",
+        object: source,
+        index: { tag: "num", type: "i32", value: index },
+        move: true,
+      };
+    }
+
+    targets.push({
+      pattern: entry.pattern,
+      target,
+      target_shape: direct,
+    });
+  }
+
+  if (pattern.rest !== undefined) {
+    const rest = product_rest_expr(pattern, source_shape);
+    targets.push({
+      pattern: pattern.rest,
+      target: rest,
+      target_shape: rest,
+    });
+  }
+
+  return targets;
+}
+
+function elaborate_nested_product_patterns(
+  targets: NestedPatternTarget[],
+  arm: MatchArm,
+  fallback: FrontExpr,
+): FrontExpr {
+  const current = targets[0];
+
+  if (current === undefined) {
+    if (arm.guard === undefined) {
+      return arm.body;
+    }
+
+    return {
+      tag: "if",
+      cond: arm.guard,
+      then_branch: arm.body,
+      else_branch: fallback,
+    };
+  }
+
+  const remaining = targets.slice(1);
+  const pattern = current.pattern;
+
+  if (pattern.tag === "binding") {
+    if (pattern.mode === "linear") {
+      throw new Error(
+        "Linear binding case patterns are not supported during elaboration: " +
+          pattern.name,
+      );
+    }
+
+    const replacements = new Map([[pattern.name, current.target]]);
+    const guard = substitute_optional_match_expr(arm.guard, replacements);
+    const body = substitute_front_expr(arm.body, replacements);
+    return elaborate_nested_product_patterns(
+      remaining,
+      { ...arm, guard, body },
+      fallback,
+    );
+  }
+
+  if (pattern.tag === "wildcard") {
+    return elaborate_nested_product_patterns(remaining, arm, fallback);
+  }
+
+  if (pattern.tag === "product") {
+    const nested = nested_product_pattern_targets(
+      pattern,
+      current.target,
+      current.target_shape,
+    );
+    return elaborate_nested_product_patterns(
+      [...nested, ...remaining],
+      arm,
+      fallback,
+    );
+  }
+
+  const then_branch = elaborate_nested_product_patterns(
+    remaining,
+    arm,
+    fallback,
+  );
+
+  if (pattern.tag === "unit") {
+    return {
+      tag: "if",
+      cond: {
+        tag: "prim",
+        prim: "i32.eq",
+        left: current.target,
+        right: { tag: "unit" },
+      },
+      then_branch,
+      else_branch: fallback,
+    };
+  }
+
+  if (pattern.tag === "literal") {
+    return {
+      tag: "if",
+      cond: match_literal_condition(current.target, pattern),
+      then_branch,
+      else_branch: fallback,
+    };
+  }
+
+  if (pattern.tag === "union_case") {
+    let value_name: string | undefined;
+
+    if (pattern.value?.tag === "binding") {
+      if (pattern.value.mode === "linear") {
+        throw new Error(
+          "Linear union payload patterns are not supported during case elaboration: " +
+            pattern.value.name,
+        );
+      }
+
+      value_name = pattern.value.name;
+    } else if (
+      pattern.value !== undefined &&
+      pattern.value.tag !== "wildcard" && pattern.value.tag !== "unit"
+    ) {
+      throw new Error(
+        "Unsupported nested case payload pattern for ." +
+          pattern.name + ": " + pattern.value.tag,
+      );
+    }
+
+    return {
+      tag: "if_let",
+      case_name: pattern.name,
+      value_name,
+      target: current.target,
+      then_branch,
+      else_branch: fallback,
+    };
+  }
+
+  throw new Error(
+    "Unsupported nested product case pattern during elaboration: " +
+      pattern.tag,
+  );
 }
 
 function elaborate_text_capture_arm(
@@ -3422,6 +3643,9 @@ function validate_match_coverage(
       arm.pattern.tag === "product" || arm.pattern.tag === "record" ||
       arm.pattern.tag === "array"
     ) {
+      if (unguarded && irrefutable_aggregate_pattern(arm.pattern)) {
+        has_catch_all = true;
+      }
       continue;
     }
 
@@ -3549,6 +3773,47 @@ function validate_match_coverage(
     "Non-exhaustive case requires a wildcard or binding arm",
     subject,
   );
+}
+
+function irrefutable_aggregate_pattern(
+  pattern:
+    | Extract<Pattern, { tag: "product" }>
+    | Extract<Pattern, { tag: "record" }>
+    | Extract<Pattern, { tag: "array" }>,
+): boolean {
+  if (pattern.tag === "product") {
+    return pattern.entries.every((entry) => {
+      return irrefutable_nested_pattern(entry.pattern);
+    }) &&
+      (pattern.rest === undefined ||
+        irrefutable_nested_pattern(pattern.rest));
+  }
+
+  if (pattern.tag === "record") {
+    return pattern.fields.every((field) => {
+      return irrefutable_nested_pattern(field.pattern);
+    }) &&
+      (pattern.rest === undefined ||
+        irrefutable_nested_pattern(pattern.rest));
+  }
+
+  return pattern.items.every(irrefutable_nested_pattern) &&
+    (pattern.rest === undefined || irrefutable_nested_pattern(pattern.rest));
+}
+
+function irrefutable_nested_pattern(pattern: Pattern): boolean {
+  if (pattern.tag === "binding" || pattern.tag === "wildcard") {
+    return true;
+  }
+
+  if (
+    pattern.tag === "product" || pattern.tag === "record" ||
+    pattern.tag === "array"
+  ) {
+    return irrefutable_aggregate_pattern(pattern);
+  }
+
+  return false;
 }
 
 function throw_match_coverage_diagnostic(
@@ -3734,6 +3999,7 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
         };
 
         if (type_annotation !== undefined) {
+          param.annotation = format_type_expr(type_annotation);
           param.type_annotation = type_annotation;
         }
         const body_scope = scope_for_params([param], scope);
@@ -3843,21 +4109,6 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       }
 
       let args = expr.args.map((item) => rewrite_expr(item, scope));
-      const product_pattern = callable_product_pattern(func, scope, new Set());
-
-      if (
-        product_pattern !== undefined &&
-        flattenable_product_pattern(product_pattern) && args.length === 1
-      ) {
-        const source = args[0];
-        expect(source !== undefined, "Missing structural function argument");
-        args = flatten_product_pattern_arguments(product_pattern, source);
-        arg = {
-          tag: "product",
-          entries: args.map((value) => ({ value })),
-          value_pack: true,
-        };
-      }
       const value_pattern = callable_value_pattern(func, scope, new Set());
 
       if (value_pattern !== undefined) {
@@ -4882,106 +5133,6 @@ function callable_value_pattern(
   const next = new Set(resolving);
   next.add(expr.name);
   return callable_value_pattern(binding.value, scope, next);
-}
-
-function callable_product_pattern(
-  expr: FrontExpr,
-  scope: TypeSetScope,
-  resolving: Set<string>,
-): Extract<Pattern, { tag: "product" }> | undefined {
-  if (expr.tag === "lam" || expr.tag === "rec") {
-    if (expr.pattern?.tag === "product") {
-      return expr.pattern;
-    }
-
-    return undefined;
-  }
-
-  if (expr.tag === "captured" || expr.tag === "comptime") {
-    return callable_product_pattern(expr.expr, scope, resolving);
-  }
-
-  if (expr.tag !== "var" || resolving.has(expr.name)) {
-    return undefined;
-  }
-
-  const binding = scope.bindings.get(expr.name);
-
-  if (binding?.value === undefined) {
-    return undefined;
-  }
-
-  const next = new Set(resolving);
-  next.add(expr.name);
-  return callable_product_pattern(binding.value, scope, next);
-}
-
-function flattenable_product_pattern(
-  pattern: Extract<Pattern, { tag: "product" }>,
-): boolean {
-  if (pattern.value_pack === true || pattern.rest !== undefined) {
-    return false;
-  }
-
-  return pattern.entries.every((entry) => {
-    if (entry.pattern.tag === "binding") {
-      return true;
-    }
-
-    if (entry.pattern.tag === "wildcard") {
-      return true;
-    }
-
-    if (entry.pattern.tag === "product") {
-      return flattenable_product_pattern(entry.pattern);
-    }
-
-    return false;
-  });
-}
-
-function flatten_product_pattern_arguments(
-  pattern: Extract<Pattern, { tag: "product" }>,
-  source: FrontExpr,
-): FrontExpr[] {
-  const args: FrontExpr[] = [];
-
-  for (let index = 0; index < pattern.entries.length; index += 1) {
-    const entry = pattern.entries[index];
-    expect(entry, "Missing structural function pattern entry");
-    let projected: FrontExpr;
-    let direct: FrontExpr | undefined;
-
-    if (source.tag === "product" || source.tag === "shape") {
-      if (entry.label === undefined) {
-        direct = source.entries[index]?.value;
-      } else {
-        direct = source.entries.find((candidate) => {
-          return candidate.label === entry.label;
-        })?.value;
-      }
-    }
-
-    if (direct !== undefined) {
-      projected = direct;
-    } else if (entry.label !== undefined) {
-      projected = { tag: "field", object: source, name: entry.label };
-    } else {
-      projected = {
-        tag: "index",
-        object: source,
-        index: { tag: "num", type: "i32", value: index },
-      };
-    }
-
-    if (entry.pattern.tag === "product") {
-      args.push(...flatten_product_pattern_arguments(entry.pattern, projected));
-    } else {
-      args.push(projected);
-    }
-  }
-
-  return args;
 }
 
 function structural_pattern_type(pattern: Pattern): TypeExpr | undefined {
@@ -7890,6 +8041,10 @@ export function resolve_front_type_value(
     return resolve_front_type_value(value.base, type_values, resolving);
   }
 
+  if (value.tag === "struct_update") {
+    return resolve_front_type_value(value.base, type_values, resolving);
+  }
+
   if (value.tag === "product") {
     const product = product_type_with_namespace(value);
 
@@ -8966,36 +9121,49 @@ function set_scope_type_value(
   }
 
   const declared = scope.type_values.get(name);
-  let declared_struct: Extract<FrontExpr, { tag: "struct_type" }> | undefined;
 
-  if (declared?.tag === "struct_type") {
-    declared_struct = declared;
-  } else if (declared?.tag === "with") {
+  let declared_type:
+    | Extract<FrontExpr, { tag: "struct_type" }>
+    | Extract<FrontExpr, { tag: "union_type" }>
+    | undefined;
+
+  if (declared?.tag === "struct_type" || declared?.tag === "union_type") {
+    declared_type = declared;
+  } else if (
+    declared?.tag === "with" || declared?.tag === "struct_update"
+  ) {
     let base = declared.base;
 
-    while (base.tag === "with") {
+    while (base.tag === "with" || base.tag === "struct_update") {
       base = base.base;
     }
 
-    if (base.tag === "struct_type") {
-      declared_struct = base;
+    if (base.tag === "struct_type" || base.tag === "union_type") {
+      declared_type = base;
     }
   }
 
   if (
-    declared_struct !== undefined && value.tag === "with"
+    declared_type !== undefined &&
+    (value.tag === "with" || value.tag === "struct_update")
   ) {
-    value = replace_type_namespace_base(value, declared_struct);
+    value = replace_type_namespace_base(value, declared_type);
   }
 
   scope.type_values.set(name, nominal_type_value(value, name));
 }
 
 function replace_type_namespace_base(
-  value: Extract<FrontExpr, { tag: "with" }>,
-  base: Extract<FrontExpr, { tag: "struct_type" }>,
-): Extract<FrontExpr, { tag: "with" }> {
-  if (value.base.tag !== "with") {
+  value:
+    | Extract<FrontExpr, { tag: "with" }>
+    | Extract<FrontExpr, { tag: "struct_update" }>,
+  base:
+    | Extract<FrontExpr, { tag: "struct_type" }>
+    | Extract<FrontExpr, { tag: "union_type" }>,
+):
+  | Extract<FrontExpr, { tag: "with" }>
+  | Extract<FrontExpr, { tag: "struct_update" }> {
+  if (value.base.tag !== "with" && value.base.tag !== "struct_update") {
     return { ...value, base };
   }
 

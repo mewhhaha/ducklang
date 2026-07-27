@@ -8,15 +8,15 @@ type FixtureSegment = ProposedPlanSegment
 
 let vertical_tab = decode_utf8(generate_bytes(1, _ => 11));
 let form_feed = decode_utf8(generate_bytes(1, _ => 12));
-let padded_open = text_append [
+let padded_open = text_append (
   vertical_tab,
-  text_append ["<proposed_plan>", text_append [form_feed, "\n"]],
-];
-let padded_close = text_append [
+  text_append ("<proposed_plan>", text_append (form_feed, "\n")),
+);
+let padded_close = text_append (
   vertical_tab,
-  text_append ["</proposed_plan>", text_append [form_feed, "\n"]],
-];
-let source = text_append [padded_open, text_append ["step\n", padded_close]];
+  text_append ("</proposed_plan>", text_append (form_feed, "\n")),
+);
+let source = text_append (padded_open, text_append ("step\n", padded_close));
 let pushed = push_proposed_plan_chunk(new_proposed_plan_parser(), source);
 let [parser, visible_text, segments] = pushed;
 let finished = finish_proposed_plan parser;
@@ -31,20 +31,20 @@ loop do
 
     case segment of
       #Normal text => do
-        rendered = text_append [
+        rendered = text_append (
           rendered,
-          text_append ["N(", text_append [text, ")"]],
-        ] end,
+          text_append ("N(", text_append (text, ")")),
+        ) end,
       #ProposedPlanStart => do
-        rendered = text_append [rendered, "S"]
+        rendered = text_append (rendered, "S")
       end,
       #ProposedPlanDelta text => do
-        rendered = text_append [
+        rendered = text_append (
           rendered,
-          text_append ["D(", text_append [text, ")"]],
-        ] end,
+          text_append ("D(", text_append (text, ")")),
+        ) end,
       #ProposedPlanEnd => do
-        rendered = text_append [rendered, "E"]
+        rendered = text_append (rendered, "E")
       end;
 
     current = remaining

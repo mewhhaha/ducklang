@@ -12,14 +12,14 @@ type SearchRankedEntryNode = ToolSearchRankedEntryNode
 type SearchRankedEntries = ToolSearchRankedEntries
 type SearchRankWords = List Text
 
-const word_count: [SearchRankWords, Text] -> I32 = (values: SearchRankWords, term: Text) => do
+const word_count: (SearchRankWords, Text) -> I32 = (values: SearchRankWords, term: Text) => do
   let current = values;
   let count = 0;
   let done = false;
   loop do
     if let #Cons node = current then
       let [word, tail] = node;
-      if text_equal_ascii_case_insensitive [word, term] then
+      if text_equal_ascii_case_insensitive (word, term) then
         count = count + 1
       end;
       current = tail
@@ -71,7 +71,7 @@ const search_info_count: SearchRankInfos -> I32 = values => do
   count
 end;
 
-const document_frequency: [SearchRankInfos, Text] -> I32 = (
+const document_frequency: (SearchRankInfos, Text) -> I32 = (
   search_infos: SearchRankInfos,
   term: Text,
 ) => do
@@ -97,7 +97,7 @@ const document_frequency: [SearchRankInfos, Text] -> I32 = (
   count
 end;
 
-const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I32 = (
+const entry_score: (SearchRankEntry, SearchRankInfos, SearchRankWords, I32) -> I32 = (
   entry: SearchRankEntry,
   search_infos: SearchRankInfos,
   query_words: SearchRankWords,
@@ -137,7 +137,7 @@ const entry_score: [SearchRankEntry, SearchRankInfos, SearchRankWords, I32] -> I
   score
 end;
 
-const ranked_before: [SearchRankedEntry, SearchRankedEntry] -> Bool = (
+const ranked_before: (SearchRankedEntry, SearchRankedEntry) -> Bool = (
   left: SearchRankedEntry,
   right: SearchRankedEntry,
 ) => do
@@ -166,7 +166,7 @@ const reverse_ranked: SearchRankedEntries -> SearchRankedEntries = values => do
   reversed
 end;
 
-const insert_ranked: [SearchRankedEntries, SearchRankedEntry] -> SearchRankedEntries = (
+const insert_ranked: (SearchRankedEntries, SearchRankedEntry) -> SearchRankedEntries = (
   values: SearchRankedEntries,
   value: SearchRankedEntry,
 ) => do
@@ -210,7 +210,7 @@ const insert_ranked: [SearchRankedEntries, SearchRankedEntry] -> SearchRankedEnt
   inserted
 end;
 
-const take_ranked: [I32, SearchRankedEntries] -> SearchRankedEntries = (
+const take_ranked: (I32, SearchRankedEntries) -> SearchRankedEntries = (
   count: I32,
   values: SearchRankedEntries,
 ) => do
@@ -237,7 +237,7 @@ const take_ranked: [I32, SearchRankedEntries] -> SearchRankedEntries = (
   reverse_ranked reversed
 end;
 
-const rank_tool_search: [Text, I32, SearchRankInfos] -> SearchRankedEntries = (
+const rank_tool_search: (Text, I32, SearchRankInfos) -> SearchRankedEntries = (
   query: Text,
   limit: I32,
   search_infos: SearchRankInfos,

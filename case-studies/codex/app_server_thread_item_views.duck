@@ -13,7 +13,7 @@ type ItemViewsTurn = AppServerTurn
 type ItemViewsTurns = AppServerTurns
 type ItemViewsView = AppServerTurnItemsView
 
-const item_text_field: [ItemViewsJson, Text] -> ItemViewsTextOption = (
+const item_text_field: (ItemViewsJson, Text) -> ItemViewsTextOption = (
   item: ItemViewsJson,
   field: Text,
 ) => do
@@ -28,7 +28,7 @@ const item_text_field: [ItemViewsJson, Text] -> ItemViewsTextOption = (
   end;
 end;
 
-const item_has_type: [ItemViewsJson, Text] -> Bool = (item: ItemViewsJson, expected: Text) => do
+const item_has_type: (ItemViewsJson, Text) -> Bool = (item: ItemViewsJson, expected: Text) => do
   if let #Some item_type = item_text_field(item, "type") then
     item_type == expected
   else
@@ -36,7 +36,7 @@ const item_has_type: [ItemViewsJson, Text] -> Bool = (item: ItemViewsJson, expec
   end;
 end;
 
-const item_ids_differ: [ItemViewsJson, ItemViewsJson] -> Bool = (
+const item_ids_differ: (ItemViewsJson, ItemViewsJson) -> Bool = (
   left: ItemViewsJson,
   right: ItemViewsJson,
 ) => do
@@ -94,7 +94,7 @@ const summarize_turn_items: ItemViewsJsonArray -> ItemViewsJsonArray =
     summary
   end;
 
-const project_turn_items: [ItemViewsTurn, ItemViewsView] -> ItemViewsTurn = (
+const project_turn_items: (ItemViewsTurn, ItemViewsView) -> ItemViewsTurn = (
   turn: ItemViewsTurn,
   view: ItemViewsView,
 ) => do
@@ -118,7 +118,7 @@ const project_turn_items: [ItemViewsTurn, ItemViewsView] -> ItemViewsTurn = (
   end;
 end;
 
-const apply_thread_turns_items_view: [ItemViewsTurns, ItemViewsView] -> ItemViewsTurns = (
+const apply_thread_turns_items_view: (ItemViewsTurns, ItemViewsView) -> ItemViewsTurns = (
   values: ItemViewsTurns,
   view: ItemViewsView,
 ) => do

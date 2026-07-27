@@ -45,10 +45,10 @@ loop do
   if let #Cons node = current then
     let [definition, tail] = node;
     let [[namespace, local_name], exposure, _, _, _, _] = definition;
-    trace = text_append [
-      text_append [text_append [text_append [trace, namespace], "."], local_name],
+    trace = text_append (
+      text_append (text_append (text_append (trace, namespace), "."), local_name),
       "|",
-    ]
+    )
     if let #DirectModelOnly = exposure then
       direct_model_only_count = direct_model_only_count + 1
     end;

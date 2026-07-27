@@ -62,7 +62,7 @@ const plan_code_mode_execute_call: ExecuteInvocation -> ExecuteCallPlan = invoca
   #StartCodeModeExecute request
 end;
 
-const plan_code_mode_execute_started: [Text, ExecuteRequest, ExecuteStartedCell] ->
+const plan_code_mode_execute_started: (Text, ExecuteRequest, ExecuteStartedCell) ->
   ExecuteStartedPlan = (
     turn_sub_id,
     request,
@@ -80,7 +80,7 @@ const plan_code_mode_execute_started: [Text, ExecuteRequest, ExecuteStartedCell]
     ]
   end;
 
-const plan_code_mode_execute_initial_response: [Text, ExecuteRuntimeResponse] ->
+const plan_code_mode_execute_initial_response: (Text, ExecuteRuntimeResponse) ->
   ExecuteInitialPlan = (
     started_cell_id,
     response,

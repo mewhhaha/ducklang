@@ -1,6 +1,6 @@
 const { .length } = import "duck:prelude/runtime" ();
 
-let classify = value => case value of
+let classify = case => of
   1 | 2 => 40,
   _ => 0;
 

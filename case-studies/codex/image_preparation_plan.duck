@@ -6,7 +6,7 @@ const ascii_lowercase = (byte: I32) => do
   if byte >= 65 && byte <= 90 then byte + 32 else byte end;
 end;
 
-const has_ascii_case_insensitive_prefix: [Text, Text] -> Bool = (text, prefix) => do
+const has_ascii_case_insensitive_prefix: (Text, Text) -> Bool = (text, prefix) => do
   let text_length = @len text;
   let prefix_length = @len prefix;
   if text_length < prefix_length then

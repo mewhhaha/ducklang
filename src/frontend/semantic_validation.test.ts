@@ -296,6 +296,15 @@ Deno.test("semantic validation warns when prelude intrinsics escape", () => {
   );
 });
 
+Deno.test("panic is the bottom type of its branch", () => {
+  const source = parse_source(`
+let value: I32 = if true then 42 else @panic "unreachable" end;
+value
+`);
+
+  assert_equals(validate_frontend_semantics(source), []);
+});
+
 Deno.test("semantic validation counts cast operands as binding uses", () => {
   const source = parse_source("let value = 1;\nvalue as I32");
   assert_equals(validate_frontend_semantics(source, { warnings: true }), []);
@@ -380,14 +389,14 @@ let (first, second) = swap(1, 2);
 
 Deno.test("template consumers type-check chunks and interpolations", () => {
   const accepted = parse_source(`
-let choose: [["value: ", ""], [I32]] -> I32 =
+let choose: (["value: ", ""], [I32]) -> I32 =
   (strings, values) => values[0];
 choose \`value: {42}\`
 `);
   assert_equals(validate_frontend_semantics(accepted), []);
 
   const invalid_value = parse_source(`
-let choose: [[Text, Text], [Bool]] -> Bool =
+let choose: ([Text, Text], [Bool]) -> Bool =
   (strings, values) => values[0];
 choose \`value: {42}\`
 `);
@@ -400,7 +409,7 @@ choose \`value: {42}\`
   );
 
   const invalid_chunks = parse_source(`
-let choose: [["amount: ", ""], [I32]] -> I32 =
+let choose: (["amount: ", ""], [I32]) -> I32 =
   (strings, values) => values[0];
 choose \`value: {42}\`
 `);
@@ -413,7 +422,7 @@ choose \`value: {42}\`
   );
 });
 
-Deno.test("calls distinguish argument packs from tuple values", () => {
+Deno.test("calls distinguish transient packs from stored products", () => {
   const pack_call = parse_source(
     "let choose = (left, right) => left;\nchoose([1, 2])",
   );
@@ -421,7 +430,7 @@ Deno.test("calls distinguish argument packs from tuple values", () => {
     validate_frontend_semantics(pack_call).map((diagnostic) =>
       diagnostic.message
     ),
-    ["Call requires an argument pack written `f(a, b)`"],
+    ["Call requires a transient pack `(a, b)`, as in `f (a, b)`"],
   );
 
   const tuple_call = parse_source(
@@ -431,7 +440,7 @@ Deno.test("calls distinguish argument packs from tuple values", () => {
     validate_frontend_semantics(tuple_call).map((diagnostic) =>
       diagnostic.message
     ),
-    ["Call requires a tuple argument written `f([a, b])`"],
+    ["Call requires a stored product `[a, b]`, as in `f [a, b]`"],
   );
 });
 

@@ -11,7 +11,7 @@ type ThreadPagesItemsListParams = AppServerThreadItemsListParams
 type ThreadPagesItemsListPlanResult = AppServerThreadItemsListPlanResult
 type ThreadPagesListSupport = AppServerPaginatedListSupport
 
-const plan_thread_turns_list: [ThreadPagesTurnsListParams, ThreadPagesHistoryMode] ->
+const plan_thread_turns_list: (ThreadPagesTurnsListParams, ThreadPagesHistoryMode) ->
   ThreadPagesTurnsListPlanResult = (
     params: ThreadPagesTurnsListParams,
     history_mode: ThreadPagesHistoryMode,
@@ -31,7 +31,7 @@ const plan_thread_turns_list: [ThreadPagesTurnsListParams, ThreadPagesHistoryMod
     end;
   end;
 
-const plan_thread_items_list: [ThreadPagesItemsListParams, ThreadPagesListSupport] ->
+const plan_thread_items_list: (ThreadPagesItemsListParams, ThreadPagesListSupport) ->
   ThreadPagesItemsListPlanResult = (
     params: ThreadPagesItemsListParams,
     support: ThreadPagesListSupport,

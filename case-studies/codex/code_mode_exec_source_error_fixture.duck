@@ -32,10 +32,10 @@ end;
 
 let malformed_json: FixtureResult = parse_code_mode_exec_source "// @exec: {\ntext('hi')";
 if let #CodeModeExecSourceError message = malformed_json then
-  if text_starts_with [
+  if text_starts_with (
     message,
     "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens` at byte ",
-  ] then
+  ) then
     score = score + 1000
   end;
 end;

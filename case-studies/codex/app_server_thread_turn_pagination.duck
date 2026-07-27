@@ -14,7 +14,7 @@ type TurnPaginationInput = AppServerThreadTurnsPaginationInput
 type TurnPaginationPage = AppServerThreadTurnsCursorPage
 type TurnPaginationPageResult = AppServerThreadTurnsCursorPageResult
 
-let turns_from_cursor: [TurnPaginationTurns, TurnPaginationCursorOption] -> TurnPaginationTurnsResult =
+let turns_from_cursor: (TurnPaginationTurns, TurnPaginationCursorOption) -> TurnPaginationTurnsResult =
   (
     ordered: TurnPaginationTurns,
     cursor: TurnPaginationCursorOption,

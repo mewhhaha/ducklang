@@ -49,7 +49,7 @@ type ThreadMethodPageSizeResult = Result Text I32
 type ThreadMethodSortDirectionResult = Result Text ThreadMethodSortDirection
 type ThreadMethodItemsViewResult = Result Text ThreadMethodItemsView
 
-const optional_text: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodTextOptionResult = (
+const optional_text: (ThreadMethodJsonObject, Text, Text) -> ThreadMethodTextOptionResult = (
   object: ThreadMethodJsonObject,
   key: Text,
   context: Text,
@@ -69,7 +69,7 @@ const optional_text: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodTextOpt
   end;
 end;
 
-const required_text: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodTextResult = (
+const required_text: (ThreadMethodJsonObject, Text, Text) -> ThreadMethodTextResult = (
   object: ThreadMethodJsonObject,
   key: Text,
   context: Text,
@@ -89,7 +89,7 @@ const required_text: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodTextRes
   end;
 end;
 
-const optional_path: [ThreadMethodJsonObject, Text] -> ThreadMethodTextOptionResult = (
+const optional_path: (ThreadMethodJsonObject, Text) -> ThreadMethodTextOptionResult = (
   object: ThreadMethodJsonObject,
   context: Text,
 ) => do
@@ -108,7 +108,7 @@ const optional_path: [ThreadMethodJsonObject, Text] -> ThreadMethodTextOptionRes
   end;
 end;
 
-const optional_bool: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodBoolOptionResult = (
+const optional_bool: (ThreadMethodJsonObject, Text, Text) -> ThreadMethodBoolOptionResult = (
   object: ThreadMethodJsonObject,
   key: Text,
   context: Text,
@@ -128,7 +128,7 @@ const optional_bool: [ThreadMethodJsonObject, Text, Text] -> ThreadMethodBoolOpt
   end;
 end;
 
-const optional_json_kind: [ThreadMethodJsonObject, Text, Text, Text] -> ThreadMethodJsonOptionResult =
+const optional_json_kind: (ThreadMethodJsonObject, Text, Text, Text) -> ThreadMethodJsonOptionResult =
   (
     object: ThreadMethodJsonObject,
     key: Text,
@@ -154,7 +154,7 @@ const optional_json_kind: [ThreadMethodJsonObject, Text, Text, Text] -> ThreadMe
     end;
   end;
 
-const optional_json: [ThreadMethodJsonObject, Text] -> ThreadMethodJsonOption = (
+const optional_json: (ThreadMethodJsonObject, Text) -> ThreadMethodJsonOption = (
   object: ThreadMethodJsonObject,
   key: Text,
 ) => do
@@ -167,7 +167,7 @@ const optional_json: [ThreadMethodJsonObject, Text] -> ThreadMethodJsonOption = 
   end;
 end;
 
-const json_field_is_present: [ThreadMethodJsonObject, Text] -> Bool = (
+const json_field_is_present: (ThreadMethodJsonObject, Text) -> Bool = (
   object: ThreadMethodJsonObject,
   key: Text,
 ) => do
@@ -175,7 +175,7 @@ const json_field_is_present: [ThreadMethodJsonObject, Text] -> Bool = (
   if let #Found _ = lookup then true else false end;
 end;
 
-const json_field_is_non_null: [ThreadMethodJsonObject, Text] -> Bool = (
+const json_field_is_non_null: (ThreadMethodJsonObject, Text) -> Bool = (
   object: ThreadMethodJsonObject,
   key: Text,
 ) => do
@@ -213,7 +213,7 @@ const sandbox_permissions_valid: ThreadMethodJson -> Bool = value => do
   !(sandbox_present && permissions_present)
 end;
 
-const decode_history_mode: [ThreadMethodJsonObject, Text] -> ThreadMethodHistoryModeResult = (
+const decode_history_mode: (ThreadMethodJsonObject, Text) -> ThreadMethodHistoryModeResult = (
   object: ThreadMethodJsonObject,
   context: Text,
 ) => do
@@ -238,7 +238,7 @@ const decode_history_mode: [ThreadMethodJsonObject, Text] -> ThreadMethodHistory
   end;
 end;
 
-const decode_start_source: [ThreadMethodJsonObject, Text] -> ThreadMethodStartSourceResult = (
+const decode_start_source: (ThreadMethodJsonObject, Text) -> ThreadMethodStartSourceResult = (
   object: ThreadMethodJsonObject,
   context: Text,
 ) => do
@@ -592,7 +592,7 @@ const decode_thread_compact_start: ThreadMethodJson -> ThreadMethodDecodeResult 
     end;
   end;
 
-const decode_metadata_git_field: [ThreadMethodJsonObject, Text] -> ThreadMethodTextPatchResult = (
+const decode_metadata_git_field: (ThreadMethodJsonObject, Text) -> ThreadMethodTextPatchResult = (
   object: ThreadMethodJsonObject,
   key: Text,
 ) => do
@@ -810,7 +810,7 @@ const decode_thread_settings_update: ThreadMethodJson -> ThreadMethodDecodeResul
     end;
   end;
 
-const decode_page_size: [ThreadMethodJsonObject, Text] -> ThreadMethodPageSizeResult = (
+const decode_page_size: (ThreadMethodJsonObject, Text) -> ThreadMethodPageSizeResult = (
   object: ThreadMethodJsonObject,
   context: Text,
 ) => do
@@ -842,7 +842,7 @@ const decode_page_size: [ThreadMethodJsonObject, Text] -> ThreadMethodPageSizeRe
   end;
 end;
 
-const decode_page_sort_direction: [ThreadMethodJsonObject, Text, ThreadMethodSortDirection] -> ThreadMethodSortDirectionResult =
+const decode_page_sort_direction: (ThreadMethodJsonObject, Text, ThreadMethodSortDirection) -> ThreadMethodSortDirectionResult =
   (
     object: ThreadMethodJsonObject,
     context: Text,

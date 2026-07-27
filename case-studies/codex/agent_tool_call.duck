@@ -8,7 +8,7 @@ type AgentCallContext = AgentToolContext
 type AgentCallOperation = AgentToolOperation
 type AgentCallPlan = AgentToolPlan
 
-const plan_agent_tool_call: [AgentCallContext, AgentCallOperation] -> AgentCallPlan = (
+const plan_agent_tool_call: (AgentCallContext, AgentCallOperation) -> AgentCallPlan = (
   context: AgentCallContext,
   operation: AgentCallOperation,
 ) => do

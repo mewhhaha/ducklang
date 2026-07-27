@@ -15,7 +15,7 @@ let parse_view_image_args: Text -> ImageJsonParseResult = document => do
     decode_view_image_value value
   else let #Err error = parsed then
     let [position, message] = error;
-    view_image_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
+    view_image_parse_failure(text_append (message, text_append (" at byte ", format_i32 position)))
   else
     view_image_parse_failure "invalid JSON parse result"
   end;

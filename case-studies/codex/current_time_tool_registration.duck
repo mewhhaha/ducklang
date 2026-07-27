@@ -10,7 +10,7 @@ type ClockName = ToolName
 const current_time_tool_name: () -> ClockName = () => ["clock", "curr_time"];
 const sleep_tool_name: () -> ClockName = () => ["clock", "sleep"];
 
-const current_time_tool_definitions: [Bool, Bool] -> ClockDefinitions = (enabled,
+const current_time_tool_definitions: (Bool, Bool) -> ClockDefinitions = (enabled,
   sleep_enabled) => do
     let definitions: ClockDefinitions = #Nil;
 

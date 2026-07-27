@@ -10,14 +10,14 @@ type WaitU64 = CodeModeWaitU64
 type WaitU64Option = CodeModeWaitU64Option
 
 let wait_parse_failure: Text -> CodeModeWaitParseResult = reason => do
-  #ParseFailed (text_append ["failed to parse function arguments: ", reason])
+  #ParseFailed (text_append ("failed to parse function arguments: ", reason))
 end;
 
 let parse_code_mode_wait_args: Text -> CodeModeWaitParseResult = document => do
   let parsed = parse_json_document document;
   if let #Err error = parsed then
     let [position, message] = error;
-    return wait_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]]);
+    return wait_parse_failure(text_append (message, text_append (" at byte ", format_i32 position)));
   end;
   let #Ok value_and_position = parsed else do
     return wait_parse_failure "invalid JSON parse result";
@@ -61,10 +61,10 @@ let parse_code_mode_wait_args: Text -> CodeModeWaitParseResult = document => do
           if let #Ok canonical = decoded then
             yield_time_ms = #U64Decimal canonical
           else let #Err reason = decoded then
-            failure = text_append [
+            failure = text_append (
               "field `yield_time_ms` ",
-              text_append [reason, text_append ["; got ", number]],
-            ]
+              text_append (reason, text_append ("; got ", number)),
+            )
           else
             failure = "field `yield_time_ms` produced no U64 parse result"
           end;
@@ -83,10 +83,10 @@ let parse_code_mode_wait_args: Text -> CodeModeWaitParseResult = document => do
             let value: WaitU64 = #U64Decimal canonical;
             max_tokens = #WaitLimitPresent value
           else let #Err reason = decoded then
-            failure = text_append [
+            failure = text_append (
               "field `max_tokens` ",
-              text_append [reason, text_append ["; got ", number]],
-            ]
+              text_append (reason, text_append ("; got ", number)),
+            )
           else
             failure = "field `max_tokens` produced no U64 parse result"
           end;

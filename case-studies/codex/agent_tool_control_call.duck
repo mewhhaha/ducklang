@@ -5,7 +5,7 @@ const {} = import "./agent_tool_types.duck" ();
 const { .normalize_wait_timeout, .validate_collab_input } = import "./agent_input_policy.duck" ();
 const { .resolve_agent_path } = import "./agent_path.duck" ();
 
-const plan_agent_message: [AgentToolContext, AgentToolMessageArguments, Bool] -> AgentToolPlan = (
+const plan_agent_message: (AgentToolContext, AgentToolMessageArguments, Bool) -> AgentToolPlan = (
   context,
   arguments,
   followup,
@@ -32,7 +32,7 @@ const plan_agent_message: [AgentToolContext, AgentToolMessageArguments, Bool] ->
   end;
 end;
 
-const plan_agent_control_call: [AgentToolContext, AgentToolControlOperation] -> AgentToolPlan = (
+const plan_agent_control_call: (AgentToolContext, AgentToolControlOperation) -> AgentToolPlan = (
   context,
   operation,
 ) => do

@@ -12,7 +12,7 @@ const {
 } = import "duck:prelude/runtime" ();
 const {} = import "./agent_types.duck" ();
 
-const append_agent_path_text = (left: Text, right: Text) => text_append [left, right];
+const append_agent_path_text = (left: Text, right: Text) => text_append (left, right);
 
 const valid_agent_name = (name: Text) => do
   if name == "" || name == "root" || name == "." || name == ".." then
@@ -30,16 +30,16 @@ end;
 const validate_relative_agent_path = (reference: Text) => do
   if reference == "" then
     #InvalidPath "agent path must not be empty"
-  else text_get [reference, text_length reference - 1] == 47 then
+  else text_get (reference, text_length reference - 1) == 47 then
     #InvalidPath "relative agent path must not end with `/`"
   else
     let start = 0;
     let valid = true;
     let invalid_segment: Text = "";
     loop do
-      let separator = text_find_from [reference, "/", start];
+      let separator = text_find_from (reference, "/", start);
       let segment_end = if separator < 0 then text_length reference else separator end;
-      let segment = text_slice [reference, start, segment_end];
+      let segment = text_slice (reference, start, segment_end);
       if valid_agent_name segment then
         if separator < 0 then
           break;
@@ -73,8 +73,8 @@ end;
 const validate_absolute_agent_path = (path: Text) => do
   if path == "/morpheus" || path == "/root" then
     #Path path
-  else text_starts_with [path, "/root/"] then
-    let relative = text_slice [path, 6, text_length path];
+  else text_starts_with (path, "/root/") then
+    let relative = text_slice (path, 6, text_length path);
     let validated = validate_relative_agent_path relative;
     if let #Path _ = validated then #Path path else let #InvalidPath message = validated then
       #InvalidPath message else #InvalidPath "invalid absolute agent path" end;
@@ -88,7 +88,7 @@ const resolve_agent_path = (current_path: Text, reference: Text) => do
     #InvalidPath "agent path must not be empty"
   else reference == "/root" then
     #Path "/root"
-  else text_get [reference, 0] == 47 then
+  else text_get (reference, 0) == 47 then
     validate_absolute_agent_path reference
   else
     let validated = validate_relative_agent_path reference;

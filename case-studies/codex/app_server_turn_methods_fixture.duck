@@ -37,14 +37,14 @@ const count_inputs = (values: FixtureInputs) => do
   count
 end;
 
-const input_one: [Text, Text, Text] -> FixtureJson = (kind: Text, key: Text, value: Text) => do
+const input_one: (Text, Text, Text) -> FixtureJson = (kind: Text, key: Text, value: Text) => do
   let fields = json_object_empty();
   fields = json_object_prepend(key, json_string value, fields)
   fields = json_object_prepend("type", json_string kind, fields)
   json_object fields
 end;
 
-const input_two: [Text, Text, Text, Text, Text] -> FixtureJson = (
+const input_two: (Text, Text, Text, Text, Text) -> FixtureJson = (
   kind: Text,
   first_key: Text,
   first_value: Text,

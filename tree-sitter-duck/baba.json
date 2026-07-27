@@ -254,6 +254,11 @@
         "kind": "prec.right"
       }
     },
+    "case_function_expression": {
+      "wrap": {
+        "kind": "prec.right"
+      }
+    },
     "_binding_alternative_pattern": {
       "wrap": {
         "kind": "prec.left"

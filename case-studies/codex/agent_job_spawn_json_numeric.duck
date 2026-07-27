@@ -7,7 +7,7 @@ type AgentJobSpawnNumericArgs = AgentJobSpawnDecodedArgs
 type AgentJobSpawnNumericOptionalResult = AgentJobOptionalTextResult
 type AgentJobSpawnNumericResult = AgentJobSpawnDecodeResult
 
-let decode_agent_job_spawn_numeric_options: [Text, AgentJobSpawnNumericArgs] -> AgentJobSpawnNumericResult =
+let decode_agent_job_spawn_numeric_options: (Text, AgentJobSpawnNumericArgs) -> AgentJobSpawnNumericResult =
   (
     document: Text,
     base: AgentJobSpawnNumericArgs,

@@ -16,7 +16,7 @@ let parse_update_plan_args: Text -> PlanJsonParseResult = document => do
     decode_update_plan_value value
   else let #Err error = parsed then
     let [position, message] = error;
-    update_plan_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
+    update_plan_parse_failure(text_append (message, text_append (" at byte ", format_i32 position)))
   else
     update_plan_parse_failure "invalid JSON parse result"
   end;

@@ -33,7 +33,7 @@ const new_plan_assistant_text_parser: () -> StreamAssistantTextParser = () => do
   ]
 end;
 
-const push_assistant_text_chunk: [StreamAssistantTextParser, Text] -> StreamAssistantTextChunk = (
+const push_assistant_text_chunk: (StreamAssistantTextParser, Text) -> StreamAssistantTextChunk = (
   parser: StreamAssistantTextParser,
   chunk: Text,
 ) => do
@@ -76,7 +76,7 @@ const finish_assistant_text: StreamAssistantTextParser -> StreamAssistantTextChu
       let finished_plan_chunk = finish_proposed_plan pushed_plan_parser;
       let [finished_plan_parser, plan_tail, finished_plan_segments] = finished_plan_chunk;
       proposed_plan_parser = finished_plan_parser
-      visible_text = text_append [plan_visible_text, plan_tail]
+      visible_text = text_append (plan_visible_text, plan_tail)
       extracted_plan_segments = plan_segments.append(
         pushed_plan_segments,
         finished_plan_segments,

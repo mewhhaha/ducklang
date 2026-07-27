@@ -16,7 +16,7 @@ let identity: FixtureIdentity = ["binned-codex/0.1", "/tmp/codex", "unix", "linu
 let initialize =
   "{\"method\":\"initialize\",\"id\":1,\"params\":{\"clientInfo\":{\"name\":\"codex_vscode\",\"title\":\"Codex VS Code Extension\",\"version\":\"0.1.0\"},\"capabilities\":{\"experimentalApi\":true,\"requestAttestation\":true,\"mcpServerOpenaiFormElicitation\":true,\"optOutNotificationMethods\":[\"thread/started\"]}}}";
 
-const score_plan: [FixtureSession, FixturePlan, I32, I32] -> FixtureOutcome = (
+const score_plan: (FixtureSession, FixturePlan, I32, I32) -> FixtureOutcome = (
   state: FixtureSession,
   plan: FixturePlan,
   index: I32,

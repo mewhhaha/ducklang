@@ -391,6 +391,39 @@ widening according to the source type, and then interprets the result as
 source-defined `From` or `TryFrom` implementation rather than call the compiler
 boundary directly.
 
+The functional prelude exports `from` as an ordinary binding for the `From.from`
+duck member. The target must come from an annotation or another result context,
+such as a function parameter. A conversion with no target context is rejected
+rather than choosing a default:
+
+```txt
+const { .from } = import "duck:prelude/functional" ();
+
+let exact: [1, 2] = from (1, 2);
+let pair: [I32; 2] = from (1, 2);
+let byte: U8 = from 1;
+
+let accept_byte: U8 -> U8 = value => value;
+let also_byte = accept_byte(from 1);
+```
+
+Because `from` is an ordinary function, it can be renamed or shadowed:
+
+```txt
+const convert = from;
+let byte: U8 = convert 1;
+
+let from = value => value + 1;
+let answer = from 41;
+```
+
+`From` is reserved for total, lossless conversions. Integer singleton literals
+may convert to a fixed-width integer when their value fits; an out-of-range
+literal is rejected. A runtime integer narrowing is not a `From` conversion and
+belongs in `TryFrom`. A transient value pack can materialize as an exact product
+or a fixed array of the same arity. This is still an inline value: binding the
+result does not by itself allocate a heap object.
+
 Double-quoted string literals produce UTF-8 `Text`.
 
 Boolean literals carry the semantic source type `Bool`. `Bool` is represented as
@@ -727,10 +760,44 @@ Functions use closure syntax.
 ```duck
 let add = (x, y) => x + y;
 
-let add_block = (x, y) => {
+let add_block = (x, y) => do
   x + y
-};
+end;
 ```
+
+Every function has one parameter and application is always whitespace
+application: `function argument`. The argument must have the form of the
+function's parameter type. Parentheses and brackets are ordinary forms of that
+argument, not distinct call syntaxes:
+
+```duck
+let add: (I32, I32) -> I32 = (left, right) => left + right;
+let first: [I32, I32] -> I32 = [left, right] => left;
+
+let sum = add (20, 22);
+let head = first [42, 0];
+```
+
+For the same reason, `stored: I32 -> C` is called `stored 1`, and
+`stored: #MyStruct -> C` is called `stored #MyStruct`. `(I32, I32) -> I32`
+matches `(20, 22)`, while `[I32, I32] -> I32` matches `[42, 0]`. The first is
+a transient pack and the second a stored product, but both are simply the one
+argument supplied to a unary function. Likewise, `()` is an empty transient
+pack and `[]` is an empty stored product.
+
+A function whose whole body dispatches on its input can put `case` at the
+function boundary:
+
+```duck
+let combine: (Option I32, Option I32) -> I32 = case => of
+  (#Some left, #Some right) => left + right,
+  (#Some value, #None) | (#None, #Some value) => value,
+  (#None, #None) => 0;
+```
+
+The patterns following `of` match the single argument supplied at `=>`.
+Parenthesized and bracketed patterns use the ordinary transient-pack and
+stored-product pattern forms.
 
 Function types support explicit universal quantification. `forall` binds one or
 more type variables through the following type expression, and it may occur at
@@ -1127,19 +1194,39 @@ type, and these function combinators:
 - products and branching: `swap`, `first`, `second`, `fanout`, and `converge`;
 - sum elimination and queries: `option`, `option_unwrap_or`, `option_is_some`,
   `option_is_none`, `result_unwrap_or`, `result_is_ok`, `result_is_err`,
-  `either_is_left`, and `either_is_right`.
+  `either_is_left`, and `either_is_right`;
+- selection: `max`, dispatched through the `Max` duck;
+- conversion: `from`.
 
-The structural category set includes `Eq`, `Ord`, `Semigroup`, `Monoid`,
+The structural category set includes `Eq`, `Ord`, `Max`, `Semigroup`, `Monoid`,
 `Semiring`, `Ring`, `EuclideanRing`, `Functor`, `Apply`, `Applicative`, `Monad`,
 `AffineMonad`, `Bind`, `Foldable`, `Show`, `Default`, `Bounded`, `Enum`,
 `Alternative`, `Bifunctor`, `Contravariant`, `Traversable`, `Category`,
 `Profunctor`, `From`, `Into`, `TryFrom`, and `Bits`. `From Source Target`
 defines `.from = Source -> Target`; its implementation is an extension on
-`Source`, and the target is inferred from the result context. Higher-kinded
-roles are written directly in duck signatures, for example `F A`, `A -> B`, and
-`F B`. Instances remain ordinary lexical `extend` declarations and can be
-checked explicitly with `comptime`. Higher-order combinations that produce a new
-closure are specialized at `comptime`, preserving a direct runtime call.
+`Source`, and the target is inferred from the result context. `Into.into` is
+derived by dispatching to the same `From` implementation, so conversion authors
+only define `.from`. `TryFrom` is the corresponding fallible category.
+Higher-kinded roles are written directly in duck signatures, for example `F A`,
+`A -> B`, and `F B`. Instances remain ordinary lexical `extend` declarations and
+can be checked explicitly with `comptime`. Higher-order combinations that
+produce a new closure are specialized at `comptime`, preserving a direct runtime
+call.
+
+```txt
+const { .struct } = import "duck:prelude/types" ();
+const { .from } = import "duck:prelude/functional" ();
+
+type Box = struct { .value = I32 }
+
+extend Box {
+  .from = box => box.value,
+}
+
+let box: Box = [.value = 42];
+let value: I32 = from box;
+let same_value: I32 = Into.into box;
+```
 
 The standard functional and bit operators are available wherever their target
 prelude name or duck is in scope:

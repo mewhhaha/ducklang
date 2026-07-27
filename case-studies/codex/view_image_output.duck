@@ -12,16 +12,16 @@ const view_image_detail_text: ImageOutputDetail -> Text = detail => do
 end;
 
 let view_image_output_json: ImageOutputValue -> Text = output => do
-  text_append [
+  text_append (
     "{\"image_url\":",
-    text_append [
+    text_append (
       encode_json_string output.image_url,
-      text_append [
+      text_append (
         ",\"detail\":",
-        text_append [encode_json_string(view_image_detail_text output.detail), "}"],
-      ],
-    ],
-  ]
+        text_append (encode_json_string(view_image_detail_text output.detail), "}"),
+      ),
+    ),
+  )
 end;
 
 return {

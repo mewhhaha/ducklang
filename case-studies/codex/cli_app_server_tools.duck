@@ -65,7 +65,7 @@ const parse_app_server_daemon: AppServerToolArgs -> AppServerToolCommandResult =
     end;
   end;
 
-let rec scan_app_server_proxy_from: [AppServerToolArgs, AppServerToolTextOption] -> AppServerToolCommandResult =
+let rec scan_app_server_proxy_from: (AppServerToolArgs, AppServerToolTextOption) -> AppServerToolCommandResult =
   (
     args: AppServerToolArgs,
     socket_path: AppServerToolTextOption,
@@ -92,11 +92,11 @@ let parse_app_server_proxy: AppServerToolArgs -> AppServerToolCommandResult = (
     scan_app_server_proxy_from(args, #None)
   end;
 
-let rec scan_app_server_generate_from: [
+let rec scan_app_server_generate_from: (
   AppServerToolArgs,
   AppServerGenerateFacts,
   AppServerGenerateTarget,
-] -> AppServerGenerateFactsResult = (
+) -> AppServerGenerateFactsResult = (
   args: AppServerToolArgs,
   facts: AppServerGenerateFacts,
   target: AppServerGenerateTarget,
@@ -137,7 +137,7 @@ let rec scan_app_server_generate_from: [
   end;
 end;
 
-let parse_app_server_generate: [AppServerGenerateTarget, AppServerToolArgs] -> AppServerToolCommandResult =
+let parse_app_server_generate: (AppServerGenerateTarget, AppServerToolArgs) -> AppServerToolCommandResult =
   (
     target: AppServerGenerateTarget,
     args: AppServerToolArgs,
@@ -179,7 +179,7 @@ let parse_app_server_generate: [AppServerGenerateTarget, AppServerToolArgs] -> A
     end;
   end;
 
-let parse_app_server_tools: [Text, AppServerToolArgs] -> AppServerToolCommandResult = (
+let parse_app_server_tools: (Text, AppServerToolArgs) -> AppServerToolCommandResult = (
   command: Text,
   args: AppServerToolArgs,
 ) => do

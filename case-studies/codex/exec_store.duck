@@ -23,7 +23,7 @@ end;
 const allocate_process_id = (values: StoreRecords) => do
   records.fold_i32(values, 999, (highest: I32, record: StoreRecord) => do
     let [process_id, _, _, _, _, _] = record;
-    max_i32 [highest, process_id]
+    max_i32 (highest, process_id)
   end) + 1
 end;
 

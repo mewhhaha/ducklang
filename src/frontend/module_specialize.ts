@@ -154,6 +154,7 @@ function specialize_import_binding(statement: Stmt): Stmt[] | undefined {
       exported.annotation === undefined &&
       exported.type_annotation === undefined &&
       !is_handler_factory(exported.value) &&
+      !is_namespace_member_reference(exported.value) &&
       !should_inline_imported_value(exported.value) && !open_nullary_module
     ) {
       return undefined;
@@ -220,6 +221,11 @@ function specialize_import_binding(statement: Stmt): Stmt[] | undefined {
   }
 
   return [...inline_bindings, ...bindings];
+}
+
+function is_namespace_member_reference(value: FrontExpr): boolean {
+  return value.tag === "field" && value.object.tag === "var" &&
+    /^[A-Z][A-Za-z0-9]*$/.test(value.object.name);
 }
 
 function inline_nullary_module_alias(
@@ -635,9 +641,15 @@ function annotate_callable_parameters(
     parameter_types = [annotation.param];
   } else if (
     annotation.param.tag === "product" &&
+    annotation.param.value_pack === true &&
     annotation.param.entries.length === value.params.length
   ) {
     parameter_types = annotation.param.entries.map((entry) => entry.type_expr);
+  } else if (
+    annotation.param.tag === "tuple" &&
+    annotation.param.items.length === value.params.length
+  ) {
+    parameter_types = annotation.param.items;
   } else {
     return value;
   }

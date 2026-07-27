@@ -10,7 +10,7 @@ type SearchOutputFunctions = ToolSearchFunctions
 type SearchOutputNamespace = ToolSearchNamespace
 type SearchOutputRankedEntries = ToolSearchRankedEntries
 
-const append_functions: [SearchOutputFunctions, SearchOutputFunctions] -> SearchOutputFunctions = (
+const append_functions: (SearchOutputFunctions, SearchOutputFunctions) -> SearchOutputFunctions = (
   left: SearchOutputFunctions,
   right: SearchOutputFunctions,
 ) => do
@@ -47,7 +47,7 @@ const append_functions: [SearchOutputFunctions, SearchOutputFunctions] -> Search
   appended
 end;
 
-const append_loadables: [SearchOutputLoadables, SearchOutputLoadables] -> SearchOutputLoadables = (
+const append_loadables: (SearchOutputLoadables, SearchOutputLoadables) -> SearchOutputLoadables = (
   left: SearchOutputLoadables,
   right: SearchOutputLoadables,
 ) => do
@@ -104,7 +104,7 @@ const reverse_loadables: SearchOutputLoadables -> SearchOutputLoadables = values
   reversed
 end;
 
-const append_coalesced: [SearchOutputLoadables, SearchOutputLoadable] -> SearchOutputLoadables = (
+const append_coalesced: (SearchOutputLoadables, SearchOutputLoadable) -> SearchOutputLoadables = (
   values: SearchOutputLoadables,
   value: SearchOutputLoadable,
 ) => do

@@ -53,7 +53,7 @@ const request_id_number_valid: Text -> Bool = (number: Text) => do
   let done = false;
 
   if valid then
-    if text_get [number, 0] == 45 then
+    if text_get (number, 0) == 45 then
       index = 1
       if index == length then
         valid = false
@@ -65,7 +65,7 @@ const request_id_number_valid: Text -> Bool = (number: Text) => do
     if index >= length then
       done = true
     else
-      let byte = text_get [number, index];
+      let byte = text_get (number, index);
 
       if byte < 48 || byte > 57 then
         valid = false
@@ -93,7 +93,7 @@ const request_id_valid: ServerJson -> Bool = (value: ServerJson) => do
   end;
 end;
 
-const lookup_or_null: [ServerJsonObject, Text] -> ServerJson =
+const lookup_or_null: (ServerJsonObject, Text) -> ServerJson =
   (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
@@ -104,7 +104,7 @@ const lookup_or_null: [ServerJsonObject, Text] -> ServerJson =
     end;
   end;
 
-const required_text: [ServerJsonObject, Text] -> ServerTextOption = (
+const required_text: (ServerJsonObject, Text) -> ServerTextOption = (
   object: ServerJsonObject,
   key: Text,
 ) => do
@@ -117,7 +117,7 @@ const required_text: [ServerJsonObject, Text] -> ServerTextOption = (
   end;
 end;
 
-const optional_text: [ServerJsonObject, Text] -> ServerTextOption = (
+const optional_text: (ServerJsonObject, Text) -> ServerTextOption = (
   object: ServerJsonObject,
   key: Text,
 ) => do
@@ -130,7 +130,7 @@ const optional_text: [ServerJsonObject, Text] -> ServerTextOption = (
   end;
 end;
 
-const optional_text_valid: [ServerJsonObject, Text] -> Bool =
+const optional_text_valid: (ServerJsonObject, Text) -> Bool =
   (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
@@ -147,7 +147,7 @@ const optional_text_valid: [ServerJsonObject, Text] -> Bool =
     end;
   end;
 
-const optional_bool: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObject, key: Text) => do
+const optional_bool: (ServerJsonObject, Text) -> Bool = (object: ServerJsonObject, key: Text) => do
   let lookup: ServerJsonLookup = json_object_get(key, object);
 
   if let #Found value = lookup then
@@ -157,7 +157,7 @@ const optional_bool: [ServerJsonObject, Text] -> Bool = (object: ServerJsonObjec
   end;
 end;
 
-const optional_bool_valid: [ServerJsonObject, Text] -> Bool =
+const optional_bool_valid: (ServerJsonObject, Text) -> Bool =
   (object: ServerJsonObject, key: Text) => do
     let lookup: ServerJsonLookup = json_object_get(key, object);
 
@@ -221,7 +221,7 @@ const client_name_valid: Text -> Bool = (name: Text) => do
     if index >= length then
       done = true
     else
-      let byte = text_get [name, index];
+      let byte = text_get (name, index);
 
       if byte < 32 then
         if byte != 9 then
@@ -289,7 +289,7 @@ const decode_capabilities: ServerJsonObject -> ServerCapabilitiesResult =
               if let #TextArrayOk values = decoded then
                 opt_out = values
               else let #TextArrayError reason = decoded then
-                error = text_append ["initialize.params.capabilities.", reason]
+                error = text_append ("initialize.params.capabilities.", reason)
               end;
             end;
           end;
@@ -341,9 +341,9 @@ const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJ
                   result = #InitializeError error
                 end;
               else
-                let prefix = text_append ["Invalid clientInfo.name: '", client_name];
+                let prefix = text_append ("Invalid clientInfo.name: '", client_name);
                 result = #InitializeError (
-                  text_append [prefix, "'. Must be a valid HTTP header value."]
+                  text_append (prefix, "'. Must be a valid HTTP header value.")
                 )
               end;
             else
@@ -366,7 +366,7 @@ const decode_initialize: ServerJson -> ServerInitializeResult = (params: ServerJ
   result
 end;
 
-const decode_peer_error: [ServerRequestId, ServerJson] -> ServerDecodeResult = (
+const decode_peer_error: (ServerRequestId, ServerJson) -> ServerDecodeResult = (
   id: ServerRequestId,
   value: ServerJson,
 ) => do
@@ -460,7 +460,7 @@ const decode_app_server_message: Text -> ServerDecodeResult = (document: Text) =
   end;
 end;
 
-const encode_response: [ServerRequestId, ServerJson] -> Text = (
+const encode_response: (ServerRequestId, ServerJson) -> Text = (
   id: ServerRequestId,
   result: ServerJson,
 ) => do
@@ -470,7 +470,7 @@ const encode_response: [ServerRequestId, ServerJson] -> Text = (
   encode_json(json_object fields)
 end;
 
-const encode_error: [ServerRequestId, Text, Text] -> Text = (
+const encode_error: (ServerRequestId, Text, Text) -> Text = (
   id: ServerRequestId,
   code: Text,
   message: Text,
@@ -494,7 +494,7 @@ const initialize_response: ServerIdentity -> ServerJson = (identity: ServerIdent
   json_object fields
 end;
 
-const handle_request: [ServerSession, ServerIdentity, ServerRequest] -> ServerPlan = (
+const handle_request: (ServerSession, ServerIdentity, ServerRequest) -> ServerPlan = (
   session: ServerSession,
   identity: ServerIdentity,
   request: ServerRequest,
@@ -529,7 +529,7 @@ const handle_request: [ServerSession, ServerIdentity, ServerRequest] -> ServerPl
   plan
 end;
 
-const handle_app_server_line: [ServerSession, ServerIdentity, Text] -> ServerPlan = (
+const handle_app_server_line: (ServerSession, ServerIdentity, Text) -> ServerPlan = (
   session: ServerSession,
   identity: ServerIdentity,
   document: Text,
@@ -552,7 +552,7 @@ const handle_app_server_line: [ServerSession, ServerIdentity, Text] -> ServerPla
   end;
 end;
 
-const notification_opted_out: [ServerTexts, Text] -> Bool =
+const notification_opted_out: (ServerTexts, Text) -> Bool =
   (values: ServerTexts, method: Text) => do
     let current = values;
     let opted_out = false;
@@ -580,7 +580,7 @@ const notification_opted_out: [ServerTexts, Text] -> Bool =
     opted_out
   end;
 
-const should_emit_notification: [ServerSession, Text] -> Bool = (
+const should_emit_notification: (ServerSession, Text) -> Bool = (
   session: ServerSession,
   method: Text,
 ) => do

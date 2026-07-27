@@ -124,6 +124,24 @@ function format_expr(
     return nested(restore_holes(expr.body, holes), parent_precedence);
   }
 
+  if (expr.tag === "lam" && expr.case_function === true) {
+    expect(expr.body.tag === "match", "Case function body must be a match");
+    const arms = expr.body.arms.map((arm) => {
+      let text = format_pattern(arm.pattern, nested);
+
+      if (arm.guard) {
+        text += " if " + nested(arm.guard);
+      }
+
+      return text + " => " + nested(arm.body);
+    });
+    return parenthesize(
+      "case => of " + arms.join(", ") + ";",
+      0,
+      parent_precedence,
+    );
+  }
+
   if (expr.tag === "lam" || expr.tag === "rec") {
     let text = "";
 

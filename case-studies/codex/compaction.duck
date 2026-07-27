@@ -42,7 +42,7 @@ const content_items_to_text: (CompactionContents) -> CompactionTextOption = valu
         if part == "" then
           ()
         else has_text then
-          text = text_append [text, text_append ["\n", part]]
+          text = text_append (text, text_append ("\n", part))
         else
           text = part
           has_text = true
@@ -67,7 +67,7 @@ const content_items_to_text: (CompactionContents) -> CompactionTextOption = valu
 end;
 
 const is_summary_message = (message: Text) => do
-  text_starts_with [message, text_append [summary_prefix, "\n"]]
+  text_starts_with (message, text_append (summary_prefix, "\n"))
 end;
 
 const user_message_text: (CompactionItem) -> CompactionTextOption =

@@ -15,7 +15,7 @@ let parse_test_sync_args: Text -> SyncJsonParseResult = document => do
     decode_test_sync_value value
   else let #Err error = parsed then
     let [position, message] = error;
-    sync_parse_failure(text_append [message, text_append [" at byte ", format_i32 position]])
+    sync_parse_failure(text_append (message, text_append (" at byte ", format_i32 position)))
   else
     sync_parse_failure "invalid JSON parse result"
   end;

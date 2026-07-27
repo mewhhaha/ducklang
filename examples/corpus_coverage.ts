@@ -120,6 +120,9 @@ export const corpus_feature_examples: Record<string, string[]> = {
   "surface_forms.txt / Bracket value after a binding": [
     "examples/data/01_struct_fields.duck",
   ],
+  "surface_forms.txt / Case function": [
+    "examples/data/17_match_patterns.duck",
+  ],
   "surface_forms.txt / Condition forms and type tests": [
     "examples/data/14_type_sets.duck",
     "examples/compile_time/22_generic_extension.duck",
@@ -141,6 +144,9 @@ export const corpus_feature_examples: Record<string, string[]> = {
   ],
   "surface_forms.txt / Prefix negation in values and conditions": [
     "examples/basics/09_literals.duck",
+  ],
+  "surface_forms.txt / Target-directed conversion": [
+    "examples/compile_time/18_ducks_and_operators.duck",
   ],
   "surface_forms.txt / Unary applications and products": [
     "examples/compile_time/22_generic_extension.duck",

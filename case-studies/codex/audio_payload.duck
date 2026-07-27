@@ -3,7 +3,7 @@ module () where
 const { .inspect_standard_base64 } = import "duck:prelude/base64" ();
 const {} = import "./audio_types.duck" ();
 
-const prepare_audio_payload: [ParsedAudioDataUrl, I32] -> AudioPreparationResult = (parsed,
+const prepare_audio_payload: (ParsedAudioDataUrl, I32) -> AudioPreparationResult = (parsed,
   code) => do
     let canonical_mime: Text = "";
     if code == 0 then

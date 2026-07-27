@@ -22,7 +22,7 @@ const candidate_matches_type =
     end;
   end;
 
-let rec find_list_candidate: [InstallPolicyCandidates, Text, InstallPolicyToolType] -> InstallPolicyCandidateOption =
+let rec find_list_candidate: (InstallPolicyCandidates, Text, InstallPolicyToolType) -> InstallPolicyCandidateOption =
   (
     values: InstallPolicyCandidates,
     id: Text,
@@ -40,7 +40,7 @@ let rec find_list_candidate: [InstallPolicyCandidates, Text, InstallPolicyToolTy
     end;
   end;
 
-let rec find_recommended_plugin: [InstallPolicyCandidates, Text] -> InstallPolicyCandidateOption = (
+let rec find_recommended_plugin: (InstallPolicyCandidates, Text) -> InstallPolicyCandidateOption = (
   values: InstallPolicyCandidates,
   id: Text,
 ) => do
@@ -60,21 +60,21 @@ let rec find_recommended_plugin: [InstallPolicyCandidates, Text] -> InstallPolic
   end;
 end;
 
-let elicitation_plan: [Text, Text, InstallPolicyCandidate] -> InstallPolicyPlan = (
+let elicitation_plan: (Text, Text, InstallPolicyCandidate) -> InstallPolicyPlan = (
   call_id: Text,
   reason: Text,
   candidate: InstallPolicyCandidate,
 ) => do
   let request: InstallPolicyHostRequest = [
-    .suggestion_id = text_append ["request_plugin_install_", call_id],
+    .suggestion_id = text_append ("request_plugin_install_", call_id),
     .suggest_reason = reason,
     .candidate = candidate,
   ];
   #Elicit request;
 end;
 
-let plan_list_plugin_install_request: [Text, Bool, InstallPolicyListArgs,
-  InstallPolicyCandidates] -> InstallPolicyPlan = (
+let plan_list_plugin_install_request: (Text, Bool, InstallPolicyListArgs,
+  InstallPolicyCandidates) -> InstallPolicyPlan = (
     call_id: Text,
     is_codex_tui: Bool,
     args: InstallPolicyListArgs,
@@ -108,12 +108,12 @@ let plan_list_plugin_install_request: [Text, Bool, InstallPolicyListArgs,
     end;
   end;
 
-let plan_recommended_plugin_install_request: [
+let plan_recommended_plugin_install_request: (
   Text,
   Bool,
   InstallPolicyRecommendedArgs,
   InstallPolicyCandidates,
-] -> InstallPolicyPlan = (
+) -> InstallPolicyPlan = (
   call_id: Text,
   is_codex_tui: Bool,
   args: InstallPolicyRecommendedArgs,

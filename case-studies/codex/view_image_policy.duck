@@ -13,7 +13,7 @@ type ImagePolicyPlan = ViewImageCallPlan
 type ImagePolicyPrepared = ViewImagePreparedCall
 type ImagePolicyTextOption = ViewImageTextOption
 
-const select_view_image_environment: [ImagePolicyEnvironments, ImagePolicyTextOption] ->
+const select_view_image_environment: (ImagePolicyEnvironments, ImagePolicyTextOption) ->
   ImagePolicyEnvironmentSelection = (
     environments: ImagePolicyEnvironments,
     requested_id: ImagePolicyTextOption,
@@ -51,14 +51,14 @@ const select_view_image_environment: [ImagePolicyEnvironments, ImagePolicyTextOp
       #Selected environment
     else let #ImageEnvironmentPresent environment_id = requested_id then
       #SelectionFailed (
-        text_append ["unknown turn environment id `", text_append [environment_id, "`"]]
+        text_append ("unknown turn environment id `", text_append (environment_id, "`"))
       )
     else
       selection
     end;
   end;
 
-const prepare_view_image: [Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool] ->
+const prepare_view_image: (Text, ImagePolicyArgs, ImagePolicyEnvironments, Bool) ->
   ImagePolicyPlan = (
     call_id: Text,
     args: ImagePolicyArgs,

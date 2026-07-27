@@ -32,7 +32,7 @@ const optional_text_json: ThreadTextOption -> ThreadJson = (value: ThreadTextOpt
   if let #Some text = value then json_string text else json_null() end;
 end;
 
-let single_field_object: [Text, ThreadJson] -> ThreadJson = (name: Text, value: ThreadJson) => do
+let single_field_object: (Text, ThreadJson) -> ThreadJson = (name: Text, value: ThreadJson) => do
   json_object(json_object_prepend(name, value, json_object_empty()))
 end;
 
@@ -66,7 +66,7 @@ const git_info_json: ThreadGitInfoOption -> ThreadJson = (git: ThreadGitInfoOpti
   end;
 end;
 
-let timestamp_values: [Text, Text] -> ThreadTimestampValues = (
+let timestamp_values: (Text, Text) -> ThreadTimestampValues = (
   created_text: Text,
   updated_text: Text,
 ) => do
@@ -84,7 +84,7 @@ let timestamp_values: [Text, Text] -> ThreadTimestampValues = (
   [normalized_created_at, normalized_updated_at, created_valid || updated_valid]
 end;
 
-const materialize_app_server_thread: [ThreadSummary, ThreadJsonArray, Bool] -> ThreadJson = (
+const materialize_app_server_thread: (ThreadSummary, ThreadJsonArray, Bool) -> ThreadJson = (
   summary: ThreadSummary,
   turns: ThreadJsonArray,
   experimental: Bool,
@@ -144,7 +144,7 @@ const materialize_app_server_thread: [ThreadSummary, ThreadJsonArray, Bool] -> T
   json_object fields
 end;
 
-const thread_json_array: [ThreadSummaries, Bool] -> ThreadJsonArray = (
+const thread_json_array: (ThreadSummaries, Bool) -> ThreadJsonArray = (
   summaries: ThreadSummaries,
   experimental: Bool,
 ) => do
@@ -189,7 +189,7 @@ const thread_json_array: [ThreadSummaries, Bool] -> ThreadJsonArray = (
   result
 end;
 
-const materialize_thread_list: [ThreadPage, ThreadTextOption, Bool] -> ThreadJson = (
+const materialize_thread_list: (ThreadPage, ThreadTextOption, Bool) -> ThreadJson = (
   page: ThreadPage,
   backwards_cursor: ThreadTextOption,
   experimental: Bool,
@@ -206,7 +206,7 @@ const materialize_thread_list: [ThreadPage, ThreadTextOption, Bool] -> ThreadJso
   json_object fields
 end;
 
-const materialize_thread_read: [ThreadSummary, ThreadJsonArray, Bool] -> ThreadJson = (
+const materialize_thread_read: (ThreadSummary, ThreadJsonArray, Bool) -> ThreadJson = (
   summary: ThreadSummary,
   turns: ThreadJsonArray,
   experimental: Bool,

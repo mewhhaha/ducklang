@@ -25,7 +25,7 @@ const install_tool_type_text = (request: InstallExecutionHostRequest) => do
   if let #Connector = request.candidate.tool_type then "connector" else "plugin" end;
 end;
 
-let finish_request_plugin_install: [InstallExecutionHostRequest, InstallExecutionHostResponse] ->
+let finish_request_plugin_install: (InstallExecutionHostRequest, InstallExecutionHostResponse) ->
   InstallExecutionCompletion = (
     request: InstallExecutionHostRequest,
     response: InstallExecutionHostResponse,

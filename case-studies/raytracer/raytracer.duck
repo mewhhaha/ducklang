@@ -9,7 +9,7 @@ const image_width = 32;
 const image_height = 20;
 const header_length = 13;
 
-let trace_channel: [F32, F32, F32, I32] -> F32 =
+let trace_channel: (F32, F32, F32, I32) -> F32 =
   (direction_x: F32, direction_y: F32, direction_z: F32, channel: I32) => do
     let sky_amount = 0.5f32 * (direction_y + 1.0f32);
     let sky_colour: F32 =
@@ -67,7 +67,7 @@ let trace_channel: [F32, F32, F32, I32] -> F32 =
     colour
   end;
 
-let camera_channel: [I32, I32, I32] -> F32 =
+let camera_channel: (I32, I32, I32) -> F32 =
   (sample_x: I32, sample_y: I32, channel: I32) => do
     let sample_x_f32: F32 = f32_from_i32 sample_x;
     let sample_y_f32: F32 = f32_from_i32 sample_y;
@@ -140,5 +140,5 @@ let render_byte: I32 -> I32 = (index: I32) => do
   end;
 end;
 
-let ppm = generate_bytes [header_length + image_width * image_height * 3, render_byte];
+let ppm = generate_bytes (header_length + image_width * image_height * 3, render_byte);
 return { .ppm = ppm };

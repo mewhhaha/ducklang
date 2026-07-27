@@ -8,7 +8,11 @@ Build a functional source-language toolchain in Deno with one compiler target:
 Source -> frontend -> semantic Core -> gpufuck Functional Core -> Wasm
 ```
 
-Duck owns parsing, source elaboration, semantic checks, and Core construction.
+Duck owns source elaboration, semantic checks, and Core construction. Parsing,
+validation, and lexing must use Baba's generated pipeline; it is the canonical
+source-syntax implementation for both the compiler and language tools. Do not
+replace, bypass, or duplicate that pipeline with a handwritten lexer or parser
+without explicit user direction.
 Gpufuck owns semantic compilation and Wasm emission. Do not add another Duck
 Wasm backend or a separate WAT route. The project should stay inspectable while
 it grows. Prefer explicit compiler stages over clever abstractions.

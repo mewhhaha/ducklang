@@ -32,7 +32,7 @@ type RenderAvailableOption = AvailableSkillsOption
 const texts = comptime list Text;
 const lines = comptime list RenderLine;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 const prepend_text = (value: Text, values: RenderTexts) => texts.prepend(value, values);
 const prepend_line = (value: RenderLine, values: RenderLines) => lines.prepend(value, values);
 
@@ -59,9 +59,9 @@ const line_before = (left: RenderLine, right: RenderLine) => do
   else left_rank > right_rank then
     false
   else left_name == right_name then
-    text_less_than [left_path, right_path]
+    text_less_than (left_path, right_path)
   else
-    text_less_than [left_name, right_name]
+    text_less_than (left_name, right_name)
   end;
 end;
 
@@ -73,7 +73,7 @@ const capped_description = (description: Text) => do
   end;
 end;
 
-let rec render_lines_from_documents: [RenderDocuments, RenderLines] -> RenderLines = (
+let rec render_lines_from_documents: (RenderDocuments, RenderLines) -> RenderLines = (
   documents: RenderDocuments,
   reversed: RenderLines,
 ) => do
@@ -83,7 +83,7 @@ let rec render_lines_from_documents: [RenderDocuments, RenderLines] -> RenderLin
     let [name, description, _, _, _, policy, path, scope, _] = metadata;
     let next = if policy_allows_implicit_invocation policy then
       prepend_line(
-        [name, capped_description description, text_replace_all [path, "\\", "/"], scope],
+        [name, capped_description description, text_replace_all (path, "\\", "/"), scope],
         reversed,
       )
     else
@@ -130,7 +130,7 @@ const line_cost = (budget: RenderBudget, line: Text) => do
   text_cost(budget, append_text(line, "\n"))
 end;
 
-let rec append_skill_lines: [RenderTexts, Text] -> Text = (values: RenderTexts, output: Text) => do
+let rec append_skill_lines: (RenderTexts, Text) -> Text = (values: RenderTexts, output: Text) => do
   if let #Cons node = values then
     let [line, tail] = node;
     append_skill_lines(tail, append_text(output, append_text(line, "\n")))
@@ -145,7 +145,7 @@ const render_available_skills_body = (skill_lines: RenderTexts) => do
   append_text("\n", append_text(append_skill_lines(skill_lines, heading), "\n"))
 end;
 
-let rec total_line_cost: [RenderLines, RenderBudget, Bool] -> I32 = (
+let rec total_line_cost: (RenderLines, RenderBudget, Bool) -> I32 = (
   values: RenderLines,
   budget: RenderBudget,
   include_descriptions: Bool,
@@ -178,7 +178,7 @@ let rec total_description_characters: RenderLines -> I32 = (values: RenderLines)
   end;
 end;
 
-let rec render_truncated_lines: [RenderLines, I32, RenderTexts, I32, I32] -> RenderAccum = (
+let rec render_truncated_lines: (RenderLines, I32, RenderTexts, I32, I32) -> RenderAccum = (
   values: RenderLines,
   allowance: I32,
   reversed: RenderTexts,
@@ -208,7 +208,7 @@ let rec render_truncated_lines: [RenderLines, I32, RenderTexts, I32, I32] -> Ren
   end;
 end;
 
-let rec render_minimum_lines: [RenderLines, RenderBudget, I32, RenderTexts, I32, I32, I32] ->
+let rec render_minimum_lines: (RenderLines, RenderBudget, I32, RenderTexts, I32, I32, I32) ->
   RenderAccum = (
     values: RenderLines,
     budget: RenderBudget,

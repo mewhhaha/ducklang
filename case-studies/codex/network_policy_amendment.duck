@@ -9,7 +9,7 @@ type ExecPolicyAmendment = NetworkExecPolicyAmendment
 type ExecPolicyProtocol = NetworkExecPolicyProtocol
 type ExecPolicyDecision = NetworkExecPolicyDecision
 
-const execpolicy_network_rule_amendment: [PolicyAmendment, AmendmentContext, Text] ->
+const execpolicy_network_rule_amendment: (PolicyAmendment, AmendmentContext, Text) ->
   ExecPolicyAmendment = (
     amendment,
     approval_context,

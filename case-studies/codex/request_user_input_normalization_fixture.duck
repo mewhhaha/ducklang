@@ -11,7 +11,7 @@ type FixtureQuestion = RequestUserInputQuestion
 type FixtureQuestionNode = RequestUserInputQuestionNode
 type FixtureQuestions = RequestUserInputQuestions
 
-let score_normalization: [FixtureArgs, I64, I32] -> I32 = (
+let score_normalization: (FixtureArgs, I64, I32) -> I32 = (
   args: FixtureArgs,
   expected_auto_resolution: I64,
   weight: I32,

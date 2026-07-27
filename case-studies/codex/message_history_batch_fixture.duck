@@ -9,7 +9,7 @@ const {} = import "./message_history_types.duck" ();
 
 type FixtureEntries = MessageHistoryBatchEntries
 
-let first_two_entry_texts_match: [FixtureEntries, Text, Text] -> Bool = (
+let first_two_entry_texts_match: (FixtureEntries, Text, Text) -> Bool = (
   entries: FixtureEntries,
   expected_first: Text,
   expected_second: Text,
@@ -38,13 +38,13 @@ end;
 let oldest = message_history_entry("session-1", 1i64, "oldest");
 let middle = message_history_entry("session-1", 2i64, "middle");
 let newest = message_history_entry("session-1", 3i64, "newest");
-let contents = text_append [
-  text_append [
-    text_append [encode_message_history_line(&oldest), "not-json\n"],
+let contents = text_append (
+  text_append (
+    text_append (encode_message_history_line(&oldest), "not-json\n"),
     encode_message_history_line(&middle),
-  ],
+  ),
   encode_message_history_line(&newest),
-];
+);
 let score = 0;
 
 let found = lookup_message_history_entry(&contents, 2, true);

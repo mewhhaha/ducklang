@@ -34,7 +34,7 @@ type Metadata = ResponsesMetadata
 const metadata_pairs = comptime list MetadataPair;
 const metadata_workspaces = comptime list MetadataWorkspace;
 
-const new_responses_metadata: [Text, Text, Text, Text] -> Metadata = (
+const new_responses_metadata: (Text, Text, Text, Text) -> Metadata = (
   installation_id,
   session_id,
   thread_id,
@@ -105,7 +105,7 @@ const sort_metadata_pairs: MetadataPairs -> MetadataPairs = values => do
   metadata_pairs.sort_by(values, (left: MetadataPair, right: MetadataPair) => do
     let [left_key, _] = left;
     let [right_key, _] = right;
-    text_less_than [left_key, right_key]
+    text_less_than (left_key, right_key)
   end)
 end;
 
@@ -272,7 +272,7 @@ end;
 const workspaces_json_object: MetadataWorkspaces -> JsonObject = values => do
   let current = metadata_workspaces.sort_by(
     values,
-    (left: MetadataWorkspace, right: MetadataWorkspace) => text_less_than [left.path, right.path],
+    (left: MetadataWorkspace, right: MetadataWorkspace) => text_less_than (left.path, right.path),
   );
   let reversed = json_object_empty();
 

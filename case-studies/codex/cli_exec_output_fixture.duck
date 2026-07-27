@@ -11,7 +11,7 @@ const empty_args = () => do
   values
 end;
 
-const prepend_arg: [Text, FixtureArgs] -> FixtureArgs = (value: Text, tail: FixtureArgs) => do
+const prepend_arg: (Text, FixtureArgs) -> FixtureArgs = (value: Text, tail: FixtureArgs) => do
   let node: ListNode Text = [value, tail];
   let values: FixtureArgs = #Cons node;
   values

@@ -9,14 +9,14 @@ type AgentJobSpawnPolicyDecoded = AgentJobSpawnDecodedArgs
 type AgentJobSpawnPolicyOption = AgentJobTextOption
 type AgentJobSpawnPolicyPlan = AgentJobSpawnPlan
 
-const prepare_agent_job_spawn: [
+const prepare_agent_job_spawn: (
   AgentJobSpawnPolicyDecoded,
   Text,
   I32,
   Bool,
   I32,
   AgentJobSpawnPolicyOption,
-] -> AgentJobSpawnPolicyPlan = (
+) -> AgentJobSpawnPolicyPlan = (
   decoded: AgentJobSpawnPolicyDecoded,
   cwd: Text,
   environment_count: I32,

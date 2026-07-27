@@ -28,7 +28,7 @@ const {
   .f32x4_divide,
 } = import "duck:prelude/runtime" ();
 
-const saturating_add_i64: [I64, I64] -> I64 = (left: I64, right: I64) => do
+const saturating_add_i64: (I64, I64) -> I64 = (left: I64, right: I64) => do
   if right > 0i64 && left > 9223372036854775807i64 - right then
     9223372036854775807i64
   else right < 0i64 && left < -9223372036854775808i64 - right then -9223372036854775808i64
@@ -37,19 +37,19 @@ const saturating_add_i64: [I64, I64] -> I64 = (left: I64, right: I64) => do
   end;
 end;
 
-const min_i64: [I64, I64] -> I64 = (left: I64, right: I64) => do
+const min_i64: (I64, I64) -> I64 = (left: I64, right: I64) => do
   if left <= right then left else right end;
 end;
 
-const max_i64: [I64, I64] -> I64 = (left: I64, right: I64) => do
+const max_i64: (I64, I64) -> I64 = (left: I64, right: I64) => do
   if left >= right then left else right end;
 end;
 
-const min_i32: [I32, I32] -> I32 = (left: I32, right: I32) => do
+const min_i32: (I32, I32) -> I32 = (left: I32, right: I32) => do
   if left <= right then left else right end;
 end;
 
-const max_i32: [I32, I32] -> I32 = (left: I32, right: I32) => do
+const max_i32: (I32, I32) -> I32 = (left: I32, right: I32) => do
   if left >= right then left else right end;
 end;
 

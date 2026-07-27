@@ -30,7 +30,7 @@ type JsonLookupResult =
   | #Found Json
   | #Missing
 
-let rec json_object_key_count_borrowed: [Text, &JsonObject] -> I32 = (
+let rec json_object_key_count_borrowed: (Text, &JsonObject) -> I32 = (
   key: Text,
   object: &JsonObject,
 ) => do
@@ -74,7 +74,7 @@ let rec json_object_length_borrowed: &JsonObject -> I32 = (object: &JsonObject) 
   length
 end;
 
-const json_object_get: [Text, JsonObject] -> JsonLookupResult =
+const json_object_get: (Text, JsonObject) -> JsonLookupResult =
   (key: Text, object: JsonObject) => do
     let current: JsonObject = object;
     let result: JsonLookupResult = #Missing;
@@ -103,11 +103,11 @@ const json_object_get: [Text, JsonObject] -> JsonLookupResult =
     result
   end;
 
-const json_object_contains: [Text, JsonObject] -> Bool = (key: Text, object: JsonObject) => do
+const json_object_contains: (Text, JsonObject) -> Bool = (key: Text, object: JsonObject) => do
   if let #Found _ = json_object_get(key, object) then true else false end;
 end;
 
-const json_object_key_count: [Text, JsonObject] -> I32 = (key: Text, object: JsonObject) => do
+const json_object_key_count: (Text, JsonObject) -> I32 = (key: Text, object: JsonObject) => do
   let current: JsonObject = object;
   let count = 0;
   let done = false;
@@ -201,7 +201,7 @@ const json_object_append = (left: JsonObject, right: JsonObject) => do
   combined
 end;
 
-let rec merge_json: [Json, Json] -> Json = (base: Json, overlay: Json) => do
+let rec merge_json: (Json, Json) -> Json = (base: Json, overlay: Json) => do
   if let #Object base_object = base then
     if let #Object overlay_object = overlay then
       let current: JsonObject = base_object;
@@ -262,25 +262,25 @@ let rec merge_json: [Json, Json] -> Json = (base: Json, overlay: Json) => do
   end;
 end;
 
-const json_null: [] -> Json = () => #Null;
+const json_null: () -> Json = () => #Null;
 const json_bool: Bool -> Json = (value: Bool) => #Bool value;
 const json_number: Text -> Json = (value: Text) => #Number value;
 const json_string: Text -> Json = (value: Text) => #String value;
 const json_array: JsonArray -> Json = (value: JsonArray) => #Array value;
 const json_object: JsonObject -> Json = (value: JsonObject) => #Object value;
-const json_array_empty: [] -> JsonArray = () => do
+const json_array_empty: () -> JsonArray = () => do
   let empty: JsonArray = #Nil;
   empty
 end;
-const json_array_prepend: [Json, JsonArray] -> JsonArray = (value: Json, tail: JsonArray) => do
+const json_array_prepend: (Json, JsonArray) -> JsonArray = (value: Json, tail: JsonArray) => do
   let node: JsonArrayNode = [value, tail];
   #Cons node
 end;
-const json_object_empty: [] -> JsonObject = () => do
+const json_object_empty: () -> JsonObject = () => do
   let empty: JsonObject = #Nil;
   empty
 end;
-const json_object_prepend: [Text, Json, JsonObject] -> JsonObject = (
+const json_object_prepend: (Text, Json, JsonObject) -> JsonObject = (
   key: Text,
   value: Json,
   tail: JsonObject,
@@ -289,32 +289,32 @@ const json_object_prepend: [Text, Json, JsonObject] -> JsonObject = (
   let node: JsonMemberNode = [member, tail];
   #Cons node
 end;
-const json_field: [Text, Json] -> (JsonObject -> JsonObject) =
+const json_field: (Text, Json) -> (JsonObject -> JsonObject) =
   (key: Text, value: Json) => (fields: JsonObject) => do
     json_object_append(fields, json_object_prepend(key, value, json_object_empty()))
   end;
-const json_string_field: [Text, Text] -> (JsonObject -> JsonObject) = (
+const json_string_field: (Text, Text) -> (JsonObject -> JsonObject) = (
   key: Text,
   value: Text,
 ) => json_field(
   key,
   json_string value,
 );
-const json_bool_field: [Text, Bool] -> (JsonObject -> JsonObject) = (
+const json_bool_field: (Text, Bool) -> (JsonObject -> JsonObject) = (
   key: Text,
   value: Bool,
 ) => json_field(
   key,
   json_bool value,
 );
-const json_optional_string_field: [Text, Bool, Text] -> (JsonObject -> JsonObject) = (
+const json_optional_string_field: (Text, Bool, Text) -> (JsonObject -> JsonObject) = (
   key: Text,
   present: Bool,
   value: Text,
 ) => (tail: JsonObject) => do
   if present then json_field(key, json_string value)(tail) else tail end;
 end;
-const json_nullable_string_field: [Text, Bool, Text] -> (JsonObject -> JsonObject) = (
+const json_nullable_string_field: (Text, Bool, Text) -> (JsonObject -> JsonObject) = (
   key: Text,
   present: Bool,
   value: Text,

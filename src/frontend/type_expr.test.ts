@@ -86,10 +86,15 @@ Deno.test("type expressions compose with whitespace application and arrows", () 
 
 Deno.test("type expression arrows associate right and keep lambda arrows distinct", () => {
   const type = parse_type_expr(tokenize("a -> b -> c"));
-  const no_args = parse_type_expr(tokenize("[] -> <Stdin> Text"));
+  const no_args = parse_type_expr(tokenize("() -> <Stdin> Text"));
+  const empty_product_arg = parse_type_expr(tokenize("[] -> <Stdin> Text"));
 
   assert_equals(format_type_expr(type), "a -> b -> c");
-  assert_equals(format_type_expr(no_args), "[] -> <Stdin> Text");
+  assert_equals(format_type_expr(no_args), "() -> <Stdin> Text");
+  assert_equals(
+    format_type_expr(empty_product_arg),
+    "[] -> <Stdin> Text",
+  );
   assert_equals(parse_source("let id: a -> b = value;").statements[0], {
     tag: "bind",
     kind: "let",
@@ -232,9 +237,15 @@ Deno.test("structured type expressions round trip canonical syntax", () => {
 });
 
 Deno.test("value-pack types round trip separately from product types", () => {
+  assert_equals(format_type_expr(parse_type_expr(tokenize("()"))), "()");
+  assert_equals(format_type_expr(parse_type_expr(tokenize("[]"))), "[]");
   assert_equals(
     format_type_expr(parse_type_expr(tokenize("(I32, Bool) -> (Bool, I32)"))),
     "(I32, Bool) -> (Bool, I32)",
+  );
+  assert_equals(
+    format_type_expr(parse_type_expr(tokenize("(I32, Bool,)"))),
+    "(I32, Bool)",
   );
   assert_equals(
     format_type_expr(parse_type_expr(tokenize("[I32, Bool] -> [Bool, I32]"))),

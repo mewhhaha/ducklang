@@ -17,7 +17,7 @@ const new_current_time_reminder_state: () -> TimeReminderState = () => do
   ]
 end;
 
-const resolve_current_time_provider: [TimeSource, Bool] -> TimeProviderResolution = (
+const resolve_current_time_provider: (TimeSource, Bool) -> TimeProviderResolution = (
   source,
   external_provider_available,
 ) => do
@@ -30,7 +30,7 @@ const resolve_current_time_provider: [TimeSource, Bool] -> TimeProviderResolutio
   end;
 end;
 
-const note_current_time_recorded_item: [TimeReminderState, TimeItem] -> TimeReminderState = (
+const note_current_time_recorded_item: (TimeReminderState, TimeItem) -> TimeReminderState = (
   state,
   item,
 ) => do
@@ -53,7 +53,7 @@ const note_current_time_recorded_item: [TimeReminderState, TimeItem] -> TimeRemi
   end;
 end;
 
-const take_current_time_reminder: [TimeReminderState, Text, I64, I64, TimeDeliveryMode] ->
+const take_current_time_reminder: (TimeReminderState, Text, I64, I64, TimeDeliveryMode) ->
   TimeReminderDecision = (
     state,
     window_id,

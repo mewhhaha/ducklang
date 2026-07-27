@@ -4,11 +4,11 @@ const { .path_basename, .path_join, .path_parent, .text_get, .text_length, .text
   import "duck:prelude/runtime" ();
 
 const path_is_absolute = (path: Text) => do
-  if text_starts_with [path, "/"] || text_starts_with [path, "\\\\"] then
+  if text_starts_with (path, "/") || text_starts_with (path, "\\\\") then
     true
-  else text_length path >= 3 && text_get [path, 1] == 58 then
-    let first = text_get [path, 0];
-    let separator = text_get [path, 2];
+  else text_length path >= 3 && text_get (path, 1) == 58 then
+    let first = text_get (path, 0);
+    let separator = text_get (path, 2);
     let drive_letter = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
     drive_letter && (separator == 47 || separator == 92)
   else
@@ -17,7 +17,7 @@ const path_is_absolute = (path: Text) => do
 end;
 
 const path_resolve = (cwd: Text, path: Text) => do
-  if path_is_absolute path then path else path_join [cwd, path] end;
+  if path_is_absolute path then path else path_join (cwd, path) end;
 end;
 
 return {

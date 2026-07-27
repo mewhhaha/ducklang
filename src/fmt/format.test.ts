@@ -29,8 +29,8 @@ Deno.test("format_text uses whitespace for atomic unary calls", () => {
     "let direct = func a;\n" +
       "let spaced = func a;\n" +
       "let passed = func;\n" +
-      "let grouped = func(a + b);\n" +
-      "let packed = func(a, b);\n",
+      "let grouped = func (a + b);\n" +
+      "let packed = func (a, b);\n",
   );
 });
 
@@ -64,7 +64,7 @@ Deno.test("format_text places block closers after terminated statements", () => 
   assert_equals(
     formatted,
     "for candidate in candidates do\n" +
-      "  if not(is_utf8_continuation candidate) then\n" +
+      "  if not (is_utf8_continuation candidate) then\n" +
       "    break;\n" +
       "  end\n" +
       "end\n",
@@ -147,11 +147,43 @@ Deno.test("format_text wraps wide definitions before their value", () => {
     "let update = () => do\n" +
       "  if has_selection then\n" +
       "    let furthest =\n" +
-      "      if selection.anchor > selection.head then selection.anchor " +
-      "else selection.head end;\n" +
+      "      if selection.anchor > selection.head then\n" +
+      "        selection.anchor\n" +
+      "      else\n" +
+      "        selection.head\n" +
+      "      end;\n" +
       "  end\n" +
       "end;\n",
   );
+  assert_equals(
+    format_source(Source.parse(formatted)),
+    format_source(Source.parse(source)),
+  );
+});
+
+Deno.test("format_text keeps a comparison together after a conditional", () => {
+  assert_equals(
+    format_text(
+      "let visible_rows =\n" +
+        "  if document_rows\n" +
+        "  > minimum_document_rows then document_rows else minimum_document_rows end;\n",
+    ),
+    "let visible_rows =\n" +
+      "  if document_rows > minimum_document_rows then\n" +
+      "    document_rows\n" +
+      "  else\n" +
+      "    minimum_document_rows\n" +
+      "  end;\n",
+  );
+});
+
+Deno.test("format_text keeps a wide single typed lambda parameter parseable", () => {
+  const source =
+    "let has_next = (state: ZippedIteratorState left_state right_state left_item right_item) => do\n" +
+    "true\n" +
+    "end;\n";
+  const formatted = format_text(source);
+
   assert_equals(
     format_source(Source.parse(formatted)),
     format_source(Source.parse(source)),
@@ -259,7 +291,7 @@ Deno.test("format_text composes wide products vertically", () => {
   );
 
   for (const line of formatted.split("\n")) {
-    assert_equals(line.length <= 100, true);
+    assert_equals(line.length <= 80, true);
   }
 
   assert_equals(
@@ -275,9 +307,9 @@ Deno.test("format_text composes a wide grouped expression vertically", () => {
         "very_long_foreground_configuration_with_platform_overrides + " +
         "additional_configuration_defaults);\n",
     ),
-    "let selected = choose(\n" +
-      "  very_long_foreground_configuration_with_platform_overrides + " +
-      "additional_configuration_defaults\n" +
+    "let selected = choose (\n" +
+      "  very_long_foreground_configuration_with_platform_overrides\n" +
+      "  + additional_configuration_defaults\n" +
       ");\n",
   );
 });
@@ -292,7 +324,7 @@ Deno.test("format_text only wraps expressions at parseable continuations", () =>
     format_source(Source.parse(formatted)),
     format_source(Source.parse(source)),
   );
-  assert_equals(formatted.includes("\n  && "), true);
+  assert_equals(formatted.includes("\n  == 2"), true);
 });
 
 Deno.test("format_text preserves every bundled prelude", async () => {
@@ -317,7 +349,7 @@ Deno.test("format_text preserves every bundled prelude", async () => {
   }
 });
 
-Deno.test("format_text preserves the examples and editor case study", async () => {
+Deno.test("format_text preserves the examples and Duck editor sources", async () => {
   const roots = ["examples"];
   const files: string[] = [];
 
@@ -340,7 +372,13 @@ Deno.test("format_text preserves the examples and editor case study", async () =
   }
 
   files.sort();
-  files.push("case-studies/editor/editor.duck");
+  files.push(
+    "case-studies/editor/editor.duck",
+    "case-studies/editor/editor_core.duck",
+    "case-studies/editor/piece_tree.duck",
+    "case-studies/editor/piece_tree_fixture.duck",
+    "case-studies/editor/terminal_keys.duck",
+  );
   assert_equals(files.length > 0, true);
 
   for (const path of files) {

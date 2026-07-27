@@ -13,12 +13,12 @@ type MessageHistoryRawRow = [I32, Text, I32]
 type MessageHistoryRawRows = List MessageHistoryRawRow
 
 const empty_raw_rows: () -> MessageHistoryRawRows = () => #Nil;
-const prepend_raw_row: [MessageHistoryRawRow, MessageHistoryRawRows] -> MessageHistoryRawRows = (
+const prepend_raw_row: (MessageHistoryRawRow, MessageHistoryRawRows) -> MessageHistoryRawRows = (
   row: MessageHistoryRawRow,
   tail: MessageHistoryRawRows,
 ) => #Cons ([row, tail]);
 const empty_batch_entries: () -> MessageHistoryLookupBatchEntries = () => #Nil;
-const prepend_batch_entry: [MessageHistoryLookupBatchEntry, MessageHistoryLookupBatchEntries] -> MessageHistoryLookupBatchEntries =
+const prepend_batch_entry: (MessageHistoryLookupBatchEntry, MessageHistoryLookupBatchEntries) -> MessageHistoryLookupBatchEntries =
   (
     entry: MessageHistoryLookupBatchEntry,
     tail: MessageHistoryLookupBatchEntries,
@@ -45,7 +45,7 @@ const reverse_batch_entries: MessageHistoryLookupBatchEntries -> MessageHistoryL
       reversed
     end;
 
-const collect_history_rows: [Text, I32] -> MessageHistoryRawRows =
+const collect_history_rows: (Text, I32) -> MessageHistoryRawRows =
   (contents: Text, end_offset: I32) => do
     let rows = empty_raw_rows();
     let length = text_length contents;
@@ -56,13 +56,13 @@ const collect_history_rows: [Text, I32] -> MessageHistoryRawRows =
       if start >= length || offset > end_offset then
         break;
       end;
-      let newline = text_find_from [contents, "\n", start];
+      let newline = text_find_from (contents, "\n", start);
       let line_end = if newline < 0 then length else newline end;
       let byte_length =
         if newline < 0 then line_end - start else line_end - start + 1 end;
       let row: MessageHistoryRawRow = [
         offset,
-        text_slice [contents, start, line_end],
+        text_slice (contents, start, line_end),
         byte_length,
       ];
       rows = prepend_raw_row(row, rows)
@@ -84,7 +84,7 @@ const empty_history_batch = () => do
   batch
 end;
 
-let rec parse_history_row_at: [MessageHistoryRawRows, I32] -> MessageHistoryLookupEntryOption = (
+let rec parse_history_row_at: (MessageHistoryRawRows, I32) -> MessageHistoryLookupEntryOption = (
   rows: MessageHistoryRawRows,
   offset: I32,
 ) => do
@@ -101,7 +101,7 @@ let rec parse_history_row_at: [MessageHistoryRawRows, I32] -> MessageHistoryLook
   end;
 end;
 
-let lookup_message_history_entry: [&Text, I32, Bool] -> MessageHistoryLookupEntryOption = (
+let lookup_message_history_entry: (&Text, I32, Bool) -> MessageHistoryLookupEntryOption = (
   contents: &Text,
   offset: I32,
   identity_matches: Bool,
@@ -112,7 +112,7 @@ let lookup_message_history_entry: [&Text, I32, Bool] -> MessageHistoryLookupEntr
   else #None end;
 end;
 
-const lookup_message_history_batch_with_limits: [&Text, I32, Bool, I32, I32] -> MessageHistoryLookupBatch =
+const lookup_message_history_batch_with_limits: (&Text, I32, Bool, I32, I32) -> MessageHistoryLookupBatch =
   (
     contents: &Text,
     end_offset: I32,
@@ -174,7 +174,7 @@ const lookup_message_history_batch_with_limits: [&Text, I32, Bool, I32, I32] -> 
     else empty_history_batch() end;
   end;
 
-const lookup_message_history_batch: [&Text, I32, Bool] -> MessageHistoryLookupBatch = (
+const lookup_message_history_batch: (&Text, I32, Bool) -> MessageHistoryLookupBatch = (
   contents: &Text,
   end_offset: I32,
   identity_matches: Bool,

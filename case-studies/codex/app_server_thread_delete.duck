@@ -12,7 +12,7 @@ type ThreadDeleteTexts = AppServerTexts
 
 const delete_texts = comptime list Text;
 
-const ordered_thread_delete_plan: [Text, ThreadDeleteSubtree] -> ThreadDeletePlanResult = (
+const ordered_thread_delete_plan: (Text, ThreadDeleteSubtree) -> ThreadDeletePlanResult = (
   thread_id: Text,
   subtree: ThreadDeleteSubtree,
 ) => do
@@ -22,7 +22,7 @@ const ordered_thread_delete_plan: [Text, ThreadDeleteSubtree] -> ThreadDeletePla
   #Ok plan
 end;
 
-const plan_thread_delete: [Text, ThreadDeleteRoot, ThreadDeleteSubtree] -> ThreadDeletePlanResult =
+const plan_thread_delete: (Text, ThreadDeleteRoot, ThreadDeleteSubtree) -> ThreadDeletePlanResult =
   (
     thread_id: Text,
     root: ThreadDeleteRoot,

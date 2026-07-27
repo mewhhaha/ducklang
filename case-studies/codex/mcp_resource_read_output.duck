@@ -8,7 +8,7 @@ const {} = import "./mcp_resource_types.duck" ();
 type ResourceReadOutputOperation = McpResourceOperation
 type ResourceReadOutputTextResult = McpResourceTextResult
 
-let read_payload_json: [ResourceReadOutputOperation, Text] -> ResourceReadOutputTextResult = (
+let read_payload_json: (ResourceReadOutputOperation, Text) -> ResourceReadOutputTextResult = (
   operation: ResourceReadOutputOperation,
   document: Text,
 ) => do

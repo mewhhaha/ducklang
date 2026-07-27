@@ -60,8 +60,8 @@ const host_key_equal = (left: ApprovalKey, right: ApprovalKey) => do
       if index >= host_length then
         break;
       end;
-      let left_byte = text_byte_ascii_lowercase(text_get [left_host, index]);
-      let right_byte = text_byte_ascii_lowercase(text_get [right_host, index]);
+      let left_byte = text_byte_ascii_lowercase(text_get (left_host, index));
+      let right_byte = text_byte_ascii_lowercase(text_get (right_host, index));
       if left_byte != right_byte then
         hosts_equal = false
       end;
@@ -138,7 +138,7 @@ const approval_call_count = (active: ApprovalCalls) => do
   count
 end;
 
-const register_network_call: [ApprovalState, ApprovalCall] -> ApprovalState = (
+const register_network_call: (ApprovalState, ApprovalCall) -> ApprovalState = (
   state: ApprovalState,
   call: ApprovalCall,
 ) => do
@@ -153,7 +153,7 @@ const approval_flow_allowed = (policy: ApprovalPolicy, profile: ApprovalProfile)
   managed && !(disabled)
 end;
 
-const find_call: [ApprovalCalls, Text] -> ApprovalCallOption = (
+const find_call: (ApprovalCalls, Text) -> ApprovalCallOption = (
   active: ApprovalCalls,
   registration_id: Text,
 ) => do
@@ -193,7 +193,7 @@ const first_call = (active: ApprovalCalls) => do
   result
 end;
 
-const resolve_request_attribution: [ApprovalCalls, ApprovalTextOption, ApprovalTextOption] -> ApprovalAttribution =
+const resolve_request_attribution: (ApprovalCalls, ApprovalTextOption, ApprovalTextOption) -> ApprovalAttribution =
   (
     active: ApprovalCalls,
     execution_id: ApprovalTextOption,
@@ -237,7 +237,7 @@ const resolve_request_attribution: [ApprovalCalls, ApprovalTextOption, ApprovalT
     end;
   end;
 
-const request_environment: [ApprovalAttribution, ApprovalTextOption] -> ApprovalTextOption = (
+const request_environment: (ApprovalAttribution, ApprovalTextOption) -> ApprovalTextOption = (
   attribution: ApprovalAttribution,
   primary_environment: ApprovalTextOption,
 ) => do
@@ -262,14 +262,14 @@ const request_owner = (attribution: ApprovalAttribution) => do
   end;
 end;
 
-const plan_network_request: [
+const plan_network_request: (
   ApprovalState,
   ApprovalRequest,
   ApprovalTextOption,
   ApprovalPolicy,
   ApprovalProfile,
   Bool,
-] -> ApprovalResult = (
+) -> ApprovalResult = (
   state: ApprovalState,
   request: ApprovalRequest,
   primary_environment: ApprovalTextOption,
@@ -300,7 +300,7 @@ const plan_network_request: [
     else !(approval_flow_allowed(policy, profile)) then
       [
         state,
-        #Reject (text_append ["Network access to ", text_append [host, " is blocked by policy"]]),
+        #Reject (text_append ("Network access to ", text_append (host, " is blocked by policy"))),
       ]
     else
       let is_owner = !(contains_key(pending, key));
@@ -310,11 +310,11 @@ const plan_network_request: [
         next_pending = #Cons pending_node
       end;
       let next_state: ApprovalState = [active, approved, denied, next_pending];
-      let target = text_append [
+      let target = text_append (
         protocol_label protocol,
-        text_append ["://", text_append [host, text_append [":", format_i32 port]]],
-      ];
-      let reason = text_append [host, " is not in the allowed_domains"];
+        text_append ("://", text_append (host, text_append (":", format_i32 port))),
+      );
+      let reason = text_append (host, " is not in the allowed_domains");
       let prompt: ApprovalPrompt = [key, request_owner attribution, target, reason, is_owner];
       if is_owner then [next_state, #Prompt prompt] else [next_state, #Await prompt] end;
     end;
@@ -323,7 +323,7 @@ const plan_network_request: [
   end;
 end;
 
-const record_call_outcome: [ApprovalState, Text, ApprovalOutcome, Bool] -> ApprovalState = (
+const record_call_outcome: (ApprovalState, Text, ApprovalOutcome, Bool) -> ApprovalState = (
   state: ApprovalState,
   registration_id: Text,
   outcome: ApprovalOutcome,
@@ -374,7 +374,7 @@ const record_call_outcome: [ApprovalState, Text, ApprovalOutcome, Bool] -> Appro
   [ordered, approved, denied, pending]
 end;
 
-const resolve_network_prompt: [ApprovalState, ApprovalPrompt, ApprovalHostDecision] -> ApprovalState =
+const resolve_network_prompt: (ApprovalState, ApprovalPrompt, ApprovalHostDecision) -> ApprovalState =
   (
     state: ApprovalState,
     prompt: ApprovalPrompt,
@@ -412,7 +412,7 @@ const resolve_network_prompt: [ApprovalState, ApprovalPrompt, ApprovalHostDecisi
     end;
   end;
 
-const record_blocked_request: [ApprovalState, ApprovalTextOption, Text] -> ApprovalState = (
+const record_blocked_request: (ApprovalState, ApprovalTextOption, Text) -> ApprovalState = (
   state: ApprovalState,
   execution_id: ApprovalTextOption,
   message: Text,
@@ -439,7 +439,7 @@ const record_blocked_request: [ApprovalState, ApprovalTextOption, Text] -> Appro
   end;
 end;
 
-const finish_network_call: [ApprovalState, Text] -> ApprovalFinishResult = (
+const finish_network_call: (ApprovalState, Text) -> ApprovalFinishResult = (
   state: ApprovalState,
   registration_id: Text,
 ) => do

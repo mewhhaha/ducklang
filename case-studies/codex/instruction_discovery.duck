@@ -63,7 +63,7 @@ const snapshot_contains_path = (snapshot: DiscoverySnapshot, path: Text) => do
   found
 end;
 
-const snapshot_file: [DiscoverySnapshot, Text] -> DiscoveryDocumentOption = (snapshot, path) => do
+const snapshot_file: (DiscoverySnapshot, Text) -> DiscoveryDocumentOption = (snapshot, path) => do
   let current = snapshot;
   let result: DiscoveryDocumentOption = #None;
   let done = false;
@@ -113,7 +113,7 @@ const directory_has_marker =
 
         if marker == "" then
           current = tail
-        else snapshot_contains_path(snapshot, path_join [directory, marker]) then
+        else snapshot_contains_path(snapshot, path_join (directory, marker)) then
           found = true
           done = true
         else
@@ -131,7 +131,7 @@ const directory_has_marker =
     found
   end;
 
-const project_directories: [DiscoverySnapshot, Text, DiscoveryTexts] -> DiscoveryTexts = (
+const project_directories: (DiscoverySnapshot, Text, DiscoveryTexts) -> DiscoveryTexts = (
   snapshot,
   cwd,
   markers,
@@ -188,7 +188,7 @@ const project_directories: [DiscoverySnapshot, Text, DiscoveryTexts] -> Discover
   end;
 end;
 
-const first_regular_file: [DiscoverySnapshot, Text, DiscoveryTexts] -> DiscoveryDocumentOption = (
+const first_regular_file: (DiscoverySnapshot, Text, DiscoveryTexts) -> DiscoveryDocumentOption = (
   snapshot,
   directory,
   names,
@@ -204,7 +204,7 @@ const first_regular_file: [DiscoverySnapshot, Text, DiscoveryTexts] -> Discovery
       if name == "" then
         current = tail
       else
-        let candidate = snapshot_file(snapshot, path_join [directory, name]);
+        let candidate = snapshot_file(snapshot, path_join (directory, name));
 
         if let #Some _ = candidate then
           result = candidate
@@ -276,7 +276,7 @@ const load_project_documents = (
   instruction_documents.reverse loaded_reversed
 end;
 
-const render_loaded_instructions: [DiscoveryDocumentOption, DiscoveryDocuments] -> DiscoveryLoaded =
+const render_loaded_instructions: (DiscoveryDocumentOption, DiscoveryDocuments) -> DiscoveryLoaded =
   (
     user_instructions,
     project_documents,
@@ -308,13 +308,13 @@ const render_loaded_instructions: [DiscoveryDocumentOption, DiscoveryDocuments] 
 
         if has_output then
           if first_project then
-            output = text_append [output, "\n\n--- project-doc ---\n\n"]
+            output = text_append (output, "\n\n--- project-doc ---\n\n")
           else
-            output = text_append [output, "\n\n"]
+            output = text_append (output, "\n\n")
           end;
         end;
 
-        output = text_append [output, contents]
+        output = text_append (output, contents)
         sources_reversed = instruction_texts.prepend(path, sources_reversed)
         has_output = true
         first_project = false

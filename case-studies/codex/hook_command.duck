@@ -55,9 +55,9 @@ type CommandUniversal = HookUniversalOutput
 const texts = comptime list Text;
 const entries = comptime list CommandOutputEntry;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
-const command_evaluation: [
+const command_evaluation: (
   CommandRunStatus,
   CommandOutputEntries,
   CommandAction,
@@ -65,7 +65,7 @@ const command_evaluation: [
   CommandTexts,
   CommandUpdatedInput,
   CommandPermissionDecisionOption,
-] -> CommandEvaluation = (
+) -> CommandEvaluation = (
   status,
   output_entries,
   action,
@@ -169,7 +169,7 @@ end;
 
 const looks_like_json = (text: Text) => do
   let trimmed = text_trim_ascii_whitespace text;
-  text_starts_with [trimmed, "{"] || text_starts_with [trimmed, "["]
+  text_starts_with (trimmed, "{") || text_starts_with (trimmed, "[")
 end;
 
 const evaluate_pre_tool_stdout: Text -> CommandEvaluation = stdout => do
@@ -434,7 +434,7 @@ const evaluate_user_prompt_stdout: Text -> CommandEvaluation = stdout => do
   end;
 end;
 
-const evaluate_stop_stdout: [Text, Text] -> CommandEvaluation = (event_name, stdout) => do
+const evaluate_stop_stdout: (Text, Text) -> CommandEvaluation = (event_name, stdout) => do
   let parsed = parse_stop_output(event_name, stdout);
 
   if let #StopOk output = parsed then
@@ -501,7 +501,7 @@ const evaluate_stop_stdout: [Text, Text] -> CommandEvaluation = (event_name, std
   end;
 end;
 
-const evaluate_start_stdout: [Text, Bool, Text] -> CommandEvaluation = (
+const evaluate_start_stdout: (Text, Bool, Text) -> CommandEvaluation = (
   event_name,
   may_stop,
   stdout,
@@ -543,7 +543,7 @@ const evaluate_start_stdout: [Text, Bool, Text] -> CommandEvaluation = (
   end;
 end;
 
-const evaluate_stateless_stdout: [Text, Text] -> CommandEvaluation = (event_name, stdout) => do
+const evaluate_stateless_stdout: (Text, Text) -> CommandEvaluation = (event_name, stdout) => do
   let parsed = parse_stateless_output(event_name, stdout);
 
   if let #StatelessOk universal = parsed then
@@ -777,7 +777,7 @@ const empty_hook_command_aggregate = () => do
   aggregate
 end;
 
-const aggregate_hook_command: [CommandAggregate, CommandEvaluation] -> CommandAggregate = (
+const aggregate_hook_command: (CommandAggregate, CommandEvaluation) -> CommandAggregate = (
   aggregate,
   evaluation,
 ) => do

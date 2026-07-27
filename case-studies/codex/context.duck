@@ -32,7 +32,7 @@ const texts = comptime list Text;
 const environments = comptime list RenderEnvironment;
 const filesystem_entries = comptime list RenderFileSystemEntry;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
 const text_element = (name: Text, value: Text) => do
   append_text(
@@ -77,23 +77,23 @@ const indent_lines = (value: Text, indent: Text) => do
 
   if text_length value > 0 then
     for index in 0..text_length value do
-      if text_get [value, index] == 10 then
+      if text_get (value, index) == 10 then
         output = append_text(
           output,
-          append_text(text_slice [value, segment_start, index + 1], indent),
+          append_text(text_slice (value, segment_start, index + 1), indent),
         )
         segment_start = index + 1
       end;
     end
   end;
 
-  append_text(output, text_slice [value, segment_start, text_length value])
+  append_text(output, text_slice (value, segment_start, text_length value))
 end;
 
 const environment_id_before = (left: RenderEnvironment, right: RenderEnvironment) => do
   let [left_id, _, _, _] = left;
   let [right_id, _, _, _] = right;
-  text_less_than [left_id, right_id]
+  text_less_than (left_id, right_id)
 end;
 
 const render_environment_values = (environment: RenderEnvironment, indent: Text) => do

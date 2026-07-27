@@ -8,7 +8,7 @@ const { .normalize_request_user_input_args } = import "./request_user_input_poli
 type RequestCallMode = RequestUserInputMode
 type RequestCallPlan = RequestUserInputPlan
 
-let plan_request_user_input_call: [Bool, RequestCallMode, Bool, Text] -> RequestCallPlan = (
+let plan_request_user_input_call: (Bool, RequestCallMode, Bool, Text) -> RequestCallPlan = (
   is_root_thread: Bool,
   mode: RequestCallMode,
   default_mode_enabled: Bool,

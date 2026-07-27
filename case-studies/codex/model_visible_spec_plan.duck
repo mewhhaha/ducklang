@@ -63,10 +63,10 @@ const code_mode_name: ToolName -> Text = tool_name => do
   if namespace == "" then
     return local_name;
   end;
-  if text_ends_with [namespace, "_"] || text_starts_with [local_name, "_"] then
-    return text_append [namespace, local_name];
+  if text_ends_with (namespace, "_") || text_starts_with (local_name, "_") then
+    return text_append (namespace, local_name);
   end;
-  text_append [text_append [namespace, "__"], local_name]
+  text_append (text_append (namespace, "__"), local_name)
 end;
 
 const exposure_is_direct_model_only: ToolExposure -> Bool = exposure => do
@@ -94,7 +94,7 @@ end;
 
 const is_nested_name: Text -> Bool = name => name != "exec" && name != "wait";
 
-const namespace_is_excluded: [Text, ModelVisibleTexts] -> Bool = (namespace,
+const namespace_is_excluded: (Text, ModelVisibleTexts) -> Bool = (namespace,
   excluded_namespaces) => do
     if namespace == "" then
       return false;
@@ -180,7 +180,7 @@ const augment_spec: ModelVisibleSpec -> ModelVisibleSpec = spec => do
   end;
 end;
 
-let rec name_seen: [ToolName, ModelVisibleNames] -> Bool = (name, names) => do
+let rec name_seen: (ToolName, ModelVisibleNames) -> Bool = (name, names) => do
   let [namespace, local_name] = name;
   if let #VisibleNamesCons node = names then
     let [[candidate_namespace, candidate_local_name], tail] = node;
@@ -194,7 +194,7 @@ let rec name_seen: [ToolName, ModelVisibleNames] -> Bool = (name, names) => do
   end;
 end;
 
-let rec append_specs: [ModelVisibleSpecs, ModelVisibleSpecs] -> ModelVisibleSpecs = (first,
+let rec append_specs: (ModelVisibleSpecs, ModelVisibleSpecs) -> ModelVisibleSpecs = (first,
   second) => do
     if let #VisibleSpecsCons node = first then
       let [spec, tail] = node;
@@ -204,7 +204,7 @@ let rec append_specs: [ModelVisibleSpecs, ModelVisibleSpecs] -> ModelVisibleSpec
     end;
   end;
 
-let rec append_functions: [ModelVisibleFunctions, ModelVisibleFunctions] -> ModelVisibleFunctions =
+let rec append_functions: (ModelVisibleFunctions, ModelVisibleFunctions) -> ModelVisibleFunctions =
   (
     first,
     second,
@@ -217,7 +217,7 @@ let rec append_functions: [ModelVisibleFunctions, ModelVisibleFunctions] -> Mode
     end;
   end;
 
-let rec merge_spec: [ModelVisibleSpecs, ModelVisibleSpec] -> ModelVisibleSpecs = (specs,
+let rec merge_spec: (ModelVisibleSpecs, ModelVisibleSpec) -> ModelVisibleSpecs = (specs,
   incoming) => do
     if let #VisibleNamespace incoming_namespace = incoming then
       let [incoming_name, _, _] = incoming_namespace;
@@ -253,7 +253,7 @@ let rec merge_spec: [ModelVisibleSpecs, ModelVisibleSpec] -> ModelVisibleSpecs =
     end;
   end;
 
-let rec insert_function: [ModelVisibleFunction, ModelVisibleFunctions] -> ModelVisibleFunctions = (
+let rec insert_function: (ModelVisibleFunction, ModelVisibleFunctions) -> ModelVisibleFunctions = (
   function,
   functions,
 ) => do
@@ -261,7 +261,7 @@ let rec insert_function: [ModelVisibleFunction, ModelVisibleFunctions] -> ModelV
   if let #VisibleFunctionsCons node = functions then
     let [existing, tail] = node;
     let [existing_name, _] = existing;
-    if text_compare [name, existing_name] < 0 then
+    if text_compare (name, existing_name) < 0 then
       #VisibleFunctionsCons ([function, functions])
     else
       #VisibleFunctionsCons ([existing, insert_function(function, tail)])
@@ -290,7 +290,7 @@ let sort_functions: ModelVisibleFunctions -> ModelVisibleFunctions = functions =
   sorted
 end;
 
-let merge_model_namespaces: [ModelVisibleSpecs, ModelVisibleNamespacePolicy] -> ModelVisibleSpecs =
+let merge_model_namespaces: (ModelVisibleSpecs, ModelVisibleNamespacePolicy) -> ModelVisibleSpecs =
   (
     specs,
     namespace_policy,
@@ -322,10 +322,10 @@ let merge_model_namespaces: [ModelVisibleSpecs, ModelVisibleNamespacePolicy] -> 
             let [name, description, functions] = namespace;
             let finalized_description = description;
             if text_trim_whitespace description == "" then
-              finalized_description = text_append [
-                text_append ["Tools in the ", name],
+              finalized_description = text_append (
+                text_append ("Tools in the ", name),
                 " namespace.",
-              ]
+              )
             end;
             let finalized: ModelVisibleNamespace = [
               name,
@@ -364,7 +364,7 @@ let merge_model_namespaces: [ModelVisibleSpecs, ModelVisibleNamespacePolicy] -> 
     result
   end;
 
-let build_model_visible_specs: [ModelVisibleRuntimes, ModelVisibleSpecs, ModelVisibleFacts] -> ModelVisibleSpecs =
+let build_model_visible_specs: (ModelVisibleRuntimes, ModelVisibleSpecs, ModelVisibleFacts) -> ModelVisibleSpecs =
   (
     runtimes,
     hosted_specs,

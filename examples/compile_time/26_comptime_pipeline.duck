@@ -8,7 +8,8 @@ const compose_all = rec (steps, index, composed) => do
   end;
 end;
 
-const pipeline = (const steps) => comptime compose_all(steps, 0, value => value);
+const pipeline =
+  (const steps) => comptime compose_all(steps, 0, value => value);
 
 const normalize = comptime pipeline [
   value => value + 1,

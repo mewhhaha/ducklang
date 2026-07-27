@@ -53,7 +53,7 @@ const parse_debug_app_server: DebugArgs -> DebugCommandResult = (args: DebugArgs
   end;
 end;
 
-let rec scan_debug_prompt_from: [DebugArgs, DebugPromptInputOptions] -> DebugCommandResult = (
+let rec scan_debug_prompt_from: (DebugArgs, DebugPromptInputOptions) -> DebugCommandResult = (
   args: DebugArgs,
   options: DebugPromptInputOptions,
 ) => do
@@ -84,7 +84,7 @@ let parse_debug_prompt_input: DebugArgs -> DebugCommandResult = (args: DebugArgs
   scan_debug_prompt_from(args, initial)
 end;
 
-let rec scan_debug_trace_from: [DebugArgs, DebugTraceFacts] -> DebugTraceFactsResult = (
+let rec scan_debug_trace_from: (DebugArgs, DebugTraceFacts) -> DebugTraceFactsResult = (
   args: DebugArgs,
   facts: DebugTraceFacts,
 ) => do

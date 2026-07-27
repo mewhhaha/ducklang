@@ -11,7 +11,7 @@ type ResourceCallPayload = McpResourcePayload
 type ResourceCallPlan = McpResourceCallPlan
 type ResourceCallPrepared = McpResourcePreparedCall
 
-const plan_list_mcp_resource_call: [Text, ResourceCallPayload, Bool, Bool] -> ResourceCallPlan = (
+const plan_list_mcp_resource_call: (Text, ResourceCallPayload, Bool, Bool) -> ResourceCallPlan = (
   call_id: Text,
   payload: ResourceCallPayload,
   templates: Bool,
@@ -44,7 +44,7 @@ const plan_list_mcp_resource_call: [Text, ResourceCallPayload, Bool, Bool] -> Re
   end;
 end;
 
-const plan_read_mcp_resource_call: [Text, ResourceCallPayload, Bool] -> ResourceCallPlan = (
+const plan_read_mcp_resource_call: (Text, ResourceCallPayload, Bool) -> ResourceCallPlan = (
   call_id: Text,
   payload: ResourceCallPayload,
   orchestrator_mcp_enabled: Bool,

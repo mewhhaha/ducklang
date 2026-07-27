@@ -16,7 +16,7 @@ type RegistryDispatchPlan = ToolDispatchPlan
 
 const empty_registry: () -> RegistryDefinitions = () => #Nil;
 
-const prepend_definition: [RegistryDefinition, RegistryDefinitions] -> RegistryDefinitions = (
+const prepend_definition: (RegistryDefinition, RegistryDefinitions) -> RegistryDefinitions = (
   definition: RegistryDefinition,
   registry: RegistryDefinitions,
 ) => do
@@ -78,7 +78,7 @@ const tool_name_text = (name: RegistryName) => do
   let [namespace, local_name] = name;
 
   if namespace != "" then
-    text_append [namespace, local_name]
+    text_append (namespace, local_name)
   else
     local_name
   end;
@@ -89,7 +89,7 @@ const definition_name = (definition: RegistryDefinition) => do
   name
 end;
 
-let rec find_tool: [RegistryDefinitions, RegistryName] -> RegistryLookup = (
+let rec find_tool: (RegistryDefinitions, RegistryName) -> RegistryLookup = (
   registry: RegistryDefinitions,
   name: RegistryName,
 ) => do
@@ -133,7 +133,7 @@ const contains_tool = (registry: RegistryDefinitions, name: RegistryName) => do
   found
 end;
 
-const register_tool: [RegistryDefinitions, RegistryDefinition] -> RegistryRegistrationResult = (
+const register_tool: (RegistryDefinitions, RegistryDefinition) -> RegistryRegistrationResult = (
   registry: RegistryDefinitions,
   definition: RegistryDefinition,
 ) => do
@@ -228,7 +228,7 @@ const payload_kinds_match = (expected: RegistryPayloadKind, received: RegistryPa
   end;
 end;
 
-const plan_tool_dispatch: [RegistryDefinitions, RegistryName, RegistryPayloadKind, Text] -> RegistryDispatchPlan =
+const plan_tool_dispatch: (RegistryDefinitions, RegistryName, RegistryPayloadKind, Text) -> RegistryDispatchPlan =
   (
     registry: RegistryDefinitions,
     name: RegistryName,

@@ -7,7 +7,7 @@ type EnvironmentPermissionsEnvironment = RequestPermissionsEnvironment
 type EnvironmentPermissionsEnvironments = RequestPermissionsEnvironments
 type EnvironmentPermissionsSelection = RequestPermissionsEnvironmentSelection
 type EnvironmentPermissionsNativeCwd = RequestPermissionsNativeCwd
-const select_request_permissions_environment: [EnvironmentPermissionsEnvironments, Text] ->
+const select_request_permissions_environment: (EnvironmentPermissionsEnvironments, Text) ->
   EnvironmentPermissionsSelection = (
     environments: EnvironmentPermissionsEnvironments,
     requested_environment_id: Text,
@@ -38,7 +38,7 @@ const select_request_permissions_environment: [EnvironmentPermissionsEnvironment
 
     if let #SelectionFailed _ = selected then
       #SelectionFailed (
-        text_append ["unknown turn environment id `", text_append [requested_environment_id, "`"]]
+        text_append ("unknown turn environment id `", text_append (requested_environment_id, "`"))
       )
     else
       selected
@@ -81,18 +81,18 @@ const request_permissions_native_cwd: EnvironmentPermissionsEnvironment ->
       #Selected environment
     else let #Foreign reason = native_cwd then
       #SelectionFailed (
-        text_append [
+        text_append (
           "request_permissions cwd `",
-          text_append [environment.cwd, text_append ["` is not native to the Codex host: ",
-            reason]],
-        ]
+          text_append (environment.cwd, text_append ("` is not native to the Codex host: ",
+            reason)),
+        )
       )
     else
       #SelectionFailed (
-        text_append [
+        text_append (
           "request_permissions cwd `",
-          text_append [environment.cwd, "` is not native to the Codex host"],
-        ]
+          text_append (environment.cwd, "` is not native to the Codex host"),
+        )
       )
     end;
   end;

@@ -489,6 +489,7 @@ function function_type(params: TypeExpr[], result: TypeExpr): TypeExpr {
     param = {
       tag: "product",
       entries: params.map((type_expr) => ({ type_expr })),
+      value_pack: true,
     };
   }
 

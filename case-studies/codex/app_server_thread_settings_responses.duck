@@ -17,7 +17,7 @@ const optional_json: SettingsJsonOption -> SettingsJson = (value: SettingsJsonOp
   if let #Some json = value then json else json_null() end;
 end;
 
-const materialize_thread_settings: [SettingsSnapshot, Bool] -> SettingsJson = (
+const materialize_thread_settings: (SettingsSnapshot, Bool) -> SettingsJson = (
   settings: SettingsSnapshot,
   experimental: Bool,
 ) => do
@@ -51,7 +51,7 @@ const materialize_thread_settings_update_response: () -> SettingsJson = () => js
   json_object_empty()
 );
 
-const materialize_thread_settings_updated_notification: [Text, SettingsSnapshot, Bool] ->
+const materialize_thread_settings_updated_notification: (Text, SettingsSnapshot, Bool) ->
   SettingsJson = (
     thread_id: Text,
     settings: SettingsSnapshot,

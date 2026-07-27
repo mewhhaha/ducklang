@@ -18,12 +18,12 @@ type ResponseItemNode = FunctionOutputContentItemNode
 type ResponseItems = FunctionOutputContentItems
 type ResponseState = [Text, ResponseRuntimeItems, ResponseRuntimeError, Bool]
 
-const handle_code_mode_runtime_response: [
+const handle_code_mode_runtime_response: (
   ResponseRuntime,
   ResponseImageDetailPolicy,
   ResponseTokenLimit,
   ResponseElapsed,
-] -> ResponseOutput = (response, image_detail_policy, token_limit, elapsed) => do
+) -> ResponseOutput = (response, image_detail_policy, token_limit, elapsed) => do
   let response_state: ResponseState = case response of
     #RuntimeYielded progress => do
       let [cell_id, yielded_items] = progress;

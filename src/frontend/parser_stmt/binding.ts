@@ -363,8 +363,12 @@ export function apply_function_result_context(
   }
 
   let parameter_types = [callable.param];
-  if (
+
+  if (callable.param.tag === "tuple") {
+    parameter_types = callable.param.items;
+  } else if (
     callable.param.tag === "product" &&
+    callable.param.value_pack === true &&
     callable.param.entries.length === value.params.length
   ) {
     parameter_types = callable.param.entries.map((entry) => entry.type_expr);

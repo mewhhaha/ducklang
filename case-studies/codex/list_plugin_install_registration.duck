@@ -17,7 +17,7 @@ const list_available_plugins_to_install_tool_name: () -> ListPluginName = () => 
   "list_available_plugins_to_install",
 ];
 
-let list_available_plugins_to_install_definitions: [Bool, Bool, ListPluginPresentation] ->
+let list_available_plugins_to_install_definitions: (Bool, Bool, ListPluginPresentation) ->
   ListPluginDefinitions = (
     enabled: Bool,
     has_candidates: Bool,
@@ -42,7 +42,7 @@ let list_available_plugins_to_install_definitions: [Bool, Bool, ListPluginPresen
     end;
   end;
 
-let list_available_plugins_to_install_specs: [Bool, Bool, ListPluginPresentation] ->
+let list_available_plugins_to_install_specs: (Bool, Bool, ListPluginPresentation) ->
   ListPluginSpecs = (
     enabled: Bool,
     has_candidates: Bool,

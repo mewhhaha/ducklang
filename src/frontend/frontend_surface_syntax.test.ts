@@ -117,6 +117,41 @@ render \`hello {name}; answer {40 + 2}\`
   );
 });
 
+Deno.test("from preserves target-directed conversion syntax", () => {
+  const source = parse_source(
+    "let exact: [1, 2] = from (1, 2);\n" +
+      "let array: [I32; 2] = from (1, 2);\n" +
+      "let byte: U8 = from 1;",
+  );
+  const exact = binding_value(source.statements[0]);
+
+  if (exact.tag !== "app" || exact.func.tag !== "var") {
+    throw new Error("Expected from to remain an ordinary function call");
+  }
+
+  assert_equals(exact.func.name, "from");
+  assert_equals(exact.args.map((arg) => arg.tag), ["num", "num"]);
+  assert_equals(
+    format_source(source),
+    "let exact: [1, 2] = from (1, 2);\n" +
+      "let array: [I32; 2] = from (1, 2);\n" +
+      "let byte: U8 = from 1;",
+  );
+});
+
+Deno.test("from can be renamed and shadowed like any other function", () => {
+  assert_equals(
+    format_source(parse_source(`
+let from = value => value;
+let convert = from;
+let result = convert 1;
+`)),
+    "let from = value => value;\n" +
+      "let convert = from;\n" +
+      "let result = convert 1;",
+  );
+});
+
 Deno.test("prelude operators retain their source operand order", () => {
   const text = "let applied = transform $ value;\n" +
     "let piped = value |> transform;\n" +
@@ -181,6 +216,27 @@ let choose = rec #Some value => value;
       "let [head, ...tail] = values;\n" +
       "let choose = rec #Some value => value;",
   );
+});
+
+Deno.test("product parameters remain distinct from argument packs", () => {
+  const source = parse_source(`
+let unpack = [left, right] => left;
+let select = (left, right) => right;
+`);
+  const unpack = binding_value(source.statements[0]);
+  const select = binding_value(source.statements[1]);
+
+  if (
+    unpack.tag !== "lam" || unpack.pattern?.tag !== "product" ||
+    select.tag !== "lam" || select.pattern?.tag !== "product"
+  ) {
+    throw new Error("Expected function bindings");
+  }
+
+  assert_equals(unpack.params.length, 1);
+  assert_equals(unpack.pattern.value_pack, undefined);
+  assert_equals(select.params.length, 2);
+  assert_equals(select.pattern.value_pack, true);
 });
 
 Deno.test("const variadic parameters capture an argument pack", () => {
@@ -524,7 +580,7 @@ Deno.test("import invocation does not permit redundant parentheses", () => {
 
 Deno.test("compiler functions retain their intrinsic prefix", () => {
   const source = parse_source(
-    "let append = [left, right] => left;\n" +
+    "let append = (left, right) => left;\n" +
       'let compiler_value = @append("a", "b");\n' +
       'let user_value = append("a", "b");\n',
   );
@@ -543,7 +599,7 @@ Deno.test("compiler functions retain their intrinsic prefix", () => {
   assert_equals(user_value.func.name, "append");
   assert_equals(
     format_source(source),
-    "let append = [left, right] => left;\n" +
+    "let append = (left, right) => left;\n" +
       'let compiler_value = @append ("a", "b");\n' +
       'let user_value = append ("a", "b");',
   );
@@ -681,6 +737,31 @@ let picked = case choice of
         "let picked = match choice with | #None => 0 end;\n",
       ),
     "Expected `;` after binding",
+  );
+});
+
+Deno.test("case functions infer their argument pack from arm patterns", () => {
+  const source = parse_source(`
+let choose = case => of
+  (#None, value) => value,
+  (value, #None) => value,
+  (left, right) => left;
+`);
+  const value = binding_value(source.statements[0]);
+
+  if (
+    value.tag !== "lam" || value.case_function !== true ||
+    value.body.tag !== "match"
+  ) {
+    throw new Error("Expected a case function");
+  }
+
+  assert_equals(value.params.length, 2);
+  assert_equals(value.body.target.tag, "product");
+  assert_equals(
+    format_source(source),
+    "let choose = case => of (#None, value) => value, " +
+      "(value, #None) => value, (left, right) => left;",
   );
 });
 

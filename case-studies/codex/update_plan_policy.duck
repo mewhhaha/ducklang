@@ -9,7 +9,7 @@ type PlanPolicyPayload = UpdatePlanPayload
 type PlanPolicyPayloadPlan = UpdatePlanPayloadPlan
 type PlanPolicyArgs = UpdatePlanArgs
 
-let plan_update_plan_payload: [PlanPolicyPayload, PlanPolicyMode] -> PlanPolicyPayloadPlan = (
+let plan_update_plan_payload: (PlanPolicyPayload, PlanPolicyMode) -> PlanPolicyPayloadPlan = (
   payload: PlanPolicyPayload,
   mode: PlanPolicyMode,
 ) => do

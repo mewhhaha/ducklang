@@ -9,14 +9,14 @@ import { scan_source, source_tokens } from "../frontend/tokenize.ts";
 
 // The formatter is deliberately biased: it re-emits the comment-preserving
 // token stream with fixed spacing, two-space bracket indentation, collapsed
-// blank runs, canonical string escapes, and a 100-column layout budget. Wide
+// blank runs, canonical string escapes, and an 80-column layout budget. Wide
 // delimited expressions use one entry per line; other expressions break only
 // at existing whitespace boundaries. The token order (and therefore the
 // parsed program) is unchanged apart from redundant atomic-call parentheses.
 // Statement semicolons are retained as line terminators, while semicolons
 // inside brackets remain fixed-array separators.
 
-const maximum_line_width = 100;
+const maximum_line_width = 80;
 
 const keywords = new Set([
   "borrow",
@@ -34,7 +34,6 @@ const keywords = new Set([
   "end",
   "for",
   "freeze",
-  "from",
   "handler",
   "if",
   "import",
@@ -217,6 +216,17 @@ export function format_syntax(syntax: SourceSyntax): string {
         continue;
       }
 
+      const expanded_conditional = expand_wide_conditional(
+        line,
+        available_width,
+      );
+
+      if (expanded_conditional !== undefined) {
+        lines.splice(index, 1, ...expanded_conditional);
+        index -= 1;
+        continue;
+      }
+
       const wrapped = wrap_at_whitespace(line, available_width);
 
       if (wrapped !== undefined) {
@@ -338,6 +348,11 @@ function mark_effect_rows(tokens: Token[]): FormatToken[] {
       continue;
     }
 
+    if (token.kind === "newline") {
+      row_depth = 0;
+      continue;
+    }
+
     if (token.kind !== "symbol") {
       continue;
     }
@@ -354,8 +369,6 @@ function mark_effect_rows(tokens: Token[]): FormatToken[] {
     } else if (token.text === ">" && row_depth > 0) {
       token.row_close = true;
       row_depth -= 1;
-    } else if (token.kind === "symbol" && token.text === "\n") {
-      row_depth = 0;
     }
   }
 
@@ -869,7 +882,14 @@ function expand_delimited_entries(
       continue;
     }
 
+    const next = line[index + 1];
+    const single_lambda_parameter = group.symbol === "(" &&
+      group.commas.length === 0 &&
+      next?.kind === "symbol" &&
+      next.text === "=>";
+
     if (
+      !single_lambda_parameter &&
       group.open + 1 < index &&
       (group.commas.length > 0 || group.symbol === "(") &&
       render_line(line.slice(0, index + 1)).length > available_width
@@ -971,6 +991,75 @@ function wrap_at_whitespace(
   }
 
   return [left, right];
+}
+
+function expand_wide_conditional(
+  line: FormatToken[],
+  available_width: number,
+): FormatToken[][] | undefined {
+  if (render_line(line).length <= available_width) {
+    return undefined;
+  }
+
+  const first = line[0];
+
+  if (first?.kind !== "name" || first.text !== "if") {
+    return undefined;
+  }
+
+  const then_index = line.findIndex((token) => {
+    return token.kind === "name" && token.text === "then";
+  });
+
+  if (then_index < 0) {
+    return undefined;
+  }
+
+  let nested_conditionals = 0;
+  let else_index = -1;
+  let end_index = -1;
+
+  for (let index = then_index + 1; index < line.length; index += 1) {
+    const token = line[index];
+
+    if (token?.kind !== "name") {
+      continue;
+    }
+
+    if (token.text === "if") {
+      nested_conditionals += 1;
+      continue;
+    }
+
+    if (token.text === "end") {
+      if (nested_conditionals > 0) {
+        nested_conditionals -= 1;
+        continue;
+      }
+
+      end_index = index;
+      break;
+    }
+
+    if (token.text === "else" && nested_conditionals === 0) {
+      else_index = index;
+    }
+  }
+
+  if (
+    else_index < 0 || end_index < 0 || then_index + 1 === else_index ||
+    else_index + 1 === end_index
+  ) {
+    return undefined;
+  }
+
+  return [
+    line.slice(0, then_index + 1),
+    line.slice(then_index + 1, else_index),
+    line.slice(else_index, else_index + 1),
+    line.slice(else_index + 1, end_index),
+    line.slice(end_index),
+  ];
 }
 
 function wrap_definition(
@@ -1263,12 +1352,17 @@ function needs_space(
       return previous.span.end < token.span.start;
     }
 
-    // Parenthesized calls glue to the value they apply to.
+    // Parentheses are an ordinary argument expression, so application keeps
+    // its whitespace separator: `call (left, right)`.
     if (token.text === "(" && is_value_end(previous)) {
       const before_previous = line[index - 2];
 
       if (before_previous?.kind === "symbol" && before_previous.text === "#") {
         return true;
+      }
+
+      if (before_previous?.kind === "symbol" && before_previous.text === "@") {
+        return false;
       }
 
       if (
@@ -1278,7 +1372,7 @@ function needs_space(
         return true;
       }
 
-      return false;
+      return true;
     }
 
     // `rec (left, right) => ...` declares parameters; `rec(left, right)`

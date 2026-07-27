@@ -59,7 +59,7 @@ const request_permission_paths_reverse: PolicyPermissionsPaths -> PolicyPermissi
     reversed
   end;
 
-const request_permission_access_equal: [PolicyPermissionsAccess, PolicyPermissionsAccess] -> Bool =
+const request_permission_access_equal: (PolicyPermissionsAccess, PolicyPermissionsAccess) -> Bool =
   (
     left: PolicyPermissionsAccess,
     right: PolicyPermissionsAccess,
@@ -73,14 +73,14 @@ const request_permission_access_equal: [PolicyPermissionsAccess, PolicyPermissio
     end;
   end;
 
-let rec request_permission_path_equal: [&PolicyPermissionsPath, &PolicyPermissionsPath] -> Bool = (
+let rec request_permission_path_equal: (&PolicyPermissionsPath, &PolicyPermissionsPath) -> Bool = (
   left: &PolicyPermissionsPath,
   right: &PolicyPermissionsPath,
 ) => do
   left.path == right.path && request_permission_access_equal(left.access, right.access)
 end;
 
-let rec request_permission_paths_contain: [&PolicyPermissionsPaths, &PolicyPermissionsPath] -> Bool =
+let rec request_permission_paths_contain: (&PolicyPermissionsPaths, &PolicyPermissionsPath) -> Bool =
   (
     paths: &PolicyPermissionsPaths,
     candidate: &PolicyPermissionsPath,
@@ -202,7 +202,7 @@ let rec request_permissions_approval_allowed: &PolicyPermissionsApprovalPolicy -
     end;
   end;
 
-const request_permission_access_covers: [PolicyPermissionsAccess, PolicyPermissionsAccess] -> Bool =
+const request_permission_access_covers: (PolicyPermissionsAccess, PolicyPermissionsAccess) -> Bool =
   (
     requested: PolicyPermissionsAccess,
     granted: PolicyPermissionsAccess,
@@ -216,7 +216,7 @@ const request_permission_access_covers: [PolicyPermissionsAccess, PolicyPermissi
     end;
   end;
 
-let rec request_permission_path_is_within: [&Text, &Text] -> Bool = (path: &Text, root: &Text) => do
+let rec request_permission_path_is_within: (&Text, &Text) -> Bool = (path: &Text, root: &Text) => do
   if path == root then
     true
   else
@@ -229,7 +229,7 @@ let rec request_permission_path_is_within: [&Text, &Text] -> Bool = (path: &Text
       if !(prefix_matches) || offset >= root_length then
         break;
       end;
-      if @get [path, offset] != @get [root, offset] then
+      if @get (path, offset) != @get (root, offset) then
         prefix_matches = false
       end;
       offset = offset + 1
@@ -242,13 +242,13 @@ let rec request_permission_path_is_within: [&Text, &Text] -> Bool = (path: &Text
     else path_length <= root_length then
       false
     else
-      let separator = @get [path, root_length];
+      let separator = @get (path, root_length);
       separator == 47 || separator == 92
     end;
   end;
 end;
 
-let rec request_permission_path_is_requested: [&PolicyPermissionsPath, &PolicyPermissionsPaths] -> Bool =
+let rec request_permission_path_is_requested: (&PolicyPermissionsPath, &PolicyPermissionsPaths) -> Bool =
   (
     granted: &PolicyPermissionsPath,
     requested: &PolicyPermissionsPaths,
@@ -282,7 +282,7 @@ let rec request_permission_path_is_requested: [&PolicyPermissionsPath, &PolicyPe
     accepted
   end;
 
-const intersect_request_permission_paths: [&PolicyPermissionsFileSystem, PolicyPermissionsPaths] -> PolicyPermissionsPaths =
+const intersect_request_permission_paths: (&PolicyPermissionsFileSystem, PolicyPermissionsPaths) -> PolicyPermissionsPaths =
   (
     requested: &PolicyPermissionsFileSystem,
     granted: PolicyPermissionsPaths,
@@ -314,8 +314,8 @@ const intersect_request_permission_paths: [&PolicyPermissionsFileSystem, PolicyP
     request_permission_paths_reverse accepted_reversed
   end;
 
-const intersect_request_permission_profiles: [&PolicyPermissionsProfile,
-  PolicyPermissionsProfile] -> PolicyPermissionsProfile = (
+const intersect_request_permission_profiles: (&PolicyPermissionsProfile,
+  PolicyPermissionsProfile) -> PolicyPermissionsProfile = (
     requested: &PolicyPermissionsProfile,
     granted: PolicyPermissionsProfile) => do
       let network: PolicyPermissionsNetworkField =
@@ -369,8 +369,8 @@ const intersect_request_permission_profiles: [&PolicyPermissionsProfile,
       [.network = network, .file_system = file_system]
     end;
 
-const normalize_request_permissions_response: [&PolicyPermissionsProfile,
-  PolicyPermissionsResponse] -> PolicyPermissionsResponse = (
+const normalize_request_permissions_response: (&PolicyPermissionsProfile,
+  PolicyPermissionsResponse) -> PolicyPermissionsResponse = (
     requested: &PolicyPermissionsProfile,
     response: PolicyPermissionsResponse,
   ) => do
@@ -414,7 +414,7 @@ const normalize_request_permissions_response: [&PolicyPermissionsProfile,
     end;
   end;
 
-const request_permissions_grant_application: [Text, PolicyPermissionsResponse] -> PolicyPermissionsGrantApplication =
+const request_permissions_grant_application: (Text, PolicyPermissionsResponse) -> PolicyPermissionsGrantApplication =
   (
     environment_id: Text,
     response: PolicyPermissionsResponse,

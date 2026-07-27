@@ -30,7 +30,7 @@ const parse_cloud_attempt: Text -> CloudAttemptResult = (value: Text) => do
   end;
 end;
 
-let rec scan_cloud_exec_from: [CloudArgs, CloudExecFacts] -> CloudExecFactsResult = (
+let rec scan_cloud_exec_from: (CloudArgs, CloudExecFacts) -> CloudExecFactsResult = (
   args: CloudArgs,
   facts: CloudExecFacts,
 ) => do
@@ -103,7 +103,7 @@ let parse_cloud_exec: CloudArgs -> CloudCommandResult = (args: CloudArgs) => do
   end;
 end;
 
-let rec scan_cloud_list_from: [CloudArgs, CloudListFacts] -> CloudListFactsResult = (
+let rec scan_cloud_list_from: (CloudArgs, CloudListFacts) -> CloudListFactsResult = (
   args: CloudArgs,
   facts: CloudListFacts,
 ) => do
@@ -187,7 +187,7 @@ const parse_cloud_status: CloudArgs -> CloudCommandResult = (args: CloudArgs) =>
   end;
 end;
 
-let rec scan_cloud_task_from: [CloudArgs, CloudTaskFacts] -> CloudTaskFactsResult = (
+let rec scan_cloud_task_from: (CloudArgs, CloudTaskFacts) -> CloudTaskFactsResult = (
   args: CloudArgs,
   facts: CloudTaskFacts,
 ) => do
@@ -219,7 +219,7 @@ let rec scan_cloud_task_from: [CloudArgs, CloudTaskFacts] -> CloudTaskFactsResul
   end;
 end;
 
-let parse_cloud_task: [Text, CloudArgs] -> CloudCommandResult =
+let parse_cloud_task: (Text, CloudArgs) -> CloudCommandResult =
   (command: Text, args: CloudArgs) => do
     let initial: CloudTaskFacts = [.task_id = #None, .attempt = #None];
     let scanned: CloudTaskFactsResult = scan_cloud_task_from(args, initial);

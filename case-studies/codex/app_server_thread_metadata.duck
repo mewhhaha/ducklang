@@ -13,7 +13,7 @@ type MetadataTextPatch = FieldPatch Text
 type MetadataGitInfoPatch = AppServerThreadMetadataGitInfoPatch
 type MetadataJson = AppServerJson
 
-const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextOption = (
+const apply_text_patch: (MetadataTextOption, MetadataTextPatch) -> MetadataTextOption = (
   current: MetadataTextOption,
   patch: MetadataTextPatch,
 ) => do
@@ -28,7 +28,7 @@ const apply_text_patch: [MetadataTextOption, MetadataTextPatch] -> MetadataTextO
   end;
 end;
 
-let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] ->
+let apply_thread_metadata_patch: (MetadataThreadSummary, MetadataGitInfoPatch) ->
   MetadataThreadSummary = (
     summary: MetadataThreadSummary,
     patch: MetadataGitInfoPatch,
@@ -71,7 +71,7 @@ let apply_thread_metadata_patch: [MetadataThreadSummary, MetadataGitInfoPatch] -
     updated
   end;
 
-const materialize_thread_metadata_update: [MetadataThreadSummary, Bool] -> MetadataJson = (
+const materialize_thread_metadata_update: (MetadataThreadSummary, Bool) -> MetadataJson = (
   summary: MetadataThreadSummary,
   experimental: Bool,
 ) => do

@@ -135,10 +135,21 @@ export abstract class ParserConditional extends ParserAggregate {
   }
 
   protected parse_case_expr(): FrontExpr {
+    if (this.match_symbol("=>")) {
+      this.expect_keyword("of");
+      this.skip_newlines();
+      const arms = this.parse_case_arms();
+      return case_function_from_arms(arms);
+    }
+
     const target = this.parse_expr_without_postfix_block();
     this.skip_newlines();
     this.expect_keyword("of");
     this.skip_newlines();
+    return { tag: "match", target, arms: this.parse_case_arms() };
+  }
+
+  private parse_case_arms(): MatchArm[] {
     const arms: MatchArm[] = [];
 
     while (true) {
@@ -187,7 +198,7 @@ export abstract class ParserConditional extends ParserAggregate {
       this.skip_newlines();
     }
 
-    return { tag: "match", target, arms };
+    return arms;
   }
 
   protected parse_if_let_condition(): ParsedIfLetCondition {
@@ -269,6 +280,86 @@ export abstract class ParserConditional extends ParserAggregate {
 
     return { tag: "pattern", pattern, target };
   }
+}
+
+function case_function_from_arms(arms: MatchArm[]): FrontExpr {
+  const packed = arms.find((arm) => {
+    return arm.pattern.tag === "product" &&
+      arm.pattern.value_pack === true;
+  });
+  let parameter_count = 1;
+
+  if (packed?.pattern.tag === "product") {
+    parameter_count = packed.pattern.entries.length;
+  }
+
+  for (const arm of arms) {
+    const pattern = arm.pattern;
+
+    if (pattern.tag === "binding" || pattern.tag === "wildcard") {
+      continue;
+    }
+
+    let arm_parameter_count = 1;
+
+    if (pattern.tag === "product" && pattern.value_pack === true) {
+      arm_parameter_count = pattern.entries.length;
+    }
+
+    expect(
+      arm_parameter_count === parameter_count,
+      "`case => of` arms must match the same argument count",
+    );
+  }
+
+  const params = Array.from({ length: parameter_count }, (_, index) => ({
+    name: "_case#param" + index.toString(),
+    is_const: false,
+    is_linear: false,
+    annotation: undefined,
+  }));
+  let pattern: Pattern;
+  let target: FrontExpr;
+
+  if (parameter_count === 1) {
+    const param = params[0];
+    expect(param, "Missing case-function parameter");
+    pattern = {
+      tag: "binding",
+      name: param.name,
+      mode: "default",
+      annotation: undefined,
+    };
+    target = { tag: "var", name: param.name };
+  } else {
+    pattern = {
+      tag: "product",
+      entries: params.map((param) => ({
+        pattern: {
+          tag: "binding",
+          name: param.name,
+          mode: "default",
+          annotation: undefined,
+        },
+      })),
+      value_pack: true,
+    };
+    target = {
+      tag: "product",
+      entries: params.map((param) => ({
+        value: { tag: "var", name: param.name },
+      })),
+      value_pack: true,
+    };
+  }
+
+  return {
+    tag: "lam",
+    pattern,
+    params,
+    body: { tag: "match", target, arms },
+    case_function: true,
+  };
 }
 
 function conditional_from_pattern(

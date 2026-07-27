@@ -8,7 +8,7 @@ type ImageCallEnvironments = ViewImageEnvironments
 type ImageCallPayload = ViewImagePayload
 type ImageCallPlan = ViewImageCallPlan
 
-const plan_view_image_call: [Text, ImageCallPayload, ImageCallEnvironments, Bool, Bool] ->
+const plan_view_image_call: (Text, ImageCallPayload, ImageCallEnvironments, Bool, Bool) ->
   ImageCallPlan = (
     call_id: Text,
     payload: ImageCallPayload,

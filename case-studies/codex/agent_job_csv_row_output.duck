@@ -27,7 +27,7 @@ const agent_job_csv_status: AgentJobCsvRowOutputStatus -> Text = status => do
   end;
 end;
 
-const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvRowOutputItem] ->
+const render_agent_job_csv_row: (Text, AgentJobCsvRowOutputHeaders, AgentJobCsvRowOutputItem) ->
   AgentJobCsvRowOutputResult = (
     job_id: Text,
     headers: AgentJobCsvRowOutputHeaders,
@@ -64,10 +64,10 @@ const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvR
     end;
     if !(matches) then
       #CsvExportFailed (
-        csv_text_append [
+        csv_text_append (
           "row values for item ",
-          csv_text_append [item.item_id, " do not match csv headers"],
-        ]
+          csv_text_append (item.item_id, " do not match csv headers"),
+        )
       )
     else
       line = csv_append_field(line, job_id, first)
@@ -80,7 +80,7 @@ const render_agent_job_csv_row: [Text, AgentJobCsvRowOutputHeaders, AgentJobCsvR
       line = csv_append_field(line, agent_job_csv_option item.result_json, false)
       line = csv_append_field(line, agent_job_csv_option item.reported_at, false)
       line = csv_append_field(line, agent_job_csv_option item.completed_at, false)
-      #CsvExported (csv_text_append [line, "\n"])
+      #CsvExported (csv_text_append (line, "\n"))
     end;
   end;
 

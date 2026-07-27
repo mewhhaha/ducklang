@@ -16,31 +16,31 @@ let encode_json_string: Text -> Text = text => do
     if index >= text_length text then
       break;
     end;
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
 
     if byte == 34 || byte == 92 || byte < 32 then
-      encoded = text_append [encoded, text_slice [text, segment_start, index]]
+      encoded = text_append (encoded, text_slice (text, segment_start, index))
 
       if byte == 34 then
-        encoded = text_append [encoded, "\\\""]
+        encoded = text_append (encoded, "\\\"")
       else byte == 92 then
-        encoded = text_append [encoded, "\\\\"]
+        encoded = text_append (encoded, "\\\\")
       else byte == 8 then
-        encoded = text_append [encoded, "\\b"]
+        encoded = text_append (encoded, "\\b")
       else byte == 9 then
-        encoded = text_append [encoded, "\\t"]
+        encoded = text_append (encoded, "\\t")
       else byte == 10 then
-        encoded = text_append [encoded, "\\n"]
+        encoded = text_append (encoded, "\\n")
       else byte == 12 then
-        encoded = text_append [encoded, "\\f"]
+        encoded = text_append (encoded, "\\f")
       else byte == 13 then
-        encoded = text_append [encoded, "\\r"]
+        encoded = text_append (encoded, "\\r")
       else
         let high = byte / 16;
         let low = byte % 16;
-        encoded = text_append [encoded, "\\u00"]
-        encoded = text_append [encoded, text_slice ["0123456789abcdef", high, high + 1]]
-        encoded = text_append [encoded, text_slice ["0123456789abcdef", low, low + 1]]
+        encoded = text_append (encoded, "\\u00")
+        encoded = text_append (encoded, text_slice ("0123456789abcdef", high, high + 1))
+        encoded = text_append (encoded, text_slice ("0123456789abcdef", low, low + 1))
       end;
 
       index = index + 1
@@ -50,8 +50,8 @@ let encode_json_string: Text -> Text = text => do
     end;
   end;
 
-  encoded = text_append [encoded, text_slice [text, segment_start, index]]
-  text_append [encoded, "\""]
+  encoded = text_append (encoded, text_slice (text, segment_start, index))
+  text_append (encoded, "\"")
 end;
 
 const encode_json_string_ascii: Text -> Text = text => do
@@ -64,52 +64,52 @@ const encode_json_string_ascii: Text -> Text = text => do
       break;
     end;
 
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
 
     if byte == 34 || byte == 92 || byte < 32 || byte >= 128 then
-      encoded = text_append [encoded, text_slice [text, segment_start, index]]
+      encoded = text_append (encoded, text_slice (text, segment_start, index))
       let width = 1;
 
       if byte == 34 then
-        encoded = text_append [encoded, "\\\""]
+        encoded = text_append (encoded, "\\\"")
       else byte == 92 then
-        encoded = text_append [encoded, "\\\\"]
+        encoded = text_append (encoded, "\\\\")
       else byte == 8 then
-        encoded = text_append [encoded, "\\b"]
+        encoded = text_append (encoded, "\\b")
       else byte == 9 then
-        encoded = text_append [encoded, "\\t"]
+        encoded = text_append (encoded, "\\t")
       else byte == 10 then
-        encoded = text_append [encoded, "\\n"]
+        encoded = text_append (encoded, "\\n")
       else byte == 12 then
-        encoded = text_append [encoded, "\\f"]
+        encoded = text_append (encoded, "\\f")
       else byte == 13 then
-        encoded = text_append [encoded, "\\r"]
+        encoded = text_append (encoded, "\\r")
       else byte < 32 then
         let high = byte / 16;
         let low = byte % 16;
-        encoded = text_append [encoded, "\\u00"]
-        encoded = text_append [encoded, text_slice ["0123456789abcdef", high, high + 1]]
-        encoded = text_append [encoded, text_slice ["0123456789abcdef", low, low + 1]]
+        encoded = text_append (encoded, "\\u00")
+        encoded = text_append (encoded, text_slice ("0123456789abcdef", high, high + 1))
+        encoded = text_append (encoded, text_slice ("0123456789abcdef", low, low + 1))
       else
         let code_point = 65533;
 
         if byte >= 194 && byte <= 223 && index + 1 < text_length text then
-          let second = text_get [text, index + 1];
+          let second = text_get (text, index + 1);
           if second >= 128 && second <= 191 then
             code_point = (byte - 192) * 64 + second - 128
             width = 2
           end;
         else byte >= 224 && byte <= 239 && index + 2 < text_length text then
-          let second = text_get [text, index + 1];
-          let third = text_get [text, index + 2];
+          let second = text_get (text, index + 1);
+          let third = text_get (text, index + 2);
           if second >= 128 && second <= 191 && third >= 128 && third <= 191 then
             code_point = (byte - 224) * 4096 + (second - 128) * 64 + third - 128
             width = 3
           end;
         else byte >= 240 && byte <= 244 && index + 3 < text_length text then
-          let second = text_get [text, index + 1];
-          let third = text_get [text, index + 2];
-          let fourth = text_get [text, index + 3];
+          let second = text_get (text, index + 1);
+          let third = text_get (text, index + 2);
+          let fourth = text_get (text, index + 3);
           if second >= 128 && second <= 191 && third >= 128 && third <= 191 && fourth >= 128
             && fourth <= 191 then
               code_point = (byte - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64
@@ -126,20 +126,20 @@ const encode_json_string_ascii: Text -> Text = text => do
           second_unit = 56320 + supplementary % 1024
         end;
 
-        encoded = text_append [encoded, "\\u"]
+        encoded = text_append (encoded, "\\u")
         let divisor = 4096;
         for _ in 0..4 do
           let digit = first_unit / divisor % 16;
-          encoded = text_append [encoded, text_slice ["0123456789abcdef", digit, digit + 1]]
+          encoded = text_append (encoded, text_slice ("0123456789abcdef", digit, digit + 1))
           divisor = divisor / 16
         end
 
         if second_unit >= 0 then
-          encoded = text_append [encoded, "\\u"]
+          encoded = text_append (encoded, "\\u")
           divisor = 4096
           for _ in 0..4 do
             let digit = second_unit / divisor % 16;
-            encoded = text_append [encoded, text_slice ["0123456789abcdef", digit, digit + 1]]
+            encoded = text_append (encoded, text_slice ("0123456789abcdef", digit, digit + 1))
             divisor = divisor / 16
           end
         end;
@@ -152,8 +152,8 @@ const encode_json_string_ascii: Text -> Text = text => do
     end;
   end;
 
-  encoded = text_append [encoded, text_slice [text, segment_start, index]]
-  text_append [encoded, "\""]
+  encoded = text_append (encoded, text_slice (text, segment_start, index))
+  text_append (encoded, "\"")
 end;
 
 let rec encode_json: Json -> Text = value => do
@@ -177,9 +177,9 @@ let rec encode_json: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
-        encoded = text_append [encoded, encode_json element]
+        encoded = text_append (encoded, encode_json element)
         current = tail
       else
         done = true
@@ -189,7 +189,7 @@ let rec encode_json: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "]"]
+    text_append (encoded, "]")
   else let #Object members = value then
     let encoded: Text = "{";
     let current: JsonEncodeObject = members;
@@ -203,11 +203,11 @@ let rec encode_json: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
-        encoded = text_append [encoded, encode_json_string key]
-        encoded = text_append [encoded, ":"]
-        encoded = text_append [encoded, encode_json member_value]
+        encoded = text_append (encoded, encode_json_string key)
+        encoded = text_append (encoded, ":")
+        encoded = text_append (encoded, encode_json member_value)
         current = tail
       else
         done = true
@@ -217,13 +217,13 @@ let rec encode_json: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "}"]
+    text_append (encoded, "}")
   else
     "null"
   end;
 end;
 
-let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => do
+let rec encode_json_pretty_at: (Json, I32) -> Text = (value, depth) => do
   if let #Array values = value then
     if let #Nil = values then
       "[]"
@@ -238,10 +238,10 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => do
           if first then
             first = false
           else
-            encoded = text_append [encoded, ",\n"]
+            encoded = text_append (encoded, ",\n")
           end;
-          encoded = text_append [encoded, text_repeat("  ", depth + 1)]
-          encoded = text_append [encoded, encode_json_pretty_at(element, depth + 1)]
+          encoded = text_append (encoded, text_repeat("  ", depth + 1))
+          encoded = text_append (encoded, encode_json_pretty_at(element, depth + 1))
           current = tail
         else
           done = true
@@ -250,7 +250,7 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => do
           break;
         end;
       end;
-      text_append [encoded, text_append ["\n", text_append [text_repeat("  ", depth), "]"]]]
+      text_append (encoded, text_append ("\n", text_append (text_repeat("  ", depth), "]")))
     end;
   else let #Object members = value then
     if let #Nil = members then
@@ -267,12 +267,12 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => do
           if first then
             first = false
           else
-            encoded = text_append [encoded, ",\n"]
+            encoded = text_append (encoded, ",\n")
           end;
-          encoded = text_append [encoded, text_repeat("  ", depth + 1)]
-          encoded = text_append [encoded, encode_json_string key]
-          encoded = text_append [encoded, ": "]
-          encoded = text_append [encoded, encode_json_pretty_at(member_value, depth + 1)]
+          encoded = text_append (encoded, text_repeat("  ", depth + 1))
+          encoded = text_append (encoded, encode_json_string key)
+          encoded = text_append (encoded, ": ")
+          encoded = text_append (encoded, encode_json_pretty_at(member_value, depth + 1))
           current = tail
         else
           done = true
@@ -281,7 +281,7 @@ let rec encode_json_pretty_at: [Json, I32] -> Text = (value, depth) => do
           break;
         end;
       end;
-      text_append [encoded, text_append ["\n", text_append [text_repeat("  ", depth), "}"]]]
+      text_append (encoded, text_append ("\n", text_append (text_repeat("  ", depth), "}")))
     end;
   else
     encode_json value
@@ -312,10 +312,10 @@ let rec encode_json_ascii: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
 
-        encoded = text_append [encoded, encode_json_ascii element]
+        encoded = text_append (encoded, encode_json_ascii element)
         current = tail
       else
         done = true
@@ -326,7 +326,7 @@ let rec encode_json_ascii: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "]"]
+    text_append (encoded, "]")
   else let #Object members = value then
     let encoded: Text = "{";
     let current: JsonEncodeObject = members;
@@ -341,12 +341,12 @@ let rec encode_json_ascii: Json -> Text = value => do
         if first then
           first = false
         else
-          encoded = text_append [encoded, ","]
+          encoded = text_append (encoded, ",")
         end;
 
-        encoded = text_append [encoded, encode_json_string_ascii key]
-        encoded = text_append [encoded, ":"]
-        encoded = text_append [encoded, encode_json_ascii member_value]
+        encoded = text_append (encoded, encode_json_string_ascii key)
+        encoded = text_append (encoded, ":")
+        encoded = text_append (encoded, encode_json_ascii member_value)
         current = tail
       else
         done = true
@@ -357,7 +357,7 @@ let rec encode_json_ascii: Json -> Text = value => do
       end;
     end;
 
-    text_append [encoded, "}"]
+    text_append (encoded, "}")
   else
     "null"
   end;

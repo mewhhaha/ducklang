@@ -9,7 +9,7 @@ const { .decode_list_mcp_resource_args, .decode_read_mcp_resource_args, .resourc
 
 type ResourceJsonParsed = McpResourceParsedArgs
 
-const parse_resource_json: [Text, Bool] -> ResourceJsonParsed = (
+const parse_resource_json: (Text, Bool) -> ResourceJsonParsed = (
   document: Text,
   read_resource: Bool,
 ) => do

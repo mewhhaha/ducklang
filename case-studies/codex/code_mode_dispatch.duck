@@ -41,7 +41,7 @@ const plan_code_mode_dispatch_submission: DispatchSubmissionFacts -> DispatchSub
     #QueueCodeModeDispatch facts.request
   end;
 
-const plan_code_mode_dispatch_response: [DispatchRequest, DispatchResponseState] ->
+const plan_code_mode_dispatch_response: (DispatchRequest, DispatchResponseState) ->
   DispatchResponsePlan = (
     request,
     response,
@@ -123,7 +123,7 @@ const plan_code_mode_notification: Notification -> NotificationPlan = notificati
   #InjectCodeModeNotification output
 end;
 
-const finish_code_mode_notification: [Text, NotificationInjection] -> NotificationCompletion = (
+const finish_code_mode_notification: (Text, NotificationInjection) -> NotificationCompletion = (
   cell_id,
   injection,
 ) => do
@@ -131,10 +131,10 @@ const finish_code_mode_notification: [Text, NotificationInjection] -> Notificati
     return #NotificationComplete;
   end;
   #NotificationRejected (
-    text_append [
+    text_append (
       "failed to inject exec notify message for cell ",
-      text_append [cell_id, ": no active turn"],
-    ]
+      text_append (cell_id, ": no active turn"),
+    )
   )
 end;
 

@@ -5,7 +5,7 @@ const { .agent_status_json } = import "./agent_status_json.duck" ();
 const { .text_append } = import "duck:prelude/runtime" ();
 
 const render_interrupt_agent_output: AgentStatus -> Text = status => do
-  text_append ["{\"previous_status\":", text_append [agent_status_json status, "}"]]
+  text_append ("{\"previous_status\":", text_append (agent_status_json status, "}"))
 end;
 
 return { .render_interrupt_agent_output };

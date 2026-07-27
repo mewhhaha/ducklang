@@ -34,7 +34,7 @@ const valid_sha256_digest: Text -> Bool = (digest: Text) => do
   end;
 end;
 
-const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransportResult = (
+const parse_app_server_transport: (AppServerTextOption, Bool) -> AppServerTransportResult = (
   listen: AppServerTextOption,
   stdio: Bool,
 ) => do
@@ -56,7 +56,7 @@ const parse_app_server_transport: [AppServerTextOption, Bool] -> AppServerTransp
         #Ok (#AppServerUnixSocket socket_path);
       else
         let socket_path: AppServerTextOption = #Some (
-          text_slice [endpoint, 7, text_length endpoint]
+          text_slice (endpoint, 7, text_length endpoint)
         );
         #Ok (#AppServerUnixSocket socket_path);
       end;
@@ -151,7 +151,7 @@ const resolve_app_server_auth: AppServerLaunchFacts -> AppServerAuthResult = (
     end;
   end;
 
-let rec scan_app_server_launch_from: [AppServerArgs, AppServerLaunchFacts] -> AppServerLaunchFactsResult =
+let rec scan_app_server_launch_from: (AppServerArgs, AppServerLaunchFacts) -> AppServerLaunchFactsResult =
   (
     args: AppServerArgs,
     facts: AppServerLaunchFacts,

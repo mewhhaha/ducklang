@@ -103,9 +103,9 @@ let list_available_plugins_to_install_output: ListPluginCandidates -> Text = val
       loop do
         if let #Cons sorted_node = remaining then
           let [sorted_candidate, sorted_tail] = sorted_node;
-          let name_order = text_compare [candidate.name, sorted_candidate.name];
+          let name_order = text_compare (candidate.name, sorted_candidate.name);
           let candidate_before = if name_order == 0 then
-            text_compare [candidate.id, sorted_candidate.id] < 0
+            text_compare (candidate.id, sorted_candidate.id) < 0
           else
             name_order < 0
           end;
@@ -181,7 +181,7 @@ let list_available_plugins_to_install_output: ListPluginCandidates -> Text = val
   encode_json(json_object(json_object_prepend("tools", json_array ordered, json_object_empty())))
 end;
 
-let plan_list_available_plugins_to_install: [ListPluginPayload, ListPluginCandidates] ->
+let plan_list_available_plugins_to_install: (ListPluginPayload, ListPluginCandidates) ->
   ListPluginCallPlan = (
     payload: ListPluginPayload,
     values: ListPluginCandidates,

@@ -4,7 +4,7 @@ const { .json_object_get } = import "duck:prelude/json/values" ();
 const { .text_append } = import "duck:prelude/runtime" ();
 const { .render_json_schema_to_typescript } = import "./code_mode_schema_renderer.duck" ();
 
-const object_has_type: [JsonObject, Text] -> Bool = (object, expected) => do
+const object_has_type: (JsonObject, Text) -> Bool = (object, expected) => do
   if let #Found value = json_object_get("type", object) then
     if let #String actual = value then actual == expected else false end;
   else
@@ -69,7 +69,7 @@ const materialize_code_mode_output_type: Json -> Text = schema => do
     if structured_type == "unknown" then
       "CallToolResult"
     else
-      text_append [text_append ["CallToolResult<", structured_type], ">"]
+      text_append (text_append ("CallToolResult<", structured_type), ">")
     end;
   else
     "CallToolResult"

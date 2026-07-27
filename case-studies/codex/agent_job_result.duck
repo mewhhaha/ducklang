@@ -15,13 +15,13 @@ let agent_job_json_string: Text -> Text = value => encode_json(json_string value
 let render_agent_job_failure: AgentJobResultFailure -> Text = failure => do
   let source_id = if let #Some value = failure.source_id then agent_job_json_string value else
     "null" end;
-  let output = text_append ["{\"item_id\":", agent_job_json_string failure.item_id];
-  output = text_append [output, text_append [",\"source_id\":", source_id]]
-  output = text_append [
+  let output = text_append ("{\"item_id\":", agent_job_json_string failure.item_id);
+  output = text_append (output, text_append (",\"source_id\":", source_id))
+  output = text_append (
     output,
-    text_append [",\"last_error\":", agent_job_json_string failure.last_error],
-  ]
-  text_append [output, "}"]
+    text_append (",\"last_error\":", agent_job_json_string failure.last_error),
+  )
+  text_append (output, "}")
 end;
 
 let render_agent_job_failures: AgentJobResultFailureList -> AgentJobRenderedFailures =
@@ -38,9 +38,9 @@ let render_agent_job_failures: AgentJobResultFailureList -> AgentJobRenderedFail
         current = tail
         if text_trim_ascii_whitespace failure.last_error != "" then
           if count > 0 then
-            rendered = text_append [rendered, ","]
+            rendered = text_append (rendered, ",")
           end;
-          rendered = text_append [rendered, render_agent_job_failure failure]
+          rendered = text_append (rendered, render_agent_job_failure failure)
           count = count + 1
         end;
       else
@@ -50,7 +50,7 @@ let render_agent_job_failures: AgentJobResultFailureList -> AgentJobRenderedFail
         break;
       end;
     end;
-    [text_append [rendered, "]"], count]
+    [text_append (rendered, "]"), count]
   end;
 
 let render_spawn_agents_on_csv_result: AgentJobResultCompletion -> Text = completed => do
@@ -70,29 +70,29 @@ let render_spawn_agents_on_csv_result: AgentJobResultCompletion -> Text = comple
     "null" end;
   let failed_item_errors_json = if failure_count > 0 then failures_json else "null" end;
   let status = if completed.cancelled then "cancelled" else "completed" end;
-  let output = text_append ["{\"job_id\":", agent_job_json_string completed.job_id];
-  output = text_append [output, text_append [",\"status\":", agent_job_json_string status]]
-  output = text_append [
+  let output = text_append ("{\"job_id\":", agent_job_json_string completed.job_id);
+  output = text_append (output, text_append (",\"status\":", agent_job_json_string status))
+  output = text_append (
     output,
-    text_append [",\"output_csv_path\":", agent_job_json_string completed.output_path],
-  ]
-  output = text_append [
+    text_append (",\"output_csv_path\":", agent_job_json_string completed.output_path),
+  )
+  output = text_append (
     output,
-    text_append [",\"total_items\":", format_i32 completed.total_items],
-  ]
-  output = text_append [
+    text_append (",\"total_items\":", format_i32 completed.total_items),
+  )
+  output = text_append (
     output,
-    text_append [",\"completed_items\":", format_i32 completed.completed_items],
-  ]
-  output = text_append [
+    text_append (",\"completed_items\":", format_i32 completed.completed_items),
+  )
+  output = text_append (
     output,
-    text_append [",\"failed_items\":", format_i32 completed.failed_items],
-  ]
-  output = text_append [output, text_append [",\"job_error\":", job_error_json]]
-  output = text_append [
+    text_append (",\"failed_items\":", format_i32 completed.failed_items),
+  )
+  output = text_append (output, text_append (",\"job_error\":", job_error_json))
+  output = text_append (
     output,
-    text_append [",\"failed_item_errors\":", text_append [failed_item_errors_json, "}"]],
-  ]
+    text_append (",\"failed_item_errors\":", text_append (failed_item_errors_json, "}")),
+  )
   output
 end;
 

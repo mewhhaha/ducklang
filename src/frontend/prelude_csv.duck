@@ -1,6 +1,6 @@
 module () where
 
-const csv_text_append: [Text, Text] -> Text = [left: Text, right: Text] => @append(left, right);
+const csv_text_append: (Text, Text) -> Text = (left: Text, right: Text) => @append(left, right);
 
 const csv_escape_field: Text -> Text = value => do
   let source: Bytes = @Utf8.encode value;
@@ -27,7 +27,7 @@ const csv_escape_field: Text -> Text = value => do
   end;
 end;
 
-const csv_append_field: [Text, Text, Bool] -> Text = (line: Text, value: Text, first: Bool) => do
+const csv_append_field: (Text, Text, Bool) -> Text = (line: Text, value: Text, first: Bool) => do
   if first then
     csv_escape_field value
   else

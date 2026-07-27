@@ -58,7 +58,7 @@ loop do
   if let #Cons node = current then
     let [definition, tail] = node;
     let [[_, local_name], _, tool_handler, _, _, _] = definition;
-    trace = text_append [local_name, text_append ["|", trace]]
+    trace = text_append (local_name, text_append ("|", trace))
     if local_name == "exec_command" then
       if let #UnifiedExec = tool_handler then
         handler_count = handler_count + 1

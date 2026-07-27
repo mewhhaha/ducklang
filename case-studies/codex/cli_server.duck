@@ -10,7 +10,7 @@ type ExecServerOptions = CodexExecServerOptions
 type ExecServerFacts = CodexExecServerFacts
 type ExecServerFactsResult = Result Text ExecServerFacts
 
-let rec scan_mcp_server: [ServerArgs, Bool] -> ServerCommandResult = (
+let rec scan_mcp_server: (ServerArgs, Bool) -> ServerCommandResult = (
   args: ServerArgs,
   strict_config: Bool,
 ) => do
@@ -31,7 +31,7 @@ let parse_mcp_server_options: ServerArgs -> ServerCommandResult = (args: ServerA
   scan_mcp_server(args, false)
 end;
 
-let rec scan_exec_server_from: [ServerArgs, ExecServerFacts] -> ExecServerFactsResult = (
+let rec scan_exec_server_from: (ServerArgs, ExecServerFacts) -> ExecServerFactsResult = (
   args: ServerArgs,
   facts: ExecServerFacts,
 ) => do

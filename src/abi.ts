@@ -706,6 +706,15 @@ function collect_type_values(source: Source): Map<string, FrontExpr> {
 
   for (const stmt of source.statements) {
     if (stmt.tag === "bind" && stmt.kind === "const") {
+      if (
+        stmt.value.tag === "struct_update" &&
+        stmt.value.base.tag === "var" &&
+        stmt.value.base.name === stmt.name &&
+        values.has(stmt.name)
+      ) {
+        continue;
+      }
+
       values.set(stmt.name, stmt.value);
     }
   }

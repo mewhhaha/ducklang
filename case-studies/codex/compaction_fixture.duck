@@ -22,7 +22,7 @@ history = items.prepend(message_item("user", "latest"), history)
 history = items.prepend(message_item("assistant", "intermediate"), history)
 history = items.prepend(message_item("user", "abcdefghijklmnopqrst"), history)
 history = items.prepend(
-  message_item("user", text_append [summary_prefix, "\nold summary"]),
+  message_item("user", text_append (summary_prefix, "\nold summary")),
   history,
 )
 history = items.prepend(message_item("user", "old message"), history)

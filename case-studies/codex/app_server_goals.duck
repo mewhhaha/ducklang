@@ -18,7 +18,7 @@ type GoalAvailability = AppServerThreadGoalAvailability
 type GoalPersistence = AppServerThreadPersistence
 type GoalBudgetPatch = FieldPatch I64
 
-const thread_goal_availability: [Bool, GoalPersistence, Text] -> GoalAvailability = (
+const thread_goal_availability: (Bool, GoalPersistence, Text) -> GoalAvailability = (
   enabled: Bool,
   persistence: GoalPersistence,
   thread_id: Text,
@@ -34,7 +34,7 @@ const thread_goal_availability: [Bool, GoalPersistence, Text] -> GoalAvailabilit
   end;
 end;
 
-const plan_thread_goal_set: [GoalOption, GoalSetParams] -> GoalSetPlanResult = (
+const plan_thread_goal_set: (GoalOption, GoalSetParams) -> GoalSetPlanResult = (
   current: GoalOption,
   params: GoalSetParams,
 ) => do

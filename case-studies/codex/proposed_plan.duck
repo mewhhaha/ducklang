@@ -26,7 +26,7 @@ const new_proposed_plan_parser: () -> PlanParser = () => do
   [.inside_plan = false, .detect_tag = true, .line_buffer = ""]
 end;
 
-const append_stream_text_to_reversed: [Bool, Text, PlanSegments] -> PlanSegments = (
+const append_stream_text_to_reversed: (Bool, Text, PlanSegments) -> PlanSegments = (
   inside_plan: Bool,
   text: Text,
   reversed: PlanSegments,
@@ -40,14 +40,14 @@ const append_stream_text_to_reversed: [Bool, Text, PlanSegments] -> PlanSegments
 
       if inside_plan then
         if let #ProposedPlanDelta existing = latest then
-          let merged: PlanSegment = #ProposedPlanDelta (text_append [existing, text]);
+          let merged: PlanSegment = #ProposedPlanDelta (text_append (existing, text));
           updated = segments.prepend(merged, tail)
         else
           updated = segments.prepend(#ProposedPlanDelta text, reversed)
         end;
       else
         if let #Normal existing = latest then
-          let merged: PlanSegment = #Normal (text_append [existing, text]);
+          let merged: PlanSegment = #Normal (text_append (existing, text));
           updated = segments.prepend(merged, tail)
         else
           updated = segments.prepend(#Normal text, reversed)
@@ -65,7 +65,7 @@ const append_stream_text_to_reversed: [Bool, Text, PlanSegments] -> PlanSegments
   updated
 end;
 
-const push_proposed_plan_chunk: [PlanParser, Text] -> PlanChunk =
+const push_proposed_plan_chunk: (PlanParser, Text) -> PlanChunk =
   (parser: PlanParser, chunk: Text) => do
     let remaining = chunk;
     let line_buffer = parser.line_buffer;
@@ -79,13 +79,13 @@ const push_proposed_plan_chunk: [PlanParser, Text] -> PlanChunk =
         break;
       end;
 
-      let newline_index = text_find [remaining, "\n"];
+      let newline_index = text_find (remaining, "\n");
 
       if detect_tag then
         if newline_index >= 0 then
           let line_end = newline_index + 1;
-          let line = text_append [line_buffer, text_slice [remaining, 0, line_end]];
-          remaining = text_slice [remaining, line_end, text_length remaining]
+          let line = text_append (line_buffer, text_slice (remaining, 0, line_end));
+          remaining = text_slice (remaining, line_end, text_length remaining)
           line_buffer = ""
           let slug = text_trim_whitespace line;
 
@@ -98,24 +98,24 @@ const push_proposed_plan_chunk: [PlanParser, Text] -> PlanChunk =
           else
             reversed = append_stream_text_to_reversed(inside_plan, line, reversed)
             if !(inside_plan) then
-              visible_text = text_append [visible_text, line]
+              visible_text = text_append (visible_text, line)
             end;
           end;
         else
-          let candidate = text_append [line_buffer, remaining];
+          let candidate = text_append (line_buffer, remaining);
           remaining = ""
           let slug = text_trim_whitespace candidate;
-          let may_be_tag = text_starts_with [proposed_plan_open, slug] || text_starts_with [
+          let may_be_tag = text_starts_with (proposed_plan_open, slug) || text_starts_with (
             proposed_plan_close,
             slug,
-          ];
+          );
 
           if may_be_tag then
             line_buffer = candidate
           else
             reversed = append_stream_text_to_reversed(inside_plan, candidate, reversed)
             if !(inside_plan) then
-              visible_text = text_append [visible_text, candidate]
+              visible_text = text_append (visible_text, candidate)
             end;
             line_buffer = ""
             detect_tag = false
@@ -124,17 +124,17 @@ const push_proposed_plan_chunk: [PlanParser, Text] -> PlanChunk =
       else
         if newline_index >= 0 then
           let line_end = newline_index + 1;
-          let streamed = text_slice [remaining, 0, line_end];
-          remaining = text_slice [remaining, line_end, text_length remaining]
+          let streamed = text_slice (remaining, 0, line_end);
+          remaining = text_slice (remaining, line_end, text_length remaining)
           reversed = append_stream_text_to_reversed(inside_plan, streamed, reversed)
           if !(inside_plan) then
-            visible_text = text_append [visible_text, streamed]
+            visible_text = text_append (visible_text, streamed)
           end;
           detect_tag = true
         else
           reversed = append_stream_text_to_reversed(inside_plan, remaining, reversed)
           if !(inside_plan) then
-            visible_text = text_append [visible_text, remaining]
+            visible_text = text_append (visible_text, remaining)
           end;
           remaining = ""
         end;
@@ -183,7 +183,7 @@ const strip_proposed_plan_blocks = (text: Text) => do
   let [parser, visible_text, _] = pushed;
   let finished = finish_proposed_plan parser;
   let [_, tail, _] = finished;
-  text_append [visible_text, tail]
+  text_append (visible_text, tail)
 end;
 
 const extract_proposed_plan_text: Text -> PlanTextOption = text => do
@@ -206,7 +206,7 @@ const extract_proposed_plan_text: Text -> PlanTextOption = text => do
           extracted = ""
         end,
         #ProposedPlanDelta delta => do
-          extracted = text_append [extracted, delta]
+          extracted = text_append (extracted, delta)
         end,
         _ => ();
 

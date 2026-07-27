@@ -14,7 +14,7 @@ const {
 type InstallJsonParseResult = RequestPluginInstallParseResult
 type InstallJsonPresentation = ToolSuggestPresentation
 
-let parse_request_plugin_install_args: [InstallJsonPresentation, Text] -> InstallJsonParseResult = (
+let parse_request_plugin_install_args: (InstallJsonPresentation, Text) -> InstallJsonParseResult = (
   presentation: InstallJsonPresentation,
   document: Text,
 ) => do
@@ -37,10 +37,10 @@ let parse_request_plugin_install_args: [InstallJsonPresentation, Text] -> Instal
   else let #Err error = parsed then
     let [position, message] = error;
     #ParseFailed (
-      text_append [
+      text_append (
         "failed to parse function arguments: ",
-        text_append [message, text_append [" at byte ", format_i32 position]],
-      ]
+        text_append (message, text_append (" at byte ", format_i32 position)),
+      )
     );
   else
     #ParseFailed "failed to parse function arguments: invalid JSON parse result"

@@ -3293,6 +3293,7 @@ class DuckCoreLowering {
 
     if (
       type.param.tag === "product" &&
+      type.param.value_pack === true &&
       type.param.entries.length === parameter_count
     ) {
       return {
@@ -4383,6 +4384,10 @@ class DuckCoreLowering {
     }
 
     if (name === "@panic") {
+      const message = args[0];
+      if (message?.tag === "text") {
+        return this.runtime_trap(expected, message.value);
+      }
       return this.runtime_trap(expected, "Duck program called @panic");
     }
 
@@ -5882,7 +5887,12 @@ class DuckCoreLowering {
     expected: TypeSchema | undefined,
     message: string,
   ): LoweredExpression {
-    const result = this.require_type(expected, "trap result");
+    if (expected === undefined) {
+      throw new Error(
+        "Duck gpufuck lowering cannot infer trap result for " + message,
+      );
+    }
+    const result = expected;
     const field = this.runtime_operation(
       "trap:" + this.type_key(result) + ":" +
         this.#runtime_fields.size.toString(),

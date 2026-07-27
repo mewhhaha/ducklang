@@ -9,7 +9,7 @@ type ResourcePolicyTextOption = McpResourceTextOption
 type ResourcePolicyListValidation = McpResourceListValidation
 type ResourcePolicyReadValidation = McpResourceReadValidation
 
-const model_can_access_mcp_server: [Text, Bool] -> Bool = (
+const model_can_access_mcp_server: (Text, Bool) -> Bool = (
   server: Text,
   orchestrator_mcp_enabled: Bool,
 ) => do
@@ -20,7 +20,7 @@ const inaccessible_mcp_server_message: Text -> Text = server => do
   text_append("MCP server '", text_append(server, "' is disabled by `orchestrator.mcp.enabled`"))
 end;
 
-const validate_list_mcp_resource_args: [ResourcePolicyListArgs, Bool] ->
+const validate_list_mcp_resource_args: (ResourcePolicyListArgs, Bool) ->
   ResourcePolicyListValidation = (
     args: ResourcePolicyListArgs,
     orchestrator_mcp_enabled: Bool,
@@ -45,7 +45,7 @@ const validate_list_mcp_resource_args: [ResourcePolicyListArgs, Bool] ->
     end;
   end;
 
-const validate_read_mcp_resource_args: [ResourcePolicyReadArgs, Bool] ->
+const validate_read_mcp_resource_args: (ResourcePolicyReadArgs, Bool) ->
   ResourcePolicyReadValidation = (
     args: ResourcePolicyReadArgs,
     orchestrator_mcp_enabled: Bool,

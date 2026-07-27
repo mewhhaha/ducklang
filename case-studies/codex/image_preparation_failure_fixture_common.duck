@@ -24,7 +24,7 @@ const single_image_processing_fixture_response: () -> FailureFixtureResponses = 
   #Cons response_node
 end;
 
-const single_image_processing_fixture_result: [I32, Text] -> FailureFixtureResults = (
+const single_image_processing_fixture_result: (I32, Text) -> FailureFixtureResults = (
   status_code,
   image_url,
 ) => do

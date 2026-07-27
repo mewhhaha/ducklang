@@ -241,7 +241,7 @@ class TypeExprParser {
 
     if (this.match_symbol("(")) {
       if (this.match_symbol(")")) {
-        return { tag: "product", entries: [] };
+        return { tag: "product", entries: [], value_pack: true };
       }
 
       const first = this.parse_product_entry();
@@ -269,6 +269,10 @@ class TypeExprParser {
       const entries = [first];
 
       while (true) {
+        if (this.match_symbol(")")) {
+          break;
+        }
+
         const entry = this.parse_product_entry();
         expect(
           entry.label === undefined,
@@ -303,7 +307,10 @@ class TypeExprParser {
       return { tag: "literal", value: literal };
     }
 
-    expect(token.kind === "name", "Expected type name");
+    expect(
+      token.kind === "name",
+      "Expected type name, got " + token.raw,
+    );
     this.index += 1;
     if (token.text === "Never") {
       return { tag: "never" };

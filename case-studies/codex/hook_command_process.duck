@@ -7,7 +7,7 @@ type ProcessCommandResult = HookCommandResult
 type ProcessCommandOutcome = HookCommandOutcome
 type ProcessTextOption = HookTextOption
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
 const classify_hook_command = (result: ProcessCommandResult) => do
   let [error, exit_code, _, stderr] = result;

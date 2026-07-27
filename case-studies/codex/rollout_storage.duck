@@ -31,7 +31,7 @@ type StorageJsonObjectOption = Option StorageJsonObject
 
 const empty_threads: () -> StorageThreads = () => #Nil;
 
-const prepend_thread: [StorageThread, StorageThreads] -> StorageThreads = (
+const prepend_thread: (StorageThread, StorageThreads) -> StorageThreads = (
   thread: StorageThread,
   tail: StorageThreads,
 ) => do
@@ -86,7 +86,7 @@ const thread_count: StorageThreads -> I32 = (values: StorageThreads) => do
   count
 end;
 
-const json_text_field: [StorageJsonObject, Text] -> Text =
+const json_text_field: (StorageJsonObject, Text) -> Text =
   (object: StorageJsonObject, key: Text) => do
     let result: Text = "";
     let lookup = json_object_get(key, object);
@@ -100,7 +100,7 @@ const json_text_field: [StorageJsonObject, Text] -> Text =
     result
   end;
 
-const json_optional_text_field: [StorageJsonObject, Text] -> StorageTextOption = (
+const json_optional_text_field: (StorageJsonObject, Text) -> StorageTextOption = (
   object: StorageJsonObject,
   key: Text,
 ) => do
@@ -116,7 +116,7 @@ const json_optional_text_field: [StorageJsonObject, Text] -> StorageTextOption =
   result
 end;
 
-const json_object_field: [StorageJsonObject, Text] -> StorageJsonObjectOption = (
+const json_object_field: (StorageJsonObject, Text) -> StorageJsonObjectOption = (
   object: StorageJsonObject,
   key: Text,
 ) => do
@@ -236,9 +236,9 @@ const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: Storag
       break;
     end;
 
-    let newline = text_find_from [contents, "\n", start];
+    let newline = text_find_from (contents, "\n", start);
     let line_end = if newline < 0 then text_length contents else newline end;
-    let line = text_slice [contents, start, line_end];
+    let line = text_slice (contents, start, line_end);
 
     if line != "" then
       let parsed = parse_json_document line;
@@ -316,7 +316,7 @@ const summarize_rollout_file: StorageFile -> StorageThreadOption = (file: Storag
   end;
 end;
 
-const text_list_allows: [StorageTexts, Text] -> Bool = (allowed: StorageTexts, value: Text) => do
+const text_list_allows: (StorageTexts, Text) -> Bool = (allowed: StorageTexts, value: Text) => do
   let current = allowed;
   let saw_candidate = false;
   let found = false;
@@ -359,7 +359,7 @@ const session_source_text: StorageSessionSource -> Text = (source: StorageSessio
   end;
 end;
 
-const thread_matches_query: [StorageThread, StorageFile, StorageQuery] -> Bool = (
+const thread_matches_query: (StorageThread, StorageFile, StorageQuery) -> Bool = (
   thread: StorageThread,
   file: StorageFile,
   query: StorageQuery,
@@ -370,49 +370,49 @@ const thread_matches_query: [StorageThread, StorageFile, StorageQuery] -> Bool =
   let source_allowed = text_list_allows(allowed_sources, source_text);
   let cwd_allowed = text_list_allows(cwd_filters, thread.cwd);
   let provider_allowed = text_list_allows(model_providers, thread.model_provider);
-  let search_matches = search_term == "" || text_contains_ascii_case_insensitive [
+  let search_matches = search_term == "" || text_contains_ascii_case_insensitive (
     contents,
     search_term,
-  ];
+  );
   source_allowed && cwd_allowed && provider_allowed && search_matches
 end;
 
-const thread_sort_value: [StorageThread, StorageSortKey] -> Text = (
+const thread_sort_value: (StorageThread, StorageSortKey) -> Text = (
   thread: StorageThread,
   sort_key: StorageSortKey,
 ) => do
   if let #UpdatedAt = sort_key then thread.updated_at else thread.created_at end;
 end;
 
-const thread_precedes: [StorageThread, StorageThread, StorageSortKey] -> Bool = (
+const thread_precedes: (StorageThread, StorageThread, StorageSortKey) -> Bool = (
   left: StorageThread,
   right: StorageThread,
   sort_key: StorageSortKey,
 ) => do
   let left_value = thread_sort_value(left, sort_key);
   let right_value = thread_sort_value(right, sort_key);
-  let comparison = text_compare [left_value, right_value];
+  let comparison = text_compare (left_value, right_value);
 
   if comparison == 0 then
-    text_compare [left.thread_id, right.thread_id] > 0
+    text_compare (left.thread_id, right.thread_id) > 0
   else
     comparison > 0
   end;
 end;
 
-const thread_after_cursor: [StorageThread, StorageTextOption, StorageSortKey] -> Bool = (
+const thread_after_cursor: (StorageThread, StorageTextOption, StorageSortKey) -> Bool = (
   thread: StorageThread,
   cursor: StorageTextOption,
   sort_key: StorageSortKey,
 ) => do
   if let #Some value = cursor then
-    text_compare [thread_sort_value(thread, sort_key), value] < 0
+    text_compare (thread_sort_value(thread, sort_key), value) < 0
   else
     true
   end;
 end;
 
-const sort_threads: [StorageThreads, StorageSortKey] -> StorageThreads = (
+const sort_threads: (StorageThreads, StorageSortKey) -> StorageThreads = (
   values: StorageThreads,
   sort_key: StorageSortKey,
 ) => do
@@ -474,7 +474,7 @@ const sort_threads: [StorageThreads, StorageSortKey] -> StorageThreads = (
   sorted
 end;
 
-const take_threads: [I32, StorageThreads] -> StorageThreads =
+const take_threads: (I32, StorageThreads) -> StorageThreads =
   (count: I32, values: StorageThreads) => do
     let current = values;
     let remaining = count;
@@ -503,7 +503,7 @@ const take_threads: [I32, StorageThreads] -> StorageThreads =
     reverse_threads taken_reversed
   end;
 
-const list_rollout_threads: [StorageFiles, StorageQuery] -> StoragePage = (
+const list_rollout_threads: (StorageFiles, StorageQuery) -> StoragePage = (
   snapshot: StorageFiles,
   query: StorageQuery,
 ) => do
@@ -570,7 +570,7 @@ const list_rollout_threads: [StorageFiles, StorageQuery] -> StoragePage = (
   page
 end;
 
-const find_rollout_path_by_id: [StorageFiles, Text] -> StorageTextOption = (
+const find_rollout_path_by_id: (StorageFiles, Text) -> StorageTextOption = (
   snapshot: StorageFiles,
   thread_id: Text,
 ) => do
@@ -603,7 +603,7 @@ const find_rollout_path_by_id: [StorageFiles, Text] -> StorageTextOption = (
   result
 end;
 
-const rollout_path: [Text, Text, Text] -> StorageTextOption = (
+const rollout_path: (Text, Text, Text) -> StorageTextOption = (
   codex_home: Text,
   timestamp: Text,
   thread_id: Text,
@@ -611,15 +611,15 @@ const rollout_path: [Text, Text, Text] -> StorageTextOption = (
   if text_length timestamp < 19 then
     StorageTextOption.None()
   else
-    let year = text_slice [timestamp, 0, 4];
-    let month = text_slice [timestamp, 5, 7];
-    let day = text_slice [timestamp, 8, 10];
+    let year = text_slice (timestamp, 0, 4);
+    let month = text_slice (timestamp, 5, 7);
+    let day = text_slice (timestamp, 8, 10);
     let filename = "rollout-" <> timestamp <> "-" <> thread_id <> ".jsonl";
-    let dated = path_join [
-      path_join [path_join [path_join [codex_home, "sessions"], year], month],
+    let dated = path_join (
+      path_join (path_join (path_join (codex_home, "sessions"), year), month),
       day,
-    ];
-    StorageTextOption.Some(path_join [dated, filename])
+    );
+    StorageTextOption.Some(path_join (dated, filename))
   end;
 end;
 
@@ -627,13 +627,13 @@ const is_rollout_path: Text -> Bool = (path: Text) => do
   let name_start = 0;
 
   for index in 0..text_length path do
-    if text_slice [path, index, index + 1] == "/" then
+    if text_slice (path, index, index + 1) == "/" then
       name_start = index + 1
     end;
   end
 
-  let name = text_slice [path, name_start, text_length path];
-  text_starts_with [name, "rollout-"] && text_ends_with [name, ".jsonl"]
+  let name = text_slice (path, name_start, text_length path);
+  text_starts_with (name, "rollout-") && text_ends_with (name, ".jsonl")
 end;
 
 return {

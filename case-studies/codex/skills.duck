@@ -55,7 +55,7 @@ const errors = comptime list CatalogError;
 const roots = comptime list CatalogRoot;
 const dependencies = comptime list CatalogDependency;
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 const prepend_text_value = (value: Text, values: CatalogTexts) => texts.prepend(value, values);
 const append_text_values = (left: CatalogTexts, right: CatalogTexts) => texts.append(left, right);
 const append_document = (values: CatalogDocuments, document: CatalogDocument) => documents.append(
@@ -63,7 +63,7 @@ const append_document = (values: CatalogDocuments, document: CatalogDocument) =>
   documents.singleton(document),
 );
 
-let rec text_values_contain: [CatalogTexts, Text] -> Bool =
+let rec text_values_contain: (CatalogTexts, Text) -> Bool =
   (values: CatalogTexts, expected: Text) => do
     if let #Cons node = values then
       let [value, tail] = node;
@@ -73,7 +73,7 @@ let rec text_values_contain: [CatalogTexts, Text] -> Bool =
     end;
   end;
 
-let rec text_value_count: [CatalogTexts, Text] -> I32 = (values: CatalogTexts, expected: Text) => do
+let rec text_value_count: (CatalogTexts, Text) -> I32 = (values: CatalogTexts, expected: Text) => do
   if let #Cons node = values then
     let [value, tail] = node;
     let rest = text_value_count(tail, expected);
@@ -83,7 +83,7 @@ let rec text_value_count: [CatalogTexts, Text] -> I32 = (values: CatalogTexts, e
   end;
 end;
 
-let rec snapshot_file: [CatalogSnapshotEntries, Text] -> CatalogTextOption = (
+let rec snapshot_file: (CatalogSnapshotEntries, Text) -> CatalogTextOption = (
   entries: CatalogSnapshotEntries,
   path: Text,
 ) => do
@@ -102,7 +102,7 @@ let rec snapshot_file: [CatalogSnapshotEntries, Text] -> CatalogTextOption = (
 end;
 
 const path_has_hidden_component_below = (path: Text, root: Text) => do
-  let relative_start = if text_starts_with [path, append_text(root, "/")] then text_length root + 1
+  let relative_start = if text_starts_with (path, append_text(root, "/")) then text_length root + 1
   else 0 end;
 
   let hidden = false;
@@ -110,8 +110,8 @@ const path_has_hidden_component_below = (path: Text, root: Text) => do
 
   if component_start < text_length path then
     for index in component_start..text_length path do
-      if text_get [path, index] == 47 then
-        if index > component_start && text_get [path, component_start] == 46 then
+      if text_get (path, index) == 47 then
+        if index > component_start && text_get (path, component_start) == 46 then
           hidden = true
         end;
 
@@ -125,13 +125,13 @@ end;
 
 const path_depth_below = (path: Text, root: Text) => do
   let start =
-    if text_starts_with [path, append_text(root, "/")] then text_length root + 1 else 0 end;
+    if text_starts_with (path, append_text(root, "/")) then text_length root + 1 else 0 end;
 
   let depth = 0;
 
   if start < text_length path then
     for index in start..text_length path do
-      if text_get [path, index] == 47 then
+      if text_get (path, index) == 47 then
         depth = depth + 1
       end;
     end
@@ -262,7 +262,7 @@ const discover_skill_entry = (
     if ineligibility != 0 then
       state
     else
-      let metadata_path = path_join [path_join [path_parent path, "agents"], "openai.yaml"];
+      let metadata_path = path_join (path_join (path_parent path, "agents"), "openai.yaml");
       let metadata_yaml = snapshot_file(entries, metadata_path);
       let parsed: CatalogDocumentParse = parse_skill_document(
         path,
@@ -288,7 +288,7 @@ const discover_skill_entry = (
   end;
 end;
 
-let rec discover_skill_entries: [
+let rec discover_skill_entries: (
   CatalogSnapshotEntries,
   CatalogSnapshotEntries,
   Text,
@@ -301,7 +301,7 @@ let rec discover_skill_entries: [
   I32,
   I32,
   CatalogDiscoveryState,
-] -> CatalogDiscoveryProgress = (
+) -> CatalogDiscoveryProgress = (
   entries: CatalogSnapshotEntries,
   all_entries: CatalogSnapshotEntries,
   root_path: Text,
@@ -358,7 +358,7 @@ let rec discover_skill_entries: [
   end;
 end;
 
-let rec discover_skill_roots: [
+let rec discover_skill_roots: (
   CatalogRoots,
   CatalogTexts,
   CatalogProductOption,
@@ -366,7 +366,7 @@ let rec discover_skill_roots: [
   I32,
   I32,
   CatalogDiscoveryState,
-] -> CatalogDiscoveryProgress = (
+) -> CatalogDiscoveryProgress = (
   snapshots: CatalogRoots,
   disabled_paths: CatalogTexts,
   product: CatalogProductOption,
@@ -442,7 +442,7 @@ const document_path = (document: CatalogDocument) => do
   path
 end;
 
-let rec documents_contain_path: [CatalogDocuments, Text] -> Bool = (
+let rec documents_contain_path: (CatalogDocuments, Text) -> Bool = (
   values: CatalogDocuments,
   path: Text,
 ) => do
@@ -454,7 +454,7 @@ let rec documents_contain_path: [CatalogDocuments, Text] -> Bool = (
   end;
 end;
 
-let rec documents_contain_name: [CatalogDocuments, Text] -> Bool = (
+let rec documents_contain_name: (CatalogDocuments, Text) -> Bool = (
   values: CatalogDocuments,
   name: Text,
 ) => do
@@ -466,7 +466,7 @@ let rec documents_contain_name: [CatalogDocuments, Text] -> Bool = (
   end;
 end;
 
-let rec document_name_count: [CatalogDocuments, Text] -> I32 = (
+let rec document_name_count: (CatalogDocuments, Text) -> I32 = (
   values: CatalogDocuments,
   name: Text,
 ) => do
@@ -479,7 +479,7 @@ let rec document_name_count: [CatalogDocuments, Text] -> I32 = (
   end;
 end;
 
-let rec find_document_path: [CatalogDocuments, Text] -> CatalogDocumentOption = (
+let rec find_document_path: (CatalogDocuments, Text) -> CatalogDocumentOption = (
   values: CatalogDocuments,
   path: Text,
 ) => do
@@ -507,29 +507,29 @@ const mention_name_char = (byte: I32) => do
   end;
 end;
 
-let rec mention_name_end: [Text, I32] -> I32 = (input: Text, index: I32) => do
+let rec mention_name_end: (Text, I32) -> I32 = (input: Text, index: I32) => do
   if index < text_length input then
-    if mention_name_char(text_get [input, index]) then mention_name_end(input, index + 1) else
+    if mention_name_char(text_get (input, index)) then mention_name_end(input, index + 1) else
       index end;
   else
     index
   end;
 end;
 
-let rec extract_plain_skill_mentions_from: [Text, I32, CatalogTexts] -> CatalogTexts = (
+let rec extract_plain_skill_mentions_from: (Text, I32, CatalogTexts) -> CatalogTexts = (
   input: Text,
   index: I32,
   mentioned_reversed: CatalogTexts,
 ) => do
   if index >= text_length input then
     mentioned_reversed
-  else text_get [input, index] == 36 then
+  else text_get (input, index) == 36 then
     let start = index + 1;
 
     if start < text_length input then
-      if mention_name_char(text_get [input, start]) then
+      if mention_name_char(text_get (input, start)) then
         let mention_end = mention_name_end(input, start + 1);
-        let name = text_slice [input, start, mention_end];
+        let name = text_slice (input, start, mention_end);
         let next_mentions: CatalogTexts = if text_values_contain(mentioned_reversed, name) then
           mentioned_reversed else prepend_text_value(
             name,
@@ -551,8 +551,8 @@ const extract_plain_skill_mentions = (input: Text) => do
   texts.reverse(extract_plain_skill_mentions_from(input, 0, texts.empty()))
 end;
 
-let rec select_structured_skills: [CatalogDocuments, CatalogStructuredSelections,
-  CatalogDocuments] -> CatalogDocuments = (
+let rec select_structured_skills: (CatalogDocuments, CatalogStructuredSelections,
+  CatalogDocuments) -> CatalogDocuments = (
     available: CatalogDocuments,
     structured: CatalogStructuredSelections,
     selected: CatalogDocuments,
@@ -575,7 +575,7 @@ let rec select_structured_skills: [CatalogDocuments, CatalogStructuredSelections
     end;
   end;
 
-let rec collect_input_mentions: [CatalogTexts, CatalogTexts] -> CatalogTexts = (
+let rec collect_input_mentions: (CatalogTexts, CatalogTexts) -> CatalogTexts = (
   inputs: CatalogTexts,
   mentioned: CatalogTexts,
 ) => do
@@ -587,13 +587,13 @@ let rec collect_input_mentions: [CatalogTexts, CatalogTexts] -> CatalogTexts = (
   end;
 end;
 
-let rec select_mentioned_skills: [
+let rec select_mentioned_skills: (
   CatalogDocuments,
   CatalogDocuments,
   CatalogTexts,
   CatalogTexts,
   CatalogDocuments,
-] -> CatalogDocuments = (
+) -> CatalogDocuments = (
   remaining: CatalogDocuments,
   available: CatalogDocuments,
   mentioned: CatalogTexts,

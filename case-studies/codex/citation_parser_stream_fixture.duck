@@ -60,10 +60,10 @@ let fourth: FixtureObservation = observe_chunk(
 let [parser_4, visible_4, count_4, length_4, checksum_4] = fourth;
 let fifth: FixtureObservation = observe_chunk(push_citation_chunk(parser_4, "ne"));
 let [_, visible_5, count_5, length_5, checksum_5] = fifth;
-let visible = text_append [
+let visible = text_append (
   visible_1,
-  text_append [visible_2, text_append [visible_3, text_append [visible_4, visible_5]]],
-];
+  text_append (visible_2, text_append (visible_3, text_append (visible_4, visible_5))),
+);
 let citation_count = count_1 + count_2 + count_3 + count_4 + count_5;
 let citation_length = length_1 + length_2 + length_3 + length_4 + length_5;
 let citation_checksum = checksum_1 + checksum_2 + checksum_3 + checksum_4 + checksum_5;

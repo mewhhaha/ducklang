@@ -8,7 +8,7 @@ type WaitEnvironmentCallEnvironments = WaitForEnvironments
 type WaitEnvironmentCallPayload = WaitForEnvironmentPayload
 type WaitEnvironmentCallPlan = WaitForEnvironmentPlan
 
-let plan_wait_for_environment_call: [WaitEnvironmentCallPayload, WaitEnvironmentCallEnvironments] ->
+let plan_wait_for_environment_call: (WaitEnvironmentCallPayload, WaitEnvironmentCallEnvironments) ->
   WaitEnvironmentCallPlan = (
     payload: WaitEnvironmentCallPayload,
     environments: WaitEnvironmentCallEnvironments,

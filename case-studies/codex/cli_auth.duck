@@ -14,7 +14,7 @@ type AuthFacts = CodexLoginFacts
 
 type AuthFactsResult = Result Text AuthFacts
 
-let rec scan_login_options_from: [AuthArgs, AuthFacts] -> AuthFactsResult = (
+let rec scan_login_options_from: (AuthArgs, AuthFacts) -> AuthFactsResult = (
   args: AuthArgs,
   facts: AuthFacts,
 ) => do

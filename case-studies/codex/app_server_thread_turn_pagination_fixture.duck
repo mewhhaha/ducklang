@@ -20,18 +20,18 @@ type FixtureTurns = AppServerTurns
 type FixturePageResult = AppServerThreadTurnsCursorPageResult
 type FixtureCursorOption = AppServerThreadTurnsCursorOption
 
-const message: [Text, Text] -> FixtureJson = (item_type: Text, id: Text) => do
+const message: (Text, Text) -> FixtureJson = (item_type: Text, id: Text) => do
   let fields = json_object_empty();
   fields = json_object_prepend("id", json_string id, fields)
   fields = json_object_prepend("type", json_string item_type, fields)
   json_object fields
 end;
 
-const turn: [Text, FixtureJsonArray] -> FixtureTurn = (id: Text, items: FixtureJsonArray) => do
+const turn: (Text, FixtureJsonArray) -> FixtureTurn = (id: Text, items: FixtureJsonArray) => do
   [id, items, #Full, #Completed, #None, #None, #None, #None]
 end;
 
-const item_has_type: [FixtureJson, Text] -> Bool = (item: FixtureJson, expected: Text) => do
+const item_has_type: (FixtureJson, Text) -> Bool = (item: FixtureJson, expected: Text) => do
   if let #Object fields = item then
     if let #Found value = json_object_get("type", fields) then
       if let #String item_type = value then item_type == expected else false end;
@@ -51,13 +51,13 @@ let third: FixtureTurn = turn("turn-3", third_items);
 let history: FixtureTurns = #Cons ([first, #Cons ([second, #Cons ([third, #Nil])])]);
 
 let score = 0;
-let ascending: FixturePageResult = paginate_thread_turns [
+let ascending: FixturePageResult = paginate_thread_turns (
   history,
   #None,
   2,
   #Ascending,
   #Summary,
-];
+);
 let next_cursor: FixtureCursorOption = #None;
 if let #Ok page = ascending then
   let [page_turns, next, backwards] = page;
@@ -103,13 +103,13 @@ if let #Ok page = ascending then
   end;
 end;
 
-let second_page: FixturePageResult = paginate_thread_turns [
+let second_page: FixturePageResult = paginate_thread_turns (
   history,
   next_cursor,
   2,
   #Ascending,
   #Full,
-];
+);
 if let #Ok page = second_page then
   let [page_turns, next, backwards] = page;
   if let #Cons node = page_turns then
@@ -128,13 +128,13 @@ if let #Ok page = second_page then
   end;
 end;
 
-let descending: FixturePageResult = paginate_thread_turns [
+let descending: FixturePageResult = paginate_thread_turns (
   history,
   #None,
   2,
   #Descending,
   #NotLoaded,
-];
+);
 if let #Ok page = descending then
   let [page_turns, _, _] = page;
   if let #Cons first_node = page_turns then

@@ -13,7 +13,7 @@ type RouteSend = AppServerSend
 const route_app_server_request: RouteInput -> RoutePlan = (route: RouteInput) => do
   let [session, id, method, params] = route;
 
-  if text_starts_with [method, "account/"] then
+  if text_starts_with (method, "account/") then
     return #Route route;
   end;
 

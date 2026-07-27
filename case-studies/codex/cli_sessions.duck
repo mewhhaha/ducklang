@@ -49,7 +49,7 @@ const prepend_text = (value: Text, values: SessionTexts) => do
   result
 end;
 
-let rec reverse_texts_from: [SessionTexts, SessionTexts] -> SessionTexts = (
+let rec reverse_texts_from: (SessionTexts, SessionTexts) -> SessionTexts = (
   values: SessionTexts,
   reversed: SessionTexts,
 ) => do
@@ -82,7 +82,7 @@ let session_known_flag: Text -> Bool = (argument: Text) => do
     == "--search" || argument == "--no-alt-screen" || argument == "--strict-config"
 end;
 
-let rec scan_session_flags_from: [SessionArgs, SessionFlagFacts, Bool] -> SessionFlagFactsResult = (
+let rec scan_session_flags_from: (SessionArgs, SessionFlagFacts, Bool) -> SessionFlagFactsResult = (
   args: SessionArgs,
   facts,
   options_done: Bool,
@@ -155,7 +155,7 @@ let scan_session_flags: SessionArgs -> SessionFlagFactsResult = (args: SessionAr
   scan_session_flags_from(args, facts, false)
 end;
 
-let rec scan_session_scalars_from: [SessionArgs, SessionScalarFacts, Bool] ->
+let rec scan_session_scalars_from: (SessionArgs, SessionScalarFacts, Bool) ->
   SessionScalarFactsResult = (
     args: SessionArgs,
     facts,
@@ -258,7 +258,7 @@ let scan_session_scalars: SessionArgs -> SessionScalarFactsResult = (args: Sessi
   scan_session_scalars_from(args, facts, false)
 end;
 
-let rec prepend_texts_reversed: [SessionTexts, SessionTexts] -> SessionTexts = (
+let rec prepend_texts_reversed: (SessionTexts, SessionTexts) -> SessionTexts = (
   values: SessionTexts,
   reversed: SessionTexts,
 ) => do
@@ -270,7 +270,7 @@ let rec prepend_texts_reversed: [SessionTexts, SessionTexts] -> SessionTexts = (
   end;
 end;
 
-let rec scan_session_lists_from: [SessionArgs, SessionListFacts, Bool] -> SessionListFactsResult = (
+let rec scan_session_lists_from: (SessionArgs, SessionListFacts, Bool) -> SessionListFactsResult = (
   args: SessionArgs,
   facts,
   options_done: Bool,
@@ -337,7 +337,7 @@ let scan_session_lists: SessionArgs -> SessionListFactsResult = (args: SessionAr
   end;
 end;
 
-let rec scan_session_positionals_from: [SessionArgs, SessionTexts, Bool] ->
+let rec scan_session_positionals_from: (SessionArgs, SessionTexts, Bool) ->
   SessionPositionalsResult = (
     args: SessionArgs,
     reversed: SessionTexts,

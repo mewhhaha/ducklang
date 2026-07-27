@@ -10,14 +10,14 @@ type PatchBoundaryResult = ApplyPatchLinesResult
 const texts = comptime list Text;
 
 let normalize_apply_patch_lines: Text -> PatchBoundaryResult = (patch: Text) => do
-  let lines: PatchBoundaryTexts = text_split [text_trim_ascii_whitespace patch, "\n"];
+  let lines: PatchBoundaryTexts = text_split (text_trim_ascii_whitespace patch, "\n");
   let line_count = texts.length(lines);
 
   if line_count >= 4 then
     let first = texts.nth_or("", 0, lines);
     let last = texts.nth_or("", line_count - 1, lines);
     let heredoc = first == "<<EOF" || first == "<<'EOF'" || first == "<<\"EOF\"";
-    if heredoc && text_ends_with [last, "EOF"] then
+    if heredoc && text_ends_with (last, "EOF") then
       lines = texts.take(line_count - 2, texts.drop(1, lines))
       line_count = texts.length(lines)
     end;

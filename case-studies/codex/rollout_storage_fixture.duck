@@ -15,7 +15,7 @@ type FixtureQuery = RolloutThreadQuery
 type FixturePage = RolloutThreadPage
 
 const empty_files: () -> FixtureFiles = () => #Nil;
-const prepend_file: [FixtureFile, FixtureFiles] -> FixtureFiles = (
+const prepend_file: (FixtureFile, FixtureFiles) -> FixtureFiles = (
   file: FixtureFile,
   tail: FixtureFiles,
 ) => #Cons ([file, tail]);

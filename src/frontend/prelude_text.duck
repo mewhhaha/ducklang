@@ -41,7 +41,7 @@ const text_trim_end_ascii_whitespace = (text: Text) => do
     if trim_end <= 0 then
       break;
     end;
-    let byte = text_get [text, trim_end - 1];
+    let byte = text_get (text, trim_end - 1);
     if byte == 9 || byte == 10 || byte == 11 || byte == 12 || byte == 13 || byte == 32 then
       trim_end = trim_end - 1
     else
@@ -49,7 +49,7 @@ const text_trim_end_ascii_whitespace = (text: Text) => do
     end;
   end;
 
-  text_slice [text, 0, trim_end]
+  text_slice (text, 0, trim_end)
 end;
 
 const text_join = (values: List Text, separator: Text) => do
@@ -64,7 +64,7 @@ const text_join = (values: List Text, separator: Text) => do
         joined = value
         first = false
       else
-        joined = text_append [joined, text_append [separator, value]]
+        joined = text_append (joined, text_append (separator, value))
       end;
       current = tail
     else

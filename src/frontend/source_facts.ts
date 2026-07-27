@@ -208,6 +208,7 @@ export type SourceTypeFact = {
   name: string;
   resolved_name: string;
   nominal: string | undefined;
+  duck_member?: { declaration: string; member: string };
   type_arguments?: SourceTypeFact[];
   call_params: (SourceTypeFact | undefined)[] | undefined;
   call_result: SourceTypeFact | undefined;
@@ -588,6 +589,8 @@ function runtime_prelude_intrinsic(name: string): string | undefined {
     case "cast":
       return "@cast";
     case "append":
+      return "@append";
+    case "append_bytes":
       return "@append";
     case "length":
       return "@len";
@@ -2224,6 +2227,7 @@ class SourceFactRecorder {
       expr.func.name === "@integer.wrap" ||
       expr.func.name === "@len" || expr.func.name === "@get" ||
       expr.func.name === "@slice" || expr.func.name === "@append" ||
+      expr.func.name === "@panic" ||
       expr.func.name === "@Bytes.generate" ||
       expr.func.name === "@Utf8.encode" ||
       expr.func.name === "@Utf8.decode" ||
@@ -2285,7 +2289,10 @@ class SourceFactRecorder {
 
       if (imported_runtime || bundled_prelude) {
         intrinsic = runtime_prelude_intrinsic(entry.label);
-      } else if (entry.label === "cast" || entry.label === "slice") {
+      } else if (
+        entry.label === "append_bytes" || entry.label === "cast" ||
+        entry.label === "slice"
+      ) {
         intrinsic = runtime_prelude_intrinsic(entry.label);
       }
 
@@ -3904,7 +3911,12 @@ class SourceFactRecorder {
       }
     } else if (declaration.tag === "duck") {
       for (const member of declaration.members) {
-        members.set(member.name, named_type("unknown"));
+        const member_type = named_type("unknown");
+        member_type.duck_member = {
+          declaration: declaration.name,
+          member: member.name,
+        };
+        members.set(member.name, member_type);
       }
     } else if (declaration.tag === "record") {
       for (const field of declaration.fields) {
@@ -4350,7 +4362,10 @@ class SourceFactRecorder {
         for (const item of type_expr.param.items) {
           params.push(this.resolve_type_expr(item, substitutions, resolving));
         }
-      } else if (type_expr.param.tag === "product") {
+      } else if (
+        type_expr.param.tag === "product" &&
+        type_expr.param.value_pack === true
+      ) {
         for (const entry of this.type_product_entries(type_expr.param)) {
           params.push(
             this.resolve_type_expr(entry.type_expr, substitutions, resolving),
@@ -4944,6 +4959,10 @@ function builtin_call_result(
   name: string,
   args: (SourceTypeFact | undefined)[],
 ): SourceTypeFact | undefined {
+  if (name === "@panic" && args.length === 1) {
+    return named_type("Never");
+  }
+
   if (name === "@type_of" && args.length === 1) {
     const represented = args[0];
 
@@ -6274,6 +6293,7 @@ function clone_source_type(
   result.modality = source.modality;
   result.recursive_inference = source.recursive_inference;
   result.positional_fields = source.positional_fields;
+  result.duck_member = source.duck_member;
   copied.set(source, result);
 
   if (source.type_arguments !== undefined) {

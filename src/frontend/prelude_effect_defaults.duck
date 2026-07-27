@@ -53,7 +53,7 @@ extend Option {
   .order = _ => 100,
 }
 
-const deterministic_clock = [start: I64, step: I64] => do
+const deterministic_clock = (start: I64, step: I64) => do
   let wall_time = start;
   let monotonic_time = 0i64;
   handler Clock {
@@ -71,14 +71,14 @@ const deterministic_clock = [start: I64, step: I64] => do
   }
 end;
 
-const handle_random = [next_i32, next_f32, random_bytes] => handler Random {
+const handle_random = (next_i32, next_f32, random_bytes) => handler Random {
   next_i32: (!resume) => !resume(next_i32()),
   next_f32: (!resume) => !resume(next_f32()),
   bytes: (length, !resume) => !resume(random_bytes length),
   return: value => value,
 };
 
-const handle_console = [read_line, write, write_line] => handler Console {
+const handle_console = (read_line, write, write_line) => handler Console {
   read_line: (!resume) => !resume(read_line()),
   write: (text, !resume) => do
     write text
@@ -96,7 +96,7 @@ const handle_environment = lookup => handler Environment {
   return: value => value,
 };
 
-const handle_resource = [acquire, release] => handler Resource {
+const handle_resource = (acquire, release) => handler Resource {
   acquire: (!resume) => !resume(acquire()),
   release: (resource, !resume) => do
     release resource
@@ -118,7 +118,7 @@ const handle_validation = on_invalid => handler Validation {
   return: value => value,
 };
 
-const handle_async = [spawn, await_task, yield_task, cancel] => handler Async {
+const handle_async = (spawn, await_task, yield_task, cancel) => handler Async {
   spawn: (task, !resume) => !resume(spawn task),
   await: (task, !resume) => !resume(await_task task),
   yield: (!resume) => do
@@ -132,7 +132,7 @@ const handle_async = [spawn, await_task, yield_task, cancel] => handler Async {
   return: value => value,
 };
 
-const handle_channel = [send, receive, close] => handler Channel {
+const handle_channel = (send, receive, close) => handler Channel {
   send: (value, !resume) => do
     send value
     !resume(())
@@ -158,7 +158,7 @@ const single_slot_channel = initial => do
   }
 end;
 
-const handle_mutex = [lock, unlock] => handler Mutex {
+const handle_mutex = (lock, unlock) => handler Mutex {
   lock: (!resume) => !resume(lock()),
   unlock: (value, !resume) => do
     unlock value
@@ -179,7 +179,7 @@ const sequential_mutex = initial => do
   }
 end;
 
-const handle_semaphore = [acquire, release] => handler Semaphore {
+const handle_semaphore = (acquire, release) => handler Semaphore {
   acquire: (!resume) => do
     acquire()
     !resume(())
@@ -206,7 +206,7 @@ const counting_semaphore = (initial: I32) => do
   }
 end;
 
-const handle_task_group = [spawn, cancel_all, await_all] => handler TaskGroup {
+const handle_task_group = (spawn, cancel_all, await_all) => handler TaskGroup {
   spawn: (task, !resume) => !resume(spawn task),
   cancel_all: (!resume) => do
     cancel_all()
@@ -219,10 +219,10 @@ const handle_task_group = [spawn, cancel_all, await_all] => handler TaskGroup {
   return: value => value,
 };
 
-const handle_stm = [read, write, retry, or_else] => handler Stm {
+const handle_stm = (read, write, retry, or_else) => handler Stm {
   read: (address, !resume) => !resume(read address),
   write: (address, value, !resume) => do
-    write [address, value]
+    write (address, value)
     !resume(())
   end,
   retry: (!resume) => do

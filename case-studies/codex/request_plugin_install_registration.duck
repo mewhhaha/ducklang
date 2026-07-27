@@ -17,7 +17,7 @@ const request_plugin_install_tool_name: () -> RequestPluginName = () => [
   "request_plugin_install",
 ];
 
-let request_plugin_install_definitions: [Bool, Bool] -> RequestPluginDefinitions = (
+let request_plugin_install_definitions: (Bool, Bool) -> RequestPluginDefinitions = (
   enabled: Bool,
   has_candidates: Bool,
 ) => do
@@ -36,7 +36,7 @@ let request_plugin_install_definitions: [Bool, Bool] -> RequestPluginDefinitions
   end;
 end;
 
-let request_plugin_install_specs: [Bool, Bool, RequestPluginPresentation] -> RequestPluginSpecs = (
+let request_plugin_install_specs: (Bool, Bool, RequestPluginPresentation) -> RequestPluginSpecs = (
   enabled: Bool,
   has_candidates: Bool,
   presentation: RequestPluginPresentation,

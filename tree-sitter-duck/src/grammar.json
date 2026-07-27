@@ -2502,6 +2502,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "case_function_expression"
+        },
+        {
+          "type": "SYMBOL",
           "name": "case_expression"
         },
         {
@@ -3918,6 +3922,55 @@
             "content": {
               "type": "SYMBOL",
               "name": "block"
+            }
+          }
+        ]
+      }
+    },
+    "case_function_expression": {
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "STRING",
+            "value": "case"
+          },
+          {
+            "type": "STRING",
+            "value": "=>"
+          },
+          {
+            "type": "STRING",
+            "value": "of"
+          },
+          {
+            "type": "FIELD",
+            "name": "arm",
+            "content": {
+              "type": "SYMBOL",
+              "name": "case_arm"
+            }
+          },
+          {
+            "type": "REPEAT",
+            "content": {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": ","
+                },
+                {
+                  "type": "FIELD",
+                  "name": "arm",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "case_arm"
+                  }
+                }
+              ]
             }
           }
         ]

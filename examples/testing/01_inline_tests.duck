@@ -3,7 +3,7 @@ module () where
 const { .test } = import "duck:prelude/attributes" ();
 const { .assert, .assert_false } = import "duck:prelude/testing" ();
 
-const add: [I32, I32] -> I32 = (left, right) => left + right;
+const add: (I32, I32) -> I32 = (left, right) => left + right;
 
 @[test]
 const addition_returns_the_sum: () -> Unit = () => do

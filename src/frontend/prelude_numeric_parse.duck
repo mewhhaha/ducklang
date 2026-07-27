@@ -23,7 +23,7 @@ const parse_u32_decimal: Text -> DecimalU32Result = text => do
     if index >= text_length text then
       break;
     end;
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
 
     if byte < 48 || byte > 57 then
       valid = false
@@ -53,7 +53,7 @@ const parse_i64_decimal: Text -> DecimalI64Result = text => do
   if text == "-9223372036854775808" then
     #Ok (-9223372036854775808i64)
   else
-    let negative = text_length text > 0 && text_get [text, 0] == 45;
+    let negative = text_length text > 0 && text_get (text, 0) == 45;
     let start = if negative then 1 else 0 end;
     let valid = start < text_length text;
     let exceeds_i64 = false;
@@ -64,7 +64,7 @@ const parse_i64_decimal: Text -> DecimalI64Result = text => do
       if index >= text_length text then
         break;
       end;
-      let byte = text_get [text, index];
+      let byte = text_get (text, index);
 
       if byte < 48 || byte > 57 then
         valid = false
@@ -100,7 +100,7 @@ const parse_u64_decimal_text: Text -> DecimalU64TextResult = text => do
     if index >= text_length text then
       break;
     end;
-    let byte = text_get [text, index];
+    let byte = text_get (text, index);
     if byte < 48 || byte > 57 then
       valid = false
     else byte != 48 && first_nonzero == text_length text then
@@ -112,15 +112,15 @@ const parse_u64_decimal_text: Text -> DecimalU64TextResult = text => do
   if !(valid) then
     #Err "must be a non-negative integer"
   else
-    let canonical = if first_nonzero == text_length text then "0" else text_slice [
+    let canonical = if first_nonzero == text_length text then "0" else text_slice (
       text,
       first_nonzero,
       text_length text,
-    ] end;
-    if text_length canonical > 20 || text_length canonical == 20 && text_less_than [
+    ) end;
+    if text_length canonical > 20 || text_length canonical == 20 && text_less_than (
       "18446744073709551615",
       canonical,
-    ] then
+    ) then
       #Err "number exceeds U64"
     else
       #Ok canonical

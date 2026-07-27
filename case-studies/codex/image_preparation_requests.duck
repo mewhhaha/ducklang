@@ -7,7 +7,7 @@ type CollectedImageRequest = ImagePreparationPlan
 type CollectedImageRequests = List CollectedImageRequest
 type CollectedImageRequestNode = ListNode CollectedImageRequest
 
-const collect_image_requests_from_contents: [HistoryContents, CollectedImageRequests] ->
+const collect_image_requests_from_contents: (HistoryContents, CollectedImageRequests) ->
   CollectedImageRequests = (
     contents,
     reversed,

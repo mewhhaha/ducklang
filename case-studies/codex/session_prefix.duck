@@ -35,7 +35,7 @@ let format_subagent_notification_message =
       <> ",\"status\":" <> agent_status_json status <> "}\n</subagent_notification>"
   end;
 
-let format_inter_agent_completion_message: [Text, Text, SessionPrefixStatus] ->
+let format_inter_agent_completion_message: (Text, Text, SessionPrefixStatus) ->
   SessionPrefixTextOption = (
     task_name: Text,
     sender: Text,

@@ -10,7 +10,7 @@ type FixtureEnvironments = WaitForEnvironments
 type FixtureHostResponse = WaitForEnvironmentHostResponse
 
 // The named boundary keeps the execution result under one native owner.
-const fixture_failure_score: [Text, FixtureHostResponse] -> I32 = (
+const fixture_failure_score: (Text, FixtureHostResponse) -> I32 = (
   environment_id: Text,
   response: FixtureHostResponse,
 ) => do

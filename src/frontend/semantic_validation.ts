@@ -121,7 +121,10 @@ export function validate_frontend_semantics(
   const const_env = create_env();
 
   for (const declaration of declarations) {
-    if (declaration.tag !== "type" && declaration.tag !== "record") {
+    if (
+      declaration.tag !== "duck" &&
+      declaration.tag !== "type" && declaration.tag !== "record"
+    ) {
       continue;
     }
 
@@ -2336,10 +2339,10 @@ function validate_call_arguments(
       expr.arg.value_pack === true;
 
     if (expects_pack !== received_pack) {
-      let expected_syntax = "a tuple argument written `f([a, b])`";
+      let expected_syntax = "a stored product `[a, b]`, as in `f [a, b]`";
 
       if (expects_pack) {
-        expected_syntax = "an argument pack written `f(a, b)`";
+        expected_syntax = "a transient pack `(a, b)`, as in `f (a, b)`";
       }
 
       diagnostics.push(source_diagnostic(
@@ -3564,6 +3567,13 @@ function infer_type(
   }
 
   if (expr.tag === "app") {
+    if (
+      expr.func.tag === "var" && expr.func.name === "@panic" &&
+      !env.bindings.has(expr.func.name)
+    ) {
+      return { tag: "never" };
+    }
+
     if (
       expr.func.tag === "var" &&
       (expr.func.name === "@cast" || expr.func.name === "@seal" ||
@@ -4894,7 +4904,10 @@ function arrow_parameter_types(
     return annotation.param.items;
   }
 
-  if (annotation.param.tag === "product") {
+  if (
+    annotation.param.tag === "product" &&
+    annotation.param.value_pack === true
+  ) {
     try {
       return expanded_type_product_entries(
         annotation.param,

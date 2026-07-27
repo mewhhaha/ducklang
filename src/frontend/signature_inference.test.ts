@@ -15,7 +15,7 @@ function binding_signature(statement: Stmt | undefined): string | undefined {
 
 Deno.test("declared polymorphic signatures contextualize lambda parameters", () => {
   const source = parse_source(`
-const choose: forall left right.[left, right] -> left = (first, second) => first;
+const choose: forall left right.(left, right) -> left = (first, second) => first;
 choose(42, true)
 `);
   const choose = source.statements[0];

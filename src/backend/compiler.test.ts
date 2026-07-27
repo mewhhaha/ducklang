@@ -1,4 +1,4 @@
-import { assert_equals } from "../../src/assert.ts";
+import { assert_equals, assert_throws } from "../../src/assert.ts";
 import { beginWasmArena, StorageClass, type WasmHostValue } from "gpufuck";
 import { success_examples } from "../../examples/manifest.ts";
 import { parse_source } from "../../src/frontend/parser.ts";
@@ -23,6 +23,115 @@ Deno.test("Duck compiler lowers Duck numeric types", () => {
   assert_equals(i64_module.nodeCount, 3);
   assert_equals(f32_module.nodeCount, 3);
   assert_equals(f64_module.nodeCount, 3);
+});
+
+Deno.test("Duck compiler composes union cases inside product patterns", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+type MaybeI32 = | #Empty | #Value I32
+
+let combine: (MaybeI32, MaybeI32) -> I32 =
+  (left, right) => case (left, right) of
+    (#Empty, #Value value) => value,
+    (#Value value, #Empty) => value,
+    (#Value left_value, #Value right_value) if left_value < right_value => left_value + right_value,
+    _ => 0;
+
+let empty: MaybeI32 = #Empty;
+combine(empty, #Value 1) + combine(#Value 2, empty)
+  + combine(#Value 20, #Value 22)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 45 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler keeps stored products distinct from argument packs", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+let sum_product: [I32, I32] -> I32 = [left, right] => left + right;
+let sum_arguments: (I32, I32) -> I32 = (left, right) => left + right;
+sum_product [20, 1] + sum_arguments(20, 1)
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler executes target-directed From conversions", async () => {
+  const compiler = await DuckCompiler.create();
+
+  try {
+    const execution = await compiler.run(`
+const { .struct } = import "duck:prelude/types" ();
+const { .from } = import "duck:prelude/functional" ();
+
+type Box = struct { .value = I32 }
+
+extend Box {
+  .from = box => box.value,
+}
+
+let exact: [1, 2] = from (1, 2);
+let array: [I32; 2] = from (1, 2);
+let byte: U8 = from 1;
+let box: Box = [.value = 42];
+let custom: I32 = from box;
+let via_into: I32 = Into.into box;
+const convert = from;
+let via_alias: I32 = convert box;
+let accept_byte: U8 -> U8 = value => value;
+let contextual = accept_byte(from 1);
+let from = value => value + 1;
+let shadowed = from 1;
+
+exact[0] + exact[1] + array[0] + array[1] + byte + custom + via_into
+  + via_alias + contextual + shadowed
+`);
+
+    assert_equals(execution.value, { kind: "integer", value: 136 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects ambiguous and narrowing From conversions", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let converted = from 1;
+converted
+`),
+    "`from` requires a result type from an annotation or call context",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let converted: U8 = from 256;
+converted
+`),
+    "Integer literal 256 is out of range for U8",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(`
+const { .from } = import "duck:prelude/functional" ();
+let value: I32 = 1;
+let converted: U8 = from value;
+converted
+`),
+    "Missing duck satisfaction for From.from at I32",
+  );
 });
 
 Deno.test("Duck compiler executes float arithmetic after integer conversion", async () => {
@@ -328,9 +437,9 @@ if let #Accepted message = decision then if message == "yes" then 42  else  0 en
   }
 });
 
-Deno.test("Duck compiler applies binding signatures to value-pack parameters", () => {
+Deno.test("Duck compiler applies binding signatures to argument-pack parameters", () => {
   const module = encode_duck_module(`
-let add: [I32, I32] -> I32 = (left, right) => left + right;
+let add: (I32, I32) -> I32 = (left, right) => left + right;
 add(19, 23)
 `);
   assert_equals(module.definitionCount, 1);
@@ -3085,7 +3194,7 @@ Deno.test("Duck compiler passes template holes with their source types", async (
 
   try {
     const execution = await compiler.run(`
-let extract: [["answer: ", "!"], [I32]] -> I32 =
+let extract: (["answer: ", "!"], [I32]) -> I32 =
   (strings, values) => @len(strings[0]) + @len(strings[1]) + values[0];
 extract \`answer: {42}!\`
 `);

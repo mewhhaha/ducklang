@@ -9,11 +9,11 @@ type NestedPayload = CodeModeNestedToolPayload
 type NestedDispatch = CodeModeNestedToolDispatch
 type NestedPlan = CodeModeNestedToolPlan
 
-const reject_nested_tool_input: [ToolName, Text] -> NestedPlan = (tool_name, expectation) => do
+const reject_nested_tool_input: (ToolName, Text) -> NestedPlan = (tool_name, expectation) => do
   let [namespace, local_name] = tool_name;
-  let rendered_name = text_append [namespace, local_name];
+  let rendered_name = text_append (namespace, local_name);
   #RejectNestedTool (
-    text_append ["tool `", text_append [rendered_name, text_append ["` expects ", expectation]]]
+    text_append ("tool `", text_append (rendered_name, text_append ("` expects ", expectation)))
   )
 end;
 

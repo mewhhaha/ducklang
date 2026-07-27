@@ -17,7 +17,7 @@ const initial_turn_state: Text -> LifecycleState = (thread_id: Text) => do
   [thread_id, #None, #None, false]
 end;
 
-const submitted_turn: [LifecycleState, Text] -> LifecycleTransition = (
+const submitted_turn: (LifecycleState, Text) -> LifecycleTransition = (
   state: LifecycleState,
   turn_id: Text,
 ) => do
@@ -36,7 +36,7 @@ const submitted_turn: [LifecycleState, Text] -> LifecycleTransition = (
   [next, turn]
 end;
 
-let record_turn_started: [LifecycleState, Text, LifecycleI64Option] -> LifecycleTransitionResult = (
+let record_turn_started: (LifecycleState, Text, LifecycleI64Option) -> LifecycleTransitionResult = (
   state: LifecycleState,
   turn_id: Text,
   started_at: LifecycleI64Option,
@@ -72,7 +72,7 @@ let record_turn_started: [LifecycleState, Text, LifecycleI64Option] -> Lifecycle
   end;
 end;
 
-let plan_turn_interrupt: [LifecycleState, Text] -> LifecycleInterruptResult = (
+let plan_turn_interrupt: (LifecycleState, Text) -> LifecycleInterruptResult = (
   state: LifecycleState,
   turn_id: Text,
 ) => do
@@ -94,7 +94,7 @@ let plan_turn_interrupt: [LifecycleState, Text] -> LifecycleInterruptResult = (
   end;
 end;
 
-let plan_turn_steer: [LifecycleState, Text] -> LifecycleSteerResult = (
+let plan_turn_steer: (LifecycleState, Text) -> LifecycleSteerResult = (
   state: LifecycleState,
   expected_turn_id: Text,
 ) => do
@@ -113,14 +113,14 @@ let plan_turn_steer: [LifecycleState, Text] -> LifecycleSteerResult = (
   end;
 end;
 
-let record_turn_terminal: [
+let record_turn_terminal: (
   LifecycleState,
   Text,
   LifecycleTerminal,
   LifecycleJsonArray,
   LifecycleI64Option,
   LifecycleI64Option,
-] -> LifecycleTransitionResult = (
+) -> LifecycleTransitionResult = (
   state: LifecycleState,
   turn_id: Text,
   terminal: LifecycleTerminal,

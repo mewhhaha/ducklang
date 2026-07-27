@@ -1,4 +1,4 @@
-import type { FrontExpr, Param, Pattern, Stmt } from "../../frontend/ast.ts";
+import type { FrontExpr, Param, Stmt } from "../../frontend/ast.ts";
 import type { CoreExpr, CoreField, CoreParam, CoreTypeField } from "../ast.ts";
 import {
   type CoreFromSourceCtx,
@@ -154,14 +154,8 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
 
     case "lam": {
       const body_ctx = fork_core_from_source_ctx(ctx);
-      const flattened = flattened_product_function(expr);
-      let params = expr.params;
-      let body = expr.body;
-
-      if (flattened !== undefined) {
-        params = flattened.params;
-        body = flattened.body;
-      }
+      const params = expr.params;
+      const body = expr.body;
 
       for (const param of params) {
         body_ctx.aliases.set(param.name, param.name);
@@ -182,14 +176,8 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
 
     case "rec": {
       const body_ctx = fork_core_from_source_ctx(ctx);
-      const flattened = flattened_product_function(expr);
-      let params = expr.params;
-      let body = expr.body;
-
-      if (flattened !== undefined) {
-        params = flattened.params;
-        body = flattened.body;
-      }
+      const params = expr.params;
+      const body = expr.body;
 
       for (const param of params) {
         body_ctx.aliases.set(param.name, param.name);
@@ -364,7 +352,12 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
           if (annotation) {
             let parameter_types = [annotation.param];
 
-            if (annotation.param.tag === "product") {
+            if (annotation.param.tag === "tuple") {
+              parameter_types = annotation.param.items;
+            } else if (
+              annotation.param.tag === "product" &&
+              annotation.param.value_pack === true
+            ) {
               parameter_types = annotation.param.entries.map((entry) => {
                 return entry.type_expr;
               });
@@ -507,12 +500,13 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
         fields: expr.fields.map(core_type_field),
       };
 
-    case "struct_value":
+    case "struct_value": {
       return {
         tag: "struct_value",
-        type_expr: core_expr(expr.type_expr, ctx),
+        type_expr: core_runtime_type_expr(expr.type_expr, ctx),
         fields: expr.fields.map((field) => core_field(field, ctx)),
       };
+    }
 
     case "struct_update":
       return {
@@ -592,7 +586,7 @@ export function core_expr(expr: FrontExpr, ctx: CoreFromSourceCtx): CoreExpr {
       }
 
       if (expr.type_expr) {
-        type_expr = core_expr(expr.type_expr, ctx);
+        type_expr = core_runtime_type_expr(expr.type_expr, ctx);
       }
 
       return {
@@ -2665,94 +2659,6 @@ const core_product_builtin_names = new Set([
   "@slice",
 ]);
 
-function flattened_product_function(
-  expr: Extract<FrontExpr, { tag: "lam" | "rec" }>,
-): { params: Param[]; body: FrontExpr } | undefined {
-  const pattern = expr.pattern;
-  const packed_param = expr.params[0];
-
-  if (pattern?.tag !== "product") {
-    return undefined;
-  }
-
-  let body = expr.body;
-
-  if (
-    expr.params.length === 1 && packed_param !== undefined &&
-    packed_param.name.startsWith("_pattern#param")
-  ) {
-    if (expr.body.tag !== "block") {
-      return undefined;
-    }
-
-    const final_stmt = expr.body.statements[expr.body.statements.length - 1];
-
-    if (!final_stmt || final_stmt.tag !== "expr") {
-      return undefined;
-    }
-
-    body = final_stmt.expr;
-  }
-
-  const params = flattened_product_pattern_params(pattern, { next: 0 });
-
-  if (params === undefined) {
-    return undefined;
-  }
-
-  return { params, body };
-}
-
-function flattened_product_pattern_params(
-  pattern: Extract<Pattern, { tag: "product" }>,
-  ignored: { next: number },
-): Param[] | undefined {
-  if (pattern.value_pack === true) {
-    return undefined;
-  }
-
-  const params: Param[] = [];
-
-  for (const entry of pattern.entries) {
-    if (entry.pattern.tag === "binding") {
-      params.push({
-        name: entry.pattern.name,
-        is_const: entry.pattern.mode === "const",
-        is_linear: entry.pattern.mode === "linear",
-        annotation: entry.pattern.annotation,
-        type_annotation: entry.pattern.type_annotation,
-      });
-      continue;
-    }
-
-    if (entry.pattern.tag === "wildcard") {
-      params.push({
-        name: "_pattern#ignored" + ignored.next.toString(),
-        is_const: entry.pattern.mode === "const",
-        is_linear: false,
-        annotation: undefined,
-      });
-      ignored.next += 1;
-      continue;
-    }
-
-    if (entry.pattern.tag === "product") {
-      const nested = flattened_product_pattern_params(entry.pattern, ignored);
-
-      if (nested === undefined) {
-        return undefined;
-      }
-
-      params.push(...nested);
-      continue;
-    }
-
-    return undefined;
-  }
-
-  return params;
-}
-
 export function core_param(param: {
   name: string;
   is_const: boolean;
@@ -2844,6 +2750,28 @@ function core_field(
   ctx: CoreFromSourceCtx,
 ): CoreField {
   return { name: field.name, value: core_expr(field.value, ctx) };
+}
+
+function core_runtime_type_expr(
+  expr: FrontExpr,
+  ctx: CoreFromSourceCtx,
+): CoreExpr {
+  if (
+    expr.tag === "var" &&
+    ctx.runtime_aggregate_type_names.has(expr.name)
+  ) {
+    return { tag: "var", name: expr.name };
+  }
+
+  if (expr.tag === "app") {
+    return {
+      tag: "app",
+      func: core_runtime_type_expr(expr.func, ctx),
+      args: expr.args.map((arg) => core_runtime_type_expr(arg, ctx)),
+    };
+  }
+
+  return core_expr(expr, ctx);
 }
 
 function core_type_field(

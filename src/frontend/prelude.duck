@@ -13,18 +13,18 @@ duck Length Self {
 
 duck Index Self {
   type Item
-  .get = [&Self, I32] -> Item
+  .get = (&Self, I32) -> Item
 }
 
 duck IndexSet Self {
   type Item
-  .set = [Self, I32, Item] -> Self
+  .set = (Self, I32, Item) -> Self
 }
 
 duck Iterable Self {
   type Item
   .length = &Self -> I32
-  .get = [&Self, I32] -> Item
+  .get = (&Self, I32) -> Item
 }
 
 duck Iterator Self {
@@ -77,7 +77,9 @@ const {
   .type_union,
 } = types_module;
 const not: Bool -> Bool = value => if value then false else true end;
-const slice = [value, start, finish] => @slice(value, start, finish);
+const slice = (value, start, finish) => @slice(value, start, finish);
+const append_bytes: (Bytes, Bytes) -> Bytes =
+  (left: Bytes, right: Bytes) => @append(left, right);
 
 return {
   .struct,
@@ -92,4 +94,5 @@ return {
   .type_difference,
   .not,
   .slice,
+  .append_bytes,
 };

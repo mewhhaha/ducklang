@@ -7,15 +7,15 @@ type WindowStatus = ContextWindowTokenStatus
 type WindowStatusInput = ContextWindowTokenStatusInput
 type WindowI64Option = ContextWindowI64Option
 
-const remaining_token_count: [I64, I64] -> I64 = (limit: I64, used: I64) => do
+const remaining_token_count: (I64, I64) -> I64 = (limit: I64, used: I64) => do
   if used >= limit then 0i64 else limit - used end;
 end;
 
-const token_count_at_least: [I64, I64] -> Bool = (used: I64, limit: I64) => do
+const token_count_at_least: (I64, I64) -> Bool = (used: I64, limit: I64) => do
   used >= limit
 end;
 
-const tokens_remaining: [&WindowI64Option, I64] -> WindowI64Option = (
+const tokens_remaining: (&WindowI64Option, I64) -> WindowI64Option = (
   limit: &WindowI64Option,
   used: I64,
 ) => do

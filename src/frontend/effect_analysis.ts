@@ -663,7 +663,7 @@ function function_type_params(
     return type.param.items;
   }
 
-  if (type.param.tag === "product") {
+  if (type.param.tag === "product" && type.param.value_pack === true) {
     return expanded_type_product_entries(
       type.param,
       (name) => effect_const_i32_name(name, analysis, new Set()),

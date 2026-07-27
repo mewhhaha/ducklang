@@ -9,7 +9,7 @@ type AdapterOutputItem = FunctionOutputContentItem
 type AdapterOutputItemNode = FunctionOutputContentItemNode
 type AdapterOutputItems = FunctionOutputContentItems
 
-const adapt_code_mode_runtime_items: [AdapterPolicy, AdapterRuntimeItems] -> AdapterOutputItems = (
+const adapt_code_mode_runtime_items: (AdapterPolicy, AdapterRuntimeItems) -> AdapterOutputItems = (
   policy,
   runtime_items,
 ) => do

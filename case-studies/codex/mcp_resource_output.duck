@@ -50,7 +50,7 @@ const reverse_json_array: ResourceOutputJsonArray -> ResourceOutputJsonArray = v
   reversed
 end;
 
-let parse_resource_object: [Text, Text] -> ResourceOutputObjectResult = (
+let parse_resource_object: (Text, Text) -> ResourceOutputObjectResult = (
   server: Text,
   document: Text,
 ) => do
@@ -71,7 +71,7 @@ let parse_resource_object: [Text, Text] -> ResourceOutputObjectResult = (
   end;
 end;
 
-const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages = (
+const ordered_visible_pages: (ResourceOutputPages, Bool) -> ResourceOutputPages = (
   values: ResourceOutputPages,
   orchestrator_mcp_enabled: Bool,
 ) => do
@@ -93,7 +93,7 @@ const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages 
           if let #Cons ordered_node = remaining then
             let typed_ordered_node: ResourceOutputPageNode = ordered_node;
             let [ordered_page, ordered_tail] = typed_ordered_node;
-            if text_less_than [page.server, ordered_page.server] then
+            if text_less_than (page.server, ordered_page.server) then
               let inserted_node: ResourceOutputPageNode = [page, remaining];
               remaining = #Cons inserted_node
               inserted = true
@@ -140,7 +140,7 @@ const ordered_visible_pages: [ResourceOutputPages, Bool] -> ResourceOutputPages 
   ordered
 end;
 
-let list_payload_json: [ResourceOutputOperation, ResourceOutputPages, Bool] ->
+let list_payload_json: (ResourceOutputOperation, ResourceOutputPages, Bool) ->
   ResourceOutputTextResult = (
     operation: ResourceOutputOperation,
     values: ResourceOutputPages,

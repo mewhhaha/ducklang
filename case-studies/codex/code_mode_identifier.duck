@@ -5,7 +5,7 @@ const { .text_append, .text_get, .text_length, .text_slice } = import "duck:prel
 const normalize_code_mode_identifier: Text -> Text = (name: Text) => do
   let normalized: Text = "";
   for index in 0..text_length name do
-    let byte = text_get [name, index];
+    let byte = text_get (name, index);
     let valid = false;
     if byte == 95 then
       valid = true
@@ -20,9 +20,9 @@ const normalize_code_mode_identifier: Text -> Text = (name: Text) => do
     end;
 
     if valid then
-      normalized = text_append [normalized, text_slice [name, index, index + 1]]
+      normalized = text_append (normalized, text_slice (name, index, index + 1))
     else byte < 128 || byte > 191 then
-      normalized = text_append [normalized, "_"]
+      normalized = text_append (normalized, "_")
     end;
   end
   if normalized == "" then "_" else normalized end;

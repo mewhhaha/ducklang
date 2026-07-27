@@ -8,7 +8,7 @@
     "lsp:perf": "deno run --allow-read scripts/lsp-performance.ts"
   },
   "imports": {
-    "@mewhhaha/baba": "jsr:@mewhhaha/baba@6.1.0",
+    "@mewhhaha/baba": "jsr:@mewhhaha/baba@7.0.0",
     "gpufuck": "jsr:@mewhhaha/gpufuck@^0.4.0",
     "@mewhhaha/typeclasses": "jsr:@mewhhaha/typeclasses@^0.5.2"
   },

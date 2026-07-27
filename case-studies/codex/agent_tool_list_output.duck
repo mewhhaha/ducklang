@@ -15,13 +15,13 @@ const render_list_agents_output: AgentStatusEntries -> Text = statuses => do
       let [entry, tail] = node;
       let [agent_name, status] = entry;
       if !(first) then
-        agents = text_append [agents, ","]
+        agents = text_append (agents, ",")
       end;
-      agents = text_append [agents, "{\"agent_name\":"]
-      agents = text_append [agents, encode_json_string agent_name]
-      agents = text_append [agents, ",\"agent_status\":"]
-      agents = text_append [agents, agent_status_json status]
-      agents = text_append [agents, "}"]
+      agents = text_append (agents, "{\"agent_name\":")
+      agents = text_append (agents, encode_json_string agent_name)
+      agents = text_append (agents, ",\"agent_status\":")
+      agents = text_append (agents, agent_status_json status)
+      agents = text_append (agents, "}")
       first = false
       current = tail
     else
@@ -32,7 +32,7 @@ const render_list_agents_output: AgentStatusEntries -> Text = statuses => do
     end;
   end;
 
-  text_append ["{\"agents\":[", text_append [agents, "]}"]]
+  text_append ("{\"agents\":[", text_append (agents, "]}"))
 end;
 
 return { .render_list_agents_output };

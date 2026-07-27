@@ -137,7 +137,7 @@ if let #Cons node = mentioned then
   let apps = effective_apps plugins;
 
   if let #Some rendered = render_explicit_plugin_instructions(summary, mcp, apps) then
-    if text_contains [rendered, "`search`, `review`"] && text_contains [rendered, "`calendar`"] then
+    if text_contains (rendered, "`search`, `review`") && text_contains (rendered, "`calendar`") then
       score = score + 100000
     end;
   end;

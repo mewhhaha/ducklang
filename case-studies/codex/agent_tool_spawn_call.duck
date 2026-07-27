@@ -18,9 +18,9 @@ const parse_fork_turns: AgentTextOption -> AgentSpawnCallForkTurnsResult = reque
   end;
   if let #Some raw_value = requested then
     let value = text_trim_ascii_whitespace raw_value;
-    if value == "" || text_equal_ascii_case_insensitive [value, "all"] then
+    if value == "" || text_equal_ascii_case_insensitive (value, "all") then
       #ForkTurnsParsed (#ForkAllTurns)
-    else text_equal_ascii_case_insensitive [value, "none"] then
+    else text_equal_ascii_case_insensitive (value, "none") then
       #ForkTurnsParsed (#ForkNoTurns)
     else
       let parsed = parse_u32_decimal value;
@@ -39,7 +39,7 @@ const parse_fork_turns: AgentTextOption -> AgentSpawnCallForkTurnsResult = reque
   end;
 end;
 
-const plan_spawn_agent_call: [AgentToolContext, AgentToolSpawnArguments] -> AgentToolPlan = (
+const plan_spawn_agent_call: (AgentToolContext, AgentToolSpawnArguments) -> AgentToolPlan = (
   context,
   arguments,
 ) => do

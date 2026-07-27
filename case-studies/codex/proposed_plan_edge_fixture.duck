@@ -18,20 +18,20 @@ const render_plan_segments = (segments: FixtureSegments) => do
 
       case segment of
         #Normal text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["N(", text_append [text, ")"]],
-          ] end,
+            text_append ("N(", text_append (text, ")")),
+          ) end,
         #ProposedPlanStart => do
-          rendered = text_append [rendered, "S"]
+          rendered = text_append (rendered, "S")
         end,
         #ProposedPlanDelta text => do
-          rendered = text_append [
+          rendered = text_append (
             rendered,
-            text_append ["D(", text_append [text, ")"]],
-          ] end,
+            text_append ("D(", text_append (text, ")")),
+          ) end,
         #ProposedPlanEnd => do
-          rendered = text_append [rendered, "E"]
+          rendered = text_append (rendered, "E")
         end;
 
       current = remaining

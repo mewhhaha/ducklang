@@ -33,7 +33,7 @@ type AgentJobPrepareJsonMember = JsonMember
 type AgentJobPrepareJsonMemberNode = JsonMemberNode
 type AgentJobPrepareJsonObject = JsonObject
 
-const agent_job_texts_contain: [AgentJobPrepareTextList, Text] -> Bool = (
+const agent_job_texts_contain: (AgentJobPrepareTextList, Text) -> Bool = (
   values: AgentJobPrepareTextList,
   expected: Text,
 ) => do
@@ -57,7 +57,7 @@ const agent_job_texts_contain: [AgentJobPrepareTextList, Text] -> Bool = (
   found
 end;
 
-const agent_job_text_at: [AgentJobPrepareTextList, I32] -> AgentJobPrepareOption = (
+const agent_job_text_at: (AgentJobPrepareTextList, I32) -> AgentJobPrepareOption = (
   values: AgentJobPrepareTextList,
   expected_index: I32,
 ) => do
@@ -85,7 +85,7 @@ const agent_job_text_at: [AgentJobPrepareTextList, I32] -> AgentJobPrepareOption
   result
 end;
 
-const insert_agent_job_member: [AgentJobPrepareJsonMember, AgentJobPrepareJsonObject] ->
+const insert_agent_job_member: (AgentJobPrepareJsonMember, AgentJobPrepareJsonObject) ->
   AgentJobPrepareJsonObject = (
     member: AgentJobPrepareJsonMember,
     members: AgentJobPrepareJsonObject,
@@ -98,7 +98,7 @@ const insert_agent_job_member: [AgentJobPrepareJsonMember, AgentJobPrepareJsonOb
       if let #Cons node = remaining then
         let [existing, tail] = node;
         let [existing_key, _] = existing;
-        if text_less_than [key, existing_key] then
+        if text_less_than (key, existing_key) then
           let inserted_node: AgentJobPrepareJsonMemberNode = [member, remaining];
           remaining = #Cons inserted_node
           inserted = true
@@ -129,7 +129,7 @@ const insert_agent_job_member: [AgentJobPrepareJsonMember, AgentJobPrepareJsonOb
     remaining
   end;
 
-const agent_job_row_object: [AgentJobPrepareTextList, AgentJobPrepareTextList] ->
+const agent_job_row_object: (AgentJobPrepareTextList, AgentJobPrepareTextList) ->
   AgentJobPrepareJsonObject = (
     headers: AgentJobPrepareTextList,
     values: AgentJobPrepareTextList,
@@ -174,7 +174,7 @@ let agent_job_schema_pretty: AgentJobPrepareOption -> Text = schema => do
   end;
 end;
 
-let render_agent_job_worker_prompt: [Text, Text, Text, AgentJobPrepareJsonObject, Text] -> Text = (
+let render_agent_job_worker_prompt: (Text, Text, Text, AgentJobPrepareJsonObject, Text) -> Text = (
   job_id: Text,
   item_id: Text,
   instruction: Text,
@@ -183,57 +183,57 @@ let render_agent_job_worker_prompt: [Text, Text, Text, AgentJobPrepareJsonObject
 ) => do
   let task = render_agent_job_instruction(instruction, row);
   let row_pretty = encode_json_pretty(json_object row);
-  let prompt = text_append [
+  let prompt = text_append (
     "You are processing one item for a generic agent job.\nJob ID: ",
     job_id,
-  ];
-  prompt = text_append [prompt, text_append ["\nItem ID: ", item_id]]
-  prompt = text_append [prompt, text_append ["\n\nTask instruction:\n", task]]
-  prompt = text_append [prompt, text_append ["\n\nInput row (JSON):\n", row_pretty]]
-  prompt = text_append [
+  );
+  prompt = text_append (prompt, text_append ("\nItem ID: ", item_id))
+  prompt = text_append (prompt, text_append ("\n\nTask instruction:\n", task))
+  prompt = text_append (prompt, text_append ("\n\nInput row (JSON):\n", row_pretty))
+  prompt = text_append (
     prompt,
-    text_append ["\n\nExpected result schema (JSON Schema or {}):\n", schema_pretty],
-  ]
-  prompt = text_append [
+    text_append ("\n\nExpected result schema (JSON Schema or {}):\n", schema_pretty),
+  )
+  prompt = text_append (
     prompt,
     "\n\nYou MUST call the `report_agent_job_result` tool exactly once with:\n",
-  ]
-  prompt = text_append [prompt, text_append ["1. `job_id` = \"", text_append [job_id, "\"\n"]]]
-  prompt = text_append [
+  )
+  prompt = text_append (prompt, text_append ("1. `job_id` = \"", text_append (job_id, "\"\n")))
+  prompt = text_append (
     prompt,
-    text_append ["2. `item_id` = \"", text_append [item_id, "\"\n"]],
-  ]
-  prompt = text_append [
+    text_append ("2. `item_id` = \"", text_append (item_id, "\"\n")),
+  )
+  prompt = text_append (
     prompt,
     "3. `result` = a JSON object that contains your analysis result for this row.\n\n",
-  ]
-  prompt = text_append [
+  )
+  prompt = text_append (
     prompt,
     "If you need to stop the job early, include `stop` = true in the tool call.\n\nAfter the tool call succeeds, stop.",
-  ]
+  )
   prompt
 end;
 
-const default_agent_job_output_path: [Text, Text] -> Text = (input_path: Text, job_id: Text) => do
+const default_agent_job_output_path: (Text, Text) -> Text = (input_path: Text, job_id: Text) => do
   let basename = path_basename input_path;
   let dot = -1;
   if text_length basename > 0 then
     for index in 0..text_length basename do
-      if text_get [basename, index] == 46 && index > 0 then
+      if text_get (basename, index) == 46 && index > 0 then
         dot = index
       end;
     end
   end;
-  let stem = if dot > 0 then text_slice [basename, 0, dot] else basename end;
+  let stem = if dot > 0 then text_slice (basename, 0, dot) else basename end;
   let suffix_end = if text_length job_id < 8 then text_length job_id else 8 end;
-  let filename = text_append [
+  let filename = text_append (
     stem,
-    text_append [".agent-job-", text_append [text_slice [job_id, 0, suffix_end], ".csv"]],
-  ];
-  path_join [path_parent input_path, filename]
+    text_append (".agent-job-", text_append (text_slice (job_id, 0, suffix_end), ".csv")),
+  );
+  path_join (path_parent input_path, filename)
 end;
 
-let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
+let prepare_agent_job: (Text, AgentJobPrepareArgs, AgentJobPrepareDocument) ->
   AgentJobPrepareResult = (
     job_id: Text,
     args: AgentJobPrepareArgs,
@@ -249,10 +249,10 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
       if let #Cons node = current_headers then
         let [header, tail] = node;
         if failure == "" && agent_job_texts_contain(seen_headers, header) then
-          failure = text_append [
+          failure = text_append (
             "csv header ",
-            text_append [header, " is duplicated"],
-          ] end;
+            text_append (header, " is duplicated"),
+          ) end;
         let seen_node: AgentJobPrepareTextListNode = [header, seen_headers];
         seen_headers = #Cons seen_node
         if let #Some id_column = args.id_column then
@@ -272,10 +272,10 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
 
     if let #Some id_column = args.id_column then
       if failure == "" && id_column_index < 0 then
-        failure = text_append [
+        failure = text_append (
           "id_column ",
-          text_append [id_column, " was not found in csv headers"],
-        ] end;
+          text_append (id_column, " was not found in csv headers"),
+        ) end;
     end;
 
     if failure != "" then
@@ -299,17 +299,17 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
               end;
             end;
           end;
-          let base_id = if let #Some value = source_id then value else text_append [
+          let base_id = if let #Some value = source_id then value else text_append (
             "row-",
             format_i32(row_index + 1),
-          ] end;
+          ) end;
           let item_id = base_id;
           let suffix = 2;
           loop do
             if !(agent_job_texts_contain(used_ids, item_id)) then
               break;
             end;
-            item_id = text_append [base_id, text_append ["-", format_i32 suffix]]
+            item_id = text_append (base_id, text_append ("-", format_i32 suffix))
             suffix = suffix + 1
           end;
           let used_node: AgentJobPrepareTextListNode = [item_id, used_ids];
@@ -367,7 +367,7 @@ let prepare_agent_job: [Text, AgentJobPrepareArgs, AgentJobPrepareDocument] ->
       let suffix_end = if text_length job_id < 8 then text_length job_id else 8 end;
       let job: AgentJobPrepareJob = [
         .job_id = job_id,
-        .name = text_append ["agent-job-", text_slice [job_id, 0, suffix_end]],
+        .name = text_append ("agent-job-", text_slice (job_id, 0, suffix_end)),
         .instruction = args.instruction,
         .headers = document.headers,
         .input_path = args.input_path,

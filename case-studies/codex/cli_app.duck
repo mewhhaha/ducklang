@@ -12,7 +12,7 @@ type RemoteControlFacts = CodexRemoteControlFacts
 type DesktopAppFactsResult = Result Text DesktopAppFacts
 type RemoteControlFactsResult = Result Text RemoteControlFacts
 
-let rec scan_desktop_app_from: [ApplicationArgs, DesktopAppFacts] -> DesktopAppFactsResult = (
+let rec scan_desktop_app_from: (ApplicationArgs, DesktopAppFacts) -> DesktopAppFactsResult = (
   args: ApplicationArgs,
   facts: DesktopAppFacts,
 ) => do
@@ -52,7 +52,7 @@ let parse_desktop_app_options: ApplicationArgs -> ApplicationCommandResult =
     end;
   end;
 
-let rec scan_remote_control_from: [ApplicationArgs, RemoteControlFacts] -> RemoteControlFactsResult =
+let rec scan_remote_control_from: (ApplicationArgs, RemoteControlFacts) -> RemoteControlFactsResult =
   (
     args: ApplicationArgs,
     facts: RemoteControlFacts,

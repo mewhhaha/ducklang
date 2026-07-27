@@ -26,23 +26,23 @@ const run_view_image = (prepared: ImageExecutionPrepared) => do
     result
   else let #LocateFailed reason = host_response then
     let result: ImageExecutionResult = #Rejected (
-      text_append [
+      text_append (
         "unable to locate image at `",
-        text_append [prepared.path, text_append ["`: ", reason]],
-      ]
+        text_append (prepared.path, text_append ("`: ", reason)),
+      )
     );
     result
   else let #NotFile = host_response then
     let result: ImageExecutionResult = #Rejected (
-      text_append ["image path `", text_append [prepared.path, "` is not a file"]]
+      text_append ("image path `", text_append (prepared.path, "` is not a file"))
     );
     result
   else let #ReadFailed reason = host_response then
     let result: ImageExecutionResult = #Rejected (
-      text_append [
+      text_append (
         "unable to read image at `",
-        text_append [prepared.path, text_append ["`: ", reason]],
-      ]
+        text_append (prepared.path, text_append ("`: ", reason)),
+      )
     );
     result
   else

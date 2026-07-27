@@ -6,7 +6,7 @@ const {} = import "./agent_job_spawn_types.duck" ();
 type AgentJobSpawnSchemaArgs = AgentJobSpawnDecodedArgs
 type AgentJobSpawnSchemaResult = AgentJobSpawnDecodeResult
 
-let decode_agent_job_spawn_schema: [Text, AgentJobSpawnSchemaArgs] -> AgentJobSpawnSchemaResult = (
+let decode_agent_job_spawn_schema: (Text, AgentJobSpawnSchemaArgs) -> AgentJobSpawnSchemaResult = (
   document: Text,
   base: AgentJobSpawnSchemaArgs,
 ) => do

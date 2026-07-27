@@ -38,11 +38,11 @@ const decrement_thread_elicitation: I64 -> ThreadControlCountResult = (count: I6
   end;
 end;
 
-const materialize_thread_set_name_response: [] -> ThreadControlJson = () => do
+const materialize_thread_set_name_response: () -> ThreadControlJson = () => do
   json_object(json_object_empty())
 end;
 
-const materialize_thread_name_updated_notification: [Text, Text] -> ThreadControlJson = (
+const materialize_thread_name_updated_notification: (Text, Text) -> ThreadControlJson = (
   thread_id: Text,
   name: Text,
 ) => do

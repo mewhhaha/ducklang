@@ -18,18 +18,18 @@ type DiffProjectionNetChanges = TurnDiffNetChanges
 type DiffProjectionTrackedPathNode = ListNode DiffProjectionTrackedPath
 type DiffProjectionNetChangeNode = ListNode DiffProjectionNetChange
 
-const turn_diff_path_less_than: [DiffProjectionTrackedPath, DiffProjectionTrackedPath] -> Bool = (
+const turn_diff_path_less_than: (DiffProjectionTrackedPath, DiffProjectionTrackedPath) -> Bool = (
   left,
   right,
 ) => do
   if left.environment_id == right.environment_id then
-    text_less_than [left.path, right.path]
+    text_less_than (left.path, right.path)
   else
-    text_less_than [left.environment_id, right.environment_id]
+    text_less_than (left.environment_id, right.environment_id)
   end;
 end;
 
-const turn_diff_insert_sorted_path: [DiffProjectionTrackedPaths, DiffProjectionTrackedPath] ->
+const turn_diff_insert_sorted_path: (DiffProjectionTrackedPaths, DiffProjectionTrackedPath) ->
   DiffProjectionTrackedPaths = (
     paths,
     inserted_path,
@@ -105,7 +105,7 @@ const turn_diff_all_paths: DiffProjectionState -> DiffProjectionTrackedPaths = s
   collected_paths
 end;
 
-const turn_diff_destination_for_origin: [DiffProjectionState, DiffProjectionTrackedPath] ->
+const turn_diff_destination_for_origin: (DiffProjectionState, DiffProjectionTrackedPath) ->
   DiffProjectionTrackedPathOption = (
     state,
     requested_origin,
@@ -145,7 +145,7 @@ const turn_diff_destination_for_origin: [DiffProjectionState, DiffProjectionTrac
     destination
   end;
 
-const turn_diff_is_paired_destination: [DiffProjectionState, DiffProjectionTrackedPath] -> Bool = (
+const turn_diff_is_paired_destination: (DiffProjectionState, DiffProjectionTrackedPath) -> Bool = (
   state,
   requested_destination,
 ) => do
@@ -172,7 +172,7 @@ const turn_diff_is_paired_destination: [DiffProjectionState, DiffProjectionTrack
   paired
 end;
 
-const turn_diff_path_is_handled: [DiffProjectionTrackedPaths, DiffProjectionTrackedPath] -> Bool = (
+const turn_diff_path_is_handled: (DiffProjectionTrackedPaths, DiffProjectionTrackedPath) -> Bool = (
   paths,
   requested_path,
 ) => do

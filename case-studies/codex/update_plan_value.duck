@@ -16,7 +16,7 @@ type PlanValueSteps = UpdatePlanSteps
 type PlanValueTextOption = UpdatePlanTextOption
 
 let update_plan_parse_failure: Text -> PlanValueParseResult = reason => do
-  #ParseFailed (text_append ["failed to parse function arguments: ", reason])
+  #ParseFailed (text_append ("failed to parse function arguments: ", reason))
 end;
 
 let reverse_update_plan_steps: PlanValueSteps -> PlanValueSteps = steps => do

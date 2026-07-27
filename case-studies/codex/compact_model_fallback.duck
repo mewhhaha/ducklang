@@ -30,13 +30,13 @@ const should_retry_with_current_model: ModelFallbackError -> Bool = error => do
   end;
 end;
 
-const model_fallback_telemetry: [
+const model_fallback_telemetry: (
   Text,
   Text,
   ModelFallbackReason,
   ModelFallbackImplementation,
   ModelFallbackTextOption,
-] -> ModelFallbackTelemetry = (
+) -> ModelFallbackTelemetry = (
   previous_model,
   current_model,
   reason,

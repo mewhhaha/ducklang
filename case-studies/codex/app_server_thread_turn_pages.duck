@@ -22,7 +22,7 @@ const serialize_optional_cursor: TurnPagesCursorOption -> TurnPagesTextOption = 
     end;
   end;
 
-let list_legacy_thread_turns: [TurnPagesTurns, TurnPagesParams] -> TurnPagesPageResult = (
+let list_legacy_thread_turns: (TurnPagesTurns, TurnPagesParams) -> TurnPagesPageResult = (
   history: TurnPagesTurns,
   params: TurnPagesParams,
 ) => do
@@ -42,7 +42,7 @@ let list_legacy_thread_turns: [TurnPagesTurns, TurnPagesParams] -> TurnPagesPage
   if let #Some reason = cursor_error then
     #Err reason
   else
-    let paginated = paginate_thread_turns [history, cursor, page_size, sort_direction, items_view];
+    let paginated = paginate_thread_turns (history, cursor, page_size, sort_direction, items_view);
     if let #Ok page = paginated then
       let [turns, next_cursor, backwards_cursor] = page;
       let response: TurnPagesPage = [

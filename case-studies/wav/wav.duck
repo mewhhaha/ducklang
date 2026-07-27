@@ -75,5 +75,5 @@ let wav_byte = (index: I32) => do
   end;
 end;
 
-let wav: Bytes = generate_bytes [wav_bytes, wav_byte];
+let wav: Bytes = generate_bytes (wav_bytes, wav_byte);
 return { .wav = wav };

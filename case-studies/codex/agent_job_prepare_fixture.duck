@@ -29,13 +29,13 @@ if let #CsvParsed document = parsed then
     if let #Cons first_node = job.items then
       let [first, tail] = first_node;
       if first.item_id == "x" && first.row_index == 0 && first.row_json
-        == "{\"area\":\"test\",\"id\":\"x\",\"path\":\"src/lib.rs\"}" && text_contains [
+        == "{\"area\":\"test\",\"id\":\"x\",\"path\":\"src/lib.rs\"}" && text_contains (
           first.prompt,
           "Task instruction:\nReview src/lib.rs in test. Keep {literal}.",
-        ] && text_contains [
+        ) && text_contains (
           first.prompt,
           "Expected result schema (JSON Schema or {}):\n{\n  \"type\": \"object\",",
-        ] then
+        ) then
           score = score + 10
         end;
       if let #Cons second_node = tail then

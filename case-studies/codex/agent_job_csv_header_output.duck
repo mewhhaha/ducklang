@@ -33,7 +33,7 @@ const render_agent_job_csv_headers: AgentJobCsvHeaderOutputHeaders -> Text = hea
   line = csv_append_field(line, "result_json", false)
   line = csv_append_field(line, "reported_at", false)
   line = csv_append_field(line, "completed_at", false)
-  csv_text_append [line, "\n"]
+  csv_text_append (line, "\n")
 end;
 
 return { .render_agent_job_csv_headers };

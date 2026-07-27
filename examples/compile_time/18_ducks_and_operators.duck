@@ -1,9 +1,11 @@
+const { .from } = import "duck:prelude/functional" ();
+
 duck Add Self Other Output {
-  .add = [Self, Other] -> Output
+  .add = (Self, Other) -> Output
 }
 
 extend I32 {
-  .add = [left, right] => @wasm.add_i32 [left, right],
+  .add = (left, right) => @wasm.add_i32 [left, right],
 }
 
 duck Invert Self Output {
@@ -17,4 +19,6 @@ extend Bool {
 infixl 60 +++ = Add.add
 prefix 80 ^^ = Invert.invert
 
-if ^^ false then 20 +++ 22 else 0 end;
+let converted: I32 = from 20;
+
+if ^^ false then converted +++ 22 else 0 end;

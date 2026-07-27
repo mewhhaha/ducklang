@@ -78,7 +78,7 @@ const bool_option_is_true = (value: McpBoolValue) => do
   if let #Some enabled = value then enabled else false end;
 end;
 
-const requires_mcp_tool_approval: [McpAnnotations, McpMode, Bool] -> Bool = (
+const requires_mcp_tool_approval: (McpAnnotations, McpMode, Bool) -> Bool = (
   annotations: McpAnnotations,
   mode: McpMode,
   full_access: Bool,
@@ -99,7 +99,7 @@ const requires_mcp_tool_approval: [McpAnnotations, McpMode, Bool] -> Bool = (
   end;
 end;
 
-const normalize_mcp_approval_decision: [McpDecision, McpMode] -> McpDecision = (
+const normalize_mcp_approval_decision: (McpDecision, McpMode) -> McpDecision = (
   decision: McpDecision,
   mode: McpMode,
 ) => do

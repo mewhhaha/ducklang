@@ -9,7 +9,7 @@ type PlanCallPlan = UpdatePlanCallPlan
 type PlanCallMode = UpdatePlanMode
 type PlanCallPayload = UpdatePlanPayload
 
-let plan_update_plan_call: [PlanCallPayload, PlanCallMode] -> PlanCallPlan = (
+let plan_update_plan_call: (PlanCallPayload, PlanCallMode) -> PlanCallPlan = (
   payload: PlanCallPayload,
   mode: PlanCallMode,
 ) => do

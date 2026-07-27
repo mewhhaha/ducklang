@@ -7,7 +7,7 @@ const {} = import "./app_server_types.duck" ();
 type WireResponseJson = AppServerJson
 type WireResponseRequestId = AppServerRequestId
 
-const encode_response: [WireResponseRequestId, WireResponseJson] -> Text = (
+const encode_response: (WireResponseRequestId, WireResponseJson) -> Text = (
   id: WireResponseRequestId,
   result: WireResponseJson,
 ) => do
@@ -17,7 +17,7 @@ const encode_response: [WireResponseRequestId, WireResponseJson] -> Text = (
   encode_json(json_object fields)
 end;
 
-const encode_error: [WireResponseRequestId, Text, Text] -> Text = (
+const encode_error: (WireResponseRequestId, Text, Text) -> Text = (
   id: WireResponseRequestId,
   code: Text,
   message: Text,

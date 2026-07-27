@@ -20,7 +20,7 @@ const tool_search_parameters: I32 -> Text = default_limit => do
   )
 end;
 
-const tool_search_tool_specs: [SearchSpecSources, I32] -> SearchSpecs = (
+const tool_search_tool_specs: (SearchSpecSources, I32) -> SearchSpecs = (
   searchable_sources: SearchSpecSources,
   default_limit: I32,
 ) => do

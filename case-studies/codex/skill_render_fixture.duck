@@ -86,8 +86,8 @@ if let #Some full = build_available_skills(available, full_budget) then
     score = score + 1
   end;
 
-  if text_starts_with [texts.nth_or("", 0, rendered), "- alpha: abcdefghij"] then
-    if text_starts_with [render_available_skills_body rendered, "\n## Skills\n"] then
+  if text_starts_with (texts.nth_or("", 0, rendered), "- alpha: abcdefghij") then
+    if text_starts_with (render_available_skills_body rendered, "\n## Skills\n") then
       score = score + 10
     end;
   end;

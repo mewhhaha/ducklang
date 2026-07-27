@@ -13,7 +13,7 @@ const context_types_module = import "./context_types.duck";
 type FragmentTextOption = ContextTextOption
 type FragmentModelContext = ModelContextFragment
 
-const append_text = (left: Text, right: Text) => text_append [left, right];
+const append_text = (left: Text, right: Text) => text_append (left, right);
 
 const render_user_instructions = (directory: FragmentTextOption, instructions: Text) => do
   let heading: Text = "# AGENTS.md instructions";
@@ -39,13 +39,13 @@ const render_rollout_budget = (remaining_tokens: I32) => do
 end;
 
 const valid_internal_context_source = (source: Text) => do
-  if text_length source == 0 || !text_byte_is_ascii_lower(text_get [source, 0]) then
+  if text_length source == 0 || !text_byte_is_ascii_lower(text_get (source, 0)) then
     false
   else
     let valid = true;
 
     for index in 1..text_length source do
-      let byte = text_get [source, index];
+      let byte = text_get (source, index);
 
       if text_byte_is_ascii_lower byte || text_byte_is_ascii_digit byte || byte == 95 then
         ()

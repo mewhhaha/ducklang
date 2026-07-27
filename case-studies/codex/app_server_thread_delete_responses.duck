@@ -6,7 +6,7 @@ const {} = import "./app_server_types.duck" ();
 
 type ThreadDeleteResponseJson = AppServerJson
 
-const materialize_thread_delete_response: [] -> ThreadDeleteResponseJson = () => do
+const materialize_thread_delete_response: () -> ThreadDeleteResponseJson = () => do
   json_object(json_object_empty())
 end;
 

@@ -21,7 +21,7 @@ type SettingsTexts = AppServerTexts
 
 const settings_texts = comptime list Text;
 
-const settings_texts_contains: [SettingsTexts, Text] -> Bool = (
+const settings_texts_contains: (SettingsTexts, Text) -> Bool = (
   values: SettingsTexts,
   expected: Text,
 ) => do
@@ -50,7 +50,7 @@ const settings_texts_contains: [SettingsTexts, Text] -> Bool = (
   found
 end;
 
-const retarget_workspace_roots: [Text, Text, SettingsTexts] -> SettingsTexts = (
+const retarget_workspace_roots: (Text, Text, SettingsTexts) -> SettingsTexts = (
   current_cwd: Text,
   next_cwd: Text,
   roots: SettingsTexts,
@@ -79,7 +79,7 @@ const retarget_workspace_roots: [Text, Text, SettingsTexts] -> SettingsTexts = (
   settings_texts.reverse(reversed)
 end;
 
-const resolve_permission_settings: [SettingsPermissionResolution, SettingsTextOption] -> SettingsPermissionResult =
+const resolve_permission_settings: (SettingsPermissionResolution, SettingsTextOption) -> SettingsPermissionResult =
   (
     permission_resolution: SettingsPermissionResolution,
     requested: SettingsTextOption,
@@ -99,7 +99,7 @@ const resolve_permission_settings: [SettingsPermissionResolution, SettingsTextOp
     end;
   end;
 
-const prefer_explicit_json: [SettingsJsonOption, SettingsJson] -> SettingsJsonOption = (
+const prefer_explicit_json: (SettingsJsonOption, SettingsJson) -> SettingsJsonOption = (
   explicit: SettingsJsonOption,
   fallback: SettingsJson,
 ) => do
