@@ -87,13 +87,12 @@
   "by"
 ] @keyword.control.repeat
 
-; Capture the keyword token, not the statement node. `(break_statement)` spans
-; `break … ;`, so the terminator inherited the keyword colour.
+; Capture the keyword token where the grammar exposes it directly.
 [
   "return"
   "break"
-  "continue"
 ] @keyword.control.return
+(continue_statement) @keyword.control.return
 
 (wildcard) @variable.builtin
 
@@ -153,9 +152,8 @@
 ; Literals and comments
 (number) @constant.numeric.integer
 (string) @string
-(template_start) @string
-(template_text) @string
-(template_literal "`" @string)
+(template_literal
+  "template" @keyword)
 (template_interpolation
   ["{" "}"] @punctuation.special)
 (character) @constant.character
@@ -171,8 +169,7 @@
   (identifier) @type)
 
 (type_application
-  constructor: (identifier) @type
-  argument: (identifier) @type)
+  constructor: (identifier) @type)
 
 (frozen_type
   name: (identifier) @type)
@@ -319,7 +316,7 @@
   function: (postfix_expression
     (identifier) @function.call))
 
-(condition_call_expression
+(condition_application_expression
   function: (condition_expression
     (identifier) @function.call))
 
@@ -328,7 +325,7 @@
     (linear_reference
       name: (identifier) @function.call)))
 
-(condition_call_expression
+(condition_application_expression
   function: (condition_expression
     (linear_reference
       name: (identifier) @function.call)))
@@ -340,7 +337,7 @@
     "len" "get" "slice" "append" "has" "fields_of" "cases_of"
     "is_struct" "is_union" "size_of" "align_of" "layout" "fail" "panic"))
 
-((condition_call_expression
+((condition_application_expression
   function: (condition_expression
     (identifier) @function.builtin))
   (#any-of? @function.builtin
@@ -373,7 +370,7 @@
     (field_expression
       field: (identifier) @function.method.call)))
 
-(condition_call_expression
+(condition_application_expression
   function: (condition_expression
     (condition_field_expression
       field: (identifier) @function.method.call)))

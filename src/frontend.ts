@@ -4,6 +4,12 @@ export type {
   SourceAnalyzeOptions,
 } from "./frontend/source.ts";
 export type { ParseSourceResult } from "./frontend/parser.ts";
+export {
+  type BabaCst,
+  type BabaParseResult,
+  type BabaToken,
+  parse_duck_source,
+} from "./frontend/baba_parser.ts";
 export type { SourceImportResolver } from "./frontend/import_diagnostic.ts";
 export type {
   SourceImportMeta,
