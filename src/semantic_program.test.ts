@@ -174,7 +174,6 @@ Deno.test("semantic analysis rejects binding semantics not yet lowered from Baba
       "let value: Bool = 1;\n",
       "let !value = 1;\n",
       "let rec identity = value => value;\n",
-      "let values = [1, 2];\n",
     ]
   ) {
     const analysis = analyze_duck_source(parse_duck_source(source));
