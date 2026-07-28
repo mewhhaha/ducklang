@@ -51,6 +51,23 @@ Deno.test("Baba reaches unchanged semantic Core without the handwritten parser",
   });
 });
 
+Deno.test("Baba indexed assignments reach semantic Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let pair = [20, 0];\n" +
+      "pair[1] = 22;\n" +
+      "pair\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core.statements[1], {
+    tag: "index_assign",
+    name: "pair",
+    index: { tag: "num", type: "i32", value: 1 },
+    value: { tag: "num", type: "i32", value: 22 },
+  });
+});
+
 Deno.test("semantic program lowering preserves source diagnostics", () => {
   const parsed = parse_duck_source("let value = ;\n");
   const analysis = analyze_duck_source(parsed);

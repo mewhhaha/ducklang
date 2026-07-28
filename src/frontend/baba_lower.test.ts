@@ -724,6 +724,29 @@ Deno.test("Baba effect aliases follow lexical shadowing", () => {
   assert_equals(nested_aggregate_source?.statements.at(-1)?.tag, "bind");
 
   for (
+    const indexed_assignment of [
+      "effect E { op: () => I32 }\n" +
+      "let pair = [E];\n" +
+      "pair[0] = 0;\n" +
+      "let [e] = pair;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "let pair = [E];\n" +
+      "do pair[0] = 0; end;\n" +
+      "let [e] = pair;\n" +
+      "out <- e.op()\n",
+    ]
+  ) {
+    const indexed_assignment_source = checked_value(
+      lower_baba_source(parse_duck_source(indexed_assignment)),
+    );
+    assert_equals(
+      indexed_assignment_source?.statements.at(-1)?.tag,
+      "bind",
+    );
+  }
+
+  for (
     const assignment_source of [
       "effect E { op: () => I32 }\n" +
       "let e = 0;\n" +
@@ -1327,6 +1350,56 @@ Deno.test("Baba lowers assignments and nested function blocks", () => {
       right: { tag: "num", type: "i32", value: 1 },
     },
   });
+});
+
+Deno.test("Baba lowers indexed assignments directly", () => {
+  for (
+    const text of [
+      "let pair = [20, 0];\n" +
+      "let index = 1;\n" +
+      "pair[index] = 22\n",
+      "let write = (buffer, offset, byte) => do\n" +
+      "  buffer[offset + 1] = byte;\n" +
+      "  buffer\n" +
+      "end;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected a directly lowered indexed assignment.");
+    }
+    const legacy_source = parse_source(text);
+    assert_equals(source, legacy_source);
+    assert_equals(all_source_nodes_have_spans(source), true);
+    assert_source_spans_equal(source, legacy_source);
+  }
+
+  const lowered = checked_value(lower_baba_source(parse_duck_source(
+    "pair[index] = 22\n",
+  )));
+  assert_equals(lowered?.statements[0], {
+    tag: "index_assign",
+    name: "pair",
+    index: { tag: "var", name: "index" },
+    value: { tag: "num", type: "i32", value: 22 },
+  });
+
+  for (const name of ["infix", "infixl", "infixr", "prefix"]) {
+    const text = "let " + name + " = [0];\n" +
+      name + "[0] = 1;\n";
+    const contextual = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(contextual), []);
+    const source = checked_value(contextual);
+    if (source === undefined) {
+      throw new Error("Expected a contextual indexed assignment.");
+    }
+    const legacy_source = parse_source(text);
+    assert_equals(source, legacy_source);
+    assert_equals(all_source_nodes_have_spans(source), true);
+    assert_source_spans_equal(source, legacy_source);
+  }
 });
 
 Deno.test("Baba treats fixity words as contextual binding names", () => {
@@ -2132,6 +2205,7 @@ Deno.test("Baba accumulates binding and aggregate boundary errors", () => {
       ["let value = const ..._ => 256u8;\n", 2],
       ["camelCase = 512u8;\n", 2],
       ["camelCase := 512u8;\n", 2],
+      ["camelCase[256u8] = 512u8;\n", 3],
       ["let value = 256u8.camelCase;\n", 2],
     ] as const
   ) {

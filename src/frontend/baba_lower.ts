@@ -2186,6 +2186,10 @@ function lower_statement(
     return lower_assignment(node, source);
   }
 
+  if (node.kind === "index_assignment") {
+    return lower_index_assignment(node, source);
+  }
+
   if (node.kind === "effect_binding_statement") {
     return lower_effect_binding(node, source);
   }
@@ -3984,6 +3988,51 @@ function lower_assignment(
       return statement;
     },
     name_check,
+    lower_expression(value_node, source),
+  );
+}
+
+function lower_index_assignment(
+  node: BabaCstNode,
+  source: string,
+): Checked<Stmt> {
+  const name_node = node.children.find((child) => child.kind === "identifier");
+  const expression_nodes = node.children.filter((child) =>
+    child !== name_node && is_expression_node(child)
+  );
+  const index_node = expression_nodes[0];
+  const value_node = expression_nodes[1];
+  if (
+    name_node === undefined || expression_nodes.length !== 2 ||
+    index_node === undefined || value_node === undefined
+  ) {
+    return unsupported(node);
+  }
+  const name = source.slice(name_node.start, name_node.end);
+  let name_check: Checked<null> = ok(null);
+  if (!is_snake_case(name)) {
+    name_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Runtime binding must use snake_case: " + name,
+        { start: name_node.start, end: name_node.end },
+      ),
+    );
+  }
+
+  return Applicative.lift(
+    (_name: null, index: FrontExpr, value: FrontExpr) => {
+      const statement: Stmt = {
+        tag: "index_assign",
+        name,
+        index,
+        value,
+      };
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    name_check,
+    lower_expression(index_node, source),
     lower_expression(value_node, source),
   );
 }
