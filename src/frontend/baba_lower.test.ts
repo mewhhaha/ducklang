@@ -42,6 +42,283 @@ Deno.test("Baba lowers bindings and expressions without the handwritten parser",
   });
 });
 
+Deno.test("Baba lowers module headers and export returns directly", () => {
+  for (
+    const text of [
+      "module () where\nreturn {};\n",
+      "module (!init: Init) where\nreturn { .init };\n",
+      "module (first, const second: I64) where\nreturn {};\n",
+      "module (_, const other: I64) where\nlet _ = 1;\nreturn {};\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected directly lowered Baba module.");
+    }
+    const legacy = parse_source(text);
+    assert_equals(source, legacy);
+    assert_equals(all_source_nodes_have_spans(source), true);
+  }
+});
+
+Deno.test("Baba accumulates module parameter and return diagnostics", () => {
+  const text = "module (camelCase: 256u8, Other: 512u8) where\n" +
+    "return { .result = 1024u8 };\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(text)),
+  );
+  assert_equals(diagnostics.length, 5);
+  const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+  assert_equals(starts, [...starts].sort((left, right) => left - right));
+});
+
+Deno.test("Baba rejects reserved module and effect result bindings", () => {
+  for (
+    const [text, start] of [
+      ["module (class) where\nreturn {};\n", 8],
+      ["class <- State.class()\n", 0],
+      ["inherits <- State.inherits()\n", 0],
+    ] as const
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(text)),
+    );
+    assert_equals(diagnostics.length, 1);
+    assert_equals(diagnostics[0]?.span.start, start);
+    assert_equals(
+      diagnostics[0]?.message.includes("reserved for unsupported"),
+      true,
+    );
+  }
+});
+
+Deno.test("every bundled Baba module header lowers directly", () => {
+  let headers = 0;
+  for (const path of duck_files("examples")) {
+    const text = Deno.readTextFileSync(path);
+    const parsed = parse_duck_source(text);
+    for (const node of source_nodes_of_kind(parsed.cst.root, "module_header")) {
+      headers += 1;
+      const module_source = text.slice(node.start, node.end) +
+        "\nreturn {};\n";
+      const lowered = lower_baba_source(parse_duck_source(module_source));
+      assert_equals(diagnostics_of(lowered), []);
+      assert_equals(checked_value(lowered), parse_source(module_source));
+    }
+  }
+  assert_equals(headers > 20, true);
+});
+
+Deno.test("Baba lowers direct and propagated effect bindings", () => {
+  for (
+    const text of [
+      "value <- effect()\n",
+      "_ <- effect()\n",
+      "value <- Io.read()\n",
+      "_ <- Io.print(1)\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(text));
+  }
+  const aliased = "effect E { op: () => I32 }\n" +
+    "const effect_instance = E;\n" +
+    "value <- effect_instance.op()\n";
+  const lowered_alias = lower_baba_source(parse_duck_source(aliased));
+  assert_equals(diagnostics_of(lowered_alias), []);
+  assert_equals(checked_value(lowered_alias), parse_source(aliased));
+  const forward_alias = "const e = E;\n" +
+    "value <- e.op()\n" +
+    "effect E { op: () => I32 }\n";
+  const lowered_forward_alias = lower_baba_source(
+    parse_duck_source(forward_alias),
+  );
+  assert_equals(diagnostics_of(lowered_forward_alias), []);
+  assert_equals(
+    checked_value(lowered_forward_alias)?.statements.at(-1)?.tag,
+    "state_bind",
+  );
+  for (
+    const parenthesized of [
+      "effect E { op: () => I32 }\n" +
+      "const e = (E);\n" +
+      "value <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const e = E;\n" +
+      "value <- (e.op())\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(parenthesized));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered)?.statements.at(-1)?.tag, "state_bind");
+  }
+  const unit_binding = lower_baba_source(
+    parse_duck_source("() <- Io.read()\n"),
+  );
+  assert_equals(diagnostics_of(unit_binding), []);
+  const unit_source = checked_value(unit_binding);
+  assert_equals(unit_source?.statements[0]?.tag, "state_bind");
+  if (unit_source?.statements[0]?.tag === "state_bind") {
+    assert_equals(unit_source.statements[0].value_name, undefined);
+  }
+});
+
+Deno.test("Baba classifies only outer effect operation calls as state bindings", () => {
+  for (
+    const text of [
+      "value <- consume(Host.field)\n",
+      "value <- Host.field\n",
+      "const resource = Host(init); value <- wrap(resource.method())\n",
+      "const ordinary = SomeValue; value <- ordinary.method()\n",
+      "effect E { op: () => I32 }\n" +
+      "const e = E; value <- e.child.op()\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(text));
+    const statement = checked_value(lowered)?.statements.at(-1);
+    assert_equals(statement?.tag, "bind");
+    if (statement?.tag === "bind") {
+      assert_equals(statement.effectful, true);
+    }
+  }
+});
+
+Deno.test("Baba effect aliases follow lexical shadowing", () => {
+  const conditional = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "if true then\n" +
+    "  let e = 0;\n" +
+    "  value <- e.op()\n" +
+    "else\n" +
+    "  0\n" +
+    "end;\n";
+  const conditional_source = checked_value(
+    lower_baba_source(parse_duck_source(conditional)),
+  );
+  const conditional_statement = conditional_source?.statements.at(-1);
+  if (
+    conditional_statement?.tag !== "expr" ||
+    conditional_statement.expr.tag !== "if" ||
+    conditional_statement.expr.then_branch.tag !== "block"
+  ) {
+    throw new Error("Expected a directly lowered conditional expression.");
+  }
+  assert_equals(
+    conditional_statement.expr.then_branch.statements[1]?.tag,
+    "bind",
+  );
+
+  const lambda = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "let run = (e) => do value <- e.op() end;\n";
+  const lambda_source = checked_value(
+    lower_baba_source(parse_duck_source(lambda)),
+  );
+  const lambda_statement = lambda_source?.statements.at(-1);
+  if (
+    lambda_statement?.tag !== "bind" ||
+    lambda_statement.value.tag !== "lam" ||
+    lambda_statement.value.body.tag !== "block"
+  ) {
+    throw new Error("Expected a directly lowered block lambda.");
+  }
+  assert_equals(lambda_statement.value.body.statements[0]?.tag, "bind");
+
+  const effect_result_shadow = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "e <- e.op()\n" +
+    "next <- e.op()\n";
+  const shadowed_source = checked_value(
+    lower_baba_source(parse_duck_source(effect_result_shadow)),
+  );
+  assert_equals(shadowed_source?.statements[1]?.tag, "state_bind");
+  assert_equals(shadowed_source?.statements[2]?.tag, "bind");
+
+  for (
+    const assignment_source of [
+      "effect E { op: () => I32 }\n" +
+      "let e = 0;\n" +
+      "e = E;\n" +
+      "value <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "let e = E;\n" +
+      "e = E;\n" +
+      "value <- e.op()\n",
+    ]
+  ) {
+    const assigned_source = checked_value(
+      lower_baba_source(parse_duck_source(assignment_source)),
+    );
+    assert_equals(assigned_source?.statements.at(-1)?.tag, "state_bind");
+  }
+  const invalidated_assignment = "effect E { op: () => I32 }\n" +
+    "let e = E;\n" +
+    "e = 0;\n" +
+    "value <- e.op()\n";
+  const invalidated_source = checked_value(
+    lower_baba_source(parse_duck_source(invalidated_assignment)),
+  );
+  assert_equals(invalidated_source?.statements.at(-1)?.tag, "bind");
+
+  for (
+    const nested_assignment of [
+      "effect E { op: () => I32 }\n" +
+      "let e = E;\n" +
+      "if true then e = 0 else e = 0 end;\n" +
+      "value <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "let e = E;\n" +
+      "do e = 0; end;\n" +
+      "value <- e.op()\n",
+    ]
+  ) {
+    const nested_assignment_source = checked_value(
+      lower_baba_source(parse_duck_source(nested_assignment)),
+    );
+    assert_equals(
+      nested_assignment_source?.statements.at(-1)?.tag,
+      "bind",
+    );
+  }
+});
+
+Deno.test("Baba does not classify ordinary applied constructors as effects", () => {
+  for (
+    const source of [
+      "type Box = newtype I32\n" +
+      "const box = Box(1);\n" +
+      "value <- box.method()\n",
+      "declare Point { x: I32 }\n" +
+      "const point = Point(1);\n" +
+      "value <- point.method()\n",
+      "const box = Box(1);\n" +
+      "value <- box.method()\n" +
+      "type Box = newtype I32\n",
+      "const point = Point(1);\n" +
+      "value <- point.method()\n" +
+      "declare Point { x: I32 }\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered)?.statements.at(-1)?.tag, "bind");
+  }
+});
+
+Deno.test("Baba accumulates effect binding name and value diagnostics", () => {
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source("camelCase <- 256u8\n")),
+  );
+  assert_equals(diagnostics.length, 2);
+  const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+  assert_equals(starts, [...starts].sort((left, right) => left - right));
+});
+
 Deno.test("Baba lowers lambda parameters positionally", () => {
   const lowered = lower_baba_source(parse_duck_source(
     "let choose = (left, right) => right;\n",
@@ -161,6 +438,28 @@ Deno.test("Baba lowers multi-argument calls as value packs", () => {
       { tag: "num", type: "i32", value: 1 },
       { tag: "num", type: "i32", value: 2 },
     ],
+  });
+});
+
+Deno.test("Baba preserves built-in qualified field semantics", () => {
+  for (
+    const text of [
+      "let value = Bytes.empty;\n",
+      "Bytes.generate(4)\n",
+      'Utf8.encode("x")\n',
+      "Utf8.decode(bytes)\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(text));
+  }
+  const bytes = checked_value(
+    lower_baba_source(parse_duck_source("Bytes.empty\n")),
+  );
+  assert_equals(bytes?.statements[0], {
+    tag: "expr",
+    expr: { tag: "text", value: "", encoding: "bytes" },
   });
 });
 
@@ -316,6 +615,7 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
       "let _ = 1;\r\n// ignored\r\nlet f = _ => 2;\r\n",
       "let value = 1;\rlet f = _ => 2;\n",
       "let value = object.field.other;\n",
+      "let value = Io.read();\n",
       "if object.end == 1 then\n  1\nend;\n",
       "let value = { .io = !init.io, .name };\n",
       "let value = [.length = 1, .other = 2];\n",
@@ -338,6 +638,7 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
       !expression_source.startsWith("let value = do\n") &&
       !expression_source.startsWith("let f:") &&
       !expression_source.includes("object.field.other") &&
+      !expression_source.includes("Io.read") &&
       !expression_source.includes("{ .io =") &&
       !expression_source.includes("[.length =")
     ) {
@@ -498,6 +799,7 @@ Deno.test("Baba rejects invalid binding and aggregate names", () => {
       ["{ .camelCase = 1 }\n", "Shape member must use snake_case"],
       ["{ .value = 1, .value = 2 }\n", "Duplicate shape member"],
       ["[.camelCase = 1]\n", "Product label must use snake_case"],
+      ["let value = object.camelCase;\n", "Field must use snake_case"],
       [
         "let value = (const ..._) => 1;\n",
         "Variadic parameter requires a binding name",
@@ -516,6 +818,15 @@ Deno.test("Baba rejects invalid binding and aggregate names", () => {
     );
     assert_equals(messages.includes(expected), true);
   }
+  const field_source = "let value = object.camelCase;\n";
+  const field_diagnostic = diagnostics_of(
+    lower_baba_source(parse_duck_source(field_source)),
+  )[0];
+  const field_start = field_source.indexOf("camelCase");
+  assert_equals(field_diagnostic?.span, {
+    start: field_start,
+    end: field_start + "camelCase".length,
+  });
 });
 
 Deno.test("Baba accumulates binding and aggregate boundary errors", () => {
@@ -531,6 +842,7 @@ Deno.test("Baba accumulates binding and aggregate boundary errors", () => {
       ["let value = const ..._ => 256u8;\n", 2],
       ["camelCase = 512u8;\n", 2],
       ["camelCase := 512u8;\n", 2],
+      ["let value = 256u8.camelCase;\n", 2],
     ] as const
   ) {
     const diagnostics = diagnostics_of(
@@ -595,4 +907,30 @@ function assert_source_spans_equal(actual: object, expected: object): void {
       assert_source_spans_equal(actual_child, expected_child);
     }
   }
+}
+
+function source_nodes_of_kind(
+  node: import("./baba_parser.ts").BabaCstNode | undefined,
+  kind: string,
+): import("./baba_parser.ts").BabaCstNode[] {
+  if (node === undefined) return [];
+  const nodes = [];
+  if (node.kind === kind) nodes.push(node);
+  for (const child of node.children) {
+    nodes.push(...source_nodes_of_kind(child, kind));
+  }
+  return nodes;
+}
+
+function duck_files(directory: string): string[] {
+  const paths: string[] = [];
+  for (const entry of Deno.readDirSync(directory)) {
+    const path = directory + "/" + entry.name;
+    if (entry.isDirectory) {
+      paths.push(...duck_files(path));
+    } else if (entry.isFile && path.endsWith(".duck")) {
+      paths.push(path);
+    }
+  }
+  return paths;
 }

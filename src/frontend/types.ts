@@ -9,9 +9,7 @@ import {
 } from "../integer.ts";
 
 export function is_builtin_type_name(name: string): boolean {
-  if (integer_type_from_name(name)) {
-    return true;
-  }
+  if (/^[IU][1-9][0-9]*$/.test(name)) return true;
 
   return name === "Bool" || name === "Char" || name === "Unit" ||
     name === "Int" ||

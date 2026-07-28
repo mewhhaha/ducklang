@@ -25,6 +25,7 @@ import type { RecoveryInterval } from "./parser_cursor.ts";
 import type { FixityTable } from "./fixity.ts";
 import { is_fixity_keyword } from "./fixity.ts";
 import { parse_type_expr } from "./type_expr.ts";
+import { is_effect_scalar_type } from "./effect_operation.ts";
 
 export class ParserStmt extends ParserTypeDeclaration {
   constructor(
@@ -1046,10 +1047,4 @@ function is_legacy_effect_ownership(name: string | undefined): boolean {
   return name === "bounded_borrow" || name === "frozen_shareable" ||
     name === "ownership_transfer" || name === "unique_heap" ||
     name === "scalar";
-}
-
-function is_effect_scalar_type(type_name: string): boolean {
-  return type_name === "Unit" || type_name === "Bool" || type_name === "Char" ||
-    type_name === "Int" || type_name === "I32" || type_name === "U32" ||
-    type_name === "I64" || type_name === "F32" || type_name === "F64";
 }

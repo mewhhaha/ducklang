@@ -52,7 +52,7 @@ function lower_type(
         if (text === "Never") {
           return ok(mark_type_span({ tag: "never" }, node));
         }
-        return ok(mark_type_span({ tag: "name", name: text }, node));
+        return lower_named_type(text, node);
       }
       return unsupported_type(node);
     }
@@ -68,10 +68,7 @@ function lower_type(
     if (name === "Never") {
       return ok(mark_type_span({ tag: "never" }, node));
     }
-    return ok(mark_type_span(
-      { tag: "name", name },
-      node,
-    ));
+    return lower_named_type(name, node);
   }
 
   if (node.kind === "top_type" || node.kind === "wildcard") {
@@ -185,6 +182,27 @@ function lower_type(
   }
 
   return unsupported_type(node);
+}
+
+function lower_named_type(
+  name: string,
+  node: BabaCstNode,
+): Checked<TypeExpr> {
+  const integer = /^[IU]([1-9][0-9]*)$/.exec(name);
+  const width = integer?.[1];
+  if (
+    width !== undefined &&
+    BigInt(width) > BigInt(Number.MAX_SAFE_INTEGER)
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Fixed-width integer width is too large: " + width,
+        { start: node.start, end: node.end },
+      ),
+    );
+  }
+  return ok(mark_type_span({ tag: "name", name }, node));
 }
 
 function lower_type_set_operation(

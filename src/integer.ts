@@ -20,7 +20,7 @@ export function integer_type_from_name(name: string): IntegerType | undefined {
   const width = Number(width_text);
 
   if (!Number.isSafeInteger(width)) {
-    throw new Error("Fixed-width integer width is too large: " + width_text);
+    return undefined;
   }
 
   return { signed: sign === "I", width };

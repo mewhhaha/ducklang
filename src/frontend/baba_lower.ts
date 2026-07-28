@@ -1,4 +1,5 @@
 import { Applicative } from "@mewhhaha/typeclasses";
+import { classify_abi_primitive } from "../abi_primitive.ts";
 import { compiler_diagnostic, diagnostic_codes } from "../diagnostic.ts";
 import { expect } from "../expect.ts";
 import { integer_literal_fits, integer_type_name } from "../integer.ts";
@@ -6,6 +7,7 @@ import { is_snake_case, no_demand_name } from "./names.ts";
 import type {
   Declaration,
   FrontExpr,
+  ModuleHeader,
   Param,
   Pattern,
   Source,
@@ -13,7 +15,12 @@ import type {
   TypeExpr,
 } from "./ast.ts";
 import type { BabaCstNode, BabaParseResult } from "./baba_parser.ts";
-import { lower_baba_type_declaration } from "./baba_declaration_lower.ts";
+import {
+  type BabaEffectTypeContext,
+  lower_baba_effect_declaration,
+  lower_baba_record_declaration,
+  lower_baba_type_declaration,
+} from "./baba_declaration_lower.ts";
 import { lower_baba_type_reference } from "./baba_type_lower.ts";
 import {
   type Checked,
@@ -22,6 +29,7 @@ import {
   fail,
   ok,
 } from "./checked.ts";
+import { is_effect_scalar_type } from "./effect_operation.ts";
 import { binary_prim, numeric_expr_type } from "./numeric.ts";
 import { parse_number_expr } from "./number_literal.ts";
 import { apply_function_result_context } from "./function_context.ts";
@@ -33,10 +41,12 @@ import {
   source_span,
   type SourceSpan,
 } from "./syntax.ts";
+import { unsupported_reserved_feature } from "./parser_support.ts";
 
 const conditional_branch_spans = new WeakMap<object, SourceSpan>();
 const no_demand_names = new WeakMap<BabaCstNode, string>();
 const synthetic_parameter_names = new WeakMap<BabaCstNode, string>();
+const direct_effect_bindings = new WeakSet<BabaCstNode>();
 
 export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
   const root = parsed.cst.root;
@@ -46,18 +56,26 @@ export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
     return ok(source);
   }
   index_synthetic_names(root, parsed.cst.text, parsed.tokens);
-
-  const contents = lower_top_level_sequence(
+  index_direct_effect_bindings(root, parsed.cst.text);
+  const declared_effect_type_context = collect_declared_effect_type_context(
     root.children,
     parsed.cst.text,
   );
 
+  const contents = lower_top_level_sequence(
+    root.children,
+    parsed.cst.text,
+    declared_effect_type_context,
+  );
+
   return contents.map((lowered) => {
     let source: Source = { tag: "program", statements: lowered.statements };
-    if (lowered.declarations.length > 0) {
+    if (
+      lowered.module !== undefined || lowered.declarations.length > 0
+    ) {
       source = {
         tag: "program",
-        module: undefined,
+        module: lowered.module,
         declarations: lowered.declarations,
         statements: lowered.statements,
       };
@@ -68,6 +86,558 @@ export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
   });
 }
 
+type EffectRepresentation = "scalar" | "rich" | "unknown";
+
+function collect_declared_effect_type_context(
+  nodes: readonly BabaCstNode[],
+  source: string,
+): BabaEffectTypeContext {
+  const representations = new Map<string, EffectRepresentation>();
+  const aliases = new Map<string, TypeExpr>();
+  const definitions = new Map<string, readonly TypeExpr[]>();
+  const arities = new Map<string, number>();
+  const parameters = new Map<string, readonly string[]>();
+  const effects = new Map<string, "host" | "duck">();
+  const declared_names = new Set<string>();
+  for (const node of nodes) {
+    if (
+      node.kind === "declare_effect_statement" ||
+      node.kind === "effect_statement"
+    ) {
+      const name_node = node.children.find((child) =>
+        child.kind === "effect_identifier"
+      );
+      if (name_node !== undefined) {
+        const name = source.slice(name_node.start, name_node.end);
+        if (!declared_names.has(name)) {
+          declared_names.add(name);
+          let implementation: "host" | "duck" = "duck";
+          if (node.kind === "declare_effect_statement") {
+            implementation = "host";
+          }
+          effects.set(name, implementation);
+        }
+      }
+      continue;
+    }
+    if (node.kind === "declare_record_statement") {
+      const name_node = node.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (name_node !== undefined) {
+        const name = source.slice(name_node.start, name_node.end);
+        if (declared_names.has(name)) continue;
+        declared_names.add(name);
+        representations.set(name, "rich");
+        arities.set(name, 0);
+        parameters.set(name, []);
+        definitions.set(
+          name,
+          lowered_type_references(node, source),
+        );
+      }
+      continue;
+    }
+    if (node.kind !== "type_declaration_statement") continue;
+    const name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (name_node === undefined) continue;
+    const name = source.slice(name_node.start, name_node.end);
+    if (declared_names.has(name)) continue;
+    declared_names.add(name);
+    const parameter_names = node.children
+      .filter((child) => child.kind === "identifier")
+      .slice(1)
+      .map((child) => source.slice(child.start, child.end));
+    arities.set(name, parameter_names.length);
+    parameters.set(name, parameter_names);
+    const definition = node.children.find((child) =>
+      child.kind === "type_sum" || child.kind === "type_product" ||
+      child.kind === "struct_type" || child.kind === "newtype_type" ||
+      child.kind === "packed_type" || child.kind === "type_reference"
+    );
+    if (definition === undefined) continue;
+    if (
+      definition.kind === "type_sum" ||
+      definition.kind === "struct_type" ||
+      definition.kind === "packed_type" ||
+      (definition.kind === "type_product" &&
+        source.slice(definition.start, definition.start + 1) === "[")
+    ) {
+      representations.set(name, "rich");
+      definitions.set(
+        name,
+        lowered_type_references(definition, source),
+      );
+      continue;
+    }
+    let representation_node = definition;
+    if (definition.kind === "newtype_type") {
+      const nested = find_descendant_of_kind(definition, "type_reference");
+      if (nested === undefined) continue;
+      representation_node = nested;
+    }
+    const lowered = checked_value(
+      lower_baba_type_reference(representation_node, source),
+    );
+    if (lowered !== undefined) {
+      aliases.set(name, lowered);
+      definitions.set(name, [lowered]);
+    }
+  }
+  for (const [name, alias] of aliases) {
+    const representation = declared_effect_representation(
+      alias,
+      representations,
+      aliases,
+      new Set([name]),
+    );
+    if (representation !== "unknown") representations.set(name, representation);
+  }
+  return { representations, definitions, arities, parameters, effects };
+}
+
+function lowered_type_references(
+  node: BabaCstNode,
+  source: string,
+): TypeExpr[] {
+  const types: TypeExpr[] = [];
+  for (const reference of descendants_of_kind(node, "type_reference")) {
+    const type = checked_value(lower_baba_type_reference(reference, source));
+    if (type !== undefined) types.push(type);
+  }
+  return types;
+}
+
+function declared_effect_representation(
+  type: TypeExpr,
+  representations: ReadonlyMap<string, EffectRepresentation>,
+  aliases: ReadonlyMap<string, TypeExpr>,
+  resolving: ReadonlySet<string>,
+): EffectRepresentation {
+  if (type.tag === "name") {
+    if (is_effect_scalar_type(type.name)) return "scalar";
+    if (
+      type.name === "Text" || type.name === "Bytes" ||
+      type.name === "I32Slice" || type.name === "TextSlice"
+    ) {
+      return "rich";
+    }
+    const known = representations.get(type.name);
+    if (known !== undefined) return known;
+    const alias = aliases.get(type.name);
+    if (alias === undefined) return "unknown";
+    if (resolving.has(type.name)) return "unknown";
+    const next = new Set(resolving);
+    next.add(type.name);
+    return declared_effect_representation(
+      alias,
+      representations,
+      aliases,
+      next,
+    );
+  }
+  if (type.tag === "borrow" || type.tag === "frozen") {
+    return declared_effect_representation(
+      type.value,
+      representations,
+      aliases,
+      resolving,
+    );
+  }
+  if (type.tag === "apply") {
+    let head: TypeExpr = type;
+    while (head.tag === "apply") head = head.func;
+    if (head.tag !== "name") return "unknown";
+    const known = representations.get(head.name);
+    if (known !== undefined) return known;
+    const alias = aliases.get(head.name);
+    if (alias === undefined) return "unknown";
+    if (resolving.has(head.name)) return "unknown";
+    const next = new Set(resolving);
+    next.add(head.name);
+    return declared_effect_representation(
+      alias,
+      representations,
+      aliases,
+      next,
+    );
+  }
+  if (
+    type.tag === "array" || type.tag === "tuple" ||
+    type.tag === "product" || type.tag === "arrow"
+  ) {
+    return "rich";
+  }
+  if (type.tag === "literal") {
+    if (type.value.tag === "text") return "rich";
+    return "scalar";
+  }
+  return "unknown";
+}
+
+function find_descendant_of_kind(
+  node: BabaCstNode,
+  kind: string,
+): BabaCstNode | undefined {
+  for (const child of node.children) {
+    if (child.kind === kind) return child;
+    const nested = find_descendant_of_kind(child, kind);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+function descendants_of_kind(
+  node: BabaCstNode,
+  kind: string,
+): BabaCstNode[] {
+  const descendants: BabaCstNode[] = [];
+  for (const child of node.children) {
+    if (child.kind === kind) {
+      descendants.push(child);
+      continue;
+    }
+    descendants.push(...descendants_of_kind(child, kind));
+  }
+  return descendants;
+}
+
+function index_direct_effect_bindings(
+  root: BabaCstNode,
+  source: string,
+): void {
+  function index_sequence(
+    nodes: readonly BabaCstNode[],
+    inherited_instances: ReadonlySet<string>,
+    inherited_effects: ReadonlySet<string>,
+    inherited_ordinary_constructors: ReadonlySet<string>,
+  ): void {
+    const instances = new Set(inherited_instances);
+    const effects = new Set(inherited_effects);
+    const ordinary_constructors = new Set(inherited_ordinary_constructors);
+    const local_declarations = new Set<string>();
+    for (const node of nodes) {
+      const is_effect_declaration = node.kind === "declare_effect_statement" ||
+        node.kind === "effect_statement";
+      if (
+        !is_effect_declaration &&
+        node.kind !== "type_declaration_statement" &&
+        node.kind !== "declare_record_statement"
+      ) {
+        continue;
+      }
+      let name_node = node.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (is_effect_declaration) {
+        name_node = node.children.find((child) =>
+          child.kind === "effect_identifier"
+        );
+      }
+      if (name_node === undefined) continue;
+      const name = source.slice(name_node.start, name_node.end);
+      if (local_declarations.has(name)) continue;
+      local_declarations.add(name);
+      if (is_effect_declaration) {
+        effects.add(name);
+      } else {
+        ordinary_constructors.add(name);
+      }
+    }
+    for (const node of nodes) {
+      const assigned_outer_names = nested_assigned_outer_names(
+        node,
+        instances,
+        source,
+      );
+      index_nested_sequences(node, instances, effects, ordinary_constructors);
+      for (const assigned_name of assigned_outer_names) {
+        instances.delete(assigned_name);
+      }
+      if (node.kind === "effect_binding_statement") {
+        const receiver = effect_binding_receiver(node, source);
+        if (receiver !== undefined && instances.has(receiver)) {
+          direct_effect_bindings.add(node);
+        }
+        const result_name_node = node.children.find((child) =>
+          child.kind === "identifier"
+        );
+        if (result_name_node !== undefined) {
+          instances.delete(
+            source.slice(result_name_node.start, result_name_node.end),
+          );
+        }
+        continue;
+      }
+      if (
+        node.kind === "assignment" ||
+        node.kind === "index_assignment"
+      ) {
+        const assigned_name = node.children.find((child) =>
+          child.kind === "identifier"
+        );
+        let assigns_effect_instance = false;
+        if (node.kind === "assignment") {
+          const value_node = node.children.find((child) =>
+            child !== assigned_name && is_expression_node(child)
+          );
+          if (value_node !== undefined) {
+            const constructor = effect_instance_constructor(
+              value_node,
+              source,
+            );
+            if (constructor !== undefined) {
+              assigns_effect_instance = effects.has(constructor.name) ||
+                (!constructor.applied &&
+                  instances.has(constructor.name));
+              if (
+                constructor.applied &&
+                /^[A-Z][A-Za-z0-9]*$/.test(constructor.name) &&
+                !ordinary_constructors.has(constructor.name)
+              ) {
+                assigns_effect_instance = true;
+              }
+            }
+          }
+        }
+        if (assigned_name !== undefined) {
+          const assigned_name_text = source.slice(
+            assigned_name.start,
+            assigned_name.end,
+          );
+          instances.delete(assigned_name_text);
+          if (assigns_effect_instance) instances.add(assigned_name_text);
+        }
+        continue;
+      }
+      if (node.kind !== "binding_statement") continue;
+      const binding_name_node = node.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (binding_name_node !== undefined) {
+        instances.delete(
+          source.slice(binding_name_node.start, binding_name_node.end),
+        );
+      }
+      if (!source.slice(node.start, node.end).trimStart().startsWith("const")) {
+        continue;
+      }
+      const value_node = node.children.find((child) =>
+        child !== binding_name_node && is_expression_node(child)
+      );
+      if (binding_name_node === undefined || value_node === undefined) {
+        continue;
+      }
+      const constructor = effect_instance_constructor(value_node, source);
+      if (constructor === undefined) continue;
+      let creates_effect_instance = effects.has(constructor.name) ||
+        (!constructor.applied && instances.has(constructor.name));
+      if (
+        constructor.applied &&
+        /^[A-Z][A-Za-z0-9]*$/.test(constructor.name) &&
+        !ordinary_constructors.has(constructor.name)
+      ) {
+        creates_effect_instance = true;
+      }
+      if (!creates_effect_instance) continue;
+      instances.add(
+        source.slice(binding_name_node.start, binding_name_node.end),
+      );
+    }
+  }
+
+  function index_nested_sequences(
+    node: BabaCstNode,
+    instances: ReadonlySet<string>,
+    effects: ReadonlySet<string>,
+    ordinary_constructors: ReadonlySet<string>,
+  ): void {
+    let nested_instances = instances;
+    if (node.kind === "arrow_function") {
+      const shadowed = new Set(instances);
+      const parameter_container = node.children.find((child) =>
+        child.kind === "parameter" || child.kind === "parameter_list"
+      );
+      if (parameter_container !== undefined) {
+        let parameters = [parameter_container];
+        if (parameter_container.kind === "parameter_list") {
+          parameters = parameter_container.children.filter((child) =>
+            child.kind === "parameter"
+          );
+        }
+        for (const parameter of parameters) {
+          const identifier = parameter.children.find((child) =>
+            child.kind === "identifier"
+          );
+          if (identifier !== undefined) {
+            shadowed.delete(source.slice(identifier.start, identifier.end));
+          }
+        }
+      }
+      nested_instances = shadowed;
+    }
+    for (const child of node.children) {
+      if (
+        child.kind === "block" ||
+        child.kind === "conditional_branch"
+      ) {
+        index_sequence(
+          child.children,
+          nested_instances,
+          effects,
+          ordinary_constructors,
+        );
+        continue;
+      }
+      index_nested_sequences(
+        child,
+        nested_instances,
+        effects,
+        ordinary_constructors,
+      );
+    }
+  }
+
+  index_sequence(root.children, new Set(), new Set(), new Set());
+}
+
+function nested_assigned_outer_names(
+  node: BabaCstNode,
+  outer_names: ReadonlySet<string>,
+  source: string,
+): ReadonlySet<string> {
+  const assigned_names = new Set<string>();
+
+  function visit_sequence(
+    nodes: readonly BabaCstNode[],
+    inherited_names: ReadonlySet<string>,
+  ): void {
+    const visible_names = new Set(inherited_names);
+    for (const current of nodes) {
+      if (current.kind === "arrow_function") continue;
+      if (
+        current.kind === "assignment" ||
+        current.kind === "index_assignment"
+      ) {
+        const assigned_name_node = current.children.find((child) =>
+          child.kind === "identifier"
+        );
+        if (assigned_name_node !== undefined) {
+          const assigned_name = source.slice(
+            assigned_name_node.start,
+            assigned_name_node.end,
+          );
+          if (visible_names.has(assigned_name)) {
+            assigned_names.add(assigned_name);
+          }
+        }
+      }
+      visit_nested(current, visible_names);
+      if (
+        current.kind !== "binding_statement" &&
+        current.kind !== "effect_binding_statement"
+      ) {
+        continue;
+      }
+      const binding_name_node = current.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (binding_name_node !== undefined) {
+        visible_names.delete(
+          source.slice(binding_name_node.start, binding_name_node.end),
+        );
+      }
+    }
+  }
+
+  function visit_nested(
+    current: BabaCstNode,
+    visible_names: ReadonlySet<string>,
+  ): void {
+    if (current.kind === "arrow_function") return;
+    for (const child of current.children) {
+      if (
+        child.kind === "block" ||
+        child.kind === "conditional_branch"
+      ) {
+        visit_sequence(child.children, visible_names);
+        continue;
+      }
+      visit_nested(child, visible_names);
+    }
+  }
+
+  visit_nested(node, outer_names);
+  return assigned_names;
+}
+
+function effect_binding_receiver(
+  node: BabaCstNode,
+  source: string,
+): string | undefined {
+  const binding = node.children.find((child) =>
+    child.kind === "identifier" || child.kind === "wildcard" ||
+    child.kind === "unit_pattern"
+  );
+  const value_node = node.children.find((child) =>
+    child !== binding && is_expression_node(child)
+  );
+  if (value_node === undefined) return undefined;
+  const value = unwrap_transparent_expression(value_node);
+  if (value.kind !== "application_expression") return undefined;
+  const function_node = value.children.find((child) =>
+    is_expression_node(child)
+  );
+  if (function_node === undefined) return undefined;
+  const field = unwrap_transparent_expression(function_node);
+  if (field.kind !== "field_expression") return undefined;
+  const object = field.children.find((child) => is_expression_node(child));
+  if (object === undefined) return undefined;
+  const receiver = unwrap_transparent_expression(object);
+  if (receiver.kind !== "identifier") return undefined;
+  return source.slice(receiver.start, receiver.end);
+}
+
+function effect_instance_constructor(
+  node: BabaCstNode,
+  source: string,
+): { name: string; applied: boolean } | undefined {
+  const expression = unwrap_transparent_expression(node);
+  let applied = false;
+  let function_node = expression;
+  if (expression.kind === "application_expression") {
+    const child = expression.children.find((candidate) =>
+      is_expression_node(candidate)
+    );
+    if (child === undefined) return undefined;
+    function_node = child;
+    applied = true;
+  }
+  const constructor = unwrap_transparent_expression(function_node);
+  if (constructor.kind !== "identifier") return undefined;
+  return {
+    name: source.slice(constructor.start, constructor.end),
+    applied,
+  };
+}
+
+function unwrap_transparent_expression(node: BabaCstNode): BabaCstNode {
+  let expression = node;
+  while (
+    expression.kind === "postfix_expression" ||
+    expression.kind === "parenthesized_expression"
+  ) {
+    const child = expression.children.find((candidate) =>
+      is_expression_node(candidate)
+    );
+    if (child === undefined) return expression;
+    expression = child;
+  }
+  return expression;
+}
+
 function index_synthetic_names(
   root: BabaCstNode,
   source: string,
@@ -75,6 +645,25 @@ function index_synthetic_names(
 ): void {
   let next_no_demand = 0;
   function visit(node: BabaCstNode): void {
+    if (node.kind === "module_header") {
+      const parameter_list = node.children.find((child) =>
+        child.kind === "parameter_list"
+      );
+      if (parameter_list !== undefined) {
+        for (
+          const parameter of parameter_list.children.filter((child) =>
+            child.kind === "parameter"
+          )
+        ) {
+          const wildcard = parameter.children.find((child) =>
+            child.kind === "wildcard"
+          );
+          if (wildcard === undefined) continue;
+          no_demand_names.set(wildcard, no_demand_name(next_no_demand));
+          next_no_demand += 1;
+        }
+      }
+    }
     if (node.kind === "binding_statement") {
       const pattern = node.children.find((child) => child.kind === "wildcard");
       if (pattern !== undefined) {
@@ -154,6 +743,7 @@ function line_break_count(text: string): number {
 }
 
 type LoweredTopLevel = {
+  module: ModuleHeader | undefined;
   declarations: Declaration[];
   statements: Stmt[];
 };
@@ -161,25 +751,143 @@ type LoweredTopLevel = {
 function lower_top_level_sequence(
   nodes: readonly BabaCstNode[],
   source: string,
+  declared_effect_type_context: BabaEffectTypeContext,
 ): Checked<LoweredTopLevel> {
   const declaration_names = new Map<string, BabaCstNode>();
   let contents: Checked<LoweredTopLevel> = ok({
+    module: undefined,
     declarations: [],
     statements: [],
   });
   for (const node of nodes) {
+    if (node.kind === "module_header") {
+      contents = Applicative.lift(
+        (current: LoweredTopLevel, module: ModuleHeader) => ({
+          module,
+          declarations: current.declarations,
+          statements: current.statements,
+        }),
+        contents,
+        lower_module_header(node, source),
+      );
+      continue;
+    }
+    let declaration: Checked<Declaration> | undefined;
     if (node.kind === "type_declaration_statement") {
-      let declaration = lower_baba_type_declaration(node, source);
+      declaration = lower_baba_type_declaration(node, source);
+    } else if (
+      node.kind === "declare_effect_statement" ||
+      node.kind === "effect_statement"
+    ) {
+      declaration = lower_baba_effect_declaration(
+        node,
+        source,
+        declared_effect_type_context,
+      );
+    } else if (node.kind === "declare_record_statement") {
+      declaration = lower_baba_record_declaration(node, source);
+    }
+    if (declaration !== undefined) {
       const name_node = node.children.find((child) =>
-        child.kind === "identifier"
+        child.kind === "identifier" || child.kind === "effect_identifier"
       );
       if (name_node !== undefined) {
         const name = source.slice(name_node.start, name_node.end);
+        let checks_init_fields = node.kind === "declare_record_statement";
+        if (node.kind === "type_declaration_statement") {
+          const type_parameter_count = node.children.filter((child) =>
+            child.kind === "identifier"
+          ).length - 1;
+          checks_init_fields = type_parameter_count === 0 &&
+            node.children.some((child) => child.kind === "struct_type");
+        }
+        if (name === "Init" && checks_init_fields) {
+          let init_check: Checked<null> = ok(null);
+          const init_field_nodes = [
+            ...descendants_of_kind(node, "type_field"),
+            ...descendants_of_kind(node, "named_type_field"),
+          ].sort((left, right) => left.start - right.start);
+          for (const field_node of init_field_nodes) {
+            const field_name_node = field_node.children.find((child) =>
+              child.kind === "identifier"
+            );
+            const type_node = field_node.children.find((child) =>
+              child.kind === "type_reference"
+            );
+            if (field_name_node === undefined || type_node === undefined) {
+              continue;
+            }
+            const field_name = source.slice(
+              field_name_node.start,
+              field_name_node.end,
+            );
+            const parsed_type = checked_value(
+              lower_baba_type_reference(type_node, source),
+            );
+            if (parsed_type === undefined) continue;
+            let invalid_init_type = false;
+            let invalid_init_message = "Init field must name a host effect: " +
+              field_name;
+            if (parsed_type.tag !== "name") {
+              invalid_init_type = true;
+              invalid_init_message += ", got " +
+                format_type_expr(parsed_type);
+            } else {
+              const effect_implementation = declared_effect_type_context
+                .effects.get(parsed_type.name);
+              if (effect_implementation === "duck") {
+                invalid_init_type = true;
+                invalid_init_message =
+                  "Init field cannot provide Duck effect " +
+                  parsed_type.name + ": " + field_name;
+              } else if (effect_implementation === undefined) {
+                const primitive = classify_abi_primitive(parsed_type.name);
+                if (
+                  primitive.tag !== "unknown" ||
+                  declared_effect_type_context.arities.has(parsed_type.name)
+                ) {
+                  invalid_init_type = true;
+                  invalid_init_message += ", got " + parsed_type.name;
+                }
+              }
+            }
+            if (!invalid_init_type) continue;
+            init_check = Applicative.lift(
+              (_fields: null, _field: null) => null,
+              init_check,
+              fail(
+                compiler_diagnostic(
+                  diagnostic_codes.syntax_error,
+                  invalid_init_message,
+                  { start: type_node.start, end: type_node.end },
+                ),
+              ),
+            );
+          }
+          const declaration_with_init = Applicative.lift(
+            (value: Declaration, _init: null) => value,
+            declaration,
+            init_check,
+          );
+          const init_diagnostics = diagnostics_of(declaration_with_init)
+            .toSorted((left, right) => {
+              if (left.span.start !== right.span.start) {
+                return left.span.start - right.span.start;
+              }
+              if (left.span.end !== right.span.end) {
+                return left.span.end - right.span.end;
+              }
+              return 0;
+            });
+          declaration = declaration_with_init;
+          if (init_diagnostics.length > 0) {
+            declaration = fail(...init_diagnostics);
+          }
+        }
         const previous = declaration_names.get(name);
         if (previous !== undefined) {
           declaration = Applicative.lift(
-            (value: Declaration, _duplicate: null) => value,
-            declaration,
+            (_duplicate: null, value: Declaration) => value,
             fail(
               compiler_diagnostic(
                 diagnostic_codes.syntax_error,
@@ -191,6 +899,7 @@ function lower_top_level_sequence(
                 }],
               ),
             ),
+            declaration,
           );
         } else {
           declaration_names.set(name, name_node);
@@ -198,6 +907,7 @@ function lower_top_level_sequence(
       }
       contents = Applicative.lift(
         (current: LoweredTopLevel, declaration: Declaration) => ({
+          module: current.module,
           declarations: [...current.declarations, declaration],
           statements: current.statements,
         }),
@@ -210,6 +920,7 @@ function lower_top_level_sequence(
       (current: LoweredTopLevel, statement: Stmt | undefined) => {
         if (statement === undefined) return current;
         return {
+          module: current.module,
           declarations: current.declarations,
           statements: [...current.statements, statement],
         };
@@ -219,6 +930,139 @@ function lower_top_level_sequence(
     );
   }
   return contents;
+}
+
+function lower_module_header(
+  node: BabaCstNode,
+  source: string,
+): Checked<ModuleHeader> {
+  const parameter_list = node.children.find((child) =>
+    child.kind === "parameter_list"
+  );
+  if (parameter_list === undefined) return unsupported(node);
+  let lowered_params: Checked<Param[]> = ok([]);
+  for (
+    const parameter_node of parameter_list.children.filter((child) =>
+      child.kind === "parameter"
+    )
+  ) {
+    const name_node = parameter_node.children.find((child) =>
+      child.kind === "identifier" || child.kind === "wildcard"
+    );
+    if (name_node === undefined) return unsupported(parameter_node);
+    const type_node = parameter_node.children.find((child) =>
+      child.kind === "type_reference"
+    );
+    const is_const = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "const"
+    );
+    const is_linear = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "!"
+    );
+    const is_variadic = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "..."
+    );
+    const parameter_diagnostics = [];
+    if (
+      name_node.kind === "identifier" &&
+      !is_snake_case(source.slice(name_node.start, name_node.end))
+    ) {
+      const name = source.slice(name_node.start, name_node.end);
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Parameter must use snake_case: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    if (name_node.kind === "identifier") {
+      const name = source.slice(name_node.start, name_node.end);
+      const reserved_feature = unsupported_reserved_feature(name);
+      if (reserved_feature !== undefined) {
+        parameter_diagnostics.push(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Parameter is reserved for unsupported " + reserved_feature +
+              ": " + name,
+            { start: name_node.start, end: name_node.end },
+          ),
+        );
+      }
+    }
+    if (name_node.kind === "wildcard" && is_linear) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Baba semantic lowering does not support linear wildcard parameters.",
+          { start: parameter_node.start, end: parameter_node.end },
+        ),
+      );
+    }
+    if (name_node.kind === "wildcard" && is_variadic) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Variadic parameter requires a binding name",
+          { start: parameter_node.start, end: parameter_node.end },
+        ),
+      );
+    }
+    let parameter_check: Checked<null> = ok(null);
+    if (parameter_diagnostics.length > 0) {
+      parameter_check = fail(...parameter_diagnostics);
+    }
+    let lowered_type: Checked<TypeExpr | undefined> = ok(undefined);
+    if (type_node !== undefined) {
+      lowered_type = lower_baba_type_reference(type_node, source);
+    }
+    const lowered_parameter = Applicative.lift(
+      (_parameter: null, parsed_type: TypeExpr | undefined) => {
+        let annotation: string | undefined;
+        let type_annotation: TypeExpr | undefined;
+        if (parsed_type !== undefined) {
+          annotation = format_type_expr(parsed_type);
+          if (parsed_type.tag !== "name") type_annotation = parsed_type;
+        }
+        let name = source.slice(name_node.start, name_node.end);
+        if (name_node.kind === "wildcard") {
+          const generated_name = no_demand_names.get(name_node);
+          expect(
+            generated_name !== undefined,
+            "Baba module wildcard parameter has no no-demand identity.",
+          );
+          name = generated_name;
+        }
+        const parameter: Param = {
+          name,
+          is_const,
+          is_linear,
+          annotation,
+        };
+        if (is_variadic) parameter.is_variadic = true;
+        if (type_annotation !== undefined) {
+          parameter.type_annotation = type_annotation;
+        }
+        mark_source_span(parameter, {
+          start: parameter_node.start,
+          end: parameter_node.end,
+        });
+        return parameter;
+      },
+      parameter_check,
+      lowered_type,
+    );
+    lowered_params = Applicative.lift(
+      (params: Param[], parameter: Param) => [...params, parameter],
+      lowered_params,
+      lowered_parameter,
+    );
+  }
+  return lowered_params.map((params) => {
+    const module: ModuleHeader = { params };
+    mark_source_span(module, { start: node.start, end: node.end });
+    return module;
+  });
 }
 
 function lower_statement(
@@ -249,8 +1093,16 @@ function lower_statement(
     return lower_assignment(node, source);
   }
 
+  if (node.kind === "effect_binding_statement") {
+    return lower_effect_binding(node, source);
+  }
+
   if (node.kind === "return_statement") {
     return lower_return(node, source);
+  }
+
+  if (node.kind === "module_return_statement") {
+    return lower_module_return(node, source);
   }
 
   if (node.kind === "break_statement") {
@@ -495,6 +1347,85 @@ function lower_assignment(
   );
 }
 
+function lower_effect_binding(
+  node: BabaCstNode,
+  source: string,
+): Checked<Stmt> {
+  const binding_node = node.children.find((child) =>
+    child.kind === "identifier" || child.kind === "wildcard" ||
+    child.kind === "unit_pattern"
+  );
+  const value_node = node.children.find((child) =>
+    child !== binding_node && is_expression_node(child)
+  );
+  if (binding_node === undefined || value_node === undefined) {
+    return unsupported(node);
+  }
+  let value_name: string | undefined;
+  let binding_check: Checked<null> = ok(null);
+  if (binding_node.kind === "identifier") {
+    value_name = source.slice(binding_node.start, binding_node.end);
+    if (!is_snake_case(value_name)) {
+      binding_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Effect result binding must use snake_case: " + value_name,
+          { start: binding_node.start, end: binding_node.end },
+        ),
+      );
+    }
+    const reserved_feature = unsupported_reserved_feature(value_name);
+    if (reserved_feature !== undefined) {
+      binding_check = Applicative.lift(
+        (_name: null, _reserved: null) => null,
+        binding_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Effect result binding is reserved for unsupported " +
+              reserved_feature + ": " + value_name,
+            { start: binding_node.start, end: binding_node.end },
+          ),
+        ),
+      );
+    }
+  }
+  return Applicative.lift(
+    (_binding: null, value: FrontExpr) => {
+      let statement: Stmt;
+      if (direct_effect_bindings.has(node) || is_direct_effect_call(value)) {
+        statement = { tag: "state_bind", value_name, value };
+      } else if (value_name === undefined) {
+        statement = { tag: "expr", expr: value, effectful: true };
+      } else {
+        statement = {
+          tag: "bind",
+          kind: "let",
+          name: value_name,
+          is_linear: false,
+          annotation: undefined,
+          effectful: true,
+          value,
+        };
+      }
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    binding_check,
+    lower_expression(value_node, source),
+  );
+}
+
+function is_direct_effect_call(value: FrontExpr): boolean {
+  if (value.tag !== "app" || value.func.tag !== "field") return false;
+  const object = value.func.object;
+  if (object.tag === "var") {
+    return /^[A-Z][A-Za-z0-9]*$/.test(object.name);
+  }
+  return object.tag === "field" && object.object.tag === "var" &&
+    /^[A-Z][A-Za-z0-9]*$/.test(object.object.name);
+}
+
 function lower_return(
   node: BabaCstNode,
   source: string,
@@ -508,6 +1439,40 @@ function lower_return(
 
   return lower_expression(value_node, source).map((value) => {
     const statement: Stmt = { tag: "return", value };
+    mark_source_span(statement, { start: node.start, end: node.end });
+    return statement;
+  });
+}
+
+function lower_module_return(
+  node: BabaCstNode,
+  source: string,
+): Checked<Stmt> {
+  const value_node = node.children.find((child) => is_expression_node(child));
+  if (value_node === undefined) return lower_return(node, source);
+  return lower_expression(value_node, source).map((value) => {
+    let return_value = value;
+    if (value.tag === "shape") {
+      const fields = value.entries.map((entry) => {
+        expect(
+          entry.label !== undefined,
+          "Baba module export shape entry has no label.",
+        );
+        const field = { name: entry.label, value: entry.value };
+        mark_source_span(field, source_span(entry));
+        return field;
+      });
+      return_value = {
+        tag: "struct_value",
+        type_expr: { tag: "var", name: "object_type" },
+        fields,
+      };
+      mark_source_span(return_value, {
+        start: value_node.start,
+        end: value_node.end,
+      });
+    }
+    const statement: Stmt = { tag: "return", value: return_value };
     mark_source_span(statement, { start: node.start, end: node.end });
     return statement;
   });
@@ -903,20 +1868,56 @@ function lower_expression(
       is_expression_node(child)
     );
     const field_node = node.children.find((child) =>
-      child.kind === "identifier" || child.kind === '"end"'
+      child !== object_node &&
+      (child.kind === "identifier" || child.kind === '"end"')
     );
     if (object_node === undefined || field_node === undefined) {
       return unsupported(node);
     }
-    return lower_expression(object_node, source).map((object) => {
-      const expression: FrontExpr = {
-        tag: "field",
-        object,
-        name: source.slice(field_node.start, field_node.end),
-      };
-      mark_source_span(expression, { start: node.start, end: node.end });
-      return expression;
-    });
+    const name = source.slice(field_node.start, field_node.end);
+    let field_check: Checked<null> = ok(null);
+    if (
+      name !== "end" && !is_snake_case(name) &&
+      !/^[A-Z][A-Za-z0-9]*$/.test(name)
+    ) {
+      field_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Field must use snake_case: " + name,
+          { start: field_node.start, end: field_node.end },
+        ),
+      );
+    }
+    return Applicative.lift(
+      (object: FrontExpr, _field: null) => {
+        let expression: FrontExpr;
+        if (
+          object.tag === "var" && object.name === "Bytes" && name === "empty"
+        ) {
+          expression = { tag: "text", value: "", encoding: "bytes" };
+        } else if (
+          object.tag === "var" && object.name === "Bytes" &&
+          name === "generate"
+        ) {
+          expression = { tag: "var", name: "@Bytes.generate" };
+        } else if (
+          object.tag === "var" && object.name === "Utf8" &&
+          (name === "encode" || name === "decode")
+        ) {
+          expression = { tag: "var", name: "Utf8." + name };
+        } else {
+          expression = {
+            tag: "field",
+            object,
+            name,
+          };
+        }
+        mark_source_span(expression, { start: node.start, end: node.end });
+        return expression;
+      },
+      lower_expression(object_node, source),
+      field_check,
+    );
   }
 
   if (node.kind === "import_expression") {
