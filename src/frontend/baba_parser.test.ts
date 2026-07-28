@@ -66,7 +66,22 @@ Deno.test("Baba converts UTF-8 columns to UTF-16 source spans", () => {
   assert_equals(parsed.diagnostics, []);
   const next_start = source.indexOf("next");
   assert_equals(
-    parsed.tokens.some((token) => token.text === "next" && token.start === next_start),
+    parsed.tokens.some((token) =>
+      token.text === "next" && token.start === next_start
+    ),
+    true,
+  );
+});
+
+Deno.test("Baba preserves UTF-16 spans after astral characters", () => {
+  const source = 'let text = "🦆";\nlet next = 1;\n';
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, []);
+  const next_start = source.indexOf("next");
+  assert_equals(
+    parsed.tokens.some((token) =>
+      token.text === "next" && token.start === next_start
+    ),
     true,
   );
 });
@@ -89,15 +104,27 @@ Deno.test("Baba reports missing-token recovery at its local byte span", () => {
 Deno.test("Baba reports every missing-token recovery", () => {
   const parsed = parse_duck_source("let a = ;\nlet b = (1;\n");
   assert_equals(parsed.diagnostics.length >= 2, true);
-  assert_equals(parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 8), true);
-  assert_equals(parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 20), true);
+  assert_equals(
+    parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 8),
+    true,
+  );
+  assert_equals(
+    parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 20),
+    true,
+  );
 });
 
 Deno.test("Baba reports nested structural recoveries independently", () => {
   const parsed = parse_duck_source("let a = [;\nlet b = [;\n");
   assert_equals(parsed.diagnostics.length >= 2, true);
-  assert_equals(parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 0), true);
-  assert_equals(parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 17), true);
+  assert_equals(
+    parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 0),
+    true,
+  );
+  assert_equals(
+    parsed.diagnostics.some((diagnostic) => diagnostic.span.start === 17),
+    true,
+  );
 });
 
 Deno.test("Baba parses prefix signatures and contract clauses", () => {
@@ -126,5 +153,5 @@ Deno.test("Baba parses transparent and opaque fact definitions", () => {
   );
   assert_equals(parsed.diagnostics, []);
   assert_equals(parsed.cst.tree.includes("prefix_fact_statement"), true);
-  assert_equals(parsed.cst.tree.includes("\"opaque\""), true);
+  assert_equals(parsed.cst.tree.includes('"opaque"'), true);
 });

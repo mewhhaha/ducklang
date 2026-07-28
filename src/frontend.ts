@@ -152,10 +152,7 @@ export type {
   ContractFunction,
   FunctionFactSummary,
 } from "./frontend/function_summary.ts";
-export {
-  analyze_duck_source,
-  lower_duck_source,
-} from "./frontend/semantic_program.ts";
+export { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 export type {
   DuckAnalysis,
   DuckAnalyzeOptions,
@@ -167,7 +164,7 @@ export type {
   SemanticSymbolIndex,
   SemanticTypeIndex,
   SourceOriginIndex,
-} from "./frontend/semantic_program.ts";
+} from "./semantic_program.ts";
 export { associate_prefix_signatures } from "./frontend/prefix_signature.ts";
 export type {
   PrefixDefinition,

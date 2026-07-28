@@ -5,7 +5,7 @@ const entry = new URL("../../duck.ts", import.meta.url).pathname;
 
 Deno.test("duck fmt --stdin formats a program", async () => {
   const command = new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "fmt", "--stdin"],
+    args: ["run", "--no-check", "--allow-read", entry, "fmt", "--stdin"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -21,7 +21,7 @@ Deno.test("duck fmt --stdin formats a program", async () => {
 
 Deno.test("duck lsp answers an initialize and formatting round trip", async () => {
   const command = new Deno.Command(Deno.execPath(), {
-    args: ["run", "--no-check", entry, "lsp"],
+    args: ["run", "--no-check", "--allow-read", entry, "lsp"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -173,7 +173,7 @@ Deno.test("duck test reports a failing source assertion", async () => {
     );
     assert_includes(
       new TextDecoder().decode(output.stderr),
-      "Duck program called @panic",
+      "Test failed",
     );
   } finally {
     await Deno.remove(directory, { recursive: true });

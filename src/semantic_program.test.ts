@@ -1,7 +1,7 @@
-import { assert_equals } from "../assert.ts";
+import { assert_equals } from "./assert.ts";
 import { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
-import { parse_duck_source } from "./baba_parser.ts";
-import { checked_value, diagnostics_of } from "./checked.ts";
+import { parse_duck_source } from "./frontend/baba_parser.ts";
+import { checked_value, diagnostics_of } from "./frontend/checked.ts";
 
 Deno.test("semantic program stages preserve Baba input and stable symbols", () => {
   const parsed = parse_duck_source("let value = 1;\n");

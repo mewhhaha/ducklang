@@ -1,32 +1,32 @@
-import type { Core } from "../core/ast.ts";
-import { core_from_source } from "../core/from_source.ts";
+import type { Core } from "./core/ast.ts";
+import { core_from_source } from "./core/from_source.ts";
 import {
   compiler_diagnostic,
   type CompilerDiagnostic,
   diagnostic_codes,
   diagnostic_sequence,
-} from "../diagnostic.ts";
-import { expect } from "../expect.ts";
+} from "./diagnostic.ts";
+import { expect } from "./expect.ts";
 import {
   type Checked,
   checked_value,
   diagnostics_of,
   fail,
   ok,
-} from "./checked.ts";
+} from "./frontend/checked.ts";
 import {
   type BabaCstNode,
   type BabaParseResult,
   is_trusted_baba_parse_result,
-} from "./baba_parser.ts";
-import type { Source as SourceNode } from "./ast.ts";
+} from "./frontend/baba_parser.ts";
+import type { Source as SourceNode } from "./frontend/ast.ts";
 import {
   analyze_baba_semantics,
   type BabaSemanticAnalyzeOptions,
-} from "./baba_analyze.ts";
-import { lower_baba_source } from "./baba_lower.ts";
-import { source_with_host_interface } from "./host_interface.ts";
-import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
+} from "./frontend/baba_analyze.ts";
+import { lower_baba_source } from "./frontend/baba_lower.ts";
+import { source_with_host_interface } from "./frontend/host_interface.ts";
+import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import {
   make_source_syntax,
   mark_source_span,
@@ -35,21 +35,21 @@ import {
   type SourceSpan,
   type SourceSyntax,
   type SyntaxDiagnostic,
-} from "./syntax.ts";
+} from "./frontend/syntax.ts";
 import {
   SemanticIdentityAllocator,
   type SemanticOrigin,
   type ValueId,
-} from "./semantic_identity.ts";
-import type { FactState } from "./fact_graph.ts";
-import type { KernelCertificate } from "./proof_kernel.ts";
-import type { FunctionFactSummary } from "./function_summary.ts";
+} from "./frontend/semantic_identity.ts";
+import type { FactState } from "./frontend/fact_graph.ts";
+import type { KernelCertificate } from "./frontend/proof_kernel.ts";
+import type { FunctionFactSummary } from "./frontend/function_summary.ts";
 import {
   associate_prefix_signatures,
   type PrefixDefinition,
   type PrefixSignature,
-} from "./prefix_signature.ts";
-import { extract_prefix_source_metadata } from "./prefix_signature_source.ts";
+} from "./frontend/prefix_signature.ts";
+import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
 
 export type SemanticSymbolIndex = ReadonlyMap<string, readonly ValueId[]>;
 export type SemanticTypeIndex = ReadonlyMap<string, string>;

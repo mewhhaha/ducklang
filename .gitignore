@@ -11,6 +11,7 @@ dist/
 out/
 
 *.wasm
+!tree-sitter-duck/tree-sitter-duck.wasm
 *.wat
 *.out
 *.tsbuildinfo

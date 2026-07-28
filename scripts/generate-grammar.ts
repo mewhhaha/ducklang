@@ -11,6 +11,7 @@ const generated_paths = [
   "src/grammar.json",
   "src/node-types.json",
   "src/parser.c",
+  "tree-sitter-duck.wasm",
 ];
 const scanner_tokens = [
   "_application_space",
@@ -111,6 +112,10 @@ try {
     generation_directory,
     temporary_directory + "/cache",
   );
+  await run_tree_sitter_wasm_build(
+    generation_directory,
+    temporary_directory + "/cache",
+  );
 
   if (check_only) {
     for (const generated_path of generated_paths) {
@@ -200,6 +205,37 @@ async function run_tree_sitter_generate(
   const stderr = new TextDecoder().decode(generation.stderr).trim();
   throw new Error(
     "Tree-sitter grammar generation failed with exit code " +
+      generation.code.toString() + ": " + stderr,
+  );
+}
+
+async function run_tree_sitter_wasm_build(
+  directory: string | URL,
+  cache_directory: string,
+): Promise<void> {
+  let output: string;
+  if (typeof directory === "string") {
+    output = directory + "/tree-sitter-duck.wasm";
+  } else {
+    output = new URL("tree-sitter-duck.wasm", directory).pathname;
+  }
+  const generation = await new Deno.Command("tree-sitter", {
+    args: ["build", "--wasm", "--output", output, "."],
+    cwd: directory,
+    env: {
+      XDG_CACHE_HOME: cache_directory,
+    },
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+
+  if (generation.success) {
+    return;
+  }
+
+  const stderr = new TextDecoder().decode(generation.stderr).trim();
+  throw new Error(
+    "Tree-sitter Wasm build failed with exit code " +
       generation.code.toString() + ": " + stderr,
   );
 }
