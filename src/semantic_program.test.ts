@@ -296,6 +296,36 @@ Deno.test("Baba recursion reaches proof-erased semantic Core", () => {
   }
 });
 
+Deno.test("Baba source operators reach proof-erased semantic Core", () => {
+  const source = "infixl 60 +++ = add\n" +
+    "let add = (left, right) => left + right;\n" +
+    "let value = 20 +++ 22;\n" +
+    "value\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected a source operator to reach semantic Core.");
+  }
+  assert_equals(
+    program.core.statements.map((statement) => statement.tag),
+    ["bind", "bind", "expr"],
+  );
+});
+
+Deno.test("semantic analysis preserves malformed fixity diagnostics", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "infixl 60 +++ =\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.message),
+    [
+      "Baba parser rejected MISSING",
+      "Malformed fixity declaration.",
+    ],
+  );
+});
+
 Deno.test("semantic Core elaborates product destructuring before lowering", () => {
   const source = "let [left, right] = [1, 2];\nleft + right;\n";
   const analysis = analyze_duck_source(parse_duck_source(source));
