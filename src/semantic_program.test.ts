@@ -229,6 +229,33 @@ Deno.test("Baba conditional patterns reach proof-erased semantic Core", () => {
   }
 });
 
+Deno.test("Baba case expressions reach proof-erased semantic Core", () => {
+  const source = "type Maybe = | #None | #Some I32\n" +
+    "let current: Maybe = #Some 42;\n" +
+    "let out = case current of #Some value => value, #None => 0;\n" +
+    "out\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected the Baba case expression to reach Core.");
+  }
+  const out = program.core.statements.find((statement) =>
+    statement.tag === "bind" && statement.name === "out"
+  );
+  if (out?.tag !== "bind") {
+    throw new Error("Case Core omitted its result binding.");
+  }
+  if (out.value.tag !== "block") {
+    throw new Error("Case Core did not elaborate its match.");
+  }
+  const case_statement = out.value.statements[0];
+  if (case_statement?.tag !== "expr") {
+    throw new Error("Case Core omitted its elaborated expression.");
+  }
+  assert_equals(case_statement.expr.tag, "if_let");
+});
+
 Deno.test("Baba loops reach proof-erased semantic Core", () => {
   for (
     const example of [

@@ -8,6 +8,7 @@ import type {
   AttributeGroup,
   Declaration,
   FrontExpr,
+  MatchArm,
   ModuleHeader,
   Param,
   Pattern,
@@ -999,6 +1000,17 @@ function index_direct_effect_bindings(
       nested_instances = shadowed;
       nested_known_values = shadowed_known_values;
     }
+    const case_bindings = case_arm_pattern_binding_names(node, source);
+    if (case_bindings.length > 0) {
+      const shadowed = new Set(nested_instances);
+      const shadowed_known_values = new Map(nested_known_values);
+      for (const name of case_bindings) {
+        shadowed.delete(name);
+        shadowed_known_values.delete(name);
+      }
+      nested_instances = shadowed;
+      nested_known_values = shadowed_known_values;
+    }
     let conditional_instances = nested_instances;
     let conditional_known_values = nested_known_values;
     const conditional_bindings = conditional_pattern_binding_names(
@@ -1152,6 +1164,13 @@ function nested_assigned_outer_names(
       for (const name of bindings) shadowed.delete(name);
       conditional_names = shadowed;
     }
+    let case_names = visible_names;
+    const case_bindings = case_arm_pattern_binding_names(current, source);
+    if (case_bindings.length > 0) {
+      const shadowed = new Set(visible_names);
+      for (const name of case_bindings) shadowed.delete(name);
+      case_names = shadowed;
+    }
     let loop_names = visible_names;
     const loop_bindings = for_pattern_binding_names(current, source);
     if (loop_bindings.length > 0) {
@@ -1168,12 +1187,18 @@ function nested_assigned_outer_names(
           visit_sequence(child.children, conditional_names);
         } else if (current.kind === "for_statement") {
           visit_sequence(child.children, loop_names);
+        } else if (current.kind === "case_arm") {
+          visit_sequence(child.children, case_names);
         } else {
           visit_sequence(child.children, visible_names);
         }
         continue;
       }
-      visit_nested(child, visible_names);
+      if (current.kind === "case_arm") {
+        visit_nested(child, case_names);
+      } else {
+        visit_nested(child, visible_names);
+      }
     }
   }
 
@@ -1230,6 +1255,24 @@ function conditional_pattern_binding_names(
     child.end <= equals_node.start && is_pattern_node(child)
   );
   if (pattern_nodes.length === 0) return [];
+  const pattern = checked_value(
+    lower_pattern_alternatives(pattern_nodes, source),
+  );
+  if (pattern === undefined) return [];
+  return pattern_bindings(pattern).map((binding) => binding.name);
+}
+
+function case_arm_pattern_binding_names(
+  node: BabaCstNode,
+  source: string,
+): string[] {
+  if (node.kind !== "case_arm") return [];
+  const arrow_node = node.children.find((child) => child.kind === '"=>"');
+  if (arrow_node === undefined) return [];
+  const pattern_nodes = node.children.filter((child) =>
+    child.end <= arrow_node.start && is_pattern_node(child)
+  );
+  if (pattern_nodes.length !== 1) return [];
   const pattern = checked_value(
     lower_pattern_alternatives(pattern_nodes, source),
   );
@@ -4450,7 +4493,10 @@ function lower_expression(
     return lower_application(node, source);
   }
 
-  if (node.kind === "positional_product") {
+  if (
+    node.kind === "positional_product" ||
+    node.kind === "condition_positional_product"
+  ) {
     const entries = node.children.filter((child) => is_expression_node(child))
       .map((child) =>
         lower_expression(child, source).map((value) => ({ value }))
@@ -4483,6 +4529,14 @@ function lower_expression(
 
   if (node.kind === "if_expression") {
     return lower_if_expression(node, source);
+  }
+
+  if (node.kind === "case_expression") {
+    return lower_case_expression(node, source);
+  }
+
+  if (node.kind === "case_function_expression") {
+    return lower_case_function_expression(node, source);
   }
 
   if (node.kind === "condition_unary_expression") {
@@ -4728,7 +4782,7 @@ function lower_expression(
   }
 
   if (node.kind === "union_case") {
-    return lower_union_case(node, source);
+    return lower_union_case(node, source, "complete_expression");
   }
 
   if (node.kind === "loop_expression") {
@@ -4736,6 +4790,213 @@ function lower_expression(
   }
 
   return unsupported(node);
+}
+
+function lower_case_expression(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const of_node = node.children.find((child) => child.kind === '"of"');
+  if (of_node === undefined) return unsupported(node);
+  const target_node = node.children.find((child) =>
+    child.end <= of_node.start && is_expression_node(child)
+  );
+  if (target_node === undefined) return unsupported(node);
+  return Applicative.lift(
+    (target: FrontExpr, arms: MatchArm[]) => {
+      const expression: FrontExpr = { tag: "match", target, arms };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    lower_expression(target_node, source),
+    lower_case_arms(node, source),
+  );
+}
+
+function lower_case_function_expression(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const lowered_arms = lower_case_arms(node, source);
+  let parameter_count = 1;
+  let arity_check: Checked<null> = ok(null);
+  const arm_nodes = node.children.filter((child) => child.kind === "case_arm");
+  const packed_arm_node = arm_nodes.find((arm_node) =>
+    arm_node.children.some((child) =>
+      child.kind === "positional_product_pattern"
+    )
+  );
+  if (packed_arm_node !== undefined) {
+    const pattern_node = packed_arm_node.children.find((child) =>
+      child.kind === "positional_product_pattern"
+    );
+    expect(
+      pattern_node !== undefined,
+      "Baba packed case function arm disappeared.",
+    );
+    parameter_count = pattern_node.children.filter((child) =>
+      is_pattern_node(child)
+    ).length;
+  }
+  for (const arm_node of arm_nodes) {
+    const pattern_node = arm_node.children.find((child) =>
+      is_pattern_node(child)
+    );
+    if (pattern_node === undefined) continue;
+    if (pattern_node.kind === "wildcard") continue;
+    if (
+      pattern_node.kind === "identifier" &&
+      !/^[A-Z][A-Za-z0-9]*$/.test(
+        source.slice(pattern_node.start, pattern_node.end),
+      )
+    ) {
+      continue;
+    }
+    let arm_parameter_count = 1;
+    if (pattern_node.kind === "positional_product_pattern") {
+      arm_parameter_count = pattern_node.children.filter((child) =>
+        is_pattern_node(child)
+      ).length;
+    }
+    if (arm_parameter_count === parameter_count) continue;
+    arity_check = Applicative.lift(
+      (_current: null, _next: null) => null,
+      arity_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "`case => of` arms must match the same argument count",
+          { start: arm_node.start, end: arm_node.end },
+        ),
+      ),
+    );
+  }
+
+  const result = Applicative.lift(
+    (arms: MatchArm[], _arity: null) => {
+      const params: Param[] = [];
+      for (let index = 0; index < parameter_count; index += 1) {
+        params.push({
+          name: "_case#param" + index.toString(),
+          is_const: false,
+          is_linear: false,
+          annotation: undefined,
+        });
+      }
+      let pattern: Pattern;
+      let target: FrontExpr;
+      if (parameter_count === 1) {
+        const param = params[0];
+        expect(
+          param !== undefined,
+          "Baba case function parameter disappeared.",
+        );
+        pattern = {
+          tag: "binding",
+          name: param.name,
+          mode: "default",
+          annotation: undefined,
+        };
+        target = { tag: "var", name: param.name };
+      } else {
+        pattern = {
+          tag: "product",
+          entries: params.map((param) => ({
+            pattern: {
+              tag: "binding",
+              name: param.name,
+              mode: "default",
+              annotation: undefined,
+            },
+          })),
+          value_pack: true,
+        };
+        target = {
+          tag: "product",
+          entries: params.map((param) => ({
+            value: { tag: "var", name: param.name },
+          })),
+          value_pack: true,
+        };
+      }
+      const body: FrontExpr = { tag: "match", target, arms };
+      derive_source_span(body, { start: node.start, end: node.end });
+      const expression: FrontExpr = {
+        tag: "lam",
+        pattern,
+        params,
+        body,
+        case_function: true,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    lowered_arms,
+    arity_check,
+  );
+  const diagnostics = diagnostics_of(result).toSorted((left, right) => {
+    if (left.span.start !== right.span.start) {
+      return left.span.start - right.span.start;
+    }
+    return left.span.end - right.span.end;
+  });
+  if (diagnostics.length > 0) return fail(...diagnostics);
+  return result;
+}
+
+function lower_case_arms(
+  node: BabaCstNode,
+  source: string,
+): Checked<MatchArm[]> {
+  let lowered_arms: Checked<MatchArm[]> = ok([]);
+  for (
+    const arm_node of node.children.filter((child) => child.kind === "case_arm")
+  ) {
+    const arrow_node = arm_node.children.find((child) => child.kind === '"=>"');
+    if (arrow_node === undefined) return unsupported(arm_node);
+    const pattern_nodes = arm_node.children.filter((child) =>
+      child.end <= arrow_node.start && is_pattern_node(child)
+    );
+    if (pattern_nodes.length !== 1) return unsupported(arm_node);
+    const pattern_node = pattern_nodes[0];
+    expect(pattern_node !== undefined, "Baba case arm pattern disappeared.");
+    const if_node = arm_node.children.find((child) =>
+      child.end <= arrow_node.start && child.kind === '"if"'
+    );
+    let lowered_guard: Checked<FrontExpr | undefined> = ok(undefined);
+    if (if_node !== undefined) {
+      const guard_node = arm_node.children.find((child) =>
+        child.start >= if_node.end && child.end <= arrow_node.start &&
+        is_expression_node(child)
+      );
+      if (guard_node === undefined) return unsupported(arm_node);
+      lowered_guard = lower_expression(guard_node, source);
+    }
+    const body_node = arm_node.children.find((child) =>
+      child.start >= arrow_node.end && is_expression_node(child)
+    );
+    if (body_node === undefined) return unsupported(arm_node);
+    const lowered_arm = Applicative.lift(
+      (
+        pattern: Pattern,
+        guard: FrontExpr | undefined,
+        body: FrontExpr,
+      ) => {
+        const arm: MatchArm = { pattern, guard, body };
+        mark_source_span(arm, { start: arm_node.start, end: arm_node.end });
+        return arm;
+      },
+      lower_pattern_alternatives([pattern_node], source),
+      lowered_guard,
+      lower_expression(body_node, source),
+    );
+    lowered_arms = Applicative.lift(
+      (arms: MatchArm[], arm: MatchArm) => [...arms, arm],
+      lowered_arms,
+      lowered_arm,
+    );
+  }
+  return lowered_arms;
 }
 
 function lower_block(
@@ -5311,29 +5572,155 @@ function lower_import_expression(
 function lower_union_case(
   node: BabaCstNode,
   source: string,
+  context: "complete_expression" | "application_argument",
 ): Checked<FrontExpr> {
-  const name_node = node.children.find((child) =>
-    child.kind === "constructor_identifier"
-  );
-  if (name_node === undefined) return unsupported(node);
-  const value_node = node.children.find((child) => is_expression_node(child));
-  if (value_node === undefined) {
+  const constructors: Array<{
+    node: BabaCstNode;
+    name_node: BabaCstNode;
+  }> = [];
+  let current = node;
+  let trailing_value_node: BabaCstNode | undefined;
+  while (true) {
+    const name_node = current.children.find((child) =>
+      child.kind === "constructor_identifier"
+    );
+    if (name_node === undefined) return unsupported(current);
+    constructors.push({ node: current, name_node });
+    const value_node = current.children.find((child) =>
+      is_expression_node(child)
+    );
+    if (value_node === undefined) break;
+    const direct_value_node = semantic_child(value_node);
+    if (
+      value_node.kind === "postfix_expression" &&
+      direct_value_node?.kind === "union_case"
+    ) {
+      current = direct_value_node;
+      continue;
+    }
+    trailing_value_node = value_node;
+    break;
+  }
+
+  const first = constructors[0];
+  expect(first !== undefined, "Baba union constructor chain is empty.");
+  if (constructors.length === 1) {
+    if (trailing_value_node !== undefined) {
+      const lowered_value = lower_expression(trailing_value_node, source);
+      let payload_check: Checked<null> = ok(null);
+      if (checked_value(lowered_value)?.tag === "unit") {
+        payload_check = fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Nullary union constructor #" +
+              source.slice(first.name_node.start, first.name_node.end) +
+              " omits `()`",
+            {
+              start: trailing_value_node.start,
+              end: trailing_value_node.end,
+            },
+          ),
+        );
+      }
+      return Applicative.lift(
+        (value: FrontExpr, _payload: null) => {
+          const expression: FrontExpr = {
+            tag: "union_case",
+            name: source.slice(first.name_node.start, first.name_node.end),
+            value,
+            type_expr: undefined,
+          };
+          mark_source_span(expression, { start: node.start, end: node.end });
+          return expression;
+        },
+        lowered_value,
+        payload_check,
+      );
+    }
+    let value: FrontExpr | undefined;
+    if (context === "complete_expression") value = { tag: "unit" };
     const expression: FrontExpr = {
       tag: "union_case",
-      name: source.slice(name_node.start, name_node.end),
-      value: { tag: "unit" },
+      name: source.slice(first.name_node.start, first.name_node.end),
+      value,
       type_expr: undefined,
     };
     mark_source_span(expression, { start: node.start, end: node.end });
     return ok(expression);
   }
-  return lower_expression(value_node, source).map((value) => {
-    const expression: FrontExpr = {
+
+  const second = constructors[1];
+  expect(second !== undefined, "Baba union constructor payload disappeared.");
+  const second_value: FrontExpr = {
+    tag: "union_case",
+    name: source.slice(second.name_node.start, second.name_node.end),
+    value: undefined,
+    type_expr: undefined,
+  };
+  mark_source_span(second_value, {
+    start: second.node.start,
+    end: second.name_node.end,
+  });
+  const initial: FrontExpr = {
+    tag: "union_case",
+    name: source.slice(first.name_node.start, first.name_node.end),
+    value: second_value,
+    type_expr: undefined,
+  };
+  const has_application_tail = constructors.length > 2 ||
+    trailing_value_node !== undefined;
+  if (has_application_tail) {
+    derive_source_span(initial, { start: node.start, end: node.end });
+  } else {
+    mark_source_span(initial, { start: node.start, end: node.end });
+  }
+  let lowered: Checked<FrontExpr> = ok(initial);
+  for (let index = 2; index < constructors.length; index += 1) {
+    const constructor = constructors[index];
+    expect(constructor !== undefined, "Baba union application disappeared.");
+    const argument: FrontExpr = {
       tag: "union_case",
-      name: source.slice(name_node.start, name_node.end),
-      value,
+      name: source.slice(
+        constructor.name_node.start,
+        constructor.name_node.end,
+      ),
+      value: undefined,
       type_expr: undefined,
     };
+    mark_source_span(argument, {
+      start: constructor.node.start,
+      end: constructor.name_node.end,
+    });
+    lowered = lowered.map((func) => {
+      const expression: FrontExpr = {
+        tag: "app",
+        func,
+        arg: argument,
+        args: [argument],
+      };
+      derive_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+  if (trailing_value_node !== undefined) {
+    lowered = Applicative.lift(
+      (func: FrontExpr, argument: FrontExpr) => {
+        let args = [argument];
+        if (argument.tag === "unit") args = [];
+        const expression: FrontExpr = {
+          tag: "app",
+          func,
+          arg: argument,
+          args,
+        };
+        derive_source_span(expression, { start: node.start, end: node.end });
+        return expression;
+      },
+      lowered,
+      lower_expression(trailing_value_node, source),
+    );
+  }
+  return lowered.map((expression) => {
     mark_source_span(expression, { start: node.start, end: node.end });
     return expression;
   });
@@ -6436,8 +6823,106 @@ function lower_application(
   if (function_node === undefined || argument_node === undefined) {
     return unsupported(node);
   }
+  let lowered_function = lower_expression(function_node, source);
+  const direct_function_node = semantic_child(function_node);
+  if (
+    function_node.kind === "postfix_expression" &&
+    direct_function_node?.kind === "union_case"
+  ) {
+    lowered_function = lower_union_case(
+      direct_function_node,
+      source,
+      "application_argument",
+    );
+  } else if (function_node.kind === "union_case") {
+    lowered_function = lower_union_case(
+      function_node,
+      source,
+      "application_argument",
+    );
+  }
+  let lowered_argument = lower_expression(argument_node, source);
+  const direct_argument_node = semantic_child(argument_node);
+  if (
+    argument_node.kind === "postfix_expression" &&
+    direct_argument_node?.kind === "union_case"
+  ) {
+    lowered_argument = lower_union_case(
+      direct_argument_node,
+      source,
+      "application_argument",
+    );
+  } else if (argument_node.kind === "union_case") {
+    lowered_argument = lower_union_case(
+      argument_node,
+      source,
+      "application_argument",
+    );
+  }
+  let constructor_call_check: Checked<null> = ok(null);
+  const parsed_function = checked_value(lowered_function);
+  const parsed_argument = checked_value(lowered_argument);
+  let called_constructor_node: BabaCstNode | undefined;
+  if (
+    argument_node.kind === "parenthesized_or_product" &&
+    function_node.end === argument_node.start
+  ) {
+    const constructor_nodes: BabaCstNode[] = [];
+    if (function_node.kind === "union_case") {
+      constructor_nodes.push(function_node);
+    }
+    constructor_nodes.push(
+      ...descendants_of_kind(function_node, "union_case"),
+    );
+    for (let index = constructor_nodes.length - 1; index >= 0; index -= 1) {
+      const candidate = constructor_nodes[index];
+      expect(candidate !== undefined, "Baba union call candidate disappeared.");
+      if (
+        candidate.end === function_node.end &&
+        !candidate.children.some((child) => is_expression_node(child))
+      ) {
+        called_constructor_node = candidate;
+        break;
+      }
+    }
+  }
+  if (called_constructor_node !== undefined) {
+    const name_node = called_constructor_node.children.find((child) =>
+      child.kind === "constructor_identifier"
+    );
+    expect(
+      name_node !== undefined,
+      "Baba called union constructor has no name.",
+    );
+    constructor_call_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Union constructor application uses #" +
+          source.slice(name_node.start, name_node.end) + " value",
+        { start: argument_node.start, end: argument_node.end },
+      ),
+    );
+  } else if (
+    parsed_function?.tag === "union_case" &&
+    parsed_function.value === undefined &&
+    parsed_argument?.tag === "unit"
+  ) {
+    constructor_call_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Union constructor application uses #" + parsed_function.name +
+          " value",
+        { start: argument_node.start, end: argument_node.end },
+      ),
+    );
+  }
   return Applicative.lift(
-    (func: FrontExpr, arg: FrontExpr) => {
+    (func: FrontExpr, arg: FrontExpr, _constructor_call: null) => {
+      if (func.tag === "union_case" && func.value === undefined) {
+        const expression: FrontExpr = { ...func, value: arg };
+        mark_source_span(expression, { start: node.start, end: node.end });
+        return expression;
+      }
       let args = [arg];
       if (arg.tag === "unit") args = [];
       if (arg.tag === "product" && arg.value_pack === true) {
@@ -6452,8 +6937,9 @@ function lower_application(
       mark_source_span(expression, { start: node.start, end: node.end });
       return expression;
     },
-    lower_expression(function_node, source),
-    lower_expression(argument_node, source),
+    lowered_function,
+    lowered_argument,
+    constructor_call_check,
   );
 }
 
@@ -6524,8 +7010,11 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "condition_call_expression" ||
     node.kind === "condition_application_expression" ||
     node.kind === "positional_product" ||
+    node.kind === "condition_positional_product" ||
     node.kind === "block" ||
     node.kind === "if_expression" ||
+    node.kind === "case_expression" ||
+    node.kind === "case_function_expression" ||
     node.kind === "condition_unary_expression" ||
     node.kind === "unary_expression" ||
     node.kind === "array_expression" ||

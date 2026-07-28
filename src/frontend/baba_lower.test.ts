@@ -1497,6 +1497,159 @@ Deno.test("Baba lowers conditional patterns and condition-only expressions", () 
   }
 });
 
+Deno.test("Baba lowers case expressions and case functions directly", () => {
+  for (
+    const source of [
+      "case of of _ => 1;\n",
+      "case choice of #Some value if value > 0 => value, #None => 0;\n",
+      "case value of 0 | #(expected) => 1, _ => do\n" +
+      "  let result = 2;\n" +
+      "  result\n" +
+      "end;\n",
+      "case (left, right) of (first, second) => first;\n",
+      "case choice of #Some value => #Outer #Middle #None, " +
+      "_ => consume #Fallback;\n",
+      "case choice of _ => #Outer function_value argument;\n",
+      "case choice of _ => #Outer #None ();\n",
+      "let inspect = value => case value of " +
+      "#Present payload => payload;\n",
+      "let choose = case => of\n" +
+      "  (#None, value) => value,\n" +
+      "  (#Some left, right) => left;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered case source.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  }
+});
+
+Deno.test("Baba validates case patterns and accumulates arm diagnostics", () => {
+  const duplicate_source = "case value of (x, x) => x;\n";
+  const duplicate = diagnostics_of(
+    lower_baba_source(parse_duck_source(duplicate_source)),
+  );
+  assert_equals(duplicate.map((diagnostic) => diagnostic.message), [
+    "Duplicate pattern binding: x",
+  ]);
+  assert_equals(duplicate[0]?.span, {
+    start: duplicate_source.lastIndexOf("x)"),
+    end: duplicate_source.lastIndexOf("x)") + 1,
+  });
+  assert_equals(duplicate[0]?.related, [{
+    message: "First pattern binding is here.",
+    span: {
+      start: duplicate_source.indexOf("x,"),
+      end: duplicate_source.indexOf("x,") + 1,
+    },
+  }]);
+
+  const independent_source = "case => of (left, right) => -1u8, #None => 0;\n";
+  const independent = diagnostics_of(
+    lower_baba_source(parse_duck_source(independent_source)),
+  );
+  assert_equals(independent.map((diagnostic) => diagnostic.message), [
+    "Unsigned U8 literal cannot be negated.",
+    "`case => of` arms must match the same argument count",
+  ]);
+
+  const ordered_source = "case => of #None => 0, (left, right) => -1u8;\n";
+  const ordered = diagnostics_of(
+    lower_baba_source(parse_duck_source(ordered_source)),
+  );
+  assert_equals(ordered.map((diagnostic) => diagnostic.message), [
+    "`case => of` arms must match the same argument count",
+    "Unsigned U8 literal cannot be negated.",
+  ]);
+
+  for (
+    const [source, message] of [
+      [
+        "case value of _ => #Outer ();\n",
+        "Nullary union constructor #Outer omits `()`",
+      ],
+      [
+        "case value of _ => #Outer();\n",
+        "Union constructor application uses #Outer value",
+      ],
+      [
+        "case value of _ => #Outer #None();\n",
+        "Union constructor application uses #None value",
+      ],
+      [
+        "case value of _ => #Some(value);\n",
+        "Union constructor application uses #Some value",
+      ],
+      [
+        "case value of _ => #Outer #Some(value);\n",
+        "Union constructor application uses #Some value",
+      ],
+    ] as const
+  ) {
+    assert_equals(
+      diagnostics_of(
+        lower_baba_source(parse_duck_source(source)),
+      ).map((diagnostic) => diagnostic.message),
+      [message],
+    );
+  }
+});
+
+Deno.test("Baba diagnoses inconsistent case-function arity at the arm", () => {
+  const source = "case => of (left, right) => left, #Some value => value;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(diagnostics, [{
+    code: "DUCK1001",
+    message: "`case => of` arms must match the same argument count",
+    severity: "error",
+    span: {
+      start: source.indexOf("#Some value => value"),
+      end: source.indexOf("#Some value => value") +
+        "#Some value => value".length,
+    },
+  }]);
+});
+
+Deno.test("Baba keeps case-function desugaring derived", () => {
+  const source = checked_value(lower_baba_source(parse_duck_source(
+    "case => of (left, right) => left;\n",
+  )));
+  const statement = source?.statements[0];
+  if (
+    statement?.tag !== "expr" || statement.expr.tag !== "lam" ||
+    statement.expr.body.tag !== "match"
+  ) {
+    throw new Error("Expected a directly lowered case function.");
+  }
+  assert_equals(source_span_origin(statement.expr), "concrete");
+  assert_equals(source_span_origin(statement.expr.body), "derived");
+});
+
+Deno.test("case-pattern bindings shadow tracked effect instances", () => {
+  const source = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "case choice of e => do\n" +
+    "  value <- e.op()\n" +
+    "end;\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const statement = checked_value(lowered)?.statements[1];
+  if (
+    statement?.tag !== "expr" || statement.expr.tag !== "match" ||
+    statement.expr.arms[0]?.body.tag !== "block"
+  ) {
+    throw new Error("Expected a case arm with a block body.");
+  }
+  assert_equals(statement.expr.arms[0].body.statements[0]?.tag, "bind");
+});
+
 Deno.test("Baba rejects negation outside a signed literal width", () => {
   for (
     const example of [
