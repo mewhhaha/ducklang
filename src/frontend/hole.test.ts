@@ -61,6 +61,24 @@ Deno.test("a hole inside a nested call is rejected", () => {
   assert_includes(message, "hole cannot appear inside a nested call");
 });
 
+Deno.test("nested aggregate and postfix holes are rejected", () => {
+  for (
+    const text of [
+      "let bad = outer({ .value = inner _ }, _);\n",
+      "let bad = outer(inner _.field, _);\n",
+      "let bad = outer({ .value = _ });\n",
+    ]
+  ) {
+    const messages = diagnostics(text);
+    assert_equals(messages.length, 1);
+    const message = messages[0];
+    if (message === undefined) {
+      throw new Error("Missing nested aggregate hole diagnostic");
+    }
+    assert_includes(message, "hole cannot appear inside a nested call");
+  }
+});
+
 Deno.test("a hole survives a format round trip", () => {
   const text =
     "let add = (a: I32, b: I32) => a + b;\nlet inc = add(1, _);\ninc 41\n";

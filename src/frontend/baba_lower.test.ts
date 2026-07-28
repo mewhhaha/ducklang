@@ -934,6 +934,118 @@ Deno.test("Baba lowers multi-argument calls as value packs", () => {
   });
 });
 
+Deno.test("Baba lowers include, scratch, and argument-hole postfix forms", () => {
+  for (
+    const source of [
+      'let config = include "./config.json";\n',
+      "let total = scratch do 1 end;\n",
+      "let increment = add (_, 1);\n",
+      "let combine = add(_, _);\n",
+      "let combine = add (1, _);\n",
+      "let combine = add ((1, _));\n",
+      "let combine = add [1, _];\n",
+      "let combine = add [.left = 1, .right = _];\n",
+      "let unapplied = _;\n",
+      "let wrapped = #Some _;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered postfix expression.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+    assert_source_spans_equal(lowered_source, parse_source(source));
+  }
+
+  const holes = checked_value(lower_baba_source(parse_duck_source(
+    "let combine = add [1, _];\n",
+  )));
+  const statement = holes?.statements[0];
+  if (
+    statement?.tag !== "bind" || statement.value.tag !== "lam" ||
+    statement.value.body.tag !== "app" ||
+    statement.value.body.arg?.tag !== "product"
+  ) {
+    throw new Error("Expected an argument hole to produce a lambda.");
+  }
+  assert_equals(source_span_origin(statement.value), "concrete");
+  assert_equals(source_span_origin(statement.value.body), "derived");
+  assert_equals(source_span(statement.value.body.arg), {
+    start: "let combine = add ".length,
+    end: "let combine = add [1, _]".length,
+  });
+  assert_equals(source_span_origin(statement.value.body.arg), "concrete");
+});
+
+Deno.test("Baba rejects argument holes inside nested calls", () => {
+  const source = "let invalid = outer (inner _, _);\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(diagnostics, [{
+    code: "DUCK1001",
+    message:
+      "A hole cannot appear inside a nested call; write the lambda instead",
+    severity: "error",
+    span: {
+      start: source.indexOf("_"),
+      end: source.indexOf("_") + 1,
+    },
+  }]);
+
+  for (
+    const nested_source of [
+      "let invalid = outer({ .x = inner _ }, _);\n",
+      "let invalid = outer(inner _.field, _);\n",
+      "let invalid = outer({ .x = _ });\n",
+    ]
+  ) {
+    const nested_diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(nested_source)),
+    );
+    assert_equals(
+      nested_diagnostics.map((diagnostic) => diagnostic.message),
+      ["A hole cannot appear inside a nested call; write the lambda instead"],
+    );
+    assert_equals(nested_diagnostics[0]?.span, {
+      start: nested_source.indexOf("_"),
+      end: nested_source.indexOf("_") + 1,
+    });
+  }
+
+  const lambda_parameter = lower_baba_source(parse_duck_source(
+    "let valid = outer((_ => 1), _);\n",
+  ));
+  assert_equals(diagnostics_of(lambda_parameter), []);
+});
+
+Deno.test("Baba accumulates nested-hole and argument diagnostics", () => {
+  const source = "let invalid = outer([.camelCase = inner _, .value = _]);\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(
+    diagnostics.map((diagnostic) => diagnostic.message),
+    [
+      "Product label must use snake_case: camelCase",
+      "A hole cannot appear inside a nested call; write the lambda instead",
+    ],
+  );
+  assert_equals(diagnostics.map((diagnostic) => diagnostic.span), [
+    {
+      start: source.indexOf("camelCase"),
+      end: source.indexOf("camelCase") + "camelCase".length,
+    },
+    {
+      start: source.indexOf("_"),
+      end: source.indexOf("_") + 1,
+    },
+  ]);
+});
+
 Deno.test("Baba lowers recursive and open binding forms directly", () => {
   const sources = [
     Deno.readTextFileSync("examples/functions/04_recursive_fibonacci.duck"),

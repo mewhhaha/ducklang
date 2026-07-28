@@ -36,6 +36,12 @@ import {
   ok,
 } from "./checked.ts";
 import { is_effect_scalar_type } from "./effect_operation.ts";
+import {
+  contains_hole,
+  contains_hole_lambda,
+  hole_name,
+  mark_hole_lambda,
+} from "./hole.ts";
 import { import_meta_binding_name } from "./import_meta.ts";
 import { binary_prim, numeric_expr_type } from "./numeric.ts";
 import { parse_number_expr } from "./number_literal.ts";
@@ -47,6 +53,7 @@ import {
   derive_source_span,
   mark_source_span,
   source_span,
+  source_span_origin,
   type SourceSpan,
 } from "./syntax.ts";
 import {
@@ -4397,6 +4404,48 @@ function lower_expression(
     return ok(expression);
   }
 
+  if (node.kind === "wildcard") {
+    const expression: FrontExpr = { tag: "var", name: hole_name };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
+  if (node.kind === "include_expression") {
+    const path_node = node.children.find((child) => child.kind === "string");
+    if (path_node === undefined) return unsupported(node);
+    const raw_path = source.slice(path_node.start, path_node.end);
+    let path: unknown;
+    try {
+      path = JSON.parse(raw_path);
+    } catch (_error) {
+      return unsupported(path_node);
+    }
+    if (typeof path !== "string") return unsupported(path_node);
+    const path_expression: FrontExpr = { tag: "text", value: path };
+    const function_expression: FrontExpr = {
+      tag: "var",
+      name: "@include",
+    };
+    const expression: FrontExpr = {
+      tag: "app",
+      func: function_expression,
+      arg: path_expression,
+      args: [path_expression],
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
+  if (node.kind === "scratch_expression") {
+    const body_node = node.children.find((child) => child.kind === "block");
+    if (body_node === undefined) return unsupported(node);
+    return lower_expression(body_node, source).map((body) => {
+      const expression: FrontExpr = { tag: "scratch", body };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+
   if (node.kind === "character") {
     const raw = source.slice(node.start, node.end);
     const body = raw.slice(1, raw.length - 1);
@@ -6916,8 +6965,14 @@ function lower_application(
       ),
     );
   }
-  return Applicative.lift(
-    (func: FrontExpr, arg: FrontExpr, _constructor_call: null) => {
+  const nested_hole_check = validate_nested_argument_holes(argument_node);
+  const application = Applicative.lift(
+    (
+      func: FrontExpr,
+      arg: FrontExpr,
+      _constructor_call: null,
+      _nested_holes: null,
+    ) => {
       if (func.tag === "union_case" && func.value === undefined) {
         const expression: FrontExpr = { ...func, value: arg };
         mark_source_span(expression, { start: node.start, end: node.end });
@@ -6934,13 +6989,252 @@ function lower_application(
         arg,
         args,
       };
-      mark_source_span(expression, { start: node.start, end: node.end });
       return expression;
     },
     lowered_function,
     lowered_argument,
     constructor_call_check,
+    nested_hole_check,
   );
+  const parsed_application = checked_value(application);
+  if (parsed_application === undefined) return application;
+  if (parsed_application.tag !== "app") return application;
+  const argument = parsed_application.arg;
+  expect(argument !== undefined, "Baba application has no unary argument.");
+  const params: Param[] = [];
+  const replace_hole = (value: FrontExpr): FrontExpr => {
+    if (value.tag !== "var" || value.name !== hole_name) return value;
+    const name = "__hole_" + params.length.toString();
+    params.push({
+      name,
+      is_const: false,
+      is_linear: false,
+      annotation: undefined,
+    });
+    return { tag: "var", name };
+  };
+  let replaced_argument = argument;
+  if (argument.tag === "product") {
+    const entries = argument.entries.map((entry) => {
+      return {
+        ...entry,
+        value: replace_hole(entry.value),
+      };
+    });
+    replaced_argument = {
+      ...argument,
+      entries,
+    };
+    if (hole_product_retains_span(argument_node)) {
+      if (source_span_origin(argument) === "concrete") {
+        mark_source_span(replaced_argument, source_span(argument));
+      } else {
+        derive_source_span(replaced_argument, source_span(argument));
+      }
+    }
+  } else {
+    replaced_argument = replace_hole(argument);
+  }
+  if (contains_hole_lambda(replaced_argument)) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "A hole cannot appear inside a nested call; write the lambda instead",
+        { start: argument_node.start, end: argument_node.end },
+      ),
+    );
+  }
+  if (contains_hole(replaced_argument)) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "A hole cannot appear inside a nested call; write the lambda instead",
+        { start: argument_node.start, end: argument_node.end },
+      ),
+    );
+  }
+  if (params.length === 0) {
+    mark_source_span(parsed_application, {
+      start: node.start,
+      end: node.end,
+    });
+    return ok(parsed_application);
+  }
+  let body_arguments = [replaced_argument];
+  if (
+    replaced_argument.tag === "product" &&
+    replaced_argument.value_pack === true
+  ) {
+    body_arguments = replaced_argument.entries.map((entry) => entry.value);
+  }
+  const body: FrontExpr = {
+    ...parsed_application,
+    arg: replaced_argument,
+    args: body_arguments,
+  };
+  const expression = mark_hole_lambda({
+    tag: "lam",
+    params,
+    body,
+    hole_params: params.map((param) => param.name),
+  });
+  mark_source_span(expression, { start: node.start, end: node.end });
+  return ok(expression);
+}
+
+function validate_nested_argument_holes(
+  argument_node: BabaCstNode,
+): Checked<null> {
+  const direct_holes = direct_argument_holes(argument_node);
+  const wildcards = expression_argument_holes(argument_node);
+  const nested = wildcards.find((wildcard) => {
+    if (direct_holes.has(wildcard)) return false;
+    return !descendant_application_owns_hole(argument_node, wildcard);
+  });
+  if (nested === undefined) return ok(null);
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.syntax_error,
+      "A hole cannot appear inside a nested call; write the lambda instead",
+      { start: nested.start, end: nested.end },
+    ),
+  );
+}
+
+function descendant_application_owns_hole(
+  argument_node: BabaCstNode,
+  wildcard: BabaCstNode,
+): boolean {
+  const pending = [...argument_node.children];
+  while (pending.length > 0) {
+    const candidate = pending.pop();
+    expect(candidate !== undefined, "Baba application traversal lost a node.");
+    if (
+      candidate.kind === "application_expression" ||
+      candidate.kind === "condition_call_expression" ||
+      candidate.kind === "condition_application_expression"
+    ) {
+      const expressions = candidate.children.filter((child) =>
+        is_expression_node(child)
+      );
+      const nested_argument = expressions[1];
+      if (
+        nested_argument !== undefined &&
+        cst_contains(nested_argument, wildcard) &&
+        !direct_argument_holes(nested_argument).has(wildcard)
+      ) {
+        return true;
+      }
+    }
+    pending.push(...candidate.children);
+  }
+  return false;
+}
+
+function cst_contains(node: BabaCstNode, target: BabaCstNode): boolean {
+  const pending = [node];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Baba containment traversal lost a node.");
+    if (current === target) return true;
+    pending.push(...current.children);
+  }
+  return false;
+}
+
+function expression_argument_holes(node: BabaCstNode): BabaCstNode[] {
+  const holes: BabaCstNode[] = [];
+  const pending = [{ node, parent_kind: undefined as string | undefined }];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Baba hole traversal lost its node.");
+    if (
+      current.node.kind === "wildcard" &&
+      (
+        current.parent_kind === undefined ||
+        current.parent_kind === "postfix_expression"
+      )
+    ) {
+      holes.push(current.node);
+      continue;
+    }
+    for (
+      let index = current.node.children.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const child = current.node.children[index];
+      expect(child !== undefined, "Baba hole child disappeared.");
+      pending.push({ node: child, parent_kind: current.node.kind });
+    }
+  }
+  return holes;
+}
+
+function direct_argument_holes(
+  argument_node: BabaCstNode,
+): Set<BabaCstNode> {
+  const direct_holes = new Set<BabaCstNode>();
+  const argument = unwrap_hole_expression(argument_node);
+  if (argument.kind === "wildcard") {
+    direct_holes.add(argument);
+    return direct_holes;
+  }
+  let entries: BabaCstNode[] = [];
+  if (
+    argument.kind === "positional_product" ||
+    argument.kind === "condition_positional_product" ||
+    argument.kind === "array_expression"
+  ) {
+    entries = argument.children.filter((child) => is_expression_node(child));
+  } else if (argument.kind === "named_product") {
+    for (
+      const field of argument.children.filter((child) =>
+        child.kind === "product_field"
+      )
+    ) {
+      const name = field.children.find((child) =>
+        child.kind === "identifier" || child.kind === '"end"'
+      );
+      const value = field.children.find((child) =>
+        child !== name && is_expression_node(child)
+      );
+      if (value !== undefined) entries.push(value);
+    }
+  }
+  for (const entry of entries) {
+    const direct = unwrap_hole_expression(entry);
+    if (direct.kind === "wildcard") direct_holes.add(direct);
+  }
+  return direct_holes;
+}
+
+function hole_product_retains_span(argument_node: BabaCstNode): boolean {
+  const argument = unwrap_hole_expression(argument_node);
+  if (
+    argument.kind !== "positional_product" &&
+    argument.kind !== "condition_positional_product"
+  ) {
+    return true;
+  }
+  return argument.start > argument_node.start ||
+    argument.end < argument_node.end;
+}
+
+function unwrap_hole_expression(node: BabaCstNode): BabaCstNode {
+  let expression = node;
+  while (
+    expression.kind === "postfix_expression" ||
+    expression.kind === "parenthesized_expression" ||
+    expression.kind === "parenthesized_or_product" ||
+    expression.kind === "condition_expression" ||
+    expression.kind === "condition_parenthesized_expression"
+  ) {
+    const child = semantic_child(expression);
+    if (child === undefined) return expression;
+    expression = child;
+  }
+  return expression;
 }
 
 function lower_recursive_call(
@@ -6998,6 +7292,9 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "boolean" ||
     node.kind === "string" ||
     node.kind === "character" ||
+    node.kind === "wildcard" ||
+    node.kind === "include_expression" ||
+    node.kind === "scratch_expression" ||
     node.kind === "atom_expression" ||
     node.kind === "linear_reference" ||
     node.kind === "unit_pattern" ||

@@ -601,14 +601,14 @@ export abstract class ParserExpr extends ParserPrimary {
       );
     }
 
-    if (params.length === 0) {
-      return app;
-    }
-
     if (contains_hole(arg)) {
       throw this.error(
         "A hole cannot appear inside a nested call; write the lambda instead",
       );
+    }
+
+    if (params.length === 0) {
+      return app;
     }
 
     expect(app.tag === "app", "Argument holes require an application");
@@ -622,10 +622,15 @@ export abstract class ParserExpr extends ParserPrimary {
 
     return mark_hole_lambda({
       tag: "lam",
-      params: params.map((param) => ({ name: param.name, is_const: false })),
+      params: params.map((param) => ({
+        name: param.name,
+        is_const: false,
+        is_linear: false,
+        annotation: undefined,
+      })),
       body: app,
       hole_params: params.map((param) => param.name),
-    } as FrontExpr);
+    });
   }
 
   private apply_unary_product(func: FrontExpr, arg: FrontExpr): FrontExpr {
