@@ -5,8 +5,7 @@ import { associate_prefix_signatures } from "./prefix_signature.ts";
 import { extract_prefix_source_metadata } from "./prefix_signature_source.ts";
 
 Deno.test("prefix source extraction preserves clauses and masks declarations", () => {
-  const source =
-    "type identity = (value: I32) -> (result: I32)\n" +
+  const source = "type identity = (value: I32) -> (result: I32)\n" +
     "requires value = value\n" +
     "ensures result = value\n" +
     "let identity = value => value;\n";
@@ -20,8 +19,7 @@ Deno.test("prefix source extraction preserves clauses and masks declarations", (
 });
 
 Deno.test("prefix source extraction records fact definition kinds", () => {
-  const source =
-    "type multiple_of = (value: I32) -> Prop\n" +
+  const source = "type multiple_of = (value: I32) -> Prop\n" +
     "opaque fact multiple_of = value => true;\n";
   const metadata = extract_prefix_source_metadata(parse_duck_source(source));
   assert_equals(metadata.definitions[0]?.kind, "opaque fact");
@@ -29,8 +27,7 @@ Deno.test("prefix source extraction records fact definition kinds", () => {
 });
 
 Deno.test("prefix source extraction handles non-space clause separators", () => {
-  const source =
-    "type f = (value: I32) -> (result: I32)\n" +
+  const source = "type f = (value: I32) -> (result: I32)\n" +
     "requires\tvalue = value\n" +
     "ensures\nresult = value\n" +
     "let f = value => value;\n";
@@ -40,8 +37,7 @@ Deno.test("prefix source extraction handles non-space clause separators", () => 
 });
 
 Deno.test("prefix source extraction retains decreases clauses", () => {
-  const source =
-    "type f = (value: I32) -> I32\n" +
+  const source = "type f = (value: I32) -> I32\n" +
     "decreases value\n" +
     "decreases value\n" +
     "let f = value => value;\n";
@@ -57,8 +53,7 @@ Deno.test("prefix source extraction retains decreases clauses", () => {
 });
 
 Deno.test("prefix source extraction separates block scopes", () => {
-  const source =
-    "let outer = do\n" +
+  const source = "let outer = do\n" +
     "type inner = (value: I32) -> I32\n" +
     "let inner = value => value;\n" +
     "end;\n";
@@ -74,27 +69,66 @@ Deno.test("prefix source extraction keeps adjacent clauses separate", () => {
   const source =
     "type f = (value: I32) -> (result: I32) requires value = value ensures result = value\n" +
     "let f = value => value;\n";
-  const signature = extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
+  const signature =
+    extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
   assert_equals(signature?.requires, ["value = value"]);
   assert_equals(signature?.ensures, ["result = value"]);
 });
 
 Deno.test("prefix source extraction diagnoses an empty clause", () => {
-  const source =
-    "type f = (value: I32) -> (result: I32)\n" +
+  const source = "type f = (value: I32) -> (result: I32)\n" +
     "requires\n" +
     "ensures result = value\n" +
     "let f = value => value;\n";
-  const signature = extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
+  const signature =
+    extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
   assert_equals(signature?.requires, ["false"]);
   assert_equals(signature?.ensures, ["result = value"]);
 });
 
 Deno.test("prefix source extraction separates inline clauses from result types", () => {
-  const source =
-    "type f = (value: I32) -> I32 ensures false\n" +
+  const source = "type f = (value: I32) -> I32 ensures false\n" +
     "let f = value => value;\n";
-  const signature = extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
+  const signature =
+    extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
   assert_equals(signature?.type_text, "(value: I32) -> I32");
   assert_equals(signature?.ensures, ["false"]);
+});
+
+Deno.test("prefix source extraction follows structural binding names", () => {
+  const repeated = extract_prefix_source_metadata(
+    parse_duck_source("let x | x = value;\n"),
+  );
+  assert_equals(repeated.definitions.map((definition) => definition.name), [
+    "x",
+  ]);
+
+  const destructured = extract_prefix_source_metadata(
+    parse_duck_source("let [left, right] = value;\n"),
+  );
+  assert_equals(
+    destructured.definitions.map((definition) => definition.name),
+    ["left", "right"],
+  );
+});
+
+Deno.test("structural binders associate with source prefix signatures", () => {
+  const source = "type left = (value: I32) -> I32\n" +
+    "let [left, right] = pair;\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  const associated = associate_prefix_signatures(
+    metadata.signatures,
+    metadata.definitions,
+  );
+  assert_equals(diagnostics_of(associated), []);
+});
+
+Deno.test("prefix source extraction retains every mutual definition", () => {
+  const source = "let rec even = value => value\n" +
+    "and odd = value => value;\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  assert_equals(metadata.definitions.map((definition) => definition.name), [
+    "even",
+    "odd",
+  ]);
 });

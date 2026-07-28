@@ -155,3 +155,20 @@ Deno.test("Baba parses transparent and opaque fact definitions", () => {
   assert_equals(parsed.cst.tree.includes("prefix_fact_statement"), true);
   assert_equals(parsed.cst.tree.includes('"opaque"'), true);
 });
+
+Deno.test("Baba reports excessive CST nesting without exhausting the host stack", () => {
+  const allowed_depth = 100;
+  const allowed = "let " + "[".repeat(allowed_depth) + "x" +
+    "]".repeat(allowed_depth) + " = value;\n";
+  assert_equals(parse_duck_source(allowed).diagnostics, []);
+
+  const rejected_depth = 4000;
+  const rejected = "let " + "[".repeat(rejected_depth) + "x" +
+    "]".repeat(rejected_depth) + " = value;\n";
+  const diagnostics = parse_duck_source(rejected).diagnostics;
+  assert_equals(diagnostics.length, 1);
+  assert_equals(
+    diagnostics[0]?.message.includes("nesting exceeds the maximum"),
+    true,
+  );
+});

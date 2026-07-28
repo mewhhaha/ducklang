@@ -1,6 +1,49 @@
 import type { FrontExpr } from "./ast.ts";
 import { is_builtin_type_name } from "./types.ts";
 
+const non_binding_keywords = new Set([
+  "break",
+  "case",
+  "comptime",
+  "const",
+  "continue",
+  "declare",
+  "decreases",
+  "do",
+  "duck",
+  "effect",
+  "end",
+  "ensures",
+  "extend",
+  "fact",
+  "false",
+  "for",
+  "freeze",
+  "handler",
+  "if",
+  "import",
+  "include",
+  "infix",
+  "infixl",
+  "infixr",
+  "let",
+  "loop",
+  "module",
+  "opaque",
+  "prefix",
+  "rec",
+  "requires",
+  "scratch",
+  "true",
+  "try",
+  "type",
+  "union",
+]);
+
+export function is_runtime_binding_name(name: string): boolean {
+  return !non_binding_keywords.has(name);
+}
+
 export function unsupported_reserved_feature(
   name: string,
 ): string | undefined {

@@ -5,6 +5,7 @@ import type {
   MatchArm,
   Param,
   Pattern,
+  ProductExprEntry,
   Source,
   Stmt,
   TypeExpr,
@@ -31,7 +32,7 @@ import {
   elaborate_array_repeat_expr,
   elaborate_product_as_expr,
 } from "./aggregate.ts";
-import { pattern_bindings } from "./pattern.ts";
+import { is_irrefutable_binding_pattern, pattern_bindings } from "./pattern.ts";
 import {
   describe_comptime_cases,
   describe_comptime_fields,
@@ -1134,11 +1135,19 @@ function elaborate_binding_pattern(
   const pattern = stmt.pattern;
   expect(pattern, "Missing complex binding pattern");
   const source_name = fresh_pattern_source_name(scope);
-  const source_shape = resolve_binding_pattern_source(
+  let source_shape = resolve_binding_pattern_source(
     stmt.value,
     scope,
     new Set(),
   );
+  if (source_shape.tag === "var") {
+    const type_annotation = scope.bindings.get(source_shape.name)
+      ?.type_annotation;
+    if (type_annotation !== undefined) {
+      const typed_shape = binding_pattern_shape_from_type(type_annotation);
+      if (typed_shape !== undefined) source_shape = typed_shape;
+    }
+  }
   let source: FrontExpr = { tag: "var", name: source_name };
   const result: Stmt[] = [];
   let source_annotation = stmt.annotation;
@@ -1147,7 +1156,10 @@ function elaborate_binding_pattern(
     source_annotation = scope.bindings.get(stmt.value.name)?.annotation;
   }
 
-  if (stmt.kind === "const" && scope_const_expr_known(source_shape, scope)) {
+  if (
+    scope_const_expr_known(source_shape, scope) &&
+    (stmt.kind === "const" || source_shape.tag === "shape")
+  ) {
     source = source_shape;
   } else {
     result.push({
@@ -1161,6 +1173,67 @@ function elaborate_binding_pattern(
       effectful: stmt.effectful,
       value: stmt.value,
     });
+  }
+  if (pattern.tag === "or" && is_irrefutable_binding_pattern(pattern)) {
+    if (
+      source_shape.tag === "product" || source_shape.tag === "shape" ||
+      source_shape.tag === "array" || source_shape.tag === "struct_value"
+    ) {
+      for (const alternative of pattern.alternatives) {
+        if (!is_irrefutable_binding_pattern(alternative)) continue;
+        let matches = true;
+        try {
+          if (alternative.tag === "product") {
+            validate_product_pattern_shape(alternative, source_shape);
+          } else if (alternative.tag === "record") {
+            validate_record_pattern_shape(alternative, source_shape);
+          } else if (alternative.tag === "array") {
+            validate_array_pattern_shape(alternative, source_shape);
+          }
+        } catch (_error) {
+          matches = false;
+        }
+        if (!matches) continue;
+        elaborate_pattern_bindings(
+          alternative,
+          source,
+          source_shape,
+          stmt.kind,
+          result,
+        );
+        return result;
+      }
+    }
+    const reachable_alternatives: Pattern[] = [];
+    for (const alternative of pattern.alternatives) {
+      reachable_alternatives.push(alternative);
+      if (is_irrefutable_binding_pattern(alternative)) break;
+    }
+    for (const binding of pattern_bindings(pattern)) {
+      const match: FrontExpr = {
+        tag: "match",
+        target: source,
+        arms: reachable_alternatives.map((alternative) => ({
+          pattern: alternative,
+          guard: undefined,
+          body: { tag: "var", name: binding.name },
+        })),
+      };
+      const projected: Extract<Stmt, { tag: "bind" }> = {
+        tag: "bind",
+        kind: stmt.kind,
+        pattern: binding,
+        name: binding.name,
+        is_linear: binding.mode === "linear",
+        annotation: binding.annotation,
+        value: rewrite_expr(match, scope),
+      };
+      if (binding.type_annotation !== undefined) {
+        projected.type_annotation = binding.type_annotation;
+      }
+      result.push(projected);
+    }
+    return result;
   }
   elaborate_pattern_bindings(
     pattern,
@@ -1194,6 +1267,49 @@ function resolve_binding_pattern_source(
   const next = new Set(resolving);
   next.add(source.name);
   return resolve_binding_pattern_source(binding.value, scope, next);
+}
+
+function binding_pattern_shape_from_type(
+  type: TypeExpr,
+): FrontExpr | undefined {
+  if (type.tag === "frozen" || type.tag === "borrow") {
+    return binding_pattern_shape_from_type(type.value);
+  }
+  if (type.tag === "tuple") {
+    return {
+      tag: "product",
+      entries: type.items.map((item) => {
+        const nested = binding_pattern_shape_from_type(item);
+        if (nested !== undefined) return { value: nested };
+        return { value: { tag: "unit" } };
+      }),
+    };
+  }
+  if (type.tag === "product" && type.repeat === undefined) {
+    return {
+      tag: "product",
+      entries: type.entries.map((entry) => {
+        let value: FrontExpr = { tag: "unit" };
+        const nested = binding_pattern_shape_from_type(entry.type_expr);
+        if (nested !== undefined) value = nested;
+        if (entry.label !== undefined) {
+          return { label: entry.label, value };
+        }
+        return { value };
+      }),
+    };
+  }
+  if (type.tag === "array" && type.length.tag === "number") {
+    const entries: ProductExprEntry[] = [];
+    for (let index = 0; index < type.length.value; index += 1) {
+      let value: FrontExpr = { tag: "unit" };
+      const nested = binding_pattern_shape_from_type(type.element);
+      if (nested !== undefined) value = nested;
+      entries.push({ value });
+    }
+    return { tag: "product", entries };
+  }
+  return undefined;
 }
 
 function function_pattern_requires_projection(
@@ -1501,7 +1617,7 @@ function known_product_arity(
     return undefined;
   }
 
-  if (source.tag === "product") {
+  if (source.tag === "product" || source.tag === "shape") {
     return source.entries.length;
   }
 
@@ -1531,7 +1647,7 @@ function known_record_field_names(
     return source.fields.map((field) => field.name);
   }
 
-  if (source.tag === "product") {
+  if (source.tag === "product" || source.tag === "shape") {
     const names: string[] = [];
 
     for (const entry of source.entries) {
@@ -1561,7 +1677,7 @@ function known_array_length(source: FrontExpr | undefined): number | undefined {
     return source.items.length;
   }
 
-  if (source.tag === "product") {
+  if (source.tag === "product" || source.tag === "shape") {
     return source.entries.length;
   }
 
@@ -1588,7 +1704,7 @@ function product_source_entry(
     return undefined;
   }
 
-  if (source.tag === "product") {
+  if (source.tag === "product" || source.tag === "shape") {
     if (label !== undefined) {
       return source.entries.find((entry) => entry.label === label)?.value;
     }
@@ -1642,7 +1758,7 @@ function array_source_item(
     return source.items[index];
   }
 
-  if (source.tag === "product") {
+  if (source.tag === "product" || source.tag === "shape") {
     return source.entries[index]?.value;
   }
 
@@ -8582,6 +8698,7 @@ function scope_for_params(params: Param[], parent: TypeSetScope): TypeSetScope {
     set_scope_binding(scope, param.name, {
       annotation: param.annotation,
       compiletime_only: param.is_const,
+      type_annotation: param.type_annotation,
       value: undefined,
       union_type: binding_union_type(param.annotation, scope),
     });

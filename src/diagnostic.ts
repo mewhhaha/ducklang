@@ -140,6 +140,16 @@ export const diagnostic_registry = {
     "types_and_effects",
     "error",
   ),
+  binding_pattern_requires_fallback: diagnostic_definition(
+    "DUCK2315",
+    "types_and_effects",
+    "error",
+  ),
+  binding_pattern_shape: diagnostic_definition(
+    "DUCK2316",
+    "types_and_effects",
+    "error",
+  ),
   import_context_missing: diagnostic_definition(
     "DUCK2500",
     "modules_and_imports",

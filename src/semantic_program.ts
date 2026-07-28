@@ -25,7 +25,9 @@ import {
   type BabaSemanticAnalyzeOptions,
 } from "./frontend/baba_analyze.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
+import { source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
+import { pattern_binding_occurrences } from "./frontend/pattern.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import {
   make_source_syntax,
@@ -552,7 +554,7 @@ export function lower_duck_source(
   if (has_error_diagnostics(analysis.diagnostics)) {
     return fail(...analysis.diagnostics);
   }
-  const core = core_from_source(analysis.source);
+  const core = core_from_source(source_for_gpufuck(analysis.source));
   return ok({
     core,
     symbols: analysis.symbols,
@@ -573,20 +575,47 @@ function collect_top_level_bindings(
 ): void {
   for (const statement of source.statements) {
     if (statement.tag !== "bind") continue;
-    const span = source_span(statement);
-    const cst_node = find_covering_node(root, span);
-    let origin: SemanticOrigin | undefined;
-    if (cst_node !== undefined) {
-      origin = { source_node: cst_node.id, start: span.start, end: span.end };
-    }
-    const binding = identity.bind(statement.name, origin?.source_node);
-    const values = symbols.get(statement.name);
-    if (values === undefined) {
-      symbols.set(statement.name, [binding.value]);
+    const introduced_bindings: Array<{ name: string; span: SourceSpan }> = [];
+    if (statement.pattern === undefined) {
+      introduced_bindings.push({
+        name: statement.name,
+        span: source_span(statement),
+      });
     } else {
-      values.push(binding.value);
+      for (
+        const occurrence of pattern_binding_occurrences(statement.pattern)
+      ) {
+        let span = source_span(occurrence.source);
+        if (occurrence.binding_span !== undefined) {
+          span = occurrence.binding_span;
+        }
+        introduced_bindings.push({
+          name: occurrence.binding.name,
+          span,
+        });
+      }
     }
-    if (origin !== undefined) origins.set(binding.value, Object.freeze(origin));
+    for (const introduced of introduced_bindings) {
+      const cst_node = find_covering_node(root, introduced.span);
+      let origin: SemanticOrigin | undefined;
+      if (cst_node !== undefined) {
+        origin = {
+          source_node: cst_node.id,
+          start: introduced.span.start,
+          end: introduced.span.end,
+        };
+      }
+      const binding = identity.bind(introduced.name, origin?.source_node);
+      const values = symbols.get(introduced.name);
+      if (values === undefined) {
+        symbols.set(introduced.name, [binding.value]);
+      } else {
+        values.push(binding.value);
+      }
+      if (origin !== undefined) {
+        origins.set(binding.value, Object.freeze(origin));
+      }
+    }
   }
 }
 

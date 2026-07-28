@@ -40,6 +40,7 @@ const duck_language = await Language.load(
 );
 const duck_parser = new Parser();
 duck_parser.setLanguage(duck_language);
+const maximum_baba_cst_nesting = 512;
 
 export function is_trusted_baba_parse_result(
   value: unknown,
@@ -58,6 +59,52 @@ export function parse_duck_source(text: string): BabaParseResult {
   );
 
   try {
+    const pending_nodes = [{ node: tree.rootNode, depth: 0 }];
+    let excessive_node: TreeSitterNode | undefined;
+    while (pending_nodes.length > 0) {
+      const pending = pending_nodes.pop();
+      expect(pending !== undefined, "Baba CST depth work disappeared.");
+      if (pending.depth > maximum_baba_cst_nesting) {
+        excessive_node = pending.node;
+        break;
+      }
+      for (const child of pending.node.children) {
+        pending_nodes.push({ node: child, depth: pending.depth + 1 });
+      }
+    }
+    if (excessive_node !== undefined) {
+      const error: BabaCstNode = {
+        id: source_node_id(
+          "ERROR",
+          excessive_node.startIndex,
+          excessive_node.endIndex,
+          1,
+        ),
+        kind: "ERROR",
+        start: excessive_node.startIndex,
+        end: excessive_node.endIndex,
+        children: [],
+      };
+      const root: BabaCstNode = {
+        id: source_node_id("source_file", 0, text.length, 0),
+        kind: "source_file",
+        start: 0,
+        end: text.length,
+        children: [error],
+      };
+      const parsed = {
+        tokens: cst_tokens(root, text),
+        diagnostics: [{
+          message: "Baba parser nesting exceeds the maximum of " +
+            maximum_baba_cst_nesting.toString(),
+          span: { start: error.start, end: error.end },
+        }],
+        cst: { text, tree: render_cst(root), root },
+      };
+      deep_freeze(parsed);
+      trusted_baba_parse_results.add(parsed);
+      return parsed;
+    }
     const ordinal = { value: 0 };
     const root = baba_cst_node(tree.rootNode, ordinal);
     const diagnostics: SyntaxDiagnostic[] = [];

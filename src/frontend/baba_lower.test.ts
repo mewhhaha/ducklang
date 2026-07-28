@@ -3,7 +3,7 @@ import { parse_duck_source } from "./baba_parser.ts";
 import { checked_value, diagnostics_of } from "./checked.ts";
 import { lower_baba_source } from "./baba_lower.ts";
 import { parse_source } from "./parser.ts";
-import { has_source_span, source_span } from "./syntax.ts";
+import { has_source_span, source_span, source_span_origin } from "./syntax.ts";
 
 Deno.test("Baba lowers bindings and expressions without the handwritten parser", () => {
   const lowered = lower_baba_source(parse_duck_source(
@@ -40,6 +40,345 @@ Deno.test("Baba lowers bindings and expressions without the handwritten parser",
       },
     ],
   });
+});
+
+Deno.test("Baba lowers structural binding patterns directly", () => {
+  for (
+    const source of [
+      "let [head, tail] = value;\n",
+      "let [head, ...tail] = value;\n",
+      "let (head, tail) = value;\n",
+      "let (head, ...tail) = value;\n",
+      "const { .x, .y = renamed } = value;\n",
+      "let { .x: I32, .y = #Some nested } = value;\n",
+      "let #None = value;\n",
+      "let #Some (left, right) = value;\n",
+      "let [true, false] = value;\n",
+      "let #Some true = value;\n",
+      "let #Other false = value;\n",
+      "let #Some nested = value else do return 0; end;\n",
+      "let 1 = value;\n",
+      "let #(constant) = value;\n",
+      "let #Some nested | #Other nested = value;\n",
+      "let !token = 1;\n",
+      'let "pre${middle}post" = value;\n',
+      'const { .length } = import "duck:prelude/runtime" ();\n',
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(
+      diagnostics_of(lowered),
+      [],
+      "Expected direct structural binding lowering for " + source,
+    );
+    const lowered_source = checked_value(lowered);
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered binding pattern.");
+    }
+    assert_equals(lowered_source, parse_source(source));
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  }
+});
+
+Deno.test("Baba diagnoses invalid structural binding patterns", () => {
+  for (
+    const [source, message] of [
+      ["let [left, right]: I32 = value;\n", "require a single name"],
+      ["let { .camelCase } = value;\n", "must use snake_case"],
+      ["let { .value, .value } = source;\n", "Duplicate pattern field"],
+      [
+        "let #Some left | #Other right = value;\n",
+        "must bind the same names",
+      ],
+      ["let ![value] = source;\n", "does not support array_pattern"],
+      ["let Some = value;\n", "must use snake_case"],
+      ["let #Some () = value;\n", "omits `()`"],
+      [
+        'let "${first}${second}" = value;\n',
+        "at most one capture",
+      ],
+      ['let "${camelCase}" = value;\n', "must use snake_case"],
+      ['let "${class}" = value;\n', "reserved for unsupported"],
+      ['let "pre${true}post" = value;\n', "reserved syntax"],
+      ['let "pre${false}post" = value;\n', "reserved syntax"],
+      ['let "pre${let}post" = value;\n', "reserved syntax"],
+      ['let "pre${requires}post" = value;\n', "reserved syntax"],
+      ['let "pre${end}post" = value;\n', "reserved syntax"],
+      ["let { .class } = value;\n", "reserved for unsupported"],
+      ["let { .class: I32 } = value;\n", "reserved for unsupported"],
+      ["let { .true } = value;\n", "reserved syntax"],
+      ["let { .false: I32 } = value;\n", "reserved syntax"],
+      ["let { .let } = value;\n", "reserved syntax"],
+      ["let f = requires => requires;\n", "reserved syntax"],
+      ["let f = class => class;\n", "reserved for unsupported"],
+      ["requires <- call()\n", "reserved syntax"],
+      ["let [] = value;\n", "Empty array binding"],
+      ["let {} = value;\n", "Empty named binding"],
+      ["let [x, x] = value;\n", "Duplicate pattern binding"],
+      ["let { .a = x, .b = x } = value;\n", "Duplicate pattern binding"],
+      ["let [x, ...x] = value;\n", "Duplicate pattern binding"],
+      [
+        "let #Some x = value else do 0 end;\n",
+        "Let-else branch must return",
+      ],
+    ] as const
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, []);
+    const diagnostics = diagnostics_of(lower_baba_source(parsed));
+    assert_equals(diagnostics.length, 1);
+    assert_equals(diagnostics[0]?.message.includes(message), true);
+  }
+});
+
+Deno.test("Baba keeps let-else diagnostics in source order", () => {
+  const source = "const #Some x = v else do 0 end;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(
+    diagnostics.map((diagnostic) => ({
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [
+      {
+        message: "Only let bindings support else branches",
+        span: {
+          start: source.indexOf("else"),
+          end: source.indexOf("else") + "else".length,
+        },
+      },
+      {
+        message: "Let-else branch must return, break, continue, or trap",
+        span: {
+          start: source.indexOf("do"),
+          end: source.indexOf("end") + "end".length,
+        },
+      },
+    ],
+  );
+});
+
+Deno.test("Baba assigns stable identities to binding alternatives", () => {
+  const source = "let x | x = value;\nlet [next] = value;\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const statements = checked_value(lowered)?.statements;
+  const alternative = statements?.[0];
+  const aggregate = statements?.[1];
+  if (
+    alternative === undefined || alternative.tag !== "bind" ||
+    aggregate === undefined || aggregate.tag !== "bind"
+  ) {
+    throw new Error("Expected two directly lowered binding statements.");
+  }
+  assert_equals(alternative.name, "@no_demand_0");
+  assert_equals(alternative.pattern?.tag, "or");
+  assert_equals(aggregate.name, "@no_demand_1");
+});
+
+Deno.test("Baba compares alternative binding signatures by name", () => {
+  for (
+    const source of [
+      "let (x, y) | (y, x) = value;\n",
+      "let { .a = x, .b = y } | { .a = y, .b = x } = value;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+  }
+});
+
+Deno.test("Baba reports duplicate pattern bindings at both occurrences", () => {
+  for (
+    const source of [
+      'let (x, "${x}") = value;\n',
+      'let ("${x}", x) = value;\n',
+    ]
+  ) {
+    const diagnostic = diagnostics_of(
+      lower_baba_source(parse_duck_source(source)),
+    )[0];
+    const occurrences = [
+      source.indexOf("x"),
+      source.lastIndexOf("x"),
+    ];
+    assert_equals(diagnostic?.span, {
+      start: occurrences[1],
+      end: occurrences[1] + 1,
+    });
+    assert_equals(diagnostic?.related?.[0]?.span, {
+      start: occurrences[0],
+      end: occurrences[0] + 1,
+    });
+  }
+});
+
+Deno.test("Baba keeps independent pattern diagnostics in source order", () => {
+  const source = "let (x, x) | (x, y) = value;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(
+    diagnostics.map((diagnostic) => ({
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [
+      {
+        message: "Duplicate pattern binding: x",
+        span: {
+          start: source.indexOf("x", source.indexOf("x") + 1),
+          end: source.indexOf("x", source.indexOf("x") + 1) + 1,
+        },
+      },
+      {
+        message: "Pattern alternatives must bind the same names, modes, and " +
+          "annotations: expected x:default:|x:default:, got " +
+          "x:default:|y:default:",
+        span: {
+          start: source.indexOf("(x, y)"),
+          end: source.indexOf("(x, y)") + "(x, y)".length,
+        },
+      },
+    ],
+  );
+});
+
+Deno.test("Baba rejects patterns beyond its deterministic nesting limit", () => {
+  const allowed_depth = 127;
+  const allowed = "let " + "[".repeat(allowed_depth) + "x" +
+    "]".repeat(allowed_depth) + " = value;\n";
+  assert_equals(
+    diagnostics_of(lower_baba_source(parse_duck_source(allowed))),
+    [],
+  );
+
+  const rejected_depth = 128;
+  const rejected = "let " + "[".repeat(rejected_depth) + "x" +
+    "]".repeat(rejected_depth) + " = value;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(rejected)),
+  );
+  assert_equals(diagnostics.length, 1);
+  assert_equals(diagnostics[0]?.message.includes("maximum of 128"), true);
+});
+
+Deno.test("Baba reports text capture names at their identifier spans", () => {
+  const source = 'let "${camelCase}" = value;\n';
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  assert_equals(diagnostics.length, 1);
+  const start = source.indexOf("camelCase");
+  assert_equals(diagnostics[0]?.span, {
+    start,
+    end: start + "camelCase".length,
+  });
+});
+
+Deno.test("Baba preserves nested type patterns in structural bindings", () => {
+  for (
+    const [source, expected_pattern] of [
+      [
+        "let { .x = struct { .a = I32 } } = value;\n",
+        {
+          tag: "product",
+          entries: [{
+            label: "x",
+            pattern: {
+              tag: "type",
+              pattern: {
+                kind: "struct",
+                fields: [{ name: "a", type_name: "I32" }],
+                open: false,
+              },
+            },
+          }],
+        },
+      ],
+      [
+        "let (union { .Some = I32, .. }, x) = value;\n",
+        {
+          tag: "product",
+          entries: [
+            {
+              pattern: {
+                tag: "type",
+                pattern: {
+                  kind: "union",
+                  fields: [{ name: "Some", type_name: "I32" }],
+                  open: true,
+                },
+              },
+            },
+            {
+              pattern: {
+                tag: "binding",
+                name: "x",
+                mode: "default",
+                annotation: undefined,
+              },
+            },
+          ],
+          rest: undefined,
+          value_pack: true,
+        },
+      ],
+    ] as const
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, []);
+    const lowered = lower_baba_source(parsed);
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered nested type pattern.");
+    }
+    const statement = lowered_source.statements[0];
+    if (statement === undefined || statement.tag !== "bind") {
+      throw new Error("Expected a structural binding statement.");
+    }
+    if (statement.pattern === undefined) {
+      throw new Error("Expected a structural binding pattern.");
+    }
+    assert_equals(statement.pattern, expected_pattern);
+    assert_equals(all_source_nodes_have_spans(statement.pattern), true);
+  }
+});
+
+Deno.test("Baba preserves concrete spans for structural product entries", () => {
+  for (
+    const source of [
+      "let [left, right] = value;\n",
+      "let (left, right) = value;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    const statement = lowered_source?.statements[0];
+    if (statement === undefined || statement.tag !== "bind") {
+      throw new Error("Expected a structural binding statement.");
+    }
+    if (statement.pattern === undefined) {
+      throw new Error("Expected a structural binding pattern.");
+    }
+    if (statement.pattern.tag !== "product") {
+      throw new Error("Expected a structural product pattern.");
+    }
+    const first_entry = statement.pattern.entries[0];
+    if (first_entry === undefined) {
+      throw new Error("Expected the first structural product entry.");
+    }
+    const start = source.indexOf("left");
+    assert_equals(source_span_origin(first_entry), "concrete");
+    assert_equals(source_span(first_entry), {
+      start,
+      end: start + "left".length,
+    });
+  }
 });
 
 Deno.test("Baba lowers module headers and export returns directly", () => {
@@ -166,6 +505,113 @@ Deno.test("Baba lowers direct and propagated effect bindings", () => {
   }
 });
 
+Deno.test("Baba propagates effect instances through lexical bindings", () => {
+  for (
+    const source of [
+      "effect E { op: () => I32 }\n" +
+      "let e = E;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "let [e] = [E];\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const [e] = [E];\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const (e, other) = (E, value);\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const { .e } = { .e = E };\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const e = E;\n" +
+      "const [e] = [e];\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const e = E;\n" +
+      "const e = e;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const pair = [E];\n" +
+      "const [e] = pair;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const shape = { .effect = E };\n" +
+      "const { .effect = e } = shape;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const nested = [[E]];\n" +
+      "const [inner] = nested;\n" +
+      "const [e] = inner;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const nested = { .inner = { .effect = E } };\n" +
+      "const { .inner } = nested;\n" +
+      "const { .effect = e } = inner;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const e = E;\n" +
+      "const pair = [e];\n" +
+      "let e = 0;\n" +
+      "const [x] = pair;\n" +
+      "out <- x.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const [e] | [e, ..._] = [E];\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const { .e } | { .e, .other = _ } = { .e = E };\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const [head, ...tail] = [0, E];\n" +
+      "const [e] = tail;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const (head, ...tail) = (0, E);\n" +
+      "const [e] = tail;\n" +
+      "out <- e.op()\n",
+      "effect E { op: () => I32 }\n" +
+      "const #Some e | e = #Some E;\n" +
+      "out <- e.op()\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered)?.statements.at(-1)?.tag, "state_bind");
+  }
+
+  const overwritten = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "const [e] = [ordinary];\n" +
+    "out <- e.op()\n";
+  const lowered = lower_baba_source(parse_duck_source(overwritten));
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.statements.at(-1)?.tag, "bind");
+
+  const captured_ordinary_value = "effect E { op: () => I32 }\n" +
+    "const e = 0;\n" +
+    "const pair = [e];\n" +
+    "const e = E;\n" +
+    "const [x] = pair;\n" +
+    "out <- x.op()\n";
+  const captured_ordinary_source = checked_value(
+    lower_baba_source(parse_duck_source(captured_ordinary_value)),
+  );
+  assert_equals(captured_ordinary_source?.statements.at(-1)?.tag, "bind");
+});
+
+Deno.test("Baba snapshots shared const aggregates without expanding their DAG", () => {
+  let source = "effect E { op: () => I32 }\nconst a0 = [E];\n";
+  for (let depth = 1; depth <= 24; depth += 1) {
+    const previous = "a" + (depth - 1).toString();
+    source += "const a" + depth.toString() + " = [" + previous + ", " +
+      previous + "];\n";
+  }
+  source += "const [left, right] = a24;\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered) !== undefined, true);
+});
+
 Deno.test("Baba classifies only outer effect operation calls as state bindings", () => {
   for (
     const text of [
@@ -239,6 +685,26 @@ Deno.test("Baba effect aliases follow lexical shadowing", () => {
   assert_equals(shadowed_source?.statements[1]?.tag, "state_bind");
   assert_equals(shadowed_source?.statements[2]?.tag, "bind");
 
+  const aggregate_effect_result_shadow = "effect E { op: () => I32 }\n" +
+    "const e = [E];\n" +
+    "e <- ordinary()\n" +
+    "const [x] = e;\n" +
+    "out <- x.op()\n";
+  const aggregate_shadow_source = checked_value(
+    lower_baba_source(parse_duck_source(aggregate_effect_result_shadow)),
+  );
+  assert_equals(aggregate_shadow_source?.statements.at(-1)?.tag, "bind");
+
+  const aggregate_nested_assignment = "effect E { op: () => I32 }\n" +
+    "let pair = [E];\n" +
+    "do pair = [0]; end;\n" +
+    "let [e] = pair;\n" +
+    "out <- e.op()\n";
+  const nested_aggregate_source = checked_value(
+    lower_baba_source(parse_duck_source(aggregate_nested_assignment)),
+  );
+  assert_equals(nested_aggregate_source?.statements.at(-1)?.tag, "bind");
+
   for (
     const assignment_source of [
       "effect E { op: () => I32 }\n" +
@@ -264,6 +730,15 @@ Deno.test("Baba effect aliases follow lexical shadowing", () => {
     lower_baba_source(parse_duck_source(invalidated_assignment)),
   );
   assert_equals(invalidated_source?.statements.at(-1)?.tag, "bind");
+
+  const destructuring_shadow = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "let [e, other] = pair;\n" +
+    "value <- e.op()\n";
+  const destructured_source = checked_value(
+    lower_baba_source(parse_duck_source(destructuring_shadow)),
+  );
+  assert_equals(destructured_source?.statements.at(-1)?.tag, "bind");
 
   for (
     const nested_assignment of [
@@ -762,16 +1237,10 @@ Deno.test("Baba lowering reports unsupported accepted syntax", () => {
 });
 
 Deno.test("Baba lowering never erases unsupported binding semantics", () => {
-  for (
-    const source of [
-      "let !value = 1;\n",
-      "let rec identity = value => value;\n",
-    ]
-  ) {
-    const lowered = lower_baba_source(parse_duck_source(source));
-    assert_equals(diagnostics_of(lowered).length, 1);
-    assert_equals(checked_value(lowered), undefined);
-  }
+  const source = "let rec identity = value => value;\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered).length, 1);
+  assert_equals(checked_value(lowered), undefined);
 });
 
 Deno.test("Baba lowering preserves statements outside recovery regions", () => {
