@@ -17,6 +17,7 @@ const scanner_tokens = [
   "_application_space",
   "_condition_application_space",
   "_type_application_space",
+  "_fixity_identifier",
 ];
 let check_only = false;
 for (const argument of Deno.args) {

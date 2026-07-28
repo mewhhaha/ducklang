@@ -508,6 +508,13 @@
         }
       }
     },
+    "_fixity_identifier_alias": {
+      "paths": {
+        "": {
+          "alias_ref": "identifier"
+        }
+      }
+    },
     "_array_spread_with_tail": {
       "wrap": {
         "kind": "prec",

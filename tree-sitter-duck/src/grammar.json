@@ -680,6 +680,10 @@
               },
               {
                 "type": "SYMBOL",
+                "name": "_fixity_identifier_alias"
+              },
+              {
+                "type": "SYMBOL",
                 "name": "wildcard"
               },
               {
@@ -2664,8 +2668,17 @@
           "type": "FIELD",
           "name": "name",
           "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_fixity_identifier_alias"
+              }
+            ]
           }
         },
         {
@@ -2702,8 +2715,17 @@
           "type": "FIELD",
           "name": "name",
           "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_fixity_identifier_alias"
+              }
+            ]
           }
         },
         {
@@ -3376,6 +3398,10 @@
                 },
                 {
                   "type": "SYMBOL",
+                  "name": "_fixity_identifier_alias"
+                },
+                {
+                  "type": "SYMBOL",
                   "name": "wildcard"
                 },
                 {
@@ -3601,6 +3627,10 @@
               {
                 "type": "SYMBOL",
                 "name": "identifier"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_fixity_identifier_alias"
               },
               {
                 "type": "SYMBOL",
@@ -5457,6 +5487,10 @@
         {
           "type": "SYMBOL",
           "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_fixity_identifier_alias"
         },
         {
           "type": "SYMBOL",
@@ -7606,6 +7640,15 @@
       "named": true,
       "value": "identifier"
     },
+    "_fixity_identifier_alias": {
+      "type": "ALIAS",
+      "content": {
+        "type": "SYMBOL",
+        "name": "_fixity_identifier"
+      },
+      "named": true,
+      "value": "identifier"
+    },
     "_array_spread_with_tail": {
       "type": "PREC",
       "value": 1,
@@ -8132,6 +8175,10 @@
     {
       "type": "SYMBOL",
       "name": "_type_application_space"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_fixity_identifier"
     }
   ],
   "inline": [

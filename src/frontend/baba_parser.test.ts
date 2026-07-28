@@ -186,6 +186,45 @@ Deno.test("Baba parses transparent and opaque fact definitions", () => {
   assert_equals(parsed.cst.tree.includes('"opaque"'), true);
 });
 
+Deno.test("Baba keeps fixity words contextual at statement boundaries", () => {
+  for (const name of ["infix", "infixl", "infixr", "prefix"]) {
+    const source = "let " + name + " = 1;\n" +
+      name + " = 2\n" +
+      name;
+    assert_equals(parse_duck_source(source).diagnostics, []);
+  }
+
+  for (
+    const source of [
+      "let f = do prefix end;\n",
+      "prefix 1;\n",
+      "prefix(1);\n",
+      "prefix.field;\n",
+      "prefix[0];\n",
+    ]
+  ) {
+    assert_equals(parse_duck_source(source).diagnostics, []);
+  }
+});
+
+Deno.test("Baba fixity lookahead honors comment extras", () => {
+  for (
+    const source of [
+      "prefix // keyword\n80 ^^ = wrap\n",
+      "prefix 80 // precedence\n^^ = wrap\n",
+      "prefix 80 ^^ // operator\n= wrap\n",
+      "infixl 70 / = divide\n",
+    ]
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, []);
+    assert_equals(
+      parsed.cst.root?.children[0]?.kind,
+      "fixity_declaration_statement",
+    );
+  }
+});
+
 Deno.test("Baba keeps union payload patterns distinct from loop collections", () => {
   const parsed = parse_duck_source(
     "for #Some value in values do value; end\n" +

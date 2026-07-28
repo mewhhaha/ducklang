@@ -1329,6 +1329,54 @@ Deno.test("Baba lowers assignments and nested function blocks", () => {
   });
 });
 
+Deno.test("Baba treats fixity words as contextual binding names", () => {
+  for (const name of ["infix", "infixl", "infixr", "prefix"]) {
+    const source = "let " + name + " = 1;\n" +
+      name + " = 2;\n" +
+      "let copied = " + name + ";\n";
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a contextual fixity binding.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+    assert_source_spans_equal(lowered_source, parse_source(source));
+  }
+
+  for (
+    const source of [
+      "let prefix = 1;\nlet copied = prefix;\n",
+      "let read = prefix => prefix;\n",
+      "let read = (text, prefix) => prefix;\n",
+      "case value of #Some prefix => prefix, _ => 0;\n",
+      "let #Some prefix = value else do return 0; end;\n" +
+      "let copied = prefix;\n",
+      "effect E { op: () => I32 }\n" +
+      "prefix <- E.op();\n" +
+      "let copied = prefix;\n",
+      "prefix 80 ^^ = wrap\nlet invert = value => ^^ value;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a contextual prefix binding.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+    if (
+      !source.startsWith("case") &&
+      !source.includes("else do") &&
+      !source.includes("<-")
+    ) {
+      assert_source_spans_equal(lowered_source, parse_source(source));
+    }
+  }
+});
+
 Deno.test("Baba matches the legacy parity oracle for foundational control flow", () => {
   for (
     const path of [

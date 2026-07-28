@@ -5,6 +5,7 @@ skip comment = /\/\/[^\r\n]*/ ;
 contextual _application_space priority 1 = /[ \t]+/ ;
 contextual _condition_application_space priority 1 = /[ \t]+/ ;
 contextual _type_application_space priority 1 = /[ \t]+/ ;
+contextual _fixity_identifier priority 1 = /(infixl|infixr|infix|prefix)/ ;
 
 token grouped_value_alternative_pattern priority 3 = /\([A-Za-z][A-Za-z0-9_]*([ \t\r\n]*\|[ \t\r\n]*[A-Za-z][A-Za-z0-9_]*)+\)/ ;
 contextual lowercase_identifier priority 2 = /[a-z][A-Za-z0-9_]*/ ;
@@ -125,7 +126,14 @@ row_variable = (lowercase_identifier | "_" | underscore_identifier) ;
 effect_operation_reference = (effect:(effect_identifier) "." operation:(identifier)) ;
 
 effect_binding_statement = (
-                             name:((identifier | wildcard | unit_pattern))
+                             name:(
+                               (
+                                 identifier
+                                 | _fixity_identifier_alias
+                                 | wildcard
+                                 | unit_pattern
+                               )
+                             )
                              "<-"
                              value:(_expression)
                            ) ;
@@ -389,10 +397,14 @@ break_statement = ("break" (value:(_expression))? ";") ;
 
 continue_statement = ("continue" ";") ;
 
-assignment = (name:(identifier) operator:(("=" | ":=")) value:(_expression)) ;
+assignment = (
+               name:((identifier | _fixity_identifier_alias))
+               operator:(("=" | ":="))
+               value:(_expression)
+             ) ;
 
 index_assignment = (
-                     name:(identifier)
+                     name:((identifier | _fixity_identifier_alias))
                      open:(_index_open)
                      index:(_expression)
                      "]"
@@ -502,7 +514,13 @@ arrow_function = (_shape_arrow | _effect_arrow | _value_arrow) ;
 recursive_function = (
                        "rec"
                        parameters:(
-                         (identifier | wildcard | parameter_list | bracket_parameter_list)
+                         (
+                           identifier
+                           | _fixity_identifier_alias
+                           | wildcard
+                           | parameter_list
+                           | bracket_parameter_list
+                         )
                        )
                        "=>"
                        body:(_expression)
@@ -516,7 +534,7 @@ bracket_parameter_list = ("[" (((parameter (("," parameter))*) (",")?))? "]") ;
 
 parameter = (
               ((("const" ("...")?) | "!"))?
-              name:((identifier | wildcard))
+              name:((identifier | _fixity_identifier_alias | wildcard))
               ((":" type:(type_reference)))?
             ) ;
 
@@ -799,6 +817,7 @@ _primary_expression = (
                         | template_literal
                         | boolean
                         | identifier
+                        | _fixity_identifier_alias
                         | wildcard
                         | _aggregate_constructor_identifier
                         | _effect_identifier_alias
@@ -1046,6 +1065,8 @@ _value_arrow = _value_arrow_expression ;
 _effect_identifier_alias = effect_identifier ;
 
 _row_identifier_alias = row_variable ;
+
+_fixity_identifier_alias = _fixity_identifier ;
 
 _array_spread_with_tail = (array_spread "," ((_expression (("," _expression))*) (",")?)) ;
 

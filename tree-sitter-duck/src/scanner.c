@@ -8,6 +8,13 @@ enum TokenType {
   APPLICATION_SPACE,
   CONDITION_APPLICATION_SPACE,
   TYPE_APPLICATION_SPACE,
+  FIXITY_IDENTIFIER,
+};
+
+enum FixityWordScan {
+  NOT_FIXITY_WORD,
+  FIXITY_IDENTIFIER_USE,
+  FIXITY_DECLARATION,
 };
 
 void *tree_sitter_duck_external_scanner_create(void) {
@@ -131,12 +138,201 @@ static bool starts_type_argument(int32_t character) {
     character == '[';
 }
 
+static bool identifier_character(int32_t character) {
+  return (character >= 'A' && character <= 'Z') ||
+    (character >= 'a' && character <= 'z') ||
+    (character >= '0' && character <= '9') || character == '_';
+}
+
+static bool operator_character(int32_t character) {
+  switch (character) {
+    case '.':
+    case '-':
+    case '!':
+    case '$':
+    case '%':
+    case '&':
+    case '*':
+    case '+':
+    case '/':
+    case '<':
+    case '=':
+    case '>':
+    case '?':
+    case '@':
+    case '\\':
+    case '^':
+    case '|':
+    case '~':
+    case ':':
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool whitespace(int32_t character) {
+  return character == ' ' || character == '\t' ||
+    character == '\r' || character == '\n';
+}
+
+static bool skip_fixity_extras(TSLexer *lexer) {
+  bool skipped = false;
+
+  while (true) {
+    while (whitespace(lexer->lookahead)) {
+      skipped = true;
+      lexer->advance(lexer, false);
+    }
+    if (lexer->lookahead != '/') {
+      return skipped;
+    }
+    lexer->advance(lexer, false);
+    if (lexer->lookahead != '/') {
+      return false;
+    }
+    skipped = true;
+    lexer->advance(lexer, false);
+    while (
+      lexer->lookahead != 0 &&
+      lexer->lookahead != '\r' &&
+      lexer->lookahead != '\n'
+    ) {
+      lexer->advance(lexer, false);
+    }
+  }
+}
+
+static enum FixityWordScan scan_fixity_word(TSLexer *lexer) {
+  char word[8] = {0};
+  unsigned length = 0;
+
+  while (length < sizeof(word) - 1 && identifier_character(lexer->lookahead)) {
+    word[length] = (char)lexer->lookahead;
+    length += 1;
+    lexer->advance(lexer, false);
+  }
+  if (identifier_character(lexer->lookahead)) {
+    return NOT_FIXITY_WORD;
+  }
+  if (
+    strcmp(word, "infix") != 0 && strcmp(word, "infixl") != 0 &&
+    strcmp(word, "infixr") != 0 && strcmp(word, "prefix") != 0
+  ) {
+    return NOT_FIXITY_WORD;
+  }
+  lexer->mark_end(lexer);
+
+  if (!skip_fixity_extras(lexer)) {
+    return FIXITY_IDENTIFIER_USE;
+  }
+  if (lexer->lookahead < '0' || lexer->lookahead > '9') {
+    return FIXITY_IDENTIFIER_USE;
+  }
+
+  if (lexer->lookahead == '0') {
+    lexer->advance(lexer, false);
+    if (lexer->lookahead == 'x' || lexer->lookahead == 'X') {
+      lexer->advance(lexer, false);
+      while (
+        (lexer->lookahead >= '0' && lexer->lookahead <= '9') ||
+        (lexer->lookahead >= 'a' && lexer->lookahead <= 'f') ||
+        (lexer->lookahead >= 'A' && lexer->lookahead <= 'F')
+      ) {
+        lexer->advance(lexer, false);
+      }
+    } else {
+      while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+        lexer->advance(lexer, false);
+      }
+    }
+  } else {
+    while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+      lexer->advance(lexer, false);
+    }
+  }
+
+  if (lexer->lookahead == '.') {
+    lexer->advance(lexer, false);
+    while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+      lexer->advance(lexer, false);
+    }
+  }
+  if (lexer->lookahead == 'e' || lexer->lookahead == 'E') {
+    lexer->advance(lexer, false);
+    if (lexer->lookahead == '+' || lexer->lookahead == '-') {
+      lexer->advance(lexer, false);
+    }
+    while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+      lexer->advance(lexer, false);
+    }
+  }
+  if (lexer->lookahead == 'i' || lexer->lookahead == 'u') {
+    lexer->advance(lexer, false);
+    while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+      lexer->advance(lexer, false);
+    }
+  } else if (lexer->lookahead == 'f') {
+    lexer->advance(lexer, false);
+    while (lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+      lexer->advance(lexer, false);
+    }
+  }
+  bool operator_started = false;
+  while (true) {
+    while (whitespace(lexer->lookahead)) {
+      lexer->advance(lexer, false);
+    }
+    if (lexer->lookahead != '/') {
+      break;
+    }
+    lexer->advance(lexer, false);
+    if (lexer->lookahead != '/') {
+      operator_started = true;
+      break;
+    }
+    lexer->advance(lexer, false);
+    while (
+      lexer->lookahead != 0 &&
+      lexer->lookahead != '\r' &&
+      lexer->lookahead != '\n'
+    ) {
+      lexer->advance(lexer, false);
+    }
+  }
+  if (!operator_started && !operator_character(lexer->lookahead)) {
+    return FIXITY_IDENTIFIER_USE;
+  }
+  while (operator_character(lexer->lookahead)) {
+    lexer->advance(lexer, false);
+  }
+  if (!skip_fixity_extras(lexer)) {
+    return FIXITY_IDENTIFIER_USE;
+  }
+  if (lexer->lookahead == '=') {
+    return FIXITY_DECLARATION;
+  }
+  return FIXITY_IDENTIFIER_USE;
+}
+
 bool tree_sitter_duck_external_scanner_scan(
   void *payload,
   TSLexer *lexer,
   const bool *valid_symbols
 ) {
   (void)payload;
+
+  if (
+    valid_symbols[FIXITY_IDENTIFIER] &&
+    !whitespace(lexer->lookahead)
+  ) {
+    enum FixityWordScan fixity = scan_fixity_word(lexer);
+    if (fixity == FIXITY_IDENTIFIER_USE) {
+      lexer->result_symbol = FIXITY_IDENTIFIER;
+      return true;
+    }
+    return false;
+  }
 
   if (
     !valid_symbols[APPLICATION_SPACE] &&
