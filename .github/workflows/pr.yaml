@@ -59,6 +59,9 @@ jobs:
         with:
           deno-version: v2.9.2
 
+      - name: install tree-sitter
+        run: npm install --global tree-sitter-cli@0.26.3
+
       - name: install wabt
         run: |
           curl --fail --location --silent --show-error \
@@ -92,6 +95,9 @@ jobs:
         with:
           deno-version: v2.9.2
 
+      - name: install tree-sitter
+        run: npm install --global tree-sitter-cli@0.26.3
+
       - name: install wabt
         run: |
           curl --fail --location --silent --show-error \
@@ -117,6 +123,9 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.2
+
+      - name: install tree-sitter
+        run: npm install --global tree-sitter-cli@0.26.3
 
       - name: enforce performance budgets
         run: |
