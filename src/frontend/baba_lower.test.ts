@@ -1449,6 +1449,181 @@ Deno.test("Baba lowers array spreads directly", () => {
   }
 });
 
+Deno.test("Baba lowers attribute groups directly", () => {
+  const source = "@[first]\n" +
+    "@[\n" +
+    "  second(1),\n" +
+    "  #slow,\n" +
+    "]\n" +
+    "const answer = 42;\n" +
+    "@[derive(I32)]\n" +
+    "type Answer = I32\n" +
+    "@[host]\n" +
+    "declare effect Input { read: () => I32 }\n" +
+    "@[runtime]\n" +
+    "effect Local { get: () => I32 }\n" +
+    "@[layout]\n" +
+    "declare Record { value: I32 }\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const lowered_source = checked_value(lowered);
+  if (lowered_source === undefined) {
+    throw new Error("Expected attributed source to lower directly.");
+  }
+  const legacy_source = parse_source(source);
+  assert_equals(lowered_source, legacy_source);
+  assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  assert_source_spans_equal(lowered_source, legacy_source);
+  const binding = lowered_source.statements[0];
+  if (binding?.tag !== "bind") {
+    throw new Error("Expected an attributed const binding.");
+  }
+  assert_equals(binding.kind, "const");
+  assert_equals(binding.attribute_groups?.[1]?.multiline, true);
+
+  const invalid_source = "@[512u8]\n" +
+    "const BadName = 1024u8;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(invalid_source)),
+  );
+  assert_equals(diagnostics.length, 3);
+  const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+  assert_equals(starts, [...starts].sort((left, right) => left - right));
+});
+
+Deno.test("Baba lowers Duck, extension, and module declarations directly", () => {
+  const source = "@[derive]\n" +
+    "duck Read Self {\n" +
+    "  type Value\n" +
+    "  .read = Self -> Value\n" +
+    "}\n" +
+    "@[implement]\n" +
+    "extend I32 Element {\n" +
+    "  type Value = Element,\n" +
+    "  .read = (value: I32) => value,\n" +
+    "}\n" +
+    "@[local]\n" +
+    "module sample = capability => do\n" +
+    "  { .read = () => capability }\n" +
+    "end\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const lowered_source = checked_value(lowered);
+  if (lowered_source === undefined) {
+    throw new Error("Expected attributed declarations to lower directly.");
+  }
+  const legacy_source = parse_source(source);
+  assert_equals(lowered_source, legacy_source);
+  assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  const duck = lowered_source.declarations?.[0];
+  const extension = lowered_source.declarations?.[1];
+  const module_binding = lowered_source.statements[0];
+  if (
+    duck?.tag !== "duck" || extension?.tag !== "extend" ||
+    module_binding?.tag !== "bind"
+  ) {
+    throw new Error("Expected Duck, extension, and module declarations.");
+  }
+  const duck_attribute = duck.attribute_groups?.[0];
+  const extension_attribute = extension.attribute_groups?.[0];
+  const module_attribute = module_binding.attribute_groups?.[0];
+  const duck_member = duck.members[0];
+  if (
+    duck_attribute === undefined || extension_attribute === undefined ||
+    module_attribute === undefined || duck_member === undefined
+  ) {
+    throw new Error("Expected exact attributed declaration members.");
+  }
+  assert_equals(source_span(duck_attribute), {
+    start: source.indexOf("@[derive]"),
+    end: source.indexOf("@[derive]") + "@[derive]".length,
+  });
+  const duck_member_type = "Self -> Value";
+  assert_equals(source_span(duck_member.type_expr), {
+    start: source.indexOf(duck_member_type),
+    end: source.indexOf(duck_member_type) + duck_member_type.length,
+  });
+  assert_equals(source_span(extension_attribute), {
+    start: source.indexOf("@[implement]"),
+    end: source.indexOf("@[implement]") + "@[implement]".length,
+  });
+  assert_equals(source_span(module_attribute), {
+    start: source.indexOf("@[local]"),
+    end: source.indexOf("@[local]") + "@[local]".length,
+  });
+
+  const invalid_source = "@[512u8]\n" +
+    "module BadName = 1024u8\n" +
+    "duck Bad left left { type lower .badName = I32 }\n" +
+    "extend Box param param { type lower = I32, .badName = 1 }\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(invalid_source)),
+  );
+  assert_equals(diagnostics.length > 8, true);
+  const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+  assert_equals(starts, [...starts].sort((left, right) => left - right));
+});
+
+Deno.test("Baba lowers effect handlers with state directly", () => {
+  const text = "const run = initial => do\n" +
+    "  let current = initial;\n" +
+    "  handler State {\n" +
+    "    get: (!resume) => !resume current,\n" +
+    "    put: (value, !resume) => do\n" +
+    "      current = value\n" +
+    "      !resume(())\n" +
+    "    end,\n" +
+    "    return: value => value,\n" +
+    "  }\n" +
+    "end;\n";
+  const lowered = lower_baba_source(parse_duck_source(text));
+  assert_equals(diagnostics_of(lowered), []);
+  const source = checked_value(lowered);
+  if (source === undefined) {
+    throw new Error("Expected an effect handler to lower directly.");
+  }
+  assert_equals(source, parse_source(text));
+  assert_equals(all_source_nodes_have_spans(source), true);
+});
+
+Deno.test("Baba rejects invalid handler clause names at the clause", () => {
+  const text = "effect State { bad_name: () => Unit }\n" +
+    "const run = handler State {\n" +
+    "  badName: (!resume) => !resume(()),\n" +
+    "  return: value => value,\n" +
+    "};\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(text)),
+  );
+  assert_equals(diagnostics, [{
+    code: "DUCK1001",
+    severity: "error",
+    message: "Handler clause must use snake_case: badName",
+    span: {
+      start: text.indexOf("badName"),
+      end: text.indexOf("badName") + "badName".length,
+    },
+  }]);
+});
+
+Deno.test("Baba preserves parenthesized Wasm calls as applications", () => {
+  for (
+    const text of [
+      "@wasm.add_i32 (1, 2)\n",
+      "@wasm.add_i32 ()\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(text));
+  }
+
+  const intrinsic = "@wasm.add_i32 [1, 2]\n";
+  const lowered_intrinsic = lower_baba_source(parse_duck_source(intrinsic));
+  assert_equals(diagnostics_of(lowered_intrinsic), []);
+  assert_equals(checked_value(lowered_intrinsic), parse_source(intrinsic));
+});
+
 Deno.test("bundled array spreads match the legacy parity oracle", async () => {
   for (
     const path of [
@@ -1462,6 +1637,51 @@ Deno.test("bundled array spreads match the legacy parity oracle", async () => {
     const source = checked_value(lowered);
     if (source === undefined) {
       throw new Error("Expected bundled array spreads to lower directly.");
+    }
+    assert_equals(source, parse_source(text));
+    assert_equals(all_source_nodes_have_spans(source), true);
+  }
+});
+
+Deno.test("bundled attributes match the legacy parity oracle", async () => {
+  for (
+    const path of [
+      "../../examples/compile_time/16_attributes_and_import_meta.duck",
+      "../../examples/compile_time/23_derived_sequence.duck",
+      "../../examples/compile_time/25_source_derive_attribute.duck",
+      "../../examples/testing/01_inline_tests.duck",
+    ]
+  ) {
+    const text = await Deno.readTextFile(new URL(path, import.meta.url));
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected bundled attributes to lower directly.");
+    }
+    assert_equals(source, parse_source(text));
+    assert_equals(all_source_nodes_have_spans(source), true);
+  }
+});
+
+Deno.test("bundled Duck and extension declarations match the legacy oracle", async () => {
+  for (
+    const path of [
+      "../../examples/compile_time/18_ducks_and_operators.duck",
+      "../../examples/compile_time/22_generic_extension.duck",
+      "../../examples/ownership_modules/07_local_module_binding.duck",
+      "prelude.duck",
+      "prelude_effects.duck",
+      "prelude_effect_defaults.duck",
+      "prelude_iterators.duck",
+    ]
+  ) {
+    const text = await Deno.readTextFile(new URL(path, import.meta.url));
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected bundled declarations to lower directly.");
     }
     assert_equals(source, parse_source(text));
     assert_equals(all_source_nodes_have_spans(source), true);

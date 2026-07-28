@@ -3,6 +3,7 @@ import { core_from_source } from "./core/from_source.ts";
 import {
   compiler_diagnostic,
   type CompilerDiagnostic,
+  CompilerDiagnosticError,
   diagnostic_codes,
   diagnostic_sequence,
 } from "./diagnostic.ts";
@@ -27,10 +28,7 @@ import { lower_baba_source } from "./frontend/baba_lower.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import { pattern_binding_occurrences } from "./frontend/pattern.ts";
-import {
-  type SourceDiagnostic,
-  SourceDiagnosticError,
-} from "./frontend/semantic_diagnostic.ts";
+import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import {
   make_source_syntax,
   mark_source_span,
@@ -213,7 +211,7 @@ export function analyze_duck_source(
     parsed: stable_input,
     source: source_analysis.source,
     source_analysis,
-    diagnostics: [
+    diagnostics: diagnostic_sequence([
       ...stable_input.diagnostics.map((diagnostic) =>
         compiler_diagnostic(
           diagnostic_codes.syntax_error,
@@ -225,7 +223,7 @@ export function analyze_duck_source(
       ...lowering_diagnostics,
       ...signature_diagnostics,
       ...contract_diagnostics,
-    ],
+    ], options.uri),
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap([]),
     facts: new FrozenMap([]),
@@ -662,7 +660,7 @@ export function lower_duck_source(
       };
     });
   } catch (error) {
-    if (error instanceof SourceDiagnosticError) {
+    if (error instanceof CompilerDiagnosticError) {
       return fail(error.diagnostic);
     }
     throw error;

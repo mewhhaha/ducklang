@@ -60,10 +60,16 @@ Deno.test("bundled type declarations match the legacy declaration oracle", () =>
         node.children.some((child) => child.kind === "attribute_group")
       ) {
         attributed += 1;
-        assert_equals(
-          diagnostics_of(lower_baba_type_declaration(node, source)).length,
-          1,
+        const declaration_source = source.slice(node.start, node.end) + "\n";
+        const lowered = lower_baba_source(
+          parse_duck_source(declaration_source),
         );
+        assert_equals(
+          diagnostics_of(lowered),
+          [],
+        );
+        assert_equals(checked_value(lowered), parse_source(declaration_source));
+        compared += 1;
         continue;
       }
       const declaration_source = source.slice(node.start, node.end) + "\n";
@@ -687,16 +693,36 @@ Deno.test("Baba validates effect and record declaration boundaries", () => {
 });
 
 Deno.test("Baba keeps duplicate declaration diagnostics in source order", () => {
-  const source = "declare A { badName: I32 }\n" +
-    "declare A { otherBad: I64 }\n";
-  const diagnostics = diagnostics_of(
-    lower_baba_source(parse_duck_source(source)),
-  );
-  assert_equals(
-    diagnostics.map((diagnostic) => diagnostic.span.start),
-    [12, 35, 39],
-  );
-  assert_equals(diagnostics[1]?.related?.[0]?.span, { start: 8, end: 9 });
+  for (
+    const [source, expected_starts, duplicate_index, first_name_span] of [
+      [
+        "declare A { badName: I32 }\n" +
+        "declare A { otherBad: I64 }\n",
+        [12, 35, 39],
+        1,
+        { start: 8, end: 9 },
+      ],
+      [
+        "@[512u8]\ntype First = I32\n" +
+        "@[1024u8]\ntype First = I64\n",
+        [2, 28, 41],
+        2,
+        { start: 14, end: 19 },
+      ],
+    ] as const
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(source)),
+    );
+    assert_equals(
+      diagnostics.map((diagnostic) => diagnostic.span.start),
+      expected_starts,
+    );
+    assert_equals(
+      diagnostics[duplicate_index]?.related?.[0]?.span,
+      first_name_span,
+    );
+  }
 });
 
 Deno.test("Baba keeps host forall diagnostics in source order", () => {

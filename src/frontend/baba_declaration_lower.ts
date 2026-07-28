@@ -50,10 +50,6 @@ export function lower_baba_type_declaration(
   node: BabaCstNode,
   source: string,
 ): Checked<Declaration> {
-  const attribute = node.children.find((child) =>
-    child.kind === "attribute_group"
-  );
-  if (attribute !== undefined) return unsupported_declaration(attribute);
   const names = node.children.filter((child) => child.kind === "identifier");
   const name_node = names[0];
   if (name_node === undefined) return unsupported_declaration(node);
@@ -168,10 +164,6 @@ export function lower_baba_record_declaration(
   node: BabaCstNode,
   source: string,
 ): Checked<Declaration> {
-  const attribute = node.children.find((child) =>
-    child.kind === "attribute_group"
-  );
-  if (attribute !== undefined) return unsupported_declaration(attribute);
   const name_node = node.children.find((child) => child.kind === "identifier");
   const field_block = node.children.find((child) =>
     child.kind === "type_field_block"
@@ -279,10 +271,6 @@ export function lower_baba_effect_declaration(
   source: string,
   type_context: BabaEffectTypeContext,
 ): Checked<Declaration> {
-  const attribute = node.children.find((child) =>
-    child.kind === "attribute_group"
-  );
-  if (attribute !== undefined) return unsupported_declaration(attribute);
   let implementation: "host" | "duck" = "duck";
   if (node.kind === "declare_effect_statement") implementation = "host";
   const name_node = node.children.find((child) =>

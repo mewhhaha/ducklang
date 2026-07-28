@@ -99,6 +99,35 @@ Deno.test("Baba compile-time array spreads reach semantic Core", () => {
   }
 });
 
+Deno.test("Baba attributes expand before semantic Core construction", () => {
+  const source = "const increment = (const target) => " +
+    "#Replace (target + 1);\n" +
+    "@[increment]\n" +
+    "const answer = 41;\n" +
+    "answer\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core, {
+    tag: "program",
+    statements: [
+      {
+        tag: "bind",
+        kind: "const",
+        name: "answer",
+        is_linear: false,
+        annotation: undefined,
+        value: { tag: "num", type: "i32", value: 42 },
+      },
+      {
+        tag: "expr",
+        expr: { tag: "var", name: "answer" },
+      },
+    ],
+  });
+});
+
 Deno.test("array spread failures remain checked source diagnostics", () => {
   for (
     const [source, expected_operand] of [
@@ -274,6 +303,47 @@ Deno.test("semantic program lowering preserves source diagnostics", () => {
   assert_equals(analysis.diagnostics.length, 1);
   const lowered = lower_duck_source(analysis);
   assert_equals(diagnostics_of(lowered).length > 0, true);
+});
+
+Deno.test("semantic analysis orders recovery and lowering diagnostics", () => {
+  const source = "const BadName = 1024u8;\n" +
+    "@[broken(]\n" +
+    "const good = 1;\n" +
+    "const next = 2;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => diagnostic.span.start),
+    [6, 16, 32],
+  );
+});
+
+Deno.test("bundled default effect handlers reach semantic Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    'const {} = import "duck:prelude/effects/defaults" ();\n' +
+      "0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core.tag, "program");
+});
+
+Deno.test("invalid handler clauses remain checked diagnostics", () => {
+  const source = "effect State { bad_name: () => Unit }\n" +
+    "const run = handler State {\n" +
+    "  badName: (!resume) => !resume(()),\n" +
+    "  return: value => value,\n" +
+    "};\n" +
+    "0\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics.length, 1);
+  assert_equals(
+    analysis.diagnostics[0]?.message,
+    "Handler clause must use snake_case: badName",
+  );
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), analysis.diagnostics);
+  assert_equals(checked_value(lowered), undefined);
 });
 
 Deno.test("Baba parse results cannot be mutated after branding", () => {
@@ -564,8 +634,8 @@ Deno.test("semantic analysis preserves malformed fixity diagnostics", () => {
   assert_equals(
     analysis.diagnostics.map((diagnostic) => diagnostic.message),
     [
-      "Baba parser rejected MISSING",
       "Malformed fixity declaration.",
+      "Baba parser rejected MISSING",
     ],
   );
 });

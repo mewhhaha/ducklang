@@ -8,8 +8,15 @@ import type {
   Source as SourceNode,
   Stmt,
 } from "./ast.ts";
+import {
+  compiler_diagnostic,
+  CompilerDiagnosticError,
+  diagnostic_codes,
+} from "../diagnostic.ts";
 import { expect } from "../expect.ts";
-import { parse_source } from "./parser.ts";
+import { lower_baba_source } from "./baba_lower.ts";
+import { parse_duck_source } from "./baba_parser.ts";
+import { checked_value, diagnostics_of } from "./checked.ts";
 import { pattern_bindings } from "./pattern.ts";
 import { bundled_source_text } from "./prelude.ts";
 import {
@@ -160,7 +167,7 @@ function load_source_url(
   const normalized = new URL(url.href);
   const text = Deno.readTextFileSync(normalized);
   dependencies?.set(normalized.href, text);
-  const source = parse_source(text);
+  const source = parse_import_source(normalized.href, text);
 
   if (require_module) {
     validate_file_module(source, normalized);
@@ -1135,13 +1142,13 @@ function resolve_import_expression(
 
 function parse_import_source(href: string, text: string): SourceNode {
   if (bundled_source_text(href) === undefined) {
-    return parse_source(text);
+    return lower_import_source(href, text);
   }
 
   const cached = parsed_bundled_sources.get(href);
   let parsed: SourceNode;
   if (cached === undefined) {
-    parsed = parse_source(text);
+    parsed = lower_import_source(href, text);
     parsed_bundled_sources.set(href, parsed);
   } else {
     parsed = cached;
@@ -1181,6 +1188,33 @@ function parse_import_source(href: string, text: string): SourceNode {
     }
   }
   return cloned;
+}
+
+function lower_import_source(href: string, text: string): SourceNode {
+  const parsed = parse_duck_source(text);
+  const parse_diagnostic = parsed.diagnostics[0];
+  if (parse_diagnostic !== undefined) {
+    const diagnostic = compiler_diagnostic(
+      diagnostic_codes.syntax_error,
+      parse_diagnostic.message,
+      parse_diagnostic.span,
+    );
+    diagnostic.uri = href;
+    throw new CompilerDiagnosticError(diagnostic);
+  }
+
+  const lowered = lower_baba_source(parsed);
+  const lowering_diagnostic = diagnostics_of(lowered)[0];
+  if (lowering_diagnostic !== undefined) {
+    throw new CompilerDiagnosticError({
+      ...lowering_diagnostic,
+      uri: href,
+    });
+  }
+
+  const source = checked_value(lowered);
+  expect(source !== undefined, "Baba import lowering failed silently: " + href);
+  return source;
 }
 
 function carry_imported_type_initializers(

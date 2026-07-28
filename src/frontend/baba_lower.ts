@@ -1,13 +1,21 @@
 import { Applicative } from "@mewhhaha/typeclasses";
 import { classify_abi_primitive } from "../abi_primitive.ts";
-import { compiler_diagnostic, diagnostic_codes } from "../diagnostic.ts";
+import {
+  compiler_diagnostic,
+  diagnostic_codes,
+  diagnostic_sequence,
+} from "../diagnostic.ts";
 import { expect } from "../expect.ts";
 import { integer_literal_fits, integer_type_name } from "../integer.ts";
+import { wasm_intrinsic_prim } from "../op.ts";
 import { is_snake_case, no_demand_name } from "./names.ts";
 import type {
   AttributeGroup,
   Declaration,
   FrontExpr,
+  HandlerClause,
+  HandlerReturnClause,
+  HandlerState,
   MatchArm,
   ModuleHeader,
   Param,
@@ -57,7 +65,9 @@ import {
   type SourceSpan,
 } from "./syntax.ts";
 import {
+  is_builtin_type_reference_name,
   is_runtime_binding_name,
+  module_value,
   unsupported_reserved_feature,
 } from "./parser_support.ts";
 import {
@@ -754,7 +764,8 @@ function index_direct_effect_bindings(
       if (
         !is_effect_declaration &&
         node.kind !== "type_declaration_statement" &&
-        node.kind !== "declare_record_statement"
+        node.kind !== "declare_record_statement" &&
+        node.kind !== "duck_declaration_statement"
       ) {
         continue;
       }
@@ -881,6 +892,20 @@ function index_direct_effect_bindings(
           if (assigned_snapshot !== undefined) {
             known_values.set(assigned_name_text, assigned_snapshot);
           }
+        }
+        continue;
+      }
+      if (node.kind === "module_binding_statement") {
+        const module_name_node = node.children.find((child) =>
+          child.kind === "identifier"
+        );
+        if (module_name_node !== undefined) {
+          const module_name = source.slice(
+            module_name_node.start,
+            module_name_node.end,
+          );
+          instances.delete(module_name);
+          known_values.delete(module_name);
         }
         continue;
       }
@@ -1791,75 +1816,12 @@ function lower_top_level_sequence(
     let declaration: Checked<Declaration> | undefined;
     if (node.kind === "type_declaration_statement") {
       declaration = lower_baba_type_declaration(node, source);
+    } else if (node.kind === "duck_declaration_statement") {
+      declaration = lower_duck_declaration(node, source);
+    } else if (node.kind === "extension_declaration_statement") {
+      declaration = lower_extension_declaration(node, source);
     } else if (node.kind === "fixity_declaration_statement") {
       declaration = lower_indexed_baba_fixity(node);
-      const attribute_nodes = node.children.filter((child) =>
-        child.kind === "attribute_group"
-      );
-      if (attribute_nodes.length > 0) {
-        let lowered_groups: Checked<AttributeGroup[]> = ok([]);
-        for (const attribute_node of attribute_nodes) {
-          let lowered_attributes: Checked<FrontExpr[]> = ok([]);
-          const expression_nodes = attribute_node.children.filter((child) =>
-            is_expression_node(child)
-          );
-          if (expression_nodes.length === 0) {
-            lowered_attributes = unsupported(attribute_node);
-          } else {
-            for (const expression_node of expression_nodes) {
-              lowered_attributes = Applicative.lift(
-                (
-                  current: FrontExpr[],
-                  attribute: FrontExpr,
-                ) => [...current, attribute],
-                lowered_attributes,
-                lower_expression(expression_node, source),
-              );
-            }
-          }
-          const lowered_group = lowered_attributes.map((attributes) => {
-            const group: AttributeGroup = { attributes };
-            if (
-              /[\r\n]/.test(
-                source.slice(attribute_node.start, attribute_node.end),
-              )
-            ) {
-              group.multiline = true;
-            }
-            mark_source_span(group, {
-              start: attribute_node.start,
-              end: attribute_node.end,
-            });
-            return group;
-          });
-          lowered_groups = Applicative.lift(
-            (
-              current: AttributeGroup[],
-              group: AttributeGroup,
-            ) => [...current, group],
-            lowered_groups,
-            lowered_group,
-          );
-        }
-        declaration = Applicative.lift(
-          (
-            lowered_declaration: Declaration,
-            attribute_groups: AttributeGroup[],
-          ) => {
-            const attributed_declaration = {
-              ...lowered_declaration,
-              attribute_groups,
-            };
-            mark_source_span(attributed_declaration, {
-              start: node.start,
-              end: node.end,
-            });
-            return attributed_declaration;
-          },
-          declaration,
-          lowered_groups,
-        );
-      }
     } else if (
       node.kind === "declare_effect_statement" ||
       node.kind === "effect_statement"
@@ -1873,9 +1835,35 @@ function lower_top_level_sequence(
       declaration = lower_baba_record_declaration(node, source);
     }
     if (declaration !== undefined) {
-      const name_node = node.children.find((child) =>
-        child.kind === "identifier" || child.kind === "effect_identifier"
+      const attribute_nodes = node.children.filter((child) =>
+        child.kind === "attribute_group"
       );
+      if (attribute_nodes.length > 0) {
+        declaration = Applicative.lift(
+          (
+            attribute_groups: AttributeGroup[],
+            lowered_declaration: Declaration,
+          ) => {
+            const attributed_declaration: Declaration = {
+              ...lowered_declaration,
+              attribute_groups,
+            };
+            mark_source_span(attributed_declaration, {
+              start: node.start,
+              end: node.end,
+            });
+            return attributed_declaration;
+          },
+          lower_attribute_groups(attribute_nodes, source),
+          declaration,
+        );
+      }
+      let name_node: BabaCstNode | undefined;
+      if (node.kind !== "extension_declaration_statement") {
+        name_node = node.children.find((child) =>
+          child.kind === "identifier" || child.kind === "effect_identifier"
+        );
+      }
       if (name_node !== undefined) {
         const name = source.slice(name_node.start, name_node.end);
         let checks_init_fields = node.kind === "declare_record_statement";
@@ -2013,7 +2001,489 @@ function lower_top_level_sequence(
       lower_statement_entries(node, source),
     );
   }
+  const diagnostics = diagnostic_sequence(diagnostics_of(contents));
+  if (diagnostics.length > 0) return fail(...diagnostics);
   return contents;
+}
+
+function lower_attribute_groups(
+  attribute_nodes: readonly BabaCstNode[],
+  source: string,
+): Checked<AttributeGroup[]> {
+  let lowered_groups: Checked<AttributeGroup[]> = ok([]);
+  for (const attribute_node of attribute_nodes) {
+    const expression_nodes = attribute_node.children.filter((child) =>
+      is_expression_node(child)
+    );
+    let lowered_attributes: Checked<FrontExpr[]> = ok([]);
+    if (expression_nodes.length === 0) {
+      lowered_attributes = unsupported(attribute_node);
+    } else {
+      for (const expression_node of expression_nodes) {
+        lowered_attributes = Applicative.lift(
+          (
+            attributes: FrontExpr[],
+            attribute: FrontExpr,
+          ) => [...attributes, attribute],
+          lowered_attributes,
+          lower_expression(expression_node, source),
+        );
+      }
+    }
+    const lowered_group = lowered_attributes.map((attributes) => {
+      const group: AttributeGroup = { attributes };
+      if (
+        /[\r\n]/.test(
+          source.slice(attribute_node.start, attribute_node.end),
+        )
+      ) {
+        group.multiline = true;
+      }
+      mark_source_span(group, {
+        start: attribute_node.start,
+        end: attribute_node.end,
+      });
+      return group;
+    });
+    lowered_groups = Applicative.lift(
+      (
+        groups: AttributeGroup[],
+        group: AttributeGroup,
+      ) => [...groups, group],
+      lowered_groups,
+      lowered_group,
+    );
+  }
+  return lowered_groups;
+}
+
+function lower_duck_declaration(
+  node: BabaCstNode,
+  source: string,
+): Checked<Declaration> {
+  const identifiers = node.children.filter((child) =>
+    child.kind === "identifier"
+  );
+  const name_node = identifiers[0];
+  const member_block = node.children.find((child) =>
+    child.kind === "duck_member_block"
+  );
+  if (name_node === undefined || member_block === undefined) {
+    return unsupported(node);
+  }
+
+  const name = source.slice(name_node.start, name_node.end);
+  let declaration_check: Checked<null> = ok(null);
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) {
+    declaration_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Duck name must use PascalCase: " + name,
+        { start: name_node.start, end: name_node.end },
+      ),
+    );
+  }
+  if (is_builtin_type_reference_name(name)) {
+    declaration_check = Applicative.lift(
+      (_name: null, _builtin: null) => null,
+      declaration_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duck declaration conflicts with builtin type: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      ),
+    );
+  }
+
+  const roles: string[] = [];
+  const role_names = new Map<string, BabaCstNode>();
+  for (const role_node of identifiers.slice(1)) {
+    const role = source.slice(role_node.start, role_node.end);
+    roles.push(role);
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(role)) {
+      declaration_check = Applicative.lift(
+        (_roles: null, _role: null) => null,
+        declaration_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duck role must use PascalCase: " + role,
+            { start: role_node.start, end: role_node.end },
+          ),
+        ),
+      );
+    }
+    const previous = role_names.get(role);
+    if (previous !== undefined) {
+      declaration_check = Applicative.lift(
+        (_roles: null, _duplicate: null) => null,
+        declaration_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicate duck role: " + role,
+            { start: role_node.start, end: role_node.end },
+            [{
+              message: "First duck role is here.",
+              span: { start: previous.start, end: previous.end },
+            }],
+          ),
+        ),
+      );
+    } else {
+      role_names.set(role, role_node);
+    }
+  }
+  if (roles.length === 0) {
+    declaration_check = Applicative.lift(
+      (_declaration: null, _role: null) => null,
+      declaration_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duck declaration requires at least one role",
+          { start: name_node.start, end: name_node.end },
+        ),
+      ),
+    );
+  }
+
+  const member_names = new Map<string, BabaCstNode>();
+  let lowered_types: Checked<
+    Extract<Declaration, { tag: "duck" }>["types"]
+  > = ok([]);
+  let lowered_members: Checked<
+    Extract<Declaration, { tag: "duck" }>["members"]
+  > = ok([]);
+  const member_nodes = member_block.children.filter((child) =>
+    child.kind === "duck_type_member" || child.kind === "duck_member"
+  );
+  for (const member_node of member_nodes) {
+    const member_name_node = member_node.children.find((child) =>
+      child.kind === "identifier" || child.kind === '"end"'
+    );
+    if (member_name_node === undefined) return unsupported(member_node);
+    const member_name = source.slice(
+      member_name_node.start,
+      member_name_node.end,
+    );
+    let member_check: Checked<null> = ok(null);
+    if (
+      member_node.kind === "duck_type_member" &&
+      !/^[A-Z][A-Za-z0-9]*$/.test(member_name)
+    ) {
+      member_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duck type member must use PascalCase: " + member_name,
+          { start: member_name_node.start, end: member_name_node.end },
+        ),
+      );
+    }
+    if (
+      member_node.kind === "duck_member" && member_name !== "end" &&
+      !is_snake_case(member_name)
+    ) {
+      member_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duck member must use snake_case: " + member_name,
+          { start: member_name_node.start, end: member_name_node.end },
+        ),
+      );
+    }
+    const previous = member_names.get(member_name);
+    if (previous !== undefined) {
+      member_check = Applicative.lift(
+        (_member: null, _duplicate: null) => null,
+        member_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicate duck member: " + member_name,
+            { start: member_name_node.start, end: member_name_node.end },
+            [{
+              message: "First duck member is here.",
+              span: { start: previous.start, end: previous.end },
+            }],
+          ),
+        ),
+      );
+    } else {
+      member_names.set(member_name, member_name_node);
+    }
+
+    const type_node = member_node.children.find((child) =>
+      child.kind === "type_reference"
+    );
+    if (member_node.kind === "duck_type_member") {
+      let lowered_default: Checked<TypeExpr | undefined> = ok(undefined);
+      if (type_node !== undefined) {
+        lowered_default = lower_baba_type_reference(type_node, source);
+      }
+      const lowered_type = Applicative.lift(
+        (_member: null, default_type: TypeExpr | undefined) => ({
+          name: member_name,
+          default_type,
+        }),
+        member_check,
+        lowered_default,
+      );
+      lowered_types = Applicative.lift(
+        (types, type) => [...types, type],
+        lowered_types,
+        lowered_type,
+      );
+      continue;
+    }
+
+    if (type_node === undefined) return unsupported(member_node);
+    const lowered_member = Applicative.lift(
+      (_member: null, type_expr: TypeExpr) => ({
+        name: member_name,
+        type_expr,
+      }),
+      member_check,
+      lower_baba_type_reference(type_node, source),
+    );
+    lowered_members = Applicative.lift(
+      (members, member) => [...members, member],
+      lowered_members,
+      lowered_member,
+    );
+  }
+  if (
+    !member_nodes.some((member_node) => member_node.kind === "duck_member")
+  ) {
+    declaration_check = Applicative.lift(
+      (_declaration: null, _member: null) => null,
+      declaration_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duck declaration requires a member",
+          { start: member_block.start, end: member_block.end },
+        ),
+      ),
+    );
+  }
+
+  return Applicative.lift(
+    (
+      _declaration: null,
+      types: Extract<Declaration, { tag: "duck" }>["types"],
+      members: Extract<Declaration, { tag: "duck" }>["members"],
+    ) => {
+      const declaration: Declaration = {
+        tag: "duck",
+        name,
+        roles,
+        types,
+        members,
+      };
+      mark_source_span(declaration, { start: node.start, end: node.end });
+      return declaration;
+    },
+    declaration_check,
+    lowered_types,
+    lowered_members,
+  );
+}
+
+function lower_extension_declaration(
+  node: BabaCstNode,
+  source: string,
+): Checked<Declaration> {
+  const identifiers = node.children.filter((child) =>
+    child.kind === "identifier"
+  );
+  const type_node = identifiers[0];
+  const member_block = node.children.find((child) =>
+    child.kind === "extension_member_block"
+  );
+  if (type_node === undefined || member_block === undefined) {
+    return unsupported(node);
+  }
+
+  const type_name = source.slice(type_node.start, type_node.end);
+  let declaration_check: Checked<null> = ok(null);
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(type_name)) {
+    declaration_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Extension type must use PascalCase: " + type_name,
+        { start: type_node.start, end: type_node.end },
+      ),
+    );
+  }
+  const params: string[] = [];
+  const parameter_names = new Map<string, BabaCstNode>();
+  for (const parameter_node of identifiers.slice(1)) {
+    const parameter = source.slice(parameter_node.start, parameter_node.end);
+    params.push(parameter);
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(parameter)) {
+      declaration_check = Applicative.lift(
+        (_params: null, _parameter: null) => null,
+        declaration_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Extension parameter must use PascalCase: " + parameter,
+            { start: parameter_node.start, end: parameter_node.end },
+          ),
+        ),
+      );
+    }
+    const previous = parameter_names.get(parameter);
+    if (previous !== undefined) {
+      declaration_check = Applicative.lift(
+        (_params: null, _duplicate: null) => null,
+        declaration_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicate extension parameter: " + parameter,
+            { start: parameter_node.start, end: parameter_node.end },
+            [{
+              message: "First extension parameter is here.",
+              span: { start: previous.start, end: previous.end },
+            }],
+          ),
+        ),
+      );
+    } else {
+      parameter_names.set(parameter, parameter_node);
+    }
+  }
+
+  const member_names = new Map<string, BabaCstNode>();
+  let lowered_types: Checked<
+    Extract<Declaration, { tag: "extend" }>["types"]
+  > = ok([]);
+  let lowered_fields: Checked<
+    Extract<Declaration, { tag: "extend" }>["fields"]
+  > = ok([]);
+  for (
+    const member_node of member_block.children.filter((child) =>
+      child.kind === "extension_type_member" || child.kind === "shape_field"
+    )
+  ) {
+    const member_name_node = member_node.children.find((child) =>
+      child.kind === "identifier" || child.kind === '"end"'
+    );
+    if (member_name_node === undefined) return unsupported(member_node);
+    const member_name = source.slice(
+      member_name_node.start,
+      member_name_node.end,
+    );
+    let member_check: Checked<null> = ok(null);
+    if (
+      member_node.kind === "extension_type_member" &&
+      !/^[A-Z][A-Za-z0-9]*$/.test(member_name)
+    ) {
+      member_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Extension type member must use PascalCase: " + member_name,
+          { start: member_name_node.start, end: member_name_node.end },
+        ),
+      );
+    }
+    if (
+      member_node.kind === "shape_field" && member_name !== "end" &&
+      !is_snake_case(member_name)
+    ) {
+      member_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Extension member must use snake_case: " + member_name,
+          { start: member_name_node.start, end: member_name_node.end },
+        ),
+      );
+    }
+    const previous = member_names.get(member_name);
+    if (previous !== undefined) {
+      member_check = Applicative.lift(
+        (_member: null, _duplicate: null) => null,
+        member_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicate extension member: " + member_name,
+            { start: member_name_node.start, end: member_name_node.end },
+            [{
+              message: "First extension member is here.",
+              span: { start: previous.start, end: previous.end },
+            }],
+          ),
+        ),
+      );
+    } else {
+      member_names.set(member_name, member_name_node);
+    }
+
+    if (member_node.kind === "extension_type_member") {
+      const member_type_node = member_node.children.find((child) =>
+        child.kind === "type_reference"
+      );
+      if (member_type_node === undefined) return unsupported(member_node);
+      const lowered_type = Applicative.lift(
+        (_member: null, type_expr: TypeExpr) => ({
+          name: member_name,
+          type_expr,
+        }),
+        member_check,
+        lower_baba_type_reference(member_type_node, source),
+      );
+      lowered_types = Applicative.lift(
+        (types, type) => [...types, type],
+        lowered_types,
+        lowered_type,
+      );
+      continue;
+    }
+
+    const value_node = member_node.children.find((child) =>
+      child !== member_name_node && is_expression_node(child)
+    );
+    if (value_node === undefined) return unsupported(member_node);
+    const lowered_field = Applicative.lift(
+      (_member: null, value: FrontExpr) => ({
+        name: member_name,
+        value,
+      }),
+      member_check,
+      lower_expression(value_node, source),
+    );
+    lowered_fields = Applicative.lift(
+      (fields, field) => [...fields, field],
+      lowered_fields,
+      lowered_field,
+    );
+  }
+
+  return Applicative.lift(
+    (
+      _declaration: null,
+      types: Extract<Declaration, { tag: "extend" }>["types"],
+      fields: Extract<Declaration, { tag: "extend" }>["fields"],
+    ) => {
+      const declaration: Declaration = {
+        tag: "extend",
+        type_name,
+        params,
+        types,
+        fields,
+      };
+      mark_source_span(declaration, { start: node.start, end: node.end });
+      return declaration;
+    },
+    declaration_check,
+    lowered_types,
+    lowered_fields,
+  );
 }
 
 function lower_module_header(
@@ -2180,6 +2650,10 @@ function lower_statement(
 
   if (node.kind === "binding_statement") {
     return lower_binding(node, source);
+  }
+
+  if (node.kind === "module_binding_statement") {
+    return lower_module_binding(node, source);
   }
 
   if (node.kind === "assignment") {
@@ -3482,7 +3956,12 @@ function lower_binding(
     ) {
       continue;
     }
-    if (child === type_node || child.kind === '":"') continue;
+    if (
+      child === type_node || child.kind === '":"' ||
+      child.kind === "attribute_group"
+    ) {
+      continue;
+    }
     if (
       child.kind === '"let"' ||
       child.kind === '"const"' ||
@@ -3507,7 +3986,7 @@ function lower_binding(
   }
 
   let kind: "let" | "const" = "let";
-  if (source.slice(node.start, node.start + 5) === "const") {
+  if (node.children.some((child) => child.kind === '"const"')) {
     kind = "const";
   }
   const is_recursive = recursive_node !== undefined;
@@ -3638,6 +4117,10 @@ function lower_binding(
     );
   }
   const lowered_value = lower_expression(value_node, source);
+  const lowered_attributes = lower_attribute_groups(
+    node.children.filter((child) => child.kind === "attribute_group"),
+    source,
+  );
   let binding_form_check: Checked<null> = ok(null);
   if (
     is_recursive && parsed_pattern !== undefined &&
@@ -3865,6 +4348,7 @@ function lower_binding(
   }
   const lowered_binding = Applicative.lift(
     (
+      attribute_groups: AttributeGroup[],
       _form: null,
       parsed_pattern: Pattern,
       parsed_type: TypeExpr | undefined,
@@ -3918,9 +4402,13 @@ function lower_binding(
       if (opens_import) statement.opens_import = true;
       if (mutual.length > 0) statement.mutual = mutual;
       if (else_branch !== undefined) statement.else_branch = else_branch;
+      if (attribute_groups.length > 0) {
+        statement.attribute_groups = attribute_groups;
+      }
       mark_source_span(statement, { start: node.start, end: node.end });
       return statement;
     },
+    lowered_attributes,
     binding_form_check,
     pattern_check,
     lowered_type,
@@ -3943,6 +4431,87 @@ function lower_binding(
     return fail(...binding_diagnostics);
   }
   return lowered_binding;
+}
+
+function lower_module_binding(
+  node: BabaCstNode,
+  source: string,
+): Checked<Stmt> {
+  const name_node = node.children.find((child) => child.kind === "identifier");
+  const value_node = node.children.find((child) =>
+    child !== name_node && is_expression_node(child)
+  );
+  if (name_node === undefined || value_node === undefined) {
+    return unsupported(node);
+  }
+
+  const name = source.slice(name_node.start, name_node.end);
+  let name_check: Checked<null> = ok(null);
+  if (!is_snake_case(name)) {
+    name_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Module must use snake_case: " + name,
+        { start: name_node.start, end: name_node.end },
+      ),
+    );
+  }
+  if (!is_runtime_binding_name(name)) {
+    name_check = Applicative.lift(
+      (_name: null, _reserved: null) => null,
+      name_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Module name is reserved syntax: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      ),
+    );
+  }
+  const reserved_feature = unsupported_reserved_feature(name);
+  if (reserved_feature !== undefined) {
+    name_check = Applicative.lift(
+      (_name: null, _reserved: null) => null,
+      name_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Module name is reserved for unsupported " + reserved_feature +
+            ": " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      ),
+    );
+  }
+
+  return Applicative.lift(
+    (
+      attribute_groups: AttributeGroup[],
+      _name: null,
+      value: FrontExpr,
+    ) => {
+      const statement: Stmt = {
+        tag: "bind",
+        kind: "const",
+        name,
+        is_linear: false,
+        annotation: undefined,
+        value: module_value(value),
+      };
+      if (attribute_groups.length > 0) {
+        statement.attribute_groups = attribute_groups;
+      }
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    lower_attribute_groups(
+      node.children.filter((child) => child.kind === "attribute_group"),
+      source,
+    ),
+    name_check,
+    lower_expression(value_node, source),
+  );
 }
 
 function lower_assignment(
@@ -4583,6 +5152,10 @@ function lower_expression(
     return lower_recursive_call(node, source);
   }
 
+  if (node.kind === "effect_handler_expression") {
+    return lower_effect_handler_expression(node, source);
+  }
+
   if (
     node.kind === "application_expression" ||
     node.kind === "condition_call_expression" ||
@@ -5104,15 +5677,187 @@ function lower_block(
   const statement_nodes = node.children.filter((child) =>
     child.kind !== '"do"' && child.kind !== '"end"'
   );
-  return lower_statement_sequence(statement_nodes, source).map(
-    (statements) => {
+  const lowered_statements = lower_statement_sequence(statement_nodes, source);
+  const statements = checked_value(lowered_statements);
+  if (statements === undefined) {
+    return fail(...diagnostics_of(lowered_statements));
+  }
+
+  const finalized_statements = finalize_block_statements(statements);
+  const final_statement = finalized_statements[finalized_statements.length - 1];
+  if (
+    final_statement === undefined || final_statement.tag !== "expr" ||
+    final_statement.expr.tag !== "handler"
+  ) {
+    const expression: FrontExpr = {
+      tag: "block",
+      statements: finalized_statements,
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
+  const state: HandlerState[] = [];
+  for (let index = 0; index < finalized_statements.length - 1; index += 1) {
+    const statement = finalized_statements[index];
+    expect(statement !== undefined, "Baba handler state disappeared.");
+    if (
+      statement.tag !== "bind" || statement.kind !== "let" ||
+      statement.is_recursive || statement.is_linear || statement.effectful
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Handler state block may contain only leading ordinary `let` bindings",
+          source_span(statement),
+        ),
+      );
+    }
+    const state_entry: HandlerState = {
+      name: statement.name,
+      annotation: statement.annotation,
+      value: statement.value,
+    };
+    mark_source_span(state_entry, source_span(statement));
+    state.push(state_entry);
+  }
+
+  const expression: FrontExpr = {
+    ...final_statement.expr,
+    state: [...state, ...final_statement.expr.state],
+  };
+  mark_source_span(expression, { start: node.start, end: node.end });
+  return ok(expression);
+}
+
+function lower_effect_handler_expression(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const effect_node = node.children.find((child) =>
+    child.kind === "effect_identifier"
+  );
+  const clauses_node = node.children.find((child) =>
+    child.kind === "handler_clause_block"
+  );
+  if (effect_node === undefined || clauses_node === undefined) {
+    return unsupported(node);
+  }
+
+  let lowered_clauses: Checked<HandlerClause[]> = ok([]);
+  for (
+    const clause_node of clauses_node.children.filter((child) =>
+      child.kind === "handler_operation_clause"
+    )
+  ) {
+    const name_node = clause_node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    const value_node = clause_node.children.find((child) =>
+      child.kind === "arrow_function"
+    );
+    if (name_node === undefined || value_node === undefined) {
+      return unsupported(clause_node);
+    }
+    const name = source.slice(name_node.start, name_node.end);
+    let name_check: Checked<null> = ok(null);
+    if (!is_snake_case(name)) {
+      name_check = fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Handler clause must use snake_case: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    const lowered_clause = Applicative.lift(
+      (_name: null, value: FrontExpr) => {
+        expect(value.tag === "lam", "Baba handler clause is not a lambda.");
+        const clause: HandlerClause = {
+          name,
+          params: value.params,
+          body: value.body,
+        };
+        mark_source_span(clause, {
+          start: clause_node.start,
+          end: clause_node.end,
+        });
+        return clause;
+      },
+      name_check,
+      lower_function_expression(value_node, source, "lam"),
+    );
+    lowered_clauses = Applicative.lift(
+      (clauses: HandlerClause[], clause: HandlerClause) => [
+        ...clauses,
+        clause,
+      ],
+      lowered_clauses,
+      lowered_clause,
+    );
+  }
+
+  const return_node = clauses_node.children.find((child) =>
+    child.kind === "handler_return_clause"
+  );
+  if (return_node === undefined) return unsupported(clauses_node);
+  const return_value_node = return_node.children.find((child) =>
+    child.kind === "arrow_function"
+  );
+  if (return_value_node === undefined) return unsupported(return_node);
+  const lowered_return_value = lower_function_expression(
+    return_value_node,
+    source,
+    "lam",
+  );
+  const parsed_return_value = checked_value(lowered_return_value);
+  let return_arity: Checked<null> = ok(null);
+  if (
+    parsed_return_value !== undefined &&
+    (parsed_return_value.tag !== "lam" ||
+      parsed_return_value.params.length !== 1)
+  ) {
+    return_arity = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Handler return clause must accept exactly one parameter",
+        { start: return_value_node.start, end: return_value_node.end },
+      ),
+    );
+  }
+  const lowered_return_clause = Applicative.lift(
+    (value: FrontExpr, _arity: null) => {
+      expect(value.tag === "lam", "Baba handler return is not a lambda.");
+      const param = value.params[0];
+      expect(param !== undefined, "Baba handler return parameter disappeared.");
+      const return_clause: HandlerReturnClause = {
+        param,
+        body: value.body,
+      };
+      mark_source_span(return_clause, {
+        start: return_node.start,
+        end: return_node.end,
+      });
+      return return_clause;
+    },
+    lowered_return_value,
+    return_arity,
+  );
+
+  return Applicative.lift(
+    (clauses: HandlerClause[], return_clause: HandlerReturnClause) => {
       const expression: FrontExpr = {
-        tag: "block",
-        statements: finalize_block_statements(statements),
+        tag: "handler",
+        effect: source.slice(effect_node.start, effect_node.end),
+        state: [],
+        clauses,
+        return_clause,
       };
       mark_source_span(expression, { start: node.start, end: node.end });
       return expression;
     },
+    lowered_clauses,
+    lowered_return_clause,
   );
 }
 
@@ -6986,6 +7731,51 @@ function lower_application(
   let constructor_call_check: Checked<null> = ok(null);
   const parsed_function = checked_value(lowered_function);
   const parsed_argument = checked_value(lowered_argument);
+  if (
+    parsed_function?.tag === "var" &&
+    parsed_function.name.startsWith("@wasm.") &&
+    source.slice(argument_node.start, argument_node.start + 1) !== "(" &&
+    parsed_argument !== undefined
+  ) {
+    const prim = wasm_intrinsic_prim(
+      parsed_function.name.slice("@wasm.".length),
+    );
+    if (prim === undefined) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Unknown Wasm intrinsic: " + parsed_function.name,
+          source_span(parsed_function),
+        ),
+      );
+    }
+    let args = [parsed_argument];
+    if (parsed_argument.tag === "unit") args = [];
+    if (
+      parsed_argument.tag === "product" &&
+      parsed_argument.entries.every((entry) => entry.label === undefined)
+    ) {
+      args = parsed_argument.entries.map((entry) => entry.value);
+    }
+    if (args.length !== 2) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Wasm intrinsic " + parsed_function.name +
+            " expects a product of 2 values, got " +
+            args.length.toString(),
+          { start: argument_node.start, end: argument_node.end },
+        ),
+      );
+    }
+    const left = args[0];
+    const right = args[1];
+    expect(left !== undefined, "Baba Wasm intrinsic lost its left operand.");
+    expect(right !== undefined, "Baba Wasm intrinsic lost its right operand.");
+    const expression: FrontExpr = { tag: "prim", prim, left, right };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
   let called_constructor_node: BabaCstNode | undefined;
   if (
     argument_node.kind === "parenthesized_or_product" &&
@@ -7378,6 +8168,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "arrow_function" ||
     node.kind === "recursive_function" ||
     node.kind === "recursive_call_expression" ||
+    node.kind === "effect_handler_expression" ||
     node.kind === "application_expression" ||
     node.kind === "condition_call_expression" ||
     node.kind === "condition_application_expression" ||
