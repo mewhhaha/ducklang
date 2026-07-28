@@ -8,6 +8,7 @@ export {
   type BabaCst,
   type BabaCstNode,
   type BabaParseResult,
+  type BabaRecoveryInterval,
   type BabaSourceNodeId,
   type BabaToken,
   parse_duck_source,

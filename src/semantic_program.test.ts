@@ -60,7 +60,7 @@ Deno.test("semantic program lowering preserves source diagnostics", () => {
 });
 
 Deno.test("Baba parse results cannot be mutated after branding", () => {
-  const parsed = parse_duck_source("let value = 1;\n");
+  const parsed = parse_duck_source("let value = ;\n");
   let rejected = false;
   try {
     parsed.cst.text = "let forged = 1;\n";
@@ -68,6 +68,33 @@ Deno.test("Baba parse results cannot be mutated after branding", () => {
     rejected = true;
   }
   assert_equals(rejected, true);
+
+  rejected = false;
+  const recovery = parsed.recovery_intervals[0];
+  if (recovery === undefined) {
+    throw new Error("Baba parser did not return its recovery interval");
+  }
+  try {
+    recovery.skipped.end = parsed.cst.text.length;
+  } catch (_error) {
+    rejected = true;
+  }
+  assert_equals(rejected, true);
+
+  const analysis = analyze_duck_source(parsed);
+  assert_equals(
+    analysis.parsed.recovery_intervals,
+    parsed.recovery_intervals,
+  );
+  const analysis_recovery = analysis.parsed.recovery_intervals[0];
+  if (analysis_recovery === undefined) {
+    throw new Error("Semantic analysis lost the Baba recovery interval");
+  }
+  if (analysis_recovery.diagnostic !== analysis.parsed.diagnostics[0]) {
+    throw new Error("Semantic analysis detached the recovery diagnostic");
+  }
+  assert_equals(Object.isFrozen(analysis_recovery), true);
+  assert_equals(Object.isFrozen(analysis_recovery.skipped), true);
 });
 
 Deno.test("semantic analysis reports prefix-signature association diagnostics", () => {

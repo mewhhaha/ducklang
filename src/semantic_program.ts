@@ -351,6 +351,7 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
   );
   require_own_data(parsed, "tokens");
   require_own_data(parsed, "diagnostics");
+  require_own_data(parsed, "recovery_intervals");
   require_own_data(parsed, "cst");
   expect(
     typeof parsed.cst === "object" && parsed.cst !== null,
@@ -369,6 +370,10 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
   );
   assert_plain_array(parsed.tokens, "Baba tokens");
   assert_plain_array(parsed.diagnostics, "Baba diagnostics");
+  assert_plain_array(
+    parsed.recovery_intervals,
+    "Baba recovery intervals",
+  );
   let root: BabaCstNode | undefined;
   if (parsed.cst.root !== undefined) {
     root = snapshot_cst_node(
@@ -439,15 +444,102 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
       }),
     }));
   }
+  const diagnostic_snapshots = new Map<SyntaxDiagnostic, SyntaxDiagnostic>();
+  for (let index = 0; index < parsed.diagnostics.length; index += 1) {
+    const source_diagnostic = parsed.diagnostics[index];
+    const diagnostic = diagnostics[index];
+    expect(
+      source_diagnostic !== undefined && diagnostic !== undefined,
+      "Baba diagnostic snapshot disappeared.",
+    );
+    diagnostic_snapshots.set(source_diagnostic, diagnostic);
+  }
+  const recovery_nodes = new Map<string, BabaCstNode>();
+  collect_cst_recovery_nodes(root, recovery_nodes);
+  const recovery_intervals: BabaParseResult["recovery_intervals"] = [];
+  for (
+    let index = 0;
+    index < parsed.recovery_intervals.length;
+    index += 1
+  ) {
+    const interval = parsed.recovery_intervals[index];
+    expect(
+      interval !== undefined,
+      "Baba recovery intervals cannot contain holes.",
+    );
+    require_own_data(interval, "diagnostic");
+    require_own_data(interval, "skipped");
+    require_own_data(interval, "source_node_id");
+    require_own_data(interval.diagnostic, "message");
+    require_own_data(interval.diagnostic, "span");
+    require_own_data(interval.diagnostic.span, "start");
+    require_own_data(interval.diagnostic.span, "end");
+    require_own_data(interval.skipped, "start");
+    require_own_data(interval.skipped, "end");
+    expect(
+      Number.isSafeInteger(interval.skipped.start) &&
+        interval.skipped.start >= 0 &&
+        interval.skipped.start <= parsed.cst.text.length,
+      "Baba recovery interval start is outside source text.",
+    );
+    expect(
+      Number.isSafeInteger(interval.skipped.end) &&
+        interval.skipped.end >= interval.skipped.start &&
+        interval.skipped.end <= parsed.cst.text.length,
+      "Baba recovery interval end is outside source text.",
+    );
+    const diagnostic = diagnostic_snapshots.get(interval.diagnostic);
+    expect(
+      diagnostic !== undefined,
+      "Baba recovery interval must reference a parser diagnostic.",
+    );
+    const recovery_node = recovery_nodes.get(interval.source_node_id);
+    expect(
+      recovery_node !== undefined,
+      "Baba recovery interval must reference a CST node.",
+    );
+    expect(
+      interval.skipped.start === recovery_node.start &&
+        interval.skipped.end === recovery_node.end,
+      "Baba recovery interval must match its CST recovery node.",
+    );
+    expect(
+      diagnostic.span.start === interval.skipped.start &&
+        diagnostic.span.end === interval.skipped.end,
+      "Baba recovery interval must match its parser diagnostic.",
+    );
+    recovery_intervals.push(Object.freeze({
+      diagnostic,
+      skipped: Object.freeze({
+        start: interval.skipped.start,
+        end: interval.skipped.end,
+      }),
+      source_node_id: interval.source_node_id,
+    }));
+  }
   return Object.freeze({
     tokens: Object.freeze(tokens),
     diagnostics: Object.freeze(diagnostics),
+    recovery_intervals: Object.freeze(recovery_intervals),
     cst: Object.freeze({
       text: parsed.cst.text,
       tree: parsed.cst.tree,
       root,
     }),
   }) as unknown as BabaParseResult;
+}
+
+function collect_cst_recovery_nodes(
+  node: BabaCstNode | undefined,
+  nodes: Map<string, BabaCstNode>,
+): void {
+  if (node === undefined) return;
+  if (node.kind === "ERROR" || node.kind === "MISSING") {
+    nodes.set(node.id, node);
+  }
+  for (const child of node.children) {
+    collect_cst_recovery_nodes(child, nodes);
+  }
 }
 
 function snapshot_cst_node(

@@ -5,6 +5,7 @@ Deno.test("Baba parser preserves source tokens and CST spans", () => {
   const parsed = parse_duck_source("stored 1;\n");
 
   assert_equals(parsed.diagnostics, []);
+  assert_equals(parsed.recovery_intervals, []);
   assert_equals(parsed.tokens, [
     { text: "stored", start: 0, end: 6 },
     { text: "1", start: 7, end: 8 },
@@ -52,6 +53,31 @@ Deno.test("Baba diagnostics identify a local recovery node", () => {
   const parsed = parse_duck_source("stored ( ;\nlet ok = 1;\n");
 
   assert_equals(parsed.diagnostics[0]?.span, { start: 7, end: 8 });
+  assert_equals(parsed.recovery_intervals[0]?.skipped, {
+    start: 7,
+    end: 8,
+  });
+  const recovery = parsed.recovery_intervals[0];
+  if (recovery === undefined) {
+    throw new Error("Baba parser did not return its recovery interval");
+  }
+  if (recovery.diagnostic !== parsed.diagnostics[0]) {
+    throw new Error("Baba recovery interval lost its parser diagnostic");
+  }
+  const recovery_node_ids: string[] = [];
+  const pending = [...(parsed.cst.root?.children || [])];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === undefined) continue;
+    if (node.kind === "ERROR" || node.kind === "MISSING") {
+      recovery_node_ids.push(node.id);
+    }
+    pending.push(...node.children);
+  }
+  assert_equals(
+    recovery_node_ids.includes(recovery.source_node_id),
+    true,
+  );
   assert_equals(parsed.tokens.some((token) => token.text === "ok"), true);
 });
 
@@ -99,6 +125,10 @@ Deno.test("Baba maps CRLF recovery spans", () => {
 Deno.test("Baba reports missing-token recovery at its local byte span", () => {
   const parsed = parse_duck_source("let value = ;\n");
   assert_equals(parsed.diagnostics[0]?.span, { start: 12, end: 12 });
+  assert_equals(parsed.recovery_intervals[0]?.skipped, {
+    start: 12,
+    end: 12,
+  });
 });
 
 Deno.test("Baba reports every missing-token recovery", () => {
@@ -165,10 +195,25 @@ Deno.test("Baba reports excessive CST nesting without exhausting the host stack"
   const rejected_depth = 4000;
   const rejected = "let " + "[".repeat(rejected_depth) + "x" +
     "]".repeat(rejected_depth) + " = value;\n";
-  const diagnostics = parse_duck_source(rejected).diagnostics;
-  assert_equals(diagnostics.length, 1);
+  const parsed = parse_duck_source(rejected);
+  assert_equals(parsed.diagnostics.length, 1);
   assert_equals(
-    diagnostics[0]?.message.includes("nesting exceeds the maximum"),
+    parsed.diagnostics[0]?.message.includes("nesting exceeds the maximum"),
+    true,
+  );
+  assert_equals(parsed.recovery_intervals.length, 1);
+  assert_equals(
+    parsed.recovery_intervals[0]?.diagnostic.message.includes(
+      "nesting exceeds the maximum",
+    ),
+    true,
+  );
+  assert_equals(parsed.recovery_intervals[0]?.skipped, {
+    start: 0,
+    end: rejected.length,
+  });
+  assert_equals(
+    parsed.tokens.some((token) => token.text === "x"),
     true,
   );
 });

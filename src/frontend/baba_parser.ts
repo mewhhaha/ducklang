@@ -26,9 +26,19 @@ export type BabaCst = {
   root: BabaCstNode | undefined;
 };
 
+export type BabaRecoveryInterval = {
+  diagnostic: SyntaxDiagnostic;
+  skipped: {
+    start: number;
+    end: number;
+  };
+  source_node_id: BabaSourceNodeId;
+};
+
 export type BabaParseResult = {
   tokens: BabaToken[];
   diagnostics: SyntaxDiagnostic[];
+  recovery_intervals: BabaRecoveryInterval[];
   cst: BabaCst;
 };
 
@@ -59,6 +69,7 @@ export function parse_duck_source(text: string): BabaParseResult {
   );
 
   try {
+    const tokens = baba_tokens(tree.rootNode, text);
     const pending_nodes = [{ node: tree.rootNode, depth: 0 }];
     let excessive_node: TreeSitterNode | undefined;
     while (pending_nodes.length > 0) {
@@ -76,13 +87,13 @@ export function parse_duck_source(text: string): BabaParseResult {
       const error: BabaCstNode = {
         id: source_node_id(
           "ERROR",
-          excessive_node.startIndex,
-          excessive_node.endIndex,
+          0,
+          text.length,
           1,
         ),
         kind: "ERROR",
-        start: excessive_node.startIndex,
-        end: excessive_node.endIndex,
+        start: 0,
+        end: text.length,
         children: [],
       };
       const root: BabaCstNode = {
@@ -92,12 +103,18 @@ export function parse_duck_source(text: string): BabaParseResult {
         end: text.length,
         children: [error],
       };
+      const diagnostic = {
+        message: "Baba parser nesting exceeds the maximum of " +
+          maximum_baba_cst_nesting.toString(),
+        span: { start: error.start, end: error.end },
+      };
       const parsed = {
-        tokens: cst_tokens(root, text),
-        diagnostics: [{
-          message: "Baba parser nesting exceeds the maximum of " +
-            maximum_baba_cst_nesting.toString(),
-          span: { start: error.start, end: error.end },
+        tokens,
+        diagnostics: [diagnostic],
+        recovery_intervals: [{
+          diagnostic,
+          skipped: { start: error.start, end: error.end },
+          source_node_id: error.id,
         }],
         cst: { text, tree: render_cst(root), root },
       };
@@ -108,6 +125,7 @@ export function parse_duck_source(text: string): BabaParseResult {
     const ordinal = { value: 0 };
     const root = baba_cst_node(tree.rootNode, ordinal);
     const diagnostics: SyntaxDiagnostic[] = [];
+    const recovery_intervals: BabaRecoveryInterval[] = [];
     const errors: BabaCstNode[] = [];
     collect_error_nodes(root, errors);
     errors.sort((left, right) => {
@@ -115,15 +133,22 @@ export function parse_duck_source(text: string): BabaParseResult {
       return left.end - right.end;
     });
     for (const error of errors) {
-      diagnostics.push({
+      const diagnostic = {
         message: `Baba parser rejected ${error.kind}`,
         span: { start: error.start, end: error.end },
+      };
+      diagnostics.push(diagnostic);
+      recovery_intervals.push({
+        diagnostic,
+        skipped: { start: error.start, end: error.end },
+        source_node_id: error.id,
       });
     }
 
     const parsed = {
-      tokens: cst_tokens(root, text),
+      tokens,
       diagnostics,
+      recovery_intervals,
       cst: { text, tree: render_cst(root), root },
     };
     deep_freeze(parsed);
@@ -187,25 +212,29 @@ function collect_error_nodes(node: BabaCstNode, errors: BabaCstNode[]): void {
   }
 }
 
-function cst_tokens(
-  root: BabaCstNode | undefined,
+function baba_tokens(
+  root: TreeSitterNode,
   source: string,
 ): BabaToken[] {
   const tokens: BabaToken[] = [];
-
-  function visit(node: BabaCstNode): void {
-    if (node.children.length === 0 && node.end > node.start) {
+  const pending = [root];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    expect(node !== undefined, "Baba token work disappeared.");
+    if (node.children.length === 0 && node.endIndex > node.startIndex) {
       tokens.push({
-        text: source.slice(node.start, node.end),
-        start: node.start,
-        end: node.end,
+        text: source.slice(node.startIndex, node.endIndex),
+        start: node.startIndex,
+        end: node.endIndex,
       });
-      return;
+      continue;
     }
-    for (const child of node.children) visit(child);
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      const child = node.children[index];
+      expect(child !== undefined, "Baba token child disappeared.");
+      pending.push(child);
+    }
   }
-
-  if (root !== undefined) visit(root);
   return tokens;
 }
 
