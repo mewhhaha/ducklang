@@ -2804,17 +2804,6 @@ function lower_pattern(
   }
   if (node.kind === "named_shape_pattern") {
     if (mode === "linear") return unsupported(node);
-    if (
-      !node.children.some((child) => child.kind === "named_shape_pattern_field")
-    ) {
-      return fail(
-        compiler_diagnostic(
-          diagnostic_codes.syntax_error,
-          "Empty named binding patterns are not supported",
-          { start: node.start, end: node.end },
-        ),
-      );
-    }
     const names = new Map<string, BabaCstNode>();
     let lowered_entries: Checked<ProductPatternEntry[]> = ok([]);
     for (

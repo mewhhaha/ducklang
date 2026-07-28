@@ -306,6 +306,23 @@ Deno.test("semantic Core elaborates product destructuring before lowering", () =
   });
 });
 
+Deno.test("empty shape bindings erase from semantic Core", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let {} = {};\n0\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const program = checked_value(lower_duck_source(analysis));
+  if (program === undefined) {
+    throw new Error("Expected an empty shape binding to reach Core.");
+  }
+  assert_equals(program.core.statements, [
+    {
+      tag: "expr",
+      expr: { tag: "num", type: "i32", value: 0 },
+    },
+  ]);
+});
+
 Deno.test("semantic Core preserves irrefutable union alternatives", () => {
   for (
     const source of [
