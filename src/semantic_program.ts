@@ -12,7 +12,6 @@ import {
   checked_value,
   diagnostics_of,
   fail,
-  ok,
 } from "./frontend/checked.ts";
 import {
   type BabaCstNode,
@@ -25,10 +24,13 @@ import {
   type BabaSemanticAnalyzeOptions,
 } from "./frontend/baba_analyze.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
-import { source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
+import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import { pattern_binding_occurrences } from "./frontend/pattern.ts";
-import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
+import {
+  type SourceDiagnostic,
+  SourceDiagnosticError,
+} from "./frontend/semantic_diagnostic.ts";
 import {
   make_source_syntax,
   mark_source_span,
@@ -646,16 +648,25 @@ export function lower_duck_source(
   if (has_error_diagnostics(analysis.diagnostics)) {
     return fail(...analysis.diagnostics);
   }
-  const core = core_from_source(source_for_gpufuck(analysis.source));
-  return ok({
-    core,
-    symbols: analysis.symbols,
-    types: analysis.types,
-    facts: analysis.facts,
-    proofs: analysis.proofs,
-    origins: analysis.origins,
-    function_summaries: analysis.function_summaries,
-  });
+  try {
+    return check_source_for_gpufuck(analysis.source).map((source) => {
+      const core = core_from_source(source);
+      return {
+        core,
+        symbols: analysis.symbols,
+        types: analysis.types,
+        facts: analysis.facts,
+        proofs: analysis.proofs,
+        origins: analysis.origins,
+        function_summaries: analysis.function_summaries,
+      };
+    });
+  } catch (error) {
+    if (error instanceof SourceDiagnosticError) {
+      return fail(error.diagnostic);
+    }
+    throw error;
+  }
 }
 
 function collect_top_level_bindings(

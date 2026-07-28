@@ -115,6 +115,11 @@ export const diagnostic_registry = {
     "types_and_effects",
     "error",
   ),
+  aggregate_spread_unresolved: diagnostic_definition(
+    "DUCK2308",
+    "types_and_effects",
+    "error",
+  ),
   unresolved_call_type: diagnostic_definition(
     "DUCK2310",
     "types_and_effects",

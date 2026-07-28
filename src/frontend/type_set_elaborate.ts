@@ -56,7 +56,7 @@ import {
   SourceDiagnosticError,
   throw_source_diagnostic,
 } from "./semantic_diagnostic.ts";
-import { has_source_span } from "./syntax.ts";
+import { has_source_span, inherit_source_span } from "./syntax.ts";
 
 type TypeSetBinding = {
   annotation: string | undefined;
@@ -4499,7 +4499,14 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
       let rest = expr.rest;
 
       if (rest !== undefined) {
-        rest = rewrite_expr(rest, scope);
+        const source_rest = rest;
+        rest = rewrite_expr(source_rest, scope);
+        if (rest !== source_rest && has_source_span(source_rest)) {
+          rest = { ...rest };
+          inherit_source_span(rest, source_rest);
+        } else if (!has_source_span(rest) && has_source_span(source_rest)) {
+          inherit_source_span(rest, source_rest);
+        }
 
         if (scope.evaluating_const_call && scope.evaluating_const_body) {
           const value = resolve_scope_const_value(rest, scope);
@@ -4536,21 +4543,16 @@ function rewrite_expr(expr: FrontExpr, scope: TypeSetScope): FrontExpr {
               rest: undefined,
             };
           }
-
-          if (scope_const_expr_known(rest, scope)) {
-            throw new Error(
-              "Compile-time product spread requires a fixed product value, got " +
-                value.tag,
-            );
-          }
         }
       }
 
-      return {
+      const rewritten: Extract<FrontExpr, { tag: "array" }> = {
         ...expr,
         items,
         rest,
       };
+      if (has_source_span(expr)) inherit_source_span(rewritten, expr);
+      return rewritten;
     }
 
     case "array_repeat": {

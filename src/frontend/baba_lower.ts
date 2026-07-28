@@ -5597,31 +5597,57 @@ function lower_array_expression(
   node: BabaCstNode,
   source: string,
 ): Checked<FrontExpr> {
-  const spread = node.children.find((child) =>
-    child.kind === "array_spread" ||
-    child.kind === "_array_spread_with_tail"
+  const spread_node = node.children.find((child) =>
+    child.kind === "array_spread"
   );
-  if (spread !== undefined) return unsupported(spread);
-  const entries = node.children.filter((child) => is_expression_node(child))
-    .map((child) =>
-      lower_expression(child, source).map((value) => ({ value }))
-    );
-  let lowered_entries: Checked<{ value: FrontExpr }[]> = ok([]);
-  for (const entry of entries) {
-    lowered_entries = Applicative.lift(
-      (current: { value: FrontExpr }[], next: { value: FrontExpr }) => [
-        ...current,
-        next,
-      ],
-      lowered_entries,
-      entry,
+  const item_nodes = node.children.filter((child) => is_expression_node(child));
+  let lowered_items: Checked<FrontExpr[]> = ok([]);
+  for (const item_node of item_nodes) {
+    lowered_items = Applicative.lift(
+      (items: FrontExpr[], item: FrontExpr) => [...items, item],
+      lowered_items,
+      lower_expression(item_node, source),
     );
   }
-  return lowered_entries.map((product_entries) => {
+
+  if (spread_node === undefined) {
+    return lowered_items.map((items) => {
+      const entries = items.map((value) => ({ value }));
+      const expression: FrontExpr = { tag: "product", entries };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+
+  const spread_value_nodes = spread_node.children.filter(is_expression_node);
+  const spread_value_node = spread_value_nodes[0];
+  if (spread_value_nodes.length !== 1 || spread_value_node === undefined) {
+    return unsupported(spread_node);
+  }
+  const first_item_node = item_nodes[0];
+  const leading_rest = first_item_node !== undefined &&
+    spread_node.start < first_item_node.start;
+  let lowered_array: Checked<{ items: FrontExpr[]; rest: FrontExpr }>;
+  if (leading_rest) {
+    lowered_array = Applicative.lift(
+      (rest: FrontExpr, items: FrontExpr[]) => ({ items, rest }),
+      lower_expression(spread_value_node, source),
+      lowered_items,
+    );
+  } else {
+    lowered_array = Applicative.lift(
+      (items: FrontExpr[], rest: FrontExpr) => ({ items, rest }),
+      lowered_items,
+      lower_expression(spread_value_node, source),
+    );
+  }
+  return lowered_array.map(({ items, rest }) => {
     const expression: FrontExpr = {
-      tag: "product",
-      entries: product_entries,
+      tag: "array",
+      items,
+      rest,
     };
+    if (leading_rest) expression.leading_rest = true;
     mark_source_span(expression, { start: node.start, end: node.end });
     return expression;
   });

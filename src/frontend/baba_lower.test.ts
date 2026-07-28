@@ -1402,6 +1402,72 @@ Deno.test("Baba lowers indexed assignments directly", () => {
   }
 });
 
+Deno.test("Baba lowers array spreads directly", () => {
+  for (
+    const text of [
+      "[1, 2, ...rest]\n",
+      "[...rest, 1, 2]\n",
+      "let prepend = (head, tail) => [head, ...tail];\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected a directly lowered array spread.");
+    }
+    const legacy_source = parse_source(text);
+    assert_equals(source, legacy_source);
+    assert_equals(all_source_nodes_have_spans(source), true);
+    assert_source_spans_equal(source, legacy_source);
+  }
+
+  const spread_only = checked_value(lower_baba_source(parse_duck_source(
+    "[...rest]\n",
+  )));
+  assert_equals(spread_only?.statements[0], {
+    tag: "expr",
+    expr: {
+      tag: "array",
+      items: [],
+      rest: { tag: "var", name: "rest" },
+    },
+  });
+
+  for (
+    const text of [
+      "[256u8, ...512u8]\n",
+      "[...256u8, 512u8]\n",
+    ]
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(text)),
+    );
+    assert_equals(diagnostics.length, 2);
+    const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+    assert_equals(starts, [...starts].sort((left, right) => left - right));
+  }
+});
+
+Deno.test("bundled array spreads match the legacy parity oracle", async () => {
+  for (
+    const path of [
+      "../../examples/compile_time/13_derived_nested_equality.duck",
+      "prelude_types.duck",
+    ]
+  ) {
+    const text = await Deno.readTextFile(new URL(path, import.meta.url));
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected bundled array spreads to lower directly.");
+    }
+    assert_equals(source, parse_source(text));
+    assert_equals(all_source_nodes_have_spans(source), true);
+  }
+});
+
 Deno.test("Baba treats fixity words as contextual binding names", () => {
   for (const name of ["infix", "infixl", "infixr", "prefix"]) {
     const source = "let " + name + " = 1;\n" +
@@ -1908,7 +1974,6 @@ Deno.test("Baba rejects negation outside a signed literal width", () => {
 Deno.test("Baba rejects accepted syntax before its semantics are lowered", () => {
   for (
     const source of [
-      "let values = [1, ...other];\n",
       "let value = -1u8;\n",
       "let value = -1u64;\n",
       "let value = -(1u8);\n",

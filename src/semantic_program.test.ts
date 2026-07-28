@@ -68,6 +68,206 @@ Deno.test("Baba indexed assignments reach semantic Core", () => {
   });
 });
 
+Deno.test("Baba compile-time array spreads reach semantic Core", () => {
+  for (
+    const [spread, expected] of [
+      ["[3, ...[1, 2]]", [3, 1, 2]],
+      ["[...[1, 2], 3]", [1, 2, 3]],
+      ["[...[1, 2]]", [1, 2]],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "const values = comptime " + spread + ";\n" +
+        "values\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    assert_equals(diagnostics_of(lowered), []);
+    const binding = checked_value(lowered)?.core.statements[0];
+    if (binding?.tag !== "bind" || binding.value.tag !== "struct_value") {
+      throw new Error("Expected an expanded array-spread Core binding.");
+    }
+    assert_equals(
+      binding.value.fields.map((field) => {
+        if (field.value.tag !== "num") {
+          throw new Error("Expected a numeric array-spread field.");
+        }
+        return field.value.value;
+      }),
+      expected,
+    );
+  }
+});
+
+Deno.test("array spread failures remain checked source diagnostics", () => {
+  for (
+    const [source, expected_operand] of [
+      [
+        "let tail = [1, 2];\n[3, ...tail]\n",
+        "tail",
+      ],
+      [
+        "let tail = [1, 2];\n[...tail, 3]\n",
+        "tail",
+      ],
+      [
+        "let tail = [1, 2];\n[...tail]\n",
+        "tail",
+      ],
+      [
+        "const values = comptime [3, ...1];\nvalues\n",
+        "1",
+      ],
+      [
+        "const values = comptime [...1, 3];\nvalues\n",
+        "1",
+      ],
+      [
+        "const values = comptime [...1];\nvalues\n",
+        "1",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    const lowered = lower_duck_source(analysis);
+    const diagnostics = diagnostics_of(lowered);
+    assert_equals(diagnostics.length, 1);
+    const spread_start = source.indexOf("...");
+    assert_equals(diagnostics[0], {
+      code: "DUCK2308",
+      severity: "error",
+      message: "Array spread must resolve to a fixed product at compile time",
+      span: {
+        start: spread_start + 3,
+        end: spread_start + 3 + expected_operand.length,
+      },
+    });
+    assert_equals(checked_value(lowered), undefined);
+  }
+});
+
+Deno.test("array spread diagnostics preserve rewritten spans and accumulate", () => {
+  const source = "let tail = [8, 9];\n" +
+    "[0, ...[1, ...tail]];\n" +
+    "const unused = comptime [...4];\n" +
+    "const values = comptime [0, ...(1 + 2)];\n" +
+    "values\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  const nested_operand = "[1, ...tail]";
+  const nested_start = source.indexOf(nested_operand);
+  const tail_start = source.indexOf("tail", nested_start);
+  const unused_start = source.indexOf("4", source.indexOf("const unused"));
+  const binary_operand = "1 + 2";
+  const binary_start = source.indexOf(binary_operand);
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: nested_start,
+        end: nested_start + nested_operand.length,
+      },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: tail_start, end: tail_start + "tail".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: unused_start, end: unused_start + 1 },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: binary_start,
+        end: binary_start + binary_operand.length,
+      },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("array spread rewrites retain distinct call-site spans", () => {
+  const source = "const scalar = () => 1;\n" +
+    "const first = comptime [0, ...scalar()];\n" +
+    "const second = comptime [...scalar(), 2];\n" +
+    "[first, second]\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const first_start = source.indexOf("scalar()");
+  const second_start = source.indexOf("scalar()", first_start + 1);
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: first_start, end: first_start + "scalar()".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: second_start, end: second_start + "scalar()".length },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
+Deno.test("array spread diagnostics deduplicate shared definition spans", () => {
+  const source = "const tail = 1;\n" +
+    "const bad = () => [1, ...tail];\n" +
+    "const first = comptime [0, ...bad()];\n" +
+    "const second = comptime [...bad(), 2];\n" +
+    "[first, second]\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const lowered = lower_duck_source(analysis);
+  const definition_start = source.indexOf("tail", source.indexOf("const bad"));
+  const first_start = source.indexOf("bad()", source.indexOf("const first"));
+  const second_start = source.indexOf("bad()", source.indexOf("const second"));
+  const message =
+    "Array spread must resolve to a fixed product at compile time";
+  assert_equals(diagnostics_of(lowered), [
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: {
+        start: definition_start,
+        end: definition_start + "tail".length,
+      },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: first_start, end: first_start + "bad()".length },
+    },
+    {
+      code: "DUCK2308",
+      severity: "error",
+      message,
+      span: { start: second_start, end: second_start + "bad()".length },
+    },
+  ]);
+  assert_equals(checked_value(lowered), undefined);
+});
+
 Deno.test("semantic program lowering preserves source diagnostics", () => {
   const parsed = parse_duck_source("let value = ;\n");
   const analysis = analyze_duck_source(parsed);

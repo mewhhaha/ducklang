@@ -38,6 +38,7 @@ import {
   const_i32_value,
   expanded_type_product_entries,
 } from "./fixed_array_type.ts";
+import { has_source_span, inherit_source_span } from "./syntax.ts";
 
 type EffectElaboration = {
   analysis: FrontEffectAnalysis;
@@ -1680,16 +1681,25 @@ function rewrite_expr(
     let rest = expr.rest;
 
     if (rest !== undefined) {
-      rest = rewrite_expr(rest, providers, elaboration);
+      const source_rest = rest;
+      rest = rewrite_expr(source_rest, providers, elaboration);
+      if (rest !== source_rest && has_source_span(source_rest)) {
+        rest = { ...rest };
+        inherit_source_span(rest, source_rest);
+      } else if (!has_source_span(rest) && has_source_span(source_rest)) {
+        inherit_source_span(rest, source_rest);
+      }
     }
 
-    return {
+    const rewritten: Extract<FrontExpr, { tag: "array" }> = {
       ...expr,
       items: expr.items.map((item) =>
         rewrite_expr(item, providers, elaboration)
       ),
       rest,
     };
+    if (has_source_span(expr)) inherit_source_span(rewritten, expr);
+    return rewritten;
   }
 
   if (expr.tag === "array_repeat") {
