@@ -132,7 +132,7 @@ export default grammar({
     try_with_expression: $ => prec.right(1, seq("try", field("body", $._expression), optional(seq("with", field("handler", $._expression))))),
     arrow_function: $ => choice($._shape_arrow, $._effect_arrow, $._value_arrow),
     recursive_function: $ => prec.right(1, seq("rec", field("parameters", choice($.identifier, $.wildcard, $.parameter_list, $.bracket_parameter_list)), "=>", field("body", $._expression))),
-    recursive_call_expression: $ => prec.left(9, seq("rec", field("argument", $.positional_product))),
+    recursive_call_expression: $ => prec.left(9, seq("rec", field("argument", $.parenthesized_or_product))),
     parameter_list: $ => seq("(", optional(seq(seq($.parameter, repeat(seq(",", $.parameter))), optional(","))), ")"),
     bracket_parameter_list: $ => seq("[", optional(seq(seq($.parameter, repeat(seq(",", $.parameter))), optional(","))), "]"),
     parameter: $ => seq(optional(choice(seq("const", optional("...")), "!")), field("name", choice($.identifier, $.wildcard)), optional(seq(":", field("type", $.type_reference)))),

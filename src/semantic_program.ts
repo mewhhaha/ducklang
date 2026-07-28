@@ -687,6 +687,20 @@ function collect_top_level_bindings(
         });
       }
     }
+    if (statement.mutual !== undefined) {
+      for (const member of statement.mutual) {
+        for (const occurrence of pattern_binding_occurrences(member.pattern)) {
+          let span = source_span(occurrence.source);
+          if (occurrence.binding_span !== undefined) {
+            span = occurrence.binding_span;
+          }
+          introduced_bindings.push({
+            name: occurrence.binding.name,
+            span,
+          });
+        }
+      }
+    }
     for (const introduced of introduced_bindings) {
       const cst_node = find_covering_node(root, introduced.span);
       let origin: SemanticOrigin | undefined;

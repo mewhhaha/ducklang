@@ -3419,7 +3419,7 @@
             "name": "argument",
             "content": {
               "type": "SYMBOL",
-              "name": "positional_product"
+              "name": "parenthesized_or_product"
             }
           }
         ]

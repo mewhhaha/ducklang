@@ -508,7 +508,7 @@ recursive_function = (
                        body:(_expression)
                      ) ;
 
-recursive_call_expression = ("rec" argument:(positional_product)) ;
+recursive_call_expression = ("rec" argument:(parenthesized_or_product)) ;
 
 parameter_list = ("(" (((parameter (("," parameter))*) (",")?))? ")") ;
 

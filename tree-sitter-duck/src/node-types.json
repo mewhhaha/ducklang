@@ -5908,7 +5908,7 @@
         "required": true,
         "types": [
           {
-            "type": "positional_product",
+            "type": "parenthesized_or_product",
             "named": true
           }
         ]

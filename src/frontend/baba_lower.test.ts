@@ -934,6 +934,196 @@ Deno.test("Baba lowers multi-argument calls as value packs", () => {
   });
 });
 
+Deno.test("Baba lowers recursive and open binding forms directly", () => {
+  const sources = [
+    Deno.readTextFileSync("examples/functions/04_recursive_fibonacci.duck"),
+    Deno.readTextFileSync("examples/functions/05_tail_recursive_gcd.duck"),
+    Deno.readTextFileSync("examples/functions/11_mutual_recursion.duck"),
+    Deno.readTextFileSync("examples/compile_time/15_open_imports.duck"),
+    "let recursive = rec [left, right] => left;\n",
+    "let recursive = rec _ => 0;\n",
+    "let recursive = rec [_, _] => 0;\n",
+    "let recursive = rec (_) => 0;\n",
+    "let recursive = rec (const _) => 0;\n",
+    "let recursive = rec (_,) => 0;\n",
+    "let recursive = rec (const _,) => 0;\n",
+    "let recursive = rec (value,) => value;\n",
+    "let recursive = rec (const value,) => value;\n",
+    "let unit = rec () => rec();\n",
+    "let unary = rec value => rec(value);\n",
+    "let pair = rec (x, y) => rec(x, y);\n",
+    "let grouped = rec (x, y) => rec((x, y));\n",
+    "let nested = rec (x, y) => rec(((x, y)));\n",
+    "let trailing = rec (x, y) => rec((x,));\n",
+    "let rec even = value => value\n" +
+    "and odd: I32 -> I32 = value => value;\n",
+    "const value = open;\n",
+    "let value = and;\n",
+  ];
+  for (const source of sources) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered recursive binding.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  }
+});
+
+Deno.test("Baba diagnoses invalid recursive and open binding forms", () => {
+  for (
+    const [source, message] of [
+      [
+        "let rec f = value => value else do return 0; end;\n",
+        "Recursive bindings do not support else branches",
+      ],
+      [
+        "let f = do 0; end\nand g = do 1; end;\n",
+        "Mutually recursive bindings require let rec",
+      ],
+      [
+        "let rec f = value => do value; end\n" +
+        "and f = value => do value; end;\n",
+        "Duplicate mutually recursive binding: f",
+      ],
+      [
+        "let f = rec (const ...values) => values;\n",
+        "Recursive functions do not support variadic parameters",
+      ],
+      [
+        "let f = rec (_: I32) => 0;\n",
+        "Wildcard parameters cannot have type annotations",
+      ],
+      [
+        "let f = rec (_, _: I32) => 0;\n",
+        "Wildcard parameters cannot have type annotations",
+      ],
+      [
+        "let f = rec [_: I32] => 0;\n",
+        "Wildcard parameters cannot have type annotations",
+      ],
+      [
+        "let rec _ = rec value => value;\n",
+        "Recursive bindings require a single name",
+      ],
+      [
+        "let rec [f] = [value => f(value)]\n" +
+        "and g = value => g(value);\n",
+        "Recursive bindings require a single name",
+      ],
+      [
+        'const open value = import "duck:x" ();\n',
+        "Open imports require a named product pattern",
+      ],
+      [
+        "const open { .value } = 0;\n",
+        "Open bindings require a direct module import invocation",
+      ],
+    ] as const
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, []);
+    const diagnostics = diagnostics_of(lower_baba_source(parsed));
+    assert_equals(diagnostics.length, 1);
+    assert_equals(diagnostics[0]?.message, message);
+  }
+});
+
+Deno.test("Baba keeps recursive binding diagnostics in source order", () => {
+  const diagnostics = diagnostics_of(lower_baba_source(parse_duck_source(
+    "let Bad = do 0; end\n" +
+      "and alsoBad = do 1; end;\n",
+  )));
+  assert_equals(
+    diagnostics.map((diagnostic) => diagnostic.message),
+    [
+      "Parameter must use snake_case: Bad",
+      "Mutually recursive bindings require let rec",
+      "Mutually recursive binding must use snake_case: alsoBad",
+    ],
+  );
+});
+
+Deno.test("Baba recursive closures preserve outer effect identities", () => {
+  for (
+    const parameter of [
+      "e",
+      "[e]",
+      "value",
+    ]
+  ) {
+    const source = "effect E { op: () => I32 }\n" +
+      "const e = E;\n" +
+      "let f = rec " + parameter + " => do e = 0; end;\n" +
+      "next <- e.op()\n";
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const program = checked_value(lowered);
+    assert_equals(program, parse_source(source));
+    assert_equals(program?.statements[2]?.tag, "state_bind");
+  }
+});
+
+Deno.test("Baba mutual members shadow outer effect identities", () => {
+  const source = "effect E { op: () => I32 }\n" +
+    "const g = E;\n" +
+    "let rec f = value => value\n" +
+    "and g = value => value;\n" +
+    "next <- g.op()\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const program = checked_value(lowered);
+  assert_equals(program?.statements[2]?.tag, "bind");
+});
+
+Deno.test("Baba recursive group names shadow effects inside every body", () => {
+  for (
+    const [binding, member_index] of [
+      ["let rec f = value => do out <- f.op() end;\n", 0],
+      [
+        "let rec f = value => do out <- g.op() end\n" +
+        "and g = value => value;\n",
+        0,
+      ],
+      [
+        "let rec f = value => value\n" +
+        "and g = value => do out <- f.op() end;\n",
+        1,
+      ],
+    ] as const
+  ) {
+    const source = "effect E { op: () => I32 }\n" +
+      "const f = E;\n" +
+      "const g = E;\n" +
+      binding;
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const program = checked_value(lowered);
+    const group = program?.statements[2];
+    if (group === undefined || group.tag !== "bind") {
+      throw new Error("Expected a recursive binding group.");
+    }
+    let member = group;
+    if (member_index === 1) {
+      const mutual = group.mutual?.[0];
+      if (mutual === undefined) {
+        throw new Error("Expected a mutual recursive member.");
+      }
+      member = {
+        tag: "bind",
+        kind: group.kind,
+        ...mutual,
+      };
+    }
+    if (member.value.tag !== "lam" || member.value.body.tag !== "block") {
+      throw new Error("Expected a recursive function block.");
+    }
+    assert_equals(member.value.body.statements[0]?.tag, "bind");
+  }
+});
+
 Deno.test("Baba preserves built-in qualified field semantics", () => {
   for (
     const text of [
@@ -1559,13 +1749,6 @@ Deno.test("Baba loop binders shadow outer effect identities", () => {
   }
   assert_equals(loop.body[1]?.tag, "bind");
   assert_equals(program?.statements[2]?.tag, "state_bind");
-});
-
-Deno.test("Baba lowering never erases unsupported binding semantics", () => {
-  const source = "let rec identity = value => value;\n";
-  const lowered = lower_baba_source(parse_duck_source(source));
-  assert_equals(diagnostics_of(lowered).length, 1);
-  assert_equals(checked_value(lowered), undefined);
 });
 
 Deno.test("Baba lowering preserves statements outside recovery regions", () => {

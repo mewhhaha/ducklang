@@ -195,19 +195,6 @@ Deno.test("semantic analysis rejects unsupported raw postconditions", () => {
   );
 });
 
-Deno.test("semantic analysis rejects binding semantics not yet lowered from Baba", () => {
-  const source = "let rec identity = value => value;\n";
-  const analysis = analyze_duck_source(parse_duck_source(source));
-  assert_equals(
-    analysis.diagnostics.some((diagnostic) =>
-      diagnostic.message.startsWith(
-        "Baba semantic lowering does not support",
-      )
-    ),
-    true,
-  );
-});
-
 Deno.test("Baba conditional patterns reach proof-erased semantic Core", () => {
   for (
     const example of [
@@ -273,6 +260,38 @@ Deno.test("Baba loops reach proof-erased semantic Core", () => {
     assert_equals(
       program.core.statements.map((statement) => statement.tag),
       example.expected_tags,
+    );
+  }
+});
+
+Deno.test("Baba recursion reaches proof-erased semantic Core", () => {
+  for (
+    const [path, expected_tags] of [
+      [
+        "examples/functions/04_recursive_fibonacci.duck",
+        ["bind", "bind", "expr"],
+      ],
+      [
+        "examples/functions/05_tail_recursive_gcd.duck",
+        ["bind", "expr"],
+      ],
+      [
+        "examples/functions/11_mutual_recursion.duck",
+        ["bind", "expr"],
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(
+      parse_duck_source(Deno.readTextFileSync(path)),
+    );
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected Baba recursion to reach Core for " + path);
+    }
+    assert_equals(
+      program.core.statements.map((statement) => statement.tag),
+      expected_tags,
     );
   }
 });
@@ -578,6 +597,26 @@ Deno.test("semantic indexes expose structural binders with exact origins", () =>
         end: start + name.length,
       });
     }
+  }
+});
+
+Deno.test("semantic indexes expose every mutual binding with exact origins", () => {
+  const source = "let rec even = value => odd(value)\n" +
+    "and odd = value => even(value);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals([...analysis.symbols.keys()], ["even", "odd"]);
+  for (const name of ["even", "odd"]) {
+    const value = analysis.symbols.get(name)?.[0];
+    if (value === undefined) {
+      throw new Error("Expected a semantic identity for " + name);
+    }
+    const start = source.indexOf(name + " =");
+    assert_equals(analysis.origins.get(value), {
+      source_node: analysis.origins.get(value)?.source_node,
+      start,
+      end: start + name.length,
+    });
   }
 });
 

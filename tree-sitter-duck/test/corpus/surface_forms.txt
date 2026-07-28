@@ -483,15 +483,16 @@ type Values = [I32; 3]
           (identifier))
         (array_spread
           (recursive_call_expression
-            (positional_product
-              (binary_expression
+            (parenthesized_or_product
+              (positional_product
+                (binary_expression
+                  (postfix_expression
+                    (identifier))
+                  (operator_symbol)
+                  (postfix_expression
+                    (number)))
                 (postfix_expression
-                  (identifier))
-                (operator_symbol)
-                (postfix_expression
-                  (number)))
-              (postfix_expression
-                (identifier))))))))
+                  (identifier)))))))))
   (binding_statement
     (identifier)
     (postfix_expression
@@ -615,6 +616,8 @@ const fold = rec (values, index) => do
     rec(values, index + 1)
   end;
 end;
+const again = rec value => rec(value);
+const forever = rec () => rec();
 
 ---
 
@@ -652,15 +655,32 @@ end;
                 (conditional_branch
                   (expression_statement
                     (recursive_call_expression
-                      (positional_product
-                        (postfix_expression
-                          (identifier))
-                        (binary_expression
+                      (parenthesized_or_product
+                        (positional_product
                           (postfix_expression
                             (identifier))
-                          (operator_symbol)
-                          (postfix_expression
-                            (number)))))))))))))))
+                          (binary_expression
+                            (postfix_expression
+                              (identifier))
+                            (operator_symbol)
+                            (postfix_expression
+                              (number)))))))))))))))
+  (binding_statement
+    (identifier)
+    (recursive_function
+      (identifier)
+      (recursive_call_expression
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (identifier)))))))
+  (binding_statement
+    (identifier)
+    (recursive_function
+      (parameter_list)
+      (recursive_call_expression
+        (parenthesized_or_product
+          (unit_pattern))))))
 
 ==================
 Const variadic parameter

@@ -11,6 +11,7 @@ import type {
   Param,
   Pattern,
   ProductPatternEntry,
+  RecursiveBinding,
   Source,
   Stmt,
   TypeExpr,
@@ -759,8 +760,23 @@ function index_direct_effect_bindings(
       }
     }
     for (const node of nodes) {
-      const tracked_names = new Set(instances);
-      for (const name of known_values.keys()) tracked_names.add(name);
+      let inherited_instances: ReadonlySet<string> = instances;
+      let inherited_known_values: ReadonlyMap<string, FrontExpr> = known_values;
+      if (
+        node.kind === "binding_statement" &&
+        node.children.some((child) => child.kind === '"rec"')
+      ) {
+        const recursive_instances = new Set(instances);
+        const recursive_known_values = new Map(known_values);
+        for (const name of binding_statement_names(node, source)) {
+          recursive_instances.delete(name);
+          recursive_known_values.delete(name);
+        }
+        inherited_instances = recursive_instances;
+        inherited_known_values = recursive_known_values;
+      }
+      const tracked_names = new Set(inherited_instances);
+      for (const name of inherited_known_values.keys()) tracked_names.add(name);
       const assigned_outer_names = nested_assigned_outer_names(
         node,
         tracked_names,
@@ -768,10 +784,10 @@ function index_direct_effect_bindings(
       );
       index_nested_sequences(
         node,
-        instances,
+        inherited_instances,
         effects,
         ordinary_constructors,
-        known_values,
+        inherited_known_values,
       );
       for (const assigned_name of assigned_outer_names) {
         instances.delete(assigned_name);
@@ -914,9 +930,9 @@ function index_direct_effect_bindings(
         introduced_effects,
         introduced_values,
       );
-      for (const binding of pattern_bindings(pattern)) {
-        instances.delete(binding.name);
-        known_values.delete(binding.name);
+      for (const name of binding_statement_names(node, source)) {
+        instances.delete(name);
+        known_values.delete(name);
       }
       for (const name of introduced_effects) instances.add(name);
       for (const [name, projected_value] of introduced_values) {
@@ -934,23 +950,36 @@ function index_direct_effect_bindings(
   ): void {
     let nested_instances = instances;
     let nested_known_values = known_values;
-    if (node.kind === "arrow_function") {
+    if (
+      node.kind === "arrow_function" || node.kind === "recursive_function"
+    ) {
       const shadowed = new Set(instances);
       const shadowed_known_values = new Map(known_values);
       const parameter_container = node.children.find((child) =>
-        child.kind === "parameter" || child.kind === "parameter_list"
+        child.kind === "parameter" || child.kind === "parameter_list" ||
+        child.kind === "bracket_parameter_list" ||
+        (node.kind === "recursive_function" &&
+          (child.kind === "identifier" || child.kind === "wildcard"))
       );
       if (parameter_container !== undefined) {
         let parameters = [parameter_container];
-        if (parameter_container.kind === "parameter_list") {
+        if (
+          parameter_container.kind === "parameter_list" ||
+          parameter_container.kind === "bracket_parameter_list"
+        ) {
           parameters = parameter_container.children.filter((child) =>
             child.kind === "parameter"
           );
         }
         for (const parameter of parameters) {
-          const identifier = parameter.children.find((child) =>
-            child.kind === "identifier"
-          );
+          let identifier: BabaCstNode | undefined;
+          if (parameter.kind === "identifier") {
+            identifier = parameter;
+          } else {
+            identifier = parameter.children.find((child) =>
+              child.kind === "identifier"
+            );
+          }
           if (identifier !== undefined) {
             const name = source.slice(identifier.start, identifier.end);
             shadowed.delete(name);
@@ -1039,7 +1068,12 @@ function nested_assigned_outer_names(
   ): void {
     const visible_names = new Set(inherited_names);
     for (const current of nodes) {
-      if (current.kind === "arrow_function") continue;
+      if (
+        current.kind === "arrow_function" ||
+        current.kind === "recursive_function"
+      ) {
+        continue;
+      }
       if (
         current.kind === "assignment" ||
         current.kind === "index_assignment"
@@ -1086,8 +1120,8 @@ function nested_assigned_outer_names(
         lower_pattern_alternatives(pattern_nodes, source),
       );
       if (pattern === undefined) continue;
-      for (const binding of pattern_bindings(pattern)) {
-        visible_names.delete(binding.name);
+      for (const name of binding_statement_names(current, source)) {
+        visible_names.delete(name);
       }
     }
   }
@@ -1096,7 +1130,12 @@ function nested_assigned_outer_names(
     current: BabaCstNode,
     visible_names: ReadonlySet<string>,
   ): void {
-    if (current.kind === "arrow_function") return;
+    if (
+      current.kind === "arrow_function" ||
+      current.kind === "recursive_function"
+    ) {
+      return;
+    }
     let conditional_names = visible_names;
     const bindings = conditional_pattern_binding_names(current, source);
     if (bindings.length > 0) {
@@ -1131,6 +1170,31 @@ function nested_assigned_outer_names(
 
   visit_nested(node, outer_names);
   return assigned_names;
+}
+
+function binding_statement_names(
+  node: BabaCstNode,
+  source: string,
+): string[] {
+  if (node.kind !== "binding_statement") return [];
+  const equals_node = node.children.find((child) => child.kind === '"="');
+  if (equals_node === undefined) return [];
+  const pattern_nodes = node.children.filter((child) =>
+    child.end <= equals_node.start && is_pattern_node(child)
+  );
+  const pattern = checked_value(
+    lower_pattern_alternatives(pattern_nodes, source),
+  );
+  if (pattern === undefined) return [];
+  const names = pattern_bindings(pattern).map((binding) => binding.name);
+  for (let index = 0; index < node.children.length; index += 1) {
+    const marker = node.children[index];
+    if (marker?.kind !== '"and"') continue;
+    const member_name_node = node.children[index + 1];
+    if (member_name_node?.kind !== "identifier") continue;
+    names.push(source.slice(member_name_node.start, member_name_node.end));
+  }
+  return names;
 }
 
 function conditional_pattern_binding_names(
@@ -1501,33 +1565,91 @@ function index_synthetic_names(
         }
       }
     }
-    if (node.kind === "arrow_function") {
+    if (
+      node.kind === "arrow_function" || node.kind === "recursive_function"
+    ) {
       const parameter_container = node.children.find((child) =>
-        child.kind === "parameter" || child.kind === "parameter_list"
+        child.kind === "parameter" || child.kind === "parameter_list" ||
+        child.kind === "bracket_parameter_list" ||
+        (node.kind === "recursive_function" &&
+          (child.kind === "identifier" || child.kind === "wildcard"))
       );
       if (parameter_container !== undefined) {
+        let parameter_offset = parameter_container.start;
+        if (node.kind === "recursive_function") {
+          parameter_offset = node.start;
+        }
         const source_offset = source_token_index(
           source,
           tokens,
-          parameter_container.start,
+          parameter_offset,
         );
-        if (parameter_container.kind === "parameter") {
-          const wildcard = parameter_container.children.find((child) =>
-            child.kind === "wildcard"
+        if (parameter_container.kind === "bracket_parameter_list") {
+          synthetic_parameter_names.set(
+            parameter_container,
+            "_pattern#param" + source_offset.toString(),
           );
-          if (wildcard !== undefined) {
-            synthetic_parameter_names.set(
-              parameter_container,
-              "_pattern#param" + source_offset.toString(),
-            );
-          }
-        } else {
           let ignored = 0;
           for (
             const parameter of parameter_container.children.filter((child) =>
               child.kind === "parameter"
             )
           ) {
+            const wildcard = parameter.children.find((child) =>
+              child.kind === "wildcard"
+            );
+            if (wildcard === undefined) continue;
+            synthetic_parameter_names.set(
+              parameter,
+              "_pattern#ignored" + source_offset.toString() + "#" +
+                ignored.toString(),
+            );
+            ignored += 1;
+          }
+        } else if (
+          parameter_container.kind === "parameter" ||
+          parameter_container.kind === "wildcard"
+        ) {
+          let wildcard: BabaCstNode | undefined;
+          if (parameter_container.kind === "wildcard") {
+            wildcard = parameter_container;
+          } else {
+            wildcard = parameter_container.children.find((child) =>
+              child.kind === "wildcard"
+            );
+          }
+          if (wildcard !== undefined) {
+            synthetic_parameter_names.set(
+              parameter_container,
+              "_pattern#param" + source_offset.toString(),
+            );
+          }
+        } else if (parameter_container.kind === "parameter_list") {
+          const parameters = parameter_container.children.filter((child) =>
+            child.kind === "parameter"
+          );
+          const is_value_pack = parameter_container.children.some((child) =>
+            child.kind === '","'
+          );
+          if (parameters.length === 1 && !is_value_pack) {
+            const parameter = parameters[0];
+            expect(
+              parameter !== undefined,
+              "Baba single parameter disappeared.",
+            );
+            const wildcard = parameter.children.find((child) =>
+              child.kind === "wildcard"
+            );
+            if (wildcard !== undefined) {
+              synthetic_parameter_names.set(
+                parameter,
+                "_pattern#param" + source_offset.toString(),
+              );
+            }
+          }
+          let ignored = 0;
+          for (const parameter of parameters) {
+            if (parameters.length === 1 && !is_value_pack) continue;
             const wildcard = parameter.children.find((child) =>
               child.kind === "wildcard"
             );
@@ -3112,14 +3234,21 @@ function lower_binding(
     child.kind === "block" &&
     else_node !== undefined && child.start >= else_node.end
   );
+  const recursive_node = node.children.find((child) => child.kind === '"rec"');
+  const open_node = node.children.find((child) => child.kind === '"open"');
+  const mutual_start_node = node.children.find((child) =>
+    child.kind === '"and"'
+  );
   const pattern_nodes = node.children.filter((child) =>
     child.end <= equals_node.start && is_pattern_node(child)
   );
   const type_node = node.children.find((child) =>
-    child.kind === "type_reference"
+    child.kind === "type_reference" && child.end <= equals_node.start
   );
   const value_nodes = node.children.filter((child) =>
     child.start >= equals_node.end &&
+    (mutual_start_node === undefined ||
+      child.end <= mutual_start_node.start) &&
     (else_node === undefined || child.end <= else_node.start) &&
     is_expression_node(child)
   );
@@ -3152,10 +3281,19 @@ function lower_binding(
       child.kind === '"let"' ||
       child.kind === '"const"' ||
       child.kind === '"!"' ||
+      child.kind === '"rec"' ||
+      child.kind === '"open"' ||
       child.kind === '"|"' ||
       child.kind === '"="' ||
       child.kind === '"else"' ||
       child.kind === '";"'
+    ) {
+      continue;
+    }
+    if (
+      mutual_start_node !== undefined &&
+      child.start >= mutual_start_node.start &&
+      (else_node === undefined || child.end <= else_node.start)
     ) {
       continue;
     }
@@ -3166,6 +3304,8 @@ function lower_binding(
   if (source.slice(node.start, node.start + 5) === "const") {
     kind = "const";
   }
+  const is_recursive = recursive_node !== undefined;
+  const opens_import = open_node !== undefined;
   let lowered_else: Checked<FrontExpr | undefined> = ok(undefined);
   if (else_block !== undefined) {
     let else_check: Checked<null> = ok(null);
@@ -3196,6 +3336,37 @@ function lower_binding(
               start: else_node.start,
               end: else_node.end,
             },
+          ),
+        ),
+      );
+    }
+    if (is_recursive) {
+      expect(
+        else_node !== undefined,
+        "Baba recursive else keyword disappeared.",
+      );
+      else_check = Applicative.lift(
+        (_previous: null, _recursive: null) => null,
+        else_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Recursive bindings do not support else branches",
+            { start: else_node.start, end: else_node.end },
+          ),
+        ),
+      );
+    }
+    if (opens_import) {
+      expect(else_node !== undefined, "Baba open else keyword disappeared.");
+      else_check = Applicative.lift(
+        (_previous: null, _open: null) => null,
+        else_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Open bindings do not support else branches",
+            { start: else_node.start, end: else_node.end },
           ),
         ),
       );
@@ -3261,12 +3432,239 @@ function lower_binding(
     );
   }
   const lowered_value = lower_expression(value_node, source);
-  return Applicative.lift(
+  let binding_form_check: Checked<null> = ok(null);
+  if (
+    is_recursive && parsed_pattern !== undefined &&
+    parsed_pattern.tag !== "binding"
+  ) {
+    binding_form_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Recursive bindings require a single name",
+        source_span(parsed_pattern),
+      ),
+    );
+  }
+  if (
+    opens_import && parsed_pattern !== undefined &&
     (
+      parsed_pattern.tag !== "product" ||
+      parsed_pattern.entries.some((entry) => entry.label === undefined)
+    )
+  ) {
+    binding_form_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Open imports require a named product pattern",
+        source_span(parsed_pattern),
+      ),
+    );
+  }
+  const parsed_value = checked_value(lowered_value);
+  if (
+    opens_import && parsed_value !== undefined &&
+    (
+      parsed_value.tag !== "app" ||
+      parsed_value.func.tag !== "import"
+    )
+  ) {
+    binding_form_check = Applicative.lift(
+      (_pattern: null, _value: null) => null,
+      binding_form_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Open bindings require a direct module import invocation",
+          source_span(parsed_value),
+        ),
+      ),
+    );
+  }
+  if (mutual_start_node !== undefined && !is_recursive) {
+    binding_form_check = Applicative.lift(
+      (_previous: null, _mutual: null) => null,
+      binding_form_check,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Mutually recursive bindings require let rec",
+          { start: mutual_start_node.start, end: mutual_start_node.end },
+        ),
+      ),
+    );
+  }
+  let lowered_mutual: Checked<RecursiveBinding[]> = ok([]);
+  const recursive_names = new Map<string, SourceSpan>();
+  if (parsed_pattern?.tag === "binding") {
+    recursive_names.set(
+      parsed_pattern.name,
+      source_span(parsed_pattern),
+    );
+  }
+  const mutual_nodes = node.children.filter((child) => child.kind === '"and"');
+  for (let index = 0; index < mutual_nodes.length; index += 1) {
+    const mutual_node = mutual_nodes[index];
+    expect(mutual_node !== undefined, "Baba mutual marker disappeared.");
+    const next_mutual_node = mutual_nodes[index + 1];
+    let segment_end = node.end;
+    if (next_mutual_node !== undefined) {
+      segment_end = next_mutual_node.start;
+    } else if (else_node !== undefined) {
+      segment_end = else_node.start;
+    }
+    const segment_nodes = node.children.filter((child) =>
+      child.start >= mutual_node.end && child.end <= segment_end
+    );
+    const name_node = segment_nodes.find((child) =>
+      child.kind === "identifier"
+    );
+    const member_type_node = segment_nodes.find((child) =>
+      child.kind === "type_reference"
+    );
+    const member_equals_node = segment_nodes.find((child) =>
+      source.slice(child.start, child.end) === "="
+    );
+    if (name_node === undefined || member_equals_node === undefined) {
+      return unsupported(mutual_node);
+    }
+    const member_value_nodes = segment_nodes.filter((child) =>
+      child.start >= member_equals_node.end && is_expression_node(child)
+    );
+    const member_value_node = member_value_nodes[0];
+    if (member_value_nodes.length !== 1 || member_value_node === undefined) {
+      return unsupported(mutual_node);
+    }
+    const name = source.slice(name_node.start, name_node.end);
+    const member_diagnostics = [];
+    if (!is_snake_case(name)) {
+      member_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Mutually recursive binding must use snake_case: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    if (!is_runtime_binding_name(name)) {
+      member_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Mutually recursive binding name is reserved syntax: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    const reserved_feature = unsupported_reserved_feature(name);
+    if (reserved_feature !== undefined) {
+      member_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Mutually recursive binding is reserved for unsupported " +
+            reserved_feature + ": " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    const previous = recursive_names.get(name);
+    if (previous !== undefined) {
+      member_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Duplicate mutually recursive binding: " + name,
+          { start: name_node.start, end: name_node.end },
+          [{
+            message: "First recursive binding is here.",
+            span: previous,
+          }],
+        ),
+      );
+    } else {
+      recursive_names.set(name, {
+        start: name_node.start,
+        end: name_node.end,
+      });
+    }
+    let member_check: Checked<null> = ok(null);
+    if (member_diagnostics.length > 0) {
+      member_check = fail(...member_diagnostics);
+    }
+    let lowered_member_type: Checked<TypeExpr | undefined> = ok(undefined);
+    if (member_type_node !== undefined) {
+      lowered_member_type = lower_baba_type_reference(
+        member_type_node,
+        source,
+      );
+    }
+    const lowered_member = Applicative.lift(
+      (
+        _member: null,
+        parsed_type: TypeExpr | undefined,
+        value: FrontExpr,
+      ) => {
+        let annotation: string | undefined;
+        let type_annotation: TypeExpr | undefined;
+        if (parsed_type !== undefined) {
+          annotation = format_type_expr(parsed_type);
+          if (parsed_type.tag !== "name") type_annotation = parsed_type;
+        }
+        const pattern: Pattern = {
+          tag: "binding",
+          name,
+          mode: "default",
+          annotation,
+        };
+        if (type_annotation !== undefined) {
+          pattern.type_annotation = type_annotation;
+        }
+        let pattern_end = name_node.end;
+        if (member_type_node !== undefined) {
+          pattern_end = member_type_node.end;
+        }
+        mark_source_span(pattern, {
+          start: name_node.start,
+          end: pattern_end,
+        });
+        record_pattern_binding_span(pattern, {
+          start: name_node.start,
+          end: name_node.end,
+        });
+        const member: RecursiveBinding = {
+          pattern,
+          name,
+          is_linear: false,
+          annotation,
+          value: apply_function_result_context(value, type_annotation),
+        };
+        if (type_annotation !== undefined) {
+          member.type_annotation = type_annotation;
+        }
+        mark_source_span(member, {
+          start: mutual_node.start,
+          end: member_value_node.end,
+        });
+        return member;
+      },
+      member_check,
+      lowered_member_type,
+      lower_expression(member_value_node, source),
+    );
+    lowered_mutual = Applicative.lift(
+      (members: RecursiveBinding[], member: RecursiveBinding) => [
+        ...members,
+        member,
+      ],
+      lowered_mutual,
+      lowered_member,
+    );
+  }
+  const lowered_binding = Applicative.lift(
+    (
+      _form: null,
       parsed_pattern: Pattern,
       parsed_type: TypeExpr | undefined,
       value: FrontExpr,
       else_branch: FrontExpr | undefined,
+      mutual: RecursiveBinding[],
     ) => {
       let annotation: string | undefined;
       let type_annotation: TypeExpr | undefined;
@@ -3302,7 +3700,7 @@ function lower_binding(
         kind,
         pattern: parsed_pattern,
         name,
-        is_recursive: false,
+        is_recursive,
         is_linear: parsed_pattern.tag === "binding" &&
           parsed_pattern.mode === "linear",
         annotation,
@@ -3311,15 +3709,34 @@ function lower_binding(
       if (type_annotation !== undefined) {
         statement.type_annotation = type_annotation;
       }
+      if (opens_import) statement.opens_import = true;
+      if (mutual.length > 0) statement.mutual = mutual;
       if (else_branch !== undefined) statement.else_branch = else_branch;
       mark_source_span(statement, { start: node.start, end: node.end });
       return statement;
     },
+    binding_form_check,
     pattern_check,
     lowered_type,
     lowered_value,
     lowered_else,
+    lowered_mutual,
   );
+  const binding_diagnostics = diagnostics_of(lowered_binding).toSorted(
+    (left, right) => {
+      if (left.span.start !== right.span.start) {
+        return left.span.start - right.span.start;
+      }
+      if (left.span.end !== right.span.end) {
+        return left.span.end - right.span.end;
+      }
+      return 0;
+    },
+  );
+  if (binding_diagnostics.length > 0) {
+    return fail(...binding_diagnostics);
+  }
+  return lowered_binding;
 }
 
 function lower_assignment(
@@ -3849,7 +4266,15 @@ function lower_expression(
   }
 
   if (node.kind === "arrow_function") {
-    return lower_arrow(node, source);
+    return lower_function_expression(node, source, "lam");
+  }
+
+  if (node.kind === "recursive_function") {
+    return lower_function_expression(node, source, "rec");
+  }
+
+  if (node.kind === "recursive_call_expression") {
+    return lower_recursive_call(node, source);
   }
 
   if (
@@ -4987,26 +5412,41 @@ function binary_fixity(
   return undefined;
 }
 
-function lower_arrow(
+function lower_function_expression(
   node: BabaCstNode,
   source: string,
+  expression_kind: "lam" | "rec",
 ): Checked<FrontExpr> {
   const parameter_nodes: BabaCstNode[] = [];
   const parameter_container = node.children.find((child) =>
-    child.kind === "parameter" || child.kind === "parameter_list"
+    child.kind === "parameter" || child.kind === "parameter_list" ||
+    child.kind === "bracket_parameter_list" ||
+    (expression_kind === "rec" &&
+      (child.kind === "identifier" || child.kind === "wildcard"))
   );
   if (parameter_container === undefined) return unsupported(node);
   let parsed_parameter_nodes = [parameter_container];
-  if (parameter_container.kind === "parameter_list") {
+  if (
+    parameter_container.kind === "parameter_list" ||
+    parameter_container.kind === "bracket_parameter_list"
+  ) {
     parsed_parameter_nodes = parameter_container.children.filter((child) =>
       child.kind === "parameter"
     );
   }
   let lowered_parameters: Checked<Param[]> = ok([]);
   for (const parameter_node of parsed_parameter_nodes) {
-    const name_node = parameter_node.children.find((child) =>
-      child.kind === "identifier" || child.kind === "wildcard"
-    );
+    let name_node: BabaCstNode | undefined;
+    if (
+      parameter_node.kind === "identifier" ||
+      parameter_node.kind === "wildcard"
+    ) {
+      name_node = parameter_node;
+    } else {
+      name_node = parameter_node.children.find((child) =>
+        child.kind === "identifier" || child.kind === "wildcard"
+      );
+    }
     if (name_node === undefined) return unsupported(parameter_node);
     const type_node = parameter_node.children.find((child) =>
       child.kind === "type_reference"
@@ -5075,27 +5515,55 @@ function lower_arrow(
         ),
       );
     }
+    if (expression_kind === "rec" && is_variadic) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Recursive functions do not support variadic parameters",
+          { start: parameter_node.start, end: parameter_node.end },
+        ),
+      );
+    }
+    if (name_node.kind === "wildcard" && type_node !== undefined) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Wildcard parameters cannot have type annotations",
+          { start: type_node.start, end: type_node.end },
+        ),
+      );
+    }
     let parameter_check: Checked<null> = ok(null);
     if (parameter_diagnostics.length > 0) {
       parameter_check = fail(...parameter_diagnostics);
     }
     let parameter_is_const = is_const;
+    let scalar_parameter = parameter_container.kind === "parameter";
+    if (
+      parameter_container.kind === "parameter_list" &&
+      parsed_parameter_nodes.length === 1 &&
+      !parameter_container.children.some((child) => child.kind === '","')
+    ) {
+      scalar_parameter = true;
+    }
     if (
       name_node.kind === "wildcard" &&
-      parameter_container.kind === "parameter"
+      scalar_parameter
     ) {
       parameter_is_const = false;
     }
-    for (const child of parameter_node.children) {
-      if (
-        child === name_node || child === type_node || child.kind === '":"' ||
-        source.slice(child.start, child.end) === "const" ||
-        source.slice(child.start, child.end) === "!" ||
-        source.slice(child.start, child.end) === "..."
-      ) {
-        continue;
+    if (name_node !== parameter_node) {
+      for (const child of parameter_node.children) {
+        if (
+          child === name_node || child === type_node || child.kind === '":"' ||
+          source.slice(child.start, child.end) === "const" ||
+          source.slice(child.start, child.end) === "!" ||
+          source.slice(child.start, child.end) === "..."
+        ) {
+          continue;
+        }
+        return unsupported(child);
       }
-      return unsupported(child);
     }
     let lowered_type: Checked<TypeExpr | undefined> = ok(undefined);
     if (type_node !== undefined) {
@@ -5152,13 +5620,81 @@ function lower_arrow(
   return Applicative.lift(
     (parameters: Param[], body: FrontExpr) => {
       let pattern: Pattern;
-      if (parameters.length === 0) {
+      let expression_parameters = parameters;
+      if (parameter_container.kind === "bracket_parameter_list") {
+        const entries = parameters.map((parameter, index) => {
+          const parameter_node = parameter_nodes[index];
+          expect(
+            parameter_node !== undefined,
+            "Baba bracket lambda lost a parameter node.",
+          );
+          let entry_pattern: Pattern;
+          if (
+            parameter_node.children.some((child) => child.kind === "wildcard")
+          ) {
+            let mode: "default" | "const" = "default";
+            if (parameter.is_const) mode = "const";
+            entry_pattern = { tag: "wildcard", mode };
+          } else {
+            const binding: Extract<Pattern, { tag: "binding" }> = {
+              tag: "binding",
+              name: parameter.name,
+              mode: parameter_mode(parameter),
+              annotation: parameter.annotation,
+            };
+            if (parameter.type_annotation !== undefined) {
+              binding.type_annotation = parameter.type_annotation;
+            }
+            if (parameter.is_variadic === true) binding.is_variadic = true;
+            entry_pattern = binding;
+          }
+          mark_source_span(entry_pattern, {
+            start: parameter_node.start,
+            end: parameter_node.end,
+          });
+          const entry: ProductPatternEntry = { pattern: entry_pattern };
+          mark_source_span(entry, {
+            start: parameter_node.start,
+            end: parameter_node.end,
+          });
+          return entry;
+        });
+        pattern = { tag: "product", entries };
+        mark_source_span(pattern, {
+          start: parameter_container.start,
+          end: parameter_container.end,
+        });
+        const generated_name = synthetic_parameter_names.get(
+          parameter_container,
+        );
+        expect(
+          generated_name !== undefined,
+          "Baba bracket lambda has no structural parameter identity.",
+        );
+        const structural_parameter: Param = {
+          name: generated_name,
+          is_const: false,
+          is_linear: false,
+          annotation: undefined,
+        };
+        mark_source_span(structural_parameter, {
+          start: parameter_container.start,
+          end: parameter_container.end,
+        });
+        expression_parameters = [structural_parameter];
+      } else if (parameters.length === 0) {
         pattern = { tag: "unit" };
         mark_source_span(pattern, {
           start: parameter_container.start,
           end: parameter_container.end,
         });
-      } else if (parameters.length === 1) {
+      } else if (
+        parameters.length === 1 &&
+        (
+          parameter_container.kind !== "parameter_list" ||
+          !parameter_container.children.some((child) => child.kind === '","')
+        )
+      ) {
         const parameter = parameters[0];
         const parameter_node = parameter_nodes[0];
         expect(
@@ -5170,6 +5706,7 @@ function lower_arrow(
           "Single-parameter Baba lambda lost its parameter node.",
         );
         if (
+          parameter_node.kind === "wildcard" ||
           parameter_node.children.some((child) => child.kind === "wildcard")
         ) {
           let mode: "default" | "const" = "default";
@@ -5246,12 +5783,22 @@ function lower_arrow(
           end: parameter_container.end,
         });
       }
-      const expression: FrontExpr = {
-        tag: "lam",
-        pattern,
-        params: parameters,
-        body,
-      };
+      let expression: FrontExpr;
+      if (expression_kind === "rec") {
+        expression = {
+          tag: "rec",
+          pattern,
+          params: expression_parameters,
+          body,
+        };
+      } else {
+        expression = {
+          tag: "lam",
+          pattern,
+          params: expression_parameters,
+          body,
+        };
+      }
       mark_source_span(expression, { start: node.start, end: node.end });
       return expression;
     },
@@ -5299,6 +5846,45 @@ function lower_application(
   );
 }
 
+function lower_recursive_call(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const argument_node = node.children.find((child) =>
+    child.kind === "parenthesized_or_product"
+  );
+  if (argument_node === undefined) return unsupported(node);
+  const recursive_name_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "rec"
+  );
+  if (recursive_name_node === undefined) return unsupported(node);
+  const direct_argument = semantic_child(argument_node);
+  if (direct_argument === undefined) return unsupported(argument_node);
+  return lower_expression(argument_node, source).map((arg) => {
+    const func: FrontExpr = { tag: "var", name: "rec" };
+    mark_source_span(func, {
+      start: recursive_name_node.start,
+      end: recursive_name_node.end,
+    });
+    let args = [arg];
+    if (arg.tag === "unit") args = [];
+    if (
+      direct_argument.kind === "positional_product" &&
+      arg.tag === "product" && arg.value_pack === true
+    ) {
+      args = arg.entries.map((entry) => entry.value);
+    }
+    const expression: FrontExpr = {
+      tag: "app",
+      func,
+      arg,
+      args,
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return expression;
+  });
+}
+
 function semantic_child(node: BabaCstNode): BabaCstNode | undefined {
   return node.children.find((child) => is_expression_node(child));
 }
@@ -5321,6 +5907,8 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "binary_expression" ||
     node.kind === "condition_binary_expression" ||
     node.kind === "arrow_function" ||
+    node.kind === "recursive_function" ||
+    node.kind === "recursive_call_expression" ||
     node.kind === "application_expression" ||
     node.kind === "condition_call_expression" ||
     node.kind === "condition_application_expression" ||
