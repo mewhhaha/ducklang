@@ -1410,6 +1410,14 @@
           "named": true
         },
         {
+          "type": "prefix_fact_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_signature_statement",
+          "named": true
+        },
+        {
           "type": "resume_dup_statement",
           "named": true
         },
@@ -2220,6 +2228,14 @@
         },
         {
           "type": "index_assignment",
+          "named": true
+        },
+        {
+          "type": "prefix_fact_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_signature_statement",
           "named": true
         },
         {
@@ -5362,6 +5378,393 @@
     }
   },
   {
+    "type": "prefix_contract_clause",
+    "named": true,
+    "fields": {
+      "metric": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "application_expression",
+            "named": true
+          },
+          {
+            "type": "arrow_function",
+            "named": true
+          },
+          {
+            "type": "as_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "case_expression",
+            "named": true
+          },
+          {
+            "type": "case_function_expression",
+            "named": true
+          },
+          {
+            "type": "effect_handler_expression",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "is_expression",
+            "named": true
+          },
+          {
+            "type": "loop_expression",
+            "named": true
+          },
+          {
+            "type": "postfix_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_call_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_function",
+            "named": true
+          },
+          {
+            "type": "try_with_expression",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "proposition": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proposition",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_fact_statement",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "lowercase_identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_fact_value",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_fact_text",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "prefix_fact_value",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_fact_text",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_proposition",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "condition_expression",
+            "named": true
+          }
+        ]
+      },
+      "operator": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "!=",
+            "named": false
+          },
+          {
+            "type": "<",
+            "named": false
+          },
+          {
+            "type": "<=",
+            "named": false
+          },
+          {
+            "type": "=",
+            "named": false
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "condition_expression",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "condition_expression",
+          "named": true
+        },
+        {
+          "type": "prefix_proposition_text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "prefix_proposition_text",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "prefix_signature_binder",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_signature_function_type",
+    "named": true,
+    "fields": {
+      "parameters": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_signature_parameter_list",
+            "named": true
+          }
+        ]
+      },
+      "result": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_signature_result",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_signature_parameter",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_signature_parameter_list",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "prefix_signature_parameter",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "prefix_signature_result",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "result",
+            "named": false
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_signature_statement",
+    "named": true,
+    "fields": {
+      "clauses": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_contract_clause",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "lowercase_identifier",
+            "named": true
+          }
+        ]
+      },
+      "signature": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_signature_type",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_signature_type",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_signature_type",
+            "named": true
+          }
+        ]
+      },
+      "parameter": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_signature_binder",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "prefix_signature_function_type",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "product_field",
     "named": true,
     "fields": {
@@ -5932,6 +6335,14 @@
         },
         {
           "type": "module_return_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_fact_statement",
+          "named": true
+        },
+        {
+          "type": "prefix_signature_statement",
           "named": true
         },
         {
@@ -7101,6 +7512,10 @@
     "named": false
   },
   {
+    "type": "!=",
+    "named": false
+  },
+  {
     "type": "#",
     "named": false
   },
@@ -7170,6 +7585,10 @@
   },
   {
     "type": "<-",
+    "named": false
+  },
+  {
+    "type": "<=",
     "named": false
   },
   {
@@ -7254,6 +7673,10 @@
     "named": false
   },
   {
+    "type": "decreases",
+    "named": false
+  },
+  {
     "type": "do",
     "named": false
   },
@@ -7282,7 +7705,15 @@
     "named": false
   },
   {
+    "type": "ensures",
+    "named": false
+  },
+  {
     "type": "extend",
+    "named": false
+  },
+  {
+    "type": "fact",
     "named": false
   },
   {
@@ -7354,6 +7785,10 @@
     "named": false
   },
   {
+    "type": "lowercase_identifier",
+    "named": true
+  },
+  {
     "type": "meta",
     "named": false
   },
@@ -7371,6 +7806,10 @@
   },
   {
     "type": "of",
+    "named": false
+  },
+  {
+    "type": "opaque",
     "named": false
   },
   {
@@ -7395,6 +7834,14 @@
   },
   {
     "type": "rec",
+    "named": false
+  },
+  {
+    "type": "requires",
+    "named": false
+  },
+  {
+    "type": "result",
     "named": false
   },
   {

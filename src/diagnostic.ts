@@ -6,7 +6,8 @@ export type DiagnosticCategory =
   | "compile_time_restriction"
   | "affine_use"
   | "types_and_effects"
-  | "modules_and_imports";
+  | "modules_and_imports"
+  | "proof_refinement";
 
 export const diagnostic_registry = {
   syntax_error: diagnostic_definition(
@@ -167,6 +168,31 @@ export const diagnostic_registry = {
   import_uri_invalid: diagnostic_definition(
     "DUCK2505",
     "modules_and_imports",
+    "error",
+  ),
+  prefix_signature_duplicate: diagnostic_definition(
+    "DUCK2600",
+    "proof_refinement",
+    "error",
+  ),
+  prefix_signature_orphaned: diagnostic_definition(
+    "DUCK2601",
+    "proof_refinement",
+    "error",
+  ),
+  prefix_signature_mismatch: diagnostic_definition(
+    "DUCK2602",
+    "proof_refinement",
+    "error",
+  ),
+  prefix_signature_multiple_decreases: diagnostic_definition(
+    "DUCK2603",
+    "proof_refinement",
+    "error",
+  ),
+  prefix_signature_unproved: diagnostic_definition(
+    "DUCK2604",
+    "proof_refinement",
     "error",
   ),
 } as const;
