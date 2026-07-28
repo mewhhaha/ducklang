@@ -41,6 +41,7 @@ import { decode_literal_escape } from "./literal.ts";
 import { format_type_expr } from "./type_expr.ts";
 import {
   derive_missing_source_spans,
+  derive_source_span,
   mark_source_span,
   source_span,
   type SourceSpan,
@@ -976,6 +977,19 @@ function index_direct_effect_bindings(
       conditional_instances = shadowed;
       conditional_known_values = shadowed_known_values;
     }
+    let loop_instances = nested_instances;
+    let loop_known_values = nested_known_values;
+    const loop_bindings = for_pattern_binding_names(node, source);
+    if (loop_bindings.length > 0) {
+      const shadowed = new Set(nested_instances);
+      const shadowed_known_values = new Map(nested_known_values);
+      for (const name of loop_bindings) {
+        shadowed.delete(name);
+        shadowed_known_values.delete(name);
+      }
+      loop_instances = shadowed;
+      loop_known_values = shadowed_known_values;
+    }
     for (const child of node.children) {
       if (
         child.kind === "block" ||
@@ -986,6 +1000,9 @@ function index_direct_effect_bindings(
         if (child.kind === "conditional_branch") {
           child_instances = conditional_instances;
           child_known_values = conditional_known_values;
+        } else if (node.kind === "for_statement") {
+          child_instances = loop_instances;
+          child_known_values = loop_known_values;
         }
         index_sequence(
           child.children,
@@ -1087,6 +1104,13 @@ function nested_assigned_outer_names(
       for (const name of bindings) shadowed.delete(name);
       conditional_names = shadowed;
     }
+    let loop_names = visible_names;
+    const loop_bindings = for_pattern_binding_names(current, source);
+    if (loop_bindings.length > 0) {
+      const shadowed = new Set(visible_names);
+      for (const name of loop_bindings) shadowed.delete(name);
+      loop_names = shadowed;
+    }
     for (const child of current.children) {
       if (
         child.kind === "block" ||
@@ -1094,6 +1118,8 @@ function nested_assigned_outer_names(
       ) {
         if (child.kind === "conditional_branch") {
           visit_sequence(child.children, conditional_names);
+        } else if (current.kind === "for_statement") {
+          visit_sequence(child.children, loop_names);
         } else {
           visit_sequence(child.children, visible_names);
         }
@@ -1136,6 +1162,157 @@ function conditional_pattern_binding_names(
   );
   if (pattern === undefined) return [];
   return pattern_bindings(pattern).map((binding) => binding.name);
+}
+
+type BabaForHeader =
+  | {
+    tag: "range";
+    collection_index_pattern_nodes: BabaCstNode[];
+    range_pattern_nodes: BabaCstNode[];
+    start_node: BabaCstNode;
+    end_node: BabaCstNode;
+    step_node: BabaCstNode | undefined;
+    range_operator: BabaCstNode;
+    body_node: BabaCstNode;
+  }
+  | {
+    tag: "collection";
+    index_pattern_nodes: BabaCstNode[];
+    item_pattern_nodes: BabaCstNode[];
+    collection_node: BabaCstNode;
+    body_node: BabaCstNode;
+  };
+
+function read_baba_for_header(
+  node: BabaCstNode,
+  source: string,
+): BabaForHeader | undefined {
+  if (node.kind !== "for_statement") return undefined;
+  const body_node = node.children.find((child) => child.kind === "block");
+  if (body_node === undefined) return undefined;
+  const in_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "in"
+  );
+  const comma_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === ","
+  );
+  const range_operator = node.children.find((child) => {
+    const text = source.slice(child.start, child.end);
+    return text === ".." || text === "..=";
+  });
+  let expression_start = node.start;
+  if (in_node !== undefined) expression_start = in_node.end;
+  const expression_nodes = node.children.filter((child) =>
+    child !== body_node && child.start >= expression_start &&
+    is_expression_node(child)
+  );
+  if (range_operator === undefined) {
+    if (in_node === undefined || expression_nodes.length !== 1) {
+      return undefined;
+    }
+    const collection_node = expression_nodes[0];
+    expect(
+      collection_node !== undefined,
+      "Baba collection expression disappeared.",
+    );
+    let index_pattern_nodes: BabaCstNode[] = [];
+    let item_pattern_nodes = node.children.filter((child) =>
+      child.end <= in_node.start && is_pattern_node(child)
+    );
+    if (comma_node !== undefined) {
+      index_pattern_nodes = item_pattern_nodes.filter((child) =>
+        child.end <= comma_node.start
+      );
+      item_pattern_nodes = item_pattern_nodes.filter((child) =>
+        child.start >= comma_node.end
+      );
+    }
+    if (
+      item_pattern_nodes.length === 0 ||
+      index_pattern_nodes.length > 1 ||
+      item_pattern_nodes.length > 1
+    ) {
+      return undefined;
+    }
+    return {
+      tag: "collection",
+      index_pattern_nodes,
+      item_pattern_nodes,
+      collection_node,
+      body_node,
+    };
+  }
+  if (
+    expression_nodes.length < 2 || expression_nodes.length > 3
+  ) {
+    return undefined;
+  }
+  const start_node = expression_nodes[0];
+  const end_node = expression_nodes[1];
+  expect(start_node !== undefined, "Baba range start disappeared.");
+  expect(end_node !== undefined, "Baba range end disappeared.");
+  let collection_index_pattern_nodes: BabaCstNode[] = [];
+  let range_pattern_nodes: BabaCstNode[] = [];
+  if (in_node !== undefined) {
+    range_pattern_nodes = node.children.filter((child) =>
+      child.end <= in_node.start && is_pattern_node(child)
+    );
+    if (comma_node !== undefined) {
+      collection_index_pattern_nodes = range_pattern_nodes.filter((child) =>
+        child.end <= comma_node.start
+      );
+      range_pattern_nodes = range_pattern_nodes.filter((child) =>
+        child.start >= comma_node.end
+      );
+    }
+  }
+  if (
+    collection_index_pattern_nodes.length > 1 ||
+    range_pattern_nodes.length > 1
+  ) {
+    return undefined;
+  }
+  return {
+    tag: "range",
+    collection_index_pattern_nodes,
+    range_pattern_nodes,
+    start_node,
+    end_node,
+    step_node: expression_nodes[2],
+    range_operator,
+    body_node,
+  };
+}
+
+function for_pattern_binding_names(
+  node: BabaCstNode,
+  source: string,
+): string[] {
+  const header = read_baba_for_header(node, source);
+  if (header === undefined) return [];
+  let pattern_nodes: BabaCstNode[] = [];
+  if (header.tag === "range") {
+    pattern_nodes = [
+      ...header.collection_index_pattern_nodes,
+      ...header.range_pattern_nodes,
+    ];
+  } else {
+    pattern_nodes = [
+      ...header.index_pattern_nodes,
+      ...header.item_pattern_nodes,
+    ];
+  }
+  const names: string[] = [];
+  for (const pattern_node of pattern_nodes) {
+    const pattern = checked_value(
+      lower_pattern_alternatives([pattern_node], source),
+    );
+    if (pattern === undefined) continue;
+    for (const binding of pattern_bindings(pattern)) {
+      names.push(binding.name);
+    }
+  }
+  return names;
 }
 
 function effect_binding_receiver(
@@ -1210,6 +1387,9 @@ function index_synthetic_names(
 ): void {
   let next_no_demand = 0;
   function visit(node: BabaCstNode): void {
+    let deferred_for_pattern:
+      | { node: BabaCstNode; kind: "no_demand" | "internal" }
+      | undefined;
     if (node.kind === "module_header") {
       const parameter_list = node.children.find((child) =>
         child.kind === "parameter_list"
@@ -1270,6 +1450,57 @@ function index_synthetic_names(
         next_no_demand += 1;
       }
     }
+    if (node.kind === "for_statement") {
+      const header = read_baba_for_header(node, source);
+      if (header?.tag === "range") {
+        const index_wildcard = header.collection_index_pattern_nodes.find(
+          (candidate) => candidate.kind === "wildcard",
+        );
+        if (index_wildcard !== undefined) {
+          no_demand_names.set(
+            index_wildcard,
+            no_demand_name(next_no_demand),
+          );
+          next_no_demand += 1;
+        }
+        if (header.range_pattern_nodes.length === 0) {
+          no_demand_names.set(node, no_demand_name(next_no_demand));
+          next_no_demand += 1;
+        } else {
+          const wildcard = header.range_pattern_nodes.find((candidate) =>
+            candidate.kind === "wildcard"
+          );
+          if (wildcard !== undefined) {
+            no_demand_names.set(wildcard, no_demand_name(next_no_demand));
+            next_no_demand += 1;
+          }
+        }
+      }
+      if (header?.tag === "collection") {
+        const index_wildcard = header.index_pattern_nodes.find((candidate) =>
+          candidate.kind === "wildcard"
+        );
+        if (index_wildcard !== undefined) {
+          no_demand_names.set(
+            index_wildcard,
+            no_demand_name(next_no_demand),
+          );
+          next_no_demand += 1;
+        }
+        const item_pattern = header.item_pattern_nodes[0];
+        if (item_pattern?.kind === "wildcard") {
+          deferred_for_pattern = {
+            node: item_pattern,
+            kind: "no_demand",
+          };
+        } else if (item_pattern?.kind !== "identifier") {
+          deferred_for_pattern = {
+            node,
+            kind: "internal",
+          };
+        }
+      }
+    }
     if (node.kind === "arrow_function") {
       const parameter_container = node.children.find((child) =>
         child.kind === "parameter" || child.kind === "parameter_list"
@@ -1312,6 +1543,20 @@ function index_synthetic_names(
       }
     }
     for (const child of node.children) visit(child);
+    if (deferred_for_pattern?.kind === "no_demand") {
+      no_demand_names.set(
+        deferred_for_pattern.node,
+        no_demand_name(next_no_demand),
+      );
+      next_no_demand += 1;
+    }
+    if (deferred_for_pattern?.kind === "internal") {
+      no_demand_names.set(
+        deferred_for_pattern.node,
+        "@for_pattern_" + next_no_demand.toString(),
+      );
+      next_no_demand += 1;
+    }
   }
   visit(root);
 }
@@ -1723,6 +1968,10 @@ function lower_statement(
     return ok(statement);
   }
 
+  if (node.kind === "for_statement") {
+    return lower_for_statement(node, source);
+  }
+
   if (node.kind === "expression_statement") {
     const expression_node = semantic_child(node);
     if (expression_node === undefined) {
@@ -1744,6 +1993,280 @@ function lower_statement(
   }
 
   return unsupported(node);
+}
+
+function lower_for_statement(
+  node: BabaCstNode,
+  source: string,
+): Checked<Stmt> {
+  const header = read_baba_for_header(node, source);
+  if (header === undefined) return unsupported(node);
+  if (header.tag === "range") {
+    return lower_range_for_statement(node, header, source);
+  }
+  return lower_collection_for_statement(node, header, source);
+}
+
+function lower_range_for_statement(
+  node: BabaCstNode,
+  header: Extract<BabaForHeader, { tag: "range" }>,
+  source: string,
+): Checked<Stmt> {
+  let range_index: Checked<string>;
+  if (header.range_pattern_nodes.length === 0) {
+    const generated_name = no_demand_names.get(node);
+    expect(
+      generated_name !== undefined,
+      "Baba anonymous range has no no-demand identity.",
+    );
+    range_index = ok(generated_name);
+  } else {
+    range_index = lower_loop_binding_name(
+      header.range_pattern_nodes,
+      source,
+      "Range loop index must be an unannotated binding",
+    );
+  }
+
+  let collection_index_check: Checked<null> = ok(null);
+  if (header.collection_index_pattern_nodes.length > 0) {
+    const index_pattern = lower_pattern_alternatives(
+      header.collection_index_pattern_nodes,
+      source,
+    );
+    const comma_node = node.children.find((child) =>
+      source.slice(child.start, child.end) === ","
+    );
+    expect(comma_node !== undefined, "Baba range index comma disappeared.");
+    collection_index_check = Applicative.lift(
+      (_pattern: Pattern, _invalid: never) => null,
+      index_pattern,
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Range loops do not have item patterns",
+          { start: comma_node.start, end: comma_node.end },
+        ),
+      ),
+    );
+  }
+
+  let step: Checked<FrontExpr>;
+  if (header.step_node === undefined) {
+    const default_step: FrontExpr = {
+      tag: "num",
+      type: "i32",
+      value: 1,
+    };
+    derive_source_span(default_step, {
+      start: header.range_operator.end,
+      end: header.range_operator.end,
+    });
+    step = ok(default_step);
+  } else {
+    step = lower_expression(header.step_node, source);
+  }
+
+  return Applicative.lift(
+    (
+      _collection_index: null,
+      index: string,
+      start: FrontExpr,
+      end: FrontExpr,
+      lowered_step: FrontExpr,
+      body: FrontExpr,
+    ) => {
+      expect(body.tag === "block", "Baba range body did not lower to a block.");
+      let end_bound: "exclusive" | "inclusive" = "exclusive";
+      if (
+        source.slice(
+          header.range_operator.start,
+          header.range_operator.end,
+        ) === "..="
+      ) {
+        end_bound = "inclusive";
+      }
+      const statement: Stmt = {
+        tag: "for_range",
+        index,
+        start,
+        end,
+        end_bound,
+        step: lowered_step,
+        body: body.statements,
+      };
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    collection_index_check,
+    range_index,
+    lower_expression(header.start_node, source),
+    lower_expression(header.end_node, source),
+    step,
+    lower_block(header.body_node, source),
+  );
+}
+
+function lower_collection_for_statement(
+  node: BabaCstNode,
+  header: Extract<BabaForHeader, { tag: "collection" }>,
+  source: string,
+): Checked<Stmt> {
+  let index: Checked<string | undefined> = ok(undefined);
+  if (header.index_pattern_nodes.length > 0) {
+    index = lower_loop_binding_name(
+      header.index_pattern_nodes,
+      source,
+      "Loop index must be an unannotated binding",
+    );
+  }
+  const item_pattern = lower_pattern_alternatives(
+    header.item_pattern_nodes,
+    source,
+  );
+  return Applicative.lift(
+    (
+      lowered_index: string | undefined,
+      pattern: Pattern,
+      collection: FrontExpr,
+      body: FrontExpr,
+    ) => {
+      expect(
+        body.tag === "block",
+        "Baba collection body did not lower to a block.",
+      );
+      let item: string;
+      if (
+        pattern.tag === "binding" && pattern.mode === "default" &&
+        pattern.annotation === undefined &&
+        pattern.type_annotation === undefined
+      ) {
+        item = pattern.name;
+        const statement: Stmt = {
+          tag: "for_collection",
+          index: lowered_index,
+          item,
+          collection,
+          body: body.statements,
+        };
+        mark_source_span(statement, { start: node.start, end: node.end });
+        return statement;
+      }
+      if (pattern.tag === "wildcard" && pattern.mode === "default") {
+        const pattern_node = header.item_pattern_nodes[0];
+        expect(
+          pattern_node !== undefined,
+          "Baba collection wildcard disappeared.",
+        );
+        const generated_name = no_demand_names.get(pattern_node);
+        expect(
+          generated_name !== undefined,
+          "Baba collection wildcard has no no-demand identity.",
+        );
+        const statement: Stmt = {
+          tag: "for_collection",
+          index: lowered_index,
+          item: generated_name,
+          collection,
+          body: body.statements,
+        };
+        mark_source_span(statement, { start: node.start, end: node.end });
+        return statement;
+      }
+
+      const generated_name = no_demand_names.get(node);
+      expect(
+        generated_name !== undefined,
+        "Baba collection pattern has no internal identity.",
+      );
+      item = generated_name;
+      const matching_body: FrontExpr = {
+        tag: "block",
+        statements: [
+          ...body.statements,
+          { tag: "expr", expr: { tag: "unit" } },
+        ],
+      };
+      derive_source_span(matching_body, source_span(body));
+      const item_reference: FrontExpr = { tag: "var", name: item };
+      derive_source_span(item_reference, source_span(pattern));
+      const matching_expression: FrontExpr = {
+        tag: "match",
+        target: item_reference,
+        arms: [
+          { pattern, guard: undefined, body: matching_body },
+          {
+            pattern: { tag: "wildcard", mode: "default" },
+            guard: undefined,
+            body: { tag: "unit" },
+          },
+        ],
+      };
+      derive_source_span(matching_expression, {
+        start: source_span(pattern).start,
+        end: source_span(body).end,
+      });
+      const filtered_statement: Stmt = {
+        tag: "expr",
+        expr: matching_expression,
+      };
+      derive_source_span(filtered_statement, source_span(matching_expression));
+      const statement: Stmt = {
+        tag: "for_collection",
+        index: lowered_index,
+        item,
+        pattern,
+        collection,
+        body: [filtered_statement],
+      };
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    index,
+    item_pattern,
+    lower_expression(header.collection_node, source),
+    lower_block(header.body_node, source),
+  );
+}
+
+function lower_loop_binding_name(
+  pattern_nodes: readonly BabaCstNode[],
+  source: string,
+  invalid_message: string,
+): Checked<string> {
+  const lowered_pattern = lower_pattern_alternatives(pattern_nodes, source);
+  const pattern = checked_value(lowered_pattern);
+  let name = "";
+  let shape_check: Checked<null> = ok(null);
+  if (
+    pattern?.tag === "binding" && pattern.mode === "default" &&
+    pattern.annotation === undefined &&
+    pattern.type_annotation === undefined
+  ) {
+    name = pattern.name;
+  } else if (pattern?.tag === "wildcard" && pattern.mode === "default") {
+    const pattern_node = pattern_nodes[0];
+    expect(pattern_node !== undefined, "Baba loop wildcard disappeared.");
+    const generated_name = no_demand_names.get(pattern_node);
+    expect(
+      generated_name !== undefined,
+      "Baba loop wildcard has no no-demand identity.",
+    );
+    name = generated_name;
+  } else if (pattern !== undefined) {
+    shape_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        invalid_message,
+        source_span(pattern),
+      ),
+    );
+  }
+  return Applicative.lift(
+    (_shape: null, _pattern: Pattern) => name,
+    shape_check,
+    lowered_pattern,
+  );
 }
 
 function lower_statement_sequence(

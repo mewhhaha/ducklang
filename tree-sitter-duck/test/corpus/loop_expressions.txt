@@ -94,6 +94,123 @@ end
           (unit_pattern))))))
 
 ==================
+Union payload loop headers
+==================
+for #Some value in values do
+  value
+end
+for #Some value | #Other value in values do
+  value
+end
+for #Some[left] in values do
+  left
+end
+for #Some[left] | #Other[right] in values do
+  left
+end
+for #Some(left, right) in values do
+  left
+end
+for #Some#Other value in values do
+  value
+end
+for #Some[left]..finish do
+  left
+end
+---
+
+(source_file
+  (for_statement
+    (union_pattern
+      (constructor_identifier)
+      (identifier))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (alternative_pattern
+      (union_pattern
+        (constructor_identifier)
+        (identifier))
+      (union_pattern
+        (constructor_identifier)
+        (identifier)))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (union_pattern
+      (constructor_identifier)
+      (array_pattern
+        (identifier)))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (alternative_pattern
+      (union_pattern
+        (constructor_identifier)
+        (array_pattern
+          (identifier)))
+      (union_pattern
+        (constructor_identifier)
+        (array_pattern
+          (identifier))))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (union_pattern
+      (constructor_identifier)
+      (positional_product_pattern
+        (identifier)
+        (identifier)))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (union_pattern
+      (constructor_identifier)
+      (union_pattern
+        (constructor_identifier)
+        (identifier)))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier)))))
+  (for_statement
+    (condition_expression
+      (condition_index_expression
+        (condition_expression
+          (union_case
+            (constructor_identifier)))
+        (postfix_expression
+          (identifier))))
+    (condition_expression
+      (identifier))
+    (block
+      (expression_statement
+        (postfix_expression
+          (identifier))))))
+
+==================
 Break without a value
 ==================
 loop do

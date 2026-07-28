@@ -401,7 +401,8 @@ index_assignment = (
                    ) ;
 
 for_statement = (
-                  (
+                  _array_union_for_statement
+                  | (
                     "for"
                     first:(_match_pattern)
                     (("," second:(_match_pattern)))?
@@ -425,6 +426,54 @@ for_statement = (
                       body:(_numeric_range_body)
                     )
                 ) ;
+
+_array_union_for_statement = (
+                               "for"
+                               first:(
+                                 _array_union_alternative_pattern
+                                 | _array_union_pattern
+                               )
+                               (("," second:(_match_pattern)))?
+                               "in"
+                               start_or_collection:(condition_expression)
+                               (
+                                 (
+                                   (".." | "..=")
+                                   end:(condition_expression)
+                                   (("by" step:(condition_expression)))?
+                                 )
+                               )?
+                               body:(_collection_range_body)
+                             ) ;
+
+_array_union_alternative_pattern = _array_union_alternative_pattern_body ;
+
+_array_union_alternative_pattern_body = (
+                                          _array_union_pattern
+                                          ((_pattern_pipe _single_match_pattern))+
+                                        ) ;
+
+_array_union_pattern = _array_union_pattern_body ;
+
+_array_union_pattern_body = (
+                              "#"
+                              case:(constructor_identifier)
+                              value:(_immediate_array_pattern)
+                            ) ;
+
+_immediate_array_pattern = _immediate_array_pattern_body ;
+
+_immediate_array_pattern_body = (
+                                  _index_open
+                                  (
+                                    (
+                                      _array_pattern_element
+                                      (("," _array_pattern_element))*
+                                    )
+                                    (",")?
+                                  )?
+                                  "]"
+                                ) ;
 
 expression_statement = _expression ;
 
@@ -503,16 +552,30 @@ conditional_branch = ((_statement (";")?))+ ;
 union_pattern = (
                   "#"
                   case:(constructor_identifier)
-                  (value:(
+                  (
                     (
-                      identifier
-                      | wildcard
-                      | unit_pattern
-                      | union_pattern
-                      | array_pattern
-                      | positional_product_pattern
+                      _application_space
+                      value:(
+                        identifier
+                        | wildcard
+                      )
                     )
-                  ))?
+                    | (
+                      _application_space
+                      value:(
+                        unit_pattern
+                        | union_pattern
+                        | array_pattern
+                        | positional_product_pattern
+                      )
+                    )
+                    | value:(
+                        unit_pattern
+                        | union_pattern
+                        | array_pattern
+                        | positional_product_pattern
+                      )
+                  )?
                 ) ;
 
 condition_expression = (

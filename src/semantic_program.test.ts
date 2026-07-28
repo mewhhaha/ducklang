@@ -242,6 +242,41 @@ Deno.test("Baba conditional patterns reach proof-erased semantic Core", () => {
   }
 });
 
+Deno.test("Baba loops reach proof-erased semantic Core", () => {
+  for (
+    const example of [
+      {
+        source: "let total = 0;\n" +
+          "for value in 0..3 do\n" +
+          "  total = total + value;\n" +
+          "end\n" +
+          "total\n",
+        expected_tags: ["bind", "bind", "expr", "expr"],
+      },
+      {
+        source: "let values = [1, 2];\n" +
+          "let total = 0;\n" +
+          "for value in values do\n" +
+          "  total = total + value;\n" +
+          "end\n" +
+          "total\n",
+        expected_tags: ["bind", "bind", "bind", "expr", "expr"],
+      },
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(example.source));
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected the Baba loop to reach Core.");
+    }
+    assert_equals(
+      program.core.statements.map((statement) => statement.tag),
+      example.expected_tags,
+    );
+  }
+});
+
 Deno.test("semantic Core elaborates product destructuring before lowering", () => {
   const source = "let [left, right] = [1, 2];\nleft + right;\n";
   const analysis = analyze_duck_source(parse_duck_source(source));

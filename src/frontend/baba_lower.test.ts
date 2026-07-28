@@ -1399,18 +1399,166 @@ Deno.test("Baba recovery preserves valid statements inside an enclosing block", 
   });
 });
 
-Deno.test("Baba lowering reports unsupported accepted syntax", () => {
-  const lowered = lower_baba_source(parse_duck_source(
-    "for value in 0..2 do\n" +
-      "  value;\n" +
+Deno.test("Baba lowers range and collection loops directly", () => {
+  for (
+    const source of [
+      "for value in values do value; end\n",
+      "for index, value in values do value; end\n",
+      "for value in 0..10 by 2 do value; end\n",
+      "for value in 1..=4 do value; end\n",
+      "for 0..count do 0; end\n",
+      "for #Some value in values do value; end\n",
+      "for #Some value | #Other value in values do value; end\n",
+      "for index, #Some value in values do value; end\n",
+      "for #Some[left] in values do left; end\n",
+      "for #Some[value] | #Other[value] in values do value; end\n",
+      "for #Some(left, right) in values do left; end\n",
+      "for #Some#Other value in values do value; end\n",
+      "let _ = 0;\n" +
+      "for _ in values do\n" +
+      "  let _ = 1;\n" +
+      "  0;\n" +
       "end\n",
-  ));
-  const diagnostics = diagnostics_of(lowered);
-  assert_equals(diagnostics.length, 1);
-  assert_equals(
-    diagnostics[0]?.message,
-    "Baba semantic lowering does not support for_statement.",
+      "let _ = 0;\n" +
+      "for [left, right] in values do\n" +
+      "  let _ = left;\n" +
+      "  right;\n" +
+      "end\n",
+      "for _, _ in values do\n" +
+      "  let _ = 0;\n" +
+      "  0;\n" +
+      "end\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered loop.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  }
+
+  const indexed_range = checked_value(
+    lower_baba_source(parse_duck_source(
+      "for #Some[left]..finish do left; end\n",
+    )),
   );
+  const indexed_range_statement = indexed_range?.statements[0];
+  if (indexed_range_statement?.tag !== "for_range") {
+    throw new Error("Expected an indexed anonymous range.");
+  }
+  assert_equals(indexed_range_statement.start.tag, "index");
+
+  const source = "for value in 1..=4 do value; end\n";
+  const lowered = checked_value(
+    lower_baba_source(parse_duck_source(source)),
+  );
+  const statement = lowered?.statements[0];
+  if (statement?.tag !== "for_range") {
+    throw new Error("Expected an inclusive Baba range.");
+  }
+  assert_equals(source_span(statement), {
+    start: 0,
+    end: source.trimEnd().length,
+  });
+  assert_equals(source_span(statement.start), {
+    start: source.indexOf("1"),
+    end: source.indexOf("1") + 1,
+  });
+  assert_equals(source_span(statement.step), {
+    start: source.indexOf("..=") + "..=".length,
+    end: source.indexOf("..=") + "..=".length,
+  });
+  assert_equals(source_span_origin(statement.step), "derived");
+});
+
+Deno.test("every bundled loop example lowers directly", () => {
+  for (const path of duck_files("examples/loops")) {
+    const source = Deno.readTextFileSync(path);
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(
+      diagnostics_of(lowered),
+      [],
+      "Expected direct loop lowering for " + path,
+    );
+    const lowered_source = checked_value(lowered);
+    assert_equals(lowered_source, parse_source(source));
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered loop example.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+  }
+});
+
+Deno.test("Baba diagnoses invalid loop headers in source order", () => {
+  const range = diagnostics_of(
+    lower_baba_source(parse_duck_source(
+      "for index, [left] in 0..2 do 0; end\n",
+    )),
+  );
+  assert_equals(
+    range.map((diagnostic) => diagnostic.message),
+    [
+      "Range loops do not have item patterns",
+      "Range loop index must be an unannotated binding",
+    ],
+  );
+  assert_equals(
+    range.map((diagnostic) => diagnostic.span),
+    [{ start: 9, end: 10 }, { start: 11, end: 17 }],
+  );
+
+  const collection = diagnostics_of(
+    lower_baba_source(parse_duck_source(
+      "for [index], value in values do 0; end\n",
+    )),
+  );
+  assert_equals(collection.length, 1);
+  assert_equals(
+    collection[0]?.message,
+    "Loop index must be an unannotated binding",
+  );
+  assert_equals(collection[0]?.span, { start: 4, end: 11 });
+
+  for (
+    const [source, message] of [
+      [
+        "for #Some[left] in 0..2 do 0; end\n",
+        "Range loop index must be an unannotated binding",
+      ],
+      [
+        "for #Some[left], value in values do 0; end\n",
+        "Loop index must be an unannotated binding",
+      ],
+    ] as const
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(source)),
+    );
+    assert_equals(diagnostics.length, 1);
+    assert_equals(diagnostics[0]?.message, message);
+  }
+});
+
+Deno.test("Baba loop binders shadow outer effect identities", () => {
+  const source = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "for e in values do\n" +
+    "  e = 0;\n" +
+    "  value <- e.op()\n" +
+    "end\n" +
+    "next <- e.op()\n";
+  const lowered = lower_baba_source(parse_duck_source(source));
+  assert_equals(diagnostics_of(lowered), []);
+  const program = checked_value(lowered);
+  const loop = program?.statements[1];
+  if (loop?.tag !== "for_collection") {
+    throw new Error("Expected a collection loop.");
+  }
+  assert_equals(loop.body[1]?.tag, "bind");
+  assert_equals(program?.statements[2]?.tag, "state_bind");
 });
 
 Deno.test("Baba lowering never erases unsupported binding semantics", () => {

@@ -186,6 +186,38 @@ Deno.test("Baba parses transparent and opaque fact definitions", () => {
   assert_equals(parsed.cst.tree.includes('"opaque"'), true);
 });
 
+Deno.test("Baba keeps union payload patterns distinct from loop collections", () => {
+  const parsed = parse_duck_source(
+    "for #Some value in values do value; end\n" +
+      "for #Some value | #Other value in values do value; end\n" +
+      "for #Some[left] in values do left; end\n" +
+      "for #Some[left] | #Other[right] in values do left; end\n" +
+      "for #Some(left, right) in values do left; end\n" +
+      "for #Some#Other value in values do value; end\n" +
+      "for #Some[left]..finish do left; end\n" +
+      "let #Some[left] = current;\n",
+  );
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(
+    parsed.cst.tree.includes(
+      "(alternative_pattern (union_pattern",
+    ),
+    true,
+  );
+  assert_equals(
+    parsed.cst.tree.includes(
+      "(condition_binary_expression",
+    ),
+    false,
+  );
+  assert_equals(
+    parsed.cst.tree.includes(
+      "(condition_index_expression",
+    ),
+    true,
+  );
+});
+
 Deno.test("Baba reports excessive CST nesting without exhausting the host stack", () => {
   const allowed_depth = 100;
   const allowed = "let " + "[".repeat(allowed_depth) + "x" +
