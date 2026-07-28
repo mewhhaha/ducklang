@@ -33,6 +33,7 @@ import {
   ok,
 } from "./checked.ts";
 import { is_effect_scalar_type } from "./effect_operation.ts";
+import { import_meta_binding_name } from "./import_meta.ts";
 import { binary_prim, numeric_expr_type } from "./numeric.ts";
 import { parse_number_expr } from "./number_literal.ts";
 import { apply_function_result_context } from "./function_context.ts";
@@ -959,17 +960,39 @@ function index_direct_effect_bindings(
       nested_instances = shadowed;
       nested_known_values = shadowed_known_values;
     }
+    let conditional_instances = nested_instances;
+    let conditional_known_values = nested_known_values;
+    const conditional_bindings = conditional_pattern_binding_names(
+      node,
+      source,
+    );
+    if (conditional_bindings.length > 0) {
+      const shadowed = new Set(nested_instances);
+      const shadowed_known_values = new Map(nested_known_values);
+      for (const name of conditional_bindings) {
+        shadowed.delete(name);
+        shadowed_known_values.delete(name);
+      }
+      conditional_instances = shadowed;
+      conditional_known_values = shadowed_known_values;
+    }
     for (const child of node.children) {
       if (
         child.kind === "block" ||
         child.kind === "conditional_branch"
       ) {
+        let child_instances = nested_instances;
+        let child_known_values = nested_known_values;
+        if (child.kind === "conditional_branch") {
+          child_instances = conditional_instances;
+          child_known_values = conditional_known_values;
+        }
         index_sequence(
           child.children,
-          nested_instances,
+          child_instances,
           effects,
           ordinary_constructors,
-          nested_known_values,
+          child_known_values,
         );
         continue;
       }
@@ -1057,12 +1080,23 @@ function nested_assigned_outer_names(
     visible_names: ReadonlySet<string>,
   ): void {
     if (current.kind === "arrow_function") return;
+    let conditional_names = visible_names;
+    const bindings = conditional_pattern_binding_names(current, source);
+    if (bindings.length > 0) {
+      const shadowed = new Set(visible_names);
+      for (const name of bindings) shadowed.delete(name);
+      conditional_names = shadowed;
+    }
     for (const child of current.children) {
       if (
         child.kind === "block" ||
         child.kind === "conditional_branch"
       ) {
-        visit_sequence(child.children, visible_names);
+        if (child.kind === "conditional_branch") {
+          visit_sequence(child.children, conditional_names);
+        } else {
+          visit_sequence(child.children, visible_names);
+        }
         continue;
       }
       visit_nested(child, visible_names);
@@ -1071,6 +1105,37 @@ function nested_assigned_outer_names(
 
   visit_nested(node, outer_names);
   return assigned_names;
+}
+
+function conditional_pattern_binding_names(
+  node: BabaCstNode,
+  source: string,
+): string[] {
+  if (
+    node.kind !== "if_expression" && node.kind !== "else_if_clause"
+  ) {
+    return [];
+  }
+  if (
+    !node.children.some((child) =>
+      source.slice(child.start, child.end) === "let"
+    )
+  ) {
+    return [];
+  }
+  const equals_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "="
+  );
+  if (equals_node === undefined) return [];
+  const pattern_nodes = node.children.filter((child) =>
+    child.end <= equals_node.start && is_pattern_node(child)
+  );
+  if (pattern_nodes.length === 0) return [];
+  const pattern = checked_value(
+    lower_pattern_alternatives(pattern_nodes, source),
+  );
+  if (pattern === undefined) return [];
+  return pattern_bindings(pattern).map((binding) => binding.name);
 }
 
 function effect_binding_receiver(
@@ -1191,6 +1256,17 @@ function index_synthetic_names(
       }
       if (needs_no_demand_name) {
         no_demand_names.set(node, no_demand_name(next_no_demand));
+        next_no_demand += 1;
+      }
+    }
+    if (
+      node.kind === "if_expression" || node.kind === "else_if_clause"
+    ) {
+      const wildcard = node.children.find((child) =>
+        child.kind === "union_pattern"
+      )?.children.find((child) => child.kind === "wildcard");
+      if (wildcard !== undefined) {
+        no_demand_names.set(wildcard, no_demand_name(next_no_demand));
         next_no_demand += 1;
       }
     }
@@ -2946,39 +3022,189 @@ function lower_if_statement(
   node: BabaCstNode,
   source: string,
 ): Checked<Stmt> {
-  if (has_direct_token(node, source, "let")) return unsupported(node);
-  const condition_node = node.children.find((child) =>
-    child.kind === "condition_expression"
-  );
   const branch_node = node.children.find((child) =>
     child.kind === "conditional_branch"
   );
-  if (condition_node === undefined || branch_node === undefined) {
-    return unsupported(node);
-  }
+  if (branch_node === undefined) return unsupported(node);
 
   return Applicative.lift(
-    (cond: FrontExpr, branch: FrontExpr) => {
+    (test: IfTest, branch: FrontExpr) => {
       expect(
         branch.tag === "block",
         "Baba conditional branch did not lower to a block.",
       );
-      const statement: Stmt = {
-        tag: "if_stmt",
-        cond,
-        body: branch.statements,
-      };
+      const statement = statement_from_if_test(test, branch);
       mark_source_span(statement, { start: node.start, end: node.end });
-      conditional_branch_spans.set(statement, source_span(branch));
+      if (
+        statement.tag === "if_stmt" || statement.tag === "if_let_stmt"
+      ) {
+        conditional_branch_spans.set(statement, source_span(branch));
+      }
       return statement;
     },
-    lower_expression(condition_node, source),
+    lower_if_test(node, source),
     lower_conditional_branch(
       branch_node,
       source,
       conditional_branch_span(node, branch_node, source),
     ),
   );
+}
+
+type IfTest =
+  | { tag: "boolean"; condition: FrontExpr }
+  | {
+    tag: "pattern";
+    pattern: Pattern;
+    target: FrontExpr;
+    span: SourceSpan;
+    wildcard_value_name: string | undefined;
+  };
+
+function lower_if_test(
+  node: BabaCstNode,
+  source: string,
+): Checked<IfTest> {
+  if (!has_direct_token(node, source, "let")) {
+    const condition_node = node.children.find((child) =>
+      child.kind !== "conditional_branch" && is_expression_node(child)
+    );
+    if (condition_node === undefined) return unsupported(node);
+    return lower_expression(condition_node, source).map((condition) => ({
+      tag: "boolean",
+      condition,
+    }));
+  }
+
+  const equals_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "="
+  );
+  const then_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "then"
+  );
+  if (equals_node === undefined || then_node === undefined) {
+    return unsupported(node);
+  }
+  const pattern_nodes = node.children.filter((child) =>
+    child.end <= equals_node.start && is_pattern_node(child)
+  );
+  const target_nodes = node.children.filter((child) =>
+    child.start >= equals_node.end && child.end <= then_node.start &&
+    is_expression_node(child)
+  );
+  if (pattern_nodes.length === 0 || target_nodes.length !== 1) {
+    return unsupported(node);
+  }
+  const target_node = target_nodes[0];
+  expect(target_node !== undefined, "Baba if-let target disappeared.");
+  const let_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "let"
+  );
+  expect(let_node !== undefined, "Baba if-let keyword disappeared.");
+  const wildcard_node = pattern_nodes.find((child) =>
+    child.kind === "union_pattern"
+  )?.children.find((child) => child.kind === "wildcard");
+  let wildcard_value_name: string | undefined;
+  if (wildcard_node !== undefined) {
+    wildcard_value_name = no_demand_names.get(wildcard_node);
+    expect(
+      wildcard_value_name !== undefined,
+      "Baba if-let wildcard has no no-demand identity.",
+    );
+  }
+  return Applicative.lift(
+    (pattern: Pattern, target: FrontExpr) => ({
+      tag: "pattern",
+      pattern,
+      target,
+      span: { start: let_node.start, end: target_node.end },
+      wildcard_value_name,
+    }),
+    lower_pattern_alternatives(pattern_nodes, source),
+    lower_expression(target_node, source),
+  );
+}
+
+function statement_from_if_test(
+  test: IfTest,
+  branch: Extract<FrontExpr, { tag: "block" }>,
+): Stmt {
+  if (test.tag === "boolean") {
+    return {
+      tag: "if_stmt",
+      cond: test.condition,
+      body: branch.statements,
+    };
+  }
+  if (test.pattern.tag === "literal") {
+    const condition = binary_expression(
+      "==",
+      test.target,
+      test.pattern.value,
+    );
+    mark_source_span(condition, test.span);
+    return {
+      tag: "if_stmt",
+      cond: condition,
+      body: branch.statements,
+    };
+  }
+  const simple_union = simple_if_let_pattern(
+    test.pattern,
+    test.wildcard_value_name,
+  );
+  if (simple_union !== undefined) {
+    return {
+      tag: "if_let_stmt",
+      case_name: simple_union.case_name,
+      value_name: simple_union.value_name,
+      target: test.target,
+      body: branch.statements,
+    };
+  }
+  const expression: FrontExpr = {
+    tag: "match",
+    target: test.target,
+    arms: [
+      {
+        pattern: test.pattern,
+        guard: undefined,
+        body: branch,
+      },
+      {
+        pattern: { tag: "wildcard", mode: "default" },
+        guard: undefined,
+        body: { tag: "unit" },
+      },
+    ],
+  };
+  return { tag: "expr", expr: expression };
+}
+
+function simple_if_let_pattern(
+  pattern: Pattern,
+  wildcard_value_name: string | undefined,
+): { case_name: string; value_name: string | undefined } | undefined {
+  if (pattern.tag !== "union_case") return undefined;
+  if (pattern.value === undefined || pattern.value.tag === "unit") {
+    return { case_name: pattern.name, value_name: undefined };
+  }
+  if (
+    pattern.value.tag === "wildcard" &&
+    pattern.value.mode === "default" &&
+    wildcard_value_name !== undefined
+  ) {
+    return { case_name: pattern.name, value_name: wildcard_value_name };
+  }
+  if (
+    pattern.value.tag !== "binding" ||
+    pattern.value.mode !== "default" ||
+    pattern.value.annotation !== undefined ||
+    pattern.value.type_annotation !== undefined
+  ) {
+    return undefined;
+  }
+  return { case_name: pattern.name, value_name: pattern.value.name };
 }
 
 function lower_expression(
@@ -2989,7 +3215,8 @@ function lower_expression(
     node.kind === "postfix_expression" ||
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||
-    node.kind === "condition_expression"
+    node.kind === "condition_expression" ||
+    node.kind === "condition_parenthesized_expression"
   ) {
     const child = semantic_child(node);
     if (child === undefined) return unsupported(node);
@@ -3113,7 +3340,11 @@ function lower_expression(
     return lower_arrow(node, source);
   }
 
-  if (node.kind === "application_expression") {
+  if (
+    node.kind === "application_expression" ||
+    node.kind === "condition_call_expression" ||
+    node.kind === "condition_application_expression"
+  ) {
     return lower_application(node, source);
   }
 
@@ -3303,8 +3534,22 @@ function lower_expression(
     });
   }
 
-  if (node.kind === "index_expression") {
+  if (
+    node.kind === "index_expression" ||
+    node.kind === "condition_index_expression"
+  ) {
     return lower_index_expression(node, source);
+  }
+
+  if (
+    node.kind === "is_expression" ||
+    node.kind === "condition_is_expression"
+  ) {
+    return lower_type_operator(node, source, "is");
+  }
+
+  if (node.kind === "as_expression") {
+    return lower_type_operator(node, source, "as");
   }
 
   if (
@@ -3371,6 +3616,15 @@ function lower_expression(
     return lower_import_expression(node, source);
   }
 
+  if (node.kind === "import_meta_expression") {
+    const expression: FrontExpr = {
+      tag: "var",
+      name: import_meta_binding_name,
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
   if (node.kind === "union_case") {
     return lower_union_case(node, source);
   }
@@ -3405,7 +3659,9 @@ function finalize_block_statements(statements: readonly Stmt[]): Stmt[] {
   const block_statements = [...statements];
   const final_statement = block_statements[block_statements.length - 1];
   if (
-    final_statement === undefined || final_statement.tag !== "if_stmt" ||
+    final_statement === undefined ||
+    (final_statement.tag !== "if_stmt" &&
+      final_statement.tag !== "if_let_stmt") ||
     final_statement.body[final_statement.body.length - 1]?.tag !== "expr"
   ) {
     return block_statements;
@@ -3419,13 +3675,26 @@ function finalize_block_statements(statements: readonly Stmt[]): Stmt[] {
   if (branch_span !== undefined) {
     mark_source_span(then_branch, branch_span);
   }
-  const conditional: FrontExpr = {
-    tag: "if",
-    cond: final_statement.cond,
-    then_branch,
-    else_branch: { tag: "num", type: "i32", value: 0 },
-    implicit_else: true,
-  };
+  let conditional: FrontExpr;
+  if (final_statement.tag === "if_stmt") {
+    conditional = {
+      tag: "if",
+      cond: final_statement.cond,
+      then_branch,
+      else_branch: { tag: "num", type: "i32", value: 0 },
+      implicit_else: true,
+    };
+  } else {
+    conditional = {
+      tag: "if_let",
+      case_name: final_statement.case_name,
+      value_name: final_statement.value_name,
+      target: final_statement.target,
+      then_branch,
+      else_branch: { tag: "num", type: "i32", value: 0 },
+      implicit_else: true,
+    };
+  }
   mark_source_span(conditional, statement_span);
   const conditional_statement: Stmt = {
     tag: "expr",
@@ -3440,16 +3709,10 @@ function lower_if_expression(
   node: BabaCstNode,
   source: string,
 ): Checked<FrontExpr> {
-  if (has_direct_token(node, source, "let")) return unsupported(node);
-  const condition_node = node.children.find((child) =>
-    child.kind === "condition_expression"
-  );
   const branch_node = node.children.find((child) =>
     child.kind === "conditional_branch"
   );
-  if (condition_node === undefined || branch_node === undefined) {
-    return unsupported(node);
-  }
+  if (branch_node === undefined) return unsupported(node);
 
   const alternatives = node.children.filter((child) =>
     child.kind === "else_if_clause" || child.kind === "else_clause"
@@ -3491,18 +3754,10 @@ function lower_if_expression(
       continue;
     }
 
-    if (has_direct_token(alternative, source, "let")) {
-      return unsupported(alternative);
-    }
-    const alternative_condition = alternative.children.find((child) =>
-      is_expression_node(child)
-    );
     const alternative_branch = alternative.children.find((child) =>
       child.kind === "conditional_branch"
     );
-    if (
-      alternative_condition === undefined || alternative_branch === undefined
-    ) {
+    if (alternative_branch === undefined) {
       return unsupported(alternative);
     }
     const alternative_has_implicit_else = implicit_else;
@@ -3513,22 +3768,27 @@ function lower_if_expression(
     }
     else_branch = Applicative.lift(
       (
-        cond: FrontExpr,
+        test: IfTest,
         then_branch: FrontExpr,
         nested_else: FrontExpr,
       ) => {
-        const expression: Extract<FrontExpr, { tag: "if" }> = {
-          tag: "if",
-          cond,
+        const expression = expression_from_if_test(
+          test,
           then_branch,
-          else_branch: nested_else,
-        };
-        if (alternative_has_implicit_else) {
-          expression.implicit_else = true;
+          nested_else,
+          alternative_has_implicit_else,
+        );
+        let expression_end = source_span(then_branch).end;
+        if (!alternative_has_implicit_else) {
+          expression_end = source_span(nested_else).end;
         }
+        mark_source_span(expression, {
+          start: alternative.start,
+          end: expression_end,
+        });
         return expression;
       },
-      lower_expression(alternative_condition, source),
+      lower_if_test(alternative, source),
       lower_conditional_branch(
         alternative_branch,
         source,
@@ -3546,21 +3806,20 @@ function lower_if_expression(
 
   return Applicative.lift(
     (
-      cond: FrontExpr,
+      test: IfTest,
       then_branch: FrontExpr,
       lowered_else: FrontExpr,
     ) => {
-      const expression: Extract<FrontExpr, { tag: "if" }> = {
-        tag: "if",
-        cond,
+      const expression = expression_from_if_test(
+        test,
         then_branch,
-        else_branch: lowered_else,
-      };
-      if (implicit_else) expression.implicit_else = true;
+        lowered_else,
+        implicit_else,
+      );
       mark_source_span(expression, { start: node.start, end: node.end });
       return expression;
     },
-    lower_expression(condition_node, source),
+    lower_if_test(node, source),
     lower_conditional_branch(
       branch_node,
       source,
@@ -3573,6 +3832,72 @@ function lower_if_expression(
     ),
     else_branch,
   );
+}
+
+function expression_from_if_test(
+  test: IfTest,
+  then_branch: FrontExpr,
+  else_branch: FrontExpr,
+  implicit_else: boolean,
+): FrontExpr {
+  if (test.tag === "boolean") {
+    const expression: Extract<FrontExpr, { tag: "if" }> = {
+      tag: "if",
+      cond: test.condition,
+      then_branch,
+      else_branch,
+    };
+    if (implicit_else) expression.implicit_else = true;
+    return expression;
+  }
+  if (test.pattern.tag === "literal") {
+    const condition = binary_expression(
+      "==",
+      test.target,
+      test.pattern.value,
+    );
+    mark_source_span(condition, test.span);
+    const expression: Extract<FrontExpr, { tag: "if" }> = {
+      tag: "if",
+      cond: condition,
+      then_branch,
+      else_branch,
+    };
+    if (implicit_else) expression.implicit_else = true;
+    return expression;
+  }
+  const simple_union = simple_if_let_pattern(
+    test.pattern,
+    test.wildcard_value_name,
+  );
+  if (simple_union !== undefined) {
+    const expression: Extract<FrontExpr, { tag: "if_let" }> = {
+      tag: "if_let",
+      case_name: simple_union.case_name,
+      value_name: simple_union.value_name,
+      target: test.target,
+      then_branch,
+      else_branch,
+    };
+    if (implicit_else) expression.implicit_else = true;
+    return expression;
+  }
+  return {
+    tag: "match",
+    target: test.target,
+    arms: [
+      {
+        pattern: test.pattern,
+        guard: undefined,
+        body: then_branch,
+      },
+      {
+        pattern: { tag: "wildcard", mode: "default" },
+        guard: undefined,
+        body: else_branch,
+      },
+    ],
+  };
 }
 
 function conditional_branch_span(
@@ -3595,7 +3920,14 @@ function conditional_branch_span(
     introducer === "then" || introducer === "else",
     "Baba conditional branch has an invalid introducer.",
   );
-  return { start: previous.end, end };
+  let start = previous.end;
+  if (!/[\r\n]/.test(source.slice(previous.end, branch.start))) {
+    start = branch.start;
+  }
+  if (!/[\r\n]/.test(source.slice(branch.end, end))) {
+    end = branch.end;
+  }
+  return { start, end };
 }
 
 function has_direct_token(
@@ -3615,6 +3947,34 @@ function lower_condition_unary(
   return lower_unary(node, source);
 }
 
+function lower_type_operator(
+  node: BabaCstNode,
+  source: string,
+  operator: "is" | "as",
+): Checked<FrontExpr> {
+  const value_node = node.children.find((child) => is_expression_node(child));
+  const type_node = node.children.find((child) =>
+    child.kind === "type_reference"
+  );
+  if (value_node === undefined || type_node === undefined) {
+    return unsupported(node);
+  }
+  return Applicative.lift(
+    (value: FrontExpr, type_expr: TypeExpr) => {
+      let expression: FrontExpr;
+      if (operator === "is") {
+        expression = { tag: "is", value, type_expr };
+      } else {
+        expression = { tag: "as", value, type_expr };
+      }
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    lower_expression(value_node, source),
+    lower_baba_type_reference(type_node, source),
+  );
+}
+
 function lower_unary(
   node: BabaCstNode,
   source: string,
@@ -3629,7 +3989,8 @@ function lower_unary(
   const operator = source.slice(operator_node.start, operator_node.end);
   if (
     operator !== "!" && operator !== "-" && operator !== "&" &&
-    operator !== "freeze" && operator !== "comptime"
+    operator !== "freeze" && operator !== "comptime" &&
+    operator !== "perform"
   ) {
     return unsupported(operator_node);
   }
@@ -3719,8 +4080,18 @@ function lower_unary(
     expression = { tag: "borrow", value };
   } else if (operator === "freeze") {
     expression = { tag: "freeze", value };
-  } else {
+  } else if (operator === "comptime") {
     expression = { tag: "comptime", expr: value };
+  } else {
+    expression = {
+      tag: "app",
+      func: {
+        tag: "field",
+        object: { tag: "var", name: "Do" },
+        name: "unwrap",
+      },
+      args: [value],
+    };
   }
   mark_source_span(expression, { start: node.start, end: node.end });
   return ok(expression);
@@ -4038,9 +4409,11 @@ function binary_expression(
   left: FrontExpr,
   right: FrontExpr,
 ): FrontExpr {
+  const left_span = source_span(left);
+  const right_span = source_span(right);
   const span = {
-    start: source_span(left).start,
-    end: source_span(right).end,
+    start: Math.min(left_span.start, right_span.start),
+    end: Math.max(left_span.end, right_span.end),
   };
   let expression: FrontExpr;
   if (operator === "&&") {
@@ -4423,6 +4796,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||
     node.kind === "condition_expression" ||
+    node.kind === "condition_parenthesized_expression" ||
     node.kind === "identifier" ||
     node.kind === "intrinsic_identifier" ||
     node.kind === "number" ||
@@ -4436,6 +4810,8 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "condition_binary_expression" ||
     node.kind === "arrow_function" ||
     node.kind === "application_expression" ||
+    node.kind === "condition_call_expression" ||
+    node.kind === "condition_application_expression" ||
     node.kind === "positional_product" ||
     node.kind === "block" ||
     node.kind === "if_expression" ||
@@ -4445,8 +4821,13 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "shape_value" ||
     node.kind === "named_product" ||
     node.kind === "index_expression" ||
+    node.kind === "condition_index_expression" ||
+    node.kind === "is_expression" ||
+    node.kind === "condition_is_expression" ||
+    node.kind === "as_expression" ||
     node.kind === "field_expression" ||
     node.kind === "condition_field_expression" ||
+    node.kind === "import_meta_expression" ||
     node.kind === "import_expression" ||
     node.kind === "union_case" ||
     node.kind === "loop_expression";

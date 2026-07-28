@@ -618,7 +618,7 @@ is_expression = (value:(_expression) operator:("is") type:(type_reference)) ;
 as_expression = (value:(_expression) as_keyword type:(type_reference)) ;
 
 unary_expression = (
-                     operator:(("!" | "&" | "freeze" | "comptime" | operator_symbol))
+                     operator:(("!" | "&" | "freeze" | "comptime" | "perform" | operator_symbol))
                      operand:(_expression)
                    ) ;
 

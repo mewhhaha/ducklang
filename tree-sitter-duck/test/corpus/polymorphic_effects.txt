@@ -46,9 +46,7 @@ end;
         (block
           (effect_binding_statement
             (identifier)
-            (application_expression
-              (postfix_expression
-                (identifier))
+            (unary_expression
               (postfix_expression
                 (identifier))))
           (expression_statement

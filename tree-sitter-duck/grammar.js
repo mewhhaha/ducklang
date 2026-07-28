@@ -143,7 +143,7 @@ export default grammar({
     binary_expression: $ => prec.left(6, seq(field("left", $._expression), field("operator", $.operator_symbol), field("right", $._expression))),
     is_expression: $ => prec.left(5, seq(field("value", $._expression), field("operator", "is"), field("type", $.type_reference))),
     as_expression: $ => prec.left(11, seq(field("value", $._expression), $.as_keyword, field("type", $.type_reference))),
-    unary_expression: $ => prec.right(8, seq(field("operator", choice("!", "&", "freeze", "comptime", $.operator_symbol)), field("operand", $._expression))),
+    unary_expression: $ => prec.right(8, seq(field("operator", choice("!", "&", "freeze", "comptime", "perform", $.operator_symbol)), field("operand", $._expression))),
     scratch_expression: $ => seq("scratch", field("body", $.block)),
     loop_expression: $ => prec(10, seq("loop", field("body", $.block))),
     case_function_expression: $ => prec.right(seq("case", "=>", "of", field("arm", $.case_arm), repeat(seq(",", field("arm", $.case_arm))))),

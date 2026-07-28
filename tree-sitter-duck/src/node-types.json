@@ -7448,6 +7448,10 @@
           {
             "type": "operator_symbol",
             "named": true
+          },
+          {
+            "type": "perform",
+            "named": false
           }
         ]
       }

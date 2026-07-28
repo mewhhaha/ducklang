@@ -659,6 +659,24 @@ Deno.test("Baba effect aliases follow lexical shadowing", () => {
     "bind",
   );
 
+  const pattern_conditional = "effect E { op: () => I32 }\n" +
+    "const e = E;\n" +
+    "const ordinary = 0;\n" +
+    "if let #Some e = option then\n" +
+    "  e = ordinary;\n" +
+    "  value <- e.op()\n" +
+    "end;\n" +
+    "next <- e.op()\n";
+  const pattern_source = checked_value(
+    lower_baba_source(parse_duck_source(pattern_conditional)),
+  );
+  const pattern_statement = pattern_source?.statements[2];
+  if (pattern_statement?.tag !== "if_let_stmt") {
+    throw new Error("Expected an if-let effect shadow.");
+  }
+  assert_equals(pattern_statement.body[1]?.tag, "bind");
+  assert_equals(pattern_source?.statements[3]?.tag, "state_bind");
+
   const lambda = "effect E { op: () => I32 }\n" +
     "const e = E;\n" +
     "let run = (e) => do value <- e.op() end;\n";
@@ -1112,12 +1130,179 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
     if (
       !expression_source.startsWith("let value = do\n") &&
       !expression_source.startsWith("let f:") &&
+      !expression_source.includes("else true then") &&
       !expression_source.includes("object.field.other") &&
       !expression_source.includes("Io.read") &&
       !expression_source.includes("{ .io =") &&
       !expression_source.includes("[.length =")
     ) {
       assert_source_spans_equal(source, legacy);
+    }
+    if (expression_source.includes("else true then")) {
+      const statement = source.statements[0];
+      if (
+        statement?.tag !== "bind" || statement.value.tag !== "if" ||
+        statement.value.else_branch.tag !== "if"
+      ) {
+        throw new Error("Expected a chained conditional binding.");
+      }
+      assert_equals(source_span(statement.value.else_branch), {
+        start: expression_source.indexOf("else true"),
+        end: expression_source.indexOf("end;"),
+      });
+    }
+  }
+});
+
+Deno.test("Baba lowers conditional patterns and condition-only expressions", () => {
+  for (
+    const source of [
+      "if let #Some value = current then value else 0 end;\n",
+      "if let #None = current then 1 end;\n",
+      "let _ = 1;\n" +
+      "if let #Some _ = current then 1 else 0 end;\n",
+      "if let 0 = current then 1 else 2 end;\n",
+      "if let true = current then 1 else 0 end;\n",
+      'if let "yes" = current then 1 else 0 end;\n',
+      "if let 'a' = current then 1 else 0 end;\n",
+      "if let [head, tail] = current then head else tail end;\n",
+      "if (let #Some value = current) then value else 0 end;\n",
+      "if ready then one else let #Some value = current then value " +
+      "else 0 end;\n",
+      "if ready then one else let [value] = current then value " +
+      "else 0 end;\n",
+      "if predicate value then 1 else 0 end;\n",
+      "if (ready) then 1 else 0 end;\n",
+      "if perform ready then 1 else 0 end;\n",
+      "if object.flag(thing[0]) is Bool then import.meta " +
+      "else perform fallback end;\n",
+      "let value = perform function argument;\n",
+      "let value = perform ();\n",
+      "let value = perform (left, right);\n",
+      "let value = current is I32;\n",
+      "let value = current as I32;\n",
+      "let value = do\n" +
+      "  if let #Some item = current then\n" +
+      "    item\n" +
+      "  end\n" +
+      "end;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    const lowered_source = checked_value(lowered);
+    const legacy_source = parse_source(source);
+    assert_equals(lowered_source, legacy_source);
+    if (lowered_source === undefined) {
+      throw new Error("Expected a directly lowered conditional source.");
+    }
+    assert_equals(all_source_nodes_have_spans(lowered_source), true);
+    const literal_conditional = source.startsWith("if let 0") ||
+      source.startsWith("if let true") ||
+      source.startsWith('if let "yes"') ||
+      source.startsWith("if let 'a'");
+    if (
+      !literal_conditional &&
+      !source.includes("let [") &&
+      !source.includes("else let") &&
+      !source.includes("object.flag") &&
+      !source.includes("current is I32") &&
+      !source.includes("current as I32") &&
+      !source.startsWith("let value = do")
+    ) {
+      assert_source_spans_equal(lowered_source, legacy_source);
+    } else if (literal_conditional) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "expr" || statement.expr.tag !== "if" ||
+        statement.expr.cond.tag !== "prim"
+      ) {
+        throw new Error("Expected a literal-pattern conditional.");
+      }
+      const literal_start = "if let ".length;
+      const literal_end = source.indexOf(" = current");
+      assert_equals(source_span(statement.expr.cond.right), {
+        start: literal_start,
+        end: literal_end,
+      });
+      assert_equals(source_span(statement.expr.cond), {
+        start: source.indexOf("let"),
+        end: source.indexOf("current") + "current".length,
+      });
+    } else if (source.startsWith("if let [")) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "expr" || statement.expr.tag !== "match" ||
+        statement.expr.arms[0]?.pattern.tag !== "product"
+      ) {
+        throw new Error("Expected a structural-pattern conditional.");
+      }
+      const entry = statement.expr.arms[0].pattern.entries[0];
+      if (entry === undefined) {
+        throw new Error("Structural conditional lost its first pattern.");
+      }
+      assert_equals(source_span(entry), {
+        start: source.indexOf("head"),
+        end: source.indexOf("head") + "head".length,
+      });
+    } else if (source.includes("object.flag")) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "expr" || statement.expr.tag !== "if" ||
+        statement.expr.cond.tag !== "is" ||
+        statement.expr.cond.value.tag !== "app"
+      ) {
+        throw new Error("Expected a condition-only call expression.");
+      }
+      assert_equals(source_span(statement.expr.cond.value.func), {
+        start: source.indexOf("object.flag"),
+        end: source.indexOf("object.flag") + "object.flag".length,
+      });
+    } else if (source.startsWith("let value = do")) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "bind" || statement.value.tag !== "block"
+      ) {
+        throw new Error("Expected a block containing an if-let result.");
+      }
+      const conditional = statement.value.statements[0];
+      if (conditional === undefined) {
+        throw new Error("Conditional block lost its result statement.");
+      }
+      assert_equals(source_span(conditional), {
+        start: source.indexOf("if let"),
+        end: source.indexOf("  end\n") + "  end".length,
+      });
+    }
+    if (source.includes("else let")) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "expr" || statement.expr.tag !== "if" ||
+        (statement.expr.else_branch.tag !== "match" &&
+          statement.expr.else_branch.tag !== "if_let")
+      ) {
+        throw new Error("Expected a pattern chained conditional.");
+      }
+      assert_equals(source_span(statement.expr.else_branch), {
+        start: source.indexOf("else let"),
+        end: source.lastIndexOf("0") + 1,
+      });
+    }
+    if (
+      source.includes("current is I32") ||
+      source.includes("current as I32")
+    ) {
+      const statement = lowered_source.statements[0];
+      if (
+        statement?.tag !== "bind" ||
+        (statement.value.tag !== "is" && statement.value.tag !== "as")
+      ) {
+        throw new Error("Expected a source type operator.");
+      }
+      assert_equals(source_span(statement.value.type_expr), {
+        start: source.indexOf("I32"),
+        end: source.indexOf("I32") + "I32".length,
+      });
     }
   }
 });
@@ -1153,14 +1338,6 @@ Deno.test("Baba rejects accepted syntax before its semantics are lowered", () =>
       "let value = -(1u8);\n",
       "let value = -((1u64));\n",
       "let f = !_ => 1;\n",
-      "if let #Some value = option then\n" +
-      "  value\n" +
-      "end;\n",
-      "if value then\n" +
-      "  0\n" +
-      "else let #Some item = option then\n" +
-      "  item\n" +
-      "end;\n",
     ]
   ) {
     const lowered = lower_baba_source(parse_duck_source(source));

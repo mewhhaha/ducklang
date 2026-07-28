@@ -4347,6 +4347,10 @@
                   "value": "comptime"
                 },
                 {
+                  "type": "STRING",
+                  "value": "perform"
+                },
+                {
                   "type": "SYMBOL",
                   "name": "operator_symbol"
                 }

@@ -208,6 +208,40 @@ Deno.test("semantic analysis rejects binding semantics not yet lowered from Baba
   );
 });
 
+Deno.test("Baba conditional patterns reach proof-erased semantic Core", () => {
+  for (
+    const example of [
+      {
+        source: "type Maybe = | #None | #Some I32\n" +
+          "let current: Maybe = #Some 42;\n" +
+          "let out = if let #Some value = current then value else 0 end;\n" +
+          "out\n",
+        expected: "if_let",
+      },
+      {
+        source: "let current = 0;\n" +
+          "let out = if let 0 = current then 42 else 0 end;\n" +
+          "out\n",
+        expected: "if",
+      },
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(example.source));
+    assert_equals(analysis.diagnostics, []);
+    const program = checked_value(lower_duck_source(analysis));
+    if (program === undefined) {
+      throw new Error("Expected the Baba conditional to reach Core.");
+    }
+    const out = program.core.statements.find((statement) =>
+      statement.tag === "bind" && statement.name === "out"
+    );
+    if (out?.tag !== "bind") {
+      throw new Error("Conditional Core omitted its result binding.");
+    }
+    assert_equals(out.value.tag, example.expected);
+  }
+});
+
 Deno.test("semantic Core elaborates product destructuring before lowering", () => {
   const source = "let [left, right] = [1, 2];\nleft + right;\n";
   const analysis = analyze_duck_source(parse_duck_source(source));
