@@ -171,7 +171,6 @@ Deno.test("semantic analysis rejects unsupported raw postconditions", () => {
 Deno.test("semantic analysis rejects binding semantics not yet lowered from Baba", () => {
   for (
     const source of [
-      "let value: Bool = 1;\n",
       "let !value = 1;\n",
       "let rec identity = value => value;\n",
     ]

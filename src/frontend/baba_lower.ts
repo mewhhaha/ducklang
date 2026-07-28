@@ -2,8 +2,19 @@ import { Applicative } from "@mewhhaha/typeclasses";
 import { compiler_diagnostic, diagnostic_codes } from "../diagnostic.ts";
 import { expect } from "../expect.ts";
 import { integer_literal_fits, integer_type_name } from "../integer.ts";
-import type { FrontExpr, Param, Pattern, Source, Stmt } from "./ast.ts";
+import { is_snake_case, no_demand_name } from "./names.ts";
+import type {
+  Declaration,
+  FrontExpr,
+  Param,
+  Pattern,
+  Source,
+  Stmt,
+  TypeExpr,
+} from "./ast.ts";
 import type { BabaCstNode, BabaParseResult } from "./baba_parser.ts";
+import { lower_baba_type_declaration } from "./baba_declaration_lower.ts";
+import { lower_baba_type_reference } from "./baba_type_lower.ts";
 import {
   type Checked,
   checked_value,
@@ -13,6 +24,9 @@ import {
 } from "./checked.ts";
 import { binary_prim, numeric_expr_type } from "./numeric.ts";
 import { parse_number_expr } from "./number_literal.ts";
+import { apply_function_result_context } from "./function_context.ts";
+import { decode_literal_escape } from "./literal.ts";
+import { format_type_expr } from "./type_expr.ts";
 import {
   derive_missing_source_spans,
   mark_source_span,
@@ -21,6 +35,8 @@ import {
 } from "./syntax.ts";
 
 const conditional_branch_spans = new WeakMap<object, SourceSpan>();
+const no_demand_names = new WeakMap<BabaCstNode, string>();
+const synthetic_parameter_names = new WeakMap<BabaCstNode, string>();
 
 export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
   const root = parsed.cst.root;
@@ -29,18 +45,180 @@ export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
     mark_source_span(source, { start: 0, end: parsed.cst.text.length });
     return ok(source);
   }
+  index_synthetic_names(root, parsed.cst.text, parsed.tokens);
 
-  const statements = lower_statement_sequence(
+  const contents = lower_top_level_sequence(
     root.children,
     parsed.cst.text,
   );
 
-  return statements.map((lowered) => {
-    const source: Source = { tag: "program", statements: lowered };
+  return contents.map((lowered) => {
+    let source: Source = { tag: "program", statements: lowered.statements };
+    if (lowered.declarations.length > 0) {
+      source = {
+        tag: "program",
+        module: undefined,
+        declarations: lowered.declarations,
+        statements: lowered.statements,
+      };
+    }
     mark_source_span(source, { start: root.start, end: root.end });
     derive_missing_source_spans(source, { start: root.start, end: root.end });
     return source;
   });
+}
+
+function index_synthetic_names(
+  root: BabaCstNode,
+  source: string,
+  tokens: readonly { text: string; start: number; end: number }[],
+): void {
+  let next_no_demand = 0;
+  function visit(node: BabaCstNode): void {
+    if (node.kind === "binding_statement") {
+      const pattern = node.children.find((child) => child.kind === "wildcard");
+      if (pattern !== undefined) {
+        no_demand_names.set(pattern, no_demand_name(next_no_demand));
+        next_no_demand += 1;
+      }
+    }
+    if (node.kind === "arrow_function") {
+      const parameter_container = node.children.find((child) =>
+        child.kind === "parameter" || child.kind === "parameter_list"
+      );
+      if (parameter_container !== undefined) {
+        const source_offset = source_token_index(
+          source,
+          tokens,
+          parameter_container.start,
+        );
+        if (parameter_container.kind === "parameter") {
+          const wildcard = parameter_container.children.find((child) =>
+            child.kind === "wildcard"
+          );
+          if (wildcard !== undefined) {
+            synthetic_parameter_names.set(
+              parameter_container,
+              "_pattern#param" + source_offset.toString(),
+            );
+          }
+        } else {
+          let ignored = 0;
+          for (
+            const parameter of parameter_container.children.filter((child) =>
+              child.kind === "parameter"
+            )
+          ) {
+            const wildcard = parameter.children.find((child) =>
+              child.kind === "wildcard"
+            );
+            if (wildcard === undefined) continue;
+            synthetic_parameter_names.set(
+              parameter,
+              "_pattern#ignored" + source_offset.toString() + "#" +
+                ignored.toString(),
+            );
+            ignored += 1;
+          }
+        }
+      }
+    }
+    for (const child of node.children) visit(child);
+  }
+  visit(root);
+}
+
+function source_token_index(
+  source: string,
+  tokens: readonly { text: string; start: number; end: number }[],
+  offset: number,
+): number {
+  let index = 0;
+  let cursor = 0;
+  for (const token of tokens) {
+    if (token.start >= offset) break;
+    index += line_break_count(source.slice(cursor, token.start));
+    if (!token.text.startsWith("//")) index += 1;
+    cursor = token.end;
+  }
+  index += line_break_count(source.slice(cursor, offset));
+  return index;
+}
+
+function line_break_count(text: string): number {
+  let count = 0;
+  for (const character of text) {
+    if (character === "\n") count += 1;
+  }
+  return count;
+}
+
+type LoweredTopLevel = {
+  declarations: Declaration[];
+  statements: Stmt[];
+};
+
+function lower_top_level_sequence(
+  nodes: readonly BabaCstNode[],
+  source: string,
+): Checked<LoweredTopLevel> {
+  const declaration_names = new Map<string, BabaCstNode>();
+  let contents: Checked<LoweredTopLevel> = ok({
+    declarations: [],
+    statements: [],
+  });
+  for (const node of nodes) {
+    if (node.kind === "type_declaration_statement") {
+      let declaration = lower_baba_type_declaration(node, source);
+      const name_node = node.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (name_node !== undefined) {
+        const name = source.slice(name_node.start, name_node.end);
+        const previous = declaration_names.get(name);
+        if (previous !== undefined) {
+          declaration = Applicative.lift(
+            (value: Declaration, _duplicate: null) => value,
+            declaration,
+            fail(
+              compiler_diagnostic(
+                diagnostic_codes.syntax_error,
+                "Duplicate declaration name: " + name,
+                { start: name_node.start, end: name_node.end },
+                [{
+                  message: "First declaration is here.",
+                  span: { start: previous.start, end: previous.end },
+                }],
+              ),
+            ),
+          );
+        } else {
+          declaration_names.set(name, name_node);
+        }
+      }
+      contents = Applicative.lift(
+        (current: LoweredTopLevel, declaration: Declaration) => ({
+          declarations: [...current.declarations, declaration],
+          statements: current.statements,
+        }),
+        contents,
+        declaration,
+      );
+      continue;
+    }
+    contents = Applicative.lift(
+      (current: LoweredTopLevel, statement: Stmt | undefined) => {
+        if (statement === undefined) return current;
+        return {
+          declarations: current.declarations,
+          statements: [...current.statements, statement],
+        };
+      },
+      contents,
+      lower_statement(node, source),
+    );
+  }
+  return contents;
 }
 
 function lower_statement(
@@ -146,7 +324,12 @@ function lower_binding(
   node: BabaCstNode,
   source: string,
 ): Checked<Stmt> {
-  const name_node = node.children.find((child) => child.kind === "identifier");
+  const name_node = node.children.find((child) =>
+    child.kind === "identifier" || child.kind === "wildcard"
+  );
+  const type_node = node.children.find((child) =>
+    child.kind === "type_reference"
+  );
   const value_nodes = node.children.filter((child) =>
     child !== name_node && is_expression_node(child)
   );
@@ -154,9 +337,27 @@ function lower_binding(
   if (name_node === undefined || value_node === undefined) {
     return unsupported(node);
   }
+  if (name_node.kind === "wildcard" && type_node !== undefined) {
+    return unsupported(type_node);
+  }
+  let name_check: Checked<null> = ok(null);
+  if (
+    name_node.kind === "identifier" &&
+    !is_snake_case(source.slice(name_node.start, name_node.end))
+  ) {
+    const name = source.slice(name_node.start, name_node.end);
+    name_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Runtime binding must use snake_case: " + name,
+        { start: name_node.start, end: name_node.end },
+      ),
+    );
+  }
   if (value_nodes.length !== 1) return unsupported(node);
   for (const child of node.children) {
     if (child === name_node || child === value_node) continue;
+    if (child === type_node || child.kind === '":"') continue;
     if (
       child.kind === '"let"' ||
       child.kind === '"const"' ||
@@ -172,31 +373,79 @@ function lower_binding(
   if (source.slice(node.start, node.start + 5) === "const") {
     kind = "const";
   }
-  return lower_expression(value_node, source).map((value) => {
-    const name = source.slice(name_node.start, name_node.end);
-    const pattern = {
-      tag: "binding" as const,
-      name,
-      mode: "default" as const,
-      annotation: undefined,
-    };
-    mark_source_span(pattern, {
-      start: name_node.start,
-      end: name_node.end,
-    });
-    const statement: Stmt = {
-      tag: "bind",
-      kind,
-      pattern,
-      name,
-      is_recursive: false,
-      is_linear: false,
-      annotation: undefined,
-      value,
-    };
-    mark_source_span(statement, { start: node.start, end: node.end });
-    return statement;
-  });
+  let lowered_type: Checked<TypeExpr | undefined> = ok(undefined);
+  if (type_node !== undefined) {
+    lowered_type = lower_baba_type_reference(type_node, source);
+  }
+  const lowered_value = lower_expression(value_node, source);
+  return Applicative.lift(
+    (
+      _name: null,
+      parsed_type: TypeExpr | undefined,
+      value: FrontExpr,
+    ) => {
+      let name = source.slice(name_node.start, name_node.end);
+      let pattern: Pattern;
+      let annotation: string | undefined;
+      let type_annotation: TypeExpr | undefined;
+      let pattern_end = name_node.end;
+      if (name_node.kind === "wildcard") {
+        const generated_name = no_demand_names.get(name_node);
+        expect(
+          generated_name !== undefined,
+          "Baba wildcard binding has no no-demand identity.",
+        );
+        name = generated_name;
+        pattern = { tag: "wildcard", mode: "default" };
+      } else if (parsed_type !== undefined) {
+        annotation = format_type_expr(parsed_type);
+        expect(
+          type_node !== undefined,
+          "Baba binding annotation lost its node.",
+        );
+        pattern_end = type_node.end;
+        if (parsed_type.tag !== "name") type_annotation = parsed_type;
+        pattern = {
+          tag: "binding",
+          name,
+          mode: "default",
+          annotation,
+        };
+      } else {
+        pattern = {
+          tag: "binding",
+          name,
+          mode: "default",
+          annotation: undefined,
+        };
+      }
+      if (type_annotation !== undefined && pattern.tag === "binding") {
+        pattern.type_annotation = type_annotation;
+      }
+      mark_source_span(pattern, {
+        start: name_node.start,
+        end: pattern_end,
+      });
+      const statement: Stmt = {
+        tag: "bind",
+        kind,
+        pattern,
+        name,
+        is_recursive: false,
+        is_linear: false,
+        annotation,
+        value: apply_function_result_context(value, type_annotation),
+      };
+      if (type_annotation !== undefined) {
+        statement.type_annotation = type_annotation;
+      }
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    name_check,
+    lowered_type,
+    lowered_value,
+  );
 }
 
 function lower_assignment(
@@ -210,25 +459,40 @@ function lower_assignment(
   if (name_node === undefined || value_node === undefined) {
     return unsupported(node);
   }
+  const name = source.slice(name_node.start, name_node.end);
+  let name_check: Checked<null> = ok(null);
+  if (!is_snake_case(name)) {
+    name_check = fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Runtime binding must use snake_case: " + name,
+        { start: name_node.start, end: name_node.end },
+      ),
+    );
+  }
 
-  return lower_expression(value_node, source).map((value) => {
-    let mode: "same" | "change" = "same";
-    if (
-      node.children.some((child) =>
-        source.slice(child.start, child.end) === ":="
-      )
-    ) {
-      mode = "change";
-    }
-    const statement: Stmt = {
-      tag: "assign",
-      name: source.slice(name_node.start, name_node.end),
-      mode,
-      value,
-    };
-    mark_source_span(statement, { start: node.start, end: node.end });
-    return statement;
-  });
+  return Applicative.lift(
+    (_name: null, value: FrontExpr) => {
+      let mode: "same" | "change" = "same";
+      if (
+        node.children.some((child) =>
+          source.slice(child.start, child.end) === ":="
+        )
+      ) {
+        mode = "change";
+      }
+      const statement: Stmt = {
+        tag: "assign",
+        name,
+        mode,
+        value,
+      };
+      mark_source_span(statement, { start: node.start, end: node.end });
+      return statement;
+    },
+    name_check,
+    lower_expression(value_node, source),
+  );
 }
 
 function lower_return(
@@ -370,6 +634,56 @@ function lower_expression(
     return ok(expression);
   }
 
+  if (node.kind === "character") {
+    const raw = source.slice(node.start, node.end);
+    const body = raw.slice(1, raw.length - 1);
+    let character = body;
+    if (body.startsWith("\\")) {
+      const escaped = body[1];
+      if (body.length !== 2 || escaped === undefined) return unsupported(node);
+      const decoded = decode_literal_escape(escaped, "'");
+      if (decoded === undefined) return unsupported(node);
+      character = decoded;
+    }
+    if (Array.from(character).length !== 1) return unsupported(node);
+    const code_point = character.codePointAt(0);
+    expect(code_point !== undefined, "Baba character has no code point.");
+    const expression: FrontExpr = {
+      tag: "num",
+      type: "i32",
+      value: code_point,
+      character,
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
+  if (node.kind === "atom_expression") {
+    const name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (name_node === undefined) return unsupported(node);
+    const expression: FrontExpr = {
+      tag: "atom",
+      name: source.slice(name_node.start, name_node.end),
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
+  if (node.kind === "linear_reference") {
+    const name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (name_node === undefined) return unsupported(node);
+    const expression: FrontExpr = {
+      tag: "linear",
+      name: source.slice(name_node.start, name_node.end),
+    };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
+
   if (node.kind === "unit_pattern") {
     const expression: FrontExpr = { tag: "unit" };
     mark_source_span(expression, { start: node.start, end: node.end });
@@ -438,8 +752,171 @@ function lower_expression(
     return lower_array_expression(node, source);
   }
 
+  if (node.kind === "shape_value") {
+    const block = node.children.find((child) =>
+      child.kind === "shape_field_block"
+    );
+    if (block === undefined) return unsupported(node);
+    const names = new Set<string>();
+    let entries: Checked<Array<{ label?: string; value: FrontExpr }>> = ok([]);
+    for (
+      const field of block.children.filter((child) =>
+        child.kind === "shape_field" || child.kind === "shorthand_field"
+      )
+    ) {
+      const name_node = field.children.find((child) =>
+        child.kind === "identifier" || child.kind === '"end"'
+      );
+      if (name_node === undefined) return unsupported(field);
+      const name = source.slice(name_node.start, name_node.end);
+      const field_diagnostics = [];
+      if (name !== "end" && !is_snake_case(name)) {
+        field_diagnostics.push(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Shape member must use snake_case: " + name,
+            { start: name_node.start, end: name_node.end },
+          ),
+        );
+      }
+      if (names.has(name)) {
+        field_diagnostics.push(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicate shape member: " + name,
+            { start: name_node.start, end: name_node.end },
+          ),
+        );
+      }
+      names.add(name);
+      let field_check: Checked<null> = ok(null);
+      if (field_diagnostics.length > 0) {
+        field_check = fail(...field_diagnostics);
+      }
+      let lowered_value: Checked<FrontExpr>;
+      if (field.kind === "shorthand_field") {
+        const value: FrontExpr = { tag: "var", name };
+        mark_source_span(value, {
+          start: name_node.start,
+          end: name_node.end,
+        });
+        lowered_value = ok(value);
+      } else {
+        const value_node = field.children.find((child) =>
+          child !== name_node && is_expression_node(child)
+        );
+        if (value_node === undefined) return unsupported(field);
+        lowered_value = lower_expression(value_node, source);
+      }
+      const lowered_entry = Applicative.lift(
+        (_field: null, value: FrontExpr) => {
+          const entry = { label: name, value };
+          mark_source_span(entry, { start: field.start, end: field.end });
+          return entry;
+        },
+        field_check,
+        lowered_value,
+      );
+      entries = Applicative.lift(
+        (
+          current: Array<{ label?: string; value: FrontExpr }>,
+          entry: { label?: string; value: FrontExpr },
+        ) => [...current, entry],
+        entries,
+        lowered_entry,
+      );
+    }
+    return entries.map((lowered_entries) => {
+      const expression: FrontExpr = {
+        tag: "shape",
+        entries: lowered_entries,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+
+  if (node.kind === "named_product") {
+    let entries: Checked<Array<{ label?: string; value: FrontExpr }>> = ok([]);
+    for (
+      const field of node.children.filter((child) =>
+        child.kind === "product_field"
+      )
+    ) {
+      const name_node = field.children.find((child) =>
+        child.kind === "identifier" || child.kind === '"end"'
+      );
+      const value_node = field.children.find((child) =>
+        child !== name_node && is_expression_node(child)
+      );
+      if (name_node === undefined || value_node === undefined) {
+        return unsupported(field);
+      }
+      const name = source.slice(name_node.start, name_node.end);
+      let field_check: Checked<null> = ok(null);
+      if (name !== "end" && !is_snake_case(name)) {
+        field_check = fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Product label must use snake_case: " + name,
+            { start: name_node.start, end: name_node.end },
+          ),
+        );
+      }
+      const lowered_entry = Applicative.lift(
+        (_field: null, value: FrontExpr) => {
+          const entry = { label: name, value };
+          mark_source_span(entry, { start: field.start, end: field.end });
+          return entry;
+        },
+        field_check,
+        lower_expression(value_node, source),
+      );
+      entries = Applicative.lift(
+        (
+          current: Array<{ label?: string; value: FrontExpr }>,
+          entry: { label?: string; value: FrontExpr },
+        ) => [...current, entry],
+        entries,
+        lowered_entry,
+      );
+    }
+    return entries.map((lowered_entries) => {
+      const expression: FrontExpr = {
+        tag: "product",
+        entries: lowered_entries,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+
   if (node.kind === "index_expression") {
     return lower_index_expression(node, source);
+  }
+
+  if (
+    node.kind === "field_expression" ||
+    node.kind === "condition_field_expression"
+  ) {
+    const object_node = node.children.find((child) =>
+      is_expression_node(child)
+    );
+    const field_node = node.children.find((child) =>
+      child.kind === "identifier" || child.kind === '"end"'
+    );
+    if (object_node === undefined || field_node === undefined) {
+      return unsupported(node);
+    }
+    return lower_expression(object_node, source).map((object) => {
+      const expression: FrontExpr = {
+        tag: "field",
+        object,
+        name: source.slice(field_node.start, field_node.end),
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
   }
 
   if (node.kind === "import_expression") {
@@ -1181,7 +1658,6 @@ function lower_arrow(
   node: BabaCstNode,
   source: string,
 ): Checked<FrontExpr> {
-  const parameters: Param[] = [];
   const parameter_nodes: BabaCstNode[] = [];
   const parameter_container = node.children.find((child) =>
     child.kind === "parameter" || child.kind === "parameter_list"
@@ -1193,26 +1669,123 @@ function lower_arrow(
       child.kind === "parameter"
     );
   }
+  let lowered_parameters: Checked<Param[]> = ok([]);
   for (const parameter_node of parsed_parameter_nodes) {
     const name_node = parameter_node.children.find((child) =>
-      child.kind === "identifier"
+      child.kind === "identifier" || child.kind === "wildcard"
     );
     if (name_node === undefined) return unsupported(parameter_node);
-    const modifier = parameter_node.children.find((child) =>
-      child !== name_node
+    const type_node = parameter_node.children.find((child) =>
+      child.kind === "type_reference"
     );
-    if (modifier !== undefined) return unsupported(modifier);
-    const parameter: Param = {
-      name: source.slice(name_node.start, name_node.end),
-      is_const: false,
-      is_linear: false,
-      annotation: undefined,
-    };
-    mark_source_span(parameter, {
-      start: parameter_node.start,
-      end: parameter_node.end,
-    });
-    parameters.push(parameter);
+    const is_const = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "const"
+    );
+    const is_linear = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "!"
+    );
+    const is_variadic = parameter_node.children.some((child) =>
+      source.slice(child.start, child.end) === "..."
+    );
+    const parameter_diagnostics = [];
+    if (
+      name_node.kind === "identifier" &&
+      !is_snake_case(source.slice(name_node.start, name_node.end))
+    ) {
+      const name = source.slice(name_node.start, name_node.end);
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Parameter must use snake_case: " + name,
+          { start: name_node.start, end: name_node.end },
+        ),
+      );
+    }
+    if (name_node.kind === "wildcard" && is_linear) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Baba semantic lowering does not support linear wildcard parameters.",
+          { start: parameter_node.start, end: parameter_node.end },
+        ),
+      );
+    }
+    if (name_node.kind === "wildcard" && is_variadic) {
+      parameter_diagnostics.push(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Variadic parameter requires a binding name",
+          { start: parameter_node.start, end: parameter_node.end },
+        ),
+      );
+    }
+    let parameter_check: Checked<null> = ok(null);
+    if (parameter_diagnostics.length > 0) {
+      parameter_check = fail(...parameter_diagnostics);
+    }
+    let parameter_is_const = is_const;
+    if (
+      name_node.kind === "wildcard" &&
+      parameter_container.kind === "parameter"
+    ) {
+      parameter_is_const = false;
+    }
+    for (const child of parameter_node.children) {
+      if (
+        child === name_node || child === type_node || child.kind === '":"' ||
+        source.slice(child.start, child.end) === "const" ||
+        source.slice(child.start, child.end) === "!" ||
+        source.slice(child.start, child.end) === "..."
+      ) {
+        continue;
+      }
+      return unsupported(child);
+    }
+    let lowered_type: Checked<TypeExpr | undefined> = ok(undefined);
+    if (type_node !== undefined) {
+      lowered_type = lower_baba_type_reference(type_node, source);
+    }
+    const lowered_parameter = Applicative.lift(
+      (_parameter: null, parsed_type: TypeExpr | undefined) => {
+        let annotation: string | undefined;
+        let type_annotation: TypeExpr | undefined;
+        if (parsed_type !== undefined) {
+          annotation = format_type_expr(parsed_type);
+          if (parsed_type.tag !== "name") type_annotation = parsed_type;
+        }
+        let name = source.slice(name_node.start, name_node.end);
+        if (name_node.kind === "wildcard") {
+          const generated_name = synthetic_parameter_names.get(parameter_node);
+          expect(
+            generated_name !== undefined,
+            "Baba wildcard parameter has no synthetic identity.",
+          );
+          name = generated_name;
+        }
+        const parameter: Param = {
+          name,
+          is_const: parameter_is_const,
+          is_linear,
+          annotation,
+        };
+        if (is_variadic) parameter.is_variadic = true;
+        if (type_annotation !== undefined) {
+          parameter.type_annotation = type_annotation;
+        }
+        mark_source_span(parameter, {
+          start: parameter_node.start,
+          end: parameter_node.end,
+        });
+        return parameter;
+      },
+      parameter_check,
+      lowered_type,
+    );
+    lowered_parameters = Applicative.lift(
+      (parameters: Param[], parameter: Param) => [...parameters, parameter],
+      lowered_parameters,
+      lowered_parameter,
+    );
     parameter_nodes.push(parameter_node);
   }
   const body_node = [...node.children].reverse().find((child) =>
@@ -1220,79 +1793,121 @@ function lower_arrow(
   );
   if (body_node === undefined) return unsupported(node);
 
-  return lower_expression(body_node, source).map((body) => {
-    let pattern: Pattern;
-    if (parameters.length === 0) {
-      pattern = { tag: "unit" };
-      mark_source_span(pattern, {
-        start: parameter_container.start,
-        end: parameter_container.end,
-      });
-    } else if (parameters.length === 1) {
-      const parameter = parameters[0];
-      const parameter_node = parameter_nodes[0];
-      expect(
-        parameter !== undefined,
-        "Single-parameter Baba lambda lost its parameter.",
-      );
-      expect(
-        parameter_node !== undefined,
-        "Single-parameter Baba lambda lost its parameter node.",
-      );
-      pattern = {
-        tag: "binding",
-        name: parameter.name,
-        mode: "default",
-        annotation: undefined,
-      };
-      mark_source_span(pattern, {
-        start: parameter_node.start,
-        end: parameter_node.end,
-      });
-    } else {
-      const entries = parameters.map((parameter, index) => {
-        const parameter_node = parameter_nodes[index];
-        expect(
-          parameter_node !== undefined,
-          "Baba lambda product pattern lost a parameter node.",
-        );
-        const binding: Pattern = {
-          tag: "binding",
-          name: parameter.name,
-          mode: "default",
-          annotation: undefined,
-        };
-        mark_source_span(binding, {
-          start: parameter_node.start,
-          end: parameter_node.end,
-        });
-        const entry = { pattern: binding };
-        mark_source_span(entry, {
+  return Applicative.lift(
+    (parameters: Param[], body: FrontExpr) => {
+      let pattern: Pattern;
+      if (parameters.length === 0) {
+        pattern = { tag: "unit" };
+        mark_source_span(pattern, {
           start: parameter_container.start,
           end: parameter_container.end,
         });
-        return entry;
-      });
-      pattern = {
-        tag: "product",
-        entries,
-        rest: undefined,
-        value_pack: true,
+      } else if (parameters.length === 1) {
+        const parameter = parameters[0];
+        const parameter_node = parameter_nodes[0];
+        expect(
+          parameter !== undefined,
+          "Single-parameter Baba lambda lost its parameter.",
+        );
+        expect(
+          parameter_node !== undefined,
+          "Single-parameter Baba lambda lost its parameter node.",
+        );
+        if (
+          parameter_node.children.some((child) => child.kind === "wildcard")
+        ) {
+          let mode: "default" | "const" = "default";
+          if (
+            parameter_node.children.some((child) =>
+              source.slice(child.start, child.end) === "const"
+            )
+          ) {
+            mode = "const";
+          }
+          pattern = { tag: "wildcard", mode };
+        } else {
+          pattern = {
+            tag: "binding",
+            name: parameter.name,
+            mode: parameter_mode(parameter),
+            annotation: parameter.annotation,
+          };
+          if (parameter.is_variadic === true) pattern.is_variadic = true;
+          if (parameter.type_annotation !== undefined) {
+            pattern.type_annotation = parameter.type_annotation;
+          }
+        }
+        mark_source_span(pattern, {
+          start: parameter_node.start,
+          end: parameter_node.end,
+        });
+      } else {
+        const entries = parameters.map((parameter, index) => {
+          const parameter_node = parameter_nodes[index];
+          expect(
+            parameter_node !== undefined,
+            "Baba lambda product pattern lost a parameter node.",
+          );
+          let entry_pattern: Pattern;
+          if (
+            parameter_node.children.some((child) => child.kind === "wildcard")
+          ) {
+            let mode: "default" | "const" = "default";
+            if (parameter.is_const) mode = "const";
+            entry_pattern = { tag: "wildcard", mode };
+          } else {
+            const binding: Extract<Pattern, { tag: "binding" }> = {
+              tag: "binding",
+              name: parameter.name,
+              mode: parameter_mode(parameter),
+              annotation: parameter.annotation,
+            };
+            if (parameter.is_variadic === true) binding.is_variadic = true;
+            if (parameter.type_annotation !== undefined) {
+              binding.type_annotation = parameter.type_annotation;
+            }
+            entry_pattern = binding;
+          }
+          mark_source_span(entry_pattern, {
+            start: parameter_node.start,
+            end: parameter_node.end,
+          });
+          const entry = { pattern: entry_pattern };
+          mark_source_span(entry, {
+            start: parameter_container.start,
+            end: parameter_container.end,
+          });
+          return entry;
+        });
+        pattern = {
+          tag: "product",
+          entries,
+          rest: undefined,
+          value_pack: true,
+        };
+        mark_source_span(pattern, {
+          start: parameter_container.start,
+          end: parameter_container.end,
+        });
+      }
+      const expression: FrontExpr = {
+        tag: "lam",
+        pattern,
+        params: parameters,
+        body,
       };
-      mark_source_span(pattern, {
-        start: parameter_container.start,
-        end: parameter_container.end,
-      });
-    }
-    const expression: FrontExpr = {
-      tag: "lam",
-      pattern,
-      params: parameters,
-      body,
-    };
-    mark_source_span(expression, { start: node.start, end: node.end });
-    return expression;
-  });
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    lowered_parameters,
+    lower_expression(body_node, source),
+  );
+}
+
+function parameter_mode(parameter: Param): "default" | "const" | "linear" {
+  if (parameter.is_const) return "const";
+  if (parameter.is_linear) return "linear";
+  return "default";
 }
 
 function lower_application(
@@ -1342,6 +1957,9 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "number" ||
     node.kind === "boolean" ||
     node.kind === "string" ||
+    node.kind === "character" ||
+    node.kind === "atom_expression" ||
+    node.kind === "linear_reference" ||
     node.kind === "unit_pattern" ||
     node.kind === "binary_expression" ||
     node.kind === "condition_binary_expression" ||
@@ -1353,7 +1971,11 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "condition_unary_expression" ||
     node.kind === "unary_expression" ||
     node.kind === "array_expression" ||
+    node.kind === "shape_value" ||
+    node.kind === "named_product" ||
     node.kind === "index_expression" ||
+    node.kind === "field_expression" ||
+    node.kind === "condition_field_expression" ||
     node.kind === "import_expression" ||
     node.kind === "union_case" ||
     node.kind === "loop_expression";

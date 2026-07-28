@@ -306,6 +306,21 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
       "let value = -(1f32 + 2f32);\n",
       "let value = -(1f64 + 2f64);\n",
       "let f = (first, second) => first + second;\n",
+      "let value: I64 = 1i64;\n",
+      "let f = (value: I32, const width: U8) => value;\n",
+      "let f = !value => value;\n",
+      "let f: (I32, I64) -> I64 = (left, right) => right;\n",
+      "let _ = 1;\nlet f = _ => 2;\n",
+      "let f = const _ => 2;\n",
+      "let f = (_, const _) => 1;\n",
+      "let _ = 1;\r\n// ignored\r\nlet f = _ => 2;\r\n",
+      "let value = 1;\rlet f = _ => 2;\n",
+      "let value = object.field.other;\n",
+      "if object.end == 1 then\n  1\nend;\n",
+      "let value = { .io = !init.io, .name };\n",
+      "let value = [.length = 1, .other = 2];\n",
+      "let value = #answer;\n",
+      "let value = 'w';\n",
     ]
   ) {
     const expression_lowered = lower_baba_source(
@@ -319,7 +334,13 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
       throw new Error("Expected Baba parity source.");
     }
     assert_equals(all_source_nodes_have_spans(source), true);
-    if (!expression_source.startsWith("let value = do\n")) {
+    if (
+      !expression_source.startsWith("let value = do\n") &&
+      !expression_source.startsWith("let f:") &&
+      !expression_source.includes("object.field.other") &&
+      !expression_source.includes("{ .io =") &&
+      !expression_source.includes("[.length =")
+    ) {
       assert_source_spans_equal(source, legacy);
     }
   }
@@ -351,13 +372,11 @@ Deno.test("Baba rejects accepted syntax before its semantics are lowered", () =>
   for (
     const source of [
       "let values = [1, ...other];\n",
-      "let f = const value => value;\n",
-      "let f = !value => value;\n",
-      "let f = value: I32 => value;\n",
       "let value = -1u8;\n",
       "let value = -1u64;\n",
       "let value = -(1u8);\n",
       "let value = -((1u64));\n",
+      "let f = !_ => 1;\n",
       "if let #Some value = option then\n" +
       "  value\n" +
       "end;\n",
@@ -444,7 +463,6 @@ Deno.test("Baba lowering reports unsupported accepted syntax", () => {
 Deno.test("Baba lowering never erases unsupported binding semantics", () => {
   for (
     const source of [
-      "let value: Bool = 1;\n",
       "let !value = 1;\n",
       "let rec identity = value => value;\n",
     ]
@@ -471,6 +489,57 @@ Deno.test("Baba lowering preserves statements outside recovery regions", () => {
     }),
     ["good"],
   );
+});
+
+Deno.test("Baba rejects invalid binding and aggregate names", () => {
+  for (
+    const [source, expected] of [
+      ["let camelCase = 1;\n", "Runtime binding must use snake_case"],
+      ["{ .camelCase = 1 }\n", "Shape member must use snake_case"],
+      ["{ .value = 1, .value = 2 }\n", "Duplicate shape member"],
+      ["[.camelCase = 1]\n", "Product label must use snake_case"],
+      [
+        "let value = (const ..._) => 1;\n",
+        "Variadic parameter requires a binding name",
+      ],
+      [
+        "let value = const ..._ => 1;\n",
+        "Variadic parameter requires a binding name",
+      ],
+    ]
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(source)),
+    );
+    const messages = diagnostics.map((diagnostic) => diagnostic.message).join(
+      "\n",
+    );
+    assert_equals(messages.includes(expected), true);
+  }
+});
+
+Deno.test("Baba accumulates binding and aggregate boundary errors", () => {
+  for (
+    const [source, count] of [
+      ["let camelCase: 256u8 = 512u8;\n", 3],
+      ["let value = { .camelCase = 256u8, .Other = 512u8 };\n", 4],
+      ["let value = [.camelCase = 256u8, .Other = 512u8];\n", 4],
+      [
+        "let value = (camelCase: 256u8, Other: 512u8) => 1024u8;\n",
+        5,
+      ],
+      ["let value = const ..._ => 256u8;\n", 2],
+      ["camelCase = 512u8;\n", 2],
+      ["camelCase := 512u8;\n", 2],
+    ] as const
+  ) {
+    const diagnostics = diagnostics_of(
+      lower_baba_source(parse_duck_source(source)),
+    );
+    assert_equals(diagnostics.length, count);
+    const starts = diagnostics.map((diagnostic) => diagnostic.span.start);
+    assert_equals(starts, [...starts].sort((left, right) => left - right));
+  }
 });
 
 function all_source_nodes_have_spans(value: object): boolean {
