@@ -1,7 +1,7 @@
 import { assert_equals } from "../assert.ts";
-import { lower_duck_source, analyze_duck_source } from "./semantic_program.ts";
+import { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 import { parse_duck_source } from "./baba_parser.ts";
-import { diagnostics_of } from "./checked.ts";
+import { checked_value, diagnostics_of } from "./checked.ts";
 
 Deno.test("semantic program stages preserve Baba input and stable symbols", () => {
   const parsed = parse_duck_source("let value = 1;\n");
@@ -17,10 +17,44 @@ Deno.test("semantic program stages preserve Baba input and stable symbols", () =
   assert_equals(diagnostics_of(inspected), []);
 });
 
+Deno.test("Baba reaches unchanged semantic Core without the handwritten parser", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let value = 1;\n" +
+      "value + 2\n",
+  ));
+  const lowered = lower_duck_source(analysis);
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered)?.core, {
+    tag: "program",
+    statements: [
+      {
+        tag: "bind",
+        kind: "let",
+        name: "value",
+        is_linear: false,
+        annotation: undefined,
+        value: { tag: "num", type: "i32", value: 1 },
+      },
+      {
+        tag: "expr",
+        expr: {
+          tag: "prim",
+          prim: "i32.add",
+          args: [
+            { tag: "var", name: "value" },
+            { tag: "num", type: "i32", value: 2 },
+          ],
+          integer: undefined,
+        },
+      },
+    ],
+  });
+});
+
 Deno.test("semantic program lowering preserves source diagnostics", () => {
   const parsed = parse_duck_source("let value = ;\n");
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(analysis.diagnostics.length, 1);
   const lowered = lower_duck_source(analysis);
   assert_equals(diagnostics_of(lowered).length > 0, true);
 });
@@ -39,7 +73,10 @@ Deno.test("Baba parse results cannot be mutated after branding", () => {
 Deno.test("semantic analysis reports prefix-signature association diagnostics", () => {
   const parsed = parse_duck_source("type value = (x: I32) -> I32\n");
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"), true);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"),
+    true,
+  );
 });
 
 Deno.test("semantic analysis extracts and masks source prefix signatures", () => {
@@ -59,7 +96,10 @@ Deno.test("analysis options cannot suppress source prefix signatures", () => {
       "\n",
   );
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"), true);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2601"),
+    true,
+  );
 });
 
 Deno.test("semantic analysis rejects an unsatisfiable literal contract", () => {
@@ -69,7 +109,10 @@ Deno.test("semantic analysis rejects an unsatisfiable literal contract", () => {
       "let f = value => value;\n",
   );
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"), true);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
 });
 
 Deno.test("semantic analysis checks identity postconditions against lambda bodies", () => {
@@ -79,7 +122,10 @@ Deno.test("semantic analysis checks identity postconditions against lambda bodie
       "let f = value => 0;\n",
   );
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"), true);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
 });
 
 Deno.test("semantic analysis alpha-renames contract parameters positionally", () => {
@@ -96,7 +142,10 @@ Deno.test("semantic analysis alpha-renames contract parameters positionally", ()
       "ensures result = value\n" +
       "let f = ignored => value;\n",
   ));
-  assert_equals(rejected.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"), true);
+  assert_equals(
+    rejected.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
 
   const multiple = analyze_duck_source(parse_duck_source(
     "type pair = (first: I32, second: I32) -> (result: I32)\n" +
@@ -113,5 +162,29 @@ Deno.test("semantic analysis rejects unsupported raw postconditions", () => {
       "let f = value => value;\n",
   );
   const analysis = analyze_duck_source(parsed);
-  assert_equals(analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"), true);
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+});
+
+Deno.test("semantic analysis rejects binding semantics not yet lowered from Baba", () => {
+  for (
+    const source of [
+      "let value: Bool = 1;\n",
+      "let !value = 1;\n",
+      "let rec identity = value => value;\n",
+      "let values = [1, 2];\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.message.startsWith(
+          "Baba semantic lowering does not support",
+        )
+      ),
+      true,
+    );
+  }
 });

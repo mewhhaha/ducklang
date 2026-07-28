@@ -623,6 +623,23 @@
         "name": "row_variable"
       }
     },
+    "row_variable": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "lowercase_identifier"
+        },
+        {
+          "type": "STRING",
+          "value": "_"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "underscore_identifier"
+        }
+      ]
+    },
     "effect_operation_reference": {
       "type": "SEQ",
       "members": [
@@ -7554,7 +7571,7 @@
       "type": "TOKEN",
       "content": {
         "type": "PATTERN",
-        "value": "([-!$%&*+\\/<>?@\\\\^|~:][.\\-!$%&*+\\/<=>?@\\\\^|~:]*|=[.\\-!$%&*+\\/<=?@\\\\^|~:][.\\-!$%&*+\\/<=>?@\\\\^|~:]*)"
+        "value": "([-!$%&*+<>?@\\\\^|~:][.\\-!$%&*+\\/<=>?@\\\\^|~:]*|\\/([.\\-!$%&*+<=>?@\\\\^|~:][.\\-!$%&*+\\/<=>?@\\\\^|~:]*)?|=[.\\-!$%&*+\\/<=?@\\\\^|~:][.\\-!$%&*+\\/<=>?@\\\\^|~:]*)"
       }
     },
     "effect_identifier": {
@@ -7568,11 +7585,11 @@
         }
       }
     },
-    "row_variable": {
+    "underscore_identifier": {
       "type": "TOKEN",
       "content": {
         "type": "PATTERN",
-        "value": "[a-z_][A-Za-z0-9_]*"
+        "value": "_[A-Za-z0-9_]+"
       }
     },
     "number": {
@@ -7741,6 +7758,10 @@
     ],
     [
       "type_case"
+    ],
+    [
+      "row_variable",
+      "top_type"
     ]
   ],
   "precedences": [],

@@ -4009,7 +4009,21 @@
   {
     "type": "identifier",
     "named": true,
-    "fields": {}
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "lowercase_identifier",
+          "named": true
+        },
+        {
+          "type": "underscore_identifier",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "if_expression",
@@ -6104,6 +6118,25 @@
     }
   },
   {
+    "type": "row_variable",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "lowercase_identifier",
+          "named": true
+        },
+        {
+          "type": "underscore_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "scratch_expression",
     "named": true,
     "fields": {
@@ -7849,10 +7882,6 @@
     "named": false
   },
   {
-    "type": "row_variable",
-    "named": true
-  },
-  {
     "type": "scalar",
     "named": false
   },
@@ -7895,6 +7924,10 @@
   {
     "type": "type",
     "named": false
+  },
+  {
+    "type": "underscore_identifier",
+    "named": true
   },
   {
     "type": "union",

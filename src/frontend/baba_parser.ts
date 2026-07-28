@@ -159,7 +159,9 @@ function parse_cst_tree(
     const remainder = match[5];
     const label = remainder.trim().replace(/^•/, "").trim();
     const indentation = remainder.length - remainder.trimStart().length;
-    const depth = Math.max(0, indentation - 4);
+    const coordinate_width = line.length - remainder.length;
+    let depth = coordinate_width + indentation;
+    if (remainder.trimStart().startsWith("•")) depth += 1;
     const node: ParsedCstEntry = {
       id: source_node_id(label, start, end, entries.length),
       kind: cst_kind(label),
@@ -211,9 +213,9 @@ function cst_kind(label: string): string {
   }
   const field_separator = label.indexOf(": ");
   if (field_separator >= 0) {
-    return label.slice(field_separator + 2);
+    label = label.slice(field_separator + 2);
   }
-  return label;
+  return label.replace(/^•/, "").trim();
 }
 
 function source_node_id(

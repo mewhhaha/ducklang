@@ -2,23 +2,40 @@ import type { Core } from "../core/ast.ts";
 import { core_from_source } from "../core/from_source.ts";
 import {
   compiler_diagnostic,
-  diagnostic_codes,
   type CompilerDiagnostic,
+  diagnostic_codes,
+  diagnostic_sequence,
 } from "../diagnostic.ts";
 import { expect } from "../expect.ts";
-import { diagnostics_of, fail, ok, type Checked } from "./checked.ts";
 import {
-  is_trusted_baba_parse_result,
+  type Checked,
+  checked_value,
+  diagnostics_of,
+  fail,
+  ok,
+} from "./checked.ts";
+import {
   type BabaCstNode,
   type BabaParseResult,
+  is_trusted_baba_parse_result,
 } from "./baba_parser.ts";
 import type { Source as SourceNode } from "./ast.ts";
 import {
-  Source,
-  type SourceAnalysis,
-  type SourceAnalyzeOptions,
-} from "./source.ts";
-import { source_span, type SourceSpan } from "./syntax.ts";
+  analyze_baba_semantics,
+  type BabaSemanticAnalyzeOptions,
+} from "./baba_analyze.ts";
+import { lower_baba_source } from "./baba_lower.ts";
+import { source_with_host_interface } from "./host_interface.ts";
+import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
+import {
+  make_source_syntax,
+  mark_source_span,
+  mark_source_syntax,
+  source_span,
+  type SourceSpan,
+  type SourceSyntax,
+  type SyntaxDiagnostic,
+} from "./syntax.ts";
 import {
   SemanticIdentityAllocator,
   type SemanticOrigin,
@@ -41,11 +58,18 @@ export type KernelCertificateIndex = ReadonlyMap<string, KernelCertificate>;
 export type SourceOriginIndex = ReadonlyMap<ValueId, SemanticOrigin>;
 export type FunctionFactIndex = ReadonlyMap<string, FunctionFactSummary>;
 
+export type DuckSourceAnalysis = {
+  source: SourceNode;
+  syntax: SourceSyntax;
+  syntax_diagnostics: SyntaxDiagnostic[];
+  diagnostics: SourceDiagnostic[];
+};
+
 export type DuckAnalysis = {
   parsed: BabaParseResult;
   source: SourceNode;
-  source_analysis: SourceAnalysis;
-  diagnostics: readonly SourceAnalysis["diagnostics"][number][];
+  source_analysis: DuckSourceAnalysis;
+  diagnostics: readonly SourceDiagnostic[];
   symbols: SemanticSymbolIndex;
   types: SemanticTypeIndex;
   facts: RefinementIndex;
@@ -64,7 +88,10 @@ export type DuckSemanticProgram = {
   function_summaries: FunctionFactIndex;
 };
 
-export type DuckAnalyzeOptions = SourceAnalyzeOptions;
+export type DuckAnalyzeOptions = BabaSemanticAnalyzeOptions & {
+  host_interface?: SourceNode;
+  uri?: string;
+};
 
 class FrozenMap<Key, Value> implements ReadonlyMap<Key, Value> {
   readonly #entries: Map<Key, Value>;
@@ -98,7 +125,9 @@ class FrozenMap<Key, Value> implements ReadonlyMap<Key, Value> {
     return this.#entries.values();
   }
 
-  forEach(callback: (value: Value, key: Key, map: ReadonlyMap<Key, Value>) => void): void {
+  forEach(
+    callback: (value: Value, key: Key, map: ReadonlyMap<Key, Value>) => void,
+  ): void {
     this.#entries.forEach((value, key) => callback(value, key, this));
   }
 
@@ -113,9 +142,46 @@ export function analyze_duck_source(
 ): DuckAnalysis {
   const stable_input = snapshot_baba_parse_result(parsed);
   const source_metadata = extract_prefix_source_metadata(stable_input);
-  const source_analysis = Source.analyze(source_metadata.masked_source, options);
+  const lowering = lower_baba_source(stable_input);
+  const lowering_diagnostics = diagnostics_of(lowering);
+  let source = checked_value(lowering);
+  if (source === undefined) {
+    source = { tag: "program", statements: [] };
+    mark_source_span(source, { start: 0, end: stable_input.cst.text.length });
+  }
+  const syntax = make_source_syntax(
+    stable_input.cst.text,
+    [],
+    stable_input.diagnostics,
+  );
+  mark_source_syntax(source, syntax);
+  let analysis_source = source;
+  if (options.host_interface !== undefined) {
+    analysis_source = source_with_host_interface(
+      analysis_source,
+      options.host_interface,
+    );
+  }
+  let semantic_diagnostics: SourceDiagnostic[] = [];
+  if (
+    stable_input.diagnostics.length === 0 &&
+    lowering_diagnostics.length === 0
+  ) {
+    semantic_diagnostics = analyze_baba_semantics(
+      analysis_source,
+      options,
+    );
+  }
+  const source_analysis: DuckSourceAnalysis = {
+    source: analysis_source,
+    syntax,
+    syntax_diagnostics: [...stable_input.diagnostics],
+    diagnostics: diagnostic_sequence(semantic_diagnostics, options.uri),
+  };
   const prefix_signatures: PrefixSignature[] = [...source_metadata.signatures];
-  const prefix_definitions: PrefixDefinition[] = [...source_metadata.definitions];
+  const prefix_definitions: PrefixDefinition[] = [
+    ...source_metadata.definitions,
+  ];
   // Definitions are syntax-owned. Caller-supplied metadata must not be able
   // to manufacture a matching definition and suppress a source diagnostic.
   const signature_diagnostics = diagnostics_of(
@@ -152,6 +218,7 @@ export function analyze_duck_source(
         )
       ),
       ...source_analysis.diagnostics,
+      ...lowering_diagnostics,
       ...signature_diagnostics,
       ...contract_diagnostics,
     ],
@@ -185,7 +252,8 @@ function validate_prefix_contracts(
         continue;
       }
       const metadata_definition = definitions.find((definition) =>
-        definition.name === signature.name && definition.scope === signature.scope &&
+        definition.name === signature.name &&
+        definition.scope === signature.scope &&
         definition.span.start >= signature.span.end
       );
       if (metadata_definition === undefined) continue;
@@ -217,22 +285,33 @@ function validate_prefix_contracts(
       }
       const parameter_pattern = /(?:^|,)\s*([A-Za-z][A-Za-z0-9_]*)\s*:/g;
       let parameter_match: RegExpExecArray | null;
-      while ((parameter_match = parameter_pattern.exec(parameter_group)) !== null) {
+      while (
+        (parameter_match = parameter_pattern.exec(parameter_group)) !== null
+      ) {
         const parameter_name = parameter_match[1];
         if (parameter_name !== undefined) {
           signature_parameters.push(parameter_name);
         }
       }
-      const lambda = definition_text.match(/=\s*(?:\(([^)]*)\)|([A-Za-z][A-Za-z0-9_]*))\s*=>\s*([A-Za-z][A-Za-z0-9_]*)\s*;?\s*$/);
+      const lambda = definition_text.match(
+        /=\s*(?:\(([^)]*)\)|([A-Za-z][A-Za-z0-9_]*))\s*=>\s*([A-Za-z][A-Za-z0-9_]*)\s*;?\s*$/,
+      );
       let establishes = false;
       if (lambda !== null) {
         let lambda_parameter_text = lambda[1];
-        if (lambda_parameter_text === undefined) lambda_parameter_text = lambda[2];
+        if (lambda_parameter_text === undefined) {
+          lambda_parameter_text = lambda[2];
+        }
         if (lambda_parameter_text === undefined) lambda_parameter_text = "";
-        const lambda_parameters = lambda_parameter_text.split(",").map((parameter) => parameter.trim()).filter((parameter) => parameter.length > 0);
+        const lambda_parameters = lambda_parameter_text.split(",").map((
+          parameter,
+        ) => parameter.trim()).filter((parameter) => parameter.length > 0);
         const result_name = lambda[3];
         const expected_index = signature_parameters.indexOf(equality[1]);
-        if (result_name !== undefined && expected_index >= 0 && lambda_parameters[expected_index] === result_name) {
+        if (
+          result_name !== undefined && expected_index >= 0 &&
+          lambda_parameters[expected_index] === result_name
+        ) {
           establishes = true;
         }
       }
@@ -260,17 +339,32 @@ function freeze_symbol_index(
 }
 
 function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
-  expect(is_trusted_baba_parse_result(parsed), "Baba parse result is not trusted by the parser boundary.");
-  expect(parsed !== null && typeof parsed === "object", "Baba parse result must be an object.");
+  expect(
+    is_trusted_baba_parse_result(parsed),
+    "Baba parse result is not trusted by the parser boundary.",
+  );
+  expect(
+    parsed !== null && typeof parsed === "object",
+    "Baba parse result must be an object.",
+  );
   require_own_data(parsed, "tokens");
   require_own_data(parsed, "diagnostics");
   require_own_data(parsed, "cst");
-  expect(typeof parsed.cst === "object" && parsed.cst !== null, "Baba CST must be an object.");
+  expect(
+    typeof parsed.cst === "object" && parsed.cst !== null,
+    "Baba CST must be an object.",
+  );
   require_own_data(parsed.cst, "text");
   require_own_data(parsed.cst, "tree");
   require_own_data(parsed.cst, "root");
-  expect(typeof parsed.cst.text === "string", "Baba CST text must be a string.");
-  expect(typeof parsed.cst.tree === "string", "Baba CST tree must be a string.");
+  expect(
+    typeof parsed.cst.text === "string",
+    "Baba CST text must be a string.",
+  );
+  expect(
+    typeof parsed.cst.tree === "string",
+    "Baba CST tree must be a string.",
+  );
   assert_plain_array(parsed.tokens, "Baba tokens");
   assert_plain_array(parsed.diagnostics, "Baba diagnostics");
   let root: BabaCstNode | undefined;
@@ -283,10 +377,16 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
       parsed.cst.text.length,
     );
   } else {
-    expect(parsed.cst.text.trim().length === 0, "Non-empty Baba input must have a CST root.");
+    expect(
+      parsed.cst.text.trim().length === 0,
+      "Non-empty Baba input must have a CST root.",
+    );
   }
   if (root !== undefined) {
-    expect(root.start === 0 && root.end === parsed.cst.text.length, "Baba CST root must cover the complete source.");
+    expect(
+      root.start === 0 && root.end === parsed.cst.text.length,
+      "Baba CST root must cover the complete source.",
+    );
   }
   const tokens: BabaParseResult["tokens"] = [];
   for (let index = 0; index < parsed.tokens.length; index += 1) {
@@ -295,9 +395,19 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
     require_own_data(token, "text");
     require_own_data(token, "start");
     require_own_data(token, "end");
-    expect(Number.isSafeInteger(token.start) && token.start >= 0 && token.start <= parsed.cst.text.length, "Baba token start is outside source text.");
-    expect(Number.isSafeInteger(token.end) && token.end >= token.start && token.end <= parsed.cst.text.length, "Baba token end is outside source text.");
-    tokens.push(Object.freeze({ text: token.text, start: token.start, end: token.end }));
+    expect(
+      Number.isSafeInteger(token.start) && token.start >= 0 &&
+        token.start <= parsed.cst.text.length,
+      "Baba token start is outside source text.",
+    );
+    expect(
+      Number.isSafeInteger(token.end) && token.end >= token.start &&
+        token.end <= parsed.cst.text.length,
+      "Baba token end is outside source text.",
+    );
+    tokens.push(
+      Object.freeze({ text: token.text, start: token.start, end: token.end }),
+    );
   }
   const diagnostics: BabaParseResult["diagnostics"] = [];
   for (let index = 0; index < parsed.diagnostics.length; index += 1) {
@@ -307,11 +417,24 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
     require_own_data(diagnostic, "span");
     require_own_data(diagnostic.span, "start");
     require_own_data(diagnostic.span, "end");
-    expect(Number.isSafeInteger(diagnostic.span.start) && diagnostic.span.start >= 0 && diagnostic.span.start <= parsed.cst.text.length, "Baba diagnostic start is outside source text.");
-    expect(Number.isSafeInteger(diagnostic.span.end) && diagnostic.span.end >= diagnostic.span.start && diagnostic.span.end <= parsed.cst.text.length, "Baba diagnostic end is outside source text.");
+    expect(
+      Number.isSafeInteger(diagnostic.span.start) &&
+        diagnostic.span.start >= 0 &&
+        diagnostic.span.start <= parsed.cst.text.length,
+      "Baba diagnostic start is outside source text.",
+    );
+    expect(
+      Number.isSafeInteger(diagnostic.span.end) &&
+        diagnostic.span.end >= diagnostic.span.start &&
+        diagnostic.span.end <= parsed.cst.text.length,
+      "Baba diagnostic end is outside source text.",
+    );
     diagnostics.push(Object.freeze({
       message: diagnostic.message,
-      span: Object.freeze({ start: diagnostic.span.start, end: diagnostic.span.end }),
+      span: Object.freeze({
+        start: diagnostic.span.start,
+        end: diagnostic.span.end,
+      }),
     }));
   }
   return Object.freeze({
@@ -334,18 +457,30 @@ function snapshot_cst_node(
   depth = 0,
 ): BabaCstNode {
   expect(depth <= 4096, "Baba CST is too deep.");
-  expect(node !== null && typeof node === "object", "Baba CST node must be an object.");
+  expect(
+    node !== null && typeof node === "object",
+    "Baba CST node must be an object.",
+  );
   require_own_data(node, "id");
   require_own_data(node, "kind");
   require_own_data(node, "start");
   require_own_data(node, "end");
   require_own_data(node, "children");
-  expect(typeof node.id === "string" && node.id.length > 0, "Baba CST node ID must not be empty.");
+  expect(
+    typeof node.id === "string" && node.id.length > 0,
+    "Baba CST node ID must not be empty.",
+  );
   expect(!ids.has(node.id), `Duplicate Baba CST node ID ${node.id}.`);
   ids.add(node.id);
   expect(typeof node.kind === "string", "Baba CST node kind must be a string.");
-  expect(Number.isSafeInteger(node.start) && node.start >= 0, "Baba CST node start must be a nonnegative integer.");
-  expect(Number.isSafeInteger(node.end) && node.end >= node.start, "Baba CST node end must follow start.");
+  expect(
+    Number.isSafeInteger(node.start) && node.start >= 0,
+    "Baba CST node start must be a nonnegative integer.",
+  );
+  expect(
+    Number.isSafeInteger(node.end) && node.end >= node.start,
+    "Baba CST node end must follow start.",
+  );
   expect(node.end <= source_length, "Baba CST node exceeds source text.");
   assert_plain_array(node.children, "Baba CST children");
   expect(!active.has(node), "Cyclic Baba CST node.");
@@ -356,7 +491,9 @@ function snapshot_cst_node(
   for (let index = 0; index < node.children.length; index += 1) {
     const child = node.children[index];
     expect(child !== undefined, "Baba CST children cannot contain holes.");
-    children.push(snapshot_cst_node(child, active, seen, ids, source_length, depth + 1));
+    children.push(
+      snapshot_cst_node(child, active, seen, ids, source_length, depth + 1),
+    );
   }
   active.delete(node);
   return Object.freeze({
@@ -369,23 +506,43 @@ function snapshot_cst_node(
 }
 
 function require_own_data(value: object, key: string): void {
-  expect(Object.prototype.hasOwnProperty.call(value, key), `Missing Baba property ${key}.`);
+  expect(
+    Object.prototype.hasOwnProperty.call(value, key),
+    `Missing Baba property ${key}.`,
+  );
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  expect(descriptor !== undefined && descriptor.get === undefined && descriptor.set === undefined, `Baba property ${key} must be an own data property.`);
+  expect(
+    descriptor !== undefined && descriptor.get === undefined &&
+      descriptor.set === undefined,
+    `Baba property ${key} must be an own data property.`,
+  );
 }
 
 function assert_plain_array(value: readonly unknown[], label: string): void {
   expect(Array.isArray(value), `${label} must be an array.`);
-  expect(Object.getPrototypeOf(value) === Array.prototype, `${label} must be an ordinary array.`);
+  expect(
+    Object.getPrototypeOf(value) === Array.prototype,
+    `${label} must be an ordinary array.`,
+  );
   const keys = Reflect.ownKeys(value);
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
-    expect(key !== undefined && typeof key === "string", `${label} cannot contain symbol properties.`);
+    expect(
+      key !== undefined && typeof key === "string",
+      `${label} cannot contain symbol properties.`,
+    );
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    expect(descriptor !== undefined && descriptor.get === undefined && descriptor.set === undefined, `${label} cannot contain accessor properties.`);
+    expect(
+      descriptor !== undefined && descriptor.get === undefined &&
+        descriptor.set === undefined,
+      `${label} cannot contain accessor properties.`,
+    );
   }
   for (let index = 0; index < value.length; index += 1) {
-    expect(Object.getOwnPropertyDescriptor(value, String(index)) !== undefined, `${label} cannot contain holes.`);
+    expect(
+      Object.getOwnPropertyDescriptor(value, String(index)) !== undefined,
+      `${label} cannot contain holes.`,
+    );
   }
 }
 
@@ -443,7 +600,10 @@ function find_covering_node(
   let best: BabaCstNode = node;
   for (const child of node.children) {
     const candidate = find_covering_node(child, span);
-    if (candidate !== undefined && candidate.end - candidate.start < best.end - best.start) {
+    if (
+      candidate !== undefined &&
+      candidate.end - candidate.start < best.end - best.start
+    ) {
       best = candidate;
     }
   }
@@ -451,7 +611,7 @@ function find_covering_node(
 }
 
 function has_error_diagnostics(
-  diagnostics: readonly SourceAnalysis["diagnostics"][number][],
+  diagnostics: readonly SourceDiagnostic[],
 ): boolean {
   return diagnostics.some((diagnostic) => diagnostic.severity === "error");
 }

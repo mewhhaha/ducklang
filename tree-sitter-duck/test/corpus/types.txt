@@ -191,7 +191,8 @@ let unit: () -> Text = () => ();
                             left: (effect_family_reference
                               effect: (effect_identifier))
                             right: (effect_row_variable
-                              name: (row_variable)))))
+                              name: (row_variable
+                                (lowercase_identifier))))))
                       result: (type_union
                         (type_intersection
                           (type_difference
@@ -199,7 +200,8 @@ let unit: () -> Text = () => ();
         effects: (latent_effect_row
           row: (effect_row
             (effect_row_variable
-              name: (row_variable))))
+              name: (row_variable
+                (lowercase_identifier)))))
         result: (type_union
           (type_intersection
             (type_difference
@@ -440,7 +442,8 @@ end;
           (type_intersection
             (type_difference
               (atom_type
-                (identifier)))))
+                (identifier
+                  (lowercase_identifier))))))
         (type_intersection
           (type_difference
             (type_difference
@@ -475,14 +478,17 @@ end;
           (type_intersection
             (type_difference
               (atom_type
-                (identifier)))))
+                (identifier
+                  (lowercase_identifier))))))
         (type_intersection
           (type_difference
             (atom_type
-              (identifier))))))
+              (identifier
+                (lowercase_identifier)))))))
     (postfix_expression
       (atom_expression
-        (identifier))))
+        (identifier
+          (lowercase_identifier)))))
   (binding_statement
     (identifier)
     (type_reference
@@ -505,7 +511,8 @@ end;
               (type_intersection
                 (type_difference
                   (atom_type
-                    (identifier))))))))
+                    (identifier
+                      (lowercase_identifier)))))))))
       (conditional_branch
         (expression_statement
           (postfix_expression

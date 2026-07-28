@@ -113,6 +113,10 @@
     ],
     [
       "type_case"
+    ],
+    [
+      "row_variable",
+      "top_type"
     ]
   ],
   "inline": [

@@ -160,6 +160,7 @@ export type {
   DuckAnalysis,
   DuckAnalyzeOptions,
   DuckSemanticProgram,
+  DuckSourceAnalysis,
   FunctionFactIndex,
   KernelCertificateIndex,
   RefinementIndex,

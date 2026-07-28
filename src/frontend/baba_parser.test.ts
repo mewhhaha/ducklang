@@ -28,6 +28,26 @@ Deno.test("Baba CST IDs and token spans are deterministic", () => {
   );
 });
 
+Deno.test("Baba CST preserves sibling statements with different coordinate widths", () => {
+  const parsed = parse_duck_source(
+    "let value = 1;\n" +
+      "value + 2\n",
+  );
+  assert_equals(
+    parsed.cst.root?.children.map((child) => child.kind),
+    ["binding_statement", "expression_statement"],
+  );
+
+  const recovered = parse_duck_source(
+    "let broken = ;\n" +
+      "let good = 1;\n",
+  );
+  assert_equals(
+    recovered.cst.root?.children.map((child) => child.kind),
+    ["binding_statement", "binding_statement"],
+  );
+});
+
 Deno.test("Baba diagnostics identify a local recovery node", () => {
   const parsed = parse_duck_source("stored ( ;\nlet ok = 1;\n");
 

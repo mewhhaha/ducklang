@@ -28,7 +28,8 @@ const answer = 42;
               (identifier)))))
       (postfix_expression
         (atom_expression
-          name: (identifier))))
+          name: (identifier
+            (lowercase_identifier)))))
     name: (identifier)
     value: (postfix_expression
       (number))))
