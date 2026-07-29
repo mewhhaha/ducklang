@@ -7,6 +7,7 @@ import {
   KernelEnvironment,
   type KernelType,
   prop_sort,
+  term_equal,
   type_assignable,
   type_equal,
   type_sort,
@@ -104,6 +105,22 @@ Deno.test("kernel checks a typed de Bruijn identity", () => {
     domain: type_sort(0),
     codomain: type_sort(0),
   });
+});
+
+Deno.test("kernel term conversion beta-reduces typed applications", () => {
+  const context: KernelType[] = [type_sort(0)];
+  const variable = { tag: "var" as const, index: 0 };
+  const applied_identity = {
+    tag: "app" as const,
+    function: {
+      tag: "lam" as const,
+      domain: type_sort(0),
+      body: { tag: "var" as const, index: 0 },
+    },
+    argument: variable,
+  };
+
+  assert_equals(term_equal(variable, applied_identity, context), true);
 });
 
 Deno.test("kernel constants require a matching trusted declaration", () => {

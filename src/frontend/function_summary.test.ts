@@ -1,10 +1,17 @@
-import { assert_throws } from "../assert.ts";
-import { check_proof, true_proposition, type Proposition } from "./proof_kernel.ts";
+import { assert_equals, assert_throws } from "../assert.ts";
+import {
+  check_proof,
+  type Proposition,
+  true_proposition,
+} from "./proof_kernel.ts";
 import {
   check_contract_compatibility,
   type ContractCompatibilityCertificates,
   type ContractFunction,
+  type FunctionFactSummary,
+  summary_matches,
 } from "./function_summary.ts";
+import { KernelEnvironment, type_sort } from "./kernel_terms.ts";
 
 function identity_implication(proposition: Proposition) {
   return check_proof(
@@ -47,7 +54,9 @@ function implies_true(premise: Proposition) {
   );
 }
 
-function function_contract(overrides: Partial<ContractFunction> = {}): ContractFunction {
+function function_contract(
+  overrides: Partial<ContractFunction> = {},
+): ContractFunction {
   const summary = {
     requires: true_proposition,
     ensures: true_proposition,
@@ -55,7 +64,15 @@ function function_contract(overrides: Partial<ContractFunction> = {}): ContractF
     ensures_when_false: true_proposition,
     total: false,
     safety: { tag: "safe" as const },
-    certificate: summary_certificate(true_proposition, true_proposition, true_proposition),
+    certificate: summary_certificate(
+      true_proposition,
+      true_proposition,
+      true_proposition,
+    ),
+    proof_context: {
+      environment: KernelEnvironment.empty(),
+      term_context: [],
+    },
   };
   return {
     parameters: [{ name: "value", type: "I32" }],
@@ -120,7 +137,12 @@ Deno.test("contract compatibility rejects unsafe actual functions", () => {
     },
   });
   assert_throws(
-    () => check_contract_compatibility(expected, actual, compatibility_certificates()),
+    () =>
+      check_contract_compatibility(
+        expected,
+        actual,
+        compatibility_certificates(),
+      ),
     "A safe contract cannot accept an unsafe function.",
   );
 });
@@ -144,7 +166,12 @@ Deno.test("contract compatibility requires total actual functions", () => {
     summary: { ...function_contract().summary, total: true },
   });
   assert_throws(
-    () => check_contract_compatibility(expected, function_contract(), compatibility_certificates()),
+    () =>
+      check_contract_compatibility(
+        expected,
+        function_contract(),
+        compatibility_certificates(),
+      ),
     "A total contract requires a total function.",
   );
 });
@@ -169,7 +196,12 @@ Deno.test("contract summaries reject unsafe guarantee certificates marked safe",
     },
   });
   assert_throws(
-    () => check_contract_compatibility(function_contract(), actual, compatibility_certificates()),
+    () =>
+      check_contract_compatibility(
+        function_contract(),
+        actual,
+        compatibility_certificates(),
+      ),
     "Kernel certificate depends on unsafe evidence.",
   );
 });
@@ -183,7 +215,12 @@ Deno.test("contract summaries require certificates for both result branches", ()
     },
   });
   assert_throws(
-    () => check_contract_compatibility(function_contract(), actual, compatibility_certificates()),
+    () =>
+      check_contract_compatibility(
+        function_contract(),
+        actual,
+        compatibility_certificates(),
+      ),
     "Kernel certificate does not establish the requested proposition.",
   );
 });
@@ -201,14 +238,64 @@ Deno.test("contract validation does not trust array iteration hooks", () => {
       },
     });
     assert_throws(
-      () => check_contract_compatibility(
-        function_contract({ parameters }),
-        function_contract({ parameters: [] }),
-        compatibility_certificates(),
-      ),
+      () =>
+        check_contract_compatibility(
+          function_contract({ parameters }),
+          function_contract({ parameters: [] }),
+          compatibility_certificates(),
+        ),
       "Contract parameters cannot contain symbol properties.",
     );
   } finally {
     Array.prototype[Symbol.iterator] = original_iterator;
   }
+});
+
+Deno.test("contract summaries compare typed equality in their proof context", () => {
+  const term = { tag: "var" as const, index: 0 };
+  const equality: Proposition = {
+    tag: "equal",
+    type: type_sort(0),
+    left: term,
+    right: term,
+  };
+  const environment = KernelEnvironment.empty();
+  const term_context = [type_sort(0)];
+  const goal: Proposition = {
+    tag: "and",
+    left: equality,
+    right: {
+      tag: "and",
+      left: true_proposition,
+      right: true_proposition,
+    },
+  };
+  const summary: FunctionFactSummary = {
+    requires: true_proposition,
+    ensures: equality,
+    ensures_when_true: true_proposition,
+    ensures_when_false: true_proposition,
+    total: true,
+    safety: { tag: "safe" },
+    certificate: check_proof(
+      {
+        tag: "and_intro",
+        left: { tag: "refl", type: type_sort(0), term },
+        right: {
+          tag: "and_intro",
+          left: { tag: "true_intro" },
+          right: { tag: "true_intro" },
+        },
+      },
+      goal,
+      {
+        allow_unsafe: false,
+        environment,
+        term_context,
+      },
+    ),
+    proof_context: { environment, term_context },
+  };
+
+  assert_equals(summary_matches(summary, summary), true);
 });

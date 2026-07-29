@@ -88,6 +88,8 @@ type StableKernelDefinition =
     value: KernelType;
   };
 
+let empty_kernel_environment: KernelEnvironment | undefined;
+
 export class KernelEnvironment {
   readonly #definitions: ReadonlyMap<string, StableKernelDefinition>;
   readonly #module: string | undefined;
@@ -106,11 +108,14 @@ export class KernelEnvironment {
     OBJECT_FREEZE(this);
   }
   static empty(): KernelEnvironment {
-    return new KernelEnvironment(
-      KERNEL_ENVIRONMENT_TOKEN,
-      new MAP_CONSTRUCTOR(),
-      undefined,
-    );
+    if (empty_kernel_environment === undefined) {
+      empty_kernel_environment = new KernelEnvironment(
+        KERNEL_ENVIRONMENT_TOKEN,
+        new MAP_CONSTRUCTOR(),
+        undefined,
+      );
+    }
+    return empty_kernel_environment;
   }
   static from(
     declarations: ReadonlyMap<string, KernelType>,
@@ -519,6 +524,30 @@ function infer_term_at(
   }
 }
 
+export function snapshot_kernel_type(type: KernelType): KernelType {
+  return snapshot_type(
+    type,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    { nodes: 0 },
+  );
+}
+
+export function snapshot_kernel_term(term: KernelTerm): KernelTerm {
+  return snapshot_term(
+    term,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    { nodes: 0 },
+  );
+}
+
+export function snapshot_kernel_context(
+  context: KernelContext,
+): KernelContext {
+  return snapshot_context(context);
+}
+
 export function check_term(
   term: KernelTerm,
   expected: KernelType,
@@ -561,6 +590,85 @@ export function check_term(
     ),
     "Kernel term does not have the expected type.",
   );
+}
+
+export function term_equal(
+  left: KernelTerm,
+  right: KernelTerm,
+  context: KernelContext = [],
+  environment: KernelEnvironment = KernelEnvironment.empty(),
+): boolean {
+  expect(
+    REFLECT_APPLY(WEAK_SET_HAS, trusted_kernel_environments, [environment]),
+    "Kernel environment is not sealed by the kernel.",
+  );
+  const snapshot_budget: KernelSnapshotBudget = { nodes: 0 };
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  const stable_context = snapshot_context(context, snapshot_budget);
+  const stable_left = snapshot_term(
+    left,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    snapshot_budget,
+  );
+  const stable_right = snapshot_term(
+    right,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    snapshot_budget,
+  );
+  validate_context_at(stable_context, environment, computation);
+  const left_type = infer_term_at(
+    stable_left,
+    stable_context,
+    environment,
+    computation,
+  );
+  const right_type = infer_term_at(
+    stable_right,
+    stable_context,
+    environment,
+    computation,
+  );
+  if (!type_equal_at(left_type, right_type, environment, computation)) {
+    return false;
+  }
+  return type_equal_at(
+    term_as_type_expression(stable_left, computation),
+    term_as_type_expression(stable_right, computation),
+    environment,
+    computation,
+  );
+}
+
+export function kernel_context_equal(
+  left: KernelContext,
+  right: KernelContext,
+  environment: KernelEnvironment = KernelEnvironment.empty(),
+): boolean {
+  expect(
+    REFLECT_APPLY(WEAK_SET_HAS, trusted_kernel_environments, [environment]),
+    "Kernel environment is not sealed by the kernel.",
+  );
+  const snapshot_budget: KernelSnapshotBudget = { nodes: 0 };
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  const stable_left = snapshot_context(left, snapshot_budget);
+  const stable_right = snapshot_context(right, snapshot_budget);
+  validate_context_at(stable_left, environment, computation);
+  validate_context_at(stable_right, environment, computation);
+  if (stable_left.length !== stable_right.length) return false;
+  for (let index = 0; index < stable_left.length; index += 1) {
+    const left_type = stable_left[index];
+    const right_type = stable_right[index];
+    expect(
+      left_type !== undefined && right_type !== undefined,
+      `Kernel context entry ${index} is missing.`,
+    );
+    if (!type_equal_at(left_type, right_type, environment, computation)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function type_equal(

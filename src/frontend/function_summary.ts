@@ -1,11 +1,20 @@
 import {
   check_certificate,
+  check_proposition_formation,
   type KernelCertificate,
   proposition_equal,
   type Proposition,
   type ProofSafety,
 } from "./proof_kernel.ts";
 import { expect } from "../expect.ts";
+import {
+  type KernelContext,
+  kernel_context_equal,
+  KernelEnvironment,
+  type KernelTerm,
+  type KernelType,
+  snapshot_kernel_context,
+} from "./kernel_terms.ts";
 
 export type FunctionFactSummary = {
   requires: Proposition;
@@ -15,6 +24,12 @@ export type FunctionFactSummary = {
   total: boolean;
   safety: ProofSafety;
   certificate: KernelCertificate;
+  proof_context: FunctionProofContext;
+};
+
+export type FunctionProofContext = {
+  environment: KernelEnvironment;
+  term_context: KernelContext;
 };
 
 export type ContractBinder = {
@@ -76,6 +91,19 @@ export function check_contract_compatibility(
       "A safe contract cannot accept an unsafe function.",
     );
   }
+  expect(
+    stable_expected.summary.proof_context.environment ===
+      stable_actual.summary.proof_context.environment,
+    "Contract functions belong to different proof environments.",
+  );
+  expect(
+    kernel_context_equal(
+      stable_expected.summary.proof_context.term_context,
+      stable_actual.summary.proof_context.term_context,
+      stable_expected.summary.proof_context.environment,
+    ),
+    "Contract functions belong to different proof contexts.",
+  );
 
   const substitutions = new Map<string, string>();
   for (let index = 0; index < stable_expected.parameters.length; index += 1) {
@@ -107,7 +135,7 @@ export function check_contract_compatibility(
   check_certificate(
     stable_certificates.requires,
     implication(stable_expected.summary.requires, actual_requires),
-    { require_safe: stable_expected.summary.safety.tag === "safe" },
+    certificate_options(stable_expected.summary),
   );
   check_certificate(
     stable_certificates.ensures,
@@ -115,7 +143,7 @@ export function check_contract_compatibility(
       stable_expected.summary.requires,
       implication(actual_ensures, stable_expected.summary.ensures),
     ),
-    { require_safe: stable_expected.summary.safety.tag === "safe" },
+    certificate_options(stable_expected.summary),
   );
   check_certificate(
     stable_certificates.ensures_when_true,
@@ -123,7 +151,7 @@ export function check_contract_compatibility(
       stable_expected.summary.requires,
       implication(actual_true, stable_expected.summary.ensures_when_true),
     ),
-    { require_safe: stable_expected.summary.safety.tag === "safe" },
+    certificate_options(stable_expected.summary),
   );
   check_certificate(
     stable_certificates.ensures_when_false,
@@ -131,8 +159,16 @@ export function check_contract_compatibility(
       stable_expected.summary.requires,
       implication(actual_false, stable_expected.summary.ensures_when_false),
     ),
-    { require_safe: stable_expected.summary.safety.tag === "safe" },
+    certificate_options(stable_expected.summary),
   );
+}
+
+function certificate_options(summary: FunctionFactSummary) {
+  return {
+    require_safe: summary.safety.tag === "safe",
+    environment: summary.proof_context.environment,
+    term_context: summary.proof_context.term_context,
+  };
 }
 
 function snapshot_contract_function(function_value: ContractFunction): ContractFunction {
@@ -166,18 +202,33 @@ function snapshot_contract_function(function_value: ContractFunction): ContractF
 
 function snapshot_summary(summary: FunctionFactSummary): FunctionFactSummary {
   assert_plain_record(summary, "Function summary");
-  require_properties(summary, ["requires", "ensures", "ensures_when_true", "ensures_when_false", "total", "safety", "certificate"]);
+  require_properties(summary, ["requires", "ensures", "ensures_when_true", "ensures_when_false", "total", "safety", "certificate", "proof_context"]);
   expect(typeof summary.total === "boolean", "Function summary totality must be boolean.");
   const safety = snapshot_safety(summary.safety);
-  const stable_requires = snapshot_proposition(summary.requires);
-  const stable_ensures = snapshot_proposition(summary.ensures);
-  const stable_true = snapshot_proposition(summary.ensures_when_true);
-  const stable_false = snapshot_proposition(summary.ensures_when_false);
+  const proof_context = snapshot_proof_context(summary.proof_context);
+  const stable_requires = check_proposition_formation(
+    summary.requires,
+    proof_context,
+  );
+  const stable_ensures = check_proposition_formation(
+    summary.ensures,
+    proof_context,
+  );
+  const stable_true = check_proposition_formation(
+    summary.ensures_when_true,
+    proof_context,
+  );
+  const stable_false = check_proposition_formation(
+    summary.ensures_when_false,
+    proof_context,
+  );
   const certificate = check_certificate(
     summary.certificate,
     summary_certificate_goal(stable_ensures, stable_true, stable_false),
     {
     require_safe: safety.tag === "safe",
+    environment: proof_context.environment,
+    term_context: proof_context.term_context,
     },
   );
   return {
@@ -188,6 +239,18 @@ function snapshot_summary(summary: FunctionFactSummary): FunctionFactSummary {
     total: summary.total,
     safety,
     certificate,
+    proof_context,
+  };
+}
+
+function snapshot_proof_context(
+  context: FunctionProofContext,
+): FunctionProofContext {
+  assert_plain_record(context, "Function proof context");
+  require_properties(context, ["environment", "term_context"]);
+  return {
+    environment: context.environment,
+    term_context: snapshot_kernel_context(context.term_context),
   };
 }
 
@@ -205,54 +268,6 @@ function summary_certificate_goal(
       right: ensures_when_false,
     },
   };
-}
-
-function snapshot_proposition(proposition: Proposition, depth = 0): Proposition {
-  expect(depth <= 256, "Contract proposition is too deep.");
-  expect(proposition !== null && typeof proposition === "object", "Contract proposition must be an object.");
-  assert_plain_record(proposition, "Contract proposition");
-  require_own_data(proposition, "tag");
-  switch (proposition.tag) {
-    case "true":
-      return { tag: "true" };
-    case "false":
-      return { tag: "false" };
-    case "atom":
-      require_own_data(proposition, "name");
-      expect(typeof proposition.name === "string" && proposition.name.length > 0, "Contract atom name must not be empty.");
-      return { tag: "atom", name: proposition.name };
-    case "equal":
-      require_own_data(proposition, "left");
-      require_own_data(proposition, "right");
-      expect(typeof proposition.left === "string" && proposition.left.length > 0, "Contract equality left term must not be empty.");
-      expect(typeof proposition.right === "string" && proposition.right.length > 0, "Contract equality right term must not be empty.");
-      return { tag: "equal", left: proposition.left, right: proposition.right };
-    case "and":
-    case "or":
-      require_own_data(proposition, "left");
-      require_own_data(proposition, "right");
-      return {
-        tag: proposition.tag,
-        left: snapshot_proposition(proposition.left, depth + 1),
-        right: snapshot_proposition(proposition.right, depth + 1),
-      };
-    case "implies":
-      require_own_data(proposition, "premise");
-      require_own_data(proposition, "conclusion");
-      return {
-        tag: "implies",
-        premise: snapshot_proposition(proposition.premise, depth + 1),
-        conclusion: snapshot_proposition(proposition.conclusion, depth + 1),
-      };
-    case "not":
-      require_own_data(proposition, "proposition");
-      return {
-        tag: "not",
-        proposition: snapshot_proposition(proposition.proposition, depth + 1),
-      };
-    default:
-      throw new Error("Invalid contract proposition tag.");
-  }
 }
 
 function snapshot_compatibility_certificates(
@@ -341,13 +356,17 @@ function substitute_proposition(
     case "true":
     case "false":
       return proposition;
-    case "atom":
-      return { tag: "atom", name: substitute_term(proposition.name, substitutions) };
+    case "atom": {
+      const replacement = substitutions.get(proposition.name);
+      if (replacement === undefined) return proposition;
+      return { tag: "atom", name: replacement };
+    }
     case "equal":
       return {
         tag: "equal",
-        left: substitute_term(proposition.left, substitutions),
-        right: substitute_term(proposition.right, substitutions),
+        type: substitute_kernel_type(proposition.type, substitutions),
+        left: substitute_kernel_term(proposition.left, substitutions),
+        right: substitute_kernel_term(proposition.right, substitutions),
       };
     case "and":
     case "or":
@@ -370,23 +389,116 @@ function substitute_proposition(
   }
 }
 
-function substitute_term(
-  term: string,
+function substitute_kernel_term(
+  term: KernelTerm,
   substitutions: ReadonlyMap<string, string>,
-): string {
-  const replacement = substitutions.get(term);
-  if (replacement === undefined) return term;
-  return replacement;
+): KernelTerm {
+  switch (term.tag) {
+    case "var":
+      return term;
+    case "constant": {
+      const replacement = substitutions.get(term.name);
+      let name = term.name;
+      if (replacement !== undefined) {
+        name = replacement;
+      }
+      return {
+        tag: "constant",
+        name,
+        type: substitute_kernel_type(term.type, substitutions),
+      };
+    }
+    case "lam":
+      return {
+        tag: "lam",
+        domain: substitute_kernel_type(term.domain, substitutions),
+        body: substitute_kernel_term(term.body, substitutions),
+      };
+    case "app":
+      return {
+        tag: "app",
+        function: substitute_kernel_term(term.function, substitutions),
+        argument: substitute_kernel_term(term.argument, substitutions),
+      };
+  }
+}
+
+function substitute_kernel_type(
+  type: KernelType,
+  substitutions: ReadonlyMap<string, string>,
+): KernelType {
+  switch (type.tag) {
+    case "sort":
+    case "var":
+      return type;
+    case "constant": {
+      const replacement = substitutions.get(type.name);
+      if (replacement === undefined) return type;
+      return { tag: "constant", name: replacement };
+    }
+    case "pi":
+      return {
+        tag: "pi",
+        domain: substitute_kernel_type(type.domain, substitutions),
+        codomain: substitute_kernel_type(type.codomain, substitutions),
+      };
+    case "lam":
+      return {
+        tag: "lam",
+        domain: substitute_kernel_type(type.domain, substitutions),
+        body: substitute_kernel_type(type.body, substitutions),
+      };
+    case "app":
+      return {
+        tag: "app",
+        function: substitute_kernel_type(type.function, substitutions),
+        argument: substitute_kernel_type(type.argument, substitutions),
+      };
+  }
 }
 
 export function summary_matches(
   summary: FunctionFactSummary,
   expected: FunctionFactSummary,
 ): boolean {
-  return proposition_equal(summary.requires, expected.requires) &&
-    proposition_equal(summary.ensures, expected.ensures) &&
-    proposition_equal(summary.ensures_when_true, expected.ensures_when_true) &&
-    proposition_equal(summary.ensures_when_false, expected.ensures_when_false) &&
-    summary.total === expected.total &&
-    summary.safety.tag === expected.safety.tag;
+  const stable_summary = snapshot_summary(summary);
+  const stable_expected = snapshot_summary(expected);
+  if (
+    stable_summary.proof_context.environment !==
+      stable_expected.proof_context.environment
+  ) {
+    return false;
+  }
+  if (
+    !kernel_context_equal(
+      stable_summary.proof_context.term_context,
+      stable_expected.proof_context.term_context,
+      stable_summary.proof_context.environment,
+    )
+  ) {
+    return false;
+  }
+  const options = stable_summary.proof_context;
+  return proposition_equal(
+    stable_summary.requires,
+    stable_expected.requires,
+    options,
+  ) &&
+    proposition_equal(
+      stable_summary.ensures,
+      stable_expected.ensures,
+      options,
+    ) &&
+    proposition_equal(
+      stable_summary.ensures_when_true,
+      stable_expected.ensures_when_true,
+      options,
+    ) &&
+    proposition_equal(
+      stable_summary.ensures_when_false,
+      stable_expected.ensures_when_false,
+      options,
+    ) &&
+    stable_summary.total === stable_expected.total &&
+    stable_summary.safety.tag === stable_expected.safety.tag;
 }

@@ -19,8 +19,10 @@ export {
   value_id_text,
 } from "./frontend/semantic_identity.ts";
 export {
+  certificate_establishes,
   check_certificate,
   check_proof,
+  check_proposition_formation,
   false_proposition,
   format_proposition,
   proposition_equal,
@@ -30,8 +32,13 @@ export {
   check_term,
   check_type,
   infer_term,
+  kernel_context_equal,
   KernelEnvironment,
   prop_sort,
+  snapshot_kernel_context,
+  snapshot_kernel_term,
+  snapshot_kernel_type,
+  term_equal,
   type_assignable,
   type_equal,
   type_sort,
@@ -96,6 +103,8 @@ export type {
   ProofSafety,
   ProofTerm,
   Proposition,
+  PropositionEqualityOptions,
+  PropositionFormationOptions,
 } from "./frontend/proof_kernel.ts";
 export type {
   BindingGeneration,
@@ -138,6 +147,8 @@ export type {
   ComputationalPackage,
   ErasedDecision,
   LogicalDecision,
+  PropositionContext,
+  PropositionContextOptions,
   RepresentationValue,
   SemanticType,
 } from "./frontend/refinement.ts";
@@ -170,6 +181,7 @@ export type {
   ContractCompatibilityCertificates,
   ContractFunction,
   FunctionFactSummary,
+  FunctionProofContext,
 } from "./frontend/function_summary.ts";
 export { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 export type {

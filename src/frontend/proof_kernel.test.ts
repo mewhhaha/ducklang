@@ -1,17 +1,96 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
+  certificate_establishes,
   check_certificate,
   check_proof,
+  type ProofTerm,
   type Proposition,
   proposition_equal,
+  true_proposition,
 } from "./proof_kernel.ts";
+import {
+  KernelEnvironment,
+  type KernelTerm,
+  type KernelType,
+  type_sort,
+} from "./kernel_terms.ts";
 
 const atom: Proposition = { tag: "atom", name: "P" };
+const value_type: KernelType = { tag: "constant", name: "Value" };
+const environment = KernelEnvironment.from_definitions([
+  {
+    tag: "declaration",
+    name: "Value",
+    type: type_sort(0),
+  },
+  {
+    tag: "declaration",
+    name: "value",
+    type: value_type,
+  },
+  {
+    tag: "declaration",
+    name: "x",
+    type: value_type,
+  },
+  {
+    tag: "declaration",
+    name: "y",
+    type: value_type,
+  },
+  {
+    tag: "declaration",
+    name: "wrap",
+    type: {
+      tag: "pi",
+      domain: value_type,
+      codomain: value_type,
+    },
+  },
+]);
+
+function constant(name: string, type: KernelType = value_type): KernelTerm {
+  return { tag: "constant", name, type };
+}
+
+function equal(left: KernelTerm, right: KernelTerm): Proposition {
+  return { tag: "equal", type: value_type, left, right };
+}
+
+function identity_application(argument: KernelTerm): KernelTerm {
+  return {
+    tag: "app",
+    function: {
+      tag: "lam",
+      domain: value_type,
+      body: { tag: "var", index: 0 },
+    },
+    argument,
+  };
+}
+
+const safe_options = { allow_unsafe: false, environment };
+const cumulative_term = { tag: "var" as const, index: 0 };
+const cumulative_goal: Proposition = {
+  tag: "equal",
+  type: type_sort(1),
+  left: cumulative_term,
+  right: cumulative_term,
+};
+const cumulative_options = {
+  allow_unsafe: false,
+  term_context: [type_sort(0)],
+};
+
+function check_cumulative_proof(proof: ProofTerm) {
+  return check_proof(proof, cumulative_goal, cumulative_options);
+}
 
 Deno.test("kernel checks reflexive equality", () => {
   const certificate = check_proof(
-    { tag: "refl", term: "value" },
-    { tag: "equal", left: "value", right: "value" },
+    { tag: "refl", type: value_type, term: constant("value") },
+    equal(constant("value"), constant("value")),
+    safe_options,
   );
 
   assert_equals(certificate.safety, { tag: "safe" });
@@ -21,10 +100,34 @@ Deno.test("kernel checks equality congruence", () => {
   const certificate = check_proof(
     {
       tag: "congr",
-      function: "wrap",
-      proof: { tag: "refl", term: "value" },
+      function: constant("wrap", {
+        tag: "pi",
+        domain: value_type,
+        codomain: value_type,
+      }),
+      proof: { tag: "refl", type: value_type, term: constant("value") },
     },
-    { tag: "equal", left: "wrap(value)", right: "wrap(value)" },
+    equal(
+      {
+        tag: "app",
+        function: constant("wrap", {
+          tag: "pi",
+          domain: value_type,
+          codomain: value_type,
+        }),
+        argument: constant("value"),
+      },
+      {
+        tag: "app",
+        function: constant("wrap", {
+          tag: "pi",
+          domain: value_type,
+          codomain: value_type,
+        }),
+        argument: constant("value"),
+      },
+    ),
+    safe_options,
   );
   assert_equals(certificate.safety, { tag: "safe" });
 });
@@ -33,14 +136,37 @@ Deno.test("kernel congruence preserves non-reflexive equality sides", () => {
   const certificate = check_proof(
     {
       tag: "congr",
-      function: "wrap",
+      function: constant("wrap", {
+        tag: "pi",
+        domain: value_type,
+        codomain: value_type,
+      }),
       proof: {
         tag: "unsafe_assume",
-        proposition: { tag: "equal", left: "x", right: "y" },
+        proposition: equal(constant("x"), constant("y")),
       },
     },
-    { tag: "equal", left: "wrap(x)", right: "wrap(y)" },
-    { allow_unsafe: true },
+    equal(
+      {
+        tag: "app",
+        function: constant("wrap", {
+          tag: "pi",
+          domain: value_type,
+          codomain: value_type,
+        }),
+        argument: constant("x"),
+      },
+      {
+        tag: "app",
+        function: constant("wrap", {
+          tag: "pi",
+          domain: value_type,
+          codomain: value_type,
+        }),
+        argument: constant("y"),
+      },
+    ),
+    { allow_unsafe: true, environment },
   );
   assert_equals(certificate.safety.tag, "unsafe");
 });
@@ -48,16 +174,127 @@ Deno.test("kernel congruence preserves non-reflexive equality sides", () => {
 Deno.test("kernel congruence rejects non-equality proofs", () => {
   assert_throws(
     () =>
-      check_proof({
-        tag: "congr",
-        function: "wrap",
-        proof: { tag: "true_intro" },
-      }, {
-        tag: "equal",
-        left: "wrap(x)",
-        right: "wrap(y)",
-      }),
+      check_proof(
+        {
+          tag: "congr",
+          function: constant("wrap", {
+            tag: "pi",
+            domain: value_type,
+            codomain: value_type,
+          }),
+          proof: { tag: "true_intro" },
+        },
+        equal(constant("x"), constant("y")),
+        safe_options,
+      ),
     "Congruence requires an equality proof.",
+  );
+});
+
+Deno.test("kernel equality uses definitional term conversion", () => {
+  const certificate = check_proof(
+    { tag: "refl", type: value_type, term: constant("x") },
+    equal(constant("x"), identity_application(constant("x"))),
+    safe_options,
+  );
+
+  assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("kernel reflexivity checks against a cumulative equality carrier", () => {
+  const certificate = check_cumulative_proof(
+    { tag: "refl", type: type_sort(1), term: cumulative_term },
+  );
+
+  assert_equals(certificate.proposition, cumulative_goal);
+});
+
+Deno.test("symmetry preserves an explicit cumulative reflexivity carrier", () => {
+  const certificate = check_cumulative_proof({
+    tag: "symm",
+    proof: { tag: "refl", type: type_sort(1), term: cumulative_term },
+  });
+
+  assert_equals(certificate.proposition, cumulative_goal);
+});
+
+Deno.test("transitivity preserves explicit cumulative reflexivity carriers", () => {
+  const reflexivity = {
+    tag: "refl" as const,
+    type: type_sort(1),
+    term: cumulative_term,
+  };
+  const certificate = check_cumulative_proof({
+    tag: "trans",
+    left: reflexivity,
+    right: reflexivity,
+  });
+
+  assert_equals(certificate.proposition, cumulative_goal);
+});
+
+Deno.test("conjunction elimination preserves a cumulative equality carrier", () => {
+  const certificate = check_cumulative_proof({
+    tag: "and_left",
+    proof: {
+      tag: "and_intro",
+      left: { tag: "refl", type: type_sort(1), term: cumulative_term },
+      right: { tag: "true_intro" },
+    },
+  });
+
+  assert_equals(certificate.proposition, cumulative_goal);
+});
+
+Deno.test("implication application preserves a cumulative equality carrier", () => {
+  const certificate = check_cumulative_proof({
+    tag: "implies_apply",
+    function: {
+      tag: "implies_intro",
+      premise: true_proposition,
+      body: { tag: "refl", type: type_sort(1), term: cumulative_term },
+    },
+    argument: { tag: "true_intro" },
+  });
+
+  assert_equals(certificate.proposition, cumulative_goal);
+});
+
+Deno.test("kernel equality transitivity composes converted middle terms", () => {
+  const certificate = check_proof(
+    {
+      tag: "trans",
+      left: {
+        tag: "unsafe_assume",
+        proposition: equal(
+          constant("x"),
+          identity_application(constant("x")),
+        ),
+      },
+      right: { tag: "refl", type: value_type, term: constant("x") },
+    },
+    equal(constant("x"), constant("x")),
+    { allow_unsafe: true, environment },
+  );
+
+  assert_equals(certificate.safety.tag, "unsafe");
+});
+
+Deno.test("kernel rejects equality terms outside their carrier", () => {
+  const malformed: Proposition = {
+    tag: "equal",
+    type: type_sort(0),
+    left: constant("x"),
+    right: constant("x"),
+  };
+  assert_throws(
+    () =>
+      check_proof(
+        { tag: "unsafe_assume", proposition: malformed },
+        malformed,
+        { allow_unsafe: true, environment },
+      ),
+    "Kernel term does not have the expected type.",
   );
 });
 
@@ -169,16 +406,16 @@ Deno.test("kernel rejects malformed proof indices and terms", () => {
   );
   assert_throws(
     () =>
-      check_proof({ tag: "refl", term: "" }, {
-        tag: "equal",
-        left: "",
-        right: "",
-      }),
-    "Equality left term must not be empty.",
+      check_proof(
+        { tag: "refl", type: value_type, term: null as never },
+        equal(constant("value"), constant("value")),
+        safe_options,
+      ),
+    "Invalid kernel term.",
   );
   assert_throws(
     () => check_proof({ tag: "bogus" } as never, atom),
-    "Invalid proof term tag.",
+    "Invalid proof term tag bogus.",
   );
 });
 
@@ -193,6 +430,59 @@ Deno.test("kernel rejects null proof and proposition nodes", () => {
         allow_unsafe: true,
       }),
     "Invalid proposition node.",
+  );
+});
+
+Deno.test("kernel proof boundaries reject accessor-backed inputs", () => {
+  const proof = Object.defineProperty({}, "tag", {
+    get() {
+      return "true_intro";
+    },
+  });
+  const options = Object.defineProperty({}, "allow_unsafe", {
+    get() {
+      return false;
+    },
+  });
+  assert_throws(
+    () => check_proof(proof as never, { tag: "true" }),
+    "Proof properties must be own data properties.",
+  );
+  assert_throws(
+    () =>
+      check_proof(
+        { tag: "true_intro" },
+        { tag: "true" },
+        options as never,
+      ),
+    "Kernel check options properties must be own data properties.",
+  );
+});
+
+Deno.test("kernel proof snapshots reject cycles and oversized dags", () => {
+  const cyclic = { tag: "symm" } as {
+    tag: "symm";
+    proof: typeof cyclic;
+  };
+  cyclic.proof = cyclic;
+  assert_throws(
+    () => check_proof(cyclic, { tag: "true" }),
+    "Proof graph must be acyclic.",
+  );
+
+  let oversized: {
+    tag: "true_intro";
+  } | {
+    tag: "and_intro";
+    left: typeof oversized;
+    right: typeof oversized;
+  } = { tag: "true_intro" };
+  for (let depth = 0; depth < 15; depth += 1) {
+    oversized = { tag: "and_intro", left: oversized, right: oversized };
+  }
+  assert_throws(
+    () => check_proof(oversized, { tag: "true" }),
+    "Proof snapshot exceeded 20000 nodes.",
   );
 });
 
@@ -270,14 +560,15 @@ Deno.test("safe proof boundaries reject unsafe certificates", () => {
 
 Deno.test("kernel certificates are deeply immutable", () => {
   const certificate = check_proof(
-    { tag: "refl", term: "value" },
-    { tag: "equal", left: "value", right: "value" },
+    { tag: "refl", type: value_type, term: constant("value") },
+    equal(constant("value"), constant("value")),
+    safe_options,
   );
   const proposition = certificate.proposition;
 
   assert_throws(
     () => {
-      (proposition as { left: string }).left = "forged";
+      (proposition as { left: KernelTerm }).left = constant("x");
     },
     "Cannot assign to read only property",
   );
@@ -285,11 +576,12 @@ Deno.test("kernel certificates are deeply immutable", () => {
 
 Deno.test("kernel certificate consumers reject forged certificates", () => {
   const certificate = check_proof(
-    { tag: "refl", term: "value" },
-    { tag: "equal", left: "value", right: "value" },
+    { tag: "refl", type: value_type, term: constant("value") },
+    equal(constant("value"), constant("value")),
+    safe_options,
   );
   assert_equals(
-    check_certificate(certificate, certificate.proposition),
+    check_certificate(certificate, certificate.proposition, { environment }),
     certificate,
   );
   assert_throws(
@@ -297,9 +589,38 @@ Deno.test("kernel certificate consumers reject forged certificates", () => {
       check_certificate(
         { proposition: certificate.proposition, safety: { tag: "safe" } },
         certificate.proposition,
+        { environment },
       ),
     "Kernel certificate is not sealed by the proof kernel.",
   );
+});
+
+Deno.test("kernel certificate sealing ignores monkeypatched weak collections", () => {
+  const certificate = check_proof({ tag: "true_intro" }, { tag: "true" });
+  const forged = {
+    proposition: certificate.proposition,
+    safety: certificate.safety,
+  };
+  const original_has = WeakSet.prototype.has;
+  const original_get = WeakMap.prototype.get;
+  try {
+    WeakSet.prototype.has = () => true;
+    WeakMap.prototype.get = () => ({
+      environment,
+      term_context: [],
+    });
+    assert_throws(
+      () => check_certificate(forged, { tag: "true" }),
+      "Kernel certificate is not sealed by the proof kernel.",
+    );
+    assert_equals(
+      check_certificate(certificate, { tag: "true" }),
+      certificate,
+    );
+  } finally {
+    WeakSet.prototype.has = original_has;
+    WeakMap.prototype.get = original_get;
+  }
 });
 
 Deno.test("kernel certificate consumers enforce requested safety and goal", () => {
@@ -315,5 +636,86 @@ Deno.test("kernel certificate consumers enforce requested safety and goal", () =
   assert_throws(
     () => check_certificate(unsafe, { tag: "false" }),
     "Kernel certificate does not establish the requested proposition.",
+  );
+});
+
+Deno.test("kernel certificates compare goals in their checked term context", () => {
+  const contextual_goal: Proposition = {
+    tag: "equal",
+    type: type_sort(0),
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  const contextual = check_proof(
+    { tag: "refl", type: type_sort(0), term: { tag: "var", index: 0 } },
+    contextual_goal,
+    {
+      allow_unsafe: false,
+      term_context: [type_sort(0)],
+    },
+  );
+
+  const context = { term_context: [type_sort(0)] };
+  assert_equals(
+    certificate_establishes(contextual, contextual_goal, context),
+    true,
+  );
+  assert_equals(
+    certificate_establishes(contextual, { tag: "true" }, context),
+    false,
+  );
+});
+
+Deno.test("kernel certificates cannot cross proof environments", () => {
+  function equality_environment(right_value: string) {
+    return KernelEnvironment.from_definitions([
+      {
+        tag: "declaration",
+        name: "V",
+        type: type_sort(0),
+      },
+      {
+        tag: "declaration",
+        name: "a",
+        type: { tag: "constant", name: "V" },
+      },
+      {
+        tag: "declaration",
+        name: "b",
+        type: { tag: "constant", name: "V" },
+      },
+      {
+        tag: "transparent",
+        name: "x",
+        module: "test",
+        type: { tag: "constant", name: "V" },
+        value: { tag: "constant", name: "a" },
+        total: true,
+      },
+      {
+        tag: "transparent",
+        name: "y",
+        module: "test",
+        type: { tag: "constant", name: "V" },
+        value: { tag: "constant", name: right_value },
+        total: true,
+      },
+    ]);
+  }
+  const first = equality_environment("a");
+  const second = equality_environment("b");
+  const carrier: KernelType = { tag: "constant", name: "V" };
+  const left = constant("x", carrier);
+  const right = constant("y", carrier);
+  const goal: Proposition = { tag: "equal", type: carrier, left, right };
+  const certificate = check_proof(
+    { tag: "refl", type: carrier, term: left },
+    goal,
+    { allow_unsafe: false, environment: first },
+  );
+
+  assert_throws(
+    () => check_certificate(certificate, goal, { environment: second }),
+    "Kernel certificate belongs to a different environment.",
   );
 });

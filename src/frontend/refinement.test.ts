@@ -1,5 +1,6 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import { check_proof, type Proposition } from "./proof_kernel.ts";
+import { type_sort } from "./kernel_terms.ts";
 import type { RepresentationType } from "./representation_type.ts";
 import { TypeEngine } from "./type_engine.ts";
 import {
@@ -20,12 +21,34 @@ import {
   yes_decision,
 } from "./refinement.ts";
 
-const proposition: Proposition = { tag: "equal", left: "x", right: "x" };
-const certificate = check_proof({ tag: "refl", term: "x" }, proposition);
+const proposition: Proposition = {
+  tag: "equal",
+  type: type_sort(0),
+  left: { tag: "var", index: 0 },
+  right: { tag: "var", index: 0 },
+};
+const certificate = check_proof(
+  {
+    tag: "refl",
+    type: type_sort(0),
+    term: { tag: "var", index: 0 },
+  },
+  proposition,
+  {
+    allow_unsafe: false,
+    term_context: [type_sort(0)],
+  },
+);
+const proof_context = { term_context: [type_sort(0)] };
 const scalar: RepresentationType = { tag: "scalar", name: "I32" };
 
 Deno.test("refinements weaken to their representation without proof fields", () => {
-  const refined = refinement_type(scalar, proposition, certificate);
+  const refined = refinement_type(
+    scalar,
+    proposition,
+    certificate,
+    proof_context,
+  );
   assert_equals(weaken_refinement(refined), scalar);
   assert_equals(erase_semantic_type(refined), scalar);
   assert_equals(refinement_proves(refined, proposition), true);
@@ -91,22 +114,56 @@ Deno.test("refinement construction rejects unsafe certificates", () => {
   const unsafe = check_proof(
     { tag: "unsafe_assume", proposition },
     proposition,
-    { allow_unsafe: true },
+    { allow_unsafe: true, term_context: [type_sort(0)] },
   );
   assert_throws(
-    () => refinement_type(scalar, proposition, unsafe),
+    () => refinement_type(scalar, proposition, unsafe, proof_context),
     "Kernel certificate depends on unsafe evidence.",
   );
 });
 
 Deno.test("logical proof and existential types erase completely", () => {
   assert_equals(
-    erase_semantic_type(proof_type(proposition)),
+    erase_semantic_type(proof_type(proposition, proof_context)),
     undefined,
   );
   assert_equals(
-    erase_semantic_type(logical_existential_type(scalar, proposition)),
+    erase_semantic_type(
+      logical_existential_type(scalar, proposition, proof_context),
+    ),
     undefined,
+  );
+});
+
+Deno.test("logical types reject malformed and oversized propositions", () => {
+  const missing_type = { tag: "constant" as const, name: "MissingType" };
+  const missing_term = {
+    tag: "constant" as const,
+    name: "missing",
+    type: missing_type,
+  };
+  const malformed: Proposition = {
+    tag: "equal",
+    type: missing_type,
+    left: missing_term,
+    right: missing_term,
+  };
+  assert_throws(
+    () => proof_type(malformed),
+    "Kernel type constant MissingType requires a trusted environment.",
+  );
+  assert_throws(
+    () => logical_existential_type(scalar, malformed),
+    "Kernel type constant MissingType requires a trusted environment.",
+  );
+
+  let oversized: Proposition = { tag: "true" };
+  for (let depth = 0; depth < 15; depth += 1) {
+    oversized = { tag: "and", left: oversized, right: oversized };
+  }
+  assert_throws(
+    () => proof_type(oversized),
+    "Proof snapshot exceeded 20000 nodes.",
   );
 });
 
@@ -128,16 +185,19 @@ Deno.test("computational existentials retain witness and payload layout", () => 
 });
 
 Deno.test("decision erasure keeps only the runtime branch tag", () => {
-  assert_equals(erase_decision(yes_decision(proposition, certificate)), {
-    tag: "yes",
-  });
+  assert_equals(
+    erase_decision(yes_decision(proposition, certificate, proof_context)),
+    {
+      tag: "yes",
+    },
+  );
   const unsafe = check_proof(
     { tag: "unsafe_assume", proposition: { tag: "not", proposition } },
     { tag: "not", proposition },
-    { allow_unsafe: true },
+    { allow_unsafe: true, term_context: [type_sort(0)] },
   );
   assert_throws(
-    () => no_decision(proposition, unsafe),
+    () => no_decision(proposition, unsafe, proof_context),
     "Kernel certificate depends on unsafe evidence.",
   );
 });
@@ -708,10 +768,15 @@ Deno.test("representation fields require own type properties", () => {
 
 Deno.test("refinement propositions reject inherited fields", () => {
   const inherited = Object.create({ tag: "equal", left: "x", right: "x" });
-  const certificate = check_proof({ tag: "refl", term: "x" }, proposition);
   assert_throws(
-    () => refinement_type(scalar, inherited as never, certificate),
-    "Refinement proposition must be a plain record.",
+    () =>
+      refinement_type(
+        scalar,
+        inherited as never,
+        certificate,
+        proof_context,
+      ),
+    "Proposition must be a plain record.",
   );
 });
 

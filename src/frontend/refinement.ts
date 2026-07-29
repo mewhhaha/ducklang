@@ -1,11 +1,17 @@
 import { expect } from "../expect.ts";
 import { integer_type_name } from "../integer.ts";
 import {
+  certificate_establishes,
   check_certificate,
+  check_proposition_formation,
   type KernelCertificate,
   type Proposition,
-  proposition_equal,
 } from "./proof_kernel.ts";
+import {
+  type KernelContext,
+  KernelEnvironment,
+  snapshot_kernel_context,
+} from "./kernel_terms.ts";
 import {
   type RepresentationOwnership,
   type RepresentationProductField,
@@ -33,17 +39,23 @@ export type RepresentationValue =
 
 export type SemanticType =
   | { tag: "representation"; representation: RepresentationType }
-  | { tag: "proof"; proposition: Proposition }
+  | {
+    tag: "proof";
+    proposition: Proposition;
+    proof_context: PropositionContext;
+  }
   | {
     tag: "refinement";
     value: RepresentationType;
     proposition: Proposition;
     certificate: KernelCertificate;
+    proof_context: PropositionContext;
   }
   | {
     tag: "logical_exists";
     witness: RepresentationType;
     proposition: Proposition;
+    proof_context: PropositionContext;
   }
   | {
     tag: "computational_exists";
@@ -54,8 +66,28 @@ export type SemanticType =
 export type ErasedDecision = { tag: "yes" } | { tag: "no" };
 
 export type LogicalDecision =
-  | { tag: "yes"; proposition: Proposition; proof: KernelCertificate }
-  | { tag: "no"; proposition: Proposition; proof: KernelCertificate };
+  | {
+    tag: "yes";
+    proposition: Proposition;
+    proof: KernelCertificate;
+    proof_context: PropositionContext;
+  }
+  | {
+    tag: "no";
+    proposition: Proposition;
+    proof: KernelCertificate;
+    proof_context: PropositionContext;
+  };
+
+export type PropositionContextOptions = {
+  environment?: KernelEnvironment;
+  term_context?: KernelContext;
+};
+
+export type PropositionContext = {
+  environment: KernelEnvironment;
+  term_context: KernelContext;
+};
 
 export type ComputationalPackage = {
   readonly __computational_package: unique symbol;
@@ -67,7 +99,6 @@ type PackageContents = {
   payload: RepresentationValue;
 };
 
-const MAX_PROPOSITION_DEPTH = 256;
 const MAX_RUNTIME_VALUE_DEPTH = 256;
 const TRUSTED_SEMANTIC_TYPES = new WeakSet<object>();
 const TRUSTED_DECISIONS = new WeakSet<object>();
@@ -80,6 +111,20 @@ const OWNED_VALUE_TYPES = new WeakMap<
 >();
 const CONSUMED_RUNTIME_VALUES = new WeakSet<object>();
 const OPENED_LINEAR_PACKAGES = new WeakSet<object>();
+
+function proposition_context(
+  options: PropositionContextOptions,
+): PropositionContext {
+  let environment = KernelEnvironment.empty();
+  if (options.environment !== undefined) {
+    environment = options.environment;
+  }
+  let term_context: KernelContext = [];
+  if (options.term_context !== undefined) {
+    term_context = snapshot_kernel_context(options.term_context);
+  }
+  return Object.freeze({ environment, term_context });
+}
 
 export function representation_type(
   representation: RepresentationType,
@@ -94,10 +139,13 @@ export function representation_type(
 
 export function proof_type(
   proposition: Proposition,
+  options: PropositionContextOptions = {},
 ): Extract<SemanticType, { tag: "proof" }> {
+  const proof_context = proposition_context(options);
   const result = Object.freeze({
     tag: "proof" as const,
-    proposition: snapshot_proposition(proposition),
+    proposition: check_proposition_formation(proposition, proof_context),
+    proof_context,
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -106,11 +154,14 @@ export function proof_type(
 export function logical_existential_type(
   witness: RepresentationType,
   proposition: Proposition,
+  options: PropositionContextOptions = {},
 ): Extract<SemanticType, { tag: "logical_exists" }> {
+  const proof_context = proposition_context(options);
   const result = Object.freeze({
     tag: "logical_exists" as const,
     witness: snapshot_runtime_representation_type(witness),
-    proposition: snapshot_proposition(proposition),
+    proposition: check_proposition_formation(proposition, proof_context),
+    proof_context,
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -120,17 +171,25 @@ export function refinement_type(
   value: RepresentationType,
   proposition: Proposition,
   certificate: KernelCertificate,
+  options: PropositionContextOptions = {},
 ): Extract<SemanticType, { tag: "refinement" }> {
+  const proof_context = proposition_context(options);
   const stable_value = snapshot_runtime_representation_type(value);
-  const stable_proposition = snapshot_proposition(proposition);
+  const stable_proposition = check_proposition_formation(
+    proposition,
+    proof_context,
+  );
   const checked = check_certificate(certificate, stable_proposition, {
     require_safe: true,
+    environment: proof_context.environment,
+    term_context: proof_context.term_context,
   });
   const result = Object.freeze({
     tag: "refinement",
     value: stable_value,
     proposition: stable_proposition,
     certificate: checked,
+    proof_context,
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -178,7 +237,11 @@ export function erase_decision(decision: LogicalDecision): ErasedDecision {
   if (decision.tag === "no") {
     expected = { tag: "not", proposition: decision.proposition };
   }
-  check_certificate(decision.proof, expected, { require_safe: true });
+  check_certificate(decision.proof, expected, {
+    require_safe: true,
+    environment: decision.proof_context.environment,
+    term_context: decision.proof_context.term_context,
+  });
   if (decision.tag === "yes") return { tag: "yes" };
   return { tag: "no" };
 }
@@ -186,15 +249,23 @@ export function erase_decision(decision: LogicalDecision): ErasedDecision {
 export function yes_decision(
   proposition: Proposition,
   proof: KernelCertificate,
+  options: PropositionContextOptions = {},
 ): LogicalDecision {
-  const stable_proposition = snapshot_proposition(proposition);
+  const proof_context = proposition_context(options);
+  const stable_proposition = check_proposition_formation(
+    proposition,
+    proof_context,
+  );
   const checked = check_certificate(proof, stable_proposition, {
     require_safe: true,
+    environment: proof_context.environment,
+    term_context: proof_context.term_context,
   });
   const result = Object.freeze({
     tag: "yes" as const,
     proposition: stable_proposition,
     proof: checked,
+    proof_context,
   });
   TRUSTED_DECISIONS.add(result);
   return result;
@@ -203,17 +274,27 @@ export function yes_decision(
 export function no_decision(
   proposition: Proposition,
   proof: KernelCertificate,
+  options: PropositionContextOptions = {},
 ): LogicalDecision {
-  const stable_proposition = snapshot_proposition(proposition);
+  const proof_context = proposition_context(options);
+  const stable_proposition = check_proposition_formation(
+    proposition,
+    proof_context,
+  );
   const expected = {
     tag: "not" as const,
     proposition: stable_proposition,
   };
-  const checked = check_certificate(proof, expected, { require_safe: true });
+  const checked = check_certificate(proof, expected, {
+    require_safe: true,
+    environment: proof_context.environment,
+    term_context: proof_context.term_context,
+  });
   const result = Object.freeze({
     tag: "no" as const,
     proposition: stable_proposition,
     proof: checked,
+    proof_context,
   });
   TRUSTED_DECISIONS.add(result);
   return result;
@@ -589,112 +670,8 @@ function snapshot_aggregate_value(
   });
 }
 
-function snapshot_proposition(
-  proposition: Proposition,
-  depth = 0,
-): Proposition {
-  expect(depth <= MAX_PROPOSITION_DEPTH, "Refinement proposition is too deep.");
-  if (proposition === null || typeof proposition !== "object") {
-    throw new Error("Invalid refinement proposition.");
-  }
-  assert_plain_proposition_record(proposition);
-  const proposition_tag = read_required_own_data<Proposition["tag"]>(
-    proposition,
-    "tag",
-  );
-  switch (proposition_tag) {
-    case "true":
-      return Object.freeze({ tag: "true" });
-    case "false":
-      return Object.freeze({ tag: "false" });
-    case "atom":
-      return Object.freeze({
-        tag: "atom",
-        name: require_text(
-          read_required_own_data<string>(proposition, "name"),
-          "Atom name",
-        ),
-      });
-    case "equal":
-      return Object.freeze({
-        tag: "equal",
-        left: require_text(
-          read_required_own_data<string>(proposition, "left"),
-          "Equality left term",
-        ),
-        right: require_text(
-          read_required_own_data<string>(proposition, "right"),
-          "Equality right term",
-        ),
-      });
-    case "and":
-    case "or":
-      return Object.freeze({
-        tag: proposition_tag,
-        left: snapshot_proposition(
-          read_required_own_data<Proposition>(proposition, "left"),
-          depth + 1,
-        ),
-        right: snapshot_proposition(
-          read_required_own_data<Proposition>(proposition, "right"),
-          depth + 1,
-        ),
-      });
-    case "implies":
-      return Object.freeze({
-        tag: "implies",
-        premise: snapshot_proposition(
-          read_required_own_data<Proposition>(proposition, "premise"),
-          depth + 1,
-        ),
-        conclusion: snapshot_proposition(
-          read_required_own_data<Proposition>(proposition, "conclusion"),
-          depth + 1,
-        ),
-      });
-    case "not":
-      return Object.freeze({
-        tag: "not",
-        proposition: snapshot_proposition(
-          read_required_own_data<Proposition>(proposition, "proposition"),
-          depth + 1,
-        ),
-      });
-    default:
-      throw new Error("Invalid refinement proposition tag.");
-  }
-}
-
-function require_text(value: string, label: string): string {
-  expect(
-    typeof value === "string" && value.length > 0,
-    `${label} must not be empty.`,
-  );
-  return value;
-}
-
 function read_required_own_data<T>(value: object, key: string): T {
   return require_own_data(value, key).value as T;
-}
-
-function assert_plain_proposition_record(value: object): void {
-  const prototype = Object.getPrototypeOf(value);
-  expect(
-    prototype === Object.prototype || prototype === null,
-    "Refinement proposition must be a plain record.",
-  );
-  for (const key of Reflect.ownKeys(value)) {
-    expect(
-      typeof key === "string",
-      "Refinement proposition cannot contain symbols.",
-    );
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    expect(
-      descriptor !== undefined && descriptor.get === undefined &&
-        descriptor.set === undefined,
-      "Refinement proposition cannot contain accessor properties.",
-    );
-  }
 }
 
 function is_runtime_primitive(
@@ -1120,8 +1097,19 @@ export function refinement_proves(
 ): boolean {
   assert_trusted_semantic_type(type);
   if (type.tag !== "refinement") return false;
-  const stable = snapshot_proposition(proposition);
-  check_certificate(type.certificate, type.proposition, { require_safe: true });
-  return proposition_equal(type.proposition, stable) &&
-    proposition_equal(type.certificate.proposition, stable);
+  const stable = check_proposition_formation(
+    proposition,
+    type.proof_context,
+  );
+  const certificate_options = {
+    require_safe: true,
+    environment: type.proof_context.environment,
+    term_context: type.proof_context.term_context,
+  };
+  check_certificate(type.certificate, type.proposition, certificate_options);
+  return certificate_establishes(type.certificate, stable, {
+    require_safe: true,
+    environment: type.proof_context.environment,
+    term_context: type.proof_context.term_context,
+  });
 }
