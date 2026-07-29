@@ -30,14 +30,16 @@ export {
   check_term,
   check_type,
   infer_term,
+  KernelEnvironment,
   prop_sort,
   type_assignable,
+  type_equal,
   type_sort,
   universe_of_sort,
 } from "./frontend/kernel_terms.ts";
 export type {
   KernelContext,
-  KernelEnvironment,
+  KernelDefinition,
   KernelTerm,
   KernelType,
   Universe,
