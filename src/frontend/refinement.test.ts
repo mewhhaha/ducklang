@@ -1,5 +1,7 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import { check_proof, type Proposition } from "./proof_kernel.ts";
+import type { RepresentationType } from "./representation_type.ts";
+import { TypeEngine } from "./type_engine.ts";
 import {
   computational_existential_family_type,
   computational_existential_type,
@@ -20,13 +22,69 @@ import {
 
 const proposition: Proposition = { tag: "equal", left: "x", right: "x" };
 const certificate = check_proof({ tag: "refl", term: "x" }, proposition);
-const scalar = { tag: "scalar" as const, name: "I32" };
+const scalar: RepresentationType = { tag: "scalar", name: "I32" };
 
 Deno.test("refinements weaken to their representation without proof fields", () => {
   const refined = refinement_type(scalar, proposition, certificate);
   assert_equals(weaken_refinement(refined), scalar);
   assert_equals(erase_semantic_type(refined), scalar);
   assert_equals(refinement_proves(refined, proposition), true);
+});
+
+Deno.test("type inference and refinement share canonical representations", () => {
+  const engine = new TypeEngine();
+  const inferred = engine.normalize({
+    tag: "record",
+    fields: [
+      { label: "second", type: { tag: "integer", signed: false, width: 8 } },
+      { label: "first", type: scalar },
+    ],
+  });
+  const semantic = representation_type(inferred);
+  assert_equals(semantic.representation, {
+    tag: "record",
+    fields: [
+      { label: "first", type: scalar },
+      { label: "second", type: { tag: "integer", signed: false, width: 8 } },
+    ],
+  });
+
+  const package_type = computational_existential_type(inferred, scalar);
+  const package_value = pack_computational_existential(
+    package_type,
+    {
+      tag: "product",
+      fields: [
+        { tag: "scalar", type: "I32", value: 4 },
+        { tag: "scalar", type: "U8", value: 255 },
+      ],
+    },
+    { tag: "scalar", type: "I32", value: 7 },
+  );
+  assert_equals(open_computational_existential(package_value).witness, {
+    tag: "product",
+    fields: [
+      { tag: "scalar", type: "I32", value: 4 },
+      { tag: "scalar", type: "U8", value: 255 },
+    ],
+  });
+});
+
+Deno.test("refinement rejects unresolved inference representations", () => {
+  const engine = new TypeEngine();
+  assert_throws(
+    () => representation_type(engine.fresh_variable("element")),
+    "Representation type variable is not a concrete runtime layout.",
+  );
+  assert_throws(
+    () =>
+      representation_type({
+        tag: "integer",
+        signed: false,
+        width: 65,
+      }),
+    "Integer width 65 is invalid.",
+  );
 });
 
 Deno.test("refinement construction rejects unsafe certificates", () => {
@@ -55,7 +113,7 @@ Deno.test("logical proof and existential types erase completely", () => {
 Deno.test("computational existentials retain witness and payload layout", () => {
   const package_type = computational_existential_type(
     { tag: "scalar", name: "U32" },
-    { tag: "owned", ownership: "unique", value: scalar },
+    { tag: "owned", ownership: "unique_heap", value: scalar },
   );
   assert_equals(erase_semantic_type(package_type), {
     tag: "product",
@@ -63,7 +121,7 @@ Deno.test("computational existentials retain witness and payload layout", () => 
       { label: "witness", type: { tag: "scalar", name: "U32" } },
       {
         label: "payload",
-        type: { tag: "owned", ownership: "unique", value: scalar },
+        type: { tag: "owned", ownership: "unique_heap", value: scalar },
       },
     ],
   });
@@ -157,7 +215,10 @@ Deno.test("sealed layouts reject nested mutation and object scalar payloads", ()
   >).fields;
   assert_throws(
     () => {
-      (fields[0] as { type: unknown }).type = { tag: "unit" };
+      (fields[0] as { type: unknown }).type = {
+        tag: "scalar",
+        name: "Unit",
+      };
     },
     "Cannot assign to read only property",
   );
@@ -192,7 +253,10 @@ Deno.test("computational existential packages validate runtime layouts", () => {
 Deno.test("dependent layout families reject non-uniform payloads", () => {
   assert_throws(
     () =>
-      computational_existential_family_type(scalar, [scalar, { tag: "unit" }]),
+      computational_existential_family_type(scalar, [
+        scalar,
+        { tag: "scalar", name: "Unit" },
+      ]),
     "Computational existential has non-uniform payload layouts.",
   );
   const uniform = computational_existential_family_type(scalar, [
@@ -236,11 +300,11 @@ Deno.test("representation layouts reject duplicate labels and scalar kind mismat
 Deno.test("unique computational packages cannot be reused", () => {
   const package_type = computational_existential_type(
     scalar,
-    { tag: "owned", ownership: "unique", value: scalar },
+    { tag: "owned", ownership: "unique_heap", value: scalar },
   );
   const owned_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
+    ownership: "unique_heap" as const,
     value: scalar,
   };
   const owned = owned_runtime_value(owned_type, {
@@ -272,7 +336,7 @@ Deno.test("unique computational packages cannot be reused", () => {
 Deno.test("nested unique values are consumed through their containing layout", () => {
   const inner_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
+    ownership: "unique_heap" as const,
     value: scalar,
   };
   const outer_type = computational_existential_type(
@@ -307,7 +371,7 @@ Deno.test("nested unique values are consumed through their containing layout", (
 Deno.test("owned runtime values require nominal handles", () => {
   const owned_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
+    ownership: "unique_heap" as const,
     value: scalar,
   };
   const package_type = computational_existential_type(scalar, owned_type);
@@ -319,7 +383,7 @@ Deno.test("owned runtime values require nominal handles", () => {
         value: 1,
       }, {
         tag: "owned",
-        ownership: "unique",
+        ownership: "unique_heap",
         value: { tag: "scalar", type: "I32", value: 2 },
       } as never),
     "Owned runtime value is not a sealed handle.",
@@ -329,12 +393,12 @@ Deno.test("owned runtime values require nominal handles", () => {
 Deno.test("owned handles retain and enforce their canonical layout", () => {
   const u32_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
-    value: { tag: "scalar" as const, name: "U32" },
+    ownership: "unique_heap" as const,
+    value: { tag: "scalar" as const, name: "U32" as const },
   };
   const i32_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
+    ownership: "unique_heap" as const,
     value: scalar,
   };
   const handle = owned_runtime_value(u32_type, {
@@ -356,7 +420,7 @@ Deno.test("owned handles retain and enforce their canonical layout", () => {
 Deno.test("failed duplicate ownership checks do not consume handles", () => {
   const owned_type = {
     tag: "owned" as const,
-    ownership: "unique" as const,
+    ownership: "unique_heap" as const,
     value: scalar,
   };
   const duplicate_type = computational_existential_type(owned_type, owned_type);
@@ -491,6 +555,20 @@ Deno.test("representation snapshots reject cycles and invalid ownership", () => 
       } as never),
     "Invalid representation ownership forged.",
   );
+  assert_throws(
+    () => representation_type({ tag: "forged" } as never),
+    "Invalid representation type.",
+  );
+  assert_throws(
+    () =>
+      representation_type({
+        tag: "product",
+        fields: [
+          { label: "value", type: { tag: "forged" } },
+        ],
+      } as never),
+    "Invalid representation type.",
+  );
 });
 
 Deno.test("representation function layouts require plain parameter arrays", () => {
@@ -503,6 +581,7 @@ Deno.test("representation function layouts require plain parameter arrays", () =
             return [];
           },
         },
+        effects: [],
         result: scalar,
       } as never),
     "Representation type members must be an array.",

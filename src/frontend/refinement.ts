@@ -1,44 +1,20 @@
 import { expect } from "../expect.ts";
+import { integer_type_name } from "../integer.ts";
 import {
   check_certificate,
   type KernelCertificate,
   type Proposition,
   proposition_equal,
 } from "./proof_kernel.ts";
-
-export type RepresentationType =
-  | { tag: "unit" }
-  | { tag: "scalar"; name: string }
-  | { tag: "opaque"; name: string }
-  | { tag: "product"; fields: readonly RepresentationField[] }
-  | { tag: "sum"; cases: readonly RepresentationCase[] }
-  | {
-    tag: "function";
-    params: readonly RepresentationType[];
-    result: RepresentationType;
-  }
-  | {
-    tag: "owned";
-    ownership: RepresentationOwnership;
-    value: RepresentationType;
-  };
-
-export type RepresentationField = {
-  label: string | undefined;
-  type: RepresentationType;
-};
-
-export type RepresentationCase = {
-  label: string;
-  payload: RepresentationType;
-};
-
-export type RepresentationOwnership =
-  | "scalar"
-  | "borrow"
-  | "frozen"
-  | "unique"
-  | "linear";
+import {
+  type RepresentationEffect,
+  type RepresentationOwnership,
+  type RepresentationProductField,
+  type RepresentationRecordField,
+  type RepresentationScalar,
+  type RepresentationSumCase,
+  type RepresentationType,
+} from "./representation_type.ts";
 
 export type RepresentationValue =
   | { tag: "unit" }
@@ -391,16 +367,48 @@ function snapshot_representation(
   active.add(type);
   let result: RepresentationType;
   switch (type.tag) {
-    case "unit":
-      result = { tag: "unit" };
+    case "never":
+      result = { tag: "never" };
       break;
-    case "scalar":
+    case "scalar": {
       require_own_data(type, "name");
-      result = { tag: "scalar", name: require_text(type.name, "Scalar name") };
+      const name = require_text(type.name, "Scalar name");
+      validate_scalar(name);
+      result = { tag: "scalar", name };
       break;
-    case "opaque":
+    }
+    case "integer":
+      require_own_data(type, "signed");
+      require_own_data(type, "width");
+      expect(
+        typeof type.signed === "boolean",
+        "Integer signedness is invalid.",
+      );
+      expect(
+        Number.isSafeInteger(type.width) &&
+          type.width > 0 &&
+          type.width <= 64,
+        `Integer width ${String(type.width)} is invalid.`,
+      );
+      result = {
+        tag: "integer",
+        signed: type.signed,
+        width: type.width,
+      };
+      break;
+    case "named":
       require_own_data(type, "name");
-      result = { tag: "opaque", name: require_text(type.name, "Opaque name") };
+      require_own_data(type, "args");
+      assert_plain_representation_array(type.args);
+      result = {
+        tag: "named",
+        name: require_text(type.name, "Named representation"),
+        args: Object.freeze(
+          type.args.map((arg) =>
+            snapshot_representation(arg, depth + 1, active)
+          ),
+        ),
+      };
       break;
     case "product": {
       require_own_data(type, "fields");
@@ -421,6 +429,41 @@ function snapshot_representation(
       };
       break;
     }
+    case "record": {
+      require_own_data(type, "fields");
+      assert_plain_representation_array(type.fields);
+      assert_unique_record_labels(type.fields);
+      result = {
+        tag: "record",
+        fields: Object.freeze(type.fields.map((field) =>
+          Object.freeze({
+            label: require_text(
+              read_required_own_data<string>(field, "label"),
+              "Record field label",
+            ),
+            type: snapshot_representation(
+              read_required_own_data<RepresentationType>(field, "type"),
+              depth + 1,
+              active,
+            ),
+          })
+        )),
+      };
+      break;
+    }
+    case "fixed_array":
+      require_own_data(type, "length");
+      require_own_data(type, "element");
+      expect(
+        Number.isSafeInteger(type.length) && type.length >= 0,
+        `Fixed array length ${String(type.length)} is invalid.`,
+      );
+      result = {
+        tag: "fixed_array",
+        length: type.length,
+        element: snapshot_representation(type.element, depth + 1, active),
+      };
+      break;
     case "sum": {
       require_own_data(type, "cases");
       assert_plain_representation_array(type.cases);
@@ -445,14 +488,19 @@ function snapshot_representation(
     }
     case "function":
       require_own_data(type, "params");
+      require_own_data(type, "effects");
       require_own_data(type, "result");
       assert_plain_representation_array(type.params);
+      assert_plain_representation_array(type.effects);
       result = {
         tag: "function",
         params: Object.freeze(
           type.params.map((parameter) =>
             snapshot_representation(parameter, depth + 1, active)
           ),
+        ),
+        effects: Object.freeze(
+          type.effects.map((effect) => snapshot_representation_effect(effect)),
         ),
         result: snapshot_representation(type.result, depth + 1, active),
       };
@@ -468,6 +516,17 @@ function snapshot_representation(
       };
       break;
     }
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
     default:
       throw new Error("Invalid representation type.");
   }
@@ -487,11 +546,17 @@ function snapshot_representation_value(
   expect(!active.has(value), "Cyclic runtime value.");
   active.add(value);
   switch (type.tag) {
-    case "unit":
-      expect(value.tag === "unit", "Runtime value does not match unit layout.");
-      active.delete(value);
-      return Object.freeze({ tag: "unit" });
+    case "never":
+      throw new Error("Never has no runtime value.");
     case "scalar":
+      if (type.name === "Unit") {
+        expect(
+          value.tag === "unit",
+          "Runtime value does not match Unit layout.",
+        );
+        active.delete(value);
+        return Object.freeze({ tag: "unit" });
+      }
       require_own_data(value, "type");
       require_own_data(value, "value");
       expect(
@@ -508,7 +573,26 @@ function snapshot_representation_value(
         type: value.type,
         value: value.value,
       });
-    case "opaque":
+    case "integer": {
+      const name = integer_type_name(type);
+      require_own_data(value, "type");
+      require_own_data(value, "value");
+      expect(
+        value.tag === "scalar" && value.type === name,
+        `Runtime value does not match integer layout ${name}.`,
+      );
+      expect(
+        integer_value_matches(type.signed, type.width, value.value),
+        `Scalar runtime value does not match ${name}.`,
+      );
+      active.delete(value);
+      return Object.freeze({
+        tag: "scalar",
+        type: value.type,
+        value: value.value,
+      });
+    }
+    case "named":
       require_own_data(value, "name");
       require_own_data(value, "value");
       expect(
@@ -526,34 +610,35 @@ function snapshot_representation_value(
         value: value.value,
       });
     case "product": {
+      return snapshot_aggregate_value(type.fields, value, depth, active);
+    }
+    case "record": {
+      return snapshot_aggregate_value(type.fields, value, depth, active);
+    }
+    case "fixed_array": {
       require_own_data(value, "fields");
       expect(
         value.tag === "product",
-        "Runtime value does not match product layout.",
-      );
-      expect(
-        Array.isArray(value.fields),
-        "Runtime product fields must be an array.",
+        "Runtime value does not match fixed array layout.",
       );
       assert_plain_runtime_array(value.fields);
       expect(
-        value.fields.length === type.fields.length,
-        "Runtime product field count does not match its layout.",
+        value.fields.length === type.length,
+        "Runtime fixed array length does not match its layout.",
       );
-      const fields: RepresentationValue[] = [];
-      for (let index = 0; index < type.fields.length; index += 1) {
-        const field = type.fields[index];
-        const actual = value.fields[index];
-        expect(
-          field !== undefined && actual !== undefined,
-          "Missing runtime product field.",
-        );
-        fields.push(
-          snapshot_representation_value(field.type, actual, depth + 1, active),
-        );
-      }
+      const elements = value.fields.map((element) =>
+        snapshot_representation_value(
+          type.element,
+          element,
+          depth + 1,
+          active,
+        )
+      );
       active.delete(value);
-      return Object.freeze({ tag: "product", fields: Object.freeze(fields) });
+      return Object.freeze({
+        tag: "product",
+        fields: Object.freeze(elements),
+      });
     }
     case "sum": {
       require_own_data(value, "case");
@@ -598,7 +683,57 @@ function snapshot_representation_value(
       active.delete(value);
       return value;
     }
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
   }
+}
+
+function snapshot_aggregate_value(
+  fields: readonly RepresentationProductField[],
+  value: RepresentationValue,
+  depth: number,
+  active: WeakSet<object>,
+): RepresentationValue {
+  require_own_data(value, "fields");
+  expect(
+    value.tag === "product",
+    "Runtime value does not match aggregate layout.",
+  );
+  expect(
+    Array.isArray(value.fields),
+    "Runtime aggregate fields must be an array.",
+  );
+  assert_plain_runtime_array(value.fields);
+  expect(
+    value.fields.length === fields.length,
+    "Runtime aggregate field count does not match its layout.",
+  );
+  const stable_fields: RepresentationValue[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    const actual = value.fields[index];
+    expect(
+      field !== undefined && actual !== undefined,
+      "Missing runtime aggregate field.",
+    );
+    stable_fields.push(
+      snapshot_representation_value(field.type, actual, depth + 1, active),
+    );
+  }
+  active.delete(value);
+  return Object.freeze({
+    tag: "product",
+    fields: Object.freeze(stable_fields),
+  });
 }
 
 function representation_equal(
@@ -607,11 +742,25 @@ function representation_equal(
 ): boolean {
   if (left.tag !== right.tag) return false;
   switch (left.tag) {
-    case "unit":
+    case "never":
       return true;
     case "scalar":
-    case "opaque":
       return left.name === (right as typeof left).name;
+    case "integer": {
+      const other = right as Extract<RepresentationType, { tag: "integer" }>;
+      return left.signed === other.signed && left.width === other.width;
+    }
+    case "named": {
+      const other = right as Extract<RepresentationType, { tag: "named" }>;
+      if (left.name !== other.name || left.args.length !== other.args.length) {
+        return false;
+      }
+      return left.args.every((arg, index) => {
+        const candidate = other.args[index];
+        return candidate !== undefined &&
+          representation_equal(arg, candidate);
+      });
+    }
     case "product": {
       const other = right as Extract<RepresentationType, { tag: "product" }>;
       if (left.fields.length !== other.fields.length) return false;
@@ -627,6 +776,24 @@ function representation_equal(
         }
       }
       return true;
+    }
+    case "record": {
+      const other = right as Extract<RepresentationType, { tag: "record" }>;
+      if (left.fields.length !== other.fields.length) return false;
+      return left.fields.every((field, index) => {
+        const candidate = other.fields[index];
+        return candidate !== undefined &&
+          field.label === candidate.label &&
+          representation_equal(field.type, candidate.type);
+      });
+    }
+    case "fixed_array": {
+      const other = right as Extract<
+        RepresentationType,
+        { tag: "fixed_array" }
+      >;
+      return left.length === other.length &&
+        representation_equal(left.element, other.element);
     }
     case "sum": {
       const other = right as Extract<RepresentationType, { tag: "sum" }>;
@@ -653,6 +820,9 @@ function representation_equal(
         if (parameter === undefined || candidate === undefined) return false;
         if (!representation_equal(parameter, candidate)) return false;
       }
+      if (!representation_effects_equal(left.effects, other.effects)) {
+        return false;
+      }
       return representation_equal(left.result, other.result);
     }
     case "owned": {
@@ -660,6 +830,17 @@ function representation_equal(
       return left.ownership === other.ownership &&
         representation_equal(left.value, other.value);
     }
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${left.tag} is not a concrete runtime layout.`,
+      );
   }
 }
 
@@ -749,6 +930,46 @@ function field_label(label: string | undefined): string | undefined {
   return require_text(label, "Field label");
 }
 
+function snapshot_representation_effect(
+  effect: RepresentationEffect,
+): RepresentationEffect {
+  assert_plain_layout_entry(effect);
+  const effect_name = require_text(
+    read_required_own_data<string>(effect, "effect"),
+    "Effect name",
+  );
+  const operation = read_required_own_data<string | undefined>(
+    effect,
+    "operation",
+  );
+  if (operation !== undefined) {
+    require_text(operation, "Effect operation");
+  }
+  return Object.freeze({ effect: effect_name, operation });
+}
+
+function representation_effects_equal(
+  left: readonly RepresentationEffect[],
+  right: readonly RepresentationEffect[],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((effect, index) => {
+    const candidate = right[index];
+    return candidate !== undefined &&
+      effect.effect === candidate.effect &&
+      effect.operation === candidate.operation;
+  });
+}
+
+function validate_scalar(name: string): asserts name is RepresentationScalar {
+  const valid = name === "Bool" || name === "Char" || name === "Unit" ||
+    name === "Int" || name === "I32" || name === "U32" ||
+    name === "I64" || name === "F32" || name === "F64" ||
+    name === "F32x4" || name === "Text" || name === "Bytes" ||
+    name === "Resume" || name === "Type";
+  expect(valid, `Invalid representation scalar ${name}.`);
+}
+
 function read_required_own_data<T>(value: object, key: string): T {
   require_own_data(value, key);
   return (value as Record<string, unknown>)[key] as T;
@@ -767,7 +988,10 @@ function assert_plain_proposition_record(value: object): void {
     "Refinement proposition must be a plain record.",
   );
   for (const key of Reflect.ownKeys(value)) {
-    expect(typeof key === "string", "Refinement proposition cannot contain symbols.");
+    expect(
+      typeof key === "string",
+      "Refinement proposition cannot contain symbols.",
+    );
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     expect(
       descriptor !== undefined && descriptor.get === undefined &&
@@ -817,8 +1041,26 @@ function scalar_value_matches(
   return is_runtime_primitive(value);
 }
 
+function integer_value_matches(
+  signed: boolean,
+  width: number,
+  value: string | number | bigint | boolean,
+): boolean {
+  if (width <= 32) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value)) return false;
+  } else {
+    if (typeof value !== "bigint") return false;
+  }
+  const integer = BigInt(value);
+  if (signed) {
+    const limit = 1n << BigInt(width - 1);
+    return integer >= -limit && integer < limit;
+  }
+  return integer >= 0n && integer < (1n << BigInt(width));
+}
+
 function assert_unique_field_labels(
-  fields: readonly RepresentationField[],
+  fields: readonly RepresentationProductField[],
 ): void {
   const labels = new Set<string>();
   for (const field of fields) {
@@ -832,7 +1074,21 @@ function assert_unique_field_labels(
   }
 }
 
-function assert_unique_case_labels(cases: readonly RepresentationCase[]): void {
+function assert_unique_record_labels(
+  fields: readonly RepresentationRecordField[],
+): void {
+  const labels = new Set<string>();
+  for (const field of fields) {
+    assert_plain_layout_entry(field);
+    const label = read_required_own_data<string>(field, "label");
+    expect(!labels.has(label), `Duplicate representation field ${label}.`);
+    labels.add(label);
+  }
+}
+
+function assert_unique_case_labels(
+  cases: readonly RepresentationSumCase[],
+): void {
   const labels = new Set<string>();
   for (const current of cases) {
     assert_plain_layout_entry(current);
@@ -847,13 +1103,19 @@ function assert_unique_case_labels(cases: readonly RepresentationCase[]): void {
 function has_unique_or_linear_layout(type: RepresentationType): boolean {
   switch (type.tag) {
     case "owned": {
-      return type.ownership === "unique" || type.ownership === "linear" ||
+      return is_consuming_ownership(type.ownership) ||
         has_unique_or_linear_layout(type.value);
     }
     case "product":
       return type.fields.some((field) =>
         has_unique_or_linear_layout(field.type)
       );
+    case "record":
+      return type.fields.some((field) =>
+        has_unique_or_linear_layout(field.type)
+      );
+    case "fixed_array":
+      return has_unique_or_linear_layout(type.element);
     case "sum":
       return type.cases.some((current) =>
         has_unique_or_linear_layout(current.payload)
@@ -861,10 +1123,22 @@ function has_unique_or_linear_layout(type: RepresentationType): boolean {
     case "function":
       return type.params.some(has_unique_or_linear_layout) ||
         has_unique_or_linear_layout(type.result);
-    case "unit":
+    case "never":
     case "scalar":
-    case "opaque":
+    case "integer":
+    case "named":
       return false;
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
   }
 }
 
@@ -896,7 +1170,7 @@ function assert_unique_inputs_available(
   switch (type.tag) {
     case "owned": {
       assert_owned_handle_layout(type, value);
-      if (type.ownership === "unique" || type.ownership === "linear") {
+      if (is_consuming_ownership(type.ownership)) {
         expect(
           !seen.has(value),
           "Unique runtime value appears more than once.",
@@ -927,6 +1201,30 @@ function assert_unique_inputs_available(
         assert_unique_inputs_available(field.type, actual, seen);
       }
       return;
+    case "record":
+      expect(value.tag === "product", "Record runtime value is required.");
+      assert_plain_runtime_array(value.fields);
+      for (let index = 0; index < type.fields.length; index += 1) {
+        const field = type.fields[index];
+        const actual = value.fields[index];
+        expect(
+          field !== undefined && actual !== undefined,
+          "Missing runtime record field.",
+        );
+        assert_unique_inputs_available(field.type, actual, seen);
+      }
+      return;
+    case "fixed_array":
+      expect(value.tag === "product", "Fixed array runtime value is required.");
+      assert_plain_runtime_array(value.fields);
+      expect(
+        value.fields.length === type.length,
+        "Runtime fixed array length does not match its layout.",
+      );
+      for (const element of value.fields) {
+        assert_unique_inputs_available(type.element, element, seen);
+      }
+      return;
     case "sum": {
       expect(value.tag === "sum", "Sum runtime value is required.");
       const current = type.cases.find((candidate) =>
@@ -937,10 +1235,22 @@ function assert_unique_inputs_available(
       return;
     }
     case "function":
-    case "unit":
+    case "never":
     case "scalar":
-    case "opaque":
+    case "integer":
+    case "named":
       return;
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
   }
 }
 
@@ -952,7 +1262,7 @@ function consume_unique_input(
     case "owned": {
       assert_owned_handle_layout(type, value);
       expect(value.tag === "owned", "Owned runtime value must be an object.");
-      if (type.ownership === "unique" || type.ownership === "linear") {
+      if (is_consuming_ownership(type.ownership)) {
         expect(
           !CONSUMED_RUNTIME_VALUES.has(value),
           "Unique runtime value was already consumed.",
@@ -974,6 +1284,28 @@ function consume_unique_input(
         consume_unique_input(field.type, actual);
       }
       return;
+    case "record":
+      expect(value.tag === "product", "Record runtime value is required.");
+      for (let index = 0; index < type.fields.length; index += 1) {
+        const field = type.fields[index];
+        const actual = value.fields[index];
+        expect(
+          field !== undefined && actual !== undefined,
+          "Missing runtime record field.",
+        );
+        consume_unique_input(field.type, actual);
+      }
+      return;
+    case "fixed_array":
+      expect(value.tag === "product", "Fixed array runtime value is required.");
+      expect(
+        value.fields.length === type.length,
+        "Runtime fixed array length does not match its layout.",
+      );
+      for (const element of value.fields) {
+        consume_unique_input(type.element, element);
+      }
+      return;
     case "sum": {
       expect(value.tag === "sum", "Sum runtime value is required.");
       const current = type.cases.find((candidate) =>
@@ -984,10 +1316,22 @@ function consume_unique_input(
       return;
     }
     case "function":
-    case "unit":
+    case "never":
     case "scalar":
-    case "opaque":
+    case "integer":
+    case "named":
       return;
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
   }
 }
 
@@ -1116,11 +1460,18 @@ function assert_plain_representation_array(value: readonly unknown[]): void {
 
 function validate_ownership(ownership: RepresentationOwnership): void {
   expect(
-    ownership === "scalar" || ownership === "borrow" ||
-      ownership === "frozen" || ownership === "unique" ||
-      ownership === "linear",
+    ownership === "scalar" || ownership === "bounded_borrow" ||
+      ownership === "frozen_shareable" ||
+      ownership === "ownership_transfer" ||
+      ownership === "unique_heap",
     `Invalid representation ownership ${String(ownership)}.`,
   );
+}
+
+function is_consuming_ownership(
+  ownership: RepresentationOwnership,
+): boolean {
+  return ownership === "ownership_transfer" || ownership === "unique_heap";
 }
 
 function assert_trusted_semantic_type(type: SemanticType): void {

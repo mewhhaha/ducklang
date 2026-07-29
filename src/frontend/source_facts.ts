@@ -20,9 +20,14 @@ import {
 import {
   format_type,
   scalar_representation_compatible,
-  type Type,
   TypeEngine,
 } from "./type_engine.ts";
+import type {
+  RepresentationProductField,
+  RepresentationRecordField,
+  RepresentationSumCase,
+  RepresentationType as Type,
+} from "./representation_type.ts";
 import { is_builtin_type_name } from "./types.ts";
 import {
   integer_literal_fits,
@@ -6016,10 +6021,7 @@ function canonical_type_from_source_fact(
     next.add(source);
 
     if (source_fields_are_positional(source)) {
-      const product_fields: Extract<
-        Type,
-        { tag: "product" }
-      >["fields"] = [];
+      const product_fields: RepresentationProductField[] = [];
 
       for (const field of fields) {
         if (field.type === undefined) {
@@ -6051,7 +6053,7 @@ function canonical_type_from_source_fact(
       return { tag: "product", fields: product_fields };
     }
 
-    const record_fields: Extract<Type, { tag: "record" }>["fields"] = [];
+    const record_fields: RepresentationRecordField[] = [];
 
     for (const field of fields) {
       if (field.type === undefined) {
@@ -6082,7 +6084,7 @@ function canonical_type_from_source_fact(
   if (cases !== undefined) {
     const next = new Set(visiting);
     next.add(source);
-    const sum_cases: Extract<Type, { tag: "sum" }>["cases"] = [];
+    const sum_cases: RepresentationSumCase[] = [];
 
     for (const [label, payload] of cases) {
       const payload_type = canonical_type_from_source_fact(

@@ -4,11 +4,13 @@ import {
   monomorphic_type_binding,
   scalar_representation_compatible,
   statically_known_const_type_binding,
-  type Type,
   type TypeBinding,
-  type TypeEffect,
   TypeEngine,
 } from "./type_engine.ts";
+import type {
+  RepresentationEffect as TypeEffect,
+  RepresentationType as Type,
+} from "./representation_type.ts";
 
 const int: Type = { tag: "scalar", name: "Int" };
 const i32: Type = { tag: "scalar", name: "I32" };

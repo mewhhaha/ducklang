@@ -8,7 +8,8 @@ import type {
 } from "./ast.ts";
 import { parse_type_expr } from "./type_expr.ts";
 import { tokenize } from "./tokenize.ts";
-import { type Type, type_key, TypeEngine } from "./type_engine.ts";
+import { type_key, TypeEngine } from "./type_engine.ts";
+import type { RepresentationType as Type } from "./representation_type.ts";
 import { integer_literal_suffix, integer_type_name } from "../integer.ts";
 
 export type SemType =

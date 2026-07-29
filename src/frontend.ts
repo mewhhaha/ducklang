@@ -125,13 +125,18 @@ export type {
   ComputationalPackage,
   ErasedDecision,
   LogicalDecision,
-  RepresentationCase,
-  RepresentationField,
-  RepresentationOwnership,
-  RepresentationType,
   RepresentationValue,
   SemanticType,
 } from "./frontend/refinement.ts";
+export type {
+  RepresentationEffect,
+  RepresentationOwnership,
+  RepresentationProductField,
+  RepresentationRecordField,
+  RepresentationScalar,
+  RepresentationSumCase,
+  RepresentationType,
+} from "./frontend/representation_type.ts";
 export type {
   SourceImportMeta,
   SourceImportMetaAtom,
