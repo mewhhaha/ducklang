@@ -75,7 +75,7 @@ extend List Element {
 }
 
 extend Bytes {
-  type Cursor = IteratorValue(IndexedIteratorState Bytes) I32,
+  type Cursor = IteratorValue (IndexedIteratorState Bytes) I32,
   .iterator = bytes => do
     let state: IndexedIteratorState Bytes = [.collection = bytes, .index = 0, .length = @len bytes];
     let has_next = (state: IndexedIteratorState Bytes) => do
@@ -93,7 +93,7 @@ extend Bytes {
       ];
       [item, next_state]
     end;
-    let iterator: IteratorValue(IndexedIteratorState Bytes) I32 = [
+    let iterator: IteratorValue (IndexedIteratorState Bytes) I32 = [
       .state = state,
       .has_next = has_next,
       .next = next,
@@ -103,7 +103,7 @@ extend Bytes {
 }
 
 extend Text {
-  type Cursor = IteratorValue(IndexedIteratorState Text) I32,
+  type Cursor = IteratorValue (IndexedIteratorState Text) I32,
   .iterator = text => do
     let state: IndexedIteratorState Text = [.collection = text, .index = 0, .length = @len text];
     let has_next = (state: IndexedIteratorState Text) => do
@@ -121,7 +121,7 @@ extend Text {
       ];
       [item, next_state]
     end;
-    let iterator: IteratorValue(IndexedIteratorState Text) I32 = [
+    let iterator: IteratorValue (IndexedIteratorState Text) I32 = [
       .state = state,
       .has_next = has_next,
       .next = next,
@@ -133,7 +133,7 @@ extend Text {
 const iterator_map: forall source_state input output.(
   IteratorValue source_state input,
   input -> output,
-) -> IteratorValue(MappedIteratorState source_state input output) output =
+) -> IteratorValue (MappedIteratorState source_state input output) output =
   (source, transform) => do
     let state: MappedIteratorState source_state input output = [
       .source = source.state,
@@ -159,7 +159,7 @@ const iterator_map: forall source_state input output.(
         let output = state.transform(item);
         [output, next_state]
       end;
-    let iterator: IteratorValue(MappedIteratorState source_state input output) output = [
+    let iterator: IteratorValue (MappedIteratorState source_state input output) output = [
       .state = state,
       .has_next = has_next,
       .next = next,
@@ -171,7 +171,7 @@ const iterator_zip: forall left_state right_state left_item right_item.(
   IteratorValue left_state left_item,
   IteratorValue right_state right_item,
 ) ->
-  IteratorValue(ZippedIteratorState left_state right_state left_item right_item)(
+  IteratorValue (ZippedIteratorState left_state right_state left_item right_item) (
     ZippedItem left_item right_item
   ) =
   (left, right) => do
@@ -204,7 +204,7 @@ const iterator_zip: forall left_state right_state left_item right_item.(
         let pair: ZippedItem left_item right_item = [left_value, right_value];
         [pair, next_state]
       end;
-    let iterator: IteratorValue(ZippedIteratorState left_state right_state left_item right_item)(
+    let iterator: IteratorValue (ZippedIteratorState left_state right_state left_item right_item) (
       ZippedItem left_item right_item
     ) = [
       .state = state,
@@ -218,7 +218,7 @@ const iterator_scan: forall source_state item state.(
   IteratorValue source_state item,
   state,
   state -> item -> state,
-) -> IteratorValue(ScannedIteratorState source_state item state) state =
+) -> IteratorValue (ScannedIteratorState source_state item state) state =
   (source, initial, combine) => do
     let state: ScannedIteratorState source_state item state = [
       .source = source.state,
@@ -246,7 +246,7 @@ const iterator_scan: forall source_state item state.(
         ];
         [combined, next_state]
       end;
-    let iterator: IteratorValue(ScannedIteratorState source_state item state) state = [
+    let iterator: IteratorValue (ScannedIteratorState source_state item state) state = [
       .state = state,
       .has_next = has_next,
       .next = next,

@@ -62,6 +62,7 @@ static bool starts_application_argument(int32_t character) {
     case '{':
     case '!':
     case '#':
+    case '@':
     case '`':
       return true;
     default:
@@ -384,6 +385,17 @@ bool tree_sitter_duck_external_scanner_scan(
   }
 
   if (lexer->lookahead == '!') {
+    lexer->advance(lexer, false);
+    if (
+      !((lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+        (lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+        lexer->lookahead == '_')
+    ) {
+      return false;
+    }
+  }
+
+  if (lexer->lookahead == '@') {
     lexer->advance(lexer, false);
     if (
       !((lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||

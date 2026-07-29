@@ -1,11 +1,15 @@
 import type { FrontExpr, Token } from "../frontend/ast.ts";
-import { parse_source_with_diagnostics } from "../frontend/parser.ts";
+import { parse_duck_source } from "../frontend/baba_parser.ts";
+import {
+  baba_source_syntax,
+  parse_baba_source_with_diagnostics,
+} from "../frontend/source_parse.ts";
 import {
   has_source_span,
   source_span,
   type SourceSyntax,
 } from "../frontend/syntax.ts";
-import { scan_source, source_tokens } from "../frontend/tokenize.ts";
+import { source_tokens } from "../frontend/tokenize.ts";
 
 // The formatter is deliberately biased: it re-emits the comment-preserving
 // token stream with fixed spacing, two-space bracket indentation, collapsed
@@ -105,7 +109,7 @@ type BlockState = {
 };
 
 export function format_text(text: string): string {
-  return format_syntax(scan_source(text));
+  return format_syntax(baba_source_syntax(parse_duck_source(text)));
 }
 
 export function format_syntax(syntax: SourceSyntax): string {
@@ -269,7 +273,7 @@ export function format_syntax(syntax: SourceSyntax): string {
 
 function redundant_unary_call_parentheses(text: string): Set<number> {
   const omitted = new Set<number>();
-  const parsed = parse_source_with_diagnostics(text);
+  const parsed = parse_baba_source_with_diagnostics(text);
 
   if (parsed.diagnostics.length > 0) {
     return omitted;
@@ -300,8 +304,19 @@ function redundant_unary_call_parentheses(text: string): Set<number> {
         const argument_span = source_span(arg);
         const before = text.slice(function_span.end, argument_span.start);
         const after = text.slice(argument_span.end, expression_span.end);
+        const prefix = text.slice(0, function_span.start).trimEnd();
+        const function_text = text.slice(
+          function_span.start,
+          function_span.end,
+        ).trimStart();
+        const follows_bang = prefix.endsWith("!") ||
+          function_text.startsWith("!");
 
-        if (/^[ \t]*\([ \t]*$/.test(before) && /^[ \t]*\)$/.test(after)) {
+        if (
+          !follows_bang &&
+          /^[ \t]*\([ \t]*$/.test(before) &&
+          /^[ \t]*\)$/.test(after)
+        ) {
           omitted.add(function_span.end + before.lastIndexOf("("));
           omitted.add(argument_span.end + after.lastIndexOf(")"));
         }
@@ -1362,6 +1377,13 @@ function needs_space(
       }
 
       if (before_previous?.kind === "symbol" && before_previous.text === "@") {
+        return false;
+      }
+
+      if (
+        before_previous?.kind === "symbol" &&
+        before_previous.text === "!"
+      ) {
         return false;
       }
 

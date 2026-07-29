@@ -74,12 +74,12 @@ duck Functor F A B {
 }
 
 duck Apply F A B {
-  .apply = (F(A -> B), F A) -> F B
+  .apply = (F (A -> B), F A) -> F B
 }
 
 duck Applicative F A B {
   .pure = A -> F A
-  .apply = (F(A -> B), F A) -> F B
+  .apply = (F (A -> B), F A) -> F B
 }
 
 duck Monad M A B {
@@ -146,7 +146,7 @@ duck Contravariant F A B {
 }
 
 duck Traversable T F A B {
-  .traverse = (T A, A -> F B) -> F(T B)
+  .traverse = (T A, A -> F B) -> F (T B)
 }
 
 duck Category C A B D {

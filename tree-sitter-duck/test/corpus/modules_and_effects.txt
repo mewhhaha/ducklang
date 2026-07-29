@@ -94,35 +94,38 @@ return { .result = result };
         (block
           (effect_binding_statement
             (identifier)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (unit_pattern))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (unit_pattern)))))
           (effect_binding_statement
             (wildcard)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (parenthesized_expression
-                  (unary_expression
-                    (postfix_expression
-                      (identifier)))))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (parenthesized_expression
+                    (unary_expression
+                      (postfix_expression
+                        (identifier))))))))
           (expression_statement
             (postfix_expression
               (identifier)))))))
   (binding_statement
     (identifier)
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (unit_pattern))))
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (unit_pattern)))))
   (module_return_statement
     (shape_value
       (shape_field_block
@@ -215,25 +218,27 @@ let inspect: () -> <Stdin :| Stdout.write_line :| Trace :- Debug> Unit = () => (
         (block
           (effect_binding_statement
             (identifier)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (unit_pattern))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (unit_pattern)))))
           (effect_binding_statement
             (wildcard)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (parenthesized_expression
-                  (unary_expression
-                    (postfix_expression
-                      (identifier)))))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (parenthesized_expression
+                    (unary_expression
+                      (postfix_expression
+                        (identifier))))))))
           (expression_statement
             (postfix_expression
               (identifier)))))))
@@ -324,11 +329,12 @@ try run()
 (source_file
   (expression_statement
     (try_with_expression
-      (application_expression
-        (postfix_expression
-          (identifier))
-        (parenthesized_or_product
-          (unit_pattern))))))
+      (postfix_expression
+        (call_expression
+          (postfix_expression
+            (identifier))
+          (parenthesized_or_product
+            (unit_pattern)))))))
 
 ==================
 Duck handler and resumptions
@@ -418,14 +424,15 @@ return { .result = result };
                   (parameter_list
                     (parameter
                       (identifier)))
-                  (application_expression
-                    (postfix_expression
-                      (linear_reference
-                        (identifier)))
-                    (parenthesized_or_product
-                      (parenthesized_expression
-                        (postfix_expression
-                          (identifier)))))))
+                  (postfix_expression
+                    (call_expression
+                      (postfix_expression
+                        (linear_reference
+                          (identifier)))
+                      (parenthesized_or_product
+                        (parenthesized_expression
+                          (postfix_expression
+                            (identifier))))))))
               (handler_operation_clause
                 (identifier)
                 (arrow_function
@@ -445,14 +452,15 @@ return { .result = result };
                           (postfix_expression
                             (identifier))))
                       (expression_statement
-                        (application_expression
-                          (postfix_expression
-                            (linear_reference
-                              (identifier)))
-                          (parenthesized_or_product
-                            (parenthesized_expression
-                              (postfix_expression
-                                (unit_pattern))))))))))
+                        (postfix_expression
+                          (call_expression
+                            (postfix_expression
+                              (linear_reference
+                                (identifier)))
+                            (parenthesized_or_product
+                              (parenthesized_expression
+                                (postfix_expression
+                                  (unit_pattern)))))))))))
               (handler_return_clause
                 (arrow_function
                   (parameter
@@ -477,14 +485,15 @@ return { .result = result };
               (parameter_list
                 (parameter
                   (identifier)))
-              (application_expression
-                (postfix_expression
-                  (linear_reference
-                    (identifier)))
-                (parenthesized_or_product
-                  (parenthesized_expression
-                    (postfix_expression
-                      (number)))))))
+              (postfix_expression
+                (call_expression
+                  (postfix_expression
+                    (linear_reference
+                      (identifier)))
+                  (parenthesized_or_product
+                    (parenthesized_expression
+                      (postfix_expression
+                        (number))))))))
           (handler_return_clause
             (arrow_function
               (parameter
@@ -494,11 +503,12 @@ return { .result = result };
   (binding_statement
     (identifier)
     (try_with_expression
-      (application_expression
-        (postfix_expression
-          (identifier))
-        (parenthesized_or_product
-          (unit_pattern)))
+      (postfix_expression
+        (call_expression
+          (postfix_expression
+            (identifier))
+          (parenthesized_or_product
+            (unit_pattern))))
       (postfix_expression
         (identifier))))
   (resume_dup_statement
@@ -576,25 +586,27 @@ return { .result = result, .close = close };
         (block
           (effect_binding_statement
             (identifier)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (unit_pattern))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (unit_pattern)))))
           (effect_binding_statement
             (wildcard)
-            (application_expression
-              (postfix_expression
-                (field_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_or_product
-                (parenthesized_expression
-                  (unary_expression
-                    (postfix_expression
-                      (identifier)))))))
+            (postfix_expression
+              (call_expression
+                (postfix_expression
+                  (field_expression
+                    (identifier)
+                    (identifier)))
+                (parenthesized_or_product
+                  (parenthesized_expression
+                    (unary_expression
+                      (postfix_expression
+                        (identifier))))))))
           (expression_statement
             (postfix_expression
               (identifier)))))))
@@ -604,29 +616,31 @@ return { .result = result, .close = close };
         (identifier))
       (named_shape_pattern_field
         (identifier)))
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (parenthesized_expression
-          (postfix_expression
-            (shape_value
-              (shape_field_block
-                (shape_field
-                  (identifier)
-                  (postfix_expression
-                    (field_expression
-                      (postfix_expression
-                        (linear_reference
-                          (identifier)))
-                      (identifier)))))))))))
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (shape_value
+                (shape_field_block
+                  (shape_field
+                    (identifier)
+                    (postfix_expression
+                      (field_expression
+                        (postfix_expression
+                          (linear_reference
+                            (identifier)))
+                        (identifier))))))))))))
   (binding_statement
     (identifier)
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (unit_pattern))))
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (unit_pattern)))))
   (module_return_statement
     (shape_value
       (shape_field_block

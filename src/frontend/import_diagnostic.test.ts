@@ -85,6 +85,15 @@ Deno.test("Source.analyze reports Baba import parse failures", () => {
       end: dependency.indexOf(";"),
     },
     uri: "file:///dep.duck",
+    related: [{
+      message: "Imported here.",
+      span: {
+        start: main.indexOf('import "./dep.duck"'),
+        end: main.indexOf('import "./dep.duck"') +
+          'import "./dep.duck"'.length,
+      },
+      uri: "file:///main.duck",
+    }],
   }]);
 });
 

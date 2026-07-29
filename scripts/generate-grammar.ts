@@ -171,6 +171,18 @@ ${scanner_tokens.map((name) => `    $.${name},`).join("\n")}
     );
   }
 
+  const immediate_type_open =
+    "    _immediate_type_open: $ => token(prec(3, /\\(/)),";
+  if (!source.includes(immediate_type_open)) {
+    throw new Error(
+      "Baba's generated grammar.js no longer contains the immediate type opener.",
+    );
+  }
+  source = source.replace(
+    immediate_type_open,
+    '    _immediate_type_open: $ => token.immediate("("),',
+  );
+
   const generated_token_rules = new Set(scanner_tokens);
   return source.replace(baba_extras, tree_sitter_configuration)
     .split("\n")
@@ -214,14 +226,8 @@ async function run_tree_sitter_wasm_build(
   directory: string | URL,
   cache_directory: string,
 ): Promise<void> {
-  let output: string;
-  if (typeof directory === "string") {
-    output = directory + "/tree-sitter-duck.wasm";
-  } else {
-    output = new URL("tree-sitter-duck.wasm", directory).pathname;
-  }
   const generation = await new Deno.Command("tree-sitter", {
-    args: ["build", "--wasm", "--output", output, "."],
+    args: ["build", "--wasm", "--output", "tree-sitter-duck.wasm", "."],
     cwd: directory,
     env: {
       XDG_CACHE_HOME: cache_directory,

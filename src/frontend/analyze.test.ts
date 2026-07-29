@@ -71,11 +71,22 @@ Deno.test("Source.analyze accepts linear branches and closures with exact use", 
 
 Deno.test("Source.analyze returns compiler-owned syntax diagnostics", () => {
   const analysis = Source.analyze("let =");
-  const diagnostic = analysis.diagnostics[0];
 
-  assert_equals(diagnostic?.code, "DUCK1001");
-  assert_equals(diagnostic?.severity, "error");
-  assert_equals(diagnostic?.span.start === 0, false);
+  assert_equals(analysis.diagnostics, [{
+    code: "DUCK1001",
+    severity: "error",
+    message: "Baba parser rejected ERROR",
+    span: { start: 0, end: 5 },
+  }]);
+});
+
+Deno.test("Source.analyze keeps import metadata fields as field access", () => {
+  const analysis = Source.analyze(
+    "const mode = import .meta.mode;\nmode\n",
+    { import_meta: { mode: { atom: "test" } } },
+  );
+
+  assert_equals(analysis.diagnostics, []);
 });
 
 const failure_goldens = [

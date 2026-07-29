@@ -324,7 +324,7 @@ extend PieceByteTraversal {
   end,
   .next = traversal => do
     let #PieceBytes cursor = traversal else do
-      @panic "Cannot advance an exhausted piece-byte iterator"
+      @panic "Cannot advance an exhausted piece-byte iterator";
       [0, traversal]
     end;
     let rec remaining_piece_bytes: PieceStack -> PieceByteTraversal =

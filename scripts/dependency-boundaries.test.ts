@@ -7,7 +7,10 @@ import {
 
 Deno.test("repository architecture has no import cycles or layer violations", () => {
   assert_equals(
-    analyze_dependencies(new URL("../src/", import.meta.url)),
+    analyze_dependencies([
+      new URL("../src/", import.meta.url),
+      new URL("./", import.meta.url),
+    ]),
     { cycles: [], violations: [] },
   );
 });
@@ -41,18 +44,41 @@ Deno.test("dependency boundaries keep the frontend independent from Core", () =>
   }]);
 });
 
-Deno.test("dependency boundaries keep the compiler on Baba", () => {
+Deno.test("dependency boundaries keep production source and tooling on Baba", () => {
   const graph = new Map([
     [
-      "src/backend/compiler.ts",
+      "src/lsp/server.ts",
+      new Set(["src/frontend/parser.ts"]),
+    ],
+    [
+      "scripts/terminate-statements.ts",
       new Set(["src/frontend/parser.ts"]),
     ],
     ["src/frontend/parser.ts", new Set<string>()],
   ]);
 
-  assert_equals(dependency_violations(graph), [{
-    importer: "src/backend/compiler.ts",
-    imported: "src/frontend/parser.ts",
-    reason: "the compiler must parse source through Baba",
-  }]);
+  assert_equals(dependency_violations(graph), [
+    {
+      importer: "scripts/terminate-statements.ts",
+      imported: "src/frontend/parser.ts",
+      reason: "production source and tooling must parse through Baba",
+    },
+    {
+      importer: "src/lsp/server.ts",
+      imported: "src/frontend/parser.ts",
+      reason: "production source and tooling must parse through Baba",
+    },
+  ]);
+});
+
+Deno.test("dependency boundaries retain the handwritten parser as a test oracle", () => {
+  const graph = new Map([
+    [
+      "src/frontend/baba_lower.test.ts",
+      new Set(["src/frontend/parser.ts"]),
+    ],
+    ["src/frontend/parser.ts", new Set<string>()],
+  ]);
+
+  assert_equals(dependency_violations(graph), []);
 });

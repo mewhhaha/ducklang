@@ -30,7 +30,6 @@ import { source_with_host_interface } from "./frontend/host_interface.ts";
 import { pattern_binding_occurrences } from "./frontend/pattern.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import {
-  make_source_syntax,
   mark_source_span,
   mark_source_syntax,
   source_span,
@@ -38,6 +37,7 @@ import {
   type SourceSyntax,
   type SyntaxDiagnostic,
 } from "./frontend/syntax.ts";
+import { baba_source_syntax } from "./frontend/source_parse.ts";
 import {
   SemanticIdentityAllocator,
   type SemanticOrigin,
@@ -151,11 +151,7 @@ export function analyze_duck_source(
     source = { tag: "program", statements: [] };
     mark_source_span(source, { start: 0, end: stable_input.cst.text.length });
   }
-  const syntax = make_source_syntax(
-    stable_input.cst.text,
-    [],
-    stable_input.diagnostics,
-  );
+  const syntax = baba_source_syntax(stable_input);
   mark_source_syntax(source, syntax);
   let analysis_source = source;
   if (options.host_interface !== undefined) {
@@ -399,9 +395,14 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
   for (let index = 0; index < parsed.tokens.length; index += 1) {
     const token = parsed.tokens[index];
     expect(token !== undefined, "Baba token list cannot contain holes.");
+    require_own_data(token, "kind");
     require_own_data(token, "text");
     require_own_data(token, "start");
     require_own_data(token, "end");
+    expect(
+      typeof token.kind === "string" && token.kind.length > 0,
+      "Baba token kind must be a non-empty string.",
+    );
     expect(
       Number.isSafeInteger(token.start) && token.start >= 0 &&
         token.start <= parsed.cst.text.length,
@@ -413,7 +414,12 @@ function snapshot_baba_parse_result(parsed: BabaParseResult): BabaParseResult {
       "Baba token end is outside source text.",
     );
     tokens.push(
-      Object.freeze({ text: token.text, start: token.start, end: token.end }),
+      Object.freeze({
+        kind: token.kind,
+        text: token.text,
+        start: token.start,
+        end: token.end,
+      }),
     );
   }
   const diagnostics: BabaParseResult["diagnostics"] = [];

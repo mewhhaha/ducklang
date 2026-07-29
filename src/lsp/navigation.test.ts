@@ -217,7 +217,7 @@ value.name
       label: "union case",
       text: "type Result = #Ok Int\n" +
         "let value = #Ok (1);\n" +
-        "if let #Ok payload = value { payload }\n",
+        "if let #Ok payload = value then payload end\n",
       selected: "#Ok",
       replacement: "Success",
       count: 3,

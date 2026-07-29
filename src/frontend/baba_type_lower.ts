@@ -155,6 +155,27 @@ function lower_type(
     return lower_type(value, source);
   }
 
+  if (node.kind === "immediate_type_argument") {
+    const values = direct_type_children(node);
+    if (values.length === 0) {
+      return ok(mark_type_span({
+        tag: "product",
+        entries: [],
+        value_pack: true,
+      }, node));
+    }
+    const product = node.children.some((child) => {
+      const text = source.slice(child.start, child.end);
+      return text === "," || text === ";";
+    });
+    if (product) return lower_positional_type_product(node, source);
+    const value = values[0];
+    if (value === undefined || values.length !== 1) {
+      return unsupported_type(node);
+    }
+    return lower_type(value, source);
+  }
+
   if (node.kind === "type_product") {
     const product = node.children.find((child) =>
       child.kind === "positional_type_product"
@@ -828,6 +849,7 @@ function is_type_node(node: BabaCstNode): boolean {
     node.kind === "boolean" ||
     node.kind === "unit_type" ||
     node.kind === "type_parenthesized" ||
+    node.kind === "immediate_type_argument" ||
     node.kind === "type_product" ||
     node.kind === "positional_type_product" ||
     node.kind === "array_type";

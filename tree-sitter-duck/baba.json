@@ -31,6 +31,10 @@
       "linear_reference"
     ],
     [
+      "condition_postfix_expression",
+      "linear_reference"
+    ],
+    [
       "shape_field_block",
       "block"
     ],
@@ -213,7 +217,13 @@
     "condition_call_expression": {
       "wrap": {
         "kind": "prec.left",
-        "value": 9
+        "value": 10
+      }
+    },
+    "condition_call_arguments": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
       }
     },
     "condition_application_expression": {
@@ -295,6 +305,12 @@
         "value": 9
       }
     },
+    "call_expression": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
     "field_expression": {
       "wrap": {
         "kind": "prec.left",
@@ -352,6 +368,12 @@
         "value": -1
       }
     },
+    "shape_nullary_union_case": {
+      "wrap": {
+        "kind": "prec",
+        "value": 3
+      }
+    },
     "named_product": {
       "wrap": {
         "kind": "prec",
@@ -362,6 +384,12 @@
       "wrap": {
         "kind": "prec",
         "value": 1
+      }
+    },
+    "shape_value": {
+      "wrap": {
+        "kind": "prec",
+        "value": 2
       }
     },
     "forall_type": {

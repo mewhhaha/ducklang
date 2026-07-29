@@ -294,7 +294,7 @@ let choice = handler Choice { decide: (!resume) => !resume false, return: value 
 Deno.test("code actions add an explicit missing if-let case", () => {
   const before = "type Result = | #Ok Int | #Err Text\n" +
     "let result = #Ok (1);\n" +
-    "if let #Ok value = result { value } else { 0 }\n";
+    "if let #Ok value = result then value else 0 end\n";
   const result = actions(before);
   const branch = result.actions.find((candidate) =>
     candidate.title === "Add explicit #Err branch"
@@ -305,7 +305,8 @@ Deno.test("code actions add an explicit missing if-let case", () => {
     after,
     "type Result = | #Ok Int | #Err Text\n" +
       "let result = #Ok (1);\n" +
-      "if let #Ok value = result { value } else if let #Err value = result { 0 } else { 0 }\n",
+      "if let #Ok value = result then value else " +
+      "if let #Err value = result then 0 else 0 end end\n",
   );
   assert_equals(Source.analyze(after).diagnostics, []);
 });

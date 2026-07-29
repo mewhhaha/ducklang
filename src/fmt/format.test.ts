@@ -17,6 +17,13 @@ Deno.test("format_text keeps unary sigils tight", () => {
   );
 });
 
+Deno.test("format_text preserves logical-not call parentheses", () => {
+  assert_equals(
+    format_text("let empty=!f();\nlet value=!f(1);\n"),
+    "let empty = !f();\nlet value = !f(1);\n",
+  );
+});
+
 Deno.test("format_text uses whitespace for atomic unary calls", () => {
   assert_equals(
     format_text(
@@ -31,6 +38,17 @@ Deno.test("format_text uses whitespace for atomic unary calls", () => {
       "let passed = func;\n" +
       "let grouped = func (a + b);\n" +
       "let packed = func (a, b);\n",
+  );
+});
+
+Deno.test("format_text preserves tight parenthesized type applications", () => {
+  const source = "type Alias = Type(value)\n";
+  const formatted = format_text(source);
+
+  assert_equals(formatted, "type Alias = Type (value)\n");
+  assert_equals(
+    format_source(Source.parse(formatted)),
+    format_source(Source.parse(source)),
   );
 });
 

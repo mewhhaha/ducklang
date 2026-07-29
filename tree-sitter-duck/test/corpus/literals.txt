@@ -70,7 +70,8 @@ end;
   (expression_statement
     (if_expression
       condition: (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       consequence: (conditional_branch
         (expression_statement
           (postfix_expression
@@ -84,7 +85,8 @@ end;
     (if_expression
       pattern: (character)
       value: (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       consequence: (conditional_branch
         (expression_statement
           (postfix_expression
@@ -98,7 +100,8 @@ end;
     (if_expression
       pattern: (string)
       value: (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       consequence: (conditional_branch
         (expression_statement
           (postfix_expression

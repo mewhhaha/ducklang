@@ -375,7 +375,7 @@ export function lower_baba_effect_declaration(
       type_context,
     );
     const operation_name_node = operation_node.children.find((child) =>
-      child.kind === "identifier"
+      child.kind === "identifier" || child.kind === '"end"'
     );
     if (operation_name_node === undefined) {
       return unsupported_declaration(operation_node);
@@ -443,7 +443,9 @@ function lower_effect_operation(
   effect_params: ReadonlySet<string>,
   type_context: BabaEffectTypeContext,
 ): Checked<EffectOperation> {
-  const name_node = node.children.find((child) => child.kind === "identifier");
+  const name_node = node.children.find((child) =>
+    child.kind === "identifier" || child.kind === '"end"'
+  );
   const parameter_list = node.children.find((child) =>
     child.kind === "host_parameter_list"
   );

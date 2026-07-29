@@ -88,6 +88,12 @@ const conditional_branch_spans = new WeakMap<object, SourceSpan>();
 const no_demand_names = new WeakMap<BabaCstNode, string>();
 const synthetic_parameter_names = new WeakMap<BabaCstNode, string>();
 const direct_effect_bindings = new WeakSet<BabaCstNode>();
+const lifted_expression_prefixes = new WeakMap<
+  BabaCstNode,
+  BabaPrefixFixity
+>();
+const lifted_prefix_references = new WeakSet<BabaCstNode>();
+const suppressed_expression_prefixes = new WeakSet<BabaCstNode>();
 const maximum_pattern_nesting = 128;
 
 export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
@@ -118,6 +124,7 @@ export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
     }
   }
   index_baba_fixities(parsed);
+  index_expression_prefixes(root, parsed.cst.text);
   index_synthetic_names(root, parsed.cst.text, parsed.tokens);
   index_direct_effect_bindings(root, parsed.cst.text);
   const declared_effect_type_context = collect_declared_effect_type_context(
@@ -147,6 +154,314 @@ export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
     derive_missing_source_spans(source, { start: root.start, end: root.end });
     return source;
   });
+}
+
+function index_expression_prefixes(root: BabaCstNode, source: string): void {
+  const parents = new WeakMap<BabaCstNode, BabaCstNode>();
+  const references: BabaCstNode[] = [];
+  const scopes: BabaCstNode[] = [];
+  const pending = [root];
+
+  while (pending.length > 0) {
+    const node = pending.pop();
+    expect(node !== undefined, "Baba linear-call indexing work disappeared.");
+    if (node.kind === "block" || node.kind === "source_file") {
+      scopes.push(node);
+    }
+    if (node.kind === "linear_reference") references.push(node);
+    for (const child of node.children) {
+      parents.set(child, node);
+      pending.push(child);
+    }
+  }
+
+  type IndexedBindingMode = {
+    end: number;
+    linear: boolean;
+  };
+  const scoped_bindings = new WeakMap<
+    BabaCstNode,
+    Map<string, IndexedBindingMode[]>
+  >();
+
+  for (const scope of scopes) {
+    const bindings = new Map<string, IndexedBindingMode[]>();
+
+    for (const statement of scope.children) {
+      if (statement.kind !== "binding_statement") continue;
+      const equals = statement.children.find((child) =>
+        source.slice(child.start, child.end) === "="
+      );
+      if (equals === undefined) continue;
+      const pattern_nodes = statement.children.filter((child) =>
+        child.end <= equals.start && is_pattern_node(child)
+      );
+      if (pattern_nodes.length === 0) continue;
+      let default_mode: "default" | "linear" = "default";
+      if (
+        statement.children.some((child) =>
+          source.slice(child.start, child.end) === "!"
+        )
+      ) {
+        default_mode = "linear";
+      }
+      const pattern = checked_value(
+        lower_pattern_alternatives(pattern_nodes, source, default_mode),
+      );
+      if (pattern === undefined) continue;
+
+      for (const binding of pattern_bindings(pattern)) {
+        let modes = bindings.get(binding.name);
+        if (modes === undefined) {
+          modes = [];
+          bindings.set(binding.name, modes);
+        }
+        modes.push({
+          end: statement.end,
+          linear: binding.mode === "linear",
+        });
+      }
+    }
+
+    scoped_bindings.set(scope, bindings);
+  }
+
+  const parameter_mode = (
+    parameter: BabaCstNode,
+    name: string,
+  ): boolean | undefined => {
+    const name_node = parameter.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (
+      name_node === undefined ||
+      source.slice(name_node.start, name_node.end) !== name
+    ) {
+      return undefined;
+    }
+    return parameter.children.some((child) =>
+      source.slice(child.start, child.end) === "!"
+    );
+  };
+
+  const arrow_parameter_mode = (
+    arrow: BabaCstNode,
+    name: string,
+  ): boolean | undefined => {
+    const parameter_list = arrow.children.find((child) =>
+      child.kind === "parameter_list"
+    );
+    if (parameter_list !== undefined) {
+      for (
+        const parameter of parameter_list.children.filter((child) =>
+          child.kind === "parameter"
+        )
+      ) {
+        const mode = parameter_mode(parameter, name);
+        if (mode !== undefined) return mode;
+      }
+      return undefined;
+    }
+    const parameter = arrow.children.find((child) =>
+      child.kind === "parameter"
+    );
+    if (parameter === undefined) return undefined;
+    return parameter_mode(parameter, name);
+  };
+
+  const scoped_binding_mode = (
+    scope: BabaCstNode,
+    name: string,
+    before: number,
+  ): boolean | undefined => {
+    const modes = scoped_bindings.get(scope)?.get(name);
+    if (modes === undefined) return undefined;
+    let lower = 0;
+    let upper = modes.length;
+
+    while (lower < upper) {
+      const middle = Math.floor((lower + upper) / 2);
+      const candidate = modes[middle];
+      expect(candidate !== undefined, "Baba binding-mode index has a hole.");
+      if (candidate.end <= before) {
+        lower = middle + 1;
+      } else {
+        upper = middle;
+      }
+    }
+
+    if (lower === 0) return undefined;
+    const mode = modes[lower - 1];
+    expect(mode !== undefined, "Baba binding-mode search lost its result.");
+    return mode.linear;
+  };
+
+  const module_parameter_mode = (
+    header: BabaCstNode,
+    name: string,
+  ): boolean | undefined => {
+    const parameter_list = header.children.find((child) =>
+      child.kind === "parameter_list"
+    );
+    if (parameter_list === undefined) return undefined;
+    for (
+      const parameter of parameter_list.children.filter((child) =>
+        child.kind === "parameter"
+      )
+    ) {
+      const mode = parameter_mode(parameter, name);
+      if (mode !== undefined) return mode;
+    }
+    return undefined;
+  };
+
+  for (const reference of references) {
+    const operator_node = reference.children.find((child) =>
+      source.slice(child.start, child.end) === "!"
+    );
+    const name_node = reference.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (operator_node === undefined || name_node === undefined) continue;
+    const name = source.slice(name_node.start, name_node.end);
+    let branch = reference;
+    let ancestor = parents.get(branch);
+    let mode: boolean | undefined;
+    if (name === "resume") {
+      mode = true;
+    }
+
+    while (ancestor !== undefined && mode === undefined) {
+      if (ancestor.kind === "arrow_function") {
+        mode = arrow_parameter_mode(ancestor, name);
+      }
+      if (ancestor.kind === "block" || ancestor.kind === "source_file") {
+        mode = scoped_binding_mode(ancestor, name, branch.start);
+        if (mode === undefined && ancestor.kind === "source_file") {
+          const header = ancestor.children.find((child) =>
+            child.kind === "module_header" && child.end <= branch.start
+          );
+          if (header !== undefined) {
+            mode = module_parameter_mode(header, name);
+          }
+        }
+      }
+      branch = ancestor;
+      ancestor = parents.get(ancestor);
+    }
+
+    const fixity = baba_prefix_fixity(operator_node);
+    if (fixity === undefined) continue;
+    let direct_function: BabaCstNode = reference;
+    let direct_parent = parents.get(direct_function);
+    while (
+      direct_parent !== undefined &&
+      (
+        direct_parent.kind === "postfix_expression" ||
+        direct_parent.kind === "condition_postfix_expression"
+      ) &&
+      semantic_child(direct_parent) === direct_function
+    ) {
+      direct_function = direct_parent;
+      direct_parent = parents.get(direct_function);
+    }
+    let parenthesized_call = false;
+    if (
+      direct_parent?.kind === "application_expression" ||
+      direct_parent?.kind === "call_expression" ||
+      direct_parent?.kind === "condition_call_expression"
+    ) {
+      const direct_expressions = direct_parent.children.filter((child) =>
+        is_expression_node(child)
+      );
+      const argument_node = direct_expressions[1];
+      let direct_argument_node: BabaCstNode | undefined = argument_node;
+      while (
+        direct_argument_node?.kind === "postfix_expression" ||
+        direct_argument_node?.kind === "condition_postfix_expression"
+      ) {
+        direct_argument_node = semantic_child(direct_argument_node);
+      }
+      parenthesized_call = direct_expressions[0] === direct_function &&
+        argument_node !== undefined &&
+        !/[\r\n]/.test(
+          source.slice(direct_function.end, argument_node.start),
+        ) &&
+        direct_argument_node !== undefined &&
+        (
+          direct_argument_node.kind === "parenthesized_or_product" ||
+          direct_argument_node.kind === "parenthesized_expression" ||
+          direct_argument_node.kind === "positional_product" ||
+          direct_argument_node.kind === "named_product" ||
+          direct_argument_node.kind === "unit_pattern" ||
+          direct_argument_node.kind === "condition_call_arguments" ||
+          direct_argument_node.kind === "condition_parenthesized_expression" ||
+          direct_argument_node.kind === "condition_positional_product"
+        );
+    }
+    if (
+      fixity.target === "@syntax.not" &&
+      (mode === true || !parenthesized_call)
+    ) {
+      continue;
+    }
+
+    let prefix_owner = reference;
+    let outer = parents.get(prefix_owner);
+    while (outer !== undefined) {
+      const outer_expressions = outer.children.filter((child) =>
+        is_expression_node(child)
+      );
+      if (outer_expressions[0] !== prefix_owner) break;
+      const outer_argument = outer_expressions[1];
+      if (
+        outer_argument !== undefined &&
+        (
+          outer.kind === "application_expression" ||
+          outer.kind === "call_expression" ||
+          outer.kind === "condition_call_expression" ||
+          outer.kind === "condition_application_expression"
+        ) &&
+        /[\r\n]/.test(
+          source.slice(prefix_owner.end, outer_argument.start),
+        )
+      ) {
+        break;
+      }
+      if (
+        outer.kind !== "postfix_expression" &&
+        outer.kind !== "condition_postfix_expression" &&
+        outer.kind !== "condition_expression" &&
+        outer.kind !== "application_expression" &&
+        outer.kind !== "call_expression" &&
+        outer.kind !== "condition_call_expression" &&
+        outer.kind !== "condition_application_expression" &&
+        outer.kind !== "field_expression" &&
+        outer.kind !== "condition_field_expression" &&
+        outer.kind !== "index_expression" &&
+        outer.kind !== "condition_index_expression"
+      ) {
+        break;
+      }
+      prefix_owner = outer;
+      outer = parents.get(prefix_owner);
+    }
+    if (
+      fixity.target === "@syntax.not" &&
+      outer !== undefined &&
+      (
+        outer.kind === "application_expression" ||
+        outer.kind === "condition_application_expression"
+      )
+    ) {
+      const outer_expressions = outer.children.filter((child) =>
+        is_expression_node(child)
+      );
+      if (outer_expressions[1] === prefix_owner) continue;
+    }
+    lifted_expression_prefixes.set(prefix_owner, fixity);
+    lifted_prefix_references.add(reference);
+  }
 }
 
 type EffectRepresentation = "scalar" | "rich" | "unknown";
@@ -1488,7 +1803,10 @@ function effect_instance_constructor(
   const expression = unwrap_transparent_expression(node);
   let applied = false;
   let function_node = expression;
-  if (expression.kind === "application_expression") {
+  if (
+    expression.kind === "application_expression" ||
+    expression.kind === "call_expression"
+  ) {
     const child = expression.children.find((candidate) =>
       is_expression_node(candidate)
     );
@@ -2840,44 +3158,66 @@ function lower_statement_entries(
     const value_node = node.children.find((child) =>
       child !== binding_node && is_expression_node(child)
     );
-    if (value_node?.kind === "application_expression") {
-      const application_nodes = value_node.children.filter((child) =>
-        is_expression_node(child)
+    const segments = newline_expression_segments(value_node, source);
+    if (segments.length > 1) {
+      const effect_node = segments[0];
+      expect(effect_node !== undefined, "Baba effect segment disappeared.");
+      const effect_statement = lower_effect_binding(
+        node,
+        source,
+        effect_node,
+        effect_node.end,
       );
-      const function_node = application_nodes[0];
-      const argument_node = application_nodes[1];
-      if (
-        function_node !== undefined && argument_node !== undefined &&
-        /[\r\n]/.test(
-          source.slice(function_node.end, argument_node.start),
-        )
-      ) {
-        const effect_statement = lower_effect_binding(
-          node,
-          source,
-          function_node,
-          function_node.end,
-        );
-        const trailing_statement = lower_expression(argument_node, source).map(
+      let trailing_statements: Checked<Stmt[]> = ok([]);
+      for (const segment of segments.slice(1)) {
+        const trailing_statement = lower_expression(segment, source).map(
           (expr) => {
             const statement: Stmt = { tag: "expr", expr };
             mark_source_span(statement, {
-              start: argument_node.start,
-              end: argument_node.end,
+              start: segment.start,
+              end: segment.end,
             });
             return statement;
           },
         );
-        return Applicative.lift(
-          (effect: Stmt, trailing: Stmt) => [effect, trailing],
-          effect_statement,
+        trailing_statements = Applicative.lift(
+          (statements: Stmt[], statement: Stmt) => [
+            ...statements,
+            statement,
+          ],
+          trailing_statements,
           trailing_statement,
         );
       }
+      return Applicative.lift(
+        (effect: Stmt, trailing: Stmt[]) => [effect, ...trailing],
+        effect_statement,
+        trailing_statements,
+      );
     }
   }
   if (node.kind === "expression_statement") {
     const expression_node = semantic_child(node);
+    const segments = newline_expression_segments(expression_node, source);
+    if (segments.length > 1) {
+      let statements: Checked<Stmt[]> = ok([]);
+      for (const segment of segments) {
+        const statement = lower_expression(segment, source).map((expr) => {
+          const entry: Stmt = { tag: "expr", expr };
+          mark_source_span(entry, {
+            start: segment.start,
+            end: segment.end,
+          });
+          return entry;
+        });
+        statements = Applicative.lift(
+          (entries: Stmt[], entry: Stmt) => [...entries, entry],
+          statements,
+          statement,
+        );
+      }
+      return statements;
+    }
     if (
       expression_node?.kind === "binary_expression" ||
       expression_node?.kind === "condition_binary_expression"
@@ -2957,6 +3297,188 @@ function lower_statement_entries(
     if (statement === undefined) return [];
     return [statement];
   });
+}
+
+function newline_expression_segments(
+  node: BabaCstNode | undefined,
+  source: string,
+): BabaCstNode[] {
+  if (node === undefined) return [];
+  const split = split_newline_expression(node, source);
+  if (split === undefined) return [node];
+  return [
+    ...newline_expression_segments(split.before, source),
+    ...newline_expression_segments(split.after, source),
+  ];
+}
+
+function split_newline_expression(
+  node: BabaCstNode,
+  source: string,
+): {
+  before: BabaCstNode;
+  after: BabaCstNode;
+} | undefined {
+  if (node.kind === "postfix_expression") {
+    const child = semantic_child(node);
+    if (child === undefined) return undefined;
+    const split = split_newline_expression(child, source);
+    if (split === undefined) return undefined;
+    return {
+      before: replace_expression_child(node, child, split.before),
+      after: replace_expression_child(node, child, split.after),
+    };
+  }
+  if (
+    node.kind === "binary_expression" ||
+    node.kind === "condition_binary_expression"
+  ) {
+    const expressions = node.children.filter((child) =>
+      is_expression_node(child)
+    );
+    const left = expressions[0];
+    const right = expressions[1];
+    if (left === undefined || right === undefined) return undefined;
+    const left_split = split_newline_expression(left, source);
+    if (left_split !== undefined) {
+      return {
+        before: left_split.before,
+        after: replace_expression_child(node, left, left_split.after),
+      };
+    }
+    const right_split = split_newline_expression(right, source);
+    if (right_split !== undefined) {
+      return {
+        before: replace_expression_child(node, right, right_split.before),
+        after: right_split.after,
+      };
+    }
+    return undefined;
+  }
+  if (
+    node.kind === "unary_expression" ||
+    node.kind === "condition_unary_expression"
+  ) {
+    const operand = semantic_child(node);
+    if (operand === undefined) return undefined;
+    const split = split_newline_expression(operand, source);
+    if (split === undefined) return undefined;
+    return {
+      before: replace_expression_child(node, operand, split.before),
+      after: split.after,
+    };
+  }
+  if (
+    node.kind === "field_expression" ||
+    node.kind === "condition_field_expression" ||
+    node.kind === "is_expression" ||
+    node.kind === "condition_is_expression" ||
+    node.kind === "as_expression"
+  ) {
+    const value = semantic_child(node);
+    if (value === undefined) return undefined;
+    const split = split_newline_expression(value, source);
+    if (split === undefined) return undefined;
+    return {
+      before: split.before,
+      after: replace_expression_child(node, value, split.after),
+    };
+  }
+  if (
+    node.kind === "index_expression" ||
+    node.kind === "condition_index_expression"
+  ) {
+    const object = node.children.find((child) => is_expression_node(child));
+    const open = node.children.find((child) =>
+      source.slice(child.start, child.end) === "["
+    );
+    if (object === undefined || open === undefined) return undefined;
+    if (/[\r\n]/.test(source.slice(object.end, open.start))) {
+      let kind = "array_expression";
+      if (
+        node.children.some((child) =>
+          source.slice(child.start, child.end) === ";"
+        )
+      ) {
+        kind = "array_repeat_expression";
+      }
+      const after: BabaCstNode = {
+        ...node,
+        kind,
+        start: open.start,
+        children: node.children.filter((child) => child.start >= open.start),
+      };
+      return { before: object, after };
+    }
+    const split = split_newline_expression(object, source);
+    if (split === undefined) return undefined;
+    return {
+      before: split.before,
+      after: replace_expression_child(node, object, split.after),
+    };
+  }
+  if (
+    node.kind !== "application_expression" &&
+    node.kind !== "call_expression"
+  ) {
+    return undefined;
+  }
+  const expression_nodes = node.children.filter((child) =>
+    is_expression_node(child)
+  );
+  const function_node = expression_nodes[0];
+  const argument_node = expression_nodes[1];
+  if (function_node === undefined || argument_node === undefined) {
+    return undefined;
+  }
+  if (/[\r\n]/.test(source.slice(function_node.end, argument_node.start))) {
+    return { before: function_node, after: argument_node };
+  }
+  const function_split = split_newline_expression(function_node, source);
+  if (function_split !== undefined) {
+    return {
+      before: function_split.before,
+      after: replace_expression_child(
+        node,
+        function_node,
+        function_split.after,
+      ),
+    };
+  }
+  const argument_split = split_newline_expression(argument_node, source);
+  if (argument_split !== undefined) {
+    return {
+      before: replace_expression_child(
+        node,
+        argument_node,
+        argument_split.before,
+      ),
+      after: argument_split.after,
+    };
+  }
+  return undefined;
+}
+
+function replace_expression_child(
+  node: BabaCstNode,
+  child: BabaCstNode,
+  replacement: BabaCstNode,
+): BabaCstNode {
+  const children = node.children.map((candidate) => {
+    if (candidate === child) return replacement;
+    return candidate;
+  });
+  let start = node.start;
+  let end = node.end;
+  if (child.start === node.start) start = replacement.start;
+  if (child.end === node.end) end = replacement.end;
+  const replaced = {
+    ...node,
+    start,
+    end,
+    children,
+  };
+  return replaced;
 }
 
 function lower_for_statement(
@@ -5196,11 +5718,54 @@ function lower_expression(
   node: BabaCstNode,
   source: string,
 ): Checked<FrontExpr> {
+  const lifted_prefix = lifted_expression_prefixes.get(node);
+  if (
+    lifted_prefix !== undefined &&
+    !suppressed_expression_prefixes.has(node)
+  ) {
+    suppressed_expression_prefixes.add(node);
+    const lowered_value = lower_expression(node, source);
+    suppressed_expression_prefixes.delete(node);
+    const value = checked_value(lowered_value);
+    if (value === undefined) return fail(...diagnostics_of(lowered_value));
+    const span = { start: node.start, end: node.end };
+    if (lifted_prefix.target === "@syntax.not") {
+      return apply_builtin_prefix("!", value, span);
+    }
+    if (lifted_prefix.target === "@syntax.negate") {
+      return apply_builtin_prefix("-", value, span);
+    }
+    if (!lifted_prefix.valid_target) {
+      const expression: FrontExpr = {
+        tag: "unsupported",
+        feature: "operator " + lifted_prefix.operator,
+        text: lifted_prefix.operator,
+      };
+      mark_source_span(expression, span);
+      return ok(expression);
+    }
+    const expression: FrontExpr = {
+      tag: "app",
+      func: qualified_operator_target(lifted_prefix.target),
+      arg: value,
+      args: [value],
+      operator_syntax: {
+        kind: "prefix",
+        operator: lifted_prefix.operator,
+        precedence: lifted_prefix.precedence,
+        target: lifted_prefix.target,
+      },
+    };
+    mark_source_span(expression, span);
+    return ok(expression);
+  }
+
   if (
     node.kind === "postfix_expression" ||
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||
     node.kind === "condition_expression" ||
+    node.kind === "condition_postfix_expression" ||
     node.kind === "condition_parenthesized_expression"
   ) {
     const child = semantic_child(node);
@@ -5256,6 +5821,10 @@ function lower_expression(
     const expression: FrontExpr = { tag: "text", value };
     mark_source_span(expression, { start: node.start, end: node.end });
     return ok(expression);
+  }
+
+  if (node.kind === "template_literal") {
+    return lower_template_literal(node, source);
   }
 
   if (node.kind === "wildcard") {
@@ -5345,6 +5914,18 @@ function lower_expression(
     if (operator_node !== undefined) {
       declared_prefix = baba_prefix_fixity(operator_node);
     }
+    if (lifted_prefix_references.has(node)) {
+      const name_node = node.children.find((child) =>
+        child.kind === "identifier"
+      );
+      if (name_node === undefined) return unsupported(node);
+      const expression: FrontExpr = {
+        tag: "var",
+        name: source.slice(name_node.start, name_node.end),
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return ok(expression);
+    }
     if (
       declared_prefix?.source_defined === true &&
       declared_prefix.target !== "@syntax.not"
@@ -5398,10 +5979,48 @@ function lower_expression(
 
   if (
     node.kind === "application_expression" ||
+    node.kind === "call_expression" ||
     node.kind === "condition_call_expression" ||
     node.kind === "condition_application_expression"
   ) {
     return lower_application(node, source);
+  }
+
+  if (node.kind === "condition_call_arguments") {
+    const values = node.children.filter((child) => is_expression_node(child));
+    if (values.length === 0) {
+      const expression: FrontExpr = { tag: "unit" };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return ok(expression);
+    }
+    const first = values[0];
+    expect(first !== undefined, "Baba condition call argument disappeared.");
+    const has_comma = node.children.some((child) =>
+      source.slice(child.start, child.end) === ","
+    );
+    if (values.length === 1 && !has_comma) {
+      return lower_expression(first, source);
+    }
+    let entries: Checked<Array<{ value: FrontExpr }>> = ok([]);
+    for (const value of values) {
+      entries = Applicative.lift(
+        (
+          current: Array<{ value: FrontExpr }>,
+          lowered: FrontExpr,
+        ) => [...current, { value: lowered }],
+        entries,
+        lower_expression(value, source),
+      );
+    }
+    return entries.map((lowered_entries) => {
+      const expression: FrontExpr = {
+        tag: "product",
+        entries: lowered_entries,
+        value_pack: true,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
   }
 
   if (
@@ -5460,6 +6079,27 @@ function lower_expression(
 
   if (node.kind === "array_expression") {
     return lower_array_expression(node, source);
+  }
+
+  if (node.kind === "array_repeat_expression") {
+    const values = node.children.filter((child) => is_expression_node(child));
+    const value_node = values[0];
+    const length_node = values[1];
+    if (
+      value_node === undefined || length_node === undefined ||
+      values.length !== 2
+    ) {
+      return unsupported(node);
+    }
+    return Applicative.lift(
+      (value: FrontExpr, length: FrontExpr) => {
+        const expression: FrontExpr = { tag: "array_repeat", value, length };
+        mark_source_span(expression, { start: node.start, end: node.end });
+        return expression;
+      },
+      lower_expression(value_node, source),
+      lower_expression(length_node, source),
+    );
   }
 
   if (node.kind === "shape_value") {
@@ -5664,6 +6304,11 @@ function lower_expression(
           (name === "encode" || name === "decode")
         ) {
           expression = { tag: "var", name: "Utf8." + name };
+        } else if (
+          object.tag === "var" && object.name.startsWith("@") &&
+          object.name !== import_meta_binding_name
+        ) {
+          expression = { tag: "var", name: object.name + "." + name };
         } else {
           expression = {
             tag: "field",
@@ -5693,6 +6338,9 @@ function lower_expression(
   }
 
   if (node.kind === "union_case") {
+    return lower_union_case(node, source, "complete_expression");
+  }
+  if (node.kind === "shape_nullary_union_case") {
     return lower_union_case(node, source, "complete_expression");
   }
 
@@ -5991,7 +6639,7 @@ function lower_effect_handler_expression(
     )
   ) {
     const name_node = clause_node.children.find((child) =>
-      child.kind === "identifier"
+      child.kind === "identifier" || child.kind === '"end"'
     );
     const value_node = clause_node.children.find((child) =>
       child.kind === "arrow_function"
@@ -6612,6 +7260,142 @@ function unwrapped_numeric_literal(
   return undefined;
 }
 
+function lower_template_literal(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const interpolation_nodes = node.children.filter((child) =>
+    child.kind === "template_interpolation"
+  );
+  const text_spans: SourceSpan[] = [];
+  let text_start = node.start + 1;
+  for (const interpolation of interpolation_nodes) {
+    text_spans.push({ start: text_start, end: interpolation.start });
+    text_start = interpolation.end;
+  }
+  text_spans.push({ start: text_start, end: node.end - 1 });
+
+  let strings: Checked<Array<{ value: FrontExpr }>> = ok([]);
+  for (const span of text_spans) {
+    strings = Applicative.lift(
+      (
+        current: Array<{ value: FrontExpr }>,
+        value: FrontExpr,
+      ) => [...current, { value }],
+      strings,
+      decode_template_text(source, span),
+    );
+  }
+  let values: Checked<Array<{ value: FrontExpr }>> = ok([]);
+  for (const interpolation of interpolation_nodes) {
+    const value_node = interpolation.children.find((child) =>
+      is_expression_node(child)
+    );
+    if (value_node === undefined) return unsupported(interpolation);
+    values = Applicative.lift(
+      (
+        current: Array<{ value: FrontExpr }>,
+        value: FrontExpr,
+      ) => [...current, { value }],
+      values,
+      lower_expression(value_node, source),
+    );
+  }
+
+  return Applicative.lift(
+    (lowered_strings, lowered_values) => {
+      const string_values: FrontExpr = {
+        tag: "product",
+        entries: lowered_strings,
+      };
+      const interpolation_values: FrontExpr = {
+        tag: "product",
+        entries: lowered_values,
+      };
+      mark_source_span(string_values, { start: node.start, end: node.end });
+      mark_source_span(interpolation_values, {
+        start: node.start,
+        end: node.end,
+      });
+      const expression: FrontExpr = {
+        tag: "product",
+        entries: [
+          { value: string_values },
+          { value: interpolation_values },
+        ],
+        value_pack: true,
+        template_literal: true,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    strings,
+    values,
+  );
+}
+
+function decode_template_text(
+  source: string,
+  span: SourceSpan,
+): Checked<FrontExpr> {
+  const raw = source.slice(span.start, span.end);
+  let value = "";
+  let index = 0;
+  while (index < raw.length) {
+    const character = raw[index];
+    if (character === "\\") {
+      const escaped = raw[index + 1];
+      if (escaped === undefined) {
+        return fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Baba template text contains an unsupported escape.",
+            span,
+          ),
+        );
+      }
+      const decoded = decode_literal_escape(escaped, "`");
+      if (decoded === undefined) {
+        return fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Baba template text contains an unsupported escape.",
+            {
+              start: span.start + index,
+              end: span.start + index + 2,
+            },
+          ),
+        );
+      }
+      value += decoded;
+      index += 2;
+      continue;
+    }
+    if (
+      (character === "{" || character === "}") &&
+      raw[index + 1] === character
+    ) {
+      value += character;
+      index += 2;
+      continue;
+    }
+    if (character === undefined) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.syntax_error,
+          "Baba template text contains an unsupported escape.",
+          span,
+        ),
+      );
+    }
+    value += character;
+    index += 1;
+  }
+  const expression: FrontExpr = { tag: "text", value };
+  mark_source_span(expression, span);
+  return ok(expression);
+}
+
 function lower_array_expression(
   node: BabaCstNode,
   source: string,
@@ -6679,7 +7463,14 @@ function lower_index_expression(
   const values = node.children.filter((child) => is_expression_node(child));
   const object_node = values[0];
   const index_node = values[1];
-  if (object_node === undefined || index_node === undefined) {
+  if (
+    object_node === undefined || index_node === undefined ||
+    values.length !== 2 ||
+    node.children.some((child) => {
+      const text = source.slice(child.start, child.end);
+      return text === "," || text === "..." || text === ";";
+    })
+  ) {
     return unsupported(node);
   }
   return Applicative.lift(
@@ -7008,7 +7799,13 @@ function lower_binary_parts(
     }
     if (part.tag === "operand") {
       if (!expects_operand) return unsupported(part.node);
+      if (part.suppress_expression_prefix) {
+        suppressed_expression_prefixes.add(part.node);
+      }
       values.push(lower_expression(part.node, source));
+      if (part.suppress_expression_prefix) {
+        suppressed_expression_prefixes.delete(part.node);
+      }
       expects_operand = false;
       continue;
     }
@@ -7107,7 +7904,11 @@ function should_reduce_binary_operator(
 }
 
 type BinaryPart =
-  | { tag: "operand"; node: BabaCstNode }
+  | {
+    tag: "operand";
+    node: BabaCstNode;
+    suppress_expression_prefix?: boolean;
+  }
   | { tag: "operator"; node: BabaCstNode }
   | {
     tag: "type_operator";
@@ -7153,11 +7954,33 @@ function collect_binary_parts(
   parts: BinaryPart[],
   source: string,
 ): boolean {
+  const lifted_prefix = lifted_expression_prefixes.get(node);
+  if (lifted_prefix !== undefined) {
+    let precedence = lifted_prefix.precedence;
+    if (lifted_prefix.builtin) precedence = 101;
+    parts.push({
+      tag: "prefix",
+      node,
+      fixity: lifted_prefix,
+      precedence,
+      builtin: lifted_prefix.builtin,
+      end: node.end,
+    });
+    parts.push({
+      tag: "operand",
+      node,
+      suppress_expression_prefix: true,
+    });
+    return true;
+  }
   if (node.kind === "postfix_expression") {
     const child = semantic_child(node);
     if (child !== undefined) return collect_binary_parts(child, parts, source);
   }
-  if (node.kind === "condition_expression") {
+  if (
+    node.kind === "condition_expression" ||
+    node.kind === "condition_postfix_expression"
+  ) {
     const child = semantic_child(node);
     if (child !== undefined) return collect_binary_parts(child, parts, source);
   }
@@ -8261,6 +9084,7 @@ function descendant_application_owns_hole(
     expect(candidate !== undefined, "Baba application traversal lost a node.");
     if (
       candidate.kind === "application_expression" ||
+      candidate.kind === "call_expression" ||
       candidate.kind === "condition_call_expression" ||
       candidate.kind === "condition_application_expression"
     ) {
@@ -8378,6 +9202,7 @@ function unwrap_hole_expression(node: BabaCstNode): BabaCstNode {
     expression.kind === "parenthesized_expression" ||
     expression.kind === "parenthesized_or_product" ||
     expression.kind === "condition_expression" ||
+    expression.kind === "condition_postfix_expression" ||
     expression.kind === "condition_parenthesized_expression"
   ) {
     const child = semantic_child(expression);
@@ -8435,12 +9260,15 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||
     node.kind === "condition_expression" ||
+    node.kind === "condition_postfix_expression" ||
     node.kind === "condition_parenthesized_expression" ||
+    node.kind === "condition_call_arguments" ||
     node.kind === "identifier" ||
     node.kind === "intrinsic_identifier" ||
     node.kind === "number" ||
     node.kind === "boolean" ||
     node.kind === "string" ||
+    node.kind === "template_literal" ||
     node.kind === "character" ||
     node.kind === "wildcard" ||
     node.kind === "include_expression" ||
@@ -8456,6 +9284,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "try_with_expression" ||
     node.kind === "effect_handler_expression" ||
     node.kind === "application_expression" ||
+    node.kind === "call_expression" ||
     node.kind === "condition_call_expression" ||
     node.kind === "condition_application_expression" ||
     node.kind === "positional_product" ||
@@ -8467,6 +9296,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "condition_unary_expression" ||
     node.kind === "unary_expression" ||
     node.kind === "array_expression" ||
+    node.kind === "array_repeat_expression" ||
     node.kind === "shape_value" ||
     node.kind === "named_product" ||
     node.kind === "index_expression" ||
@@ -8479,6 +9309,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "import_meta_expression" ||
     node.kind === "import_expression" ||
     node.kind === "union_case" ||
+    node.kind === "shape_nullary_union_case" ||
     node.kind === "loop_expression";
 }
 

@@ -57,14 +57,17 @@ end;
       (condition_expression
         (condition_unary_expression
           (condition_expression
-            (condition_parenthesized_expression
-              (condition_expression
-                (condition_binary_expression
-                  (condition_expression
-                    (identifier))
-                  (operator_symbol)
-                  (condition_expression
-                    (identifier))))))))
+            (condition_postfix_expression
+              (condition_parenthesized_expression
+                (condition_expression
+                  (condition_binary_expression
+                    (condition_expression
+                      (condition_postfix_expression
+                        (identifier)))
+                    (operator_symbol)
+                    (condition_expression
+                      (condition_postfix_expression
+                        (identifier))))))))))
       (conditional_branch
         (expression_statement
           (postfix_expression
@@ -172,7 +175,8 @@ let result = case key of
     (identifier)
     (case_expression
       (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       (case_arm
         (alternative_pattern
           (character)
@@ -256,27 +260,33 @@ end;
                         (condition_binary_expression
                           (condition_expression
                             (condition_application_expression
-                              (identifier)
-                              (identifier)))
+                              (condition_postfix_expression
+                                (identifier))
+                              (condition_postfix_expression
+                                (identifier))))
                           (operator_symbol)
                           (condition_expression
-                            (condition_field_expression
-                              (condition_expression
-                                (identifier))
-                              (identifier)))))
+                            (condition_postfix_expression
+                              (condition_field_expression
+                                (condition_postfix_expression
+                                  (identifier))
+                                (identifier))))))
                       (operator_symbol)
                       (condition_expression
-                        (condition_index_expression
-                          (condition_expression
-                            (identifier))
-                          (postfix_expression
-                            (number))))))
+                        (condition_postfix_expression
+                          (condition_index_expression
+                            (condition_postfix_expression
+                              (identifier))
+                            (postfix_expression
+                              (number)))))))
                   (operator_symbol)
                   (condition_expression
-                    (number))))
+                    (condition_postfix_expression
+                      (number)))))
               (operator_symbol)
               (condition_expression
-                (identifier))))
+                (condition_postfix_expression
+                  (identifier)))))
           (type_reference
             (type_union
               (type_intersection
@@ -415,13 +425,14 @@ let named = [.x = x, .y = y];
         (identifier))))
   (binding_statement
     (identifier)
-    (application_expression
-      (postfix_expression
-        (identifier))
-      (parenthesized_or_product
-        (parenthesized_expression
-          (postfix_expression
-            (identifier))))))
+    (postfix_expression
+      (call_expression
+        (postfix_expression
+          (identifier))
+        (parenthesized_or_product
+          (parenthesized_expression
+            (postfix_expression
+              (identifier)))))))
   (binding_statement
     (identifier)
     (postfix_expression
@@ -559,13 +570,15 @@ type Values = [I32; 3]
     (identifier)
     (case_expression
       (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       (case_arm
         (union_pattern
           (constructor_identifier)
           (identifier))
         (condition_expression
-          (identifier))
+          (condition_postfix_expression
+            (identifier)))
         (postfix_expression
           (identifier)))
       (case_arm
@@ -576,7 +589,8 @@ type Values = [I32; 3]
     (identifier)
     (case_expression
       (condition_expression
-        (identifier))
+        (condition_postfix_expression
+          (identifier)))
       (case_arm
         (alternative_pattern
           (number)
@@ -637,16 +651,18 @@ const forever = rec () => rec();
               (condition_expression
                 (condition_binary_expression
                   (condition_expression
-                    (identifier))
+                    (condition_postfix_expression
+                      (identifier)))
                   (operator_symbol)
                   (condition_expression
-                    (condition_call_expression
-                      (condition_expression
-                        (intrinsic_identifier))
-                      (parenthesized_or_product
-                        (parenthesized_expression
-                          (postfix_expression
-                            (identifier))))))))
+                    (condition_postfix_expression
+                      (condition_call_expression
+                        (condition_postfix_expression
+                          (intrinsic_identifier))
+                        (condition_call_arguments
+                          (condition_expression
+                            (condition_postfix_expression
+                              (identifier)))))))))
               (conditional_branch
                 (expression_statement
                   (postfix_expression
@@ -714,9 +730,11 @@ _ => 0;
     (case_expression
       (condition_positional_product
         (condition_expression
-          (number))
+          (condition_postfix_expression
+            (number)))
         (condition_expression
-          (number)))
+          (condition_postfix_expression
+            (number))))
       (case_arm
         (positional_product_pattern
           (identifier)

@@ -1,6 +1,7 @@
 import { format_text } from "../fmt/format.ts";
 import { run_lsp } from "../lsp/server.ts";
 import { Source, type SourceDiagnostic } from "../frontend.ts";
+import { source_file_url } from "../frontend/load.ts";
 
 const usage = `Usage: duck <command>
 
@@ -179,9 +180,26 @@ function format_source_diagnostic(
   text: string,
   diagnostic: SourceDiagnostic,
 ): string {
-  const location = source_location(text, diagnostic.span.start);
+  let diagnostic_file = file;
+  let diagnostic_text = text;
+
+  if (
+    diagnostic.uri !== undefined &&
+    diagnostic.uri !== source_file_url(file).href
+  ) {
+    const diagnostic_url = new URL(diagnostic.uri);
+    if (diagnostic_url.protocol === "file:") {
+      diagnostic_file = Deno.realPathSync(diagnostic_url);
+      diagnostic_text = Deno.readTextFileSync(diagnostic_url);
+    }
+  }
+
+  const location = source_location(
+    diagnostic_text,
+    diagnostic.span.start,
+  );
   const lines = [
-    file + ":" + location.line.toString() + ":" +
+    diagnostic_file + ":" + location.line.toString() + ":" +
     location.column.toString() + ": " + diagnostic.severity + "[" +
     diagnostic.code + "]: " + diagnostic.message,
   ];
@@ -196,7 +214,7 @@ function format_source_diagnostic(
 
     if (related.uri !== undefined) {
       const related_url = new URL(related.uri);
-      related_file = related_url.pathname;
+      related_file = Deno.realPathSync(related_url);
       related_text = Deno.readTextFileSync(related_url);
     }
 

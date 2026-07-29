@@ -17,15 +17,16 @@ const answer = 42;
       (postfix_expression
         (identifier)))
     attribute: (attribute_group
-      (application_expression
-        function: (postfix_expression
-          (identifier))
-        argument: (parenthesized_or_product
-          (positional_product
-            (postfix_expression
-              (identifier))
-            (postfix_expression
-              (identifier)))))
+      (postfix_expression
+        (call_expression
+          function: (postfix_expression
+            (identifier))
+          argument: (parenthesized_or_product
+            (positional_product
+              (postfix_expression
+                (identifier))
+              (postfix_expression
+                (identifier))))))
       (postfix_expression
         (atom_expression
           name: (identifier

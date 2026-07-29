@@ -270,12 +270,12 @@ Deno.test("inlay comptime hints use the environment before each binding", () => 
 });
 
 Deno.test("inlay loop hints snapshot static expansion counts", () => {
-  const text = "for index in 1..5 {\n" +
+  const text = "for index in 1..5 do\n" +
     "  index\n" +
-    "}\n" +
-    'for byte in "abc" {\n' +
+    "end\n" +
+    'for byte in "abc" do\n' +
     "  byte\n" +
-    "}\n";
+    "end\n";
 
   assert_equals(dump(hints(text, category_config("loops"))), [{
     line: 0,

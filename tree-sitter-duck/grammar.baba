@@ -5,6 +5,7 @@ skip comment = /\/\/[^\r\n]*/ ;
 contextual _application_space priority 1 = /[ \t]+/ ;
 contextual _condition_application_space priority 1 = /[ \t]+/ ;
 contextual _type_application_space priority 1 = /[ \t]+/ ;
+contextual _immediate_type_open priority 3 = /\(/ ;
 contextual _fixity_identifier priority 1 = /(infixl|infixr|infix|prefix)/ ;
 
 token grouped_value_alternative_pattern priority 3 = /\([A-Za-z][A-Za-z0-9_]*([ \t\r\n]*\|[ \t\r\n]*[A-Za-z][A-Za-z0-9_]*)+\)/ ;
@@ -13,12 +14,12 @@ contextual prefix_proposition_text priority 1 = /[^;\r\n]+/ ;
 contextual prefix_fact_text priority 1 = /[^;\r\n]+/ ;
 token identifier = /([A-Za-z][A-Za-z0-9_]{0,1}|[A-Za-df-z][A-Za-z0-9_]{2}|e[A-Za-mo-z0-9_][A-Za-z0-9_]|en[A-Zace-z0-9_]|[A-Za-km-z][A-Za-z0-9_]{3}|l[A-Za-np-z0-9_][A-Za-z0-9_]{2}|lo[A-Za-np-z0-9_][A-Za-z0-9_]|loo[A-Za-oq-z0-9_]|[A-Za-z][A-Za-z0-9_]{4}[A-Za-z0-9_]*)/ ;
 contextual constructor_identifier priority 2 = /[A-Z][A-Za-z0-9_]*/ ;
-token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_.]*/ ;
+token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*/ ;
 token operator_symbol priority 0 = /([-!$%&*+<>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*|\/([.\-!$%&*+<=>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)?|=[.\-!$%&*+\/<=?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)/ ;
 contextual effect_identifier priority 1 = /[A-Z][A-Za-z0-9]*/ ;
 token underscore_identifier = /_[A-Za-z0-9_]+/ ;
 token number = /(0[xX][0-9a-fA-F]+([iu][1-9][0-9]*)?|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?([iu][1-9][0-9]*|f(32|64))?)/ ;
-token string = /"([^"\\]|\\[ntr"\\])*"/ ;
+token string = /"([^"\\\n\r]|\\[ntr"\\])*"/ ;
 token character = /'([^'\\\n\r]|\\[ntr'\\])'/ ;
 contextual template_start priority 2 = /`/ ;
 contextual template_text priority 1 = /([^`{}\\]|\\[ntr`\\]|\{\{|\}\})+/ ;
@@ -125,7 +126,11 @@ effect_row_variable = name:(row_variable) ;
 
 row_variable = (lowercase_identifier | "_" | underscore_identifier) ;
 
-effect_operation_reference = (effect:(effect_identifier) "." operation:(identifier)) ;
+effect_operation_reference = (
+                               effect:(effect_identifier)
+                               "."
+                               operation:((identifier | "end"))
+                             ) ;
 
 effect_binding_statement = (
                              name:(
@@ -185,7 +190,7 @@ effect_operation_block = ("{" ((effect_operation (",")?))* "}") ;
 
 effect_operation = (
                      ("suspending")?
-                     name:(identifier)
+                     name:((identifier | "end"))
                      ":"
                      (forall:(effect_operation_forall))?
                      parameters:(host_parameter_list)
@@ -410,7 +415,7 @@ assignment = (
 index_assignment = (
                      name:((identifier | _fixity_identifier_alias))
                      open:(_index_open)
-                     index:(_expression)
+                     (_index_contents)?
                      "]"
                      "="
                      value:(_expression)
@@ -604,24 +609,28 @@ condition_expression = (
                          condition_binary_expression
                          | condition_is_expression
                          | condition_unary_expression
-                         | condition_call_expression
                          | condition_application_expression
-                         | condition_field_expression
-                         | condition_index_expression
-                         | condition_parenthesized_expression
-                         | number
-                         | string
+                         | condition_postfix_expression
+                         | union_case
+                       ) ;
+
+condition_postfix_expression = (
+                                 condition_call_expression
+                                 | condition_field_expression
+                                 | condition_index_expression
+                                 | condition_parenthesized_expression
+                                 | number
+                                 | string
                          | character
                          | boolean
                          | atom_expression
                          | import_meta_expression
                          | intrinsic_identifier
-                         | identifier
-                         | _aggregate_constructor_identifier
-                         | _effect_identifier_alias
-                         | linear_reference
-                         | union_case
-                       ) ;
+                                 | identifier
+                                 | _aggregate_constructor_identifier
+                                 | _effect_identifier_alias
+                                 | linear_reference
+                               ) ;
 
 condition_binary_expression = (
                                 left:(condition_expression)
@@ -638,47 +647,46 @@ condition_unary_expression = (
                                operand:(condition_expression)
                              ) ;
 
-condition_call_expression = (function:(condition_expression) argument:(parenthesized_or_product)) ;
+condition_call_expression = (
+                              function:(condition_postfix_expression)
+                              (_condition_application_space)?
+                              argument:(condition_call_arguments)
+                            ) ;
+
+condition_call_arguments = (
+                             "("
+                             (
+                               (
+                                 condition_expression
+                                 (("," condition_expression))*
+                               )
+                               (",")?
+                             )?
+                             ")"
+                           ) ;
 
 condition_application_expression = (
                                      function:(
-                                       (
-                                         condition_application_expression
-                                         | identifier
-                                         | _effect_identifier_alias
-                                         | intrinsic_identifier
-                                         | condition_field_expression
-                                       )
+                                       condition_application_expression
+                                       | condition_postfix_expression
                                      )
                                      _condition_application_space
-                                     argument:(
-                                       (
-                                         identifier
-                                         | _aggregate_constructor_identifier
-                                         | _effect_identifier_alias
-                                         | intrinsic_identifier
-                                         | number
-                                         | string
-                                         | character
-                                         | boolean
-                                         | atom_expression
-                                         | import_meta_expression
-                                         | linear_reference
-                                         | parenthesized_or_product
-                                         | array_expression
-                                       )
-                                     )
+                                     argument:((condition_postfix_expression | union_case))
                                    ) ;
 
 condition_field_expression = (
-                               (object:(condition_expression) "." field:((identifier | "end")))
+                               (
+                                 object:(condition_postfix_expression)
+                                 "."
+                                 field:((identifier | "end"))
+                               )
                                | (object:(_effect_identifier_alias) "." field:((identifier | "end")))
                              ) ;
 
 condition_index_expression = (
-                               object:(condition_expression)
+                               object:((condition_postfix_expression | union_case))
                                open:(_index_open)
-                               index:(_expression)
+                               (_index_contents)?
                                "]"
                              ) ;
 
@@ -777,28 +785,36 @@ _single_match_pattern = (
                         ) ;
 
 application_expression = (
-                           (
-                             function:((application_expression | postfix_expression))
-                             _application_space
-                             argument:(postfix_expression)
-                           )
-                           | (
-                               function:((application_expression | postfix_expression))
-                               argument:(parenthesized_or_product)
-                             )
+                           function:((application_expression | postfix_expression))
+                           _application_space
+                           argument:(postfix_expression)
                          ) ;
 
-postfix_expression = (field_expression | index_expression | _primary_expression) ;
+postfix_expression = (
+                       call_expression
+                       | field_expression
+                       | index_expression
+                       | _primary_expression
+                     ) ;
+
+call_expression = (
+                    function:(postfix_expression)
+                    argument:(parenthesized_or_product)
+                  ) ;
 
 field_expression = (
-                     (object:(postfix_expression) "." field:((identifier | "end")))
+                     (
+                       object:(postfix_expression)
+                       "."
+                       field:((identifier | "end"))
+                     )
                      | (object:(_effect_identifier_alias) "." field:((identifier | "end")))
                    ) ;
 
 index_expression = (
                      object:(postfix_expression)
                      open:(_index_open)
-                     index:(_expression)
+                     (_index_contents)?
                      "]"
                    ) ;
 
@@ -810,7 +826,11 @@ effect_handler_expression = (
 
 handler_clause_block = ("{" ((handler_operation_clause (",")?))* handler_return_clause (",")? "}") ;
 
-handler_operation_clause = (name:(identifier) ":" value:(arrow_function)) ;
+handler_operation_clause = (
+                             name:((identifier | "end"))
+                             ":"
+                             value:(arrow_function)
+                           ) ;
 
 handler_return_clause = ("return" ":" value:(arrow_function)) ;
 
@@ -900,6 +920,13 @@ array_repeat_expression = (
                             "]"
                           ) ;
 
+_index_contents = (
+                    ((_expression (("," _expression))*) (",")?)
+                    | _array_spread_with_tail
+                    | ((((_expression (("," _expression))*) ","))? array_spread)
+                    | (_expression ";" _expression)
+                  ) ;
+
 array_pattern = ("[" (((_array_pattern_element (("," _array_pattern_element))*) (",")?))? "]") ;
 
 _array_pattern_element = (
@@ -949,7 +976,14 @@ shape_value = fields:(shape_field_block) ;
 
 shape_field_block = ("{" (((shape_field | shorthand_field) (",")?))* "}") ;
 
-shape_field = ("." name:((identifier | "end")) "=" value:(_expression)) ;
+shape_field = (
+               "."
+               name:((identifier | "end"))
+               "="
+               value:((shape_nullary_union_case | _expression))
+             ) ;
+
+shape_nullary_union_case = ("#" case:(constructor_identifier)) ;
 
 shorthand_field = ("." name:((identifier | "end"))) ;
 
@@ -1001,9 +1035,23 @@ type_application = (
                      )
                      | (
                          constructor:((type_application | _type_prefix))
-                         argument:(type_parenthesized)
+                         argument:(immediate_type_argument)
                        )
                    ) ;
+
+immediate_type_argument = (
+                            _immediate_type_open
+                            (
+                              (
+                                type_reference
+                                ","
+                                (type_reference (("," type_reference))*)
+                                (",")?
+                              )
+                              | value:(type_reference)
+                            )?
+                            ")"
+                          ) ;
 
 _type_prefix = (atom_type | frozen_type | borrow_type | _type_atom) ;
 

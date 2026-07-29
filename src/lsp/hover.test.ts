@@ -57,7 +57,7 @@ Deno.test("hover renders effect parameters as source types", () => {
 });
 
 Deno.test("hover shows folded const closure captures", () => {
-  const text = "const make_adder = n => {\n  x => x + n\n};\n\n" +
+  const text = "const make_adder = n => do\n  x => x + n\nend;\n\n" +
     "const add_three = comptime make_adder(3);\n\n" +
     "let value = add_three(29);\n";
   const { parsed, index } = analyzed(text);
@@ -215,7 +215,7 @@ end;
 
 Deno.test("hover represents frozen, scratch, and borrow bindings as declarations", () => {
   const text = 'let frozen = freeze "value";\n' +
-    "let temporary = scratch { 1 };\n" +
+    "let temporary = scratch do 1 end;\n" +
     "let view = &frozen;\n";
   const { parsed, index } = analyzed(text);
 
@@ -1013,7 +1013,7 @@ Deno.test("hover preserves nominal unions and if-let payload types", () => {
     "let qualified = #Ok true;\n" +
     "let through_value = #Ok false;\n" +
     "let unqualified = #Ok true;\n" +
-    "if let #Ok payload = through_value { payload } else { false }\n";
+    "if let #Ok payload = through_value then payload else false end\n";
   const analysis = analyzed(text);
 
   for (
@@ -1045,9 +1045,9 @@ Deno.test("hover propagates value types through control flow and primitives", ()
     "let comparison = wide < 2i64;\n" +
     "let atoms = #a == #a;\n" +
     "let units = () == ();\n" +
-    "let branch = if ready { true } else { false };\n" +
-    "let nested = { let local = true; local == false };\n" +
-    "let repeated = loop { break true; };\n";
+    "let branch = if ready then true else false end;\n" +
+    "let nested = do let local = true; local == false end;\n" +
+    "let repeated = loop do break true; end;\n";
   const analysis = analyzed(text);
 
   for (
@@ -1069,7 +1069,7 @@ Deno.test("hover propagates value types through control flow and primitives", ()
   assert_hover_type(text, analysis, text.indexOf("wide ="), "I64");
 
   const invalid = 'let bad_logic = "x" && true;\n' +
-    "let bad_condition = if 1i64 { true } else { false };\n";
+    "let bad_condition = if 1i64 then true else false end;\n";
   const invalid_analysis = analyzed(invalid);
   assert_hover_type(
     invalid,
@@ -1237,9 +1237,9 @@ Deno.test("signature help follows nested calls and effect operations", () => {
 });
 
 Deno.test("hover follows compile-time descriptors through construction", () => {
-  const text = `type Player = struct {.name = Int, .score = Int}
+  const text = `type Player = struct { .name = Int, .score = Int }
 const score_field = @describe_fields(Player)[1];
-let player = @construct(Player, { name: 20, score: 40 });
+let player = @construct(Player, { .name = 20, .score = 40 });
 let score = @project(player, score_field);
 `;
   const analysis = analyzed(text);

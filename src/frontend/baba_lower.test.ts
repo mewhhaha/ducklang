@@ -42,6 +42,49 @@ Deno.test("Baba lowers bindings and expressions without the handwritten parser",
   });
 });
 
+Deno.test("Baba distinguishes logical not calls from linear calls", () => {
+  for (
+    const source of [
+      "let invalid = !predicate(value);\n",
+      "let invalid = !predicate(value)(other);\n",
+      "let invalid = !predicate value other;\n",
+      "let invalid = !predicate (value);\n",
+      "let invalid = !predicate ();\n",
+      "let invoke = (!callback) => !callback(value);\n",
+      "let invoke = (!callback) => !callback(value)(other);\n",
+      "let invoke = (!callback) => do\n" +
+      "  let callback = predicate;\n" +
+      "  !callback(value)\n" +
+      "end;\n",
+      "let invoke = (!callback) => do\n" +
+      "  let (callback, value) = pair;\n" +
+      "  !callback(value)\n" +
+      "end;\n",
+      "let invoke = (!callback) => do\n" +
+      "  let !later = !callback;\n" +
+      "  !later(value)\n" +
+      "end;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(source));
+  }
+});
+
+Deno.test("Baba distinguishes intrinsic fields from import metadata fields", () => {
+  for (
+    const source of [
+      "@type .extend(Type, value)\n",
+      "const mode = import .meta.mode;\nmode\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(source));
+  }
+});
+
 Deno.test("Baba lowers structural binding patterns directly", () => {
   for (
     const source of [
@@ -955,6 +998,45 @@ Deno.test("Baba lowers multi-argument calls as value packs", () => {
       { tag: "num", type: "i32", value: 2 },
     ],
   });
+});
+
+Deno.test("Baba preserves statement breaks and trailing-comma call packs", () => {
+  for (
+    const source of [
+      "f(1)\n()\n",
+      "f 1\n()\n",
+      "a + f 2\n()\n",
+      "!f\n()\n",
+      "do\n  value\n  [0]\nend\n",
+      "do\n  value\n  []\nend\n",
+      "do\n  value\n  [1, 2]\nend\n",
+      "do\n  value\n  [0; 4]\nend\n",
+      "do\n  value\n  [1, ...values]\nend\n",
+      "do\n  value\n  [...values, 1]\nend\n",
+      "if predicate(value,) then 1 else 0 end\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(source));
+  }
+});
+
+Deno.test("Baba lowers template literals and repeated arrays", () => {
+  for (
+    const source of [
+      "`text`\n",
+      "`left {value} right`\n",
+      "`escaped {{ brace }} and \\\\ slash`\n",
+      "let rendered = `value: {value}`;\n",
+      "[0; 4]\n",
+      "let values = [value; length];\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(source));
+    assert_equals(diagnostics_of(lowered), []);
+    assert_equals(checked_value(lowered), parse_source(source));
+  }
 });
 
 Deno.test("Baba lowers include, scratch, and argument-hole postfix forms", () => {

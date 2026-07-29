@@ -7,9 +7,9 @@ Deno.test("Baba parser preserves source tokens and CST spans", () => {
   assert_equals(parsed.diagnostics, []);
   assert_equals(parsed.recovery_intervals, []);
   assert_equals(parsed.tokens, [
-    { text: "stored", start: 0, end: 6 },
-    { text: "1", start: 7, end: 8 },
-    { text: ";", start: 8, end: 9 },
+    { kind: "identifier", text: "stored", start: 0, end: 6 },
+    { kind: "number", text: "1", start: 7, end: 8 },
+    { kind: ";", text: ";", start: 8, end: 9 },
   ]);
   if (!parsed.cst.tree.includes("application_expression")) {
     throw new Error("Baba CST did not contain the application expression");
@@ -84,6 +84,13 @@ Deno.test("Baba diagnostics identify a local recovery node", () => {
 Deno.test("Baba accepts source literals containing ERROR", () => {
   const parsed = parse_duck_source('let text = "ERROR";\n');
   assert_equals(parsed.diagnostics, []);
+});
+
+Deno.test("Baba rejects malformed intrinsic identifier paths", () => {
+  for (const source of ["@foo.\n", "@foo..bar\n", "@foo.1\n", "@foo._bar\n"]) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics.length > 0, true);
+  }
 });
 
 Deno.test("Baba converts UTF-8 columns to UTF-16 source spans", () => {
@@ -174,6 +181,34 @@ Deno.test("Baba keeps PascalCase declarations on the ordinary type path", () => 
   assert_equals(parsed.diagnostics, []);
   assert_equals(parsed.cst.tree.includes("type_declaration_statement"), true);
   assert_equals(parsed.cst.tree.includes("prefix_signature_statement"), false);
+});
+
+Deno.test("Baba distinguishes tight type arguments from following statements", () => {
+  for (
+    const source of [
+      "type Alias = Type\n(value)\n",
+      "do\n  f as Type\n  (value)\nend\n",
+      "do\n  f is Type\n  ()\nend\n",
+    ]
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics.length, 1);
+    assert_equals(
+      parsed.diagnostics[0]?.message,
+      "Parenthesized type application must start on the constructor's line",
+    );
+  }
+
+  for (
+    const source of [
+      "type Alias = Type(value)\n",
+      "type Alias = Type(\n  value\n)\n",
+      "let value: Type() = ();\n",
+      "let value: Type(I32, I64) = ();\n",
+    ]
+  ) {
+    assert_equals(parse_duck_source(source).diagnostics, []);
+  }
 });
 
 Deno.test("Baba parses transparent and opaque fact definitions", () => {
@@ -287,4 +322,13 @@ Deno.test("Baba reports excessive CST nesting without exhausting the host stack"
     parsed.tokens.some((token) => token.text === "x"),
     true,
   );
+});
+
+Deno.test("Baba rejects raw newlines in string literals", () => {
+  for (const newline of ["\n", "\r"]) {
+    const parsed = parse_duck_source(
+      'let value = "first' + newline + 'second";\n',
+    );
+    assert_equals(parsed.diagnostics.length > 0, true);
+  }
 });

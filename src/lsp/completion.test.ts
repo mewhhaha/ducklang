@@ -81,8 +81,8 @@ Deno.test("completion offers recovered scope names inside a broken statement", (
 });
 
 Deno.test("completion ranks local scope before outer scope and keywords", () => {
-  const text = "let outer = 1;\nlet result = {\n  let inner = 2;\n  \n};";
-  const offset = text.indexOf("  \n}") + 2;
+  const text = "let outer = 1;\nlet result = do\n  let inner = 2;\n  \nend;";
+  const offset = text.indexOf("  \nend") + 2;
   const parsed = parse_source_with_diagnostics(text);
   const index = build_binding_index(parsed);
   const result = completions(

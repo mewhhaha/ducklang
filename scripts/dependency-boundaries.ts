@@ -13,10 +13,11 @@ type ModuleGraph = Map<string, Set<string>>;
 
 const repository = new URL("../", import.meta.url);
 const source_directory = new URL("src/", repository);
+const scripts_directory = new URL("scripts/", repository);
 const baseline_url = new URL("dependency-baseline.json", import.meta.url);
 
 if (import.meta.main) {
-  const report = analyze_dependencies(source_directory);
+  const report = analyze_dependencies([source_directory, scripts_directory]);
 
   if (Deno.args.includes("--write-baseline")) {
     Deno.writeTextFileSync(
@@ -44,8 +45,10 @@ if (import.meta.main) {
   }
 }
 
-export function analyze_dependencies(root: URL): DependencyReport {
-  const graph = build_module_graph(root);
+export function analyze_dependencies(
+  directories: readonly URL[],
+): DependencyReport {
+  const graph = build_module_graph(directories);
   const cycles = strongly_connected_components(graph).filter((component) =>
     component.length > 1
   );
@@ -53,8 +56,10 @@ export function analyze_dependencies(root: URL): DependencyReport {
   return { cycles, violations };
 }
 
-export function build_module_graph(root: URL): ModuleGraph {
-  const files = collect_typescript_files(root);
+export function build_module_graph(directories: readonly URL[]): ModuleGraph {
+  const files = directories.flatMap((directory) =>
+    collect_typescript_files(directory)
+  ).sort();
   const known = new Set(files);
   const graph: ModuleGraph = new Map();
 
@@ -304,10 +309,11 @@ function forbidden_import_reason(
   imported: string,
 ): string | undefined {
   if (
-    importer === "src/backend/compiler.ts" &&
-    imported === "src/frontend/parser.ts"
+    imported === "src/frontend/parser.ts" &&
+    importer !== "src/frontend/parser.ts" &&
+    !importer.endsWith(".test.ts")
   ) {
-    return "the compiler must parse source through Baba";
+    return "production source and tooling must parse through Baba";
   }
 
   if (

@@ -455,7 +455,7 @@ let apply_keys: (Editor, KeyDecoder, Bytes) -> EditorInputResult = (
       quit_requested = true
     else
       let #ContinueKeys continued = application else do
-        @panic "Key application returned an unknown state"
+        @panic "Key application returned an unknown state";
         ()
       end;
       state = continued

@@ -145,13 +145,14 @@ const apply: (forall value. value -> value) -> I32 =
       (parameter_list
         (parameter
           (identifier)))
-      (application_expression
-        (postfix_expression
-          (identifier))
-        (parenthesized_or_product
-          (parenthesized_expression
-            (postfix_expression
-              (number))))))))
+      (postfix_expression
+        (call_expression
+          (postfix_expression
+            (identifier))
+          (parenthesized_or_product
+            (parenthesized_expression
+              (postfix_expression
+                (number)))))))))
 
 ==================
 Surface function types
@@ -505,7 +506,8 @@ end;
       (condition_expression
         (condition_is_expression
           (condition_expression
-            (identifier))
+            (condition_postfix_expression
+              (identifier)))
           (type_reference
             (type_union
               (type_intersection

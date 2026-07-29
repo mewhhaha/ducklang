@@ -13,8 +13,12 @@ import type {
 } from "./ast.ts";
 import { expect } from "../expect.ts";
 import { name_sites, type NameSite } from "./name_site.ts";
-import type { ParseSourceResult } from "./parser.ts";
-import { has_source_span, source_span, type SourceSpan } from "./syntax.ts";
+import {
+  has_source_span,
+  source_span,
+  type SourceSpan,
+  type SourceSyntax,
+} from "./syntax.ts";
 import { source_type_display_name, type SourceFacts } from "./source_facts.ts";
 import { front_type_from_type_name } from "./types.ts";
 import { is_const_builtin_name } from "./constness.ts";
@@ -96,6 +100,12 @@ export type BindingIndex = {
   dump(): string;
 };
 
+type BindingIndexSource = {
+  source: Source;
+  syntax: SourceSyntax;
+  recovery_intervals: { skipped: SourceSpan }[];
+};
+
 type State = {
   index: BindingIndex;
   facts: SourceFacts;
@@ -107,7 +117,7 @@ type State = {
 };
 
 export function build_binding_index(
-  parsed: ParseSourceResult,
+  parsed: BindingIndexSource,
   version = 0,
 ): BindingIndex {
   const root: BindingScope = {

@@ -26,7 +26,7 @@ import {
   resolve_source_imports,
 } from "./load.ts";
 import { specialize_const_module_imports } from "./module_specialize.ts";
-import type { ParseSourceResult } from "./parser.ts";
+import type { ParseSourceResult } from "./source_parse.ts";
 import { validate_frontend_semantics } from "./semantic_validation.ts";
 import type { SourceDiagnostic } from "./semantic_diagnostic.ts";
 import {

@@ -69,7 +69,7 @@ effect Counter { get: () => I32 }
 declare Init { counter: Counter }
 return doend;
 `)),
-    "Init field must name a declared effect: counter: Counter",
+    "Init field cannot provide Duck effect Counter: counter",
   );
 });
 

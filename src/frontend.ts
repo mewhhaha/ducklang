@@ -3,7 +3,7 @@ export type {
   SourceAnalysis,
   SourceAnalyzeOptions,
 } from "./frontend/source.ts";
-export type { ParseSourceResult } from "./frontend/parser.ts";
+export type { ParseSourceResult } from "./frontend/source_parse.ts";
 export {
   type BabaCst,
   type BabaCstNode,

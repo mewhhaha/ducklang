@@ -3,6 +3,7 @@ import { expect } from "../expect.ts";
 import type { SyntaxDiagnostic } from "./syntax.ts";
 
 export type BabaToken = {
+  kind: string;
   text: string;
   start: number;
   end: number;
@@ -45,8 +46,9 @@ export type BabaParseResult = {
 const trusted_baba_parse_results = new WeakSet<object>();
 await Parser.init();
 const duck_language = await Language.load(
-  new URL("../../tree-sitter-duck/tree-sitter-duck.wasm", import.meta.url)
-    .pathname,
+  await Deno.readFile(
+    new URL("../../tree-sitter-duck/tree-sitter-duck.wasm", import.meta.url),
+  ),
 );
 const duck_parser = new Parser();
 duck_parser.setLanguage(duck_language);
@@ -128,15 +130,35 @@ export function parse_duck_source(text: string): BabaParseResult {
     const recovery_intervals: BabaRecoveryInterval[] = [];
     const errors: BabaCstNode[] = [];
     collect_error_nodes(root, errors);
+    collect_separated_immediate_type_arguments(root, text, errors);
     errors.sort((left, right) => {
       if (left.start !== right.start) return left.start - right.start;
       return left.end - right.end;
     });
+    let previous_error: BabaCstNode | undefined;
     for (const error of errors) {
-      const diagnostic = {
-        message: `Baba parser rejected ${error.kind}`,
-        span: { start: error.start, end: error.end },
-      };
+      if (
+        previous_error !== undefined &&
+        previous_error.kind === error.kind &&
+        previous_error.start === error.start &&
+        previous_error.end === error.end
+      ) {
+        continue;
+      }
+      previous_error = error;
+      let diagnostic: SyntaxDiagnostic;
+      if (error.kind === "immediate_type_argument") {
+        diagnostic = {
+          message:
+            "Parenthesized type application must start on the constructor's line",
+          span: { start: error.start, end: error.start },
+        };
+      } else {
+        diagnostic = {
+          message: `Baba parser rejected ${error.kind}`,
+          span: { start: error.start, end: error.end },
+        };
+      }
       diagnostics.push(diagnostic);
       recovery_intervals.push({
         diagnostic,
@@ -184,6 +206,32 @@ function baba_cst_node(
   };
 }
 
+function collect_separated_immediate_type_arguments(
+  node: BabaCstNode,
+  source: string,
+  separated: BabaCstNode[],
+): void {
+  if (node.kind === "type_application") {
+    const argument_index = node.children.findIndex((child) =>
+      child.kind === "immediate_type_argument"
+    );
+    if (argument_index > 0) {
+      const argument = node.children[argument_index];
+      const constructor = node.children[argument_index - 1];
+      expect(
+        argument !== undefined && constructor !== undefined,
+        "Baba immediate type application children disappeared.",
+      );
+      if (source.slice(constructor.end, argument.start).length > 0) {
+        separated.push(argument);
+      }
+    }
+  }
+  for (const child of node.children) {
+    collect_separated_immediate_type_arguments(child, source, separated);
+  }
+}
+
 function render_cst(node: BabaCstNode): string {
   if (node.children.length === 0) {
     return node.kind;
@@ -223,6 +271,7 @@ function baba_tokens(
     expect(node !== undefined, "Baba token work disappeared.");
     if (node.children.length === 0 && node.endIndex > node.startIndex) {
       tokens.push({
+        kind: node.type,
         text: source.slice(node.startIndex, node.endIndex),
         start: node.startIndex,
         end: node.endIndex,
