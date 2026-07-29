@@ -290,6 +290,30 @@ answer
       (identifier))))
 
 ==================
+Top-level return forms
+==================
+
+return;
+return 1;
+return { .value = 1 };
+
+---
+
+(source_file
+  (top_level_return_statement)
+  (top_level_return_statement
+    (postfix_expression
+      (number)))
+  (top_level_return_statement
+    (postfix_expression
+      (shape_value
+        (shape_field_block
+          (shape_field
+            (identifier)
+            (postfix_expression
+              (number))))))))
+
+==================
 Inferred default handlers
 ==================
 

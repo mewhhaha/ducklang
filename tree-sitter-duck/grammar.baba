@@ -28,10 +28,12 @@ document = (
                ((_module_statement (";")?))*
                module_return_statement
              )
-             | ((_module_statement (";")?))+
+             | ((_top_level_statement (";")?))+
            ) ;
 
 module_header = ("module" parameters:(parameter_list) "where") ;
+
+_top_level_statement = (_module_statement | top_level_return_statement) ;
 
 _module_statement = (
                       declare_effect_statement
@@ -389,7 +391,9 @@ host_parameter = (
 
 host_result = ((contract:(("#" | "scalar")) type:(type_reference)) | type:(type_reference)) ;
 
-return_statement = ("return" value:(_expression)) ;
+return_statement = ("return" ((value:(_expression) ";") | ";")) ;
+
+top_level_return_statement = ("return" ((value:(_expression) ";") | ";")) ;
 
 module_return_statement = ("return" exports:(shape_value) ";") ;
 

@@ -1586,6 +1586,71 @@ Deno.test("Baba lowers effect handlers with state directly", () => {
   assert_equals(all_source_nodes_have_spans(source), true);
 });
 
+Deno.test("Baba lowers type checks and explicit handlers directly", () => {
+  for (
+    const text of [
+      "let struct { .name = Text, ..} = Player;\n",
+      "let union { .Some = I32, ..} = Optional;\n",
+      "try run() with counter\n",
+      "let result = try calculate();\n",
+      "let output = try do\n  ()\nend with collect 4;\n",
+    ]
+  ) {
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected a type check or handler to lower directly.");
+    }
+    const legacy = parse_source(text);
+    assert_equals(source, legacy);
+    assert_equals(all_source_nodes_have_spans(source), true);
+    assert_source_spans_equal(source, legacy);
+  }
+
+  const implicit_text = "try calculate()\n";
+  const implicit = checked_value(
+    lower_baba_source(parse_duck_source(implicit_text)),
+  );
+  const statement = implicit?.statements[0];
+  if (
+    statement === undefined || statement.tag !== "expr" ||
+    statement.expr.tag !== "try_with"
+  ) {
+    throw new Error("Expected an implicit default-handler expression.");
+  }
+  assert_equals(statement.expr.infer_default_handlers, true);
+  assert_equals(source_span(statement.expr.handler), {
+    start: 0,
+    end: "try calculate()".length,
+  });
+  assert_equals(source_span_origin(statement.expr.handler), "derived");
+});
+
+Deno.test("Baba lowers duplicated resumptions directly", () => {
+  const text = "let (!left, !right) = dup !resume;\n";
+  const lowered = lower_baba_source(parse_duck_source(text));
+  assert_equals(diagnostics_of(lowered), []);
+  assert_equals(checked_value(lowered), parse_source(text));
+
+  const invalid = "let (!camelCase, !Other) = dup !resume;\n";
+  const diagnostics = diagnostics_of(
+    lower_baba_source(parse_duck_source(invalid)),
+  );
+  assert_equals(
+    diagnostics.map((diagnostic) => diagnostic.span.start),
+    [invalid.indexOf("camelCase"), invalid.indexOf("Other")],
+  );
+  assert_equals(
+    diagnostics.every((diagnostic) =>
+      diagnostic.message.startsWith(
+        "Duplicated resumption must use snake_case:",
+      )
+    ),
+    true,
+  );
+});
+
 Deno.test("Baba rejects invalid handler clause names at the clause", () => {
   const text = "effect State { bad_name: () => Unit }\n" +
     "const run = handler State {\n" +
@@ -1688,6 +1753,31 @@ Deno.test("bundled Duck and extension declarations match the legacy oracle", asy
   }
 });
 
+Deno.test("bundled type checks and effect handlers match the legacy oracle", async () => {
+  for (
+    const path of [
+      "../../examples/compile_time/21_type_patterns.duck",
+      "../../examples/handlers/01_local_counter.duck",
+      "../../examples/handlers/02_inferred_option_do.duck",
+      "../../examples/handlers/03_composed_default_handlers.duck",
+      "../../examples/handlers/04_output_builder.duck",
+      "../../examples/handlers/05_effects_in_collection_loop.duck",
+      "../../examples/handlers/06_effects_in_cursor_loop.duck",
+      "../../examples/handlers/07_effectful_loop_continue.duck",
+    ]
+  ) {
+    const text = await Deno.readTextFile(new URL(path, import.meta.url));
+    const lowered = lower_baba_source(parse_duck_source(text));
+    assert_equals(diagnostics_of(lowered), []);
+    const source = checked_value(lowered);
+    if (source === undefined) {
+      throw new Error("Expected bundled type checks and handlers to lower.");
+    }
+    assert_equals(source, parse_source(text));
+    assert_equals(all_source_nodes_have_spans(source), true);
+  }
+});
+
 Deno.test("Baba treats fixity words as contextual binding names", () => {
   for (const name of ["infix", "infixl", "infixr", "prefix"]) {
     const source = "let " + name + " = 1;\n" +
@@ -1768,6 +1858,26 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
   );
 
   for (
+    const top_level_return_source of [
+      "return;\n",
+      "value <- effect()\nreturn 1;\n",
+      "value <- effect()\nreturn { .value };\n",
+    ]
+  ) {
+    const top_level_return_lowered = lower_baba_source(
+      parse_duck_source(top_level_return_source),
+    );
+    assert_equals(diagnostics_of(top_level_return_lowered), []);
+    const top_level_return = checked_value(top_level_return_lowered);
+    const legacy_top_level_return = parse_source(top_level_return_source);
+    assert_equals(top_level_return, legacy_top_level_return);
+    if (top_level_return === undefined) {
+      throw new Error("Expected a top-level return statement.");
+    }
+    assert_source_spans_equal(top_level_return, legacy_top_level_return);
+  }
+
+  for (
     const expression_source of [
       "let value = a && b && c;\n",
       "let value = if false then\n" +
@@ -1814,6 +1924,10 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
       "let _ = 1;\nlet f = _ => 2;\n",
       "let f = const _ => 2;\n",
       "let f = (_, const _) => 1;\n",
+      "let value = f();\n",
+      "let value = f(());\n",
+      "let value = !resume(());\n",
+      "let stop = () => do\n  return;\nend;\n",
       "let _ = 1;\r\n// ignored\r\nlet f = _ => 2;\r\n",
       "let value = 1;\rlet f = _ => 2;\n",
       "let value = object.field.other;\n",
@@ -1863,11 +1977,67 @@ Deno.test("Baba matches the legacy parity oracle for foundational control flow",
   }
 });
 
+Deno.test("Baba rejects return values after a line break", () => {
+  for (
+    const source of [
+      "return\n1;\n",
+      "return\n{ .value = 1 };\n",
+      "return\n;\n",
+      "return // stop here\n1;\n",
+      "return // stop here\r\n1;\r\n",
+      "return 1\n;\n",
+      "return { .value = 1 }\n;\n",
+      "return 1 // stop here\n;\n",
+      "let stop = () => do\n  return\n  1;\nend;\n",
+      "let stop = () => do\n  return // stop here\n  1;\nend;\n",
+      "let stop = () => do\n  return 1\n  ;\nend;\n",
+    ]
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, []);
+    const diagnostics = diagnostics_of(lower_baba_source(parsed));
+    const return_start = source.indexOf("return");
+    const line_break = source.indexOf("\n", return_start);
+    assert_equals(diagnostics, [{
+      code: "DUCK1001",
+      message: "Expected `;` after `return`",
+      severity: "error",
+      span: { start: line_break, end: line_break + 1 },
+    }]);
+  }
+});
+
+Deno.test("Baba requires a terminator after return values", () => {
+  for (
+    const source of [
+      "return 1\n",
+      "return { .value = 1 }\n",
+      "return 1 // stop here\n",
+      "let stop = () => do\n  return 1\nend;\n",
+    ]
+  ) {
+    const diagnostics = parse_duck_source(source).diagnostics;
+    assert_equals(
+      diagnostics.map((diagnostic) => diagnostic.message),
+      ["Baba parser rejected MISSING"],
+    );
+    const diagnostic = diagnostics[0];
+    if (diagnostic === undefined) {
+      throw new Error("Expected a missing return terminator.");
+    }
+    const line_break = source.indexOf("\n", source.indexOf("return"));
+    assert_equals(diagnostic.span.start >= line_break, true);
+    assert_equals(diagnostic.span.end, diagnostic.span.start);
+  }
+});
+
 Deno.test("Baba lowers conditional patterns and condition-only expressions", () => {
   for (
     const source of [
       "if let #Some value = current then value else 0 end;\n",
       "if let #None = current then 1 end;\n",
+      "if let #Bool true = current then 1 else 0 end;\n",
+      "if let #Bool false = current then return 1; end;\n",
       "let _ = 1;\n" +
       "if let #Some _ = current then 1 else 0 end;\n",
       "if let 0 = current then 1 else 2 end;\n",

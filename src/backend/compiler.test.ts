@@ -15,6 +15,45 @@ Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   assert_equals(module.nodeCount, 5);
 });
 
+Deno.test("Duck compiler preserves top-level return forms through Baba", () => {
+  const unit = encode_duck_module("return;\n");
+  const scalar = encode_duck_module("return 1;\n");
+  const shape = encode_duck_module("return { .value = 1 };\n");
+
+  assert_equals(unit.definitionCount, 1);
+  assert_equals(unit.entrySymbol, 0);
+  assert_equals(unit.nodeCount, 1);
+  assert_equals(scalar.definitionCount, 1);
+  assert_equals(scalar.entrySymbol, 0);
+  assert_equals(scalar.nodeCount, 1);
+  assert_equals(shape.definitionCount, 1);
+  assert_equals(shape.entrySymbol, 0);
+  assert_equals(shape.nodeCount, 3);
+});
+
+Deno.test("Duck compiler rejects return values after a line break", () => {
+  assert_throws(
+    () => encode_duck_module("return\n1;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return // stop here\n1;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1\n;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1 // stop here\n;\n"),
+    "Expected `;` after `return`",
+  );
+  assert_throws(
+    () => encode_duck_module("return 1\n"),
+    "Baba parser rejected MISSING",
+  );
+});
+
 Deno.test("Duck compiler lowers Duck numeric types", () => {
   const i64_module = encode_duck_module("21i64 * 2i64");
   const f32_module = encode_duck_module("20.5f32 + 21.5f32");

@@ -304,6 +304,13 @@ function forbidden_import_reason(
   imported: string,
 ): string | undefined {
   if (
+    importer === "src/backend/compiler.ts" &&
+    imported === "src/frontend/parser.ts"
+  ) {
+    return "the compiler must parse source through Baba";
+  }
+
+  if (
     importer.startsWith("src/frontend/") &&
     imported.startsWith("src/core/")
   ) {

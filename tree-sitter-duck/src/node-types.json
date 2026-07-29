@@ -6051,7 +6051,7 @@
     "fields": {
       "value": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "application_expression",
@@ -6383,6 +6383,10 @@
           "named": true
         },
         {
+          "type": "top_level_return_statement",
+          "named": true
+        },
+        {
           "type": "type_declaration_statement",
           "named": true
         },
@@ -6502,6 +6506,78 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "top_level_return_statement",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "application_expression",
+            "named": true
+          },
+          {
+            "type": "arrow_function",
+            "named": true
+          },
+          {
+            "type": "as_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "case_expression",
+            "named": true
+          },
+          {
+            "type": "case_function_expression",
+            "named": true
+          },
+          {
+            "type": "effect_handler_expression",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "is_expression",
+            "named": true
+          },
+          {
+            "type": "loop_expression",
+            "named": true
+          },
+          {
+            "type": "postfix_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_call_expression",
+            "named": true
+          },
+          {
+            "type": "recursive_function",
+            "named": true
+          },
+          {
+            "type": "try_with_expression",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {

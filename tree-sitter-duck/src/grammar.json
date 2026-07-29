@@ -54,7 +54,7 @@
             "members": [
               {
                 "type": "SYMBOL",
-                "name": "_module_statement"
+                "name": "_top_level_statement"
               },
               {
                 "type": "CHOICE",
@@ -91,6 +91,19 @@
         {
           "type": "STRING",
           "value": "where"
+        }
+      ]
+    },
+    "_top_level_statement": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "_module_statement"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "top_level_return_statement"
         }
       ]
     },
@@ -2589,12 +2602,65 @@
           "value": "return"
         },
         {
-          "type": "FIELD",
-          "name": "value",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_expression"
-          }
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "FIELD",
+                  "name": "value",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_expression"
+                  }
+                },
+                {
+                  "type": "STRING",
+                  "value": ";"
+                }
+              ]
+            },
+            {
+              "type": "STRING",
+              "value": ";"
+            }
+          ]
+        }
+      ]
+    },
+    "top_level_return_statement": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "return"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "FIELD",
+                  "name": "value",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_expression"
+                  }
+                },
+                {
+                  "type": "STRING",
+                  "value": ";"
+                }
+              ]
+            },
+            {
+              "type": "STRING",
+              "value": ";"
+            }
+          ]
         }
       ]
     },

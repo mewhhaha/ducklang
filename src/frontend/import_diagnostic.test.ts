@@ -63,11 +63,10 @@ Deno.test("Source.analyze diagnoses cycles reached through closure bodies", () =
   );
 });
 
-Deno.test("Source.analyze reports Baba import lowering failures", () => {
+Deno.test("Source.analyze reports Baba import parse failures", () => {
   const main = 'const dependency = import "./dep.duck";\ndependency\n';
   const dependency = "module () where\n" +
-    "type Player = struct { .name = Text }\n" +
-    "let struct { .name = Text, ..} = Player;\n" +
+    "let value = ;\n" +
     "return {};\n";
   const analysis = Source.analyze(main, {
     uri: "file:///main.duck",
@@ -80,10 +79,10 @@ Deno.test("Source.analyze reports Baba import lowering failures", () => {
   assert_equals(analysis.diagnostics, [{
     code: "DUCK1001",
     severity: "error",
-    message: "Baba semantic lowering does not support type_pattern_statement.",
+    message: "Baba parser rejected MISSING",
     span: {
-      start: dependency.indexOf("let struct"),
-      end: dependency.indexOf("\nreturn"),
+      start: dependency.indexOf(";"),
+      end: dependency.indexOf(";"),
     },
     uri: "file:///dep.duck",
   }]);

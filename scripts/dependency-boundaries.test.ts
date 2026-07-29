@@ -40,3 +40,19 @@ Deno.test("dependency boundaries keep the frontend independent from Core", () =>
     reason: "frontend stages cannot import semantic Core",
   }]);
 });
+
+Deno.test("dependency boundaries keep the compiler on Baba", () => {
+  const graph = new Map([
+    [
+      "src/backend/compiler.ts",
+      new Set(["src/frontend/parser.ts"]),
+    ],
+    ["src/frontend/parser.ts", new Set<string>()],
+  ]);
+
+  assert_equals(dependency_violations(graph), [{
+    importer: "src/backend/compiler.ts",
+    imported: "src/frontend/parser.ts",
+    reason: "the compiler must parse source through Baba",
+  }]);
+});

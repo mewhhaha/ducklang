@@ -1641,6 +1641,36 @@ function index_synthetic_names(
       }
     }
     if (
+      node.kind === "handler_operation_clause" ||
+      node.kind === "handler_return_clause"
+    ) {
+      const arrow = node.children.find((child) =>
+        child.kind === "arrow_function"
+      );
+      const parameter_container = arrow?.children.find((child) =>
+        child.kind === "parameter" || child.kind === "parameter_list"
+      );
+      if (parameter_container !== undefined) {
+        let parameters = [parameter_container];
+        if (parameter_container.kind === "parameter_list") {
+          parameters = parameter_container.children.filter((child) =>
+            child.kind === "parameter"
+          );
+        }
+        for (const parameter of parameters) {
+          const wildcard = parameter.children.find((child) =>
+            child.kind === "wildcard"
+          );
+          if (wildcard === undefined) continue;
+          synthetic_parameter_names.set(
+            parameter,
+            no_demand_name(next_no_demand),
+          );
+          next_no_demand += 1;
+        }
+      }
+    }
+    if (
       node.kind === "arrow_function" || node.kind === "recursive_function"
     ) {
       const parameter_container = node.children.find((child) =>
@@ -1694,10 +1724,12 @@ function index_synthetic_names(
             );
           }
           if (wildcard !== undefined) {
-            synthetic_parameter_names.set(
-              parameter_container,
-              "_pattern#param" + source_offset.toString(),
-            );
+            if (!synthetic_parameter_names.has(parameter_container)) {
+              synthetic_parameter_names.set(
+                parameter_container,
+                "_pattern#param" + source_offset.toString(),
+              );
+            }
           }
         } else if (parameter_container.kind === "parameter_list") {
           const parameters = parameter_container.children.filter((child) =>
@@ -1716,10 +1748,12 @@ function index_synthetic_names(
               child.kind === "wildcard"
             );
             if (wildcard !== undefined) {
-              synthetic_parameter_names.set(
-                parameter,
-                "_pattern#param" + source_offset.toString(),
-              );
+              if (!synthetic_parameter_names.has(parameter)) {
+                synthetic_parameter_names.set(
+                  parameter,
+                  "_pattern#param" + source_offset.toString(),
+                );
+              }
             }
           }
           let ignored = 0;
@@ -1729,11 +1763,13 @@ function index_synthetic_names(
               child.kind === "wildcard"
             );
             if (wildcard === undefined) continue;
-            synthetic_parameter_names.set(
-              parameter,
-              "_pattern#ignored" + source_offset.toString() + "#" +
-                ignored.toString(),
-            );
+            if (!synthetic_parameter_names.has(parameter)) {
+              synthetic_parameter_names.set(
+                parameter,
+                "_pattern#ignored" + source_offset.toString() + "#" +
+                  ignored.toString(),
+              );
+            }
             ignored += 1;
           }
         }
@@ -2652,6 +2688,82 @@ function lower_statement(
     return lower_binding(node, source);
   }
 
+  if (node.kind === "type_pattern_statement") {
+    const pattern_node = node.children.find((child) =>
+      child.kind === "type_pattern"
+    );
+    const equals_node = node.children.find((child) =>
+      source.slice(child.start, child.end) === "="
+    );
+    if (pattern_node === undefined || equals_node === undefined) {
+      return unsupported(node);
+    }
+    const target_node = node.children.find((child) =>
+      child.start >= equals_node.end && is_expression_node(child)
+    );
+    if (target_node === undefined) return unsupported(node);
+    return Applicative.lift(
+      (pattern: TypePattern, target: FrontExpr) => {
+        const statement: Stmt = { tag: "type_check", pattern, target };
+        mark_source_span(statement, { start: node.start, end: node.end });
+        return statement;
+      },
+      lower_type_pattern(pattern_node, source),
+      lower_expression(target_node, source),
+    );
+  }
+
+  if (node.kind === "resume_dup_statement") {
+    const names = node.children.filter((child) => child.kind === "identifier");
+    const left_node = names[0];
+    const right_node = names[1];
+    const value_node = node.children.find((child) =>
+      child.kind === "linear_reference"
+    );
+    if (
+      left_node === undefined || right_node === undefined ||
+      value_node === undefined
+    ) {
+      return unsupported(node);
+    }
+    const left = source.slice(left_node.start, left_node.end);
+    const right = source.slice(right_node.start, right_node.end);
+    let names_check: Checked<null> = ok(null);
+    for (
+      const [name, name_node] of [
+        [left, left_node],
+        [right, right_node],
+      ] as const
+    ) {
+      if (is_snake_case(name)) continue;
+      names_check = Applicative.lift(
+        (_current: null, _next: null) => null,
+        names_check,
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.syntax_error,
+            "Duplicated resumption must use snake_case: " + name,
+            { start: name_node.start, end: name_node.end },
+          ),
+        ),
+      );
+    }
+    return Applicative.lift(
+      (_names: null, value: FrontExpr) => {
+        const statement: Stmt = {
+          tag: "resume_dup",
+          left,
+          right,
+          value,
+        };
+        mark_source_span(statement, { start: node.start, end: node.end });
+        return statement;
+      },
+      names_check,
+      lower_expression(value_node, source),
+    );
+  }
+
   if (node.kind === "module_binding_statement") {
     return lower_module_binding(node, source);
   }
@@ -2672,7 +2784,10 @@ function lower_statement(
     return lower_return(node, source);
   }
 
-  if (node.kind === "module_return_statement") {
+  if (
+    node.kind === "module_return_statement" ||
+    node.kind === "top_level_return_statement"
+  ) {
     return lower_module_return(node, source);
   }
 
@@ -2717,6 +2832,50 @@ function lower_statement_entries(
   node: BabaCstNode,
   source: string,
 ): Checked<Stmt[]> {
+  if (node.kind === "effect_binding_statement") {
+    const binding_node = node.children.find((child) =>
+      child.kind === "identifier" || child.kind === "wildcard" ||
+      child.kind === "unit_pattern"
+    );
+    const value_node = node.children.find((child) =>
+      child !== binding_node && is_expression_node(child)
+    );
+    if (value_node?.kind === "application_expression") {
+      const application_nodes = value_node.children.filter((child) =>
+        is_expression_node(child)
+      );
+      const function_node = application_nodes[0];
+      const argument_node = application_nodes[1];
+      if (
+        function_node !== undefined && argument_node !== undefined &&
+        /[\r\n]/.test(
+          source.slice(function_node.end, argument_node.start),
+        )
+      ) {
+        const effect_statement = lower_effect_binding(
+          node,
+          source,
+          function_node,
+          function_node.end,
+        );
+        const trailing_statement = lower_expression(argument_node, source).map(
+          (expr) => {
+            const statement: Stmt = { tag: "expr", expr };
+            mark_source_span(statement, {
+              start: argument_node.start,
+              end: argument_node.end,
+            });
+            return statement;
+          },
+        );
+        return Applicative.lift(
+          (effect: Stmt, trailing: Stmt) => [effect, trailing],
+          effect_statement,
+          trailing_statement,
+        );
+      }
+    }
+  }
   if (node.kind === "expression_statement") {
     const expression_node = semantic_child(node);
     if (
@@ -4609,14 +4768,19 @@ function lower_index_assignment(
 function lower_effect_binding(
   node: BabaCstNode,
   source: string,
+  value_override?: BabaCstNode,
+  statement_end?: number,
 ): Checked<Stmt> {
   const binding_node = node.children.find((child) =>
     child.kind === "identifier" || child.kind === "wildcard" ||
     child.kind === "unit_pattern"
   );
-  const value_node = node.children.find((child) =>
-    child !== binding_node && is_expression_node(child)
-  );
+  let value_node = value_override;
+  if (value_node === undefined) {
+    value_node = node.children.find((child) =>
+      child !== binding_node && is_expression_node(child)
+    );
+  }
   if (binding_node === undefined || value_node === undefined) {
     return unsupported(node);
   }
@@ -4680,7 +4844,9 @@ function lower_effect_binding(
           value,
         };
       }
-      mark_source_span(statement, { start: node.start, end: node.end });
+      let end = node.end;
+      if (statement_end !== undefined) end = statement_end;
+      mark_source_span(statement, { start: node.start, end });
       return statement;
     },
     binding_check,
@@ -4702,18 +4868,28 @@ function lower_return(
   node: BabaCstNode,
   source: string,
 ): Checked<Stmt> {
+  const line_check = check_return_line_boundary(node, source);
+  let statement_end = node.end;
+  const terminator = /^[ \t]*;/.exec(source.slice(node.end));
+  if (terminator !== null) statement_end += terminator[0].length;
   const value_node = node.children.find((child) => is_expression_node(child));
   if (value_node === undefined) {
-    const statement: Stmt = { tag: "return", value: { tag: "unit" } };
-    mark_source_span(statement, { start: node.start, end: node.end });
-    return ok(statement);
+    return line_check.map((_line: null) => {
+      const statement: Stmt = { tag: "return", value: { tag: "unit" } };
+      mark_source_span(statement, { start: node.start, end: statement_end });
+      return statement;
+    });
   }
 
-  return lower_expression(value_node, source).map((value) => {
-    const statement: Stmt = { tag: "return", value };
-    mark_source_span(statement, { start: node.start, end: node.end });
-    return statement;
-  });
+  return Applicative.lift(
+    (_line: null, value: FrontExpr) => {
+      const statement: Stmt = { tag: "return", value };
+      mark_source_span(statement, { start: node.start, end: statement_end });
+      return statement;
+    },
+    line_check,
+    lower_expression(value_node, source),
+  );
 }
 
 function lower_module_return(
@@ -4722,32 +4898,88 @@ function lower_module_return(
 ): Checked<Stmt> {
   const value_node = node.children.find((child) => is_expression_node(child));
   if (value_node === undefined) return lower_return(node, source);
-  return lower_expression(value_node, source).map((value) => {
-    let return_value = value;
-    if (value.tag === "shape") {
-      const fields = value.entries.map((entry) => {
-        expect(
-          entry.label !== undefined,
-          "Baba module export shape entry has no label.",
-        );
-        const field = { name: entry.label, value: entry.value };
-        mark_source_span(field, source_span(entry));
-        return field;
-      });
-      return_value = {
-        tag: "struct_value",
-        type_expr: { tag: "var", name: "object_type" },
-        fields,
-      };
-      mark_source_span(return_value, {
-        start: value_node.start,
-        end: value_node.end,
-      });
-    }
-    const statement: Stmt = { tag: "return", value: return_value };
-    mark_source_span(statement, { start: node.start, end: node.end });
-    return statement;
-  });
+  const line_check = check_return_line_boundary(node, source);
+  let statement_end = node.end;
+  const terminator = /^[ \t]*;/.exec(source.slice(node.end));
+  if (terminator !== null) statement_end += terminator[0].length;
+  return Applicative.lift(
+    (_line: null, value: FrontExpr) => {
+      let return_value = value;
+      if (value.tag === "shape") {
+        const fields = value.entries.map((entry) => {
+          expect(
+            entry.label !== undefined,
+            "Baba module export shape entry has no label.",
+          );
+          const entry_span = source_span(entry);
+          if (!source.slice(entry_span.start, entry_span.end).includes("=")) {
+            mark_source_span(entry.value, entry_span);
+          }
+          const field = { name: entry.label, value: entry.value };
+          derive_source_span(field, {
+            start: value_node.start,
+            end: value_node.end,
+          });
+          return field;
+        });
+        return_value = {
+          tag: "struct_value",
+          type_expr: { tag: "var", name: "object_type" },
+          fields,
+        };
+        mark_source_span(return_value, {
+          start: value_node.start,
+          end: value_node.end,
+        });
+      }
+      const statement: Stmt = { tag: "return", value: return_value };
+      mark_source_span(statement, { start: node.start, end: statement_end });
+      return statement;
+    },
+    line_check,
+    lower_expression(value_node, source),
+  );
+}
+
+function check_return_line_boundary(
+  node: BabaCstNode,
+  source: string,
+): Checked<null> {
+  const return_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === "return"
+  );
+  expect(return_node !== undefined, "Baba return keyword disappeared.");
+  const following_node = node.children.find((child) =>
+    child.start >= return_node.end && child !== return_node &&
+    child.kind !== "comment"
+  );
+  if (following_node === undefined) return ok(null);
+  const boundaries = [{
+    start: return_node.end,
+    end: following_node.start,
+  }];
+  const value_node = node.children.find((child) => is_expression_node(child));
+  const semicolon_node = node.children.find((child) =>
+    source.slice(child.start, child.end) === ";"
+  );
+  if (value_node !== undefined && semicolon_node !== undefined) {
+    boundaries.push({ start: value_node.end, end: semicolon_node.start });
+  }
+  for (const boundary of boundaries) {
+    const gap = source.slice(boundary.start, boundary.end);
+    let line_break = gap.indexOf("\n");
+    if (line_break < 0) line_break = gap.indexOf("\r");
+    if (line_break < 0) continue;
+    const start = boundary.start + line_break;
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        "Expected `;` after `return`",
+        { start, end: start + 1 },
+      ),
+    );
+  }
+  return ok(null);
 }
 
 function lower_break(
@@ -4807,7 +5039,9 @@ type IfTest =
     pattern: Pattern;
     target: FrontExpr;
     span: SourceSpan;
-    wildcard_value_name: string | undefined;
+    simple_union:
+      | { case_name: string; value_name: string | undefined }
+      | undefined;
   };
 
 function lower_if_test(
@@ -4850,28 +5084,59 @@ function lower_if_test(
     source.slice(child.start, child.end) === "let"
   );
   expect(let_node !== undefined, "Baba if-let keyword disappeared.");
-  const wildcard_node = pattern_nodes.find((child) =>
-    child.kind === "union_pattern"
-  )?.children.find((child) => child.kind === "wildcard");
-  let wildcard_value_name: string | undefined;
-  if (wildcard_node !== undefined) {
-    wildcard_value_name = no_demand_names.get(wildcard_node);
-    expect(
-      wildcard_value_name !== undefined,
-      "Baba if-let wildcard has no no-demand identity.",
-    );
-  }
+  const simple_union = simple_if_let_union(pattern_nodes, source);
   return Applicative.lift(
     (pattern: Pattern, target: FrontExpr) => ({
       tag: "pattern",
       pattern,
       target,
       span: { start: let_node.start, end: target_node.end },
-      wildcard_value_name,
+      simple_union,
     }),
     lower_pattern_alternatives(pattern_nodes, source),
     lower_expression(target_node, source),
   );
+}
+
+function simple_if_let_union(
+  pattern_nodes: readonly BabaCstNode[],
+  source: string,
+): { case_name: string; value_name: string | undefined } | undefined {
+  if (pattern_nodes.length !== 1) return undefined;
+  const pattern = pattern_nodes[0];
+  expect(pattern !== undefined, "Baba if-let pattern disappeared.");
+  if (pattern.kind !== "union_pattern") return undefined;
+  const name = pattern.children.find((child) =>
+    child.kind === "constructor_identifier"
+  );
+  if (name === undefined) return undefined;
+  const payload = pattern.children.find((child) =>
+    child !== name && is_pattern_node(child)
+  );
+  if (payload === undefined) {
+    return {
+      case_name: source.slice(name.start, name.end),
+      value_name: undefined,
+    };
+  }
+  if (payload.kind === "identifier") {
+    const value_name = source.slice(payload.start, payload.end);
+    if (!/^[_a-z]/.test(value_name)) return undefined;
+    return {
+      case_name: source.slice(name.start, name.end),
+      value_name,
+    };
+  }
+  if (payload.kind !== "wildcard") return undefined;
+  const value_name = no_demand_names.get(payload);
+  expect(
+    value_name !== undefined,
+    "Baba if-let wildcard has no no-demand identity.",
+  );
+  return {
+    case_name: source.slice(name.start, name.end),
+    value_name,
+  };
 }
 
 function statement_from_if_test(
@@ -4898,10 +5163,7 @@ function statement_from_if_test(
       body: branch.statements,
     };
   }
-  const simple_union = simple_if_let_pattern(
-    test.pattern,
-    test.wildcard_value_name,
-  );
+  const simple_union = test.simple_union;
   if (simple_union !== undefined) {
     return {
       tag: "if_let_stmt",
@@ -4928,32 +5190,6 @@ function statement_from_if_test(
     ],
   };
   return { tag: "expr", expr: expression };
-}
-
-function simple_if_let_pattern(
-  pattern: Pattern,
-  wildcard_value_name: string | undefined,
-): { case_name: string; value_name: string | undefined } | undefined {
-  if (pattern.tag !== "union_case") return undefined;
-  if (pattern.value === undefined || pattern.value.tag === "unit") {
-    return { case_name: pattern.name, value_name: undefined };
-  }
-  if (
-    pattern.value.tag === "wildcard" &&
-    pattern.value.mode === "default" &&
-    wildcard_value_name !== undefined
-  ) {
-    return { case_name: pattern.name, value_name: wildcard_value_name };
-  }
-  if (
-    pattern.value.tag !== "binding" ||
-    pattern.value.mode !== "default" ||
-    pattern.value.annotation !== undefined ||
-    pattern.value.type_annotation !== undefined
-  ) {
-    return undefined;
-  }
-  return { case_name: pattern.name, value_name: pattern.value.name };
 }
 
 function lower_expression(
@@ -5150,6 +5386,10 @@ function lower_expression(
 
   if (node.kind === "recursive_call_expression") {
     return lower_recursive_call(node, source);
+  }
+
+  if (node.kind === "try_with_expression") {
+    return lower_try_with_expression(node, source);
   }
 
   if (node.kind === "effect_handler_expression") {
@@ -5861,6 +6101,43 @@ function lower_effect_handler_expression(
   );
 }
 
+function lower_try_with_expression(
+  node: BabaCstNode,
+  source: string,
+): Checked<FrontExpr> {
+  const expression_nodes = node.children.filter((child) =>
+    is_expression_node(child)
+  );
+  const body_node = expression_nodes[0];
+  const handler_node = expression_nodes[1];
+  if (body_node === undefined || expression_nodes.length > 2) {
+    return unsupported(node);
+  }
+  if (handler_node === undefined) {
+    return lower_expression(body_node, source).map((body) => {
+      const handler: FrontExpr = { tag: "unit" };
+      derive_source_span(handler, { start: node.start, end: node.end });
+      const expression: FrontExpr = {
+        tag: "try_with",
+        body,
+        handler,
+        infer_default_handlers: true,
+      };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    });
+  }
+  return Applicative.lift(
+    (body: FrontExpr, handler: FrontExpr) => {
+      const expression: FrontExpr = { tag: "try_with", body, handler };
+      mark_source_span(expression, { start: node.start, end: node.end });
+      return expression;
+    },
+    lower_expression(body_node, source),
+    lower_expression(handler_node, source),
+  );
+}
+
 function finalize_block_statements(statements: readonly Stmt[]): Stmt[] {
   const block_statements = [...statements];
   const final_statement = block_statements[block_statements.length - 1];
@@ -6072,10 +6349,7 @@ function expression_from_if_test(
     if (implicit_else) expression.implicit_else = true;
     return expression;
   }
-  const simple_union = simple_if_let_pattern(
-    test.pattern,
-    test.wildcard_value_name,
-  );
+  const simple_union = test.simple_union;
   if (simple_union !== undefined) {
     const expression: Extract<FrontExpr, { tag: "if_let" }> = {
       tag: "if_let",
@@ -7844,7 +8118,18 @@ function lower_application(
         return expression;
       }
       let args = [arg];
-      if (arg.tag === "unit") args = [];
+      if (arg.tag === "unit") {
+        args = [];
+        if (
+          argument_node.kind === "parenthesized_or_product" &&
+          argument_node.children.some((child) =>
+            child.kind === "unit_pattern"
+          ) &&
+          function_node.end === argument_node.start
+        ) {
+          derive_source_span(arg, { start: node.start, end: node.end });
+        }
+      }
       if (arg.tag === "product" && arg.value_pack === true) {
         args = arg.entries.map((entry) => entry.value);
       }
@@ -8168,6 +8453,7 @@ function is_expression_node(node: BabaCstNode): boolean {
     node.kind === "arrow_function" ||
     node.kind === "recursive_function" ||
     node.kind === "recursive_call_expression" ||
+    node.kind === "try_with_expression" ||
     node.kind === "effect_handler_expression" ||
     node.kind === "application_expression" ||
     node.kind === "condition_call_expression" ||

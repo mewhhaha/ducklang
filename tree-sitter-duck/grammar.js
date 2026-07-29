@@ -56,8 +56,9 @@ export default grammar({
 
   rules: {
     source_file: $ => $.document,
-    document: $ => choice(seq($.module_header, repeat(seq($._module_statement, optional(";"))), $.module_return_statement), repeat1(seq($._module_statement, optional(";")))),
+    document: $ => choice(seq($.module_header, repeat(seq($._module_statement, optional(";"))), $.module_return_statement), repeat1(seq($._top_level_statement, optional(";")))),
     module_header: $ => seq("module", field("parameters", $.parameter_list), "where"),
+    _top_level_statement: $ => choice($._module_statement, $.top_level_return_statement),
     _module_statement: $ => choice($.declare_effect_statement, $.effect_statement, $.declare_record_statement, $.prefix_signature_statement, $.prefix_fact_statement, $.type_declaration_statement, $.duck_declaration_statement, $.extension_declaration_statement, $.fixity_declaration_statement, $.module_binding_statement, $.effect_binding_statement, $.resume_dup_statement, $.binding_statement, $.type_pattern_statement, $.for_statement, $.break_statement, $.continue_statement, $.index_assignment, $.assignment, $.expression_statement),
     _statement: $ => choice($.effect_binding_statement, $.resume_dup_statement, $.prefix_signature_statement, $.prefix_fact_statement, $.binding_statement, $.type_pattern_statement, $.return_statement, $.for_statement, $.break_statement, $.continue_statement, $.index_assignment, $.assignment, $.expression_statement),
     binding_statement: $ => seq(repeat(field("attribute", $.attribute_group)), choice(seq(field("kind", "let"), optional(field("recursive", "rec"))), seq(field("kind", "const"), optional(field("open", "open")))), optional(field("linear", "!")), field("name", $._binding_pattern), optional(seq(":", field("type", $.type_reference))), "=", field("value", $._expression), repeat(seq("and", field("mutual_name", $.identifier), optional(seq(":", field("mutual_type", $.type_reference))), "=", field("mutual_value", $._expression))), optional(seq("else", field("alternative", $.block))), ";"),
@@ -114,7 +115,8 @@ export default grammar({
     host_parameter_list: $ => seq("(", optional(seq(seq($.host_parameter, repeat(seq(",", $.host_parameter))), optional(","))), ")"),
     host_parameter: $ => choice(seq(field("contract", choice("&", "#", "scalar")), field("type", $.type_reference)), field("type", $.type_reference)),
     host_result: $ => choice(seq(field("contract", choice("#", "scalar")), field("type", $.type_reference)), field("type", $.type_reference)),
-    return_statement: $ => seq("return", field("value", $._expression)),
+    return_statement: $ => seq("return", choice(seq(field("value", $._expression), ";"), ";")),
+    top_level_return_statement: $ => seq("return", choice(seq(field("value", $._expression), ";"), ";")),
     module_return_statement: $ => seq("return", field("exports", $.shape_value), ";"),
     break_statement: $ => seq("break", optional(field("value", $._expression)), ";"),
     continue_statement: $ => seq("continue", ";"),

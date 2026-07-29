@@ -20,7 +20,16 @@ import {
   type WasmInitBinding,
   type WasmRunOptions,
 } from "gpufuck";
+import {
+  compiler_diagnostic,
+  CompilerDiagnosticError,
+  diagnostic_codes,
+} from "../../src/diagnostic.ts";
+import { expect } from "../../src/expect.ts";
 import type { Source as SourceNode } from "../../src/frontend/ast.ts";
+import { lower_baba_source } from "../../src/frontend/baba_lower.ts";
+import { parse_duck_source } from "../../src/frontend/baba_parser.ts";
+import { checked_value, diagnostics_of } from "../../src/frontend/checked.ts";
 import { format_source } from "../../src/frontend/format.ts";
 import { source_with_host_interface } from "../../src/frontend/host_interface.ts";
 import type { SourceImportMeta } from "../../src/frontend/import_meta.ts";
@@ -30,7 +39,6 @@ import {
   source_file_url,
   type SourceDependency,
 } from "../../src/frontend/load.ts";
-import { parse_source } from "../../src/frontend/parser.ts";
 import {
   lower_duck_source_to_gpufuck,
   type LoweredDuckGpufuckModule,
@@ -588,7 +596,24 @@ export function encode_duck_file(path: string): EncodedModule {
 }
 
 function lower_duck_text(source_text: string): LoweredDuckGpufuckModule {
-  const source = parse_source(source_text);
+  const parsed = parse_duck_source(source_text);
+  const parse_diagnostic = parsed.diagnostics[0];
+  if (parse_diagnostic !== undefined) {
+    throw new CompilerDiagnosticError(
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        parse_diagnostic.message,
+        parse_diagnostic.span,
+      ),
+    );
+  }
+  const lowered = lower_baba_source(parsed);
+  const lowering_diagnostic = diagnostics_of(lowered)[0];
+  if (lowering_diagnostic !== undefined) {
+    throw new CompilerDiagnosticError(lowering_diagnostic);
+  }
+  const source = checked_value(lowered);
+  expect(source !== undefined, "Baba compiler lowering failed silently.");
   const source_byte_length = new TextEncoder().encode(source_text).byteLength;
   return lower_gpufuck_source(source, source_byte_length);
 }
