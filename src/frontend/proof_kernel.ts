@@ -8,9 +8,13 @@ import {
   KernelEnvironment,
   type KernelTerm,
   type KernelType,
+  shift_kernel_term_variables,
+  shift_kernel_type_variables,
   snapshot_kernel_context,
   snapshot_kernel_term,
   snapshot_kernel_type,
+  substitute_kernel_term_variable,
+  substitute_kernel_type_variable,
   term_equal,
   type_equal,
 } from "./kernel_terms.ts";
@@ -49,7 +53,9 @@ export type Proposition =
   | { tag: "and"; left: Proposition; right: Proposition }
   | { tag: "or"; left: Proposition; right: Proposition }
   | { tag: "implies"; premise: Proposition; conclusion: Proposition }
-  | { tag: "not"; proposition: Proposition };
+  | { tag: "not"; proposition: Proposition }
+  | { tag: "forall"; domain: KernelType; body: Proposition }
+  | { tag: "exists"; domain: KernelType; body: Proposition };
 
 export type ProofTerm =
   | { tag: "assumption"; index: number }
@@ -72,6 +78,27 @@ export type ProofTerm =
   | { tag: "not_intro"; premise: Proposition; body: ProofTerm }
   | { tag: "implies_intro"; premise: Proposition; body: ProofTerm }
   | { tag: "implies_apply"; function: ProofTerm; argument: ProofTerm }
+  | { tag: "forall_intro"; domain: KernelType; body: ProofTerm }
+  | { tag: "forall_apply"; proof: ProofTerm; argument: KernelTerm }
+  | {
+    tag: "exists_intro";
+    domain: KernelType;
+    body: Proposition;
+    witness: KernelTerm;
+    proof: ProofTerm;
+  }
+  | {
+    tag: "exists_elim";
+    proof: ProofTerm;
+    target: Proposition;
+    body: ProofTerm;
+  }
+  | {
+    tag: "transport";
+    equality: ProofTerm;
+    motive: Proposition;
+    proof: ProofTerm;
+  }
   | { tag: "false_elim"; proof: ProofTerm; target: Proposition }
   | { tag: "unsafe_assume"; proposition: Proposition };
 
@@ -222,6 +249,17 @@ function proposition_equal_at(
         context,
         environment,
       );
+    case "forall":
+    case "exists": {
+      const other = right as Extract<Proposition, { tag: typeof left.tag }>;
+      if (!type_equal(left.domain, other.domain, environment)) return false;
+      return proposition_equal_at(
+        left.body,
+        other.body,
+        extend_term_context(left.domain, context),
+        environment,
+      );
+    }
   }
 }
 
@@ -472,6 +510,24 @@ function snapshot_proposition(
         ),
       };
       break;
+    case "forall":
+    case "exists": {
+      const domain = snapshot_kernel_type(
+        required_property(properties, "domain", "Quantified proposition"),
+      );
+      charge_kernel_type(domain, budget);
+      snapshot = {
+        tag,
+        domain,
+        body: snapshot_proposition(
+          required_property(properties, "body", "Quantified proposition"),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
+      break;
+    }
     default:
       throw new Error(
         `Invalid proposition tag ${STRING_CONSTRUCTOR(tag)}.`,
@@ -741,6 +797,114 @@ function snapshot_proof(
         ),
       };
       break;
+    case "forall_intro": {
+      const domain = snapshot_kernel_type(
+        required_property(properties, "domain", "Universal introduction"),
+      );
+      charge_kernel_type(domain, budget);
+      snapshot = {
+        tag: "forall_intro",
+        domain,
+        body: snapshot_proof(
+          required_property(properties, "body", "Universal introduction"),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
+      break;
+    }
+    case "forall_apply": {
+      const argument = snapshot_kernel_term(
+        required_property(properties, "argument", "Universal application"),
+      );
+      charge_kernel_term(argument, budget);
+      snapshot = {
+        tag: "forall_apply",
+        proof: snapshot_proof(
+          required_property(properties, "proof", "Universal application"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        argument,
+      };
+      break;
+    }
+    case "exists_intro": {
+      const domain = snapshot_kernel_type(
+        required_property(properties, "domain", "Existential introduction"),
+      );
+      const witness = snapshot_kernel_term(
+        required_property(properties, "witness", "Existential introduction"),
+      );
+      charge_kernel_type(domain, budget);
+      charge_kernel_term(witness, budget);
+      snapshot = {
+        tag: "exists_intro",
+        domain,
+        body: snapshot_proposition(
+          required_property(properties, "body", "Existential introduction"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        witness,
+        proof: snapshot_proof(
+          required_property(properties, "proof", "Existential introduction"),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
+      break;
+    }
+    case "exists_elim":
+      snapshot = {
+        tag: "exists_elim",
+        proof: snapshot_proof(
+          required_property(properties, "proof", "Existential elimination"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        target: snapshot_proposition(
+          required_property(properties, "target", "Existential elimination"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        body: snapshot_proof(
+          required_property(properties, "body", "Existential elimination"),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
+      break;
+    case "transport":
+      snapshot = {
+        tag: "transport",
+        equality: snapshot_proof(
+          required_property(properties, "equality", "Equality transport"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        motive: snapshot_proposition(
+          required_property(properties, "motive", "Equality transport"),
+          depth + 1,
+          active,
+          budget,
+        ),
+        proof: snapshot_proof(
+          required_property(properties, "proof", "Equality transport"),
+          depth + 1,
+          active,
+          budget,
+        ),
+      };
+      break;
     case "false_elim":
       snapshot = {
         tag: "false_elim",
@@ -999,6 +1163,265 @@ function kernel_hypothesis(proposition: Proposition): KernelHypothesis {
   return { proposition, safety: { tag: "safe" } };
 }
 
+function extend_term_context(
+  type: KernelType,
+  context: KernelContext,
+): KernelContext {
+  const extended: KernelType[] = [type];
+  for (let index = 0; index < context.length; index += 1) {
+    const entry = context[index];
+    expect(entry !== undefined, `Kernel context entry ${index} is missing.`);
+    OBJECT_DEFINE_PROPERTY(extended, index + 1, {
+      value: entry,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return OBJECT_FREEZE(extended);
+}
+
+function substitute_proposition_variable(
+  proposition: Proposition,
+  argument: KernelTerm,
+  index = 0,
+  budget: SnapshotBudget = { nodes: 0 },
+): Proposition {
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= MAX_SNAPSHOT_NODES,
+    `Proof proposition transform exceeded ${MAX_SNAPSHOT_NODES} nodes.`,
+  );
+  switch (proposition.tag) {
+    case "true":
+    case "false":
+    case "atom":
+      return proposition;
+    case "equal": {
+      const type = substitute_kernel_type_variable(
+        proposition.type,
+        argument,
+        index,
+      );
+      const left = substitute_kernel_term_variable(
+        proposition.left,
+        argument,
+        index,
+      );
+      const right = substitute_kernel_term_variable(
+        proposition.right,
+        argument,
+        index,
+      );
+      charge_kernel_type(type, budget);
+      charge_kernel_term(left, budget);
+      charge_kernel_term(right, budget);
+      return {
+        tag: "equal",
+        type,
+        left,
+        right,
+      };
+    }
+    case "and":
+    case "or":
+      return {
+        tag: proposition.tag,
+        left: substitute_proposition_variable(
+          proposition.left,
+          argument,
+          index,
+          budget,
+        ),
+        right: substitute_proposition_variable(
+          proposition.right,
+          argument,
+          index,
+          budget,
+        ),
+      };
+    case "implies":
+      return {
+        tag: "implies",
+        premise: substitute_proposition_variable(
+          proposition.premise,
+          argument,
+          index,
+          budget,
+        ),
+        conclusion: substitute_proposition_variable(
+          proposition.conclusion,
+          argument,
+          index,
+          budget,
+        ),
+      };
+    case "not":
+      return {
+        tag: "not",
+        proposition: substitute_proposition_variable(
+          proposition.proposition,
+          argument,
+          index,
+          budget,
+        ),
+      };
+    case "forall":
+    case "exists": {
+      const domain = substitute_kernel_type_variable(
+        proposition.domain,
+        argument,
+        index,
+      );
+      charge_kernel_type(domain, budget);
+      return {
+        tag: proposition.tag,
+        domain,
+        body: substitute_proposition_variable(
+          proposition.body,
+          argument,
+          index + 1,
+          budget,
+        ),
+      };
+    }
+  }
+}
+
+function shift_proposition_variables(
+  proposition: Proposition,
+  amount: number,
+  cutoff = 0,
+  budget: SnapshotBudget = { nodes: 0 },
+): Proposition {
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= MAX_SNAPSHOT_NODES,
+    `Proof proposition transform exceeded ${MAX_SNAPSHOT_NODES} nodes.`,
+  );
+  switch (proposition.tag) {
+    case "true":
+    case "false":
+    case "atom":
+      return proposition;
+    case "equal": {
+      const type = shift_kernel_type_variables(
+        proposition.type,
+        amount,
+        cutoff,
+      );
+      const left = shift_kernel_term_variables(
+        proposition.left,
+        amount,
+        cutoff,
+      );
+      const right = shift_kernel_term_variables(
+        proposition.right,
+        amount,
+        cutoff,
+      );
+      charge_kernel_type(type, budget);
+      charge_kernel_term(left, budget);
+      charge_kernel_term(right, budget);
+      return {
+        tag: "equal",
+        type,
+        left,
+        right,
+      };
+    }
+    case "and":
+    case "or":
+      return {
+        tag: proposition.tag,
+        left: shift_proposition_variables(
+          proposition.left,
+          amount,
+          cutoff,
+          budget,
+        ),
+        right: shift_proposition_variables(
+          proposition.right,
+          amount,
+          cutoff,
+          budget,
+        ),
+      };
+    case "implies":
+      return {
+        tag: "implies",
+        premise: shift_proposition_variables(
+          proposition.premise,
+          amount,
+          cutoff,
+          budget,
+        ),
+        conclusion: shift_proposition_variables(
+          proposition.conclusion,
+          amount,
+          cutoff,
+          budget,
+        ),
+      };
+    case "not":
+      return {
+        tag: "not",
+        proposition: shift_proposition_variables(
+          proposition.proposition,
+          amount,
+          cutoff,
+          budget,
+        ),
+      };
+    case "forall":
+    case "exists": {
+      const domain = shift_kernel_type_variables(
+        proposition.domain,
+        amount,
+        cutoff,
+      );
+      charge_kernel_type(domain, budget);
+      return {
+        tag: proposition.tag,
+        domain,
+        body: shift_proposition_variables(
+          proposition.body,
+          amount,
+          cutoff + 1,
+          budget,
+        ),
+      };
+    }
+  }
+}
+
+function shift_proof_context_variables(
+  context: readonly KernelHypothesis[],
+  amount: number,
+): KernelHypothesis[] {
+  const shifted: KernelHypothesis[] = [];
+  for (let index = 0; index < context.length; index += 1) {
+    const hypothesis = context[index];
+    expect(
+      hypothesis !== undefined,
+      `Proof context entry ${index} is missing.`,
+    );
+    OBJECT_DEFINE_PROPERTY(shifted, index, {
+      value: {
+        proposition: shift_proposition_variables(
+          hypothesis.proposition,
+          amount,
+        ),
+        safety: hypothesis.safety,
+      },
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return shifted;
+}
+
 function extend_proof_context(
   hypothesis: KernelHypothesis,
   context: readonly KernelHypothesis[],
@@ -1076,6 +1499,13 @@ function freeze_proposition(proposition: Proposition): Proposition {
         tag: "not",
         proposition: freeze_proposition(proposition.proposition),
       });
+    case "forall":
+    case "exists":
+      return OBJECT_FREEZE({
+        tag: proposition.tag,
+        domain: proposition.domain,
+        body: freeze_proposition(proposition.body),
+      });
   }
 }
 
@@ -1134,6 +1564,15 @@ function check_proposition(
       return;
     case "not":
       check_proposition(proposition.proposition, context, environment);
+      return;
+    case "forall":
+    case "exists":
+      check_type(proposition.domain, context, environment);
+      check_proposition(
+        proposition.body,
+        extend_term_context(proposition.domain, context),
+        environment,
+      );
       return;
   }
 }
@@ -1223,6 +1662,63 @@ function check_proof_against(
       options,
     );
     return { proposition: goal, safety: body.safety };
+  }
+  if (proof.tag === "forall_intro" && goal.tag === "forall") {
+    check_type(proof.domain, term_context, environment);
+    expect(
+      type_equal(proof.domain, goal.domain, environment),
+      "Universal proof introduces a different domain.",
+    );
+    const extended_term_context = extend_term_context(
+      goal.domain,
+      term_context,
+    );
+    const body = check_proof_against(
+      proof.body,
+      goal.body,
+      shift_proof_context_variables(context, 1),
+      extended_term_context,
+      environment,
+      options,
+    );
+    return { proposition: goal, safety: body.safety };
+  }
+  if (proof.tag === "exists_intro" && goal.tag === "exists") {
+    check_type(proof.domain, term_context, environment);
+    expect(
+      type_equal(proof.domain, goal.domain, environment),
+      "Existential proof introduces a different domain.",
+    );
+    const body_context = extend_term_context(goal.domain, term_context);
+    check_proposition(proof.body, body_context, environment);
+    expect(
+      proposition_equal_at(
+        proof.body,
+        goal.body,
+        body_context,
+        environment,
+      ),
+      "Existential proof introduces a different proposition.",
+    );
+    check_kernel_term(
+      proof.witness,
+      goal.domain,
+      term_context,
+      environment,
+    );
+    const instantiated = substitute_proposition_variable(
+      goal.body,
+      proof.witness,
+    );
+    const checked = check_proof_against(
+      proof.proof,
+      instantiated,
+      context,
+      term_context,
+      environment,
+      options,
+    );
+    return { proposition: goal, safety: checked.safety };
   }
   if (proof.tag === "or_left" && goal.tag === "or") {
     expect(
@@ -1332,7 +1828,7 @@ function check_proof_term(
   context: KernelHypothesis[],
   term_context: KernelContext,
   environment: KernelEnvironment,
-  options: KernelCheckOptions,
+  options: StableKernelCheckOptions,
 ): KernelResult {
   switch (proof.tag) {
     case "assumption": {
@@ -1679,6 +2175,158 @@ function check_proof_term(
         safety: merge_safety(function_proof.safety, argument.safety),
       };
     }
+    case "forall_intro": {
+      check_type(proof.domain, term_context, environment);
+      const extended_term_context = extend_term_context(
+        proof.domain,
+        term_context,
+      );
+      const body = check_proof_term(
+        proof.body,
+        shift_proof_context_variables(context, 1),
+        extended_term_context,
+        environment,
+        options,
+      );
+      return {
+        proposition: {
+          tag: "forall",
+          domain: proof.domain,
+          body: body.proposition,
+        },
+        safety: body.safety,
+      };
+    }
+    case "forall_apply": {
+      const universal = check_proof_term(
+        proof.proof,
+        context,
+        term_context,
+        environment,
+        options,
+      );
+      expect(
+        universal.proposition.tag === "forall",
+        "Universal application requires a universal proof.",
+      );
+      check_kernel_term(
+        proof.argument,
+        universal.proposition.domain,
+        term_context,
+        environment,
+      );
+      const proposition = substitute_proposition_variable(
+        universal.proposition.body,
+        proof.argument,
+      );
+      check_proposition(proposition, term_context, environment);
+      return { proposition, safety: universal.safety };
+    }
+    case "exists_intro": {
+      check_type(proof.domain, term_context, environment);
+      const body_context = extend_term_context(proof.domain, term_context);
+      check_proposition(proof.body, body_context, environment);
+      check_kernel_term(
+        proof.witness,
+        proof.domain,
+        term_context,
+        environment,
+      );
+      const instantiated = substitute_proposition_variable(
+        proof.body,
+        proof.witness,
+      );
+      const checked = check_proof_against(
+        proof.proof,
+        instantiated,
+        context,
+        term_context,
+        environment,
+        options,
+      );
+      return {
+        proposition: {
+          tag: "exists",
+          domain: proof.domain,
+          body: proof.body,
+        },
+        safety: checked.safety,
+      };
+    }
+    case "exists_elim": {
+      const existential = check_proof_term(
+        proof.proof,
+        context,
+        term_context,
+        environment,
+        options,
+      );
+      expect(
+        existential.proposition.tag === "exists",
+        "Existential elimination requires an existential proof.",
+      );
+      check_proposition(proof.target, term_context, environment);
+      const body_term_context = extend_term_context(
+        existential.proposition.domain,
+        term_context,
+      );
+      const body_proof_context = extend_proof_context(
+        kernel_hypothesis(existential.proposition.body),
+        shift_proof_context_variables(context, 1),
+      );
+      const lifted_target = shift_proposition_variables(proof.target, 1);
+      const body = check_proof_against(
+        proof.body,
+        lifted_target,
+        body_proof_context,
+        body_term_context,
+        environment,
+        options,
+      );
+      return {
+        proposition: proof.target,
+        safety: merge_safety(existential.safety, body.safety),
+      };
+    }
+    case "transport": {
+      const equality = check_proof_term(
+        proof.equality,
+        context,
+        term_context,
+        environment,
+        options,
+      );
+      expect(
+        equality.proposition.tag === "equal",
+        "Equality transport requires an equality proof.",
+      );
+      const motive_context = extend_term_context(
+        equality.proposition.type,
+        term_context,
+      );
+      check_proposition(proof.motive, motive_context, environment);
+      const source = substitute_proposition_variable(
+        proof.motive,
+        equality.proposition.left,
+      );
+      const target = substitute_proposition_variable(
+        proof.motive,
+        equality.proposition.right,
+      );
+      const transported = check_proof_against(
+        proof.proof,
+        source,
+        context,
+        term_context,
+        environment,
+        options,
+      );
+      check_proposition(target, term_context, environment);
+      return {
+        proposition: target,
+        safety: merge_safety(equality.safety, transported.safety),
+      };
+    }
     case "false_elim": {
       const checked = check_proof_term(
         proof.proof,
@@ -1774,6 +2422,12 @@ function format_proposition_at(proposition: Proposition): string {
         format_proposition_at(proposition.conclusion) + ")";
     case "not":
       return "not " + format_proposition_at(proposition.proposition);
+    case "forall":
+      return "(forall " + format_kernel_type(proposition.domain) + ". " +
+        format_proposition_at(proposition.body) + ")";
+    case "exists":
+      return "(exists " + format_kernel_type(proposition.domain) + ". " +
+        format_proposition_at(proposition.body) + ")";
   }
 }
 

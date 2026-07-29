@@ -386,6 +386,13 @@ function substitute_proposition(
         tag: "not",
         proposition: substitute_proposition(proposition.proposition, substitutions),
       };
+    case "forall":
+    case "exists":
+      return {
+        tag: proposition.tag,
+        domain: substitute_kernel_type(proposition.domain, substitutions),
+        body: substitute_proposition(proposition.body, substitutions),
+      };
   }
 }
 

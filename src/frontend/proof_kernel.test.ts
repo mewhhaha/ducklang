@@ -530,6 +530,378 @@ Deno.test("kernel propagates unsafe evidence through elimination", () => {
   assert_equals(certificate.safety.tag, "unsafe");
 });
 
+Deno.test("kernel introduces and applies universal proofs", () => {
+  const bound_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  const universal: ProofTerm = {
+    tag: "forall_intro",
+    domain: value_type,
+    body: {
+      tag: "refl",
+      type: value_type,
+      term: { tag: "var", index: 0 },
+    },
+  };
+
+  const certificate = check_proof(
+    {
+      tag: "forall_apply",
+      proof: universal,
+      argument: constant("x"),
+    },
+    equal(constant("x"), constant("x")),
+    safe_options,
+  );
+  assert_equals(certificate.safety, { tag: "safe" });
+  check_proof(
+    universal,
+    { tag: "forall", domain: value_type, body: bound_identity },
+    safe_options,
+  );
+});
+
+Deno.test("universal introduction shifts existing proof hypotheses", () => {
+  const outer_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  const lifted_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 1 },
+    right: { tag: "var", index: 1 },
+  };
+  const goal: Proposition = {
+    tag: "implies",
+    premise: outer_identity,
+    conclusion: {
+      tag: "forall",
+      domain: value_type,
+      body: lifted_identity,
+    },
+  };
+
+  const certificate = check_proof(
+    {
+      tag: "implies_intro",
+      premise: outer_identity,
+      body: {
+        tag: "forall_intro",
+        domain: value_type,
+        body: { tag: "assumption", index: 0 },
+      },
+    },
+    goal,
+    {
+      allow_unsafe: false,
+      environment,
+      term_context: [value_type],
+    },
+  );
+
+  assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("universal application substitutes below nested quantifiers", () => {
+  const proof: ProofTerm = {
+    tag: "forall_apply",
+    proof: {
+      tag: "forall_intro",
+      domain: value_type,
+      body: {
+        tag: "exists_intro",
+        domain: value_type,
+        body: {
+          tag: "equal",
+          type: value_type,
+          left: { tag: "var", index: 1 },
+          right: { tag: "var", index: 1 },
+        },
+        witness: { tag: "var", index: 0 },
+        proof: {
+          tag: "refl",
+          type: value_type,
+          term: { tag: "var", index: 0 },
+        },
+      },
+    },
+    argument: constant("x"),
+  };
+  const goal: Proposition = {
+    tag: "exists",
+    domain: value_type,
+    body: equal(constant("x"), constant("x")),
+  };
+
+  const certificate = check_proof(proof, goal, safe_options);
+  assert_equals(certificate.proposition, goal);
+});
+
+Deno.test("nested universal substitution weakens ambient arguments", () => {
+  const proof: ProofTerm = {
+    tag: "forall_apply",
+    proof: {
+      tag: "forall_intro",
+      domain: value_type,
+      body: {
+        tag: "exists_intro",
+        domain: value_type,
+        body: {
+          tag: "equal",
+          type: value_type,
+          left: { tag: "var", index: 1 },
+          right: { tag: "var", index: 1 },
+        },
+        witness: { tag: "var", index: 0 },
+        proof: {
+          tag: "refl",
+          type: value_type,
+          term: { tag: "var", index: 0 },
+        },
+      },
+    },
+    argument: { tag: "var", index: 0 },
+  };
+  const goal: Proposition = {
+    tag: "exists",
+    domain: value_type,
+    body: {
+      tag: "equal",
+      type: value_type,
+      left: { tag: "var", index: 1 },
+      right: { tag: "var", index: 1 },
+    },
+  };
+
+  const certificate = check_proof(proof, goal, {
+    allow_unsafe: false,
+    environment,
+    term_context: [value_type],
+  });
+  assert_equals(certificate.proposition, goal);
+});
+
+Deno.test("quantified substitution has one aggregate output budget", () => {
+  const bound_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  let body: Proposition = bound_identity;
+  for (let index = 0; index < 99; index += 1) {
+    body = { tag: "and", left: bound_identity, right: body };
+  }
+  let argument = constant("x");
+  for (let index = 0; index < 100; index += 1) {
+    argument = {
+      tag: "app",
+      function: constant("wrap", {
+        tag: "pi",
+        domain: value_type,
+        codomain: value_type,
+      }),
+      argument,
+    };
+  }
+
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "forall_apply",
+          proof: {
+            tag: "unsafe_assume",
+            proposition: {
+              tag: "forall",
+              domain: value_type,
+              body,
+            },
+          },
+          argument,
+        },
+        { tag: "true" },
+        { allow_unsafe: true, environment },
+      ),
+    "Proof snapshot exceeded 20000 nodes.",
+  );
+});
+
+Deno.test("kernel introduces and eliminates logical existentials", () => {
+  const existence: ProofTerm = {
+    tag: "exists_intro",
+    domain: value_type,
+    body: { tag: "true" },
+    witness: constant("x"),
+    proof: { tag: "true_intro" },
+  };
+  const goal: Proposition = {
+    tag: "exists",
+    domain: value_type,
+    body: { tag: "true" },
+  };
+
+  check_proof(existence, goal, safe_options);
+  const certificate = check_proof(
+    {
+      tag: "exists_elim",
+      proof: existence,
+      target: { tag: "true" },
+      body: { tag: "assumption", index: 0 },
+    },
+    { tag: "true" },
+    safe_options,
+  );
+  assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("existential elimination shifts outer goals and hypotheses", () => {
+  const outer_identity: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  const existence: ProofTerm = {
+    tag: "exists_intro",
+    domain: value_type,
+    body: { tag: "true" },
+    witness: constant("x"),
+    proof: { tag: "true_intro" },
+  };
+
+  const certificate = check_proof(
+    {
+      tag: "implies_intro",
+      premise: outer_identity,
+      body: {
+        tag: "exists_elim",
+        proof: existence,
+        target: outer_identity,
+        body: { tag: "assumption", index: 1 },
+      },
+    },
+    {
+      tag: "implies",
+      premise: outer_identity,
+      conclusion: outer_identity,
+    },
+    {
+      allow_unsafe: false,
+      environment,
+      term_context: [value_type],
+    },
+  );
+
+  assert_equals(certificate.safety, { tag: "safe" });
+});
+
+Deno.test("logical existential witnesses cannot escape elimination", () => {
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "exists_elim",
+          proof: {
+            tag: "exists_intro",
+            domain: value_type,
+            body: { tag: "true" },
+            witness: constant("x"),
+            proof: { tag: "true_intro" },
+          },
+          target: {
+            tag: "equal",
+            type: value_type,
+            left: { tag: "var", index: 0 },
+            right: { tag: "var", index: 0 },
+          },
+          body: {
+            tag: "refl",
+            type: value_type,
+            term: { tag: "var", index: 0 },
+          },
+        },
+        { tag: "true" },
+        safe_options,
+      ),
+    "Kernel variable 0 is out of scope.",
+  );
+});
+
+Deno.test("equality transport is restricted to propositions", () => {
+  const motive: Proposition = {
+    tag: "equal",
+    type: value_type,
+    left: { tag: "var", index: 0 },
+    right: constant("x"),
+  };
+  const goal = equal(constant("y"), constant("x"));
+  const certificate = check_proof(
+    {
+      tag: "transport",
+      equality: {
+        tag: "unsafe_assume",
+        proposition: equal(constant("x"), constant("y")),
+      },
+      motive,
+      proof: {
+        tag: "refl",
+        type: value_type,
+        term: constant("x"),
+      },
+    },
+    goal,
+    { allow_unsafe: true, environment },
+  );
+
+  assert_equals(certificate.proposition, goal);
+  assert_equals(certificate.safety.tag, "unsafe");
+});
+
+Deno.test("equality transport rejects non-equality evidence", () => {
+  assert_throws(
+    () =>
+      check_proof(
+        {
+          tag: "transport",
+          equality: { tag: "true_intro" },
+          motive: { tag: "true" },
+          proof: { tag: "true_intro" },
+        },
+        { tag: "true" },
+        safe_options,
+      ),
+    "Equality transport requires an equality proof.",
+  );
+});
+
+Deno.test("quantified proposition bodies cannot reference escaped values", () => {
+  assert_throws(
+    () =>
+      check_proof(
+        { tag: "unsafe_assume", proposition: { tag: "true" } },
+        {
+          tag: "forall",
+          domain: value_type,
+          body: {
+            tag: "equal",
+            type: value_type,
+            left: { tag: "var", index: 1 },
+            right: { tag: "var", index: 1 },
+          },
+        },
+        { allow_unsafe: true, environment },
+      ),
+    "Kernel variable 1 is out of scope.",
+  );
+});
+
 Deno.test("kernel rejects assumptions outside an internal binder", () => {
   assert_throws(
     () =>

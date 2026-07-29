@@ -548,6 +548,99 @@ export function snapshot_kernel_context(
   return snapshot_context(context);
 }
 
+export function shift_kernel_type_variables(
+  type: KernelType,
+  amount: number,
+  cutoff = 0,
+): KernelType {
+  validate_shift(amount, cutoff);
+  const stable = snapshot_kernel_type(type);
+  return shift_type(stable, amount, cutoff);
+}
+
+export function shift_kernel_term_variables(
+  term: KernelTerm,
+  amount: number,
+  cutoff = 0,
+): KernelTerm {
+  validate_shift(amount, cutoff);
+  const stable = snapshot_kernel_term(term);
+  return shift_term(stable, amount, cutoff);
+}
+
+export function instantiate_kernel_type(
+  type: KernelType,
+  argument: KernelTerm,
+): KernelType {
+  return substitute_kernel_type_variable(type, argument, 0);
+}
+
+export function substitute_kernel_type_variable(
+  type: KernelType,
+  argument: KernelTerm,
+  index: number,
+): KernelType {
+  validate_index(index, "substitution");
+  const budget: KernelSnapshotBudget = { nodes: 0 };
+  const stable_type = snapshot_type(
+    type,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  const stable_argument = snapshot_term(
+    argument,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  return substitute_type_variable_at(
+    stable_type,
+    term_as_type_expression(stable_argument, computation),
+    index,
+    0,
+    computation,
+  );
+}
+
+export function instantiate_kernel_term(
+  term: KernelTerm,
+  argument: KernelTerm,
+): KernelTerm {
+  return substitute_kernel_term_variable(term, argument, 0);
+}
+
+export function substitute_kernel_term_variable(
+  term: KernelTerm,
+  argument: KernelTerm,
+  index: number,
+): KernelTerm {
+  validate_index(index, "substitution");
+  const budget: KernelSnapshotBudget = { nodes: 0 };
+  const stable_term = snapshot_term(
+    term,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  const stable_argument = snapshot_term(
+    argument,
+    0,
+    new WEAK_SET_CONSTRUCTOR<object>(),
+    budget,
+  );
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  return substitute_term_variable_at(
+    stable_term,
+    stable_argument,
+    term_as_type_expression(stable_argument, computation),
+    index,
+    0,
+    computation,
+  );
+}
+
 export function check_term(
   term: KernelTerm,
   expected: KernelType,
@@ -1483,6 +1576,62 @@ function term_as_type_expression(
   }
 }
 
+function validate_shift(amount: number, cutoff: number): void {
+  expect(
+    NUMBER_IS_SAFE_INTEGER(amount),
+    `Kernel shift amount ${STRING_CONSTRUCTOR(amount)} is invalid.`,
+  );
+  expect(
+    NUMBER_IS_SAFE_INTEGER(cutoff) && cutoff >= 0,
+    `Kernel shift cutoff ${STRING_CONSTRUCTOR(cutoff)} is invalid.`,
+  );
+}
+
+function shift_term(
+  term: KernelTerm,
+  amount: number,
+  cutoff = 0,
+  budget: NormalizationBudget = { nodes: 0, steps: 0 },
+): KernelTerm {
+  if (amount === 0) return term;
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= MAX_NORMALIZATION_NODES,
+    `Kernel normalization exceeded ${MAX_NORMALIZATION_NODES} nodes.`,
+  );
+  switch (term.tag) {
+    case "var": {
+      if (term.index < cutoff) return term;
+      const index = term.index + amount;
+      expect(
+        NUMBER_IS_SAFE_INTEGER(index) && index >= 0,
+        "Kernel term shift produced an invalid index.",
+      );
+      return OBJECT_FREEZE({ tag: "var", index });
+    }
+    case "constant":
+      return OBJECT_FREEZE({
+        tag: "constant",
+        name: term.name,
+        type: shift_type(term.type, amount, cutoff, budget),
+      });
+    case "lam":
+      return OBJECT_FREEZE({
+        tag: "lam",
+        domain: shift_type(term.domain, amount, cutoff, budget),
+        body: shift_term(term.body, amount, cutoff + 1, budget),
+      });
+    case "app":
+      return OBJECT_FREEZE({
+        tag: "app",
+        function: shift_term(term.function, amount, cutoff, budget),
+        argument: shift_term(term.argument, amount, cutoff, budget),
+      });
+    default:
+      throw new Error("Invalid kernel term tag.");
+  }
+}
+
 function shift_type(
   type: KernelType,
   amount: number,
@@ -1531,11 +1680,109 @@ function shift_type(
   }
 }
 
+function substitute_term_variable_at(
+  term: KernelTerm,
+  replacement: KernelTerm,
+  replacement_type: KernelType,
+  index: number,
+  binder_depth: number,
+  budget: NormalizationBudget,
+): KernelTerm {
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= MAX_NORMALIZATION_NODES,
+    `Kernel normalization exceeded ${MAX_NORMALIZATION_NODES} nodes.`,
+  );
+  switch (term.tag) {
+    case "var": {
+      const target = index + binder_depth;
+      expect(
+        NUMBER_IS_SAFE_INTEGER(target),
+        "Kernel term substitution target exceeds the safe integer range.",
+      );
+      if (term.index === target) {
+        return shift_term(replacement, target, 0, budget);
+      }
+      if (term.index < target) return term;
+      return OBJECT_FREEZE({ tag: "var", index: term.index - 1 });
+    }
+    case "constant":
+      return OBJECT_FREEZE({
+        tag: "constant",
+        name: term.name,
+        type: substitute_type_variable_at(
+          term.type,
+          replacement_type,
+          index,
+          binder_depth,
+          budget,
+        ),
+      });
+    case "lam":
+      return OBJECT_FREEZE({
+        tag: "lam",
+        domain: substitute_type_variable_at(
+          term.domain,
+          replacement_type,
+          index,
+          binder_depth,
+          budget,
+        ),
+        body: substitute_term_variable_at(
+          term.body,
+          replacement,
+          replacement_type,
+          index,
+          binder_depth + 1,
+          budget,
+        ),
+      });
+    case "app":
+      return OBJECT_FREEZE({
+        tag: "app",
+        function: substitute_term_variable_at(
+          term.function,
+          replacement,
+          replacement_type,
+          index,
+          binder_depth,
+          budget,
+        ),
+        argument: substitute_term_variable_at(
+          term.argument,
+          replacement,
+          replacement_type,
+          index,
+          binder_depth,
+          budget,
+        ),
+      });
+    default:
+      throw new Error("Invalid kernel term tag.");
+  }
+}
+
 function substitute_bound_variable(
   type: KernelType,
   replacement: KernelType,
-  depth = 0,
+  index = 0,
   budget: NormalizationBudget = { nodes: 0, steps: 0 },
+): KernelType {
+  return substitute_type_variable_at(
+    type,
+    replacement,
+    index,
+    0,
+    budget,
+  );
+}
+
+function substitute_type_variable_at(
+  type: KernelType,
+  replacement: KernelType,
+  index: number,
+  binder_depth: number,
+  budget: NormalizationBudget,
 ): KernelType {
   budget.nodes += 1;
   expect(
@@ -1547,57 +1794,68 @@ function substitute_bound_variable(
     case "constant":
       return type;
     case "var": {
-      if (type.index === depth) {
-        return shift_type(replacement, depth, 0, budget);
+      const target = index + binder_depth;
+      expect(
+        NUMBER_IS_SAFE_INTEGER(target),
+        "Kernel type substitution target exceeds the safe integer range.",
+      );
+      if (type.index === target) {
+        return shift_type(replacement, target, 0, budget);
       }
-      if (type.index < depth) return type;
+      if (type.index < target) return type;
       return OBJECT_FREEZE({ tag: "var", index: type.index - 1 });
     }
     case "pi":
       return OBJECT_FREEZE({
         tag: "pi",
-        domain: substitute_bound_variable(
+        domain: substitute_type_variable_at(
           type.domain,
           replacement,
-          depth,
+          index,
+          binder_depth,
           budget,
         ),
-        codomain: substitute_bound_variable(
+        codomain: substitute_type_variable_at(
           type.codomain,
           replacement,
-          depth + 1,
+          index,
+          binder_depth + 1,
           budget,
         ),
       });
     case "lam":
       return OBJECT_FREEZE({
         tag: "lam",
-        domain: substitute_bound_variable(
+        domain: substitute_type_variable_at(
           type.domain,
           replacement,
-          depth,
+          index,
+          binder_depth,
           budget,
         ),
-        body: substitute_bound_variable(
+        body: substitute_type_variable_at(
           type.body,
           replacement,
-          depth + 1,
+          index,
+          binder_depth + 1,
           budget,
         ),
       });
     case "app":
       return OBJECT_FREEZE({
         tag: "app",
-        function: substitute_bound_variable(
+        function: substitute_type_variable_at(
           type.function,
           replacement,
-          depth,
+          index,
+          binder_depth,
           budget,
         ),
-        argument: substitute_bound_variable(
+        argument: substitute_type_variable_at(
           type.argument,
           replacement,
-          depth,
+          index,
+          binder_depth,
           budget,
         ),
       });

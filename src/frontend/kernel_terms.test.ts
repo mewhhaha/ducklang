@@ -7,6 +7,9 @@ import {
   KernelEnvironment,
   type KernelType,
   prop_sort,
+  shift_kernel_term_variables,
+  substitute_kernel_term_variable,
+  substitute_kernel_type_variable,
   term_equal,
   type_assignable,
   type_equal,
@@ -121,6 +124,133 @@ Deno.test("kernel term conversion beta-reduces typed applications", () => {
   };
 
   assert_equals(term_equal(variable, applied_identity, context), true);
+});
+
+Deno.test("kernel term substitution avoids capture below binders", () => {
+  const term = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: { tag: "var" as const, index: 1 },
+  };
+
+  assert_equals(
+    substitute_kernel_term_variable(
+      term,
+      { tag: "var", index: 0 },
+      0,
+    ),
+    {
+      tag: "lam",
+      domain: type_sort(0),
+      body: { tag: "var", index: 1 },
+    },
+  );
+});
+
+Deno.test("kernel substitution distinguishes context index from binder depth", () => {
+  assert_equals(
+    substitute_kernel_term_variable(
+      {
+        tag: "app",
+        function: { tag: "var", index: 1 },
+        argument: { tag: "var", index: 0 },
+      },
+      {
+        tag: "lam",
+        domain: type_sort(0),
+        body: { tag: "var", index: 1 },
+      },
+      1,
+    ),
+    {
+      tag: "app",
+      function: {
+        tag: "lam",
+        domain: type_sort(0),
+        body: { tag: "var", index: 2 },
+      },
+      argument: { tag: "var", index: 0 },
+    },
+  );
+  assert_equals(
+    substitute_kernel_type_variable(
+      {
+        tag: "pi",
+        domain: { tag: "var", index: 1 },
+        codomain: { tag: "var", index: 2 },
+      },
+      {
+        tag: "lam",
+        domain: type_sort(0),
+        body: { tag: "var", index: 1 },
+      },
+      1,
+    ),
+    {
+      tag: "pi",
+      domain: {
+        tag: "lam",
+        domain: type_sort(0),
+        body: { tag: "var", index: 2 },
+      },
+      codomain: {
+        tag: "lam",
+        domain: type_sort(0),
+        body: { tag: "var", index: 3 },
+      },
+    },
+  );
+});
+
+Deno.test("kernel shifts only variables at or above the cutoff", () => {
+  assert_equals(
+    shift_kernel_term_variables(
+      {
+        tag: "lam",
+        domain: type_sort(0),
+        body: {
+          tag: "app",
+          function: { tag: "var", index: 0 },
+          argument: { tag: "var", index: 1 },
+        },
+      },
+      1,
+    ),
+    {
+      tag: "lam",
+      domain: type_sort(0),
+      body: {
+        tag: "app",
+        function: { tag: "var", index: 0 },
+        argument: { tag: "var", index: 2 },
+      },
+    },
+  );
+});
+
+Deno.test("kernel substitution rejects invalid context indices", () => {
+  assert_throws(
+    () =>
+      substitute_kernel_term_variable(
+        { tag: "var", index: 0 },
+        { tag: "var", index: 0 },
+        -1,
+      ),
+    "Invalid substitution de Bruijn index -1.",
+  );
+  assert_throws(
+    () =>
+      substitute_kernel_term_variable(
+        {
+          tag: "lam",
+          domain: type_sort(0),
+          body: { tag: "var", index: 0 },
+        },
+        { tag: "var", index: 0 },
+        Number.MAX_SAFE_INTEGER,
+      ),
+    "Kernel term substitution target exceeds the safe integer range.",
+  );
 });
 
 Deno.test("kernel constants require a matching trusted declaration", () => {
