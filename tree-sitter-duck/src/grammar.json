@@ -1814,7 +1814,7 @@
           "name": "type",
           "content": {
             "type": "SYMBOL",
-            "name": "type_reference"
+            "name": "prefix_signature_value_type"
           }
         }
       ]
@@ -1882,7 +1882,7 @@
                 "name": "type",
                 "content": {
                   "type": "SYMBOL",
-                  "name": "type_reference"
+                  "name": "prefix_signature_value_type"
                 }
               },
               {
@@ -1896,11 +1896,69 @@
             "name": "type",
             "content": {
               "type": "SYMBOL",
-              "name": "type_reference"
+              "name": "prefix_signature_value_type"
             }
           }
         ]
       }
+    },
+    "prefix_signature_value_type": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "prefix_refinement_type"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "type_reference"
+        }
+      ]
+    },
+    "prefix_refinement_type": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "lowercase_identifier"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ":"
+        },
+        {
+          "type": "FIELD",
+          "name": "value",
+          "content": {
+            "type": "SYMBOL",
+            "name": "type_reference"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "|"
+        },
+        {
+          "type": "FIELD",
+          "name": "proposition",
+          "content": {
+            "type": "SYMBOL",
+            "name": "prefix_proposition"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
     },
     "prefix_contract_clause": {
       "type": "CHOICE",

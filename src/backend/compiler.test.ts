@@ -59,6 +59,27 @@ Deno.test("Duck compiler checks and erases contracts before gpufuck", async () =
   }
 });
 
+Deno.test("Duck compiler erases checked refinement signatures", async () => {
+  const refined_source = "type identity = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\nidentity 42\n";
+  const refined_module = encode_duck_module(refined_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(refined_module.nodeWords, plain_module.nodeWords);
+  assert_equals(refined_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const refined = await compiler.run(refined_source);
+    assert_equals(refined.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
   assert_throws(
     () =>
@@ -89,6 +110,15 @@ Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
           'identity "wrong"\n',
       ),
     "cannot unify I32 with Text",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type f = (result: I32) -> {answer: I32 | answer = result}\n" +
+          "let f = ignored => 0;\n" +
+          "f 42\n",
+      ),
+    "cannot use reserved result as a parameter binder",
   );
 });
 

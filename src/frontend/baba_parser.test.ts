@@ -176,6 +176,17 @@ Deno.test("Baba parses prefix signatures and contract clauses", () => {
   assert_equals(parsed.cst.tree.includes("prefix_signature_result"), true);
 });
 
+Deno.test("Baba parses refinement types in prefix signatures", () => {
+  const parsed = parse_duck_source(
+    "type keep = " +
+      "(value: {refined: I32 | refined = refined}) -> " +
+      "(result: {answer: I32 | answer = value})\n" +
+      "let keep = value => value;\n",
+  );
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(parsed.cst.tree.includes("prefix_refinement_type"), true);
+});
+
 Deno.test("Baba rejects uppercase prefix type binders", () => {
   const parsed = parse_duck_source(
     "type f = forall (A: Type). (value: A) -> (result: A)\n" +

@@ -31,6 +31,26 @@ Deno.test("prefix source extraction preserves clauses and masks declarations", (
   assert_equals(metadata.masked_source.includes("ensures"), false);
 });
 
+Deno.test("prefix source extraction retains refinement binders", () => {
+  const source = "type keep = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let keep = value => value;\n";
+  const signature =
+    extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
+  assert_equals(signature?.type.parameters[0]?.type.canonical, "I32");
+  assert_equals(
+    signature?.type.parameters[0]?.type.refinement?.binder,
+    "refined",
+  );
+  assert_equals(
+    signature?.type.parameters[0]?.type.refinement?.proposition.tag,
+    "equal",
+  );
+  assert_equals(signature?.type.result.type.canonical, "I32");
+  assert_equals(signature?.type.result.type.refinement?.binder, "answer");
+});
+
 Deno.test("prefix source extraction records fact definition kinds", () => {
   const source = "type multiple_of = (value: I32) -> Prop\n" +
     "opaque fact multiple_of = value => true;\n";

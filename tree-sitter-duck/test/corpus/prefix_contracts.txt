@@ -1,0 +1,65 @@
+==================
+Refinement signature
+==================
+
+type keep = (value: {refined: I32 | refined = refined}) -> (result: {answer: I32 | answer = value})
+let keep = value => value;
+
+---
+
+(source_file
+  (prefix_signature_statement
+    (lowercase_identifier)
+    (prefix_signature_type
+      (prefix_signature_function_type
+        (prefix_signature_parameter_list
+          (prefix_signature_parameter
+            (identifier)
+            (prefix_signature_value_type
+              (prefix_refinement_type
+                (lowercase_identifier)
+                (type_reference
+                  (type_union
+                    (type_intersection
+                      (type_difference
+                        (identifier)))))
+                (prefix_proposition
+                  (prefix_implication_proposition
+                    (prefix_disjunction_proposition
+                      (prefix_conjunction_proposition
+                        (prefix_negation_proposition
+                          (prefix_atomic_proposition
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))
+                            (prefix_proposition_term
+                              (prefix_proposition_postfix_term
+                                (identifier)))))))))))))
+        (prefix_signature_result
+          (prefix_signature_value_type
+            (prefix_refinement_type
+              (lowercase_identifier)
+              (type_reference
+                (type_union
+                  (type_intersection
+                    (type_difference
+                      (identifier)))))
+              (prefix_proposition
+                (prefix_implication_proposition
+                  (prefix_disjunction_proposition
+                    (prefix_conjunction_proposition
+                      (prefix_negation_proposition
+                        (prefix_atomic_proposition
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))
+                          (prefix_proposition_term
+                            (prefix_proposition_postfix_term
+                              (identifier)))))))))))))))
+  (binding_statement
+    (identifier)
+    (arrow_function
+      (parameter
+        (identifier))
+      (postfix_expression
+        (identifier)))))

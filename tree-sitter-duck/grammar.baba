@@ -311,7 +311,7 @@ prefix_signature_parameter_list = (
 prefix_signature_parameter = (
                               name:(identifier)
                               ":"
-                              type:(type_reference)
+                              type:(prefix_signature_value_type)
                             ) ;
 
 prefix_signature_binder = (
@@ -323,9 +323,21 @@ prefix_signature_binder = (
                          ) ;
 
 prefix_signature_result = (
-                           ("(" name:("result") ":" type:(type_reference) ")")
-                           | type:(type_reference)
+                           ("(" name:("result") ":" type:(prefix_signature_value_type) ")")
+                           | type:(prefix_signature_value_type)
                          ) ;
+
+prefix_signature_value_type = (prefix_refinement_type | type_reference) ;
+
+prefix_refinement_type = (
+                          "{"
+                          name:(lowercase_identifier)
+                          ":"
+                          value:(type_reference)
+                          "|"
+                          proposition:(prefix_proposition)
+                          "}"
+                        ) ;
 
 prefix_contract_clause = (
                           (prefix_requires_keyword proposition:(prefix_proposition))

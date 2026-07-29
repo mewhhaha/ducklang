@@ -15,8 +15,16 @@ export type PrefixTypeReference = {
   text: string;
   canonical: string;
   expression?: TypeExpr;
+  refinement?: PrefixRefinement;
   representation?: string;
   resolved?: true;
+  span: PrefixSpan;
+};
+
+export type PrefixRefinement = {
+  binder: string;
+  proposition: PrefixProposition;
+  text: string;
   span: PrefixSpan;
 };
 
@@ -480,10 +488,11 @@ function snapshot_callable_type(type: PrefixCallableType): PrefixCallableType {
   );
   const result = own_value<PrefixSignatureResult>(type, "result");
   const span = own_value<PrefixSpan>(type, "span");
+  const active = new WeakSet<object>();
   return Object.freeze({
-    binders: snapshot_parameters(binders, "binders"),
-    parameters: snapshot_parameters(parameters, "parameters"),
-    result: snapshot_result(result),
+    binders: snapshot_parameters(binders, "binders", active),
+    parameters: snapshot_parameters(parameters, "parameters", active),
+    result: snapshot_result(result, active),
     span: snapshot_span(span),
   });
 }
@@ -491,6 +500,8 @@ function snapshot_callable_type(type: PrefixCallableType): PrefixCallableType {
 function snapshot_parameters(
   parameters: readonly PrefixSignatureParameter[],
   label: string,
+  active: WeakSet<object> = new WeakSet<object>(),
+  depth = 0,
 ): readonly PrefixSignatureParameter[] {
   assert_plain_array(parameters, `Prefix ${label}`);
   const result: PrefixSignatureParameter[] = [];
@@ -508,19 +519,23 @@ function snapshot_parameters(
     const span = own_value<PrefixSpan>(parameter, "span");
     result.push(Object.freeze({
       name: require_text(name, `Prefix ${label} name`),
-      type: snapshot_type_reference(type),
+      type: snapshot_type_reference(type, active, depth + 1),
       span: snapshot_span(span),
     }));
   }
   return Object.freeze(result);
 }
 
-function snapshot_result(result: PrefixSignatureResult): PrefixSignatureResult {
+function snapshot_result(
+  result: PrefixSignatureResult,
+  active: WeakSet<object> = new WeakSet<object>(),
+  depth = 0,
+): PrefixSignatureResult {
   assert_record(result, "Prefix signature result");
   const type = own_value<PrefixTypeReference>(result, "type");
   const span = own_value<PrefixSpan>(result, "span");
   const snapshot: PrefixSignatureResult = {
-    type: snapshot_type_reference(type),
+    type: snapshot_type_reference(type, active, depth + 1),
     span: snapshot_span(span),
   };
   if (Object.prototype.hasOwnProperty.call(result, "name")) {
@@ -536,16 +551,51 @@ function snapshot_result(result: PrefixSignatureResult): PrefixSignatureResult {
 
 function snapshot_type_reference(
   type: PrefixTypeReference,
+  active: WeakSet<object> = new WeakSet<object>(),
+  depth = 0,
 ): PrefixTypeReference {
   assert_record(type, "Prefix type reference");
-  const text = own_value<string>(type, "text");
-  const canonical = own_value<string>(type, "canonical");
-  const span = own_value<PrefixSpan>(type, "span");
-  return Object.freeze({
-    text: require_text(text, "Prefix type reference"),
-    canonical: require_text(canonical, "Canonical prefix type reference"),
-    span: snapshot_span(span),
-  });
+  expect(depth <= 256, "Prefix dependent type nesting exceeds 256 levels.");
+  expect(!active.has(type), "Prefix dependent type cannot be cyclic.");
+  active.add(type);
+  try {
+    const text = own_value<string>(type, "text");
+    const canonical = own_value<string>(type, "canonical");
+    const span = own_value<PrefixSpan>(type, "span");
+    const snapshot: PrefixTypeReference = {
+      text: require_text(text, "Prefix type reference"),
+      canonical: require_text(canonical, "Canonical prefix type reference"),
+      span: snapshot_span(span),
+    };
+    if (Object.prototype.hasOwnProperty.call(type, "refinement")) {
+      const refinement = own_value<PrefixRefinement | undefined>(
+        type,
+        "refinement",
+      );
+      if (refinement !== undefined) {
+        assert_record(refinement, "Prefix refinement");
+        snapshot.refinement = Object.freeze({
+          binder: require_text(
+            own_value<string>(refinement, "binder"),
+            "Prefix refinement binder",
+          ),
+          proposition: snapshot_proposition(
+            own_value<PrefixProposition>(refinement, "proposition"),
+            active,
+            depth + 1,
+          ),
+          text: require_text(
+            own_value<string>(refinement, "text"),
+            "Prefix refinement text",
+          ),
+          span: snapshot_span(own_value<PrefixSpan>(refinement, "span")),
+        });
+      }
+    }
+    return Object.freeze(snapshot);
+  } finally {
+    active.delete(type);
+  }
 }
 
 function snapshot_propositions(
@@ -609,6 +659,8 @@ function snapshot_proposition(
         value: snapshot_term(own_value<PrefixTerm>(proposition, "value")),
         type: snapshot_type_reference(
           own_value<PrefixTypeReference>(proposition, "type"),
+          active,
+          depth + 1,
         ),
         span,
       });
@@ -644,7 +696,12 @@ function snapshot_proposition(
       const binder = own_value<PrefixSignatureBinder>(proposition, "binder");
       return Object.freeze({
         tag,
-        binder: snapshot_parameters([binder], "proposition binder")[0],
+        binder: snapshot_parameters(
+          [binder],
+          "proposition binder",
+          active,
+          depth + 1,
+        )[0],
         proposition: snapshot_proposition(
           own_value<PrefixProposition>(proposition, "proposition"),
           active,

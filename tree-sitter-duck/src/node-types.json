@@ -6287,6 +6287,42 @@
     }
   },
   {
+    "type": "prefix_refinement_type",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "lowercase_identifier",
+            "named": true
+          }
+        ]
+      },
+      "proposition": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_proposition",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_reference",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "prefix_signature_binder",
     "named": true,
     "fields": {
@@ -6357,7 +6393,7 @@
         "required": true,
         "types": [
           {
-            "type": "type_reference",
+            "type": "prefix_signature_value_type",
             "named": true
           }
         ]
@@ -6398,7 +6434,7 @@
         "required": true,
         "types": [
           {
-            "type": "type_reference",
+            "type": "prefix_signature_value_type",
             "named": true
           }
         ]
@@ -6472,6 +6508,25 @@
       "types": [
         {
           "type": "prefix_signature_function_type",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "prefix_signature_value_type",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "prefix_refinement_type",
+          "named": true
+        },
+        {
+          "type": "type_reference",
           "named": true
         }
       ]

@@ -52,6 +52,22 @@ Deno.test("format_text preserves tight parenthesized type applications", () => {
   );
 });
 
+Deno.test("format_text round trips prefix refinement signatures", () => {
+  const source = "type keep = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let keep = value => value;\n";
+  const formatted = format_text(source);
+  assert_equals(
+    formatted,
+    "type keep = (value: { refined: I32 | refined = refined }) -> (\n" +
+      "  result: { answer: I32 | answer = value }\n" +
+      ")\n" +
+      "let keep = value => value;\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text normalizes expressions inside template literals", () => {
   assert_equals(
     format_text('render   `hello { name+ "!" } {{reader}}`\n'),

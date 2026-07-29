@@ -99,7 +99,9 @@ import {
   associate_prefix_signatures,
   type PrefixDefinition,
   type PrefixProposition,
+  type PrefixRefinement,
   type PrefixSignature,
+  type PrefixTerm,
   type PrefixTypeReference,
 } from "./frontend/prefix_signature.ts";
 import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
@@ -879,6 +881,11 @@ function validate_prefix_contracts(
   for (const signature of resolved_signatures) {
     const signature_checks: Checked<undefined>[] = [
       check_prefix_binder_names(signature, resolved_definitions),
+      check_prefix_refinement_formation(
+        signature,
+        resolved_signatures,
+        declared_type_names,
+      ),
       check_prefix_requires(
         signature,
         resolved_signatures,
@@ -925,6 +932,20 @@ function validate_prefix_contracts(
           signature,
           ensures,
           clause_index,
+          resolved_definitions,
+          source_text,
+          symbols,
+          types,
+          origins,
+        ),
+      );
+    }
+    const result_refinement = signature.type.result.type.refinement;
+    if (result_refinement !== undefined) {
+      checks.push(
+        check_prefix_result_refinement(
+          signature,
+          result_refinement,
           resolved_definitions,
           source_text,
           symbols,
@@ -1016,9 +1037,25 @@ function resolve_prefix_type_reference(
   source_text: string,
   type_variables: ReadonlySet<string>,
 ): PrefixTypeReference {
+  let refinement = type.refinement;
+  if (refinement !== undefined) {
+    refinement = {
+      ...refinement,
+      proposition: resolve_prefix_proposition_types(
+        refinement.proposition,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+    };
+  }
+  const resolved_type = { ...type, refinement };
   const canonical = resolve_transparent_type_aliases(type.canonical, aliases);
   if (canonical === "Type" || canonical === "Prop") {
-    return { ...type, canonical, resolved: true };
+    return { ...resolved_type, canonical, resolved: true };
   }
   const type_node = find_cst_node(cst_root, type.span, "type_reference");
   expect(type_node !== undefined, "Prefix type reference lost its Baba node.");
@@ -1041,7 +1078,7 @@ function resolve_prefix_type_reference(
     if (resolved_name !== "unknown") {
       if (type_variable_names.length > 0) {
         return {
-          ...type,
+          ...resolved_type,
           canonical,
           expression: normalized_expression,
           resolved: true,
@@ -1057,7 +1094,7 @@ function resolve_prefix_type_reference(
         representation_name = logical_representation_name(representation);
       }
       return {
-        ...type,
+        ...resolved_type,
         canonical: resolved_name,
         expression: normalized_expression,
         representation: representation_name,
@@ -1065,7 +1102,7 @@ function resolve_prefix_type_reference(
       };
     }
   }
-  return { ...type, canonical };
+  return { ...resolved_type, canonical };
 }
 
 function normalize_transparent_type_expression(
@@ -1414,6 +1451,18 @@ function check_prefix_binder_names(
     ...signature.type.binders,
     ...signature.type.parameters,
   ];
+  const reserved_result_parameter = signature.type.parameters.find(
+    (parameter) => parameter.name === "result",
+  );
+  if (reserved_result_parameter !== undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} cannot use reserved result as a parameter binder.`,
+        reserved_result_parameter.span,
+      ),
+    );
+  }
   for (const binder of binders) {
     if (!names.has(binder.name)) {
       names.add(binder.name);
@@ -1486,6 +1535,87 @@ function check_prefix_binder_names(
     );
   }
   return ok(undefined);
+}
+
+function check_prefix_refinement_formation(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  declared_type_names: ReadonlySet<string>,
+): Checked<undefined> {
+  const term_types = new Map<string, LogicalTermType>();
+  for (const parameter of signature.type.parameters) {
+    term_types.set(
+      parameter.name,
+      logical_term_type_from_reference(parameter.type),
+    );
+  }
+  const parameter_references = new Set(
+    signature.type.parameters.map((parameter) => parameter.type),
+  );
+  const references = [
+    ...parameter_references,
+    signature.type.result.type,
+  ];
+  const checks: Checked<undefined>[] = [];
+  for (const reference of references) {
+    const refinement = reference.refinement;
+    if (refinement === undefined) continue;
+    if (
+      reference.resolved !== true || reference.canonical === "Type" ||
+      reference.canonical === "Prop"
+    ) {
+      checks.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_signature_mismatch,
+            `Prefix signature ${signature.name} cannot refine ${reference.text}.`,
+            refinement.span,
+          ),
+        ),
+      );
+      continue;
+    }
+    const scoped_terms = new Map(term_types);
+    scoped_terms.set(
+      refinement.binder,
+      logical_term_type_from_reference({
+        ...reference,
+        refinement: undefined,
+      }),
+    );
+    const formation = check_prefix_proposition(
+      signature.name,
+      refinement.proposition,
+      scoped_terms,
+      signature_type_names(signature, declared_type_names),
+      prefix_fact_signatures(
+        signatures,
+        signature.scope,
+        signature.span.start,
+      ),
+      new Set(),
+    );
+    checks.push(formation);
+    if (
+      parameter_references.has(reference) &&
+      diagnostics_of(formation).length === 0 &&
+      !prefix_proposition_is_tautology(
+        refinement.proposition,
+        scoped_terms,
+      )
+    ) {
+      checks.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_signature_unproved,
+            `Prefix signature ${signature.name} cannot yet synthesize calls requiring parameter refinement ${refinement.text}.`,
+            refinement.span,
+          ),
+        ),
+      );
+    }
+  }
+  return all(checks).map(() => undefined);
 }
 
 function check_prefix_requires(
@@ -1950,10 +2080,15 @@ function logical_term_type_from_reference(
   if (type.expression !== undefined) {
     display_name = format_type_expr(type.expression);
   }
+  let name = type.canonical;
+  if (type.refinement !== undefined) {
+    name = type.refinement.text.replaceAll(/\s+/g, "");
+    display_name = type.refinement.text;
+  }
   return {
     display_name,
     expression: type.expression,
-    name: type.canonical,
+    name,
     representation,
   };
 }
@@ -3053,6 +3188,178 @@ function prefix_term_is_zero(
   return BigInt(term.text.replaceAll("_", "")) === 0n;
 }
 
+function check_prefix_result_refinement(
+  signature: PrefixSignature,
+  refinement: PrefixRefinement,
+  definitions: readonly PrefixDefinition[],
+  source_text: string,
+  symbols: ReadonlyMap<string, readonly ValueId[]>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  const ensures = rename_prefix_proposition_reference(
+    refinement.proposition,
+    refinement.binder,
+    "result",
+  );
+  return check_prefix_ensures(
+    {
+      ...signature,
+      type: {
+        ...signature.type,
+        result: { ...signature.type.result, name: "result" },
+      },
+    },
+    ensures,
+    signature.ensures.length,
+    definitions,
+    source_text,
+    symbols,
+    types,
+    origins,
+  );
+}
+
+function rename_prefix_proposition_reference(
+  proposition: PrefixProposition,
+  from: string,
+  to: string,
+): PrefixProposition {
+  if (proposition.tag === "true" || proposition.tag === "false") {
+    return proposition;
+  }
+  if (proposition.tag === "holds") {
+    return {
+      ...proposition,
+      value: rename_prefix_term_reference(proposition.value, from, to),
+    };
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    return {
+      ...proposition,
+      left: rename_prefix_term_reference(proposition.left, from, to),
+      right: rename_prefix_term_reference(proposition.right, from, to),
+    };
+  }
+  if (proposition.tag === "is") {
+    return {
+      ...proposition,
+      value: rename_prefix_term_reference(proposition.value, from, to),
+    };
+  }
+  if (proposition.tag === "not") {
+    return {
+      ...proposition,
+      proposition: rename_prefix_proposition_reference(
+        proposition.proposition,
+        from,
+        to,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return {
+      ...proposition,
+      left: rename_prefix_proposition_reference(proposition.left, from, to),
+      right: rename_prefix_proposition_reference(proposition.right, from, to),
+    };
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    if (proposition.binder.name === from) return proposition;
+    return {
+      ...proposition,
+      proposition: rename_prefix_proposition_reference(
+        proposition.proposition,
+        from,
+        to,
+      ),
+    };
+  }
+  throw new Error("Unknown prefix proposition.");
+}
+
+function rename_prefix_term_reference(
+  term: PrefixTerm,
+  from: string,
+  to: string,
+): PrefixTerm {
+  const references = term.references.map((reference) => {
+    if (reference === from) return to;
+    return reference;
+  });
+  const shape = term.shape;
+  if (shape.tag === "name") {
+    if (shape.name !== from) return { ...term, references };
+    return {
+      ...term,
+      text: to,
+      references,
+      shape: { tag: "name", name: to },
+    };
+  }
+  if (shape.tag === "binary") {
+    return {
+      ...term,
+      references,
+      shape: {
+        ...shape,
+        left: rename_prefix_term_reference(shape.left, from, to),
+        right: rename_prefix_term_reference(shape.right, from, to),
+      },
+    };
+  }
+  if (shape.tag === "unary") {
+    return {
+      ...term,
+      references,
+      shape: {
+        ...shape,
+        operand: rename_prefix_term_reference(shape.operand, from, to),
+      },
+    };
+  }
+  if (shape.tag === "call") {
+    return {
+      ...term,
+      references,
+      shape: {
+        ...shape,
+        function: rename_prefix_term_reference(shape.function, from, to),
+        arguments: shape.arguments.map((argument) =>
+          rename_prefix_term_reference(argument, from, to)
+        ),
+      },
+    };
+  }
+  if (shape.tag === "field" || shape.tag === "index") {
+    return {
+      ...term,
+      references,
+      shape: {
+        ...shape,
+        object: rename_prefix_term_reference(shape.object, from, to),
+      },
+    };
+  }
+  if (shape.tag === "parenthesized") {
+    return {
+      ...term,
+      references,
+      shape: {
+        ...shape,
+        value: rename_prefix_term_reference(shape.value, from, to),
+      },
+    };
+  }
+  return { ...term, references };
+}
+
 function check_prefix_ensures(
   signature: PrefixSignature,
   ensures: PrefixSignature["ensures"][number],
@@ -3100,6 +3407,43 @@ function check_prefix_ensures(
         ensures.span,
       ),
     );
+  }
+  if (ensures.left.text === "result" && ensures.right.text === "result") {
+    const result_type_name = signature.type.result.type.canonical;
+    const declarations = new Map<string, KernelType>();
+    declarations.set(result_type_name, type_sort(0));
+    const environment = KernelEnvironment.from(declarations);
+    const term_context = snapshot_kernel_context([{
+      tag: "constant",
+      name: result_type_name,
+    }]);
+    const equality_type = {
+      tag: "constant" as const,
+      name: result_type_name,
+    };
+    const variable = { tag: "var" as const, index: 0 };
+    const goal = {
+      tag: "equal" as const,
+      type: equality_type,
+      left: variable,
+      right: variable,
+    };
+    return ok({
+      key: proof_key,
+      proof: Object.freeze({
+        certificate: check_proof(
+          { tag: "refl", type: equality_type, term: variable },
+          goal,
+          {
+            allow_unsafe: false,
+            environment,
+            term_context,
+          },
+        ),
+        environment,
+        term_context,
+      }),
+    });
   }
   let expected_name: string | undefined;
   if (ensures.left.text === "result") expected_name = ensures.right.text;

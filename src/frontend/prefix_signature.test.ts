@@ -1,5 +1,5 @@
 import { assert_equals, assert_throws } from "../assert.ts";
-import { diagnostics_of } from "./checked.ts";
+import { checked_value, diagnostics_of } from "./checked.ts";
 import {
   associate_prefix_signatures,
   type PrefixDefinition,
@@ -149,6 +149,60 @@ Deno.test("prefix signature snapshots reject cyclic logical terms", () => {
         [definition()],
       ),
     "Prefix term cannot be cyclic",
+  );
+});
+
+Deno.test("prefix signature snapshots seal refinement propositions", () => {
+  const source_signature = signature();
+  const parameter = source_signature.type.parameters[0];
+  if (parameter === undefined) throw new Error("Expected source parameter.");
+  parameter.type.refinement = {
+    binder: "refined",
+    proposition: { tag: "true", span: { start: 4, end: 8 } },
+    text: "{refined: I32 | True}",
+    span: { start: 1, end: 22 },
+  };
+  const result = checked_value(
+    associate_prefix_signatures([source_signature], [definition()]),
+  );
+  if (result === undefined) throw new Error("Expected associated signature.");
+  parameter.type.refinement.binder = "forged";
+  const associated = [...result.values()][0];
+  assert_equals(
+    associated?.signature.type.parameters[0]?.type.refinement?.binder,
+    "refined",
+  );
+  assert_equals(
+    Object.isFrozen(
+      associated?.signature.type.parameters[0]?.type.refinement?.proposition,
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signature snapshots reject cyclic refinements", () => {
+  const source_signature = signature();
+  const parameter = source_signature.type.parameters[0];
+  if (parameter === undefined) throw new Error("Expected source parameter.");
+  parameter.type.refinement = {
+    binder: "refined",
+    proposition: {
+      tag: "is",
+      value: {
+        text: "refined",
+        references: ["refined"],
+        shape: { tag: "name", name: "refined" },
+        span: { start: 4, end: 11 },
+      },
+      type: parameter.type,
+      span: { start: 4, end: 18 },
+    },
+    text: "{refined: I32 | refined is I32}",
+    span: { start: 1, end: 33 },
+  };
+  assert_throws(
+    () => associate_prefix_signatures([source_signature], [definition()]),
+    "Prefix dependent type cannot be cyclic",
   );
 });
 

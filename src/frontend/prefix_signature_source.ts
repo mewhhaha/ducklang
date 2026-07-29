@@ -358,12 +358,16 @@ function parameter_from_node(
     child.kind === "identifier" || child.kind === "lowercase_identifier"
   );
   const type_node = node.children.find((child) =>
-    child.kind === "type_reference"
+    child.kind === "prefix_signature_value_type" ||
+    child.kind === "type_reference" ||
+    child.kind === "prefix_refinement_type"
   );
   if (name_node === undefined || type_node === undefined) return undefined;
+  const type = signature_type_reference_from_node(type_node, source);
+  if (type === undefined) return undefined;
   return {
     name: source.slice(name_node.start, name_node.end),
-    type: type_reference_from_node(type_node, source),
+    type,
     span: { start: node.start, end: node.end },
   };
 }
@@ -373,17 +377,62 @@ function result_from_node(
   source: string,
 ): PrefixSignatureResult | undefined {
   const type_node = node.children.find((child) =>
-    child.kind === "type_reference"
+    child.kind === "prefix_signature_value_type" ||
+    child.kind === "type_reference" ||
+    child.kind === "prefix_refinement_type"
   );
   if (type_node === undefined) return undefined;
+  const type = signature_type_reference_from_node(type_node, source);
+  if (type === undefined) return undefined;
   const result: PrefixSignatureResult = {
-    type: type_reference_from_node(type_node, source),
+    type,
     span: { start: node.start, end: node.end },
   };
   if (node.children.some((child) => child.kind === '"result"')) {
     result.name = "result";
   }
   return result;
+}
+
+function signature_type_reference_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixTypeReference | undefined {
+  let value_node = node;
+  if (node.kind === "prefix_signature_value_type") {
+    const child = semantic_child(node);
+    if (child === undefined) return undefined;
+    value_node = child;
+  }
+  if (value_node.kind === "type_reference") {
+    return type_reference_from_node(value_node, source);
+  }
+  if (value_node.kind !== "prefix_refinement_type") return undefined;
+  const binder_node = value_node.children.find((child) =>
+    child.kind === "lowercase_identifier"
+  );
+  const type_node = value_node.children.find((child) =>
+    child.kind === "type_reference"
+  );
+  const proposition_node = value_node.children.find((child) =>
+    child.kind === "prefix_proposition"
+  );
+  if (
+    binder_node === undefined || type_node === undefined ||
+    proposition_node === undefined
+  ) {
+    return undefined;
+  }
+  const proposition = proposition_from_node(proposition_node, source);
+  if (proposition === undefined) return undefined;
+  const type = type_reference_from_node(type_node, source);
+  type.refinement = {
+    binder: source.slice(binder_node.start, binder_node.end),
+    proposition,
+    text: source.slice(value_node.start, value_node.end),
+    span: { start: value_node.start, end: value_node.end },
+  };
+  return type;
 }
 
 function type_reference_from_node(

@@ -1164,6 +1164,89 @@ Deno.test("checked contracts erase before semantic Core construction", () => {
   );
 });
 
+Deno.test("checked refinement signatures erase to their base representation", () => {
+  const refined_source = "type identity = " +
+    "(value: {refined: I32 | refined = refined}) -> " +
+    "(result: {answer: I32 | answer = value})\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "identity 42\n";
+  const refined = analyze_duck_source(parse_duck_source(refined_source));
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(refined.diagnostics, []);
+  assert_equals(refined.proofs.size, 1);
+  const refined_program = checked_value(lower_duck_source(refined));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (refined_program === undefined || plain_program === undefined) {
+    throw new Error("Expected refined and plain programs to lower.");
+  }
+  assert_equals(refined_program.core, plain_program.core);
+  assert_equals(
+    JSON.stringify(refined_program.core).includes("refinement"),
+    false,
+  );
+
+  const reflexive = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> " +
+      "{answer: I32 | answer = answer}\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(reflexive.diagnostics, []);
+  assert_equals(reflexive.proofs.size, 1);
+
+  const unproved = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> {answer: I32 | answer = 0}\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  ));
+  assert_equals(
+    unproved.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("does not match the inferred")
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(unproved)), undefined);
+
+  const unchecked_parameter = analyze_duck_source(parse_duck_source(
+    "type divide = " +
+      "(value: {nonzero: I32 | nonzero != 0}) -> I32\n" +
+      "let divide = value => value;\n" +
+      "divide 0\n",
+  ));
+  assert_equals(
+    unchecked_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "cannot yet synthesize calls requiring parameter refinement",
+      )
+    ),
+    true,
+  );
+  assert_equals(
+    checked_value(lower_duck_source(unchecked_parameter)),
+    undefined,
+  );
+
+  const captured_result = analyze_duck_source(parse_duck_source(
+    "type f = (result: I32) -> {answer: I32 | answer = result}\n" +
+      "let f = ignored => 0;\n" +
+      "f 42\n",
+  ));
+  assert_equals(
+    captured_result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "cannot use reserved result as a parameter binder",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(captured_result)), undefined);
+});
+
 Deno.test("semantic program brands reject analysis and Core mutation", () => {
   const invalid = analyze_duck_source(parse_duck_source(
     "type identity = (value: I32) -> (result: I32)\n" +
