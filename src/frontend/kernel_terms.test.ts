@@ -6,6 +6,7 @@ import {
   KernelEnvironment,
   prop_sort,
   type_assignable,
+  type_equal,
   type_sort,
 } from "./kernel_terms.ts";
 
@@ -50,7 +51,7 @@ Deno.test("kernel validates raw universes and de Bruijn indices", () => {
   );
   assert_throws(
     () => infer_term({ tag: "var", index: 0 }, [{ tag: "bogus" } as never]),
-    "Invalid kernel type tag.",
+    "Invalid kernel type tag bogus.",
   );
 });
 
@@ -202,5 +203,302 @@ Deno.test("kernel rejects an application with a mismatched argument", () => {
   assert_throws(
     () => infer_term({ tag: "app", function: identity, argument: identity }),
     "Kernel application argument has an invalid type.",
+  );
+});
+
+Deno.test("kernel substitutes dependent application result types", () => {
+  const polymorphic_identity = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: {
+      tag: "lam" as const,
+      domain: { tag: "var" as const, index: 0 },
+      body: { tag: "var" as const, index: 0 },
+    },
+  };
+  assert_equals(infer_term(polymorphic_identity), {
+    tag: "pi",
+    domain: type_sort(0),
+    codomain: {
+      tag: "pi",
+      domain: { tag: "var", index: 0 },
+      codomain: { tag: "var", index: 1 },
+    },
+  });
+
+  const environment = KernelEnvironment.from(
+    new Map([
+      ["T", type_sort(0)],
+      ["value", { tag: "constant" as const, name: "T" }],
+    ]),
+  );
+  const type_argument = {
+    tag: "constant" as const,
+    name: "T",
+    type: type_sort(0),
+  };
+  const specialized = {
+    tag: "app" as const,
+    function: polymorphic_identity,
+    argument: type_argument,
+  };
+  assert_equals(infer_term(specialized, [], environment), {
+    tag: "pi",
+    domain: { tag: "constant", name: "T" },
+    codomain: { tag: "constant", name: "T" },
+  });
+  assert_equals(
+    infer_term(
+      {
+        tag: "app",
+        function: specialized,
+        argument: {
+          tag: "constant",
+          name: "value",
+          type: { tag: "constant", name: "T" },
+        },
+      },
+      [],
+      environment,
+    ),
+    { tag: "constant", name: "T" },
+  );
+});
+
+Deno.test("kernel type conversion beta-reduces type-level applications", () => {
+  const environment = KernelEnvironment.from(
+    new Map([["T", type_sort(0)]]),
+  );
+  const reduced = {
+    tag: "app" as const,
+    function: {
+      tag: "lam" as const,
+      domain: type_sort(0),
+      body: { tag: "var" as const, index: 0 },
+    },
+    argument: { tag: "constant" as const, name: "T" },
+  };
+
+  assert_equals(
+    type_equal(reduced, { tag: "constant", name: "T" }),
+    true,
+  );
+  assert_equals(
+    check_type(reduced, [], environment),
+    { tag: "type", level: 0 },
+  );
+});
+
+Deno.test("dependent substitution avoids capture under nested binders", () => {
+  const polymorphic_type = {
+    tag: "pi" as const,
+    domain: type_sort(0),
+    codomain: {
+      tag: "pi" as const,
+      domain: { tag: "var" as const, index: 0 },
+      codomain: { tag: "var" as const, index: 1 },
+    },
+  };
+  const environment = KernelEnvironment.from(
+    new Map([["identity", polymorphic_type]]),
+  );
+  const specialization = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: {
+      tag: "app" as const,
+      function: {
+        tag: "constant" as const,
+        name: "identity",
+        type: polymorphic_type,
+      },
+      argument: { tag: "var" as const, index: 0 },
+    },
+  };
+
+  assert_equals(infer_term(specialization, [], environment), {
+    tag: "pi",
+    domain: type_sort(0),
+    codomain: {
+      tag: "pi",
+      domain: { tag: "var", index: 0 },
+      codomain: { tag: "var", index: 1 },
+    },
+  });
+});
+
+Deno.test("kernel conversion rejects non-normalizing forged expressions", () => {
+  const self_application = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: {
+      tag: "app" as const,
+      function: { tag: "var" as const, index: 0 },
+      argument: { tag: "var" as const, index: 0 },
+    },
+  };
+
+  assert_throws(
+    () =>
+      type_equal({
+        tag: "app",
+        function: self_application,
+        argument: self_application,
+      }, type_sort(0)),
+    "Kernel normalization exceeded 10000 steps.",
+  );
+});
+
+Deno.test("dependent application snapshots its argument once", () => {
+  const polymorphic_identity = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: {
+      tag: "lam" as const,
+      domain: { tag: "var" as const, index: 0 },
+      body: { tag: "var" as const, index: 0 },
+    },
+  };
+  const trusted_argument = {
+    tag: "constant" as const,
+    name: "T",
+    type: type_sort(0),
+  };
+  const missing_argument = {
+    tag: "constant" as const,
+    name: "Missing",
+    type: type_sort(0),
+  };
+  let argument_reads = 0;
+  const application = new Proxy({
+    tag: "app" as const,
+    function: polymorphic_identity,
+    argument: trusted_argument,
+  }, {
+    get(target, key, receiver) {
+      if (key === "argument") {
+        argument_reads += 1;
+        if (argument_reads === 1) return trusted_argument;
+        return missing_argument;
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const environment = KernelEnvironment.from(
+    new Map([["T", type_sort(0)]]),
+  );
+
+  assert_equals(infer_term(application, [], environment), {
+    tag: "pi",
+    domain: { tag: "constant", name: "T" },
+    codomain: { tag: "constant", name: "T" },
+  });
+  assert_equals(argument_reads, 0);
+});
+
+Deno.test("kernel environments snapshot declarations before checking", () => {
+  let tag_reads = 0;
+  const declaration = new Proxy(type_sort(0), {
+    get(target, key, receiver) {
+      if (key === "tag") {
+        tag_reads += 1;
+        if (tag_reads === 1) return "sort";
+        return "constant";
+      }
+      if (key === "name") return "Missing";
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const environment = KernelEnvironment.from(
+    new Map([["T", declaration]]),
+  );
+
+  assert_equals(environment.declaration("T"), type_sort(0));
+  assert_equals(tag_reads, 0);
+});
+
+Deno.test("kernel constants reject ill-formed beta-equal annotations", () => {
+  const invalid_annotation = {
+    tag: "app" as const,
+    function: {
+      tag: "lam" as const,
+      domain: prop_sort,
+      body: type_sort(0),
+    },
+    argument: type_sort(0),
+  };
+  const environment = KernelEnvironment.from(
+    new Map([["T", type_sort(0)]]),
+  );
+
+  assert_throws(
+    () =>
+      infer_term(
+        {
+          tag: "constant",
+          name: "T",
+          type: invalid_annotation,
+        },
+        [],
+        environment,
+      ),
+    "Kernel type application argument has an invalid type.",
+  );
+});
+
+Deno.test("kernel type snapshots reject cyclic input graphs", () => {
+  const cyclic = {
+    tag: "pi" as const,
+    domain: type_sort(0),
+    codomain: type_sort(0),
+  };
+  cyclic.codomain = cyclic;
+
+  assert_throws(
+    () => check_type(cyclic),
+    "Kernel type graph must be acyclic.",
+  );
+});
+
+Deno.test("kernel term snapshots reject cyclic input graphs", () => {
+  const cyclic: {
+    tag: "lam";
+    domain: ReturnType<typeof type_sort>;
+    body: unknown;
+  } = {
+    tag: "lam" as const,
+    domain: type_sort(0),
+    body: { tag: "var" as const, index: 0 },
+  };
+  cyclic.body = cyclic;
+
+  assert_throws(
+    () => infer_term(cyclic as never),
+    "Kernel term graph must be acyclic.",
+  );
+});
+
+Deno.test("public type checks reject ill-formed context entries", () => {
+  const invalid_context_type = {
+    tag: "app" as const,
+    function: {
+      tag: "lam" as const,
+      domain: prop_sort,
+      body: type_sort(0),
+    },
+    argument: type_sort(0),
+  };
+  assert_throws(
+    () => check_type({ tag: "var", index: 0 }, [invalid_context_type]),
+    "Kernel type application argument has an invalid type.",
+  );
+  assert_throws(
+    () =>
+      type_assignable(
+        { tag: "var", index: 0 },
+        { tag: "var", index: 0 },
+        [invalid_context_type],
+      ),
+    "Kernel type application argument has an invalid type.",
   );
 });
