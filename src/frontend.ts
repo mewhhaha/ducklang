@@ -43,6 +43,14 @@ export type {
   Universe,
 } from "./frontend/kernel_terms.ts";
 export {
+  KernelPatternSolution,
+  unify_kernel_patterns,
+} from "./frontend/kernel_unification.ts";
+export type {
+  KernelPattern,
+  KernelUnificationOptions,
+} from "./frontend/kernel_unification.ts";
+export {
   assume_fact,
   assume_machine_fact,
   assume_state,
