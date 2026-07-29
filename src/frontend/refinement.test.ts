@@ -6,8 +6,9 @@ import { TypeEngine } from "./type_engine.ts";
 import {
   computational_existential_family_type,
   computational_existential_type,
-  erase_decision,
+  decision_type,
   erase_semantic_type,
+  erase_semantic_value,
   logical_existential_type,
   no_decision,
   open_computational_existential,
@@ -17,6 +18,8 @@ import {
   refinement_proves,
   refinement_type,
   representation_type,
+  unsafe_no_decision,
+  unsafe_refinement_type,
   weaken_refinement,
   yes_decision,
 } from "./refinement.ts";
@@ -120,6 +123,21 @@ Deno.test("refinement construction rejects unsafe certificates", () => {
     () => refinement_type(scalar, proposition, unsafe, proof_context),
     "Kernel certificate depends on unsafe evidence.",
   );
+  const refined = unsafe_refinement_type(
+    scalar,
+    proposition,
+    unsafe,
+    proof_context,
+  );
+  assert_equals(refined.safety.tag, "unsafe");
+  assert_equals(refinement_proves(refined, proposition), false);
+  assert_equals(
+    erase_semantic_value(
+      refined,
+      { tag: "scalar", type: "I32", value: 7 },
+    ),
+    { tag: "scalar", type: "I32", value: 7 },
+  );
 });
 
 Deno.test("logical proof and existential types erase completely", () => {
@@ -129,9 +147,187 @@ Deno.test("logical proof and existential types erase completely", () => {
   );
   assert_equals(
     erase_semantic_type(
-      logical_existential_type(scalar, proposition, proof_context),
+      logical_existential_type(type_sort(0), proposition),
     ),
     undefined,
+  );
+});
+
+Deno.test("logical existential formation binds only its witness", () => {
+  const bound: Proposition = {
+    tag: "equal",
+    type: type_sort(0),
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  };
+  const type = logical_existential_type(type_sort(0), bound);
+  assert_equals(type.proposition, {
+    tag: "exists",
+    domain: type_sort(0),
+    body: bound,
+  });
+
+  const escaped: Proposition = {
+    tag: "equal",
+    type: type_sort(0),
+    left: { tag: "var", index: 1 },
+    right: { tag: "var", index: 1 },
+  };
+  assert_throws(
+    () => logical_existential_type(type_sort(0), escaped),
+    "Kernel variable 1 is out of scope.",
+  );
+});
+
+Deno.test("checked semantic values erase through one runtime boundary", () => {
+  const proof = proof_type(proposition, proof_context);
+  assert_equals(erase_semantic_value(proof, certificate), undefined);
+
+  const logical_exists = logical_existential_type(
+    type_sort(0),
+    proposition,
+    proof_context,
+  );
+  const existence = check_proof(
+    {
+      tag: "exists_intro",
+      domain: type_sort(0),
+      body: proposition,
+      witness: { tag: "var", index: 0 },
+      proof: {
+        tag: "refl",
+        type: type_sort(0),
+        term: { tag: "var", index: 0 },
+      },
+    },
+    logical_exists.proposition,
+    {
+      allow_unsafe: false,
+      term_context: [type_sort(0)],
+    },
+  );
+  assert_equals(erase_semantic_value(logical_exists, existence), undefined);
+
+  const refined = refinement_type(
+    scalar,
+    proposition,
+    certificate,
+    proof_context,
+  );
+  const runtime_value = { tag: "scalar" as const, type: "I32", value: 7 };
+  assert_equals(
+    erase_semantic_value(refined, runtime_value),
+    runtime_value,
+  );
+
+  const decision = decision_type(proposition, proof_context);
+  assert_equals(
+    erase_semantic_value(decision, yes_decision(decision, certificate)),
+    {
+      tag: "sum",
+      case: "Yes",
+      payload: { tag: "unit" },
+    },
+  );
+
+  const package_type = computational_existential_type(scalar, scalar);
+  const package_value = pack_computational_existential(
+    package_type,
+    runtime_value,
+    runtime_value,
+  );
+  assert_equals(
+    erase_semantic_value(package_type, package_value),
+    {
+      tag: "product",
+      fields: [runtime_value, runtime_value],
+    },
+  );
+});
+
+Deno.test("semantic erasure consumes unique runtime values", () => {
+  const unique_type = {
+    tag: "owned" as const,
+    ownership: "unique_heap" as const,
+    value: scalar,
+  };
+  const runtime_value = { tag: "scalar" as const, type: "I32", value: 7 };
+  const representation_value = owned_runtime_value(unique_type, runtime_value);
+  const representation = representation_type(unique_type);
+  assert_equals(
+    erase_semantic_value(representation, representation_value),
+    representation_value,
+  );
+  assert_throws(
+    () => erase_semantic_value(representation, representation_value),
+    "Unique runtime value was already consumed.",
+  );
+
+  const refinement_value = owned_runtime_value(unique_type, runtime_value);
+  const refined = refinement_type(
+    unique_type,
+    proposition,
+    certificate,
+    proof_context,
+  );
+  assert_equals(
+    erase_semantic_value(refined, refinement_value),
+    refinement_value,
+  );
+  assert_throws(
+    () => erase_semantic_value(refined, refinement_value),
+    "Unique runtime value was already consumed.",
+  );
+});
+
+Deno.test("semantic value erasure rejects mismatched dependent values", () => {
+  const left = decision_type(proposition, proof_context);
+  const equivalent = decision_type(proposition, proof_context);
+  const value = yes_decision(left, certificate);
+  assert_equals(
+    erase_semantic_value(equivalent, value),
+    {
+      tag: "sum",
+      case: "Yes",
+      payload: { tag: "unit" },
+    },
+  );
+  const right = decision_type({ tag: "false" }, proof_context);
+  assert_throws(
+    () => erase_semantic_value(right, value),
+    "Logical decision value has a different semantic type.",
+  );
+
+  const first_package_type = computational_existential_type(scalar, scalar);
+  const equivalent_package_type = computational_existential_type(
+    scalar,
+    scalar,
+  );
+  const runtime_value = { tag: "scalar" as const, type: "I32", value: 7 };
+  const package_value = pack_computational_existential(
+    first_package_type,
+    runtime_value,
+    runtime_value,
+  );
+  assert_equals(
+    erase_semantic_value(equivalent_package_type, package_value),
+    {
+      tag: "product",
+      fields: [runtime_value, runtime_value],
+    },
+  );
+  const second_package_type = computational_existential_type(
+    scalar,
+    { tag: "scalar", name: "U32" },
+  );
+  const second_package_value = pack_computational_existential(
+    first_package_type,
+    runtime_value,
+    runtime_value,
+  );
+  assert_throws(
+    () => erase_semantic_value(second_package_type, second_package_value),
+    "Computational package has a different semantic type.",
   );
 });
 
@@ -153,7 +349,7 @@ Deno.test("logical types reject malformed and oversized propositions", () => {
     "Kernel type constant MissingType requires a trusted environment.",
   );
   assert_throws(
-    () => logical_existential_type(scalar, malformed),
+    () => logical_existential_type(type_sort(0), malformed),
     "Kernel type constant MissingType requires a trusted environment.",
   );
 
@@ -185,10 +381,20 @@ Deno.test("computational existentials retain witness and payload layout", () => 
 });
 
 Deno.test("decision erasure keeps only the runtime branch tag", () => {
+  const type = decision_type(proposition, proof_context);
+  assert_equals(erase_semantic_type(type), {
+    tag: "sum",
+    cases: [
+      { label: "Yes", payload: { tag: "scalar", name: "Unit" } },
+      { label: "No", payload: { tag: "scalar", name: "Unit" } },
+    ],
+  });
   assert_equals(
-    erase_decision(yes_decision(proposition, certificate, proof_context)),
+    erase_semantic_value(type, yes_decision(type, certificate)),
     {
-      tag: "yes",
+      tag: "sum",
+      case: "Yes",
+      payload: { tag: "unit" },
     },
   );
   const unsafe = check_proof(
@@ -197,8 +403,19 @@ Deno.test("decision erasure keeps only the runtime branch tag", () => {
     { allow_unsafe: true, term_context: [type_sort(0)] },
   );
   assert_throws(
-    () => no_decision(proposition, unsafe, proof_context),
+    () => no_decision(type, unsafe),
     "Kernel certificate depends on unsafe evidence.",
+  );
+  const unsafe_decision = unsafe_no_decision(type, unsafe);
+  assert_equals(unsafe_decision.safety.tag, "unsafe");
+  assert_equals(erase_semantic_value(type, unsafe_decision), {
+    tag: "sum",
+    case: "No",
+    payload: { tag: "unit" },
+  });
+  assert_equals(
+    erase_semantic_type(decision_type({ tag: "true" })),
+    erase_semantic_type(decision_type({ tag: "false" })),
   );
 });
 
@@ -448,10 +665,19 @@ Deno.test("unique computational packages cannot be reused", () => {
       ),
     "Unique runtime value was already consumed.",
   );
-  open_computational_existential(package_value);
+  const opened = open_computational_existential(package_value);
   assert_throws(
     () => open_computational_existential(package_value),
     "Unique computational existential package was already opened.",
+  );
+  const repacked = pack_computational_existential(
+    package_type,
+    opened.witness,
+    opened.payload,
+  );
+  assert_equals(
+    open_computational_existential(repacked).payload,
+    opened.payload,
   );
 });
 
@@ -487,6 +713,27 @@ Deno.test("nested unique values are consumed through their containing layout", (
         inner,
       ),
     "Unique runtime value was already consumed.",
+  );
+
+  const nested_inner = owned_runtime_value(inner_type, {
+    tag: "scalar",
+    type: "I32",
+    value: 5,
+  });
+  const nested_type = {
+    tag: "owned" as const,
+    ownership: "unique_heap" as const,
+    value: inner_type,
+  };
+  const nested_outer = owned_runtime_value(nested_type, nested_inner);
+  const nested_package = pack_computational_existential(
+    computational_existential_type(scalar, nested_type),
+    { tag: "scalar", type: "I32", value: 6 },
+    nested_outer,
+  );
+  assert_equals(
+    open_computational_existential(nested_package).payload.tag,
+    "owned",
   );
 });
 

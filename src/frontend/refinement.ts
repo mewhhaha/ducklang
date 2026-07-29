@@ -5,11 +5,15 @@ import {
   check_certificate,
   check_proposition_formation,
   type KernelCertificate,
+  type ProofSafety,
   type Proposition,
+  proposition_equal,
 } from "./proof_kernel.ts";
 import {
+  kernel_context_equal,
   type KernelContext,
   KernelEnvironment,
+  type KernelType,
   snapshot_kernel_context,
 } from "./kernel_terms.ts";
 import {
@@ -50,10 +54,15 @@ export type SemanticType =
     proposition: Proposition;
     certificate: KernelCertificate;
     proof_context: PropositionContext;
+    safety: ProofSafety;
   }
   | {
     tag: "logical_exists";
-    witness: RepresentationType;
+    proposition: Extract<Proposition, { tag: "exists" }>;
+    proof_context: PropositionContext;
+  }
+  | {
+    tag: "decision";
     proposition: Proposition;
     proof_context: PropositionContext;
   }
@@ -63,20 +72,20 @@ export type SemanticType =
     payload: RepresentationType;
   };
 
-export type ErasedDecision = { tag: "yes" } | { tag: "no" };
+export type ErasedDecision = Extract<RepresentationValue, { tag: "sum" }>;
 
 export type LogicalDecision =
   | {
     tag: "yes";
-    proposition: Proposition;
+    type: Extract<SemanticType, { tag: "decision" }>;
     proof: KernelCertificate;
-    proof_context: PropositionContext;
+    safety: ProofSafety;
   }
   | {
     tag: "no";
-    proposition: Proposition;
+    type: Extract<SemanticType, { tag: "decision" }>;
     proof: KernelCertificate;
-    proof_context: PropositionContext;
+    safety: ProofSafety;
   };
 
 export type PropositionContextOptions = {
@@ -152,14 +161,40 @@ export function proof_type(
 }
 
 export function logical_existential_type(
-  witness: RepresentationType,
-  proposition: Proposition,
+  domain: KernelType,
+  body: Proposition,
   options: PropositionContextOptions = {},
 ): Extract<SemanticType, { tag: "logical_exists" }> {
   const proof_context = proposition_context(options);
+  const proposition = {
+    tag: "exists" as const,
+    domain,
+    body,
+  };
+  const stable_proposition = check_proposition_formation(
+    proposition,
+    proof_context,
+  );
+  expect(
+    stable_proposition.tag === "exists",
+    "Logical existential formation changed its proposition.",
+  );
   const result = Object.freeze({
     tag: "logical_exists" as const,
-    witness: snapshot_runtime_representation_type(witness),
+    proposition: stable_proposition,
+    proof_context,
+  });
+  TRUSTED_SEMANTIC_TYPES.add(result);
+  return result;
+}
+
+export function decision_type(
+  proposition: Proposition,
+  options: PropositionContextOptions = {},
+): Extract<SemanticType, { tag: "decision" }> {
+  const proof_context = proposition_context(options);
+  const result = Object.freeze({
+    tag: "decision" as const,
     proposition: check_proposition_formation(proposition, proof_context),
     proof_context,
   });
@@ -173,6 +208,37 @@ export function refinement_type(
   certificate: KernelCertificate,
   options: PropositionContextOptions = {},
 ): Extract<SemanticType, { tag: "refinement" }> {
+  return checked_refinement_type(
+    value,
+    proposition,
+    certificate,
+    options,
+    true,
+  );
+}
+
+export function unsafe_refinement_type(
+  value: RepresentationType,
+  proposition: Proposition,
+  certificate: KernelCertificate,
+  options: PropositionContextOptions = {},
+): Extract<SemanticType, { tag: "refinement" }> {
+  return checked_refinement_type(
+    value,
+    proposition,
+    certificate,
+    options,
+    false,
+  );
+}
+
+function checked_refinement_type(
+  value: RepresentationType,
+  proposition: Proposition,
+  certificate: KernelCertificate,
+  options: PropositionContextOptions,
+  require_safe: boolean,
+): Extract<SemanticType, { tag: "refinement" }> {
   const proof_context = proposition_context(options);
   const stable_value = snapshot_runtime_representation_type(value);
   const stable_proposition = check_proposition_formation(
@@ -180,7 +246,7 @@ export function refinement_type(
     proof_context,
   );
   const checked = check_certificate(certificate, stable_proposition, {
-    require_safe: true,
+    require_safe,
     environment: proof_context.environment,
     term_context: proof_context.term_context,
   });
@@ -190,6 +256,7 @@ export function refinement_type(
     proposition: stable_proposition,
     certificate: checked,
     proof_context,
+    safety: checked.safety,
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -214,6 +281,20 @@ export function erase_semantic_type(
     case "proof":
     case "logical_exists":
       return undefined;
+    case "decision":
+      return Object.freeze({
+        tag: "sum",
+        cases: Object.freeze([
+          Object.freeze({
+            label: "Yes",
+            payload: Object.freeze({ tag: "scalar", name: "Unit" }),
+          }),
+          Object.freeze({
+            label: "No",
+            payload: Object.freeze({ tag: "scalar", name: "Unit" }),
+          }),
+        ]),
+      });
     case "computational_exists":
       return Object.freeze({
         tag: "product",
@@ -231,70 +312,169 @@ export function erase_semantic_type(
   }
 }
 
-export function erase_decision(decision: LogicalDecision): ErasedDecision {
+function erase_logical_decision(decision: LogicalDecision): ErasedDecision {
   assert_trusted_decision(decision);
-  let expected: Proposition = decision.proposition;
+  let expected: Proposition = decision.type.proposition;
   if (decision.tag === "no") {
-    expected = { tag: "not", proposition: decision.proposition };
+    expected = { tag: "not", proposition: decision.type.proposition };
   }
   check_certificate(decision.proof, expected, {
-    require_safe: true,
-    environment: decision.proof_context.environment,
-    term_context: decision.proof_context.term_context,
+    require_safe: decision.safety.tag === "safe",
+    environment: decision.type.proof_context.environment,
+    term_context: decision.type.proof_context.term_context,
   });
-  if (decision.tag === "yes") return { tag: "yes" };
-  return { tag: "no" };
+  let case_name = "Yes";
+  if (decision.tag === "no") case_name = "No";
+  return Object.freeze({
+    tag: "sum",
+    case: case_name,
+    payload: Object.freeze({ tag: "unit" }),
+  });
+}
+
+export function erase_semantic_value(
+  type: SemanticType,
+  value: unknown,
+): RepresentationValue | undefined {
+  assert_trusted_semantic_type(type);
+  switch (type.tag) {
+    case "representation": {
+      const runtime_value = snapshot_representation_value(
+        type.representation,
+        value as RepresentationValue,
+      );
+      assert_unique_inputs_available(
+        type.representation,
+        runtime_value,
+        new WeakSet<object>(),
+      );
+      return transfer_runtime_value(type.representation, runtime_value);
+    }
+    case "refinement": {
+      check_certificate(type.certificate, type.proposition, {
+        require_safe: type.safety.tag === "safe",
+        environment: type.proof_context.environment,
+        term_context: type.proof_context.term_context,
+      });
+      const runtime_value = snapshot_representation_value(
+        type.value,
+        value as RepresentationValue,
+      );
+      assert_unique_inputs_available(
+        type.value,
+        runtime_value,
+        new WeakSet<object>(),
+      );
+      return transfer_runtime_value(type.value, runtime_value);
+    }
+    case "proof":
+    case "logical_exists":
+      check_certificate(value, type.proposition, {
+        require_safe: true,
+        environment: type.proof_context.environment,
+        term_context: type.proof_context.term_context,
+      });
+      return undefined;
+    case "decision": {
+      assert_trusted_decision(value as LogicalDecision);
+      const decision = value as LogicalDecision;
+      expect(
+        decision.type.proof_context.environment ===
+            type.proof_context.environment &&
+          kernel_context_equal(
+            decision.type.proof_context.term_context,
+            type.proof_context.term_context,
+            type.proof_context.environment,
+          ) &&
+          proposition_equal(
+            decision.type.proposition,
+            type.proposition,
+            type.proof_context,
+          ),
+        "Logical decision value has a different semantic type.",
+      );
+      return erase_logical_decision(decision);
+    }
+    case "computational_exists": {
+      expect(
+        value !== null && typeof value === "object" &&
+          TRUSTED_PACKAGES.has(value),
+        "Computational existential package is not sealed.",
+      );
+      const contents = PACKAGE_CONTENTS.get(value);
+      expect(
+        contents !== undefined &&
+          same_representation_type(contents.type.witness, type.witness) &&
+          same_representation_type(contents.type.payload, type.payload),
+        "Computational package has a different semantic type.",
+      );
+      const opened = open_computational_existential(
+        value as ComputationalPackage,
+      );
+      return Object.freeze({
+        tag: "product",
+        fields: Object.freeze([opened.witness, opened.payload]),
+      });
+    }
+  }
 }
 
 export function yes_decision(
-  proposition: Proposition,
+  type: SemanticType,
   proof: KernelCertificate,
-  options: PropositionContextOptions = {},
 ): LogicalDecision {
-  const proof_context = proposition_context(options);
-  const stable_proposition = check_proposition_formation(
-    proposition,
-    proof_context,
-  );
-  const checked = check_certificate(proof, stable_proposition, {
-    require_safe: true,
-    environment: proof_context.environment,
-    term_context: proof_context.term_context,
-  });
-  const result = Object.freeze({
-    tag: "yes" as const,
-    proposition: stable_proposition,
-    proof: checked,
-    proof_context,
-  });
-  TRUSTED_DECISIONS.add(result);
-  return result;
+  return checked_decision("yes", type, proof, true);
+}
+
+export function unsafe_yes_decision(
+  type: SemanticType,
+  proof: KernelCertificate,
+): LogicalDecision {
+  return checked_decision("yes", type, proof, false);
 }
 
 export function no_decision(
-  proposition: Proposition,
+  type: SemanticType,
   proof: KernelCertificate,
-  options: PropositionContextOptions = {},
 ): LogicalDecision {
-  const proof_context = proposition_context(options);
-  const stable_proposition = check_proposition_formation(
-    proposition,
-    proof_context,
+  return checked_decision("no", type, proof, true);
+}
+
+export function unsafe_no_decision(
+  type: SemanticType,
+  proof: KernelCertificate,
+): LogicalDecision {
+  return checked_decision("no", type, proof, false);
+}
+
+function checked_decision(
+  tag: LogicalDecision["tag"],
+  type: SemanticType,
+  proof: KernelCertificate,
+  require_safe: boolean,
+): LogicalDecision {
+  assert_trusted_semantic_type(type);
+  expect(
+    type.tag === "decision",
+    "Expected a logical decision type.",
   );
-  const expected = {
-    tag: "not" as const,
-    proposition: stable_proposition,
-  };
+  let expected: Proposition = type.proposition;
+  if (tag === "no") {
+    expected = {
+      tag: "not",
+      proposition: type.proposition,
+    };
+  }
   const checked = check_certificate(proof, expected, {
-    require_safe: true,
-    environment: proof_context.environment,
-    term_context: proof_context.term_context,
+    require_safe,
+    environment: type.proof_context.environment,
+    term_context: type.proof_context.term_context,
   });
   const result = Object.freeze({
-    tag: "no" as const,
-    proposition: stable_proposition,
+    tag,
+    type,
     proof: checked,
-    proof_context,
+    safety: checked.safety,
   });
   TRUSTED_DECISIONS.add(result);
   return result;
@@ -327,11 +507,14 @@ export function owned_runtime_value(
     stable_value,
     new WeakSet<object>(),
   );
-  consume_unique_input(stable_type.value, stable_value);
+  const transferred_value = transfer_runtime_value(
+    stable_type.value,
+    stable_value,
+  );
   const result = Object.freeze({
     tag: "owned" as const,
     ownership: stable_type.ownership,
-    value: stable_value,
+    value: transferred_value,
   });
   TRUSTED_OWNED_VALUES.add(result);
   OWNED_VALUE_TYPES.set(result, stable_type);
@@ -382,16 +565,22 @@ export function pack_computational_existential(
   const available = new WeakSet<object>();
   assert_unique_inputs_available(type.witness, stable_witness, available);
   assert_unique_inputs_available(type.payload, stable_payload, available);
-  consume_unique_input(type.witness, stable_witness);
-  consume_unique_input(type.payload, stable_payload);
+  const transferred_witness = transfer_runtime_value(
+    type.witness,
+    stable_witness,
+  );
+  const transferred_payload = transfer_runtime_value(
+    type.payload,
+    stable_payload,
+  );
   const package_handle = Object.freeze({}) as ComputationalPackage;
   TRUSTED_PACKAGES.add(package_handle);
   PACKAGE_CONTENTS.set(
     package_handle,
     Object.freeze({
       type,
-      witness: stable_witness,
-      payload: stable_payload,
+      witness: transferred_witness,
+      payload: transferred_payload,
     }),
   );
   return package_handle;
@@ -900,10 +1089,10 @@ function assert_unique_inputs_available(
   }
 }
 
-function consume_unique_input(
+function transfer_runtime_value(
   type: RepresentationType,
   value: RepresentationValue,
-): void {
+): RepresentationValue {
   switch (type.tag) {
     case "owned": {
       assert_owned_handle_layout(type, value);
@@ -915,11 +1104,18 @@ function consume_unique_input(
         );
         CONSUMED_RUNTIME_VALUES.add(value);
       }
-      consume_unique_input(type.value, value.value);
-      return;
+      const result = Object.freeze({
+        tag: "owned" as const,
+        ownership: type.ownership,
+        value: transfer_runtime_value(type.value, value.value),
+      });
+      TRUSTED_OWNED_VALUES.add(result);
+      OWNED_VALUE_TYPES.set(result, type);
+      return result;
     }
-    case "product":
+    case "product": {
       expect(value.tag === "product", "Product runtime value is required.");
+      const fields: RepresentationValue[] = [];
       for (let index = 0; index < type.fields.length; index += 1) {
         const field = type.fields[index];
         const actual = value.fields[index];
@@ -927,11 +1123,16 @@ function consume_unique_input(
           field !== undefined && actual !== undefined,
           "Missing runtime product field.",
         );
-        consume_unique_input(field.type, actual);
+        fields.push(transfer_runtime_value(field.type, actual));
       }
-      return;
-    case "record":
+      return Object.freeze({
+        tag: "product",
+        fields: Object.freeze(fields),
+      });
+    }
+    case "record": {
       expect(value.tag === "product", "Record runtime value is required.");
+      const fields: RepresentationValue[] = [];
       for (let index = 0; index < type.fields.length; index += 1) {
         const field = type.fields[index];
         const actual = value.fields[index];
@@ -939,34 +1140,47 @@ function consume_unique_input(
           field !== undefined && actual !== undefined,
           "Missing runtime record field.",
         );
-        consume_unique_input(field.type, actual);
+        fields.push(transfer_runtime_value(field.type, actual));
       }
-      return;
-    case "fixed_array":
+      return Object.freeze({
+        tag: "product",
+        fields: Object.freeze(fields),
+      });
+    }
+    case "fixed_array": {
       expect(value.tag === "product", "Fixed array runtime value is required.");
       expect(
         value.fields.length === type.length,
         "Runtime fixed array length does not match its layout.",
       );
+      const fields: RepresentationValue[] = [];
       for (const element of value.fields) {
-        consume_unique_input(type.element, element);
+        fields.push(transfer_runtime_value(type.element, element));
       }
-      return;
+      return Object.freeze({
+        tag: "product",
+        fields: Object.freeze(fields),
+      });
+    }
     case "sum": {
       expect(value.tag === "sum", "Sum runtime value is required.");
       const current = type.cases.find((candidate) =>
         candidate.label === value.case
       );
       expect(current !== undefined, `Unknown runtime sum case ${value.case}.`);
-      consume_unique_input(current.payload, value.payload);
-      return;
+      return Object.freeze({
+        tag: "sum",
+        case: value.case,
+        payload: transfer_runtime_value(current.payload, value.payload),
+      });
     }
     case "function":
-    case "never":
     case "scalar":
     case "integer":
     case "named":
-      return;
+      return value;
+    case "never":
+      throw new Error("Never has no runtime value.");
     case "variable":
     case "rigid":
     case "forall":
@@ -1097,6 +1311,7 @@ export function refinement_proves(
 ): boolean {
   assert_trusted_semantic_type(type);
   if (type.tag !== "refinement") return false;
+  if (type.safety.tag === "unsafe") return false;
   const stable = check_proposition_formation(
     proposition,
     type.proof_context,

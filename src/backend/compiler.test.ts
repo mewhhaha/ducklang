@@ -1,10 +1,23 @@
 import { assert_equals, assert_throws } from "../../src/assert.ts";
 import { beginWasmArena, StorageClass, type WasmHostValue } from "gpufuck";
 import { success_examples } from "../../examples/manifest.ts";
+import { parse_duck_source } from "../../src/frontend/baba_parser.ts";
+import { checked_value } from "../../src/frontend/checked.ts";
 import { parse_source } from "../../src/frontend/parser.ts";
+import {
+  analyze_duck_source,
+  lower_duck_source,
+} from "../../src/semantic_program.ts";
 import { compiler_compatibility_cases } from "./benchmark_cases.ts";
-import { DuckCompiler, encode_duck_module } from "./compiler.ts";
-import { lower_duck_source_to_gpufuck } from "./core_lowering.ts";
+import {
+  DuckCompiler,
+  encode_duck_file,
+  encode_duck_module,
+} from "./compiler.ts";
+import {
+  lower_duck_semantic_program_to_gpufuck,
+  lower_duck_source_to_gpufuck,
+} from "./core_lowering.ts";
 
 Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   const module = encode_duck_module("let value = 40;\nvalue + 2");
@@ -13,6 +26,123 @@ Deno.test("Duck compiler lowers the supported scalar source shape", () => {
   assert_equals(module.entrySymbol, 0);
   assert_equals(module.evaluationProfile, "strict-eager-v1");
   assert_equals(module.nodeCount, 5);
+});
+
+Deno.test("Duck compiler checks and erases contracts before gpufuck", async () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\nidentity 42\n";
+  const contracted_module = encode_duck_module(contracted_source);
+  const plain_module = encode_duck_module(plain_source);
+
+  assert_equals(contracted_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    contracted_module.definitionWords,
+    plain_module.definitionWords,
+  );
+  assert_equals(contracted_module.nodeCount, plain_module.nodeCount);
+  assert_equals(
+    contracted_module.definitionCount,
+    plain_module.definitionCount,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const contracted = await compiler.run(contracted_source);
+    const plain = await compiler.run(plain_source);
+    assert_equals(contracted.value, { kind: "integer", value: 42 });
+    assert_equals(contracted.value, plain.value);
+  } finally {
+    compiler.destroy();
+  }
+});
+
+Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: I32) -> (result: I32)\n" +
+          "ensures result = value\n" +
+          "let identity = value => 0;\n" +
+          "identity 42\n",
+      ),
+    "does not establish ensures result = value",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: Bogus) -> (result: Bogus)\n" +
+          "ensures result = value\n" +
+          "let identity = value => value;\n" +
+          "identity 42\n",
+      ),
+    "does not match the inferred callable representation",
+  );
+  assert_throws(
+    () =>
+      encode_duck_module(
+        "type identity = (value: I32) -> (result: I32)\n" +
+          "ensures result = value\n" +
+          "let identity = value => value;\n" +
+          'identity "wrong"\n',
+      ),
+    "does not match the inferred callable representation",
+  );
+});
+
+Deno.test("Duck file compilation checks prefix contracts", () => {
+  const directory = Deno.makeTempDirSync({
+    prefix: "binned-contract-check-",
+  });
+  const invalid_path = directory + "/invalid.duck";
+  Deno.writeTextFileSync(
+    invalid_path,
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => 0;\n" +
+      "identity 42\n",
+  );
+  const valid_path = directory + "/valid.duck";
+  Deno.writeTextFileSync(
+    valid_path,
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n" +
+      "identity 42\n",
+  );
+  try {
+    assert_throws(
+      () => encode_duck_file(invalid_path),
+      "does not establish ensures result = value",
+    );
+    assert_equals(
+      encode_duck_file(valid_path).nodeWords,
+      encode_duck_module(Deno.readTextFileSync(valid_path)).nodeWords,
+    );
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("gpufuck lowering rejects a semantic program from another source", () => {
+  const first = analyze_duck_source(parse_duck_source("40 + 2"));
+  const second = analyze_duck_source(parse_duck_source("20 + 22"));
+  const program = checked_value(lower_duck_source(first));
+  if (program === undefined) {
+    throw new Error("Expected a checked semantic program.");
+  }
+
+  assert_throws(
+    () =>
+      lower_duck_semantic_program_to_gpufuck(
+        second.source,
+        program,
+        7,
+      ),
+    "requires a checked semantic program for its source",
+  );
 });
 
 Deno.test("Duck compiler preserves top-level return forms through Baba", () => {

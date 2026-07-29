@@ -56,6 +56,10 @@ import {
 import type { TypeExpr } from "../../src/type_syntax.ts";
 import type { Prim } from "../../src/op.ts";
 import { expect } from "../../src/expect.ts";
+import {
+  type DuckSemanticProgram,
+  is_checked_duck_semantic_program_for_source,
+} from "../../src/semantic_program.ts";
 
 const duck_runtime_capability = "$DuckRuntime";
 const unit_type: TypeSchema = { kind: "unit" };
@@ -105,6 +109,45 @@ export function lower_duck_source_to_gpufuck(
   source: Source,
   source_byte_length: number,
 ): LoweredDuckGpufuckModule {
+  const lowering = prepare_duck_core_lowering(source);
+  let core: CoreProgram;
+  try {
+    core = core_from_source(lowering.compiled_source);
+  } catch (error) {
+    try {
+      core = core_from_source(lowering.source);
+    } catch {
+      throw error;
+    }
+  }
+  return lower_prepared_duck_core(lowering, core, source_byte_length);
+}
+
+export function lower_duck_semantic_program_to_gpufuck(
+  source: Source,
+  program: DuckSemanticProgram,
+  source_byte_length: number,
+): LoweredDuckGpufuckModule {
+  expect(
+    is_checked_duck_semantic_program_for_source(program, source),
+    "Gpufuck lowering requires a checked semantic program for its source.",
+  );
+  return lower_prepared_duck_core(
+    prepare_duck_core_lowering(source),
+    program.core,
+    source_byte_length,
+  );
+}
+
+type PreparedDuckCoreLowering = {
+  source: Source;
+  compiled_source: Source;
+  abi: AbiManifest;
+};
+
+function prepare_duck_core_lowering(
+  source: Source,
+): PreparedDuckCoreLowering {
   source = source_with_expanded_attributes(source);
   source = source_with_host_callable_exports(source);
   const abi_source = infer_default_effect_handlers(
@@ -126,23 +169,24 @@ export function lower_duck_source_to_gpufuck(
       };
     }),
   };
-  let core: CoreProgram;
-  try {
-    core = core_from_source(compiled_source);
-  } catch (error) {
-    try {
-      core = core_from_source(source);
-    } catch {
-      throw error;
-    }
-  }
+  return {
+    source,
+    compiled_source,
+    abi: build_abi_manifest(abi_source, compiled_source),
+  };
+}
+
+function lower_prepared_duck_core(
+  lowering: PreparedDuckCoreLowering,
+  core: CoreProgram,
+  source_byte_length: number,
+): LoweredDuckGpufuckModule {
   const type_statements = core.statements;
   core = analyze_core_demand(core);
-  const abi = build_abi_manifest(abi_source, compiled_source);
   const type_aliases = new Map<string, string>();
   const declared_types = new Set<string>();
-  if (source.declarations !== undefined) {
-    for (const declaration of source.declarations) {
+  if (lowering.source.declarations !== undefined) {
+    for (const declaration of lowering.source.declarations) {
       if (declaration.tag === "type") {
         declared_types.add(declaration.name);
       }
@@ -159,7 +203,7 @@ export function lower_duck_source_to_gpufuck(
   }
   return new DuckCoreLowering(
     core,
-    abi,
+    lowering.abi,
     source_byte_length,
     type_aliases,
     declared_types,

@@ -129,8 +129,9 @@ export type {
 export {
   computational_existential_family_type,
   computational_existential_type,
-  erase_decision,
+  decision_type,
   erase_semantic_type,
+  erase_semantic_value,
   logical_existential_type,
   no_decision,
   open_computational_existential,
@@ -140,6 +141,9 @@ export {
   refinement_proves,
   refinement_type,
   representation_type,
+  unsafe_no_decision,
+  unsafe_refinement_type,
+  unsafe_yes_decision,
   weaken_refinement,
   yes_decision,
 } from "./frontend/refinement.ts";

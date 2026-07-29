@@ -1,7 +1,8 @@
-import { assert_equals } from "./assert.ts";
+import { assert_equals, assert_throws } from "./assert.ts";
 import { analyze_duck_source, lower_duck_source } from "./semantic_program.ts";
 import { parse_duck_source } from "./frontend/baba_parser.ts";
 import { checked_value, diagnostics_of } from "./frontend/checked.ts";
+import { check_certificate } from "./frontend/proof_kernel.ts";
 
 Deno.test("semantic program stages preserve Baba input and stable symbols", () => {
   const parsed = parse_duck_source("let value = 1;\n");
@@ -1046,11 +1047,103 @@ Deno.test("semantic analysis extracts and masks source prefix signatures", () =>
   const parsed = parse_duck_source(
     "type identity = (value: I32) -> (result: I32)\n" +
       "ensures result = value\n" +
-      "let identity = value => value;\n",
+      "let identity = value => value;\n" +
+      "identity 1\n",
   );
   const analysis = analyze_duck_source(parsed);
   assert_equals(analysis.diagnostics, []);
   assert_equals(analysis.symbols.has("identity"), true);
+});
+
+Deno.test("checked contracts erase before semantic Core construction", () => {
+  const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
+    "ensures result = value\n" +
+    "let identity = value => value;\n" +
+    "identity 42\n";
+  const plain_source = "let identity = value => value;\n" +
+    "identity 42\n";
+  const contracted = analyze_duck_source(
+    parse_duck_source(contracted_source),
+  );
+  const plain = analyze_duck_source(parse_duck_source(plain_source));
+  assert_equals(contracted.diagnostics, []);
+  assert_equals(plain.diagnostics, []);
+  assert_equals(contracted.proofs.size, 1);
+  const checked_certificate = [...contracted.proofs.values()][0];
+  if (checked_certificate === undefined) {
+    throw new Error("Expected a checked contract certificate.");
+  }
+  const certificate = checked_certificate.certificate;
+  assert_equals(certificate.safety, { tag: "safe" });
+  assert_equals(certificate.proposition, {
+    tag: "equal",
+    type: { tag: "constant", name: "I32" },
+    left: { tag: "var", index: 0 },
+    right: { tag: "var", index: 0 },
+  });
+  assert_equals(
+    check_certificate(certificate, certificate.proposition, {
+      environment: checked_certificate.environment,
+      term_context: checked_certificate.term_context,
+      require_safe: true,
+    }),
+    certificate,
+  );
+
+  const contracted_program = checked_value(lower_duck_source(contracted));
+  const plain_program = checked_value(lower_duck_source(plain));
+  if (contracted_program === undefined || plain_program === undefined) {
+    throw new Error("Expected both identity programs to lower.");
+  }
+  assert_equals(contracted_program.core, plain_program.core);
+  assert_equals(
+    JSON.stringify(contracted_program.core).includes("proposition"),
+    false,
+  );
+  assert_equals(
+    JSON.stringify(contracted_program.core).includes("proof"),
+    false,
+  );
+});
+
+Deno.test("semantic program brands reject analysis and Core mutation", () => {
+  const invalid = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => 0;\n",
+  ));
+  assert_throws(
+    () => {
+      (invalid.diagnostics as unknown[]).length = 0;
+    },
+    "Cannot assign to read only property",
+  );
+  assert_equals(checked_value(lower_duck_source(invalid)), undefined);
+
+  const changed = analyze_duck_source(parse_duck_source(
+    "let value = 42;\nvalue\n",
+  ));
+  const binding = changed.source.statements[0];
+  if (binding === undefined || binding.tag !== "bind") {
+    throw new Error("Expected a source binding.");
+  }
+  binding.name = "forged";
+  assert_throws(
+    () => lower_duck_source(changed),
+    "Duck analysis source changed after semantic checking.",
+  );
+
+  const checked = analyze_duck_source(parse_duck_source("40 + 2"));
+  const program = checked_value(lower_duck_source(checked));
+  if (program === undefined) {
+    throw new Error("Expected a checked semantic program.");
+  }
+  assert_throws(
+    () => {
+      (program.core.statements as unknown[]).length = 0;
+    },
+    "Cannot assign to read only property",
+  );
 });
 
 Deno.test("analysis options cannot suppress source prefix signatures", () => {
@@ -1095,7 +1188,8 @@ Deno.test("semantic analysis alpha-renames contract parameters positionally", ()
   const accepted = analyze_duck_source(parse_duck_source(
     "type f = (value: I32) -> (result: I32)\n" +
       "ensures result = value\n" +
-      "let f = ignored => ignored;\n",
+      "let f = ignored => ignored;\n" +
+      "f 1\n",
   ));
   assert_equals(accepted.diagnostics, []);
 
@@ -1113,9 +1207,36 @@ Deno.test("semantic analysis alpha-renames contract parameters positionally", ()
   const multiple = analyze_duck_source(parse_duck_source(
     "type pair = (first: I32, second: I32) -> (result: I32)\n" +
       "ensures result = second\n" +
-      "let pair = (left, right) => right;\n",
+      "let pair = (left, right) => right;\n" +
+      "pair(1, 2)\n",
   ));
   assert_equals(multiple.diagnostics, []);
+});
+
+Deno.test("contract certificates match the inferred callable representation", () => {
+  const unknown = analyze_duck_source(parse_duck_source(
+    "type f = (value: Bogus) -> (result: Bogus)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    unknown.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(unknown.proofs.size, 0);
+
+  const mismatched = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      'f "oops"\n',
+  ));
+  assert_equals(
+    mismatched.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    true,
+  );
+  assert_equals(mismatched.proofs.size, 0);
 });
 
 Deno.test("semantic analysis rejects unsupported raw postconditions", () => {

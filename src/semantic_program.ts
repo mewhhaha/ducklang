@@ -9,10 +9,12 @@ import {
 } from "./diagnostic.ts";
 import { expect } from "./expect.ts";
 import {
+  all,
   type Checked,
   checked_value,
   diagnostics_of,
   fail,
+  ok,
 } from "./frontend/checked.ts";
 import {
   type BabaCstNode,
@@ -59,7 +61,17 @@ import {
   snapshot_representation_type,
 } from "./frontend/representation_type.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
-import type { KernelCertificate } from "./frontend/proof_kernel.ts";
+import {
+  check_proof,
+  type KernelCertificate,
+} from "./frontend/proof_kernel.ts";
+import {
+  type KernelContext,
+  KernelEnvironment,
+  type KernelType,
+  snapshot_kernel_context,
+  type_sort,
+} from "./frontend/kernel_terms.ts";
 import type { FunctionFactSummary } from "./frontend/function_summary.ts";
 import {
   associate_prefix_signatures,
@@ -71,7 +83,15 @@ import { extract_prefix_source_metadata } from "./frontend/prefix_signature_sour
 export type SemanticSymbolIndex = ReadonlyMap<string, readonly ValueId[]>;
 export type SemanticTypeIndex = ReadonlyMap<ValueId, RepresentationType>;
 export type RefinementIndex = ReadonlyMap<ValueId, FactState>;
-export type KernelCertificateIndex = ReadonlyMap<string, KernelCertificate>;
+export type CheckedKernelCertificate = {
+  certificate: KernelCertificate;
+  environment: KernelEnvironment;
+  term_context: KernelContext;
+};
+export type KernelCertificateIndex = ReadonlyMap<
+  string,
+  CheckedKernelCertificate
+>;
 export type SourceOriginIndex = ReadonlyMap<ValueId, SemanticOrigin>;
 export type FunctionFactIndex = ReadonlyMap<string, FunctionFactSummary>;
 export type SemanticCallableCfgIndex = ReadonlyMap<
@@ -110,6 +130,33 @@ export type DuckSemanticProgram = {
   origins: SourceOriginIndex;
   function_summaries: FunctionFactIndex;
 };
+
+const checked_duck_analyses = new WeakSet<DuckAnalysis>();
+const checked_duck_analysis_state = new WeakMap<
+  DuckAnalysis,
+  {
+    has_errors: boolean;
+    source_fingerprint: string;
+  }
+>();
+const checked_semantic_program_sources = new WeakMap<
+  DuckSemanticProgram,
+  SourceNode
+>();
+const weak_map_get = WeakMap.prototype.get;
+const weak_map_set = WeakMap.prototype.set;
+const weak_set_add = WeakSet.prototype.add;
+const weak_set_has = WeakSet.prototype.has;
+
+export function is_checked_duck_semantic_program_for_source(
+  program: unknown,
+  source: SourceNode,
+): program is DuckSemanticProgram {
+  if (program === null || typeof program !== "object") return false;
+  return Reflect.apply(weak_map_get, checked_semantic_program_sources, [
+    program as DuckSemanticProgram,
+  ]) === source;
+}
 
 export type DuckAnalyzeOptions = BabaSemanticAnalyzeOptions & {
   host_interface?: SourceNode;
@@ -210,11 +257,6 @@ export function analyze_duck_source(
       prefix_definitions,
     ),
   );
-  const contract_diagnostics = validate_prefix_contracts(
-    prefix_signatures,
-    prefix_definitions,
-    stable_input.cst.text,
-  );
   const identity = new SemanticIdentityAllocator("duck-program");
   const binding_index = build_binding_index({
     source: source_analysis.source,
@@ -232,6 +274,14 @@ export function analyze_duck_source(
     types,
     origins,
   );
+  const contract_validation = validate_prefix_contracts(
+    prefix_signatures,
+    prefix_definitions,
+    stable_input.cst.text,
+    symbols,
+    types,
+    origins,
+  );
   const diagnostics = diagnostic_sequence([
     ...stable_input.diagnostics.map((diagnostic) =>
       compiler_diagnostic(
@@ -243,7 +293,7 @@ export function analyze_duck_source(
     ...source_analysis.diagnostics,
     ...lowering_diagnostics,
     ...signature_diagnostics,
-    ...contract_diagnostics,
+    ...contract_validation.diagnostics,
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
   let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
@@ -258,7 +308,11 @@ export function analyze_duck_source(
     control_flow = control_flows.root;
     callable_control_flow = new FrozenMap(control_flows.callables);
   }
-  return {
+  freeze_semantic_graph(source_analysis.syntax_diagnostics);
+  freeze_semantic_graph(source_analysis.diagnostics);
+  Object.freeze(source_analysis);
+  freeze_semantic_graph(diagnostics);
+  const analysis: DuckAnalysis = {
     parsed: stable_input,
     source: source_analysis.source,
     source_analysis,
@@ -267,108 +321,320 @@ export function analyze_duck_source(
     callable_control_flow,
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
-    facts: new FrozenMap([]),
-    proofs: new FrozenMap([]),
+    facts: new FrozenMap<ValueId, FactState>([]),
+    proofs: new FrozenMap(contract_validation.proofs),
     origins: new FrozenMap(origins),
-    function_summaries: new FrozenMap([]),
+    function_summaries: new FrozenMap<string, FunctionFactSummary>([]),
   };
+  Object.freeze(analysis);
+  Reflect.apply(weak_map_set, checked_duck_analysis_state, [
+    analysis,
+    Object.freeze({
+      has_errors: has_error_diagnostics(analysis.diagnostics),
+      source_fingerprint: semantic_graph_fingerprint(analysis.source),
+    }),
+  ]);
+  Reflect.apply(weak_set_add, checked_duck_analyses, [analysis]);
+  return analysis;
 }
 
 function validate_prefix_contracts(
   signatures: readonly PrefixSignature[],
   definitions: readonly PrefixDefinition[],
   source_text: string,
-): CompilerDiagnostic[] {
-  const diagnostics: CompilerDiagnostic[] = [];
+  symbols: ReadonlyMap<string, readonly ValueId[]>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const checks: Checked<
+    { key: string; proof: CheckedKernelCertificate } | undefined
+  >[] = [];
   for (const signature of signatures) {
-    for (const ensures of signature.ensures) {
-      const equality = ensures.match(/^result\s*=\s*([A-Za-z][A-Za-z0-9_]*)$/);
-      if (equality === null) {
-        if (ensures.trim() === "true" || ensures.trim() === "false") continue;
-        diagnostics.push(
-          compiler_diagnostic(
-            diagnostic_codes.prefix_signature_unproved,
-            `Prefix signature ${signature.name} uses an unsupported ensures proposition: ${ensures}.`,
-            signature.span,
-          ),
-        );
+    for (
+      let clause_index = 0;
+      clause_index < signature.ensures.length;
+      clause_index += 1
+    ) {
+      const ensures = signature.ensures[clause_index];
+      expect(
+        ensures !== undefined,
+        `Prefix signature ${signature.name} lost ensures clause ${clause_index}.`,
+      );
+      checks.push(
+        check_prefix_ensures(
+          signature,
+          ensures,
+          clause_index,
+          definitions,
+          source_text,
+          symbols,
+          types,
+          origins,
+        ),
+      );
+    }
+  }
+  const proofs = new Map<string, CheckedKernelCertificate>();
+  for (const check of checks) {
+    const proof = checked_value(check);
+    if (proof !== undefined) {
+      proofs.set(proof.key, proof.proof);
+    }
+  }
+  return {
+    diagnostics: diagnostics_of(all(checks)),
+    proofs,
+  };
+}
+
+function check_prefix_ensures(
+  signature: PrefixSignature,
+  ensures: string,
+  clause_index: number,
+  definitions: readonly PrefixDefinition[],
+  source_text: string,
+  symbols: ReadonlyMap<string, readonly ValueId[]>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  const proof_key = signature.scope + ":" + signature.name + ":ensures:" +
+    clause_index.toString();
+  const normalized = ensures.trim();
+  if (normalized === "true") {
+    const environment = KernelEnvironment.empty();
+    const term_context = snapshot_kernel_context([]);
+    return ok({
+      key: proof_key,
+      proof: Object.freeze({
+        certificate: check_proof(
+          { tag: "true_intro" },
+          { tag: "true" },
+          {
+            allow_unsafe: false,
+            environment,
+            term_context,
+          },
+        ),
+        environment,
+        term_context,
+      }),
+    });
+  }
+  if (normalized === "false") return ok(undefined);
+  const equality = ensures.match(
+    /^result\s*=\s*([A-Za-z][A-Za-z0-9_]*)$/,
+  );
+  if (equality === null) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} uses an unsupported ensures proposition: ${ensures}.`,
+        signature.span,
+      ),
+    );
+  }
+  const metadata_definition = definitions.find((definition) =>
+    definition.name === signature.name &&
+    definition.scope === signature.scope &&
+    definition.span.start >= signature.span.end
+  );
+  if (metadata_definition === undefined) return ok(undefined);
+  let callable_type: RepresentationType | undefined;
+  let callable_start = Number.MAX_SAFE_INTEGER;
+  const signature_values = symbols.get(signature.name);
+  if (signature_values !== undefined) {
+    for (const value of signature_values) {
+      const origin = origins.get(value);
+      if (
+        origin === undefined ||
+        origin.start < metadata_definition.span.start ||
+        origin.end > metadata_definition.span.end ||
+        origin.start >= callable_start
+      ) {
         continue;
       }
-      const metadata_definition = definitions.find((definition) =>
-        definition.name === signature.name &&
-        definition.scope === signature.scope &&
-        definition.span.start >= signature.span.end
-      );
-      if (metadata_definition === undefined) continue;
-      const definition_text = source_text.slice(
-        metadata_definition.span.start,
-        metadata_definition.span.end,
-      );
-      const signature_parameters: string[] = [];
-      const arrow_index = signature.type_text.indexOf("->");
-      let parameter_group = "";
-      if (arrow_index >= 0) {
-        const parameter_prefix = signature.type_text.slice(0, arrow_index);
-        let depth = 0;
-        let group_start = -1;
-        for (let index = 0; index < parameter_prefix.length; index += 1) {
-          const character = parameter_prefix[index];
-          if (character === "(") {
-            if (depth === 0) group_start = index;
-            depth += 1;
-          }
-          if (character === ")") {
-            depth -= 1;
-            if (depth === 0 && group_start >= 0) {
-              parameter_group = parameter_prefix.slice(group_start + 1, index);
-              group_start = -1;
-            }
-          }
+      callable_type = types.get(value);
+      callable_start = origin.start;
+    }
+  }
+  if (callable_type === undefined || callable_type.tag !== "function") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} cannot certify ensures ${ensures} because the definition has no inferred callable representation.`,
+        signature.span,
+      ),
+    );
+  }
+  const definition_text = source_text.slice(
+    metadata_definition.span.start,
+    metadata_definition.span.end,
+  );
+  const signature_parameters: { name: string; type_name: string }[] = [];
+  const arrow_index = signature.type_text.indexOf("->");
+  let parameter_group = "";
+  if (arrow_index >= 0) {
+    const parameter_prefix = signature.type_text.slice(0, arrow_index);
+    let depth = 0;
+    let group_start = -1;
+    for (let index = 0; index < parameter_prefix.length; index += 1) {
+      const character = parameter_prefix[index];
+      if (character === "(") {
+        if (depth === 0) group_start = index;
+        depth += 1;
+      }
+      if (character === ")") {
+        depth -= 1;
+        if (depth === 0 && group_start >= 0) {
+          parameter_group = parameter_prefix.slice(group_start + 1, index);
+          group_start = -1;
         }
       }
-      const parameter_pattern = /(?:^|,)\s*([A-Za-z][A-Za-z0-9_]*)\s*:/g;
-      let parameter_match: RegExpExecArray | null;
-      while (
-        (parameter_match = parameter_pattern.exec(parameter_group)) !== null
-      ) {
-        const parameter_name = parameter_match[1];
-        if (parameter_name !== undefined) {
-          signature_parameters.push(parameter_name);
-        }
-      }
-      const lambda = definition_text.match(
-        /=\s*(?:\(([^)]*)\)|([A-Za-z][A-Za-z0-9_]*))\s*=>\s*([A-Za-z][A-Za-z0-9_]*)\s*;?\s*$/,
-      );
-      let establishes = false;
-      if (lambda !== null) {
-        let lambda_parameter_text = lambda[1];
-        if (lambda_parameter_text === undefined) {
-          lambda_parameter_text = lambda[2];
-        }
-        if (lambda_parameter_text === undefined) lambda_parameter_text = "";
-        const lambda_parameters = lambda_parameter_text.split(",").map((
-          parameter,
-        ) => parameter.trim()).filter((parameter) => parameter.length > 0);
-        const result_name = lambda[3];
-        const expected_index = signature_parameters.indexOf(equality[1]);
-        if (
-          result_name !== undefined && expected_index >= 0 &&
-          lambda_parameters[expected_index] === result_name
-        ) {
-          establishes = true;
-        }
-      }
-      if (establishes) continue;
-      diagnostics.push(
+    }
+  }
+  const parameter_pattern =
+    /(?:^|,)\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)\s*(?=,|$)/g;
+  let parameter_match: RegExpExecArray | null;
+  while ((parameter_match = parameter_pattern.exec(parameter_group)) !== null) {
+    const parameter_name = parameter_match[1];
+    const parameter_type = parameter_match[2];
+    if (parameter_name !== undefined && parameter_type !== undefined) {
+      signature_parameters.push({
+        name: parameter_name,
+        type_name: parameter_type,
+      });
+    }
+  }
+  let result_type_name: string | undefined;
+  if (arrow_index >= 0) {
+    const result = signature.type_text.slice(arrow_index + 2).trim().match(
+      /^\(\s*result\s*:\s*([A-Za-z][A-Za-z0-9_]*)\s*\)$/,
+    );
+    if (result !== null) result_type_name = result[1];
+  }
+  if (result_type_name === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} needs explicit simple parameter and result types to certify ensures ${ensures}.`,
+        signature.span,
+      ),
+    );
+  }
+  if (
+    callable_type.params.length !== signature_parameters.length ||
+    callable_type.result.tag !== "scalar" ||
+    callable_type.result.name !== result_type_name
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} does not match the inferred callable representation required by ensures ${ensures}.`,
+        signature.span,
+      ),
+    );
+  }
+  for (let index = 0; index < signature_parameters.length; index += 1) {
+    const parameter = signature_parameters[index];
+    const inferred = callable_type.params[index];
+    expect(
+      parameter !== undefined && inferred !== undefined,
+      `Prefix signature ${signature.name} lost parameter ${index}.`,
+    );
+    if (inferred.tag !== "scalar" || inferred.name !== parameter.type_name) {
+      return fail(
         compiler_diagnostic(
           diagnostic_codes.prefix_signature_unproved,
-          `Prefix signature ${signature.name} does not establish ensures ${ensures}.`,
+          `Prefix signature ${signature.name} does not match the inferred callable representation required by ensures ${ensures}.`,
           signature.span,
         ),
       );
     }
   }
-  return diagnostics;
+  const lambda = definition_text.match(
+    /=\s*(?:\(([^)]*)\)|([A-Za-z][A-Za-z0-9_]*))\s*=>\s*([A-Za-z][A-Za-z0-9_]*)\s*;?\s*$/,
+  );
+  let result_name: string | undefined;
+  let lambda_parameters: string[] = [];
+  if (lambda !== null) {
+    let lambda_parameter_text = lambda[1];
+    if (lambda_parameter_text === undefined) {
+      lambda_parameter_text = lambda[2];
+    }
+    if (lambda_parameter_text === undefined) lambda_parameter_text = "";
+    lambda_parameters = lambda_parameter_text.split(",").map((parameter) =>
+      parameter.trim()
+    ).filter((parameter) => parameter.length > 0);
+    result_name = lambda[3];
+  }
+  const expected_name = equality[1];
+  expect(expected_name !== undefined, "Contract equality lost its parameter.");
+  const expected_index = signature_parameters.findIndex((parameter) =>
+    parameter.name === expected_name
+  );
+  const expected_parameter = signature_parameters[expected_index];
+  const establishes = result_name !== undefined && expected_index >= 0 &&
+    expected_parameter !== undefined &&
+    expected_parameter.type_name === result_type_name &&
+    lambda_parameters[expected_index] === result_name;
+  if (!establishes) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} does not establish ensures ${ensures}.`,
+        signature.span,
+      ),
+    );
+  }
+  const declarations = new Map<string, KernelType>();
+  for (const parameter of signature_parameters) {
+    declarations.set(parameter.type_name, type_sort(0));
+  }
+  declarations.set(result_type_name, type_sort(0));
+  const environment = KernelEnvironment.from(declarations);
+  const term_context = snapshot_kernel_context(
+    signature_parameters.map((parameter) => ({
+      tag: "constant" as const,
+      name: parameter.type_name,
+    })),
+  );
+  const variable = {
+    tag: "var" as const,
+    index: signature_parameters.length - expected_index - 1,
+  };
+  expect(
+    expected_parameter !== undefined,
+    "Established contract lost its expected parameter.",
+  );
+  const equality_type = {
+    tag: "constant" as const,
+    name: expected_parameter.type_name,
+  };
+  const goal = {
+    tag: "equal" as const,
+    type: equality_type,
+    left: variable,
+    right: variable,
+  };
+  return ok({
+    key: proof_key,
+    proof: Object.freeze({
+      certificate: check_proof(
+        { tag: "refl", type: equality_type, term: variable },
+        goal,
+        {
+          allow_unsafe: false,
+          environment,
+          term_context,
+        },
+      ),
+      environment,
+      term_context,
+    }),
+  });
 }
 
 function freeze_symbol_index(
@@ -694,13 +960,36 @@ function assert_plain_array(value: readonly unknown[], label: string): void {
 export function lower_duck_source(
   analysis: DuckAnalysis,
 ): Checked<DuckSemanticProgram> {
-  if (has_error_diagnostics(analysis.diagnostics)) {
+  expect(
+    Reflect.apply(weak_set_has, checked_duck_analyses, [analysis]),
+    "Duck semantic lowering requires compiler-owned analysis.",
+  );
+  const analysis_state = Reflect.apply(
+    weak_map_get,
+    checked_duck_analysis_state,
+    [analysis],
+  ) as {
+    has_errors: boolean;
+    source_fingerprint: string;
+  } | undefined;
+  expect(
+    analysis_state !== undefined,
+    "Compiler-owned Duck analysis lost its checked state.",
+  );
+  expect(
+    semantic_graph_fingerprint(analysis.source) ===
+      analysis_state.source_fingerprint,
+    "Duck analysis source changed after semantic checking.",
+  );
+  if (analysis_state.has_errors) {
     return fail(...analysis.diagnostics);
   }
   try {
     return check_source_for_gpufuck(analysis.source).map((source) => {
       const core = core_from_source(source);
-      return {
+      freeze_semantic_graph(analysis.source);
+      freeze_semantic_graph(core);
+      const program = Object.freeze({
         core,
         symbols: analysis.symbols,
         types: analysis.types,
@@ -708,7 +997,12 @@ export function lower_duck_source(
         proofs: analysis.proofs,
         origins: analysis.origins,
         function_summaries: analysis.function_summaries,
-      };
+      });
+      Reflect.apply(weak_map_set, checked_semantic_program_sources, [
+        program,
+        analysis.source,
+      ]);
+      return program;
     });
   } catch (error) {
     if (error instanceof CompilerDiagnosticError) {
@@ -716,6 +1010,86 @@ export function lower_duck_source(
     }
     throw error;
   }
+}
+
+function freeze_semantic_graph<value extends object>(root: value): value {
+  const pending: object[] = [root];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Semantic graph traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const prototype = Object.getPrototypeOf(current);
+    expect(
+      prototype === Object.prototype || prototype === Array.prototype,
+      "Semantic graphs must contain only ordinary records and arrays.",
+    );
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      expect(
+        descriptor !== undefined && descriptor.get === undefined &&
+          descriptor.set === undefined,
+        "Semantic graphs cannot contain accessor properties.",
+      );
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") {
+        pending.push(child);
+      }
+    }
+    Object.freeze(current);
+  }
+  return root;
+}
+
+function semantic_graph_fingerprint(root: object): string {
+  const cached = new WeakMap<object, string>();
+  const active = new WeakSet<object>();
+  let remaining_nodes = 100_000;
+
+  function encode(value: unknown): string {
+    if (value === null) return "null";
+    if (typeof value === "bigint") return "bigint:" + value.toString();
+    if (typeof value !== "object") {
+      return typeof value + ":" + JSON.stringify(value);
+    }
+    const existing = cached.get(value);
+    if (existing !== undefined) return existing;
+    expect(!active.has(value), "Semantic graphs cannot contain cycles.");
+    remaining_nodes -= 1;
+    expect(remaining_nodes >= 0, "Semantic graph is too large.");
+    active.add(value);
+    const prototype = Object.getPrototypeOf(value);
+    expect(
+      prototype === Object.prototype || prototype === Array.prototype,
+      "Semantic graphs must contain only ordinary records and arrays.",
+    );
+    const entries: string[] = [];
+    for (const key of Reflect.ownKeys(value)) {
+      if (Array.isArray(value) && key === "length") continue;
+      expect(
+        typeof key === "string",
+        "Semantic graphs cannot contain symbol properties.",
+      );
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      expect(
+        descriptor !== undefined && descriptor.get === undefined &&
+          descriptor.set === undefined,
+        "Semantic graphs cannot contain accessor properties.",
+      );
+      entries.push(
+        key.length.toString() + ":" + key + "=" + encode(descriptor.value),
+      );
+    }
+    active.delete(value);
+    let prefix = "object";
+    if (Array.isArray(value)) prefix = "array";
+    const result = prefix + "[" + entries.join(",") + "]";
+    cached.set(value, result);
+    return result;
+  }
+
+  return encode(root);
 }
 
 function collect_semantic_bindings(
