@@ -98,11 +98,13 @@ export type {
   SemanticBlock,
   SemanticBlockId,
   SemanticCfg,
+  SemanticExplicitOutput,
   SemanticNode,
   SemanticNodeId,
   SemanticOperation,
   SemanticPhiInput,
   SemanticTerminator,
+  SemanticValue,
 } from "./frontend/semantic_cfg.ts";
 export {
   computational_existential_family_type,

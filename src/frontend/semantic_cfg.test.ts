@@ -1,7 +1,12 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import { SemanticCfgBuilder } from "./semantic_cfg.ts";
+import type { ValueId } from "./semantic_identity.ts";
+import type { RepresentationType } from "./representation_type.ts";
 
 const origin = "expression:0:1:0" as never;
+const span = { start: 0, end: 1 };
+const bool_type = { tag: "scalar", name: "Bool" } as const;
+const i32_type = { tag: "scalar", name: "I32" } as const;
 
 Deno.test("semantic CFG preserves typed operations and stable value identities", () => {
   const builder = new SemanticCfgBuilder("cfg-test");
@@ -12,9 +17,10 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
   const condition = builder.add_node(
     entry,
     origin,
+    span,
     { tag: "constant", value: true },
     [],
-    1,
+    [bool_type],
   )[0];
   if (condition === undefined) throw new Error("missing condition value");
   builder.connect(entry, when_true);
@@ -30,16 +36,18 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
   const true_value = builder.add_node(
     when_true,
     "true:1:2:0" as never,
+    { start: 1, end: 2 },
     { tag: "constant", value: 1 },
     [],
-    1,
+    [i32_type],
   )[0];
   const false_value = builder.add_node(
     when_false,
     "false:2:3:0" as never,
+    { start: 2, end: 3 },
     { tag: "constant", value: 2 },
     [],
-    1,
+    [i32_type],
   )[0];
   if (true_value === undefined || false_value === undefined) {
     throw new Error("missing branch value");
@@ -49,14 +57,17 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
   const phi = builder.add_phi(
     joined,
     "join:3:4:0" as never,
+    { start: 3, end: 4 },
     new Map([[when_true, true_value], [when_false, false_value]]),
+    i32_type,
   );
   const output = builder.add_node(
     joined,
     "join:3:4:0" as never,
+    { start: 3, end: 4 },
     { tag: "primitive", name: "identity" },
     [phi],
-    1,
+    [i32_type],
   )[0];
   builder.terminate(joined, { tag: "return", value: output });
   const cfg = builder.finish();
@@ -68,6 +79,50 @@ Deno.test("semantic CFG preserves typed operations and stable value identities",
   });
   assert_equals(cfg.blocks[3]?.nodes[0]?.operation.tag, "phi");
   assert_equals(cfg.blocks[3]?.nodes[1]?.inputs, [phi]);
+  assert_equals(cfg.blocks[0]?.nodes[0]?.span, span);
+  assert_equals(cfg.values.map((value) => value.type), [
+    bool_type,
+    i32_type,
+    i32_type,
+    i32_type,
+    i32_type,
+  ]);
+  assert_equals(cfg.values[0]?.origin, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+});
+
+Deno.test("semantic CFG parameters are typed values available from entry", () => {
+  const builder = new SemanticCfgBuilder("parameter");
+  const entry = builder.add_block(undefined);
+  const parameter = "external-value" as ValueId;
+  builder.add_parameter(parameter, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const output = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "primitive", name: "identity" },
+    [parameter],
+    [i32_type],
+  )[0];
+  builder.terminate(entry, { tag: "return", value: output });
+  const cfg = builder.finish();
+  assert_equals(cfg.parameters, [parameter]);
+  assert_equals(cfg.values[0], {
+    value: parameter,
+    type: i32_type,
+    origin: {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    },
+  });
 });
 
 Deno.test("semantic CFG rejects disconnected terminators and missing phis", () => {
@@ -79,7 +134,7 @@ Deno.test("semantic CFG rejects disconnected terminators and missing phis", () =
     "CFG jump target is not connected.",
   );
   assert_throws(
-    () => builder.add_phi(block, origin, new Map()),
+    () => builder.add_phi(block, origin, span, new Map(), i32_type),
     "CFG phi needs a live predecessor.",
   );
 });
@@ -92,13 +147,24 @@ Deno.test("semantic CFG rejects forged values and incomplete phi coverage", () =
   const join = builder.add_block("join:3:4:0" as never);
   assert_throws(
     () =>
-      builder.add_node(entry, origin, { tag: "primitive", name: "copy" }, [
-        "forged" as never,
-      ], 1),
+      builder.add_node(
+        entry,
+        origin,
+        span,
+        { tag: "primitive", name: "copy" },
+        ["forged" as never],
+        [i32_type],
+      ),
     "CFG input ValueId forged is undefined.",
   );
-  const condition =
-    builder.add_node(entry, origin, { tag: "constant", value: true }, [], 1)[0];
+  const condition = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
   if (condition === undefined) throw new Error("missing condition value");
   builder.connect(entry, left);
   builder.connect(entry, right);
@@ -112,11 +178,24 @@ Deno.test("semantic CFG rejects forged values and incomplete phi coverage", () =
   });
   builder.terminate(left, { tag: "jump", target: join });
   builder.terminate(right, { tag: "jump", target: join });
-  const left_value =
-    builder.add_node(join, origin, { tag: "constant", value: 1 }, [], 1)[0];
+  const left_value = builder.add_node(
+    join,
+    origin,
+    span,
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
   if (left_value === undefined) throw new Error("missing left value");
   assert_throws(
-    () => builder.add_phi(join, origin, new Map([[left, left_value]])),
+    () =>
+      builder.add_phi(
+        join,
+        origin,
+        span,
+        new Map([[left, left_value]]),
+        i32_type,
+      ),
     "CFG phi must cover every live predecessor.",
   );
 });
@@ -127,14 +206,21 @@ Deno.test("semantic CFG rejects branch-local values crossing a phi edge", () => 
   const left = builder.add_block("left:1:2:0" as never);
   const right = builder.add_block("right:2:3:0" as never);
   const join = builder.add_block("join:3:4:0" as never);
-  const condition =
-    builder.add_node(entry, origin, { tag: "constant", value: true }, [], 1)[0];
+  const condition = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
   const right_value = builder.add_node(
     right,
     "right:2:3:0" as never,
+    { start: 2, end: 3 },
     { tag: "constant", value: 9 },
     [],
-    1,
+    [i32_type],
   )[0];
   if (condition === undefined || right_value === undefined) {
     throw new Error("missing CFG value");
@@ -154,7 +240,9 @@ Deno.test("semantic CFG rejects branch-local values crossing a phi edge", () => 
   builder.add_phi(
     join,
     "join:3:4:0" as never,
+    { start: 3, end: 4 },
     new Map([[left, right_value], [right, right_value]]),
+    i32_type,
   );
   builder.terminate(join, { tag: "return", value: undefined });
   assert_throws(
@@ -171,16 +259,19 @@ Deno.test("semantic CFG rechecks phi coverage after late edges", () => {
   const first_value = builder.add_node(
     first,
     "first:0:1:0" as never,
+    span,
     { tag: "constant", value: 1 },
     [],
-    1,
+    [i32_type],
   )[0];
   if (first_value === undefined) throw new Error("missing first value");
   builder.connect(first, join);
   const phi = builder.add_phi(
     join,
     "join:2:3:0" as never,
+    { start: 2, end: 3 },
     new Map([[first, first_value]]),
+    i32_type,
   );
   builder.connect(second, join);
   builder.terminate(first, { tag: "jump", target: join });
@@ -200,12 +291,223 @@ Deno.test("semantic CFG constants reject mutable host values", () => {
       builder.add_node(
         block,
         origin,
+        span,
         { tag: "constant", value: { forged: true } as never },
         [],
-        1,
+        [i32_type],
       ),
     "CFG constants must be primitive values.",
   );
+});
+
+Deno.test("semantic CFG rejects non-boolean branch conditions", () => {
+  const builder = new SemanticCfgBuilder("branch-type");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("true:1:2:0" as never);
+  const when_false = builder.add_block("false:2:3:0" as never);
+  const condition = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (condition === undefined) throw new Error("missing condition value");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  assert_throws(
+    () =>
+      builder.terminate(entry, {
+        tag: "branch",
+        condition,
+        when_true,
+        when_false,
+      }),
+    "must have representation Bool",
+  );
+});
+
+Deno.test("semantic CFG rejects duplicate explicit output identities", () => {
+  const builder = new SemanticCfgBuilder("duplicate-output");
+  const entry = builder.add_block(origin);
+  const output = {
+    value: "same-output" as ValueId,
+    origin: {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    },
+  };
+  assert_throws(
+    () =>
+      builder.add_node(
+        entry,
+        origin,
+        span,
+        { tag: "primitive", name: "split" },
+        [],
+        [i32_type, i32_type],
+        [output, output],
+      ),
+    "is already defined",
+  );
+  const retried = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "primitive", name: "split" },
+    [],
+    [i32_type],
+  )[0];
+  const fresh_builder = new SemanticCfgBuilder("duplicate-output");
+  const fresh_entry = fresh_builder.add_block(origin);
+  const fresh = fresh_builder.add_node(
+    fresh_entry,
+    origin,
+    span,
+    { tag: "primitive", name: "split" },
+    [],
+    [i32_type],
+  )[0];
+  assert_equals(retried, fresh);
+});
+
+Deno.test("semantic CFG rejects representation key collisions at phis", () => {
+  const builder = new SemanticCfgBuilder("phi-type-collision");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("true:1:2:0" as never);
+  const when_false = builder.add_block("false:2:3:0" as never);
+  const joined = builder.add_block("join:3:4:0" as never);
+  const condition = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: true },
+    [],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("missing condition value");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.connect(when_true, joined);
+  builder.connect(when_false, joined);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const one_field = {
+    tag: "product",
+    fields: [{ label: "a:scalar(I32),b", type: i32_type }],
+  } as const;
+  const two_fields = {
+    tag: "product",
+    fields: [
+      { label: "a", type: i32_type },
+      { label: "b", type: i32_type },
+    ],
+  } as const;
+  const true_value = builder.add_node(
+    when_true,
+    "true:1:2:0" as never,
+    { start: 1, end: 2 },
+    { tag: "constant", value: 1 },
+    [],
+    [one_field],
+  )[0];
+  const false_value = builder.add_node(
+    when_false,
+    "false:2:3:0" as never,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 2 },
+    [],
+    [one_field],
+  )[0];
+  if (true_value === undefined || false_value === undefined) {
+    throw new Error("missing branch value");
+  }
+  assert_throws(
+    () =>
+      builder.add_phi(
+        joined,
+        "join:3:4:0" as never,
+        { start: 3, end: 4 },
+        new Map([[when_true, true_value], [when_false, false_value]]),
+        two_fields,
+      ),
+    "has an incompatible type",
+  );
+});
+
+Deno.test("rejected semantic phis leave the builder unchanged", () => {
+  const builder = new SemanticCfgBuilder("phi-retry");
+  const entry = builder.add_block(origin);
+  const joined = builder.add_block("join:3:4:0" as never);
+  const input = builder.add_node(
+    entry,
+    origin,
+    span,
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (input === undefined) throw new Error("missing input value");
+  builder.connect(entry, joined);
+  builder.terminate(entry, { tag: "jump", target: joined });
+  const inherited_type = Object.create({
+    tag: "scalar",
+    name: "I32",
+  }) as RepresentationType;
+  assert_throws(
+    () =>
+      builder.add_phi(
+        joined,
+        "join:3:4:0" as never,
+        { start: 3, end: 4 },
+        new Map([[entry, input]]),
+        inherited_type,
+      ),
+    "plain record",
+  );
+  const retried = builder.add_phi(
+    joined,
+    "join:3:4:0" as never,
+    { start: 3, end: 4 },
+    new Map([[entry, input]]),
+    i32_type,
+  );
+  builder.terminate(joined, { tag: "return", value: retried });
+  const cfg = builder.finish();
+
+  const fresh_builder = new SemanticCfgBuilder("phi-retry");
+  const fresh_entry = fresh_builder.add_block(origin);
+  const fresh_joined = fresh_builder.add_block("join:3:4:0" as never);
+  const fresh_input = fresh_builder.add_node(
+    fresh_entry,
+    origin,
+    span,
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (fresh_input === undefined) throw new Error("missing fresh input value");
+  fresh_builder.connect(fresh_entry, fresh_joined);
+  fresh_builder.terminate(fresh_entry, {
+    tag: "jump",
+    target: fresh_joined,
+  });
+  const fresh = fresh_builder.add_phi(
+    fresh_joined,
+    "join:3:4:0" as never,
+    { start: 3, end: 4 },
+    new Map([[fresh_entry, fresh_input]]),
+    i32_type,
+  );
+  assert_equals(retried, fresh);
+  assert_equals(cfg.blocks[1]?.nodes.length, 1);
+  assert_equals(cfg.values.length, 2);
 });
 
 Deno.test("semantic CFG rejects non-numeric block IDs", () => {

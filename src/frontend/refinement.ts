@@ -736,7 +736,7 @@ function snapshot_aggregate_value(
   });
 }
 
-function representation_equal(
+export function representation_equal(
   left: RepresentationType,
   right: RepresentationType,
 ): boolean {
