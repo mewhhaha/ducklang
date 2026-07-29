@@ -11,8 +11,21 @@ Deno.test("prefix source extraction preserves clauses and masks declarations", (
     "let identity = value => value;\n";
   const metadata = extract_prefix_source_metadata(parse_duck_source(source));
   assert_equals(metadata.signatures[0]?.name, "identity");
-  assert_equals(metadata.signatures[0]?.requires, ["value = value"]);
-  assert_equals(metadata.signatures[0]?.ensures, ["result = value"]);
+  assert_equals(metadata.signatures[0]?.requires[0]?.tag, "equal");
+  assert_equals(metadata.signatures[0]?.ensures[0]?.tag, "equal");
+  const requirement = metadata.signatures[0]?.requires[0];
+  const guarantee = metadata.signatures[0]?.ensures[0];
+  if (requirement === undefined || guarantee === undefined) {
+    throw new Error("Expected structured contract clauses.");
+  }
+  assert_equals(
+    source.slice(requirement.span.start, requirement.span.end),
+    "value = value",
+  );
+  assert_equals(
+    source.slice(guarantee.span.start, guarantee.span.end),
+    "result = value",
+  );
   assert_equals(metadata.definitions[0]?.name, "identity");
   assert_equals(metadata.masked_source.includes("let identity"), true);
   assert_equals(metadata.masked_source.includes("ensures"), false);
@@ -32,8 +45,8 @@ Deno.test("prefix source extraction handles non-space clause separators", () => 
     "ensures\nresult = value\n" +
     "let f = value => value;\n";
   const metadata = extract_prefix_source_metadata(parse_duck_source(source));
-  assert_equals(metadata.signatures[0]?.requires, ["value = value"]);
-  assert_equals(metadata.signatures[0]?.ensures, ["result = value"]);
+  assert_equals(metadata.signatures[0]?.requires[0]?.tag, "equal");
+  assert_equals(metadata.signatures[0]?.ensures[0]?.tag, "equal");
 });
 
 Deno.test("prefix source extraction retains decreases clauses", () => {
@@ -42,7 +55,17 @@ Deno.test("prefix source extraction retains decreases clauses", () => {
     "decreases value\n" +
     "let f = value => value;\n";
   const metadata = extract_prefix_source_metadata(parse_duck_source(source));
-  assert_equals(metadata.signatures[0]?.decreases, ["value", "value"]);
+  assert_equals(
+    metadata.signatures[0]?.decreases.map((metric) => metric.text),
+    ["value", "value"],
+  );
+  assert_equals(
+    metadata.signatures[0]?.decreases.map((metric) => metric.shape),
+    [
+      { tag: "name", name: "value" },
+      { tag: "name", name: "value" },
+    ],
+  );
   const signature = metadata.signatures[0];
   if (signature === undefined) throw new Error("Expected extracted signature.");
   const result = associate_prefix_signatures(
@@ -71,19 +94,30 @@ Deno.test("prefix source extraction keeps adjacent clauses separate", () => {
     "let f = value => value;\n";
   const signature =
     extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
-  assert_equals(signature?.requires, ["value = value"]);
-  assert_equals(signature?.ensures, ["result = value"]);
+  assert_equals(signature?.requires[0]?.tag, "equal");
+  assert_equals(signature?.ensures[0]?.tag, "equal");
 });
 
-Deno.test("prefix source extraction diagnoses an empty clause", () => {
+Deno.test("prefix source extraction does not invent an empty clause", () => {
   const source = "type f = (value: I32) -> (result: I32)\n" +
     "requires\n" +
     "ensures result = value\n" +
     "let f = value => value;\n";
-  const signature =
-    extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
-  assert_equals(signature?.requires, ["false"]);
-  assert_equals(signature?.ensures, ["result = value"]);
+  const parsed = parse_duck_source(source);
+  const signature = extract_prefix_source_metadata(parsed).signatures[0];
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a proposition before the next clause",
+    span: {
+      start: source.indexOf("requires") + "requires".length,
+      end: source.indexOf("requires") + "requires".length,
+    },
+  }]);
+  assert_equals(signature?.requires[0]?.tag, "holds");
+  if (signature?.requires[0]?.tag !== "holds") {
+    throw new Error("Expected the explicit requires proposition.");
+  }
+  assert_equals(signature.requires[0].value.text, "ensures");
+  assert_equals(signature.ensures, []);
 });
 
 Deno.test("prefix source extraction separates inline clauses from result types", () => {
@@ -91,8 +125,11 @@ Deno.test("prefix source extraction separates inline clauses from result types",
     "let f = value => value;\n";
   const signature =
     extract_prefix_source_metadata(parse_duck_source(source)).signatures[0];
-  assert_equals(signature?.type_text, "(value: I32) -> I32");
-  assert_equals(signature?.ensures, ["false"]);
+  assert_equals(signature?.type.parameters[0]?.type.text, "I32");
+  assert_equals(signature?.type.parameters[0]?.type.canonical, "I32");
+  assert_equals(signature?.type.result.type.text, "I32");
+  assert_equals(signature?.type.result.type.canonical, "I32");
+  assert_equals(signature?.ensures[0]?.tag, "holds");
 });
 
 Deno.test("prefix source extraction follows structural binding names", () => {
@@ -149,4 +186,16 @@ Deno.test("prefix source extraction accepts a contextual fixity name", () => {
   );
   assert_equals(diagnostics_of(associated), []);
   assert_equals(checked_value(associated)?.size, 1);
+});
+
+Deno.test("prefix type canonicalization preserves application boundaries", () => {
+  const metadata = extract_prefix_source_metadata(parse_duck_source(
+    "type Box a = a\n" +
+      "type p = forall (a: Type). (value: Box a) -> Prop\n" +
+      "fact p = value => True;\n",
+  ));
+  assert_equals(
+    metadata.signatures[0]?.type.parameters[0]?.type.canonical,
+    "Box a",
+  );
 });

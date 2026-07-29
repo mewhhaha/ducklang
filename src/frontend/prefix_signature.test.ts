@@ -4,6 +4,7 @@ import {
   associate_prefix_signatures,
   type PrefixDefinition,
   type PrefixSignature,
+  type PrefixTerm,
 } from "./prefix_signature.ts";
 
 function signature(overrides: Partial<PrefixSignature> = {}): PrefixSignature {
@@ -11,7 +12,27 @@ function signature(overrides: Partial<PrefixSignature> = {}): PrefixSignature {
     name: "identity",
     kind: "let",
     scope: "root",
-    type_text: "(I32) -> I32",
+    type: {
+      binders: [],
+      parameters: [{
+        name: "value",
+        type: {
+          text: "I32",
+          canonical: "I32",
+          span: { start: 1, end: 4 },
+        },
+        span: { start: 1, end: 10 },
+      }],
+      result: {
+        type: {
+          text: "I32",
+          canonical: "I32",
+          span: { start: 11, end: 14 },
+        },
+        span: { start: 11, end: 14 },
+      },
+      span: { start: 1, end: 14 },
+    },
     requires: [],
     ensures: [],
     decreases: [],
@@ -20,7 +41,9 @@ function signature(overrides: Partial<PrefixSignature> = {}): PrefixSignature {
   };
 }
 
-function definition(overrides: Partial<PrefixDefinition> = {}): PrefixDefinition {
+function definition(
+  overrides: Partial<PrefixDefinition> = {},
+): PrefixDefinition {
   return {
     name: "identity",
     kind: "let",
@@ -79,7 +102,10 @@ Deno.test("prefix signature mismatches retain related definition spans", () => {
     [signature()],
     [definition({ scope: "nested" })],
   );
-  assert_equals(diagnostics_of(result)[0]?.related?.[0]?.span, definition({ scope: "nested" }).span);
+  assert_equals(
+    diagnostics_of(result)[0]?.related?.[0]?.span,
+    definition({ scope: "nested" }).span,
+  );
 });
 
 Deno.test("prefix signature snapshots do not trust changing proxy fields", () => {
@@ -90,7 +116,14 @@ Deno.test("prefix signature snapshots do not trust changing proxy fields", () =>
       const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
       if (key === "kind") {
         reads += 1;
-        if (reads > 1) return { configurable: true, enumerable: true, writable: true, value: "forged" };
+        if (reads > 1) {
+          return {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: "forged",
+          };
+        }
       }
       return descriptor;
     },
@@ -101,9 +134,42 @@ Deno.test("prefix signature snapshots do not trust changing proxy fields", () =>
   );
 });
 
+Deno.test("prefix signature snapshots reject cyclic logical terms", () => {
+  const cyclic: PrefixTerm = {
+    text: "(value)",
+    references: ["value"],
+    shape: { tag: "unsupported" },
+    span: { start: 4, end: 11 },
+  };
+  cyclic.shape = { tag: "parenthesized", value: cyclic };
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature({ decreases: [cyclic] })],
+        [definition()],
+      ),
+    "Prefix term cannot be cyclic",
+  );
+});
+
 Deno.test("prefix signatures reject repeated decreases clauses", () => {
   const result = associate_prefix_signatures(
-    [signature({ decreases: ["n", "m"] })],
+    [signature({
+      decreases: [
+        {
+          text: "n",
+          references: ["n"],
+          shape: { tag: "name", name: "n" },
+          span: { start: 4, end: 5 },
+        },
+        {
+          text: "m",
+          references: ["m"],
+          shape: { tag: "name", name: "m" },
+          span: { start: 6, end: 7 },
+        },
+      ],
+    })],
     [definition()],
   );
   assert_equals(diagnostics_of(result)[0]?.code, "DUCK2603");

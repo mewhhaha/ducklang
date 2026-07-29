@@ -1,5 +1,11 @@
+import { Applicative } from "@mewhhaha/typeclasses";
 import type { Core } from "./core/ast.ts";
 import { core_from_source } from "./core/from_source.ts";
+import {
+  integer_maximum,
+  integer_type_from_name,
+  integer_type_name,
+} from "./integer.ts";
 import {
   compiler_diagnostic,
   type CompilerDiagnostic,
@@ -22,6 +28,7 @@ import {
   is_trusted_baba_parse_result,
 } from "./frontend/baba_parser.ts";
 import type { Source as SourceNode } from "./frontend/ast.ts";
+import type { Stmt } from "./frontend/ast.ts";
 import {
   analyze_baba_semantics,
   type BabaSemanticAnalyzeOptions,
@@ -32,8 +39,19 @@ import {
   type EntityId,
 } from "./frontend/binding_index.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
+import { substitute_type_expr } from "./frontend/baba_declaration_lower.ts";
+import { lower_baba_type_reference } from "./frontend/baba_type_lower.ts";
+import { apply_function_result_context } from "./frontend/function_context.ts";
+import { format_type_expr } from "./frontend/type_expr.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
+import { parse_number_expr } from "./frontend/number_literal.ts";
+import { is_snake_case } from "./frontend/names.ts";
+import {
+  representation_type_of_source_type,
+  resolved_name_of_source_type,
+  source_facts,
+} from "./frontend/source_facts.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import type {
   SemanticCallableControlFlow,
@@ -41,8 +59,10 @@ import type {
 } from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
+  has_source_span,
   mark_source_span,
   mark_source_syntax,
+  source_span,
   type SourceSpan,
   type SourceSyntax,
   type SyntaxDiagnostic,
@@ -58,6 +78,7 @@ import {
 } from "./frontend/semantic_identity.ts";
 import {
   type RepresentationType,
+  same_representation_type,
   snapshot_representation_type,
 } from "./frontend/representation_type.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
@@ -73,10 +94,13 @@ import {
   type_sort,
 } from "./frontend/kernel_terms.ts";
 import type { FunctionFactSummary } from "./frontend/function_summary.ts";
+import type { TypeExpr } from "./type_syntax.ts";
 import {
   associate_prefix_signatures,
   type PrefixDefinition,
+  type PrefixProposition,
   type PrefixSignature,
+  type PrefixTypeReference,
 } from "./frontend/prefix_signature.ts";
 import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
 
@@ -212,6 +236,12 @@ export function analyze_duck_source(
 ): DuckAnalysis {
   const stable_input = snapshot_baba_parse_result(parsed);
   const source_metadata = extract_prefix_source_metadata(stable_input);
+  const prefix_signatures = source_metadata.signatures.filter((signature) =>
+    !span_contains_parse_diagnostic(signature.span, stable_input.diagnostics)
+  );
+  const prefix_definitions = source_metadata.definitions.filter((definition) =>
+    !span_contains_parse_diagnostic(definition.span, stable_input.diagnostics)
+  );
   const lowering = lower_baba_source(stable_input);
   const lowering_diagnostics = diagnostics_of(lowering);
   let source = checked_value(lowering);
@@ -219,6 +249,14 @@ export function analyze_duck_source(
     source = { tag: "program", statements: [] };
     mark_source_span(source, { start: 0, end: stable_input.cst.text.length });
   }
+  const prefix_type_application = apply_prefix_signature_types(
+    source,
+    stable_input.cst.root,
+    stable_input.cst.text,
+    prefix_signatures,
+    prefix_definitions,
+  );
+  const prefix_type_diagnostics = diagnostics_of(prefix_type_application);
   const syntax = baba_source_syntax(stable_input);
   mark_source_syntax(source, syntax);
   record_baba_source_name_sites(source, syntax);
@@ -232,7 +270,8 @@ export function analyze_duck_source(
   let semantic_diagnostics: SourceDiagnostic[] = [];
   if (
     stable_input.diagnostics.length === 0 &&
-    lowering_diagnostics.length === 0
+    lowering_diagnostics.length === 0 &&
+    prefix_type_diagnostics.length === 0
   ) {
     semantic_diagnostics = analyze_baba_semantics(
       analysis_source,
@@ -245,10 +284,6 @@ export function analyze_duck_source(
     syntax_diagnostics: [...stable_input.diagnostics],
     diagnostics: diagnostic_sequence(semantic_diagnostics, options.uri),
   };
-  const prefix_signatures: PrefixSignature[] = [...source_metadata.signatures];
-  const prefix_definitions: PrefixDefinition[] = [
-    ...source_metadata.definitions,
-  ];
   // Definitions are syntax-owned. Caller-supplied metadata must not be able
   // to manufacture a matching definition and suppress a source diagnostic.
   const signature_diagnostics = diagnostics_of(
@@ -277,6 +312,8 @@ export function analyze_duck_source(
   const contract_validation = validate_prefix_contracts(
     prefix_signatures,
     prefix_definitions,
+    source_analysis.source,
+    stable_input.cst.root,
     stable_input.cst.text,
     symbols,
     types,
@@ -292,6 +329,7 @@ export function analyze_duck_source(
     ),
     ...source_analysis.diagnostics,
     ...lowering_diagnostics,
+    ...prefix_type_diagnostics,
     ...signature_diagnostics,
     ...contract_validation.diagnostics,
   ], options.uri);
@@ -338,9 +376,333 @@ export function analyze_duck_source(
   return analysis;
 }
 
+function span_contains_parse_diagnostic(
+  span: SourceSpan,
+  diagnostics: readonly SyntaxDiagnostic[],
+): boolean {
+  return diagnostics.some((diagnostic) =>
+    diagnostic.span.start >= span.start &&
+    diagnostic.span.start <= span.end
+  );
+}
+
+function apply_prefix_signature_types(
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+): Checked<SourceNode> {
+  const applications: Checked<null>[] = [];
+  for (const signature of signatures) {
+    const binder_check = check_prefix_binder_names(signature, definitions);
+    applications.push(binder_check.map(() => null));
+    if (diagnostics_of(binder_check).length > 0) continue;
+    if (signature.kind === "fact" || signature.kind === "opaque fact") {
+      continue;
+    }
+    const definition = definitions.find((candidate) =>
+      candidate.name === signature.name &&
+      candidate.scope === signature.scope &&
+      candidate.span.start >= signature.span.end
+    );
+    if (definition === undefined) continue;
+    const parameter_type_check = check_prefix_callable_parameter_types(
+      signature,
+      definition,
+      source,
+      cst_root,
+      source_text,
+    );
+    applications.push(parameter_type_check.map(() => null));
+    if (diagnostics_of(parameter_type_check).length > 0) continue;
+    const binding = find_source_binding(
+      source,
+      signature.name,
+      definition.span,
+    );
+    if (binding === undefined) {
+      applications.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_signature_mismatch,
+            `Prefix signature ${signature.name} cannot predeclare this structural or mutual definition.`,
+            definition.span,
+            [{ message: "Prefix signature is here.", span: signature.span }],
+          ),
+        ),
+      );
+      continue;
+    }
+    if (
+      binding.annotation !== undefined ||
+      binding.type_annotation !== undefined
+    ) {
+      applications.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_signature_mismatch,
+            `Named callable ${signature.name} cannot combine a prefix signature with an inline annotation.`,
+            definition.span,
+            [{ message: "Prefix signature is here.", span: signature.span }],
+          ),
+        ),
+      );
+      continue;
+    }
+    const parameter_checks = signature.type.parameters.map((parameter) => {
+      const type_node = find_cst_node(
+        cst_root,
+        parameter.type.span,
+        "type_reference",
+      );
+      expect(
+        type_node !== undefined,
+        `Prefix parameter ${parameter.name} lost its Baba type node.`,
+      );
+      return lower_baba_type_reference(type_node, source_text);
+    });
+    const result_node = find_cst_node(
+      cst_root,
+      signature.type.result.type.span,
+      "type_reference",
+    );
+    expect(
+      result_node !== undefined,
+      `Prefix signature ${signature.name} lost its Baba result type node.`,
+    );
+    const result_check = lower_baba_type_reference(result_node, source_text);
+    let lowered_parameters: Checked<TypeExpr[]> = ok([]);
+    for (const parameter_check of parameter_checks) {
+      lowered_parameters = Applicative.lift(
+        (parameters: TypeExpr[], parameter: TypeExpr) => [
+          ...parameters,
+          parameter,
+        ],
+        lowered_parameters,
+        parameter_check,
+      );
+    }
+    applications.push(
+      Applicative.lift(
+        (parameters: TypeExpr[], result: TypeExpr) => {
+          let parameter_type: TypeExpr;
+          if (parameters.length === 1) {
+            const only_parameter = parameters[0];
+            expect(
+              only_parameter !== undefined,
+              `Prefix signature ${signature.name} lost its parameter type.`,
+            );
+            parameter_type = only_parameter;
+          } else {
+            parameter_type = {
+              tag: "product",
+              entries: parameters.map((type_expr) => ({ type_expr })),
+              value_pack: true,
+            };
+            mark_source_span(parameter_type, signature.type.span);
+          }
+          let annotation: TypeExpr = {
+            tag: "arrow",
+            param: parameter_type,
+            effects: undefined,
+            result,
+          };
+          mark_source_span(annotation, signature.type.span);
+          const type_parameters = signature.type.binders.filter((binder) =>
+            binder.type.canonical === "Type"
+          ).map((binder) => binder.name);
+          if (type_parameters.length > 0) {
+            annotation = {
+              tag: "forall",
+              params: type_parameters,
+              body: annotation,
+            };
+            mark_source_span(annotation, signature.type.span);
+          }
+          binding.annotation = format_type_expr(annotation);
+          binding.type_annotation = annotation;
+          if (binding.pattern?.tag === "binding") {
+            binding.pattern.annotation = binding.annotation;
+            binding.pattern.type_annotation = annotation;
+          }
+          binding.value = apply_function_result_context(
+            binding.value,
+            annotation,
+          );
+          return null;
+        },
+        lowered_parameters,
+        result_check,
+      ),
+    );
+  }
+  return all(applications).map(() => source);
+}
+
+function find_source_binding(
+  root: object,
+  name: string,
+  span: SourceSpan,
+): Extract<Stmt, { tag: "bind" }> | undefined {
+  const pending: object[] = [root];
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    expect(current !== undefined, "Prefix binding traversal lost a node.");
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (
+      "tag" in current && current.tag === "bind" &&
+      "name" in current && current.name === name &&
+      has_source_span(current)
+    ) {
+      const current_span = source_span(current);
+      if (current_span.start === span.start && current_span.end === span.end) {
+        return current as Extract<Stmt, { tag: "bind" }>;
+      }
+    }
+    for (const key of Reflect.ownKeys(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (
+        descriptor === undefined || descriptor.get !== undefined ||
+        descriptor.set !== undefined
+      ) {
+        continue;
+      }
+      const child = descriptor.value;
+      if (child !== null && typeof child === "object") pending.push(child);
+    }
+  }
+  return undefined;
+}
+
+function find_cst_node(
+  node: BabaCstNode | undefined,
+  span: SourceSpan,
+  kind: string,
+): BabaCstNode | undefined {
+  if (
+    node === undefined || node.start > span.start || node.end < span.end
+  ) {
+    return undefined;
+  }
+  if (
+    node.kind === kind && node.start === span.start && node.end === span.end
+  ) {
+    return node;
+  }
+  for (const child of node.children) {
+    const found = find_cst_node(child, span, kind);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function check_prefix_callable_parameter_types(
+  signature: PrefixSignature,
+  definition: PrefixDefinition,
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+): Checked<undefined> {
+  const parameters = definition.callable_parameters;
+  const parameter_types = definition.callable_parameter_types;
+  if (parameters === undefined || parameter_types === undefined) {
+    return ok(undefined);
+  }
+  if (parameters.length !== signature.type.parameters.length) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} does not match its definition parameters.`,
+        definition.span,
+        [{ message: "Signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  expect(
+    parameter_types.length === parameters.length,
+    `Callable ${signature.name} parameter metadata is misaligned.`,
+  );
+  const checks: Checked<undefined>[] = [];
+  for (let index = 0; index < parameters.length; index += 1) {
+    const parameter = parameters[index];
+    const declared = signature.type.parameters[index];
+    const inline_type = parameter_types[index];
+    expect(
+      parameter !== undefined && declared !== undefined,
+      `Prefix callable ${signature.name} lost parameter ${index}.`,
+    );
+    if (
+      inline_type === undefined ||
+      inline_type.canonical === declared.type.canonical
+    ) {
+      continue;
+    }
+    const inline_node = find_cst_node(
+      cst_root,
+      inline_type.span,
+      "type_reference",
+    );
+    const declared_node = find_cst_node(
+      cst_root,
+      declared.type.span,
+      "type_reference",
+    );
+    expect(
+      inline_node !== undefined && declared_node !== undefined,
+      `Callable ${signature.name} lost a parameter type node.`,
+    );
+    const inline_check = lower_baba_type_reference(inline_node, source_text);
+    const declared_check = lower_baba_type_reference(
+      declared_node,
+      source_text,
+    );
+    const lowered_types = Applicative.lift(
+      (inline_expression: TypeExpr, declared_expression: TypeExpr) => {
+        return [inline_expression, declared_expression] as const;
+      },
+      inline_check,
+      declared_check,
+    );
+    const type_expressions = checked_value(lowered_types);
+    if (type_expressions === undefined) {
+      checks.push(lowered_types.map(() => undefined));
+      continue;
+    }
+    const [inline_expression, declared_expression] = type_expressions;
+    const inline_name = resolved_name_of_source_type(
+      source,
+      inline_expression,
+    );
+    const declared_name = resolved_name_of_source_type(
+      source,
+      declared_expression,
+    );
+    if (inline_name !== "unknown" && inline_name === declared_name) continue;
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Callable ${signature.name} parameter ${parameter} declares ${inline_type.text} but its prefix signature requires ${declared.type.text}.`,
+          inline_type.span,
+          [{
+            message: "Prefix parameter is here.",
+            span: declared.type.span,
+          }],
+        ),
+      ),
+    );
+  }
+  return all(checks).map(() => undefined);
+}
+
 function validate_prefix_contracts(
   signatures: readonly PrefixSignature[],
   definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
   source_text: string,
   symbols: ReadonlyMap<string, readonly ValueId[]>,
   types: ReadonlyMap<ValueId, RepresentationType>,
@@ -349,10 +711,205 @@ function validate_prefix_contracts(
   diagnostics: CompilerDiagnostic[];
   proofs: ReadonlyMap<string, CheckedKernelCertificate>;
 } {
+  const transparent_aliases = new Map<string, string>();
+  const transparent_type_definitions = new Map<
+    string,
+    TransparentTypeDefinition
+  >();
+  const declared_type_names = new Set<string>();
+  let declarations = source.declarations;
+  if (declarations === undefined) declarations = [];
+  for (const declaration of declarations) {
+    if (declaration.tag !== "type") continue;
+    declared_type_names.add(declaration.name);
+    if (
+      declaration.body.tag !== "alias" || declaration.body.opaque === true
+    ) continue;
+    const declaration_node = find_cst_node(
+      cst_root,
+      source_span(declaration),
+      "type_declaration_statement",
+    );
+    expect(
+      declaration_node !== undefined,
+      `Transparent type ${declaration.name} lost its Baba declaration.`,
+    );
+    const body_node = declaration_node.children.find((child) =>
+      child.kind === "type_reference"
+    );
+    expect(
+      body_node !== undefined,
+      `Transparent type ${declaration.name} lost its Baba body.`,
+    );
+    const body = checked_value(
+      lower_baba_type_reference(body_node, source_text),
+    );
+    expect(
+      body !== undefined,
+      `Transparent type ${declaration.name} has an invalid lowered body.`,
+    );
+    transparent_type_definitions.set(declaration.name, {
+      parameters: declaration.params,
+      body,
+    });
+    if (declaration.params.length === 0) {
+      transparent_aliases.set(
+        declaration.name,
+        declaration.body.type_name,
+      );
+    }
+  }
+  const resolved_signatures = signatures.map((signature) => {
+    const type_variables = new Set(
+      signature.type.binders.map((binder) => binder.name),
+    );
+    return {
+      ...signature,
+      type: {
+        ...signature.type,
+        binders: signature.type.binders.map((binder) => ({
+          ...binder,
+          type: resolve_prefix_type_reference(
+            binder.type,
+            transparent_aliases,
+            transparent_type_definitions,
+            source,
+            cst_root,
+            source_text,
+            new Set(),
+          ),
+        })),
+        parameters: signature.type.parameters.map((parameter) => ({
+          ...parameter,
+          type: resolve_prefix_type_reference(
+            parameter.type,
+            transparent_aliases,
+            transparent_type_definitions,
+            source,
+            cst_root,
+            source_text,
+            type_variables,
+          ),
+        })),
+        result: {
+          ...signature.type.result,
+          type: resolve_prefix_type_reference(
+            signature.type.result.type,
+            transparent_aliases,
+            transparent_type_definitions,
+            source,
+            cst_root,
+            source_text,
+            type_variables,
+          ),
+        },
+      },
+      requires: signature.requires.map((proposition) =>
+        resolve_prefix_proposition_types(
+          proposition,
+          transparent_aliases,
+          transparent_type_definitions,
+          source,
+          cst_root,
+          source_text,
+          type_variables,
+        )
+      ),
+      ensures: signature.ensures.map((proposition) =>
+        resolve_prefix_proposition_types(
+          proposition,
+          transparent_aliases,
+          transparent_type_definitions,
+          source,
+          cst_root,
+          source_text,
+          type_variables,
+        )
+      ),
+    };
+  });
+  const resolved_definitions = definitions.map((definition) => {
+    const resolved: PrefixDefinition = { ...definition };
+    if (definition.callable_parameter_types !== undefined) {
+      resolved.callable_parameter_types = definition.callable_parameter_types
+        .map(
+          (type) => {
+            if (type === undefined) return undefined;
+            return {
+              ...resolve_prefix_type_reference(
+                type,
+                transparent_aliases,
+                transparent_type_definitions,
+                source,
+                cst_root,
+                source_text,
+                new Set(),
+              ),
+            };
+          },
+        );
+    }
+    if (definition.fact_body !== undefined) {
+      const signature = signatures.find((candidate) =>
+        candidate.name === definition.name &&
+        candidate.scope === definition.scope &&
+        candidate.span.start <= definition.span.start
+      );
+      const type_variables = new Set<string>();
+      if (signature !== undefined) {
+        for (const binder of signature.type.binders) {
+          type_variables.add(binder.name);
+        }
+      }
+      resolved.fact_body = resolve_prefix_proposition_types(
+        definition.fact_body,
+        transparent_aliases,
+        transparent_type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      );
+    }
+    return resolved;
+  });
   const checks: Checked<
     { key: string; proof: CheckedKernelCertificate } | undefined
   >[] = [];
-  for (const signature of signatures) {
+  for (const signature of resolved_signatures) {
+    const signature_checks: Checked<undefined>[] = [
+      check_prefix_binder_names(signature, resolved_definitions),
+      check_prefix_requires(
+        signature,
+        resolved_signatures,
+        source_text,
+        declared_type_names,
+      ),
+      check_prefix_decreases(
+        signature,
+        resolved_signatures,
+        resolved_definitions,
+      ),
+      check_prefix_fact_definition(
+        signature,
+        resolved_signatures,
+        resolved_definitions,
+        source_text,
+        declared_type_names,
+      ),
+      check_prefix_signature_representation(
+        signature,
+        resolved_definitions,
+        source,
+        cst_root,
+        source_text,
+        symbols,
+        types,
+        origins,
+      ),
+    ];
+    checks.push(...signature_checks);
+    if (diagnostics_of(all(signature_checks)).length > 0) continue;
     for (
       let clause_index = 0;
       clause_index < signature.ensures.length;
@@ -368,7 +925,7 @@ function validate_prefix_contracts(
           signature,
           ensures,
           clause_index,
-          definitions,
+          resolved_definitions,
           source_text,
           symbols,
           types,
@@ -390,9 +947,2115 @@ function validate_prefix_contracts(
   };
 }
 
+function resolve_transparent_type_aliases(
+  type_name: string,
+  aliases: ReadonlyMap<string, string>,
+  resolving = new Set<string>(),
+): string {
+  let resolved = "";
+  let index = 0;
+  while (index < type_name.length) {
+    const character = type_name[index];
+    expect(character !== undefined, "Canonical type character disappeared.");
+    if (character === '"' || character === "'") {
+      const quote = character;
+      resolved += character;
+      index += 1;
+      let escaped = false;
+      while (index < type_name.length) {
+        const literal_character = type_name[index];
+        expect(
+          literal_character !== undefined,
+          "Canonical singleton type character disappeared.",
+        );
+        resolved += literal_character;
+        index += 1;
+        if (escaped) {
+          escaped = false;
+        } else if (literal_character === "\\") {
+          escaped = true;
+        } else if (literal_character === quote) {
+          break;
+        }
+      }
+      continue;
+    }
+    if (!/[A-Za-z_]/.test(character)) {
+      resolved += character;
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < type_name.length) {
+      const next = type_name[end];
+      expect(next !== undefined, "Canonical type name character disappeared.");
+      if (!/[A-Za-z0-9_]/.test(next)) break;
+      end += 1;
+    }
+    const name = type_name.slice(index, end);
+    const target = aliases.get(name);
+    if (target === undefined || resolving.has(name)) {
+      resolved += name;
+      index = end;
+      continue;
+    }
+    const nested = new Set(resolving);
+    nested.add(name);
+    resolved += resolve_transparent_type_aliases(target, aliases, nested);
+    index = end;
+  }
+  return resolved;
+}
+
+function resolve_prefix_type_reference(
+  type: PrefixTypeReference,
+  aliases: ReadonlyMap<string, string>,
+  type_definitions: ReadonlyMap<string, TransparentTypeDefinition>,
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  type_variables: ReadonlySet<string>,
+): PrefixTypeReference {
+  const canonical = resolve_transparent_type_aliases(type.canonical, aliases);
+  if (canonical === "Type" || canonical === "Prop") {
+    return { ...type, canonical, resolved: true };
+  }
+  const type_node = find_cst_node(cst_root, type.span, "type_reference");
+  expect(type_node !== undefined, "Prefix type reference lost its Baba node.");
+  const lowered = checked_value(
+    lower_baba_type_reference(type_node, source_text),
+  );
+  if (lowered !== undefined) {
+    const normalized_expression = normalize_transparent_type_expression(
+      lowered,
+      type_definitions,
+    );
+    const type_variable_names = [
+      ...canonical.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g),
+    ].map((match) => match[0]).filter((name) => type_variables.has(name));
+    const resolved_name = resolved_name_of_source_type(
+      source,
+      lowered,
+      type_variables,
+    );
+    if (resolved_name !== "unknown") {
+      if (type_variable_names.length > 0) {
+        return {
+          ...type,
+          canonical,
+          expression: normalized_expression,
+          resolved: true,
+        };
+      }
+      const representation = representation_type_of_source_type(
+        source,
+        lowered,
+        type_variables,
+      );
+      let representation_name: string | undefined;
+      if (representation !== undefined) {
+        representation_name = logical_representation_name(representation);
+      }
+      return {
+        ...type,
+        canonical: resolved_name,
+        expression: normalized_expression,
+        representation: representation_name,
+        resolved: true,
+      };
+    }
+  }
+  return { ...type, canonical };
+}
+
+function normalize_transparent_type_expression(
+  type: TypeExpr,
+  definitions: ReadonlyMap<string, TransparentTypeDefinition>,
+  resolving = new Set<string>(),
+): TypeExpr {
+  const application = transparent_type_application(type);
+  if (application !== undefined && !resolving.has(application.name)) {
+    const definition = definitions.get(application.name);
+    if (
+      definition !== undefined &&
+      definition.parameters.length === application.arguments.length
+    ) {
+      const substitutions = new Map<string, TypeExpr>();
+      for (let index = 0; index < definition.parameters.length; index += 1) {
+        const parameter = definition.parameters[index];
+        const argument = application.arguments[index];
+        expect(
+          parameter !== undefined && argument !== undefined,
+          `Transparent type ${application.name} lost argument ${index}.`,
+        );
+        substitutions.set(
+          parameter,
+          normalize_transparent_type_expression(
+            argument,
+            definitions,
+            resolving,
+          ),
+        );
+      }
+      const nested = new Set(resolving);
+      nested.add(application.name);
+      return normalize_transparent_type_expression(
+        substitute_type_expr(definition.body, substitutions),
+        definitions,
+        nested,
+      );
+    }
+  }
+  if (type.tag === "frozen" || type.tag === "borrow") {
+    return {
+      tag: type.tag,
+      value: normalize_transparent_type_expression(
+        type.value,
+        definitions,
+        resolving,
+      ),
+    };
+  }
+  if (type.tag === "union" || type.tag === "intersection") {
+    const pending = [type.left, type.right];
+    const members: TypeExpr[] = [];
+    while (pending.length > 0) {
+      const member = pending.pop();
+      expect(member !== undefined, "Type-set member disappeared.");
+      if (member.tag === type.tag) {
+        pending.push(member.left, member.right);
+        continue;
+      }
+      members.push(
+        normalize_transparent_type_expression(
+          member,
+          definitions,
+          resolving,
+        ),
+      );
+    }
+    members.sort((left, right) => {
+      const left_name = format_type_expr(left);
+      const right_name = format_type_expr(right);
+      if (left_name < right_name) return -1;
+      if (left_name > right_name) return 1;
+      return 0;
+    });
+    const distinct_members = members.filter((member, index) => {
+      if (index === 0) return true;
+      const previous = members[index - 1];
+      expect(previous !== undefined, "Sorted type-set member disappeared.");
+      return format_type_expr(previous) !== format_type_expr(member);
+    });
+    const first_member = distinct_members[0];
+    expect(first_member !== undefined, "Type set cannot lose every member.");
+    let normalized = first_member;
+    for (let index = 1; index < distinct_members.length; index += 1) {
+      const member = distinct_members[index];
+      expect(member !== undefined, "Distinct type-set member disappeared.");
+      normalized = {
+        tag: type.tag,
+        left: normalized,
+        right: member,
+      };
+    }
+    return normalized;
+  }
+  if (type.tag === "difference") {
+    return {
+      tag: "difference",
+      left: normalize_transparent_type_expression(
+        type.left,
+        definitions,
+        resolving,
+      ),
+      right: normalize_transparent_type_expression(
+        type.right,
+        definitions,
+        resolving,
+      ),
+    };
+  }
+  if (type.tag === "apply") {
+    return {
+      tag: "apply",
+      func: normalize_transparent_type_expression(
+        type.func,
+        definitions,
+        resolving,
+      ),
+      arg: normalize_transparent_type_expression(
+        type.arg,
+        definitions,
+        resolving,
+      ),
+    };
+  }
+  if (type.tag === "tuple") {
+    return {
+      tag: "tuple",
+      items: type.items.map((value) =>
+        normalize_transparent_type_expression(value, definitions, resolving)
+      ),
+    };
+  }
+  if (type.tag === "product") {
+    return {
+      tag: "product",
+      entries: type.entries.map((entry) => ({
+        label: entry.label,
+        type_expr: normalize_transparent_type_expression(
+          entry.type_expr,
+          definitions,
+          resolving,
+        ),
+      })),
+      value_pack: type.value_pack,
+      repeat: type.repeat,
+    };
+  }
+  if (type.tag === "array") {
+    return {
+      tag: "array",
+      element: normalize_transparent_type_expression(
+        type.element,
+        definitions,
+        resolving,
+      ),
+      length: type.length,
+    };
+  }
+  if (type.tag === "arrow") {
+    return {
+      tag: "arrow",
+      param: normalize_transparent_type_expression(
+        type.param,
+        definitions,
+        resolving,
+      ),
+      effects: type.effects,
+      result: normalize_transparent_type_expression(
+        type.result,
+        definitions,
+        resolving,
+      ),
+    };
+  }
+  if (type.tag === "forall") {
+    return {
+      tag: "forall",
+      params: [...type.params],
+      body: normalize_transparent_type_expression(
+        type.body,
+        definitions,
+        resolving,
+      ),
+    };
+  }
+  return type;
+}
+
+function transparent_type_application(
+  type: TypeExpr,
+): { name: string; arguments: readonly TypeExpr[] } | undefined {
+  const arguments_: TypeExpr[] = [];
+  let function_type = type;
+  while (function_type.tag === "apply") {
+    arguments_.unshift(function_type.arg);
+    function_type = function_type.func;
+  }
+  if (function_type.tag !== "name") return undefined;
+  return { name: function_type.name, arguments: arguments_ };
+}
+
+function logical_representation_name(
+  representation: RepresentationType,
+): string {
+  if (representation.tag === "scalar") return representation.name;
+  if (representation.tag === "integer") {
+    return integer_type_name(representation);
+  }
+  if (
+    representation.tag === "union" ||
+    representation.tag === "intersection"
+  ) {
+    let common: string | undefined;
+    for (const member of representation.members) {
+      const member_name = logical_representation_name(member);
+      if (common === undefined) {
+        common = member_name;
+      } else if (common !== member_name) {
+        return JSON.stringify(representation);
+      }
+    }
+    if (common !== undefined) return common;
+  }
+  if (representation.tag === "difference") {
+    return logical_representation_name(representation.base);
+  }
+  return JSON.stringify(representation);
+}
+
+function resolve_prefix_proposition_types(
+  proposition: PrefixProposition,
+  aliases: ReadonlyMap<string, string>,
+  type_definitions: ReadonlyMap<string, TransparentTypeDefinition>,
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  type_variables: ReadonlySet<string>,
+): PrefixProposition {
+  if (proposition.tag === "is") {
+    return {
+      ...proposition,
+      type: resolve_prefix_type_reference(
+        proposition.type,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+    };
+  }
+  if (proposition.tag === "not") {
+    return {
+      ...proposition,
+      proposition: resolve_prefix_proposition_types(
+        proposition.proposition,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return {
+      ...proposition,
+      left: resolve_prefix_proposition_types(
+        proposition.left,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+      right: resolve_prefix_proposition_types(
+        proposition.right,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        type_variables,
+      ),
+    };
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    const binder = {
+      ...proposition,
+      binder: {
+        ...proposition.binder,
+        type: resolve_prefix_type_reference(
+          proposition.binder.type,
+          aliases,
+          type_definitions,
+          source,
+          cst_root,
+          source_text,
+          type_variables,
+        ),
+      },
+    };
+    const nested_type_variables = new Set(type_variables);
+    if (binder.binder.type.canonical === "Type") {
+      nested_type_variables.add(binder.binder.name);
+    }
+    return {
+      ...binder,
+      proposition: resolve_prefix_proposition_types(
+        proposition.proposition,
+        aliases,
+        type_definitions,
+        source,
+        cst_root,
+        source_text,
+        nested_type_variables,
+      ),
+    };
+  }
+  return proposition;
+}
+
+function check_prefix_binder_names(
+  signature: PrefixSignature,
+  definitions: readonly PrefixDefinition[],
+): Checked<undefined> {
+  const names = new Set<string>();
+  for (const binder of signature.type.binders) {
+    if (is_snake_case(binder.name) && binder.name !== "_") continue;
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} type binder ${binder.name} must use snake_case.`,
+        binder.span,
+      ),
+    );
+  }
+  const binders = [
+    ...signature.type.binders,
+    ...signature.type.parameters,
+  ];
+  for (const binder of binders) {
+    if (!names.has(binder.name)) {
+      names.add(binder.name);
+      continue;
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} repeats logical binder ${binder.name}.`,
+        binder.span,
+      ),
+    );
+  }
+  if (signature.type.result.name !== undefined) {
+    const result_name = signature.type.result.name;
+    if (names.has(result_name)) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Prefix signature ${signature.name} repeats logical binder ${result_name}.`,
+          signature.type.result.span,
+        ),
+      );
+    }
+  }
+  const definition = definitions.find((candidate) =>
+    candidate.name === signature.name &&
+    candidate.scope === signature.scope &&
+    candidate.span.start >= signature.span.end
+  );
+  const callable_parameters = definition?.callable_parameters;
+  if (callable_parameters !== undefined) {
+    const callable_names = new Set<string>();
+    for (const parameter of callable_parameters) {
+      if (!callable_names.has(parameter)) {
+        callable_names.add(parameter);
+        continue;
+      }
+      expect(
+        definition !== undefined,
+        `Callable ${signature.name} lost its matched definition.`,
+      );
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Callable ${signature.name} repeats parameter ${parameter}.`,
+          definition.span,
+        ),
+      );
+    }
+  }
+  const fact_parameters = definition?.fact_parameters;
+  if (fact_parameters === undefined) return ok(undefined);
+  expect(
+    definition !== undefined,
+    `Fact ${signature.name} lost its matched definition.`,
+  );
+  const fact_names = new Set<string>();
+  for (const parameter of fact_parameters) {
+    if (!fact_names.has(parameter)) {
+      fact_names.add(parameter);
+      continue;
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Fact ${signature.name} repeats parameter ${parameter}.`,
+        definition.span,
+      ),
+    );
+  }
+  return ok(undefined);
+}
+
+function check_prefix_requires(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  source_text: string,
+  declared_type_names: ReadonlySet<string>,
+): Checked<undefined> {
+  if (signature.requires.length === 0) return ok(undefined);
+  const term_types = new Map<string, LogicalTermType>();
+  for (const parameter of signature.type.parameters) {
+    term_types.set(
+      parameter.name,
+      logical_term_type_from_reference(parameter.type),
+    );
+  }
+  const checks: Checked<undefined>[] = [];
+  for (const requirement of signature.requires) {
+    const formation = check_prefix_proposition(
+      signature.name,
+      requirement,
+      term_types,
+      signature_type_names(signature, declared_type_names),
+      prefix_fact_signatures(
+        signatures,
+        signature.scope,
+        signature.span.start,
+      ),
+      new Set(),
+    );
+    if (diagnostics_of(formation).length > 0) {
+      checks.push(formation);
+      continue;
+    }
+    if (prefix_proposition_is_tautology(requirement, term_types)) {
+      checks.push(ok(undefined));
+      continue;
+    }
+    const requirement_text = source_text.slice(
+      requirement.span.start,
+      requirement.span.end,
+    );
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `Prefix signature ${signature.name} cannot yet propagate requires ${requirement_text} by semantic identity.`,
+          requirement.span,
+        ),
+      ),
+    );
+  }
+  return all(checks).map(() => undefined);
+}
+
+function check_prefix_decreases(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+): Checked<undefined> {
+  if (signature.decreases.length === 0) return ok(undefined);
+  const definition = definitions.find((candidate) =>
+    candidate.name === signature.name &&
+    candidate.scope === signature.scope &&
+    candidate.span.start >= signature.span.end
+  );
+  if (definition?.recursive === true) {
+    const metric = signature.decreases[0];
+    expect(
+      metric !== undefined,
+      `Prefix signature ${signature.name} lost its decreases metric.`,
+    );
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} has recursive decreases obligations that are not yet checked.`,
+        metric.span,
+      ),
+    );
+  }
+  const term_types = new Map<string, LogicalTermType>();
+  for (const parameter of signature.type.parameters) {
+    term_types.set(
+      parameter.name,
+      logical_term_type_from_reference(parameter.type),
+    );
+  }
+  const checks = signature.decreases.map((metric) => {
+    const checked_type = check_prefix_term_type(
+      signature.name,
+      metric,
+      term_types,
+      prefix_fact_signatures(
+        signatures,
+        signature.scope,
+        signature.span.start,
+      ),
+      new Set(),
+    );
+    const metric_type = checked_value(checked_type);
+    if (metric_type === undefined) return checked_type.map(() => undefined);
+    if (is_machine_integer_logical_type(metric_type.representation)) {
+      return ok(undefined);
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} uses non-integer decreases metric ${metric.text}: ${
+          logical_term_type_display(metric_type)
+        }.`,
+        metric.span,
+      ),
+    );
+  });
+  return all(checks).map(() => undefined);
+}
+
+function prefix_proposition_is_tautology(
+  proposition: PrefixSignature["requires"][number],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+): boolean {
+  if (proposition.tag === "true") return true;
+  if (proposition.tag === "holds") return proposition.value.text === "true";
+  if (proposition.tag === "equal") {
+    if (proposition.left.text !== proposition.right.text) return false;
+    if (proposition.left.references.length === 0) return true;
+    return proposition.left.references.every((reference) =>
+      term_types.has(reference)
+    );
+  }
+  if (proposition.tag === "and") {
+    return prefix_proposition_is_tautology(proposition.left, term_types) &&
+      prefix_proposition_is_tautology(proposition.right, term_types);
+  }
+  return false;
+}
+
+function check_prefix_fact_definition(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source_text: string,
+  declared_type_names: ReadonlySet<string>,
+): Checked<undefined> {
+  if (signature.kind !== "fact" && signature.kind !== "opaque fact") {
+    return ok(undefined);
+  }
+  const definition = definitions.find((candidate) =>
+    candidate.name === signature.name &&
+    candidate.scope === signature.scope &&
+    candidate.span.start >= signature.span.end
+  );
+  if (definition === undefined) return ok(undefined);
+  const parameters = definition.fact_parameters;
+  const body = definition.fact_body;
+  if (
+    parameters === undefined ||
+    parameters.length !== signature.type.parameters.length
+  ) {
+    let parameter_count = 0;
+    if (parameters !== undefined) parameter_count = parameters.length;
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Fact ${signature.name} must define ${signature.type.parameters.length} parameters but defines ${parameter_count}.`,
+        definition.span,
+        [{ message: "Fact signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (body === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Fact ${signature.name} has no checked proposition body.`,
+        definition.span,
+      ),
+    );
+  }
+  const type_names = signature_type_names(signature, declared_type_names);
+  const type_variables = new Set(
+    signature.type.binders.map((binder) => binder.name),
+  );
+  for (const parameter of signature.type.parameters) {
+    if (
+      parameter.type.resolved === true ||
+      type_variables.has(parameter.type.canonical)
+    ) {
+      continue;
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Fact ${signature.name} refers to unknown parameter type ${parameter.type.text}.`,
+        parameter.type.span,
+      ),
+    );
+  }
+  if (
+    fact_dependency_is_recursive(
+      signature.name,
+      signature.name,
+      signature.scope,
+      signatures,
+      definitions,
+      new Set(),
+    )
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Fact ${signature.name} is recursive without a checked totality derivation.`,
+        body.span,
+      ),
+    );
+  }
+  const term_types = new Map<string, LogicalTermType>();
+  for (let index = 0; index < parameters.length; index += 1) {
+    const parameter = parameters[index];
+    const declared = signature.type.parameters[index];
+    expect(
+      parameter !== undefined && declared !== undefined,
+      `Fact ${signature.name} lost parameter ${index}.`,
+    );
+    term_types.set(parameter, logical_term_type_from_reference(declared.type));
+  }
+  const formation = check_prefix_proposition(
+    signature.name,
+    body,
+    term_types,
+    type_names,
+    prefix_fact_signatures(
+      signatures,
+      signature.scope,
+      definition.span.start,
+    ),
+    new Set(),
+  );
+  if (diagnostics_of(formation).length === 0) return formation;
+  return fail(
+    ...diagnostics_of(formation).map((diagnostic) =>
+      compiler_diagnostic(
+        diagnostic.code,
+        diagnostic.message,
+        diagnostic.span,
+        [{
+          message: "Fact body is here: " +
+            source_text.slice(body.span.start, body.span.end),
+          span: body.span,
+        }],
+      )
+    ),
+  );
+}
+
+function first_unbound_proposition_name(
+  proposition: PrefixSignature["requires"][number],
+  bound: ReadonlySet<string>,
+): string | undefined {
+  if (
+    proposition.tag === "true" || proposition.tag === "false"
+  ) {
+    return undefined;
+  }
+  if (proposition.tag === "holds") {
+    return unbound_term_reference(proposition.value, bound);
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    const left = unbound_term_reference(proposition.left, bound);
+    if (left !== undefined) return left;
+    return unbound_term_reference(proposition.right, bound);
+  }
+  if (proposition.tag === "is") {
+    return unbound_term_reference(proposition.value, bound);
+  }
+  if (proposition.tag === "not") {
+    return first_unbound_proposition_name(proposition.proposition, bound);
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    const left = first_unbound_proposition_name(proposition.left, bound);
+    if (left !== undefined) return left;
+    return first_unbound_proposition_name(proposition.right, bound);
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    const nested_bound = new Set(bound);
+    nested_bound.add(proposition.binder.name);
+    return first_unbound_proposition_name(
+      proposition.proposition,
+      nested_bound,
+    );
+  }
+  throw new Error("Unknown prefix proposition.");
+}
+
+function unbound_term_reference(
+  term: PrefixSignature["decreases"][number],
+  bound: ReadonlySet<string>,
+): string | undefined {
+  for (const reference of term.references) {
+    if (reference === "true" || reference === "false") continue;
+    if (bound.has(reference)) continue;
+    return reference;
+  }
+  return undefined;
+}
+
+function fact_dependency_is_recursive(
+  current_name: string,
+  target_name: string,
+  scope: string,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  visited: Set<string>,
+): boolean {
+  if (visited.has(current_name)) return false;
+  visited.add(current_name);
+  const definition = definitions.find((candidate) =>
+    candidate.name === current_name &&
+    candidate.scope === scope &&
+    (candidate.kind === "fact" || candidate.kind === "opaque fact")
+  );
+  if (definition?.fact_body === undefined) return false;
+  const facts = prefix_fact_signatures(
+    signatures,
+    scope,
+    definition.span.start,
+  );
+  const dependencies = prefix_proposition_fact_dependencies(
+    definition.fact_body,
+    facts,
+  );
+  for (const dependency of dependencies) {
+    if (dependency === target_name) return true;
+    if (
+      fact_dependency_is_recursive(
+        dependency,
+        target_name,
+        scope,
+        signatures,
+        definitions,
+        visited,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function prefix_proposition_fact_dependencies(
+  proposition: PrefixSignature["requires"][number],
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): readonly string[] {
+  if (proposition.tag === "true" || proposition.tag === "false") return [];
+  if (proposition.tag === "holds") {
+    return prefix_term_fact_dependencies(proposition.value, facts);
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    return [
+      ...prefix_term_fact_dependencies(proposition.left, facts),
+      ...prefix_term_fact_dependencies(proposition.right, facts),
+    ];
+  }
+  if (proposition.tag === "is") {
+    return prefix_term_fact_dependencies(proposition.value, facts);
+  }
+  if (proposition.tag === "not") {
+    return prefix_proposition_fact_dependencies(
+      proposition.proposition,
+      facts,
+    );
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return [
+      ...prefix_proposition_fact_dependencies(proposition.left, facts),
+      ...prefix_proposition_fact_dependencies(proposition.right, facts),
+    ];
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    return prefix_proposition_fact_dependencies(
+      proposition.proposition,
+      facts,
+    );
+  }
+  throw new Error("Unknown prefix proposition dependency.");
+}
+
+function prefix_term_fact_dependencies(
+  term: PrefixSignature["decreases"][number],
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): readonly string[] {
+  const shape = term.shape;
+  if (shape.tag === "binary") {
+    return [
+      ...prefix_term_fact_dependencies(shape.left, facts),
+      ...prefix_term_fact_dependencies(shape.right, facts),
+    ];
+  }
+  if (shape.tag === "unary") {
+    return prefix_term_fact_dependencies(shape.operand, facts);
+  }
+  if (shape.tag === "call") {
+    const dependencies: string[] = [];
+    if (
+      shape.function.shape.tag === "name" &&
+      facts.has(shape.function.shape.name)
+    ) {
+      dependencies.push(shape.function.shape.name);
+    }
+    for (const argument of shape.arguments) {
+      dependencies.push(...prefix_term_fact_dependencies(argument, facts));
+    }
+    return dependencies;
+  }
+  if (
+    shape.tag === "field" || shape.tag === "index"
+  ) {
+    return prefix_term_fact_dependencies(shape.object, facts);
+  }
+  if (shape.tag === "parenthesized") {
+    return prefix_term_fact_dependencies(shape.value, facts);
+  }
+  return [];
+}
+
+type PrefixFactSignature = {
+  parameters: readonly LogicalTermType[];
+  type_parameters: ReadonlySet<string>;
+};
+
+type LogicalTermType = {
+  display_name?: string;
+  expression?: TypeExpr;
+  name: string;
+  representation: string;
+  refinement?: string;
+};
+
+type TransparentTypeDefinition = {
+  parameters: readonly string[];
+  body: TypeExpr;
+};
+
+function logical_term_type_from_reference(
+  type: PrefixTypeReference,
+): LogicalTermType {
+  let representation = type.representation;
+  if (representation === undefined) representation = type.canonical;
+  let display_name = type.canonical;
+  if (type.expression !== undefined) {
+    display_name = format_type_expr(type.expression);
+  }
+  return {
+    display_name,
+    expression: type.expression,
+    name: type.canonical,
+    representation,
+  };
+}
+
+function prefix_fact_signatures(
+  signatures: readonly PrefixSignature[],
+  scope: string,
+  visible_at: number,
+): ReadonlyMap<string, PrefixFactSignature> {
+  const facts = new Map<string, PrefixFactSignature>();
+  for (const signature of signatures) {
+    if (signature.kind !== "fact" && signature.kind !== "opaque fact") {
+      continue;
+    }
+    if (
+      signature.scope !== scope &&
+      !scope.startsWith(signature.scope + "/")
+    ) {
+      continue;
+    }
+    if (signature.span.start > visible_at) continue;
+    facts.set(signature.name, {
+      parameters: signature.type.parameters.map((parameter) =>
+        logical_term_type_from_reference(parameter.type)
+      ),
+      type_parameters: new Set(
+        signature.type.binders.filter((binder) =>
+          binder.type.canonical === "Type"
+        ).map((binder) => binder.name),
+      ),
+    });
+  }
+  return facts;
+}
+
+function signature_type_names(
+  signature: PrefixSignature,
+  declared_type_names: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const names = new Set(declared_type_names);
+  for (const binder of signature.type.binders) {
+    if (binder.type.canonical === "Type") names.add(binder.name);
+  }
+  return names;
+}
+
+function check_prefix_proposition(
+  declaration_name: string,
+  proposition: PrefixSignature["requires"][number],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  type_names: ReadonlySet<string>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  nonzero_terms: ReadonlySet<string>,
+): Checked<undefined> {
+  const bound = new Set(term_types.keys());
+  for (const fact_name of facts.keys()) bound.add(fact_name);
+  const unbound = first_unbound_proposition_name(proposition, bound);
+  if (unbound !== undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `${declaration_name} refers to unbound logical value ${unbound}.`,
+        proposition.span,
+      ),
+    );
+  }
+  return check_formed_prefix_proposition(
+    declaration_name,
+    proposition,
+    term_types,
+    type_names,
+    facts,
+    nonzero_terms,
+  );
+}
+
+function check_formed_prefix_proposition(
+  declaration_name: string,
+  proposition: PrefixSignature["requires"][number],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  type_names: ReadonlySet<string>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  nonzero_terms: ReadonlySet<string>,
+): Checked<undefined> {
+  if (proposition.tag === "true" || proposition.tag === "false") {
+    return ok(undefined);
+  }
+  if (proposition.tag === "holds") {
+    const term_type = check_prefix_term_type(
+      declaration_name,
+      proposition.value,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const type = checked_value(term_type);
+    if (type === undefined) return term_type.map(() => undefined);
+    if (type.representation === "Bool" || type.name === "Prop") {
+      return ok(undefined);
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `${declaration_name} uses ${proposition.value.text}: ${
+          logical_term_type_display(type)
+        } as a proposition.`,
+        proposition.value.span,
+      ),
+    );
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    const left = check_prefix_term_type(
+      declaration_name,
+      proposition.left,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const right = check_prefix_term_type(
+      declaration_name,
+      proposition.right,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const operands = Applicative.lift(
+      (left_type: LogicalTermType, right_type: LogicalTermType) =>
+        [
+          left_type,
+          right_type,
+        ] as const,
+      left,
+      right,
+    );
+    const operand_types = checked_value(operands);
+    if (operand_types === undefined) return operands.map(() => undefined);
+    const [left_type, right_type] = operand_types;
+    if (!logical_term_types_match(left_type, right_type)) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} compares ${
+            logical_term_type_display(left_type)
+          } with ${logical_term_type_display(right_type)}.`,
+          proposition.span,
+        ),
+      );
+    }
+    if (
+      (proposition.tag === "less" || proposition.tag === "less_equal") &&
+      !is_ordered_logical_type(left_type.representation)
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} orders values of type ${
+            logical_term_type_display(left_type)
+          }.`,
+          proposition.span,
+        ),
+      );
+    }
+    return ok(undefined);
+  }
+  if (proposition.tag === "is") {
+    if (
+      proposition.type.resolved !== true &&
+      !type_names.has(proposition.type.canonical)
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} refers to unknown logical type ${proposition.type.text}.`,
+          proposition.type.span,
+        ),
+      );
+    }
+    return check_prefix_term_type(
+      declaration_name,
+      proposition.value,
+      term_types,
+      facts,
+      nonzero_terms,
+    ).map(() => undefined);
+  }
+  if (proposition.tag === "not") {
+    return check_prefix_proposition(
+      declaration_name,
+      proposition.proposition,
+      term_types,
+      type_names,
+      facts,
+      nonzero_terms,
+    );
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    const left = check_prefix_proposition(
+      declaration_name,
+      proposition.left,
+      term_types,
+      type_names,
+      facts,
+      nonzero_terms,
+    );
+    let right_nonzero = nonzero_terms;
+    if (proposition.tag === "and") {
+      const established = proposition_nonzero_term(proposition.left);
+      if (established !== undefined) {
+        const extended = new Set(nonzero_terms);
+        extended.add(established);
+        right_nonzero = extended;
+      }
+    }
+    const right = check_prefix_proposition(
+      declaration_name,
+      proposition.right,
+      term_types,
+      type_names,
+      facts,
+      right_nonzero,
+    );
+    return all([left, right]).map(() => undefined);
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    const binder_type = proposition.binder.type.canonical;
+    if (
+      proposition.binder.type.resolved !== true &&
+      !type_names.has(binder_type)
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} quantifies over unknown logical type ${binder_type}.`,
+          proposition.binder.type.span,
+        ),
+      );
+    }
+    const nested_types = new Map(term_types);
+    nested_types.set(
+      proposition.binder.name,
+      logical_term_type_from_reference(proposition.binder.type),
+    );
+    const nested_nonzero = new Set(nonzero_terms);
+    nested_nonzero.delete(proposition.binder.name);
+    return check_prefix_proposition(
+      declaration_name,
+      proposition.proposition,
+      nested_types,
+      type_names,
+      facts,
+      nested_nonzero,
+    );
+  }
+  throw new Error("Unknown formed prefix proposition.");
+}
+
+function check_prefix_term_type(
+  declaration_name: string,
+  term: PrefixSignature["decreases"][number],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  nonzero_terms: ReadonlySet<string>,
+): Checked<LogicalTermType> {
+  const shape = term.shape;
+  if (shape.tag === "name") {
+    const direct_type = term_types.get(shape.name);
+    if (direct_type !== undefined) {
+      return ok(direct_type);
+    }
+    return unsupported_prefix_term(declaration_name, term);
+  }
+  if (shape.tag === "boolean") {
+    return ok({
+      name: "Bool",
+      representation: "Bool",
+      refinement: term.text,
+    });
+  }
+  if (shape.tag === "number") {
+    return check_prefix_number_type(declaration_name, term);
+  }
+  if (shape.tag === "string") {
+    return ok({
+      name: "Text",
+      representation: "Text",
+      refinement: term.text,
+    });
+  }
+  if (shape.tag === "character") {
+    return ok({
+      name: "Char",
+      representation: "Char",
+      refinement: term.text,
+    });
+  }
+  if (shape.tag === "parenthesized") {
+    return check_prefix_term_type(
+      declaration_name,
+      shape.value,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+  }
+  if (shape.tag === "unary") {
+    if (shape.operator === "-" && shape.operand.shape.tag === "number") {
+      return check_prefix_negative_number_type(
+        declaration_name,
+        shape.operand,
+      );
+    }
+    const operand = check_prefix_term_type(
+      declaration_name,
+      shape.operand,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const operand_type = checked_value(operand);
+    if (operand_type === undefined) return operand;
+    if (
+      (shape.operator === "-" || shape.operator === "+") &&
+      is_machine_integer_logical_type(operand_type.representation)
+    ) {
+      return ok({
+        name: operand_type.representation,
+        representation: operand_type.representation,
+      });
+    }
+    if (shape.operator === "!" && operand_type.representation === "Bool") {
+      return ok({ name: "Bool", representation: "Bool" });
+    }
+    return unsupported_prefix_term(declaration_name, term);
+  }
+  if (shape.tag === "binary") {
+    const left = check_prefix_term_type(
+      declaration_name,
+      shape.left,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const right = check_prefix_term_type(
+      declaration_name,
+      shape.right,
+      term_types,
+      facts,
+      nonzero_terms,
+    );
+    const operands = Applicative.lift(
+      (left_type: LogicalTermType, right_type: LogicalTermType) =>
+        [
+          left_type,
+          right_type,
+        ] as const,
+      left,
+      right,
+    );
+    const operand_types = checked_value(operands);
+    if (operand_types === undefined) return operands.map((types) => types[0]);
+    const [left_type, right_type] = operand_types;
+    if (shape.operator === "&&" || shape.operator === "||") {
+      if (
+        left_type.representation !== "Bool" ||
+        right_type.representation !== "Bool"
+      ) {
+        return unsupported_prefix_term(declaration_name, term);
+      }
+      return ok({ name: "Bool", representation: "Bool" });
+    }
+    if (shape.operator === "==") {
+      if (
+        !logical_term_types_match(left_type, right_type) ||
+        !supports_prefix_runtime_equality(left_type.representation)
+      ) {
+        return unsupported_prefix_term(declaration_name, term);
+      }
+      return ok({ name: "Bool", representation: "Bool" });
+    }
+    if (
+      !logical_term_types_match(left_type, right_type) ||
+      !is_machine_integer_logical_type(left_type.representation) ||
+      !is_machine_integer_logical_type(right_type.representation)
+    ) {
+      return unsupported_prefix_term(declaration_name, term);
+    }
+    if (
+      shape.operator !== "+" && shape.operator !== "-" &&
+      shape.operator !== "*" && shape.operator !== "/" &&
+      shape.operator !== "%"
+    ) {
+      return unsupported_prefix_term(declaration_name, term);
+    }
+    if (
+      (shape.operator === "/" || shape.operator === "%") &&
+      !prefix_term_is_known_nonzero(shape.right, nonzero_terms)
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} cannot prove ${shape.right.text} is nonzero before evaluating ${term.text}.`,
+          shape.right.span,
+        ),
+      );
+    }
+    const result_type: LogicalTermType = {
+      name: left_type.representation,
+      representation: left_type.representation,
+    };
+    if (
+      shape.operator === "/" &&
+      is_signed_machine_integer_logical_type(result_type.representation) &&
+      !prefix_term_is_positive_number(shape.right)
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_unproved,
+          `${declaration_name} cannot rule out signed division overflow in ${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    return ok(result_type);
+  }
+  if (shape.tag === "call") {
+    if (shape.function.shape.tag !== "name") {
+      return unsupported_prefix_term(declaration_name, term);
+    }
+    const fact_name = shape.function.shape.name;
+    if (term_types.has(fact_name)) {
+      return unsupported_prefix_term(declaration_name, term);
+    }
+    const fact = facts.get(fact_name);
+    if (fact === undefined) {
+      return unsupported_prefix_term(declaration_name, term);
+    }
+    if (shape.arguments.length !== fact.parameters.length) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Fact ${fact_name} expects ${fact.parameters.length} arguments but received ${shape.arguments.length}.`,
+          term.span,
+        ),
+      );
+    }
+    const type_substitutions = new Map<string, LogicalTermType>();
+    const argument_checks = shape.arguments.map((argument, index) => {
+      const checked_argument = check_prefix_term_type(
+        declaration_name,
+        argument,
+        term_types,
+        facts,
+        nonzero_terms,
+      );
+      const argument_type = checked_value(checked_argument);
+      if (argument_type === undefined) return checked_argument;
+      const expected = fact.parameters[index];
+      expect(
+        expected !== undefined,
+        `Fact ${fact_name} lost parameter ${index}.`,
+      );
+      const candidate_substitutions = new Map(type_substitutions);
+      if (
+        expected.expression !== undefined &&
+        prefix_type_pattern_matches(
+          expected.expression,
+          argument_type,
+          fact.type_parameters,
+          candidate_substitutions,
+        )
+      ) {
+        for (const [name, type] of candidate_substitutions) {
+          type_substitutions.set(name, type);
+        }
+        return ok(argument_type);
+      }
+      if (
+        argument_type.name === expected.name ||
+        argument_type.refinement === expected.name ||
+        expected.name === expected.representation &&
+          argument_type.representation === expected.representation
+      ) {
+        return ok(argument_type);
+      }
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Fact ${fact_name} argument ${index + 1} requires ${
+            logical_term_type_display(expected)
+          } but received ${logical_term_type_display(argument_type)}.`,
+          argument.span,
+        ),
+      );
+    });
+    return all(argument_checks).map(() => ({
+      name: "Prop",
+      representation: "Prop",
+    }));
+  }
+  return unsupported_prefix_term(declaration_name, term);
+}
+
+function check_prefix_number_type(
+  declaration_name: string,
+  term: PrefixSignature["decreases"][number],
+): Checked<LogicalTermType> {
+  const integer_literal = prefix_integer_literal(term.text);
+  if (integer_literal !== undefined) {
+    if (integer_literal.type.width > 64) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} uses unsupported logical integer width ${integer_literal.type.width} in ${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    if (integer_literal.value > integer_maximum(integer_literal.type)) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} contains out-of-range ${
+            integer_type_name(integer_literal.type)
+          } logical number ${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    return ok({
+      name: integer_type_name(integer_literal.type),
+      representation: integer_type_name(integer_literal.type),
+      refinement: term.text,
+    });
+  }
+  let expression;
+  try {
+    expression = parse_number_expr(term.text);
+  } catch (error) {
+    let message = String(error);
+    if (error instanceof Error) message = error.message;
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `${declaration_name} contains invalid logical number ${term.text}: ${message}`,
+        term.span,
+      ),
+    );
+  }
+  expect(expression.tag === "num", "Logical number did not parse as a number.");
+  if (
+    expression.integer === undefined && expression.type === "i32" &&
+    /^[0-9][0-9_]*$/.test(term.text)
+  ) {
+    const value = BigInt(term.text.replaceAll("_", ""));
+    if (value > 2_147_483_647n) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} contains out-of-range I32 logical number ${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    return ok({
+      name: "I32",
+      representation: "I32",
+      refinement: term.text,
+    });
+  }
+  if (expression.type === "f32") {
+    return ok({ name: "F32", representation: "F32" });
+  }
+  if (expression.type === "f64") {
+    return ok({ name: "F64", representation: "F64" });
+  }
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.prefix_signature_mismatch,
+      `${declaration_name} contains malformed logical number ${term.text}.`,
+      term.span,
+    ),
+  );
+}
+
+function check_prefix_negative_number_type(
+  declaration_name: string,
+  term: PrefixSignature["decreases"][number],
+): Checked<LogicalTermType> {
+  const integer_literal = prefix_integer_literal(term.text);
+  if (integer_literal !== undefined) {
+    if (integer_literal.type.width > 64) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} uses unsupported logical integer width ${integer_literal.type.width} in -${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    if (!integer_literal.type.signed) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} negates unsigned logical number ${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    const minimum_magnitude = 1n <<
+      BigInt(integer_literal.type.width - 1);
+    if (integer_literal.value > minimum_magnitude) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `${declaration_name} contains out-of-range negative ${
+            integer_type_name(integer_literal.type)
+          } logical number -${term.text}.`,
+          term.span,
+        ),
+      );
+    }
+    return ok({
+      name: integer_type_name(integer_literal.type),
+      representation: integer_type_name(integer_literal.type),
+      refinement: "-" + term.text,
+    });
+  }
+  if (/^[0-9][0-9_]*$/.test(term.text)) {
+    const value = BigInt(term.text.replaceAll("_", ""));
+    if (value <= 2_147_483_648n) {
+      return ok({
+        name: "I32",
+        representation: "I32",
+        refinement: "-" + term.text,
+      });
+    }
+  }
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.prefix_signature_mismatch,
+      `${declaration_name} contains invalid negative logical number -${term.text}.`,
+      term.span,
+    ),
+  );
+}
+
+function prefix_integer_literal(
+  text: string,
+): { type: { signed: boolean; width: number }; value: bigint } | undefined {
+  const suffix = /([iu][1-9][0-9]*)$/.exec(text)?.[1];
+  if (suffix === undefined) return undefined;
+  const type = integer_type_from_name(suffix.toUpperCase());
+  if (type === undefined) return undefined;
+  const literal = text.slice(0, text.length - suffix.length);
+  return {
+    type,
+    value: BigInt(literal.replaceAll("_", "")),
+  };
+}
+
+function unsupported_prefix_term(
+  declaration_name: string,
+  term: PrefixSignature["decreases"][number],
+): Checked<LogicalTermType> {
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.prefix_signature_unproved,
+      `${declaration_name} contains unsupported logical term ${term.text}.`,
+      term.span,
+    ),
+  );
+}
+
+function logical_term_types_match(
+  left: LogicalTermType,
+  right: LogicalTermType,
+): boolean {
+  return left.name === right.name ||
+    left.representation === right.representation;
+}
+
+function logical_term_type_display(type: LogicalTermType): string {
+  if (type.display_name !== undefined) return type.display_name;
+  return type.name;
+}
+
+function prefix_type_pattern_matches(
+  pattern: TypeExpr,
+  actual: LogicalTermType,
+  type_parameters: ReadonlySet<string>,
+  substitutions: Map<string, LogicalTermType>,
+  bound_names: {
+    pattern: readonly string[];
+    actual: readonly string[];
+  } = { pattern: [], actual: [] },
+): boolean {
+  if (pattern.tag === "name") {
+    const pattern_depth = bound_names.pattern.lastIndexOf(pattern.name);
+    if (pattern_depth >= 0) {
+      if (actual.expression?.tag !== "name") return false;
+      const actual_depth = bound_names.actual.lastIndexOf(
+        actual.expression.name,
+      );
+      return pattern_depth === actual_depth;
+    }
+  }
+  if (pattern.tag === "name" && type_parameters.has(pattern.name)) {
+    if (
+      actual.expression !== undefined &&
+      type_expression_references_enclosing_binder(
+        actual.expression,
+        new Set(bound_names.actual),
+      )
+    ) {
+      return false;
+    }
+    const existing = substitutions.get(pattern.name);
+    if (existing === undefined) {
+      substitutions.set(pattern.name, actual);
+      return true;
+    }
+    return logical_term_types_match(existing, actual);
+  }
+  const actual_expression = actual.expression;
+  if (actual_expression === undefined) return false;
+  if (pattern.tag !== actual_expression.tag) return false;
+  if (pattern.tag === "name" && actual_expression.tag === "name") {
+    return pattern.name === actual_expression.name;
+  }
+  if (pattern.tag === "atom" && actual_expression.tag === "atom") {
+    return pattern.name === actual_expression.name;
+  }
+  if (
+    pattern.tag === "literal" || pattern.tag === "top" ||
+    pattern.tag === "never"
+  ) {
+    return format_type_expr(pattern) === format_type_expr(actual_expression);
+  }
+  if (
+    (pattern.tag === "frozen" && actual_expression.tag === "frozen") ||
+    (pattern.tag === "borrow" && actual_expression.tag === "borrow")
+  ) {
+    return prefix_type_pattern_matches(
+      pattern.value,
+      logical_term_type_from_expression(actual_expression.value),
+      type_parameters,
+      substitutions,
+      bound_names,
+    );
+  }
+  if (
+    (pattern.tag === "union" && actual_expression.tag === "union") ||
+    (pattern.tag === "intersection" &&
+      actual_expression.tag === "intersection") ||
+    (pattern.tag === "difference" && actual_expression.tag === "difference")
+  ) {
+    return prefix_type_pattern_matches(
+      pattern.left,
+      logical_term_type_from_expression(actual_expression.left),
+      type_parameters,
+      substitutions,
+      bound_names,
+    ) &&
+      prefix_type_pattern_matches(
+        pattern.right,
+        logical_term_type_from_expression(actual_expression.right),
+        type_parameters,
+        substitutions,
+        bound_names,
+      );
+  }
+  if (pattern.tag === "apply" && actual_expression.tag === "apply") {
+    return prefix_type_pattern_matches(
+      pattern.func,
+      logical_term_type_from_expression(actual_expression.func),
+      type_parameters,
+      substitutions,
+      bound_names,
+    ) &&
+      prefix_type_pattern_matches(
+        pattern.arg,
+        logical_term_type_from_expression(actual_expression.arg),
+        type_parameters,
+        substitutions,
+        bound_names,
+      );
+  }
+  if (pattern.tag === "tuple" && actual_expression.tag === "tuple") {
+    if (pattern.items.length !== actual_expression.items.length) return false;
+    return pattern.items.every((value, index) => {
+      const actual_value = actual_expression.items[index];
+      expect(actual_value !== undefined, "Tuple type argument disappeared.");
+      return prefix_type_pattern_matches(
+        value,
+        logical_term_type_from_expression(actual_value),
+        type_parameters,
+        substitutions,
+        bound_names,
+      );
+    });
+  }
+  if (pattern.tag === "product" && actual_expression.tag === "product") {
+    if (pattern.entries.length !== actual_expression.entries.length) {
+      return false;
+    }
+    if (pattern.value_pack !== actual_expression.value_pack) return false;
+    if (
+      JSON.stringify(pattern.repeat) !==
+        JSON.stringify(actual_expression.repeat)
+    ) {
+      return false;
+    }
+    return pattern.entries.every((entry, index) => {
+      const actual_entry = actual_expression.entries[index];
+      expect(actual_entry !== undefined, "Product type entry disappeared.");
+      if (entry.label !== actual_entry.label) return false;
+      return prefix_type_pattern_matches(
+        entry.type_expr,
+        logical_term_type_from_expression(actual_entry.type_expr),
+        type_parameters,
+        substitutions,
+        bound_names,
+      );
+    });
+  }
+  if (pattern.tag === "array" && actual_expression.tag === "array") {
+    if (
+      JSON.stringify(pattern.length) !==
+        JSON.stringify(actual_expression.length)
+    ) {
+      return false;
+    }
+    return prefix_type_pattern_matches(
+      pattern.element,
+      logical_term_type_from_expression(actual_expression.element),
+      type_parameters,
+      substitutions,
+      bound_names,
+    );
+  }
+  if (pattern.tag === "arrow" && actual_expression.tag === "arrow") {
+    if (
+      JSON.stringify(pattern.effects) !==
+        JSON.stringify(actual_expression.effects)
+    ) {
+      return false;
+    }
+    return prefix_type_pattern_matches(
+      pattern.param,
+      logical_term_type_from_expression(actual_expression.param),
+      type_parameters,
+      substitutions,
+      bound_names,
+    ) &&
+      prefix_type_pattern_matches(
+        pattern.result,
+        logical_term_type_from_expression(actual_expression.result),
+        type_parameters,
+        substitutions,
+        bound_names,
+      );
+  }
+  if (pattern.tag === "forall" && actual_expression.tag === "forall") {
+    const pattern_parameters = [...pattern.params];
+    let pattern_body = pattern.body;
+    while (pattern_body.tag === "forall") {
+      pattern_parameters.push(...pattern_body.params);
+      pattern_body = pattern_body.body;
+    }
+    const actual_parameters = [...actual_expression.params];
+    let actual_body = actual_expression.body;
+    while (actual_body.tag === "forall") {
+      actual_parameters.push(...actual_body.params);
+      actual_body = actual_body.body;
+    }
+    if (pattern_parameters.length !== actual_parameters.length) return false;
+    const nested_bound_names = {
+      pattern: [...bound_names.pattern, ...pattern_parameters],
+      actual: [...bound_names.actual, ...actual_parameters],
+    };
+    return prefix_type_pattern_matches(
+      pattern_body,
+      logical_term_type_from_expression(actual_body),
+      type_parameters,
+      substitutions,
+      nested_bound_names,
+    );
+  }
+  return false;
+}
+
+function logical_term_type_from_expression(
+  expression: TypeExpr,
+): LogicalTermType {
+  const name = format_type_expr(expression);
+  return { expression, name, representation: name };
+}
+
+function type_expression_references_enclosing_binder(
+  type: TypeExpr,
+  enclosing_names: ReadonlySet<string>,
+  local_names = new Set<string>(),
+): boolean {
+  if (type.tag === "name") {
+    return enclosing_names.has(type.name) && !local_names.has(type.name);
+  }
+  if (type.tag === "frozen" || type.tag === "borrow") {
+    return type_expression_references_enclosing_binder(
+      type.value,
+      enclosing_names,
+      local_names,
+    );
+  }
+  if (
+    type.tag === "union" || type.tag === "intersection" ||
+    type.tag === "difference"
+  ) {
+    return type_expression_references_enclosing_binder(
+      type.left,
+      enclosing_names,
+      local_names,
+    ) ||
+      type_expression_references_enclosing_binder(
+        type.right,
+        enclosing_names,
+        local_names,
+      );
+  }
+  if (type.tag === "apply") {
+    return type_expression_references_enclosing_binder(
+      type.func,
+      enclosing_names,
+      local_names,
+    ) ||
+      type_expression_references_enclosing_binder(
+        type.arg,
+        enclosing_names,
+        local_names,
+      );
+  }
+  if (type.tag === "tuple") {
+    return type.items.some((value) =>
+      type_expression_references_enclosing_binder(
+        value,
+        enclosing_names,
+        local_names,
+      )
+    );
+  }
+  if (type.tag === "product") {
+    return type.entries.some((entry) =>
+      type_expression_references_enclosing_binder(
+        entry.type_expr,
+        enclosing_names,
+        local_names,
+      )
+    );
+  }
+  if (type.tag === "array") {
+    return type_expression_references_enclosing_binder(
+      type.element,
+      enclosing_names,
+      local_names,
+    );
+  }
+  if (type.tag === "arrow") {
+    return type_expression_references_enclosing_binder(
+      type.param,
+      enclosing_names,
+      local_names,
+    ) ||
+      type_expression_references_enclosing_binder(
+        type.result,
+        enclosing_names,
+        local_names,
+      );
+  }
+  if (type.tag === "forall") {
+    const nested_local_names = new Set(local_names);
+    for (const parameter of type.params) nested_local_names.add(parameter);
+    return type_expression_references_enclosing_binder(
+      type.body,
+      enclosing_names,
+      nested_local_names,
+    );
+  }
+  return false;
+}
+
+function is_ordered_logical_type(type_name: string): boolean {
+  return type_name === "Int" || type_name === "I32" || type_name === "U32" ||
+    type_name === "I64" || type_name === "F32" || type_name === "F64" ||
+    /^[IU][1-9][0-9]*$/.test(type_name);
+}
+
+function supports_prefix_runtime_equality(type_name: string): boolean {
+  return is_ordered_logical_type(type_name) ||
+    type_name === "Bool" || type_name === "Char" || type_name === "Text" ||
+    type_name === "Bytes" || type_name === "Unit" ||
+    type_name.startsWith("#");
+}
+
+function is_machine_integer_logical_type(type_name: string): boolean {
+  return type_name === "Int" || type_name === "I32" || type_name === "U32" ||
+    type_name === "I64" || /^[IU][1-9][0-9]*$/.test(type_name);
+}
+
+function is_signed_machine_integer_logical_type(type_name: string): boolean {
+  return type_name === "Int" || type_name === "I32" || type_name === "I64" ||
+    /^I[1-9][0-9]*$/.test(type_name);
+}
+
+function prefix_term_is_known_nonzero(
+  term: PrefixSignature["decreases"][number],
+  nonzero_terms: ReadonlySet<string>,
+): boolean {
+  if (term.shape.tag === "name") return nonzero_terms.has(term.shape.name);
+  if (term.shape.tag !== "number") return false;
+  const integer_literal = prefix_integer_literal(term.text);
+  if (integer_literal !== undefined) {
+    if (integer_literal.type.width > 64) return false;
+    if (integer_literal.value > integer_maximum(integer_literal.type)) {
+      return false;
+    }
+    return integer_literal.value !== 0n;
+  }
+  if (!/^[0-9][0-9_]*$/.test(term.text)) return false;
+  return BigInt(term.text.replaceAll("_", "")) !== 0n;
+}
+
+function prefix_term_is_positive_number(
+  term: PrefixSignature["decreases"][number],
+): boolean {
+  if (term.shape.tag !== "number") return false;
+  const integer_literal = prefix_integer_literal(term.text);
+  if (integer_literal !== undefined) {
+    if (integer_literal.type.width > 64) return false;
+    if (integer_literal.value > integer_maximum(integer_literal.type)) {
+      return false;
+    }
+    return integer_literal.value > 0n;
+  }
+  if (!/^[0-9][0-9_]*$/.test(term.text)) return false;
+  return BigInt(term.text.replaceAll("_", "")) > 0n;
+}
+
+function proposition_nonzero_term(
+  proposition: PrefixSignature["requires"][number],
+): string | undefined {
+  if (proposition.tag === "not") {
+    if (proposition.proposition.tag !== "equal") return undefined;
+    return unequal_zero_term(
+      proposition.proposition.left,
+      proposition.proposition.right,
+    );
+  }
+  if (proposition.tag !== "not_equal") return undefined;
+  return unequal_zero_term(proposition.left, proposition.right);
+}
+
+function unequal_zero_term(
+  left: PrefixSignature["decreases"][number],
+  right: PrefixSignature["decreases"][number],
+): string | undefined {
+  if (
+    prefix_term_is_zero(left) && right.shape.tag === "name"
+  ) {
+    return right.shape.name;
+  }
+  if (
+    prefix_term_is_zero(right) && left.shape.tag === "name"
+  ) {
+    return left.shape.name;
+  }
+  return undefined;
+}
+
+function prefix_term_is_zero(
+  term: PrefixSignature["decreases"][number],
+): boolean {
+  if (term.shape.tag !== "number") return false;
+  const integer_literal = prefix_integer_literal(term.text);
+  if (integer_literal !== undefined) {
+    if (integer_literal.type.width > 64) return false;
+    if (integer_literal.value > integer_maximum(integer_literal.type)) {
+      return false;
+    }
+    return integer_literal.value === 0n;
+  }
+  if (!/^[0-9][0-9_]*$/.test(term.text)) return false;
+  return BigInt(term.text.replaceAll("_", "")) === 0n;
+}
+
 function check_prefix_ensures(
   signature: PrefixSignature,
-  ensures: string,
+  ensures: PrefixSignature["ensures"][number],
   clause_index: number,
   definitions: readonly PrefixDefinition[],
   source_text: string,
@@ -402,8 +3065,14 @@ function check_prefix_ensures(
 ): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
   const proof_key = signature.scope + ":" + signature.name + ":ensures:" +
     clause_index.toString();
-  const normalized = ensures.trim();
-  if (normalized === "true") {
+  const proposition_text = source_text.slice(
+    ensures.span.start,
+    ensures.span.end,
+  );
+  if (
+    ensures.tag === "true" ||
+    (ensures.tag === "holds" && ensures.value.text === "true")
+  ) {
     const environment = KernelEnvironment.empty();
     const term_context = snapshot_kernel_context([]);
     return ok({
@@ -423,16 +3092,24 @@ function check_prefix_ensures(
       }),
     });
   }
-  if (normalized === "false") return ok(undefined);
-  const equality = ensures.match(
-    /^result\s*=\s*([A-Za-z][A-Za-z0-9_]*)$/,
-  );
-  if (equality === null) {
+  if (ensures.tag !== "equal") {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} uses an unsupported ensures proposition: ${ensures}.`,
-        signature.span,
+        `Prefix signature ${signature.name} does not establish ensures ${proposition_text}.`,
+        ensures.span,
+      ),
+    );
+  }
+  let expected_name: string | undefined;
+  if (ensures.left.text === "result") expected_name = ensures.right.text;
+  if (ensures.right.text === "result") expected_name = ensures.left.text;
+  if (expected_name === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} does not establish ensures ${proposition_text}.`,
+        ensures.span,
       ),
     );
   }
@@ -460,150 +3137,82 @@ function check_prefix_ensures(
       callable_start = origin.start;
     }
   }
-  if (callable_type === undefined || callable_type.tag !== "function") {
+  if (callable_type !== undefined) {
+    callable_type = callable_function_body(callable_type);
+  }
+  if (callable_type === undefined) {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} cannot certify ensures ${ensures} because the definition has no inferred callable representation.`,
-        signature.span,
+        `Prefix signature ${signature.name} cannot certify ensures ${proposition_text} because the definition has no inferred callable representation.`,
+        ensures.span,
       ),
     );
   }
-  const definition_text = source_text.slice(
-    metadata_definition.span.start,
-    metadata_definition.span.end,
-  );
-  const signature_parameters: { name: string; type_name: string }[] = [];
-  const arrow_index = signature.type_text.indexOf("->");
-  let parameter_group = "";
-  if (arrow_index >= 0) {
-    const parameter_prefix = signature.type_text.slice(0, arrow_index);
-    let depth = 0;
-    let group_start = -1;
-    for (let index = 0; index < parameter_prefix.length; index += 1) {
-      const character = parameter_prefix[index];
-      if (character === "(") {
-        if (depth === 0) group_start = index;
-        depth += 1;
-      }
-      if (character === ")") {
-        depth -= 1;
-        if (depth === 0 && group_start >= 0) {
-          parameter_group = parameter_prefix.slice(group_start + 1, index);
-          group_start = -1;
-        }
-      }
-    }
-  }
-  const parameter_pattern =
-    /(?:^|,)\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)\s*(?=,|$)/g;
-  let parameter_match: RegExpExecArray | null;
-  while ((parameter_match = parameter_pattern.exec(parameter_group)) !== null) {
-    const parameter_name = parameter_match[1];
-    const parameter_type = parameter_match[2];
-    if (parameter_name !== undefined && parameter_type !== undefined) {
-      signature_parameters.push({
-        name: parameter_name,
-        type_name: parameter_type,
-      });
-    }
-  }
-  let result_type_name: string | undefined;
-  if (arrow_index >= 0) {
-    const result = signature.type_text.slice(arrow_index + 2).trim().match(
-      /^\(\s*result\s*:\s*([A-Za-z][A-Za-z0-9_]*)\s*\)$/,
-    );
-    if (result !== null) result_type_name = result[1];
-  }
-  if (result_type_name === undefined) {
+  const signature_parameters = signature.type.parameters;
+  const result_type_name = signature.type.result.type.canonical;
+  if (signature.type.result.name !== "result") {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} needs explicit simple parameter and result types to certify ensures ${ensures}.`,
-        signature.span,
+        `Prefix signature ${signature.name} must name its result to certify ensures ${proposition_text}.`,
+        signature.type.result.span,
       ),
     );
   }
-  if (
-    callable_type.params.length !== signature_parameters.length ||
-    callable_type.result.tag !== "scalar" ||
-    callable_type.result.name !== result_type_name
-  ) {
-    return fail(
-      compiler_diagnostic(
-        diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} does not match the inferred callable representation required by ensures ${ensures}.`,
-        signature.span,
-      ),
-    );
-  }
-  for (let index = 0; index < signature_parameters.length; index += 1) {
-    const parameter = signature_parameters[index];
-    const inferred = callable_type.params[index];
-    expect(
-      parameter !== undefined && inferred !== undefined,
-      `Prefix signature ${signature.name} lost parameter ${index}.`,
-    );
-    if (inferred.tag !== "scalar" || inferred.name !== parameter.type_name) {
-      return fail(
-        compiler_diagnostic(
-          diagnostic_codes.prefix_signature_unproved,
-          `Prefix signature ${signature.name} does not match the inferred callable representation required by ensures ${ensures}.`,
-          signature.span,
-        ),
-      );
-    }
-  }
-  const lambda = definition_text.match(
-    /=\s*(?:\(([^)]*)\)|([A-Za-z][A-Za-z0-9_]*))\s*=>\s*([A-Za-z][A-Za-z0-9_]*)\s*;?\s*$/,
-  );
-  let result_name: string | undefined;
-  let lambda_parameters: string[] = [];
-  if (lambda !== null) {
-    let lambda_parameter_text = lambda[1];
-    if (lambda_parameter_text === undefined) {
-      lambda_parameter_text = lambda[2];
-    }
-    if (lambda_parameter_text === undefined) lambda_parameter_text = "";
-    lambda_parameters = lambda_parameter_text.split(",").map((parameter) =>
-      parameter.trim()
-    ).filter((parameter) => parameter.length > 0);
-    result_name = lambda[3];
-  }
-  const expected_name = equality[1];
-  expect(expected_name !== undefined, "Contract equality lost its parameter.");
   const expected_index = signature_parameters.findIndex((parameter) =>
     parameter.name === expected_name
   );
   const expected_parameter = signature_parameters[expected_index];
-  const establishes = result_name !== undefined && expected_index >= 0 &&
+  const expected_representation = callable_type.params[expected_index];
+  if (
+    callable_type.params.length !== signature_parameters.length ||
+    expected_parameter === undefined ||
+    expected_representation === undefined ||
+    !same_representation_type(
+      callable_type.result,
+      expected_representation,
+    )
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_unproved,
+        `Prefix signature ${signature.name} does not match the inferred callable representation required by ensures ${proposition_text}.`,
+        ensures.span,
+      ),
+    );
+  }
+  const result_name = metadata_definition.callable_body?.text;
+  const lambda_parameters = metadata_definition.callable_parameters;
+  const establishes = result_name !== undefined &&
+    lambda_parameters !== undefined && expected_index >= 0 &&
     expected_parameter !== undefined &&
-    expected_parameter.type_name === result_type_name &&
+    expected_parameter.type.canonical === result_type_name &&
     lambda_parameters[expected_index] === result_name;
   if (!establishes) {
     return fail(
       compiler_diagnostic(
         diagnostic_codes.prefix_signature_unproved,
-        `Prefix signature ${signature.name} does not establish ensures ${ensures}.`,
-        signature.span,
+        `Prefix signature ${signature.name} does not establish ensures ${proposition_text}.`,
+        ensures.span,
       ),
     );
   }
   const declarations = new Map<string, KernelType>();
   for (const parameter of signature_parameters) {
-    declarations.set(parameter.type_name, type_sort(0));
+    declarations.set(parameter.type.canonical, type_sort(0));
   }
   declarations.set(result_type_name, type_sort(0));
   const environment = KernelEnvironment.from(declarations);
   const term_context = snapshot_kernel_context(
     signature_parameters.map((parameter) => ({
       tag: "constant" as const,
-      name: parameter.type_name,
+      name: parameter.type.canonical,
     })),
   );
   const variable = {
     tag: "var" as const,
-    index: signature_parameters.length - expected_index - 1,
+    index: expected_index,
   };
   expect(
     expected_parameter !== undefined,
@@ -611,7 +3220,7 @@ function check_prefix_ensures(
   );
   const equality_type = {
     tag: "constant" as const,
-    name: expected_parameter.type_name,
+    name: expected_parameter.type.canonical,
   };
   const goal = {
     tag: "equal" as const,
@@ -635,6 +3244,203 @@ function check_prefix_ensures(
       term_context,
     }),
   });
+}
+
+function check_prefix_signature_representation(
+  signature: PrefixSignature,
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  symbols: ReadonlyMap<string, readonly ValueId[]>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+): Checked<undefined> {
+  const unsupported_binder = signature.type.binders.find((binder) =>
+    binder.type.canonical !== "Type"
+  );
+  if (unsupported_binder !== undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} cannot erase dependent binder ${unsupported_binder.name}: ${unsupported_binder.type.text}.`,
+        unsupported_binder.span,
+      ),
+    );
+  }
+  if (signature.kind === "fact" || signature.kind === "opaque fact") {
+    if (signature.type.result.type.canonical === "Prop") return ok(undefined);
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Fact signature ${signature.name} must return Prop.`,
+        signature.type.result.type.span,
+      ),
+    );
+  }
+  const definition = definitions.find((candidate) =>
+    candidate.name === signature.name &&
+    candidate.scope === signature.scope &&
+    candidate.span.start >= signature.span.end
+  );
+  if (definition === undefined) return ok(undefined);
+  const body_check = check_prefix_callable_body(
+    signature,
+    definition,
+    source,
+    cst_root,
+    source_text,
+  );
+  if (diagnostics_of(body_check).length > 0) return body_check;
+  const values = symbols.get(signature.name);
+  if (values === undefined) return ok(undefined);
+  let callable: RepresentationType | undefined;
+  let callable_start = Number.MAX_SAFE_INTEGER;
+  for (const value of values) {
+    const origin = origins.get(value);
+    if (
+      origin === undefined ||
+      origin.start < definition.span.start ||
+      origin.end > definition.span.end ||
+      origin.start >= callable_start
+    ) {
+      continue;
+    }
+    callable = types.get(value);
+    callable_start = origin.start;
+  }
+  if (callable === undefined) return ok(undefined);
+  callable = callable_function_body(callable);
+  if (callable === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} requires a callable definition.`,
+        definition.span,
+        [{ message: "Signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (callable.params.length !== signature.type.parameters.length) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} does not match its definition representation.`,
+        definition.span,
+        [{ message: "Signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  return ok(undefined);
+}
+
+function check_prefix_callable_body(
+  signature: PrefixSignature,
+  definition: PrefixDefinition,
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+): Checked<undefined> {
+  const parameters = definition.callable_parameters;
+  const parameter_types = definition.callable_parameter_types;
+  const body = definition.callable_body;
+  if (
+    parameters === undefined || parameter_types === undefined ||
+    body === undefined
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} requires a direct callable definition.`,
+        definition.span,
+        [{ message: "Signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (parameters.length !== signature.type.parameters.length) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} does not match its definition parameters.`,
+        definition.span,
+        [{ message: "Signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  const parameter_type_check = check_prefix_callable_parameter_types(
+    signature,
+    definition,
+    source,
+    cst_root,
+    source_text,
+  );
+  if (diagnostics_of(parameter_type_check).length > 0) {
+    return parameter_type_check;
+  }
+  expect(
+    parameter_types.length === parameters.length,
+    `Callable ${signature.name} parameter metadata is misaligned.`,
+  );
+  const term_types = new Map<string, LogicalTermType>();
+  for (let index = 0; index < parameters.length; index += 1) {
+    const parameter = parameters[index];
+    const declared = signature.type.parameters[index];
+    expect(
+      parameter !== undefined && declared !== undefined,
+      `Prefix callable ${signature.name} lost parameter ${index}.`,
+    );
+    term_types.set(parameter, logical_term_type_from_reference(declared.type));
+  }
+  const checked_body = check_prefix_term_type(
+    signature.name,
+    body,
+    term_types,
+    new Map(),
+    new Set(),
+  );
+  const body_type = checked_value(checked_body);
+  if (body_type === undefined) return checked_body.map(() => undefined);
+  const result_type = signature.type.result.type.canonical;
+  const binding = find_source_binding(source, signature.name, definition.span);
+  if (binding === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Prefix signature ${signature.name} cannot predeclare this structural or mutual definition.`,
+        definition.span,
+        [{ message: "Prefix signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (body_type.name === result_type) return ok(undefined);
+  if (body.text === result_type) return ok(undefined);
+  let actual_result_name: string | undefined;
+  if (binding.value.tag === "lam" || binding.value.tag === "rec") {
+    actual_result_name = source_facts(source).editor_type_of.get(
+      binding.value.body,
+    )?.resolved_name;
+  }
+  if (actual_result_name === result_type) return ok(undefined);
+  return fail(
+    compiler_diagnostic(
+      diagnostic_codes.prefix_signature_mismatch,
+      `Prefix signature ${signature.name} declares result ${result_type} but its body has ${body_type.name}.`,
+      body.span,
+      [{
+        message: "Signature result is here.",
+        span: signature.type.result.span,
+      }],
+    ),
+  );
+}
+
+function callable_function_body(
+  representation: RepresentationType,
+): Extract<RepresentationType, { tag: "function" }> | undefined {
+  let current = representation;
+  while (current.tag === "forall") current = current.body;
+  if (current.tag !== "function") return undefined;
+  return current;
 }
 
 function freeze_symbol_index(

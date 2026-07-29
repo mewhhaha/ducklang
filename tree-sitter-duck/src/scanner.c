@@ -103,9 +103,9 @@ static bool application_stop_keyword(TSLexer *lexer) {
     strcmp(word, "with") == 0;
 }
 
-/** The `do … end` delimiters, which never continue an application or a type. */
+/** Words that terminate a preceding type instead of becoming type arguments. */
 static bool block_stop_keyword(TSLexer *lexer) {
-  char word[8] = {0};
+  char word[16] = {0};
   unsigned length = 0;
 
   while (
@@ -128,8 +128,10 @@ static bool block_stop_keyword(TSLexer *lexer) {
     return false;
   }
 
-  return strcmp(word, "do") == 0 || strcmp(word, "else") == 0 ||
-    strcmp(word, "end") == 0 || strcmp(word, "then") == 0;
+  return strcmp(word, "decreases") == 0 || strcmp(word, "do") == 0 ||
+    strcmp(word, "else") == 0 || strcmp(word, "end") == 0 ||
+    strcmp(word, "ensures") == 0 || strcmp(word, "requires") == 0 ||
+    strcmp(word, "then") == 0;
 }
 
 static bool starts_type_argument(int32_t character) {

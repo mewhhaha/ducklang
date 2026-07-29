@@ -35,6 +35,18 @@
       "linear_reference"
     ],
     [
+      "prefix_proposition_postfix_term",
+      "linear_reference"
+    ],
+    [
+      "prefix_atomic_proposition",
+      "prefix_proposition_parenthesized_term"
+    ],
+    [
+      "prefix_signature_result",
+      "type_application"
+    ],
+    [
       "shape_field_block",
       "block"
     ],
@@ -200,6 +212,53 @@
       "wrap": {
         "kind": "prec.left",
         "value": 6
+      }
+    },
+    "prefix_proposition_binary_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 6
+      }
+    },
+    "prefix_signature_result": {
+      "wrap": {
+        "kind": "prec",
+        "value": 10
+      }
+    },
+    "prefix_proposition_unary_term": {
+      "wrap": {
+        "kind": "prec.right",
+        "value": 8
+      }
+    },
+    "prefix_proposition_call_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "prefix_proposition_call_arguments": {
+      "wrap": {
+        "kind": "prec",
+        "value": 1
+      }
+    },
+    "prefix_proposition_field_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      }
+    },
+    "prefix_proposition_index_term": {
+      "wrap": {
+        "kind": "prec.left",
+        "value": 10
+      },
+      "paths": {
+        "open": {
+          "hidden_path": true
+        }
       }
     },
     "condition_is_expression": {

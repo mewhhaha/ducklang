@@ -1,7 +1,14 @@
 import type { BabaCstNode, BabaParseResult } from "./baba_parser.ts";
 import {
+  type PrefixCallableType,
   type PrefixDefinition,
+  type PrefixProposition,
   type PrefixSignature,
+  type PrefixSignatureBinder,
+  type PrefixSignatureParameter,
+  type PrefixSignatureResult,
+  type PrefixTerm,
+  type PrefixTypeReference,
 } from "./prefix_signature.ts";
 import { is_snake_case } from "./names.ts";
 import {
@@ -91,45 +98,47 @@ function signature_from_node(
     child.kind === "prefix_signature_type"
   );
   if (name_node === undefined || type_node === undefined) return undefined;
-  const full_type_text = source.slice(type_node.start, type_node.end);
-  const inline_clause = full_type_text.match(
-    /\b(requires|ensures|decreases)\b/,
-  );
-  let type_end = type_node.end;
-  let clauses_start = type_node.end;
-  if (inline_clause !== null && inline_clause.index !== undefined) {
-    type_end = type_node.start + inline_clause.index;
-    clauses_start = type_end;
-  }
-  const requires: string[] = [];
-  const ensures: string[] = [];
-  const decreases: string[] = [];
-  const clause_text = source.slice(clauses_start, node.end);
-  const clause_pattern = /\b(requires|ensures|decreases)\b/g;
-  const clause_matches: RegExpExecArray[] = [];
-  let clause_match: RegExpExecArray | null;
-  while ((clause_match = clause_pattern.exec(clause_text)) !== null) {
-    clause_matches.push(clause_match);
-  }
-  for (let index = 0; index < clause_matches.length; index += 1) {
-    const match = clause_matches[index];
-    if (match === undefined) continue;
-    const next = clause_matches[index + 1];
-    let end = clause_text.length;
-    if (next !== undefined && next.index !== undefined) end = next.index;
-    let proposition = clause_text.slice(match.index + match[0].length, end)
-      .trim();
-    proposition = proposition.replace(/[;]+$/, "").trim();
-    if (proposition.length === 0) proposition = "false";
-    if (match[1] === "requires") requires.push(proposition);
-    if (match[1] === "ensures") ensures.push(proposition);
-    if (match[1] === "decreases") decreases.push(proposition);
+  const type = callable_type_from_node(type_node, source);
+  if (type === undefined) return undefined;
+  const requires: PrefixProposition[] = [];
+  const ensures: PrefixProposition[] = [];
+  const decreases: PrefixTerm[] = [];
+  for (
+    const clause of node.children.filter((child) =>
+      child.kind === "prefix_contract_clause"
+    )
+  ) {
+    const clause_name = clause.children.find((child) =>
+      child.kind === "prefix_requires_keyword" ||
+      child.kind === "prefix_ensures_keyword" ||
+      child.kind === "prefix_decreases_keyword"
+    );
+    if (clause_name === undefined) continue;
+    if (clause_name.kind === "prefix_decreases_keyword") {
+      const metric = clause.children.find((child) =>
+        child.start >= clause_name.end
+      );
+      if (metric !== undefined) decreases.push(term_from_node(metric, source));
+      continue;
+    }
+    const proposition_node = clause.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    if (proposition_node === undefined) continue;
+    const proposition = proposition_from_node(proposition_node, source);
+    if (proposition === undefined) continue;
+    if (clause_name.kind === "prefix_requires_keyword") {
+      requires.push(proposition);
+    }
+    if (clause_name.kind === "prefix_ensures_keyword") {
+      ensures.push(proposition);
+    }
   }
   return {
     name: source.slice(name_node.start, name_node.end),
     kind: "let",
     scope,
-    type_text: source.slice(type_node.start, type_end).trimEnd(),
+    type,
     requires,
     ensures,
     decreases,
@@ -143,7 +152,14 @@ function definitions_from_node(
   scope: string,
 ): PrefixDefinition[] {
   let kind: PrefixDefinition["kind"] = "let";
-  let body_text: string | undefined;
+  let recursive = false;
+  let fact_parameters: string[] | undefined;
+  let fact_body: PrefixProposition | undefined;
+  const callable_definitions: {
+    parameters: string[];
+    parameter_types: (PrefixTypeReference | undefined)[];
+    body: PrefixTerm;
+  }[] = [];
   let names: string[] = [];
   if (node.kind === "prefix_fact_statement") {
     kind = "fact";
@@ -157,7 +173,20 @@ function definitions_from_node(
       child.kind === "prefix_fact_value"
     );
     if (body_node !== undefined) {
-      body_text = source.slice(body_node.start, body_node.end).trim();
+      const parameter_node = body_node.children.find((child) =>
+        child.kind === "prefix_fact_parameters"
+      );
+      if (parameter_node !== undefined) {
+        fact_parameters = parameter_node.children.filter((child) =>
+          child.kind === "identifier"
+        ).map((child) => source.slice(child.start, child.end));
+      }
+      const proposition_node = body_node.children.find((child) =>
+        child.kind === "prefix_proposition"
+      );
+      if (proposition_node !== undefined) {
+        fact_body = proposition_from_node(proposition_node, source);
+      }
     }
     if (node.children.some((child) => child.kind === '"opaque"')) {
       kind = "opaque fact";
@@ -168,6 +197,7 @@ function definitions_from_node(
     );
     if (kind_node === undefined) return [];
     if (kind_node.kind === '"const"') kind = "const";
+    recursive = node.children.some((child) => child.kind === '"rec"');
     const equals_node = node.children.find((child) =>
       source.slice(child.start, child.end) === "="
     );
@@ -200,17 +230,550 @@ function definitions_from_node(
       seen.add(name);
       names.push(name);
     }
+    for (
+      const arrow_node of node.children.filter((child) =>
+        child.kind === "arrow_function"
+      )
+    ) {
+      const parameters: string[] = [];
+      const parameter_types: (PrefixTypeReference | undefined)[] = [];
+      const arrow = arrow_node.children.find((child) => child.kind === '"=>"');
+      if (arrow === undefined) continue;
+      for (const child of arrow_node.children) {
+        if (child.start >= arrow.start) continue;
+        if (child.kind === "parameter") {
+          const name_node = first_descendant(child, "identifier");
+          if (name_node !== undefined) {
+            parameters.push(source.slice(name_node.start, name_node.end));
+            const type_node = first_descendant(child, "type_reference");
+            if (type_node === undefined) {
+              parameter_types.push(undefined);
+            } else {
+              parameter_types.push(type_reference_from_node(type_node, source));
+            }
+          }
+          continue;
+        }
+        if (child.kind !== "parameter_list") continue;
+        for (
+          const parameter_node of child.children.filter((candidate) =>
+            candidate.kind === "parameter"
+          )
+        ) {
+          const name_node = first_descendant(parameter_node, "identifier");
+          if (name_node !== undefined) {
+            parameters.push(source.slice(name_node.start, name_node.end));
+            const type_node = first_descendant(
+              parameter_node,
+              "type_reference",
+            );
+            if (type_node === undefined) {
+              parameter_types.push(undefined);
+            } else {
+              parameter_types.push(type_reference_from_node(type_node, source));
+            }
+          }
+        }
+      }
+      const body = arrow_node.children.find((child) =>
+        child.start >= arrow.end
+      );
+      if (body === undefined) continue;
+      callable_definitions.push({
+        parameters,
+        parameter_types,
+        body: term_from_node(body, source),
+      });
+    }
   }
-  return names.map((name) => {
+  return names.map((name, index) => {
     const definition: PrefixDefinition = {
       name,
       kind,
       scope,
+      recursive,
       span: { start: node.start, end: node.end },
     };
-    if (body_text !== undefined) definition.body_text = body_text;
+    const callable = callable_definitions[index];
+    if (callable !== undefined) {
+      definition.callable_parameters = callable.parameters;
+      definition.callable_parameter_types = callable.parameter_types;
+      definition.callable_body = callable.body;
+    }
+    if (fact_parameters !== undefined) {
+      definition.fact_parameters = fact_parameters;
+    }
+    if (fact_body !== undefined) definition.fact_body = fact_body;
     return definition;
   });
+}
+
+function callable_type_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixCallableType | undefined {
+  const function_node = first_descendant(
+    node,
+    "prefix_signature_function_type",
+  );
+  if (function_node === undefined) return undefined;
+  const binders: PrefixSignatureBinder[] = [];
+  collect_descendants(node, "prefix_signature_binder", (binder_node) => {
+    const binder = parameter_from_node(binder_node, source);
+    if (binder !== undefined) binders.push(binder);
+  });
+  const parameter_list = function_node.children.find((child) =>
+    child.kind === "prefix_signature_parameter_list"
+  );
+  const parameters: PrefixSignatureParameter[] = [];
+  if (parameter_list !== undefined) {
+    for (
+      const parameter_node of parameter_list.children.filter((child) =>
+        child.kind === "prefix_signature_parameter"
+      )
+    ) {
+      const parameter = parameter_from_node(parameter_node, source);
+      if (parameter !== undefined) parameters.push(parameter);
+    }
+  }
+  const result_node = function_node.children.find((child) =>
+    child.kind === "prefix_signature_result"
+  );
+  if (result_node === undefined) return undefined;
+  const result = result_from_node(result_node, source);
+  if (result === undefined) return undefined;
+  return {
+    binders,
+    parameters,
+    result,
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function parameter_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixSignatureParameter | undefined {
+  const name_node = node.children.find((child) =>
+    child.kind === "identifier" || child.kind === "lowercase_identifier"
+  );
+  const type_node = node.children.find((child) =>
+    child.kind === "type_reference"
+  );
+  if (name_node === undefined || type_node === undefined) return undefined;
+  return {
+    name: source.slice(name_node.start, name_node.end),
+    type: type_reference_from_node(type_node, source),
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function result_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixSignatureResult | undefined {
+  const type_node = node.children.find((child) =>
+    child.kind === "type_reference"
+  );
+  if (type_node === undefined) return undefined;
+  const result: PrefixSignatureResult = {
+    type: type_reference_from_node(type_node, source),
+    span: { start: node.start, end: node.end },
+  };
+  if (node.children.some((child) => child.kind === '"result"')) {
+    result.name = "result";
+  }
+  return result;
+}
+
+function type_reference_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixTypeReference {
+  return {
+    text: source.slice(node.start, node.end),
+    canonical: canonical_type_reference(node, source),
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function canonical_type_reference(
+  node: BabaCstNode,
+  source: string,
+): string {
+  if (node.children.length === 0) {
+    return source.slice(node.start, node.end);
+  }
+  if (node.kind === "type_application") {
+    let application = "";
+    for (const child of node.children) {
+      if (child.kind === "comment") continue;
+      if (
+        application.length > 0 && child.kind !== "immediate_type_argument"
+      ) {
+        application += " ";
+      }
+      application += canonical_type_reference(child, source);
+    }
+    return application;
+  }
+  let canonical = "";
+  for (const child of node.children) {
+    if (child.kind === "comment") continue;
+    canonical += canonical_type_reference(child, source);
+  }
+  return canonical;
+}
+
+function proposition_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixProposition | undefined {
+  const span = { start: node.start, end: node.end };
+  if (node.kind === "prefix_proposition") {
+    const child = semantic_child(node);
+    if (child === undefined) return undefined;
+    return proposition_from_node(child, source);
+  }
+  if (node.kind === "prefix_implication_proposition") {
+    const premise_node = node.children.find((child) =>
+      child.kind === "prefix_disjunction_proposition"
+    );
+    if (premise_node === undefined) return undefined;
+    const premise = proposition_from_node(premise_node, source);
+    if (premise === undefined) return undefined;
+    const conclusion_node = node.children.find((child) =>
+      child.kind === "prefix_implication_proposition"
+    );
+    if (conclusion_node === undefined) return premise;
+    const conclusion = proposition_from_node(conclusion_node, source);
+    if (conclusion === undefined) return undefined;
+    return { tag: "implies", left: premise, right: conclusion, span };
+  }
+  if (node.kind === "prefix_disjunction_proposition") {
+    return fold_propositions(
+      node,
+      source,
+      "prefix_conjunction_proposition",
+      "or",
+    );
+  }
+  if (node.kind === "prefix_conjunction_proposition") {
+    return fold_propositions(
+      node,
+      source,
+      "prefix_negation_proposition",
+      "and",
+    );
+  }
+  if (node.kind === "prefix_negation_proposition") {
+    const proposition_node = node.children.find((child) =>
+      child.kind === "prefix_negation_proposition"
+    );
+    if (proposition_node !== undefined) {
+      const proposition = proposition_from_node(proposition_node, source);
+      if (proposition === undefined) return undefined;
+      return { tag: "not", proposition, span };
+    }
+    const child = semantic_child(node);
+    if (child === undefined) return undefined;
+    return proposition_from_node(child, source);
+  }
+  if (node.kind === "prefix_quantified_proposition") {
+    const binder_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_binder"
+    );
+    const proposition_node = node.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    if (binder_node === undefined || proposition_node === undefined) {
+      return undefined;
+    }
+    const binder = parameter_from_node(binder_node, source);
+    const proposition = proposition_from_node(proposition_node, source);
+    if (binder === undefined || proposition === undefined) return undefined;
+    let tag: "forall" | "exists" = "forall";
+    if (
+      node.children.some((child) => child.kind === "prefix_exists_keyword")
+    ) {
+      tag = "exists";
+    }
+    return { tag, binder, proposition, span };
+  }
+  if (node.kind !== "prefix_atomic_proposition") return undefined;
+  const nested = node.children.find((child) =>
+    child.kind === "prefix_proposition"
+  );
+  if (nested !== undefined) return proposition_from_node(nested, source);
+  const atom_text = source.slice(node.start, node.end);
+  if (atom_text === "True") return { tag: "true", span };
+  if (atom_text === "False") return { tag: "false", span };
+  const terms = node.children.filter((child) =>
+    child.kind === "prefix_proposition_term"
+  );
+  const operator = node.children.find((child) =>
+    child.kind === '"="' || child.kind === '"!="' || child.kind === '"<"' ||
+    child.kind === '"<="' || child.kind === '"is"'
+  );
+  const left_node = terms[0];
+  if (left_node === undefined) return undefined;
+  const left = term_from_node(left_node, source);
+  if (operator === undefined) return { tag: "holds", value: left, span };
+  if (operator.kind === '"is"') {
+    const type_node = node.children.find((child) =>
+      child.kind === "type_reference"
+    );
+    if (type_node === undefined) return undefined;
+    return {
+      tag: "is",
+      value: left,
+      type: type_reference_from_node(type_node, source),
+      span,
+    };
+  }
+  const right_node = terms[1];
+  if (right_node === undefined) return undefined;
+  const right = term_from_node(right_node, source);
+  if (operator.kind === '"="') return { tag: "equal", left, right, span };
+  if (operator.kind === '"!="') {
+    return { tag: "not_equal", left, right, span };
+  }
+  if (operator.kind === '"<"') return { tag: "less", left, right, span };
+  return { tag: "less_equal", left, right, span };
+}
+
+function fold_propositions(
+  node: BabaCstNode,
+  source: string,
+  child_kind: string,
+  tag: "and" | "or",
+): PrefixProposition | undefined {
+  const children = node.children.filter((child) => child.kind === child_kind);
+  const first_node = children[0];
+  if (first_node === undefined) return undefined;
+  let result = proposition_from_node(first_node, source);
+  if (result === undefined) return undefined;
+  for (let index = 1; index < children.length; index += 1) {
+    const child = children[index];
+    if (child === undefined) return undefined;
+    const right = proposition_from_node(child, source);
+    if (right === undefined) return undefined;
+    result = {
+      tag,
+      left: result,
+      right,
+      span: { start: result.span.start, end: right.span.end },
+    };
+  }
+  return result;
+}
+
+function term_from_node(node: BabaCstNode, source: string): PrefixTerm {
+  return {
+    text: source.slice(node.start, node.end),
+    references: term_references(node, source),
+    shape: term_shape_from_node(node, source),
+    span: { start: node.start, end: node.end },
+  };
+}
+
+function term_shape_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixTerm["shape"] {
+  if (
+    node.kind === "prefix_proposition_term" ||
+    node.kind === "prefix_proposition_postfix_term" ||
+    node.kind === "postfix_expression"
+  ) {
+    const child = semantic_child(node);
+    if (child === undefined) return { tag: "unsupported" };
+    return term_shape_from_node(child, source);
+  }
+  if (
+    node.kind === "identifier" || node.kind === "lowercase_identifier" ||
+    node.kind === "_aggregate_constructor_identifier" ||
+    node.kind === "_effect_identifier_alias"
+  ) {
+    return {
+      tag: "name",
+      name: source.slice(node.start, node.end),
+    };
+  }
+  if (node.kind === "number") return { tag: "number" };
+  if (node.kind === "string") return { tag: "string" };
+  if (node.kind === "character") return { tag: "character" };
+  if (node.kind === "boolean") return { tag: "boolean" };
+  if (node.kind === "prefix_proposition_binary_term") {
+    const terms = node.children.filter((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    const left = terms[0];
+    const right = terms[1];
+    const operator = node.children.find((child) =>
+      child.kind === "operator_symbol"
+    );
+    if (left === undefined || right === undefined || operator === undefined) {
+      return { tag: "unsupported" };
+    }
+    return {
+      tag: "binary",
+      operator: source.slice(operator.start, operator.end),
+      left: term_from_node(left, source),
+      right: term_from_node(right, source),
+    };
+  }
+  if (node.kind === "binary_expression") {
+    const operands = node.children.filter((child) =>
+      child.kind !== "operator_symbol" && child.kind !== "comment"
+    );
+    const left = operands[0];
+    const right = operands[1];
+    const operator = node.children.find((child) =>
+      child.kind === "operator_symbol"
+    );
+    if (left === undefined || right === undefined || operator === undefined) {
+      return { tag: "unsupported" };
+    }
+    return {
+      tag: "binary",
+      operator: source.slice(operator.start, operator.end),
+      left: term_from_node(left, source),
+      right: term_from_node(right, source),
+    };
+  }
+  if (node.kind === "prefix_proposition_unary_term") {
+    const operand = node.children.find((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    let operand_start = node.end;
+    if (operand !== undefined) operand_start = operand.start;
+    const operator = node.children.find((child) =>
+      child.end <= operand_start &&
+      child.kind !== "comment"
+    );
+    if (operand === undefined || operator === undefined) {
+      return { tag: "unsupported" };
+    }
+    return {
+      tag: "unary",
+      operator: source.slice(operator.start, operator.end),
+      operand: term_from_node(operand, source),
+    };
+  }
+  if (node.kind === "prefix_proposition_call_term") {
+    const function_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_postfix_term"
+    );
+    const arguments_node = node.children.find((child) =>
+      child.kind === "prefix_proposition_call_arguments"
+    );
+    if (function_node === undefined || arguments_node === undefined) {
+      return { tag: "unsupported" };
+    }
+    return {
+      tag: "call",
+      function: term_from_node(function_node, source),
+      arguments: arguments_node.children.filter((child) =>
+        child.kind === "prefix_proposition_term"
+      ).map((child) => term_from_node(child, source)),
+    };
+  }
+  if (node.kind === "prefix_proposition_field_term") {
+    const object = node.children.find((child) =>
+      child.kind === "prefix_proposition_postfix_term"
+    );
+    const field = node.children.find((child) =>
+      child.kind === "identifier" ||
+      source.slice(child.start, child.end) === "end"
+    );
+    if (object === undefined || field === undefined) {
+      return { tag: "unsupported" };
+    }
+    return {
+      tag: "field",
+      object: term_from_node(object, source),
+      field: source.slice(field.start, field.end),
+    };
+  }
+  if (node.kind === "prefix_proposition_index_term") {
+    const object = node.children.find((child) =>
+      child.kind === "prefix_proposition_postfix_term"
+    );
+    if (object === undefined) return { tag: "unsupported" };
+    return { tag: "index", object: term_from_node(object, source) };
+  }
+  if (node.kind === "prefix_proposition_parenthesized_term") {
+    const value = node.children.find((child) =>
+      child.kind === "prefix_proposition_term"
+    );
+    if (value === undefined) return { tag: "unsupported" };
+    return { tag: "parenthesized", value: term_from_node(value, source) };
+  }
+  return { tag: "unsupported" };
+}
+
+function term_references(node: BabaCstNode, source: string): string[] {
+  if (
+    node.kind === "identifier" || node.kind === "lowercase_identifier"
+  ) {
+    return [source.slice(node.start, node.end)];
+  }
+  if (node.kind === "prefix_proposition_field_term") {
+    const object = node.children.find((child) =>
+      child.kind === "prefix_proposition_postfix_term"
+    );
+    if (object === undefined) return [];
+    return term_references(object, source);
+  }
+  const references: string[] = [];
+  const seen = new Set<string>();
+  for (const child of node.children) {
+    if (
+      child.kind.startsWith('"') || child.kind === "comment" ||
+      child.kind === "type_reference"
+    ) {
+      continue;
+    }
+    for (const reference of term_references(child, source)) {
+      if (seen.has(reference)) continue;
+      seen.add(reference);
+      references.push(reference);
+    }
+  }
+  return references;
+}
+
+function semantic_child(node: BabaCstNode): BabaCstNode | undefined {
+  return node.children.find((child) =>
+    !child.kind.startsWith('"') && child.kind !== "comment"
+  );
+}
+
+function first_descendant(
+  node: BabaCstNode,
+  kind: string,
+): BabaCstNode | undefined {
+  if (node.kind === kind) return node;
+  for (const child of node.children) {
+    const found = first_descendant(child, kind);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function collect_descendants(
+  node: BabaCstNode,
+  kind: string,
+  collect: (node: BabaCstNode) => void,
+): void {
+  for (const child of node.children) {
+    if (child.kind === kind) {
+      collect(child);
+      continue;
+    }
+    collect_descendants(child, kind, collect);
+  }
 }
 
 function binding_names_from_pattern(

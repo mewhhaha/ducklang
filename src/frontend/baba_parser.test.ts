@@ -176,6 +176,86 @@ Deno.test("Baba parses prefix signatures and contract clauses", () => {
   assert_equals(parsed.cst.tree.includes("prefix_signature_result"), true);
 });
 
+Deno.test("Baba rejects uppercase prefix type binders", () => {
+  const parsed = parse_duck_source(
+    "type f = forall (A: Type). (value: A) -> (result: A)\n" +
+      "let f = value => value;\n",
+  );
+  assert_equals(parsed.diagnostics.length > 0, true);
+});
+
+Deno.test("Baba rejects a contract clause without a proposition", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "requires\n" +
+    "ensures result = value\n" +
+    "let f = value => value;\n";
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a proposition before the next clause",
+    span: {
+      start: source.indexOf("requires") + "requires".length,
+      end: source.indexOf("requires") + "requires".length,
+    },
+  }]);
+});
+
+Deno.test("Baba does not consume a definition as a requires proposition", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "requires\n" +
+    "let f = value => value;\n";
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a proposition before the next clause",
+    span: {
+      start: source.indexOf("requires") + "requires".length,
+      end: source.indexOf("requires") + "requires".length,
+    },
+  }]);
+});
+
+Deno.test("Baba does not consume a definition as an ensures proposition", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "ensures\n" +
+    "let f = value => value;\n";
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a proposition before the next clause",
+    span: {
+      start: source.indexOf("ensures") + "ensures".length,
+      end: source.indexOf("ensures") + "ensures".length,
+    },
+  }]);
+});
+
+Deno.test("Baba does not consume a definition as a decreases metric", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "decreases\n" +
+    "let f = value => value;\n";
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a metric before the next clause",
+    span: {
+      start: source.indexOf("decreases") + "decreases".length,
+      end: source.indexOf("decreases") + "decreases".length,
+    },
+  }]);
+});
+
+Deno.test("Baba does not consume an ensures clause as a decreases metric", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "decreases\n" +
+    "ensures result = value\n" +
+    "let f = value => value;\n";
+  const parsed = parse_duck_source(source);
+  assert_equals(parsed.diagnostics, [{
+    message: "Contract clause requires a metric before the next clause",
+    span: {
+      start: source.indexOf("decreases") + "decreases".length,
+      end: source.indexOf("decreases") + "decreases".length,
+    },
+  }]);
+});
+
 Deno.test("Baba keeps PascalCase declarations on the ordinary type path", () => {
   const parsed = parse_duck_source("type Identity = I32 -> I32\n");
   assert_equals(parsed.diagnostics, []);

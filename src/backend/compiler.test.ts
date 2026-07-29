@@ -78,7 +78,7 @@ Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
           "let identity = value => value;\n" +
           "identity 42\n",
       ),
-    "does not match the inferred callable representation",
+    "cannot certify ensures result = value",
   );
   assert_throws(
     () =>
@@ -88,7 +88,7 @@ Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
           "let identity = value => value;\n" +
           'identity "wrong"\n',
       ),
-    "does not match the inferred callable representation",
+    "cannot unify I32 with Text",
   );
 });
 

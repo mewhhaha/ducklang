@@ -203,11 +203,20 @@ export type {
 } from "./semantic_program.ts";
 export { associate_prefix_signatures } from "./frontend/prefix_signature.ts";
 export type {
+  PrefixCallableType,
   PrefixDefinition,
+  PrefixProposition,
   PrefixSignature,
   PrefixSignatureAssociation,
+  PrefixSignatureBinder,
   PrefixSignatureIndex,
   PrefixSignatureKind,
+  PrefixSignatureParameter,
+  PrefixSignatureResult,
+  PrefixSpan,
+  PrefixTerm,
+  PrefixTermShape,
+  PrefixTypeReference,
 } from "./frontend/prefix_signature.ts";
 export { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
 export type { PrefixSourceMetadata } from "./frontend/prefix_signature_source.ts";

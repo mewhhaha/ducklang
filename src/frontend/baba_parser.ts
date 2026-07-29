@@ -128,9 +128,22 @@ export function parse_duck_source(text: string): BabaParseResult {
     const root = baba_cst_node(tree.rootNode, ordinal);
     const diagnostics: SyntaxDiagnostic[] = [];
     const recovery_intervals: BabaRecoveryInterval[] = [];
-    const errors: BabaCstNode[] = [];
+    let errors: BabaCstNode[] = [];
+    const suppressed_error_intervals: { start: number; end: number }[] = [];
     collect_error_nodes(root, errors);
     collect_separated_immediate_type_arguments(root, text, errors);
+    collect_contract_keyword_propositions(
+      root,
+      text,
+      errors,
+      suppressed_error_intervals,
+    );
+    errors = errors.filter((error) => {
+      if (error.kind !== "ERROR" && error.kind !== "MISSING") return true;
+      return !suppressed_error_intervals.some((interval) =>
+        error.start >= interval.start && error.end <= interval.end
+      );
+    });
     errors.sort((left, right) => {
       if (left.start !== right.start) return left.start - right.start;
       return left.end - right.end;
@@ -153,6 +166,17 @@ export function parse_duck_source(text: string): BabaParseResult {
             "Parenthesized type application must start on the constructor's line",
           span: { start: error.start, end: error.start },
         };
+      } else if (error.kind === "contract_keyword_proposition") {
+        diagnostic = {
+          message:
+            "Contract clause requires a proposition before the next clause",
+          span: { start: error.start, end: error.end },
+        };
+      } else if (error.kind === "contract_keyword_metric") {
+        diagnostic = {
+          message: "Contract clause requires a metric before the next clause",
+          span: { start: error.start, end: error.end },
+        };
       } else {
         diagnostic = {
           message: `Baba parser rejected ${error.kind}`,
@@ -160,6 +184,12 @@ export function parse_duck_source(text: string): BabaParseResult {
         };
       }
       diagnostics.push(diagnostic);
+      if (
+        error.kind === "contract_keyword_proposition" ||
+        error.kind === "contract_keyword_metric"
+      ) {
+        continue;
+      }
       recovery_intervals.push({
         diagnostic,
         skipped: { start: error.start, end: error.end },
@@ -178,6 +208,100 @@ export function parse_duck_source(text: string): BabaParseResult {
     return parsed;
   } finally {
     tree.delete();
+  }
+}
+
+function collect_contract_keyword_propositions(
+  node: BabaCstNode,
+  source: string,
+  errors: BabaCstNode[],
+  suppressed_error_intervals: { start: number; end: number }[],
+): void {
+  if (node.kind === "prefix_contract_clause") {
+    const keyword = node.children.find((child) =>
+      child.kind === "prefix_requires_keyword" ||
+      child.kind === "prefix_ensures_keyword" ||
+      child.kind === "prefix_decreases_keyword"
+    );
+    const proposition = node.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    const metric = node.children.find((child) =>
+      child !== keyword &&
+      child.kind !== "prefix_requires_keyword" &&
+      child.kind !== "prefix_ensures_keyword" &&
+      child.kind !== "prefix_decreases_keyword"
+    );
+    let metric_starts_statement = false;
+    if (metric !== undefined) {
+      const match = /^\s*([A-Za-z]+)/.exec(
+        source.slice(metric.start, metric.end),
+      );
+      const first_word = match?.[1];
+      metric_starts_statement = first_word === "let" ||
+        first_word === "const" || first_word === "fact" ||
+        first_word === "opaque" || first_word === "type" ||
+        first_word === "requires" || first_word === "ensures" ||
+        first_word === "decreases";
+    }
+    if (
+      keyword?.kind === "prefix_decreases_keyword" &&
+      (
+        metric === undefined || metric.kind === "MISSING" ||
+        metric.start === metric.end || metric_starts_statement
+      )
+    ) {
+      errors.push({
+        id: source_node_id(
+          "contract_keyword_metric",
+          keyword.end,
+          keyword.end,
+          0,
+        ),
+        kind: "contract_keyword_metric",
+        start: keyword.end,
+        end: keyword.end,
+        children: [],
+      });
+      const statement_end = source.indexOf(";", keyword.end);
+      let suppression_end = source.length;
+      if (statement_end >= 0) {
+        suppression_end = statement_end + 1;
+      }
+      suppressed_error_intervals.push({
+        start: keyword.end,
+        end: suppression_end,
+      });
+    }
+    if (keyword !== undefined && proposition !== undefined) {
+      const text = source.slice(proposition.start, proposition.end);
+      if (
+        text === "requires" || text === "ensures" || text === "decreases" ||
+        text === "let" || text === "const" || text === "fact" ||
+        text === "opaque" || text === "type"
+      ) {
+        errors.push({
+          id: source_node_id(
+            "contract_keyword_proposition",
+            keyword.end,
+            keyword.end,
+            0,
+          ),
+          kind: "contract_keyword_proposition",
+          start: keyword.end,
+          end: keyword.end,
+          children: [],
+        });
+      }
+    }
+  }
+  for (const child of node.children) {
+    collect_contract_keyword_propositions(
+      child,
+      source,
+      errors,
+      suppressed_error_intervals,
+    );
   }
 }
 

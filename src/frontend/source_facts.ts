@@ -269,6 +269,40 @@ export function source_facts(source: Source): SourceFacts {
   return facts;
 }
 
+export function resolved_name_of_source_type(
+  source: Source,
+  type: TypeExpr,
+  type_parameters: ReadonlySet<string> = new Set(),
+): string {
+  const recorder = new SourceFactRecorder(source);
+  const substitutions = new Map<string, SourceTypeFact>();
+  for (const parameter of type_parameters) {
+    substitutions.set(
+      parameter,
+      recorder.type_from_type_expr({ tag: "name", name: "I32" }),
+    );
+  }
+  return recorder.resolve_type_expr(type, substitutions, new Set())
+    .resolved_name;
+}
+
+export function representation_type_of_source_type(
+  source: Source,
+  type: TypeExpr,
+  type_parameters: ReadonlySet<string> = new Set(),
+): Type | undefined {
+  const recorder = new SourceFactRecorder(source);
+  const substitutions = new Map<string, SourceTypeFact>();
+  for (const parameter of type_parameters) {
+    substitutions.set(
+      parameter,
+      recorder.type_from_type_expr({ tag: "name", name: "I32" }),
+    );
+  }
+  return recorder.resolve_type_expr(type, substitutions, new Set())
+    .canonical_type();
+}
+
 export function invalidate_source_facts(source: Source): void {
   cached_source_facts.delete(source);
 }

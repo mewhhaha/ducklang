@@ -1055,6 +1055,64 @@ Deno.test("semantic analysis extracts and masks source prefix signatures", () =>
   assert_equals(analysis.symbols.has("identity"), true);
 });
 
+Deno.test("prefix signatures predeclare uncalled callable types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected the predeclared callable identity.");
+  }
+  assert_equals(analysis.types.get(identity), {
+    tag: "function",
+    params: [{ tag: "scalar", name: "I32" }],
+    effects: [],
+    result: { tag: "scalar", name: "I32" },
+  });
+});
+
+Deno.test("named callables reject competing inline annotations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = (value: I32) -> (result: I32)\n" +
+      "let identity: I32 -> I32 = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("cannot combine")
+    ),
+    true,
+  );
+});
+
+Deno.test("polymorphic prefix signatures retain quantified representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type identity = forall (a: Type). (value: a) -> (result: a)\n" +
+      "ensures result = value\n" +
+      "let identity = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  const identity = analysis.symbols.get("identity")?.[0];
+  if (identity === undefined) {
+    throw new Error("Expected the polymorphic callable identity.");
+  }
+  assert_equals(analysis.types.get(identity), {
+    tag: "forall",
+    quantified_variables: [0],
+    body: {
+      tag: "function",
+      params: [{ tag: "variable", id: 0, hint: "unknown" }],
+      effects: [],
+      result: { tag: "variable", id: 0, hint: "unknown" },
+    },
+  });
+});
+
 Deno.test("checked contracts erase before semantic Core construction", () => {
   const contracted_source = "type identity = (value: I32) -> (result: I32)\n" +
     "ensures result = value\n" +
@@ -1171,6 +1229,1234 @@ Deno.test("semantic analysis rejects an unsatisfiable literal contract", () => {
   );
 });
 
+Deno.test("requirements are rejected until semantic summaries can carry them", () => {
+  const called = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    called.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot yet propagate requires False")
+    ),
+    true,
+  );
+
+  const uncalled = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    uncalled.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot yet propagate requires False")
+    ),
+    true,
+  );
+
+  const alias = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires False\n" +
+      "let f = value => value;\n" +
+      "let alias = f;\n" +
+      "alias 1\n",
+  ));
+  assert_equals(
+    alias.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot yet propagate requires False")
+    ),
+    true,
+  );
+});
+
+Deno.test("requirements reject unbound names before tautology checking", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "requires missing = missing\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value missing")
+    ),
+    true,
+  );
+});
+
+Deno.test("malformed contract clauses report one syntax root cause", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "requires\n" +
+    "let f = value => value;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [{
+      code: "DUCK1001",
+      message: "Contract clause requires a proposition before the next clause",
+      span: {
+        start: source.indexOf("requires") + "requires".length,
+        end: source.indexOf("requires") + "requires".length,
+      },
+    }],
+  );
+});
+
+Deno.test("malformed decreases clauses report one syntax root cause", () => {
+  const source = "type f = (value: I32) -> (result: I32)\n" +
+    "decreases\n" +
+    "let f = value => value;\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      span: diagnostic.span,
+    })),
+    [{
+      code: "DUCK1001",
+      message: "Contract clause requires a metric before the next clause",
+      span: {
+        start: source.indexOf("decreases") + "decreases".length,
+        end: source.indexOf("decreases") + "decreases".length,
+      },
+    }],
+  );
+});
+
+Deno.test("fact definitions check arity and free logical values", () => {
+  const unbound = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => missing = missing;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unbound.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value missing")
+    ),
+    true,
+  );
+
+  const arity = analyze_duck_source(parse_duck_source(
+    "type lie = (first: I32, second: I32) -> Prop\n" +
+      "fact lie = value => False;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    arity.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2602"),
+    true,
+  );
+});
+
+Deno.test("fact definitions require well-formed propositions", () => {
+  const runtime_value = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    runtime_value.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("value: I32 as a proposition")
+    ),
+    true,
+  );
+
+  const predicate_arity = analyze_duck_source(parse_duck_source(
+    "type predicate = (left: I32, right: I32) -> Prop\n" +
+      "fact predicate = (left, right) => left = right;\n" +
+      "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => predicate(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    predicate_arity.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("expects 2 arguments but received 1")
+    ),
+    true,
+  );
+
+  const unknown_quantifier_type = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => forall (x: Bogus). x = x;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unknown_quantifier_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unknown logical type Bogus")
+    ),
+    true,
+  );
+
+  const zero_divisor = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value % 0 = 0;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    zero_divisor.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const unsupported_index = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value[0] = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    unsupported_index.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term value[0]")
+    ),
+    true,
+  );
+});
+
+Deno.test("fact totality checks every partial operation structurally", () => {
+  const nested_zero = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => value / 0 + value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    nested_zero.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const first_unguarded = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, first: I32, second: I32) -> Prop\n" +
+      "fact lie = (value, first, second) =>\n" +
+      "  second != 0 and value / first / second = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    first_unguarded.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove first is nonzero")
+    ),
+    true,
+  );
+
+  const expression_guard = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) =>\n" +
+      "  divisor + 1 != 0 and value / divisor = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    expression_guard.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove divisor is nonzero")
+    ),
+    true,
+  );
+
+  const shadowed_guard = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) => divisor != 0 and\n" +
+      "  (forall (divisor: I32). value / divisor = value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    shadowed_guard.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove divisor is nonzero")
+    ),
+    true,
+  );
+
+  const signed_overflow = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32, divisor: I32) -> Prop\n" +
+      "fact lie = (value, divisor) =>\n" +
+      "  divisor != 0 and value / divisor = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    signed_overflow.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot rule out signed division overflow")
+    ),
+    true,
+  );
+
+  const guarded = analyze_duck_source(parse_duck_source(
+    "type multiple_of = (value: I32, divisor: I32) -> Prop\n" +
+      "fact multiple_of = (value, divisor) =>\n" +
+      "  divisor != 0 and value % divisor = 0;\n" +
+      "42\n",
+  ));
+  assert_equals(guarded.diagnostics, []);
+
+  const literal_guards = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value % 1i32 = 0i32;\n" +
+      "type q = (value: I64) -> Prop\n" +
+      "fact q = value => value / 2i64 = value;\n" +
+      "type r = (value: U32) -> Prop\n" +
+      "fact r = value => value / 1u32 = value;\n" +
+      "42\n",
+  ));
+  assert_equals(literal_guards.diagnostics, []);
+
+  const typed_variable_guard = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64, divisor: I64) -> Prop\n" +
+      "fact p = (value, divisor) =>\n" +
+      "  divisor != 0i64 and value % divisor = 0i64;\n" +
+      "42\n",
+  ));
+  assert_equals(typed_variable_guard.diagnostics, []);
+});
+
+Deno.test("fact terms use structural operator typing", () => {
+  const chained_comparison = analyze_duck_source(parse_duck_source(
+    "type lie = (a: I32, b: I32, c: I32) -> Prop\n" +
+      "fact lie = (a, b, c) => a < b < c;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    chained_comparison.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term")
+    ),
+    true,
+  );
+
+  const address = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => &value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    address.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term &value")
+    ),
+    true,
+  );
+
+  const mixed = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      'fact lie = value => "a" + value + "b" = "anything";\n' +
+      "42\n",
+  ));
+  assert_equals(
+    mixed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes('unsupported logical term "a" + value')
+    ),
+    true,
+  );
+});
+
+Deno.test("logical binders shadow fact names", () => {
+  const parameter = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (q: I32) -> Prop\n" +
+      "fact p = q => q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term q(1)")
+    ),
+    true,
+  );
+
+  const quantified = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (q: I32). q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    quantified.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term q(1)")
+    ),
+    true,
+  );
+});
+
+Deno.test("logical numbers preserve suffixes and ranges", () => {
+  const suffix = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i64;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    suffix.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("compares I32 with I64")
+    ),
+    true,
+  );
+
+  const oversized = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value / 4294967296 = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    oversized.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I32 logical number")
+    ),
+    true,
+  );
+
+  const matching = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i32;\n" +
+      "42\n",
+  ));
+  assert_equals(matching.diagnostics, []);
+
+  const positive_i32_minimum_magnitude = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: I32) -> Prop\n" +
+        "fact p = value => value = 2147483648i32;\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    positive_i32_minimum_magnitude.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I32 logical number")
+    ),
+    true,
+  );
+
+  const positive_i64_minimum_magnitude = analyze_duck_source(
+    parse_duck_source(
+      "type p = (value: I64) -> Prop\n" +
+        "fact p = value => value = 9223372036854775808i64;\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(
+    positive_i64_minimum_magnitude.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("out-of-range I64 logical number")
+    ),
+    true,
+  );
+
+  const negative_minimums = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = -2147483648i32;\n" +
+      "type q = (value: I64) -> Prop\n" +
+      "fact q = value => value = -9223372036854775808i64;\n" +
+      "42\n",
+  ));
+  assert_equals(negative_minimums.diagnostics, []);
+
+  const absurd_width = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value = 1i9007199254740991;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    absurd_width.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("unsupported logical integer width")
+    ),
+    true,
+  );
+});
+
+Deno.test("fact signatures reject unknown parameter types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type lie = (value: Bogus) -> Prop\n" +
+      "fact lie = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("unknown parameter type Bogus")
+    ),
+    true,
+  );
+
+  for (
+    const malformed of [
+      "I32 :| Bogus",
+      "I32 :& Bogus",
+      "I32 :- Bogus",
+      "Maybe Bogus",
+      "Maybe I32 Text",
+    ]
+  ) {
+    const malformed_analysis = analyze_duck_source(parse_duck_source(
+      "type Maybe a = | #None | #Some a\n" +
+        `type p = (value: ${malformed}) -> Prop\n` +
+        "fact p = value => value = value;\n" +
+        "42\n",
+    ));
+    assert_equals(
+      malformed_analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2602" &&
+        diagnostic.message.includes(`unknown parameter type ${malformed}`)
+      ),
+      true,
+    );
+    assert_equals(
+      checked_value(lower_duck_source(malformed_analysis)),
+      undefined,
+    );
+  }
+});
+
+Deno.test("fact signatures accept resolved structural parameter types", () => {
+  for (const type of ["[I32]", "(I32, I32)", "1", '"a"']) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      `type p = (value: ${type}) -> Prop\n` +
+        "fact p = value => value = value;\n" +
+        "42\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+
+  const refined_numbers = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1) -> Prop\n" +
+      "fact p = value => value = 1 and value < 2 and value + 1 = 2;\n" +
+      "42\n",
+  ));
+  assert_equals(refined_numbers.diagnostics, []);
+
+  const finite_numbers = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1 :| 2) -> Prop\n" +
+      "fact p = value => value < 3 and value + 1 = 2;\n" +
+      "42\n",
+  ));
+  assert_equals(finite_numbers.diagnostics, []);
+
+  const refined_text = analyze_duck_source(parse_duck_source(
+    'type p = (value: "a") -> Prop\n' +
+      'fact p = value => value = "a";\n' +
+      "42\n",
+  ));
+  assert_equals(refined_text.diagnostics, []);
+
+  const weakening = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = (value: 1) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "type r = () -> Prop\n" +
+      "fact r = () => p(1);\n" +
+      "42\n",
+  ));
+  assert_equals(weakening.diagnostics, []);
+
+  const strengthening = analyze_duck_source(parse_duck_source(
+    "type p = (value: 1) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => p(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    strengthening.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires 1 but received I32")
+    ),
+    true,
+  );
+
+  const alpha_equivalent = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: a) -> Prop\n" +
+      "type p = forall (b: Type). (value: b) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(alpha_equivalent.diagnostics, []);
+
+  const applied_alpha_equivalent = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = forall (a: Type). (value: Box a) -> Prop\n" +
+      "type p = forall (b: Type). (value: Box b) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(applied_alpha_equivalent.diagnostics, []);
+
+  const concrete_instantiation = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "type p = () -> Prop\n" +
+      "fact p = () => q(1, 2);\n" +
+      "type r = (left: Alias, right: I32) -> Prop\n" +
+      "fact r = (left, right) => q(left, right);\n" +
+      "42\n",
+  ));
+  assert_equals(concrete_instantiation.diagnostics, []);
+
+  const incoherent_instantiation = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "type p = () -> Prop\n" +
+      'fact p = () => q(1, "wrong");\n' +
+      "42\n",
+  ));
+  assert_equals(
+    incoherent_instantiation.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires a but received Text")
+    ),
+    true,
+  );
+
+  const aliases_inside_applications = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type Alias = I32\n" +
+      "type q = forall (a: Type). " +
+      "(left: Box a, right: Box a) -> Prop\n" +
+      "type p = (left: Box Alias, right: Box I32) -> Prop\n" +
+      "fact q = (left, right) => left = right;\n" +
+      "fact p = (left, right) => q(left, right);\n" +
+      "42\n",
+  ));
+  assert_equals(aliases_inside_applications.diagnostics, []);
+
+  const transparent_head = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = forall (a: Type). (value: Box a) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "type p = () -> Prop\n" +
+      "fact p = () => q(1);\n" +
+      "42\n",
+  ));
+  assert_equals(transparent_head.diagnostics, []);
+
+  const repeated_transparent_instantiation = analyze_duck_source(
+    parse_duck_source(
+      "type Box a = a\n" +
+        "type q = forall (a: Type). (left: a, right: a) -> Prop\n" +
+        "type p = (left: Box I32, right: I32) -> Prop\n" +
+        "fact q = (left, right) => left = right;\n" +
+        "fact p = (left, right) => q(left, right);\n" +
+        "42\n",
+    ),
+  );
+  assert_equals(repeated_transparent_instantiation.diagnostics, []);
+
+  const reordered_type_sets = analyze_duck_source(parse_duck_source(
+    "type q = (value: I32 :| (Text :| Bool)) -> Prop\n" +
+      "type p = (value: (Bool :| I32) :| Text) -> Prop\n" +
+      "type r = (value: I32 :& Text) -> Prop\n" +
+      "type s = (value: Text :& I32) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "fact r = value => True;\n" +
+      "fact s = value => r(value);\n" +
+      "42\n",
+  ));
+  assert_equals(reordered_type_sets.diagnostics, []);
+
+  const nested_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a. a -> a) -> Prop\n" +
+      "type p = (value: forall b. b -> b) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(nested_forall.diagnostics, []);
+
+  const regrouped_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a b. a -> b) -> Prop\n" +
+      "type p = (value: forall x. forall y. x -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(regrouped_forall.diagnostics, []);
+
+  const captured_forall = analyze_duck_source(parse_duck_source(
+    "type q = (value: forall a. forall b. a -> b) -> Prop\n" +
+      "type p = (value: forall x. forall x. x -> x) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    captured_forall.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("Fact q argument 1")
+    ),
+    true,
+  );
+
+  const escaping_forall = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: forall x. a -> x) -> Prop\n" +
+      "type p = (value: forall y. y -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    escaping_forall.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("Fact q argument 1")
+    ),
+    true,
+  );
+
+  const scoped_forall_instantiation = analyze_duck_source(parse_duck_source(
+    "type q = forall (a: Type). (value: forall x. a -> x) -> Prop\n" +
+      "type p = forall (b: Type). (value: forall y. b -> y) -> Prop\n" +
+      "fact q = value => True;\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(scoped_forall_instantiation.diagnostics, []);
+
+  const refined_bool = analyze_duck_source(parse_duck_source(
+    "type p = (value: true) -> Prop\n" +
+      "fact p = value => value;\n" +
+      "42\n",
+  ));
+  assert_equals(refined_bool.diagnostics, []);
+
+  const runtime_booleans = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => value == value;\n" +
+      "type q = () -> Prop\n" +
+      "fact q = () => true && true;\n" +
+      "42\n",
+  ));
+  assert_equals(runtime_booleans.diagnostics, []);
+});
+
+Deno.test("fact propositions resolve aliases in quantified types", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (other: Alias). other + 1 = other;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+
+  const generic = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type p = forall (a: Type). (value: Box a) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(generic.diagnostics, []);
+
+  const concrete_generic = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type q = (value: Box I32) -> Prop\n" +
+      "fact q = value => value = 1;\n" +
+      "type p = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "42\n",
+  ));
+  assert_equals(concrete_generic.diagnostics, []);
+
+  const malformed_quantifier = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => forall (other: I32 :| Bogus). True;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    malformed_quantifier.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unknown logical type")
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive facts require a checked totality derivation", () => {
+  const direct = analyze_duck_source(parse_duck_source(
+    "type lie = (value: I32) -> Prop\n" +
+      "fact lie = value => lie(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    direct.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("recursive without a checked totality")
+    ),
+    true,
+  );
+
+  const mutual = analyze_duck_source(parse_duck_source(
+    "type first = (value: I32) -> Prop\n" +
+      "fact first = value => second(value);\n" +
+      "type second = (value: I32) -> Prop\n" +
+      "fact second = value => first(value);\n" +
+      "42\n",
+  ));
+  assert_equals(
+    mutual.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value second")
+    ),
+    true,
+  );
+});
+
+Deno.test("decreases clauses require well-formed integer metrics", () => {
+  const missing = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases missing\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    missing.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term missing")
+    ),
+    true,
+  );
+
+  const partial = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases value / 0\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    partial.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("cannot prove 0 is nonzero")
+    ),
+    true,
+  );
+
+  const valid = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(valid.diagnostics, []);
+
+  const floating = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases 1.5f32\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    floating.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("non-integer decreases metric")
+    ),
+    true,
+  );
+
+  const recursive = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "decreases value\n" +
+      "let rec f = value => f value;\n",
+  ));
+  assert_equals(
+    recursive.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "recursive decreases obligations that are not yet checked",
+      )
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures reject duplicate logical binders", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32, value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = (left, right) => left;\n" +
+      "f(1, 2)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats logical binder value")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+
+  const callable = analyze_duck_source(parse_duck_source(
+    "type f = (left: I32, right: I32) -> (result: I32)\n" +
+      "ensures result = left\n" +
+      "let f = (x, x) => x;\n" +
+      "f(1, 2)\n",
+  ));
+  assert_equals(
+    callable.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats parameter x")
+    ),
+    true,
+  );
+  assert_equals(callable.proofs.size, 0);
+
+  const duplicate_type = analyze_duck_source(parse_duck_source(
+    "type f = forall (a: Type) (a: Type). " +
+      "(value: a) -> (result: a)\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    duplicate_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("repeats logical binder a")
+    ),
+    true,
+  );
+
+  const camel_type = analyze_duck_source(parse_duck_source(
+    "type f = forall (camelCase: Type). " +
+      "(value: camelCase) -> (result: camelCase)\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    camel_type.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("must use snake_case")
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures reject unsupported structural and mutual predeclarations", () => {
+  const structural = analyze_duck_source(parse_duck_source(
+    "type left = (value: I32) -> (result: I32)\n" +
+      'let [left] = [value => "wrong"];\n' +
+      "left 1\n",
+  ));
+  assert_equals(
+    structural.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("structural or mutual definition")
+    ),
+    true,
+  );
+
+  const mutual = analyze_duck_source(parse_duck_source(
+    "type first = (value: I32) -> (result: I32)\n" +
+      "type second = (value: I32) -> (result: I32)\n" +
+      "let rec first = value => first value\n" +
+      'and second = value => "wrong";\n' +
+      "first 1\n",
+  ));
+  assert_equals(
+    mutual.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("structural or mutual definition")
+    ),
+    true,
+  );
+});
+
+Deno.test("prefix signatures check direct callable body representations", () => {
+  const result = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      'let f = value => "wrong";\n' +
+      "f 1\n",
+  ));
+  assert_equals(
+    result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares result I32") &&
+      diagnostic.message.includes("body has Text")
+    ),
+    true,
+  );
+
+  const parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: Text) -> (result: Text)\n" +
+      "let f = value => value + 1;\n" +
+      'f "a"\n',
+  ));
+  assert_equals(
+    parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unsupported logical term value + 1")
+    ),
+    true,
+  );
+
+  const unsuffixed = analyze_duck_source(parse_duck_source(
+    "type f = (value: I64) -> (result: I64)\n" +
+      "let f = value => 1;\n" +
+      "f 1i64\n",
+  ));
+  assert_equals(
+    unsuffixed.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares result I64") &&
+      diagnostic.message.includes("body has I32")
+    ),
+    true,
+  );
+
+  const inline_parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = (value: Text) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    inline_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "parameter value declares Text but its prefix signature requires I32",
+      )
+    ),
+    true,
+  );
+  assert_equals(inline_parameter.proofs.size, 0);
+});
+
+Deno.test("prefix callable types compare semantic spelling and aliases", () => {
+  const compact_inline = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32, I32]) -> (result: [I32, I32])\n" +
+      "let f = (value: [I32,I32]) => value;\n",
+  ));
+  assert_equals(compact_inline.diagnostics, []);
+
+  const compact_signature = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32,I32]) -> (result: [I32, I32])\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(compact_signature.diagnostics, []);
+  assert_equals(compact_signature.proofs.size, 1);
+
+  const alias = analyze_duck_source(parse_duck_source(
+    "type Identity = I32\n" +
+      "type f = (value: Identity) -> (result: Identity)\n" +
+      "ensures result = value\n" +
+      "let f = (value: I32) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(alias.diagnostics, []);
+  assert_equals(alias.proofs.size, 1);
+
+  const fact_alias = analyze_duck_source(parse_duck_source(
+    "type Identity = I32\n" +
+      "type p = (value: Identity) -> Prop\n" +
+      "fact p = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(fact_alias.diagnostics, []);
+
+  const generic_alias = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = (value: Box I32) -> (result: Box I32)\n" +
+      "let f = (value: I32) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(generic_alias.diagnostics, []);
+
+  const generic_result = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = () -> (result: Box I32)\n" +
+      "let f = () => 1;\n" +
+      "f()\n",
+  ));
+  assert_equals(generic_result.diagnostics, []);
+
+  const generic_identity = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type f = (value: Box I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(generic_identity.diagnostics, []);
+  assert_equals(generic_identity.proofs.size, 1);
+
+  const distinct_application = analyze_duck_source(parse_duck_source(
+    "type Box a = a\n" +
+      "type BoxI32 = Text\n" +
+      "type f = (value: Box I32) -> (result: Box I32)\n" +
+      "let f = (value: BoxI32) => value;\n" +
+      'f "oops"\n',
+  ));
+  assert_equals(
+    distinct_application.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes(
+        "declares BoxI32 but its prefix signature requires Box I32",
+      )
+    ),
+    true,
+  );
+
+  const singleton = analyze_duck_source(parse_duck_source(
+    "type f = (value: 1) -> (result: 1)\n" +
+      "let f = (value: 1) => value;\n" +
+      "type one = () -> (result: 1)\n" +
+      "let one = () => 1;\n" +
+      "f(one())\n",
+  ));
+  assert_equals(singleton.diagnostics, []);
+
+  const wrong_singleton_parameter = analyze_duck_source(parse_duck_source(
+    "type f = (value: 1) -> (result: 1)\n" +
+      "let f = (value: 2) => value;\n" +
+      "f 1\n",
+  ));
+  assert_equals(
+    wrong_singleton_parameter.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("declares 2") &&
+      diagnostic.message.includes("requires 1")
+    ),
+    true,
+  );
+
+  const wrong_singleton_result = analyze_duck_source(parse_duck_source(
+    'type text = () -> (result: "a")\n' +
+      'let text = () => "b";\n' +
+      "text()\n",
+  ));
+  assert_equals(
+    wrong_singleton_result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes('declares result "a"')
+    ),
+    true,
+  );
+});
+
+Deno.test("logical numerals retain their source value type", () => {
+  const equality = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64) -> Prop\n" +
+      "fact p = value => value = 1;\n",
+  ));
+  assert_equals(
+    equality.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("compares I64 with I32")
+    ),
+    true,
+  );
+
+  const fact_call = analyze_duck_source(parse_duck_source(
+    "type p = (value: I64) -> Prop\n" +
+      "fact p = value => True;\n" +
+      "type q = () -> Prop\n" +
+      "fact q = () => p(1);\n",
+  ));
+  assert_equals(
+    fact_call.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires I64 but received I32")
+    ),
+    true,
+  );
+});
+
+Deno.test("identity certificates require a direct callable definition", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = if false then value => value else value => 0 end;\n" +
+      "f 42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("requires a direct callable definition")
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("fact signatures are not visible before their declaration", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact q = value => value = value;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes("unbound logical value q")
+    ),
+    true,
+  );
+
+  const predeclared = analyze_duck_source(parse_duck_source(
+    "type p = (value: I32) -> Prop\n" +
+      "type q = (value: I32) -> Prop\n" +
+      "fact p = value => q(value);\n" +
+      "fact q = value => True;\n" +
+      "42\n",
+  ));
+  assert_equals(predeclared.diagnostics, []);
+});
+
+Deno.test("contract equality certificates use heterogeneous parameter indices", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (left: I32, right: Text) -> (result: I32)\n" +
+      "ensures result = left\n" +
+      "let f = (left, right) => left;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+});
+
+Deno.test("prefix signatures reject non-type erased binders", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = forall (n: I32). (value: I32) -> (result: I32)\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2602" &&
+      diagnostic.message.includes("cannot erase dependent binder")
+    ),
+    true,
+  );
+});
+
+Deno.test("identity contracts accept aggregate representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type f = (value: [I32]) -> (result: [I32])\n" +
+      "ensures result = value\n" +
+      "let f = value => value;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+});
+
 Deno.test("semantic analysis checks identity postconditions against lambda bodies", () => {
   const parsed = parse_duck_source(
     "type f = (value: I32) -> (result: I32)\n" +
@@ -1233,10 +2519,10 @@ Deno.test("contract certificates match the inferred callable representation", ()
       'f "oops"\n',
   ));
   assert_equals(
-    mismatched.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2604"),
+    mismatched.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2310"),
     true,
   );
-  assert_equals(mismatched.proofs.size, 0);
+  assert_equals(mismatched.proofs.size, 1);
 });
 
 Deno.test("semantic analysis rejects unsupported raw postconditions", () => {

@@ -1162,7 +1162,7 @@ function effect_type_representation(
   return "unknown";
 }
 
-function substitute_type_expr(
+export function substitute_type_expr(
   type: TypeExpr,
   substitutions: ReadonlyMap<string, TypeExpr>,
 ): TypeExpr {

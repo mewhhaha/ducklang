@@ -374,6 +374,6 @@ let loop = 1;
   (binding_statement
     (identifier)
     (ERROR
-      (identifier))
+      (lowercase_identifier))
     (postfix_expression
       (number))))

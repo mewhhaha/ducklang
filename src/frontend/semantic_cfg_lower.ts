@@ -1887,8 +1887,12 @@ function build_callable_control_flow_pass(
   entry_captures: readonly CapturedSemanticValue[],
   callable_ordinals: Map<BabaSourceNodeId, number>,
 ): LoweredCallableControlFlow {
+  let function_type = callable_type;
+  while (function_type.tag === "forall") {
+    function_type = function_type.body;
+  }
   expect(
-    callable_type.tag === "function",
+    function_type.tag === "function",
     `Callable ${String(callable)} has a non-function representation.`,
   );
   const builder = new SemanticCfgBuilder("duck-callable:" + String(callable));
@@ -1975,7 +1979,7 @@ function build_callable_control_flow_pass(
   try {
     const lowered = lower_expression(expression.body, entry, context);
     if (lowered.tag === "value") {
-      if (!same_representation_type(lowered.type, callable_type.result)) {
+      if (!same_representation_type(lowered.type, function_type.result)) {
         throw new SemanticCfgUnavailable(
           `Callable ${String(callable)} has incompatible return evidence.`,
         );
