@@ -97,6 +97,7 @@ export { SemanticCfgBuilder } from "./frontend/semantic_cfg.ts";
 export type {
   SemanticBlock,
   SemanticBlockId,
+  SemanticCallableControlFlow,
   SemanticCfg,
   SemanticExplicitOutput,
   SemanticNode,
@@ -169,6 +170,7 @@ export type {
   FunctionFactIndex,
   KernelCertificateIndex,
   RefinementIndex,
+  SemanticCallableCfgIndex,
   SemanticSymbolIndex,
   SemanticTypeIndex,
   SourceOriginIndex,

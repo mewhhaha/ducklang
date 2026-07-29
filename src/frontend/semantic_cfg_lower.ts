@@ -4,12 +4,17 @@ import type { BabaCstNode, BabaSourceNodeId } from "./baba_parser.ts";
 import type { BindingEntity, BindingIndex, EntityId } from "./binding_index.ts";
 import {
   type SemanticBlockId,
+  type SemanticCallableControlFlow,
   type SemanticCfg,
   SemanticCfgBuilder,
   type SemanticExplicitOutput,
   type SemanticOperation,
 } from "./semantic_cfg.ts";
-import type { SemanticOrigin, ValueId } from "./semantic_identity.ts";
+import {
+  SemanticIdentityAllocator,
+  type SemanticOrigin,
+  type ValueId,
+} from "./semantic_identity.ts";
 import {
   type RepresentationType,
   same_representation_type,
@@ -57,6 +62,19 @@ type OverridePredecessor = {
   overrides: ReadonlyMap<EntityId, ValueId>;
 };
 
+type CallableBinding = {
+  entity: BindingEntity;
+  recursive: boolean;
+  recursive_group: readonly ValueId[];
+};
+
+type CapturedSemanticValue = {
+  value: ValueId;
+  root: EntityId;
+  type: RepresentationType;
+  origin: SemanticOrigin;
+};
+
 type LoweringContext = {
   builder: SemanticCfgBuilder;
   binding_index: BindingIndex;
@@ -67,31 +85,58 @@ type LoweringContext = {
   root: BabaCstNode | undefined;
   loops: LoopBoundary[];
   overrides: Map<EntityId, ValueId>;
+  capture_overrides: ReadonlyMap<EntityId, ValueId>;
   value_types: Map<ValueId, RepresentationType>;
+  value_origins: Map<ValueId, SemanticOrigin>;
+  defined_values: Set<ValueId>;
+  captured_values: CapturedSemanticValue[];
+  recursive_values: ReadonlySet<ValueId>;
+  callable_bindings: WeakMap<FrontExpr, CallableBinding>;
+  callable_control_flow: Map<ValueId, SemanticCallableControlFlow>;
+  callable_identity: SemanticIdentityAllocator;
+  callable_ordinals: Map<BabaSourceNodeId, number>;
+  allow_captures: boolean;
 };
 
-export function semantic_cfg_from_source(
+export type SemanticCfgCollection = {
+  root: SemanticCfg | undefined;
+  callables: ReadonlyMap<ValueId, SemanticCallableControlFlow>;
+};
+
+export function semantic_cfgs_from_source(
   source: Source,
   root: BabaCstNode | undefined,
   binding_index: BindingIndex,
   binding_values: ReadonlyMap<EntityId, ValueId>,
   binding_origins: ReadonlyMap<ValueId, SemanticOrigin>,
-): SemanticCfg | undefined {
+): SemanticCfgCollection {
+  const callables = new Map<ValueId, SemanticCallableControlFlow>();
   try {
-    return build_semantic_cfg_from_source(
+    const control_flow = build_semantic_cfg_from_source(
       source,
       root,
       binding_index,
       binding_values,
       binding_origins,
+      callables,
     );
+    return { root: control_flow, callables };
   } catch (error) {
-    if (error instanceof SemanticCfgUnavailable) return undefined;
+    if (error instanceof SemanticCfgUnavailable) {
+      return { root: undefined, callables: new Map() };
+    }
     throw error;
   }
 }
 
-class SemanticCfgUnavailable extends Error {}
+class SemanticCfgUnavailable extends Error {
+  readonly invalidates_parent: boolean;
+
+  constructor(message: string, invalidates_parent = false) {
+    super(message);
+    this.invalidates_parent = invalidates_parent;
+  }
+}
 
 function build_semantic_cfg_from_source(
   source: Source,
@@ -99,6 +144,7 @@ function build_semantic_cfg_from_source(
   binding_index: BindingIndex,
   binding_values: ReadonlyMap<EntityId, ValueId>,
   binding_origins: ReadonlyMap<ValueId, SemanticOrigin>,
+  callable_control_flow: Map<ValueId, SemanticCallableControlFlow>,
 ): SemanticCfg {
   const builder = new SemanticCfgBuilder("duck-program");
   const entry = builder.add_block(root?.id);
@@ -116,6 +162,8 @@ function build_semantic_cfg_from_source(
   }
   const overrides = new Map<EntityId, ValueId>();
   const value_types = new Map<ValueId, RepresentationType>();
+  const value_origins = new Map<ValueId, SemanticOrigin>();
+  const defined_values = new Set<ValueId>();
   for (const entity of binding_index.entities.values()) {
     if (
       entity.kind !== "module_parameter" || entity.owner !== undefined
@@ -140,6 +188,8 @@ function build_semantic_cfg_from_source(
       });
     }
     builder.add_parameter(value, type, origin);
+    defined_values.add(value);
+    value_origins.set(value, origin);
     const root_entity = binding_root(entity.id, binding_index);
     overrides.set(root_entity, value);
     value_types.set(value, snapshot_representation_type(type));
@@ -154,7 +204,17 @@ function build_semantic_cfg_from_source(
     root,
     loops: [],
     overrides,
+    capture_overrides: new Map(),
     value_types,
+    value_origins,
+    defined_values,
+    captured_values: [],
+    recursive_values: new Set(),
+    callable_bindings: new WeakMap(),
+    callable_control_flow,
+    callable_identity: new SemanticIdentityAllocator("duck-program"),
+    callable_ordinals: new Map(),
+    allow_captures: false,
   };
   const lowered = lower_statements(source.statements, entry, context);
   if (!lowered.terminated) {
@@ -217,6 +277,7 @@ function lower_statement(
     return statement_value(block, value, type);
   }
   if (statement.tag === "bind") {
+    associate_callable_group(statement, context);
     const initializer = lower_expression(statement.value, block, context);
     if (initializer.tag === "terminated") {
       return { block: initializer.block, value: initializer, terminated: true };
@@ -535,6 +596,60 @@ function statement_value(
   };
 }
 
+function associate_callable_group(
+  statement: Extract<Stmt, { tag: "bind" }>,
+  context: LoweringContext,
+): void {
+  const candidates: { expression: FrontExpr; subject: object }[] = [{
+    expression: statement.value,
+    subject: statement,
+  }];
+  if (statement.mutual !== undefined) {
+    for (const member of statement.mutual) {
+      candidates.push({ expression: member.value, subject: member });
+    }
+  }
+  const bindings: {
+    expression: Extract<FrontExpr, { tag: "lam" | "rec" }>;
+    entity: BindingEntity;
+  }[] = [];
+  for (const candidate of candidates) {
+    if (
+      candidate.expression.tag !== "lam" &&
+      candidate.expression.tag !== "rec"
+    ) {
+      continue;
+    }
+    const entity = find_binding_entity(candidate.subject, "name", context);
+    if (entity === undefined) continue;
+    bindings.push({ expression: candidate.expression, entity });
+  }
+  let recursive = statement.is_recursive === true ||
+    statement.mutual !== undefined;
+  if (bindings.some((binding) => binding.expression.tag === "rec")) {
+    recursive = true;
+  }
+  const recursive_group: ValueId[] = [];
+  if (recursive) {
+    for (const binding of bindings) {
+      const value = context.binding_values.get(binding.entity.id);
+      expect(
+        value !== undefined,
+        `Recursive callable ${binding.entity.name} has no ValueId.`,
+      );
+      recursive_group.push(value);
+    }
+  }
+  const stable_group = Object.freeze(recursive_group);
+  for (const binding of bindings) {
+    context.callable_bindings.set(binding.expression, {
+      entity: binding.entity,
+      recursive,
+      recursive_group: stable_group,
+    });
+  }
+}
+
 function bind_statement_values(
   statement: Extract<Stmt, { tag: "bind" }>,
   initializer: Extract<ExpressionFlow, { tag: "value" }>,
@@ -565,6 +680,19 @@ function bind_values(
     if (emitted.has(output.value)) continue;
     emitted.add(output.value);
     const type = binding_entity_type(entity, context);
+    if (initializer.value === output.value) {
+      expect(
+        same_representation_type(initializer.type, type),
+        `Callable binding ${entity.name} changed representation.`,
+      );
+      result = {
+        tag: "value",
+        block: initializer.block,
+        value: output.value,
+        type,
+      };
+      continue;
+    }
     const value = emit_operation(
       initializer.block,
       entity.definition_subject,
@@ -774,7 +902,11 @@ function lower_range_loop(
     index_type,
     binding_output(statement, "index", context),
   );
-  record_semantic_value(index, index_type, context);
+  record_semantic_value(index, index_type, {
+    source_node: index_location.origin,
+    start: index_location.span.start,
+    end: index_location.span.end,
+  }, context);
   const header_overrides = new Map(context.overrides);
   const condition = emit_operation(
     header,
@@ -917,7 +1049,11 @@ function lower_collection_loop(
     new Map([[collection.block, initial_cursor]]),
     cursor_type,
   );
-  record_semantic_value(cursor, cursor_type, context);
+  record_semantic_value(cursor, cursor_type, {
+    source_node: location.origin,
+    start: location.span.start,
+    end: location.span.end,
+  }, context);
   const condition = emit_operation(
     header,
     statement,
@@ -1059,6 +1195,9 @@ function lower_expression(
       );
       let value = context.overrides.get(root_entity);
       if (value === undefined) {
+        value = context.capture_overrides.get(root_entity);
+      }
+      if (value === undefined) {
         value = context.binding_values.get(occurrence.entity);
       }
       if (value === undefined && !runtime_binding(entity)) {
@@ -1077,11 +1216,17 @@ function lower_expression(
         value !== undefined,
         `Reference ${expression.name} lost its semantic ValueId.`,
       );
+      let binding_type = context.value_types.get(value);
+      if (binding_type === undefined) {
+        binding_type = binding_entity_type(entity, context);
+      }
+      ensure_semantic_value_is_available(
+        value,
+        binding_type,
+        root_entity,
+        context,
+      );
       if (expression.tag === "var") {
-        let binding_type = context.value_types.get(value);
-        if (binding_type === undefined) {
-          binding_type = binding_entity_type(entity, context);
-        }
         return { tag: "value", block, value, type: binding_type };
       }
       const consumed = emit_operation(
@@ -1360,13 +1505,101 @@ function lower_expression(
     return { tag: "value", block: operand.block, value, type };
   }
   if (expression.tag === "lam" || expression.tag === "rec") {
+    const callable_identity = callable_output(expression, type, context);
+    const output = callable_identity.output;
+    let callable: LoweredCallableControlFlow | undefined;
+    if (callable_identity.body_available) {
+      callable = lower_callable_control_flow(
+        expression,
+        output.value,
+        type,
+        context,
+      );
+    }
+    const captures: ValueId[] = [];
+    if (callable !== undefined) {
+      let captures_available = true;
+      for (const parameter of callable.control_flow.parameters) {
+        if (callable.declared_parameters.has(parameter)) continue;
+        if (callable.recursive_values.has(parameter)) continue;
+        if (
+          !context.defined_values.has(parameter) && !context.allow_captures
+        ) {
+          captures_available = false;
+          break;
+        }
+      }
+      if (captures_available) {
+        for (const parameter of callable.control_flow.parameters) {
+          if (callable.declared_parameters.has(parameter)) continue;
+          if (callable.recursive_values.has(parameter)) continue;
+          if (!context.defined_values.has(parameter)) {
+            let capture_root: EntityId | undefined;
+            for (const [root, value] of context.overrides) {
+              if (value === parameter) {
+                capture_root = root;
+                break;
+              }
+            }
+            if (capture_root === undefined) {
+              for (const [root, value] of context.capture_overrides) {
+                if (value === parameter) {
+                  capture_root = root;
+                  break;
+                }
+              }
+            }
+            expect(
+              capture_root !== undefined,
+              `Callable capture ${String(parameter)} has no live binding.`,
+            );
+            const capture = callable.control_flow.values.find((candidate) =>
+              candidate.value === parameter
+            );
+            expect(
+              capture !== undefined,
+              `Callable capture ${String(parameter)} has no representation.`,
+            );
+            ensure_semantic_value_is_available(
+              parameter,
+              capture.type,
+              capture_root,
+              context,
+            );
+          }
+          captures.push(parameter);
+        }
+        for (const [value, nested] of callable.nested_callables) {
+          context.callable_control_flow.set(value, nested);
+        }
+        let recursive_self: ValueId | undefined;
+        if (
+          expression.tag === "rec" ||
+          (callable_identity.binding !== undefined &&
+            callable_identity.binding.recursive)
+        ) {
+          recursive_self = output.value;
+        }
+        context.callable_control_flow.set(
+          output.value,
+          Object.freeze({
+            callable: output.value,
+            parameters: Object.freeze([...callable.declared_parameters]),
+            captures: Object.freeze([...captures]),
+            recursive_self,
+            recursive_group: Object.freeze([...callable.recursive_values]),
+            control_flow: callable.control_flow,
+          }),
+        );
+      }
+    }
     const value = emit_operation(
       block,
       expression,
       { tag: "construct", constructor: expression.tag },
-      [],
+      captures,
       type,
-      undefined,
+      output,
       context,
     );
     return { tag: "value", block, value, type };
@@ -1484,6 +1717,293 @@ function lower_expression(
   throw new Error("Unknown semantic expression.");
 }
 
+type LoweredCallableControlFlow = {
+  control_flow: SemanticCfg;
+  declared_parameters: ReadonlySet<ValueId>;
+  recursive_values: ReadonlySet<ValueId>;
+  nested_callables: ReadonlyMap<ValueId, SemanticCallableControlFlow>;
+  captured_values: readonly CapturedSemanticValue[];
+};
+
+type CallableOutput = {
+  output: SemanticExplicitOutput;
+  binding: CallableBinding | undefined;
+  body_available: boolean;
+};
+
+function callable_output(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  type: RepresentationType,
+  context: LoweringContext,
+): CallableOutput {
+  const binding = context.callable_bindings.get(expression);
+  if (binding !== undefined) {
+    const binding_type = binding_entity_type(binding.entity, context);
+    if (same_representation_type(binding_type, type)) {
+      return {
+        output: semantic_output(binding.entity, context),
+        binding,
+        body_available: true,
+      };
+    }
+    return {
+      output: anonymous_callable_output(expression, context),
+      binding,
+      body_available: false,
+    };
+  }
+  return {
+    output: anonymous_callable_output(expression, context),
+    binding: undefined,
+    body_available: true,
+  };
+}
+
+function anonymous_callable_output(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  context: LoweringContext,
+): SemanticExplicitOutput {
+  const location = semantic_location(expression, context.root);
+  let ordinal = 0;
+  const previous = context.callable_ordinals.get(location.origin);
+  if (previous !== undefined) ordinal = previous;
+  context.callable_ordinals.set(location.origin, ordinal + 1);
+  const value = context.callable_identity.value_for(
+    location.origin,
+    "callable:" + ordinal.toString(),
+  );
+  return Object.freeze({
+    value,
+    origin: Object.freeze({
+      source_node: location.origin,
+      start: location.span.start,
+      end: location.span.end,
+    }),
+  });
+}
+
+function lower_callable_control_flow(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  callable: ValueId,
+  callable_type: RepresentationType,
+  parent: LoweringContext,
+): LoweredCallableControlFlow | undefined {
+  try {
+    return build_callable_control_flow(
+      expression,
+      callable,
+      callable_type,
+      parent,
+    );
+  } catch (error) {
+    if (error instanceof SemanticCfgUnavailable) {
+      if (error.invalidates_parent) throw error;
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function build_callable_control_flow(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  callable: ValueId,
+  callable_type: RepresentationType,
+  parent: LoweringContext,
+): LoweredCallableControlFlow {
+  const body_span = source_span(expression.body);
+  const live_values = new Map(parent.capture_overrides);
+  for (const [root, value] of parent.overrides) {
+    live_values.set(root, value);
+  }
+  const binding = parent.callable_bindings.get(expression);
+  const recursive_values = new Set<ValueId>();
+  if (binding !== undefined) {
+    for (const value of binding.recursive_group) {
+      recursive_values.add(value);
+    }
+  }
+  const entry_captures: CapturedSemanticValue[] = [];
+  const captured_roots = new Set<EntityId>();
+  const occurrences = [...parent.binding_index.occurrences.values()].sort(
+    (left, right) => left.span.start - right.span.start,
+  );
+  for (const occurrence of occurrences) {
+    if (
+      occurrence.span.start < body_span.start ||
+      occurrence.span.end > body_span.end
+    ) {
+      continue;
+    }
+    if (
+      occurrence.role !== "reference" &&
+      occurrence.role !== "consume" &&
+      occurrence.role !== "shadow"
+    ) {
+      continue;
+    }
+    if (occurrence.entity === undefined) continue;
+    const entity = parent.binding_index.entities.get(occurrence.entity);
+    expect(
+      entity !== undefined,
+      `Callable occurrence ${occurrence.id} lost its binding entity.`,
+    );
+    if (!runtime_binding(entity)) continue;
+    const root = binding_root(entity.id, parent.binding_index);
+    if (captured_roots.has(root)) continue;
+    const value = live_values.get(root);
+    if (value === undefined || recursive_values.has(value)) continue;
+    let type = parent.value_types.get(value);
+    if (type === undefined) {
+      type = binding_entity_type(entity, parent);
+    }
+    const origin = parent.value_origins.get(value);
+    expect(
+      origin !== undefined,
+      `Lexical capture ${String(value)} has no semantic origin.`,
+    );
+    captured_roots.add(root);
+    entry_captures.push(Object.freeze({
+      value,
+      root,
+      type: snapshot_representation_type(type),
+      origin,
+    }));
+  }
+  return build_callable_control_flow_pass(
+    expression,
+    callable,
+    callable_type,
+    parent,
+    entry_captures,
+    parent.callable_ordinals,
+  );
+}
+
+function build_callable_control_flow_pass(
+  expression: Extract<FrontExpr, { tag: "lam" | "rec" }>,
+  callable: ValueId,
+  callable_type: RepresentationType,
+  parent: LoweringContext,
+  entry_captures: readonly CapturedSemanticValue[],
+  callable_ordinals: Map<BabaSourceNodeId, number>,
+): LoweredCallableControlFlow {
+  expect(
+    callable_type.tag === "function",
+    `Callable ${String(callable)} has a non-function representation.`,
+  );
+  const builder = new SemanticCfgBuilder("duck-callable:" + String(callable));
+  const entry = builder.add_block(
+    semantic_location(expression.body, parent.root).origin,
+  );
+  const overrides = new Map<EntityId, ValueId>();
+  const capture_overrides = new Map(parent.capture_overrides);
+  for (const [root, value] of parent.overrides) {
+    capture_overrides.set(root, value);
+  }
+  const value_types = new Map(parent.value_types);
+  const value_origins = new Map(parent.value_origins);
+  const defined_values = new Set<ValueId>();
+  const declared_parameters = new Set<ValueId>();
+  const binding = parent.callable_bindings.get(expression);
+  const recursive_values = new Set<ValueId>();
+  if (binding !== undefined) {
+    for (const value of binding.recursive_group) {
+      recursive_values.add(value);
+      const entity_id = parent.entity_by_value.get(value);
+      expect(
+        entity_id !== undefined,
+        `Recursive callable ${String(value)} has no binding entity.`,
+      );
+      const entity = parent.binding_index.entities.get(entity_id);
+      expect(
+        entity !== undefined,
+        `Recursive callable ${String(value)} lost its binding entity.`,
+      );
+      const type = binding_entity_type(entity, parent);
+      const output = semantic_output(entity, parent);
+      value_types.set(value, type);
+      value_origins.set(value, output.origin);
+      const root = binding_root(entity.id, parent.binding_index);
+      capture_overrides.set(root, value);
+    }
+  }
+  for (const parameter of expression.params) {
+    const entity = binding_entity(parameter, "name", parent);
+    const output = semantic_output(entity, parent);
+    const type = binding_entity_type(entity, parent);
+    builder.add_parameter(output.value, type, output.origin);
+    declared_parameters.add(output.value);
+    defined_values.add(output.value);
+    value_types.set(output.value, snapshot_representation_type(type));
+    value_origins.set(output.value, output.origin);
+    const root = binding_root(entity.id, parent.binding_index);
+    overrides.set(root, output.value);
+  }
+  for (const capture of entry_captures) {
+    builder.add_parameter(capture.value, capture.type, capture.origin);
+    defined_values.add(capture.value);
+    value_types.set(
+      capture.value,
+      snapshot_representation_type(capture.type),
+    );
+    value_origins.set(capture.value, capture.origin);
+    overrides.set(capture.root, capture.value);
+  }
+  const nested_callables = new Map<ValueId, SemanticCallableControlFlow>();
+  const context: LoweringContext = {
+    builder,
+    binding_index: parent.binding_index,
+    binding_values: parent.binding_values,
+    binding_origins: parent.binding_origins,
+    entity_by_value: parent.entity_by_value,
+    entities_by_subject: parent.entities_by_subject,
+    root: parent.root,
+    loops: [],
+    overrides,
+    capture_overrides,
+    value_types,
+    value_origins,
+    defined_values,
+    captured_values: [...entry_captures],
+    recursive_values,
+    callable_bindings: parent.callable_bindings,
+    callable_control_flow: nested_callables,
+    callable_identity: parent.callable_identity,
+    callable_ordinals,
+    allow_captures: true,
+  };
+  try {
+    const lowered = lower_expression(expression.body, entry, context);
+    if (lowered.tag === "value") {
+      if (!same_representation_type(lowered.type, callable_type.result)) {
+        throw new SemanticCfgUnavailable(
+          `Callable ${String(callable)} has incompatible return evidence.`,
+        );
+      }
+      builder.terminate(lowered.block, {
+        tag: "return",
+        value: lowered.value,
+      });
+    }
+  } catch (error) {
+    if (
+      error instanceof SemanticCfgUnavailable &&
+      !error.invalidates_parent &&
+      (context.captured_values.length > 0 || nested_callables.size > 0)
+    ) {
+      throw new SemanticCfgUnavailable(error.message, true);
+    }
+    throw error;
+  }
+  return {
+    control_flow: builder.finish(),
+    declared_parameters,
+    recursive_values,
+    nested_callables,
+    captured_values: Object.freeze([...context.captured_values]),
+  };
+}
+
 function emit_constant(
   subject: object,
   constant: string | number | bigint | boolean,
@@ -1509,12 +2029,18 @@ function normalize_condition(
   context: LoweringContext,
 ): ValueId {
   const bool_type = { tag: "scalar", name: "Bool" } as const;
-  expect(
-    same_representation_type(condition.type, bool_type),
-    `Validated condition at ${
-      semantic_location(subject, context.root).span.start
-    } does not have representation Bool.`,
-  );
+  if (!same_representation_type(condition.type, bool_type)) {
+    const location = semantic_location(subject, context.root);
+    if (context.allow_captures) {
+      throw new SemanticCfgUnavailable(
+        `Callable condition at ${location.span.start} has no Bool representation evidence.`,
+      );
+    }
+    expect(
+      false,
+      `Validated condition at ${location.span.start} does not have representation Bool.`,
+    );
+  }
   return condition.value;
 }
 
@@ -1974,7 +2500,11 @@ function join_expression_values(
     incoming,
     type,
   );
-  record_semantic_value(value, type, context);
+  record_semantic_value(value, type, {
+    source_node: location.origin,
+    start: location.span.start,
+    end: location.span.end,
+  }, context);
   return { tag: "value", block: joined, value, type };
 }
 
@@ -2000,7 +2530,11 @@ function begin_loop_overrides(
       new Map([[predecessor, value]]),
       type,
     );
-    context.value_types.set(phi, snapshot_representation_type(type));
+    record_semantic_value(phi, type, {
+      source_node: location.origin,
+      start: location.span.start,
+      end: location.span.end,
+    }, context);
     carried.set(entity, phi);
   }
   context.overrides = new Map(carried);
@@ -2064,7 +2598,11 @@ function merge_overrides(
       incoming,
       type,
     );
-    context.value_types.set(phi, snapshot_representation_type(type));
+    record_semantic_value(phi, type, {
+      source_node: location.origin,
+      start: location.span.start,
+      end: location.span.end,
+    }, context);
     merged.set(entity, phi);
   }
   context.overrides = merged;
@@ -2164,20 +2702,67 @@ function emit_operation(
   );
   const value = values[0];
   expect(value !== undefined, "Semantic operation produced no value.");
-  record_semantic_value(value, type, context);
+  let value_origin: SemanticOrigin = {
+    source_node: location.origin,
+    start: location.span.start,
+    end: location.span.end,
+  };
+  if (output !== undefined) value_origin = output.origin;
+  record_semantic_value(value, type, value_origin, context);
   return value;
 }
 
 function record_semantic_value(
   value: ValueId,
   type: RepresentationType,
+  origin: SemanticOrigin,
   context: LoweringContext,
 ): void {
+  context.defined_values.add(value);
   context.value_types.set(value, snapshot_representation_type(type));
+  context.value_origins.set(
+    value,
+    Object.freeze({
+      source_node: origin.source_node,
+      start: origin.start,
+      end: origin.end,
+    }),
+  );
   const entity = context.entity_by_value.get(value);
   if (entity === undefined) return;
   const root = binding_root(entity, context.binding_index);
   context.overrides.set(root, value);
+}
+
+function ensure_semantic_value_is_available(
+  value: ValueId,
+  type: RepresentationType,
+  root: EntityId,
+  context: LoweringContext,
+): void {
+  if (context.defined_values.has(value)) return;
+  if (!context.allow_captures) {
+    throw new SemanticCfgUnavailable(
+      `Semantic value ${String(value)} is unavailable at this program point.`,
+    );
+  }
+  const origin = context.value_origins.get(value);
+  expect(
+    origin !== undefined,
+    `Captured semantic value ${String(value)} has no origin.`,
+  );
+  context.builder.add_parameter(value, type, origin);
+  context.defined_values.add(value);
+  context.value_types.set(value, snapshot_representation_type(type));
+  context.overrides.set(root, value);
+  if (!context.recursive_values.has(value)) {
+    context.captured_values.push(Object.freeze({
+      value,
+      root,
+      type: snapshot_representation_type(type),
+      origin,
+    }));
+  }
 }
 
 function representation_of(
@@ -2356,12 +2941,25 @@ function replaced_value(
   const root = binding_root(entity.replaces, context.binding_index);
   let previous = context.overrides.get(root);
   if (previous === undefined) {
+    previous = context.capture_overrides.get(root);
+  }
+  if (previous === undefined) {
     previous = context.binding_values.get(entity.replaces);
   }
   expect(
     previous !== undefined,
     `Semantic replacement ${entity.name} lost its predecessor ValueId.`,
   );
+  let type = context.value_types.get(previous);
+  if (type === undefined) {
+    const predecessor = context.binding_index.entities.get(entity.replaces);
+    expect(
+      predecessor !== undefined,
+      `Semantic replacement ${entity.name} lost its predecessor entity.`,
+    );
+    type = binding_entity_type(predecessor, context);
+  }
+  ensure_semantic_value_is_available(previous, type, root, context);
   return previous;
 }
 

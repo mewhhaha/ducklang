@@ -33,8 +33,11 @@ import { lower_baba_source } from "./frontend/baba_lower.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
-import type { SemanticCfg } from "./frontend/semantic_cfg.ts";
-import { semantic_cfg_from_source } from "./frontend/semantic_cfg_lower.ts";
+import type {
+  SemanticCallableControlFlow,
+  SemanticCfg,
+} from "./frontend/semantic_cfg.ts";
+import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   mark_source_span,
   mark_source_syntax,
@@ -71,6 +74,10 @@ export type RefinementIndex = ReadonlyMap<ValueId, FactState>;
 export type KernelCertificateIndex = ReadonlyMap<string, KernelCertificate>;
 export type SourceOriginIndex = ReadonlyMap<ValueId, SemanticOrigin>;
 export type FunctionFactIndex = ReadonlyMap<string, FunctionFactSummary>;
+export type SemanticCallableCfgIndex = ReadonlyMap<
+  ValueId,
+  SemanticCallableControlFlow
+>;
 
 export type DuckSourceAnalysis = {
   source: SourceNode;
@@ -85,6 +92,7 @@ export type DuckAnalysis = {
   source_analysis: DuckSourceAnalysis;
   diagnostics: readonly SourceDiagnostic[];
   control_flow: SemanticCfg | undefined;
+  callable_control_flow: SemanticCallableCfgIndex;
   symbols: SemanticSymbolIndex;
   types: SemanticTypeIndex;
   facts: RefinementIndex;
@@ -238,14 +246,17 @@ export function analyze_duck_source(
     ...contract_diagnostics,
   ], options.uri);
   let control_flow: SemanticCfg | undefined;
+  let callable_control_flow: SemanticCallableCfgIndex = new FrozenMap([]);
   if (!has_error_diagnostics(diagnostics)) {
-    control_flow = semantic_cfg_from_source(
+    const control_flows = semantic_cfgs_from_source(
       source_analysis.source,
       stable_input.cst.root,
       binding_index,
       binding_values,
       origins,
     );
+    control_flow = control_flows.root;
+    callable_control_flow = new FrozenMap(control_flows.callables);
   }
   return {
     parsed: stable_input,
@@ -253,6 +264,7 @@ export function analyze_duck_source(
     source_analysis,
     diagnostics,
     control_flow,
+    callable_control_flow,
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
     facts: new FrozenMap([]),

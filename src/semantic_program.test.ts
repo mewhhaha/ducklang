@@ -49,6 +49,332 @@ Deno.test("successful analysis exposes stable typed control flow", () => {
   );
 });
 
+Deno.test("named callable control flow uses the binding identity", () => {
+  const source = "let identity = (value: I32) => value;\nidentity\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const identity = first.symbols.get("identity")?.[0];
+  const parameter = first.symbols.get("value")?.[0];
+  if (identity === undefined || parameter === undefined) {
+    throw new Error("Expected identity and parameter semantic identities.");
+  }
+  const callable = first.callable_control_flow.get(identity);
+  if (callable === undefined) {
+    throw new Error("Expected identity callable control flow.");
+  }
+  assert_equals(callable.callable, identity);
+  assert_equals(callable.parameters, [parameter]);
+  assert_equals(callable.captures, []);
+  assert_equals(callable.recursive_self, undefined);
+  assert_equals(callable.recursive_group, []);
+  assert_equals(Object.isFrozen(callable), true);
+  assert_equals(Object.isFrozen(callable.parameters), true);
+  assert_equals(Object.isFrozen(callable.captures), true);
+  assert_equals(Object.isFrozen(callable.recursive_group), true);
+  assert_equals(callable.control_flow.parameters, [parameter]);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: parameter,
+  });
+  assert_equals(
+    first.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "construct" &&
+      node.operation.constructor === "lam" &&
+      node.outputs[0] === identity
+    ),
+    true,
+  );
+  assert_equals(
+    [...second.callable_control_flow],
+    [...first.callable_control_flow],
+  );
+});
+
+Deno.test("nested callable control flow records lexical captures", () => {
+  const source = "let outer = (base: I32) => do\n" +
+    "  let inner = (value: I32) => base + value;\n" +
+    "  inner\n" +
+    "end;\n" +
+    "outer\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const outer = analysis.symbols.get("outer")?.[0];
+  const inner = analysis.symbols.get("inner")?.[0];
+  const base = analysis.symbols.get("base")?.[0];
+  const value = analysis.symbols.get("value")?.[0];
+  if (
+    outer === undefined || inner === undefined || base === undefined ||
+    value === undefined
+  ) {
+    throw new Error("Expected nested callable semantic identities.");
+  }
+  const outer_flow = analysis.callable_control_flow.get(outer);
+  const inner_flow = analysis.callable_control_flow.get(inner);
+  if (outer_flow === undefined || inner_flow === undefined) {
+    throw new Error("Expected both nested callable graphs.");
+  }
+  assert_equals(outer_flow.parameters, [base]);
+  assert_equals(outer_flow.captures, []);
+  assert_equals(outer_flow.recursive_group, []);
+  assert_equals(inner_flow.parameters, [value]);
+  assert_equals(inner_flow.captures, [base]);
+  assert_equals(inner_flow.recursive_group, []);
+  assert_equals(inner_flow.control_flow.parameters, [value, base]);
+  assert_equals(
+    outer_flow.control_flow.blocks.flatMap((block) => block.nodes).some(
+      (node) =>
+        node.operation.tag === "construct" &&
+        node.operation.constructor === "lam" &&
+        node.inputs[0] === base &&
+        node.outputs[0] === inner,
+    ),
+    true,
+  );
+});
+
+Deno.test("recursive callable control flow separates self from captures", () => {
+  const source =
+    "let rec countdown = (value: I32) => if value == 0 then 0 else countdown(value - 1) end;\n" +
+    "countdown\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const countdown = analysis.symbols.get("countdown")?.[0];
+  const value = analysis.symbols.get("value")?.[0];
+  if (countdown === undefined || value === undefined) {
+    throw new Error("Expected recursive callable semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(countdown);
+  if (callable === undefined) {
+    throw new Error("Expected recursive callable control flow.");
+  }
+  assert_equals(callable.parameters, [value]);
+  assert_equals(callable.captures, []);
+  assert_equals(callable.recursive_self, countdown);
+  assert_equals(callable.recursive_group, [countdown]);
+  assert_equals(callable.control_flow.parameters, [value, countdown]);
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).find((node) =>
+      node.outputs[0] === countdown
+    )?.inputs,
+    [],
+  );
+});
+
+Deno.test("callable captures use the live parent SSA generation", () => {
+  const source = "let total = 0;\n" +
+    "if true then total = 1; end\n" +
+    "let get = () => total;\n" +
+    "get\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const get = analysis.symbols.get("get")?.[0];
+  if (get === undefined) {
+    throw new Error("Expected get semantic identity.");
+  }
+  const parent_phi = analysis.control_flow?.blocks.flatMap((block) =>
+    block.nodes
+  ).find((node) => node.operation.tag === "phi");
+  const current_total = parent_phi?.outputs[0];
+  if (current_total === undefined) {
+    throw new Error("Expected the parent assignment phi.");
+  }
+  const callable = analysis.callable_control_flow.get(get);
+  if (callable === undefined) {
+    throw new Error("Expected get callable control flow.");
+  }
+  assert_equals(callable.captures, [current_total]);
+  assert_equals(callable.control_flow.parameters, [current_total]);
+  assert_equals(callable.control_flow.blocks[0]?.terminator, {
+    tag: "return",
+    value: current_total,
+  });
+});
+
+Deno.test("write-only callable assignments capture their predecessor", () => {
+  const source = "let total = 0;\n" +
+    "let set = () => do\n" +
+    "  total = 1;\n" +
+    "  total\n" +
+    "end;\n" +
+    "set\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const set = analysis.symbols.get("set")?.[0];
+  if (total === undefined || set === undefined) {
+    throw new Error("Expected total and set semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(set);
+  if (callable === undefined) {
+    throw new Error("Expected set callable control flow.");
+  }
+  const assignment = callable.control_flow.blocks.flatMap((block) =>
+    block.nodes
+  ).find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  assert_equals(callable.captures, [total]);
+  assert_equals(callable.control_flow.parameters, [total]);
+  assert_equals(assignment?.inputs[0], total);
+  assert_equals(
+    callable.control_flow.blocks[0]?.terminator,
+    { tag: "return", value: assignment?.outputs[0] },
+  );
+});
+
+Deno.test("callable branch assignments return the joined capture", () => {
+  const source = "let total = 0;\n" +
+    "let update = (flag: Bool) => do\n" +
+    "  if flag then\n" +
+    "    total = total + 1;\n" +
+    "  end\n" +
+    "  total\n" +
+    "end;\n" +
+    "update\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const update = analysis.symbols.get("update")?.[0];
+  if (total === undefined || update === undefined) {
+    throw new Error("Expected total and update semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(update);
+  if (callable === undefined) {
+    throw new Error("Expected update callable control flow.");
+  }
+  const nodes = callable.control_flow.blocks.flatMap((block) => block.nodes);
+  const assignment = nodes.find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  const joined = nodes.find((node) => node.operation.tag === "phi");
+  if (assignment === undefined || joined === undefined) {
+    throw new Error("Expected assignment and join nodes in update.");
+  }
+  assert_equals(callable.captures, [total]);
+  assert_equals(joined.inputs, [total, assignment.outputs[0]]);
+  assert_equals(
+    callable.control_flow.blocks.at(-1)?.terminator,
+    { tag: "return", value: joined.outputs[0] },
+  );
+});
+
+Deno.test("callable loops carry captured assignments through the header", () => {
+  const source = "let total = 0;\n" +
+    "let update = (stop: I32) => do\n" +
+    "  for value in 0..stop do\n" +
+    "    total = total + value;\n" +
+    "  end\n" +
+    "  total\n" +
+    "end;\n" +
+    "update\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const total = analysis.symbols.get("total")?.[0];
+  const update = analysis.symbols.get("update")?.[0];
+  if (total === undefined || update === undefined) {
+    throw new Error("Expected total and update semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(update);
+  if (callable === undefined) {
+    throw new Error("Expected update callable control flow.");
+  }
+  const nodes = callable.control_flow.blocks.flatMap((block) => block.nodes);
+  const assignment = nodes.find((node) =>
+    node.operation.tag === "primitive" &&
+    node.operation.name === "assign:same"
+  );
+  if (assignment === undefined) {
+    throw new Error("Expected a loop assignment for total.");
+  }
+  const carried = nodes.find((node) =>
+    node.operation.tag === "phi" &&
+    node.inputs.includes(total) &&
+    node.inputs.includes(assignment.outputs[0])
+  );
+  if (carried === undefined) {
+    throw new Error("Expected the loop header to carry total.");
+  }
+  assert_equals(callable.captures, [total]);
+  assert_equals(
+    callable.control_flow.blocks.at(-1)?.terminator,
+    { tag: "return", value: carried.outputs[0] },
+  );
+});
+
+Deno.test("unavailable captured callables make root flow unavailable", () => {
+  for (
+    const source of [
+      "let base: I32 = 7;\n" +
+      "let pair = (left, right) => if base == 7 then right else left end;\n" +
+      "pair\n",
+      "let base: I32 = 7;\n" +
+      "let choose = (flag: I32) => do\n" +
+      "  if flag then\n" +
+      "    1;\n" +
+      "  end\n" +
+      "  base\n" +
+      "end;\n" +
+      "choose\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.control_flow, undefined);
+    assert_equals(analysis.callable_control_flow.size, 0);
+  }
+});
+
+Deno.test("mutual callable control flow predeclares recursive peers", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    Deno.readTextFileSync("examples/functions/11_mutual_recursion.duck"),
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const even = analysis.symbols.get("even")?.[0];
+  const odd = analysis.symbols.get("odd")?.[0];
+  if (even === undefined || odd === undefined) {
+    throw new Error("Expected mutual callable semantic identities.");
+  }
+  const even_flow = analysis.callable_control_flow.get(even);
+  const odd_flow = analysis.callable_control_flow.get(odd);
+  if (even_flow === undefined || odd_flow === undefined) {
+    throw new Error("Expected both mutual callable graphs.");
+  }
+  assert_equals(even_flow.recursive_group, [even, odd]);
+  assert_equals(odd_flow.recursive_group, [even, odd]);
+  assert_equals(even_flow.captures, []);
+  assert_equals(odd_flow.captures, []);
+  assert_equals(even_flow.control_flow.parameters.includes(odd), true);
+  assert_equals(odd_flow.control_flow.parameters.includes(even), true);
+});
+
+Deno.test("unknown callable body representations do not poison root flow", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let pair = (left, right) => right;\npair\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.control_flow !== undefined, true);
+  assert_equals(analysis.callable_control_flow.size, 0);
+});
+
+Deno.test("callable graph omissions preserve valid elaboration examples", () => {
+  for (
+    const path of [
+      "examples/basics/07_early_return.duck",
+      "examples/compile_time/20_variadic_value_packs.duck",
+      "examples/compile_time/24_comptime_stack_module.duck",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      Deno.readTextFileSync(path),
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(diagnostics_of(lower_duck_source(analysis)), []);
+  }
+});
+
 Deno.test("semantic indexes cover lexical generations with canonical types", () => {
   const source = "let x: I32 = 1;\n" +
     "let f = (value: Bool) => do\n" +

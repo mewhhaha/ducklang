@@ -80,6 +80,15 @@ export type SemanticCfg = {
   blocks: readonly SemanticBlock[];
 };
 
+export type SemanticCallableControlFlow = {
+  callable: ValueId;
+  parameters: readonly ValueId[];
+  captures: readonly ValueId[];
+  recursive_self: ValueId | undefined;
+  recursive_group: readonly ValueId[];
+  control_flow: SemanticCfg;
+};
+
 type MutableBlock = {
   id: SemanticBlockId;
   origin: BabaSourceNodeId | undefined;
