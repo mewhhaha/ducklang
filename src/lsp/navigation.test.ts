@@ -145,7 +145,7 @@ Deno.test("import definitions jump to the imported file from expressions", () =>
   );
 });
 
-Deno.test("rename edits exactly one shadow generation and preserves index shape", () => {
+Deno.test("rename keeps a shadow chain source-valid", () => {
   const text = "let x = 0;\nx\nx = x + 1\nx\n";
   const { index } = indexed(text);
   const edit = rename_symbol(
@@ -163,7 +163,7 @@ Deno.test("rename edits exactly one shadow generation and preserves index shape"
 
   assert_equals(
     edit.changes["file:///main.duck"]?.map((item) => item.range.start.line),
-    [0, 1, 2],
+    [0, 1, 2, 2, 3],
   );
   const edits = edit.changes["file:///main.duck"];
 
@@ -172,12 +172,12 @@ Deno.test("rename edits exactly one shadow generation and preserves index shape"
   }
 
   const renamed = apply_edits(text, edits);
-  assert_equals(renamed, "let base = 0;\nbase\nx = base + 1\nx\n");
+  assert_equals(renamed, "let base = 0;\nbase\nbase = base + 1\nbase\n");
   const renamed_index = indexed(renamed).index;
   assert_equals(index_shape(renamed_index), index_shape(index));
 });
 
-Deno.test("rename respects const capture snapshots", () => {
+Deno.test("rename keeps const capture shadow chains source-valid", () => {
   const text = "let value = 1;\nconst captured = () => value;\n" +
     "value = 2\ncaptured() + value\n";
   const { index } = indexed(text);
@@ -196,8 +196,38 @@ Deno.test("rename respects const capture snapshots", () => {
 
   assert_equals(
     edit.changes["file:///main.duck"]?.map((item) => item.range.start.line),
-    [0, 1],
+    [0, 1, 2, 3],
   );
+  const edits = edit.changes["file:///main.duck"];
+  if (edits === undefined) {
+    throw new Error("Missing const-capture rename edits");
+  }
+  assert_equals(
+    apply_edits(text, edits),
+    "let snapshot = 1;\nconst captured = () => snapshot;\n" +
+      "snapshot = 2\ncaptured() + snapshot\n",
+  );
+});
+
+Deno.test("rename rejects shadow-chain conflicts from every generation", () => {
+  const text = "let x = 0;\ndo x = 2 end;\nlet y = 1;\n";
+  const { index } = indexed(text);
+  const outer = text.indexOf("x");
+  const inner = text.indexOf("x", outer + 1);
+
+  for (const offset of [outer, inner]) {
+    assert_equals(
+      rename_symbol(
+        index,
+        text,
+        "file:///main.duck",
+        offset,
+        "y",
+        "utf-16",
+      ),
+      undefined,
+    );
+  }
 });
 
 for (

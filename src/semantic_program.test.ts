@@ -17,6 +17,81 @@ Deno.test("semantic program stages preserve Baba input and stable symbols", () =
   assert_equals(diagnostics_of(inspected), []);
 });
 
+Deno.test("semantic indexes cover lexical generations with canonical types", () => {
+  const source = "let x: I32 = 1;\n" +
+    "let f = (value: Bool) => do\n" +
+    "  let x = 2;\n" +
+    "  x = x + 1;\n" +
+    "  value\n" +
+    "end;\n" +
+    "x = x + 1;\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const xs = first.symbols.get("x");
+  if (xs === undefined) {
+    throw new Error("Expected every x binding generation");
+  }
+  assert_equals(xs.length, 4);
+  assert_equals(new Set(xs).size, 4);
+  assert_equals(xs.map((value) => first.types.get(value)), [
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+    { tag: "scalar", name: "I32" },
+  ]);
+  assert_equals(xs.map((value) => first.origins.get(value)?.start), [
+    source.indexOf("x"),
+    source.indexOf("x", source.indexOf("let f")),
+    source.indexOf(
+      "x =",
+      source.indexOf("let x", source.indexOf("let f")) + "let x".length,
+    ),
+    source.lastIndexOf("x ="),
+  ]);
+  assert_equals(second.symbols.get("x"), xs);
+  const parameter = first.symbols.get("value")?.[0];
+  if (parameter === undefined) {
+    throw new Error("Expected lambda parameter identity");
+  }
+  assert_equals(first.types.get(parameter), {
+    tag: "scalar",
+    name: "Bool",
+  });
+  const callable = first.symbols.get("f")?.[0];
+  if (callable === undefined) {
+    throw new Error("Expected function binding identity");
+  }
+  const callable_type = first.types.get(callable);
+  assert_equals(callable_type, {
+    tag: "function",
+    params: [{ tag: "scalar", name: "Bool" }],
+    effects: [],
+    result: { tag: "scalar", name: "Bool" },
+  });
+  assert_equals(Object.isFrozen(callable_type), true);
+  if (callable_type?.tag !== "function") {
+    throw new Error("Expected canonical function representation");
+  }
+  assert_equals(Object.isFrozen(callable_type.params), true);
+});
+
+Deno.test("semantic indexes remain partial across Baba recovery", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let = broken;\nlet kept: Bool = true;\n",
+  ));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals([...analysis.symbols.keys()], ["kept"]);
+  const kept = analysis.symbols.get("kept")?.[0];
+  if (kept === undefined) {
+    throw new Error("Expected recovered kept binding");
+  }
+  assert_equals(analysis.types.get(kept), {
+    tag: "scalar",
+    name: "Bool",
+  });
+});
+
 Deno.test("Baba reaches unchanged semantic Core without the handwritten parser", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "let value = 1;\n" +
@@ -52,12 +127,37 @@ Deno.test("Baba reaches unchanged semantic Core without the handwritten parser",
 });
 
 Deno.test("Baba indexed assignments reach semantic Core", () => {
-  const analysis = analyze_duck_source(parse_duck_source(
-    "let pair = [20, 0];\n" +
-      "pair[1] = 22;\n" +
-      "pair\n",
-  ));
+  const source = "let pair = [20, 0];\n" +
+    "pair[1] = 22;\n" +
+    "pair\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
   assert_equals(analysis.diagnostics, []);
+  const pair = analysis.symbols.get("pair");
+  if (pair === undefined) {
+    throw new Error("Expected indexed aggregate identities");
+  }
+  assert_equals(pair.length, 2);
+  assert_equals(pair[0] === pair[1], false);
+  assert_equals(pair.map((value) => analysis.origins.get(value)?.start), [
+    source.indexOf("pair"),
+    source.indexOf("pair", source.indexOf("\n") + 1),
+  ]);
+  assert_equals(pair.map((value) => analysis.types.get(value)), [
+    {
+      tag: "product",
+      fields: [
+        { label: "0", type: { tag: "scalar", name: "I32" } },
+        { label: "1", type: { tag: "scalar", name: "I32" } },
+      ],
+    },
+    {
+      tag: "product",
+      fields: [
+        { label: "0", type: { tag: "scalar", name: "I32" } },
+        { label: "1", type: { tag: "scalar", name: "I32" } },
+      ],
+    },
+  ]);
   const lowered = lower_duck_source(analysis);
   assert_equals(diagnostics_of(lowered), []);
   assert_equals(checked_value(lowered)?.core.statements[1], {
@@ -66,6 +166,26 @@ Deno.test("Baba indexed assignments reach semantic Core", () => {
     index: { tag: "num", type: "i32", value: 1 },
     value: { tag: "num", type: "i32", value: 22 },
   });
+});
+
+Deno.test("semantic indexes do not publish generated placeholder names", () => {
+  const source = "let f = add(_, _);\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals([...analysis.symbols.keys()], ["f"]);
+  assert_equals(
+    [...analysis.origins.values()].every((origin) =>
+      source.slice(origin.start, origin.end) === "f"
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic indexes do not publish unresolved assignment targets", () => {
+  for (const source of ["missing = 1;\n", "missing[0] = 1;\n"]) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.symbols.has("missing"), false);
+  }
 });
 
 Deno.test("Baba compile-time array spreads reach semantic Core", () => {
@@ -949,7 +1069,8 @@ Deno.test("semantic indexes expose every mutual binding with exact origins", () 
     "and odd = value => even(value);\n";
   const analysis = analyze_duck_source(parse_duck_source(source));
   assert_equals(analysis.diagnostics, []);
-  assert_equals([...analysis.symbols.keys()], ["even", "odd"]);
+  assert_equals([...analysis.symbols.keys()], ["even", "odd", "value"]);
+  assert_equals(analysis.symbols.get("value")?.length, 2);
   for (const name of ["even", "odd"]) {
     const value = analysis.symbols.get(name)?.[0];
     if (value === undefined) {

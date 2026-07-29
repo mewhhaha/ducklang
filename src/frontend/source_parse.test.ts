@@ -1,8 +1,10 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import { build_binding_index } from "./binding_index.ts";
+import { name_sites } from "./name_site.ts";
 import {
   parse_baba_source,
   parse_baba_source_with_diagnostics,
+  record_baba_source_name_sites,
 } from "./source_parse.ts";
 import { source_tokens } from "./tokenize.ts";
 
@@ -68,6 +70,23 @@ Deno.test("Baba source recovery preserves unaffected names and exact spans", () 
       span: { start: 29, end: 33 },
     }],
   );
+});
+
+Deno.test("Baba records embedded text binders exactly once", () => {
+  const parsed = parse_baba_source_with_diagnostics(
+    'let "${capture}" = text;\n',
+  );
+  const statement = parsed.source.statements[0];
+  if (statement?.tag !== "bind" || statement.pattern?.tag !== "text_capture") {
+    throw new Error("Expected text capture binding");
+  }
+  record_baba_source_name_sites(parsed.source, parsed.syntax);
+  assert_equals(name_sites(statement.pattern), [{
+    slot: "name",
+    index: undefined,
+    name: "capture",
+    span: { start: 7, end: 14 },
+  }]);
 });
 
 Deno.test("strict Baba source parsing rejects semantic lowering errors", () => {

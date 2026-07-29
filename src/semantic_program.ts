@@ -24,25 +24,32 @@ import {
   analyze_baba_semantics,
   type BabaSemanticAnalyzeOptions,
 } from "./frontend/baba_analyze.ts";
+import {
+  type BindingIndex,
+  build_binding_index,
+} from "./frontend/binding_index.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
-import { pattern_binding_occurrences } from "./frontend/pattern.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import {
   mark_source_span,
   mark_source_syntax,
-  source_span,
   type SourceSpan,
   type SourceSyntax,
   type SyntaxDiagnostic,
 } from "./frontend/syntax.ts";
-import { baba_source_syntax } from "./frontend/source_parse.ts";
+import {
+  baba_source_syntax,
+  record_baba_source_name_sites,
+} from "./frontend/source_parse.ts";
 import {
   SemanticIdentityAllocator,
   type SemanticOrigin,
   type ValueId,
 } from "./frontend/semantic_identity.ts";
+import type { RepresentationType } from "./frontend/representation_type.ts";
+import { representation_type } from "./frontend/refinement.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
 import type { KernelCertificate } from "./frontend/proof_kernel.ts";
 import type { FunctionFactSummary } from "./frontend/function_summary.ts";
@@ -54,7 +61,7 @@ import {
 import { extract_prefix_source_metadata } from "./frontend/prefix_signature_source.ts";
 
 export type SemanticSymbolIndex = ReadonlyMap<string, readonly ValueId[]>;
-export type SemanticTypeIndex = ReadonlyMap<string, string>;
+export type SemanticTypeIndex = ReadonlyMap<ValueId, RepresentationType>;
 export type RefinementIndex = ReadonlyMap<ValueId, FactState>;
 export type KernelCertificateIndex = ReadonlyMap<string, KernelCertificate>;
 export type SourceOriginIndex = ReadonlyMap<ValueId, SemanticOrigin>;
@@ -153,6 +160,7 @@ export function analyze_duck_source(
   }
   const syntax = baba_source_syntax(stable_input);
   mark_source_syntax(source, syntax);
+  record_baba_source_name_sites(source, syntax);
   let analysis_source = source;
   if (options.host_interface !== undefined) {
     analysis_source = source_with_host_interface(
@@ -194,13 +202,20 @@ export function analyze_duck_source(
     stable_input.cst.text,
   );
   const identity = new SemanticIdentityAllocator("duck-program");
+  const binding_index = build_binding_index({
+    source: source_analysis.source,
+    syntax,
+    recovery_intervals: stable_input.recovery_intervals,
+  });
   const symbols = new Map<string, ValueId[]>();
+  const types = new Map<ValueId, RepresentationType>();
   const origins = new Map<ValueId, SemanticOrigin>();
-  collect_top_level_bindings(
-    source_analysis.source,
+  collect_semantic_bindings(
+    binding_index,
     stable_input.cst.root,
     identity,
     symbols,
+    types,
     origins,
   );
   return {
@@ -221,7 +236,7 @@ export function analyze_duck_source(
       ...contract_diagnostics,
     ], options.uri),
     symbols: freeze_symbol_index(symbols),
-    types: new FrozenMap([]),
+    types: new FrozenMap(types),
     facts: new FrozenMap([]),
     proofs: new FrozenMap([]),
     origins: new FrozenMap(origins),
@@ -673,78 +688,114 @@ export function lower_duck_source(
   }
 }
 
-function collect_top_level_bindings(
-  source: SourceNode,
+function collect_semantic_bindings(
+  binding_index: BindingIndex,
   root: BabaCstNode | undefined,
   identity: SemanticIdentityAllocator,
   symbols: Map<string, ValueId[]>,
+  types: Map<ValueId, RepresentationType>,
   origins: Map<ValueId, SemanticOrigin>,
 ): void {
-  for (const statement of source.statements) {
-    if (statement.tag !== "bind") continue;
-    const introduced_bindings: Array<{ name: string; span: SourceSpan }> = [];
-    if (statement.pattern === undefined) {
-      introduced_bindings.push({
-        name: statement.name,
-        span: source_span(statement),
-      });
+  for (const entity of binding_index.entities.values()) {
+    if (
+      (entity.kind !== "value" && entity.kind !== "const" &&
+        entity.kind !== "parameter" && entity.kind !== "module_parameter") ||
+      entity.owner !== undefined
+    ) {
+      continue;
+    }
+    let definition_span: SourceSpan | undefined;
+    if (entity.definition !== undefined) {
+      const occurrence = binding_index.occurrences.get(entity.definition);
+      expect(
+        occurrence !== undefined,
+        `Semantic binding ${entity.id} lost its definition occurrence.`,
+      );
+      definition_span = occurrence.span;
+    }
+    const cst_node = find_covering_node(root, definition_span);
+    let value: ValueId;
+    if (cst_node === undefined || definition_span === undefined) {
+      value = identity.allocate_value();
     } else {
-      for (
-        const occurrence of pattern_binding_occurrences(statement.pattern)
-      ) {
-        let span = source_span(occurrence.source);
-        if (occurrence.binding_span !== undefined) {
-          span = occurrence.binding_span;
-        }
-        introduced_bindings.push({
-          name: occurrence.binding.name,
-          span,
-        });
-      }
-    }
-    if (statement.mutual !== undefined) {
-      for (const member of statement.mutual) {
-        for (const occurrence of pattern_binding_occurrences(member.pattern)) {
-          let span = source_span(occurrence.source);
-          if (occurrence.binding_span !== undefined) {
-            span = occurrence.binding_span;
-          }
-          introduced_bindings.push({
-            name: occurrence.binding.name,
-            span,
-          });
-        }
-      }
-    }
-    for (const introduced of introduced_bindings) {
-      const cst_node = find_covering_node(root, introduced.span);
-      let origin: SemanticOrigin | undefined;
-      if (cst_node !== undefined) {
-        origin = {
+      value = identity.value_for(
+        cst_node.id,
+        "binding:" + entity.kind + ":" + entity.name + ":" +
+          entity.generation.toString(),
+      );
+      origins.set(
+        value,
+        Object.freeze({
           source_node: cst_node.id,
-          start: introduced.span.start,
-          end: introduced.span.end,
-        };
-      }
-      const binding = identity.bind(introduced.name, origin?.source_node);
-      const values = symbols.get(introduced.name);
+          start: definition_span.start,
+          end: definition_span.end,
+        }),
+      );
+    }
+    if (entity.definition !== undefined) {
+      const values = symbols.get(entity.name);
       if (values === undefined) {
-        symbols.set(introduced.name, [binding.value]);
+        symbols.set(entity.name, [value]);
       } else {
-        values.push(binding.value);
-      }
-      if (origin !== undefined) {
-        origins.set(binding.value, Object.freeze(origin));
+        values.push(value);
       }
     }
+    const representation = binding_index.facts.get(entity.id)?.representation;
+    if (
+      representation !== undefined &&
+      representation_is_concrete(representation)
+    ) {
+      types.set(value, representation_type(representation).representation);
+    }
+  }
+}
+
+function representation_is_concrete(type: RepresentationType): boolean {
+  switch (type.tag) {
+    case "never":
+    case "scalar":
+      return true;
+    case "integer":
+      return Number.isSafeInteger(type.width) &&
+        type.width > 0 && type.width <= 64;
+    case "named":
+      return type.args.every(representation_is_concrete);
+    case "product":
+    case "record":
+      return type.fields.every((field) =>
+        representation_is_concrete(field.type)
+      );
+    case "fixed_array":
+      return representation_is_concrete(type.element);
+    case "sum":
+      return type.cases.every((current) =>
+        representation_is_concrete(current.payload)
+      );
+    case "function":
+      return type.params.every(representation_is_concrete) &&
+        representation_is_concrete(type.result);
+    case "owned":
+      return representation_is_concrete(type.value);
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      return false;
   }
 }
 
 function find_covering_node(
   node: BabaCstNode | undefined,
-  span: SourceSpan,
+  span: SourceSpan | undefined,
 ): BabaCstNode | undefined {
-  if (node === undefined || node.start > span.start || node.end < span.end) {
+  if (
+    node === undefined || span === undefined ||
+    node.start > span.start || node.end < span.end
+  ) {
     return undefined;
   }
   let best: BabaCstNode = node;

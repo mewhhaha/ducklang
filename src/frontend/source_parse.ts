@@ -13,7 +13,11 @@ import {
 } from "./baba_parser.ts";
 import { checked_value, diagnostics_of } from "./checked.ts";
 import { decode_literal_escape } from "./literal.ts";
-import { record_direct_node_name_sites } from "./name_site.ts";
+import {
+  name_sites,
+  record_direct_node_name_sites,
+  record_name_site,
+} from "./name_site.ts";
 import {
   make_source_syntax,
   mark_source_syntax,
@@ -70,7 +74,7 @@ export function parse_baba_source_with_diagnostics(
 
   const syntax = baba_source_syntax(baba, diagnostics);
   mark_source_syntax(source, syntax);
-  record_baba_name_sites(source, syntax);
+  record_baba_source_name_sites(source, syntax);
   return {
     baba,
     source,
@@ -80,7 +84,10 @@ export function parse_baba_source_with_diagnostics(
   };
 }
 
-function record_baba_name_sites(source: Source, syntax: SourceSyntax): void {
+export function record_baba_source_name_sites(
+  source: Source,
+  syntax: SourceSyntax,
+): void {
   const tokens = source_tokens(syntax);
   const seen = new WeakSet<object>();
   const pending: object[] = [source];
@@ -117,6 +124,31 @@ function record_baba_name_sites(source: Source, syntax: SourceSyntax): void {
         owned_tokens.push(token);
       }
       record_direct_node_name_sites(owner, owned_tokens);
+      const owner_record = owner as { tag?: string; name?: string };
+      if (
+        owner_record.tag === "text_capture" &&
+        owner_record.name !== undefined
+      ) {
+        const marker = "${" + owner_record.name + "}";
+        const marker_start = syntax.text.indexOf(marker, span.start);
+        if (
+          marker_start >= span.start &&
+          marker_start + marker.length <= span.end
+        ) {
+          const start = marker_start + 2;
+          const already_recorded = name_sites(owner).some((site) =>
+            site.slot === "name" && site.name === owner_record.name &&
+            site.span.start === start &&
+            site.span.end === start + owner_record.name.length
+          );
+          if (!already_recorded) {
+            record_name_site(owner, "name", owner_record.name, {
+              start,
+              end: start + owner_record.name.length,
+            });
+          }
+        }
+      }
     }
 
     for (const child of Object.values(owner)) {
