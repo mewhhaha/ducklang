@@ -283,6 +283,53 @@ Deno.test("semantic CFG rechecks phi coverage after late edges", () => {
   );
 });
 
+Deno.test("semantic CFG accepts a typed loop backedge on an existing phi", () => {
+  const builder = new SemanticCfgBuilder("loop-phi-edge");
+  const entry = builder.add_block("entry:0:1:0" as never);
+  const header = builder.add_block("header:1:2:0" as never);
+  const latch = builder.add_block("latch:2:3:0" as never);
+  const initial = builder.add_node(
+    entry,
+    "entry:0:1:0" as never,
+    span,
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (initial === undefined) throw new Error("missing initial loop value");
+  builder.connect(entry, header);
+  builder.terminate(entry, { tag: "jump", target: header });
+  const phi = builder.add_phi(
+    header,
+    "header:1:2:0" as never,
+    { start: 1, end: 2 },
+    new Map([[entry, initial]]),
+    i32_type,
+  );
+  builder.connect(header, latch);
+  builder.terminate(header, { tag: "jump", target: latch });
+  const next = builder.add_node(
+    latch,
+    "latch:2:3:0" as never,
+    { start: 2, end: 3 },
+    { tag: "primitive", name: "increment" },
+    [phi],
+    [i32_type],
+  )[0];
+  if (next === undefined) throw new Error("missing next loop value");
+  builder.connect(latch, header);
+  builder.add_phi_input(phi, latch, next);
+  builder.terminate(latch, { tag: "jump", target: header });
+  const cfg = builder.finish();
+  assert_equals(cfg.blocks[1]?.nodes[0]?.operation, {
+    tag: "phi",
+    incoming: [
+      { predecessor: entry, value: initial },
+      { predecessor: latch, value: next },
+    ],
+  });
+});
+
 Deno.test("semantic CFG constants reject mutable host values", () => {
   const builder = new SemanticCfgBuilder("constant-boundary");
   const block = builder.add_block(origin);

@@ -27,11 +27,14 @@ import {
 import {
   type BindingIndex,
   build_binding_index,
+  type EntityId,
 } from "./frontend/binding_index.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
+import type { SemanticCfg } from "./frontend/semantic_cfg.ts";
+import { semantic_cfg_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   mark_source_span,
   mark_source_syntax,
@@ -48,8 +51,10 @@ import {
   type SemanticOrigin,
   type ValueId,
 } from "./frontend/semantic_identity.ts";
-import type { RepresentationType } from "./frontend/representation_type.ts";
-import { representation_type } from "./frontend/refinement.ts";
+import {
+  type RepresentationType,
+  snapshot_representation_type,
+} from "./frontend/representation_type.ts";
 import type { FactState } from "./frontend/fact_graph.ts";
 import type { KernelCertificate } from "./frontend/proof_kernel.ts";
 import type { FunctionFactSummary } from "./frontend/function_summary.ts";
@@ -79,6 +84,7 @@ export type DuckAnalysis = {
   source: SourceNode;
   source_analysis: DuckSourceAnalysis;
   diagnostics: readonly SourceDiagnostic[];
+  control_flow: SemanticCfg | undefined;
   symbols: SemanticSymbolIndex;
   types: SemanticTypeIndex;
   facts: RefinementIndex;
@@ -210,7 +216,7 @@ export function analyze_duck_source(
   const symbols = new Map<string, ValueId[]>();
   const types = new Map<ValueId, RepresentationType>();
   const origins = new Map<ValueId, SemanticOrigin>();
-  collect_semantic_bindings(
+  const binding_values = collect_semantic_bindings(
     binding_index,
     stable_input.cst.root,
     identity,
@@ -218,23 +224,35 @@ export function analyze_duck_source(
     types,
     origins,
   );
+  const diagnostics = diagnostic_sequence([
+    ...stable_input.diagnostics.map((diagnostic) =>
+      compiler_diagnostic(
+        diagnostic_codes.syntax_error,
+        diagnostic.message,
+        diagnostic.span,
+      )
+    ),
+    ...source_analysis.diagnostics,
+    ...lowering_diagnostics,
+    ...signature_diagnostics,
+    ...contract_diagnostics,
+  ], options.uri);
+  let control_flow: SemanticCfg | undefined;
+  if (!has_error_diagnostics(diagnostics)) {
+    control_flow = semantic_cfg_from_source(
+      source_analysis.source,
+      stable_input.cst.root,
+      binding_index,
+      binding_values,
+      origins,
+    );
+  }
   return {
     parsed: stable_input,
     source: source_analysis.source,
     source_analysis,
-    diagnostics: diagnostic_sequence([
-      ...stable_input.diagnostics.map((diagnostic) =>
-        compiler_diagnostic(
-          diagnostic_codes.syntax_error,
-          diagnostic.message,
-          diagnostic.span,
-        )
-      ),
-      ...source_analysis.diagnostics,
-      ...lowering_diagnostics,
-      ...signature_diagnostics,
-      ...contract_diagnostics,
-    ], options.uri),
+    diagnostics,
+    control_flow,
     symbols: freeze_symbol_index(symbols),
     types: new FrozenMap(types),
     facts: new FrozenMap([]),
@@ -695,7 +713,8 @@ function collect_semantic_bindings(
   symbols: Map<string, ValueId[]>,
   types: Map<ValueId, RepresentationType>,
   origins: Map<ValueId, SemanticOrigin>,
-): void {
+): Map<EntityId, ValueId> {
+  const binding_values = new Map<EntityId, ValueId>();
   for (const entity of binding_index.entities.values()) {
     if (
       (entity.kind !== "value" && entity.kind !== "const" &&
@@ -732,6 +751,7 @@ function collect_semantic_bindings(
         }),
       );
     }
+    binding_values.set(entity.id, value);
     if (entity.definition !== undefined) {
       const values = symbols.get(entity.name);
       if (values === undefined) {
@@ -741,51 +761,11 @@ function collect_semantic_bindings(
       }
     }
     const representation = binding_index.facts.get(entity.id)?.representation;
-    if (
-      representation !== undefined &&
-      representation_is_concrete(representation)
-    ) {
-      types.set(value, representation_type(representation).representation);
+    if (representation !== undefined) {
+      types.set(value, snapshot_representation_type(representation));
     }
   }
-}
-
-function representation_is_concrete(type: RepresentationType): boolean {
-  switch (type.tag) {
-    case "never":
-    case "scalar":
-      return true;
-    case "integer":
-      return Number.isSafeInteger(type.width) &&
-        type.width > 0 && type.width <= 64;
-    case "named":
-      return type.args.every(representation_is_concrete);
-    case "product":
-    case "record":
-      return type.fields.every((field) =>
-        representation_is_concrete(field.type)
-      );
-    case "fixed_array":
-      return representation_is_concrete(type.element);
-    case "sum":
-      return type.cases.every((current) =>
-        representation_is_concrete(current.payload)
-      );
-    case "function":
-      return type.params.every(representation_is_concrete) &&
-        representation_is_concrete(type.result);
-    case "owned":
-      return representation_is_concrete(type.value);
-    case "variable":
-    case "rigid":
-    case "forall":
-    case "top":
-    case "type_value":
-    case "union":
-    case "intersection":
-    case "difference":
-      return false;
-  }
+  return binding_values;
 }
 
 function find_covering_node(

@@ -102,6 +102,12 @@ export type BindingIndex = {
   occurrence_at(offset: number): BindingOccurrence | undefined;
   visible_at(offset: number): BindingEntity[];
   member_lookup(owner: EntityId, name: string): BindingEntity | undefined;
+  occurrence_of(
+    owner: object,
+    slot: string,
+    index?: number,
+  ): BindingOccurrence | undefined;
+  representation_of(subject: object): RepresentationType | undefined;
   dump(): string;
 };
 
@@ -119,12 +125,15 @@ type State = {
   next_occurrence: number;
   generations: Map<string, number>;
   sites: Set<NameSite>;
+  occurrences_by_site: WeakMap<NameSite, OccurrenceId>;
 };
 
 export function build_binding_index(
   parsed: BindingIndexSource,
   version = 0,
 ): BindingIndex {
+  const facts = editor_source_facts(parsed.source);
+  const occurrences_by_site = new WeakMap<NameSite, OccurrenceId>();
   const root: BindingScope = {
     id: "scope:0",
     parent: undefined,
@@ -211,6 +220,20 @@ export function build_binding_index(
       if (member === undefined) return undefined;
       return this.entities.get(member);
     },
+    occurrence_of(owner, slot, occurrence_index = undefined) {
+      const site = name_sites(owner).find((candidate) =>
+        candidate.slot === slot && candidate.index === occurrence_index
+      );
+      if (site === undefined) return undefined;
+      const occurrence = occurrences_by_site.get(site);
+      if (occurrence === undefined) return undefined;
+      return this.occurrences.get(occurrence);
+    },
+    representation_of(subject) {
+      const type = facts.editor_type_of.get(subject);
+      if (type === undefined) return undefined;
+      return type.canonical_type();
+    },
     dump() {
       return [...this.occurrences.values()].map((occurrence) =>
         occurrence.name + " " + occurrence.role + " " +
@@ -220,12 +243,13 @@ export function build_binding_index(
   };
   const state: State = {
     index,
-    facts: editor_source_facts(parsed.source),
+    facts,
     next_entity: 0,
     next_scope: 1,
     next_occurrence: 0,
     generations: new Map(),
     sites: new Set(),
+    occurrences_by_site,
   };
   predeclare(parsed.source, root.id, state);
   visit_statements(parsed.source.statements, root.id, state);
@@ -2020,6 +2044,7 @@ function occurrence_for(
     unresolved: unresolved_reason,
     scope,
   });
+  state.occurrences_by_site.set(site, id);
   record_scope_span(scope, site.span, state);
   if (
     entity !== undefined &&

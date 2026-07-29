@@ -17,6 +17,38 @@ Deno.test("semantic program stages preserve Baba input and stable symbols", () =
   assert_equals(diagnostics_of(inspected), []);
 });
 
+Deno.test("successful analysis exposes stable typed control flow", () => {
+  const source = "let result = if true then 1 else 2 end;\nresult\n";
+  const first = analyze_duck_source(parse_duck_source(source));
+  const second = analyze_duck_source(parse_duck_source(source));
+  assert_equals(first.diagnostics, []);
+  const control_flow = first.control_flow;
+  if (control_flow === undefined) {
+    throw new Error("Expected successful analysis to expose control flow.");
+  }
+  assert_equals(second.control_flow, control_flow);
+  assert_equals(control_flow.blocks.length, 4);
+  const joined = control_flow.blocks[3];
+  assert_equals(joined?.nodes[0]?.operation.tag, "phi");
+  const result = first.symbols.get("result")?.[0];
+  if (result === undefined) throw new Error("Expected result identity.");
+  assert_equals(joined?.nodes[1]?.outputs, [result]);
+  assert_equals(
+    control_flow.values.find((value) => value.value === result)?.type,
+    { tag: "scalar", name: "I32" },
+  );
+  assert_equals(
+    control_flow.blocks.flatMap((block) => block.nodes).every((node) =>
+      node.span.start >= 0 && node.span.end <= source.length
+    ),
+    true,
+  );
+  assert_equals(
+    checked_value(lower_duck_source(first))?.core,
+    checked_value(lower_duck_source(second))?.core,
+  );
+});
+
 Deno.test("semantic indexes cover lexical generations with canonical types", () => {
   const source = "let x: I32 = 1;\n" +
     "let f = (value: Bool) => do\n" +
@@ -90,6 +122,177 @@ Deno.test("semantic indexes remain partial across Baba recovery", () => {
     tag: "scalar",
     name: "Bool",
   });
+  assert_equals(analysis.control_flow, undefined);
+});
+
+Deno.test("semantic indexes omit bindings without inferred representations", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "let broken = 1 + true;\n",
+  ));
+  assert_equals(analysis.diagnostics.length > 0, true);
+  const broken = analysis.symbols.get("broken")?.[0];
+  if (broken === undefined) {
+    throw new Error("Expected the invalid binding identity.");
+  }
+  assert_equals(analysis.types.has(broken), false);
+  assert_equals(analysis.control_flow, undefined);
+});
+
+Deno.test("semantic control flow records matches loops and ownership", () => {
+  const matched = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "let current: Maybe = #Some 42;\n" +
+      "case current of #Some value => value, #None => 0;\n",
+  ));
+  const match_operations = matched.control_flow?.blocks.flatMap((block) =>
+    block.nodes.map((node) => node.operation)
+  );
+  assert_equals(
+    match_operations?.filter((operation) =>
+      operation.tag === "primitive" &&
+      operation.name.startsWith("pattern:")
+    ).length,
+    2,
+  );
+
+  const looped = analyze_duck_source(parse_duck_source(
+    "let total = 0;\n" +
+      "for value in 0..3 do\n" +
+      "  total = total + value;\n" +
+      "end\n" +
+      "total\n",
+  ));
+  const loop_phi = looped.control_flow?.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.operation.tag === "phi");
+  if (loop_phi?.operation.tag !== "phi") {
+    throw new Error("Expected a loop phi.");
+  }
+  assert_equals(loop_phi.operation.incoming.length, 2);
+
+  const linear = analyze_duck_source(parse_duck_source(
+    "let !token = 1;\n!token\n",
+  ));
+  assert_equals(
+    linear.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "ownership_transition" &&
+      node.operation.transition === "consume"
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic control flow carries assignment identities across joins", () => {
+  const branched = analyze_duck_source(parse_duck_source(
+    "let value = 0;\n" +
+      "if true then value = value + 1; end\n" +
+      "value\n",
+  ));
+  assert_equals(branched.diagnostics, []);
+  const branch_flow = branched.control_flow;
+  if (branch_flow === undefined) {
+    throw new Error("Expected branch control flow.");
+  }
+  const branch_return = branch_flow.blocks.find((block) =>
+    block.terminator.tag === "return"
+  );
+  if (branch_return?.terminator.tag !== "return") {
+    throw new Error("Expected branch return.");
+  }
+  const branch_phi = branch_return.nodes.find((node) =>
+    node.operation.tag === "phi"
+  );
+  assert_equals(branch_return.terminator.value, branch_phi?.outputs[0]);
+  if (branch_phi?.operation.tag !== "phi") {
+    throw new Error("Expected branch assignment phi.");
+  }
+  assert_equals(branch_phi.operation.incoming.length, 2);
+
+  const looped = analyze_duck_source(parse_duck_source(
+    "let total = 0;\n" +
+      "for value in 0..3 do\n" +
+      "  total = total + value;\n" +
+      "end\n" +
+      "total\n",
+  ));
+  assert_equals(looped.diagnostics, []);
+  const loop_flow = looped.control_flow;
+  if (loop_flow === undefined) {
+    throw new Error("Expected loop control flow.");
+  }
+  const assignment = looped.symbols.get("total")?.[1];
+  if (assignment === undefined) {
+    throw new Error("Expected loop assignment identity.");
+  }
+  const carried = loop_flow.blocks.flatMap((block) => block.nodes).find(
+    (node) =>
+      node.operation.tag === "phi" &&
+      node.operation.incoming.some((input) => input.value === assignment),
+  );
+  if (carried?.operation.tag !== "phi") {
+    throw new Error("Expected loop-carried assignment phi.");
+  }
+  assert_equals(carried.operation.incoming.length, 2);
+  const loop_return = loop_flow.blocks.find((block) =>
+    block.terminator.tag === "return"
+  );
+  if (loop_return?.terminator.tag !== "return") {
+    throw new Error("Expected loop return.");
+  }
+  assert_equals(loop_return.terminator.value, carried.outputs[0]);
+});
+
+Deno.test("guard failure keeps pattern bindings out of later match arms", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "let current: Maybe = #Some 42;\n" +
+      "case current of\n" +
+      "  #Some value if false => 0,\n" +
+      "  _ => loop do break 1; end;\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.control_flow !== undefined, true);
+});
+
+Deno.test("semantic control flow covers existing semantic symbol boundaries", () => {
+  const incomplete_paths = [
+    "examples/basics/08_dynamic_condition.duck",
+    "examples/ownership_modules/multi_file/score_module.duck",
+  ];
+  for (const path of incomplete_paths) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      Deno.readTextFileSync(path),
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.control_flow, undefined);
+  }
+  const refutable = analyze_duck_source(parse_duck_source(
+    Deno.readTextFileSync(
+      "examples/loops/11_refutable_collection_pattern.duck",
+    ),
+  ));
+  assert_equals(refutable.diagnostics, []);
+  assert_equals(refutable.control_flow !== undefined, true);
+});
+
+Deno.test("finite type sets pass through control flow without changing Core", () => {
+  const source = "type Marker = #answer :| #other\n" +
+    "let marker: Marker = #answer;\n" +
+    "if marker is #answer then 1 else 0 end\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    analysis.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
+      node.operation.tag === "primitive" && node.operation.name === "is"
+    ),
+    true,
+  );
+  const program = checked_value(lower_duck_source(analysis));
+  assert_equals(program?.core.statements[2]?.tag, "expr");
+  const expression = program?.core.statements[2];
+  if (expression?.tag !== "expr") {
+    throw new Error("Expected the finite type-set expression in Core.");
+  }
+  assert_equals(expression.expr.tag, "if_let");
 });
 
 Deno.test("Baba reaches unchanged semantic Core without the handwritten parser", () => {

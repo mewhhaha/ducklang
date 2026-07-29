@@ -5,8 +5,11 @@ import {
   type SemanticOrigin,
   type ValueId,
 } from "./semantic_identity.ts";
-import type { RepresentationType } from "./representation_type.ts";
-import { representation_equal, representation_type } from "./refinement.ts";
+import {
+  type RepresentationType,
+  same_representation_type,
+  snapshot_representation_type,
+} from "./representation_type.ts";
 import type { SourceSpan } from "./syntax.ts";
 
 export type SemanticBlockId = number & {
@@ -96,6 +99,7 @@ export class SemanticCfgBuilder {
   readonly #values = new Map<ValueId, SemanticValue>();
   readonly #operation_ordinals = new Map<string, number>();
   readonly #phi_ordinals = new Map<BabaSourceNodeId, number>();
+  readonly #phi_blocks = new Map<ValueId, SemanticBlockId>();
 
   constructor(namespace: string) {
     this.#allocator = new SemanticIdentityAllocator(namespace);
@@ -177,9 +181,7 @@ export class SemanticCfgBuilder {
     if (previous_ordinal !== undefined) {
       operation_ordinal = previous_ordinal;
     }
-    const stable_types = output_types.map((type) =>
-      representation_type(type).representation
-    );
+    const stable_types = output_types.map(snapshot_representation_type);
     const outputs: ValueId[] = [];
     const pending_outputs = new Set<ValueId>();
     const pending_values: SemanticValue[] = [];
@@ -249,7 +251,7 @@ export class SemanticCfgBuilder {
       "CFG phi must cover every live predecessor.",
     );
     const stable_span = snapshot_span(span);
-    const stable_type = representation_type(type).representation;
+    const stable_type = snapshot_representation_type(type);
     for (const [predecessor, value] of incoming) {
       expect(
         block.predecessors.has(predecessor),
@@ -264,7 +266,7 @@ export class SemanticCfgBuilder {
       const incoming_value = this.#values.get(value);
       expect(
         incoming_value !== undefined &&
-          representation_equal(incoming_value.type, stable_type),
+          same_representation_type(incoming_value.type, stable_type),
         `CFG phi ValueId ${String(value)} has an incompatible type.`,
       );
     }
@@ -316,7 +318,66 @@ export class SemanticCfgBuilder {
     block.nodes.push(node);
     this.#defined_values.add(output);
     this.#values.set(output, stable_output);
+    this.#phi_blocks.set(output, block_id);
     return output;
+  }
+
+  add_phi_input(
+    phi: ValueId,
+    predecessor: SemanticBlockId,
+    value: ValueId,
+  ): void {
+    const block_id = this.#phi_blocks.get(phi);
+    expect(block_id !== undefined, `CFG ValueId ${String(phi)} is not a phi.`);
+    const block = this.block(block_id);
+    expect(
+      block.predecessors.has(predecessor),
+      `CFG phi predecessor ${String(predecessor)} is not connected to block ${
+        String(block_id)
+      }.`,
+    );
+    const phi_value = this.#values.get(phi);
+    const incoming_value = this.#values.get(value);
+    expect(
+      phi_value !== undefined && incoming_value !== undefined,
+      "CFG phi input has no semantic value.",
+    );
+    expect(
+      same_representation_type(phi_value.type, incoming_value.type),
+      `CFG phi ValueId ${String(value)} has an incompatible type.`,
+    );
+    const node_index = block.nodes.findIndex((node) =>
+      node.outputs.length === 1 && node.outputs[0] === phi
+    );
+    expect(node_index >= 0, `CFG phi ValueId ${String(phi)} has no node.`);
+    const node = block.nodes[node_index];
+    expect(node !== undefined, "CFG phi node disappeared.");
+    expect(node.operation.tag === "phi", "CFG phi node changed operation.");
+    expect(
+      !node.operation.incoming.some((entry) =>
+        entry.predecessor === predecessor
+      ),
+      `CFG phi already has predecessor ${String(predecessor)}.`,
+    );
+    const incoming = [
+      ...node.operation.incoming,
+      Object.freeze({ predecessor, value }),
+    ];
+    expect(
+      incoming.length <= block.predecessors.size,
+      "CFG phi has more inputs than predecessors.",
+    );
+    block.nodes[node_index] = Object.freeze({
+      id: node.id,
+      origin: node.origin,
+      span: node.span,
+      inputs: Object.freeze(incoming.map((entry) => entry.value)),
+      outputs: node.outputs,
+      operation: Object.freeze({
+        tag: "phi",
+        incoming: Object.freeze(incoming),
+      }),
+    });
   }
 
   terminate(block_id: SemanticBlockId, terminator: SemanticTerminator): void {
@@ -396,7 +457,7 @@ export class SemanticCfgBuilder {
           `CFG condition ValueId ${String(terminator.condition)} is undefined.`,
         );
         expect(
-          representation_equal(condition.type, {
+          same_representation_type(condition.type, {
             tag: "scalar",
             name: "Bool",
           }),
@@ -445,11 +506,26 @@ export class SemanticCfgBuilder {
 
   private validate_value_availability(): void {
     const entry = this.#entry as SemanticBlockId;
+    const reachable = new Set<SemanticBlockId>([entry]);
+    const pending = [entry];
+    while (pending.length > 0) {
+      const current = pending.pop();
+      expect(current !== undefined, "CFG reachability work disappeared.");
+      for (const successor of this.block(current).successors) {
+        if (reachable.has(successor)) continue;
+        reachable.add(successor);
+        pending.push(successor);
+      }
+    }
     const available_at_entry = new Map<SemanticBlockId, Set<ValueId>>();
     const available_after_block = new Map<SemanticBlockId, Set<ValueId>>();
     for (const block of this.#blocks) {
-      available_at_entry.set(block.id, new Set());
-      available_after_block.set(block.id, new Set());
+      let initial = new Set<ValueId>();
+      if (block.id !== entry && reachable.has(block.id)) {
+        initial = new Set(this.#defined_values);
+      }
+      available_at_entry.set(block.id, new Set(initial));
+      available_after_block.set(block.id, initial);
     }
     let changed = true;
     let iterations = 0;
@@ -582,7 +658,7 @@ function snapshot_value(
   type: RepresentationType,
   origin: SemanticOrigin,
 ): SemanticValue {
-  const stable_type = representation_type(type).representation;
+  const stable_type = snapshot_representation_type(type);
   const span = snapshot_span(origin);
   return Object.freeze({
     value,
