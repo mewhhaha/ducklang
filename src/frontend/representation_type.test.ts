@@ -3,6 +3,7 @@ import {
   type RepresentationType,
   same_representation_type,
   snapshot_representation_type,
+  snapshot_runtime_representation_type,
 } from "./representation_type.ts";
 
 Deno.test("representation snapshots retain generic semantic types", () => {
@@ -31,6 +32,39 @@ Deno.test("representation snapshots retain generic semantic types", () => {
   assert_equals(Object.isFrozen(snapshot.quantified_variables), true);
   assert_equals(Object.isFrozen(snapshot.body.params), true);
   assert_equals(Object.isFrozen(snapshot.body.effects), true);
+});
+
+Deno.test("runtime representation snapshots reject semantic-only forms", () => {
+  const runtime: RepresentationType = {
+    tag: "function",
+    params: [{ tag: "scalar", name: "I32" }],
+    effects: [],
+    result: {
+      tag: "owned",
+      ownership: "unique_heap",
+      value: { tag: "scalar", name: "Bytes" },
+    },
+  };
+  assert_equals(snapshot_runtime_representation_type(runtime), runtime);
+  assert_throws(
+    () =>
+      snapshot_runtime_representation_type({
+        tag: "named",
+        name: "Box",
+        args: [{ tag: "variable", id: 3, hint: "element" }],
+      }),
+    "Representation type variable is not a concrete runtime layout.",
+  );
+  assert_throws(
+    () =>
+      snapshot_runtime_representation_type({
+        tag: "function",
+        params: [],
+        effects: [{ effect: "Io" } as never],
+        result: { tag: "scalar", name: "Unit" },
+      }),
+    "Representation value is missing operation.",
+  );
 });
 
 Deno.test("representation equality alpha-renames forall binders", () => {
@@ -114,5 +148,33 @@ Deno.test("representation snapshots reject forged and cyclic inputs", () => {
         result: { tag: "scalar", name: "Unit" },
       }),
     "cannot contain symbol properties",
+  );
+});
+
+Deno.test("representation snapshots never dispatch through caller arrays", () => {
+  const expected: RepresentationType = {
+    tag: "product",
+    fields: [{
+      label: "value",
+      type: { tag: "scalar", name: "I32" },
+    }],
+  };
+  const fields = new Proxy(expected.fields, {
+    get(target, key, receiver) {
+      if (key === "map") {
+        return () => [{
+          label: "unchecked",
+          type: { tag: "scalar", name: "unchecked" },
+        }];
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  assert_equals(
+    snapshot_runtime_representation_type({
+      tag: "product",
+      fields,
+    }),
+    expected,
   );
 });

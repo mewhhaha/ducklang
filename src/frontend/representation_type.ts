@@ -92,6 +92,14 @@ export function snapshot_representation_type(
   return snapshot_representation_at(type, 0, new WeakSet<object>());
 }
 
+export function snapshot_runtime_representation_type(
+  type: RepresentationType,
+): RepresentationType {
+  const stable = snapshot_representation_type(type);
+  assert_runtime_representation_type(stable);
+  return stable;
+}
+
 export function same_representation_type(
   left: RepresentationType,
   right: RepresentationType,
@@ -105,6 +113,56 @@ export function same_representation_type(
     new Map(),
     { next_binder: 0 },
   );
+}
+
+function assert_runtime_representation_type(
+  type: RepresentationType,
+): void {
+  switch (type.tag) {
+    case "never":
+    case "scalar":
+    case "integer":
+      return;
+    case "named":
+      for (const argument of type.args) {
+        assert_runtime_representation_type(argument);
+      }
+      return;
+    case "product":
+    case "record":
+      for (const field of type.fields) {
+        assert_runtime_representation_type(field.type);
+      }
+      return;
+    case "fixed_array":
+      assert_runtime_representation_type(type.element);
+      return;
+    case "sum":
+      for (const current of type.cases) {
+        assert_runtime_representation_type(current.payload);
+      }
+      return;
+    case "function":
+      for (const parameter of type.params) {
+        assert_runtime_representation_type(parameter);
+      }
+      assert_runtime_representation_type(type.result);
+      return;
+    case "owned":
+      assert_runtime_representation_type(type.value);
+      return;
+    case "variable":
+    case "rigid":
+    case "forall":
+    case "top":
+    case "type_value":
+    case "union":
+    case "intersection":
+    case "difference":
+      throw new Error(
+        `Representation type ${type.tag} is not a concrete runtime layout.`,
+      );
+  }
 }
 
 function snapshot_representation_at(
@@ -125,7 +183,7 @@ function snapshot_representation_at(
   switch (tag) {
     case "variable": {
       const id = representation_id(own_property(type, "id"), "variable");
-      const hint = optional_text(type, "hint", "Variable hint");
+      const hint = required_optional_text(type, "hint", "Variable hint");
       result = { tag, id, hint };
       break;
     }
@@ -340,7 +398,11 @@ function snapshot_product_fields(
   const labels = new Set<string>();
   return Object.freeze(fields.map((field) => {
     assert_plain_record(field, "Product field");
-    const label = optional_text(field, "label", "Product field label");
+    const label = required_optional_text(
+      field,
+      "label",
+      "Product field label",
+    );
     if (label !== undefined) {
       expect(!labels.has(label), `Duplicate product field ${label}.`);
       labels.add(label);
@@ -419,7 +481,11 @@ function snapshot_representation_effect(
     own_property(effect, "effect"),
     "Effect name",
   );
-  const operation = optional_text(effect, "operation", "Effect operation");
+  const operation = required_optional_text(
+    effect,
+    "operation",
+    "Effect operation",
+  );
   return Object.freeze({ effect: effect_name, operation });
 }
 
@@ -713,12 +779,11 @@ function required_text(value: unknown, label: string): string {
   return value;
 }
 
-function optional_text(
+function required_optional_text(
   value: object,
   key: string,
   label: string,
 ): string | undefined {
-  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
   const current = own_property<unknown>(value, key);
   if (current === undefined) return undefined;
   return required_text(current, label);
@@ -744,6 +809,16 @@ function plain_array<Value>(value: unknown, label: string): readonly Value[] {
     Object.getPrototypeOf(value) === Array.prototype,
     `${label} must be an ordinary array.`,
   );
+  const length_descriptor = Object.getOwnPropertyDescriptor(value, "length");
+  expect(
+    length_descriptor !== undefined &&
+      length_descriptor.get === undefined &&
+      length_descriptor.set === undefined &&
+      Number.isSafeInteger(length_descriptor.value) &&
+      length_descriptor.value >= 0,
+    `${label} length must be an own data property.`,
+  );
+  const length = length_descriptor.value as number;
   for (const key of Reflect.ownKeys(value)) {
     expect(
       typeof key === "string",
@@ -759,17 +834,22 @@ function plain_array<Value>(value: unknown, label: string): readonly Value[] {
     const index = Number(key);
     expect(
       Number.isSafeInteger(index) && index >= 0 &&
-        index < value.length && String(index) === key,
+        index < length && String(index) === key,
       `${label} contains invalid property ${key}.`,
     );
   }
-  for (let index = 0; index < value.length; index += 1) {
+  const snapshot: Value[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     expect(
-      Object.prototype.hasOwnProperty.call(value, index),
+      descriptor !== undefined &&
+        descriptor.get === undefined &&
+        descriptor.set === undefined,
       `${label} cannot contain holes.`,
     );
+    snapshot.push(descriptor.value as Value);
   }
-  return value as readonly Value[];
+  return Object.freeze(snapshot);
 }
 
 function assert_plain_record(value: object, label: string): void {

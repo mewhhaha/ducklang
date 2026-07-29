@@ -7,13 +7,11 @@ import {
   proposition_equal,
 } from "./proof_kernel.ts";
 import {
-  type RepresentationEffect,
   type RepresentationOwnership,
   type RepresentationProductField,
-  type RepresentationRecordField,
-  type RepresentationScalar,
-  type RepresentationSumCase,
   type RepresentationType,
+  same_representation_type,
+  snapshot_runtime_representation_type,
 } from "./representation_type.ts";
 
 export type RepresentationValue =
@@ -70,7 +68,6 @@ type PackageContents = {
 };
 
 const MAX_PROPOSITION_DEPTH = 256;
-const MAX_REPRESENTATION_DEPTH = 256;
 const MAX_RUNTIME_VALUE_DEPTH = 256;
 const TRUSTED_SEMANTIC_TYPES = new WeakSet<object>();
 const TRUSTED_DECISIONS = new WeakSet<object>();
@@ -89,7 +86,7 @@ export function representation_type(
 ): Extract<SemanticType, { tag: "representation" }> {
   const result = Object.freeze({
     tag: "representation",
-    representation: snapshot_representation(representation),
+    representation: snapshot_runtime_representation_type(representation),
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -112,7 +109,7 @@ export function logical_existential_type(
 ): Extract<SemanticType, { tag: "logical_exists" }> {
   const result = Object.freeze({
     tag: "logical_exists" as const,
-    witness: snapshot_representation(witness),
+    witness: snapshot_runtime_representation_type(witness),
     proposition: snapshot_proposition(proposition),
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
@@ -124,7 +121,7 @@ export function refinement_type(
   proposition: Proposition,
   certificate: KernelCertificate,
 ): Extract<SemanticType, { tag: "refinement" }> {
-  const stable_value = snapshot_representation(value);
+  const stable_value = snapshot_runtime_representation_type(value);
   const stable_proposition = snapshot_proposition(proposition);
   const checked = check_certificate(certificate, stable_proposition, {
     require_safe: true,
@@ -152,9 +149,9 @@ export function erase_semantic_type(
   assert_trusted_semantic_type(type);
   switch (type.tag) {
     case "representation":
-      return snapshot_representation(type.representation);
+      return snapshot_runtime_representation_type(type.representation);
     case "refinement":
-      return snapshot_representation(type.value);
+      return snapshot_runtime_representation_type(type.value);
     case "proof":
     case "logical_exists":
       return undefined;
@@ -164,11 +161,11 @@ export function erase_semantic_type(
         fields: Object.freeze([
           Object.freeze({
             label: "witness",
-            type: snapshot_representation(type.witness),
+            type: snapshot_runtime_representation_type(type.witness),
           }),
           Object.freeze({
             label: "payload",
-            type: snapshot_representation(type.payload),
+            type: snapshot_runtime_representation_type(type.payload),
           }),
         ]),
       });
@@ -228,8 +225,8 @@ export function computational_existential_type(
 ): Extract<SemanticType, { tag: "computational_exists" }> {
   const result = Object.freeze({
     tag: "computational_exists",
-    witness: snapshot_representation(witness),
-    payload: snapshot_representation(payload),
+    witness: snapshot_runtime_representation_type(witness),
+    payload: snapshot_runtime_representation_type(payload),
   });
   TRUSTED_SEMANTIC_TYPES.add(result);
   return result;
@@ -239,8 +236,7 @@ export function owned_runtime_value(
   type: Extract<RepresentationType, { tag: "owned" }>,
   value: RepresentationValue,
 ): RepresentationValue {
-  validate_ownership(type.ownership);
-  const stable_type = snapshot_representation(type) as Extract<
+  const stable_type = snapshot_runtime_representation_type(type) as Extract<
     RepresentationType,
     { tag: "owned" }
   >;
@@ -253,7 +249,7 @@ export function owned_runtime_value(
   consume_unique_input(stable_type.value, stable_value);
   const result = Object.freeze({
     tag: "owned" as const,
-    ownership: type.ownership,
+    ownership: stable_type.ownership,
     value: stable_value,
   });
   TRUSTED_OWNED_VALUES.add(result);
@@ -265,12 +261,16 @@ export function computational_existential_family_type(
   witness: RepresentationType,
   payloads: readonly RepresentationType[],
 ): Extract<SemanticType, { tag: "computational_exists" }> {
+  const payload_entries = snapshot_data_array<RepresentationType>(
+    payloads,
+    "Computational existential payload layouts",
+  );
   expect(
-    payloads.length > 0,
+    payload_entries.length > 0,
     "Computational existential needs a payload layout.",
   );
-  const stable_payloads = payloads.map((payload) =>
-    snapshot_representation(payload)
+  const stable_payloads = payload_entries.map((payload) =>
+    snapshot_runtime_representation_type(payload)
   );
   const first = stable_payloads[0];
   expect(
@@ -279,7 +279,7 @@ export function computational_existential_family_type(
   );
   for (const payload of stable_payloads.slice(1)) {
     expect(
-      representation_equal(first, payload),
+      same_representation_type(first, payload),
       "Computational existential has non-uniform payload layouts.",
     );
   }
@@ -351,189 +351,6 @@ export function open_computational_existential(
   });
 }
 
-function snapshot_representation(
-  type: RepresentationType,
-  depth = 0,
-  active = new WeakSet<object>(),
-): RepresentationType {
-  expect(depth <= MAX_REPRESENTATION_DEPTH, "Representation type is too deep.");
-  expect(
-    type !== null && typeof type === "object",
-    "Invalid representation type.",
-  );
-  assert_plain_representation_record(type);
-  require_own_data(type, "tag");
-  expect(!active.has(type), "Cyclic representation type.");
-  active.add(type);
-  let result: RepresentationType;
-  switch (type.tag) {
-    case "never":
-      result = { tag: "never" };
-      break;
-    case "scalar": {
-      require_own_data(type, "name");
-      const name = require_text(type.name, "Scalar name");
-      validate_scalar(name);
-      result = { tag: "scalar", name };
-      break;
-    }
-    case "integer":
-      require_own_data(type, "signed");
-      require_own_data(type, "width");
-      expect(
-        typeof type.signed === "boolean",
-        "Integer signedness is invalid.",
-      );
-      expect(
-        Number.isSafeInteger(type.width) &&
-          type.width > 0 &&
-          type.width <= 64,
-        `Integer width ${String(type.width)} is invalid.`,
-      );
-      result = {
-        tag: "integer",
-        signed: type.signed,
-        width: type.width,
-      };
-      break;
-    case "named":
-      require_own_data(type, "name");
-      require_own_data(type, "args");
-      assert_plain_representation_array(type.args);
-      result = {
-        tag: "named",
-        name: require_text(type.name, "Named representation"),
-        args: Object.freeze(
-          type.args.map((arg) =>
-            snapshot_representation(arg, depth + 1, active)
-          ),
-        ),
-      };
-      break;
-    case "product": {
-      require_own_data(type, "fields");
-      assert_plain_representation_array(type.fields);
-      assert_unique_field_labels(type.fields);
-      result = {
-        tag: "product",
-        fields: Object.freeze(type.fields.map((field) =>
-          Object.freeze({
-            label: field_label(read_optional_own_data<string>(field, "label")),
-            type: snapshot_representation(
-              read_required_own_data<RepresentationType>(field, "type"),
-              depth + 1,
-              active,
-            ),
-          })
-        )),
-      };
-      break;
-    }
-    case "record": {
-      require_own_data(type, "fields");
-      assert_plain_representation_array(type.fields);
-      assert_unique_record_labels(type.fields);
-      result = {
-        tag: "record",
-        fields: Object.freeze(type.fields.map((field) =>
-          Object.freeze({
-            label: require_text(
-              read_required_own_data<string>(field, "label"),
-              "Record field label",
-            ),
-            type: snapshot_representation(
-              read_required_own_data<RepresentationType>(field, "type"),
-              depth + 1,
-              active,
-            ),
-          })
-        )),
-      };
-      break;
-    }
-    case "fixed_array":
-      require_own_data(type, "length");
-      require_own_data(type, "element");
-      expect(
-        Number.isSafeInteger(type.length) && type.length >= 0,
-        `Fixed array length ${String(type.length)} is invalid.`,
-      );
-      result = {
-        tag: "fixed_array",
-        length: type.length,
-        element: snapshot_representation(type.element, depth + 1, active),
-      };
-      break;
-    case "sum": {
-      require_own_data(type, "cases");
-      assert_plain_representation_array(type.cases);
-      assert_unique_case_labels(type.cases);
-      result = {
-        tag: "sum",
-        cases: Object.freeze(type.cases.map((current) =>
-          Object.freeze({
-            label: require_text(
-              read_required_own_data<string>(current, "label"),
-              "Case label",
-            ),
-            payload: snapshot_representation(
-              read_required_own_data<RepresentationType>(current, "payload"),
-              depth + 1,
-              active,
-            ),
-          })
-        )),
-      };
-      break;
-    }
-    case "function":
-      require_own_data(type, "params");
-      require_own_data(type, "effects");
-      require_own_data(type, "result");
-      assert_plain_representation_array(type.params);
-      assert_plain_representation_array(type.effects);
-      result = {
-        tag: "function",
-        params: Object.freeze(
-          type.params.map((parameter) =>
-            snapshot_representation(parameter, depth + 1, active)
-          ),
-        ),
-        effects: Object.freeze(
-          type.effects.map((effect) => snapshot_representation_effect(effect)),
-        ),
-        result: snapshot_representation(type.result, depth + 1, active),
-      };
-      break;
-    case "owned": {
-      require_own_data(type, "ownership");
-      require_own_data(type, "value");
-      validate_ownership(type.ownership);
-      result = {
-        tag: "owned",
-        ownership: type.ownership,
-        value: snapshot_representation(type.value, depth + 1, active),
-      };
-      break;
-    }
-    case "variable":
-    case "rigid":
-    case "forall":
-    case "top":
-    case "type_value":
-    case "union":
-    case "intersection":
-    case "difference":
-      throw new Error(
-        `Representation type ${type.tag} is not a concrete runtime layout.`,
-      );
-    default:
-      throw new Error("Invalid representation type.");
-  }
-  active.delete(type);
-  return Object.freeze(result);
-}
-
 function snapshot_representation_value(
   type: RepresentationType,
   value: RepresentationValue,
@@ -542,91 +359,119 @@ function snapshot_representation_value(
 ): RepresentationValue {
   expect(depth <= MAX_RUNTIME_VALUE_DEPTH, "Runtime value is too deep.");
   assert_plain_runtime_record(value);
-  require_own_data(value, "tag");
+  const value_tag = read_required_own_data<RepresentationValue["tag"]>(
+    value,
+    "tag",
+  );
   expect(!active.has(value), "Cyclic runtime value.");
   active.add(value);
   switch (type.tag) {
     case "never":
       throw new Error("Never has no runtime value.");
-    case "scalar":
+    case "scalar": {
       if (type.name === "Unit") {
         expect(
-          value.tag === "unit",
+          value_tag === "unit",
           "Runtime value does not match Unit layout.",
         );
         active.delete(value);
         return Object.freeze({ tag: "unit" });
       }
-      require_own_data(value, "type");
-      require_own_data(value, "value");
+      const scalar_type = read_required_own_data<string>(value, "type");
+      const scalar_value = read_required_own_data<
+        string | number | bigint | boolean
+      >(value, "value");
       expect(
-        value.tag === "scalar" && value.type === type.name,
+        value_tag === "scalar" && scalar_type === type.name,
         `Runtime value does not match scalar layout ${type.name}.`,
       );
       expect(
-        scalar_value_matches(type.name, value.value),
+        scalar_value_matches(type.name, scalar_value),
         `Scalar runtime value does not match ${type.name}.`,
       );
       active.delete(value);
       return Object.freeze({
         tag: "scalar",
-        type: value.type,
-        value: value.value,
+        type: scalar_type,
+        value: scalar_value,
       });
+    }
     case "integer": {
       const name = integer_type_name(type);
-      require_own_data(value, "type");
-      require_own_data(value, "value");
+      const scalar_type = read_required_own_data<string>(value, "type");
+      const scalar_value = read_required_own_data<
+        string | number | bigint | boolean
+      >(value, "value");
       expect(
-        value.tag === "scalar" && value.type === name,
+        value_tag === "scalar" && scalar_type === name,
         `Runtime value does not match integer layout ${name}.`,
       );
       expect(
-        integer_value_matches(type.signed, type.width, value.value),
+        integer_value_matches(type.signed, type.width, scalar_value),
         `Scalar runtime value does not match ${name}.`,
       );
       active.delete(value);
       return Object.freeze({
         tag: "scalar",
-        type: value.type,
-        value: value.value,
+        type: scalar_type,
+        value: scalar_value,
       });
     }
-    case "named":
-      require_own_data(value, "name");
-      require_own_data(value, "value");
+    case "named": {
+      const name = read_required_own_data<string>(value, "name");
+      const opaque_value = read_required_own_data<
+        string | number | bigint | boolean
+      >(value, "value");
       expect(
-        value.tag === "opaque" && value.name === type.name,
+        value_tag === "opaque" && name === type.name,
         `Runtime value does not match opaque layout ${type.name}.`,
       );
       expect(
-        is_runtime_primitive(value.value),
+        is_runtime_primitive(opaque_value),
         "Opaque runtime value must be primitive.",
       );
       active.delete(value);
       return Object.freeze({
         tag: "opaque",
-        name: value.name,
-        value: value.value,
+        name,
+        value: opaque_value,
       });
+    }
     case "product": {
-      return snapshot_aggregate_value(type.fields, value, depth, active);
+      return snapshot_aggregate_value(
+        type.fields,
+        value,
+        value_tag,
+        depth,
+        active,
+      );
     }
     case "record": {
-      return snapshot_aggregate_value(type.fields, value, depth, active);
+      return snapshot_aggregate_value(
+        type.fields,
+        value,
+        value_tag,
+        depth,
+        active,
+      );
     }
     case "fixed_array": {
-      require_own_data(value, "fields");
       expect(
-        value.tag === "product",
+        value_tag === "product",
         "Runtime value does not match fixed array layout.",
       );
-      assert_plain_runtime_array(value.fields);
+      const fields = snapshot_data_array<RepresentationValue>(
+        read_required_own_data<readonly RepresentationValue[]>(
+          value,
+          "fields",
+        ),
+        "Runtime aggregate fields",
+      );
       expect(
-        value.fields.length === type.length,
+        fields.length === type.length,
         "Runtime fixed array length does not match its layout.",
       );
-      const elements = value.fields.map((element) =>
+      const elements = fields.map((element) =>
         snapshot_representation_value(
           type.element,
           element,
@@ -641,43 +486,52 @@ function snapshot_representation_value(
       });
     }
     case "sum": {
-      require_own_data(value, "case");
-      require_own_data(value, "payload");
-      expect(value.tag === "sum", "Runtime value does not match sum layout.");
+      const case_name = read_required_own_data<string>(value, "case");
+      const runtime_payload = read_required_own_data<RepresentationValue>(
+        value,
+        "payload",
+      );
       expect(
-        value.payload !== null && typeof value.payload === "object",
+        value_tag === "sum",
+        "Runtime value does not match sum layout.",
+      );
+      expect(
+        runtime_payload !== null && typeof runtime_payload === "object",
         "Runtime sum payload is required.",
       );
       const current = type.cases.find((candidate) =>
-        candidate.label === value.case
+        candidate.label === case_name
       );
-      expect(current !== undefined, `Unknown runtime sum case ${value.case}.`);
+      expect(current !== undefined, `Unknown runtime sum case ${case_name}.`);
       const payload = snapshot_representation_value(
         current.payload,
-        value.payload,
+        runtime_payload,
         depth + 1,
         active,
       );
       active.delete(value);
       return Object.freeze({
         tag: "sum",
-        case: value.case,
+        case: case_name,
         payload,
       });
     }
     case "function":
       expect(
-        value.tag === "function",
+        value_tag === "function",
         "Runtime value does not match function layout.",
       );
       active.delete(value);
       return Object.freeze({ tag: "function" });
     case "owned": {
-      require_own_data(value, "ownership");
-      require_own_data(value, "value");
+      const ownership = read_required_own_data<RepresentationOwnership>(
+        value,
+        "ownership",
+      );
+      read_required_own_data<RepresentationValue>(value, "value");
       assert_owned_handle_layout(type, value);
       expect(
-        value.tag === "owned" && value.ownership === type.ownership,
+        value_tag === "owned" && ownership === type.ownership,
         "Runtime ownership does not match its representation.",
       );
       active.delete(value);
@@ -700,27 +554,26 @@ function snapshot_representation_value(
 function snapshot_aggregate_value(
   fields: readonly RepresentationProductField[],
   value: RepresentationValue,
+  value_tag: RepresentationValue["tag"],
   depth: number,
   active: WeakSet<object>,
 ): RepresentationValue {
-  require_own_data(value, "fields");
   expect(
-    value.tag === "product",
+    value_tag === "product",
     "Runtime value does not match aggregate layout.",
   );
-  expect(
-    Array.isArray(value.fields),
-    "Runtime aggregate fields must be an array.",
+  const actual_fields = snapshot_data_array<RepresentationValue>(
+    read_required_own_data<readonly RepresentationValue[]>(value, "fields"),
+    "Runtime aggregate fields",
   );
-  assert_plain_runtime_array(value.fields);
   expect(
-    value.fields.length === fields.length,
+    actual_fields.length === fields.length,
     "Runtime aggregate field count does not match its layout.",
   );
   const stable_fields: RepresentationValue[] = [];
   for (let index = 0; index < fields.length; index += 1) {
     const field = fields[index];
-    const actual = value.fields[index];
+    const actual = actual_fields[index];
     expect(
       field !== undefined && actual !== undefined,
       "Missing runtime aggregate field.",
@@ -736,114 +589,6 @@ function snapshot_aggregate_value(
   });
 }
 
-function representation_equal(
-  left: RepresentationType,
-  right: RepresentationType,
-): boolean {
-  if (left.tag !== right.tag) return false;
-  switch (left.tag) {
-    case "never":
-      return true;
-    case "scalar":
-      return left.name === (right as typeof left).name;
-    case "integer": {
-      const other = right as Extract<RepresentationType, { tag: "integer" }>;
-      return left.signed === other.signed && left.width === other.width;
-    }
-    case "named": {
-      const other = right as Extract<RepresentationType, { tag: "named" }>;
-      if (left.name !== other.name || left.args.length !== other.args.length) {
-        return false;
-      }
-      return left.args.every((arg, index) => {
-        const candidate = other.args[index];
-        return candidate !== undefined &&
-          representation_equal(arg, candidate);
-      });
-    }
-    case "product": {
-      const other = right as Extract<RepresentationType, { tag: "product" }>;
-      if (left.fields.length !== other.fields.length) return false;
-      for (let index = 0; index < left.fields.length; index += 1) {
-        const field = left.fields[index];
-        const candidate = other.fields[index];
-        if (field === undefined || candidate === undefined) return false;
-        if (
-          field.label !== candidate.label ||
-          !representation_equal(field.type, candidate.type)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    }
-    case "record": {
-      const other = right as Extract<RepresentationType, { tag: "record" }>;
-      if (left.fields.length !== other.fields.length) return false;
-      return left.fields.every((field, index) => {
-        const candidate = other.fields[index];
-        return candidate !== undefined &&
-          field.label === candidate.label &&
-          representation_equal(field.type, candidate.type);
-      });
-    }
-    case "fixed_array": {
-      const other = right as Extract<
-        RepresentationType,
-        { tag: "fixed_array" }
-      >;
-      return left.length === other.length &&
-        representation_equal(left.element, other.element);
-    }
-    case "sum": {
-      const other = right as Extract<RepresentationType, { tag: "sum" }>;
-      if (left.cases.length !== other.cases.length) return false;
-      for (let index = 0; index < left.cases.length; index += 1) {
-        const current = left.cases[index];
-        const candidate = other.cases[index];
-        if (current === undefined || candidate === undefined) return false;
-        if (
-          current.label !== candidate.label ||
-          !representation_equal(current.payload, candidate.payload)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    }
-    case "function": {
-      const other = right as Extract<RepresentationType, { tag: "function" }>;
-      if (left.params.length !== other.params.length) return false;
-      for (let index = 0; index < left.params.length; index += 1) {
-        const parameter = left.params[index];
-        const candidate = other.params[index];
-        if (parameter === undefined || candidate === undefined) return false;
-        if (!representation_equal(parameter, candidate)) return false;
-      }
-      if (!representation_effects_equal(left.effects, other.effects)) {
-        return false;
-      }
-      return representation_equal(left.result, other.result);
-    }
-    case "owned": {
-      const other = right as Extract<RepresentationType, { tag: "owned" }>;
-      return left.ownership === other.ownership &&
-        representation_equal(left.value, other.value);
-    }
-    case "variable":
-    case "rigid":
-    case "forall":
-    case "top":
-    case "type_value":
-    case "union":
-    case "intersection":
-    case "difference":
-      throw new Error(
-        `Representation type ${left.tag} is not a concrete runtime layout.`,
-      );
-  }
-}
-
 function snapshot_proposition(
   proposition: Proposition,
   depth = 0,
@@ -853,8 +598,11 @@ function snapshot_proposition(
     throw new Error("Invalid refinement proposition.");
   }
   assert_plain_proposition_record(proposition);
-  require_own_data(proposition, "tag");
-  switch (proposition.tag) {
+  const proposition_tag = read_required_own_data<Proposition["tag"]>(
+    proposition,
+    "tag",
+  );
+  switch (proposition_tag) {
     case "true":
       return Object.freeze({ tag: "true" });
     case "false":
@@ -882,7 +630,7 @@ function snapshot_proposition(
     case "and":
     case "or":
       return Object.freeze({
-        tag: proposition.tag,
+        tag: proposition_tag,
         left: snapshot_proposition(
           read_required_own_data<Proposition>(proposition, "left"),
           depth + 1,
@@ -925,60 +673,8 @@ function require_text(value: string, label: string): string {
   return value;
 }
 
-function field_label(label: string | undefined): string | undefined {
-  if (label === undefined) return undefined;
-  return require_text(label, "Field label");
-}
-
-function snapshot_representation_effect(
-  effect: RepresentationEffect,
-): RepresentationEffect {
-  assert_plain_layout_entry(effect);
-  const effect_name = require_text(
-    read_required_own_data<string>(effect, "effect"),
-    "Effect name",
-  );
-  const operation = read_required_own_data<string | undefined>(
-    effect,
-    "operation",
-  );
-  if (operation !== undefined) {
-    require_text(operation, "Effect operation");
-  }
-  return Object.freeze({ effect: effect_name, operation });
-}
-
-function representation_effects_equal(
-  left: readonly RepresentationEffect[],
-  right: readonly RepresentationEffect[],
-): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((effect, index) => {
-    const candidate = right[index];
-    return candidate !== undefined &&
-      effect.effect === candidate.effect &&
-      effect.operation === candidate.operation;
-  });
-}
-
-function validate_scalar(name: string): asserts name is RepresentationScalar {
-  const valid = name === "Bool" || name === "Char" || name === "Unit" ||
-    name === "Int" || name === "I32" || name === "U32" ||
-    name === "I64" || name === "F32" || name === "F64" ||
-    name === "F32x4" || name === "Text" || name === "Bytes" ||
-    name === "Resume" || name === "Type";
-  expect(valid, `Invalid representation scalar ${name}.`);
-}
-
 function read_required_own_data<T>(value: object, key: string): T {
-  require_own_data(value, key);
-  return (value as Record<string, unknown>)[key] as T;
-}
-
-function read_optional_own_data<T>(value: object, key: string): T | undefined {
-  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
-  require_own_data(value, key);
-  return (value as Record<string, unknown>)[key] as T;
+  return require_own_data(value, key).value as T;
 }
 
 function assert_plain_proposition_record(value: object): void {
@@ -1059,47 +755,6 @@ function integer_value_matches(
   return integer >= 0n && integer < (1n << BigInt(width));
 }
 
-function assert_unique_field_labels(
-  fields: readonly RepresentationProductField[],
-): void {
-  const labels = new Set<string>();
-  for (const field of fields) {
-    assert_plain_layout_entry(field);
-    if (field.label === undefined) continue;
-    expect(
-      !labels.has(field.label),
-      `Duplicate representation field ${field.label}.`,
-    );
-    labels.add(field.label);
-  }
-}
-
-function assert_unique_record_labels(
-  fields: readonly RepresentationRecordField[],
-): void {
-  const labels = new Set<string>();
-  for (const field of fields) {
-    assert_plain_layout_entry(field);
-    const label = read_required_own_data<string>(field, "label");
-    expect(!labels.has(label), `Duplicate representation field ${label}.`);
-    labels.add(label);
-  }
-}
-
-function assert_unique_case_labels(
-  cases: readonly RepresentationSumCase[],
-): void {
-  const labels = new Set<string>();
-  for (const current of cases) {
-    assert_plain_layout_entry(current);
-    expect(
-      !labels.has(current.label),
-      `Duplicate representation case ${current.label}.`,
-    );
-    labels.add(current.label);
-  }
-}
-
 function has_unique_or_linear_layout(type: RepresentationType): boolean {
   switch (type.tag) {
     case "owned": {
@@ -1157,7 +812,7 @@ function assert_owned_handle_layout(
     "Owned runtime value has no canonical layout.",
   );
   expect(
-    representation_equal(canonical, type),
+    same_representation_type(canonical, type),
     "Owned runtime value layout does not match its expected type.",
   );
 }
@@ -1190,41 +845,55 @@ function assert_unique_inputs_available(
     }
     case "product":
       expect(value.tag === "product", "Product runtime value is required.");
-      assert_plain_runtime_array(value.fields);
-      for (let index = 0; index < type.fields.length; index += 1) {
-        const field = type.fields[index];
-        const actual = value.fields[index];
-        expect(
-          field !== undefined && actual !== undefined,
-          "Missing runtime product field.",
+      {
+        const fields = snapshot_data_array<RepresentationValue>(
+          value.fields,
+          "Runtime aggregate fields",
         );
-        assert_unique_inputs_available(field.type, actual, seen);
+        for (let index = 0; index < type.fields.length; index += 1) {
+          const field = type.fields[index];
+          const actual = fields[index];
+          expect(
+            field !== undefined && actual !== undefined,
+            "Missing runtime product field.",
+          );
+          assert_unique_inputs_available(field.type, actual, seen);
+        }
       }
       return;
     case "record":
       expect(value.tag === "product", "Record runtime value is required.");
-      assert_plain_runtime_array(value.fields);
-      for (let index = 0; index < type.fields.length; index += 1) {
-        const field = type.fields[index];
-        const actual = value.fields[index];
-        expect(
-          field !== undefined && actual !== undefined,
-          "Missing runtime record field.",
+      {
+        const fields = snapshot_data_array<RepresentationValue>(
+          value.fields,
+          "Runtime aggregate fields",
         );
-        assert_unique_inputs_available(field.type, actual, seen);
+        for (let index = 0; index < type.fields.length; index += 1) {
+          const field = type.fields[index];
+          const actual = fields[index];
+          expect(
+            field !== undefined && actual !== undefined,
+            "Missing runtime record field.",
+          );
+          assert_unique_inputs_available(field.type, actual, seen);
+        }
       }
       return;
-    case "fixed_array":
+    case "fixed_array": {
       expect(value.tag === "product", "Fixed array runtime value is required.");
-      assert_plain_runtime_array(value.fields);
+      const fields = snapshot_data_array<RepresentationValue>(
+        value.fields,
+        "Runtime aggregate fields",
+      );
       expect(
-        value.fields.length === type.length,
+        fields.length === type.length,
         "Runtime fixed array length does not match its layout.",
       );
-      for (const element of value.fields) {
+      for (const element of fields) {
         assert_unique_inputs_available(type.element, element, seen);
       }
       return;
+    }
     case "sum": {
       expect(value.tag === "sum", "Sum runtime value is required.");
       const current = type.cases.find((candidate) =>
@@ -1359,113 +1028,68 @@ function assert_plain_runtime_record(value: RepresentationValue): void {
   }
 }
 
-function assert_plain_runtime_array(
-  value: readonly RepresentationValue[],
-): void {
-  expect(Array.isArray(value), "Runtime aggregate fields must be an array.");
+function snapshot_data_array<Value>(
+  value: readonly Value[],
+  label: string,
+): readonly Value[] {
+  expect(Array.isArray(value), `${label} must be an array.`);
   expect(
     Object.getPrototypeOf(value) === Array.prototype,
-    "Runtime aggregate fields must be an ordinary array.",
+    `${label} must be an ordinary array.`,
   );
+  const length_descriptor = Object.getOwnPropertyDescriptor(value, "length");
+  expect(
+    length_descriptor !== undefined &&
+      length_descriptor.get === undefined &&
+      length_descriptor.set === undefined &&
+      Number.isSafeInteger(length_descriptor.value) &&
+      length_descriptor.value >= 0,
+    `${label} length must be an own data property.`,
+  );
+  const length = length_descriptor.value as number;
   for (const key of Reflect.ownKeys(value)) {
     expect(
       typeof key === "string",
-      "Runtime aggregate cannot contain symbol properties.",
+      `${label} cannot contain symbol properties.`,
     );
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     expect(
       descriptor !== undefined && descriptor.get === undefined &&
         descriptor.set === undefined,
-      "Runtime aggregate cannot contain accessor properties.",
+      `${label} properties must be data properties.`,
+    );
+    if (key === "length") continue;
+    const index = Number(key);
+    expect(
+      Number.isSafeInteger(index) && index >= 0 &&
+        index < length && String(index) === key,
+      `${label} contains invalid property ${key}.`,
     );
   }
-  for (let index = 0; index < value.length; index += 1) {
+  const snapshot: Value[] = [];
+  for (let index = 0; index < length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     expect(
       descriptor !== undefined && descriptor.get === undefined &&
         descriptor.set === undefined,
-      "Runtime aggregate fields cannot contain holes.",
+      `${label} cannot contain holes.`,
     );
+    snapshot.push(descriptor.value as Value);
   }
+  return Object.freeze(snapshot);
 }
 
-function assert_plain_representation_record(type: RepresentationType): void {
-  assert_plain_layout_entry(type);
-}
-
-function assert_plain_layout_entry(value: unknown): void {
-  expect(
-    value !== null && typeof value === "object",
-    "Representation layout entry must be an object.",
-  );
-  const prototype = Object.getPrototypeOf(value);
-  expect(
-    prototype === Object.prototype || prototype === null,
-    "Representation type must be a plain record.",
-  );
-  for (const key of Reflect.ownKeys(value as object)) {
-    expect(
-      typeof key === "string",
-      "Representation type cannot contain symbols.",
-    );
-    const descriptor = Object.getOwnPropertyDescriptor(value as object, key);
-    expect(
-      descriptor !== undefined && descriptor.get === undefined &&
-        descriptor.set === undefined,
-      "Representation type cannot contain accessor properties.",
-    );
-  }
-}
-
-function require_own_data(value: object, key: string): void {
-  expect(
-    Object.prototype.hasOwnProperty.call(value, key),
-    `Missing own layout property ${key}.`,
-  );
+function require_own_data(value: object, key: string): PropertyDescriptor {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   expect(
-    descriptor !== undefined && descriptor.get === undefined &&
-      descriptor.set === undefined,
+    descriptor !== undefined,
+    `Missing own layout property ${key}.`,
+  );
+  expect(
+    descriptor.get === undefined && descriptor.set === undefined,
     `Layout property ${key} must be an own data property.`,
   );
-}
-
-function assert_plain_representation_array(value: readonly unknown[]): void {
-  expect(Array.isArray(value), "Representation type members must be an array.");
-  expect(
-    Object.getPrototypeOf(value) === Array.prototype,
-    "Representation type members must be an ordinary array.",
-  );
-  for (const key of Reflect.ownKeys(value)) {
-    expect(
-      typeof key === "string",
-      "Representation type arrays cannot contain symbols.",
-    );
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    expect(
-      descriptor !== undefined && descriptor.get === undefined &&
-        descriptor.set === undefined,
-      "Representation type arrays cannot contain accessor properties.",
-    );
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    expect(
-      descriptor !== undefined && descriptor.get === undefined &&
-        descriptor.set === undefined,
-      "Representation type members cannot contain holes.",
-    );
-  }
-}
-
-function validate_ownership(ownership: RepresentationOwnership): void {
-  expect(
-    ownership === "scalar" || ownership === "bounded_borrow" ||
-      ownership === "frozen_shareable" ||
-      ownership === "ownership_transfer" ||
-      ownership === "unique_heap",
-    `Invalid representation ownership ${String(ownership)}.`,
-  );
+  return descriptor;
 }
 
 function is_consuming_ownership(

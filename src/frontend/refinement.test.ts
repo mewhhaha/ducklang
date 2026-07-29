@@ -83,7 +83,7 @@ Deno.test("refinement rejects unresolved inference representations", () => {
         signed: false,
         width: 65,
       }),
-    "Integer width 65 is invalid.",
+    "Representation integer width 65 is invalid.",
   );
 });
 
@@ -202,6 +202,32 @@ Deno.test("computational package values are snapshotted before storage", () => {
     },
     payload: { tag: "scalar", type: "I32", value: 8 },
   });
+
+  let reads = 0;
+  const changing_payload = new Proxy(
+    { tag: "scalar" as const, type: "I32", value: 1 },
+    {
+      get(target, key, receiver) {
+        if (key === "value") {
+          reads += 1;
+          if (reads === 1) return 1;
+          return { unchecked: true };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    },
+  );
+  const scalar_package = pack_computational_existential(
+    computational_existential_type(scalar, scalar),
+    { tag: "scalar", type: "I32", value: 0 },
+    changing_payload,
+  );
+  assert_equals(open_computational_existential(scalar_package).payload, {
+    tag: "scalar",
+    type: "I32",
+    value: 1,
+  });
+  assert_equals(reads, 0);
 });
 
 Deno.test("sealed layouts reject nested mutation and object scalar payloads", () => {
@@ -248,6 +274,29 @@ Deno.test("computational existential packages validate runtime layouts", () => {
       }),
     "Runtime value does not match scalar layout I32.",
   );
+  const fixed_type = computational_existential_type(scalar, {
+    tag: "fixed_array",
+    length: 2,
+    element: scalar,
+  });
+  const valid = { tag: "scalar" as const, type: "I32", value: 1 };
+  const fields = new Proxy([
+    valid,
+    { tag: "scalar" as const, type: "Text", value: "unchecked" },
+  ], {
+    get(target, key, receiver) {
+      if (key === "map") return () => [valid, valid];
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  assert_throws(
+    () =>
+      pack_computational_existential(fixed_type, runtime_value, {
+        tag: "product",
+        fields,
+      }),
+    "Runtime value does not match scalar layout I32.",
+  );
 });
 
 Deno.test("dependent layout families reject non-uniform payloads", () => {
@@ -257,6 +306,19 @@ Deno.test("dependent layout families reject non-uniform payloads", () => {
         scalar,
         { tag: "scalar", name: "Unit" },
       ]),
+    "Computational existential has non-uniform payload layouts.",
+  );
+  const payloads = new Proxy([
+    scalar,
+    { tag: "scalar" as const, name: "Bool" as const },
+  ], {
+    get(target, key, receiver) {
+      if (key === "map") return () => [scalar];
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  assert_throws(
+    () => computational_existential_family_type(scalar, payloads),
     "Computational existential has non-uniform payload layouts.",
   );
   const uniform = computational_existential_family_type(scalar, [
@@ -276,7 +338,7 @@ Deno.test("representation layouts reject duplicate labels and scalar kind mismat
           { label: "value", type: scalar },
         ],
       }),
-    "Duplicate representation field value.",
+    "Duplicate product field value.",
   );
   const bool_type = computational_existential_type(
     { tag: "scalar", name: "Bool" },
@@ -417,6 +479,38 @@ Deno.test("owned handles retain and enforce their canonical layout", () => {
   );
 });
 
+Deno.test("owned handles use the canonical ownership descriptor", () => {
+  let ownership_reads = 0;
+  const owned_type = new Proxy({
+    tag: "owned" as const,
+    ownership: "unique_heap" as const,
+    value: scalar,
+  }, {
+    get(target, key, receiver) {
+      if (key === "ownership") {
+        ownership_reads += 1;
+        if (ownership_reads === 1) {
+          return "unique_heap";
+        }
+        return "scalar";
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const owned = owned_runtime_value(owned_type, {
+    tag: "scalar",
+    type: "I32",
+    value: 5,
+  });
+
+  assert_equals(owned, {
+    tag: "owned",
+    ownership: "unique_heap",
+    value: { tag: "scalar", type: "I32", value: 5 },
+  });
+  assert_equals(ownership_reads, 0);
+});
+
 Deno.test("failed duplicate ownership checks do not consume handles", () => {
   const owned_type = {
     tag: "owned" as const,
@@ -544,7 +638,7 @@ Deno.test("representation snapshots reject cycles and invalid ownership", () => 
   });
   assert_throws(
     () => representation_type(cyclic),
-    "Cyclic representation type.",
+    "Representation type cannot be cyclic.",
   );
   assert_throws(
     () =>
@@ -557,7 +651,7 @@ Deno.test("representation snapshots reject cycles and invalid ownership", () => 
   );
   assert_throws(
     () => representation_type({ tag: "forged" } as never),
-    "Invalid representation type.",
+    "Invalid representation type tag forged.",
   );
   assert_throws(
     () =>
@@ -567,7 +661,7 @@ Deno.test("representation snapshots reject cycles and invalid ownership", () => 
           { label: "value", type: { tag: "forged" } },
         ],
       } as never),
-    "Invalid representation type.",
+    "Invalid representation type tag forged.",
   );
 });
 
@@ -584,7 +678,7 @@ Deno.test("representation function layouts require plain parameter arrays", () =
         effects: [],
         result: scalar,
       } as never),
-    "Representation type members must be an array.",
+    "Function parameters must be an array.",
   );
 });
 
@@ -597,15 +691,18 @@ Deno.test("representation field wrappers cannot contain accessors", () => {
   });
   assert_throws(
     () => representation_type({ tag: "product", fields: [field] } as never),
-    "Representation type cannot contain accessor properties.",
+    "Representation property label must be an own data property.",
   );
 });
 
 Deno.test("representation fields require own type properties", () => {
-  const field = {} as { label?: string; type: typeof scalar };
+  const field = { label: undefined } as {
+    label: string | undefined;
+    type: typeof scalar;
+  };
   assert_throws(
     () => representation_type({ tag: "product", fields: [field] } as never),
-    "Missing own layout property type.",
+    "Representation value is missing type.",
   );
 });
 
@@ -642,7 +739,7 @@ Deno.test("representation and runtime arrays reject inherited elements", () => {
   Object.setPrototypeOf(fields, inherited);
   assert_throws(
     () => representation_type({ tag: "product", fields } as never),
-    "Representation type members must be an ordinary array.",
+    "Product fields must be an ordinary array.",
   );
 });
 
