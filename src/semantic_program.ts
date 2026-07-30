@@ -1683,14 +1683,17 @@ function check_prefix_proof_formation(
       proposition !== undefined,
       `Proof parameter ${parameter.name} lost its proposition.`,
     );
-    const opaque = first_opaque_quantified_proposition(proposition);
-    if (opaque !== undefined) {
+    const unstructured = first_unstructured_quantified_proposition(
+      proposition,
+      facts,
+    );
+    if (unstructured !== undefined) {
       checks.push(
         fail(
           compiler_diagnostic(
             diagnostic_codes.prefix_proof_invalid,
-            `Proof declaration ${signature.name} cannot quantify over an opaque ${opaque.tag} proposition until opaque predicates have structured kernel arguments.`,
-            opaque.span,
+            `Proof declaration ${signature.name} cannot quantify over ${unstructured.tag} until every referenced logical term has a structured kernel representation.`,
+            unstructured.span,
           ),
         ),
       );
@@ -1709,14 +1712,17 @@ function check_prefix_proof_formation(
   }
   const result = signature.type.result.type.proof;
   if (result !== undefined) {
-    const opaque = first_opaque_quantified_proposition(result);
-    if (opaque !== undefined) {
+    const unstructured = first_unstructured_quantified_proposition(
+      result,
+      facts,
+    );
+    if (unstructured !== undefined) {
       checks.push(
         fail(
           compiler_diagnostic(
             diagnostic_codes.prefix_proof_invalid,
-            `Proof declaration ${signature.name} cannot quantify over an opaque ${opaque.tag} proposition until opaque predicates have structured kernel arguments.`,
-            opaque.span,
+            `Proof declaration ${signature.name} cannot quantify over ${unstructured.tag} until every referenced logical term has a structured kernel representation.`,
+            unstructured.span,
           ),
         ),
       );
@@ -1736,19 +1742,22 @@ function check_prefix_proof_formation(
   return all(checks).map(() => undefined);
 }
 
-function first_opaque_quantified_proposition(
+function first_unstructured_quantified_proposition(
   proposition: PrefixProposition,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
   quantified = false,
 ): PrefixProposition | undefined {
   if (proposition.tag === "forall" || proposition.tag === "exists") {
-    return first_opaque_quantified_proposition(
+    return first_unstructured_quantified_proposition(
       proposition.proposition,
+      facts,
       true,
     );
   }
   if (proposition.tag === "not") {
-    return first_opaque_quantified_proposition(
+    return first_unstructured_quantified_proposition(
       proposition.proposition,
+      facts,
       quantified,
     );
   }
@@ -1756,13 +1765,15 @@ function first_opaque_quantified_proposition(
     proposition.tag === "and" || proposition.tag === "or" ||
     proposition.tag === "implies"
   ) {
-    const left = first_opaque_quantified_proposition(
+    const left = first_unstructured_quantified_proposition(
       proposition.left,
+      facts,
       quantified,
     );
     if (left !== undefined) return left;
-    return first_opaque_quantified_proposition(
+    return first_unstructured_quantified_proposition(
       proposition.right,
+      facts,
       quantified,
     );
   }
@@ -1771,7 +1782,8 @@ function first_opaque_quantified_proposition(
     return undefined;
   }
   if (
-    proposition.tag === "equal" || proposition.tag === "not_equal"
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
   ) {
     if (
       prefix_term_has_kernel_representation(proposition.left) &&
@@ -1785,6 +1797,26 @@ function first_opaque_quantified_proposition(
     proposition.tag === "holds" &&
     (proposition.value.text === "true" ||
       proposition.value.text === "false")
+  ) {
+    return undefined;
+  }
+  if (proposition.tag === "holds") {
+    const shape = proposition.value.shape;
+    if (prefix_term_has_kernel_representation(proposition.value)) {
+      return undefined;
+    }
+    if (
+      shape.tag === "call" && shape.function.shape.tag === "name" &&
+      facts.has(shape.function.shape.name) &&
+      shape.arguments.every(prefix_term_has_kernel_representation)
+    ) {
+      return undefined;
+    }
+    return proposition;
+  }
+  if (
+    proposition.tag === "is" &&
+    prefix_term_has_kernel_representation(proposition.value)
   ) {
     return undefined;
   }
@@ -2131,10 +2163,12 @@ function prefix_kernel_proposition(
   if (proposition.tag === "holds") {
     if (proposition.value.text === "true") return { tag: "true" };
     if (proposition.value.text === "false") return { tag: "false" };
-    return {
-      tag: "atom",
-      name: prefix_proposition_atom(proposition, context),
-    };
+    return prefix_kernel_atom(
+      declaration_name,
+      proposition,
+      context,
+      facts,
+    );
   }
   if (proposition.tag === "equal") {
     const left = prefix_kernel_term(
@@ -2160,10 +2194,12 @@ function prefix_kernel_proposition(
         right: right.term,
       };
     }
-    return {
-      tag: "atom",
-      name: prefix_proposition_atom(proposition, context),
-    };
+    return prefix_kernel_atom(
+      declaration_name,
+      proposition,
+      context,
+      facts,
+    );
   }
   if (proposition.tag === "not_equal") {
     const equality: PrefixProposition = {
@@ -2184,16 +2220,20 @@ function prefix_kernel_proposition(
     };
   }
   if (proposition.tag === "less" || proposition.tag === "less_equal") {
-    return {
-      tag: "atom",
-      name: prefix_proposition_atom(proposition, context),
-    };
+    return prefix_kernel_atom(
+      declaration_name,
+      proposition,
+      context,
+      facts,
+    );
   }
   if (proposition.tag === "is") {
-    return {
-      tag: "atom",
-      name: prefix_proposition_atom(proposition, context),
-    };
+    return prefix_kernel_atom(
+      declaration_name,
+      proposition,
+      context,
+      facts,
+    );
   }
   if (proposition.tag === "not") {
     return {
@@ -2268,7 +2308,99 @@ function prefix_kernel_proposition(
   throw new Error("Unknown prefix proof proposition.");
 }
 
-function prefix_proposition_atom(
+function prefix_kernel_atom(
+  declaration_name: string,
+  proposition: PrefixProposition,
+  context: PrefixKernelProofContext,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): Extract<Proposition, { tag: "atom" }> {
+  if (proposition.tag === "holds") {
+    const shape = proposition.value.shape;
+    if (
+      shape.tag === "call" && shape.function.shape.tag === "name" &&
+      facts.has(shape.function.shape.name)
+    ) {
+      const arguments_: KernelTerm[] = [];
+      for (const source_argument of shape.arguments) {
+        const checked = prefix_kernel_term(
+          declaration_name,
+          source_argument,
+          context,
+          facts,
+        );
+        if (checked === undefined) {
+          return {
+            tag: "atom",
+            name: prefix_proposition_atom_key(proposition, context),
+            arguments: [],
+          };
+        }
+        arguments_.push(checked.term);
+      }
+      return {
+        tag: "atom",
+        name: "fact:" + shape.function.shape.name,
+        arguments: arguments_,
+      };
+    }
+    const checked = prefix_kernel_term(
+      declaration_name,
+      proposition.value,
+      context,
+      facts,
+    );
+    if (checked !== undefined) {
+      return {
+        tag: "atom",
+        name: "builtin:Holds",
+        arguments: [checked.term],
+      };
+    }
+  }
+  if (proposition.tag === "less" || proposition.tag === "less_equal") {
+    const left = prefix_kernel_term(
+      declaration_name,
+      proposition.left,
+      context,
+      facts,
+    );
+    const right = prefix_kernel_term(
+      declaration_name,
+      proposition.right,
+      context,
+      facts,
+    );
+    if (left !== undefined && right !== undefined) {
+      return {
+        tag: "atom",
+        name: "builtin:" + proposition.tag,
+        arguments: [left.term, right.term],
+      };
+    }
+  }
+  if (proposition.tag === "is") {
+    const checked = prefix_kernel_term(
+      declaration_name,
+      proposition.value,
+      context,
+      facts,
+    );
+    if (checked !== undefined) {
+      return {
+        tag: "atom",
+        name: "builtin:is:" + proposition.type.canonical,
+        arguments: [checked.term],
+      };
+    }
+  }
+  return {
+    tag: "atom",
+    name: prefix_proposition_atom_key(proposition, context),
+    arguments: [],
+  };
+}
+
+function prefix_proposition_atom_key(
   proposition: PrefixProposition,
   context: PrefixKernelProofContext,
 ): string {

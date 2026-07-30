@@ -1,6 +1,7 @@
 import { expect } from "../expect.ts";
 import {
   check_term as check_kernel_term,
+  check_term_sequence,
   check_type,
   infer_term,
   kernel_context_equal,
@@ -8,6 +9,7 @@ import {
   KernelEnvironment,
   type KernelTerm,
   type KernelType,
+  MAX_KERNEL_TERM_SEQUENCE_LENGTH,
   shift_kernel_term_variables,
   shift_kernel_type_variables,
   snapshot_kernel_context,
@@ -16,10 +18,14 @@ import {
   substitute_kernel_term_variable,
   substitute_kernel_type_variable,
   term_equal,
+  term_sequences_equal,
   type_equal,
 } from "./kernel_terms.ts";
 
 const MAP_CONSTRUCTOR = Map;
+const ARRAY_CONSTRUCTOR = Array;
+const ARRAY_IS_ARRAY = Array.isArray;
+const ARRAY_PROTOTYPE = Array.prototype;
 const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger;
 const OBJECT_DEFINE_PROPERTY = Object.defineProperty;
 const OBJECT_FREEZE = Object.freeze;
@@ -43,7 +49,7 @@ const WEAK_SET_HAS = WEAK_SET_CONSTRUCTOR.prototype.has;
 export type Proposition =
   | { tag: "true" }
   | { tag: "false" }
-  | { tag: "atom"; name: string }
+  | { tag: "atom"; name: string; arguments: readonly KernelTerm[] }
   | {
     tag: "equal";
     type: KernelType;
@@ -243,9 +249,16 @@ function proposition_equal_at(
     case "true":
     case "false":
       return true;
-    case "atom":
-      return left.name ===
-        (right as Extract<Proposition, { tag: "atom" }>).name;
+    case "atom": {
+      const other = right as Extract<Proposition, { tag: "atom" }>;
+      if (left.name !== other.name) return false;
+      return term_sequences_equal(
+        left.arguments,
+        other.arguments,
+        context,
+        environment,
+      );
+    }
     case "equal": {
       const other = right as Extract<Proposition, { tag: "equal" }>;
       return type_equal(left.type, other.type, environment) &&
@@ -476,6 +489,10 @@ function snapshot_proposition(
         name: valid_text(
           required_property(properties, "name", "Proposition atom"),
           "Proposition atom name",
+        ),
+        arguments: snapshot_predicate_arguments(
+          required_property(properties, "arguments", "Proposition atom"),
+          budget,
         ),
       };
       break;
@@ -1193,6 +1210,67 @@ function valid_text(value: string, label: string): string {
   return value;
 }
 
+function snapshot_predicate_arguments(
+  value: unknown,
+  budget: SnapshotBudget,
+): readonly KernelTerm[] {
+  expect(
+    value !== null && typeof value === "object" &&
+      REFLECT_APPLY(ARRAY_IS_ARRAY, ARRAY_CONSTRUCTOR, [value]),
+    "Predicate arguments must be an array.",
+  );
+  expect(
+    OBJECT_GET_PROTOTYPE_OF(value) === ARRAY_PROTOTYPE,
+    "Predicate arguments must be an ordinary array.",
+  );
+  const length_descriptor = OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(value, "length");
+  expect(
+    length_descriptor !== undefined &&
+      length_descriptor.get === undefined &&
+      length_descriptor.set === undefined &&
+      NUMBER_IS_SAFE_INTEGER(length_descriptor.value) &&
+      length_descriptor.value >= 0,
+    "Predicate arguments have an invalid length.",
+  );
+  const length = length_descriptor.value as number;
+  expect(
+    length <= MAX_KERNEL_TERM_SEQUENCE_LENGTH,
+    `Predicate arguments exceed ${MAX_KERNEL_TERM_SEQUENCE_LENGTH} entries.`,
+  );
+  const keys = REFLECT_OWN_KEYS(value);
+  expect(
+    keys.length === length + 1,
+    "Predicate arguments cannot contain holes or extra properties.",
+  );
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= MAX_SNAPSHOT_NODES,
+    `Proof snapshot exceeded ${MAX_SNAPSHOT_NODES} nodes.`,
+  );
+  const arguments_: KernelTerm[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(
+      value,
+      STRING_CONSTRUCTOR(index),
+    );
+    expect(
+      descriptor !== undefined &&
+        descriptor.get === undefined &&
+        descriptor.set === undefined,
+      `Predicate argument ${index} must be an own data property.`,
+    );
+    const argument = snapshot_kernel_term(descriptor.value as KernelTerm);
+    charge_kernel_term(argument, budget);
+    OBJECT_DEFINE_PROPERTY(arguments_, index, {
+      value: argument,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return OBJECT_FREEZE(arguments_);
+}
+
 type KernelHypothesis = KernelResult;
 
 function kernel_hypothesis(proposition: Proposition): KernelHypothesis {
@@ -1231,8 +1309,38 @@ function substitute_proposition_variable(
   switch (proposition.tag) {
     case "true":
     case "false":
-    case "atom":
       return proposition;
+    case "atom": {
+      const arguments_: KernelTerm[] = [];
+      for (
+        let argument_index = 0;
+        argument_index < proposition.arguments.length;
+        argument_index += 1
+      ) {
+        const current = proposition.arguments[argument_index];
+        expect(
+          current !== undefined,
+          `Predicate argument ${argument_index} is missing.`,
+        );
+        const substituted = substitute_kernel_term_variable(
+          current,
+          argument,
+          index,
+        );
+        charge_kernel_term(substituted, budget);
+        OBJECT_DEFINE_PROPERTY(arguments_, argument_index, {
+          value: substituted,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+      return {
+        tag: "atom",
+        name: proposition.name,
+        arguments: arguments_,
+      };
+    }
     case "equal": {
       const type = substitute_kernel_type_variable(
         proposition.type,
@@ -1338,8 +1446,38 @@ function shift_proposition_variables(
   switch (proposition.tag) {
     case "true":
     case "false":
-    case "atom":
       return proposition;
+    case "atom": {
+      const arguments_: KernelTerm[] = [];
+      for (
+        let argument_index = 0;
+        argument_index < proposition.arguments.length;
+        argument_index += 1
+      ) {
+        const current = proposition.arguments[argument_index];
+        expect(
+          current !== undefined,
+          `Predicate argument ${argument_index} is missing.`,
+        );
+        const argument = shift_kernel_term_variables(
+          current,
+          amount,
+          cutoff,
+        );
+        charge_kernel_term(argument, budget);
+        OBJECT_DEFINE_PROPERTY(arguments_, argument_index, {
+          value: argument,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+      return {
+        tag: "atom",
+        name: proposition.name,
+        arguments: arguments_,
+      };
+    }
     case "equal": {
       const type = shift_kernel_type_variables(
         proposition.type,
@@ -1509,7 +1647,11 @@ function freeze_proposition(proposition: Proposition): Proposition {
     case "false":
       return OBJECT_FREEZE({ tag: "false" });
     case "atom":
-      return OBJECT_FREEZE({ tag: "atom", name: proposition.name });
+      return OBJECT_FREEZE({
+        tag: "atom",
+        name: proposition.name,
+        arguments: OBJECT_FREEZE(proposition.arguments),
+      });
     case "equal":
       return OBJECT_FREEZE({
         tag: "equal",
@@ -1572,7 +1714,9 @@ function check_proposition(
   switch (proposition.tag) {
     case "true":
     case "false":
+      return;
     case "atom":
+      check_term_sequence(proposition.arguments, context, environment);
       return;
     case "equal":
       check_type(proposition.type, context, environment);
@@ -2442,8 +2586,20 @@ function format_proposition_at(proposition: Proposition): string {
       return "True";
     case "false":
       return "False";
-    case "atom":
-      return proposition.name;
+    case "atom": {
+      if (proposition.arguments.length === 0) return proposition.name;
+      let formatted = proposition.name + "(";
+      for (let index = 0; index < proposition.arguments.length; index += 1) {
+        const argument = proposition.arguments[index];
+        expect(
+          argument !== undefined,
+          `Predicate argument ${index} is missing.`,
+        );
+        if (index > 0) formatted += ", ";
+        formatted += format_kernel_term(argument);
+      }
+      return formatted + ")";
+    }
     case "equal":
       return format_kernel_term(proposition.left) + " = " +
         format_kernel_term(proposition.right);

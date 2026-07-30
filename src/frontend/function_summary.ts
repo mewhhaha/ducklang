@@ -357,9 +357,20 @@ function substitute_proposition(
     case "false":
       return proposition;
     case "atom": {
-      const replacement = substitutions.get(proposition.name);
-      if (replacement === undefined) return proposition;
-      return { tag: "atom", name: replacement };
+      const arguments_: KernelTerm[] = [];
+      for (let index = 0; index < proposition.arguments.length; index += 1) {
+        const argument = proposition.arguments[index];
+        expect(
+          argument !== undefined,
+          `Predicate argument ${index} is missing.`,
+        );
+        arguments_[index] = substitute_kernel_term(argument, substitutions);
+      }
+      return {
+        tag: "atom",
+        name: proposition.name,
+        arguments: arguments_,
+      };
     }
     case "equal":
       return {

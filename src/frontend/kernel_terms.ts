@@ -59,6 +59,7 @@ const MAX_KERNEL_DEPTH = 256;
 const MAX_KERNEL_NODES = 20_000;
 const MAX_NORMALIZATION_NODES = 100_000;
 const MAX_NORMALIZATION_STEPS = 10_000;
+export const MAX_KERNEL_TERM_SEQUENCE_LENGTH = 64;
 const KERNEL_ENVIRONMENT_TOKEN = Symbol("ducklang.KernelEnvironment");
 const trusted_kernel_environments = new WEAK_SET_CONSTRUCTOR<object>();
 const MAP_FOR_EACH = MAP_CONSTRUCTOR.prototype.forEach;
@@ -445,6 +446,30 @@ export function infer_term(
   );
 }
 
+export function check_term_sequence(
+  terms: readonly KernelTerm[],
+  context: KernelContext = [],
+  environment: KernelEnvironment = KernelEnvironment.empty(),
+): void {
+  expect(
+    REFLECT_APPLY(WEAK_SET_HAS, trusted_kernel_environments, [environment]),
+    "Kernel environment is not sealed by the kernel.",
+  );
+  const snapshot_budget: KernelSnapshotBudget = { nodes: 0 };
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  const stable_terms = snapshot_term_sequence(terms, snapshot_budget);
+  const stable_context = snapshot_context(context, snapshot_budget);
+  validate_context_at(stable_context, environment, computation);
+  for (let index = 0; index < stable_terms.length; index += 1) {
+    const term = stable_terms[index];
+    expect(
+      term !== undefined,
+      `Kernel term sequence entry ${index} is missing.`,
+    );
+    infer_term_at(term, stable_context, environment, computation);
+  }
+}
+
 function infer_term_at(
   term: KernelTerm,
   context: KernelContext,
@@ -732,6 +757,59 @@ export function term_equal(
     environment,
     computation,
   );
+}
+
+export function term_sequences_equal(
+  left: readonly KernelTerm[],
+  right: readonly KernelTerm[],
+  context: KernelContext = [],
+  environment: KernelEnvironment = KernelEnvironment.empty(),
+): boolean {
+  expect(
+    REFLECT_APPLY(WEAK_SET_HAS, trusted_kernel_environments, [environment]),
+    "Kernel environment is not sealed by the kernel.",
+  );
+  const snapshot_budget: KernelSnapshotBudget = { nodes: 0 };
+  const computation: NormalizationBudget = { nodes: 0, steps: 0 };
+  const stable_left = snapshot_term_sequence(left, snapshot_budget);
+  const stable_right = snapshot_term_sequence(right, snapshot_budget);
+  const stable_context = snapshot_context(context, snapshot_budget);
+  validate_context_at(stable_context, environment, computation);
+  if (stable_left.length !== stable_right.length) return false;
+  for (let index = 0; index < stable_left.length; index += 1) {
+    const left_term = stable_left[index];
+    const right_term = stable_right[index];
+    expect(
+      left_term !== undefined && right_term !== undefined,
+      `Kernel term sequence entry ${index} is missing.`,
+    );
+    const left_type = infer_term_at(
+      left_term,
+      stable_context,
+      environment,
+      computation,
+    );
+    const right_type = infer_term_at(
+      right_term,
+      stable_context,
+      environment,
+      computation,
+    );
+    if (!type_equal_at(left_type, right_type, environment, computation)) {
+      return false;
+    }
+    if (
+      !type_equal_at(
+        term_as_type_expression(left_term, computation),
+        term_as_type_expression(right_term, computation),
+        environment,
+        computation,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function kernel_context_equal(
@@ -1290,6 +1368,64 @@ function snapshot_term(
   }
   REFLECT_APPLY(WEAK_SET_DELETE, active, [term]);
   return snapshot;
+}
+
+function snapshot_term_sequence(
+  terms: readonly KernelTerm[],
+  budget: KernelSnapshotBudget,
+): readonly KernelTerm[] {
+  expect(ARRAY_IS_ARRAY(terms), "Kernel term sequence must be an array.");
+  expect(
+    OBJECT_GET_PROTOTYPE_OF(terms) === ARRAY_PROTOTYPE,
+    "Kernel term sequence must be an ordinary array.",
+  );
+  const length_descriptor = OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(terms, "length");
+  expect(
+    length_descriptor !== undefined &&
+      length_descriptor.get === undefined &&
+      length_descriptor.set === undefined &&
+      NUMBER_IS_SAFE_INTEGER(length_descriptor.value) &&
+      length_descriptor.value >= 0,
+    "Kernel term sequence length is invalid.",
+  );
+  const length = length_descriptor.value as number;
+  expect(
+    length <= MAX_KERNEL_TERM_SEQUENCE_LENGTH,
+    `Kernel term sequence exceeds ${MAX_KERNEL_TERM_SEQUENCE_LENGTH} entries.`,
+  );
+  const properties = own_data_properties(
+    terms,
+    "Kernel term sequence",
+    "array",
+  );
+  const snapshot: KernelTerm[] = [];
+  for (let index = 0; index < length; index += 1) {
+    OBJECT_DEFINE_PROPERTY(snapshot, index, {
+      value: snapshot_term(
+        required_property(
+          properties,
+          STRING_CONSTRUCTOR(index),
+          "Kernel term sequence",
+        ),
+        0,
+        new WEAK_SET_CONSTRUCTOR<object>(),
+        budget,
+      ),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  REFLECT_APPLY(MAP_FOR_EACH, properties, [(_value: unknown, key: string) => {
+    if (key === "length") return;
+    const index = NUMBER_CONSTRUCTOR(key);
+    expect(
+      NUMBER_IS_SAFE_INTEGER(index) && index >= 0 &&
+        index < length && STRING_CONSTRUCTOR(index) === key,
+      `Kernel term sequence contains invalid property ${key}.`,
+    );
+  }]);
+  return OBJECT_FREEZE(snapshot);
 }
 
 function snapshot_definitions(

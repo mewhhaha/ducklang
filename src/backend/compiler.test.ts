@@ -91,6 +91,11 @@ Deno.test("Duck compiler erases checked proof declarations", async () => {
     "type witness = (value: I32) -> " +
     "Proof exists (found: I32). found = value\n" +
     "let witness = actual => by exists_intro(actual, refl);\n" +
+    "type predicate = (value: I32) -> Prop\n" +
+    "fact predicate = value => True;\n" +
+    "type predicate_identity = () -> " +
+    "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
+    "let predicate_identity = () => by value => evidence => evidence;\n" +
     "42\n";
   const plain_source = "42\n";
   const proof_module = encode_duck_module(proof_source);

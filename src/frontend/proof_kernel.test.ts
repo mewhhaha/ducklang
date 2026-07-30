@@ -3,6 +3,8 @@ import {
   certificate_establishes,
   check_certificate,
   check_proof,
+  check_proposition_formation,
+  format_proposition,
   instantiate_proposition,
   lift_proposition,
   type ProofTerm,
@@ -14,10 +16,11 @@ import {
   KernelEnvironment,
   type KernelTerm,
   type KernelType,
+  MAX_KERNEL_TERM_SEQUENCE_LENGTH,
   type_sort,
 } from "./kernel_terms.ts";
 
-const atom: Proposition = { tag: "atom", name: "P" };
+const atom: Proposition = { tag: "atom", name: "P", arguments: [] };
 const value_type: KernelType = { tag: "constant", name: "Value" };
 const environment = KernelEnvironment.from_definitions([
   {
@@ -57,6 +60,10 @@ function constant(name: string, type: KernelType = value_type): KernelTerm {
 
 function equal(left: KernelTerm, right: KernelTerm): Proposition {
   return { tag: "equal", type: value_type, left, right };
+}
+
+function predicate(argument: KernelTerm): Proposition {
+  return { tag: "atom", name: "P", arguments: [argument] };
 }
 
 function identity_application(argument: KernelTerm): KernelTerm {
@@ -334,7 +341,7 @@ Deno.test("kernel checks disjunction introduction", () => {
     body: {
       tag: "or_left" as const,
       proof: { tag: "assumption" as const, index: 0 },
-      other: { tag: "atom" as const, name: "Q" },
+      other: { tag: "atom" as const, name: "Q", arguments: [] },
     },
   };
   const certificate = check_proof(proof, {
@@ -343,7 +350,7 @@ Deno.test("kernel checks disjunction introduction", () => {
     conclusion: {
       tag: "or",
       left: atom,
-      right: { tag: "atom", name: "Q" },
+      right: { tag: "atom", name: "Q", arguments: [] },
     },
   });
   assert_equals(certificate.safety, { tag: "safe" });
@@ -353,7 +360,7 @@ Deno.test("kernel checks disjunction elimination", () => {
   const disjunction = {
     tag: "or" as const,
     left: atom,
-    right: { tag: "atom" as const, name: "Q" },
+    right: { tag: "atom" as const, name: "Q", arguments: [] },
   };
   const proof = {
     tag: "implies_intro" as const,
@@ -364,7 +371,7 @@ Deno.test("kernel checks disjunction elimination", () => {
       left_body: {
         tag: "or_left" as const,
         proof: { tag: "assumption" as const, index: 0 },
-        other: { tag: "atom" as const, name: "Q" },
+        other: { tag: "atom" as const, name: "Q", arguments: [] },
       },
       right_body: {
         tag: "or_right" as const,
@@ -593,6 +600,147 @@ Deno.test("kernel proposition transforms snapshot quantified inputs", () => {
   assert_throws(
     () => lift_proposition(cyclic),
     "Proposition graph must be acyclic",
+  );
+});
+
+Deno.test("predicate arguments participate in quantified conversion", () => {
+  const bound = predicate({ tag: "var", index: 0 });
+  assert_equals(
+    instantiate_proposition(bound, constant("x")),
+    predicate(constant("x")),
+  );
+  assert_equals(
+    lift_proposition(bound),
+    predicate({ tag: "var", index: 1 }),
+  );
+  assert_equals(
+    proposition_equal(
+      predicate(constant("x")),
+      predicate(constant("y")),
+      { environment },
+    ),
+    false,
+  );
+  assert_equals(format_proposition(predicate(constant("x"))), "P(x)");
+
+  const universal: Proposition = {
+    tag: "forall",
+    domain: value_type,
+    body: bound,
+  };
+  const goal: Proposition = {
+    tag: "implies",
+    premise: universal,
+    conclusion: predicate(constant("x")),
+  };
+  const certificate = check_proof(
+    {
+      tag: "implies_intro",
+      premise: universal,
+      body: {
+        tag: "forall_apply",
+        proof: { tag: "assumption", index: 0 },
+        argument: constant("x"),
+      },
+    },
+    goal,
+    safe_options,
+  );
+  assert_equals(certificate.proposition, goal);
+});
+
+Deno.test("predicate arguments are checked and snapshotted", () => {
+  assert_throws(
+    () =>
+      check_proposition_formation(
+        {
+          tag: "atom",
+          name: "P",
+          arguments: [{ tag: "var", index: 0 }],
+        },
+        { environment },
+      ),
+    "Kernel variable 0 is out of scope.",
+  );
+
+  const source_term = constant("x");
+  const source_arguments = [source_term];
+  const stable = check_proposition_formation(
+    { tag: "atom", name: "P", arguments: source_arguments },
+    { environment },
+  );
+  if (source_term.tag !== "constant") {
+    throw new Error("Expected a predicate constant argument.");
+  }
+  source_term.name = "y";
+  source_arguments[0] = constant("y");
+  assert_equals(stable, predicate(constant("x")));
+  assert_equals(Object.isFrozen(stable), true);
+  assert_equals(
+    Object.isFrozen(
+      (stable as Extract<Proposition, { tag: "atom" }>).arguments,
+    ),
+    true,
+  );
+
+  const sparse = new Array<KernelTerm>(1);
+  assert_throws(
+    () =>
+      check_proposition_formation(
+        { tag: "atom", name: "P", arguments: sparse },
+        { environment },
+      ),
+    "Predicate arguments cannot contain holes",
+  );
+
+  const accessor = [constant("x")];
+  Object.defineProperty(accessor, "0", { get: () => constant("y") });
+  assert_throws(
+    () =>
+      check_proposition_formation(
+        { tag: "atom", name: "P", arguments: accessor },
+        { environment },
+      ),
+    "Predicate argument 0 must be an own data property.",
+  );
+
+  const maximum_arguments: KernelTerm[] = [];
+  for (
+    let index = 0;
+    index < MAX_KERNEL_TERM_SEQUENCE_LENGTH;
+    index += 1
+  ) {
+    maximum_arguments.push(constant("x"));
+  }
+  const maximum_predicate: Proposition = {
+    tag: "atom",
+    name: "P",
+    arguments: maximum_arguments,
+  };
+  assert_equals(
+    proposition_equal(
+      check_proposition_formation(maximum_predicate, { environment }),
+      maximum_predicate,
+      { environment },
+    ),
+    true,
+  );
+
+  const oversized_arguments = new Array<KernelTerm>(
+    MAX_KERNEL_TERM_SEQUENCE_LENGTH + 1,
+  );
+  const hostile_arguments = new Proxy(oversized_arguments, {
+    ownKeys() {
+      throw new Error("Predicate argument keys must not be enumerated.");
+    },
+  });
+  assert_throws(
+    () =>
+      check_proposition_formation(
+        { tag: "atom", name: "P", arguments: hostile_arguments },
+        { environment },
+      ),
+    `Predicate arguments exceed ${MAX_KERNEL_TERM_SEQUENCE_LENGTH} entries.`,
   );
 });
 

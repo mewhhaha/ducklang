@@ -1,16 +1,20 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
   check_term,
+  check_term_sequence,
   check_type,
   infer_term,
   type KernelDefinition,
   KernelEnvironment,
+  type KernelTerm,
   type KernelType,
+  MAX_KERNEL_TERM_SEQUENCE_LENGTH,
   prop_sort,
   shift_kernel_term_variables,
   substitute_kernel_term_variable,
   substitute_kernel_type_variable,
   term_equal,
+  term_sequences_equal,
   type_assignable,
   type_equal,
   type_sort,
@@ -81,6 +85,31 @@ Deno.test("kernel infers de Bruijn lambda types", () => {
     domain: type_sort(0),
     codomain: type_sort(0),
   });
+});
+
+Deno.test("kernel checks bounded term sequences with shared context", () => {
+  const context = [type_sort(0)];
+  const terms: KernelTerm[] = [];
+  for (
+    let index = 0;
+    index < MAX_KERNEL_TERM_SEQUENCE_LENGTH;
+    index += 1
+  ) {
+    terms.push({ tag: "var", index: 0 });
+  }
+
+  check_term_sequence(terms, context);
+  assert_equals(term_sequences_equal(terms, terms, context), true);
+
+  terms.push({ tag: "var", index: 0 });
+  assert_throws(
+    () => check_term_sequence(terms, context),
+    `Kernel term sequence exceeds ${MAX_KERNEL_TERM_SEQUENCE_LENGTH} entries.`,
+  );
+  assert_throws(
+    () => term_sequences_equal(terms, terms, context),
+    `Kernel term sequence exceeds ${MAX_KERNEL_TERM_SEQUENCE_LENGTH} entries.`,
+  );
 });
 
 Deno.test("kernel type variables retain their declared universe", () => {

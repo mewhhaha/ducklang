@@ -1531,6 +1531,43 @@ Deno.test("direct quantified proof terms produce checked kernel terms", () => {
       "type shadow_universal = " +
       "(outer: I32) -> Proof forall (outer: I32). outer = outer\n" +
       "let shadow_universal = actual => by actual => refl;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type retain_quantified_predicate = " +
+      "(universal: Proof forall (value: I32). predicate(value)) -> " +
+      "Proof True\n" +
+      "let retain_quantified_predicate = universal => by true_intro;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type specialize_predicate = " +
+      "(actual: I32, universal: Proof forall (value: I32). predicate(value)) -> " +
+      "Proof predicate(actual)\n" +
+      "let specialize_predicate = (actual, universal) => " +
+      "by forall_apply(universal, actual);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type witness_predicate = " +
+      "(actual: I32, evidence: Proof predicate(actual)) -> " +
+      "Proof exists (found: I32). predicate(found)\n" +
+      "let witness_predicate = (actual, evidence) => " +
+      "by exists_intro(actual, evidence);\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type preserve_predicate_witness = " +
+      "(package: Proof exists (value: I32). predicate(value)) -> " +
+      "Proof exists (copy: I32). predicate(copy)\n" +
+      "let preserve_predicate_witness = package => " +
+      "by exists_elim(package, witness, evidence => " +
+      "exists_intro(witness, evidence));\n42\n",
+      "type ordered_identity = () -> " +
+      "Proof forall (value: I32). value < value implies value < value\n" +
+      "let ordered_identity = () => by value => evidence => evidence;\n42\n",
+      "type held_identity = () -> " +
+      "Proof forall (value: Bool). value implies value\n" +
+      "let held_identity = () => by value => evidence => evidence;\n42\n",
+      "type type_test_identity = () -> " +
+      "Proof forall (value: I32). (value is I32) implies (value is I32)\n" +
+      "let type_test_identity = () => by value => evidence => evidence;\n42\n",
     ]
   ) {
     const analysis = analyze_duck_source(parse_duck_source(source));
@@ -1541,6 +1578,36 @@ Deno.test("direct quantified proof terms produce checked kernel terms", () => {
       true,
     );
   }
+});
+
+Deno.test("quantified predicate certificates retain structured arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type predicate_identity = () -> " +
+      "Proof forall (value: I32). predicate(value) implies predicate(value)\n" +
+      "let predicate_identity = () => by value => evidence => evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:predicate_identity:proof");
+  if (checked === undefined) {
+    throw new Error("Expected a quantified predicate certificate.");
+  }
+  const predicate = {
+    tag: "atom" as const,
+    name: "fact:predicate",
+    arguments: [{ tag: "var" as const, index: 0 }],
+  };
+  assert_equals(checked.certificate.proposition, {
+    tag: "forall",
+    domain: { tag: "constant", name: "I32" },
+    body: {
+      tag: "implies",
+      premise: predicate,
+      conclusion: predicate,
+    },
+  });
 });
 
 Deno.test("invalid direct quantified proof terms fail before Core", () => {
@@ -1612,22 +1679,21 @@ Deno.test("invalid direct quantified proof terms fail before Core", () => {
         "(outer: I32, evidence: Proof predicate(outer)) -> " +
         "Proof forall (inner: I32). predicate(inner)\n" +
         "let bad = (outer, evidence) => by inner => evidence;\n42\n",
-        "cannot quantify over an opaque holds proposition",
+        "Proof establishes fact:predicate(#1), not fact:predicate(#0)",
       ],
       [
         "type predicate = (value: I32) -> Prop\n" +
         "fact predicate = value => True;\n" +
         "type bad = " +
-        "(universal: Proof forall (value: I32). predicate(value)) -> " +
-        "Proof True\n" +
-        "let bad = universal => by true_intro;\n42\n",
-        "cannot quantify over an opaque holds proposition",
+        "() -> Proof forall (value: I32). predicate(value + 1)\n" +
+        "let bad = () => by value => true_intro;\n42\n",
+        "cannot quantify over holds until every referenced logical term has a structured kernel representation",
       ],
       [
         "type bad = " +
         "() -> Proof forall (value: I32). value + 0 = value\n" +
         "let bad = () => by value => refl;\n42\n",
-        "cannot quantify over an opaque equal proposition",
+        "cannot quantify over equal until every referenced logical term has a structured kernel representation",
       ],
     ] as const
   ) {
@@ -1842,15 +1908,15 @@ Deno.test("proof atoms preserve literal contents during kernel checking", () => 
     analysis.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2605" &&
       diagnostic.message.includes("Proof establishes") &&
-      diagnostic.message.includes('\\"a b\\"') &&
-      diagnostic.message.includes('\\"ab\\"')
+      diagnostic.message.includes('literal:Text:"a b"') &&
+      diagnostic.message.includes('literal:Text:"ab"')
     ),
     true,
   );
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
-Deno.test("quantified opaque proof atoms fail closed", () => {
+Deno.test("structured predicate atoms preserve quantified variable identity", () => {
   const source = "type predicate = (value: I32) -> Prop\n" +
     "fact predicate = value => True;\n" +
     "type bad = " +
@@ -1863,7 +1929,7 @@ Deno.test("quantified opaque proof atoms fail closed", () => {
     analysis.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2605" &&
       diagnostic.message.includes(
-        "cannot quantify over an opaque holds proposition",
+        "Proof establishes (forall I32. fact:predicate(#1)), not (forall I32. fact:predicate(#0))",
       )
     ),
     true,
