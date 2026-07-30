@@ -560,3 +560,99 @@ Deno.test("semantic unreachable certificates normalize wrapping comparison const
     false,
   );
 });
+
+Deno.test("semantic machine certificates reject calls repeated by a loop", () => {
+  const builder = new SemanticCfgBuilder("repeated-call-certificate");
+  const entry = builder.add_block(origin);
+  const header = builder.add_block("loop-header:1:2:0" as never);
+  const body = builder.add_block("loop-body:2:3:0" as never);
+  const latch = builder.add_block("loop-latch:3:4:0" as never);
+  const exit = builder.add_block("loop-exit:4:5:0" as never);
+  const ready = "repeated-call-ready" as ValueId;
+  builder.add_parameter(ready, bool_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const initial = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (initial === undefined) throw new Error("Expected initial loop value.");
+  builder.connect(entry, header);
+  builder.terminate(entry, { tag: "jump", target: header });
+  const current = builder.add_phi(
+    header,
+    "loop-header:1:2:0" as never,
+    { start: 2, end: 3 },
+    new Map([[entry, initial]]),
+    i32_type,
+  );
+  builder.connect(header, body);
+  builder.connect(header, exit);
+  builder.terminate(header, {
+    tag: "branch",
+    condition: ready,
+    when_true: body,
+    when_false: exit,
+  });
+  const call_span = { start: 4, end: 11 };
+  const call = builder.add_node(
+    body,
+    "loop-body:2:3:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [current],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected repeated call result.");
+  builder.connect(body, latch);
+  builder.terminate(body, { tag: "jump", target: latch });
+  const next = builder.add_node(
+    latch,
+    "loop-latch:3:4:0" as never,
+    { start: 12, end: 13 },
+    { tag: "constant", value: 1 },
+    [],
+    [i32_type],
+  )[0];
+  if (next === undefined) throw new Error("Expected next loop value.");
+  builder.connect(latch, header);
+  builder.add_phi_input(current, latch, next);
+  builder.terminate(latch, { tag: "jump", target: header });
+  const fallback = builder.add_node(
+    exit,
+    "loop-exit:4:5:0" as never,
+    { start: 14, end: 15 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  builder.terminate(exit, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticMachineRequirement = {
+    tag: "fact",
+    proposition: { tag: "equal", value: current, expected: 0n },
+  };
+  assert_equals(
+    infer_semantic_machine_certificate(
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_machine_certificate(
+      semantic_machine_certificate(call_span, requirement),
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+});

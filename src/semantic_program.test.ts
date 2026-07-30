@@ -1814,6 +1814,31 @@ Deno.test("branch joins retain facts from every live predecessor", () => {
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
+Deno.test("loop calls cannot reuse facts from only their first visit", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value = 0) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type run = () -> I32\n" +
+      "let run = () => do\n" +
+      "for index in 0..3 do consume index; end;\n" +
+      "0\n" +
+      "end;\n" +
+      "run ()\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("short-circuit facts stay bound to their original ValueId", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

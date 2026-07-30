@@ -154,6 +154,7 @@ function verify_semantic_paths(
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
   );
+  if (target_block_can_repeat(target.block.id, blocks)) return "rejected";
   const producers = semantic_value_producers(control_flow);
   const reaches_target = blocks_reaching_target(target.block.id, blocks);
   const entry_counts = new Map<SemanticBlockId, number>();
@@ -396,6 +397,27 @@ function blocks_reaching_target(
     }
   }
   return reachable;
+}
+
+function target_block_can_repeat(
+  target: SemanticBlockId,
+  blocks: ReadonlyMap<SemanticBlockId, SemanticBlock>,
+): boolean {
+  const target_block = blocks.get(target);
+  if (target_block === undefined) return true;
+  const visited = new Set<SemanticBlockId>();
+  const pending = [...target_block.successors];
+  while (pending.length > 0) {
+    const block_id = pending.pop();
+    if (block_id === undefined) break;
+    if (block_id === target) return true;
+    if (visited.has(block_id)) continue;
+    visited.add(block_id);
+    const block = blocks.get(block_id);
+    if (block === undefined) return true;
+    pending.push(...block.successors);
+  }
+  return false;
 }
 
 function enqueue_verification_state(
