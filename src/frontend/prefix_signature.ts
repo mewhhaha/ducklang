@@ -15,6 +15,7 @@ export type PrefixTypeReference = {
   text: string;
   canonical: string;
   expression?: TypeExpr;
+  proof?: PrefixProposition;
   refinement?: PrefixRefinement;
   representation?: string;
   resolved?: true;
@@ -79,6 +80,21 @@ export type PrefixTermShape =
   | { tag: "parenthesized"; value: PrefixTerm }
   | { tag: "unsupported" };
 
+export type PrefixProofTerm =
+  | { tag: "name"; name: string; span: PrefixSpan }
+  | { tag: "refl" | "true_intro"; span: PrefixSpan }
+  | {
+    tag: "symm" | "and_left" | "and_right";
+    proof: PrefixProofTerm;
+    span: PrefixSpan;
+  }
+  | {
+    tag: "trans" | "and_intro" | "implies_apply";
+    left: PrefixProofTerm;
+    right: PrefixProofTerm;
+    span: PrefixSpan;
+  };
+
 export type PrefixProposition =
   | { tag: "true"; span: PrefixSpan }
   | { tag: "false"; span: PrefixSpan }
@@ -121,6 +137,7 @@ export type PrefixSignature = {
 };
 
 export type PrefixDefinition = {
+  attribute_span?: PrefixSpan;
   name: string;
   kind: PrefixSignatureKind;
   scope: string;
@@ -128,6 +145,7 @@ export type PrefixDefinition = {
   callable_parameters?: readonly string[];
   callable_parameter_types?: readonly (PrefixTypeReference | undefined)[];
   callable_body?: PrefixTerm;
+  callable_proof_body?: PrefixProofTerm;
   fact_parameters?: readonly string[];
   fact_body?: PrefixProposition;
   span: PrefixSpan;
@@ -142,6 +160,10 @@ export type PrefixSignatureIndex = ReadonlyMap<
   string,
   PrefixSignatureAssociation
 >;
+
+const maximum_prefix_proof_snapshot_nodes = 20_000;
+const maximum_prefix_proposition_snapshot_nodes = 20_000;
+const maximum_prefix_term_snapshot_nodes = 20_000;
 
 export function associate_prefix_signatures(
   signatures: readonly PrefixSignature[],
@@ -370,6 +392,13 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
       "Prefix definition recursive marker must be boolean.",
     );
   }
+  let attribute_span: PrefixSpan | undefined;
+  if (Object.prototype.hasOwnProperty.call(definition, "attribute_span")) {
+    attribute_span = own_value<PrefixSpan | undefined>(
+      definition,
+      "attribute_span",
+    );
+  }
   let fact_parameters: readonly string[] | undefined;
   if (Object.prototype.hasOwnProperty.call(definition, "fact_parameters")) {
     fact_parameters = own_value<readonly string[] | undefined>(
@@ -424,6 +453,15 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
       "callable_body",
     );
   }
+  let callable_proof_body: PrefixProofTerm | undefined;
+  if (
+    Object.prototype.hasOwnProperty.call(definition, "callable_proof_body")
+  ) {
+    callable_proof_body = own_value<PrefixProofTerm | undefined>(
+      definition,
+      "callable_proof_body",
+    );
+  }
   require_text(name, "Prefix definition name");
   require_text(scope, "Prefix definition scope");
   require_kind(kind);
@@ -433,6 +471,9 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
     scope,
     span: snapshot_span(span),
   };
+  if (attribute_span !== undefined) {
+    snapshot.attribute_span = snapshot_span(attribute_span);
+  }
   if (recursive !== undefined) snapshot.recursive = recursive;
   if (callable_parameters !== undefined) {
     snapshot.callable_parameters = snapshot_texts(
@@ -466,6 +507,9 @@ function snapshot_definition(definition: PrefixDefinition): PrefixDefinition {
   }
   if (callable_body !== undefined) {
     snapshot.callable_body = snapshot_term(callable_body);
+  }
+  if (callable_proof_body !== undefined) {
+    snapshot.callable_proof_body = snapshot_proof_term(callable_proof_body);
   }
   if (fact_parameters !== undefined) {
     snapshot.fact_parameters = snapshot_texts(
@@ -592,6 +636,12 @@ function snapshot_type_reference(
         });
       }
     }
+    if (Object.prototype.hasOwnProperty.call(type, "proof")) {
+      const proof = own_value<PrefixProposition | undefined>(type, "proof");
+      if (proof !== undefined) {
+        snapshot.proof = snapshot_proposition(proof, active, depth + 1);
+      }
+    }
     return Object.freeze(snapshot);
   } finally {
     active.delete(type);
@@ -624,8 +674,15 @@ function snapshot_proposition(
   proposition: PrefixProposition,
   active: WeakSet<object> = new WeakSet<object>(),
   depth = 0,
+  budget: { nodes: number } = { nodes: 0 },
 ): PrefixProposition {
   assert_record(proposition, "Prefix proposition");
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= maximum_prefix_proposition_snapshot_nodes,
+    "Prefix proposition snapshot exceeded " +
+      maximum_prefix_proposition_snapshot_nodes.toString() + " nodes.",
+  );
   expect(depth <= 256, "Prefix proposition nesting exceeds 256 levels.");
   expect(!active.has(proposition), "Prefix proposition cannot be cyclic.");
   active.add(proposition);
@@ -672,6 +729,7 @@ function snapshot_proposition(
           own_value<PrefixProposition>(proposition, "proposition"),
           active,
           depth + 1,
+          budget,
         ),
         span,
       });
@@ -683,11 +741,13 @@ function snapshot_proposition(
           own_value<PrefixProposition>(proposition, "left"),
           active,
           depth + 1,
+          budget,
         ),
         right: snapshot_proposition(
           own_value<PrefixProposition>(proposition, "right"),
           active,
           depth + 1,
+          budget,
         ),
         span,
       });
@@ -706,6 +766,7 @@ function snapshot_proposition(
           own_value<PrefixProposition>(proposition, "proposition"),
           active,
           depth + 1,
+          budget,
         ),
         span,
       });
@@ -732,12 +793,90 @@ function snapshot_terms(
   return Object.freeze(result);
 }
 
+function snapshot_proof_term(
+  proof: PrefixProofTerm,
+  active: WeakSet<object> = new WeakSet<object>(),
+  depth = 0,
+  budget: { nodes: number } = { nodes: 0 },
+): PrefixProofTerm {
+  assert_record(proof, "Prefix proof term");
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= maximum_prefix_proof_snapshot_nodes,
+    "Prefix proof snapshot exceeded " +
+      maximum_prefix_proof_snapshot_nodes.toString() + " nodes.",
+  );
+  expect(depth <= 256, "Prefix proof term nesting exceeds 256 levels.");
+  expect(!active.has(proof), "Prefix proof term cannot be cyclic.");
+  active.add(proof);
+  try {
+    const tag = own_value<PrefixProofTerm["tag"]>(proof, "tag");
+    const span = snapshot_span(own_value<PrefixSpan>(proof, "span"));
+    if (tag === "name") {
+      return Object.freeze({
+        tag,
+        name: require_text(
+          own_value<string>(proof, "name"),
+          "Prefix proof name",
+        ),
+        span,
+      });
+    }
+    if (tag === "refl" || tag === "true_intro") {
+      return Object.freeze({ tag, span });
+    }
+    if (tag === "symm" || tag === "and_left" || tag === "and_right") {
+      return Object.freeze({
+        tag,
+        proof: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "proof"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    if (
+      tag === "trans" || tag === "and_intro" || tag === "implies_apply"
+    ) {
+      return Object.freeze({
+        tag,
+        left: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "left"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        right: snapshot_proof_term(
+          own_value<PrefixProofTerm>(proof, "right"),
+          active,
+          depth + 1,
+          budget,
+        ),
+        span,
+      });
+    }
+    tag satisfies never;
+    throw new Error("Invalid prefix proof term.");
+  } finally {
+    active.delete(proof);
+  }
+}
+
 function snapshot_term(
   term: PrefixTerm,
   active: WeakSet<object> = new WeakSet<object>(),
   depth = 0,
+  budget: { nodes: number } = { nodes: 0 },
 ): PrefixTerm {
   assert_record(term, "Prefix term");
+  budget.nodes += 1;
+  expect(
+    budget.nodes <= maximum_prefix_term_snapshot_nodes,
+    "Prefix term snapshot exceeded " +
+      maximum_prefix_term_snapshot_nodes.toString() + " nodes.",
+  );
   expect(depth <= 256, "Prefix term nesting exceeds 256 levels.");
   expect(!active.has(term), "Prefix term cannot be cyclic.");
   active.add(term);
@@ -748,7 +887,7 @@ function snapshot_term(
   const snapshot = Object.freeze({
     text: require_text(text, "Prefix term"),
     references: snapshot_texts(references, "term references"),
-    shape: snapshot_term_shape(shape, active, depth),
+    shape: snapshot_term_shape(shape, active, depth, budget),
     span: snapshot_span(span),
   });
   active.delete(term);
@@ -759,6 +898,7 @@ function snapshot_term_shape(
   shape: PrefixTermShape,
   active: WeakSet<object>,
   depth: number,
+  budget: { nodes: number },
 ): PrefixTermShape {
   assert_record(shape, "Prefix term shape");
   const tag = own_value<PrefixTermShape["tag"]>(shape, "tag");
@@ -785,11 +925,13 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "left"),
         active,
         depth + 1,
+        budget,
       ),
       right: snapshot_term(
         own_value<PrefixTerm>(shape, "right"),
         active,
         depth + 1,
+        budget,
       ),
     });
   }
@@ -804,6 +946,7 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "operand"),
         active,
         depth + 1,
+        budget,
       ),
     });
   }
@@ -825,7 +968,9 @@ function snapshot_term_shape(
         "Prefix call arguments",
       );
       expect(argument !== undefined, "Prefix call arguments contain a hole.");
-      arguments_snapshot.push(snapshot_term(argument, active, depth + 1));
+      arguments_snapshot.push(
+        snapshot_term(argument, active, depth + 1, budget),
+      );
     }
     return Object.freeze({
       tag,
@@ -833,6 +978,7 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "function"),
         active,
         depth + 1,
+        budget,
       ),
       arguments: Object.freeze(arguments_snapshot),
     });
@@ -844,6 +990,7 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "object"),
         active,
         depth + 1,
+        budget,
       ),
       field: require_text(
         own_value<string>(shape, "field"),
@@ -858,6 +1005,7 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "object"),
         active,
         depth + 1,
+        budget,
       ),
     });
   }
@@ -868,6 +1016,7 @@ function snapshot_term_shape(
         own_value<PrefixTerm>(shape, "value"),
         active,
         depth + 1,
+        budget,
       ),
     });
   }

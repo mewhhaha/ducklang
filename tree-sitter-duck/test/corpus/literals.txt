@@ -126,7 +126,7 @@ boundary.end
   (binding_statement
     (identifier)
     (ERROR
-      (lowercase_identifier))
+      (identifier))
     (postfix_expression
       (number)))
   (binding_statement

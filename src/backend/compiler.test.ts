@@ -80,6 +80,27 @@ Deno.test("Duck compiler erases checked refinement signatures", async () => {
   }
 });
 
+Deno.test("Duck compiler erases checked proof declarations", async () => {
+  const proof_source =
+    "type reflexive = (value: I32) -> Proof value = value\n" +
+    "let reflexive = actual => by refl;\n" +
+    "42\n";
+  const plain_source = "42\n";
+  const proof_module = encode_duck_module(proof_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proof_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proof_module.definitionWords, plain_module.definitionWords);
+  assert_equals(proof_module.definitionCount, plain_module.definitionCount);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const result = await compiler.run(proof_source);
+    assert_equals(result.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler rejects contracts the definition cannot prove", () => {
   assert_throws(
     () =>

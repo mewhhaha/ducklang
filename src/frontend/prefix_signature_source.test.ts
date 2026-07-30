@@ -219,3 +219,19 @@ Deno.test("prefix type canonicalization preserves application boundaries", () =>
     "Box a",
   );
 });
+
+Deno.test("prefix source extraction retains proof propositions and bodies", () => {
+  const metadata = extract_prefix_source_metadata(parse_duck_source(
+    "type keep = " +
+      "(value: I32, evidence: Proof value = value) -> Proof value = value\n" +
+      "let keep = (actual, proof) => by proof;\n",
+  ));
+  const signature = metadata.signatures[0];
+  assert_equals(signature?.type.parameters[1]?.type.canonical, "Proof");
+  assert_equals(signature?.type.parameters[1]?.type.proof?.tag, "equal");
+  assert_equals(signature?.type.result.type.proof?.tag, "equal");
+  const body = metadata.definitions[0]?.callable_proof_body;
+  assert_equals(body?.tag, "name");
+  if (body?.tag !== "name") throw new Error("Expected a named proof body.");
+  assert_equals(body.name, "proof");
+});

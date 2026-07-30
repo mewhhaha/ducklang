@@ -9,6 +9,8 @@ enum TokenType {
   CONDITION_APPLICATION_SPACE,
   TYPE_APPLICATION_SPACE,
   FIXITY_IDENTIFIER,
+  PREFIX_PROOF_KEYWORD,
+  PROOF_PREFIXED_IDENTIFIER,
 };
 
 enum FixityWordScan {
@@ -324,6 +326,52 @@ bool tree_sitter_duck_external_scanner_scan(
   const bool *valid_symbols
 ) {
   (void)payload;
+
+  if (
+    (
+      valid_symbols[PREFIX_PROOF_KEYWORD] ||
+      valid_symbols[PROOF_PREFIXED_IDENTIFIER]
+    ) &&
+    lexer->lookahead == 'P'
+  ) {
+    const char proof[] = "Proof";
+    for (unsigned index = 0; index < sizeof(proof) - 1; index += 1) {
+      if (lexer->lookahead != proof[index]) {
+        return false;
+      }
+      lexer->advance(lexer, false);
+    }
+    if (
+      lexer->lookahead == '_' &&
+      valid_symbols[PROOF_PREFIXED_IDENTIFIER]
+    ) {
+      lexer->advance(lexer, false);
+      while (identifier_character(lexer->lookahead)) {
+        lexer->advance(lexer, false);
+      }
+      lexer->mark_end(lexer);
+      lexer->result_symbol = PROOF_PREFIXED_IDENTIFIER;
+      return true;
+    }
+    if (identifier_character(lexer->lookahead)) {
+      return false;
+    }
+    if (!valid_symbols[PREFIX_PROOF_KEYWORD]) {
+      return false;
+    }
+    lexer->mark_end(lexer);
+    while (lexer->lookahead == ' ' || lexer->lookahead == '\t') {
+      lexer->advance(lexer, false);
+    }
+    if (
+      lexer->lookahead == 0 || lexer->lookahead == '\r' ||
+      lexer->lookahead == '\n' || lexer->lookahead == '/'
+    ) {
+      return false;
+    }
+    lexer->result_symbol = PREFIX_PROOF_KEYWORD;
+    return true;
+  }
 
   if (
     valid_symbols[FIXITY_IDENTIFIER] &&

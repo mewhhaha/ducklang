@@ -2,6 +2,7 @@ import type { BabaCstNode, BabaParseResult } from "./baba_parser.ts";
 import {
   type PrefixCallableType,
   type PrefixDefinition,
+  type PrefixProofTerm,
   type PrefixProposition,
   type PrefixSignature,
   type PrefixSignatureBinder,
@@ -155,10 +156,12 @@ function definitions_from_node(
   let recursive = false;
   let fact_parameters: string[] | undefined;
   let fact_body: PrefixProposition | undefined;
+  let direct_proof_body: PrefixProofTerm | undefined;
   const callable_definitions: {
     parameters: string[];
     parameter_types: (PrefixTypeReference | undefined)[];
     body: PrefixTerm;
+    proof_body?: PrefixProofTerm;
   }[] = [];
   let names: string[] = [];
   if (node.kind === "prefix_fact_statement") {
@@ -283,7 +286,15 @@ function definitions_from_node(
         parameters,
         parameter_types,
         body: term_from_node(body, source),
+        proof_body: proof_body_from_node(body, source),
       });
+    }
+    if (callable_definitions.length === 0) {
+      for (const child of node.children) {
+        if (child.start < equals_node.end) continue;
+        direct_proof_body = proof_body_from_node(child, source);
+        if (direct_proof_body !== undefined) break;
+      }
     }
   }
   return names.map((name, index) => {
@@ -294,11 +305,26 @@ function definitions_from_node(
       recursive,
       span: { start: node.start, end: node.end },
     };
+    const attribute = node.children.find((child) =>
+      child.kind === "attribute_group"
+    );
+    if (attribute !== undefined) {
+      definition.attribute_span = {
+        start: attribute.start,
+        end: attribute.end,
+      };
+    }
     const callable = callable_definitions[index];
     if (callable !== undefined) {
       definition.callable_parameters = callable.parameters;
       definition.callable_parameter_types = callable.parameter_types;
       definition.callable_body = callable.body;
+      if (callable.proof_body !== undefined) {
+        definition.callable_proof_body = callable.proof_body;
+      }
+    }
+    if (callable === undefined && direct_proof_body !== undefined) {
+      definition.callable_proof_body = direct_proof_body;
     }
     if (fact_parameters !== undefined) {
       definition.fact_parameters = fact_parameters;
@@ -360,7 +386,8 @@ function parameter_from_node(
   const type_node = node.children.find((child) =>
     child.kind === "prefix_signature_value_type" ||
     child.kind === "type_reference" ||
-    child.kind === "prefix_refinement_type"
+    child.kind === "prefix_refinement_type" ||
+    child.kind === "prefix_proof_type"
   );
   if (name_node === undefined || type_node === undefined) return undefined;
   const type = signature_type_reference_from_node(type_node, source);
@@ -379,7 +406,8 @@ function result_from_node(
   const type_node = node.children.find((child) =>
     child.kind === "prefix_signature_value_type" ||
     child.kind === "type_reference" ||
-    child.kind === "prefix_refinement_type"
+    child.kind === "prefix_refinement_type" ||
+    child.kind === "prefix_proof_type"
   );
   if (type_node === undefined) return undefined;
   const type = signature_type_reference_from_node(type_node, source);
@@ -406,6 +434,20 @@ function signature_type_reference_from_node(
   }
   if (value_node.kind === "type_reference") {
     return type_reference_from_node(value_node, source);
+  }
+  if (value_node.kind === "prefix_proof_type") {
+    const proposition_node = value_node.children.find((child) =>
+      child.kind === "prefix_proposition"
+    );
+    if (proposition_node === undefined) return undefined;
+    const proposition = proposition_from_node(proposition_node, source);
+    if (proposition === undefined) return undefined;
+    return {
+      text: source.slice(value_node.start, value_node.end),
+      canonical: "Proof",
+      proof: proposition,
+      span: { start: value_node.start, end: value_node.end },
+    };
   }
   if (value_node.kind !== "prefix_refinement_type") return undefined;
   const binder_node = value_node.children.find((child) =>
@@ -444,6 +486,85 @@ function type_reference_from_node(
     canonical: canonical_type_reference(node, source),
     span: { start: node.start, end: node.end },
   };
+}
+
+function proof_body_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixProofTerm | undefined {
+  let proof_expression = node;
+  while (
+    proof_expression.kind === "postfix_expression" ||
+    proof_expression.kind === "parenthesized_expression" ||
+    proof_expression.kind === "parenthesized_or_product"
+  ) {
+    const nested = semantic_child(proof_expression);
+    if (nested === undefined) return undefined;
+    proof_expression = nested;
+  }
+  if (proof_expression.kind !== "prefix_by_proof_expression") return undefined;
+  const proof_node = proof_expression.children.find((child) =>
+    child.kind === "prefix_proof_term"
+  );
+  if (proof_node === undefined) return undefined;
+  return proof_term_from_node(proof_node, source);
+}
+
+function proof_term_from_node(
+  node: BabaCstNode,
+  source: string,
+): PrefixProofTerm | undefined {
+  const span = { start: node.start, end: node.end };
+  const text = source.slice(node.start, node.end);
+  if (text === "refl") return { tag: "refl", span };
+  if (text === "true_intro") return { tag: "true_intro", span };
+  const operator_node = node.children.find((child) =>
+    child.kind === '"symm"' || child.kind === '"and_left"' ||
+    child.kind === '"and_right"' || child.kind === '"trans"' ||
+    child.kind === '"and_intro"' || child.kind === '"implies_apply"'
+  );
+  const nested = node.children.filter((child) =>
+    child.kind === "prefix_proof_term"
+  );
+  if (operator_node === undefined) {
+    const name_node = node.children.find((child) =>
+      child.kind === "identifier"
+    );
+    if (name_node !== undefined) {
+      return {
+        tag: "name",
+        name: source.slice(name_node.start, name_node.end),
+        span,
+      };
+    }
+    const parenthesized = nested[0];
+    if (parenthesized === undefined) return undefined;
+    return proof_term_from_node(parenthesized, source);
+  }
+  const operator = source.slice(operator_node.start, operator_node.end);
+  if (
+    operator === "symm" || operator === "and_left" ||
+    operator === "and_right"
+  ) {
+    const proof_node = nested[0];
+    if (proof_node === undefined) return undefined;
+    const proof = proof_term_from_node(proof_node, source);
+    if (proof === undefined) return undefined;
+    return { tag: operator, proof, span };
+  }
+  if (
+    operator === "trans" || operator === "and_intro" ||
+    operator === "implies_apply"
+  ) {
+    const left_node = nested[0];
+    const right_node = nested[1];
+    if (left_node === undefined || right_node === undefined) return undefined;
+    const left = proof_term_from_node(left_node, source);
+    const right = proof_term_from_node(right_node, source);
+    if (left === undefined || right === undefined) return undefined;
+    return { tag: operator, left, right, span };
+  }
+  return undefined;
 }
 
 function canonical_type_reference(

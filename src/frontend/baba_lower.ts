@@ -94,6 +94,7 @@ const lifted_expression_prefixes = new WeakMap<
 >();
 const lifted_prefix_references = new WeakSet<BabaCstNode>();
 const suppressed_expression_prefixes = new WeakSet<BabaCstNode>();
+const semantic_proof_placeholders = new WeakSet<BabaCstNode>();
 const maximum_pattern_nesting = 128;
 
 export function lower_baba_source(parsed: BabaParseResult): Checked<Source> {
@@ -3003,6 +3004,14 @@ function lower_statement(
   }
 
   if (node.kind === "binding_statement") {
+    const proof_body = binding_direct_proof_body(node);
+    if (
+      proof_body !== undefined &&
+      !node.children.some((child) => child.kind === '"and"')
+    ) {
+      return ok(undefined);
+    }
+    if (proof_body !== undefined) semantic_proof_placeholders.add(proof_body);
     return lower_binding(node, source);
   }
 
@@ -3144,6 +3153,35 @@ function lower_statement(
   }
 
   return unsupported(node);
+}
+
+function binding_direct_proof_body(
+  node: BabaCstNode,
+): BabaCstNode | undefined {
+  const equals_node = node.children.find((child) => child.kind === '"="');
+  if (equals_node === undefined) return undefined;
+  let value = node.children.find((child) =>
+    child.start >= equals_node.end && is_expression_node(child)
+  );
+  if (value === undefined) return undefined;
+  if (value.kind === "arrow_function") {
+    const arrow = value.children.find((child) => child.kind === '"=>"');
+    if (arrow === undefined) return undefined;
+    value = value.children.find((child) =>
+      child.start >= arrow.end && is_expression_node(child)
+    );
+    if (value === undefined) return undefined;
+  }
+  while (
+    value.kind === "postfix_expression" ||
+    value.kind === "parenthesized_expression" ||
+    value.kind === "parenthesized_or_product"
+  ) {
+    value = semantic_child(value);
+    if (value === undefined) return undefined;
+  }
+  if (value.kind === "prefix_by_proof_expression") return value;
+  return undefined;
 }
 
 function lower_statement_entries(
@@ -5718,6 +5756,12 @@ function lower_expression(
   node: BabaCstNode,
   source: string,
 ): Checked<FrontExpr> {
+  if (node.kind === "prefix_by_proof_expression") {
+    if (!semantic_proof_placeholders.has(node)) return unsupported(node);
+    const expression: FrontExpr = { tag: "unit" };
+    mark_source_span(expression, { start: node.start, end: node.end });
+    return ok(expression);
+  }
   const lifted_prefix = lifted_expression_prefixes.get(node);
   if (
     lifted_prefix !== undefined &&
@@ -9256,7 +9300,8 @@ function semantic_child(node: BabaCstNode): BabaCstNode | undefined {
 }
 
 function is_expression_node(node: BabaCstNode): boolean {
-  return node.kind === "postfix_expression" ||
+  return node.kind === "prefix_by_proof_expression" ||
+    node.kind === "postfix_expression" ||
     node.kind === "parenthesized_expression" ||
     node.kind === "parenthesized_or_product" ||
     node.kind === "condition_expression" ||

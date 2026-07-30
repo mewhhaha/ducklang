@@ -1247,6 +1247,334 @@ Deno.test("checked refinement signatures erase to their base representation", ()
   assert_equals(checked_value(lower_duck_source(captured_result)), undefined);
 });
 
+Deno.test("direct proof declarations are kernel checked and erased", () => {
+  const proof_source =
+    "type reflexive = (value: I32) -> Proof value = value\n" +
+    "let reflexive = actual => by refl;\n" +
+    "42\n";
+  const proof_analysis = analyze_duck_source(
+    parse_duck_source(proof_source),
+  );
+  const plain_analysis = analyze_duck_source(parse_duck_source("42\n"));
+  assert_equals(proof_analysis.diagnostics, []);
+  assert_equals(proof_analysis.symbols.has("reflexive"), false);
+  assert_equals([...proof_analysis.proofs.keys()], [
+    "root:reflexive:proof",
+  ]);
+  const checked_certificate = [...proof_analysis.proofs.values()][0];
+  if (checked_certificate === undefined) {
+    throw new Error("Expected a checked proof certificate.");
+  }
+  assert_equals(checked_certificate.certificate.safety, { tag: "safe" });
+  assert_equals(
+    check_certificate(
+      checked_certificate.certificate,
+      checked_certificate.certificate.proposition,
+      {
+        environment: checked_certificate.environment,
+        term_context: checked_certificate.term_context,
+        require_safe: true,
+      },
+    ),
+    checked_certificate.certificate,
+  );
+  const proof_program = checked_value(lower_duck_source(proof_analysis));
+  const plain_program = checked_value(lower_duck_source(plain_analysis));
+  if (proof_program === undefined || plain_program === undefined) {
+    throw new Error("Expected proof and plain programs to lower.");
+  }
+  assert_equals(proof_program.core, plain_program.core);
+  assert_equals(JSON.stringify(proof_program.core).includes("proof"), false);
+
+  const polymorphic = analyze_duck_source(parse_duck_source(
+    "type reflexive = " +
+      "forall (a: Type). (value: a) -> Proof value = value\n" +
+      "let reflexive = actual => by refl;\n42\n",
+  ));
+  assert_equals(polymorphic.diagnostics, []);
+  assert_equals(polymorphic.proofs.size, 1);
+});
+
+Deno.test("direct proof hypotheses alpha rename and compose", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type both = " +
+      "(left: Proof True, right: Proof True) -> Proof True and True\n" +
+      "let both = (first, second) => by and_intro(first, second);\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    checked_value(lower_duck_source(analysis))?.core.statements,
+    [{ tag: "expr", expr: { tag: "num", type: "i32", value: 42 } }],
+  );
+});
+
+Deno.test("direct proof eliminators produce checked kernel terms", () => {
+  for (
+    const source of [
+      "type symmetric = " +
+      "(left: I32, right: I32, equality: Proof right = left) -> " +
+      "Proof left = right\n" +
+      "let symmetric = (a, b, evidence) => by symm(evidence);\n42\n",
+      "type chain = " +
+      "(a: I32, b: I32, c: I32, first: Proof a = b, second: Proof b = c) -> " +
+      "Proof a = c\n" +
+      "let chain = (x, y, z, left, right) => by trans(left, right);\n42\n",
+      "type project = (pair: Proof True and False) -> Proof True\n" +
+      "let project = evidence => by and_left(evidence);\n42\n",
+      "type apply_implication = " +
+      "(function: Proof True implies False, argument: Proof True) -> " +
+      "Proof False\n" +
+      "let apply_implication = (f, value) => " +
+      "by implies_apply(f, value);\n42\n",
+      "type left_nested = " +
+      "(value: I32, evidence: Proof True) -> Proof value = value\n" +
+      "let left_nested = (value, evidence) => " +
+      "by and_left(and_intro(refl, evidence));\n42\n",
+      "type applied_refl = " +
+      "(value: I32, function: Proof value = value implies True) -> " +
+      "Proof True\n" +
+      "let applied_refl = (value, function) => " +
+      "by implies_apply(function, refl);\n42\n",
+      "type left_identity = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let left_identity = (left, right, equality) => " +
+      "by trans(refl, equality);\n42\n",
+      "type right_identity = " +
+      "(left: I32, right: I32, equality: Proof left = right) -> " +
+      "Proof left = right\n" +
+      "let right_identity = (left, right, equality) => " +
+      "by trans(equality, refl);\n42\n",
+      "type literal_refl = () -> Proof 0 = 0i32\n" +
+      "let literal_refl = () => by refl;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type parenthesized = " +
+      "(value: I32, evidence: Proof predicate(value)) -> " +
+      "Proof predicate((value))\n" +
+      "let parenthesized = (value, evidence) => by evidence;\n42\n",
+      "type predicate = (value: I32) -> Prop\n" +
+      "fact predicate = value => True;\n" +
+      "type numeric_atom = " +
+      "(evidence: Proof predicate(0)) -> Proof predicate(0i32)\n" +
+      "let numeric_atom = evidence => by evidence;\n42\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("invalid direct proof declarations fail before Core", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = () -> Proof False\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "Proof establishes True, not False",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by missing;\n42\n",
+        "Unknown proof evidence missing",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => true;\n42\n",
+        "must use a direct by proof term body",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "ensures False\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "must express its guarantee in the Proof result",
+      ],
+      [
+        "type bad = (evidence: Proof True) -> I32\n" +
+        "let bad = evidence => 42;\nbad true\n",
+        "cannot yet erase explicit proof parameter evidence",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad = () => by true_intro\n" +
+        "and runtime = () => 42;\n42\n",
+        "cannot yet erase from a mutual binding group",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "@[test]\n" +
+        "let bad = () => by true_intro;\n42\n",
+        "cannot carry runtime binding attributes",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2605" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("proof declarations reject conflicting inline annotations", () => {
+  for (
+    const [source, message] of [
+      [
+        "type bad = (value: I32) -> Proof True\n" +
+        "let bad = (value: Text) => by true_intro;\n42\n",
+        "parameter value has type I32, but its inline annotation is Text",
+      ],
+      [
+        "type bad = () -> Proof True\n" +
+        "let bad: I32 = () => by true_intro;\n42\n",
+        "cannot combine a prefix signature with an inline annotation",
+      ],
+    ] as const
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2602" &&
+        diagnostic.message.includes(message)
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("incomplete Proof recovery preserves unaffected semantics", () => {
+  for (
+    const source of [
+      "type broken = () -> Proof\nlet kept = 42;\nkept\n",
+      "type broken = () -> Proof   \nlet kept = 42;\nkept\n",
+      "type broken = () -> Proof // missing\nlet kept = 42;\nkept\n",
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(source));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("Proof requires a proposition")
+      ),
+      true,
+    );
+    assert_equals(analysis.symbols.has("kept"), true);
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("rejected mutual proofs preserve runtime peer symbols", () => {
+  const source = "type proof = () -> Proof True\n" +
+    "let rec proof = () => by true_intro\n" +
+    "and runtime = () => 42;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("requires a checked totality derivation")
+    ),
+    true,
+  );
+  assert_equals(analysis.symbols.has("runtime"), true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("a by body without a proof result is rejected", () => {
+  const source = "type bad = () -> I32\n" +
+    "let bad = () => by refl;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "requires a matching prefix signature with a Proof result",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("orphan proof bodies do not erase enclosing runtime bindings", () => {
+  const source = "let outer = () => do\n" +
+    "  let orphan = () => by refl;\n" +
+    "  42\n" +
+    "end;\n" +
+    "outer()\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes(
+        "requires a matching prefix signature with a Proof result",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.symbols.has("outer"), true);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+
+  const direct = analyze_duck_source(
+    parse_duck_source("let orphan = by refl;\n42\n"),
+  );
+  assert_equals(
+    direct.diagnostics.some((diagnostic) => diagnostic.code === "DUCK2605"),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(direct)), undefined);
+});
+
+Deno.test("proof atoms preserve literal contents during kernel checking", () => {
+  const source = "type text_property = (value: Text) -> Prop\n" +
+    "fact text_property = value => True;\n" +
+    "type bad = " +
+    '(evidence: Proof text_property("a b")) -> Proof text_property("ab")\n' +
+    "let bad = proof => by proof;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes("Proof establishes") &&
+      diagnostic.message.includes('\\"a b\\"') &&
+      diagnostic.message.includes('\\"ab\\"')
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("proof atoms preserve quantified variable identity", () => {
+  const source = "type predicate = (value: I32) -> Prop\n" +
+    "fact predicate = value => True;\n" +
+    "type bad = " +
+    "(outer: I32, evidence: Proof " +
+    "forall (x: I32). predicate(outer)) -> " +
+    "Proof forall (outer: I32). predicate(outer)\n" +
+    "let bad = (value, proof) => by proof;\n42\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2605" &&
+      diagnostic.message.includes('["var",1]') &&
+      diagnostic.message.includes('["var",0]')
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("semantic program brands reject analysis and Core mutation", () => {
   const invalid = analyze_duck_source(parse_duck_source(
     "type identity = (value: I32) -> (result: I32)\n" +

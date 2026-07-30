@@ -21,6 +21,8 @@ token prefix_and_keyword priority 3 = /and/ ;
 token prefix_not_keyword priority 3 = /not/ ;
 token prefix_forall_keyword priority 3 = /forall/ ;
 token prefix_exists_keyword priority 3 = /exists/ ;
+contextual prefix_proof_keyword priority 3 = /Proof/ ;
+contextual proof_prefixed_identifier priority 4 = /Proof_[A-Za-z0-9_]*/ ;
 token intrinsic_identifier = /@[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*/ ;
 token operator_symbol priority 0 = /([-!$%&*+<>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*|\/([.\-!$%&*+<=>?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)?|=[.\-!$%&*+\/<=?@\\^|~:][.\-!$%&*+\/<=>?@\\^|~:]*)/ ;
 contextual effect_identifier priority 1 = /[A-Z][A-Za-z0-9]*/ ;
@@ -327,7 +329,16 @@ prefix_signature_result = (
                            | type:(prefix_signature_value_type)
                          ) ;
 
-prefix_signature_value_type = (prefix_refinement_type | type_reference) ;
+prefix_signature_value_type = (
+                              prefix_proof_type
+                              | prefix_refinement_type
+                              | type_reference
+                            ) ;
+
+prefix_proof_type = (
+                    prefix_proof_keyword
+                    proposition:(prefix_proposition)
+                  ) ;
 
 prefix_refinement_type = (
                           "{"
@@ -490,6 +501,41 @@ prefix_fact_parameters = (
                               ")"
                             )
                         ) ;
+
+prefix_by_proof_expression = ("by" proof:(prefix_proof_term)) ;
+
+prefix_proof_term = (
+                     name:(identifier)
+                     | "refl"
+                     | "true_intro"
+                     | (
+                         operator:(
+                           (
+                             "symm"
+                             | "and_left"
+                             | "and_right"
+                           )
+                         )
+                         "("
+                         proof:(prefix_proof_term)
+                         ")"
+                       )
+                     | (
+                         operator:(
+                           (
+                             "trans"
+                             | "and_intro"
+                             | "implies_apply"
+                           )
+                         )
+                         "("
+                         left:(prefix_proof_term)
+                         ","
+                         right:(prefix_proof_term)
+                         ")"
+                       )
+                     | ("(" proof:(prefix_proof_term) ")")
+                   ) ;
 
 
 fixity_target = (
@@ -981,7 +1027,8 @@ handler_operation_clause = (
 handler_return_clause = ("return" ":" value:(arrow_function)) ;
 
 _primary_expression = (
-                        number
+                        prefix_by_proof_expression
+                        | number
                         | string
                         | character
                         | template_literal
@@ -1208,7 +1255,8 @@ frozen_type = ("freeze" (name:(_effect_identifier_alias) | type_parenthesized)) 
 borrow_type = ("&" (identifier | type_parenthesized)) ;
 
 _type_atom = (
-               _effect_identifier_alias
+               _proof_prefixed_identifier_alias
+               | _effect_identifier_alias
                | identifier
                | top_type
                | type_literal
@@ -1261,6 +1309,8 @@ _effect_arrow = _effect_arrow_expression ;
 _value_arrow = _value_arrow_expression ;
 
 _effect_identifier_alias = effect_identifier ;
+
+_proof_prefixed_identifier_alias = proof_prefixed_identifier ;
 
 _row_identifier_alias = row_variable ;
 

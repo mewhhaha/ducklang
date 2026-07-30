@@ -205,6 +205,7 @@ export { associate_prefix_signatures } from "./frontend/prefix_signature.ts";
 export type {
   PrefixCallableType,
   PrefixDefinition,
+  PrefixProofTerm,
   PrefixProposition,
   PrefixSignature,
   PrefixSignatureAssociation,

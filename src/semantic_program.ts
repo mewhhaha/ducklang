@@ -85,10 +85,13 @@ import type { FactState } from "./frontend/fact_graph.ts";
 import {
   check_proof,
   type KernelCertificate,
+  type ProofTerm,
+  type Proposition,
 } from "./frontend/proof_kernel.ts";
 import {
   type KernelContext,
   KernelEnvironment,
+  type KernelTerm,
   type KernelType,
   snapshot_kernel_context,
   type_sort,
@@ -98,6 +101,7 @@ import type { TypeExpr } from "./type_syntax.ts";
 import {
   associate_prefix_signatures,
   type PrefixDefinition,
+  type PrefixProofTerm,
   type PrefixProposition,
   type PrefixRefinement,
   type PrefixSignature,
@@ -401,6 +405,22 @@ function apply_prefix_signature_types(
     applications.push(binder_check.map(() => null));
     if (diagnostics_of(binder_check).length > 0) continue;
     if (signature.kind === "fact" || signature.kind === "opaque fact") {
+      continue;
+    }
+    if (signature.type.result.type.proof !== undefined) continue;
+    const proof_parameter = signature.type.parameters.find((parameter) =>
+      parameter.type.proof !== undefined
+    );
+    if (proof_parameter !== undefined) {
+      applications.push(
+        fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_proof_invalid,
+            `Prefix signature ${signature.name} cannot yet erase explicit proof parameter ${proof_parameter.name} from a runtime-returning definition.`,
+            proof_parameter.span,
+          ),
+        ),
+      );
       continue;
     }
     const definition = definitions.find((candidate) =>
@@ -878,9 +898,37 @@ function validate_prefix_contracts(
   const checks: Checked<
     { key: string; proof: CheckedKernelCertificate } | undefined
   >[] = [];
+  for (const definition of resolved_definitions) {
+    if (definition.callable_proof_body === undefined) continue;
+    const signature = resolved_signatures.find((candidate) =>
+      candidate.name === definition.name &&
+      candidate.scope === definition.scope &&
+      candidate.span.end <= definition.span.start
+    );
+    if (
+      signature !== undefined &&
+      signature.type.result.type.proof !== undefined
+    ) {
+      continue;
+    }
+    checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          `Proof body for ${definition.name} requires a matching prefix signature with a Proof result.`,
+          definition.callable_proof_body.span,
+        ),
+      ),
+    );
+  }
   for (const signature of resolved_signatures) {
     const signature_checks: Checked<undefined>[] = [
       check_prefix_binder_names(signature, resolved_definitions),
+      check_prefix_proof_formation(
+        signature,
+        resolved_signatures,
+        declared_type_names,
+      ),
       check_prefix_refinement_formation(
         signature,
         resolved_signatures,
@@ -917,6 +965,18 @@ function validate_prefix_contracts(
     ];
     checks.push(...signature_checks);
     if (diagnostics_of(all(signature_checks)).length > 0) continue;
+    if (signature.type.result.type.proof !== undefined) {
+      checks.push(
+        check_prefix_proof_definition(
+          signature,
+          resolved_signatures,
+          resolved_definitions,
+          declared_type_names,
+          cst_root,
+        ),
+      );
+      continue;
+    }
     for (
       let clause_index = 0;
       clause_index < signature.ensures.length;
@@ -1037,6 +1097,18 @@ function resolve_prefix_type_reference(
   source_text: string,
   type_variables: ReadonlySet<string>,
 ): PrefixTypeReference {
+  let proof = type.proof;
+  if (proof !== undefined) {
+    proof = resolve_prefix_proposition_types(
+      proof,
+      aliases,
+      type_definitions,
+      source,
+      cst_root,
+      source_text,
+      type_variables,
+    );
+  }
   let refinement = type.refinement;
   if (refinement !== undefined) {
     refinement = {
@@ -1052,7 +1124,10 @@ function resolve_prefix_type_reference(
       ),
     };
   }
-  const resolved_type = { ...type, refinement };
+  const resolved_type = { ...type, proof, refinement };
+  if (proof !== undefined) {
+    return { ...resolved_type, canonical: "Proof", resolved: true };
+  }
   const canonical = resolve_transparent_type_aliases(type.canonical, aliases);
   if (canonical === "Type" || canonical === "Prop") {
     return { ...resolved_type, canonical, resolved: true };
@@ -1537,6 +1612,1092 @@ function check_prefix_binder_names(
   return ok(undefined);
 }
 
+function check_prefix_proof_formation(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  declared_type_names: ReadonlySet<string>,
+): Checked<undefined> {
+  const proof_parameters = signature.type.parameters.filter((parameter) =>
+    parameter.type.proof !== undefined
+  );
+  if (
+    proof_parameters.length > 0 &&
+    signature.type.result.type.proof === undefined
+  ) {
+    const parameter = proof_parameters[0];
+    expect(parameter !== undefined, "Proof parameter selection disappeared.");
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Prefix signature ${signature.name} cannot yet erase explicit proof parameter ${parameter.name} from a runtime-returning definition.`,
+        parameter.span,
+      ),
+    );
+  }
+  if (
+    signature.type.result.type.proof !== undefined &&
+    signature.type.result.name !== undefined
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Proof result for ${signature.name} cannot introduce the runtime result binder.`,
+        signature.type.result.span,
+      ),
+    );
+  }
+  if (
+    signature.type.result.type.proof !== undefined &&
+    signature.ensures.length > 0
+  ) {
+    const guarantee = signature.ensures[0];
+    expect(guarantee !== undefined, "Proof guarantee selection disappeared.");
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Proof declaration ${signature.name} must express its guarantee in the Proof result instead of ensures.`,
+        guarantee.span,
+      ),
+    );
+  }
+  const term_types = new Map<string, LogicalTermType>();
+  for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
+    term_types.set(
+      parameter.name,
+      logical_term_type_from_reference(parameter.type),
+    );
+  }
+  const facts = prefix_fact_signatures(
+    signatures,
+    signature.scope,
+    signature.span.start,
+  );
+  const type_names = signature_type_names(signature, declared_type_names);
+  const checks: Checked<undefined>[] = [];
+  for (const parameter of proof_parameters) {
+    const proposition = parameter.type.proof;
+    expect(
+      proposition !== undefined,
+      `Proof parameter ${parameter.name} lost its proposition.`,
+    );
+    checks.push(
+      check_prefix_proposition(
+        signature.name,
+        proposition,
+        term_types,
+        type_names,
+        facts,
+        new Set(),
+      ),
+    );
+  }
+  const result = signature.type.result.type.proof;
+  if (result !== undefined) {
+    checks.push(
+      check_prefix_proposition(
+        signature.name,
+        result,
+        term_types,
+        type_names,
+        facts,
+        new Set(),
+      ),
+    );
+  }
+  return all(checks).map(() => undefined);
+}
+
+type PrefixKernelProofContext = {
+  declarations: Map<string, KernelType>;
+  proof_indices: ReadonlyMap<string, number>;
+  proof_propositions: ReadonlyMap<string, Proposition>;
+  term_context: KernelType[];
+  term_indices: ReadonlyMap<string, number>;
+  term_types: ReadonlyMap<string, LogicalTermType>;
+};
+
+function check_prefix_proof_definition(
+  signature: PrefixSignature,
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  declared_type_names: ReadonlySet<string>,
+  cst_root: BabaCstNode | undefined,
+): Checked<{ key: string; proof: CheckedKernelCertificate } | undefined> {
+  const goal_source = signature.type.result.type.proof;
+  expect(
+    goal_source !== undefined,
+    `Proof declaration ${signature.name} lost its result proposition.`,
+  );
+  const definition = definitions.find((candidate) =>
+    candidate.name === signature.name &&
+    candidate.scope === signature.scope &&
+    candidate.span.start >= signature.span.end
+  );
+  if (definition === undefined) return ok(undefined);
+  const body = definition.callable_proof_body;
+  if (body === undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Proof declaration ${signature.name} must use a direct by proof term body.`,
+        definition.span,
+        [{ message: "Proof signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (definition.attribute_span !== undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Proof declaration ${signature.name} cannot carry runtime binding attributes.`,
+        definition.attribute_span,
+      ),
+    );
+  }
+  const binding_node = find_cst_node(
+    cst_root,
+    definition.span,
+    "binding_statement",
+  );
+  expect(
+    binding_node !== undefined,
+    `Proof declaration ${signature.name} lost its Baba binding node.`,
+  );
+  const equals_index = binding_node.children.findIndex((child) =>
+    child.kind === '"="'
+  );
+  expect(
+    equals_index >= 0,
+    `Proof declaration ${signature.name} lost its binding equals sign.`,
+  );
+  const inline_annotation = binding_node.children.find((child, index) =>
+    index < equals_index && child.kind === "type_reference"
+  );
+  if (inline_annotation !== undefined) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Proof declaration ${signature.name} cannot combine a prefix signature with an inline annotation.`,
+        { start: inline_annotation.start, end: inline_annotation.end },
+        [{ message: "Proof signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  if (definition.recursive === true) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Recursive proof declaration ${signature.name} requires a checked totality derivation.`,
+        definition.span,
+      ),
+    );
+  }
+  if (
+    definitions.filter((candidate) =>
+      candidate.scope === definition.scope &&
+      candidate.span.start === definition.span.start &&
+      candidate.span.end === definition.span.end
+    ).length > 1
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Proof declaration ${signature.name} cannot yet erase from a mutual binding group.`,
+        definition.span,
+      ),
+    );
+  }
+  const callable_parameters = definition.callable_parameters;
+  if (
+    callable_parameters === undefined ||
+    callable_parameters.length !== signature.type.parameters.length
+  ) {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_signature_mismatch,
+        `Proof signature ${signature.name} does not match its definition parameters.`,
+        definition.span,
+        [{ message: "Proof signature is here.", span: signature.span }],
+      ),
+    );
+  }
+  const parameter_types = definition.callable_parameter_types;
+  expect(
+    parameter_types !== undefined &&
+      parameter_types.length === callable_parameters.length,
+    `Proof declaration ${signature.name} parameter metadata is misaligned.`,
+  );
+  const parameter_annotation_checks: Checked<undefined>[] = [];
+  for (let index = 0; index < parameter_types.length; index += 1) {
+    const inline_type = parameter_types[index];
+    const declared = signature.type.parameters[index];
+    expect(
+      declared !== undefined,
+      `Proof declaration ${signature.name} lost parameter ${index}.`,
+    );
+    if (
+      inline_type === undefined ||
+      inline_type.canonical === declared.type.canonical
+    ) {
+      continue;
+    }
+    parameter_annotation_checks.push(
+      fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_signature_mismatch,
+          `Proof signature ${signature.name} parameter ${declared.name} has type ${declared.type.canonical}, but its inline annotation is ${inline_type.canonical}.`,
+          inline_type.span,
+          [{
+            message: "Proof parameter is declared here.",
+            span: declared.span,
+          }],
+        ),
+      ),
+    );
+  }
+  const parameter_annotations = all(parameter_annotation_checks);
+  if (diagnostics_of(parameter_annotations).length > 0) {
+    return parameter_annotations.map(() => undefined);
+  }
+  const declarations = new Map<string, KernelType>();
+  for (const binder of signature.type.binders) {
+    if (binder.type.canonical === "Type") {
+      declarations.set(binder.name, type_sort(0));
+    }
+  }
+  const term_context: KernelType[] = [];
+  const term_indices = new Map<string, number>();
+  const term_types = new Map<string, LogicalTermType>();
+  const proof_parameters = signature.type.parameters.filter((parameter) =>
+    parameter.type.proof !== undefined
+  );
+  const proof_indices = new Map<string, number>();
+  const proof_propositions = new Map<string, Proposition>();
+  let proof_index = 0;
+  for (let index = 0; index < signature.type.parameters.length; index += 1) {
+    const parameter = signature.type.parameters[index];
+    const definition_parameter = callable_parameters[index];
+    expect(
+      parameter !== undefined && definition_parameter !== undefined,
+      `Proof parameter ${index} disappeared.`,
+    );
+    if (parameter.type.proof === undefined) continue;
+    proof_indices.set(
+      definition_parameter,
+      proof_parameters.length - proof_index - 1,
+    );
+    proof_index += 1;
+  }
+  for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
+    const logical_type = logical_term_type_from_reference(parameter.type);
+    const kernel_type: KernelType = {
+      tag: "constant",
+      name: logical_type.representation,
+    };
+    declarations.set(logical_type.representation, type_sort(0));
+    term_indices.set(parameter.name, term_context.length);
+    term_types.set(parameter.name, logical_type);
+    term_context.push(kernel_type);
+  }
+  const context: PrefixKernelProofContext = {
+    declarations,
+    proof_indices,
+    proof_propositions,
+    term_context,
+    term_indices,
+    term_types,
+  };
+  const facts = prefix_fact_signatures(
+    signatures,
+    signature.scope,
+    signature.span.start,
+  );
+  const type_names = signature_type_names(signature, declared_type_names);
+  const goal = prefix_kernel_proposition(
+    signature.name,
+    goal_source,
+    context,
+    facts,
+    type_names,
+  );
+  const hypothesis_goals: Proposition[] = [];
+  for (const parameter of proof_parameters) {
+    const proposition = parameter.type.proof;
+    expect(
+      proposition !== undefined,
+      `Proof hypothesis ${parameter.name} lost its proposition.`,
+    );
+    const hypothesis = prefix_kernel_proposition(
+      signature.name,
+      proposition,
+      context,
+      facts,
+      type_names,
+    );
+    hypothesis_goals.push(hypothesis);
+    const parameter_index = signature.type.parameters.indexOf(parameter);
+    const definition_parameter = callable_parameters[parameter_index];
+    expect(
+      definition_parameter !== undefined,
+      `Proof hypothesis ${parameter.name} lost its definition parameter.`,
+    );
+    proof_propositions.set(definition_parameter, hypothesis);
+  }
+  const elaborated = elaborate_prefix_proof(body, goal, context);
+  const proof = checked_value(elaborated);
+  if (proof === undefined) return elaborated.map(() => undefined);
+  let theorem_goal = goal;
+  let theorem_proof = proof;
+  for (let index = hypothesis_goals.length - 1; index >= 0; index -= 1) {
+    const premise = hypothesis_goals[index];
+    expect(premise !== undefined, `Proof premise ${index} disappeared.`);
+    theorem_goal = {
+      tag: "implies",
+      premise,
+      conclusion: theorem_goal,
+    };
+    theorem_proof = {
+      tag: "implies_intro",
+      premise,
+      body: theorem_proof,
+    };
+  }
+  const environment = KernelEnvironment.from(declarations);
+  const stable_term_context = snapshot_kernel_context(term_context);
+  try {
+    return ok({
+      key: signature.scope + ":" + signature.name + ":proof",
+      proof: Object.freeze({
+        certificate: check_proof(theorem_proof, theorem_goal, {
+          allow_unsafe: false,
+          require_safe: true,
+          environment,
+          term_context: stable_term_context,
+        }),
+        environment,
+        term_context: stable_term_context,
+      }),
+    });
+  } catch (error) {
+    let message = String(error);
+    if (error instanceof Error) message = error.message;
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Invalid proof for ${signature.name}: ${message}`,
+        body.span,
+        [{ message: "Proof goal is declared here.", span: goal_source.span }],
+      ),
+    );
+  }
+}
+
+function prefix_kernel_proposition(
+  declaration_name: string,
+  proposition: PrefixProposition,
+  context: PrefixKernelProofContext,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+  type_names: ReadonlySet<string>,
+): Proposition {
+  if (proposition.tag === "true") return { tag: "true" };
+  if (proposition.tag === "false") return { tag: "false" };
+  if (proposition.tag === "holds") {
+    if (proposition.value.text === "true") return { tag: "true" };
+    if (proposition.value.text === "false") return { tag: "false" };
+    return {
+      tag: "atom",
+      name: prefix_proposition_atom(proposition, context),
+    };
+  }
+  if (proposition.tag === "equal") {
+    const left = prefix_kernel_term(
+      declaration_name,
+      proposition.left,
+      context,
+      facts,
+    );
+    const right = prefix_kernel_term(
+      declaration_name,
+      proposition.right,
+      context,
+      facts,
+    );
+    if (
+      left !== undefined && right !== undefined &&
+      left.type_name === right.type_name
+    ) {
+      return {
+        tag: "equal",
+        type: left.type,
+        left: left.term,
+        right: right.term,
+      };
+    }
+    return {
+      tag: "atom",
+      name: prefix_proposition_atom(proposition, context),
+    };
+  }
+  if (proposition.tag === "not_equal") {
+    const equality: PrefixProposition = {
+      tag: "equal",
+      left: proposition.left,
+      right: proposition.right,
+      span: proposition.span,
+    };
+    return {
+      tag: "not",
+      proposition: prefix_kernel_proposition(
+        declaration_name,
+        equality,
+        context,
+        facts,
+        type_names,
+      ),
+    };
+  }
+  if (proposition.tag === "less" || proposition.tag === "less_equal") {
+    return {
+      tag: "atom",
+      name: prefix_proposition_atom(proposition, context),
+    };
+  }
+  if (proposition.tag === "is") {
+    return {
+      tag: "atom",
+      name: prefix_proposition_atom(proposition, context),
+    };
+  }
+  if (proposition.tag === "not") {
+    return {
+      tag: "not",
+      proposition: prefix_kernel_proposition(
+        declaration_name,
+        proposition.proposition,
+        context,
+        facts,
+        type_names,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    const left = prefix_kernel_proposition(
+      declaration_name,
+      proposition.left,
+      context,
+      facts,
+      type_names,
+    );
+    const right = prefix_kernel_proposition(
+      declaration_name,
+      proposition.right,
+      context,
+      facts,
+      type_names,
+    );
+    if (proposition.tag === "and") {
+      return { tag: "and", left, right };
+    }
+    if (proposition.tag === "or") return { tag: "or", left, right };
+    return { tag: "implies", premise: left, conclusion: right };
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    const logical_type = logical_term_type_from_reference(
+      proposition.binder.type,
+    );
+    const domain: KernelType = {
+      tag: "constant",
+      name: logical_type.representation,
+    };
+    context.declarations.set(logical_type.representation, type_sort(0));
+    const nested_indices = new Map<string, number>();
+    for (const [name, index] of context.term_indices) {
+      nested_indices.set(name, index + 1);
+    }
+    nested_indices.set(proposition.binder.name, 0);
+    const nested_types = new Map(context.term_types);
+    nested_types.set(proposition.binder.name, logical_type);
+    const nested_context: PrefixKernelProofContext = {
+      ...context,
+      term_context: [domain, ...context.term_context],
+      term_indices: nested_indices,
+      term_types: nested_types,
+    };
+    const body = prefix_kernel_proposition(
+      declaration_name,
+      proposition.proposition,
+      nested_context,
+      facts,
+      type_names,
+    );
+    if (proposition.tag === "forall") {
+      return { tag: "forall", domain, body };
+    }
+    return { tag: "exists", domain, body };
+  }
+  throw new Error("Unknown prefix proof proposition.");
+}
+
+function prefix_proposition_atom(
+  proposition: PrefixProposition,
+  context: PrefixKernelProofContext,
+): string {
+  if (proposition.tag === "holds") {
+    return JSON.stringify([
+      "holds",
+      prefix_term_key(proposition.value, context),
+    ]);
+  }
+  if (
+    proposition.tag === "equal" || proposition.tag === "not_equal" ||
+    proposition.tag === "less" || proposition.tag === "less_equal"
+  ) {
+    return JSON.stringify([
+      proposition.tag,
+      prefix_term_key(proposition.left, context),
+      prefix_term_key(proposition.right, context),
+    ]);
+  }
+  if (proposition.tag === "is") {
+    return JSON.stringify([
+      "is",
+      prefix_term_key(proposition.value, context),
+      proposition.type.canonical,
+    ]);
+  }
+  throw new Error("Only atomic propositions have kernel atom keys.");
+}
+
+function prefix_term_key(
+  term: PrefixTerm,
+  context: PrefixKernelProofContext,
+): unknown {
+  const shape = term.shape;
+  if (shape.tag === "number") {
+    const fixed_width = prefix_integer_literal(term.text);
+    if (fixed_width !== undefined) {
+      return [
+        "number",
+        integer_type_name(fixed_width.type),
+        fixed_width.value.toString(),
+      ];
+    }
+    const literal = parse_number_expr(term.text);
+    expect(literal.tag === "num", "Parsed proof number is not numeric.");
+    return ["number", literal.type.toUpperCase(), literal.value.toString()];
+  }
+  if (
+    shape.tag === "string" || shape.tag === "character" ||
+    shape.tag === "boolean"
+  ) {
+    return [shape.tag, term.text];
+  }
+  if (shape.tag === "unsupported") {
+    return [shape.tag, term.span.start, term.span.end, term.text];
+  }
+  if (shape.tag === "name") {
+    const index = context.term_indices.get(shape.name);
+    if (index !== undefined) return ["var", index];
+    return ["name", shape.name];
+  }
+  if (shape.tag === "binary") {
+    return [
+      "binary",
+      shape.operator,
+      prefix_term_key(shape.left, context),
+      prefix_term_key(shape.right, context),
+    ];
+  }
+  if (shape.tag === "unary") {
+    return [
+      "unary",
+      shape.operator,
+      prefix_term_key(shape.operand, context),
+    ];
+  }
+  if (shape.tag === "call") {
+    return [
+      "call",
+      prefix_term_key(shape.function, context),
+      shape.arguments.map((argument) => prefix_term_key(argument, context)),
+    ];
+  }
+  if (shape.tag === "field") {
+    return ["field", prefix_term_key(shape.object, context), shape.field];
+  }
+  if (shape.tag === "index") {
+    return [
+      "index",
+      prefix_term_key(shape.object, context),
+      term.span.start,
+      term.span.end,
+      term.text,
+    ];
+  }
+  return prefix_term_key(shape.value, context);
+}
+
+function prefix_kernel_term(
+  declaration_name: string,
+  term: PrefixTerm,
+  context: PrefixKernelProofContext,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): { term: KernelTerm; type: KernelType; type_name: string } | undefined {
+  if (term.shape.tag === "name") {
+    const index = context.term_indices.get(term.shape.name);
+    const logical_type = context.term_types.get(term.shape.name);
+    if (index === undefined || logical_type === undefined) return undefined;
+    const type: KernelType = {
+      tag: "constant",
+      name: logical_type.representation,
+    };
+    return {
+      term: { tag: "var", index },
+      type,
+      type_name: logical_type.representation,
+    };
+  }
+  if (term.shape.tag === "parenthesized") {
+    return prefix_kernel_term(
+      declaration_name,
+      term.shape.value,
+      context,
+      facts,
+    );
+  }
+  if (
+    term.shape.tag !== "number" && term.shape.tag !== "string" &&
+    term.shape.tag !== "character" && term.shape.tag !== "boolean"
+  ) {
+    return undefined;
+  }
+  const logical_type = checked_value(
+    check_prefix_term_type(
+      declaration_name,
+      term,
+      context.term_types,
+      facts,
+      new Set(),
+    ),
+  );
+  if (logical_type === undefined) return undefined;
+  const type_name = logical_type.representation;
+  const type: KernelType = { tag: "constant", name: type_name };
+  let literal_key = term.text;
+  if (term.shape.tag === "number") {
+    const literal = parse_number_expr(term.text);
+    expect(literal.tag === "num", "Parsed proof number is not numeric.");
+    literal_key = literal.value.toString();
+  }
+  const name = "literal:" + type_name + ":" + literal_key;
+  context.declarations.set(type_name, type_sort(0));
+  context.declarations.set(name, type);
+  return { term: { tag: "constant", name, type }, type, type_name };
+}
+
+function elaborate_prefix_proof(
+  proof: PrefixProofTerm,
+  goal: Proposition,
+  context: PrefixKernelProofContext,
+): Checked<ProofTerm> {
+  if (proof.tag === "name") {
+    const index = context.proof_indices.get(proof.name);
+    if (index !== undefined) return ok({ tag: "assumption", index });
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Unknown proof evidence ${proof.name}.`,
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "refl") {
+    if (goal.tag !== "equal") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "refl requires an equality goal.",
+          proof.span,
+        ),
+      );
+    }
+    return ok({ tag: "refl", type: goal.type, term: goal.left });
+  }
+  if (proof.tag === "true_intro") return ok({ tag: "true_intro" });
+  if (proof.tag === "and_intro") {
+    if (goal.tag !== "and") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "and_intro requires a conjunction goal.",
+          proof.span,
+        ),
+      );
+    }
+    return Applicative.lift(
+      (left: ProofTerm, right: ProofTerm): ProofTerm => ({
+        tag: "and_intro",
+        left,
+        right,
+      }),
+      elaborate_prefix_proof(proof.left, goal.left, context),
+      elaborate_prefix_proof(proof.right, goal.right, context),
+    );
+  }
+  if (proof.tag === "symm" && goal.tag === "equal") {
+    const reversed: Proposition = {
+      tag: "equal",
+      type: goal.type,
+      left: goal.right,
+      right: goal.left,
+    };
+    return elaborate_prefix_proof(proof.proof, reversed, context).map(
+      (inner): ProofTerm => ({ tag: "symm", proof: inner }),
+    );
+  }
+  if (
+    (proof.tag === "and_left" || proof.tag === "and_right") &&
+    proof.proof.tag === "and_intro"
+  ) {
+    let projected = proof.proof.left;
+    let retained = proof.proof.right;
+    if (proof.tag === "and_right") {
+      projected = proof.proof.right;
+      retained = proof.proof.left;
+    }
+    const retained_proof = synthesize_prefix_proof(retained, context);
+    return Applicative.lift(
+      (projected_term: ProofTerm, retained_term: SynthesizedPrefixProof) => {
+        let pair: ProofTerm;
+        if (proof.tag === "and_left") {
+          pair = {
+            tag: "and_intro",
+            left: projected_term,
+            right: retained_term.term,
+          };
+          return { tag: "and_left", proof: pair };
+        }
+        pair = {
+          tag: "and_intro",
+          left: retained_term.term,
+          right: projected_term,
+        };
+        return { tag: "and_right", proof: pair };
+      },
+      elaborate_prefix_proof(projected, goal, context),
+      retained_proof,
+    );
+  }
+  if (proof.tag === "trans" && goal.tag === "equal") {
+    if (proof.left.tag === "refl") {
+      const left_goal: Proposition = {
+        tag: "equal",
+        type: goal.type,
+        left: goal.left,
+        right: goal.left,
+      };
+      return Applicative.lift(
+        (left: ProofTerm, right: ProofTerm): ProofTerm => ({
+          tag: "trans",
+          left,
+          right,
+        }),
+        elaborate_prefix_proof(proof.left, left_goal, context),
+        elaborate_prefix_proof(proof.right, goal, context),
+      );
+    }
+    if (proof.right.tag === "refl") {
+      const right_goal: Proposition = {
+        tag: "equal",
+        type: goal.type,
+        left: goal.right,
+        right: goal.right,
+      };
+      return Applicative.lift(
+        (left: ProofTerm, right: ProofTerm): ProofTerm => ({
+          tag: "trans",
+          left,
+          right,
+        }),
+        elaborate_prefix_proof(proof.left, goal, context),
+        elaborate_prefix_proof(proof.right, right_goal, context),
+      );
+    }
+    if (prefix_proof_synthesizes(proof.left)) {
+      const left = synthesize_prefix_proof(proof.left, context);
+      const left_proof = checked_value(left);
+      if (left_proof === undefined) {
+        return left.map((synthesized) => synthesized.term);
+      }
+      if (left_proof.proposition.tag !== "equal") {
+        return fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_proof_invalid,
+            "trans requires equality proofs.",
+            proof.left.span,
+          ),
+        );
+      }
+      const right_goal: Proposition = {
+        tag: "equal",
+        type: left_proof.proposition.type,
+        left: left_proof.proposition.right,
+        right: goal.right,
+      };
+      return elaborate_prefix_proof(proof.right, right_goal, context).map(
+        (right): ProofTerm => ({
+          tag: "trans",
+          left: left_proof.term,
+          right,
+        }),
+      );
+    }
+    if (prefix_proof_synthesizes(proof.right)) {
+      const right = synthesize_prefix_proof(proof.right, context);
+      const right_proof = checked_value(right);
+      if (right_proof === undefined) {
+        return right.map((synthesized) => synthesized.term);
+      }
+      if (right_proof.proposition.tag !== "equal") {
+        return fail(
+          compiler_diagnostic(
+            diagnostic_codes.prefix_proof_invalid,
+            "trans requires equality proofs.",
+            proof.right.span,
+          ),
+        );
+      }
+      const left_goal: Proposition = {
+        tag: "equal",
+        type: right_proof.proposition.type,
+        left: goal.left,
+        right: right_proof.proposition.left,
+      };
+      return elaborate_prefix_proof(proof.left, left_goal, context).map(
+        (left): ProofTerm => ({
+          tag: "trans",
+          left,
+          right: right_proof.term,
+        }),
+      );
+    }
+  }
+  if (proof.tag === "implies_apply") {
+    const function_proof = synthesize_prefix_proof(proof.left, context);
+    const synthesized = checked_value(function_proof);
+    if (synthesized === undefined) {
+      return function_proof.map((checked) => checked.term);
+    }
+    if (synthesized.proposition.tag !== "implies") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "implies_apply requires an implication proof.",
+          proof.left.span,
+        ),
+      );
+    }
+    return elaborate_prefix_proof(
+      proof.right,
+      synthesized.proposition.premise,
+      context,
+    ).map((argument): ProofTerm => ({
+      tag: "implies_apply",
+      function: synthesized.term,
+      argument,
+    }));
+  }
+  return synthesize_prefix_proof(proof, context).map(
+    (synthesized) => synthesized.term,
+  );
+}
+
+type SynthesizedPrefixProof = {
+  term: ProofTerm;
+  proposition: Proposition;
+};
+
+function synthesize_prefix_proof(
+  proof: PrefixProofTerm,
+  context: PrefixKernelProofContext,
+): Checked<SynthesizedPrefixProof> {
+  if (proof.tag === "name") {
+    const index = context.proof_indices.get(proof.name);
+    const proposition = context.proof_propositions.get(proof.name);
+    if (index !== undefined && proposition !== undefined) {
+      return ok({ term: { tag: "assumption", index }, proposition });
+    }
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        `Unknown proof evidence ${proof.name}.`,
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "true_intro") {
+    return ok({
+      term: { tag: "true_intro" },
+      proposition: { tag: "true" },
+    });
+  }
+  if (proof.tag === "refl") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "refl requires an expected equality goal.",
+        proof.span,
+      ),
+    );
+  }
+  if (proof.tag === "symm") {
+    const inner_check = synthesize_prefix_proof(proof.proof, context);
+    const inner = checked_value(inner_check);
+    if (inner === undefined) return inner_check;
+    if (inner.proposition.tag !== "equal") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "symm requires an equality proof.",
+          proof.span,
+        ),
+      );
+    }
+    return ok({
+      term: { tag: "symm", proof: inner.term },
+      proposition: {
+        tag: "equal",
+        type: inner.proposition.type,
+        left: inner.proposition.right,
+        right: inner.proposition.left,
+      },
+    });
+  }
+  if (proof.tag === "and_left" || proof.tag === "and_right") {
+    const inner_check = synthesize_prefix_proof(proof.proof, context);
+    const inner = checked_value(inner_check);
+    if (inner === undefined) return inner_check;
+    if (inner.proposition.tag !== "and") {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "Conjunction elimination requires a conjunction proof.",
+          proof.span,
+        ),
+      );
+    }
+    let proposition = inner.proposition.left;
+    if (proof.tag === "and_right") {
+      proposition = inner.proposition.right;
+    }
+    return ok({
+      term: { tag: proof.tag, proof: inner.term },
+      proposition,
+    });
+  }
+  if (
+    proof.tag !== "trans" && proof.tag !== "and_intro" &&
+    proof.tag !== "implies_apply"
+  ) {
+    throw new Error("Unknown prefix proof term.");
+  }
+  const left = synthesize_prefix_proof(proof.left, context);
+  const right = synthesize_prefix_proof(proof.right, context);
+  const pair = Applicative.lift(
+    (left_proof: SynthesizedPrefixProof, right_proof: SynthesizedPrefixProof) =>
+      [left_proof, right_proof] as const,
+    left,
+    right,
+  );
+  const synthesized = checked_value(pair);
+  if (synthesized === undefined) {
+    return pair.map(([left_proof]) => left_proof);
+  }
+  const [left_proof, right_proof] = synthesized;
+  if (proof.tag === "trans") {
+    if (
+      left_proof.proposition.tag !== "equal" ||
+      right_proof.proposition.tag !== "equal"
+    ) {
+      return fail(
+        compiler_diagnostic(
+          diagnostic_codes.prefix_proof_invalid,
+          "trans requires equality proofs.",
+          proof.span,
+        ),
+      );
+    }
+    return ok({
+      term: {
+        tag: "trans",
+        left: left_proof.term,
+        right: right_proof.term,
+      },
+      proposition: {
+        tag: "equal",
+        type: left_proof.proposition.type,
+        left: left_proof.proposition.left,
+        right: right_proof.proposition.right,
+      },
+    });
+  }
+  if (proof.tag === "and_intro") {
+    return ok({
+      term: {
+        tag: "and_intro",
+        left: left_proof.term,
+        right: right_proof.term,
+      },
+      proposition: {
+        tag: "and",
+        left: left_proof.proposition,
+        right: right_proof.proposition,
+      },
+    });
+  }
+  if (left_proof.proposition.tag !== "implies") {
+    return fail(
+      compiler_diagnostic(
+        diagnostic_codes.prefix_proof_invalid,
+        "implies_apply requires an implication proof.",
+        proof.left.span,
+      ),
+    );
+  }
+  return ok({
+    term: {
+      tag: "implies_apply",
+      function: left_proof.term,
+      argument: right_proof.term,
+    },
+    proposition: left_proof.proposition.conclusion,
+  });
+}
+
+function prefix_proof_synthesizes(proof: PrefixProofTerm): boolean {
+  if (proof.tag === "refl") return false;
+  if (proof.tag === "name" || proof.tag === "true_intro") return true;
+  if (
+    proof.tag === "symm" || proof.tag === "and_left" ||
+    proof.tag === "and_right"
+  ) {
+    return prefix_proof_synthesizes(proof.proof);
+  }
+  if (
+    proof.tag !== "trans" && proof.tag !== "and_intro" &&
+    proof.tag !== "implies_apply"
+  ) {
+    throw new Error("Unknown prefix proof term.");
+  }
+  return prefix_proof_synthesizes(proof.left) &&
+    prefix_proof_synthesizes(proof.right);
+}
+
 function check_prefix_refinement_formation(
   signature: PrefixSignature,
   signatures: readonly PrefixSignature[],
@@ -1544,6 +2705,7 @@ function check_prefix_refinement_formation(
 ): Checked<undefined> {
   const term_types = new Map<string, LogicalTermType>();
   for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
     term_types.set(
       parameter.name,
       logical_term_type_from_reference(parameter.type),
@@ -1627,6 +2789,7 @@ function check_prefix_requires(
   if (signature.requires.length === 0) return ok(undefined);
   const term_types = new Map<string, LogicalTermType>();
   for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
     term_types.set(
       parameter.name,
       logical_term_type_from_reference(parameter.type),
@@ -1698,6 +2861,7 @@ function check_prefix_decreases(
   }
   const term_types = new Map<string, LogicalTermType>();
   for (const parameter of signature.type.parameters) {
+    if (parameter.type.proof !== undefined) continue;
     term_types.set(
       parameter.name,
       logical_term_type_from_reference(parameter.type),
@@ -3611,6 +4775,14 @@ function check_prefix_signature_representation(
         unsupported_binder.span,
       ),
     );
+  }
+  if (
+    signature.type.result.type.proof !== undefined ||
+    signature.type.parameters.some((parameter) =>
+      parameter.type.proof !== undefined
+    )
+  ) {
+    return ok(undefined);
   }
   if (signature.kind === "fact" || signature.kind === "opaque fact") {
     if (signature.type.result.type.canonical === "Prop") return ok(undefined);

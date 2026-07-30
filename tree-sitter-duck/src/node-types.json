@@ -5427,6 +5427,10 @@
           "named": true
         },
         {
+          "type": "prefix_by_proof_expression",
+          "named": true
+        },
+        {
           "type": "scratch_expression",
           "named": true
         },
@@ -5547,6 +5551,22 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "prefix_by_proof_expression",
+    "named": true,
+    "fields": {
+      "proof": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -5850,6 +5870,108 @@
         },
         {
           "type": "prefix_not_keyword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "prefix_proof_term",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "operator": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "and_intro",
+            "named": false
+          },
+          {
+            "type": "and_left",
+            "named": false
+          },
+          {
+            "type": "and_right",
+            "named": false
+          },
+          {
+            "type": "implies_apply",
+            "named": false
+          },
+          {
+            "type": "symm",
+            "named": false
+          },
+          {
+            "type": "trans",
+            "named": false
+          }
+        ]
+      },
+      "proof": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "prefix_proof_term",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "prefix_proof_type",
+    "named": true,
+    "fields": {
+      "proposition": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "prefix_proposition",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "prefix_proof_keyword",
           "named": true
         }
       ]
@@ -6521,6 +6643,10 @@
       "multiple": false,
       "required": true,
       "types": [
+        {
+          "type": "prefix_proof_type",
+          "named": true
+        },
         {
           "type": "prefix_refinement_type",
           "named": true
@@ -7530,6 +7656,10 @@
             "named": true
           },
           {
+            "type": "proof_prefixed_identifier",
+            "named": true
+          },
+          {
             "type": "top_type",
             "named": true
           },
@@ -7573,6 +7703,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "proof_prefixed_identifier",
             "named": true
           },
           {
@@ -7734,6 +7868,10 @@
             "named": true
           },
           {
+            "type": "proof_prefixed_identifier",
+            "named": true
+          },
+          {
             "type": "top_type",
             "named": true
           },
@@ -7782,6 +7920,10 @@
         },
         {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "proof_prefixed_identifier",
           "named": true
         },
         {
@@ -8527,6 +8669,18 @@
     "named": false
   },
   {
+    "type": "and_intro",
+    "named": false
+  },
+  {
+    "type": "and_left",
+    "named": false
+  },
+  {
+    "type": "and_right",
+    "named": false
+  },
+  {
     "type": "as_keyword",
     "named": true
   },
@@ -8633,6 +8787,10 @@
   },
   {
     "type": "if",
+    "named": false
+  },
+  {
+    "type": "implies_apply",
     "named": false
   },
   {
@@ -8756,11 +8914,23 @@
     "named": true
   },
   {
+    "type": "prefix_proof_keyword",
+    "named": true
+  },
+  {
     "type": "prefix_requires_keyword",
     "named": true
   },
   {
+    "type": "proof_prefixed_identifier",
+    "named": true
+  },
+  {
     "type": "rec",
+    "named": false
+  },
+  {
+    "type": "refl",
     "named": false
   },
   {
@@ -8792,6 +8962,10 @@
     "named": false
   },
   {
+    "type": "symm",
+    "named": false
+  },
+  {
     "type": "template_start",
     "named": true
   },
@@ -8804,7 +8978,15 @@
     "named": false
   },
   {
+    "type": "trans",
+    "named": false
+  },
+  {
     "type": "true",
+    "named": false
+  },
+  {
+    "type": "true_intro",
     "named": false
   },
   {

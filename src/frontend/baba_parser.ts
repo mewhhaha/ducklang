@@ -138,6 +138,7 @@ export function parse_duck_source(text: string): BabaParseResult {
       errors,
       suppressed_error_intervals,
     );
+    collect_missing_proof_propositions(root, text, errors);
     errors = errors.filter((error) => {
       if (error.kind !== "ERROR" && error.kind !== "MISSING") return true;
       return !suppressed_error_intervals.some((interval) =>
@@ -177,6 +178,11 @@ export function parse_duck_source(text: string): BabaParseResult {
           message: "Contract clause requires a metric before the next clause",
           span: { start: error.start, end: error.end },
         };
+      } else if (error.kind === "proof_missing_proposition") {
+        diagnostic = {
+          message: "Proof requires a proposition on the same line",
+          span: { start: error.start, end: error.end },
+        };
       } else {
         diagnostic = {
           message: `Baba parser rejected ${error.kind}`,
@@ -186,7 +192,8 @@ export function parse_duck_source(text: string): BabaParseResult {
       diagnostics.push(diagnostic);
       if (
         error.kind === "contract_keyword_proposition" ||
-        error.kind === "contract_keyword_metric"
+        error.kind === "contract_keyword_metric" ||
+        error.kind === "proof_missing_proposition"
       ) {
         continue;
       }
@@ -208,6 +215,34 @@ export function parse_duck_source(text: string): BabaParseResult {
     return parsed;
   } finally {
     tree.delete();
+  }
+}
+
+function collect_missing_proof_propositions(
+  node: BabaCstNode,
+  source: string,
+  errors: BabaCstNode[],
+): void {
+  if (
+    node.kind === "prefix_signature_value_type" &&
+    !node.children.some((child) => child.kind === "prefix_proof_type") &&
+    source.slice(node.start, node.end) === "Proof"
+  ) {
+    errors.push({
+      id: source_node_id(
+        "proof_missing_proposition",
+        node.end,
+        node.end,
+        0,
+      ),
+      kind: "proof_missing_proposition",
+      start: node.end,
+      end: node.end,
+      children: [],
+    });
+  }
+  for (const child of node.children) {
+    collect_missing_proof_propositions(child, source, errors);
   }
 }
 

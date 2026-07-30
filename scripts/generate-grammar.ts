@@ -18,6 +18,8 @@ const scanner_tokens = [
   "_condition_application_space",
   "_type_application_space",
   "_fixity_identifier",
+  "prefix_proof_keyword",
+  "proof_prefixed_identifier",
 ];
 let check_only = false;
 for (const argument of Deno.args) {

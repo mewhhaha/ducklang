@@ -3,6 +3,8 @@ import { checked_value, diagnostics_of } from "./checked.ts";
 import {
   associate_prefix_signatures,
   type PrefixDefinition,
+  type PrefixProofTerm,
+  type PrefixProposition,
   type PrefixSignature,
   type PrefixTerm,
 } from "./prefix_signature.ts";
@@ -203,6 +205,126 @@ Deno.test("prefix signature snapshots reject cyclic refinements", () => {
   assert_throws(
     () => associate_prefix_signatures([source_signature], [definition()]),
     "Prefix dependent type cannot be cyclic",
+  );
+});
+
+Deno.test("prefix signature snapshots seal proof propositions", () => {
+  const source_signature = signature();
+  source_signature.type.result.type.proof = {
+    tag: "true",
+    span: { start: 11, end: 15 },
+  };
+  const result = checked_value(
+    associate_prefix_signatures([source_signature], [definition()]),
+  );
+  if (result === undefined) throw new Error("Expected associated signature.");
+  (source_signature.type.result.type.proof as {
+    tag: "true" | "false";
+  }).tag = "false";
+  const associated = [...result.values()][0];
+  assert_equals(
+    associated?.signature.type.result.type.proof?.tag,
+    "true",
+  );
+  assert_equals(
+    Object.isFrozen(associated?.signature.type.result.type.proof),
+    true,
+  );
+});
+
+Deno.test("prefix signature snapshots reject cyclic proof terms", () => {
+  const cyclic: PrefixProofTerm = {
+    tag: "symm",
+    proof: { tag: "refl", span: { start: 20, end: 24 } },
+    span: { start: 15, end: 25 },
+  };
+  cyclic.proof = cyclic;
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: cyclic })],
+      ),
+    "Prefix proof term cannot be cyclic",
+  );
+});
+
+Deno.test("prefix proof snapshots have one structural node budget", () => {
+  let shared: PrefixProofTerm = {
+    tag: "true_intro",
+    span: { start: 15, end: 25 },
+  };
+  for (let depth = 0; depth < 15; depth += 1) {
+    shared = {
+      tag: "and_intro",
+      left: shared,
+      right: shared,
+      span: { start: 15, end: 25 },
+    };
+  }
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature()],
+        [definition({ callable_proof_body: shared })],
+      ),
+    "Prefix proof snapshot exceeded 20000 nodes.",
+  );
+});
+
+Deno.test("prefix proposition snapshots have one structural node budget", () => {
+  let shared: PrefixProposition = {
+    tag: "true",
+    span: { start: 15, end: 25 },
+  };
+  for (let depth = 0; depth < 15; depth += 1) {
+    shared = {
+      tag: "and",
+      left: shared,
+      right: shared,
+      span: { start: 15, end: 25 },
+    };
+  }
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature({ ensures: [shared] })],
+        [definition()],
+      ),
+    "Prefix proposition snapshot exceeded 20000 nodes.",
+  );
+});
+
+Deno.test("prefix logical term snapshots have one structural node budget", () => {
+  let shared: PrefixTerm = {
+    text: "value",
+    references: ["value"],
+    shape: { tag: "name", name: "value" },
+    span: { start: 15, end: 25 },
+  };
+  for (let depth = 0; depth < 15; depth += 1) {
+    shared = {
+      text: "value + value",
+      references: ["value"],
+      shape: {
+        tag: "binary",
+        operator: "+",
+        left: shared,
+        right: shared,
+      },
+      span: { start: 15, end: 25 },
+    };
+  }
+
+  assert_throws(
+    () =>
+      associate_prefix_signatures(
+        [signature({ decreases: [shared] })],
+        [definition()],
+      ),
+    "Prefix term snapshot exceeded 20000 nodes.",
   );
 });
 

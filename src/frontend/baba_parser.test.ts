@@ -187,6 +187,88 @@ Deno.test("Baba parses refinement types in prefix signatures", () => {
   assert_equals(parsed.cst.tree.includes("prefix_refinement_type"), true);
 });
 
+Deno.test("Baba parses explicit proof types and direct proof terms", () => {
+  const parsed = parse_duck_source(
+    "type keep = " +
+      "(value: I32, evidence: Proof value = value) -> Proof value = value\n" +
+      "let keep = (actual, proof) => by proof;\n" +
+      "type reflexive = (value: I32) -> Proof value = value\n" +
+      "let reflexive = value => by refl;\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(parsed.cst.tree.includes("(prefix_proof_type"), true);
+  assert_equals(
+    parsed.cst.tree.includes("(prefix_by_proof_expression"),
+    true,
+  );
+});
+
+Deno.test("Baba reserves Proof without splitting longer type names", () => {
+  const parsed = parse_duck_source(
+    "type boxed = () -> ProofBox\n" +
+      "let boxed = () => 1;\n" +
+      "type underscored = () -> Proof_Box\n" +
+      "let underscored = () => 1;\n" +
+      "type trailing = () -> Proof_\n" +
+      "let trailing = () => 1;\n" +
+      "type proven = () -> Proof True\n" +
+      "let proven = () => by true_intro;\n",
+  );
+
+  assert_equals(parsed.diagnostics, []);
+  assert_equals(
+    parsed.tokens.some((token) =>
+      token.kind === "identifier" && token.text === "ProofBox"
+    ),
+    true,
+  );
+  assert_equals(
+    parsed.tokens.some((token) =>
+      token.kind === "proof_prefixed_identifier" &&
+      token.text === "Proof_Box"
+    ),
+    true,
+  );
+  assert_equals(
+    parsed.tokens.some((token) =>
+      token.kind === "proof_prefixed_identifier" &&
+      token.text === "Proof_"
+    ),
+    true,
+  );
+  assert_equals(
+    parsed.tokens.some((token) => token.kind === "prefix_proof_keyword"),
+    true,
+  );
+});
+
+Deno.test("Baba keeps the next binding after an incomplete Proof type", () => {
+  for (
+    const source of [
+      "type broken = () -> Proof\nlet kept = 1;\n",
+      "type broken = () -> Proof // missing\nlet kept = 1;\n",
+    ]
+  ) {
+    const parsed = parse_duck_source(source);
+    assert_equals(parsed.diagnostics, [{
+      message: "Proof requires a proposition on the same line",
+      span: {
+        start: source.indexOf("Proof") + "Proof".length,
+        end: source.indexOf("Proof") + "Proof".length,
+      },
+    }]);
+    assert_equals(parsed.recovery_intervals, []);
+    assert_equals(
+      parsed.cst.root?.children.some((child) =>
+        child.kind === "binding_statement" &&
+        source.slice(child.start, child.end).includes("kept")
+      ),
+      true,
+    );
+  }
+});
+
 Deno.test("Baba rejects uppercase prefix type binders", () => {
   const parsed = parse_duck_source(
     "type f = forall (A: Type). (value: A) -> (result: A)\n" +

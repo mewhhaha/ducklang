@@ -1907,11 +1907,32 @@
       "members": [
         {
           "type": "SYMBOL",
+          "name": "prefix_proof_type"
+        },
+        {
+          "type": "SYMBOL",
           "name": "prefix_refinement_type"
         },
         {
           "type": "SYMBOL",
           "name": "type_reference"
+        }
+      ]
+    },
+    "prefix_proof_type": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "prefix_proof_keyword"
+        },
+        {
+          "type": "FIELD",
+          "name": "proposition",
+          "content": {
+            "type": "SYMBOL",
+            "name": "prefix_proposition"
+          }
         }
       ]
     },
@@ -2849,6 +2870,161 @@
                   "type": "BLANK"
                 }
               ]
+            },
+            {
+              "type": "STRING",
+              "value": ")"
+            }
+          ]
+        }
+      ]
+    },
+    "prefix_by_proof_expression": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "by"
+        },
+        {
+          "type": "FIELD",
+          "name": "proof",
+          "content": {
+            "type": "SYMBOL",
+            "name": "prefix_proof_term"
+          }
+        }
+      ]
+    },
+    "prefix_proof_term": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "refl"
+        },
+        {
+          "type": "STRING",
+          "value": "true_intro"
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "operator",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "symm"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "and_left"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "and_right"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "STRING",
+              "value": "("
+            },
+            {
+              "type": "FIELD",
+              "name": "proof",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            },
+            {
+              "type": "STRING",
+              "value": ")"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "operator",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "trans"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "and_intro"
+                  },
+                  {
+                    "type": "STRING",
+                    "value": "implies_apply"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "STRING",
+              "value": "("
+            },
+            {
+              "type": "FIELD",
+              "name": "left",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            },
+            {
+              "type": "STRING",
+              "value": ","
+            },
+            {
+              "type": "FIELD",
+              "name": "right",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
+            },
+            {
+              "type": "STRING",
+              "value": ")"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "("
+            },
+            {
+              "type": "FIELD",
+              "name": "proof",
+              "content": {
+                "type": "SYMBOL",
+                "name": "prefix_proof_term"
+              }
             },
             {
               "type": "STRING",
@@ -6397,6 +6573,10 @@
       "members": [
         {
           "type": "SYMBOL",
+          "name": "prefix_by_proof_expression"
+        },
+        {
+          "type": "SYMBOL",
           "name": "number"
         },
         {
@@ -8425,6 +8605,10 @@
         "members": [
           {
             "type": "SYMBOL",
+            "name": "_proof_prefixed_identifier_alias"
+          },
+          {
+            "type": "SYMBOL",
             "name": "_effect_identifier_alias"
           },
           {
@@ -8798,6 +8982,10 @@
       },
       "named": true,
       "value": "identifier"
+    },
+    "_proof_prefixed_identifier_alias": {
+      "type": "SYMBOL",
+      "name": "proof_prefixed_identifier"
     },
     "_row_identifier_alias": {
       "type": "ALIAS",
@@ -9447,6 +9635,14 @@
     {
       "type": "SYMBOL",
       "name": "_fixity_identifier"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "prefix_proof_keyword"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "proof_prefixed_identifier"
     }
   ],
   "inline": [

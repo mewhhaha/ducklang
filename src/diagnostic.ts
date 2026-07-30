@@ -210,6 +210,11 @@ export const diagnostic_registry = {
     "proof_refinement",
     "error",
   ),
+  prefix_proof_invalid: diagnostic_definition(
+    "DUCK2605",
+    "proof_refinement",
+    "error",
+  ),
 } as const;
 
 export type DiagnosticName = keyof typeof diagnostic_registry;

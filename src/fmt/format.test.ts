@@ -68,6 +68,20 @@ Deno.test("format_text round trips prefix refinement signatures", () => {
   assert_equals(format_text(formatted), formatted);
 });
 
+Deno.test("format_text round trips direct proof declarations", () => {
+  const source = "type keep=(value:I32,evidence:Proof value=value)" +
+    "->Proof value=value\n" +
+    "let keep=(actual,proof)=>by proof;\n";
+  const formatted = format_text(source);
+  assert_equals(
+    formatted,
+    "type keep = " +
+      "(value: I32, evidence: Proof value = value) -> Proof value = value\n" +
+      "let keep = (actual, proof) => by proof;\n",
+  );
+  assert_equals(format_text(formatted), formatted);
+});
+
 Deno.test("format_text normalizes expressions inside template literals", () => {
   assert_equals(
     format_text('render   `hello { name+ "!" } {{reader}}`\n'),
