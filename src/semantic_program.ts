@@ -95,6 +95,7 @@ import type { FactState } from "./frontend/fact_graph.ts";
 import {
   infer_semantic_machine_certificate,
   infer_semantic_remainder_certificate,
+  infer_semantic_remainder_divisibility_certificate,
   infer_semantic_unreachable_certificate,
   type SemanticMachineRequirement,
 } from "./frontend/semantic_fact_graph.ts";
@@ -102,10 +103,12 @@ import {
   semantic_predicate_certificate,
   type SemanticControlFlowCertificate,
   type SemanticPredicateAtom,
+  type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
+  verify_semantic_remainder_divisibility_certificate,
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
@@ -1725,6 +1728,35 @@ function verified_branch_hypotheses(
       certificate,
     };
   }
+  for (
+    const divisibility_requirement
+      of prefix_remainder_divisibility_requirements(
+        normalized,
+        binding_values,
+        candidate,
+      )
+  ) {
+    const certificate = infer_semantic_remainder_divisibility_certificate(
+      candidate,
+      call_span,
+      divisibility_requirement,
+    );
+    if (certificate === undefined) continue;
+    if (
+      !verify_semantic_remainder_divisibility_certificate(
+        certificate,
+        candidate,
+        call_span,
+        divisibility_requirement,
+      )
+    ) {
+      continue;
+    }
+    return {
+      propositions: [proposition],
+      certificate,
+    };
+  }
   const goal_atom = prefix_opaque_predicate_atom(
     declaration_name,
     proposition,
@@ -2247,6 +2279,81 @@ function prefix_remainder_requirements(
         divisor,
         remainder,
         expected,
+      });
+    }
+  }
+  return requirements;
+}
+
+function prefix_remainder_divisibility_requirements(
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg,
+): readonly SemanticRemainderDivisibilityRequirement[] {
+  if (proposition.tag !== "equal") return [];
+  let expression = proposition.left;
+  let expected_term = proposition.right;
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    expression = proposition.right;
+    expected_term = proposition.left;
+  }
+  if (
+    expression.shape.tag !== "binary" ||
+    expression.shape.operator !== "%"
+  ) {
+    return [];
+  }
+  const dividend = prefix_semantic_value(
+    expression.shape.left,
+    binding_values,
+  );
+  const goal_divisor = prefix_integer_constant(expression.shape.right);
+  const goal_expected = prefix_integer_constant(expected_term);
+  if (
+    dividend === undefined || goal_divisor === undefined ||
+    goal_expected === undefined || goal_divisor <= 0n ||
+    goal_expected !== 0n
+  ) {
+    return [];
+  }
+  const producers = new Map<ValueId, SemanticNode>();
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      for (const output of node.outputs) producers.set(output, node);
+    }
+  }
+  const requirements: SemanticRemainderDivisibilityRequirement[] = [];
+  for (const block of control_flow.blocks) {
+    for (const node of block.nodes) {
+      if (
+        node.operation.tag !== "primitive" ||
+        (!node.operation.name.endsWith(".rem_s") &&
+          !node.operation.name.endsWith(".rem_u")) ||
+        node.inputs.length !== 2
+      ) {
+        continue;
+      }
+      const left = node.inputs[0];
+      const divisor = node.inputs[1];
+      const remainder = node.outputs[0];
+      if (
+        left !== dividend || divisor === undefined ||
+        remainder === undefined ||
+        producers.get(divisor)?.operation.tag !== "constant"
+      ) {
+        continue;
+      }
+      requirements.push({
+        premise: {
+          dividend,
+          divisor,
+          remainder,
+          expected: 0n,
+        },
+        goal_divisor,
       });
     }
   }

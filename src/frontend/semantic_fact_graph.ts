@@ -22,10 +22,13 @@ import {
 import {
   semantic_machine_certificate,
   semantic_remainder_certificate,
+  semantic_remainder_divisibility_certificate,
   semantic_unreachable_certificate,
   type SemanticMachineCertificate,
   type SemanticMachineRequirement,
   type SemanticRemainderCertificate,
+  type SemanticRemainderDivisibilityCertificate,
+  type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   type SemanticUnreachableCertificate,
 } from "./semantic_fact_certificate.ts";
@@ -83,6 +86,23 @@ export function infer_semantic_remainder_certificate(
     return undefined;
   }
   return semantic_remainder_certificate(call_span, requirement);
+}
+
+export function infer_semantic_remainder_divisibility_certificate(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticRemainderDivisibilityRequirement,
+): SemanticRemainderDivisibilityCertificate | undefined {
+  if (
+    infer_semantic_remainder_certificate(
+      control_flow,
+      call_span,
+      requirement.premise,
+    ) === undefined
+  ) {
+    return undefined;
+  }
+  return semantic_remainder_divisibility_certificate(call_span, requirement);
 }
 
 export function infer_semantic_unreachable_certificate(

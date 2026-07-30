@@ -1507,6 +1507,212 @@ Deno.test("remainder branches establish transparent modular facts", () => {
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
+Deno.test("remainder branches establish zero-residue divisibility facts", () => {
+  for (
+    const [value_type, premise_divisor, goal_divisor, zero, argument] of [
+      ["I32", "4i32", "2i32", "0i32", "(-8i32)"],
+      ["U32", "6u32", "3u32", "0u32", "12u32"],
+      ["I64", "10i64", "5i64", "0i64", "(-20i64)"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: ${value_type}, evidence: Proof ` +
+        `value % ${goal_divisor} = ${zero}) -> ${value_type}\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        `type guarded = (value: ${value_type}) -> ${value_type}\n` +
+        "let guarded = actual => " +
+        `if actual % ${premise_divisor} == ${zero} ` +
+        `then consume actual else ${zero} end;\n` +
+        `guarded ${argument}\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "remainder_divisibility",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("remainder divisibility recognizes reversed logical equality", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof 0i32 = value % 2i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+      "guarded (-8i32)\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "remainder_divisibility",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder divisibility establishes transparent modular facts", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type even = (value: I32) -> Prop\n" +
+      "fact even = value => value % 2i32 = 0i32;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof even(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual % 4i32 != 0i32 then 0 else consume actual end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "remainder_divisibility",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("remainder divisibility rejects unsupported modular implications", () => {
+  for (
+    const [condition, requirement] of [
+      ["actual % 3i32 == 0i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == 1i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == -1i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 != 0i32", "value % 2i32 = 0i32"],
+      ["actual % 4i32 == 0i32", "value % 2i32 = 1i32"],
+      ["actual % 4i32 == 0i32", "value % -2i32 = 0i32"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} ` +
+        "then consume actual else 0 end;\n" +
+        "guarded 8\n",
+    ));
+    assert_equals(
+      analysis.diagnostics.some((diagnostic) =>
+        diagnostic.code === "DUCK2604" &&
+        diagnostic.message.includes(
+          "unknown: call to consume cannot prove proof parameter evidence",
+        )
+      ),
+      true,
+    );
+    assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+  }
+});
+
+Deno.test("remainder divisibility stays bound to the dividend identity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left % 4i32 == 0i32 then consume right else 0 end;\n" +
+      "guarded (8, 3)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder divisibility rejects calls repeated by loops", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  for index in 0..3 do\n" +
+      "    if actual % 4i32 == 0i32 then consume actual else index end;\n" +
+      "  end;\n" +
+      "  0\n" +
+      "end;\n" +
+      "guarded 8\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder divisibility rejects alternate remainder identities across joins", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32, choose: Bool) -> I32\n" +
+      "let guarded = (actual, choose) => do\n" +
+      "  let remainder = if choose then actual % 4i32 " +
+      "else actual % 4i32 end;\n" +
+      "  if remainder == 0i32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded (8, true)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("remainder divisibility returns unknown after its path budget", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = " +
+      "(value: I32, a: Bool, b: Bool, c: Bool, d: Bool, e: Bool) -> I32\n" +
+      "let guarded = (actual, a, b, c, d, e) => " +
+      "if actual % 4i32 != 0i32 then 0 else do\n" +
+      "  let one = if a then 1 else 2 end;\n" +
+      "  let two = if b then 1 else 2 end;\n" +
+      "  let three = if c then 1 else 2 end;\n" +
+      "  let four = if d then 1 else 2 end;\n" +
+      "  let five = if e then 1 else 2 end;\n" +
+      "  consume actual + one - one + two - two + three - three + " +
+      "four - four + five - five\n" +
+      "end end;\n" +
+      "guarded (8, true, true, true, true, true)\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("remainder evidence stays bound to its divisor and result", () => {
   for (
     const condition of [

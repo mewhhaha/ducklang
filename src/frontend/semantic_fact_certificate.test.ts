@@ -1,14 +1,18 @@
 import { assert_equals } from "../assert.ts";
+import { normalize_machine_integer } from "./fact_graph.ts";
 import {
   semantic_machine_certificate,
   semantic_predicate_certificate,
   semantic_remainder_certificate,
+  semantic_remainder_divisibility_certificate,
   semantic_unreachable_certificate,
   type SemanticMachineRequirement,
+  type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
+  verify_semantic_remainder_divisibility_certificate,
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
@@ -420,6 +424,211 @@ Deno.test("semantic remainder certificates reject traps and primitive mismatches
       ),
       false,
     );
+  }
+});
+
+Deno.test("semantic remainder divisibility certificates verify zero residue implications", () => {
+  const builder = new SemanticCfgBuilder("remainder-divisibility");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block(
+    "remainder-divisibility-true:1:2:0" as never,
+  );
+  const when_false = builder.add_block(
+    "remainder-divisibility-false:2:3:0" as never,
+  );
+  const value = "remainder-divisibility-parameter" as ValueId;
+  builder.add_parameter(value, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const divisor = builder.add_node(
+    entry,
+    origin,
+    { start: 2, end: 3 },
+    { tag: "constant", value: 4 },
+    [],
+    [i32_type],
+  )[0];
+  if (divisor === undefined) throw new Error("Expected divisibility divisor.");
+  const remainder = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 3 },
+    { tag: "primitive", name: "i32.rem_s" },
+    [value, divisor],
+    [i32_type],
+  )[0];
+  if (remainder === undefined) {
+    throw new Error("Expected divisibility remainder.");
+  }
+  const zero = builder.add_node(
+    entry,
+    origin,
+    { start: 4, end: 5 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (zero === undefined) throw new Error("Expected divisibility zero.");
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 5 },
+    { tag: "primitive", name: "i32.eq" },
+    [remainder, zero],
+    [bool_type],
+  )[0];
+  if (condition === undefined) {
+    throw new Error("Expected divisibility branch.");
+  }
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const call_span = { start: 6, end: 19 };
+  const result = builder.add_node(
+    when_true,
+    "remainder-divisibility-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [value],
+    [i32_type],
+  )[0];
+  if (result === undefined) throw new Error("Expected divisibility call.");
+  builder.terminate(when_true, { tag: "return", value: result });
+  builder.terminate(when_false, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticRemainderDivisibilityRequirement = {
+    premise: {
+      dividend: value,
+      divisor,
+      remainder,
+      expected: 0n,
+    },
+    goal_divisor: 2n,
+  };
+  const certificate = semantic_remainder_divisibility_certificate(
+    call_span,
+    requirement,
+  );
+  assert_equals(
+    verify_semantic_remainder_divisibility_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate), true);
+  assert_equals(Object.isFrozen(certificate.requirement), true);
+  assert_equals(Object.isFrozen(certificate.requirement.premise), true);
+
+  for (
+    const invalid_requirement of [
+      { ...requirement, goal_divisor: 3n },
+      { ...requirement, goal_divisor: 0n },
+      { ...requirement, goal_divisor: -2n },
+      {
+        ...requirement,
+        premise: {
+          ...requirement.premise,
+          dividend: "different-dividend" as ValueId,
+        },
+      },
+      { ...requirement, goal_divisor: 4_294_967_298n },
+    ]
+  ) {
+    const invalid_certificate = semantic_remainder_divisibility_certificate(
+      call_span,
+      invalid_requirement,
+    );
+    assert_equals(
+      verify_semantic_remainder_divisibility_certificate(
+        invalid_certificate,
+        control_flow,
+        call_span,
+        invalid_requirement,
+      ),
+      false,
+    );
+  }
+  const forged_residue = {
+    ...requirement,
+    premise: { ...requirement.premise, expected: 1n },
+  } as unknown as SemanticRemainderDivisibilityRequirement;
+  const forged_residue_certificate =
+    semantic_remainder_divisibility_certificate(
+      call_span,
+      forged_residue,
+    );
+  assert_equals(
+    verify_semantic_remainder_divisibility_certificate(
+      forged_residue_certificate,
+      control_flow,
+      call_span,
+      forged_residue,
+    ),
+    false,
+  );
+
+  for (const invalid_divisor of [0, -4, 4_294_967_300]) {
+    const invalid_control_flow = {
+      ...control_flow,
+      blocks: control_flow.blocks.map((block) => ({
+        ...block,
+        nodes: block.nodes.map((node) => {
+          if (node.outputs[0] !== divisor) return node;
+          return {
+            ...node,
+            operation: {
+              tag: "constant" as const,
+              value: invalid_divisor,
+            },
+          };
+        }),
+      })),
+    };
+    assert_equals(
+      verify_semantic_remainder_divisibility_certificate(
+        certificate,
+        invalid_control_flow,
+        call_span,
+        requirement,
+      ),
+      false,
+    );
+  }
+});
+
+Deno.test("zero residue divisibility is exhaustive for signed and unsigned three-bit integers", () => {
+  for (const signed of [false, true]) {
+    const integer = { width: 3 as const, signed };
+    for (let raw_value = 0n; raw_value < 8n; raw_value += 1n) {
+      const value = normalize_machine_integer(raw_value, integer);
+      let maximum_divisor = 7n;
+      if (signed) maximum_divisor = 3n;
+      for (
+        let premise_divisor = 1n;
+        premise_divisor <= maximum_divisor;
+        premise_divisor += 1n
+      ) {
+        if (value % premise_divisor !== 0n) continue;
+        for (
+          let goal_divisor = 1n;
+          goal_divisor <= maximum_divisor;
+          goal_divisor += 1n
+        ) {
+          if (premise_divisor % goal_divisor !== 0n) continue;
+          assert_equals(value % goal_divisor, 0n);
+        }
+      }
+    }
   }
 });
 

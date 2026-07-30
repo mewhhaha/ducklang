@@ -58,6 +58,17 @@ export type SemanticRemainderCertificate = {
   requirement: SemanticRemainderRequirement;
 };
 
+export type SemanticRemainderDivisibilityRequirement = {
+  premise: SemanticRemainderRequirement & { expected: 0n };
+  goal_divisor: bigint;
+};
+
+export type SemanticRemainderDivisibilityCertificate = {
+  tag: "remainder_divisibility";
+  call_span: SourceSpan;
+  requirement: SemanticRemainderDivisibilityRequirement;
+};
+
 export type SemanticUnreachableCertificate = {
   tag: "machine_unreachable";
   call_span: SourceSpan;
@@ -66,6 +77,7 @@ export type SemanticUnreachableCertificate = {
 export type SemanticControlFlowCertificate =
   | SemanticMachineCertificate
   | SemanticPredicateCertificate
+  | SemanticRemainderDivisibilityCertificate
   | SemanticRemainderCertificate
   | SemanticUnreachableCertificate;
 
@@ -373,6 +385,94 @@ function same_remainder_requirement(
     left.divisor === right.divisor &&
     left.remainder === right.remainder &&
     left.expected === right.expected;
+}
+
+export function semantic_remainder_divisibility_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticRemainderDivisibilityRequirement,
+): SemanticRemainderDivisibilityCertificate {
+  return Object.freeze({
+    tag: "remainder_divisibility",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: Object.freeze({
+      premise: Object.freeze({ ...requirement.premise }),
+      goal_divisor: requirement.goal_divisor,
+    }),
+  });
+}
+
+export function verify_semantic_remainder_divisibility_certificate(
+  certificate: SemanticRemainderDivisibilityCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticRemainderDivisibilityRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic remainder divisibility certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "remainder_divisibility",
+    "Semantic remainder divisibility certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    !same_remainder_requirement(
+      certificate.requirement.premise,
+      requirement.premise,
+    ) ||
+    certificate.requirement.goal_divisor !== requirement.goal_divisor
+  ) {
+    return false;
+  }
+  if (
+    requirement.premise.expected !== 0n ||
+    requirement.goal_divisor <= 0n
+  ) {
+    return false;
+  }
+  const ranges = machine_ranges(control_flow);
+  const integer = ranges.get(requirement.premise.dividend);
+  const divisor_type = ranges.get(requirement.premise.divisor);
+  if (
+    integer === undefined || divisor_type === undefined ||
+    !same_integer_type(integer, divisor_type) ||
+    normalize_integer(integer, requirement.goal_divisor) !==
+      requirement.goal_divisor
+  ) {
+    return false;
+  }
+  const producers = semantic_value_producers(control_flow);
+  const premise_divisor = verified_integer_constant(
+    requirement.premise.divisor,
+    producers,
+  );
+  if (premise_divisor === undefined) return false;
+  const normalized_premise_divisor = normalize_integer(
+    divisor_type,
+    premise_divisor,
+  );
+  if (
+    normalized_premise_divisor !== premise_divisor ||
+    normalized_premise_divisor <= 0n ||
+    normalized_premise_divisor % requirement.goal_divisor !== 0n
+  ) {
+    return false;
+  }
+  const premise_certificate = semantic_remainder_certificate(
+    call_span,
+    requirement.premise,
+  );
+  return verify_semantic_remainder_certificate(
+    premise_certificate,
+    control_flow,
+    call_span,
+    requirement.premise,
+  );
 }
 
 export function verify_semantic_machine_certificate(

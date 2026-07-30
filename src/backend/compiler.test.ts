@@ -187,6 +187,34 @@ Deno.test("Duck compiler erases remainder branch proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases remainder divisibility proofs", async () => {
+  const proved_source = "type consume = " +
+    "(value: I32, evidence: Proof value % 2i32 = 0i32) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+    "guarded (-8i32)\n";
+  const plain_source = "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual % 4i32 == 0i32 then consume actual else 0 end;\n" +
+    "guarded (-8i32)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(proved_module.definitionWords, plain_module.definitionWords);
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: -8 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases transparent fact proofs", async () => {
   const proved_source = "type nonzero = (value: I32) -> Prop\n" +
     "fact nonzero = candidate => candidate != 0;\n" +
