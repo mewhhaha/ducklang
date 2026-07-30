@@ -1300,12 +1300,7 @@ function lower_expression(
     return { tag: "value", block: operands.block, value, type };
   }
   if (expression.tag === "app") {
-    const expressions = [expression.func];
-    if (expression.arg !== undefined) {
-      expressions.push(expression.arg);
-    } else {
-      expressions.push(...expression.args);
-    }
+    const expressions = [expression.func, ...expression.args];
     const operands = lower_expressions(expressions, block, context);
     if (operands.tag === "terminated") return operands;
     let function_name = "value";

@@ -1718,68 +1718,102 @@ function semantic_comparison_establishes(
   binding_values: ReadonlyMap<EntityId, ValueId>,
   producers: ReadonlyMap<ValueId, SemanticNode>,
 ): boolean {
-  let comparison: "equal" | "not_equal";
+  let comparison:
+    | "equal"
+    | "not_equal"
+    | "less"
+    | "less_equal";
+  let expected_left = left;
+  let expected_right = right;
   if (primitive.endsWith(".eq")) {
     comparison = "not_equal";
     if (branch_value) comparison = "equal";
   } else if (primitive.endsWith(".ne")) {
     comparison = "equal";
     if (branch_value) comparison = "not_equal";
+  } else if (
+    primitive.endsWith(".lt_s") || primitive.endsWith(".lt_u")
+  ) {
+    comparison = "less";
+    if (!branch_value) {
+      comparison = "less_equal";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".le_s") || primitive.endsWith(".le_u")
+  ) {
+    comparison = "less_equal";
+    if (!branch_value) {
+      comparison = "less";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".gt_s") || primitive.endsWith(".gt_u")
+  ) {
+    comparison = "less_equal";
+    if (branch_value) {
+      comparison = "less";
+      expected_left = right;
+      expected_right = left;
+    }
+  } else if (
+    primitive.endsWith(".ge_s") || primitive.endsWith(".ge_u")
+  ) {
+    comparison = "less";
+    if (branch_value) {
+      comparison = "less_equal";
+      expected_left = right;
+      expected_right = left;
+    }
   } else {
     return false;
   }
   if (proposition.tag !== comparison) return false;
-  const left_constant = producers.get(left);
-  const right_constant = producers.get(right);
-  if (left_constant?.operation.tag === "constant") {
-    if (
-      prefix_comparison_operand_matches(
-        proposition.right,
-        right,
-        binding_values,
-      ) &&
-      prefix_constant_matches(
-        proposition.left,
-        left_constant.operation.value,
-      )
-    ) {
-      return true;
-    }
-    return prefix_comparison_operand_matches(
+  if (
+    prefix_term_matches_semantic_value(
       proposition.left,
-      right,
+      expected_left,
       binding_values,
+      producers,
     ) &&
-      prefix_constant_matches(
-        proposition.right,
-        left_constant.operation.value,
-      );
-  }
-  if (right_constant?.operation.tag === "constant") {
-    if (
-      prefix_comparison_operand_matches(
-        proposition.left,
-        left,
-        binding_values,
-      ) &&
-      prefix_constant_matches(
-        proposition.right,
-        right_constant.operation.value,
-      )
-    ) {
-      return true;
-    }
-    return prefix_comparison_operand_matches(
+    prefix_term_matches_semantic_value(
       proposition.right,
-      left,
+      expected_right,
       binding_values,
-    ) &&
-      prefix_constant_matches(
-        proposition.left,
-        right_constant.operation.value,
-      );
+      producers,
+    )
+  ) {
+    return true;
   }
-  return false;
+  if (comparison !== "equal" && comparison !== "not_equal") return false;
+  return prefix_term_matches_semantic_value(
+    proposition.left,
+    expected_right,
+    binding_values,
+    producers,
+  ) &&
+    prefix_term_matches_semantic_value(
+      proposition.right,
+      expected_left,
+      binding_values,
+      producers,
+    );
+}
+
+function prefix_term_matches_semantic_value(
+  term: PrefixTerm,
+  value: ValueId,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  producers: ReadonlyMap<ValueId, SemanticNode>,
+): boolean {
+  if (prefix_comparison_operand_matches(term, value, binding_values)) {
+    return true;
+  }
+  const producer = producers.get(value);
+  if (producer?.operation.tag !== "constant") return false;
+  return prefix_constant_matches(term, producer.operation.value);
 }
 
 function prefix_comparison_operand_matches(

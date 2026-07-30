@@ -92,6 +92,32 @@ Deno.test("named callable control flow uses the binding identity", () => {
   );
 });
 
+Deno.test("callable control flow flattens transient argument packs", () => {
+  const source = "type select = (left: I32, right: I32) -> I32\n" +
+    "let select = (left, right) => right;\n" +
+    "type invoke = (left: I32, right: I32) -> I32\n" +
+    "let invoke = (left, right) => select (left, right);\n" +
+    "invoke (1, 2)\n";
+  const analysis = analyze_duck_source(parse_duck_source(source));
+  assert_equals(analysis.diagnostics, []);
+  const select = analysis.symbols.get("select")?.[0];
+  const invoke = analysis.symbols.get("invoke")?.[0];
+  if (select === undefined || invoke === undefined) {
+    throw new Error("Expected callable semantic identities.");
+  }
+  const callable = analysis.callable_control_flow.get(invoke);
+  if (callable === undefined) {
+    throw new Error("Expected invoke callable control flow.");
+  }
+  const [left, right] = callable.parameters;
+  if (left === undefined || right === undefined) {
+    throw new Error("Expected invoke parameter semantic identities.");
+  }
+  const call = callable.control_flow.blocks.flatMap((block) => block.nodes)
+    .find((node) => node.operation.tag === "call");
+  assert_equals(call?.inputs, [select, left, right]);
+});
+
 Deno.test("nested callable control flow records lexical captures", () => {
   const source = "let outer = (base: I32) => do\n" +
     "  let inner = (value: I32) => base + value;\n" +
@@ -1424,6 +1450,190 @@ Deno.test("false comparison branches establish call evidence", () => {
   assert_equals(analysis.diagnostics, []);
   assert_equals(analysis.proofs.size, 1);
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("ordered comparison branches establish call evidence", () => {
+  for (
+    const [requirement, condition, then_branch, else_branch] of [
+      ["value < 10", "actual < 10", "consume actual", "0"],
+      ["value < 10", "actual >= 10", "0", "consume actual"],
+      ["10 <= value", "actual >= 10", "consume actual", "0"],
+      ["10 <= value", "actual < 10", "0", "consume actual"],
+      ["10 < value", "actual > 10", "consume actual", "0"],
+      ["value <= 10", "actual > 10", "0", "consume actual"],
+    ]
+  ) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(value: I32, evidence: Proof ${requirement}) -> I32\n` +
+        "let consume = (actual, evidence) => actual;\n" +
+        "type guarded = (value: I32) -> I32\n" +
+        `let guarded = actual => if ${condition} then ` +
+        `${then_branch} else ${else_branch} end;\n` +
+        "guarded 5\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("ordered value comparisons establish exact branch evidence", () => {
+  const branch_cases = [
+    {
+      condition: "a < b",
+      true_requirement: "left < right",
+      false_requirement: "right <= left",
+    },
+    {
+      condition: "a <= b",
+      true_requirement: "left <= right",
+      false_requirement: "right < left",
+    },
+    {
+      condition: "a > b",
+      true_requirement: "right < left",
+      false_requirement: "left <= right",
+    },
+    {
+      condition: "a >= b",
+      true_requirement: "right <= left",
+      false_requirement: "left < right",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        let literal_suffix = "";
+        if (value_type === "U32") literal_suffix = "u32";
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            `guarded (5${literal_suffix}, 10${literal_suffix})\n`,
+        ));
+        assert_equals(analysis.diagnostics, []);
+        assert_equals(analysis.proofs.size, 1);
+        assert_equals(
+          checked_value(lower_duck_source(analysis)) !== undefined,
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("ordered value comparison evidence rejects opposite branches", () => {
+  const branch_cases = [
+    {
+      condition: "a < b",
+      true_requirement: "right <= left",
+      false_requirement: "left < right",
+    },
+    {
+      condition: "a <= b",
+      true_requirement: "right < left",
+      false_requirement: "left <= right",
+    },
+    {
+      condition: "a > b",
+      true_requirement: "left <= right",
+      false_requirement: "right < left",
+    },
+    {
+      condition: "a >= b",
+      true_requirement: "left < right",
+      false_requirement: "right <= left",
+    },
+  ];
+  for (const value_type of ["I32", "U32"]) {
+    for (const branch_case of branch_cases) {
+      for (
+        const [requirement, then_branch, else_branch] of [
+          [branch_case.true_requirement, "consume (a, b)", "a"],
+          [branch_case.false_requirement, "a", "consume (a, b)"],
+        ]
+      ) {
+        const analysis = analyze_duck_source(parse_duck_source(
+          "type consume = " +
+            `(left: ${value_type}, right: ${value_type}, ` +
+            `evidence: Proof ${requirement}) -> ${value_type}\n` +
+            "let consume = (a, b, evidence) => a;\n" +
+            "type guarded = " +
+            `(left: ${value_type}, right: ${value_type}) -> ${value_type}\n` +
+            "let guarded = (a, b) => " +
+            `if ${branch_case.condition} then ${then_branch} ` +
+            `else ${else_branch} end;\n` +
+            "42\n",
+        ));
+        assert_equals(
+          analysis.diagnostics.some((diagnostic) =>
+            diagnostic.code === "DUCK2604"
+          ),
+          true,
+        );
+        assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+      }
+    }
+  }
+});
+
+Deno.test("ordered comparison evidence respects branch polarity", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value < 10) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32) -> I32\n" +
+      "let wrong = actual => " +
+      "if actual < 10 then 0 else consume actual end;\n" +
+      "42\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("false greater-than branches do not reverse operands", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof 10 <= value) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type wrong = (value: I32) -> I32\n" +
+      "let wrong = actual => " +
+      "if actual > 10 then 0 else consume actual end;\n" +
+      "wrong 5\n",
+  ));
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
 Deno.test("comparison evidence does not cross branch joins", () => {

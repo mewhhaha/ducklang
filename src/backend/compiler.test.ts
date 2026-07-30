@@ -159,6 +159,38 @@ Deno.test("Duck compiler erases branch-established proofs", async () => {
   }
 });
 
+Deno.test(
+  "Duck compiler erases ordered branch proofs across argument packs",
+  async () => {
+    const proved_source = "type consume = " +
+      "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+      "let consume = (left, right, evidence) => right;\n" +
+      "type guarded = (left: I32, right: I32) -> I32\n" +
+      "let guarded = (left, right) => " +
+      "if left < right then consume (left, right) else left end;\n" +
+      "guarded (10, 42)\n";
+    const plain_source = "let consume = (left, right) => right;\n" +
+      "let guarded = (left, right) => " +
+      "if left < right then consume (left, right) else left end;\n" +
+      "guarded (10, 42)\n";
+    const proved_module = encode_duck_module(proved_source);
+    const plain_module = encode_duck_module(plain_source);
+    assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+    assert_equals(
+      proved_module.definitionWords,
+      plain_module.definitionWords,
+    );
+
+    const compiler = await DuckCompiler.create();
+    try {
+      const proved = await compiler.run(proved_source);
+      assert_equals(proved.value, { kind: "integer", value: 42 });
+    } finally {
+      compiler.destroy();
+    }
+  },
+);
+
 Deno.test("Duck compiler erases checked proof declarations", async () => {
   const proof_source =
     "type merge = (choice: Proof True or True) -> Proof True\n" +
