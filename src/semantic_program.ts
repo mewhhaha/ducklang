@@ -58,15 +58,11 @@ import {
 } from "./frontend/source_facts.ts";
 import type { SourceDiagnostic } from "./frontend/semantic_diagnostic.ts";
 import type {
-  SemanticBlockId,
   SemanticCallableControlFlow,
   SemanticCfg,
   SemanticNode,
 } from "./frontend/semantic_cfg.ts";
-import {
-  semantic_calls_at_span,
-  unique_semantic_call_at_span,
-} from "./frontend/semantic_cfg.ts";
+import { semantic_calls_at_span } from "./frontend/semantic_cfg.ts";
 import { semantic_cfgs_from_source } from "./frontend/semantic_cfg_lower.ts";
 import {
   has_source_span,
@@ -1854,19 +1850,6 @@ function verified_branch_hypotheses(
       };
     }
   }
-  if (
-    branch_control_flow_establishes(
-      candidate,
-      normalized,
-      call_span,
-      binding_values,
-    )
-  ) {
-    return {
-      propositions: [proposition],
-      certificate: undefined,
-    };
-  }
   return {
     propositions: [],
     certificate: undefined,
@@ -1919,232 +1902,6 @@ function unique_control_flow_for_call(
     }
   }
   return found;
-}
-
-function branch_control_flow_establishes(
-  control_flow: SemanticCfg,
-  proposition: PrefixProposition,
-  call_span: SourceSpan,
-  binding_values: ReadonlyMap<EntityId, ValueId>,
-): boolean {
-  const target = unique_semantic_call_at_span(control_flow, call_span);
-  if (target === undefined) return false;
-  const dominators = semantic_block_dominators(control_flow);
-  const call_dominators = dominators.get(target.block.id);
-  expect(
-    call_dominators !== undefined,
-    `Call block ${String(target.block.id)} lost its dominators.`,
-  );
-  const producers = new Map<ValueId, SemanticNode>();
-  for (const block of control_flow.blocks) {
-    for (const node of block.nodes) {
-      for (const output of node.outputs) producers.set(output, node);
-    }
-  }
-  for (const block of control_flow.blocks) {
-    const terminator = block.terminator;
-    if (terminator.tag !== "branch") continue;
-    if (!call_dominators.has(block.id)) continue;
-    let branch_value: boolean | undefined;
-    if (call_dominators.has(terminator.when_true)) branch_value = true;
-    if (call_dominators.has(terminator.when_false)) {
-      if (branch_value !== undefined) continue;
-      branch_value = false;
-    }
-    if (branch_value === undefined) continue;
-    const condition = producers.get(terminator.condition);
-    if (
-      condition === undefined || condition.operation.tag !== "primitive" ||
-      condition.inputs.length !== 2
-    ) {
-      continue;
-    }
-    const left = condition.inputs[0];
-    const right = condition.inputs[1];
-    expect(
-      left !== undefined && right !== undefined,
-      "Binary branch condition lost an operand.",
-    );
-    if (
-      semantic_comparison_establishes(
-        condition.operation.name,
-        left,
-        right,
-        branch_value,
-        proposition,
-        binding_values,
-        producers,
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function semantic_block_dominators(
-  control_flow: SemanticCfg,
-): ReadonlyMap<SemanticBlockId, ReadonlySet<SemanticBlockId>> {
-  const block_ids = new Set(control_flow.blocks.map((block) => block.id));
-  const dominators = new Map<SemanticBlockId, Set<SemanticBlockId>>();
-  for (const block of control_flow.blocks) {
-    if (block.id === control_flow.entry) {
-      dominators.set(block.id, new Set([block.id]));
-    } else {
-      dominators.set(block.id, new Set(block_ids));
-    }
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const block of control_flow.blocks) {
-      if (block.id === control_flow.entry) continue;
-      let intersection = new Set(block_ids);
-      if (block.predecessors.length === 0) intersection = new Set();
-      for (const predecessor of block.predecessors) {
-        const predecessor_dominators = dominators.get(predecessor);
-        expect(
-          predecessor_dominators !== undefined,
-          `CFG predecessor ${String(predecessor)} lost its dominators.`,
-        );
-        intersection = new Set(
-          [...intersection].filter((candidate) =>
-            predecessor_dominators.has(candidate)
-          ),
-        );
-      }
-      intersection.add(block.id);
-      const previous = dominators.get(block.id);
-      expect(
-        previous !== undefined,
-        `CFG block ${String(block.id)} lost its dominators.`,
-      );
-      if (
-        previous.size === intersection.size &&
-        [...previous].every((candidate) => intersection.has(candidate))
-      ) {
-        continue;
-      }
-      dominators.set(block.id, intersection);
-      changed = true;
-    }
-  }
-  return dominators;
-}
-
-function semantic_comparison_establishes(
-  primitive: string,
-  left: ValueId,
-  right: ValueId,
-  branch_value: boolean,
-  proposition: PrefixProposition,
-  binding_values: ReadonlyMap<EntityId, ValueId>,
-  producers: ReadonlyMap<ValueId, SemanticNode>,
-): boolean {
-  let comparison:
-    | "equal"
-    | "not_equal"
-    | "less"
-    | "less_equal";
-  let expected_left = left;
-  let expected_right = right;
-  if (primitive.endsWith(".eq")) {
-    comparison = "not_equal";
-    if (branch_value) comparison = "equal";
-  } else if (primitive.endsWith(".ne")) {
-    comparison = "equal";
-    if (branch_value) comparison = "not_equal";
-  } else if (
-    primitive.endsWith(".lt_s") || primitive.endsWith(".lt_u")
-  ) {
-    comparison = "less";
-    if (!branch_value) {
-      comparison = "less_equal";
-      expected_left = right;
-      expected_right = left;
-    }
-  } else if (
-    primitive.endsWith(".le_s") || primitive.endsWith(".le_u")
-  ) {
-    comparison = "less_equal";
-    if (!branch_value) {
-      comparison = "less";
-      expected_left = right;
-      expected_right = left;
-    }
-  } else if (
-    primitive.endsWith(".gt_s") || primitive.endsWith(".gt_u")
-  ) {
-    comparison = "less_equal";
-    if (branch_value) {
-      comparison = "less";
-      expected_left = right;
-      expected_right = left;
-    }
-  } else if (
-    primitive.endsWith(".ge_s") || primitive.endsWith(".ge_u")
-  ) {
-    comparison = "less";
-    if (branch_value) {
-      comparison = "less_equal";
-      expected_left = right;
-      expected_right = left;
-    }
-  } else {
-    return false;
-  }
-  if (proposition.tag !== comparison) return false;
-  if (
-    prefix_term_matches_semantic_value(
-      proposition.left,
-      expected_left,
-      binding_values,
-      producers,
-    ) &&
-    prefix_term_matches_semantic_value(
-      proposition.right,
-      expected_right,
-      binding_values,
-      producers,
-    )
-  ) {
-    return true;
-  }
-  if (comparison !== "equal" && comparison !== "not_equal") return false;
-  return prefix_term_matches_semantic_value(
-    proposition.left,
-    expected_right,
-    binding_values,
-    producers,
-  ) &&
-    prefix_term_matches_semantic_value(
-      proposition.right,
-      expected_left,
-      binding_values,
-      producers,
-    );
-}
-
-function prefix_term_matches_semantic_value(
-  term: PrefixTerm,
-  value: ValueId,
-  binding_values: ReadonlyMap<EntityId, ValueId>,
-  producers: ReadonlyMap<ValueId, SemanticNode>,
-): boolean {
-  if (prefix_comparison_operand_matches(term, value, binding_values)) {
-    return true;
-  }
-  const producer = producers.get(value);
-  if (producer?.operation.tag !== "constant") return false;
-  return prefix_constant_matches(term, producer.operation.value);
-}
-
-function prefix_comparison_operand_matches(
-  term: PrefixTerm,
-  value: ValueId,
-  binding_values: ReadonlyMap<EntityId, ValueId>,
-): boolean {
-  return prefix_semantic_value(term, binding_values) === value;
 }
 
 function prefix_semantic_value(
@@ -2203,6 +1960,30 @@ function prefix_machine_requirement(
       left_constant,
       true,
     );
+  }
+  if (
+    left_value !== undefined && right_value !== undefined &&
+    proposition.tag === "equal" && left_value === right_value
+  ) {
+    return {
+      tag: "difference",
+      left: left_value,
+      right: right_value,
+      maximum: 0n,
+    };
+  }
+  if (
+    left_value !== undefined && right_value !== undefined &&
+    (proposition.tag === "less" || proposition.tag === "less_equal")
+  ) {
+    let maximum = 0n;
+    if (proposition.tag === "less") maximum = -1n;
+    return {
+      tag: "difference",
+      left: left_value,
+      right: right_value,
+      maximum,
+    };
   }
   return undefined;
 }

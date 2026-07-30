@@ -22,7 +22,10 @@ import {
   infer_semantic_machine_certificate,
   infer_semantic_unreachable_certificate,
 } from "./semantic_fact_graph.ts";
-import { SemanticCfgBuilder } from "./semantic_cfg.ts";
+import {
+  semantic_cfg_is_well_formed,
+  SemanticCfgBuilder,
+} from "./semantic_cfg.ts";
 import type { ValueId } from "./semantic_identity.ts";
 
 const origin = "fact-certificate:0:1:0" as never;
@@ -1294,6 +1297,182 @@ Deno.test("semantic machine certificates independently verify CFG bounds", () =>
       control_flow,
       call_span,
       stronger,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic machine certificates independently close affine comparisons", () => {
+  const builder = new SemanticCfgBuilder("difference-certificate");
+  const entry = builder.add_block(origin);
+  const after_first = builder.add_block("difference-first:1:2:0" as never);
+  const after_second = builder.add_block("difference-second:2:3:0" as never);
+  const fallback = builder.add_block("difference-fallback:3:4:0" as never);
+  const left = "difference-certificate-left" as ValueId;
+  const middle = "difference-certificate-middle" as ValueId;
+  const right = "difference-certificate-right" as ValueId;
+  for (const parameter of [left, middle, right]) {
+    builder.add_parameter(parameter, i32_type, {
+      source_node: origin,
+      start: 0,
+      end: 1,
+    });
+  }
+  const first_condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 5 },
+    { tag: "primitive", name: "i32.lt_s" },
+    [left, middle],
+    [bool_type],
+  )[0];
+  if (first_condition === undefined) {
+    throw new Error("Expected first affine comparison.");
+  }
+  builder.connect(entry, after_first);
+  builder.connect(entry, fallback);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition: first_condition,
+    when_true: after_first,
+    when_false: fallback,
+  });
+  const second_condition = builder.add_node(
+    after_first,
+    "difference-first:1:2:0" as never,
+    { start: 6, end: 11 },
+    { tag: "primitive", name: "i32.le_s" },
+    [middle, right],
+    [bool_type],
+  )[0];
+  if (second_condition === undefined) {
+    throw new Error("Expected second affine comparison.");
+  }
+  builder.connect(after_first, after_second);
+  builder.connect(after_first, fallback);
+  builder.terminate(after_first, {
+    tag: "branch",
+    condition: second_condition,
+    when_true: after_second,
+    when_false: fallback,
+  });
+  const call_span = { start: 12, end: 20 };
+  const call = builder.add_node(
+    after_second,
+    "difference-second:2:3:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [left, right],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected affine call.");
+  builder.terminate(after_second, { tag: "return", value: call });
+  const zero = builder.add_node(
+    fallback,
+    "difference-fallback:3:4:0" as never,
+    { start: 21, end: 22 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  builder.terminate(fallback, { tag: "return", value: zero });
+  const control_flow = builder.finish();
+  const requirement: SemanticMachineRequirement = {
+    tag: "difference",
+    left,
+    right,
+    maximum: -1n,
+  };
+  const certificate = infer_semantic_machine_certificate(
+    control_flow,
+    call_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected inferred affine certificate.");
+  }
+  assert_equals(
+    verify_semantic_machine_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  assert_equals(Object.isFrozen(certificate.requirement), true);
+  const stronger: SemanticMachineRequirement = {
+    tag: "difference",
+    left,
+    right,
+    maximum: -2n,
+  };
+  assert_equals(
+    verify_semantic_machine_certificate(
+      semantic_machine_certificate(call_span, stronger),
+      control_flow,
+      call_span,
+      stronger,
+    ),
+    false,
+  );
+  const malformed = {
+    tag: "difference",
+    left,
+    right,
+    maximum: "invalid",
+  } as unknown as SemanticMachineRequirement;
+  assert_equals(
+    verify_semantic_machine_certificate(
+      semantic_machine_certificate(call_span, malformed),
+      control_flow,
+      call_span,
+      malformed,
+    ),
+    false,
+  );
+  const entry_block = control_flow.blocks.find((block) => block.id === entry);
+  const fallback_block = control_flow.blocks.find((block) =>
+    block.id === fallback
+  );
+  const condition_node = entry_block?.nodes.find((node) =>
+    node.outputs.includes(first_condition)
+  );
+  if (
+    entry_block === undefined || fallback_block === undefined ||
+    condition_node === undefined
+  ) {
+    throw new Error("Expected affine certificate blocks.");
+  }
+  const forged = {
+    ...control_flow,
+    blocks: control_flow.blocks.map((block) => {
+      if (block.id === entry) {
+        return {
+          ...block,
+          nodes: block.nodes.filter((node) => node !== condition_node),
+        };
+      }
+      if (block.id === fallback) {
+        return {
+          ...block,
+          nodes: [condition_node, ...block.nodes],
+        };
+      }
+      return block;
+    }),
+  };
+  assert_equals(semantic_cfg_is_well_formed(forged), false);
+  assert_equals(
+    infer_semantic_machine_certificate(forged, call_span, requirement),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_machine_certificate(
+      certificate,
+      forged,
+      call_span,
+      requirement,
     ),
     false,
   );

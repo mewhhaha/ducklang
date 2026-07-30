@@ -2386,11 +2386,73 @@ Deno.test("ordered value comparisons establish exact branch evidence", () => {
         assert_equals(analysis.diagnostics, []);
         assert_equals(analysis.proofs.size, 1);
         assert_equals(
+          [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+          "machine_fact",
+        );
+        assert_equals(
           checked_value(lower_duck_source(analysis)) !== undefined,
           true,
         );
       }
     }
+  }
+});
+
+Deno.test("ordered value comparisons compose through affine certificates", () => {
+  for (const value_type of ["I32", "U32"]) {
+    let literal_suffix = "";
+    if (value_type === "U32") literal_suffix = "u32";
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        `(left: ${value_type}, right: ${value_type}, ` +
+        `evidence: Proof left < right) -> ${value_type}\n` +
+        "let consume = (a, b, evidence) => a;\n" +
+        "type guarded = " +
+        `(left: ${value_type}, middle: ${value_type}, ` +
+        `right: ${value_type}) -> ${value_type}\n` +
+        "let guarded = (a, b, c) => " +
+        "if a < b then " +
+        "if b <= c then consume (a, c) else a end " +
+        "else a end;\n" +
+        `guarded (1${literal_suffix}, 2${literal_suffix}, ` +
+        `3${literal_suffix})\n`,
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(analysis.proofs.size, 1);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
+  }
+});
+
+Deno.test("ordered affine certificates follow either value alias", () => {
+  for (const arguments_ of ["a, second", "first, b"]) {
+    const analysis = analyze_duck_source(parse_duck_source(
+      "type consume = " +
+        "(left: I32, right: I32, evidence: Proof left < right) -> I32\n" +
+        "let consume = (a, b, evidence) => b;\n" +
+        "type guarded = (left: I32, right: I32) -> I32\n" +
+        "let guarded = (a, b) => do\n" +
+        "  let first = a;\n" +
+        "  let second = b;\n" +
+        `  if a < b then consume (${arguments_}) else a end\n` +
+        "end;\n" +
+        "guarded (1, 2)\n",
+    ));
+    assert_equals(analysis.diagnostics, []);
+    assert_equals(
+      [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+      "machine_fact",
+    );
+    assert_equals(
+      checked_value(lower_duck_source(analysis)) !== undefined,
+      true,
+    );
   }
 });
 

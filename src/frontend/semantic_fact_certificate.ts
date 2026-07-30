@@ -38,6 +38,12 @@ export type SemanticMachineRequirement =
     value: ValueId;
     known_zero: bigint;
     known_one: bigint;
+  }
+  | {
+    tag: "difference";
+    left: ValueId;
+    right: ValueId;
+    maximum: bigint;
   };
 
 export type SemanticMachineCertificate = {
@@ -141,6 +147,9 @@ type VerifiedCongruence = {
   modulus: bigint;
   residue: bigint;
 };
+
+const VERIFIED_DIFFERENCE_ZERO = Symbol("duck.verified_difference_zero");
+type VerifiedDifferenceTerm = ValueId | typeof VERIFIED_DIFFERENCE_ZERO;
 
 export function semantic_machine_certificate(
   call_span: SourceSpan,
@@ -737,6 +746,7 @@ function verify_semantic_paths(
   requirement: SemanticMachineRequirement | undefined,
   bounded_offset?: SemanticBoundedOffsetRequirement,
 ): VerifiedSemanticPaths {
+  if (!semantic_cfg_is_well_formed(control_flow)) return "rejected";
   const target = unique_semantic_call_at_span(control_flow, call_span);
   if (target === undefined) return "rejected";
   const ranges = machine_ranges(control_flow);
@@ -746,6 +756,15 @@ function verify_semantic_paths(
     goal_value = requirement_value(requirement);
     goal_range = ranges.get(goal_value);
     if (goal_range === undefined) return "rejected";
+    if (requirement.tag === "difference") {
+      const right_range = ranges.get(requirement.right);
+      if (
+        right_range === undefined ||
+        !same_integer_type(goal_range, right_range)
+      ) {
+        return "rejected";
+      }
+    }
   }
   const blocks = new Map(
     control_flow.blocks.map((block) => [block.id, block]),
@@ -825,8 +844,11 @@ function verify_semantic_paths(
         goal_value !== undefined && goal_range !== undefined,
         "Semantic fact goal lost its machine range.",
       );
-      const path_goal_value = resolved_alias(goal_value, aliases);
-      if (path_goal_value === undefined) return "rejected";
+      const path_requirement = aliased_machine_requirement(
+        requirement,
+        aliases,
+      );
+      const path_goal_value = requirement_value(path_requirement);
       const path_goal_range = ranges.get(path_goal_value);
       if (path_goal_range === undefined) return "rejected";
       const interval = interval_from_premises(
@@ -839,10 +861,11 @@ function verify_semantic_paths(
       if (
         !interval_implies_requirement(
           interval,
-          requirement,
+          path_requirement,
           path_premises,
           path_goal_value,
           path_goal_range,
+          ranges,
         )
       ) {
         return "rejected";
@@ -997,6 +1020,14 @@ function snapshot_machine_requirement(
       residue: requirement.residue,
     });
   }
+  if (requirement.tag === "difference") {
+    return Object.freeze({
+      tag: "difference",
+      left: requirement.left,
+      right: requirement.right,
+      maximum: requirement.maximum,
+    });
+  }
   return Object.freeze({
     tag: "fact",
     proposition: Object.freeze({ ...requirement.proposition }),
@@ -1020,6 +1051,11 @@ function same_machine_requirement(
     return left.value === right.value &&
       left.modulus === right.modulus &&
       left.residue === right.residue;
+  }
+  if (left.tag === "difference" && right.tag === "difference") {
+    return left.left === right.left &&
+      left.right === right.right &&
+      left.maximum === right.maximum;
   }
   if (left.tag !== "fact" || right.tag !== "fact") return false;
   if (
@@ -1077,6 +1113,7 @@ function machine_ranges(
 
 function requirement_value(requirement: SemanticMachineRequirement): ValueId {
   if (requirement.tag === "fact") return requirement.proposition.value;
+  if (requirement.tag === "difference") return requirement.left;
   return requirement.value;
 }
 
@@ -1211,6 +1248,7 @@ function verified_repeating_call_requirement(
     premises,
     goal_value,
     goal_range,
+    ranges,
   );
 }
 
@@ -1482,6 +1520,20 @@ function aliased_machine_requirement(
   requirement: SemanticMachineRequirement,
   aliases: ReadonlyMap<ValueId, ValueId>,
 ): SemanticMachineRequirement {
+  if (requirement.tag === "difference") {
+    const left = resolved_alias(requirement.left, aliases);
+    const right = resolved_alias(requirement.right, aliases);
+    if (left === undefined || right === undefined) return requirement;
+    if (left === requirement.left && right === requirement.right) {
+      return requirement;
+    }
+    return {
+      tag: "difference",
+      left,
+      right,
+      maximum: requirement.maximum,
+    };
+  }
   const value = requirement_value(requirement);
   const resolved = resolved_alias(value, aliases);
   if (resolved === undefined || resolved === value) return requirement;
@@ -1619,13 +1671,23 @@ function verified_comparison_requirement(
   } else {
     return undefined;
   }
-  return verified_constant_comparison(
+  const constant_requirement = verified_constant_comparison(
     relation,
     expected_left,
     expected_right,
     ranges,
     producers,
   );
+  if (constant_requirement !== undefined) return constant_requirement;
+  if (relation !== "less" && relation !== "less_equal") return undefined;
+  let maximum = 0n;
+  if (relation === "less") maximum = -1n;
+  return {
+    tag: "difference",
+    left: expected_left,
+    right: expected_right,
+    maximum,
+  };
 }
 
 function verified_bitmask_requirement(
@@ -2108,6 +2170,7 @@ function interval_from_premises(
   const exclusions = new Set<bigint>();
   for (const premise of premises) {
     if (requirement_value(premise) !== value) continue;
+    if (premise.tag === "difference") continue;
     if (premise.tag === "exclusion") {
       exclusions.add(premise.expected);
       continue;
@@ -2232,11 +2295,160 @@ function verified_value_matches_bitmask(
     (bits & bitmask.known_one) === bitmask.known_one;
 }
 
+function verified_difference_closure(
+  premises: readonly SemanticMachineRequirement[],
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+  additional_values: readonly ValueId[],
+): {
+  bounds: ReadonlyMap<
+    VerifiedDifferenceTerm,
+    ReadonlyMap<VerifiedDifferenceTerm, bigint>
+  >;
+  contradiction: boolean;
+} | undefined {
+  const values = new Set<ValueId>(additional_values);
+  for (const premise of premises) {
+    if (premise.tag !== "difference") continue;
+    values.add(premise.left);
+    values.add(premise.right);
+  }
+  if (
+    values.size > proof_limits.maximum_relational_terms_per_function
+  ) {
+    return undefined;
+  }
+  const ordered_values = [...values].sort();
+  const terms: VerifiedDifferenceTerm[] = [
+    VERIFIED_DIFFERENCE_ZERO,
+    ...ordered_values,
+  ];
+  const bounds = new Map<
+    VerifiedDifferenceTerm,
+    Map<VerifiedDifferenceTerm, bigint>
+  >();
+  for (const term of terms) {
+    bounds.set(term, new Map([[term, 0n]]));
+  }
+  for (const value of ordered_values) {
+    const range = ranges.get(value);
+    if (range === undefined) return undefined;
+    const interval = interval_from_premises(premises, value, range);
+    if (interval.contradiction) {
+      return { bounds, contradiction: true };
+    }
+    set_verified_difference(
+      bounds,
+      value,
+      VERIFIED_DIFFERENCE_ZERO,
+      interval.maximum,
+    );
+    set_verified_difference(
+      bounds,
+      VERIFIED_DIFFERENCE_ZERO,
+      value,
+      -interval.minimum,
+    );
+  }
+  for (const premise of premises) {
+    if (premise.tag !== "difference") continue;
+    if (typeof premise.maximum !== "bigint") return undefined;
+    const left_range = ranges.get(premise.left);
+    const right_range = ranges.get(premise.right);
+    if (
+      left_range === undefined || right_range === undefined ||
+      !same_integer_type(left_range, right_range)
+    ) {
+      return undefined;
+    }
+    set_verified_difference(
+      bounds,
+      premise.left,
+      premise.right,
+      premise.maximum,
+    );
+  }
+  for (const through of terms) {
+    for (const left of terms) {
+      const left_to_through = bounds.get(left)?.get(through);
+      if (left_to_through === undefined) continue;
+      for (const right of terms) {
+        const through_to_right = bounds.get(through)?.get(right);
+        if (through_to_right === undefined) continue;
+        set_verified_difference(
+          bounds,
+          left,
+          right,
+          left_to_through + through_to_right,
+        );
+      }
+    }
+  }
+  for (const term of terms) {
+    const self = bounds.get(term)?.get(term);
+    if (self !== undefined && self < 0n) {
+      return { bounds, contradiction: true };
+    }
+  }
+  return { bounds, contradiction: false };
+}
+
+function set_verified_difference(
+  bounds: Map<
+    VerifiedDifferenceTerm,
+    Map<VerifiedDifferenceTerm, bigint>
+  >,
+  left: VerifiedDifferenceTerm,
+  right: VerifiedDifferenceTerm,
+  maximum: bigint,
+): void {
+  let row = bounds.get(left);
+  if (row === undefined) {
+    row = new Map();
+    bounds.set(left, row);
+  }
+  const current = row.get(right);
+  if (current !== undefined && current <= maximum) return;
+  row.set(right, maximum);
+}
+
+function verified_difference_implies(
+  premises: readonly SemanticMachineRequirement[],
+  requirement: Extract<
+    SemanticMachineRequirement,
+    { tag: "difference" }
+  >,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
+): boolean {
+  if (typeof requirement.maximum !== "bigint") return false;
+  const left_range = ranges.get(requirement.left);
+  const right_range = ranges.get(requirement.right);
+  if (
+    left_range === undefined || right_range === undefined ||
+    !same_integer_type(left_range, right_range)
+  ) {
+    return false;
+  }
+  const closure = verified_difference_closure(
+    premises,
+    ranges,
+    [requirement.left, requirement.right],
+  );
+  if (closure === undefined || closure.contradiction) return false;
+  const known = closure.bounds.get(requirement.left)?.get(requirement.right);
+  return known !== undefined && known <= requirement.maximum;
+}
+
 function premises_are_contradictory(
   premises: readonly SemanticMachineRequirement[],
   ranges: ReadonlyMap<ValueId, IntegerType>,
 ): boolean {
-  const values = new Set(premises.map(requirement_value));
+  const closure = verified_difference_closure(premises, ranges, []);
+  if (closure?.contradiction) return true;
+  const values = new Set<ValueId>();
+  for (const premise of premises) {
+    values.add(requirement_value(premise));
+    if (premise.tag === "difference") values.add(premise.right);
+  }
   for (const value of values) {
     const range = ranges.get(value);
     if (range === undefined) continue;
@@ -2427,8 +2639,12 @@ function interval_implies_requirement(
   premises: readonly SemanticMachineRequirement[],
   value: ValueId,
   range: IntegerType,
+  ranges: ReadonlyMap<ValueId, IntegerType>,
 ): boolean {
   if (interval.contradiction) return true;
+  if (requirement.tag === "difference") {
+    return verified_difference_implies(premises, requirement, ranges);
+  }
   const bitmask = bitmask_from_premises(premises, value, range);
   if (
     bitmask.malformed ||

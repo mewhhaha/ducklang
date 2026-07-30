@@ -6,10 +6,12 @@ import {
 import {
   assume_machine_bitmask,
   assume_machine_congruence,
+  assume_machine_difference,
   assume_machine_fact,
   exclude_machine_fact,
   implies_machine_bitmask,
   implies_machine_congruence,
+  implies_machine_difference,
   implies_machine_fact,
   machine_excludes_equal,
   machine_fact_domain,
@@ -18,6 +20,7 @@ import {
 } from "./fact_graph.ts";
 import { proof_limits } from "./proof_limits.ts";
 import {
+  semantic_cfg_is_well_formed,
   type SemanticBlock,
   type SemanticBlockId,
   type SemanticCfg,
@@ -64,6 +67,12 @@ export function infer_semantic_machine_certificate(
     (requirement.modulus <= 0n ||
       requirement.residue < 0n ||
       requirement.residue >= requirement.modulus)
+  ) {
+    return undefined;
+  }
+  if (
+    requirement.tag === "difference" &&
+    typeof requirement.maximum !== "bigint"
   ) {
     return undefined;
   }
@@ -167,6 +176,7 @@ function semantic_cfg_machine_path_result(
   requirement: SemanticMachineRequirement | undefined,
   bounded_offset?: SemanticBoundedOffsetRequirement,
 ): SemanticMachinePathResult {
+  if (!semantic_cfg_is_well_formed(control_flow)) return "unknown";
   const target = unique_semantic_call_at_span(control_flow, call_span);
   if (target === undefined) return "unknown";
   const ranges = new Map<ValueId, { signed: boolean; width: number }>();
@@ -377,6 +387,12 @@ function requirement_has_range(
 ): boolean {
   if (requirement.tag === "fact") {
     return ranges.has(requirement.proposition.value);
+  }
+  if (requirement.tag === "difference") {
+    const left = ranges.get(requirement.left);
+    const right = ranges.get(requirement.right);
+    return left !== undefined && right !== undefined &&
+      left.signed === right.signed && left.width === right.width;
   }
   return ranges.has(requirement.value);
 }
@@ -699,6 +715,20 @@ function aliased_machine_requirement(
   requirement: SemanticMachineRequirement,
   aliases: ReadonlyMap<ValueId, ValueId>,
 ): SemanticMachineRequirement {
+  if (requirement.tag === "difference") {
+    const left = resolved_alias(requirement.left, aliases);
+    const right = resolved_alias(requirement.right, aliases);
+    if (left === undefined || right === undefined) return requirement;
+    if (left === requirement.left && right === requirement.right) {
+      return requirement;
+    }
+    return {
+      tag: "difference",
+      left,
+      right,
+      maximum: requirement.maximum,
+    };
+  }
   const value = requirement_value(requirement);
   const resolved = resolved_alias(value, aliases);
   if (resolved === undefined || resolved === value) return requirement;
@@ -738,6 +768,7 @@ function requirement_value(
   requirement: SemanticMachineRequirement,
 ): ValueId {
   if (requirement.tag === "fact") return requirement.proposition.value;
+  if (requirement.tag === "difference") return requirement.left;
   return requirement.value;
 }
 
@@ -854,13 +885,23 @@ function semantic_comparison_requirement(
   } else {
     return undefined;
   }
-  return comparison_with_constant(
+  const constant_requirement = comparison_with_constant(
     relation,
     expected_left,
     expected_right,
     ranges,
     producers,
   );
+  if (constant_requirement !== undefined) return constant_requirement;
+  if (relation !== "less" && relation !== "less_equal") return undefined;
+  let maximum = 0n;
+  if (relation === "less") maximum = -1n;
+  return {
+    tag: "difference",
+    left: expected_left,
+    right: expected_right,
+    maximum,
+  };
 }
 
 function semantic_bitmask_requirement(
@@ -1289,6 +1330,14 @@ function assume_machine_requirement(
       requirement.residue,
     );
   }
+  if (requirement.tag === "difference") {
+    return assume_machine_difference(
+      domain,
+      requirement.left,
+      requirement.right,
+      requirement.maximum,
+    );
+  }
   return exclude_machine_fact(domain, {
     tag: "equal",
     value: requirement.value,
@@ -1317,6 +1366,14 @@ function machine_requirement_holds(
       requirement.value,
       requirement.modulus,
       requirement.residue,
+    );
+  }
+  if (requirement.tag === "difference") {
+    return implies_machine_difference(
+      domain,
+      requirement.left,
+      requirement.right,
+      requirement.maximum,
     );
   }
   return machine_excludes_equal(
