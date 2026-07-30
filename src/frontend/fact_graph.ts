@@ -75,6 +75,10 @@ export type FactProposition =
 
 export type MachineInteger = IntegerType;
 export type MachineOffsetOperation = "add" | "subtract";
+export type MachineCongruence = {
+  modulus: bigint;
+  residue: bigint;
+};
 
 const MACHINE_DOMAIN_TOKEN = Symbol("duck.machine_fact_domain");
 const TRUSTED_MACHINE_DOMAINS = new WeakSet<object>();
@@ -86,6 +90,7 @@ export class MachineFactDomain {
   readonly ranges: ReadonlyMap<ValueId, MachineInteger>;
   readonly evidence: ReadonlyMap<ValueId, readonly FactEvidence[]>;
   readonly exclusions: ReadonlyMap<ValueId, readonly bigint[]>;
+  readonly congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>;
 
   constructor(
     token: symbol,
@@ -94,6 +99,7 @@ export class MachineFactDomain {
     ranges: ReadonlyMap<ValueId, MachineInteger>,
     evidence: ReadonlyMap<ValueId, readonly FactEvidence[]>,
     exclusions: ReadonlyMap<ValueId, readonly bigint[]>,
+    congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
   ) {
     if (token !== MACHINE_DOMAIN_TOKEN) {
       throw new Error(
@@ -105,6 +111,7 @@ export class MachineFactDomain {
     this.ranges = snapshot_machine_ranges(ranges);
     this.evidence = snapshot_machine_evidence(evidence);
     this.exclusions = snapshot_machine_exclusions(exclusions);
+    this.congruences = snapshot_machine_congruences(congruences);
     Object.freeze(this);
     TRUSTED_MACHINE_DOMAINS.add(this);
   }
@@ -181,11 +188,26 @@ export function transfer_machine_offset(
   if (minimum < range.minimum || maximum > range.maximum) {
     return replace_machine_fact(domain, result, undefined);
   }
-  return replace_machine_fact(
+  let transferred = replace_machine_fact(
     domain,
     result,
     bounded_interval(minimum, maximum),
   );
+  const congruences = domain.congruences.get(input);
+  if (congruences === undefined) return transferred;
+  for (const congruence of congruences) {
+    let result_residue = congruence.residue + offset_fact.value;
+    if (operation === "subtract") {
+      result_residue = congruence.residue - offset_fact.value;
+    }
+    transferred = assume_machine_congruence(
+      transferred,
+      result,
+      congruence.modulus,
+      result_residue,
+    );
+  }
+  return transferred;
 }
 
 export function machine_fact_domain(
@@ -209,7 +231,104 @@ export function machine_fact_domain(
     snapshots,
     immutable_map<ValueId, readonly FactEvidence[]>([]),
     immutable_map<ValueId, readonly bigint[]>([]),
+    immutable_map<ValueId, readonly MachineCongruence[]>([]),
   );
+}
+
+export function assume_machine_congruence(
+  domain: MachineFactDomain,
+  value: ValueId,
+  modulus: bigint,
+  residue: bigint,
+): MachineFactDomain {
+  assert_machine_domain(domain);
+  const range = domain.ranges.get(value);
+  if (range === undefined) {
+    throw new Error(`Missing machine range for ${value}.`);
+  }
+  const congruence = canonical_machine_congruence(modulus, residue);
+  if (!domain.reachable || congruence.modulus === 1n) return domain;
+  const fact = domain.facts.get(value);
+  let current: ScalarFact = bounded_interval(
+    integer_minimum(range),
+    integer_maximum(range),
+  );
+  if (fact !== undefined) current = fact;
+  const known = domain.congruences.get(value);
+  let existing: readonly MachineCongruence[] = [];
+  if (known !== undefined) existing = known;
+  for (const candidate of existing) {
+    if (!machine_congruences_are_compatible(candidate, congruence)) {
+      return unreachable_machine_domain(domain, value);
+    }
+    if (machine_congruence_implies(candidate, congruence)) return domain;
+  }
+  const combined = combine_machine_congruences([...existing, congruence]);
+  if (
+    combined === undefined ||
+    !fact_allows_congruence(
+      current,
+      combined,
+      domain.exclusions.get(value),
+    )
+  ) {
+    return unreachable_machine_domain(domain, value);
+  }
+  const congruences = new Map(domain.congruences);
+  congruences.set(
+    value,
+    Object.freeze([combined]),
+  );
+  return new MachineFactDomain(
+    MACHINE_DOMAIN_TOKEN,
+    true,
+    domain.facts,
+    domain.ranges,
+    domain.evidence,
+    domain.exclusions,
+    congruences,
+  );
+}
+
+export function implies_machine_congruence(
+  domain: MachineFactDomain,
+  value: ValueId,
+  modulus: bigint,
+  residue: bigint,
+): boolean {
+  assert_machine_domain(domain);
+  const range = domain.ranges.get(value);
+  if (range === undefined) {
+    throw new Error(`Missing machine range for ${value}.`);
+  }
+  const goal = canonical_machine_congruence(modulus, residue);
+  if (!domain.reachable) return false;
+  if (goal.modulus === 1n) return true;
+  const fact = domain.facts.get(value);
+  if (
+    fact?.tag === "exact" &&
+    canonical_residue(fact.value, goal.modulus) === goal.residue
+  ) {
+    return true;
+  }
+  const congruences = domain.congruences.get(value);
+  if (congruences === undefined) return false;
+  const combined = combine_machine_congruences(congruences);
+  if (combined === undefined) return false;
+  return machine_congruence_implies(combined, goal);
+}
+
+export function machine_congruences(
+  domain: MachineFactDomain,
+  value: ValueId,
+): readonly MachineCongruence[] {
+  assert_machine_domain(domain);
+  if (!domain.ranges.has(value)) {
+    throw new Error(`Missing machine range for ${value}.`);
+  }
+  const congruences = domain.congruences.get(value);
+  if (congruences === undefined) return EMPTY_CONGRUENCES;
+  return congruences;
 }
 
 function replace_machine_fact(
@@ -220,9 +339,11 @@ function replace_machine_fact(
   const facts = new Map(domain.facts);
   const evidence = new Map(domain.evidence);
   const exclusions = new Map(domain.exclusions);
+  const congruences = new Map(domain.congruences);
   facts.delete(value);
   evidence.delete(value);
   exclusions.delete(value);
+  congruences.delete(value);
   if (fact !== undefined) facts.set(value, fact);
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
@@ -231,6 +352,7 @@ function replace_machine_fact(
     domain.ranges,
     evidence,
     exclusions,
+    congruences,
   );
 }
 
@@ -257,6 +379,16 @@ export function assume_machine_fact(
   const narrowed_fact = meet_facts(existing, asserted_fact);
   const known_exclusions = domain.exclusions.get(proposition.value);
   const fact = apply_exclusions(narrowed_fact, known_exclusions, range);
+  const congruences = domain.congruences.get(proposition.value);
+  if (congruences !== undefined) {
+    const combined = combine_machine_congruences(congruences);
+    if (
+      combined === undefined ||
+      !fact_allows_congruence(fact, combined, known_exclusions)
+    ) {
+      return unreachable_machine_domain(domain, proposition.value);
+    }
+  }
   const result = new Map(domain.facts);
   result.set(proposition.value, fact);
   const evidence = new Map(domain.evidence);
@@ -273,6 +405,7 @@ export function assume_machine_fact(
     domain.ranges,
     evidence,
     domain.exclusions,
+    domain.congruences,
   );
 }
 
@@ -286,14 +419,33 @@ export function implies_machine_fact(
     throw new Error(`Missing machine range for ${proposition.value}.`);
   }
   if (!domain.reachable) return false;
-  const current = domain.facts.get(proposition.value);
-  if (current === undefined) return false;
-  if (current.tag === "bottom") return false;
-  if (proposition.tag === "equal") {
-    const exclusions = domain.exclusions.get(proposition.value);
+  let current = domain.facts.get(proposition.value);
+  const exclusions = domain.exclusions.get(proposition.value);
+  const congruences = domain.congruences.get(proposition.value);
+  if (congruences !== undefined) {
+    let bounded: ScalarFact = bounded_interval(
+      integer_minimum(range),
+      integer_maximum(range),
+    );
+    if (current !== undefined) bounded = current;
+    if (bounded.tag === "bottom") return false;
+    const combined = combine_machine_congruences(congruences);
+    if (combined === undefined) return false;
+    const remaining = remaining_congruence_singleton(
+      bounded,
+      combined,
+      exclusions,
+    );
+    if (remaining !== undefined) {
+      current = { tag: "exact", value: remaining };
+    }
+  }
+  if (proposition.tag === "equal" && current !== undefined) {
     const remaining = remaining_singleton(current, exclusions);
     if (remaining !== undefined) return remaining === proposition.expected;
   }
+  if (current === undefined) return false;
+  if (current.tag === "bottom") return false;
   return fact_implies(current, machine_proposition_fact(proposition, range));
 }
 
@@ -312,6 +464,15 @@ export function machine_excludes_equal(
   if (expected < bounds.minimum || expected > bounds.maximum) return true;
   const exclusions = domain.exclusions.get(value);
   if (exclusions?.includes(expected)) return true;
+  const congruences = domain.congruences.get(value);
+  if (
+    congruences !== undefined &&
+    congruences.some((congruence) =>
+      canonical_residue(expected, congruence.modulus) !== congruence.residue
+    )
+  ) {
+    return true;
+  }
   const current = domain.facts.get(value);
   if (current === undefined || current.tag === "unknown") return false;
   if (current.tag === "bottom") return false;
@@ -371,6 +532,7 @@ export function exclude_machine_fact(
       domain.ranges,
       domain.evidence,
       exclusions,
+      domain.congruences,
     );
     const updated_values = exclusions.get(proposition.value);
     let current_fact: ScalarFact = bounded_interval(
@@ -383,6 +545,16 @@ export function exclude_machine_fact(
       apply_exclusions(current_fact, updated_values, range).tag === "bottom"
     ) {
       return unreachable_machine_domain(updated, proposition.value);
+    }
+    const congruences = updated.congruences.get(proposition.value);
+    if (congruences !== undefined) {
+      const combined = combine_machine_congruences(congruences);
+      if (
+        combined === undefined ||
+        !fact_allows_congruence(current_fact, combined, updated_values)
+      ) {
+        return unreachable_machine_domain(updated, proposition.value);
+      }
     }
     return updated;
   }
@@ -453,6 +625,41 @@ function remaining_singleton(
   return remaining;
 }
 
+function remaining_congruence_singleton(
+  fact: ScalarFact,
+  congruence: MachineCongruence,
+  exclusions: readonly bigint[] | undefined,
+): bigint | undefined {
+  const canonical = canonical_fact(fact);
+  if (canonical.tag === "bottom" || canonical.tag === "unknown") {
+    return undefined;
+  }
+  const bounds = fact_bounds(canonical);
+  const first = bounds.minimum +
+    canonical_residue(
+      congruence.residue - bounds.minimum,
+      congruence.modulus,
+    );
+  if (first > bounds.maximum) return undefined;
+  const witness_count = (bounds.maximum - first) / congruence.modulus + 1n;
+  let exclusion_count = 0n;
+  if (exclusions !== undefined) {
+    exclusion_count = BigInt(exclusions.length);
+  }
+  if (witness_count > exclusion_count + 1n) return undefined;
+  let remaining: bigint | undefined;
+  for (
+    let candidate = first;
+    candidate <= bounds.maximum;
+    candidate += congruence.modulus
+  ) {
+    if (exclusions?.includes(candidate)) continue;
+    if (remaining !== undefined) return undefined;
+    remaining = candidate;
+  }
+  return remaining;
+}
+
 export function join_machine_domains(
   left: MachineFactDomain,
   right: MachineFactDomain,
@@ -485,7 +692,60 @@ export function join_machine_domains(
     left.ranges,
     immutable_map<ValueId, readonly FactEvidence[]>([]),
     exclusions,
+    joined_machine_congruences(left, right),
   );
+}
+
+function joined_machine_congruences(
+  left: MachineFactDomain,
+  right: MachineFactDomain,
+): ReadonlyMap<ValueId, readonly MachineCongruence[]> {
+  const joined = new Map<ValueId, readonly MachineCongruence[]>();
+  for (const value of left.ranges.keys()) {
+    const left_basis = machine_congruence_basis(left, value);
+    const right_basis = machine_congruence_basis(right, value);
+    if (left_basis.length === 0 || right_basis.length === 0) continue;
+    const left_congruence = left_basis[0];
+    const right_congruence = right_basis[0];
+    if (left_congruence === undefined || right_congruence === undefined) {
+      continue;
+    }
+    const difference = absolute_bigint(
+      left_congruence.residue - right_congruence.residue,
+    );
+    const modulus = greatest_common_divisor(
+      greatest_common_divisor(
+        left_congruence.modulus,
+        right_congruence.modulus,
+      ),
+      difference,
+    );
+    if (modulus <= 1n) continue;
+    const candidate = canonical_machine_congruence(
+      modulus,
+      left_congruence.residue,
+    );
+    joined.set(
+      value,
+      Object.freeze([candidate]),
+    );
+  }
+  return joined;
+}
+
+function machine_congruence_basis(
+  domain: MachineFactDomain,
+  value: ValueId,
+): readonly MachineCongruence[] {
+  const fact = domain.facts.get(value);
+  if (fact?.tag === "exact") {
+    return [{ modulus: 0n, residue: fact.value }];
+  }
+  const congruences = domain.congruences.get(value);
+  if (congruences === undefined) return EMPTY_CONGRUENCES;
+  const combined = combine_machine_congruences(congruences);
+  if (combined === undefined) return EMPTY_CONGRUENCES;
+  return [combined];
 }
 
 function clone_machine_domain(domain: MachineFactDomain): MachineFactDomain {
@@ -497,6 +757,10 @@ function clone_machine_domain(domain: MachineFactDomain): MachineFactDomain {
   for (const [value, entries] of domain.exclusions) {
     exclusions.set(value, Object.freeze([...entries]));
   }
+  const congruences = new Map<ValueId, readonly MachineCongruence[]>();
+  for (const [value, entries] of domain.congruences) {
+    congruences.set(value, Object.freeze([...entries]));
+  }
   return new MachineFactDomain(
     MACHINE_DOMAIN_TOKEN,
     domain.reachable,
@@ -504,6 +768,7 @@ function clone_machine_domain(domain: MachineFactDomain): MachineFactDomain {
     domain.ranges,
     evidence,
     exclusions,
+    congruences,
   );
 }
 
@@ -564,6 +829,30 @@ function snapshot_machine_exclusions(
   return immutable_map(snapshots);
 }
 
+function snapshot_machine_congruences(
+  congruences: ReadonlyMap<ValueId, readonly MachineCongruence[]>,
+): ReadonlyMap<ValueId, readonly MachineCongruence[]> {
+  const snapshots = new Map<ValueId, readonly MachineCongruence[]>();
+  for (const [value, entries] of congruences) {
+    if (
+      entries.length > proof_limits.maximum_congruences_per_value
+    ) {
+      throw new Error(`Machine congruence budget exceeded for ${value}.`);
+    }
+    snapshots.set(
+      value,
+      Object.freeze(
+        entries.map((entry) =>
+          Object.freeze(
+            canonical_machine_congruence(entry.modulus, entry.residue),
+          )
+        ),
+      ),
+    );
+  }
+  return immutable_map(snapshots);
+}
+
 function unreachable_machine_domain(
   domain: MachineFactDomain,
   value: ValueId,
@@ -577,6 +866,7 @@ function unreachable_machine_domain(
     domain.ranges,
     domain.evidence,
     domain.exclusions,
+    domain.congruences,
   );
 }
 
@@ -686,9 +976,158 @@ function validate_machine_integer(type: MachineInteger): void {
   }
 }
 
+function canonical_machine_congruence(
+  modulus: bigint,
+  residue: bigint,
+): MachineCongruence {
+  if (typeof modulus !== "bigint" || modulus <= 0n) {
+    throw new Error(
+      `Machine congruence modulus must be positive: ${String(modulus)}.`,
+    );
+  }
+  if (typeof residue !== "bigint") {
+    throw new Error(
+      `Machine congruence residue must be an integer: ${String(residue)}.`,
+    );
+  }
+  return Object.freeze({
+    modulus,
+    residue: canonical_residue(residue, modulus),
+  });
+}
+
+function canonical_residue(value: bigint, modulus: bigint): bigint {
+  const residue = value % modulus;
+  if (residue >= 0n) return residue;
+  return residue + modulus;
+}
+
+function machine_congruence_implies(
+  premise: MachineCongruence,
+  goal: MachineCongruence,
+): boolean {
+  return premise.modulus % goal.modulus === 0n &&
+    canonical_residue(premise.residue, goal.modulus) === goal.residue;
+}
+
+function machine_congruences_are_compatible(
+  left: MachineCongruence,
+  right: MachineCongruence,
+): boolean {
+  const divisor = greatest_common_divisor(left.modulus, right.modulus);
+  return canonical_residue(left.residue - right.residue, divisor) === 0n;
+}
+
+function combine_machine_congruences(
+  congruences: readonly MachineCongruence[],
+): MachineCongruence | undefined {
+  let combined: MachineCongruence | undefined;
+  for (const congruence of congruences) {
+    if (combined === undefined) {
+      combined = congruence;
+      continue;
+    }
+    const divisor = greatest_common_divisor(
+      combined.modulus,
+      congruence.modulus,
+    );
+    const difference = congruence.residue - combined.residue;
+    if (canonical_residue(difference, divisor) !== 0n) return undefined;
+    const left = combined.modulus / divisor;
+    const right = congruence.modulus / divisor;
+    let multiplier = 0n;
+    if (right !== 1n) {
+      multiplier = canonical_residue(
+        (difference / divisor) * modular_inverse(left, right),
+        right,
+      );
+    }
+    combined = canonical_machine_congruence(
+      combined.modulus * right,
+      combined.residue + combined.modulus * multiplier,
+    );
+  }
+  return combined;
+}
+
+function modular_inverse(value: bigint, modulus: bigint): bigint {
+  let previous_remainder = value;
+  let remainder = modulus;
+  let previous_coefficient = 1n;
+  let coefficient = 0n;
+  while (remainder !== 0n) {
+    const quotient = previous_remainder / remainder;
+    const next_remainder = previous_remainder - quotient * remainder;
+    previous_remainder = remainder;
+    remainder = next_remainder;
+    const next_coefficient = previous_coefficient - quotient * coefficient;
+    previous_coefficient = coefficient;
+    coefficient = next_coefficient;
+  }
+  if (previous_remainder !== 1n) {
+    throw new Error(
+      `Machine congruence inverse does not exist for ${value} modulo ${modulus}.`,
+    );
+  }
+  return canonical_residue(previous_coefficient, modulus);
+}
+
+function fact_allows_congruence(
+  fact: ScalarFact,
+  congruence: MachineCongruence,
+  exclusions: readonly bigint[] | undefined = undefined,
+): boolean {
+  const canonical = canonical_fact(fact);
+  if (canonical.tag === "unknown") return true;
+  if (canonical.tag === "bottom") return false;
+  if (canonical.tag === "exact") {
+    if (
+      canonical_residue(canonical.value, congruence.modulus) !==
+        congruence.residue
+    ) {
+      return false;
+    }
+    return exclusions === undefined || !exclusions.includes(canonical.value);
+  }
+  const first = canonical.minimum +
+    canonical_residue(
+      congruence.residue - canonical.minimum,
+      congruence.modulus,
+    );
+  if (first > canonical.maximum) return false;
+  if (exclusions === undefined || exclusions.length === 0) return true;
+  const witness_count = (canonical.maximum - first) / congruence.modulus + 1n;
+  if (witness_count > BigInt(exclusions.length)) return true;
+  for (
+    let candidate = first;
+    candidate <= canonical.maximum;
+    candidate += congruence.modulus
+  ) {
+    if (!exclusions.includes(candidate)) return true;
+  }
+  return false;
+}
+
+function greatest_common_divisor(left: bigint, right: bigint): bigint {
+  let dividend = absolute_bigint(left);
+  let divisor = absolute_bigint(right);
+  while (divisor !== 0n) {
+    const remainder = dividend % divisor;
+    dividend = divisor;
+    divisor = remainder;
+  }
+  return dividend;
+}
+
+function absolute_bigint(value: bigint): bigint {
+  if (value < 0n) return -value;
+  return value;
+}
+
 export const unknown_fact: ScalarFact = Object.freeze({ tag: "unknown" });
 
 const EMPTY_EVIDENCE: readonly FactEvidence[] = Object.freeze([]);
+const EMPTY_CONGRUENCES: readonly MachineCongruence[] = Object.freeze([]);
 
 export const reachable_state: FactState = {
   reachable: true,

@@ -1,6 +1,7 @@
 import { assert_equals, assert_throws } from "../assert.ts";
 import {
   assume_fact,
+  assume_machine_congruence,
   assume_machine_fact,
   assume_state,
   establish_fact,
@@ -9,10 +10,12 @@ import {
   exclude_state,
   type FactEnvironment,
   implies_fact,
+  implies_machine_congruence,
   implies_machine_fact,
   join_facts,
   join_machine_domains,
   join_states,
+  machine_congruences,
   machine_excludes_equal,
   machine_fact_domain,
   machine_fact_evidence,
@@ -200,6 +203,433 @@ Deno.test("machine integer facts normalize signed and unsigned wrapping", () => 
   assert_equals(
     normalize_machine_integer(-1n, { width: 3, signed: false }),
     7n,
+  );
+});
+
+Deno.test("machine congruences normalize and imply weaker moduli", () => {
+  let domain = machine_fact_domain(
+    new Map([[value, { width: 4, signed: false }]]),
+  );
+  domain = assume_machine_congruence(domain, value, 4n, -1n);
+  assert_equals(machine_congruences(domain, value), [{
+    modulus: 4n,
+    residue: 3n,
+  }]);
+  assert_equals(implies_machine_congruence(domain, value, 2n, 1n), true);
+  assert_equals(implies_machine_congruence(domain, value, 4n, 1n), false);
+  assert_equals(machine_excludes_equal(domain, value, 2n), true);
+  const exact = assume_machine_fact(
+    machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    ),
+    { tag: "equal", value, expected: 0n },
+  );
+  assert_equals(implies_machine_congruence(exact, value, 9n, 0n), true);
+
+  let singleton = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  singleton = assume_machine_congruence(singleton, value, 8n, 3n);
+  assert_equals(
+    implies_machine_fact(singleton, {
+      tag: "equal",
+      value,
+      expected: 3n,
+    }),
+    true,
+  );
+  assert_equals(
+    implies_machine_fact(singleton, {
+      tag: "greater_equal",
+      value,
+      bound: 3n,
+    }),
+    true,
+  );
+  assert_equals(
+    implies_machine_fact(singleton, {
+      tag: "less_equal",
+      value,
+      bound: 3n,
+    }),
+    true,
+  );
+
+  domain = assume_machine_congruence(domain, value, 8n, 7n);
+  assert_equals(machine_congruences(domain, value), [{
+    modulus: 8n,
+    residue: 7n,
+  }]);
+  assert_equals(
+    Object.isFrozen(machine_congruences(domain, value)[0]),
+    true,
+  );
+  assert_equals(Object.isFrozen(machine_congruences(domain, value)), true);
+});
+
+Deno.test("machine congruences detect scalar and modular contradictions", () => {
+  let narrowed = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  narrowed = assume_machine_fact(narrowed, {
+    tag: "greater_equal",
+    value,
+    bound: 2n,
+  });
+  narrowed = assume_machine_fact(narrowed, {
+    tag: "less_equal",
+    value,
+    bound: 3n,
+  });
+  narrowed = assume_machine_congruence(narrowed, value, 4n, 1n);
+  assert_equals(narrowed.reachable, false);
+
+  let modular = machine_fact_domain(
+    new Map([[value, { width: 3, signed: true }]]),
+  );
+  modular = assume_machine_congruence(modular, value, 4n, 1n);
+  modular = assume_machine_congruence(modular, value, 2n, 0n);
+  assert_equals(modular.reachable, false);
+
+  let reversed = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  reversed = assume_machine_congruence(reversed, value, 4n, 1n);
+  reversed = assume_machine_fact(reversed, {
+    tag: "greater_equal",
+    value,
+    bound: 2n,
+  });
+  reversed = assume_machine_fact(reversed, {
+    tag: "less_equal",
+    value,
+    bound: 3n,
+  });
+  assert_equals(reversed.reachable, false);
+
+  let conjunction_first = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  conjunction_first = assume_machine_congruence(
+    conjunction_first,
+    value,
+    2n,
+    0n,
+  );
+  conjunction_first = assume_machine_congruence(
+    conjunction_first,
+    value,
+    3n,
+    1n,
+  );
+  assert_equals(
+    implies_machine_congruence(conjunction_first, value, 6n, 4n),
+    true,
+  );
+  conjunction_first = assume_machine_fact(conjunction_first, {
+    tag: "less_equal",
+    value,
+    bound: 2n,
+  });
+  assert_equals(conjunction_first.reachable, false);
+
+  let interval_first = machine_fact_domain(
+    new Map([[value, { width: 3, signed: false }]]),
+  );
+  interval_first = assume_machine_fact(interval_first, {
+    tag: "less_equal",
+    value,
+    bound: 2n,
+  });
+  interval_first = assume_machine_congruence(interval_first, value, 2n, 0n);
+  interval_first = assume_machine_congruence(interval_first, value, 3n, 1n);
+  assert_equals(interval_first.reachable, false);
+});
+
+Deno.test("machine congruence reduction accounts for finite exclusions", () => {
+  for (const exclusion_first of [false, true]) {
+    let domain = machine_fact_domain(
+      new Map([[value, { width: 3, signed: false }]]),
+    );
+    if (exclusion_first) {
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 4n,
+      });
+    }
+    domain = assume_machine_congruence(domain, value, 2n, 0n);
+    domain = assume_machine_congruence(domain, value, 3n, 1n);
+    if (!exclusion_first) {
+      domain = exclude_machine_fact(domain, {
+        tag: "equal",
+        value,
+        expected: 4n,
+      });
+    }
+    assert_equals(domain.reachable, false);
+  }
+});
+
+Deno.test("machine congruence joins retain the weakest shared modulus", () => {
+  const ranges = new Map([[value, { width: 4, signed: false }]]);
+  let left = machine_fact_domain(ranges);
+  let right = machine_fact_domain(ranges);
+  left = assume_machine_fact(left, { tag: "equal", value, expected: 1n });
+  right = assume_machine_fact(right, { tag: "equal", value, expected: 5n });
+  const exact_join = join_machine_domains(left, right);
+  assert_equals(machine_congruences(exact_join, value), [{
+    modulus: 4n,
+    residue: 1n,
+  }]);
+
+  left = assume_machine_congruence(
+    machine_fact_domain(ranges),
+    value,
+    4n,
+    1n,
+  );
+  right = assume_machine_congruence(
+    machine_fact_domain(ranges),
+    value,
+    4n,
+    3n,
+  );
+  const modular_join = join_machine_domains(left, right);
+  assert_equals(machine_congruences(modular_join, value), [{
+    modulus: 2n,
+    residue: 1n,
+  }]);
+  assert_equals(
+    machine_congruences(
+      join_machine_domains(left, machine_fact_domain(ranges)),
+      value,
+    ),
+    [],
+  );
+});
+
+Deno.test("machine congruence joins are exhaustive for three-bit integers", () => {
+  for (const signed of [false, true]) {
+    const type = { width: 3 as const, signed };
+    const range = machine_range(type);
+    const cases: {
+      modulus: bigint;
+      residue: bigint;
+      domain: ReturnType<typeof machine_fact_domain>;
+    }[] = [];
+    for (let modulus = 1n; modulus <= 10n; modulus += 1n) {
+      for (let residue = 0n; residue < modulus; residue += 1n) {
+        cases.push({
+          modulus,
+          residue,
+          domain: assume_machine_congruence(
+            machine_fact_domain(new Map([[value, type]])),
+            value,
+            modulus,
+            residue,
+          ),
+        });
+      }
+    }
+    for (const left of cases) {
+      for (const right of cases) {
+        const joined = join_machine_domains(left.domain, right.domain);
+        const reversed = join_machine_domains(right.domain, left.domain);
+        assert_equals(
+          machine_congruences(joined, value),
+          machine_congruences(reversed, value),
+        );
+        for (
+          let concrete = range.minimum;
+          concrete <= range.maximum;
+          concrete += 1n
+        ) {
+          let left_residue = concrete % left.modulus;
+          if (left_residue < 0n) left_residue += left.modulus;
+          let right_residue = concrete % right.modulus;
+          if (right_residue < 0n) right_residue += right.modulus;
+          const belongs_to_union = left_residue === left.residue ||
+            right_residue === right.residue;
+          if (!belongs_to_union) continue;
+          for (const congruence of machine_congruences(joined, value)) {
+            let joined_residue = concrete % congruence.modulus;
+            if (joined_residue < 0n) {
+              joined_residue += congruence.modulus;
+            }
+            assert_equals(joined_residue, congruence.residue);
+          }
+        }
+      }
+    }
+  }
+});
+
+Deno.test("machine offset transfer preserves non-wrapping congruences", () => {
+  const input = "congruent-offset-input" as ValueId;
+  const offset = "congruent-offset-constant" as ValueId;
+  const result = "congruent-offset-result" as ValueId;
+  const ranges = new Map([
+    [input, { width: 4, signed: true }],
+    [offset, { width: 4, signed: true }],
+    [result, { width: 4, signed: true }],
+  ]);
+  let domain = machine_fact_domain(ranges);
+  domain = assume_machine_fact(domain, {
+    tag: "greater_equal",
+    value: input,
+    bound: -4n,
+  });
+  domain = assume_machine_fact(domain, {
+    tag: "less_equal",
+    value: input,
+    bound: 4n,
+  });
+  domain = assume_machine_congruence(domain, input, 4n, 3n);
+  domain = assume_machine_fact(domain, {
+    tag: "equal",
+    value: offset,
+    expected: 1n,
+  });
+  const added = transfer_machine_offset(
+    domain,
+    "add",
+    input,
+    offset,
+    result,
+  );
+  assert_equals(machine_congruences(added, result), [{
+    modulus: 4n,
+    residue: 0n,
+  }]);
+  const subtracted = transfer_machine_offset(
+    domain,
+    "subtract",
+    input,
+    offset,
+    result,
+  );
+  assert_equals(machine_congruences(subtracted, result), [{
+    modulus: 4n,
+    residue: 2n,
+  }]);
+
+  const wrapping = assume_machine_fact(domain, {
+    tag: "greater_equal",
+    value: input,
+    bound: 7n,
+  });
+  assert_equals(
+    machine_congruences(
+      transfer_machine_offset(
+        wrapping,
+        "add",
+        input,
+        offset,
+        result,
+      ),
+      result,
+    ),
+    [],
+  );
+});
+
+Deno.test("machine congruence assumptions are exhaustive for three-bit integers", () => {
+  for (const signed of [false, true]) {
+    const type = { width: 3 as const, signed };
+    const range = machine_range(type);
+    for (let modulus = 1n; modulus <= 8n; modulus += 1n) {
+      for (let residue = -10n; residue <= 10n; residue += 1n) {
+        const domain = assume_machine_congruence(
+          machine_fact_domain(new Map([[value, type]])),
+          value,
+          modulus,
+          residue,
+        );
+        let has_witness = false;
+        for (
+          let concrete = range.minimum;
+          concrete <= range.maximum;
+          concrete += 1n
+        ) {
+          let concrete_residue = concrete % modulus;
+          if (concrete_residue < 0n) concrete_residue += modulus;
+          let expected_residue = residue % modulus;
+          if (expected_residue < 0n) expected_residue += modulus;
+          if (concrete_residue === expected_residue) has_witness = true;
+        }
+        assert_equals(domain.reachable, has_witness);
+        if (!has_witness) continue;
+        assert_equals(
+          implies_machine_congruence(
+            domain,
+            value,
+            modulus,
+            residue,
+          ),
+          true,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("machine congruence normalization is assumption-order independent", () => {
+  const moduli = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n];
+  const assume_all = (ordered_moduli: readonly bigint[]) => {
+    let domain = machine_fact_domain(
+      new Map([[value, { width: 128, signed: false }]]),
+    );
+    for (const modulus of ordered_moduli) {
+      domain = assume_machine_congruence(domain, value, modulus, 0n);
+    }
+    return domain;
+  };
+  const forward = assume_all(moduli);
+  const reverse = assume_all([...moduli].reverse());
+  assert_equals(
+    machine_congruences(forward, value),
+    machine_congruences(reverse, value),
+  );
+  assert_equals(machine_congruences(forward, value).length, 1);
+  for (const modulus of moduli) {
+    assert_equals(
+      implies_machine_congruence(forward, value, modulus, 0n),
+      true,
+    );
+  }
+  const nonzero_atoms = [
+    { modulus: 3n, residue: 2n },
+    { modulus: 4n, residue: 3n },
+    { modulus: 5n, residue: 4n },
+  ];
+  const assume_nonzero = (
+    atoms: readonly { modulus: bigint; residue: bigint }[],
+  ) => {
+    let domain = machine_fact_domain(
+      new Map([[value, { width: 128, signed: false }]]),
+    );
+    for (const atom of atoms) {
+      domain = assume_machine_congruence(
+        domain,
+        value,
+        atom.modulus,
+        atom.residue,
+      );
+    }
+    return machine_congruences(domain, value);
+  };
+  assert_equals(assume_nonzero(nonzero_atoms), [{
+    modulus: 60n,
+    residue: 59n,
+  }]);
+  assert_equals(
+    assume_nonzero(nonzero_atoms),
+    assume_nonzero([...nonzero_atoms].reverse()),
+  );
+  assert_throws(
+    () => assume_machine_congruence(forward, value, 0n, 0n),
+    "Machine congruence modulus must be positive: 0.",
   );
 });
 
