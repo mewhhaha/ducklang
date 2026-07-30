@@ -32,6 +32,7 @@ import type {
   FrontExpr,
   Source as SourceNode,
   Stmt,
+  TypeDeclaration,
 } from "./frontend/ast.ts";
 import {
   analyze_baba_semantics,
@@ -43,10 +44,16 @@ import {
   type EntityId,
 } from "./frontend/binding_index.ts";
 import { lower_baba_source } from "./frontend/baba_lower.ts";
-import { substitute_type_expr } from "./frontend/baba_declaration_lower.ts";
 import { lower_baba_type_reference } from "./frontend/baba_type_lower.ts";
 import { apply_function_result_context } from "./frontend/function_context.ts";
-import { format_type_expr } from "./frontend/type_expr.ts";
+import {
+  format_type_expr,
+  resolve_transparent_type_aliases,
+} from "./frontend/type_expr.ts";
+import {
+  normalize_transparent_type_expression,
+  type TransparentTypeDefinition,
+} from "./frontend/transparent_type.ts";
 import { check_source_for_gpufuck } from "./frontend/gpufuck_pipeline.ts";
 import { source_with_host_interface } from "./frontend/host_interface.ts";
 import { parse_number_expr } from "./frontend/number_literal.ts";
@@ -93,8 +100,10 @@ import {
   infer_semantic_machine_certificate,
   infer_semantic_remainder_certificate,
   infer_semantic_remainder_divisibility_certificate,
+  infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
   type SemanticMachineRequirement,
+  type SemanticTypeRequirement,
 } from "./frontend/semantic_fact_graph.ts";
 import {
   semantic_predicate_certificate,
@@ -108,6 +117,7 @@ import {
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
 } from "./frontend/semantic_fact_certificate.ts";
 import {
@@ -378,6 +388,11 @@ export function analyze_duck_source(
     types,
     origins,
   );
+  const transparent_types = collect_transparent_types(
+    source_analysis.source,
+    stable_input.cst.root,
+    stable_input.cst.text,
+  );
   const precontract_diagnostics = diagnostic_sequence([
     ...stable_input.diagnostics.map((diagnostic) =>
       compiler_diagnostic(
@@ -390,6 +405,7 @@ export function analyze_duck_source(
     ...lowering_diagnostics,
     ...prefix_type_diagnostics,
     ...signature_diagnostics,
+    ...transparent_types.diagnostics,
   ], options.uri);
   let inferred_control_flow: SemanticCfg | undefined;
   let inferred_callable_control_flow = new Map<
@@ -403,6 +419,7 @@ export function analyze_duck_source(
       binding_index,
       binding_values,
       origins,
+      transparent_types.definitions,
     );
     inferred_control_flow = control_flows.root;
     inferred_callable_control_flow = new Map(control_flows.callables);
@@ -420,6 +437,7 @@ export function analyze_duck_source(
     symbols,
     types,
     origins,
+    transparent_types,
   );
   const diagnostics = diagnostic_sequence([
     ...precontract_diagnostics,
@@ -930,37 +948,29 @@ function check_prefix_callable_parameter_types(
   return all(checks).map(() => undefined);
 }
 
-function validate_prefix_contracts(
-  signatures: readonly PrefixSignature[],
-  definitions: readonly PrefixDefinition[],
+type TransparentTypeContext = {
+  aliases: ReadonlyMap<string, string>;
+  definitions: ReadonlyMap<string, TransparentTypeDefinition>;
+  diagnostics: readonly CompilerDiagnostic[];
+};
+
+function collect_transparent_types(
   source: SourceNode,
   cst_root: BabaCstNode | undefined,
   source_text: string,
-  binding_index: BindingIndex,
-  binding_values: ReadonlyMap<EntityId, ValueId>,
-  control_flow: SemanticCfg | undefined,
-  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
-  symbols: ReadonlyMap<string, readonly ValueId[]>,
-  types: ReadonlyMap<ValueId, RepresentationType>,
-  origins: ReadonlyMap<ValueId, SemanticOrigin>,
-): {
-  diagnostics: CompilerDiagnostic[];
-  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
-} {
-  const transparent_aliases = new Map<string, string>();
-  const transparent_type_definitions = new Map<
-    string,
-    TransparentTypeDefinition
-  >();
-  const declared_type_names = new Set<string>();
+): TransparentTypeContext {
+  const aliases = new Map<string, string>();
+  const definitions = new Map<string, TransparentTypeDefinition>();
+  const declarations_by_name = new Map<string, TypeDeclaration>();
   let declarations = source.declarations;
   if (declarations === undefined) declarations = [];
   for (const declaration of declarations) {
-    if (declaration.tag !== "type") continue;
-    declared_type_names.add(declaration.name);
     if (
-      declaration.body.tag !== "alias" || declaration.body.opaque === true
-    ) continue;
+      declaration.tag !== "type" || declaration.body.tag !== "alias" ||
+      declaration.body.opaque === true
+    ) {
+      continue;
+    }
     const declaration_node = find_cst_node(
       cst_root,
       source_span(declaration),
@@ -984,16 +994,193 @@ function validate_prefix_contracts(
       body !== undefined,
       `Transparent type ${declaration.name} has an invalid lowered body.`,
     );
-    transparent_type_definitions.set(declaration.name, {
+    definitions.set(declaration.name, {
       parameters: declaration.params,
       body,
     });
+    declarations_by_name.set(declaration.name, declaration);
     if (declaration.params.length === 0) {
-      transparent_aliases.set(
-        declaration.name,
-        declaration.body.type_name,
+      aliases.set(declaration.name, declaration.body.type_name);
+    }
+  }
+  const diagnostics: CompilerDiagnostic[] = [];
+  for (const name of definitions.keys()) {
+    if (!transparent_alias_reaches(name, name, definitions, new Set())) {
+      continue;
+    }
+    const declaration = declarations_by_name.get(name);
+    expect(
+      declaration !== undefined,
+      `Transparent type ${name} lost its source declaration.`,
+    );
+    diagnostics.push(
+      compiler_diagnostic(
+        diagnostic_codes.recursive_type_alias,
+        `Transparent type alias ${name} is recursive.`,
+        source_span(declaration),
+      ),
+    );
+  }
+  return { aliases, definitions, diagnostics };
+}
+
+function transparent_alias_reaches(
+  current: string,
+  target: string,
+  definitions: ReadonlyMap<string, TransparentTypeDefinition>,
+  visited: ReadonlySet<string>,
+): boolean {
+  if (visited.has(current)) return false;
+  const definition = definitions.get(current);
+  if (definition === undefined) return false;
+  const dependencies = new Set<string>();
+  collect_transparent_alias_dependencies(
+    definition.body,
+    new Set(definition.parameters),
+    dependencies,
+  );
+  if (dependencies.has(target)) return true;
+  const next = new Set(visited);
+  next.add(current);
+  for (const dependency of dependencies) {
+    if (
+      transparent_alias_reaches(
+        dependency,
+        target,
+        definitions,
+        next,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collect_transparent_alias_dependencies(
+  type: TypeExpr,
+  bound_names: ReadonlySet<string>,
+  dependencies: Set<string>,
+): void {
+  if (type.tag === "name") {
+    if (!bound_names.has(type.name)) dependencies.add(type.name);
+    return;
+  }
+  if (type.tag === "frozen" || type.tag === "borrow") {
+    collect_transparent_alias_dependencies(
+      type.value,
+      bound_names,
+      dependencies,
+    );
+    return;
+  }
+  if (
+    type.tag === "union" || type.tag === "intersection" ||
+    type.tag === "difference"
+  ) {
+    collect_transparent_alias_dependencies(
+      type.left,
+      bound_names,
+      dependencies,
+    );
+    collect_transparent_alias_dependencies(
+      type.right,
+      bound_names,
+      dependencies,
+    );
+    return;
+  }
+  if (type.tag === "apply") {
+    collect_transparent_alias_dependencies(
+      type.func,
+      bound_names,
+      dependencies,
+    );
+    collect_transparent_alias_dependencies(
+      type.arg,
+      bound_names,
+      dependencies,
+    );
+    return;
+  }
+  if (type.tag === "tuple") {
+    for (const member of type.items) {
+      collect_transparent_alias_dependencies(
+        member,
+        bound_names,
+        dependencies,
       );
     }
+    return;
+  }
+  if (type.tag === "product") {
+    for (const entry of type.entries) {
+      collect_transparent_alias_dependencies(
+        entry.type_expr,
+        bound_names,
+        dependencies,
+      );
+    }
+    return;
+  }
+  if (type.tag === "array") {
+    collect_transparent_alias_dependencies(
+      type.element,
+      bound_names,
+      dependencies,
+    );
+    return;
+  }
+  if (type.tag === "arrow") {
+    collect_transparent_alias_dependencies(
+      type.param,
+      bound_names,
+      dependencies,
+    );
+    collect_transparent_alias_dependencies(
+      type.result,
+      bound_names,
+      dependencies,
+    );
+    return;
+  }
+  if (type.tag === "forall") {
+    const nested_names = new Set(bound_names);
+    for (const parameter of type.params) nested_names.add(parameter);
+    collect_transparent_alias_dependencies(
+      type.body,
+      nested_names,
+      dependencies,
+    );
+  }
+}
+
+function validate_prefix_contracts(
+  signatures: readonly PrefixSignature[],
+  definitions: readonly PrefixDefinition[],
+  source: SourceNode,
+  cst_root: BabaCstNode | undefined,
+  source_text: string,
+  binding_index: BindingIndex,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+  control_flow: SemanticCfg | undefined,
+  callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
+  symbols: ReadonlyMap<string, readonly ValueId[]>,
+  types: ReadonlyMap<ValueId, RepresentationType>,
+  origins: ReadonlyMap<ValueId, SemanticOrigin>,
+  transparent_types: TransparentTypeContext,
+): {
+  diagnostics: CompilerDiagnostic[];
+  proofs: ReadonlyMap<string, CheckedKernelCertificate>;
+} {
+  const transparent_aliases = transparent_types.aliases;
+  const transparent_type_definitions = transparent_types.definitions;
+  const declared_type_names = new Set<string>();
+  let declarations = source.declarations;
+  if (declarations === undefined) declarations = [];
+  for (const declaration of declarations) {
+    if (declaration.tag !== "type") continue;
+    declared_type_names.add(declaration.name);
   }
   const resolved_signatures = signatures.map((signature) => {
     const type_variables = new Set(
@@ -1673,6 +1860,31 @@ function verified_branch_hypotheses(
     term_types,
     facts,
   );
+  const type_requirement = prefix_type_requirement(
+    normalized,
+    binding_values,
+  );
+  if (type_requirement !== undefined) {
+    const certificate = infer_semantic_type_certificate(
+      candidate,
+      call_span,
+      type_requirement,
+    );
+    if (
+      certificate !== undefined &&
+      verify_semantic_type_certificate(
+        certificate,
+        candidate,
+        call_span,
+        type_requirement,
+      )
+    ) {
+      return {
+        propositions: [proposition],
+        certificate,
+      };
+    }
+  }
   const machine_requirement = prefix_machine_requirement(
     normalized,
     binding_values,
@@ -1987,6 +2199,32 @@ function prefix_machine_requirement(
     };
   }
   return undefined;
+}
+
+function prefix_type_requirement(
+  proposition: PrefixProposition,
+  binding_values: ReadonlyMap<EntityId, ValueId>,
+): SemanticTypeRequirement | undefined {
+  let membership = proposition;
+  let expected = true;
+  if (
+    proposition.tag === "not" && proposition.proposition.tag === "is"
+  ) {
+    membership = proposition.proposition;
+    expected = false;
+  }
+  if (membership.tag !== "is") return undefined;
+  const value = prefix_semantic_value(membership.value, binding_values);
+  if (value === undefined) return undefined;
+  let type = membership.type.canonical;
+  if (membership.type.expression !== undefined) {
+    type = format_type_expr(membership.type.expression);
+  }
+  return {
+    value,
+    type,
+    expected,
+  };
 }
 
 function prefix_opaque_predicate_atom(
@@ -3019,66 +3257,6 @@ function logical_entity_name(entity: EntityId): string {
   return "semantic:" + entity;
 }
 
-function resolve_transparent_type_aliases(
-  type_name: string,
-  aliases: ReadonlyMap<string, string>,
-  resolving = new Set<string>(),
-): string {
-  let resolved = "";
-  let index = 0;
-  while (index < type_name.length) {
-    const character = type_name[index];
-    expect(character !== undefined, "Canonical type character disappeared.");
-    if (character === '"' || character === "'") {
-      const quote = character;
-      resolved += character;
-      index += 1;
-      let escaped = false;
-      while (index < type_name.length) {
-        const literal_character = type_name[index];
-        expect(
-          literal_character !== undefined,
-          "Canonical singleton type character disappeared.",
-        );
-        resolved += literal_character;
-        index += 1;
-        if (escaped) {
-          escaped = false;
-        } else if (literal_character === "\\") {
-          escaped = true;
-        } else if (literal_character === quote) {
-          break;
-        }
-      }
-      continue;
-    }
-    if (!/[A-Za-z_]/.test(character)) {
-      resolved += character;
-      index += 1;
-      continue;
-    }
-    let end = index + 1;
-    while (end < type_name.length) {
-      const next = type_name[end];
-      expect(next !== undefined, "Canonical type name character disappeared.");
-      if (!/[A-Za-z0-9_]/.test(next)) break;
-      end += 1;
-    }
-    const name = type_name.slice(index, end);
-    const target = aliases.get(name);
-    if (target === undefined || resolving.has(name)) {
-      resolved += name;
-      index = end;
-      continue;
-    }
-    const nested = new Set(resolving);
-    nested.add(name);
-    resolved += resolve_transparent_type_aliases(target, aliases, nested);
-    index = end;
-  }
-  return resolved;
-}
-
 function resolve_prefix_type_reference(
   type: PrefixTypeReference,
   aliases: ReadonlyMap<string, string>,
@@ -3169,206 +3347,6 @@ function resolve_prefix_type_reference(
     }
   }
   return { ...resolved_type, canonical };
-}
-
-function normalize_transparent_type_expression(
-  type: TypeExpr,
-  definitions: ReadonlyMap<string, TransparentTypeDefinition>,
-  resolving = new Set<string>(),
-): TypeExpr {
-  const application = transparent_type_application(type);
-  if (application !== undefined && !resolving.has(application.name)) {
-    const definition = definitions.get(application.name);
-    if (
-      definition !== undefined &&
-      definition.parameters.length === application.arguments.length
-    ) {
-      const substitutions = new Map<string, TypeExpr>();
-      for (let index = 0; index < definition.parameters.length; index += 1) {
-        const parameter = definition.parameters[index];
-        const argument = application.arguments[index];
-        expect(
-          parameter !== undefined && argument !== undefined,
-          `Transparent type ${application.name} lost argument ${index}.`,
-        );
-        substitutions.set(
-          parameter,
-          normalize_transparent_type_expression(
-            argument,
-            definitions,
-            resolving,
-          ),
-        );
-      }
-      const nested = new Set(resolving);
-      nested.add(application.name);
-      return normalize_transparent_type_expression(
-        substitute_type_expr(definition.body, substitutions),
-        definitions,
-        nested,
-      );
-    }
-  }
-  if (type.tag === "frozen" || type.tag === "borrow") {
-    return {
-      tag: type.tag,
-      value: normalize_transparent_type_expression(
-        type.value,
-        definitions,
-        resolving,
-      ),
-    };
-  }
-  if (type.tag === "union" || type.tag === "intersection") {
-    const pending = [type.left, type.right];
-    const members: TypeExpr[] = [];
-    while (pending.length > 0) {
-      const member = pending.pop();
-      expect(member !== undefined, "Type-set member disappeared.");
-      if (member.tag === type.tag) {
-        pending.push(member.left, member.right);
-        continue;
-      }
-      members.push(
-        normalize_transparent_type_expression(
-          member,
-          definitions,
-          resolving,
-        ),
-      );
-    }
-    members.sort((left, right) => {
-      const left_name = format_type_expr(left);
-      const right_name = format_type_expr(right);
-      if (left_name < right_name) return -1;
-      if (left_name > right_name) return 1;
-      return 0;
-    });
-    const distinct_members = members.filter((member, index) => {
-      if (index === 0) return true;
-      const previous = members[index - 1];
-      expect(previous !== undefined, "Sorted type-set member disappeared.");
-      return format_type_expr(previous) !== format_type_expr(member);
-    });
-    const first_member = distinct_members[0];
-    expect(first_member !== undefined, "Type set cannot lose every member.");
-    let normalized = first_member;
-    for (let index = 1; index < distinct_members.length; index += 1) {
-      const member = distinct_members[index];
-      expect(member !== undefined, "Distinct type-set member disappeared.");
-      normalized = {
-        tag: type.tag,
-        left: normalized,
-        right: member,
-      };
-    }
-    return normalized;
-  }
-  if (type.tag === "difference") {
-    return {
-      tag: "difference",
-      left: normalize_transparent_type_expression(
-        type.left,
-        definitions,
-        resolving,
-      ),
-      right: normalize_transparent_type_expression(
-        type.right,
-        definitions,
-        resolving,
-      ),
-    };
-  }
-  if (type.tag === "apply") {
-    return {
-      tag: "apply",
-      func: normalize_transparent_type_expression(
-        type.func,
-        definitions,
-        resolving,
-      ),
-      arg: normalize_transparent_type_expression(
-        type.arg,
-        definitions,
-        resolving,
-      ),
-    };
-  }
-  if (type.tag === "tuple") {
-    return {
-      tag: "tuple",
-      items: type.items.map((value) =>
-        normalize_transparent_type_expression(value, definitions, resolving)
-      ),
-    };
-  }
-  if (type.tag === "product") {
-    return {
-      tag: "product",
-      entries: type.entries.map((entry) => ({
-        label: entry.label,
-        type_expr: normalize_transparent_type_expression(
-          entry.type_expr,
-          definitions,
-          resolving,
-        ),
-      })),
-      value_pack: type.value_pack,
-      repeat: type.repeat,
-    };
-  }
-  if (type.tag === "array") {
-    return {
-      tag: "array",
-      element: normalize_transparent_type_expression(
-        type.element,
-        definitions,
-        resolving,
-      ),
-      length: type.length,
-    };
-  }
-  if (type.tag === "arrow") {
-    return {
-      tag: "arrow",
-      param: normalize_transparent_type_expression(
-        type.param,
-        definitions,
-        resolving,
-      ),
-      effects: type.effects,
-      result: normalize_transparent_type_expression(
-        type.result,
-        definitions,
-        resolving,
-      ),
-    };
-  }
-  if (type.tag === "forall") {
-    return {
-      tag: "forall",
-      params: [...type.params],
-      body: normalize_transparent_type_expression(
-        type.body,
-        definitions,
-        resolving,
-      ),
-    };
-  }
-  return type;
-}
-
-function transparent_type_application(
-  type: TypeExpr,
-): { name: string; arguments: readonly TypeExpr[] } | undefined {
-  const arguments_: TypeExpr[] = [];
-  let function_type = type;
-  while (function_type.tag === "apply") {
-    arguments_.unshift(function_type.arg);
-    function_type = function_type.func;
-  }
-  if (function_type.tag !== "name") return undefined;
-  return { name: function_type.name, arguments: arguments_ };
 }
 
 function logical_representation_name(
@@ -6111,11 +6089,6 @@ type LogicalTermType = {
   name: string;
   representation: string;
   refinement?: string;
-};
-
-type TransparentTypeDefinition = {
-  parameters: readonly string[];
-  body: TypeExpr;
 };
 
 function logical_term_type_from_reference(

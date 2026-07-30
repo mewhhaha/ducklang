@@ -27,6 +27,11 @@ import {
   snapshot_representation_type,
 } from "./representation_type.ts";
 import { has_source_span, source_span, type SourceSpan } from "./syntax.ts";
+import { format_type_expr } from "./type_expr.ts";
+import {
+  normalize_transparent_type_expression,
+  type TransparentTypeDefinition,
+} from "./transparent_type.ts";
 
 type SemanticLocation = {
   origin: BabaSourceNodeId;
@@ -102,6 +107,10 @@ type LoweringContext = {
   callable_identity: SemanticIdentityAllocator;
   callable_ordinals: Map<BabaSourceNodeId, number>;
   allow_captures: boolean;
+  transparent_type_definitions: ReadonlyMap<
+    string,
+    TransparentTypeDefinition
+  >;
 };
 
 export type SemanticCfgCollection = {
@@ -115,6 +124,10 @@ export function semantic_cfgs_from_source(
   binding_index: BindingIndex,
   binding_values: ReadonlyMap<EntityId, ValueId>,
   binding_origins: ReadonlyMap<ValueId, SemanticOrigin>,
+  transparent_type_definitions: ReadonlyMap<
+    string,
+    TransparentTypeDefinition
+  >,
 ): SemanticCfgCollection {
   const callables = new Map<ValueId, SemanticCallableControlFlow>();
   try {
@@ -125,6 +138,7 @@ export function semantic_cfgs_from_source(
       binding_values,
       binding_origins,
       callables,
+      transparent_type_definitions,
     );
     return { root: control_flow, callables };
   } catch (error) {
@@ -151,6 +165,10 @@ function build_semantic_cfg_from_source(
   binding_values: ReadonlyMap<EntityId, ValueId>,
   binding_origins: ReadonlyMap<ValueId, SemanticOrigin>,
   callable_control_flow: Map<ValueId, SemanticCallableControlFlow>,
+  transparent_type_definitions: ReadonlyMap<
+    string,
+    TransparentTypeDefinition
+  >,
 ): SemanticCfg {
   const builder = new SemanticCfgBuilder("duck-program");
   const entry = builder.add_block(root?.id);
@@ -221,6 +239,7 @@ function build_semantic_cfg_from_source(
     callable_identity: new SemanticIdentityAllocator("duck-program"),
     callable_ordinals: new Map(),
     allow_captures: false,
+    transparent_type_definitions,
   };
   const lowered = lower_statements(source.statements, entry, context);
   if (!lowered.terminated) {
@@ -812,7 +831,7 @@ function lower_if_let_statement(
   const condition = emit_operation(
     target.block,
     statement,
-    { tag: "primitive", name: "is-case:" + statement.case_name },
+    { tag: "type_test", type: "#" + statement.case_name },
     [target.value],
     { tag: "scalar", name: "Bool" },
     undefined,
@@ -1512,10 +1531,25 @@ function lower_expression(
   if (expression.tag === "as" || expression.tag === "is") {
     const operand = lower_expression(expression.value, block, context);
     if (operand.tag === "terminated") return operand;
+    let operation: SemanticOperation = {
+      tag: "primitive",
+      name: expression.tag,
+    };
+    if (expression.tag === "is") {
+      operation = {
+        tag: "type_test",
+        type: format_type_expr(
+          normalize_transparent_type_expression(
+            expression.type_expr,
+            context.transparent_type_definitions,
+          ),
+        ),
+      };
+    }
     const value = emit_operation(
       operand.block,
       expression,
-      { tag: "primitive", name: expression.tag },
+      operation,
       [operand.value],
       type,
       undefined,
@@ -2040,6 +2074,7 @@ function build_callable_control_flow_pass(
     callable_identity: parent.callable_identity,
     callable_ordinals,
     allow_captures: true,
+    transparent_type_definitions: parent.transparent_type_definitions,
   };
   try {
     const lowered = lower_expression(expression.body, entry, context);
@@ -2234,7 +2269,7 @@ function lower_if_let_expression(
   const condition = emit_operation(
     target.block,
     expression,
-    { tag: "primitive", name: "is-case:" + expression.case_name },
+    { tag: "type_test", type: "#" + expression.case_name },
     [target.value],
     { tag: "scalar", name: "Bool" },
     undefined,
@@ -2683,6 +2718,28 @@ function emit_pattern_test(
   target: ValueId,
   context: LoweringContext,
 ): ValueId {
+  if (pattern.tag === "union_case") {
+    return emit_operation(
+      block,
+      pattern,
+      { tag: "type_test", type: "#" + pattern.name },
+      [target],
+      { tag: "scalar", name: "Bool" },
+      undefined,
+      context,
+    );
+  }
+  if (pattern.tag === "literal" && pattern.value.tag === "atom") {
+    return emit_operation(
+      block,
+      pattern,
+      { tag: "type_test", type: "#" + pattern.value.name },
+      [target],
+      { tag: "scalar", name: "Bool" },
+      undefined,
+      context,
+    );
+  }
   return emit_operation(
     block,
     pattern,

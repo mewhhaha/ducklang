@@ -159,6 +159,39 @@ Deno.test("Duck compiler erases branch-established proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases type-membership branch proofs", async () => {
+  const proved_source = "type Alias = I32\n" +
+    "type consume = " +
+    "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+    "let consume = (actual, evidence) => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual is Alias then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const plain_source = "type Alias = I32\n" +
+    "type consume = (value: I32) -> I32\n" +
+    "let consume = actual => actual;\n" +
+    "type guarded = (value: I32) -> I32\n" +
+    "let guarded = actual => " +
+    "if actual is Alias then consume actual else 0 end;\n" +
+    "guarded 42\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases remainder branch proofs", async () => {
   const proved_source = "type consume = " +
     "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +

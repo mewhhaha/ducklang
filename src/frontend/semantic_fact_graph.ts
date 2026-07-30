@@ -10,17 +10,23 @@ import {
   assume_machine_disequality,
   assume_machine_equality,
   assume_machine_fact,
+  assume_type_fact,
   exclude_machine_fact,
+  exclude_type_fact,
   implies_machine_bitmask,
   implies_machine_congruence,
   implies_machine_difference,
   implies_machine_disequality,
   implies_machine_equality,
   implies_machine_fact,
+  implies_type_fact,
   machine_excludes_equal,
   machine_fact_domain,
   type MachineFactDomain,
   transfer_machine_offset,
+  transfer_type_facts,
+  type_fact_domain,
+  type TypeFactDomain,
 } from "./fact_graph.ts";
 import { proof_limits } from "./proof_limits.ts";
 import {
@@ -32,10 +38,15 @@ import {
   unique_semantic_call_at_span,
 } from "./semantic_cfg.ts";
 import {
+  type RepresentationType,
+  same_representation_type,
+} from "./representation_type.ts";
+import {
   semantic_bounded_offset_certificate,
   semantic_machine_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
+  semantic_type_certificate,
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetCertificate,
   type SemanticBoundedOffsetRequirement,
@@ -45,12 +56,15 @@ import {
   type SemanticRemainderDivisibilityCertificate,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticTypeCertificate,
+  type SemanticTypeRequirement,
   type SemanticUnreachableCertificate,
 } from "./semantic_fact_certificate.ts";
 import type { ValueId } from "./semantic_identity.ts";
 import type { SourceSpan } from "./syntax.ts";
 
 export type { SemanticMachineRequirement } from "./semantic_fact_certificate.ts";
+export type { SemanticTypeRequirement } from "./semantic_fact_certificate.ts";
 
 type PathState = {
   block: SemanticBlockId;
@@ -58,6 +72,16 @@ type PathState = {
   domain: MachineFactDomain;
   booleans: ReadonlyMap<ValueId, boolean>;
   aliases: ReadonlyMap<ValueId, ValueId>;
+  visited: ReadonlySet<SemanticBlockId>;
+};
+
+type TypePathState = {
+  block: SemanticBlockId;
+  predecessor: SemanticBlockId | undefined;
+  domain: TypeFactDomain;
+  aliases: ReadonlyMap<ValueId, ValueId>;
+  booleans: ReadonlyMap<ValueId, boolean>;
+  tests: ReadonlyMap<ValueId, Omit<SemanticTypeRequirement, "expected">>;
   visited: ReadonlySet<SemanticBlockId>;
 };
 
@@ -90,6 +114,21 @@ export function infer_semantic_machine_certificate(
     return undefined;
   }
   return semantic_machine_certificate(call_span, requirement);
+}
+
+export function infer_semantic_type_certificate(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticTypeRequirement,
+): SemanticTypeCertificate | undefined {
+  if (
+    typeof requirement.type !== "string" || requirement.type.length === 0 ||
+    semantic_cfg_type_path_result(control_flow, call_span, requirement) !==
+      "proved"
+  ) {
+    return undefined;
+  }
+  return semantic_type_certificate(call_span, requirement);
 }
 
 export function infer_semantic_bounded_offset_certificate(
@@ -383,6 +422,296 @@ function semantic_cfg_machine_path_result(
   if (paths === 0) return "unreachable";
   if (requirement === undefined) return "unproved";
   return "proved";
+}
+
+function semantic_cfg_type_path_result(
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticTypeRequirement,
+): "proved" | "unproved" | "unknown" {
+  if (!semantic_cfg_is_well_formed(control_flow)) return "unknown";
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return "unknown";
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  if (target_block_can_repeat(target.block.id, blocks)) return "unknown";
+  const reaches_target = blocks_reaching_target(target.block.id, blocks);
+  const entry_counts = new Map<SemanticBlockId, number>();
+  entry_counts.set(control_flow.entry, 1);
+  const pending: TypePathState[] = [{
+    block: control_flow.entry,
+    predecessor: undefined,
+    domain: type_fact_domain(),
+    aliases: new Map(),
+    booleans: new Map(),
+    tests: new Map(),
+    visited: new Set(),
+  }];
+  let paths = 0;
+  let steps = 0;
+  while (pending.length > 0) {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) return "unknown";
+    const state = pending.pop();
+    if (state === undefined || state.visited.has(state.block)) return "unknown";
+    const visited = new Set(state.visited);
+    visited.add(state.block);
+    if (visited.size > proof_limits.compiler_search_depth) return "unknown";
+    const block = blocks.get(state.block);
+    if (block === undefined) return "unknown";
+    let domain = state.domain;
+    let aliases = new Map(state.aliases);
+    let booleans = new Map(state.booleans);
+    let tests = new Map(state.tests);
+    let reached_call = false;
+    for (const node of block.nodes) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return "unknown";
+      if (node === target.node) {
+        reached_call = true;
+        if (!domain.reachable) break;
+        paths += 1;
+        if (
+          !implies_type_fact(
+            domain,
+            {
+              value: resolved_type_alias(requirement.value, aliases),
+              type: requirement.type,
+            },
+            requirement.expected,
+          )
+        ) {
+          return "unproved";
+        }
+        break;
+      }
+      const transferred = transfer_semantic_type_node(
+        node,
+        state.predecessor,
+        domain,
+        aliases,
+        booleans,
+        tests,
+        value_types,
+      );
+      domain = transferred.domain;
+      aliases = transferred.aliases;
+      booleans = transferred.booleans;
+      tests = transferred.tests;
+    }
+    if (reached_call || block.id === target.block.id) continue;
+    if (!domain.reachable) continue;
+    if (block.terminator.tag !== "branch") {
+      for (const successor of block.successors) {
+        if (!reaches_target.has(successor)) continue;
+        if (
+          !enqueue_type_path(
+            pending,
+            entry_counts,
+            {
+              block: successor,
+              predecessor: block.id,
+              domain,
+              aliases,
+              booleans,
+              tests,
+              visited,
+            },
+          )
+        ) {
+          return "unknown";
+        }
+      }
+      continue;
+    }
+    const known_condition = booleans.get(block.terminator.condition);
+    const type_test = tests.get(block.terminator.condition);
+    for (
+      const [branch_value, successor] of [
+        [true, block.terminator.when_true],
+        [false, block.terminator.when_false],
+      ] as const
+    ) {
+      if (!reaches_target.has(successor)) continue;
+      if (
+        known_condition !== undefined && known_condition !== branch_value
+      ) {
+        continue;
+      }
+      let branch_domain = domain;
+      if (type_test !== undefined) {
+        const fact = { value: type_test.value, type: type_test.type };
+        if (branch_value) {
+          branch_domain = assume_type_fact(branch_domain, fact);
+        } else {
+          branch_domain = exclude_type_fact(branch_domain, fact);
+        }
+      }
+      if (!branch_domain.reachable) continue;
+      if (
+        !enqueue_type_path(
+          pending,
+          entry_counts,
+          {
+            block: successor,
+            predecessor: block.id,
+            domain: branch_domain,
+            aliases,
+            booleans,
+            tests,
+            visited,
+          },
+        )
+      ) {
+        return "unknown";
+      }
+    }
+  }
+  if (paths === 0) return "unknown";
+  return "proved";
+}
+
+function transfer_semantic_type_node(
+  node: SemanticNode,
+  predecessor: SemanticBlockId | undefined,
+  current_domain: TypeFactDomain,
+  current_aliases: ReadonlyMap<ValueId, ValueId>,
+  current_booleans: ReadonlyMap<ValueId, boolean>,
+  current_tests: ReadonlyMap<
+    ValueId,
+    Omit<SemanticTypeRequirement, "expected">
+  >,
+  value_types: ReadonlyMap<ValueId, RepresentationType>,
+): {
+  domain: TypeFactDomain;
+  aliases: Map<ValueId, ValueId>;
+  booleans: Map<ValueId, boolean>;
+  tests: Map<ValueId, Omit<SemanticTypeRequirement, "expected">>;
+} {
+  let domain = current_domain;
+  const aliases = new Map(current_aliases);
+  const booleans = new Map(current_booleans);
+  const tests = new Map(current_tests);
+  const output = node.outputs[0];
+  if (node.operation.tag === "constant" && output !== undefined) {
+    if (typeof node.operation.value === "boolean") {
+      booleans.set(output, node.operation.value);
+    }
+    return { domain, aliases, booleans, tests };
+  }
+  if (
+    node.operation.tag === "type_test" &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    if (input !== undefined) {
+      tests.set(output, {
+        value: resolved_type_alias(input, aliases),
+        type: node.operation.type,
+      });
+    }
+    return { domain, aliases, booleans, tests };
+  }
+  if (
+    node.operation.tag === "primitive" &&
+    node.operation.name.startsWith("bind:") &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    const input_type = value_types.get(input as ValueId);
+    const output_type = value_types.get(output);
+    if (
+      input !== undefined && input_type !== undefined &&
+      output_type !== undefined &&
+      same_representation_type(input_type, output_type)
+    ) {
+      aliases.set(output, resolved_type_alias(input, aliases));
+      const input_boolean = booleans.get(input);
+      if (input_boolean !== undefined) booleans.set(output, input_boolean);
+      const input_test = tests.get(input);
+      if (input_test !== undefined) tests.set(output, input_test);
+    }
+    return { domain, aliases, booleans, tests };
+  }
+  if (
+    node.operation.tag === "ownership_transition" &&
+    (node.operation.transition === "borrow" ||
+      node.operation.transition === "freeze") &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    const input_type = value_types.get(input as ValueId);
+    const output_type = value_types.get(output);
+    if (
+      input !== undefined && input_type !== undefined &&
+      output_type !== undefined &&
+      same_representation_type(input_type, output_type)
+    ) {
+      domain = transfer_type_facts(
+        domain,
+        resolved_type_alias(input, aliases),
+        output,
+      );
+      const input_boolean = booleans.get(input);
+      if (input_boolean !== undefined) booleans.set(output, input_boolean);
+      const input_test = tests.get(input);
+      if (input_test !== undefined) tests.set(output, input_test);
+    }
+    return { domain, aliases, booleans, tests };
+  }
+  if (
+    node.operation.tag !== "phi" || predecessor === undefined ||
+    output === undefined
+  ) {
+    return { domain, aliases, booleans, tests };
+  }
+  const incoming = node.operation.incoming.find((candidate) =>
+    candidate.predecessor === predecessor
+  );
+  if (incoming === undefined) return { domain, aliases, booleans, tests };
+  const incoming_boolean = booleans.get(incoming.value);
+  if (incoming_boolean !== undefined) booleans.set(output, incoming_boolean);
+  const incoming_test = tests.get(incoming.value);
+  if (incoming_test !== undefined) tests.set(output, incoming_test);
+  const incoming_alias = resolved_type_alias(incoming.value, aliases);
+  aliases.set(output, incoming_alias);
+  return { domain, aliases, booleans, tests };
+}
+
+function resolved_type_alias(
+  value: ValueId,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): ValueId {
+  let current = value;
+  const visited = new Set<ValueId>();
+  while (!visited.has(current)) {
+    visited.add(current);
+    const next = aliases.get(current);
+    if (next === undefined || next === current) return current;
+    current = next;
+  }
+  return value;
+}
+
+function enqueue_type_path(
+  pending: TypePathState[],
+  entry_counts: Map<SemanticBlockId, number>,
+  state: TypePathState,
+): boolean {
+  let count = 1;
+  const previous = entry_counts.get(state.block);
+  if (previous !== undefined) count = previous + 1;
+  if (count > proof_limits.maximum_formula_disjuncts) return false;
+  entry_counts.set(state.block, count);
+  pending.push(state);
+  return true;
 }
 
 function requirement_has_range(

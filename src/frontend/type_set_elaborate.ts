@@ -8008,12 +8008,25 @@ function semantic_type_for_value(
     case "linear": {
       const binding = scope.bindings.get(value.name);
 
-      if (!binding?.annotation) {
-        return undefined;
+      if (binding?.annotation !== undefined) {
+        return semantic_type_for_expr(
+          parse_type_expr(tokenize(binding.annotation)),
+          scope,
+          new Set(),
+        );
       }
 
+      if (binding?.type_annotation !== undefined) {
+        return semantic_type_for_expr(
+          binding.type_annotation,
+          scope,
+          new Set(),
+        );
+      }
+
+      if (binding?.inferred_type === undefined) return undefined;
       return semantic_type_for_expr(
-        parse_type_expr(tokenize(binding.annotation)),
+        prelude_type_expr(binding.inferred_type),
         scope,
         new Set(),
       );
@@ -8029,6 +8042,24 @@ function semantic_type_for_expr(
   scope: TypeSetScope,
   resolving: Set<string>,
 ): SemType {
+  if (type.tag === "apply") {
+    const resolved = resolve_front_type_value(
+      type_value_from_type_expr(type),
+      scope.type_values,
+      resolving,
+    );
+    if (resolved?.tag === "set_type") {
+      return semantic_type_for_expr(resolved.type_expr, scope, resolving);
+    }
+    if (resolved?.tag === "var" || resolved?.tag === "type_name") {
+      return semantic_type_for_expr(
+        { tag: "name", name: resolved.name },
+        scope,
+        resolving,
+      );
+    }
+  }
+
   return sem_type_from_expr(type, (name) => {
     if (resolving.has(name)) {
       throw new Error(

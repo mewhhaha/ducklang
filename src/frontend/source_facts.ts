@@ -5827,11 +5827,14 @@ function canonical_type_from_source_fact(
     source.alias_target !== undefined &&
     !source_is_opaque_alias(source)
   ) {
+    if (visiting.has(source)) return undefined;
+    const next = new Set(visiting);
+    next.add(source);
     return canonical_type_from_source_fact(
       source.alias_target,
       engine,
       variables,
-      visiting,
+      next,
       unwrapped_quantifiers,
       variable_kind,
     );
@@ -5882,11 +5885,14 @@ function canonical_type_from_source_fact(
   const canonical_type_set = source_type_set(source);
 
   if (canonical_type_set !== undefined) {
+    if (visiting.has(source)) return undefined;
+    const next = new Set(visiting);
+    next.add(source);
     const left = canonical_type_from_source_fact(
       canonical_type_set.left,
       engine,
       variables,
-      visiting,
+      next,
       unwrapped_quantifiers,
       variable_kind,
     );
@@ -5894,7 +5900,7 @@ function canonical_type_from_source_fact(
       canonical_type_set.right,
       engine,
       variables,
-      visiting,
+      next,
       unwrapped_quantifiers,
       variable_kind,
     );

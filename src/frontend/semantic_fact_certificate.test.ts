@@ -6,20 +6,24 @@ import {
   semantic_predicate_certificate,
   semantic_remainder_certificate,
   semantic_remainder_divisibility_certificate,
+  semantic_type_certificate,
   semantic_unreachable_certificate,
   type SemanticBoundedOffsetRequirement,
   type SemanticMachineRequirement,
   type SemanticRemainderDivisibilityRequirement,
   type SemanticRemainderRequirement,
+  type SemanticTypeRequirement,
   verify_semantic_bounded_offset_certificate,
   verify_semantic_machine_certificate,
   verify_semantic_predicate_certificate,
   verify_semantic_remainder_certificate,
   verify_semantic_remainder_divisibility_certificate,
+  verify_semantic_type_certificate,
   verify_semantic_unreachable_certificate,
 } from "./semantic_fact_certificate.ts";
 import {
   infer_semantic_machine_certificate,
+  infer_semantic_type_certificate,
   infer_semantic_unreachable_certificate,
 } from "./semantic_fact_graph.ts";
 import {
@@ -33,6 +37,473 @@ const i32_type = { tag: "scalar", name: "I32" } as const;
 const u32_type = { tag: "scalar", name: "U32" } as const;
 const u64_type = { tag: "integer", signed: false, width: 64 } as const;
 const bool_type = { tag: "scalar", name: "Bool" } as const;
+
+Deno.test("semantic type certificates verify positive branch membership", () => {
+  const builder = new SemanticCfgBuilder("positive-type-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("type-true:1:2:0" as never);
+  const when_false = builder.add_block("type-false:2:3:0" as never);
+  const marker = "type-parameter" as ValueId;
+  builder.add_parameter(marker, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 8 },
+    { tag: "type_test", type: "#answer" },
+    [marker],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected semantic type test.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const call_span = { start: 9, end: 23 };
+  const call = builder.add_node(
+    when_true,
+    "type-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [marker],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected type-refined call.");
+  builder.terminate(when_true, { tag: "return", value: call });
+  const fallback = builder.add_node(
+    when_false,
+    "type-false:2:3:0" as never,
+    { start: 24, end: 25 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (fallback === undefined) throw new Error("Expected type fallback.");
+  builder.terminate(when_false, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value: marker,
+    type: "#answer",
+    expected: true,
+  };
+  const certificate = infer_semantic_type_certificate(
+    control_flow,
+    call_span,
+    requirement,
+  );
+
+  assert_equals(certificate?.tag, "type_fact");
+  if (certificate === undefined) {
+    throw new Error("Expected inferred semantic type certificate.");
+  }
+  assert_equals(
+    verify_semantic_type_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic type certificates verify negative branch membership", () => {
+  const builder = new SemanticCfgBuilder("negative-type-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("negative-true:1:2:0" as never);
+  const when_false = builder.add_block("negative-false:2:3:0" as never);
+  const marker = "negative-type-parameter" as ValueId;
+  builder.add_parameter(marker, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 8 },
+    { tag: "type_test", type: "#answer" },
+    [marker],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected semantic type test.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const fallback = builder.add_node(
+    when_true,
+    "negative-true:1:2:0" as never,
+    { start: 9, end: 10 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (fallback === undefined) throw new Error("Expected type fallback.");
+  builder.terminate(when_true, { tag: "return", value: fallback });
+  const call_span = { start: 11, end: 25 };
+  const call = builder.add_node(
+    when_false,
+    "negative-false:2:3:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [marker],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected type-refined call.");
+  builder.terminate(when_false, { tag: "return", value: call });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value: marker,
+    type: "#answer",
+    expected: false,
+  };
+  const certificate = infer_semantic_type_certificate(
+    control_flow,
+    call_span,
+    requirement,
+  );
+
+  assert_equals(certificate?.tag, "type_fact");
+  if (certificate === undefined) {
+    throw new Error("Expected inferred negative type certificate.");
+  }
+  assert_equals(
+    verify_semantic_type_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+  const forged = semantic_type_certificate(call_span, {
+    ...requirement,
+    expected: true,
+  });
+  assert_equals(
+    verify_semantic_type_certificate(
+      forged,
+      control_flow,
+      call_span,
+      { ...requirement, expected: true },
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic type certificates reject representation-changing binds", () => {
+  const builder = new SemanticCfgBuilder("type-bind-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("type-bind-true:1:2:0" as never);
+  const when_false = builder.add_block("type-bind-false:2:3:0" as never);
+  const marker = "type-bind-parameter" as ValueId;
+  builder.add_parameter(marker, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 8 },
+    { tag: "type_test", type: "I32" },
+    [marker],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected semantic type test.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const alias = builder.add_node(
+    when_true,
+    "type-bind-true:1:2:0" as never,
+    { start: 9, end: 14 },
+    { tag: "primitive", name: "bind:alias" },
+    [marker],
+    [{ tag: "scalar", name: "F32" }],
+  )[0];
+  if (alias === undefined) throw new Error("Expected changed bind.");
+  const call_span = { start: 15, end: 29 };
+  const call = builder.add_node(
+    when_true,
+    "type-bind-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [alias],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected changed bind call.");
+  builder.terminate(when_true, { tag: "return", value: call });
+  const fallback = builder.add_node(
+    when_false,
+    "type-bind-false:2:3:0" as never,
+    { start: 30, end: 31 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (fallback === undefined) throw new Error("Expected bind fallback.");
+  builder.terminate(when_false, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value: alias,
+    type: "I32",
+    expected: true,
+  };
+
+  assert_equals(
+    infer_semantic_type_certificate(control_flow, call_span, requirement),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_type_certificate(
+      semantic_type_certificate(call_span, requirement),
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic type certificates reject representation-changing borrows", () => {
+  const builder = new SemanticCfgBuilder("type-borrow-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block("type-borrow-true:1:2:0" as never);
+  const when_false = builder.add_block("type-borrow-false:2:3:0" as never);
+  const marker = "type-borrow-parameter" as ValueId;
+  builder.add_parameter(marker, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 8 },
+    { tag: "type_test", type: "I32" },
+    [marker],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected semantic type test.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const borrowed = builder.add_node(
+    when_true,
+    "type-borrow-true:1:2:0" as never,
+    { start: 9, end: 15 },
+    { tag: "ownership_transition", transition: "borrow" },
+    [marker],
+    [{ tag: "scalar", name: "F32" }],
+  )[0];
+  if (borrowed === undefined) throw new Error("Expected changed borrow.");
+  const call_span = { start: 16, end: 30 };
+  const call = builder.add_node(
+    when_true,
+    "type-borrow-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [borrowed],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected changed borrow call.");
+  builder.terminate(when_true, { tag: "return", value: call });
+  const fallback = builder.add_node(
+    when_false,
+    "type-borrow-false:2:3:0" as never,
+    { start: 31, end: 32 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (fallback === undefined) throw new Error("Expected borrow fallback.");
+  builder.terminate(when_false, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value: borrowed,
+    type: "I32",
+    expected: true,
+  };
+
+  assert_equals(
+    infer_semantic_type_certificate(control_flow, call_span, requirement),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_type_certificate(
+      semantic_type_certificate(call_span, requirement),
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+});
+
+Deno.test("semantic type certificates preserve aliased facts across borrows", () => {
+  const builder = new SemanticCfgBuilder("type-aliased-borrow-certificate");
+  const entry = builder.add_block(origin);
+  const when_true = builder.add_block(
+    "type-aliased-borrow-true:1:2:0" as never,
+  );
+  const when_false = builder.add_block(
+    "type-aliased-borrow-false:2:3:0" as never,
+  );
+  const marker = "type-aliased-borrow-parameter" as ValueId;
+  builder.add_parameter(marker, i32_type, {
+    source_node: origin,
+    start: 0,
+    end: 1,
+  });
+  const condition = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 8 },
+    { tag: "type_test", type: "I32" },
+    [marker],
+    [bool_type],
+  )[0];
+  if (condition === undefined) throw new Error("Expected semantic type test.");
+  builder.connect(entry, when_true);
+  builder.connect(entry, when_false);
+  builder.terminate(entry, {
+    tag: "branch",
+    condition,
+    when_true,
+    when_false,
+  });
+  const alias = builder.add_node(
+    when_true,
+    "type-aliased-borrow-true:1:2:0" as never,
+    { start: 9, end: 14 },
+    { tag: "primitive", name: "bind:alias" },
+    [marker],
+    [i32_type],
+  )[0];
+  if (alias === undefined) throw new Error("Expected borrow source alias.");
+  const borrowed = builder.add_node(
+    when_true,
+    "type-aliased-borrow-true:1:2:0" as never,
+    { start: 15, end: 21 },
+    { tag: "ownership_transition", transition: "borrow" },
+    [alias],
+    [i32_type],
+  )[0];
+  if (borrowed === undefined) throw new Error("Expected aliased borrow.");
+  const call_span = { start: 22, end: 36 };
+  const call = builder.add_node(
+    when_true,
+    "type-aliased-borrow-true:1:2:0" as never,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [borrowed],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected aliased borrow call.");
+  builder.terminate(when_true, { tag: "return", value: call });
+  const fallback = builder.add_node(
+    when_false,
+    "type-aliased-borrow-false:2:3:0" as never,
+    { start: 37, end: 38 },
+    { tag: "constant", value: 0 },
+    [],
+    [i32_type],
+  )[0];
+  if (fallback === undefined) throw new Error("Expected borrow fallback.");
+  builder.terminate(when_false, { tag: "return", value: fallback });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value: borrowed,
+    type: "I32",
+    expected: true,
+  };
+  const certificate = infer_semantic_type_certificate(
+    control_flow,
+    call_span,
+    requirement,
+  );
+  if (certificate === undefined) {
+    throw new Error("Expected aliased borrow type certificate.");
+  }
+
+  assert_equals(
+    verify_semantic_type_certificate(
+      certificate,
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    true,
+  );
+});
+
+Deno.test("semantic type certificates do not infer from string contents", () => {
+  const builder = new SemanticCfgBuilder("type-string-certificate");
+  const entry = builder.add_block(origin);
+  const value = builder.add_node(
+    entry,
+    origin,
+    { start: 0, end: 9 },
+    { tag: "constant", value: "#answer" },
+    [],
+    [i32_type],
+  )[0];
+  if (value === undefined) throw new Error("Expected string constant.");
+  const call_span = { start: 10, end: 24 };
+  const call = builder.add_node(
+    entry,
+    origin,
+    call_span,
+    { tag: "call", function_name: "consume" },
+    [value],
+    [i32_type],
+  )[0];
+  if (call === undefined) throw new Error("Expected string call.");
+  builder.terminate(entry, { tag: "return", value: call });
+  const control_flow = builder.finish();
+  const requirement: SemanticTypeRequirement = {
+    value,
+    type: "#answer",
+    expected: true,
+  };
+
+  assert_equals(
+    infer_semantic_type_certificate(control_flow, call_span, requirement),
+    undefined,
+  );
+  assert_equals(
+    verify_semantic_type_certificate(
+      semantic_type_certificate(call_span, requirement),
+      control_flow,
+      call_span,
+      requirement,
+    ),
+    false,
+  );
+});
 
 Deno.test("semantic bounded offset certificates verify non-wrapping arithmetic", () => {
   const builder = new SemanticCfgBuilder("bounded-offset-certificate");

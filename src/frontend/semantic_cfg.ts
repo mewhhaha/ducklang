@@ -22,6 +22,7 @@ export type SemanticNodeId = number & {
 export type SemanticOperation =
   | { tag: "constant"; value: string | number | bigint | boolean }
   | { tag: "primitive"; name: string }
+  | { tag: "type_test"; type: string }
   | { tag: "project"; field: string }
   | { tag: "construct"; constructor: string }
   | { tag: "call"; function_name: string }
@@ -288,6 +289,28 @@ export function semantic_cfg_is_well_formed(
     for (let index = 0; index < block.nodes.length; index += 1) {
       const node = block.nodes[index];
       if (node === undefined) return false;
+      if (node.operation.tag === "type_test") {
+        if (
+          typeof node.operation.type !== "string" ||
+          node.operation.type.length === 0 ||
+          node.inputs.length !== 1 ||
+          node.outputs.length !== 1
+        ) {
+          return false;
+        }
+        const output_value = node.outputs[0];
+        if (output_value === undefined) return false;
+        const output = values.get(output_value);
+        if (
+          output === undefined ||
+          !same_representation_type(output.type, {
+            tag: "scalar",
+            name: "Bool",
+          })
+        ) {
+          return false;
+        }
+      }
       if (node.operation.tag === "phi") {
         if (
           node.outputs.length !== 1 ||
@@ -1020,6 +1043,11 @@ function snapshot_operation(operation: SemanticOperation): SemanticOperation {
       return Object.freeze({
         tag: "primitive",
         name: required_text(operation.name),
+      });
+    case "type_test":
+      return Object.freeze({
+        tag: "type_test",
+        type: required_text(operation.type),
       });
     case "project":
       return Object.freeze({

@@ -62,6 +62,18 @@ export type SemanticMachineCertificate = {
   requirement: SemanticMachineRequirement;
 };
 
+export type SemanticTypeRequirement = {
+  value: ValueId;
+  type: string;
+  expected: boolean;
+};
+
+export type SemanticTypeCertificate = {
+  tag: "type_fact";
+  call_span: SourceSpan;
+  requirement: SemanticTypeRequirement;
+};
+
 export type SemanticBoundedOffsetGoal = {
   tag: "fact";
   proposition: Exclude<FactProposition, { tag: "equal" }>;
@@ -129,6 +141,7 @@ export type SemanticControlFlowCertificate =
   | SemanticPredicateCertificate
   | SemanticRemainderDivisibilityCertificate
   | SemanticRemainderCertificate
+  | SemanticTypeCertificate
   | SemanticUnreachableCertificate;
 
 type VerificationState = {
@@ -172,6 +185,24 @@ export function semantic_machine_certificate(
       end: call_span.end,
     }),
     requirement: snapshot_machine_requirement(requirement),
+  });
+}
+
+export function semantic_type_certificate(
+  call_span: SourceSpan,
+  requirement: SemanticTypeRequirement,
+): SemanticTypeCertificate {
+  expect(
+    typeof requirement.type === "string" && requirement.type.length > 0,
+    "Semantic type requirement must name a canonical type.",
+  );
+  return Object.freeze({
+    tag: "type_fact",
+    call_span: Object.freeze({
+      start: call_span.start,
+      end: call_span.end,
+    }),
+    requirement: Object.freeze({ ...requirement }),
   });
 }
 
@@ -720,6 +751,378 @@ export function verify_semantic_machine_certificate(
     call_span,
     requirement,
   ) === "proved";
+}
+
+type TypeVerificationState = {
+  block: SemanticBlockId;
+  predecessor: SemanticBlockId | undefined;
+  aliases: ReadonlyMap<ValueId, ValueId>;
+  booleans: ReadonlyMap<ValueId, boolean>;
+  tests: ReadonlyMap<ValueId, Omit<SemanticTypeRequirement, "expected">>;
+  premises: readonly SemanticTypeRequirement[];
+  visited: ReadonlySet<SemanticBlockId>;
+};
+
+export function verify_semantic_type_certificate(
+  certificate: SemanticTypeCertificate,
+  control_flow: SemanticCfg,
+  call_span: SourceSpan,
+  requirement: SemanticTypeRequirement,
+): boolean {
+  expect(
+    certificate !== null && typeof certificate === "object",
+    "Semantic type certificate must be an object.",
+  );
+  expect(
+    certificate.tag === "type_fact",
+    "Semantic type certificate has an invalid tag.",
+  );
+  if (
+    certificate.call_span.start !== call_span.start ||
+    certificate.call_span.end !== call_span.end ||
+    certificate.requirement.value !== requirement.value ||
+    certificate.requirement.type !== requirement.type ||
+    certificate.requirement.expected !== requirement.expected ||
+    typeof requirement.type !== "string" || requirement.type.length === 0 ||
+    !semantic_cfg_is_well_formed(control_flow)
+  ) {
+    return false;
+  }
+  const target = unique_semantic_call_at_span(control_flow, call_span);
+  if (target === undefined) return false;
+  const blocks = new Map(
+    control_flow.blocks.map((block) => [block.id, block]),
+  );
+  const value_types = new Map(
+    control_flow.values.map((value) => [value.value, value.type]),
+  );
+  if (target_block_can_repeat(target.block.id, blocks)) return false;
+  const reaches_target = blocks_reaching_target(target.block.id, blocks);
+  const entry_counts = new Map<SemanticBlockId, number>();
+  entry_counts.set(control_flow.entry, 1);
+  const pending: TypeVerificationState[] = [{
+    block: control_flow.entry,
+    predecessor: undefined,
+    aliases: new Map(),
+    booleans: new Map(),
+    tests: new Map(),
+    premises: [],
+    visited: new Set(),
+  }];
+  let feasible_paths = 0;
+  let steps = 0;
+  while (pending.length > 0) {
+    steps += 1;
+    if (steps > proof_limits.compiler_search_steps) return false;
+    const state = pending.pop();
+    expect(
+      state !== undefined,
+      "Semantic type certificate worklist disappeared.",
+    );
+    if (state.visited.has(state.block)) return false;
+    const visited = new Set(state.visited);
+    visited.add(state.block);
+    if (visited.size > proof_limits.compiler_search_depth) return false;
+    const block = blocks.get(state.block);
+    if (block === undefined) return false;
+    let aliases = new Map(state.aliases);
+    let booleans = new Map(state.booleans);
+    let tests = new Map(state.tests);
+    let premises = [...state.premises];
+    let reached_call = false;
+    for (const node of block.nodes) {
+      steps += 1;
+      if (steps > proof_limits.compiler_search_steps) return false;
+      if (node === target.node) {
+        reached_call = true;
+        if (verified_type_premises_contradict(premises)) break;
+        feasible_paths += 1;
+        if (
+          !verified_type_premises_imply(premises, {
+            ...requirement,
+            value: resolved_verified_type_alias(
+              requirement.value,
+              aliases,
+            ),
+          })
+        ) {
+          return false;
+        }
+        break;
+      }
+      const transferred = transfer_verified_type_node(
+        node,
+        state.predecessor,
+        aliases,
+        booleans,
+        tests,
+        premises,
+        value_types,
+      );
+      booleans = transferred.booleans;
+      aliases = transferred.aliases;
+      tests = transferred.tests;
+      premises = transferred.premises;
+    }
+    if (reached_call || block.id === target.block.id) continue;
+    if (block.terminator.tag !== "branch") {
+      for (const successor of block.successors) {
+        if (!reaches_target.has(successor)) continue;
+        if (
+          !enqueue_type_verification_state(
+            pending,
+            entry_counts,
+            {
+              block: successor,
+              predecessor: block.id,
+              aliases,
+              booleans,
+              tests,
+              premises,
+              visited,
+            },
+          )
+        ) {
+          return false;
+        }
+      }
+      continue;
+    }
+    const known_condition = booleans.get(block.terminator.condition);
+    const type_test = tests.get(block.terminator.condition);
+    for (
+      const [branch_value, successor] of [
+        [true, block.terminator.when_true],
+        [false, block.terminator.when_false],
+      ] as const
+    ) {
+      if (!reaches_target.has(successor)) continue;
+      if (
+        known_condition !== undefined && known_condition !== branch_value
+      ) {
+        continue;
+      }
+      const branch_premises = [...premises];
+      if (type_test !== undefined) {
+        branch_premises.push({
+          ...type_test,
+          expected: branch_value,
+        });
+      }
+      if (
+        verified_type_premises_contradict(branch_premises)
+      ) {
+        continue;
+      }
+      if (
+        !enqueue_type_verification_state(
+          pending,
+          entry_counts,
+          {
+            block: successor,
+            predecessor: block.id,
+            aliases,
+            booleans,
+            tests,
+            premises: branch_premises,
+            visited,
+          },
+        )
+      ) {
+        return false;
+      }
+    }
+  }
+  return feasible_paths > 0;
+}
+
+function transfer_verified_type_node(
+  node: SemanticNode,
+  predecessor: SemanticBlockId | undefined,
+  current_aliases: ReadonlyMap<ValueId, ValueId>,
+  current_booleans: ReadonlyMap<ValueId, boolean>,
+  current_tests: ReadonlyMap<
+    ValueId,
+    Omit<SemanticTypeRequirement, "expected">
+  >,
+  current_premises: readonly SemanticTypeRequirement[],
+  value_types: ReadonlyMap<ValueId, RepresentationType>,
+): {
+  booleans: Map<ValueId, boolean>;
+  aliases: Map<ValueId, ValueId>;
+  tests: Map<ValueId, Omit<SemanticTypeRequirement, "expected">>;
+  premises: SemanticTypeRequirement[];
+} {
+  const booleans = new Map(current_booleans);
+  const aliases = new Map(current_aliases);
+  const tests = new Map(current_tests);
+  const premises = [...current_premises];
+  const output = node.outputs[0];
+  if (node.operation.tag === "constant" && output !== undefined) {
+    if (typeof node.operation.value === "boolean") {
+      booleans.set(output, node.operation.value);
+    }
+    return { aliases, booleans, tests, premises };
+  }
+  if (
+    node.operation.tag === "type_test" &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    if (input !== undefined) {
+      tests.set(output, {
+        value: resolved_verified_type_alias(input, aliases),
+        type: node.operation.type,
+      });
+    }
+    return { aliases, booleans, tests, premises };
+  }
+  if (
+    node.operation.tag === "primitive" &&
+    node.operation.name.startsWith("bind:") &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    const input_type = value_types.get(input as ValueId);
+    const output_type = value_types.get(output);
+    if (
+      input !== undefined && input_type !== undefined &&
+      output_type !== undefined &&
+      same_representation_type(input_type, output_type)
+    ) {
+      aliases.set(output, resolved_verified_type_alias(input, aliases));
+      const input_boolean = booleans.get(input);
+      if (input_boolean !== undefined) booleans.set(output, input_boolean);
+      const input_test = tests.get(input);
+      if (input_test !== undefined) tests.set(output, input_test);
+    }
+    return { aliases, booleans, tests, premises };
+  }
+  if (
+    node.operation.tag === "ownership_transition" &&
+    (node.operation.transition === "borrow" ||
+      node.operation.transition === "freeze") &&
+    node.inputs.length === 1 &&
+    output !== undefined
+  ) {
+    const input = node.inputs[0];
+    const input_type = value_types.get(input as ValueId);
+    const output_type = value_types.get(output);
+    if (
+      input !== undefined && input_type !== undefined &&
+      output_type !== undefined &&
+      same_representation_type(input_type, output_type)
+    ) {
+      transfer_verified_type_premises(
+        premises,
+        resolved_verified_type_alias(input, aliases),
+        output,
+      );
+      const input_boolean = booleans.get(input);
+      if (input_boolean !== undefined) booleans.set(output, input_boolean);
+      const input_test = tests.get(input);
+      if (input_test !== undefined) tests.set(output, input_test);
+    }
+    return { aliases, booleans, tests, premises };
+  }
+  if (
+    node.operation.tag !== "phi" || predecessor === undefined ||
+    output === undefined
+  ) {
+    return { aliases, booleans, tests, premises };
+  }
+  const incoming = node.operation.incoming.find((candidate) =>
+    candidate.predecessor === predecessor
+  );
+  if (incoming === undefined) {
+    return { aliases, booleans, tests, premises };
+  }
+  const incoming_boolean = booleans.get(incoming.value);
+  if (incoming_boolean !== undefined) booleans.set(output, incoming_boolean);
+  const incoming_test = tests.get(incoming.value);
+  if (incoming_test !== undefined) tests.set(output, incoming_test);
+  aliases.set(
+    output,
+    resolved_verified_type_alias(incoming.value, aliases),
+  );
+  return { aliases, booleans, tests, premises };
+}
+
+function resolved_verified_type_alias(
+  value: ValueId,
+  aliases: ReadonlyMap<ValueId, ValueId>,
+): ValueId {
+  let current = value;
+  const visited = new Set<ValueId>();
+  while (!visited.has(current)) {
+    visited.add(current);
+    const next = aliases.get(current);
+    if (next === undefined || next === current) return current;
+    current = next;
+  }
+  return value;
+}
+
+function transfer_verified_type_premises(
+  premises: SemanticTypeRequirement[],
+  source: ValueId,
+  target: ValueId,
+): void {
+  const inherited = premises.filter((premise) => premise.value === source);
+  for (const premise of inherited) {
+    premises.push({ ...premise, value: target });
+  }
+}
+
+function verified_type_premises_contradict(
+  premises: readonly SemanticTypeRequirement[],
+): boolean {
+  for (let left_index = 0; left_index < premises.length; left_index += 1) {
+    const left = premises[left_index];
+    expect(left !== undefined, "Semantic type premise disappeared.");
+    for (
+      let right_index = left_index + 1;
+      right_index < premises.length;
+      right_index += 1
+    ) {
+      const right = premises[right_index];
+      expect(right !== undefined, "Semantic type premise disappeared.");
+      if (
+        left.value === right.value && left.type === right.type &&
+        left.expected !== right.expected
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function verified_type_premises_imply(
+  premises: readonly SemanticTypeRequirement[],
+  requirement: SemanticTypeRequirement,
+): boolean {
+  return premises.some((premise) =>
+    premise.value === requirement.value &&
+    premise.type === requirement.type &&
+    premise.expected === requirement.expected
+  );
+}
+
+function enqueue_type_verification_state(
+  pending: TypeVerificationState[],
+  entry_counts: Map<SemanticBlockId, number>,
+  state: TypeVerificationState,
+): boolean {
+  let count = 1;
+  const previous = entry_counts.get(state.block);
+  if (previous !== undefined) count = previous + 1;
+  if (count > proof_limits.maximum_formula_disjuncts) return false;
+  entry_counts.set(state.block, count);
+  pending.push(state);
+  return true;
 }
 
 export function verify_semantic_unreachable_certificate(

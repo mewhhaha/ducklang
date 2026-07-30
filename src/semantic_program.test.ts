@@ -502,8 +502,8 @@ Deno.test("semantic control flow records matches loops and ownership", () => {
   );
   assert_equals(
     match_operations?.filter((operation) =>
-      operation.tag === "primitive" &&
-      operation.name.startsWith("pattern:")
+      operation.tag === "type_test" &&
+      (operation.type === "#Some" || operation.type === "#None")
     ).length,
     2,
   );
@@ -635,7 +635,7 @@ Deno.test("finite type sets pass through control flow without changing Core", ()
   assert_equals(analysis.diagnostics, []);
   assert_equals(
     analysis.control_flow?.blocks.flatMap((block) => block.nodes).some((node) =>
-      node.operation.tag === "primitive" && node.operation.name === "is"
+      node.operation.tag === "type_test" && node.operation.type === "#answer"
     ),
     true,
   );
@@ -1453,6 +1453,213 @@ Deno.test("false comparison branches establish call evidence", () => {
   ));
   assert_equals(analysis.diagnostics, []);
   assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type-test branches establish positive membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let matches = actual is Alias;\n" +
+      "  if matches then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership normalizes reordered associative type sets", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias = I32 :| Text :| Bool\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Bool :| (Text :| I32) " +
+      "then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership deduplicates members introduced by aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Inner = I32 :| Text\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Inner) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Inner :| I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership specializes generic transparent aliases", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Alias a = a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Alias I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Alias I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("recursive generic aliases fail as checked source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Loop a = Loop a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Loop I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Loop I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics.length > 0, true);
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("mutually recursive generic aliases fail as checked source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Left a = Right a\n" +
+      "type Right a = Left a\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof value is Left I32) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is Left I32 then consume actual else 0 end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.filter((diagnostic) => diagnostic.code === "DUCK2317")
+      .length,
+    2,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("type membership learned through an alias refines its source", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value is I32) -> I32\n" +
+      "let consume = (value, evidence) => value;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let alias = actual;\n" +
+      "  if alias is I32 then consume actual else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("type membership learned through a source refines its alias", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof value is I32) -> I32\n" +
+      "let consume = (value, evidence) => value;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => do\n" +
+      "  let alias = actual;\n" +
+      "  if actual is I32 then consume alias else 0 end\n" +
+      "end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("text contents cannot establish atom membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: Text, evidence: Proof value is #answer) -> Text\n" +
+      "let consume = (value, evidence) => value;\n" +
+      'let value: Text = "#answer";\n' +
+      "consume value\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("type-test branches establish negative membership evidence", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type consume = " +
+      "(value: I32, evidence: Proof not (value is F32)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual is F32 then 0 else consume actual end;\n" +
+      "guarded 42\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 

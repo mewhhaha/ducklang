@@ -31,6 +31,66 @@ export function format_type_expr(type: TypeExpr): string {
   return format(type, 0);
 }
 
+export function resolve_transparent_type_aliases(
+  type_name: string,
+  aliases: ReadonlyMap<string, string>,
+  resolving = new Set<string>(),
+): string {
+  let resolved = "";
+  let index = 0;
+  while (index < type_name.length) {
+    const character = type_name[index];
+    expect(character !== undefined, "Canonical type character disappeared.");
+    if (character === '"' || character === "'") {
+      const quote = character;
+      resolved += character;
+      index += 1;
+      let escaped = false;
+      while (index < type_name.length) {
+        const literal_character = type_name[index];
+        expect(
+          literal_character !== undefined,
+          "Canonical singleton type character disappeared.",
+        );
+        resolved += literal_character;
+        index += 1;
+        if (escaped) {
+          escaped = false;
+        } else if (literal_character === "\\") {
+          escaped = true;
+        } else if (literal_character === quote) {
+          break;
+        }
+      }
+      continue;
+    }
+    if (!/[A-Za-z_]/.test(character)) {
+      resolved += character;
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < type_name.length) {
+      const next = type_name[end];
+      expect(next !== undefined, "Canonical type name character disappeared.");
+      if (!/[A-Za-z0-9_]/.test(next)) break;
+      end += 1;
+    }
+    const name = type_name.slice(index, end);
+    const target = aliases.get(name);
+    if (target === undefined || resolving.has(name)) {
+      resolved += name;
+      index = end;
+      continue;
+    }
+    const nested = new Set(resolving);
+    nested.add(name);
+    resolved += resolve_transparent_type_aliases(target, aliases, nested);
+    index = end;
+  }
+  return resolved;
+}
+
 export function function_type_expr(
   type: TypeExpr | undefined,
 ): Extract<TypeExpr, { tag: "arrow" }> | undefined {

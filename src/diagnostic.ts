@@ -155,6 +155,11 @@ export const diagnostic_registry = {
     "types_and_effects",
     "error",
   ),
+  recursive_type_alias: diagnostic_definition(
+    "DUCK2317",
+    "types_and_effects",
+    "error",
+  ),
   import_context_missing: diagnostic_definition(
     "DUCK2500",
     "modules_and_imports",

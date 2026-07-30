@@ -8,10 +8,12 @@ import {
   assume_machine_equality,
   assume_machine_fact,
   assume_state,
+  assume_type_fact,
   establish_fact,
   exclude_fact,
   exclude_machine_fact,
   exclude_state,
+  exclude_type_fact,
   type FactEnvironment,
   implies_fact,
   implies_machine_bitmask,
@@ -20,9 +22,11 @@ import {
   implies_machine_disequality,
   implies_machine_equality,
   implies_machine_fact,
+  implies_type_fact,
   join_facts,
   join_machine_domains,
   join_states,
+  join_type_fact_domains,
   machine_bitmask,
   machine_congruences,
   machine_differences,
@@ -36,6 +40,8 @@ import {
   reachable_state,
   transfer_machine_bitwise,
   transfer_machine_offset,
+  transfer_type_facts,
+  type_fact_domain,
   unreachable_state,
   widen_facts,
   widen_machine_facts,
@@ -44,6 +50,86 @@ import type { ValueId } from "./semantic_identity.ts";
 import type { ScalarFact } from "./fact_graph.ts";
 
 const value = "stable:value" as ValueId;
+
+Deno.test("type facts retain positive and negative membership", () => {
+  const answer = { value, type: "#answer" };
+  const other = { value, type: "#other" };
+  let domain = type_fact_domain();
+  domain = assume_type_fact(domain, answer);
+  domain = exclude_type_fact(domain, other);
+
+  assert_equals(implies_type_fact(domain, answer, true), true);
+  assert_equals(implies_type_fact(domain, other, false), true);
+  assert_equals(implies_type_fact(domain, answer, false), false);
+});
+
+Deno.test("opposite type facts make a path unreachable", () => {
+  const answer = { value, type: "#answer" };
+  const positive = exclude_type_fact(
+    assume_type_fact(type_fact_domain(), answer),
+    answer,
+  );
+  const negative = assume_type_fact(
+    exclude_type_fact(type_fact_domain(), answer),
+    answer,
+  );
+
+  assert_equals(positive.reachable, false);
+  assert_equals(negative.reachable, false);
+});
+
+Deno.test("type fact joins retain only path-independent evidence", () => {
+  const answer = { value, type: "#answer" };
+  const other = { value, type: "#other" };
+  const left = exclude_type_fact(
+    assume_type_fact(type_fact_domain(), answer),
+    other,
+  );
+  const right = assume_type_fact(type_fact_domain(), answer);
+  const joined = join_type_fact_domains(left, right);
+
+  assert_equals(implies_type_fact(joined, answer, true), true);
+  assert_equals(implies_type_fact(joined, other, false), false);
+});
+
+Deno.test("type facts transfer to value-preserving identities", () => {
+  const alias = "stable:alias" as ValueId;
+  let domain = assume_type_fact(
+    type_fact_domain(),
+    { value, type: "#answer" },
+  );
+  domain = exclude_type_fact(domain, { value, type: "#other" });
+  const transferred = transfer_type_facts(domain, value, alias);
+
+  assert_equals(
+    implies_type_fact(transferred, { value: alias, type: "#answer" }, true),
+    true,
+  );
+  assert_equals(
+    implies_type_fact(transferred, { value: alias, type: "#other" }, false),
+    true,
+  );
+});
+
+Deno.test("type fact domains reject mutation and forged transitions", () => {
+  const domain = assume_type_fact(
+    type_fact_domain(),
+    { value, type: "#answer" },
+  );
+  assert_throws(() => {
+    (domain.facts as Map<ValueId, readonly string[]>).set(value, ["#other"]);
+  }, "is not a function");
+  assert_throws(() => {
+    assume_type_fact(
+      {
+        reachable: true,
+        facts: new Map(),
+        exclusions: new Map(),
+      } as never,
+      { value, type: "#answer" },
+    );
+  }, "requires a trusted domain");
+});
 
 Deno.test("fact meet narrows an interval to an exact value", () => {
   assert_equals(

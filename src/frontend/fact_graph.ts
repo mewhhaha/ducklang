@@ -73,6 +73,39 @@ export type FactProposition =
   | { tag: "greater_than"; value: ValueId; bound: bigint }
   | { tag: "greater_equal"; value: ValueId; bound: bigint };
 
+export type TypeFact = {
+  value: ValueId;
+  type: string;
+};
+
+const TYPE_DOMAIN_TOKEN = Symbol("duck.type_fact_domain");
+const TRUSTED_TYPE_DOMAINS = new WeakSet<object>();
+
+export class TypeFactDomain {
+  readonly #brand = true;
+  readonly reachable: boolean;
+  readonly facts: ReadonlyMap<ValueId, readonly string[]>;
+  readonly exclusions: ReadonlyMap<ValueId, readonly string[]>;
+
+  constructor(
+    token: symbol,
+    reachable: boolean,
+    facts: ReadonlyMap<ValueId, readonly string[]>,
+    exclusions: ReadonlyMap<ValueId, readonly string[]>,
+  ) {
+    if (token !== TYPE_DOMAIN_TOKEN) {
+      throw new Error(
+        "TypeFactDomain must be created by FactGraph transitions.",
+      );
+    }
+    this.reachable = reachable;
+    this.facts = snapshot_type_facts(facts);
+    this.exclusions = snapshot_type_facts(exclusions);
+    Object.freeze(this);
+    TRUSTED_TYPE_DOMAINS.add(this);
+  }
+}
+
 export type MachineInteger = IntegerType;
 export type MachineOffsetOperation = "add" | "subtract";
 export type MachineBitwiseOperation = "and" | "or" | "xor";
@@ -171,6 +204,185 @@ export class MachineFactDomain {
     Object.freeze(this);
     TRUSTED_MACHINE_DOMAINS.add(this);
   }
+}
+
+export function type_fact_domain(): TypeFactDomain {
+  return new TypeFactDomain(TYPE_DOMAIN_TOKEN, true, new Map(), new Map());
+}
+
+export function assume_type_fact(
+  domain: TypeFactDomain,
+  fact: TypeFact,
+): TypeFactDomain {
+  assert_type_domain(domain);
+  validate_type_fact(fact);
+  if (!domain.reachable || has_type_fact(domain.facts, fact)) return domain;
+  if (has_type_fact(domain.exclusions, fact)) {
+    return new TypeFactDomain(
+      TYPE_DOMAIN_TOKEN,
+      false,
+      domain.facts,
+      domain.exclusions,
+    );
+  }
+  const current = domain.facts.get(fact.value);
+  if (
+    current !== undefined &&
+    current.length >= proof_limits.maximum_formula_disjuncts
+  ) {
+    return domain;
+  }
+  return new TypeFactDomain(
+    TYPE_DOMAIN_TOKEN,
+    true,
+    add_type_fact(domain.facts, fact),
+    domain.exclusions,
+  );
+}
+
+export function exclude_type_fact(
+  domain: TypeFactDomain,
+  fact: TypeFact,
+): TypeFactDomain {
+  assert_type_domain(domain);
+  validate_type_fact(fact);
+  if (!domain.reachable || has_type_fact(domain.exclusions, fact)) {
+    return domain;
+  }
+  if (has_type_fact(domain.facts, fact)) {
+    return new TypeFactDomain(
+      TYPE_DOMAIN_TOKEN,
+      false,
+      domain.facts,
+      domain.exclusions,
+    );
+  }
+  const current = domain.exclusions.get(fact.value);
+  if (
+    current !== undefined &&
+    current.length >= proof_limits.maximum_exclusions_per_value
+  ) {
+    return domain;
+  }
+  return new TypeFactDomain(
+    TYPE_DOMAIN_TOKEN,
+    true,
+    domain.facts,
+    add_type_fact(domain.exclusions, fact),
+  );
+}
+
+export function implies_type_fact(
+  domain: TypeFactDomain,
+  fact: TypeFact,
+  expected: boolean,
+): boolean {
+  assert_type_domain(domain);
+  validate_type_fact(fact);
+  if (!domain.reachable) return true;
+  if (expected) return has_type_fact(domain.facts, fact);
+  return has_type_fact(domain.exclusions, fact);
+}
+
+export function join_type_fact_domains(
+  left: TypeFactDomain,
+  right: TypeFactDomain,
+): TypeFactDomain {
+  assert_type_domain(left);
+  assert_type_domain(right);
+  if (!left.reachable) return right;
+  if (!right.reachable) return left;
+  return new TypeFactDomain(
+    TYPE_DOMAIN_TOKEN,
+    true,
+    intersect_type_facts(left.facts, right.facts),
+    intersect_type_facts(left.exclusions, right.exclusions),
+  );
+}
+
+export function transfer_type_facts(
+  domain: TypeFactDomain,
+  source: ValueId,
+  target: ValueId,
+): TypeFactDomain {
+  assert_type_domain(domain);
+  if (!domain.reachable || source === target) return domain;
+  let transferred = domain;
+  const facts = domain.facts.get(source);
+  if (facts !== undefined) {
+    for (const type of facts) {
+      transferred = assume_type_fact(transferred, { value: target, type });
+    }
+  }
+  const exclusions = domain.exclusions.get(source);
+  if (exclusions !== undefined) {
+    for (const type of exclusions) {
+      transferred = exclude_type_fact(transferred, { value: target, type });
+    }
+  }
+  return transferred;
+}
+
+function snapshot_type_facts(
+  facts: ReadonlyMap<ValueId, readonly string[]>,
+): ReadonlyMap<ValueId, readonly string[]> {
+  const snapshot = new Map<ValueId, readonly string[]>();
+  for (const [value, types] of facts) {
+    snapshot.set(value, Object.freeze([...types].sort()));
+  }
+  return immutable_map(snapshot);
+}
+
+function assert_type_domain(domain: TypeFactDomain): void {
+  if (
+    domain === null || typeof domain !== "object" ||
+    !(domain instanceof TypeFactDomain) ||
+    !TRUSTED_TYPE_DOMAINS.has(domain)
+  ) {
+    throw new Error("Type FactGraph transition requires a trusted domain.");
+  }
+}
+
+function validate_type_fact(fact: TypeFact): void {
+  if (typeof fact.type !== "string" || fact.type.length === 0) {
+    throw new Error(
+      `Type fact for ${String(fact.value)} must have a canonical type.`,
+    );
+  }
+}
+
+function has_type_fact(
+  facts: ReadonlyMap<ValueId, readonly string[]>,
+  fact: TypeFact,
+): boolean {
+  return facts.get(fact.value)?.includes(fact.type) === true;
+}
+
+function add_type_fact(
+  facts: ReadonlyMap<ValueId, readonly string[]>,
+  fact: TypeFact,
+): ReadonlyMap<ValueId, readonly string[]> {
+  const next = new Map(facts);
+  const current = facts.get(fact.value);
+  const types: string[] = [];
+  if (current !== undefined) types.push(...current);
+  types.push(fact.type);
+  next.set(fact.value, types);
+  return next;
+}
+
+function intersect_type_facts(
+  left: ReadonlyMap<ValueId, readonly string[]>,
+  right: ReadonlyMap<ValueId, readonly string[]>,
+): ReadonlyMap<ValueId, readonly string[]> {
+  const intersection = new Map<ValueId, readonly string[]>();
+  for (const [value, left_types] of left) {
+    const right_types = right.get(value);
+    if (right_types === undefined) continue;
+    const shared = left_types.filter((type) => right_types.includes(type));
+    if (shared.length > 0) intersection.set(value, shared);
+  }
+  return intersection;
 }
 
 export function machine_range(
