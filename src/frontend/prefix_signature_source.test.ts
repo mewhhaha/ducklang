@@ -51,6 +51,19 @@ Deno.test("prefix source extraction retains refinement binders", () => {
   assert_equals(signature?.type.result.type.refinement?.binder, "answer");
 });
 
+Deno.test("prefix source extraction retains constructor membership", () => {
+  const source = "type use_some = " +
+    "(value: Maybe, evidence: Proof value is #Some) -> I32\n" +
+    "let use_some = (value, evidence) => 1;\n";
+  const metadata = extract_prefix_source_metadata(parse_duck_source(source));
+  const proof = metadata.signatures[0]?.type.parameters[1]?.type.proof;
+  if (proof?.tag !== "is") {
+    throw new Error("Expected constructor membership proposition.");
+  }
+
+  assert_equals(proof.type.canonical, "#Some");
+});
+
 Deno.test("prefix source extraction records fact definition kinds", () => {
   const source = "type multiple_of = (value: I32) -> Prop\n" +
     "opaque fact multiple_of = value => true;\n";

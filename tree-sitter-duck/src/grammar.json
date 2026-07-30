@@ -2386,7 +2386,7 @@
               "name": "type",
               "content": {
                 "type": "SYMBOL",
-                "name": "type_reference"
+                "name": "_prefix_membership_type"
               }
             }
           ]
@@ -2394,6 +2394,36 @@
         {
           "type": "SYMBOL",
           "name": "prefix_proposition_term"
+        }
+      ]
+    },
+    "_prefix_membership_type": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "constructor_membership_type"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "type_reference"
+        }
+      ]
+    },
+    "constructor_membership_type": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "#"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "constructor_identifier"
+          }
         }
       ]
     },

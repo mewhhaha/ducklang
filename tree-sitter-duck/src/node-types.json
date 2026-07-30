@@ -2350,6 +2350,22 @@
     }
   },
   {
+    "type": "constructor_membership_type",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "constructor_identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "continue_statement",
     "named": true,
     "fields": {}
@@ -5533,6 +5549,10 @@
         "multiple": false,
         "required": false,
         "types": [
+          {
+            "type": "constructor_membership_type",
+            "named": true
+          },
           {
             "type": "type_reference",
             "named": true

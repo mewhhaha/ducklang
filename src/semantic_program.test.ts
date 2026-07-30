@@ -1579,6 +1579,74 @@ Deno.test("mutually recursive generic aliases fail as checked source", () => {
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
 });
 
+Deno.test("if-let branches establish constructor membership", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof value is #Some) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then consume actual else 0 end;\n" +
+      "guarded (#Some 42)\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("if-let fallbacks establish negative constructor membership", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof not value is #Some) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then payload else consume actual end;\n" +
+      "guarded #None\n",
+  ));
+
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(
+    [...analysis.proofs.values()][0]?.semantic_certificate?.tag,
+    "type_fact",
+  );
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("if-let branches do not prove a different constructor", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type Maybe = | #None | #Some I32\n" +
+      "type consume = " +
+      "(value: Maybe, evidence: Proof value is #None) -> I32\n" +
+      "let consume = (actual, evidence) => 1;\n" +
+      "type guarded = (value: Maybe) -> I32\n" +
+      "let guarded = actual => " +
+      "if let #Some payload = actual " +
+      "then consume actual else 0 end;\n" +
+      "guarded (#Some 42)\n",
+  ));
+
+  assert_equals(
+    analysis.diagnostics.some((diagnostic) =>
+      diagnostic.code === "DUCK2604" &&
+      diagnostic.message.includes(
+        "unknown: call to consume cannot prove proof parameter evidence",
+      )
+    ),
+    true,
+  );
+  assert_equals(analysis.proofs.size, 0);
+  assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
 Deno.test("type membership learned through an alias refines its source", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type consume = " +

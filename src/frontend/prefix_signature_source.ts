@@ -913,13 +913,28 @@ function proposition_from_node(
   if (operator === undefined) return { tag: "holds", value: left, span };
   if (operator.kind === '"is"') {
     const type_node = node.children.find((child) =>
-      child.kind === "type_reference"
+      child.kind === "type_reference" ||
+      child.kind === "constructor_membership_type"
     );
     if (type_node === undefined) return undefined;
+    let type = type_reference_from_node(type_node, source);
+    if (type_node.kind === "constructor_membership_type") {
+      const name_node = type_node.children.find((child) =>
+        child.kind === "constructor_identifier"
+      );
+      if (name_node === undefined) return undefined;
+      const name = source.slice(name_node.start, name_node.end);
+      type = {
+        ...type,
+        canonical: "#" + name,
+        expression: { tag: "atom", name },
+        resolved: true,
+      };
+    }
     return {
       tag: "is",
       value: left,
-      type: type_reference_from_node(type_node, source),
+      type,
       span,
     };
   }

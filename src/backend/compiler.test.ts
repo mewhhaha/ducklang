@@ -192,6 +192,39 @@ Deno.test("Duck compiler erases type-membership branch proofs", async () => {
   }
 });
 
+Deno.test("Duck compiler erases constructor-membership proofs", async () => {
+  const proved_source = "type Maybe = | #None | #Some I32\n" +
+    "type consume = " +
+    "(value: Maybe, evidence: Proof value is #Some) -> I32\n" +
+    "let consume = (actual, evidence) => 42;\n" +
+    "type guarded = (value: Maybe) -> I32\n" +
+    "let guarded = actual => " +
+    "if let #Some payload = actual then consume actual else 0 end;\n" +
+    "guarded (#Some 42)\n";
+  const plain_source = "type Maybe = | #None | #Some I32\n" +
+    "type consume = (value: Maybe) -> I32\n" +
+    "let consume = actual => 42;\n" +
+    "type guarded = (value: Maybe) -> I32\n" +
+    "let guarded = actual => " +
+    "if let #Some payload = actual then consume actual else 0 end;\n" +
+    "guarded (#Some 42)\n";
+  const proved_module = encode_duck_module(proved_source);
+  const plain_module = encode_duck_module(plain_source);
+  assert_equals(proved_module.nodeWords, plain_module.nodeWords);
+  assert_equals(
+    proved_module.definitionWords,
+    plain_module.definitionWords,
+  );
+
+  const compiler = await DuckCompiler.create();
+  try {
+    const proved = await compiler.run(proved_source);
+    assert_equals(proved.value, { kind: "integer", value: 42 });
+  } finally {
+    compiler.destroy();
+  }
+});
+
 Deno.test("Duck compiler erases remainder branch proofs", async () => {
   const proved_source = "type consume = " +
     "(value: I32, evidence: Proof value % 4i32 = 0i32) -> I32\n" +

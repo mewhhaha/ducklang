@@ -415,10 +415,14 @@ prefix_atomic_proposition = (
                               | (
                                   value:(prefix_proposition_term)
                                   operator:("is")
-                                  type:(type_reference)
+                                  type:(_prefix_membership_type)
                                 )
                               | prefix_proposition_term
                             ) ;
+
+_prefix_membership_type = (constructor_membership_type | type_reference) ;
+
+constructor_membership_type = ("#" name:(constructor_identifier)) ;
 
 prefix_proposition_term = (
                            prefix_proposition_binary_term

@@ -3297,6 +3297,12 @@ function resolve_prefix_type_reference(
   if (proof !== undefined) {
     return { ...resolved_type, canonical: "Proof", resolved: true };
   }
+  if (
+    type.resolved === true && type.expression?.tag === "atom" &&
+    /^[A-Z][A-Za-z0-9_]*$/.test(type.expression.name)
+  ) {
+    return resolved_type;
+  }
   const canonical = resolve_transparent_type_aliases(type.canonical, aliases);
   if (canonical === "Type" || canonical === "Prop") {
     return { ...resolved_type, canonical, resolved: true };
