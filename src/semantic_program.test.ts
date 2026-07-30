@@ -3230,22 +3230,81 @@ Deno.test("proof bodies see transparent facts defined after their signature", ()
   assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
-Deno.test("polymorphic transparent facts stay opaque without type substitution", () => {
+Deno.test("polymorphic transparent facts infer type substitutions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type all_reflexive = forall (a: Type). (value: a) -> Prop\n" +
+      "fact all_reflexive = value => " +
+      "forall (other: a). other = other;\n" +
+      "type prove = (value: I32) -> Proof all_reflexive(value)\n" +
+      "let prove = actual => by other => refl;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  const checked = analysis.proofs.get("root:prove:proof");
+  if (checked === undefined) {
+    throw new Error("Expected a polymorphic transparent fact certificate.");
+  }
+  assert_equals(checked.certificate.proposition, {
+    tag: "forall",
+    domain: { tag: "constant", name: "I32" },
+    body: {
+      tag: "equal",
+      type: { tag: "constant", name: "I32" },
+      left: { tag: "var", index: 0 },
+      right: { tag: "var", index: 0 },
+    },
+  });
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic transparent facts refine contextual calls", () => {
   const analysis = analyze_duck_source(parse_duck_source(
     "type reflexive = forall (a: Type). (value: a) -> Prop\n" +
       "fact reflexive = value => value = value;\n" +
-      "type invalid = (value: I32) -> Proof reflexive(value)\n" +
-      "let invalid = actual => by refl;\n" +
+      "type consume = " +
+      "(value: I32, evidence: Proof reflexive(value)) -> I32\n" +
+      "let consume = (actual, evidence) => actual;\n" +
+      "type guarded = (value: I32) -> I32\n" +
+      "let guarded = actual => " +
+      "if actual == actual then consume actual else 0 end;\n" +
+      "guarded 7\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
+});
+
+Deno.test("polymorphic fact unfolding rejects undetermined type arguments", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type always = forall (a: Type). () -> Prop\n" +
+      "fact always = () => True;\n" +
+      "type invalid = () -> Proof always()\n" +
+      "let invalid = () => by true_intro;\n" +
       "42\n",
   ));
   assert_equals(
     analysis.diagnostics.some((diagnostic) =>
       diagnostic.code === "DUCK2605" &&
-      diagnostic.message.includes("refl requires an equality goal")
+      diagnostic.message.includes("Proof establishes True")
     ),
     true,
   );
   assert_equals(checked_value(lower_duck_source(analysis)), undefined);
+});
+
+Deno.test("term binders do not shadow polymorphic fact type substitutions", () => {
+  const analysis = analyze_duck_source(parse_duck_source(
+    "type typed = forall (a: Type). (value: a) -> Prop\n" +
+      "fact typed = value => forall (a: I32). value is a;\n" +
+      "type prove = " +
+      "(value: I32, evidence: Proof forall (a: I32). value is I32) " +
+      "-> Proof typed(value)\n" +
+      "let prove = (actual, evidence) => by evidence;\n" +
+      "42\n",
+  ));
+  assert_equals(analysis.diagnostics, []);
+  assert_equals(analysis.proofs.size, 1);
+  assert_equals(checked_value(lower_duck_source(analysis)) !== undefined, true);
 });
 
 Deno.test("transparent fact substitution avoids quantified capture", () => {

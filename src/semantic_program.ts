@@ -1597,9 +1597,11 @@ function check_prefix_call_obligations(
         `Call to ${contract.signature.name} lost obligation ${index}.`,
       );
       const branch_hypotheses = verified_branch_hypotheses(
+        contract.signature.name,
         obligation.proposition,
         source_span(call),
         binding_values,
+        term_types,
         facts,
         control_flow,
         callable_control_flow,
@@ -1635,9 +1637,11 @@ type VerifiedBranchHypotheses = {
 };
 
 function verified_branch_hypotheses(
+  declaration_name: string,
   proposition: PrefixProposition,
   call_span: SourceSpan,
   binding_values: ReadonlyMap<EntityId, ValueId>,
+  term_types: ReadonlyMap<string, LogicalTermType>,
   facts: ReadonlyMap<string, PrefixFactSignature>,
   control_flow: SemanticCfg | undefined,
   callable_control_flow: ReadonlyMap<ValueId, SemanticCallableControlFlow>,
@@ -1654,7 +1658,9 @@ function verified_branch_hypotheses(
     };
   }
   const normalized = unfold_transparent_prefix_proposition(
+    declaration_name,
     proposition,
+    term_types,
     facts,
   );
   const machine_requirement = prefix_machine_requirement(
@@ -3902,28 +3908,28 @@ function prefix_kernel_proposition(
         fact.body_parameters.length === application.arguments.length &&
         !active_facts.has(fact.kernel_name)
       ) {
-        const substitutions = new Map<string, PrefixTerm>();
-        for (let index = 0; index < fact.body_parameters.length; index += 1) {
-          const parameter = fact.body_parameters[index];
-          const argument = application.arguments[index];
-          expect(
-            parameter !== undefined && argument !== undefined,
-            `Transparent fact ${fact_name} lost argument ${index}.`,
-          );
-          substitutions.set(parameter, argument);
-        }
-        const nested_active = new Set(active_facts);
-        nested_active.add(fact.kernel_name);
-        let body_facts = facts;
-        if (fact.body_facts !== undefined) body_facts = fact.body_facts;
-        return prefix_kernel_proposition(
+        const body = instantiate_transparent_fact(
           declaration_name,
-          substitute_prefix_proposition(fact.body, substitutions),
-          context,
-          body_facts,
-          type_names,
-          nested_active,
+          fact_name,
+          fact,
+          application.arguments,
+          context.term_types,
+          facts,
         );
+        if (body !== undefined) {
+          const nested_active = new Set(active_facts);
+          nested_active.add(fact.kernel_name);
+          let body_facts = facts;
+          if (fact.body_facts !== undefined) body_facts = fact.body_facts;
+          return prefix_kernel_proposition(
+            declaration_name,
+            body,
+            context,
+            body_facts,
+            type_names,
+            nested_active,
+          );
+        }
       }
     }
     return prefix_kernel_atom(
@@ -5918,8 +5924,7 @@ function prefix_fact_signatures(
       );
       if (
         definition?.fact_body !== undefined &&
-        definition.fact_parameters !== undefined &&
-        fact.type_parameters.size === 0
+        definition.fact_parameters !== undefined
       ) {
         fact.body = definition.fact_body;
         fact.body_facts = prefix_fact_signatures(
@@ -5939,8 +5944,173 @@ function prefix_fact_signatures(
   return facts;
 }
 
-function unfold_transparent_prefix_proposition(
+function instantiate_transparent_fact(
+  declaration_name: string,
+  fact_name: string,
+  fact: PrefixFactSignature,
+  arguments_: readonly PrefixTerm[],
+  term_types: ReadonlyMap<string, LogicalTermType>,
+  facts: ReadonlyMap<string, PrefixFactSignature>,
+): PrefixProposition | undefined {
+  if (
+    fact.body === undefined || fact.body_parameters === undefined ||
+    fact.body_parameters.length !== arguments_.length
+  ) {
+    return undefined;
+  }
+  const type_substitutions = new Map<string, LogicalTermType>();
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    const expected = fact.parameters[index];
+    if (argument === undefined || expected === undefined) return undefined;
+    const actual = checked_value(
+      check_prefix_term_type(
+        declaration_name,
+        argument,
+        term_types,
+        facts,
+        new Set(),
+      ),
+    );
+    if (
+      actual === undefined ||
+      (fact.type_parameters.size > 0 && actual.refinement !== undefined)
+    ) {
+      return undefined;
+    }
+    if (expected.expression !== undefined) {
+      const candidates = new Map(type_substitutions);
+      if (
+        prefix_type_pattern_matches(
+          expected.expression,
+          actual,
+          fact.type_parameters,
+          candidates,
+        )
+      ) {
+        for (const [name, type] of candidates) {
+          type_substitutions.set(name, type);
+        }
+        continue;
+      }
+    }
+    if (
+      actual.name !== expected.name &&
+      (expected.name !== expected.representation ||
+        actual.representation !== expected.representation)
+    ) {
+      return undefined;
+    }
+  }
+  for (const type_parameter of fact.type_parameters) {
+    if (!type_substitutions.has(type_parameter)) return undefined;
+  }
+  const term_substitutions = new Map<string, PrefixTerm>();
+  for (let index = 0; index < fact.body_parameters.length; index += 1) {
+    const parameter = fact.body_parameters[index];
+    const argument = arguments_[index];
+    expect(
+      parameter !== undefined && argument !== undefined,
+      `Transparent fact ${fact_name} lost argument ${index}.`,
+    );
+    term_substitutions.set(parameter, argument);
+  }
+  const body = substitute_prefix_proposition(
+    fact.body,
+    term_substitutions,
+  );
+  return substitute_prefix_proposition_types(body, type_substitutions);
+}
+
+function substitute_prefix_proposition_types(
   proposition: PrefixProposition,
+  substitutions: ReadonlyMap<string, LogicalTermType>,
+): PrefixProposition {
+  if (
+    proposition.tag === "true" || proposition.tag === "false" ||
+    proposition.tag === "holds" || proposition.tag === "equal" ||
+    proposition.tag === "not_equal" || proposition.tag === "less" ||
+    proposition.tag === "less_equal"
+  ) {
+    return proposition;
+  }
+  if (proposition.tag === "is") {
+    return {
+      ...proposition,
+      type: substitute_prefix_type_reference(
+        proposition.type,
+        substitutions,
+      ),
+    };
+  }
+  if (proposition.tag === "not") {
+    return {
+      ...proposition,
+      proposition: substitute_prefix_proposition_types(
+        proposition.proposition,
+        substitutions,
+      ),
+    };
+  }
+  if (
+    proposition.tag === "and" || proposition.tag === "or" ||
+    proposition.tag === "implies"
+  ) {
+    return {
+      ...proposition,
+      left: substitute_prefix_proposition_types(
+        proposition.left,
+        substitutions,
+      ),
+      right: substitute_prefix_proposition_types(
+        proposition.right,
+        substitutions,
+      ),
+    };
+  }
+  if (proposition.tag === "forall" || proposition.tag === "exists") {
+    return {
+      ...proposition,
+      binder: {
+        ...proposition.binder,
+        type: substitute_prefix_type_reference(
+          proposition.binder.type,
+          substitutions,
+        ),
+      },
+      proposition: substitute_prefix_proposition_types(
+        proposition.proposition,
+        substitutions,
+      ),
+    };
+  }
+  throw new Error("Unknown polymorphic fact proposition.");
+}
+
+function substitute_prefix_type_reference(
+  reference: PrefixTypeReference,
+  substitutions: ReadonlyMap<string, LogicalTermType>,
+): PrefixTypeReference {
+  const replacement = substitutions.get(reference.canonical);
+  if (replacement === undefined) return reference;
+  let text = replacement.representation;
+  if (replacement.display_name !== undefined) {
+    text = replacement.display_name;
+  }
+  return {
+    text,
+    canonical: replacement.name,
+    expression: replacement.expression,
+    representation: replacement.representation,
+    resolved: true,
+    span: reference.span,
+  };
+}
+
+function unfold_transparent_prefix_proposition(
+  declaration_name: string,
+  proposition: PrefixProposition,
+  term_types: ReadonlyMap<string, LogicalTermType>,
   facts: ReadonlyMap<string, PrefixFactSignature>,
   active_facts: ReadonlySet<string> = new Set(),
 ): PrefixProposition {
@@ -5959,22 +6129,23 @@ function unfold_transparent_prefix_proposition(
     ) {
       return proposition;
     }
-    const substitutions = new Map<string, PrefixTerm>();
-    for (let index = 0; index < fact.body_parameters.length; index += 1) {
-      const parameter = fact.body_parameters[index];
-      const argument = application.arguments[index];
-      expect(
-        parameter !== undefined && argument !== undefined,
-        `Transparent fact ${fact_name} lost argument ${index}.`,
-      );
-      substitutions.set(parameter, argument);
-    }
+    const body = instantiate_transparent_fact(
+      declaration_name,
+      fact_name,
+      fact,
+      application.arguments,
+      term_types,
+      facts,
+    );
+    if (body === undefined) return proposition;
     const nested_active = new Set(active_facts);
     nested_active.add(fact.kernel_name);
     let body_facts = facts;
     if (fact.body_facts !== undefined) body_facts = fact.body_facts;
     return unfold_transparent_prefix_proposition(
-      substitute_prefix_proposition(fact.body, substitutions),
+      declaration_name,
+      body,
+      term_types,
       body_facts,
       nested_active,
     );
@@ -5990,7 +6161,9 @@ function unfold_transparent_prefix_proposition(
     return {
       ...proposition,
       proposition: unfold_transparent_prefix_proposition(
+        declaration_name,
         proposition.proposition,
+        term_types,
         facts,
         active_facts,
       ),
@@ -6003,12 +6176,16 @@ function unfold_transparent_prefix_proposition(
     return {
       ...proposition,
       left: unfold_transparent_prefix_proposition(
+        declaration_name,
         proposition.left,
+        term_types,
         facts,
         active_facts,
       ),
       right: unfold_transparent_prefix_proposition(
+        declaration_name,
         proposition.right,
+        term_types,
         facts,
         active_facts,
       ),
@@ -6018,7 +6195,9 @@ function unfold_transparent_prefix_proposition(
     return {
       ...proposition,
       proposition: unfold_transparent_prefix_proposition(
+        declaration_name,
         proposition.proposition,
+        term_types,
         facts,
         active_facts,
       ),
